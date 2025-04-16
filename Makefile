@@ -1,15 +1,16 @@
 CC = clang
 VULKAN_SDK ?= $(HOME)/VulkanSDK/1.4.309.0/macOS
-CFLAGS = -std=c17 -O0 -g -Wall -MMD -fPIC `pkg-config --cflags sdl3` -I$(VULKAN_SDK)/include
-LDFLAGS = `pkg-config --libs sdl3` -L$(VULKAN_SDK)/lib -lvulkan
-INCLUDE = -I.
+CFLAGS = -std=c17 -O0 -g -Wall -MMD -fPIC `pkg-config --cflags sdl3`
+LDFLAGS = `pkg-config --libs sdl3` -lvulkan
+INCLUDE = -I. -I$(VULKAN_SDK)/include
 BUILDDIR = ./build
-LDINCLUDE = 
+LDINCLUDE = -L$(VULKAN_SDK)/lib -Wl,-rpath,$(VULKAN_SDK)/lib
 
 SRCS = $(wildcard *.c **/*.c)
 OBJS = $(foreach obj, $(SRCS:.c=.o), $(BUILDDIR)/$(obj))
 
 # Run with DYLD_LIBRARY_PATH=$HOME/VulkanSDK/1.4.309.0/macOS/lib ./build/ngen
+# With rpath, it's not needed
 .PHONY: all
 all: $(OBJS)
 	$(CC) $^ -o $(BUILDDIR)/ngen $(CFLAGS) $(INCLUDE) $(LDINCLUDE) $(LDFLAGS)
