@@ -52,5 +52,6 @@ Mkfile.old
 dkms.conf
 
 build/
+out/
 .cache/
 compile_commands.json

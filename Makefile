@@ -3,19 +3,19 @@ VULKAN_SDK ?= $(HOME)/VulkanSDK/1.4.309.0/macOS
 CFLAGS = -std=c17 -O0 -g -Wall -MMD -fPIC `pkg-config --cflags sdl3`
 LDFLAGS = `pkg-config --libs sdl3` -lvulkan
 INCLUDE = -I. -I$(VULKAN_SDK)/include
-BUILDDIR = ./build
+OUTDIR = ./out
 LDINCLUDE = -L$(VULKAN_SDK)/lib -Wl,-rpath,$(VULKAN_SDK)/lib
 
 SRCS = $(wildcard *.c **/*.c)
-OBJS = $(foreach obj, $(SRCS:.c=.o), $(BUILDDIR)/$(obj))
+OBJS = $(foreach obj, $(SRCS:.c=.o), $(OUTDIR)/$(obj))
 
 # Run with DYLD_LIBRARY_PATH=$HOME/VulkanSDK/1.4.309.0/macOS/lib ./build/ngen
 # With rpath, it's not needed
 .PHONY: all
 all: $(OBJS)
-	$(CC) $^ -o $(BUILDDIR)/ngen $(CFLAGS) $(INCLUDE) $(LDINCLUDE) $(LDFLAGS)
+	$(CC) $^ -o $(OUTDIR)/ngen $(CFLAGS) $(INCLUDE) $(LDINCLUDE) $(LDFLAGS)
 
-$(OBJS): $(BUILDDIR)/%.o: %.c
+$(OBJS): $(OUTDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) -c $(CFLAGS) -o $@ $< $(INCLUDE)
 
@@ -23,6 +23,6 @@ $(OBJS): $(BUILDDIR)/%.o: %.c
 
 .PHONY: clean
 clean:
-	@rm -rf $(BUILDDIR)
+	@rm -rf $(OUTDIR)
 
 print-%  : ; @echo $* = $($*)
