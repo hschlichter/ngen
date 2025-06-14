@@ -513,7 +513,34 @@ int main(int argc, char* argv[]) {
     }
 
     // 12. Create Sync Objects
-    
+    VkSemaphore imageAvailableSemaphore;
+    VkSemaphore renderFinishedSemaphore;
+    VkSemaphoreCreateInfo semInfo = {
+        .sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO,
+    };
+
+    result = vkCreateSemaphore(device, &semInfo, NULL, &imageAvailableSemaphore);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkCreateSemaphore failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
+    result = vkCreateSemaphore(device, &semInfo, NULL, &renderFinishedSemaphore);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkCreateSemaphore failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
+    VkFence inflightFence;
+    VkFenceCreateInfo fenceInfo = {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+    };
+
+    result = vkCreateFence(device, &fenceInfo, NULL, &inflightFence);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkCreateFence failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
 
     // 13. Main loop
     bool quit = false;
@@ -550,12 +577,81 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        uint32_t index;
+        result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphore, inflightFence, &index);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "vkAcquireNextImageKHR failed: %s(%d)\n", string_VkResult(result), result);
+            return 1;
+        }
 
+        VkSubmitInfo submit = {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = & imageAvailableSemaphore,
+            .pWaitDstStageMask = (VkPipelineStageFlags[]){ VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT },
+            .commandBufferCount = 1,
+            .pCommandBuffers = &cmdBuffers[index],
+            .signalSemaphoreCount = 1,
+            .pSignalSemaphores = &renderFinishedSemaphore,
+        };
+
+        result = vkQueueSubmit(graphicsQueue, 1, & submit, inflightFence);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "vkQueueSubmit failed: %s(%d)\n", string_VkResult(result), result);
+            return 1;
+        }
+
+        VkPresentInfoKHR present = {
+            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &renderFinishedSemaphore,
+            .swapchainCount = 1,
+            .pSwapchains = &swapchain,
+            .pImageIndices = &index,
+        };
+
+        result = vkQueuePresentKHR(graphicsQueue, &present);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "vkQueuePresentKHR failed: %s(%d)\n", string_VkResult(result), result);
+            return 1;
+        }
+
+        result = vkQueueWaitIdle(graphicsQueue);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "vkQueueWaitIdle failed: %s(%d)\n", string_VkResult(result), result);
+            return 1;
+        }
     }
 
-
     // 14. Clean up.
+    result = vkDeviceWaitIdle(device);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkDeviceWaitIdle failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
+    for (uint32_t i = 0; i < imageCount; i++) {
+        vkDestroyFramebuffer(device, framebuffers[i], NULL);
+        vkDestroyImageView(device, imageViews[i], NULL);
+    }
+
+    vkDestroyPipeline(device, pipeline, NULL);
+    vkDestroyPipelineLayout(device, layout, NULL);
+    vkDestroyRenderPass(device, renderPass, NULL);
+
+    vkDestroyShaderModule(device, vertShader, NULL);
+    vkDestroyShaderModule(device, fragShader, NULL);
+
+    vkDestroySwapchainKHR(device, swapchain, NULL);
+
+    vkDestroySemaphore(device, imageAvailableSemaphore, NULL);
+    vkDestroySemaphore(device, renderFinishedSemaphore, NULL);
+    vkDestroyFence(device, inflightFence, NULL);
+
+    vkDestroyCommandPool(device, cmdPool, NULL);
+
     vkDestroyDevice(device, NULL);
+    vkDestroySurfaceKHR(instance, surface, NULL);
     vkDestroyInstance(instance, NULL);
 
     SDL_DestroyWindow(window); 
