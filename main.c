@@ -7,7 +7,41 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
+VkShaderModule loadShaderModule(VkDevice device, const char* filepath) {
+    FILE* file = fopen(filepath, "rb");
+    if (!file) {
+        fprintf(stderr, "Failed to open shader filer: %s\n", filepath);
+        return VK_NULL_HANDLE;
+    }
+
+    fseek(file, 0, SEEK_END);
+    size_t size = ftell(file);
+    rewind(file);
+
+    uint32_t* code = malloc(size);
+    fread(code, 1, size, file);
+    fclose(file);
+
+    VkShaderModuleCreateInfo createInfo = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = size,
+        .pCode = code,
+    };
+
+    VkShaderModule shaderModule;
+    VkResult result = vkCreateShaderModule(device, &createInfo, NULL, &shaderModule);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkCreateShaderModule failed: %s(%d)\n", string_VkResult(result), result);
+        shaderModule = VK_NULL_HANDLE;
+    }
+
+    printf("Loaded shader: %s\n", filepath);
+    free(code);
+
+    return shaderModule;
+}
 
 // Steps to setup Vulkan
 //
@@ -22,8 +56,9 @@
 // 9. Create Shader Modules
 // 10. Create Graphics Pipeline
 // 11. Allocate Command Buffers
-// 12. Main loop
-// 13. Clean up
+// 12. Create Sync Objects
+// 13. Main loop
+// 14. Clean up
 
 int main(int argc, char* argv[]) {
     // 1. SDL init and window stuff.
@@ -34,8 +69,8 @@ int main(int argc, char* argv[]) {
 
     SDL_PropertiesID windowProps = SDL_CreateProperties();
     SDL_SetStringProperty(windowProps, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "ngen");
-    SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, 1280);
-    SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, 720);
+    SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, 1920);
+    SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, 1080);
     SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_VULKAN_BOOLEAN, 1);
     SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, 1);
     SDL_Window* window = SDL_CreateWindowWithProperties(windowProps);
@@ -325,12 +360,162 @@ int main(int argc, char* argv[]) {
     }
 
     // 9. Create Shader Modules
+    VkShaderModule vertShader = loadShaderModule(device, "triangle.vert.spv");
+    VkShaderModule fragShader = loadShaderModule(device, "triangle.frag.spv");
 
     // 10. Create Graphics Pipeline
+    VkPipelineShaderStageCreateInfo stages[2] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_VERTEX_BIT,
+            .module = vertShader,
+            .pName = "main",
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = fragShader,
+            .pName = "main",
+        }
+    };
+
+    VkPipelineVertexInputStateCreateInfo vertexInputState = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+    };
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    };
+
+    VkViewport viewport = { 0, 0, extent.width, extent.height, 0, 1 };
+    VkRect2D scissor = { { 0, 0 }, extent };
+    VkPipelineViewportStateCreateInfo viewportState = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1,
+        .pViewports = &viewport,
+        .scissorCount = 1,
+        .pScissors = &scissor,
+    };
+
+    VkPipelineRasterizationStateCreateInfo rasterizationState = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_BACK_BIT,
+        .frontFace = VK_FRONT_FACE_CLOCKWISE,
+        .lineWidth = 1.0f,
+    };
+
+    VkPipelineMultisampleStateCreateInfo multisampleState = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+    };
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment = {
+        .colorWriteMask = 0xF,
+        .blendEnable = VK_FALSE,
+    };
+
+    VkPipelineColorBlendStateCreateInfo colorBlendState = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments = &colorBlendAttachment,
+    };
+
+    VkPipelineLayout layout;
+    VkPipelineLayoutCreateInfo layoutInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+    };
+
+    result = vkCreatePipelineLayout(device, &layoutInfo, NULL, &layout);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkCreatePipelineLayout failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
+    VkGraphicsPipelineCreateInfo graphicsPipelineInfo = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .stageCount = 2,
+        .pStages = stages,
+        .pVertexInputState = &vertexInputState,
+        .pInputAssemblyState = &inputAssemblyState,
+        .pViewportState = &viewportState,
+        .pRasterizationState = &rasterizationState,
+        .pMultisampleState = &multisampleState,
+        .pColorBlendState = &colorBlendState,
+        .layout = layout,
+        .renderPass = renderPass,
+    };
+
+    VkPipeline pipeline;
+    result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphicsPipelineInfo, NULL, &pipeline);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkCreateGraphicsPipelines failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
 
     // 11. Allocate Command Buffers
+    VkCommandPool cmdPool;
+    VkCommandPoolCreateInfo poolInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .queueFamilyIndex = queueFamilyIndex,
+    };
+    result = vkCreateCommandPool(device, &poolInfo, NULL, &cmdPool);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkCreateCommandPool failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
 
-    // 12. Main loop
+    VkCommandBuffer cmdBuffers[imageCount];
+    VkCommandBufferAllocateInfo allocInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = cmdPool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = imageCount,
+    };
+    result = vkAllocateCommandBuffers(device, &allocInfo, cmdBuffers);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkAllocateCommandBuffers failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
+    for (uint32_t i = 0; i < imageCount; i++) {
+        VkCommandBufferBeginInfo begin = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        };
+        result = vkBeginCommandBuffer(cmdBuffers[i], &begin);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "vkBeginCommandBuffer failed: %s(%d)\n", string_VkResult(result), result);
+            return 1;
+        }
+
+        VkClearValue clear = { 
+            .color = { { 0.1f, 0.1f, 0.1f, 1.0f } },
+        };
+        VkRenderPassBeginInfo passBeginInfo = {
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .renderPass = renderPass,
+            .framebuffer = framebuffers[i],
+            .renderArea = { { 0, 0 }, extent },
+            .clearValueCount = 1,
+            .pClearValues = &clear,
+        };
+
+        vkCmdBeginRenderPass(cmdBuffers[i], &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(cmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        vkCmdDraw(cmdBuffers[i], 3, 1, 0, 0);
+        vkCmdEndRenderPass(cmdBuffers[i]);
+        result = vkEndCommandBuffer(cmdBuffers[i]);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "vkEndCommandBuffer failed: %s(%d)\n", string_VkResult(result), result);
+            return 1;
+        }
+    }
+
+    // 12. Create Sync Objects
+    
+
+    // 13. Main loop
     bool quit = false;
     while (!quit) {
         SDL_Event ev;
@@ -364,10 +549,13 @@ int main(int argc, char* argv[]) {
                 // New command buffers.
             }
         }
+
+
     }
 
 
-    // 13. Clean up.
+    // 14. Clean up.
+    vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
 
     SDL_DestroyWindow(window); 
@@ -375,3 +563,4 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+

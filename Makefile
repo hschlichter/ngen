@@ -21,6 +21,10 @@ $(OBJS): $(OUTDIR)/%.o: %.c
 
 -include $(OBJS:%.o=%.d)
 
+shaders:
+	$(VULKAN_SDK)/bin/glslc triangle.vert -o triangle.vert.spv
+	$(VULKAN_SDK)/bin/glslc triangle.frag -o triangle.frag.spv
+
 .PHONY: clean
 clean:
 	@rm -rf $(OUTDIR)
