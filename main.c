@@ -94,7 +94,7 @@ int main(int argc, char* argv[]) {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "ngen",
         .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-        .pEngineName = "No Engine",
+        .pEngineName = "Custom Engine",
         .engineVersion = VK_MAKE_VERSION(1, 0, 0),
         .apiVersion = apiVersion,
     };
@@ -105,12 +105,19 @@ int main(int argc, char* argv[]) {
         printf("%s\n", extensions[i]);
     }
 
+    const char* validationLayers[] = {
+        "VK_LAYER_KHRONOS_validation",
+    };
+    uint32_t validationLayersCount = 1;
+
     VkInstanceCreateInfo instanceCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &appInfo,
         .enabledExtensionCount = extensionsCount,
         .ppEnabledExtensionNames = extensions,
         .flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR, // Needed for MoltenVk/macOS
+        .enabledLayerCount = validationLayersCount,
+        .ppEnabledLayerNames = validationLayers,
     };
 
     VkInstance instance;
@@ -175,21 +182,22 @@ int main(int argc, char* argv[]) {
     // 4. Create logical device and graphic queue.
     float queuePriority = 1.0f;
     VkDeviceQueueCreateInfo queueCreateInfo = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .queueFamilyIndex = queueFamilyIndex,
         .queueCount = 1,
         .pQueuePriorities = &queuePriority,
     };
 
     const char* deviceExtensions[] = {
-        "VK_KHR_swapchain"
+        "VK_KHR_swapchain",
+        "VK_KHR_portability_subset",
     };
 
     VkDeviceCreateInfo deviceCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queueCreateInfo,
-        .enabledExtensionCount = 1,
+        .enabledExtensionCount = 2,
         .ppEnabledExtensionNames = deviceExtensions,
     };
 
@@ -310,7 +318,8 @@ int main(int argc, char* argv[]) {
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
     };
 
     VkAttachmentReference colorRef = {
@@ -516,7 +525,7 @@ int main(int argc, char* argv[]) {
     VkSemaphore imageAvailableSemaphore;
     VkSemaphore renderFinishedSemaphore;
     VkSemaphoreCreateInfo semInfo = {
-        .sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO,
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
     };
 
     result = vkCreateSemaphore(device, &semInfo, NULL, &imageAvailableSemaphore);
@@ -534,6 +543,7 @@ int main(int argc, char* argv[]) {
     VkFence inflightFence;
     VkFenceCreateInfo fenceInfo = {
         .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .flags = VK_FENCE_CREATE_SIGNALED_BIT,
     };
 
     result = vkCreateFence(device, &fenceInfo, NULL, &inflightFence);
@@ -577,10 +587,22 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        result = vkWaitForFences(device, 1, &inflightFence, VK_TRUE, UINT64_MAX);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "vkWaitForFences failed: %s(%d)\n", string_VkResult(result), result);
+            return 1;
+        }
+
         uint32_t index;
-        result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphore, inflightFence, &index);
+        result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &index);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "vkAcquireNextImageKHR failed: %s(%d)\n", string_VkResult(result), result);
+            return 1;
+        }
+
+        result = vkResetFences(device, 1, &inflightFence);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "vkResetFences failed: %s(%d)\n", string_VkResult(result), result);
             return 1;
         }
 
@@ -616,11 +638,11 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        result = vkQueueWaitIdle(graphicsQueue);
-        if (result != VK_SUCCESS) {
-            fprintf(stderr, "vkQueueWaitIdle failed: %s(%d)\n", string_VkResult(result), result);
-            return 1;
-        }
+        // result = vkQueueWaitIdle(graphicsQueue);
+        // if (result != VK_SUCCESS) {
+        //     fprintf(stderr, "vkQueueWaitIdle failed: %s(%d)\n", string_VkResult(result), result);
+        //     return 1;
+        // }
     }
 
     // 14. Clean up.
