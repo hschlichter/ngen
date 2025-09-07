@@ -51,8 +51,7 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-build/
-out/
+_out/
 .cache/
 compile_commands.json
 *.spv

@@ -369,8 +369,8 @@ int main(int argc, char* argv[]) {
     }
 
     // 9. Create Shader Modules
-    VkShaderModule vertShader = loadShaderModule(device, "triangle.vert.spv");
-    VkShaderModule fragShader = loadShaderModule(device, "triangle.frag.spv");
+    VkShaderModule vertShader = loadShaderModule(device, "shaders/triangle.vert.spv");
+    VkShaderModule fragShader = loadShaderModule(device, "shaders/triangle.frag.spv");
 
     // 10. Create Graphics Pipeline
     VkPipelineShaderStageCreateInfo stages[2] = {
