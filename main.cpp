@@ -8,12 +8,19 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+
+#define CGLTF_IMPLEMENTATION
+#include <cgltf.h>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 struct UniformBufferObject {
     glm::mat4 model;
@@ -210,6 +217,133 @@ VkShaderModule loadShaderModule(VkDevice device, const char* filepath) {
     return shaderModule;
 }
 
+struct Mesh {
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+    int texWidth = 0, texHeight = 0;
+    std::vector<uint8_t> texPixels; // RGBA
+};
+
+static Mesh loadGltf(const char* filepath) {
+    Mesh mesh;
+
+    cgltf_options options = {};
+    cgltf_data* gltf = nullptr;
+    cgltf_result res = cgltf_parse_file(&options, filepath, &gltf);
+    if (res != cgltf_result_success) {
+        fprintf(stderr, "cgltf_parse_file failed: %d\n", res);
+        return mesh;
+    }
+
+    res = cgltf_load_buffers(&options, gltf, filepath);
+    if (res != cgltf_result_success) {
+        fprintf(stderr, "cgltf_load_buffers failed: %d\n", res);
+        cgltf_free(gltf);
+        return mesh;
+    }
+
+    // Load first mesh, first primitive
+    if (gltf->meshes_count == 0 || gltf->meshes[0].primitives_count == 0) {
+        fprintf(stderr, "No meshes found in %s\n", filepath);
+        cgltf_free(gltf);
+        return mesh;
+    }
+
+    cgltf_primitive* prim = &gltf->meshes[0].primitives[0];
+
+    // Read indices
+    if (prim->indices) {
+        size_t count = prim->indices->count;
+        mesh.indices.resize(count);
+        for (size_t i = 0; i < count; i++) {
+            mesh.indices[i] = (uint32_t)cgltf_accessor_read_index(prim->indices, i);
+        }
+    }
+
+    // Find accessors for position, normal, texcoord
+    cgltf_accessor* posAccessor = nullptr;
+    cgltf_accessor* normAccessor = nullptr;
+    cgltf_accessor* uvAccessor = nullptr;
+
+    for (size_t i = 0; i < prim->attributes_count; i++) {
+        if (prim->attributes[i].type == cgltf_attribute_type_position)
+            posAccessor = prim->attributes[i].data;
+        else if (prim->attributes[i].type == cgltf_attribute_type_normal)
+            normAccessor = prim->attributes[i].data;
+        else if (prim->attributes[i].type == cgltf_attribute_type_texcoord)
+            uvAccessor = prim->attributes[i].data;
+    }
+
+    if (!posAccessor) {
+        fprintf(stderr, "No position attribute in mesh\n");
+        cgltf_free(gltf);
+        return mesh;
+    }
+
+    size_t vertCount = posAccessor->count;
+    mesh.vertices.resize(vertCount);
+
+    for (size_t i = 0; i < vertCount; i++) {
+        Vertex& v = mesh.vertices[i];
+
+        cgltf_accessor_read_float(posAccessor, i, v.position, 3);
+
+        if (normAccessor)
+            cgltf_accessor_read_float(normAccessor, i, v.normal, 3);
+        else
+            v.normal[0] = v.normal[1] = 0, v.normal[2] = 1;
+
+        if (uvAccessor)
+            cgltf_accessor_read_float(uvAccessor, i, v.texCoord, 2);
+        else
+            v.texCoord[0] = v.texCoord[1] = 0;
+
+        v.color[0] = v.color[1] = v.color[2] = 1.0f;
+    }
+
+    // If no indices were provided, generate sequential indices
+    if (mesh.indices.empty()) {
+        mesh.indices.resize(vertCount);
+        for (size_t i = 0; i < vertCount; i++) mesh.indices[i] = (uint32_t)i;
+    }
+
+    printf("Loaded mesh: %zu vertices, %zu indices\n", mesh.vertices.size(), mesh.indices.size());
+
+    // Load texture from material
+    if (prim->material && prim->material->pbr_metallic_roughness.base_color_texture.texture) {
+        cgltf_image* img = prim->material->pbr_metallic_roughness.base_color_texture.texture->image;
+        if (img) {
+            int channels;
+            uint8_t* pixels = nullptr;
+
+            if (img->buffer_view) {
+                // Embedded texture
+                const uint8_t* bufData = (const uint8_t*)img->buffer_view->buffer->data + img->buffer_view->offset;
+                pixels = stbi_load_from_memory(bufData, (int)img->buffer_view->size,
+                    &mesh.texWidth, &mesh.texHeight, &channels, 4);
+            } else if (img->uri) {
+                // External texture file — resolve relative to GLTF path
+                std::string dir(filepath);
+                size_t slash = dir.find_last_of("/\\");
+                std::string texPath = (slash != std::string::npos ? dir.substr(0, slash + 1) : "") + img->uri;
+                pixels = stbi_load(texPath.c_str(), &mesh.texWidth, &mesh.texHeight, &channels, 4);
+            }
+
+            if (pixels) {
+                size_t sz = (size_t)mesh.texWidth * mesh.texHeight * 4;
+                mesh.texPixels.assign(pixels, pixels + sz);
+                stbi_image_free(pixels);
+                printf("Loaded texture: %dx%d\n", mesh.texWidth, mesh.texHeight);
+            } else {
+                fprintf(stderr, "Failed to load texture\n");
+            }
+        }
+    }
+
+    cgltf_free(gltf);
+    return mesh;
+}
+
 // Steps to setup Vulkan
 //
 // 1. Initialize SDL and Create Vulkan Surface
@@ -228,6 +362,17 @@ VkShaderModule loadShaderModule(VkDevice device, const char* filepath) {
 // 14. Clean up
 
 int main(int argc, char* argv[]) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <model.gltf>\n", argv[0]);
+        return 1;
+    }
+
+    Mesh mesh = loadGltf(argv[1]);
+    if (mesh.vertices.empty()) {
+        fprintf(stderr, "Failed to load model\n");
+        return 1;
+    }
+
     // 1. SDL init and window stuff.
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -400,40 +545,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Create Vertex Buffer (device-local via staging)
-    // Cube: 24 vertices (4 per face for correct normals), 36 indices
-    Vertex vertices[] = {
-        // Front face (z = +0.5)
-        { .position = { -0.5f, -0.5f,  0.5f }, .normal = { 0, 0, 1 }, .color = { 1, 1, 1 }, .texCoord = { 0, 0 } },
-        { .position = {  0.5f, -0.5f,  0.5f }, .normal = { 0, 0, 1 }, .color = { 1, 1, 1 }, .texCoord = { 1, 0 } },
-        { .position = {  0.5f,  0.5f,  0.5f }, .normal = { 0, 0, 1 }, .color = { 1, 1, 1 }, .texCoord = { 1, 1 } },
-        { .position = { -0.5f,  0.5f,  0.5f }, .normal = { 0, 0, 1 }, .color = { 1, 1, 1 }, .texCoord = { 0, 1 } },
-        // Back face (z = -0.5)
-        { .position = {  0.5f, -0.5f, -0.5f }, .normal = { 0, 0, -1 }, .color = { 1, 1, 1 }, .texCoord = { 0, 0 } },
-        { .position = { -0.5f, -0.5f, -0.5f }, .normal = { 0, 0, -1 }, .color = { 1, 1, 1 }, .texCoord = { 1, 0 } },
-        { .position = { -0.5f,  0.5f, -0.5f }, .normal = { 0, 0, -1 }, .color = { 1, 1, 1 }, .texCoord = { 1, 1 } },
-        { .position = {  0.5f,  0.5f, -0.5f }, .normal = { 0, 0, -1 }, .color = { 1, 1, 1 }, .texCoord = { 0, 1 } },
-        // Right face (x = +0.5)
-        { .position = {  0.5f, -0.5f,  0.5f }, .normal = { 1, 0, 0 }, .color = { 1, 1, 1 }, .texCoord = { 0, 0 } },
-        { .position = {  0.5f, -0.5f, -0.5f }, .normal = { 1, 0, 0 }, .color = { 1, 1, 1 }, .texCoord = { 1, 0 } },
-        { .position = {  0.5f,  0.5f, -0.5f }, .normal = { 1, 0, 0 }, .color = { 1, 1, 1 }, .texCoord = { 1, 1 } },
-        { .position = {  0.5f,  0.5f,  0.5f }, .normal = { 1, 0, 0 }, .color = { 1, 1, 1 }, .texCoord = { 0, 1 } },
-        // Left face (x = -0.5)
-        { .position = { -0.5f, -0.5f, -0.5f }, .normal = { -1, 0, 0 }, .color = { 1, 1, 1 }, .texCoord = { 0, 0 } },
-        { .position = { -0.5f, -0.5f,  0.5f }, .normal = { -1, 0, 0 }, .color = { 1, 1, 1 }, .texCoord = { 1, 0 } },
-        { .position = { -0.5f,  0.5f,  0.5f }, .normal = { -1, 0, 0 }, .color = { 1, 1, 1 }, .texCoord = { 1, 1 } },
-        { .position = { -0.5f,  0.5f, -0.5f }, .normal = { -1, 0, 0 }, .color = { 1, 1, 1 }, .texCoord = { 0, 1 } },
-        // Top face (y = +0.5)
-        { .position = { -0.5f,  0.5f,  0.5f }, .normal = { 0, 1, 0 }, .color = { 1, 1, 1 }, .texCoord = { 0, 0 } },
-        { .position = {  0.5f,  0.5f,  0.5f }, .normal = { 0, 1, 0 }, .color = { 1, 1, 1 }, .texCoord = { 1, 0 } },
-        { .position = {  0.5f,  0.5f, -0.5f }, .normal = { 0, 1, 0 }, .color = { 1, 1, 1 }, .texCoord = { 1, 1 } },
-        { .position = { -0.5f,  0.5f, -0.5f }, .normal = { 0, 1, 0 }, .color = { 1, 1, 1 }, .texCoord = { 0, 1 } },
-        // Bottom face (y = -0.5)
-        { .position = { -0.5f, -0.5f, -0.5f }, .normal = { 0, -1, 0 }, .color = { 1, 1, 1 }, .texCoord = { 0, 0 } },
-        { .position = {  0.5f, -0.5f, -0.5f }, .normal = { 0, -1, 0 }, .color = { 1, 1, 1 }, .texCoord = { 1, 0 } },
-        { .position = {  0.5f, -0.5f,  0.5f }, .normal = { 0, -1, 0 }, .color = { 1, 1, 1 }, .texCoord = { 1, 1 } },
-        { .position = { -0.5f, -0.5f,  0.5f }, .normal = { 0, -1, 0 }, .color = { 1, 1, 1 }, .texCoord = { 0, 1 } },
-    };
-    VkDeviceSize vertexBufferSize = sizeof(vertices);
+    VkDeviceSize vertexBufferSize = mesh.vertices.size() * sizeof(Vertex);
 
     VkBuffer vertexStaging;
     VkDeviceMemory vertexStagingMemory;
@@ -444,7 +556,7 @@ int main(int argc, char* argv[]) {
 
     void* data;
     vkMapMemory(device, vertexStagingMemory, 0, vertexBufferSize, 0, &data);
-    memcpy(data, vertices, vertexBufferSize);
+    memcpy(data, mesh.vertices.data(), vertexBufferSize);
     vkUnmapMemory(device, vertexStagingMemory);
 
     VkBuffer vertexBuffer;
@@ -459,16 +571,8 @@ int main(int argc, char* argv[]) {
     vkFreeMemory(device, vertexStagingMemory, NULL);
 
     // Create Index Buffer (device-local via staging)
-    uint16_t indices[] = {
-         0,  1,  2,  2,  3,  0, // front
-         4,  5,  6,  6,  7,  4, // back
-         8,  9, 10, 10, 11,  8, // right
-        12, 13, 14, 14, 15, 12, // left
-        16, 17, 18, 18, 19, 16, // top
-        20, 21, 22, 22, 23, 20, // bottom
-    };
-    uint32_t indexCount = sizeof(indices) / sizeof(indices[0]);
-    VkDeviceSize indexBufferSize = sizeof(indices);
+    uint32_t indexCount = (uint32_t)mesh.indices.size();
+    VkDeviceSize indexBufferSize = mesh.indices.size() * sizeof(uint32_t);
 
     VkBuffer indexStaging;
     VkDeviceMemory indexStagingMemory;
@@ -479,7 +583,7 @@ int main(int argc, char* argv[]) {
 
     void* indexData;
     vkMapMemory(device, indexStagingMemory, 0, indexBufferSize, 0, &indexData);
-    memcpy(indexData, indices, indexBufferSize);
+    memcpy(indexData, mesh.indices.data(), indexBufferSize);
     vkUnmapMemory(device, indexStagingMemory);
 
     VkBuffer indexBuffer;
@@ -493,20 +597,32 @@ int main(int argc, char* argv[]) {
     vkDestroyBuffer(device, indexStaging, NULL);
     vkFreeMemory(device, indexStagingMemory, NULL);
 
-    // Create Texture (checkerboard pattern)
-    const uint32_t texWidth = 64, texHeight = 64;
-    const uint32_t texSize = texWidth * texHeight * 4;
-    uint8_t texPixels[texWidth * texHeight * 4];
-    for (uint32_t y = 0; y < texHeight; y++) {
-        for (uint32_t x = 0; x < texWidth; x++) {
-            uint8_t c = ((x / 8) + (y / 8)) % 2 ? 255 : 64;
-            uint32_t i = (y * texWidth + x) * 4;
-            texPixels[i + 0] = c;
-            texPixels[i + 1] = c;
-            texPixels[i + 2] = c;
-            texPixels[i + 3] = 255;
+    // Create Texture (from GLTF or fallback checkerboard)
+    uint32_t texWidth, texHeight;
+    const uint8_t* texPixelPtr;
+    std::vector<uint8_t> fallbackPixels;
+
+    if (!mesh.texPixels.empty()) {
+        texWidth = (uint32_t)mesh.texWidth;
+        texHeight = (uint32_t)mesh.texHeight;
+        texPixelPtr = mesh.texPixels.data();
+    } else {
+        texWidth = 64;
+        texHeight = 64;
+        fallbackPixels.resize(texWidth * texHeight * 4);
+        for (uint32_t y = 0; y < texHeight; y++) {
+            for (uint32_t x = 0; x < texWidth; x++) {
+                uint8_t c = ((x / 8) + (y / 8)) % 2 ? 255 : 64;
+                uint32_t i = (y * texWidth + x) * 4;
+                fallbackPixels[i + 0] = c;
+                fallbackPixels[i + 1] = c;
+                fallbackPixels[i + 2] = c;
+                fallbackPixels[i + 3] = 255;
+            }
         }
+        texPixelPtr = fallbackPixels.data();
     }
+    uint32_t texSize = texWidth * texHeight * 4;
 
     VkBuffer texStaging;
     VkDeviceMemory texStagingMemory;
@@ -516,7 +632,7 @@ int main(int argc, char* argv[]) {
                      &texStaging, &texStagingMemory)) return 1;
     void* texData;
     vkMapMemory(device, texStagingMemory, 0, texSize, 0, &texData);
-    memcpy(texData, texPixels, texSize);
+    memcpy(texData, texPixelPtr, texSize);
     vkUnmapMemory(device, texStagingMemory);
 
     VkImage textureImage;
@@ -1275,7 +1391,7 @@ int main(int argc, char* argv[]) {
         vkCmdBindPipeline(cmdBuffers[index], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(cmdBuffers[index], 0, 1, &vertexBuffer, offsets);
-        vkCmdBindIndexBuffer(cmdBuffers[index], indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindIndexBuffer(cmdBuffers[index], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdBindDescriptorSets(cmdBuffers[index], VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &descriptorSets[index], 0, NULL);
         vkCmdDrawIndexed(cmdBuffers[index], indexCount, 1, 0, 0, 0);
         vkCmdEndRenderPass(cmdBuffers[index]);

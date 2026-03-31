@@ -7,17 +7,17 @@ EXE = ngen
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 	VULKAN_SDK ?= $(HOME)/VulkanSDK/1.4.309.0/macOS
-	INCLUDE = -I. -Iexternal/glm -I$(VULKAN_SDK)/include
+	INCLUDE = -I. -Iexternal/glm -Iexternal/cgltf -Iexternal/stb -I$(VULKAN_SDK)/include
 	LDINCLUDE = -L$(VULKAN_SDK)/lib -Wl,-rpath,$(VULKAN_SDK)/lib
 	GLSLC = $(VULKAN_SDK)/bin/glslc
 else ifeq ($(OS),Windows_NT)
 	VULKAN_SDK ?= $(VULKAN_SDK)
-	INCLUDE = -I. -Iexternal/glm -I$(VULKAN_SDK)/Include
+	INCLUDE = -I. -Iexternal/glm -Iexternal/cgltf -Iexternal/stb -I$(VULKAN_SDK)/Include
 	LDINCLUDE = -L$(VULKAN_SDK)/Lib
 	GLSLC = $(VULKAN_SDK)/Bin/glslc.exe
 	EXE = ngen.exe
 else
-	INCLUDE = -I. -Iexternal/glm
+	INCLUDE = -I. -Iexternal/glm -Iexternal/cgltf -Iexternal/stb
 	LDINCLUDE =
 	GLSLC = glslc
 endif
