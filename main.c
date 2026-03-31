@@ -115,7 +115,11 @@ int main(int argc, char* argv[]) {
         .pApplicationInfo = &appInfo,
         .enabledExtensionCount = extensionsCount,
         .ppEnabledExtensionNames = extensions,
+#ifdef __APPLE__
         .flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR, // Needed for MoltenVk/macOS
+#else
+        .flags = 0,
+#endif
         .enabledLayerCount = validationLayersCount,
         .ppEnabledLayerNames = validationLayers,
     };
@@ -190,14 +194,17 @@ int main(int argc, char* argv[]) {
 
     const char* deviceExtensions[] = {
         "VK_KHR_swapchain",
+#ifdef __APPLE__
         "VK_KHR_portability_subset",
+#endif
     };
+    uint32_t deviceExtensionCount = sizeof(deviceExtensions) / sizeof(deviceExtensions[0]);
 
     VkDeviceCreateInfo deviceCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queueCreateInfo,
-        .enabledExtensionCount = 2,
+        .enabledExtensionCount = deviceExtensionCount,
         .ppEnabledExtensionNames = deviceExtensions,
     };
 
@@ -521,36 +528,40 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // 12. Create Sync Objects
-    VkSemaphore imageAvailableSemaphore;
-    VkSemaphore renderFinishedSemaphore;
+    // 12. Create Sync Objects (per swapchain image)
+    VkSemaphore imageAvailableSemaphores[imageCount];
+    VkSemaphore renderFinishedSemaphores[imageCount];
+    VkFence inflightFences[imageCount];
+
     VkSemaphoreCreateInfo semInfo = {
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
     };
-
-    result = vkCreateSemaphore(device, &semInfo, NULL, &imageAvailableSemaphore);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkCreateSemaphore failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
-    }
-
-    result = vkCreateSemaphore(device, &semInfo, NULL, &renderFinishedSemaphore);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkCreateSemaphore failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
-    }
-
-    VkFence inflightFence;
     VkFenceCreateInfo fenceInfo = {
         .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
         .flags = VK_FENCE_CREATE_SIGNALED_BIT,
     };
 
-    result = vkCreateFence(device, &fenceInfo, NULL, &inflightFence);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkCreateFence failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
+    for (uint32_t i = 0; i < imageCount; i++) {
+        result = vkCreateSemaphore(device, &semInfo, NULL, &imageAvailableSemaphores[i]);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "vkCreateSemaphore failed: %s(%d)\n", string_VkResult(result), result);
+            return 1;
+        }
+
+        result = vkCreateSemaphore(device, &semInfo, NULL, &renderFinishedSemaphores[i]);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "vkCreateSemaphore failed: %s(%d)\n", string_VkResult(result), result);
+            return 1;
+        }
+
+        result = vkCreateFence(device, &fenceInfo, NULL, &inflightFences[i]);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "vkCreateFence failed: %s(%d)\n", string_VkResult(result), result);
+            return 1;
+        }
     }
+
+    uint32_t currentFrame = 0;
 
     // 13. Main loop
     bool quit = false;
@@ -587,20 +598,20 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        result = vkWaitForFences(device, 1, &inflightFence, VK_TRUE, UINT64_MAX);
+        result = vkWaitForFences(device, 1, &inflightFences[currentFrame], VK_TRUE, UINT64_MAX);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "vkWaitForFences failed: %s(%d)\n", string_VkResult(result), result);
             return 1;
         }
 
         uint32_t index;
-        result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &index);
+        result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &index);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "vkAcquireNextImageKHR failed: %s(%d)\n", string_VkResult(result), result);
             return 1;
         }
 
-        result = vkResetFences(device, 1, &inflightFence);
+        result = vkResetFences(device, 1, &inflightFences[currentFrame]);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "vkResetFences failed: %s(%d)\n", string_VkResult(result), result);
             return 1;
@@ -609,15 +620,15 @@ int main(int argc, char* argv[]) {
         VkSubmitInfo submit = {
             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
             .waitSemaphoreCount = 1,
-            .pWaitSemaphores = & imageAvailableSemaphore,
+            .pWaitSemaphores = &imageAvailableSemaphores[currentFrame],
             .pWaitDstStageMask = (VkPipelineStageFlags[]){ VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT },
             .commandBufferCount = 1,
             .pCommandBuffers = &cmdBuffers[index],
             .signalSemaphoreCount = 1,
-            .pSignalSemaphores = &renderFinishedSemaphore,
+            .pSignalSemaphores = &renderFinishedSemaphores[currentFrame],
         };
 
-        result = vkQueueSubmit(graphicsQueue, 1, & submit, inflightFence);
+        result = vkQueueSubmit(graphicsQueue, 1, &submit, inflightFences[currentFrame]);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "vkQueueSubmit failed: %s(%d)\n", string_VkResult(result), result);
             return 1;
@@ -626,7 +637,7 @@ int main(int argc, char* argv[]) {
         VkPresentInfoKHR present = {
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &renderFinishedSemaphore,
+            .pWaitSemaphores = &renderFinishedSemaphores[currentFrame],
             .swapchainCount = 1,
             .pSwapchains = &swapchain,
             .pImageIndices = &index,
@@ -638,11 +649,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        // result = vkQueueWaitIdle(graphicsQueue);
-        // if (result != VK_SUCCESS) {
-        //     fprintf(stderr, "vkQueueWaitIdle failed: %s(%d)\n", string_VkResult(result), result);
-        //     return 1;
-        // }
+        currentFrame = (currentFrame + 1) % imageCount;
     }
 
     // 14. Clean up.
@@ -666,9 +673,11 @@ int main(int argc, char* argv[]) {
 
     vkDestroySwapchainKHR(device, swapchain, NULL);
 
-    vkDestroySemaphore(device, imageAvailableSemaphore, NULL);
-    vkDestroySemaphore(device, renderFinishedSemaphore, NULL);
-    vkDestroyFence(device, inflightFence, NULL);
+    for (uint32_t i = 0; i < imageCount; i++) {
+        vkDestroySemaphore(device, imageAvailableSemaphores[i], NULL);
+        vkDestroySemaphore(device, renderFinishedSemaphores[i], NULL);
+        vkDestroyFence(device, inflightFences[i], NULL);
+    }
 
     vkDestroyCommandPool(device, cmdPool, NULL);
 
