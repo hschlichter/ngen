@@ -15,6 +15,7 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #define CGLTF_IMPLEMENTATION
 #include <cgltf.h>
@@ -23,7 +24,6 @@
 #include <stb_image.h>
 
 struct UniformBufferObject {
-    glm::mat4 model;
     glm::mat4 view;
     glm::mat4 proj;
 };
@@ -217,50 +217,37 @@ VkShaderModule loadShaderModule(VkDevice device, const char* filepath) {
     return shaderModule;
 }
 
-struct Mesh {
+struct MeshData {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
     int texWidth = 0, texHeight = 0;
     std::vector<uint8_t> texPixels; // RGBA
+    glm::mat4 transform = glm::mat4(1.0f);
 };
 
-static Mesh loadGltf(const char* filepath) {
-    Mesh mesh;
+// GPU-side resources for a single mesh, created after Vulkan init
+struct GpuMesh {
+    VkBuffer vertexBuffer, indexBuffer;
+    VkDeviceMemory vertexMemory, indexMemory;
+    uint32_t indexCount;
+    VkImage textureImage;
+    VkDeviceMemory textureMemory;
+    VkImageView textureView;
+    glm::mat4 transform;
+};
 
-    cgltf_options options = {};
-    cgltf_data* gltf = nullptr;
-    cgltf_result res = cgltf_parse_file(&options, filepath, &gltf);
-    if (res != cgltf_result_success) {
-        fprintf(stderr, "cgltf_parse_file failed: %d\n", res);
-        return mesh;
-    }
+struct Scene {
+    std::vector<MeshData> meshes;
+};
 
-    res = cgltf_load_buffers(&options, gltf, filepath);
-    if (res != cgltf_result_success) {
-        fprintf(stderr, "cgltf_load_buffers failed: %d\n", res);
-        cgltf_free(gltf);
-        return mesh;
-    }
-
-    // Load first mesh, first primitive
-    if (gltf->meshes_count == 0 || gltf->meshes[0].primitives_count == 0) {
-        fprintf(stderr, "No meshes found in %s\n", filepath);
-        cgltf_free(gltf);
-        return mesh;
-    }
-
-    cgltf_primitive* prim = &gltf->meshes[0].primitives[0];
-
-    // Read indices
+static void loadPrimitive(MeshData& mesh, cgltf_primitive* prim, const char* filepath) {
     if (prim->indices) {
         size_t count = prim->indices->count;
         mesh.indices.resize(count);
-        for (size_t i = 0; i < count; i++) {
+        for (size_t i = 0; i < count; i++)
             mesh.indices[i] = (uint32_t)cgltf_accessor_read_index(prim->indices, i);
-        }
     }
 
-    // Find accessors for position, normal, texcoord
     cgltf_accessor* posAccessor = nullptr;
     cgltf_accessor* normAccessor = nullptr;
     cgltf_accessor* uvAccessor = nullptr;
@@ -274,74 +261,109 @@ static Mesh loadGltf(const char* filepath) {
             uvAccessor = prim->attributes[i].data;
     }
 
-    if (!posAccessor) {
-        fprintf(stderr, "No position attribute in mesh\n");
-        cgltf_free(gltf);
-        return mesh;
-    }
-
+    if (!posAccessor) return;
     size_t vertCount = posAccessor->count;
     mesh.vertices.resize(vertCount);
 
     for (size_t i = 0; i < vertCount; i++) {
         Vertex& v = mesh.vertices[i];
-
         cgltf_accessor_read_float(posAccessor, i, v.position, 3);
-
-        if (normAccessor)
-            cgltf_accessor_read_float(normAccessor, i, v.normal, 3);
-        else
-            v.normal[0] = v.normal[1] = 0, v.normal[2] = 1;
-
-        if (uvAccessor)
-            cgltf_accessor_read_float(uvAccessor, i, v.texCoord, 2);
-        else
-            v.texCoord[0] = v.texCoord[1] = 0;
-
+        if (normAccessor) cgltf_accessor_read_float(normAccessor, i, v.normal, 3);
+        else { v.normal[0] = v.normal[1] = 0; v.normal[2] = 1; }
+        if (uvAccessor) cgltf_accessor_read_float(uvAccessor, i, v.texCoord, 2);
+        else { v.texCoord[0] = v.texCoord[1] = 0; }
         v.color[0] = v.color[1] = v.color[2] = 1.0f;
     }
 
-    // If no indices were provided, generate sequential indices
     if (mesh.indices.empty()) {
         mesh.indices.resize(vertCount);
         for (size_t i = 0; i < vertCount; i++) mesh.indices[i] = (uint32_t)i;
     }
 
-    printf("Loaded mesh: %zu vertices, %zu indices\n", mesh.vertices.size(), mesh.indices.size());
-
-    // Load texture from material
     if (prim->material && prim->material->pbr_metallic_roughness.base_color_texture.texture) {
         cgltf_image* img = prim->material->pbr_metallic_roughness.base_color_texture.texture->image;
         if (img) {
             int channels;
             uint8_t* pixels = nullptr;
-
             if (img->buffer_view) {
-                // Embedded texture
                 const uint8_t* bufData = (const uint8_t*)img->buffer_view->buffer->data + img->buffer_view->offset;
                 pixels = stbi_load_from_memory(bufData, (int)img->buffer_view->size,
                     &mesh.texWidth, &mesh.texHeight, &channels, 4);
             } else if (img->uri) {
-                // External texture file — resolve relative to GLTF path
                 std::string dir(filepath);
                 size_t slash = dir.find_last_of("/\\");
                 std::string texPath = (slash != std::string::npos ? dir.substr(0, slash + 1) : "") + img->uri;
                 pixels = stbi_load(texPath.c_str(), &mesh.texWidth, &mesh.texHeight, &channels, 4);
             }
-
             if (pixels) {
-                size_t sz = (size_t)mesh.texWidth * mesh.texHeight * 4;
-                mesh.texPixels.assign(pixels, pixels + sz);
+                mesh.texPixels.assign(pixels, pixels + (size_t)mesh.texWidth * mesh.texHeight * 4);
                 stbi_image_free(pixels);
-                printf("Loaded texture: %dx%d\n", mesh.texWidth, mesh.texHeight);
-            } else {
-                fprintf(stderr, "Failed to load texture\n");
             }
         }
     }
+}
 
+static glm::mat4 getNodeTransform(cgltf_node* node) {
+    glm::mat4 t(1.0f);
+    if (node->has_matrix) {
+        memcpy(&t, node->matrix, sizeof(float) * 16);
+    } else {
+        if (node->has_translation)
+            t = glm::translate(t, glm::vec3(node->translation[0], node->translation[1], node->translation[2]));
+        if (node->has_rotation) {
+            glm::quat q(node->rotation[3], node->rotation[0], node->rotation[1], node->rotation[2]);
+            t *= glm::mat4_cast(q);
+        }
+        if (node->has_scale)
+            t = glm::scale(t, glm::vec3(node->scale[0], node->scale[1], node->scale[2]));
+    }
+    return t;
+}
+
+static void processNode(Scene& scene, cgltf_node* node, const glm::mat4& parentTransform, const char* filepath) {
+    glm::mat4 world = parentTransform * getNodeTransform(node);
+    if (node->mesh) {
+        for (size_t p = 0; p < node->mesh->primitives_count; p++) {
+            MeshData md;
+            md.transform = world;
+            loadPrimitive(md, &node->mesh->primitives[p], filepath);
+            if (!md.vertices.empty()) {
+                printf("  mesh: %zu verts, %zu indices, tex %dx%d\n",
+                    md.vertices.size(), md.indices.size(), md.texWidth, md.texHeight);
+                scene.meshes.push_back(std::move(md));
+            }
+        }
+    }
+    for (size_t i = 0; i < node->children_count; i++)
+        processNode(scene, node->children[i], world, filepath);
+}
+
+static Scene loadGltf(const char* filepath) {
+    Scene scene;
+    cgltf_options options = {};
+    cgltf_data* gltf = nullptr;
+    if (cgltf_parse_file(&options, filepath, &gltf) != cgltf_result_success) {
+        fprintf(stderr, "cgltf_parse_file failed\n");
+        return scene;
+    }
+    if (cgltf_load_buffers(&options, gltf, filepath) != cgltf_result_success) {
+        fprintf(stderr, "cgltf_load_buffers failed\n");
+        cgltf_free(gltf);
+        return scene;
+    }
+
+    if (gltf->scene) {
+        for (size_t i = 0; i < gltf->scene->nodes_count; i++)
+            processNode(scene, gltf->scene->nodes[i], glm::mat4(1.0f), filepath);
+    } else {
+        for (size_t i = 0; i < gltf->nodes_count; i++)
+            if (!gltf->nodes[i].parent)
+                processNode(scene, &gltf->nodes[i], glm::mat4(1.0f), filepath);
+    }
+
+    printf("Loaded %zu mesh(es)\n", scene.meshes.size());
     cgltf_free(gltf);
-    return mesh;
+    return scene;
 }
 
 // Steps to setup Vulkan
@@ -367,8 +389,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    Mesh mesh = loadGltf(argv[1]);
-    if (mesh.vertices.empty()) {
+    Scene scene = loadGltf(argv[1]);
+    if (scene.meshes.empty()) {
         fprintf(stderr, "Failed to load model\n");
         return 1;
     }
@@ -544,211 +566,126 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Create Vertex Buffer (device-local via staging)
-    VkDeviceSize vertexBufferSize = mesh.vertices.size() * sizeof(Vertex);
-
-    VkBuffer vertexStaging;
-    VkDeviceMemory vertexStagingMemory;
-    if (createBuffer(device, physicalDevice, vertexBufferSize,
-                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                     &vertexStaging, &vertexStagingMemory)) return 1;
-
-    void* data;
-    vkMapMemory(device, vertexStagingMemory, 0, vertexBufferSize, 0, &data);
-    memcpy(data, mesh.vertices.data(), vertexBufferSize);
-    vkUnmapMemory(device, vertexStagingMemory);
-
-    VkBuffer vertexBuffer;
-    VkDeviceMemory vertexBufferMemory;
-    if (createBuffer(device, physicalDevice, vertexBufferSize,
-                     VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                     &vertexBuffer, &vertexBufferMemory)) return 1;
-
-    copyBuffer(device, cmdPool, graphicsQueue, vertexStaging, vertexBuffer, vertexBufferSize);
-    vkDestroyBuffer(device, vertexStaging, NULL);
-    vkFreeMemory(device, vertexStagingMemory, NULL);
-
-    // Create Index Buffer (device-local via staging)
-    uint32_t indexCount = (uint32_t)mesh.indices.size();
-    VkDeviceSize indexBufferSize = mesh.indices.size() * sizeof(uint32_t);
-
-    VkBuffer indexStaging;
-    VkDeviceMemory indexStagingMemory;
-    if (createBuffer(device, physicalDevice, indexBufferSize,
-                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                     &indexStaging, &indexStagingMemory)) return 1;
-
-    void* indexData;
-    vkMapMemory(device, indexStagingMemory, 0, indexBufferSize, 0, &indexData);
-    memcpy(indexData, mesh.indices.data(), indexBufferSize);
-    vkUnmapMemory(device, indexStagingMemory);
-
-    VkBuffer indexBuffer;
-    VkDeviceMemory indexBufferMemory;
-    if (createBuffer(device, physicalDevice, indexBufferSize,
-                     VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                     &indexBuffer, &indexBufferMemory)) return 1;
-
-    copyBuffer(device, cmdPool, graphicsQueue, indexStaging, indexBuffer, indexBufferSize);
-    vkDestroyBuffer(device, indexStaging, NULL);
-    vkFreeMemory(device, indexStagingMemory, NULL);
-
-    // Create Texture (from GLTF or fallback checkerboard)
-    uint32_t texWidth, texHeight;
-    const uint8_t* texPixelPtr;
-    std::vector<uint8_t> fallbackPixels;
-
-    if (!mesh.texPixels.empty()) {
-        texWidth = (uint32_t)mesh.texWidth;
-        texHeight = (uint32_t)mesh.texHeight;
-        texPixelPtr = mesh.texPixels.data();
-    } else {
-        texWidth = 64;
-        texHeight = 64;
-        fallbackPixels.resize(texWidth * texHeight * 4);
-        for (uint32_t y = 0; y < texHeight; y++) {
-            for (uint32_t x = 0; x < texWidth; x++) {
-                uint8_t c = ((x / 8) + (y / 8)) % 2 ? 255 : 64;
-                uint32_t i = (y * texWidth + x) * 4;
-                fallbackPixels[i + 0] = c;
-                fallbackPixels[i + 1] = c;
-                fallbackPixels[i + 2] = c;
-                fallbackPixels[i + 3] = 255;
-            }
-        }
-        texPixelPtr = fallbackPixels.data();
-    }
-    uint32_t texSize = texWidth * texHeight * 4;
-
-    VkBuffer texStaging;
-    VkDeviceMemory texStagingMemory;
-    if (createBuffer(device, physicalDevice, texSize,
-                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                     &texStaging, &texStagingMemory)) return 1;
-    void* texData;
-    vkMapMemory(device, texStagingMemory, 0, texSize, 0, &texData);
-    memcpy(texData, texPixelPtr, texSize);
-    vkUnmapMemory(device, texStagingMemory);
-
-    VkImage textureImage;
-    VkDeviceMemory textureImageMemory;
-    VkImageCreateInfo texImageInfo = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = VK_FORMAT_R8G8B8A8_SRGB,
-        .extent = { texWidth, texHeight, 1 },
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-    };
-    result = vkCreateImage(device, &texImageInfo, NULL, &textureImage);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkCreateImage failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
-    }
-
-    VkMemoryRequirements texMemReqs;
-    vkGetImageMemoryRequirements(device, textureImage, &texMemReqs);
-    uint32_t texMemType = findMemoryType(physicalDevice, texMemReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    if (texMemType == UINT32_MAX) return 1;
-
-    VkMemoryAllocateInfo texAllocInfo = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = texMemReqs.size,
-        .memoryTypeIndex = texMemType,
-    };
-    result = vkAllocateMemory(device, &texAllocInfo, NULL, &textureImageMemory);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkAllocateMemory failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
-    }
-    vkBindImageMemory(device, textureImage, textureImageMemory, 0);
-
-    // Upload: UNDEFINED -> TRANSFER_DST, copy, TRANSFER_DST -> SHADER_READ_ONLY
-    transitionImageLayout(device, cmdPool, graphicsQueue, textureImage,
-        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-
-    {
-        VkCommandBufferAllocateInfo cmdAllocInfo = {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            .commandPool = cmdPool,
-            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-            .commandBufferCount = 1,
-        };
-        VkCommandBuffer cmd;
-        vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd);
-        VkCommandBufferBeginInfo beginInfo = {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-        };
-        vkBeginCommandBuffer(cmd, &beginInfo);
-        VkBufferImageCopy copyRegion = {
-            .imageSubresource = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1 },
-            .imageExtent = { texWidth, texHeight, 1 },
-        };
-        vkCmdCopyBufferToImage(cmd, texStaging, textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
-        vkEndCommandBuffer(cmd);
-        VkSubmitInfo submitInfo = {
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .commandBufferCount = 1,
-            .pCommandBuffers = &cmd,
-        };
-        vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-        vkQueueWaitIdle(graphicsQueue);
-        vkFreeCommandBuffers(device, cmdPool, 1, &cmd);
-    }
-
-    transitionImageLayout(device, cmdPool, graphicsQueue, textureImage,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-    vkDestroyBuffer(device, texStaging, NULL);
-    vkFreeMemory(device, texStagingMemory, NULL);
-
-    // Texture Image View
-    VkImageView textureImageView;
-    VkImageViewCreateInfo texViewInfo = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = textureImage,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = VK_FORMAT_R8G8B8A8_SRGB,
-        .subresourceRange = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
-    };
-    result = vkCreateImageView(device, &texViewInfo, NULL, &textureImageView);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkCreateImageView failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
-    }
-
-    // Texture Sampler
+    // Create GPU resources for each mesh
+    std::vector<GpuMesh> gpuMeshes(scene.meshes.size());
+    // Shared sampler
     VkSampler textureSampler;
-    VkSamplerCreateInfo samplerInfo = {
-        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .magFilter = VK_FILTER_LINEAR,
-        .minFilter = VK_FILTER_LINEAR,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-    };
-    result = vkCreateSampler(device, &samplerInfo, NULL, &textureSampler);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkCreateSampler failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
+    {
+        VkSamplerCreateInfo samplerInfo = {
+            .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .magFilter = VK_FILTER_LINEAR,
+            .minFilter = VK_FILTER_LINEAR,
+            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+            .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        };
+        result = vkCreateSampler(device, &samplerInfo, NULL, &textureSampler);
+        if (result != VK_SUCCESS) { fprintf(stderr, "vkCreateSampler failed\n"); return 1; }
+    }
+
+    // Fallback checkerboard texture
+    std::vector<uint8_t> fallbackPixels(64 * 64 * 4);
+    for (uint32_t y = 0; y < 64; y++)
+        for (uint32_t x = 0; x < 64; x++) {
+            uint8_t c = ((x / 8) + (y / 8)) % 2 ? 255 : 64;
+            uint32_t i = (y * 64 + x) * 4;
+            fallbackPixels[i] = fallbackPixels[i+1] = fallbackPixels[i+2] = c;
+            fallbackPixels[i+3] = 255;
+        }
+
+    for (size_t m = 0; m < scene.meshes.size(); m++) {
+        MeshData& md = scene.meshes[m];
+        GpuMesh& gm = gpuMeshes[m];
+        gm.transform = md.transform;
+        gm.indexCount = (uint32_t)md.indices.size();
+
+        // Vertex buffer
+        VkDeviceSize vbSize = md.vertices.size() * sizeof(Vertex);
+        VkBuffer vStaging; VkDeviceMemory vStagingMem;
+        createBuffer(device, physicalDevice, vbSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &vStaging, &vStagingMem);
+        void* data;
+        vkMapMemory(device, vStagingMem, 0, vbSize, 0, &data);
+        memcpy(data, md.vertices.data(), vbSize);
+        vkUnmapMemory(device, vStagingMem);
+        createBuffer(device, physicalDevice, vbSize,
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &gm.vertexBuffer, &gm.vertexMemory);
+        copyBuffer(device, cmdPool, graphicsQueue, vStaging, gm.vertexBuffer, vbSize);
+        vkDestroyBuffer(device, vStaging, NULL); vkFreeMemory(device, vStagingMem, NULL);
+
+        // Index buffer
+        VkDeviceSize ibSize = md.indices.size() * sizeof(uint32_t);
+        VkBuffer iStaging; VkDeviceMemory iStagingMem;
+        createBuffer(device, physicalDevice, ibSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &iStaging, &iStagingMem);
+        vkMapMemory(device, iStagingMem, 0, ibSize, 0, &data);
+        memcpy(data, md.indices.data(), ibSize);
+        vkUnmapMemory(device, iStagingMem);
+        createBuffer(device, physicalDevice, ibSize,
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &gm.indexBuffer, &gm.indexMemory);
+        copyBuffer(device, cmdPool, graphicsQueue, iStaging, gm.indexBuffer, ibSize);
+        vkDestroyBuffer(device, iStaging, NULL); vkFreeMemory(device, iStagingMem, NULL);
+
+        // Texture
+        uint32_t tw, th; const uint8_t* texPtr;
+        if (!md.texPixels.empty()) { tw = md.texWidth; th = md.texHeight; texPtr = md.texPixels.data(); }
+        else { tw = 64; th = 64; texPtr = fallbackPixels.data(); }
+        uint32_t texSize = tw * th * 4;
+
+        VkBuffer tStaging; VkDeviceMemory tStagingMem;
+        createBuffer(device, physicalDevice, texSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &tStaging, &tStagingMem);
+        vkMapMemory(device, tStagingMem, 0, texSize, 0, &data);
+        memcpy(data, texPtr, texSize);
+        vkUnmapMemory(device, tStagingMem);
+
+        VkImageCreateInfo texImageInfo = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D,
+            .format = VK_FORMAT_R8G8B8A8_SRGB, .extent = { tw, th, 1 },
+            .mipLevels = 1, .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE, .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        };
+        vkCreateImage(device, &texImageInfo, NULL, &gm.textureImage);
+        VkMemoryRequirements texMemReqs;
+        vkGetImageMemoryRequirements(device, gm.textureImage, &texMemReqs);
+        VkMemoryAllocateInfo texAllocInfo = {
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = texMemReqs.size,
+            .memoryTypeIndex = findMemoryType(physicalDevice, texMemReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+        };
+        vkAllocateMemory(device, &texAllocInfo, NULL, &gm.textureMemory);
+        vkBindImageMemory(device, gm.textureImage, gm.textureMemory, 0);
+
+        transitionImageLayout(device, cmdPool, graphicsQueue, gm.textureImage,
+            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+        {
+            VkCommandBufferAllocateInfo ca = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                .commandPool = cmdPool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1 };
+            VkCommandBuffer cmd; vkAllocateCommandBuffers(device, &ca, &cmd);
+            VkCommandBufferBeginInfo bi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT };
+            vkBeginCommandBuffer(cmd, &bi);
+            VkBufferImageCopy region = { .imageSubresource = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1 },
+                .imageExtent = { tw, th, 1 } };
+            vkCmdCopyBufferToImage(cmd, tStaging, gm.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+            vkEndCommandBuffer(cmd);
+            VkSubmitInfo si = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1, .pCommandBuffers = &cmd };
+            vkQueueSubmit(graphicsQueue, 1, &si, VK_NULL_HANDLE); vkQueueWaitIdle(graphicsQueue);
+            vkFreeCommandBuffers(device, cmdPool, 1, &cmd);
+        }
+        transitionImageLayout(device, cmdPool, graphicsQueue, gm.textureImage,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        vkDestroyBuffer(device, tStaging, NULL); vkFreeMemory(device, tStagingMem, NULL);
+
+        VkImageViewCreateInfo tvInfo = { .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = gm.textureImage, .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = VK_FORMAT_R8G8B8A8_SRGB,
+            .subresourceRange = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseMipLevel = 0,
+                .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1 } };
+        vkCreateImageView(device, &tvInfo, NULL, &gm.textureView);
     }
 
     // 5. Create Swapchain
@@ -1136,11 +1073,19 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    VkPushConstantRange pushConstRange = {
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        .offset = 0,
+        .size = sizeof(glm::mat4),
+    };
+
     VkPipelineLayout layout;
     VkPipelineLayoutCreateInfo layoutInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 1,
         .pSetLayouts = &descriptorSetLayout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pushConstRange,
     };
 
     result = vkCreatePipelineLayout(device, &layoutInfo, NULL, &layout);
@@ -1184,15 +1129,17 @@ int main(int argc, char* argv[]) {
         vkMapMemory(device, uniformBuffersMemory[i], 0, sizeof(UniformBufferObject), 0, &uniformBuffersMapped[i]);
     }
 
-    // Descriptor Pool and Sets
+    // Descriptor Pool and Sets — one set per frame per mesh
+    uint32_t meshCount = (uint32_t)gpuMeshes.size();
+    uint32_t totalSets = imageCount * meshCount;
     VkDescriptorPoolSize poolSizes[] = {
-        { .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = imageCount },
-        { .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = imageCount },
+        { .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = totalSets },
+        { .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = totalSets },
     };
     VkDescriptorPool descriptorPool;
     VkDescriptorPoolCreateInfo descriptorPoolInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .maxSets = imageCount,
+        .maxSets = totalSets,
         .poolSizeCount = 2,
         .pPoolSizes = poolSizes,
     };
@@ -1202,14 +1149,14 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::vector<VkDescriptorSetLayout> layouts(imageCount, descriptorSetLayout);
-
-    std::vector<VkDescriptorSet> descriptorSets(imageCount);
+    // descriptorSets[frame * meshCount + meshIdx]
+    std::vector<VkDescriptorSetLayout> dsLayouts(totalSets, descriptorSetLayout);
+    std::vector<VkDescriptorSet> descriptorSets(totalSets);
     VkDescriptorSetAllocateInfo descriptorAllocInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .descriptorPool = descriptorPool,
-        .descriptorSetCount = imageCount,
-        .pSetLayouts = layouts.data(),
+        .descriptorSetCount = totalSets,
+        .pSetLayouts = dsLayouts.data(),
     };
     result = vkAllocateDescriptorSets(device, &descriptorAllocInfo, descriptorSets.data());
     if (result != VK_SUCCESS) {
@@ -1218,35 +1165,37 @@ int main(int argc, char* argv[]) {
     }
 
     for (uint32_t i = 0; i < imageCount; i++) {
-        VkDescriptorBufferInfo bufInfo = {
-            .buffer = uniformBuffers[i],
-            .offset = 0,
-            .range = sizeof(UniformBufferObject),
-        };
-        VkDescriptorImageInfo imgInfo = {
-            .sampler = textureSampler,
-            .imageView = textureImageView,
-            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        };
-        VkWriteDescriptorSet writes[] = {
-            {
-                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstSet = descriptorSets[i],
-                .dstBinding = 0,
-                .descriptorCount = 1,
-                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .pBufferInfo = &bufInfo,
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstSet = descriptorSets[i],
-                .dstBinding = 1,
-                .descriptorCount = 1,
-                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                .pImageInfo = &imgInfo,
-            },
-        };
-        vkUpdateDescriptorSets(device, 2, writes, 0, NULL);
+        for (uint32_t m = 0; m < meshCount; m++) {
+            VkDescriptorBufferInfo bufInfo = {
+                .buffer = uniformBuffers[i],
+                .offset = 0,
+                .range = sizeof(UniformBufferObject),
+            };
+            VkDescriptorImageInfo imgInfo = {
+                .sampler = textureSampler,
+                .imageView = gpuMeshes[m].textureView,
+                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            };
+            VkWriteDescriptorSet writes[] = {
+                {
+                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet = descriptorSets[i * meshCount + m],
+                    .dstBinding = 0,
+                    .descriptorCount = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    .pBufferInfo = &bufInfo,
+                },
+                {
+                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet = descriptorSets[i * meshCount + m],
+                    .dstBinding = 1,
+                    .descriptorCount = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                    .pImageInfo = &imgInfo,
+                },
+            };
+            vkUpdateDescriptorSets(device, 2, writes, 0, NULL);
+        }
     }
 
     // 11. Allocate Command Buffers
@@ -1348,7 +1297,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        // Update uniform buffer
+        // Update uniform buffer (view + proj only, model is per-mesh via push constants)
         float time = (float)(SDL_GetTicksNS() - startTicks) / 1.0e9f;
         int winW, winH;
         SDL_GetWindowSizeInPixels(window, &winW, &winH);
@@ -1356,7 +1305,6 @@ int main(int argc, char* argv[]) {
         glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 10.0f);
         proj[1][1] *= -1.0f; // Flip Y for Vulkan clip coordinates
         UniformBufferObject ubo = {
-            .model = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f)),
             .view = glm::lookAt(glm::vec3(2.0f, 1.5f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
             .proj = proj,
         };
@@ -1389,11 +1337,20 @@ int main(int argc, char* argv[]) {
 
         vkCmdBeginRenderPass(cmdBuffers[index], &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(cmdBuffers[index], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        VkDeviceSize offsets[] = { 0 };
-        vkCmdBindVertexBuffers(cmdBuffers[index], 0, 1, &vertexBuffer, offsets);
-        vkCmdBindIndexBuffer(cmdBuffers[index], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdBindDescriptorSets(cmdBuffers[index], VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &descriptorSets[index], 0, NULL);
-        vkCmdDrawIndexed(cmdBuffers[index], indexCount, 1, 0, 0, 0);
+
+        glm::mat4 rootModel = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
+        for (uint32_t m = 0; m < meshCount; m++) {
+            GpuMesh& gm = gpuMeshes[m];
+            glm::mat4 model = rootModel * gm.transform;
+            vkCmdPushConstants(cmdBuffers[index], layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model);
+            VkDeviceSize offsets[] = { 0 };
+            vkCmdBindVertexBuffers(cmdBuffers[index], 0, 1, &gm.vertexBuffer, offsets);
+            vkCmdBindIndexBuffer(cmdBuffers[index], gm.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindDescriptorSets(cmdBuffers[index], VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1,
+                &descriptorSets[index * meshCount + m], 0, NULL);
+            vkCmdDrawIndexed(cmdBuffers[index], gm.indexCount, 1, 0, 0, 0);
+        }
+
         vkCmdEndRenderPass(cmdBuffers[index]);
         result = vkEndCommandBuffer(cmdBuffers[index]);
         if (result != VK_SUCCESS) {
@@ -1471,14 +1428,15 @@ int main(int argc, char* argv[]) {
     vkDestroySwapchainKHR(device, swapchain, NULL);
 
     vkDestroySampler(device, textureSampler, NULL);
-    vkDestroyImageView(device, textureImageView, NULL);
-    vkDestroyImage(device, textureImage, NULL);
-    vkFreeMemory(device, textureImageMemory, NULL);
-
-    vkDestroyBuffer(device, vertexBuffer, NULL);
-    vkFreeMemory(device, vertexBufferMemory, NULL);
-    vkDestroyBuffer(device, indexBuffer, NULL);
-    vkFreeMemory(device, indexBufferMemory, NULL);
+    for (auto& gm : gpuMeshes) {
+        vkDestroyImageView(device, gm.textureView, NULL);
+        vkDestroyImage(device, gm.textureImage, NULL);
+        vkFreeMemory(device, gm.textureMemory, NULL);
+        vkDestroyBuffer(device, gm.vertexBuffer, NULL);
+        vkFreeMemory(device, gm.vertexMemory, NULL);
+        vkDestroyBuffer(device, gm.indexBuffer, NULL);
+        vkFreeMemory(device, gm.indexMemory, NULL);
+    }
 
     for (uint32_t i = 0; i < imageCount; i++) {
         vkDestroySemaphore(device, imageAvailableSemaphores[i], NULL);
