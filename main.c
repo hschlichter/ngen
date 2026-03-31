@@ -237,9 +237,10 @@ int main(int argc, char* argv[]) {
 
     // Create Vertex Buffer
     Vertex vertices[] = {
-        { .position = {  0.0f, -0.5f }, .color = { 1.0f, 0.0f, 0.0f } },
-        { .position = {  0.5f,  0.5f }, .color = { 0.0f, 1.0f, 0.0f } },
-        { .position = { -0.5f,  0.5f }, .color = { 0.0f, 0.0f, 1.0f } },
+        { .position = { -0.5f, -0.5f }, .color = { 1.0f, 0.0f, 0.0f } },
+        { .position = {  0.5f, -0.5f }, .color = { 0.0f, 1.0f, 0.0f } },
+        { .position = {  0.5f,  0.5f }, .color = { 0.0f, 0.0f, 1.0f } },
+        { .position = { -0.5f,  0.5f }, .color = { 1.0f, 1.0f, 1.0f } },
     };
     VkDeviceSize vertexBufferSize = sizeof(vertices);
 
@@ -285,6 +286,54 @@ int main(int argc, char* argv[]) {
     vkMapMemory(device, vertexBufferMemory, 0, vertexBufferSize, 0, &data);
     memcpy(data, vertices, vertexBufferSize);
     vkUnmapMemory(device, vertexBufferMemory);
+
+    // Create Index Buffer
+    uint16_t indices[] = { 0, 1, 2, 2, 3, 0 };
+    uint32_t indexCount = sizeof(indices) / sizeof(indices[0]);
+    VkDeviceSize indexBufferSize = sizeof(indices);
+
+    VkBuffer indexBuffer;
+    VkBufferCreateInfo indexBufferInfo = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = indexBufferSize,
+        .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    result = vkCreateBuffer(device, &indexBufferInfo, NULL, &indexBuffer);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkCreateBuffer failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
+    VkMemoryRequirements indexMemReqs;
+    vkGetBufferMemoryRequirements(device, indexBuffer, &indexMemReqs);
+
+    uint32_t indexMemTypeIndex = findMemoryType(physicalDevice, indexMemReqs.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    if (indexMemTypeIndex == UINT32_MAX) return 1;
+
+    VkDeviceMemory indexBufferMemory;
+    VkMemoryAllocateInfo indexMemAllocInfo = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = indexMemReqs.size,
+        .memoryTypeIndex = indexMemTypeIndex,
+    };
+    result = vkAllocateMemory(device, &indexMemAllocInfo, NULL, &indexBufferMemory);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkAllocateMemory failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
+    result = vkBindBufferMemory(device, indexBuffer, indexBufferMemory, 0);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkBindBufferMemory failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
+    void* indexData;
+    vkMapMemory(device, indexBufferMemory, 0, indexBufferSize, 0, &indexData);
+    memcpy(indexData, indices, indexBufferSize);
+    vkUnmapMemory(device, indexBufferMemory);
 
     // 5. Create Swapchain
     VkSurfaceCapabilitiesKHR capabilities;
@@ -614,7 +663,8 @@ int main(int argc, char* argv[]) {
         vkCmdBindPipeline(cmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(cmdBuffers[i], 0, 1, &vertexBuffer, offsets);
-        vkCmdDraw(cmdBuffers[i], 3, 1, 0, 0);
+        vkCmdBindIndexBuffer(cmdBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdDrawIndexed(cmdBuffers[i], indexCount, 1, 0, 0, 0);
         vkCmdEndRenderPass(cmdBuffers[i]);
         result = vkEndCommandBuffer(cmdBuffers[i]);
         if (result != VK_SUCCESS) {
@@ -770,6 +820,8 @@ int main(int argc, char* argv[]) {
 
     vkDestroyBuffer(device, vertexBuffer, NULL);
     vkFreeMemory(device, vertexBufferMemory, NULL);
+    vkDestroyBuffer(device, indexBuffer, NULL);
+    vkFreeMemory(device, indexBufferMemory, NULL);
 
     for (uint32_t i = 0; i < imageCount; i++) {
         vkDestroySemaphore(device, imageAvailableSemaphores[i], NULL);
