@@ -1,14 +1,15 @@
 #include "vulkan/vulkan_core.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
-#include <string.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_enum_string_helper.h>
 
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <vector>
 
 typedef struct {
     float m[4][4];
@@ -307,8 +308,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    VkPhysicalDevice physicalDevices[deviceCount];
-    vkEnumeratePhysicalDevices(instance, &deviceCount, physicalDevices);
+    std::vector<VkPhysicalDevice> physicalDevices(deviceCount);
+    vkEnumeratePhysicalDevices(instance, &deviceCount, physicalDevices.data());
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkEnumeratePhysicalDevices failed: %s(%d)\n", string_VkResult(result), result);
         return 1;
@@ -321,8 +322,8 @@ int main(int argc, char* argv[]) {
         uint32_t queueCount;
         vkGetPhysicalDeviceQueueFamilyProperties(physicalDevices[i], &queueCount, NULL);
 
-        VkQueueFamilyProperties props[queueCount];
-        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevices[i], &queueCount, props);
+        std::vector<VkQueueFamilyProperties> props(queueCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevices[i], &queueCount, props.data());
 
         for (uint32_t j = 0; j < queueCount; j++) {
             uint32_t presentSupport;
@@ -468,8 +469,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    VkSurfaceFormatKHR formats[formatCount];
-    result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, formats);
+    std::vector<VkSurfaceFormatKHR> formats(formatCount);
+    result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, formats.data());
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkGetPhysicalDeviceSurfaceFormatsKHR failed: %s(%d)\n", string_VkResult(result), result);
         return 1;
@@ -484,8 +485,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    VkPresentModeKHR presentModes[presentModeCount];
-    result = vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, presentModes);
+    std::vector<VkPresentModeKHR> presentModes(presentModeCount);
+    result = vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, presentModes.data());
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkGetPhysicalDeviceSurfacePresentModesKHR failed: %s(%d)\n", string_VkResult(result), result);
         return 1;
@@ -527,11 +528,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    VkImage images[imageCount];
-    result = vkGetSwapchainImagesKHR(device, swapchain, &imageCount, images);
+    std::vector<VkImage> images(imageCount);
+    result = vkGetSwapchainImagesKHR(device, swapchain, &imageCount, images.data());
 
     // 6. Create Image Views
-    VkImageView imageViews[imageCount];
+    std::vector<VkImageView> imageViews(imageCount);
     for (uint32_t i = 0; i < imageCount; i++) {
         VkImageViewCreateInfo viewInfo = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -591,7 +592,7 @@ int main(int argc, char* argv[]) {
     }
 
     // 8. Create Framebuffers
-    VkFramebuffer framebuffers[imageCount];
+    std::vector<VkFramebuffer> framebuffers(imageCount);
     for (uint32_t i = 0; i < imageCount; i++) {
         VkFramebufferCreateInfo framebufferInfo = {
             .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -753,9 +754,9 @@ int main(int argc, char* argv[]) {
     }
 
     // Create Uniform Buffers (one per swapchain image)
-    VkBuffer uniformBuffers[imageCount];
-    VkDeviceMemory uniformBuffersMemory[imageCount];
-    void* uniformBuffersMapped[imageCount];
+    std::vector<VkBuffer> uniformBuffers(imageCount);
+    std::vector<VkDeviceMemory> uniformBuffersMemory(imageCount);
+    std::vector<void*> uniformBuffersMapped(imageCount);
 
     for (uint32_t i = 0; i < imageCount; i++) {
         if (createBuffer(device, physicalDevice, sizeof(UniformBufferObject),
@@ -783,17 +784,16 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    VkDescriptorSetLayout layouts[imageCount];
-    for (uint32_t i = 0; i < imageCount; i++) layouts[i] = descriptorSetLayout;
+    std::vector<VkDescriptorSetLayout> layouts(imageCount, descriptorSetLayout);
 
-    VkDescriptorSet descriptorSets[imageCount];
+    std::vector<VkDescriptorSet> descriptorSets(imageCount);
     VkDescriptorSetAllocateInfo descriptorAllocInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .descriptorPool = descriptorPool,
         .descriptorSetCount = imageCount,
-        .pSetLayouts = layouts,
+        .pSetLayouts = layouts.data(),
     };
-    result = vkAllocateDescriptorSets(device, &descriptorAllocInfo, descriptorSets);
+    result = vkAllocateDescriptorSets(device, &descriptorAllocInfo, descriptorSets.data());
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkAllocateDescriptorSets failed: %s(%d)\n", string_VkResult(result), result);
         return 1;
@@ -817,14 +817,14 @@ int main(int argc, char* argv[]) {
     }
 
     // 11. Allocate Command Buffers
-    VkCommandBuffer cmdBuffers[imageCount];
+    std::vector<VkCommandBuffer> cmdBuffers(imageCount);
     VkCommandBufferAllocateInfo allocInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .commandPool = cmdPool,
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = imageCount,
     };
-    result = vkAllocateCommandBuffers(device, &allocInfo, cmdBuffers);
+    result = vkAllocateCommandBuffers(device, &allocInfo, cmdBuffers.data());
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkAllocateCommandBuffers failed: %s(%d)\n", string_VkResult(result), result);
         return 1;
@@ -833,9 +833,9 @@ int main(int argc, char* argv[]) {
     // Command buffers are now recorded per-frame in the main loop.
 
     // 12. Create Sync Objects (per swapchain image)
-    VkSemaphore imageAvailableSemaphores[imageCount];
-    VkSemaphore renderFinishedSemaphores[imageCount];
-    VkFence inflightFences[imageCount];
+    std::vector<VkSemaphore> imageAvailableSemaphores(imageCount);
+    std::vector<VkSemaphore> renderFinishedSemaphores(imageCount);
+    std::vector<VkFence> inflightFences(imageCount);
 
     VkSemaphoreCreateInfo semInfo = {
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
