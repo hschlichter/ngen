@@ -5,9 +5,79 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_enum_string_helper.h>
 
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+typedef struct {
+    float m[4][4];
+} mat4;
+
+static mat4 mat4_identity(void) {
+    mat4 r = {0};
+    r.m[0][0] = r.m[1][1] = r.m[2][2] = r.m[3][3] = 1.0f;
+    return r;
+}
+
+__attribute__((unused))
+static mat4 mat4_mul(mat4 a, mat4 b) {
+    mat4 r = {0};
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++)
+            for (int k = 0; k < 4; k++)
+                r.m[i][j] += a.m[i][k] * b.m[k][j];
+    return r;
+}
+
+static mat4 mat4_rotate_z(float angle) {
+    mat4 r = mat4_identity();
+    float c = cosf(angle), s = sinf(angle);
+    r.m[0][0] = c;  r.m[0][1] = s;
+    r.m[1][0] = -s; r.m[1][1] = c;
+    return r;
+}
+
+static mat4 mat4_perspective(float fovY, float aspect, float near, float far) {
+    float tanHalf = tanf(fovY / 2.0f);
+    mat4 r = {0};
+    r.m[0][0] = 1.0f / (aspect * tanHalf);
+    r.m[1][1] = 1.0f / tanHalf;
+    r.m[2][2] = far / (near - far);
+    r.m[2][3] = -1.0f;
+    r.m[3][2] = (near * far) / (near - far);
+    return r;
+}
+
+static mat4 mat4_lookAt(float eyeX, float eyeY, float eyeZ,
+                        float centerX, float centerY, float centerZ,
+                        float upX, float upY, float upZ) {
+    float fx = centerX - eyeX, fy = centerY - eyeY, fz = centerZ - eyeZ;
+    float len = sqrtf(fx*fx + fy*fy + fz*fz);
+    fx /= len; fy /= len; fz /= len;
+
+    float sx = fy*upZ - fz*upY, sy = fz*upX - fx*upZ, sz = fx*upY - fy*upX;
+    len = sqrtf(sx*sx + sy*sy + sz*sz);
+    sx /= len; sy /= len; sz /= len;
+
+    float ux = sy*fz - sz*fy, uy = sz*fx - sx*fz, uz = sx*fy - sy*fx;
+
+    mat4 r = mat4_identity();
+    r.m[0][0] = sx;  r.m[1][0] = sx;  // will be overwritten below
+    r.m[0][0] = sx; r.m[0][1] = ux; r.m[0][2] = -fx;
+    r.m[1][0] = sy; r.m[1][1] = uy; r.m[1][2] = -fy;
+    r.m[2][0] = sz; r.m[2][1] = uz; r.m[2][2] = -fz;
+    r.m[3][0] = -(sx*eyeX + sy*eyeY + sz*eyeZ);
+    r.m[3][1] = -(ux*eyeX + uy*eyeY + uz*eyeZ);
+    r.m[3][2] =  (fx*eyeX + fy*eyeY + fz*eyeZ);
+    return r;
+}
+
+typedef struct {
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+} UniformBufferObject;
 
 typedef struct {
     float position[2];
@@ -627,9 +697,31 @@ int main(int argc, char* argv[]) {
         .pAttachments = &colorBlendAttachment,
     };
 
+    // Descriptor Set Layout
+    VkDescriptorSetLayoutBinding uboBinding = {
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+    };
+
+    VkDescriptorSetLayout descriptorSetLayout;
+    VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &uboBinding,
+    };
+    result = vkCreateDescriptorSetLayout(device, &descriptorSetLayoutInfo, NULL, &descriptorSetLayout);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkCreateDescriptorSetLayout failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
     VkPipelineLayout layout;
     VkPipelineLayoutCreateInfo layoutInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &descriptorSetLayout,
     };
 
     result = vkCreatePipelineLayout(device, &layoutInfo, NULL, &layout);
@@ -659,6 +751,70 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Create Uniform Buffers (one per swapchain image)
+    VkBuffer uniformBuffers[imageCount];
+    VkDeviceMemory uniformBuffersMemory[imageCount];
+    void* uniformBuffersMapped[imageCount];
+
+    for (uint32_t i = 0; i < imageCount; i++) {
+        if (createBuffer(device, physicalDevice, sizeof(UniformBufferObject),
+                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         &uniformBuffers[i], &uniformBuffersMemory[i])) return 1;
+        vkMapMemory(device, uniformBuffersMemory[i], 0, sizeof(UniformBufferObject), 0, &uniformBuffersMapped[i]);
+    }
+
+    // Descriptor Pool and Sets
+    VkDescriptorPoolSize poolSize = {
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = imageCount,
+    };
+    VkDescriptorPool descriptorPool;
+    VkDescriptorPoolCreateInfo descriptorPoolInfo = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .maxSets = imageCount,
+        .poolSizeCount = 1,
+        .pPoolSizes = &poolSize,
+    };
+    result = vkCreateDescriptorPool(device, &descriptorPoolInfo, NULL, &descriptorPool);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkCreateDescriptorPool failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
+    VkDescriptorSetLayout layouts[imageCount];
+    for (uint32_t i = 0; i < imageCount; i++) layouts[i] = descriptorSetLayout;
+
+    VkDescriptorSet descriptorSets[imageCount];
+    VkDescriptorSetAllocateInfo descriptorAllocInfo = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = descriptorPool,
+        .descriptorSetCount = imageCount,
+        .pSetLayouts = layouts,
+    };
+    result = vkAllocateDescriptorSets(device, &descriptorAllocInfo, descriptorSets);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkAllocateDescriptorSets failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
+    for (uint32_t i = 0; i < imageCount; i++) {
+        VkDescriptorBufferInfo bufInfo = {
+            .buffer = uniformBuffers[i],
+            .offset = 0,
+            .range = sizeof(UniformBufferObject),
+        };
+        VkWriteDescriptorSet write = {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = descriptorSets[i],
+            .dstBinding = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .pBufferInfo = &bufInfo,
+        };
+        vkUpdateDescriptorSets(device, 1, &write, 0, NULL);
+    }
+
     // 11. Allocate Command Buffers
     VkCommandBuffer cmdBuffers[imageCount];
     VkCommandBufferAllocateInfo allocInfo = {
@@ -673,41 +829,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    for (uint32_t i = 0; i < imageCount; i++) {
-        VkCommandBufferBeginInfo begin = {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        };
-        result = vkBeginCommandBuffer(cmdBuffers[i], &begin);
-        if (result != VK_SUCCESS) {
-            fprintf(stderr, "vkBeginCommandBuffer failed: %s(%d)\n", string_VkResult(result), result);
-            return 1;
-        }
-
-        VkClearValue clear = { 
-            .color = { { 0.1f, 0.1f, 0.1f, 1.0f } },
-        };
-        VkRenderPassBeginInfo passBeginInfo = {
-            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-            .renderPass = renderPass,
-            .framebuffer = framebuffers[i],
-            .renderArea = { { 0, 0 }, extent },
-            .clearValueCount = 1,
-            .pClearValues = &clear,
-        };
-
-        vkCmdBeginRenderPass(cmdBuffers[i], &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdBindPipeline(cmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        VkDeviceSize offsets[] = { 0 };
-        vkCmdBindVertexBuffers(cmdBuffers[i], 0, 1, &vertexBuffer, offsets);
-        vkCmdBindIndexBuffer(cmdBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT16);
-        vkCmdDrawIndexed(cmdBuffers[i], indexCount, 1, 0, 0, 0);
-        vkCmdEndRenderPass(cmdBuffers[i]);
-        result = vkEndCommandBuffer(cmdBuffers[i]);
-        if (result != VK_SUCCESS) {
-            fprintf(stderr, "vkEndCommandBuffer failed: %s(%d)\n", string_VkResult(result), result);
-            return 1;
-        }
-    }
+    // Command buffers are now recorded per-frame in the main loop.
 
     // 12. Create Sync Objects (per swapchain image)
     VkSemaphore imageAvailableSemaphores[imageCount];
@@ -745,6 +867,7 @@ int main(int argc, char* argv[]) {
     uint32_t currentFrame = 0;
 
     // 13. Main loop
+    uint64_t startTicks = SDL_GetTicksNS();
     bool quit = false;
     while (!quit) {
         SDL_Event ev;
@@ -769,13 +892,6 @@ int main(int argc, char* argv[]) {
                     fprintf(stderr, "vkDeviceWaitIdle failed: %s(%d)\n", string_VkResult(result), result);
                     return 1;
                 }
-
-
-                // Destroyg framebuffers, pipelie, images views and swapchain.
-                // Re-query surface capabilities.
-                // Create new swapchain.
-                // Create new image views.
-                // New command buffers.
             }
         }
 
@@ -795,6 +911,54 @@ int main(int argc, char* argv[]) {
         result = vkResetFences(device, 1, &inflightFences[currentFrame]);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "vkResetFences failed: %s(%d)\n", string_VkResult(result), result);
+            return 1;
+        }
+
+        // Update uniform buffer
+        float time = (float)(SDL_GetTicksNS() - startTicks) / 1.0e9f;
+        float aspect = (float)extent.width / (float)extent.height;
+        UniformBufferObject ubo = {
+            .model = mat4_rotate_z(time),
+            .view = mat4_lookAt(0.0f, 0.0f, 2.0f,  0.0f, 0.0f, 0.0f,  0.0f, 1.0f, 0.0f),
+            .proj = mat4_perspective(45.0f * (3.14159265f / 180.0f), aspect, 0.1f, 10.0f),
+        };
+        memcpy(uniformBuffersMapped[index], &ubo, sizeof(ubo));
+
+        // Record command buffer for this frame
+        vkResetCommandBuffer(cmdBuffers[index], 0);
+
+        VkCommandBufferBeginInfo begin = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        };
+        result = vkBeginCommandBuffer(cmdBuffers[index], &begin);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "vkBeginCommandBuffer failed: %s(%d)\n", string_VkResult(result), result);
+            return 1;
+        }
+
+        VkClearValue clear = {
+            .color = { { 0.1f, 0.1f, 0.1f, 1.0f } },
+        };
+        VkRenderPassBeginInfo passBeginInfo = {
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .renderPass = renderPass,
+            .framebuffer = framebuffers[index],
+            .renderArea = { { 0, 0 }, extent },
+            .clearValueCount = 1,
+            .pClearValues = &clear,
+        };
+
+        vkCmdBeginRenderPass(cmdBuffers[index], &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(cmdBuffers[index], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        VkDeviceSize offsets[] = { 0 };
+        vkCmdBindVertexBuffers(cmdBuffers[index], 0, 1, &vertexBuffer, offsets);
+        vkCmdBindIndexBuffer(cmdBuffers[index], indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindDescriptorSets(cmdBuffers[index], VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &descriptorSets[index], 0, NULL);
+        vkCmdDrawIndexed(cmdBuffers[index], indexCount, 1, 0, 0, 0);
+        vkCmdEndRenderPass(cmdBuffers[index]);
+        result = vkEndCommandBuffer(cmdBuffers[index]);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "vkEndCommandBuffer failed: %s(%d)\n", string_VkResult(result), result);
             return 1;
         }
 
@@ -843,6 +1007,14 @@ int main(int argc, char* argv[]) {
     for (uint32_t i = 0; i < imageCount; i++) {
         vkDestroyFramebuffer(device, framebuffers[i], NULL);
         vkDestroyImageView(device, imageViews[i], NULL);
+    }
+
+    vkDestroyDescriptorPool(device, descriptorPool, NULL);
+    vkDestroyDescriptorSetLayout(device, descriptorSetLayout, NULL);
+    for (uint32_t i = 0; i < imageCount; i++) {
+        vkUnmapMemory(device, uniformBuffersMemory[i]);
+        vkDestroyBuffer(device, uniformBuffers[i], NULL);
+        vkFreeMemory(device, uniformBuffersMemory[i], NULL);
     }
 
     vkDestroyPipeline(device, pipeline, NULL);

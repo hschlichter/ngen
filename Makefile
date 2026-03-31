@@ -1,6 +1,6 @@
 CC = clang
 CFLAGS = -std=c17 -O0 -g -Wall -MMD -fPIC `pkg-config --cflags sdl3`
-LDFLAGS = `pkg-config --libs sdl3` -lvulkan
+LDFLAGS = `pkg-config --libs sdl3` -lvulkan -lm
 OUTDIR = ./_out
 EXE = ngen
 
