@@ -21,10 +21,11 @@ struct UniformBufferObject {
     glm::mat4 proj;
 };
 
-typedef struct {
-    float position[2];
+struct Vertex {
+    float position[3];
+    float normal[3];
     float color[3];
-} Vertex;
+};
 
 static uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) {
     VkPhysicalDeviceMemoryProperties memProps;
@@ -336,11 +337,38 @@ int main(int argc, char* argv[]) {
     }
 
     // Create Vertex Buffer (device-local via staging)
+    // Cube: 24 vertices (4 per face for correct normals), 36 indices
     Vertex vertices[] = {
-        { .position = { -0.5f, -0.5f }, .color = { 1.0f, 0.0f, 0.0f } },
-        { .position = {  0.5f, -0.5f }, .color = { 0.0f, 1.0f, 0.0f } },
-        { .position = {  0.5f,  0.5f }, .color = { 0.0f, 0.0f, 1.0f } },
-        { .position = { -0.5f,  0.5f }, .color = { 1.0f, 1.0f, 1.0f } },
+        // Front face (z = +0.5)
+        { .position = { -0.5f, -0.5f,  0.5f }, .normal = { 0, 0, 1 }, .color = { 1, 0, 0 } },
+        { .position = {  0.5f, -0.5f,  0.5f }, .normal = { 0, 0, 1 }, .color = { 1, 0, 0 } },
+        { .position = {  0.5f,  0.5f,  0.5f }, .normal = { 0, 0, 1 }, .color = { 1, 0, 0 } },
+        { .position = { -0.5f,  0.5f,  0.5f }, .normal = { 0, 0, 1 }, .color = { 1, 0, 0 } },
+        // Back face (z = -0.5)
+        { .position = {  0.5f, -0.5f, -0.5f }, .normal = { 0, 0, -1 }, .color = { 0, 1, 0 } },
+        { .position = { -0.5f, -0.5f, -0.5f }, .normal = { 0, 0, -1 }, .color = { 0, 1, 0 } },
+        { .position = { -0.5f,  0.5f, -0.5f }, .normal = { 0, 0, -1 }, .color = { 0, 1, 0 } },
+        { .position = {  0.5f,  0.5f, -0.5f }, .normal = { 0, 0, -1 }, .color = { 0, 1, 0 } },
+        // Right face (x = +0.5)
+        { .position = {  0.5f, -0.5f,  0.5f }, .normal = { 1, 0, 0 }, .color = { 0, 0, 1 } },
+        { .position = {  0.5f, -0.5f, -0.5f }, .normal = { 1, 0, 0 }, .color = { 0, 0, 1 } },
+        { .position = {  0.5f,  0.5f, -0.5f }, .normal = { 1, 0, 0 }, .color = { 0, 0, 1 } },
+        { .position = {  0.5f,  0.5f,  0.5f }, .normal = { 1, 0, 0 }, .color = { 0, 0, 1 } },
+        // Left face (x = -0.5)
+        { .position = { -0.5f, -0.5f, -0.5f }, .normal = { -1, 0, 0 }, .color = { 1, 1, 0 } },
+        { .position = { -0.5f, -0.5f,  0.5f }, .normal = { -1, 0, 0 }, .color = { 1, 1, 0 } },
+        { .position = { -0.5f,  0.5f,  0.5f }, .normal = { -1, 0, 0 }, .color = { 1, 1, 0 } },
+        { .position = { -0.5f,  0.5f, -0.5f }, .normal = { -1, 0, 0 }, .color = { 1, 1, 0 } },
+        // Top face (y = +0.5)
+        { .position = { -0.5f,  0.5f,  0.5f }, .normal = { 0, 1, 0 }, .color = { 1, 0, 1 } },
+        { .position = {  0.5f,  0.5f,  0.5f }, .normal = { 0, 1, 0 }, .color = { 1, 0, 1 } },
+        { .position = {  0.5f,  0.5f, -0.5f }, .normal = { 0, 1, 0 }, .color = { 1, 0, 1 } },
+        { .position = { -0.5f,  0.5f, -0.5f }, .normal = { 0, 1, 0 }, .color = { 1, 0, 1 } },
+        // Bottom face (y = -0.5)
+        { .position = { -0.5f, -0.5f, -0.5f }, .normal = { 0, -1, 0 }, .color = { 0, 1, 1 } },
+        { .position = {  0.5f, -0.5f, -0.5f }, .normal = { 0, -1, 0 }, .color = { 0, 1, 1 } },
+        { .position = {  0.5f, -0.5f,  0.5f }, .normal = { 0, -1, 0 }, .color = { 0, 1, 1 } },
+        { .position = { -0.5f, -0.5f,  0.5f }, .normal = { 0, -1, 0 }, .color = { 0, 1, 1 } },
     };
     VkDeviceSize vertexBufferSize = sizeof(vertices);
 
@@ -368,7 +396,14 @@ int main(int argc, char* argv[]) {
     vkFreeMemory(device, vertexStagingMemory, NULL);
 
     // Create Index Buffer (device-local via staging)
-    uint16_t indices[] = { 0, 1, 2, 2, 3, 0 };
+    uint16_t indices[] = {
+         0,  1,  2,  2,  3,  0, // front
+         4,  5,  6,  6,  7,  4, // back
+         8,  9, 10, 10, 11,  8, // right
+        12, 13, 14, 14, 15, 12, // left
+        16, 17, 18, 18, 19, 16, // top
+        20, 21, 22, 22, 23, 20, // bottom
+    };
     uint32_t indexCount = sizeof(indices) / sizeof(indices[0]);
     VkDeviceSize indexBufferSize = sizeof(indices);
 
@@ -435,11 +470,19 @@ int main(int argc, char* argv[]) {
 
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
 
-    VkExtent2D extent = capabilities.currentExtent;
-    if (extent.width == UINT32_MAX) {
-        extent.width = 1280;
-        extent.height = 720;
+    VkExtent2D extent;
+    {
+        int w, h;
+        SDL_GetWindowSizeInPixels(window, &w, &h);
+        extent.width = (uint32_t)w;
+        extent.height = (uint32_t)h;
     }
+    // Clamp to surface capabilities
+    if (extent.width < capabilities.minImageExtent.width) extent.width = capabilities.minImageExtent.width;
+    if (extent.width > capabilities.maxImageExtent.width) extent.width = capabilities.maxImageExtent.width;
+    if (extent.height < capabilities.minImageExtent.height) extent.height = capabilities.minImageExtent.height;
+    if (extent.height > capabilities.maxImageExtent.height) extent.height = capabilities.maxImageExtent.height;
+    printf("Swapchain extent: %dx%d\n", extent.width, extent.height);
 
     uint32_t imageCount = capabilities.minImageCount + 1;
     if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount) {
@@ -665,11 +708,17 @@ int main(int argc, char* argv[]) {
         {
             .location = 0,
             .binding = 0,
-            .format = VK_FORMAT_R32G32_SFLOAT,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
             .offset = offsetof(Vertex, position),
         },
         {
             .location = 1,
+            .binding = 0,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset = offsetof(Vertex, normal),
+        },
+        {
+            .location = 2,
             .binding = 0,
             .format = VK_FORMAT_R32G32B32_SFLOAT,
             .offset = offsetof(Vertex, color),
@@ -680,7 +729,7 @@ int main(int argc, char* argv[]) {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &bindingDesc,
-        .vertexAttributeDescriptionCount = 2,
+        .vertexAttributeDescriptionCount = 3,
         .pVertexAttributeDescriptions = attrDescs,
     };
 
@@ -703,7 +752,7 @@ int main(int argc, char* argv[]) {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .polygonMode = VK_POLYGON_MODE_FILL,
         .cullMode = VK_CULL_MODE_BACK_BIT,
-        .frontFace = VK_FRONT_FACE_CLOCKWISE,
+        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .lineWidth = 1.0f,
     };
 
@@ -951,11 +1000,15 @@ int main(int argc, char* argv[]) {
 
         // Update uniform buffer
         float time = (float)(SDL_GetTicksNS() - startTicks) / 1.0e9f;
-        float aspect = (float)extent.width / (float)extent.height;
+        int winW, winH;
+        SDL_GetWindowSizeInPixels(window, &winW, &winH);
+        float aspect = (float)winW / (float)winH;
+        glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 10.0f);
+        proj[1][1] *= -1.0f; // Flip Y for Vulkan clip coordinates
         UniformBufferObject ubo = {
-            .model = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 0.0f, 1.0f)),
-            .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
-            .proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 10.0f),
+            .model = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f)),
+            .view = glm::lookAt(glm::vec3(2.0f, 1.5f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
+            .proj = proj,
         };
         memcpy(uniformBuffersMapped[index], &ubo, sizeof(ubo));
 
