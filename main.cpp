@@ -1250,9 +1250,20 @@ int main(int argc, char* argv[]) {
     uint32_t currentFrame = 0;
 
     // 13. Main loop
-    uint64_t startTicks = SDL_GetTicksNS();
+    glm::vec3 camPos = glm::vec3(2.0f, 1.5f, 2.0f);
+    float camYaw = -135.0f;   // degrees, facing toward origin
+    float camPitch = -20.0f;  // degrees
+    float camSpeed = 1.0f;
+    float mouseSensitivity = 0.15f;
+    bool mouseCapture = false;
+
+    uint64_t lastTicks = SDL_GetTicksNS();
     bool quit = false;
     while (!quit) {
+        uint64_t nowTicks = SDL_GetTicksNS();
+        float dt = (float)(nowTicks - lastTicks) / 1.0e9f;
+        lastTicks = nowTicks;
+
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
             if (ev.type == SDL_EVENT_QUIT) {
@@ -1261,22 +1272,52 @@ int main(int argc, char* argv[]) {
             }
 
             if (ev.type == SDL_EVENT_WINDOW_RESIZED) {
-                int newWidth;
-                int newHeight;
+                int newWidth, newHeight;
                 if (!SDL_GetWindowSizeInPixels(window, &newWidth, &newHeight)) {
                     fprintf(stderr, "SDL_GetWindowSizeInPixels failed: %s\n", SDL_GetError());
                     return 1;
                 }
-
                 printf("Window resized to %dx%d\n", newWidth, newHeight);
-
                 result = vkDeviceWaitIdle(device);
                 if (result != VK_SUCCESS) {
                     fprintf(stderr, "vkDeviceWaitIdle failed: %s(%d)\n", string_VkResult(result), result);
                     return 1;
                 }
             }
+
+            if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_RIGHT)
+                mouseCapture = true;
+            if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_RIGHT)
+                mouseCapture = false;
+
+            if (ev.type == SDL_EVENT_MOUSE_MOTION && mouseCapture) {
+                camYaw += ev.motion.xrel * mouseSensitivity;
+                camPitch -= ev.motion.yrel * mouseSensitivity;
+                if (camPitch > 89.0f) camPitch = 89.0f;
+                if (camPitch < -89.0f) camPitch = -89.0f;
+            }
         }
+
+        // Camera direction from yaw/pitch
+        float yawRad = glm::radians(camYaw);
+        float pitchRad = glm::radians(camPitch);
+        glm::vec3 forward = glm::normalize(glm::vec3(
+            cosf(pitchRad) * cosf(yawRad),
+            sinf(pitchRad),
+            cosf(pitchRad) * sinf(yawRad)
+        ));
+        glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0, 1, 0)));
+        glm::vec3 up = glm::vec3(0, 1, 0);
+
+        // WASD movement, E/R for up/down, shift to sprint
+        const bool* keys = SDL_GetKeyboardState(NULL);
+        float speed = keys[SDL_SCANCODE_LSHIFT] ? camSpeed * 2.0f : camSpeed;
+        if (keys[SDL_SCANCODE_W]) camPos += forward * speed * dt;
+        if (keys[SDL_SCANCODE_S]) camPos -= forward * speed * dt;
+        if (keys[SDL_SCANCODE_A]) camPos -= right * speed * dt;
+        if (keys[SDL_SCANCODE_D]) camPos += right * speed * dt;
+        if (keys[SDL_SCANCODE_E]) camPos += up * speed * dt;
+        if (keys[SDL_SCANCODE_Q]) camPos -= up * speed * dt;
 
         result = vkWaitForFences(device, 1, &inflightFences[currentFrame], VK_TRUE, UINT64_MAX);
         if (result != VK_SUCCESS) {
@@ -1298,14 +1339,13 @@ int main(int argc, char* argv[]) {
         }
 
         // Update uniform buffer (view + proj only, model is per-mesh via push constants)
-        float time = (float)(SDL_GetTicksNS() - startTicks) / 1.0e9f;
         int winW, winH;
         SDL_GetWindowSizeInPixels(window, &winW, &winH);
         float aspect = (float)winW / (float)winH;
         glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 10.0f);
         proj[1][1] *= -1.0f; // Flip Y for Vulkan clip coordinates
         UniformBufferObject ubo = {
-            .view = glm::lookAt(glm::vec3(2.0f, 1.5f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
+            .view = glm::lookAt(camPos, camPos + forward, up),
             .proj = proj,
         };
         memcpy(uniformBuffersMapped[index], &ubo, sizeof(ubo));
@@ -1338,10 +1378,9 @@ int main(int argc, char* argv[]) {
         vkCmdBeginRenderPass(cmdBuffers[index], &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(cmdBuffers[index], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
-        glm::mat4 rootModel = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
         for (uint32_t m = 0; m < meshCount; m++) {
             GpuMesh& gm = gpuMeshes[m];
-            glm::mat4 model = rootModel * gm.transform;
+            glm::mat4 model = gm.transform;
             vkCmdPushConstants(cmdBuffers[index], layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model);
             VkDeviceSize offsets[] = { 0 };
             vkCmdBindVertexBuffers(cmdBuffers[index], 0, 1, &gm.vertexBuffer, offsets);
