@@ -26,6 +26,80 @@ static uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFil
     return UINT32_MAX;
 }
 
+static int createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size,
+                        VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
+                        VkBuffer* buffer, VkDeviceMemory* memory) {
+    VkBufferCreateInfo bufferInfo = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = size,
+        .usage = usage,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    VkResult result = vkCreateBuffer(device, &bufferInfo, NULL, buffer);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkCreateBuffer failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
+    VkMemoryRequirements memReqs;
+    vkGetBufferMemoryRequirements(device, *buffer, &memReqs);
+
+    uint32_t memTypeIndex = findMemoryType(physicalDevice, memReqs.memoryTypeBits, properties);
+    if (memTypeIndex == UINT32_MAX) return 1;
+
+    VkMemoryAllocateInfo allocInfo = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = memReqs.size,
+        .memoryTypeIndex = memTypeIndex,
+    };
+    result = vkAllocateMemory(device, &allocInfo, NULL, memory);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkAllocateMemory failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
+    result = vkBindBufferMemory(device, *buffer, *memory, 0);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkBindBufferMemory failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
+    return 0;
+}
+
+static int copyBuffer(VkDevice device, VkCommandPool cmdPool, VkQueue queue,
+                      VkBuffer src, VkBuffer dst, VkDeviceSize size) {
+    VkCommandBufferAllocateInfo allocInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = cmdPool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1,
+    };
+    VkCommandBuffer cmd;
+    VkResult result = vkAllocateCommandBuffers(device, &allocInfo, &cmd);
+    if (result != VK_SUCCESS) return 1;
+
+    VkCommandBufferBeginInfo beginInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    };
+    vkBeginCommandBuffer(cmd, &beginInfo);
+    VkBufferCopy region = { .size = size };
+    vkCmdCopyBuffer(cmd, src, dst, 1, &region);
+    vkEndCommandBuffer(cmd);
+
+    VkSubmitInfo submitInfo = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &cmd,
+    };
+    vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(queue);
+
+    vkFreeCommandBuffers(device, cmdPool, 1, &cmd);
+    return 0;
+}
+
 VkShaderModule loadShaderModule(VkDevice device, const char* filepath) {
     FILE* file = fopen(filepath, "rb");
     if (!file) {
@@ -235,7 +309,20 @@ int main(int argc, char* argv[]) {
     VkQueue graphicsQueue;
     vkGetDeviceQueue(device, queueFamilyIndex, 0, &graphicsQueue);
 
-    // Create Vertex Buffer
+    // Create Command Pool (needed for staging buffer transfers)
+    VkCommandPool cmdPool;
+    VkCommandPoolCreateInfo poolInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = queueFamilyIndex,
+    };
+    result = vkCreateCommandPool(device, &poolInfo, NULL, &cmdPool);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkCreateCommandPool failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
+    // Create Vertex Buffer (device-local via staging)
     Vertex vertices[] = {
         { .position = { -0.5f, -0.5f }, .color = { 1.0f, 0.0f, 0.0f } },
         { .position = {  0.5f, -0.5f }, .color = { 0.0f, 1.0f, 0.0f } },
@@ -244,96 +331,56 @@ int main(int argc, char* argv[]) {
     };
     VkDeviceSize vertexBufferSize = sizeof(vertices);
 
-    VkBuffer vertexBuffer;
-    VkBufferCreateInfo vertexBufferInfo = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = vertexBufferSize,
-        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-    };
-    result = vkCreateBuffer(device, &vertexBufferInfo, NULL, &vertexBuffer);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkCreateBuffer failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
-    }
-
-    VkMemoryRequirements memReqs;
-    vkGetBufferMemoryRequirements(device, vertexBuffer, &memReqs);
-
-    uint32_t memTypeIndex = findMemoryType(physicalDevice, memReqs.memoryTypeBits,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    if (memTypeIndex == UINT32_MAX) return 1;
-
-    VkDeviceMemory vertexBufferMemory;
-    VkMemoryAllocateInfo memAllocInfo = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = memReqs.size,
-        .memoryTypeIndex = memTypeIndex,
-    };
-    result = vkAllocateMemory(device, &memAllocInfo, NULL, &vertexBufferMemory);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkAllocateMemory failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
-    }
-
-    result = vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkBindBufferMemory failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
-    }
+    VkBuffer vertexStaging;
+    VkDeviceMemory vertexStagingMemory;
+    if (createBuffer(device, physicalDevice, vertexBufferSize,
+                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     &vertexStaging, &vertexStagingMemory)) return 1;
 
     void* data;
-    vkMapMemory(device, vertexBufferMemory, 0, vertexBufferSize, 0, &data);
+    vkMapMemory(device, vertexStagingMemory, 0, vertexBufferSize, 0, &data);
     memcpy(data, vertices, vertexBufferSize);
-    vkUnmapMemory(device, vertexBufferMemory);
+    vkUnmapMemory(device, vertexStagingMemory);
 
-    // Create Index Buffer
+    VkBuffer vertexBuffer;
+    VkDeviceMemory vertexBufferMemory;
+    if (createBuffer(device, physicalDevice, vertexBufferSize,
+                     VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                     &vertexBuffer, &vertexBufferMemory)) return 1;
+
+    copyBuffer(device, cmdPool, graphicsQueue, vertexStaging, vertexBuffer, vertexBufferSize);
+    vkDestroyBuffer(device, vertexStaging, NULL);
+    vkFreeMemory(device, vertexStagingMemory, NULL);
+
+    // Create Index Buffer (device-local via staging)
     uint16_t indices[] = { 0, 1, 2, 2, 3, 0 };
     uint32_t indexCount = sizeof(indices) / sizeof(indices[0]);
     VkDeviceSize indexBufferSize = sizeof(indices);
 
-    VkBuffer indexBuffer;
-    VkBufferCreateInfo indexBufferInfo = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = indexBufferSize,
-        .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-    };
-    result = vkCreateBuffer(device, &indexBufferInfo, NULL, &indexBuffer);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkCreateBuffer failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
-    }
-
-    VkMemoryRequirements indexMemReqs;
-    vkGetBufferMemoryRequirements(device, indexBuffer, &indexMemReqs);
-
-    uint32_t indexMemTypeIndex = findMemoryType(physicalDevice, indexMemReqs.memoryTypeBits,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    if (indexMemTypeIndex == UINT32_MAX) return 1;
-
-    VkDeviceMemory indexBufferMemory;
-    VkMemoryAllocateInfo indexMemAllocInfo = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = indexMemReqs.size,
-        .memoryTypeIndex = indexMemTypeIndex,
-    };
-    result = vkAllocateMemory(device, &indexMemAllocInfo, NULL, &indexBufferMemory);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkAllocateMemory failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
-    }
-
-    result = vkBindBufferMemory(device, indexBuffer, indexBufferMemory, 0);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkBindBufferMemory failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
-    }
+    VkBuffer indexStaging;
+    VkDeviceMemory indexStagingMemory;
+    if (createBuffer(device, physicalDevice, indexBufferSize,
+                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     &indexStaging, &indexStagingMemory)) return 1;
 
     void* indexData;
-    vkMapMemory(device, indexBufferMemory, 0, indexBufferSize, 0, &indexData);
+    vkMapMemory(device, indexStagingMemory, 0, indexBufferSize, 0, &indexData);
     memcpy(indexData, indices, indexBufferSize);
-    vkUnmapMemory(device, indexBufferMemory);
+    vkUnmapMemory(device, indexStagingMemory);
+
+    VkBuffer indexBuffer;
+    VkDeviceMemory indexBufferMemory;
+    if (createBuffer(device, physicalDevice, indexBufferSize,
+                     VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                     &indexBuffer, &indexBufferMemory)) return 1;
+
+    copyBuffer(device, cmdPool, graphicsQueue, indexStaging, indexBuffer, indexBufferSize);
+    vkDestroyBuffer(device, indexStaging, NULL);
+    vkFreeMemory(device, indexStagingMemory, NULL);
 
     // 5. Create Swapchain
     VkSurfaceCapabilitiesKHR capabilities;
@@ -613,17 +660,6 @@ int main(int argc, char* argv[]) {
     }
 
     // 11. Allocate Command Buffers
-    VkCommandPool cmdPool;
-    VkCommandPoolCreateInfo poolInfo = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .queueFamilyIndex = queueFamilyIndex,
-    };
-    result = vkCreateCommandPool(device, &poolInfo, NULL, &cmdPool);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkCreateCommandPool failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
-    }
-
     VkCommandBuffer cmdBuffers[imageCount];
     VkCommandBufferAllocateInfo allocInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
