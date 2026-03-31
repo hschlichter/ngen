@@ -25,6 +25,7 @@ struct Vertex {
     float position[3];
     float normal[3];
     float color[3];
+    float texCoord[2];
 };
 
 static uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) {
@@ -111,6 +112,68 @@ static int copyBuffer(VkDevice device, VkCommandPool cmdPool, VkQueue queue,
 
     vkFreeCommandBuffers(device, cmdPool, 1, &cmd);
     return 0;
+}
+
+static void transitionImageLayout(VkDevice device, VkCommandPool cmdPool, VkQueue queue,
+                                  VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) {
+    VkCommandBufferAllocateInfo allocInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = cmdPool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1,
+    };
+    VkCommandBuffer cmd;
+    vkAllocateCommandBuffers(device, &allocInfo, &cmd);
+
+    VkCommandBufferBeginInfo beginInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    };
+    vkBeginCommandBuffer(cmd, &beginInfo);
+
+    VkImageMemoryBarrier barrier = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .oldLayout = oldLayout,
+        .newLayout = newLayout,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+    };
+
+    VkPipelineStageFlags srcStage, dstStage;
+    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        srcStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        dstStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    } else {
+        srcStage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+        dstStage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    }
+
+    vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, NULL, 0, NULL, 1, &barrier);
+    vkEndCommandBuffer(cmd);
+
+    VkSubmitInfo submitInfo = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &cmd,
+    };
+    vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(queue);
+    vkFreeCommandBuffers(device, cmdPool, 1, &cmd);
 }
 
 VkShaderModule loadShaderModule(VkDevice device, const char* filepath) {
@@ -340,35 +403,35 @@ int main(int argc, char* argv[]) {
     // Cube: 24 vertices (4 per face for correct normals), 36 indices
     Vertex vertices[] = {
         // Front face (z = +0.5)
-        { .position = { -0.5f, -0.5f,  0.5f }, .normal = { 0, 0, 1 }, .color = { 1, 0, 0 } },
-        { .position = {  0.5f, -0.5f,  0.5f }, .normal = { 0, 0, 1 }, .color = { 1, 0, 0 } },
-        { .position = {  0.5f,  0.5f,  0.5f }, .normal = { 0, 0, 1 }, .color = { 1, 0, 0 } },
-        { .position = { -0.5f,  0.5f,  0.5f }, .normal = { 0, 0, 1 }, .color = { 1, 0, 0 } },
+        { .position = { -0.5f, -0.5f,  0.5f }, .normal = { 0, 0, 1 }, .color = { 1, 1, 1 }, .texCoord = { 0, 0 } },
+        { .position = {  0.5f, -0.5f,  0.5f }, .normal = { 0, 0, 1 }, .color = { 1, 1, 1 }, .texCoord = { 1, 0 } },
+        { .position = {  0.5f,  0.5f,  0.5f }, .normal = { 0, 0, 1 }, .color = { 1, 1, 1 }, .texCoord = { 1, 1 } },
+        { .position = { -0.5f,  0.5f,  0.5f }, .normal = { 0, 0, 1 }, .color = { 1, 1, 1 }, .texCoord = { 0, 1 } },
         // Back face (z = -0.5)
-        { .position = {  0.5f, -0.5f, -0.5f }, .normal = { 0, 0, -1 }, .color = { 0, 1, 0 } },
-        { .position = { -0.5f, -0.5f, -0.5f }, .normal = { 0, 0, -1 }, .color = { 0, 1, 0 } },
-        { .position = { -0.5f,  0.5f, -0.5f }, .normal = { 0, 0, -1 }, .color = { 0, 1, 0 } },
-        { .position = {  0.5f,  0.5f, -0.5f }, .normal = { 0, 0, -1 }, .color = { 0, 1, 0 } },
+        { .position = {  0.5f, -0.5f, -0.5f }, .normal = { 0, 0, -1 }, .color = { 1, 1, 1 }, .texCoord = { 0, 0 } },
+        { .position = { -0.5f, -0.5f, -0.5f }, .normal = { 0, 0, -1 }, .color = { 1, 1, 1 }, .texCoord = { 1, 0 } },
+        { .position = { -0.5f,  0.5f, -0.5f }, .normal = { 0, 0, -1 }, .color = { 1, 1, 1 }, .texCoord = { 1, 1 } },
+        { .position = {  0.5f,  0.5f, -0.5f }, .normal = { 0, 0, -1 }, .color = { 1, 1, 1 }, .texCoord = { 0, 1 } },
         // Right face (x = +0.5)
-        { .position = {  0.5f, -0.5f,  0.5f }, .normal = { 1, 0, 0 }, .color = { 0, 0, 1 } },
-        { .position = {  0.5f, -0.5f, -0.5f }, .normal = { 1, 0, 0 }, .color = { 0, 0, 1 } },
-        { .position = {  0.5f,  0.5f, -0.5f }, .normal = { 1, 0, 0 }, .color = { 0, 0, 1 } },
-        { .position = {  0.5f,  0.5f,  0.5f }, .normal = { 1, 0, 0 }, .color = { 0, 0, 1 } },
+        { .position = {  0.5f, -0.5f,  0.5f }, .normal = { 1, 0, 0 }, .color = { 1, 1, 1 }, .texCoord = { 0, 0 } },
+        { .position = {  0.5f, -0.5f, -0.5f }, .normal = { 1, 0, 0 }, .color = { 1, 1, 1 }, .texCoord = { 1, 0 } },
+        { .position = {  0.5f,  0.5f, -0.5f }, .normal = { 1, 0, 0 }, .color = { 1, 1, 1 }, .texCoord = { 1, 1 } },
+        { .position = {  0.5f,  0.5f,  0.5f }, .normal = { 1, 0, 0 }, .color = { 1, 1, 1 }, .texCoord = { 0, 1 } },
         // Left face (x = -0.5)
-        { .position = { -0.5f, -0.5f, -0.5f }, .normal = { -1, 0, 0 }, .color = { 1, 1, 0 } },
-        { .position = { -0.5f, -0.5f,  0.5f }, .normal = { -1, 0, 0 }, .color = { 1, 1, 0 } },
-        { .position = { -0.5f,  0.5f,  0.5f }, .normal = { -1, 0, 0 }, .color = { 1, 1, 0 } },
-        { .position = { -0.5f,  0.5f, -0.5f }, .normal = { -1, 0, 0 }, .color = { 1, 1, 0 } },
+        { .position = { -0.5f, -0.5f, -0.5f }, .normal = { -1, 0, 0 }, .color = { 1, 1, 1 }, .texCoord = { 0, 0 } },
+        { .position = { -0.5f, -0.5f,  0.5f }, .normal = { -1, 0, 0 }, .color = { 1, 1, 1 }, .texCoord = { 1, 0 } },
+        { .position = { -0.5f,  0.5f,  0.5f }, .normal = { -1, 0, 0 }, .color = { 1, 1, 1 }, .texCoord = { 1, 1 } },
+        { .position = { -0.5f,  0.5f, -0.5f }, .normal = { -1, 0, 0 }, .color = { 1, 1, 1 }, .texCoord = { 0, 1 } },
         // Top face (y = +0.5)
-        { .position = { -0.5f,  0.5f,  0.5f }, .normal = { 0, 1, 0 }, .color = { 1, 0, 1 } },
-        { .position = {  0.5f,  0.5f,  0.5f }, .normal = { 0, 1, 0 }, .color = { 1, 0, 1 } },
-        { .position = {  0.5f,  0.5f, -0.5f }, .normal = { 0, 1, 0 }, .color = { 1, 0, 1 } },
-        { .position = { -0.5f,  0.5f, -0.5f }, .normal = { 0, 1, 0 }, .color = { 1, 0, 1 } },
+        { .position = { -0.5f,  0.5f,  0.5f }, .normal = { 0, 1, 0 }, .color = { 1, 1, 1 }, .texCoord = { 0, 0 } },
+        { .position = {  0.5f,  0.5f,  0.5f }, .normal = { 0, 1, 0 }, .color = { 1, 1, 1 }, .texCoord = { 1, 0 } },
+        { .position = {  0.5f,  0.5f, -0.5f }, .normal = { 0, 1, 0 }, .color = { 1, 1, 1 }, .texCoord = { 1, 1 } },
+        { .position = { -0.5f,  0.5f, -0.5f }, .normal = { 0, 1, 0 }, .color = { 1, 1, 1 }, .texCoord = { 0, 1 } },
         // Bottom face (y = -0.5)
-        { .position = { -0.5f, -0.5f, -0.5f }, .normal = { 0, -1, 0 }, .color = { 0, 1, 1 } },
-        { .position = {  0.5f, -0.5f, -0.5f }, .normal = { 0, -1, 0 }, .color = { 0, 1, 1 } },
-        { .position = {  0.5f, -0.5f,  0.5f }, .normal = { 0, -1, 0 }, .color = { 0, 1, 1 } },
-        { .position = { -0.5f, -0.5f,  0.5f }, .normal = { 0, -1, 0 }, .color = { 0, 1, 1 } },
+        { .position = { -0.5f, -0.5f, -0.5f }, .normal = { 0, -1, 0 }, .color = { 1, 1, 1 }, .texCoord = { 0, 0 } },
+        { .position = {  0.5f, -0.5f, -0.5f }, .normal = { 0, -1, 0 }, .color = { 1, 1, 1 }, .texCoord = { 1, 0 } },
+        { .position = {  0.5f, -0.5f,  0.5f }, .normal = { 0, -1, 0 }, .color = { 1, 1, 1 }, .texCoord = { 1, 1 } },
+        { .position = { -0.5f, -0.5f,  0.5f }, .normal = { 0, -1, 0 }, .color = { 1, 1, 1 }, .texCoord = { 0, 1 } },
     };
     VkDeviceSize vertexBufferSize = sizeof(vertices);
 
@@ -429,6 +492,148 @@ int main(int argc, char* argv[]) {
     copyBuffer(device, cmdPool, graphicsQueue, indexStaging, indexBuffer, indexBufferSize);
     vkDestroyBuffer(device, indexStaging, NULL);
     vkFreeMemory(device, indexStagingMemory, NULL);
+
+    // Create Texture (checkerboard pattern)
+    const uint32_t texWidth = 64, texHeight = 64;
+    const uint32_t texSize = texWidth * texHeight * 4;
+    uint8_t texPixels[texWidth * texHeight * 4];
+    for (uint32_t y = 0; y < texHeight; y++) {
+        for (uint32_t x = 0; x < texWidth; x++) {
+            uint8_t c = ((x / 8) + (y / 8)) % 2 ? 255 : 64;
+            uint32_t i = (y * texWidth + x) * 4;
+            texPixels[i + 0] = c;
+            texPixels[i + 1] = c;
+            texPixels[i + 2] = c;
+            texPixels[i + 3] = 255;
+        }
+    }
+
+    VkBuffer texStaging;
+    VkDeviceMemory texStagingMemory;
+    if (createBuffer(device, physicalDevice, texSize,
+                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     &texStaging, &texStagingMemory)) return 1;
+    void* texData;
+    vkMapMemory(device, texStagingMemory, 0, texSize, 0, &texData);
+    memcpy(texData, texPixels, texSize);
+    vkUnmapMemory(device, texStagingMemory);
+
+    VkImage textureImage;
+    VkDeviceMemory textureImageMemory;
+    VkImageCreateInfo texImageInfo = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_SRGB,
+        .extent = { texWidth, texHeight, 1 },
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    result = vkCreateImage(device, &texImageInfo, NULL, &textureImage);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkCreateImage failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
+    VkMemoryRequirements texMemReqs;
+    vkGetImageMemoryRequirements(device, textureImage, &texMemReqs);
+    uint32_t texMemType = findMemoryType(physicalDevice, texMemReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (texMemType == UINT32_MAX) return 1;
+
+    VkMemoryAllocateInfo texAllocInfo = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = texMemReqs.size,
+        .memoryTypeIndex = texMemType,
+    };
+    result = vkAllocateMemory(device, &texAllocInfo, NULL, &textureImageMemory);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkAllocateMemory failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+    vkBindImageMemory(device, textureImage, textureImageMemory, 0);
+
+    // Upload: UNDEFINED -> TRANSFER_DST, copy, TRANSFER_DST -> SHADER_READ_ONLY
+    transitionImageLayout(device, cmdPool, graphicsQueue, textureImage,
+        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+    {
+        VkCommandBufferAllocateInfo cmdAllocInfo = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = cmdPool,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1,
+        };
+        VkCommandBuffer cmd;
+        vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd);
+        VkCommandBufferBeginInfo beginInfo = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        };
+        vkBeginCommandBuffer(cmd, &beginInfo);
+        VkBufferImageCopy copyRegion = {
+            .imageSubresource = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1 },
+            .imageExtent = { texWidth, texHeight, 1 },
+        };
+        vkCmdCopyBufferToImage(cmd, texStaging, textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+        vkEndCommandBuffer(cmd);
+        VkSubmitInfo submitInfo = {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &cmd,
+        };
+        vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(graphicsQueue);
+        vkFreeCommandBuffers(device, cmdPool, 1, &cmd);
+    }
+
+    transitionImageLayout(device, cmdPool, graphicsQueue, textureImage,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    vkDestroyBuffer(device, texStaging, NULL);
+    vkFreeMemory(device, texStagingMemory, NULL);
+
+    // Texture Image View
+    VkImageView textureImageView;
+    VkImageViewCreateInfo texViewInfo = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = textureImage,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_SRGB,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+    };
+    result = vkCreateImageView(device, &texViewInfo, NULL, &textureImageView);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkCreateImageView failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+
+    // Texture Sampler
+    VkSampler textureSampler;
+    VkSamplerCreateInfo samplerInfo = {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+    };
+    result = vkCreateSampler(device, &samplerInfo, NULL, &textureSampler);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkCreateSampler failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
 
     // 5. Create Swapchain
     VkSurfaceCapabilitiesKHR capabilities;
@@ -723,13 +928,19 @@ int main(int argc, char* argv[]) {
             .format = VK_FORMAT_R32G32B32_SFLOAT,
             .offset = offsetof(Vertex, color),
         },
+        {
+            .location = 3,
+            .binding = 0,
+            .format = VK_FORMAT_R32G32_SFLOAT,
+            .offset = offsetof(Vertex, texCoord),
+        },
     };
 
     VkPipelineVertexInputStateCreateInfo vertexInputState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &bindingDesc,
-        .vertexAttributeDescriptionCount = 3,
+        .vertexAttributeDescriptionCount = 4,
         .pVertexAttributeDescriptions = attrDescs,
     };
 
@@ -782,18 +993,26 @@ int main(int argc, char* argv[]) {
     };
 
     // Descriptor Set Layout
-    VkDescriptorSetLayoutBinding uboBinding = {
-        .binding = 0,
-        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+    VkDescriptorSetLayoutBinding layoutBindings[] = {
+        {
+            .binding = 0,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        },
+        {
+            .binding = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        },
     };
 
     VkDescriptorSetLayout descriptorSetLayout;
     VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 1,
-        .pBindings = &uboBinding,
+        .bindingCount = 2,
+        .pBindings = layoutBindings,
     };
     result = vkCreateDescriptorSetLayout(device, &descriptorSetLayoutInfo, NULL, &descriptorSetLayout);
     if (result != VK_SUCCESS) {
@@ -850,16 +1069,16 @@ int main(int argc, char* argv[]) {
     }
 
     // Descriptor Pool and Sets
-    VkDescriptorPoolSize poolSize = {
-        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .descriptorCount = imageCount,
+    VkDescriptorPoolSize poolSizes[] = {
+        { .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = imageCount },
+        { .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = imageCount },
     };
     VkDescriptorPool descriptorPool;
     VkDescriptorPoolCreateInfo descriptorPoolInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .maxSets = imageCount,
-        .poolSizeCount = 1,
-        .pPoolSizes = &poolSize,
+        .poolSizeCount = 2,
+        .pPoolSizes = poolSizes,
     };
     result = vkCreateDescriptorPool(device, &descriptorPoolInfo, NULL, &descriptorPool);
     if (result != VK_SUCCESS) {
@@ -888,15 +1107,30 @@ int main(int argc, char* argv[]) {
             .offset = 0,
             .range = sizeof(UniformBufferObject),
         };
-        VkWriteDescriptorSet write = {
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet = descriptorSets[i],
-            .dstBinding = 0,
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .pBufferInfo = &bufInfo,
+        VkDescriptorImageInfo imgInfo = {
+            .sampler = textureSampler,
+            .imageView = textureImageView,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         };
-        vkUpdateDescriptorSets(device, 1, &write, 0, NULL);
+        VkWriteDescriptorSet writes[] = {
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = descriptorSets[i],
+                .dstBinding = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .pBufferInfo = &bufInfo,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = descriptorSets[i],
+                .dstBinding = 1,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .pImageInfo = &imgInfo,
+            },
+        };
+        vkUpdateDescriptorSets(device, 2, writes, 0, NULL);
     }
 
     // 11. Allocate Command Buffers
@@ -1119,6 +1353,11 @@ int main(int argc, char* argv[]) {
     vkDestroyShaderModule(device, fragShader, NULL);
 
     vkDestroySwapchainKHR(device, swapchain, NULL);
+
+    vkDestroySampler(device, textureSampler, NULL);
+    vkDestroyImageView(device, textureImageView, NULL);
+    vkDestroyImage(device, textureImage, NULL);
+    vkFreeMemory(device, textureImageMemory, NULL);
 
     vkDestroyBuffer(device, vertexBuffer, NULL);
     vkFreeMemory(device, vertexBufferMemory, NULL);
