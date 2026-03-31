@@ -15,14 +15,14 @@ typedef struct {
 } mat4;
 
 static mat4 mat4_identity(void) {
-    mat4 r = {0};
+    mat4 r = {{}};
     r.m[0][0] = r.m[1][1] = r.m[2][2] = r.m[3][3] = 1.0f;
     return r;
 }
 
 __attribute__((unused))
 static mat4 mat4_mul(mat4 a, mat4 b) {
-    mat4 r = {0};
+    mat4 r = {{}};
     for (int i = 0; i < 4; i++)
         for (int j = 0; j < 4; j++)
             for (int k = 0; k < 4; k++)
@@ -40,7 +40,7 @@ static mat4 mat4_rotate_z(float angle) {
 
 static mat4 mat4_perspective(float fovY, float aspect, float near, float far) {
     float tanHalf = tanf(fovY / 2.0f);
-    mat4 r = {0};
+    mat4 r = {{}};
     r.m[0][0] = 1.0f / (aspect * tanHalf);
     r.m[1][1] = 1.0f / tanHalf;
     r.m[2][2] = far / (near - far);
@@ -181,7 +181,7 @@ VkShaderModule loadShaderModule(VkDevice device, const char* filepath) {
     size_t size = ftell(file);
     rewind(file);
 
-    uint32_t* code = malloc(size);
+    uint32_t* code = (uint32_t*)malloc(size);
     fread(code, 1, size, file);
     fclose(file);
 
@@ -273,16 +273,17 @@ int main(int argc, char* argv[]) {
 
     VkInstanceCreateInfo instanceCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pApplicationInfo = &appInfo,
-        .enabledExtensionCount = extensionsCount,
-        .ppEnabledExtensionNames = extensions,
+        .pNext = NULL,
 #ifdef __APPLE__
         .flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR, // Needed for MoltenVk/macOS
 #else
         .flags = 0,
 #endif
+        .pApplicationInfo = &appInfo,
         .enabledLayerCount = validationLayersCount,
         .ppEnabledLayerNames = validationLayers,
+        .enabledExtensionCount = extensionsCount,
+        .ppEnabledExtensionNames = extensions,
     };
 
     VkInstance instance;
@@ -663,7 +664,7 @@ int main(int argc, char* argv[]) {
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
     };
 
-    VkViewport viewport = { 0, 0, extent.width, extent.height, 0, 1 };
+    VkViewport viewport = { 0, 0, (float)extent.width, (float)extent.height, 0, 1 };
     VkRect2D scissor = { { 0, 0 }, extent };
     VkPipelineViewportStateCreateInfo viewportState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
@@ -687,8 +688,8 @@ int main(int argc, char* argv[]) {
     };
 
     VkPipelineColorBlendAttachmentState colorBlendAttachment = {
-        .colorWriteMask = 0xF,
         .blendEnable = VK_FALSE,
+        .colorWriteMask = 0xF,
     };
 
     VkPipelineColorBlendStateCreateInfo colorBlendState = {
@@ -962,11 +963,12 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
+        VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         VkSubmitInfo submit = {
             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
             .waitSemaphoreCount = 1,
             .pWaitSemaphores = &imageAvailableSemaphores[currentFrame],
-            .pWaitDstStageMask = (VkPipelineStageFlags[]){ VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT },
+            .pWaitDstStageMask = &waitStage,
             .commandBufferCount = 1,
             .pCommandBuffers = &cmdBuffers[index],
             .signalSemaphoreCount = 1,

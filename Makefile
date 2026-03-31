@@ -1,5 +1,5 @@
-CC = clang
-CFLAGS = -std=c17 -O0 -g -Wall -MMD -fPIC `pkg-config --cflags sdl3`
+CXX = clang++
+CXXFLAGS = -std=c++23 -O0 -g -Wall -MMD -fPIC `pkg-config --cflags sdl3`
 LDFLAGS = `pkg-config --libs sdl3` -lvulkan -lm
 OUTDIR = ./_out
 EXE = ngen
@@ -25,15 +25,15 @@ endif
 SHADERS_SRCS = $(wildcard *.vert **/*.vert) $(wildcard *.frag **/*.frag)
 SHADERS_SPV = $(foreach spv, $(SHADERS_SRCS:=.spv), $(spv))
 
-SRCS = $(wildcard *.c **/*.c)
-OBJS = $(foreach obj, $(SRCS:.c=.o), $(OUTDIR)/$(obj))
+SRCS = $(wildcard *.cpp **/*.cpp)
+OBJS = $(foreach obj, $(SRCS:.cpp=.o), $(OUTDIR)/$(obj))
 
 all: $(OBJS) | $(SHADERS_SPV)
-	$(CC) $^ -o $(OUTDIR)/$(EXE) $(CFLAGS) $(INCLUDE) $(LDINCLUDE) $(LDFLAGS)
+	$(CXX) $^ -o $(OUTDIR)/$(EXE) $(CXXFLAGS) $(INCLUDE) $(LDINCLUDE) $(LDFLAGS)
 
-$(OBJS): $(OUTDIR)/%.o: %.c
+$(OBJS): $(OUTDIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(CC) -c $(CFLAGS) -o $@ $< $(INCLUDE)
+	$(CXX) -c $(CXXFLAGS) -o $@ $< $(INCLUDE)
 
 %.spv: %
 	$(GLSLC) $< -o $@
