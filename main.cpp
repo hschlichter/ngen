@@ -4,81 +4,22 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_enum_string_helper.h>
 
-#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
 
-typedef struct {
-    float m[4][4];
-} mat4;
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
-static mat4 mat4_identity(void) {
-    mat4 r = {{}};
-    r.m[0][0] = r.m[1][1] = r.m[2][2] = r.m[3][3] = 1.0f;
-    return r;
-}
-
-__attribute__((unused))
-static mat4 mat4_mul(mat4 a, mat4 b) {
-    mat4 r = {{}};
-    for (int i = 0; i < 4; i++)
-        for (int j = 0; j < 4; j++)
-            for (int k = 0; k < 4; k++)
-                r.m[i][j] += a.m[i][k] * b.m[k][j];
-    return r;
-}
-
-static mat4 mat4_rotate_z(float angle) {
-    mat4 r = mat4_identity();
-    float c = cosf(angle), s = sinf(angle);
-    r.m[0][0] = c;  r.m[0][1] = s;
-    r.m[1][0] = -s; r.m[1][1] = c;
-    return r;
-}
-
-static mat4 mat4_perspective(float fovY, float aspect, float near, float far) {
-    float tanHalf = tanf(fovY / 2.0f);
-    mat4 r = {{}};
-    r.m[0][0] = 1.0f / (aspect * tanHalf);
-    r.m[1][1] = 1.0f / tanHalf;
-    r.m[2][2] = far / (near - far);
-    r.m[2][3] = -1.0f;
-    r.m[3][2] = (near * far) / (near - far);
-    return r;
-}
-
-static mat4 mat4_lookAt(float eyeX, float eyeY, float eyeZ,
-                        float centerX, float centerY, float centerZ,
-                        float upX, float upY, float upZ) {
-    float fx = centerX - eyeX, fy = centerY - eyeY, fz = centerZ - eyeZ;
-    float len = sqrtf(fx*fx + fy*fy + fz*fz);
-    fx /= len; fy /= len; fz /= len;
-
-    float sx = fy*upZ - fz*upY, sy = fz*upX - fx*upZ, sz = fx*upY - fy*upX;
-    len = sqrtf(sx*sx + sy*sy + sz*sz);
-    sx /= len; sy /= len; sz /= len;
-
-    float ux = sy*fz - sz*fy, uy = sz*fx - sx*fz, uz = sx*fy - sy*fx;
-
-    mat4 r = mat4_identity();
-    r.m[0][0] = sx;  r.m[1][0] = sx;  // will be overwritten below
-    r.m[0][0] = sx; r.m[0][1] = ux; r.m[0][2] = -fx;
-    r.m[1][0] = sy; r.m[1][1] = uy; r.m[1][2] = -fy;
-    r.m[2][0] = sz; r.m[2][1] = uz; r.m[2][2] = -fz;
-    r.m[3][0] = -(sx*eyeX + sy*eyeY + sz*eyeZ);
-    r.m[3][1] = -(ux*eyeX + uy*eyeY + uz*eyeZ);
-    r.m[3][2] =  (fx*eyeX + fy*eyeY + fz*eyeZ);
-    return r;
-}
-
-typedef struct {
-    mat4 model;
-    mat4 view;
-    mat4 proj;
-} UniformBufferObject;
+struct UniformBufferObject {
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
+};
 
 typedef struct {
     float position[2];
@@ -919,9 +860,9 @@ int main(int argc, char* argv[]) {
         float time = (float)(SDL_GetTicksNS() - startTicks) / 1.0e9f;
         float aspect = (float)extent.width / (float)extent.height;
         UniformBufferObject ubo = {
-            .model = mat4_rotate_z(time),
-            .view = mat4_lookAt(0.0f, 0.0f, 2.0f,  0.0f, 0.0f, 0.0f,  0.0f, 1.0f, 0.0f),
-            .proj = mat4_perspective(45.0f * (3.14159265f / 180.0f), aspect, 0.1f, 10.0f),
+            .model = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 0.0f, 1.0f)),
+            .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
+            .proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 10.0f),
         };
         memcpy(uniformBuffersMapped[index], &ubo, sizeof(ubo));
 
