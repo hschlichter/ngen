@@ -34,8 +34,8 @@ public:
     void destroy() override;
 
 private:
-    VulkanDevice dev;
-    VulkanSwapchain swapchain;
+    DeviceVulkan dev;
+    SwapchainVulkan swapchain;
 
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;

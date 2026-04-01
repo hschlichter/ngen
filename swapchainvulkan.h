@@ -3,10 +3,19 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 
-struct VulkanDevice;
+class DeviceVulkan;
 struct SDL_Window;
 
-struct VulkanSwapchain {
+class SwapchainVulkan {
+public:
+    SwapchainVulkan() = default;
+    SwapchainVulkan(const SwapchainVulkan&) = delete;
+    SwapchainVulkan& operator=(const SwapchainVulkan&) = delete;
+    ~SwapchainVulkan() = default;
+
+    int init(DeviceVulkan& dev, SDL_Window* window);
+    void destroy(VkDevice device);
+
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkFormat imageFormat;
     VkExtent2D extent;
@@ -20,7 +29,4 @@ struct VulkanSwapchain {
 
     VkRenderPass renderPass = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> framebuffers;
-
-    int init(VulkanDevice& dev, SDL_Window* window);
-    void destroy(VkDevice device);
 };

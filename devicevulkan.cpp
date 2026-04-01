@@ -9,7 +9,7 @@
 #include <cstring>
 #include <vector>
 
-int VulkanDevice::init(SDL_Window* window) {
+int DeviceVulkan::init(SDL_Window* window) {
     // Create Vulkan instance
     uint32_t apiVersion = VK_API_VERSION_1_0;
     VkResult result = vkEnumerateInstanceVersion(&apiVersion);
@@ -153,14 +153,14 @@ int VulkanDevice::init(SDL_Window* window) {
     return 0;
 }
 
-void VulkanDevice::destroy() {
+void DeviceVulkan::destroy() {
     vkDestroyCommandPool(device, cmdPool, NULL);
     vkDestroyDevice(device, NULL);
     vkDestroySurfaceKHR(instance, surface, NULL);
     vkDestroyInstance(instance, NULL);
 }
 
-uint32_t VulkanDevice::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+uint32_t DeviceVulkan::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
     VkPhysicalDeviceMemoryProperties memProps;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
     for (uint32_t i = 0; i < memProps.memoryTypeCount; i++) {
@@ -172,7 +172,7 @@ uint32_t VulkanDevice::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags
     return UINT32_MAX;
 }
 
-int VulkanDevice::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
+int DeviceVulkan::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
                                VkBuffer* buffer, VkDeviceMemory* memory) {
     VkBufferCreateInfo bufferInfo = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -212,7 +212,7 @@ int VulkanDevice::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMe
     return 0;
 }
 
-int VulkanDevice::copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) {
+int DeviceVulkan::copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) {
     VkCommandBufferAllocateInfo allocInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .commandPool = cmdPool,
@@ -244,7 +244,7 @@ int VulkanDevice::copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) {
     return 0;
 }
 
-void VulkanDevice::transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) {
+void DeviceVulkan::transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) {
     VkCommandBufferAllocateInfo allocInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .commandPool = cmdPool,
@@ -305,7 +305,7 @@ void VulkanDevice::transitionImageLayout(VkImage image, VkImageLayout oldLayout,
     vkFreeCommandBuffers(device, cmdPool, 1, &cmd);
 }
 
-VkShaderModule VulkanDevice::loadShaderModule(const char* filepath) {
+VkShaderModule DeviceVulkan::loadShaderModule(const char* filepath) {
     FILE* file = fopen(filepath, "rb");
     if (!file) {
         fprintf(stderr, "Failed to open shader filer: %s\n", filepath);

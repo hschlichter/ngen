@@ -7,7 +7,7 @@
 
 #include <cstdio>
 
-int VulkanSwapchain::init(VulkanDevice& dev, SDL_Window* window) {
+int SwapchainVulkan::init(DeviceVulkan& dev, SDL_Window* window) {
     VkResult result;
 
     // Query surface capabilities and formats
@@ -257,7 +257,7 @@ int VulkanSwapchain::init(VulkanDevice& dev, SDL_Window* window) {
     return 0;
 }
 
-void VulkanSwapchain::destroy(VkDevice device) {
+void SwapchainVulkan::destroy(VkDevice device) {
     vkDestroyImageView(device, depthImageView, NULL);
     vkDestroyImage(device, depthImage, NULL);
     vkFreeMemory(device, depthMemory, NULL);
