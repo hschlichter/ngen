@@ -1,0 +1,89 @@
+---
+# Sensible default for modern C++23 projects.
+# Base on LLVM because it is compact, readable, and widely recognized.
+BasedOnStyle: LLVM
+Language: Cpp
+
+# General layout
+IndentWidth: 4
+ContinuationIndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+AccessModifierOffset: -4
+IndentCaseLabels: true
+IndentCaseBlocks: false
+
+# Braces and line breaking
+BreakBeforeBraces: Attach
+AllowShortBlocksOnASingleLine: Empty
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: Inline
+AllowShortLoopsOnASingleLine: false
+
+# Modern C++ readability
+Cpp11BracedListStyle: true
+SpaceBeforeCpp11BracedList: false
+Standard: Latest
+
+# Function declarations / calls
+BinPackArguments: false
+BinPackParameters: false
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+PenaltyBreakBeforeFirstCallParameter: 1
+
+# Whitespace and operators
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+SpaceInEmptyParentheses: false
+SpacesInContainerLiterals: false
+SpaceAfterCStyleCast: true
+SpaceBeforeAssignmentOperators: true
+
+# Pointers / references / qualifiers
+DerivePointerAlignment: false
+PointerAlignment: Left
+ReferenceAlignment: Left
+QualifierAlignment: Left
+
+# Includes
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
+
+# Alignment
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignOperands: Align
+AlignTrailingComments:
+  Kind: Always
+  OverEmptyLines: 0
+
+# Constructors / inheritance
+BreakConstructorInitializers: BeforeComma
+ConstructorInitializerIndentWidth: 4
+PackConstructorInitializers: NextLine
+BreakInheritanceList: BeforeComma
+
+# Misc
+EmptyLineBeforeAccessModifier: LogicalBlock
+FixNamespaceComments: true
+NamespaceIndentation: None
+ReflowComments: true
+SeparateDefinitionBlocks: Leave
+SortUsingDeclarations: LexicographicNumeric
+
+# Keep raw string formatting reasonable
+RawStringFormats:
+  - Language: Cpp
+    Delimiters:
+      - cc
+      - cpp
+      - h
+      - hh
+      - hpp
+    BasedOnStyle: LLVM

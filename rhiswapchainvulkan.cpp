@@ -1,5 +1,4 @@
-#include "swapchainvulkan.h"
-#include "devicevulkan.h"
+#include "rhiswapchainvulkan.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
@@ -7,97 +6,93 @@
 
 #include <cstdio>
 
-int SwapchainVulkan::init(DeviceVulkan& dev, SDL_Window* window) {
+uint32_t RhiSwapchainVulkan::findMemoryType(VkPhysicalDevice physicalDevice,
+                                             uint32_t typeFilter,
+                                             VkMemoryPropertyFlags properties) {
+    VkPhysicalDeviceMemoryProperties memProps;
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
+    for (uint32_t i = 0; i < memProps.memoryTypeCount; i++) {
+        if ((typeFilter & (1 << i)) && (memProps.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+    fprintf(stderr, "Failed to find suitable memory type\n");
+    return UINT32_MAX;
+}
+
+int RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device,
+                              VkSurfaceKHR surface, uint32_t queueFamilyIndex,
+                              SDL_Window* window) {
+    vkDevice = device;
     VkResult result;
 
-    // Query surface capabilities and formats
     VkSurfaceCapabilitiesKHR capabilities;
-    result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev.physicalDevice, dev.surface, &capabilities);
+    result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed: %s(%d)\n", string_VkResult(result), result);
         return 1;
     }
 
     uint32_t formatCount;
-    result = vkGetPhysicalDeviceSurfaceFormatsKHR(dev.physicalDevice, dev.surface, &formatCount, NULL);
+    result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, NULL);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkGetPhysicalDeviceSurfaceFormatsKHR failed: %s(%d)\n", string_VkResult(result), result);
         return 1;
     }
 
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
-    result = vkGetPhysicalDeviceSurfaceFormatsKHR(dev.physicalDevice, dev.surface, &formatCount, formats.data());
+    result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, formats.data());
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkGetPhysicalDeviceSurfaceFormatsKHR failed: %s(%d)\n", string_VkResult(result), result);
         return 1;
     }
 
     VkSurfaceFormatKHR format = formats[0];
-    imageFormat = format.format;
 
-    uint32_t presentModeCount;
-    result = vkGetPhysicalDeviceSurfacePresentModesKHR(dev.physicalDevice, dev.surface, &presentModeCount, NULL);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkGetPhysicalDeviceSurfacePresentModesKHR failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
-    }
-
-    std::vector<VkPresentModeKHR> presentModes(presentModeCount);
-    result = vkGetPhysicalDeviceSurfacePresentModesKHR(dev.physicalDevice, dev.surface, &presentModeCount, presentModes.data());
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkGetPhysicalDeviceSurfacePresentModesKHR failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
-    }
-
-    VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
-
-    // Determine extent
     {
         int w, h;
         SDL_GetWindowSizeInPixels(window, &w, &h);
-        extent.width = (uint32_t)w;
-        extent.height = (uint32_t)h;
+        ext.width = (uint32_t)w;
+        ext.height = (uint32_t)h;
     }
-    if (extent.width < capabilities.minImageExtent.width) extent.width = capabilities.minImageExtent.width;
-    if (extent.width > capabilities.maxImageExtent.width) extent.width = capabilities.maxImageExtent.width;
-    if (extent.height < capabilities.minImageExtent.height) extent.height = capabilities.minImageExtent.height;
-    if (extent.height > capabilities.maxImageExtent.height) extent.height = capabilities.maxImageExtent.height;
-    printf("Swapchain extent: %dx%d\n", extent.width, extent.height);
+    if (ext.width < capabilities.minImageExtent.width) ext.width = capabilities.minImageExtent.width;
+    if (ext.width > capabilities.maxImageExtent.width) ext.width = capabilities.maxImageExtent.width;
+    if (ext.height < capabilities.minImageExtent.height) ext.height = capabilities.minImageExtent.height;
+    if (ext.height > capabilities.maxImageExtent.height) ext.height = capabilities.maxImageExtent.height;
+    printf("Swapchain extent: %dx%d\n", ext.width, ext.height);
 
-    imageCount = capabilities.minImageCount + 1;
-    if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount) {
-        imageCount = capabilities.maxImageCount;
+    imgCount = capabilities.minImageCount + 1;
+    if (capabilities.maxImageCount > 0 && imgCount > capabilities.maxImageCount) {
+        imgCount = capabilities.maxImageCount;
     }
 
-    // Create swapchain
     VkSwapchainCreateInfoKHR swapchainInfo = {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-        .surface = dev.surface,
-        .minImageCount = imageCount,
+        .surface = surface,
+        .minImageCount = imgCount,
         .imageFormat = format.format,
         .imageColorSpace = format.colorSpace,
-        .imageExtent = extent,
+        .imageExtent = { ext.width, ext.height },
         .imageArrayLayers = 1,
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .preTransform = capabilities.currentTransform,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = presentMode,
+        .presentMode = VK_PRESENT_MODE_FIFO_KHR,
         .clipped = VK_TRUE,
     };
 
-    result = vkCreateSwapchainKHR(dev.device, &swapchainInfo, NULL, &swapchain);
+    result = vkCreateSwapchainKHR(device, &swapchainInfo, NULL, &swapchain);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkCreateSwapchainKHR failed: %s(%d)\n", string_VkResult(result), result);
         return 1;
     }
 
-    images.resize(imageCount);
-    result = vkGetSwapchainImagesKHR(dev.device, swapchain, &imageCount, images.data());
+    images.resize(imgCount);
+    result = vkGetSwapchainImagesKHR(device, swapchain, &imgCount, images.data());
 
-    // Create image views
-    imageViews.resize(imageCount);
-    for (uint32_t i = 0; i < imageCount; i++) {
+    imageViews.resize(imgCount);
+    for (uint32_t i = 0; i < imgCount; i++) {
         VkImageViewCreateInfo viewInfo = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .image = images[i],
@@ -112,21 +107,21 @@ int SwapchainVulkan::init(DeviceVulkan& dev, SDL_Window* window) {
             },
         };
 
-        result = vkCreateImageView(dev.device, &viewInfo, NULL, &imageViews[i]);
+        result = vkCreateImageView(device, &viewInfo, NULL, &imageViews[i]);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "vkCreateImageView failed: %s(%d)\n", string_VkResult(result), result);
             return 1;
         }
     }
 
-    // Create depth image
+    // Depth image
     VkFormat depthFormat = VK_FORMAT_D32_SFLOAT;
 
     VkImageCreateInfo depthImageInfo = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
         .format = depthFormat,
-        .extent = { extent.width, extent.height, 1 },
+        .extent = { ext.width, ext.height, 1 },
         .mipLevels = 1,
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -136,16 +131,16 @@ int SwapchainVulkan::init(DeviceVulkan& dev, SDL_Window* window) {
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     };
 
-    result = vkCreateImage(dev.device, &depthImageInfo, NULL, &depthImage);
+    result = vkCreateImage(device, &depthImageInfo, NULL, &depthImage);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkCreateImage failed: %s(%d)\n", string_VkResult(result), result);
         return 1;
     }
 
     VkMemoryRequirements depthMemReqs;
-    vkGetImageMemoryRequirements(dev.device, depthImage, &depthMemReqs);
+    vkGetImageMemoryRequirements(device, depthImage, &depthMemReqs);
 
-    uint32_t depthMemType = dev.findMemoryType(depthMemReqs.memoryTypeBits,
+    uint32_t depthMemType = findMemoryType(physicalDevice, depthMemReqs.memoryTypeBits,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (depthMemType == UINT32_MAX) return 1;
 
@@ -154,12 +149,12 @@ int SwapchainVulkan::init(DeviceVulkan& dev, SDL_Window* window) {
         .allocationSize = depthMemReqs.size,
         .memoryTypeIndex = depthMemType,
     };
-    result = vkAllocateMemory(dev.device, &depthAllocInfo, NULL, &depthMemory);
+    result = vkAllocateMemory(device, &depthAllocInfo, NULL, &depthMemory);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkAllocateMemory failed: %s(%d)\n", string_VkResult(result), result);
         return 1;
     }
-    vkBindImageMemory(dev.device, depthImage, depthMemory, 0);
+    vkBindImageMemory(device, depthImage, depthMemory, 0);
 
     VkImageViewCreateInfo depthViewInfo = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -174,13 +169,13 @@ int SwapchainVulkan::init(DeviceVulkan& dev, SDL_Window* window) {
             .layerCount = 1,
         },
     };
-    result = vkCreateImageView(dev.device, &depthViewInfo, NULL, &depthImageView);
+    result = vkCreateImageView(device, &depthViewInfo, NULL, &depthImageView);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkCreateImageView failed: %s(%d)\n", string_VkResult(result), result);
         return 1;
     }
 
-    // Create render pass
+    // Render pass
     VkAttachmentDescription attachments[] = {
         {
             .format = format.format,
@@ -227,27 +222,27 @@ int SwapchainVulkan::init(DeviceVulkan& dev, SDL_Window* window) {
         .pSubpasses = &subpass,
     };
 
-    result = vkCreateRenderPass(dev.device, &renderPassInfo, NULL, &renderPass);
+    result = vkCreateRenderPass(device, &renderPassInfo, NULL, &rhiRenderPass.renderPass);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkCreateRenderPass failed: %s(%d)\n", string_VkResult(result), result);
         return 1;
     }
 
-    // Create framebuffers
-    framebuffers.resize(imageCount);
-    for (uint32_t i = 0; i < imageCount; i++) {
+    // Framebuffers
+    rhiFramebuffers.resize(imgCount);
+    for (uint32_t i = 0; i < imgCount; i++) {
         VkImageView fbAttachments[] = { imageViews[i], depthImageView };
         VkFramebufferCreateInfo framebufferInfo = {
             .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .renderPass = renderPass,
+            .renderPass = rhiRenderPass.renderPass,
             .attachmentCount = 2,
             .pAttachments = fbAttachments,
-            .width = extent.width,
-            .height = extent.height,
+            .width = ext.width,
+            .height = ext.height,
             .layers = 1,
         };
 
-        result = vkCreateFramebuffer(dev.device, &framebufferInfo, NULL, &framebuffers[i]);
+        result = vkCreateFramebuffer(device, &framebufferInfo, NULL, &rhiFramebuffers[i].framebuffer);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "vkCreateFramebuffer failed: %s(%d)\n", string_VkResult(result), result);
             return 1;
@@ -257,16 +252,27 @@ int SwapchainVulkan::init(DeviceVulkan& dev, SDL_Window* window) {
     return 0;
 }
 
-void SwapchainVulkan::destroy(VkDevice device) {
-    vkDestroyImageView(device, depthImageView, NULL);
-    vkDestroyImage(device, depthImage, NULL);
-    vkFreeMemory(device, depthMemory, NULL);
+int RhiSwapchainVulkan::acquireNextImage(RhiSemaphore* signalSemaphore, uint32_t* outIndex) {
+    auto* sem = static_cast<RhiSemaphoreVulkan*>(signalSemaphore);
+    VkResult result = vkAcquireNextImageKHR(vkDevice, swapchain, UINT64_MAX,
+                                             sem->semaphore, VK_NULL_HANDLE, outIndex);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vkAcquireNextImageKHR failed: %s(%d)\n", string_VkResult(result), result);
+        return 1;
+    }
+    return 0;
+}
 
-    for (uint32_t i = 0; i < imageCount; i++) {
-        vkDestroyFramebuffer(device, framebuffers[i], NULL);
-        vkDestroyImageView(device, imageViews[i], NULL);
+void RhiSwapchainVulkan::destroy() {
+    vkDestroyImageView(vkDevice, depthImageView, NULL);
+    vkDestroyImage(vkDevice, depthImage, NULL);
+    vkFreeMemory(vkDevice, depthMemory, NULL);
+
+    for (uint32_t i = 0; i < imgCount; i++) {
+        vkDestroyFramebuffer(vkDevice, rhiFramebuffers[i].framebuffer, NULL);
+        vkDestroyImageView(vkDevice, imageViews[i], NULL);
     }
 
-    vkDestroyRenderPass(device, renderPass, NULL);
-    vkDestroySwapchainKHR(device, swapchain, NULL);
+    vkDestroyRenderPass(vkDevice, rhiRenderPass.renderPass, NULL);
+    vkDestroySwapchainKHR(vkDevice, swapchain, NULL);
 }

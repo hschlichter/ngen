@@ -1,18 +1,61 @@
 #pragma once
 
+#include "rhitypes.h"
+
+#include <glm/glm.hpp>
+#include <vector>
+
+class RhiDevice;
+class RhiSwapchain;
+class RhiCommandBuffer;
 struct Scene;
 struct Camera;
 struct SDL_Window;
+
+struct UniformBufferObject {
+    glm::mat4 view;
+    glm::mat4 proj;
+};
+
+struct GpuMesh {
+    RhiBuffer* vertexBuffer;
+    RhiBuffer* indexBuffer;
+    uint32_t indexCount;
+    RhiTexture* texture;
+    glm::mat4 transform;
+};
 
 class Renderer {
 public:
     Renderer() = default;
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
-    virtual ~Renderer() = default;
+    ~Renderer() = default;
 
-    virtual int init(SDL_Window* window) = 0;
-    virtual void uploadScene(const Scene& scene) = 0;
-    virtual void draw(const Camera& camera, SDL_Window* window) = 0;
-    virtual void destroy() = 0;
+    int init(RhiDevice* rhiDevice, SDL_Window* window);
+    void uploadScene(const Scene& scene);
+    void draw(const Camera& camera, SDL_Window* window);
+    void destroy();
+
+private:
+    RhiDevice* device = nullptr;
+    RhiSwapchain* swapchain = nullptr;
+
+    RhiPipeline* pipeline = nullptr;
+    RhiDescriptorSetLayout* descriptorSetLayout = nullptr;
+    RhiDescriptorPool* descriptorPool = nullptr;
+    std::vector<RhiDescriptorSet*> descriptorSets;
+    RhiSampler* textureSampler = nullptr;
+    RhiShaderModule* vertShader = nullptr;
+    RhiShaderModule* fragShader = nullptr;
+
+    std::vector<GpuMesh> gpuMeshes;
+    std::vector<RhiBuffer*> uniformBuffers;
+    std::vector<void*> uniformBuffersMapped;
+
+    std::vector<RhiCommandBuffer*> cmdBuffers;
+    std::vector<RhiSemaphore*> imageAvailableSemaphores;
+    std::vector<RhiSemaphore*> renderFinishedSemaphores;
+    std::vector<RhiFence*> inflightFences;
+    uint32_t currentFrame = 0;
 };
