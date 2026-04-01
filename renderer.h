@@ -13,6 +13,6 @@ public:
 
     virtual int init(SDL_Window* window) = 0;
     virtual void uploadScene(const Scene& scene) = 0;
-    virtual void render(const Camera& camera, SDL_Window* window) = 0;
+    virtual void draw(const Camera& camera, SDL_Window* window) = 0;
     virtual void destroy() = 0;
 };

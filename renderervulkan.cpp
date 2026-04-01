@@ -381,7 +381,7 @@ void RendererVulkan::uploadScene(const Scene& scene) {
     }
 }
 
-void RendererVulkan::render(const Camera& camera, SDL_Window* window) {
+void RendererVulkan::draw(const Camera& camera, SDL_Window* window) {
 
     VkResult result;
 

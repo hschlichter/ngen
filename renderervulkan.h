@@ -30,7 +30,7 @@ public:
 
     int init(SDL_Window* window) override;
     void uploadScene(const Scene& scene) override;
-    void render(const Camera& camera, SDL_Window* window) override;
+    void draw(const Camera& camera, SDL_Window* window) override;
     void destroy() override;
 
 private:
