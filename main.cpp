@@ -1342,7 +1342,7 @@ int main(int argc, char* argv[]) {
         int winW, winH;
         SDL_GetWindowSizeInPixels(window, &winW, &winH);
         float aspect = (float)winW / (float)winH;
-        glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 10.0f);
+        glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
         proj[1][1] *= -1.0f; // Flip Y for Vulkan clip coordinates
         UniformBufferObject ubo = {
             .view = glm::lookAt(camPos, camPos + forward, up),
