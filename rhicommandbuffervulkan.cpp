@@ -1,5 +1,7 @@
 #include "rhicommandbuffervulkan.h"
 
+#include <utility>
+
 auto RhiCommandBufferVulkan::begin() -> void {
     VkCommandBufferBeginInfo beginInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -64,10 +66,10 @@ auto RhiCommandBufferVulkan::bindDescriptorSet(RhiPipeline* pipeline, RhiDescrip
 auto RhiCommandBufferVulkan::pushConstants(RhiPipeline* pipeline, RhiShaderStage stage, uint32_t offset, uint32_t size, const void* data) -> void {
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
     VkShaderStageFlags vkStage = 0;
-    if ((uint32_t) stage & (uint32_t) RhiShaderStage::Vertex) {
+    if (std::to_underlying(stage) & std::to_underlying(RhiShaderStage::Vertex)) {
         vkStage |= VK_SHADER_STAGE_VERTEX_BIT;
     }
-    if ((uint32_t) stage & (uint32_t) RhiShaderStage::Fragment) {
+    if (std::to_underlying(stage) & std::to_underlying(RhiShaderStage::Fragment)) {
         vkStage |= VK_SHADER_STAGE_FRAGMENT_BIT;
     }
     vkCmdPushConstants(cmd, p->layout, vkStage, offset, size, data);

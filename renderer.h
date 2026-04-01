@@ -2,6 +2,7 @@
 
 #include "rhitypes.h"
 
+#include <expected>
 #include <glm/glm.hpp>
 #include <vector>
 
@@ -32,7 +33,7 @@ public:
     Renderer& operator=(const Renderer&) = delete;
     ~Renderer() = default;
 
-    auto init(RhiDevice* rhiDevice, SDL_Window* window) -> int;
+    auto init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<void, int>;
     auto uploadScene(const Scene& scene) -> void;
     auto draw(const Camera& camera, SDL_Window* window) -> void;
     auto destroy() -> void;

@@ -3,6 +3,7 @@
 #include "rhiresourcesvulkan.h"
 #include "rhiswapchain.h"
 
+#include <expected>
 #include <vector>
 #include <vulkan/vulkan.h>
 
@@ -12,10 +13,11 @@ class RhiSwapchainVulkan : public RhiSwapchain {
     friend class RhiDeviceVulkan;
 
 public:
-    auto init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, SDL_Window* window) -> int;
+    auto init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, SDL_Window* window)
+        -> std::expected<void, int>;
     auto destroy() -> void override;
 
-    auto acquireNextImage(RhiSemaphore* signalSemaphore, uint32_t* outIndex) -> int override;
+    auto acquireNextImage(RhiSemaphore* signalSemaphore) -> std::expected<uint32_t, int> override;
     auto imageCount() -> uint32_t override { return imgCount; }
     auto extent() -> RhiExtent2D override { return ext; }
     auto renderPass() -> RhiRenderPass* override { return &rhiRenderPass; }

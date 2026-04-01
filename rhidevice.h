@@ -2,6 +2,8 @@
 
 #include "rhitypes.h"
 
+#include <expected>
+#include <span>
 #include <vector>
 
 class RhiSwapchain;
@@ -12,7 +14,7 @@ class RhiDevice {
 public:
     virtual ~RhiDevice() = default;
 
-    virtual auto init(SDL_Window* window) -> int = 0;
+    virtual auto init(SDL_Window* window) -> std::expected<void, int> = 0;
     virtual auto destroy() -> void = 0;
     virtual auto waitIdle() -> void = 0;
 
@@ -22,10 +24,10 @@ public:
     virtual auto createSampler(const RhiSamplerDesc& desc) -> RhiSampler* = 0;
     virtual auto createShaderModule(const char* filepath) -> RhiShaderModule* = 0;
     virtual auto createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) -> RhiPipeline* = 0;
-    virtual auto createDescriptorSetLayout(const RhiDescriptorBinding* bindings, uint32_t count) -> RhiDescriptorSetLayout* = 0;
-    virtual auto createDescriptorPool(uint32_t maxSets, const RhiDescriptorBinding* bindings, uint32_t bindingCount) -> RhiDescriptorPool* = 0;
+    virtual auto createDescriptorSetLayout(std::span<const RhiDescriptorBinding> bindings) -> RhiDescriptorSetLayout* = 0;
+    virtual auto createDescriptorPool(uint32_t maxSets, std::span<const RhiDescriptorBinding> bindings) -> RhiDescriptorPool* = 0;
     virtual auto allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) -> std::vector<RhiDescriptorSet*> = 0;
-    virtual auto updateDescriptorSet(RhiDescriptorSet* set, const RhiDescriptorWrite* writes, uint32_t writeCount) -> void = 0;
+    virtual auto updateDescriptorSet(RhiDescriptorSet* set, std::span<const RhiDescriptorWrite> writes) -> void = 0;
 
     virtual auto createCommandBuffer() -> RhiCommandBuffer* = 0;
     virtual auto createSemaphore() -> RhiSemaphore* = 0;

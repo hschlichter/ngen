@@ -1,7 +1,7 @@
 #include "sceneloader.h"
 
-#include <cstdio>
 #include <cstring>
+#include <print>
 #include <string>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -115,7 +115,7 @@ static auto processNode(Scene& scene, cgltf_node* node, const glm::mat4& parentT
             md.transform = world;
             loadPrimitive(md, &node->mesh->primitives[p], filepath);
             if (!md.vertices.empty()) {
-                printf("  mesh: %zu verts, %zu indices, tex %dx%d\n", md.vertices.size(), md.indices.size(), md.texWidth, md.texHeight);
+                std::println("  mesh: {} verts, {} indices, tex {}x{}", md.vertices.size(), md.indices.size(), md.texWidth, md.texHeight);
                 scene.meshes.push_back(std::move(md));
             }
         }
@@ -130,11 +130,11 @@ auto loadGltf(const char* filepath) -> Scene {
     cgltf_options options = {};
     cgltf_data* gltf = nullptr;
     if (cgltf_parse_file(&options, filepath, &gltf) != cgltf_result_success) {
-        fprintf(stderr, "cgltf_parse_file failed\n");
+        std::println(stderr, "cgltf_parse_file failed");
         return scene;
     }
     if (cgltf_load_buffers(&options, gltf, filepath) != cgltf_result_success) {
-        fprintf(stderr, "cgltf_load_buffers failed\n");
+        std::println(stderr, "cgltf_load_buffers failed");
         cgltf_free(gltf);
         return scene;
     }
@@ -151,7 +151,7 @@ auto loadGltf(const char* filepath) -> Scene {
         }
     }
 
-    printf("Loaded %zu mesh(es)\n", scene.meshes.size());
+    std::println("Loaded {} mesh(es)", scene.meshes.size());
     cgltf_free(gltf);
     return scene;
 }

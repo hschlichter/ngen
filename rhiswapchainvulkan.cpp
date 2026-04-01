@@ -4,7 +4,7 @@
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vk_enum_string_helper.h>
 
-#include <cstdio>
+#include <print>
 
 auto RhiSwapchainVulkan::findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t {
     VkPhysicalDeviceMemoryProperties memProps;
@@ -14,33 +14,34 @@ auto RhiSwapchainVulkan::findMemoryType(VkPhysicalDevice physicalDevice, uint32_
             return i;
         }
     }
-    fprintf(stderr, "Failed to find suitable memory type\n");
+    std::println(stderr, "Failed to find suitable memory type");
     return UINT32_MAX;
 }
 
-auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, SDL_Window* window) -> int {
+auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, SDL_Window* window)
+    -> std::expected<void, int> {
     vkDevice = device;
     VkResult result;
 
     VkSurfaceCapabilitiesKHR capabilities;
     result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
+        std::println(stderr, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed: {}({})", string_VkResult(result), (int) result);
+        return std::unexpected(1);
     }
 
     uint32_t formatCount;
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, NULL);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkGetPhysicalDeviceSurfaceFormatsKHR failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
+        std::println(stderr, "vkGetPhysicalDeviceSurfaceFormatsKHR failed: {}({})", string_VkResult(result), (int) result);
+        return std::unexpected(1);
     }
 
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, formats.data());
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkGetPhysicalDeviceSurfaceFormatsKHR failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
+        std::println(stderr, "vkGetPhysicalDeviceSurfaceFormatsKHR failed: {}({})", string_VkResult(result), (int) result);
+        return std::unexpected(1);
     }
 
     auto format = formats[0];
@@ -63,7 +64,7 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     if (ext.height > capabilities.maxImageExtent.height) {
         ext.height = capabilities.maxImageExtent.height;
     }
-    printf("Swapchain extent: %dx%d\n", ext.width, ext.height);
+    std::println("Swapchain extent: {}x{}", ext.width, ext.height);
 
     imgCount = capabilities.minImageCount + 1;
     if (capabilities.maxImageCount > 0 && imgCount > capabilities.maxImageCount) {
@@ -88,8 +89,8 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
 
     result = vkCreateSwapchainKHR(device, &swapchainInfo, NULL, &swapchain);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkCreateSwapchainKHR failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
+        std::println(stderr, "vkCreateSwapchainKHR failed: {}({})", string_VkResult(result), (int) result);
+        return std::unexpected(1);
     }
 
     images.resize(imgCount);
@@ -114,8 +115,8 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
 
         result = vkCreateImageView(device, &viewInfo, NULL, &imageViews[i]);
         if (result != VK_SUCCESS) {
-            fprintf(stderr, "vkCreateImageView failed: %s(%d)\n", string_VkResult(result), result);
-            return 1;
+            std::println(stderr, "vkCreateImageView failed: {}({})", string_VkResult(result), (int) result);
+            return std::unexpected(1);
         }
     }
 
@@ -138,8 +139,8 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
 
     result = vkCreateImage(device, &depthImageInfo, NULL, &depthImage);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkCreateImage failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
+        std::println(stderr, "vkCreateImage failed: {}({})", string_VkResult(result), (int) result);
+        return std::unexpected(1);
     }
 
     VkMemoryRequirements depthMemReqs;
@@ -147,7 +148,7 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
 
     auto depthMemType = findMemoryType(physicalDevice, depthMemReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (depthMemType == UINT32_MAX) {
-        return 1;
+        return std::unexpected(1);
     }
 
     VkMemoryAllocateInfo depthAllocInfo = {
@@ -157,8 +158,8 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     };
     result = vkAllocateMemory(device, &depthAllocInfo, NULL, &depthMemory);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkAllocateMemory failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
+        std::println(stderr, "vkAllocateMemory failed: {}({})", string_VkResult(result), (int) result);
+        return std::unexpected(1);
     }
     vkBindImageMemory(device, depthImage, depthMemory, 0);
 
@@ -178,8 +179,8 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     };
     result = vkCreateImageView(device, &depthViewInfo, NULL, &depthImageView);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkCreateImageView failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
+        std::println(stderr, "vkCreateImageView failed: {}({})", string_VkResult(result), (int) result);
+        return std::unexpected(1);
     }
 
     // Render pass
@@ -231,8 +232,8 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
 
     result = vkCreateRenderPass(device, &renderPassInfo, NULL, &rhiRenderPass.renderPass);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkCreateRenderPass failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
+        std::println(stderr, "vkCreateRenderPass failed: {}({})", string_VkResult(result), (int) result);
+        return std::unexpected(1);
     }
 
     // Framebuffers
@@ -251,22 +252,23 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
 
         result = vkCreateFramebuffer(device, &framebufferInfo, NULL, &rhiFramebuffers[i].framebuffer);
         if (result != VK_SUCCESS) {
-            fprintf(stderr, "vkCreateFramebuffer failed: %s(%d)\n", string_VkResult(result), result);
-            return 1;
+            std::println(stderr, "vkCreateFramebuffer failed: {}({})", string_VkResult(result), (int) result);
+            return std::unexpected(1);
         }
     }
 
-    return 0;
+    return {};
 }
 
-auto RhiSwapchainVulkan::acquireNextImage(RhiSemaphore* signalSemaphore, uint32_t* outIndex) -> int {
+auto RhiSwapchainVulkan::acquireNextImage(RhiSemaphore* signalSemaphore) -> std::expected<uint32_t, int> {
     auto* sem = static_cast<RhiSemaphoreVulkan*>(signalSemaphore);
-    auto result = vkAcquireNextImageKHR(vkDevice, swapchain, UINT64_MAX, sem->semaphore, VK_NULL_HANDLE, outIndex);
+    uint32_t index;
+    auto result = vkAcquireNextImageKHR(vkDevice, swapchain, UINT64_MAX, sem->semaphore, VK_NULL_HANDLE, &index);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkAcquireNextImageKHR failed: %s(%d)\n", string_VkResult(result), result);
-        return 1;
+        std::println(stderr, "vkAcquireNextImageKHR failed: {}({})", string_VkResult(result), (int) result);
+        return std::unexpected(1);
     }
-    return 0;
+    return index;
 }
 
 auto RhiSwapchainVulkan::destroy() -> void {

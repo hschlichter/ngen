@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
+#include <utility>
 
 enum class RhiBufferUsage : uint32_t {
     TransferSrc = 1 << 0,
@@ -12,11 +14,11 @@ enum class RhiBufferUsage : uint32_t {
 };
 
 inline auto operator|(RhiBufferUsage a, RhiBufferUsage b) -> RhiBufferUsage {
-    return (RhiBufferUsage) ((uint32_t) a | (uint32_t) b);
+    return (RhiBufferUsage) (std::to_underlying(a) | std::to_underlying(b));
 }
 
 inline auto operator&(RhiBufferUsage a, RhiBufferUsage b) -> bool {
-    return ((uint32_t) a & (uint32_t) b) != 0;
+    return (std::to_underlying(a) & std::to_underlying(b)) != 0;
 }
 
 enum class RhiMemoryUsage {
@@ -137,8 +139,7 @@ struct RhiGraphicsPipelineDesc {
     RhiDescriptorSetLayout* descriptorSetLayout;
     RhiRenderPass* renderPass;
     uint32_t vertexStride;
-    const RhiVertexAttribute* vertexAttributes;
-    uint32_t vertexAttributeCount;
+    std::span<const RhiVertexAttribute> vertexAttributes;
     RhiPushConstantRange pushConstant;
     RhiExtent2D viewportExtent;
 };

@@ -6,23 +6,23 @@
 
 #include <SDL3/SDL.h>
 
-#include <cstdio>
+#include <print>
 
 auto main(int argc, char* argv[]) -> int {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <model.gltf>\n", argv[0]);
+        std::println(stderr, "Usage: {} <model.gltf>", argv[0]);
         return 1;
     }
 
     auto scene = loadGltf(argv[1]);
     if (scene.meshes.empty()) {
-        fprintf(stderr, "Failed to load model\n");
+        std::println(stderr, "Failed to load model");
         return 1;
     }
 
     // SDL init and window
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
+        std::println(stderr, "SDL_Init failed: {}", SDL_GetError());
         return 1;
     }
 
@@ -34,20 +34,20 @@ auto main(int argc, char* argv[]) -> int {
     SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, 1);
     auto* window = SDL_CreateWindowWithProperties(windowProps);
     if (window == NULL) {
-        fprintf(stderr, "SDL_CreateWindowWithProperties failed: %s\n", SDL_GetError());
+        std::println(stderr, "SDL_CreateWindowWithProperties failed: {}", SDL_GetError());
         return 1;
     }
     SDL_DestroyProperties(windowProps);
 
     // RHI device
     RhiDeviceVulkan rhiDevice;
-    if (rhiDevice.init(window)) {
+    if (!rhiDevice.init(window)) {
         return 1;
     }
 
     // Renderer
     Renderer renderer;
-    if (renderer.init(&rhiDevice, window)) {
+    if (!renderer.init(&rhiDevice, window)) {
         return 1;
     }
     renderer.uploadScene(scene);
@@ -73,7 +73,7 @@ auto main(int argc, char* argv[]) -> int {
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
             if (ev.type == SDL_EVENT_QUIT) {
-                printf("Quitting\n");
+                std::println("Quitting");
                 quit = true;
             }
 

@@ -7,33 +7,36 @@
 
 #include <SDL3/SDL.h>
 
-#include <cstdio>
 #include <cstring>
+#include <print>
 
 #include <glm/gtc/matrix_transform.hpp>
 
-auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> int {
+auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<void, int> {
+    using enum RhiDescriptorType;
+    using enum RhiFormat;
+
     device = rhiDevice;
 
     swapchain = device->createSwapchain(window);
     if (!swapchain) {
-        return 1;
+        return std::unexpected(1);
     }
 
     vertShader = device->createShaderModule("shaders/triangle.vert.spv");
     fragShader = device->createShaderModule("shaders/triangle.frag.spv");
 
     RhiDescriptorBinding bindings[] = {
-        {.binding = 0, .type = RhiDescriptorType::UniformBuffer, .stage = RhiShaderStage::Vertex},
-        {.binding = 1, .type = RhiDescriptorType::CombinedImageSampler, .stage = RhiShaderStage::Fragment},
+        {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
+        {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
     };
-    descriptorSetLayout = device->createDescriptorSetLayout(bindings, 2);
+    descriptorSetLayout = device->createDescriptorSetLayout(bindings);
 
     RhiVertexAttribute vertexAttrs[] = {
-        {.location = 0, .binding = 0, .format = RhiFormat::R32G32B32_SFLOAT, .offset = offsetof(Vertex, position)},
-        {.location = 1, .binding = 0, .format = RhiFormat::R32G32B32_SFLOAT, .offset = offsetof(Vertex, normal)},
-        {.location = 2, .binding = 0, .format = RhiFormat::R32G32B32_SFLOAT, .offset = offsetof(Vertex, color)},
-        {.location = 3, .binding = 0, .format = RhiFormat::R32G32_SFLOAT, .offset = offsetof(Vertex, texCoord)},
+        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
+        {.location = 1, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, normal)},
+        {.location = 2, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, color)},
+        {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
     };
 
     auto ext = swapchain->extent();
@@ -44,13 +47,12 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> int {
         .renderPass = swapchain->renderPass(),
         .vertexStride = sizeof(Vertex),
         .vertexAttributes = vertexAttrs,
-        .vertexAttributeCount = 4,
         .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(glm::mat4)},
         .viewportExtent = ext,
     };
     pipeline = device->createGraphicsPipeline(pipelineDesc);
     if (!pipeline) {
-        return 1;
+        return std::unexpected(1);
     }
 
     auto imgCount = swapchain->imageCount();
@@ -81,10 +83,13 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> int {
         inflightFences[i] = device->createFence(true);
     }
 
-    return 0;
+    return {};
 }
 
 auto Renderer::uploadScene(const Scene& scene) -> void {
+    using enum RhiDescriptorType;
+    using enum RhiMemoryUsage;
+
     gpuMeshes.resize(scene.meshes.size());
 
     textureSampler = device->createSampler({});
@@ -110,7 +115,7 @@ auto Renderer::uploadScene(const Scene& scene) -> void {
         RhiBufferDesc stagingDesc = {
             .size = vbSize,
             .usage = RhiBufferUsage::TransferSrc,
-            .memory = RhiMemoryUsage::CpuToGpu,
+            .memory = CpuToGpu,
         };
         auto* vStaging = device->createBuffer(stagingDesc);
         auto* data = device->mapBuffer(vStaging);
@@ -120,7 +125,7 @@ auto Renderer::uploadScene(const Scene& scene) -> void {
         RhiBufferDesc vbDesc = {
             .size = vbSize,
             .usage = RhiBufferUsage::TransferDst | RhiBufferUsage::Vertex,
-            .memory = RhiMemoryUsage::GpuOnly,
+            .memory = GpuOnly,
         };
         gm.vertexBuffer = device->createBuffer(vbDesc);
         device->copyBuffer(vStaging, gm.vertexBuffer, vbSize);
@@ -137,7 +142,7 @@ auto Renderer::uploadScene(const Scene& scene) -> void {
         RhiBufferDesc ibDesc = {
             .size = ibSize,
             .usage = RhiBufferUsage::TransferDst | RhiBufferUsage::Index,
-            .memory = RhiMemoryUsage::GpuOnly,
+            .memory = GpuOnly,
         };
         gm.indexBuffer = device->createBuffer(ibDesc);
         device->copyBuffer(iStaging, gm.indexBuffer, ibSize);
@@ -172,10 +177,10 @@ auto Renderer::uploadScene(const Scene& scene) -> void {
     auto totalSets = imgCount * meshCount;
 
     RhiDescriptorBinding bindings[] = {
-        {.binding = 0, .type = RhiDescriptorType::UniformBuffer, .stage = RhiShaderStage::Vertex},
-        {.binding = 1, .type = RhiDescriptorType::CombinedImageSampler, .stage = RhiShaderStage::Fragment},
+        {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
+        {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
     };
-    descriptorPool = device->createDescriptorPool(totalSets, bindings, 2);
+    descriptorPool = device->createDescriptorPool(totalSets, bindings);
     descriptorSets = device->allocateDescriptorSets(descriptorPool, descriptorSetLayout, totalSets);
 
     for (uint32_t i = 0; i < imgCount; i++) {
@@ -183,18 +188,18 @@ auto Renderer::uploadScene(const Scene& scene) -> void {
             RhiDescriptorWrite writes[] = {
                 {
                     .binding = 0,
-                    .type = RhiDescriptorType::UniformBuffer,
+                    .type = UniformBuffer,
                     .buffer = uniformBuffers[i],
                     .bufferRange = sizeof(UniformBufferObject),
                 },
                 {
                     .binding = 1,
-                    .type = RhiDescriptorType::CombinedImageSampler,
+                    .type = CombinedImageSampler,
                     .texture = gpuMeshes[m].texture,
                     .sampler = textureSampler,
                 },
             };
-            device->updateDescriptorSet(descriptorSets[i * meshCount + m], writes, 2);
+            device->updateDescriptorSet(descriptorSets[i * meshCount + m], writes);
         }
     }
 }
@@ -202,8 +207,8 @@ auto Renderer::uploadScene(const Scene& scene) -> void {
 auto Renderer::draw(const Camera& camera, SDL_Window* window) -> void {
     device->waitForFence(inflightFences[currentFrame]);
 
-    uint32_t index;
-    if (swapchain->acquireNextImage(imageAvailableSemaphores[currentFrame], &index)) {
+    auto index = swapchain->acquireNextImage(imageAvailableSemaphores[currentFrame]);
+    if (!index) {
         return;
     }
 
@@ -218,16 +223,16 @@ auto Renderer::draw(const Camera& camera, SDL_Window* window) -> void {
         .view = camera.viewMatrix(),
         .proj = proj,
     };
-    memcpy(uniformBuffersMapped[index], &ubo, sizeof(ubo));
+    memcpy(uniformBuffersMapped[*index], &ubo, sizeof(ubo));
 
-    auto* cmd = cmdBuffers[index];
+    auto* cmd = cmdBuffers[*index];
     cmd->reset();
     cmd->begin();
 
     auto ext = swapchain->extent();
     RhiRenderPassBeginDesc rpDesc = {
         .renderPass = swapchain->renderPass(),
-        .framebuffer = swapchain->framebuffer(index),
+        .framebuffer = swapchain->framebuffer(*index),
         .extent = ext,
         .clearColor = {0.1f, 0.1f, 0.1f, 1.0f},
         .clearDepth = 1.0f,
@@ -242,7 +247,7 @@ auto Renderer::draw(const Camera& camera, SDL_Window* window) -> void {
         cmd->pushConstants(pipeline, RhiShaderStage::Vertex, 0, sizeof(glm::mat4), &model);
         cmd->bindVertexBuffer(gm.vertexBuffer);
         cmd->bindIndexBuffer(gm.indexBuffer);
-        cmd->bindDescriptorSet(pipeline, descriptorSets[index * meshCount + m]);
+        cmd->bindDescriptorSet(pipeline, descriptorSets[*index * meshCount + m]);
         cmd->drawIndexed(gm.indexCount, 1, 0, 0, 0);
     }
 
@@ -255,7 +260,7 @@ auto Renderer::draw(const Camera& camera, SDL_Window* window) -> void {
         .fence = inflightFences[currentFrame],
     };
     device->submitCommandBuffer(cmd, submitInfo);
-    device->present(swapchain, renderFinishedSemaphores[currentFrame], index);
+    device->present(swapchain, renderFinishedSemaphores[currentFrame], *index);
 
     currentFrame = (currentFrame + 1) % swapchain->imageCount();
 }

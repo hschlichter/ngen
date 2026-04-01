@@ -9,7 +9,7 @@
 
 class RhiDeviceVulkan : public RhiDevice {
 public:
-    auto init(SDL_Window* window) -> int override;
+    auto init(SDL_Window* window) -> std::expected<void, int> override;
     auto destroy() -> void override;
     auto waitIdle() -> void override;
 
@@ -19,10 +19,10 @@ public:
     auto createSampler(const RhiSamplerDesc& desc) -> RhiSampler* override;
     auto createShaderModule(const char* filepath) -> RhiShaderModule* override;
     auto createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) -> RhiPipeline* override;
-    auto createDescriptorSetLayout(const RhiDescriptorBinding* bindings, uint32_t count) -> RhiDescriptorSetLayout* override;
-    auto createDescriptorPool(uint32_t maxSets, const RhiDescriptorBinding* bindings, uint32_t bindingCount) -> RhiDescriptorPool* override;
+    auto createDescriptorSetLayout(std::span<const RhiDescriptorBinding> bindings) -> RhiDescriptorSetLayout* override;
+    auto createDescriptorPool(uint32_t maxSets, std::span<const RhiDescriptorBinding> bindings) -> RhiDescriptorPool* override;
     auto allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) -> std::vector<RhiDescriptorSet*> override;
-    auto updateDescriptorSet(RhiDescriptorSet* set, const RhiDescriptorWrite* writes, uint32_t writeCount) -> void override;
+    auto updateDescriptorSet(RhiDescriptorSet* set, std::span<const RhiDescriptorWrite> writes) -> void override;
 
     auto createCommandBuffer() -> RhiCommandBuffer* override;
     auto createSemaphore() -> RhiSemaphore* override;
