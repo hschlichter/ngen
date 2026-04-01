@@ -1,7 +1,9 @@
 #include "types.h"
 #include "sceneloader.h"
 #include "camera.h"
-#include "renderer.h"
+#if defined(__linux__) || defined(_WIN32) || defined(__APPLE__)
+#include "renderervulkan.h"
+#endif
 
 #include <SDL3/SDL.h>
 
@@ -39,9 +41,13 @@ int main(int argc, char* argv[]) {
     SDL_DestroyProperties(windowProps);
 
     // Renderer
-    Renderer renderer;
-    if (renderer.init(window)) return 1;
-    renderer.uploadScene(scene);
+#if defined(__linux__) || defined(_WIN32) || defined(__APPLE__)
+    Renderer* renderer = new RendererVulkan();
+#else
+    #error "No renderer backend for this platform"
+#endif
+    if (renderer->init(window)) return 1;
+    renderer->uploadScene(scene);
 
     // Camera
     Camera cam = {
@@ -80,10 +86,11 @@ int main(int argc, char* argv[]) {
 
         const bool* keys = SDL_GetKeyboardState(NULL);
         cam.update(keys, dt);
-        renderer.render(cam, window);
+        renderer->render(cam, window);
     }
 
-    renderer.destroy();
+    renderer->destroy();
+    delete renderer;
     SDL_DestroyWindow(window);
     SDL_Quit();
 

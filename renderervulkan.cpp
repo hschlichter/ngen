@@ -1,4 +1,4 @@
-#include "renderer.h"
+#include "renderervulkan.h"
 #include "types.h"
 #include "camera.h"
 
@@ -11,22 +11,15 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
-struct UniformBufferObject {
-    glm::mat4 view;
-    glm::mat4 proj;
-};
-
-int Renderer::init(SDL_Window* window) {
+int RendererVulkan::init(SDL_Window* window) {
     if (dev.init(window)) return 1;
     if (swapchain.init(dev, window)) return 1;
 
     VkResult result;
 
-    // Create shader modules
     vertShader = dev.loadShaderModule("shaders/triangle.vert.spv");
     fragShader = dev.loadShaderModule("shaders/triangle.frag.spv");
 
-    // Create graphics pipeline
     VkPipelineShaderStageCreateInfo stages[2] = {
         {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -111,7 +104,6 @@ int Renderer::init(SDL_Window* window) {
         .pAttachments = &colorBlendAttachment,
     };
 
-    // Descriptor set layout
     VkDescriptorSetLayoutBinding layoutBindings[] = {
         { .binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_VERTEX_BIT },
         { .binding = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT },
@@ -169,7 +161,6 @@ int Renderer::init(SDL_Window* window) {
         return 1;
     }
 
-    // Uniform buffers (one per swapchain image)
     uniformBuffers.resize(swapchain.imageCount);
     uniformBuffersMemory.resize(swapchain.imageCount);
     uniformBuffersMapped.resize(swapchain.imageCount);
@@ -182,7 +173,6 @@ int Renderer::init(SDL_Window* window) {
         vkMapMemory(dev.device, uniformBuffersMemory[i], 0, sizeof(UniformBufferObject), 0, &uniformBuffersMapped[i]);
     }
 
-    // Command buffers
     cmdBuffers.resize(swapchain.imageCount);
     VkCommandBufferAllocateInfo allocInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -196,7 +186,6 @@ int Renderer::init(SDL_Window* window) {
         return 1;
     }
 
-    // Sync objects (per swapchain image)
     imageAvailableSemaphores.resize(swapchain.imageCount);
     renderFinishedSemaphores.resize(swapchain.imageCount);
     inflightFences.resize(swapchain.imageCount);
@@ -216,10 +205,10 @@ int Renderer::init(SDL_Window* window) {
     return 0;
 }
 
-void Renderer::uploadScene(const Scene& scene) {
+void RendererVulkan::uploadScene(const Scene& scene) {
+
     gpuMeshes.resize(scene.meshes.size());
 
-    // Shared sampler
     {
         VkSamplerCreateInfo samplerInfo = {
             .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -233,7 +222,6 @@ void Renderer::uploadScene(const Scene& scene) {
         vkCreateSampler(dev.device, &samplerInfo, NULL, &textureSampler);
     }
 
-    // Fallback checkerboard texture
     std::vector<uint8_t> fallbackPixels(64 * 64 * 4);
     for (uint32_t y = 0; y < 64; y++)
         for (uint32_t x = 0; x < 64; x++) {
@@ -249,7 +237,6 @@ void Renderer::uploadScene(const Scene& scene) {
         gm.transform = md.transform;
         gm.indexCount = (uint32_t)md.indices.size();
 
-        // Vertex buffer
         VkDeviceSize vbSize = md.vertices.size() * sizeof(Vertex);
         VkBuffer vStaging; VkDeviceMemory vStagingMem;
         dev.createBuffer(vbSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -264,7 +251,6 @@ void Renderer::uploadScene(const Scene& scene) {
         dev.copyBuffer(vStaging, gm.vertexBuffer, vbSize);
         vkDestroyBuffer(dev.device, vStaging, NULL); vkFreeMemory(dev.device, vStagingMem, NULL);
 
-        // Index buffer
         VkDeviceSize ibSize = md.indices.size() * sizeof(uint32_t);
         VkBuffer iStaging; VkDeviceMemory iStagingMem;
         dev.createBuffer(ibSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -278,7 +264,6 @@ void Renderer::uploadScene(const Scene& scene) {
         dev.copyBuffer(iStaging, gm.indexBuffer, ibSize);
         vkDestroyBuffer(dev.device, iStaging, NULL); vkFreeMemory(dev.device, iStagingMem, NULL);
 
-        // Texture
         uint32_t tw, th; const uint8_t* texPtr;
         if (!md.texPixels.empty()) { tw = md.texWidth; th = md.texHeight; texPtr = md.texPixels.data(); }
         else { tw = 64; th = 64; texPtr = fallbackPixels.data(); }
@@ -337,7 +322,6 @@ void Renderer::uploadScene(const Scene& scene) {
         vkCreateImageView(dev.device, &tvInfo, NULL, &gm.textureView);
     }
 
-    // Descriptor pool and sets — one set per frame per mesh
     uint32_t meshCount = (uint32_t)gpuMeshes.size();
     uint32_t totalSets = swapchain.imageCount * meshCount;
     VkDescriptorPoolSize poolSizes[] = {
@@ -397,49 +381,35 @@ void Renderer::uploadScene(const Scene& scene) {
     }
 }
 
-void Renderer::render(const Camera& camera, SDL_Window* window) {
+void RendererVulkan::render(const Camera& camera, SDL_Window* window) {
+
     VkResult result;
 
     result = vkWaitForFences(dev.device, 1, &inflightFences[currentFrame], VK_TRUE, UINT64_MAX);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkWaitForFences failed: %s(%d)\n", string_VkResult(result), result);
-        return;
-    }
+    if (result != VK_SUCCESS) { fprintf(stderr, "vkWaitForFences failed: %s(%d)\n", string_VkResult(result), result); return; }
 
     uint32_t index;
     result = vkAcquireNextImageKHR(dev.device, swapchain.swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &index);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkAcquireNextImageKHR failed: %s(%d)\n", string_VkResult(result), result);
-        return;
-    }
+    if (result != VK_SUCCESS) { fprintf(stderr, "vkAcquireNextImageKHR failed: %s(%d)\n", string_VkResult(result), result); return; }
 
     result = vkResetFences(dev.device, 1, &inflightFences[currentFrame]);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkResetFences failed: %s(%d)\n", string_VkResult(result), result);
-        return;
-    }
+    if (result != VK_SUCCESS) { fprintf(stderr, "vkResetFences failed: %s(%d)\n", string_VkResult(result), result); return; }
 
-    // Update uniform buffer
     int winW, winH;
     SDL_GetWindowSizeInPixels(window, &winW, &winH);
     float aspect = (float)winW / (float)winH;
     glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
-    proj[1][1] *= -1.0f; // Flip Y for Vulkan clip coordinates
+    proj[1][1] *= -1.0f;
     UniformBufferObject ubo = {
         .view = camera.viewMatrix(),
         .proj = proj,
     };
     memcpy(uniformBuffersMapped[index], &ubo, sizeof(ubo));
 
-    // Record command buffer
     vkResetCommandBuffer(cmdBuffers[index], 0);
 
     VkCommandBufferBeginInfo begin = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-    result = vkBeginCommandBuffer(cmdBuffers[index], &begin);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkBeginCommandBuffer failed: %s(%d)\n", string_VkResult(result), result);
-        return;
-    }
+    vkBeginCommandBuffer(cmdBuffers[index], &begin);
 
     VkClearValue clearValues[2] = {};
     clearValues[0].color = { { 0.1f, 0.1f, 0.1f, 1.0f } };
@@ -485,11 +455,7 @@ void Renderer::render(const Camera& camera, SDL_Window* window) {
         .pSignalSemaphores = &renderFinishedSemaphores[currentFrame],
     };
 
-    result = vkQueueSubmit(dev.graphicsQueue, 1, &submit, inflightFences[currentFrame]);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "vkQueueSubmit failed: %s(%d)\n", string_VkResult(result), result);
-        return;
-    }
+    vkQueueSubmit(dev.graphicsQueue, 1, &submit, inflightFences[currentFrame]);
 
     VkPresentInfoKHR present = {
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -501,11 +467,10 @@ void Renderer::render(const Camera& camera, SDL_Window* window) {
     };
 
     vkQueuePresentKHR(dev.graphicsQueue, &present);
-
     currentFrame = (currentFrame + 1) % swapchain.imageCount;
 }
 
-void Renderer::destroy() {
+void RendererVulkan::destroy() {
     vkDeviceWaitIdle(dev.device);
 
     vkDestroyDescriptorPool(dev.device, descriptorPool, NULL);
