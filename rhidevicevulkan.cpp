@@ -9,7 +9,7 @@
 #include <cstring>
 #include <vector>
 
-VkBufferUsageFlags RhiDeviceVulkan::toVkBufferUsage(RhiBufferUsage usage) {
+auto RhiDeviceVulkan::toVkBufferUsage(RhiBufferUsage usage) -> VkBufferUsageFlags {
     VkBufferUsageFlags flags = 0;
     if (usage & RhiBufferUsage::TransferSrc) {
         flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
@@ -29,7 +29,7 @@ VkBufferUsageFlags RhiDeviceVulkan::toVkBufferUsage(RhiBufferUsage usage) {
     return flags;
 }
 
-VkMemoryPropertyFlags RhiDeviceVulkan::toVkMemoryProps(RhiMemoryUsage usage) {
+auto RhiDeviceVulkan::toVkMemoryProps(RhiMemoryUsage usage) -> VkMemoryPropertyFlags {
     switch (usage) {
         case RhiMemoryUsage::GpuOnly:
             return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -39,7 +39,7 @@ VkMemoryPropertyFlags RhiDeviceVulkan::toVkMemoryProps(RhiMemoryUsage usage) {
     return 0;
 }
 
-VkFormat RhiDeviceVulkan::toVkFormat(RhiFormat format) {
+auto RhiDeviceVulkan::toVkFormat(RhiFormat format) -> VkFormat {
     switch (format) {
         case RhiFormat::R32G32_SFLOAT:
             return VK_FORMAT_R32G32_SFLOAT;
@@ -53,7 +53,7 @@ VkFormat RhiDeviceVulkan::toVkFormat(RhiFormat format) {
     return VK_FORMAT_UNDEFINED;
 }
 
-VkShaderStageFlags RhiDeviceVulkan::toVkShaderStage(RhiShaderStage stage) {
+auto RhiDeviceVulkan::toVkShaderStage(RhiShaderStage stage) -> VkShaderStageFlags {
     VkShaderStageFlags flags = 0;
     if ((uint32_t) stage & (uint32_t) RhiShaderStage::Vertex) {
         flags |= VK_SHADER_STAGE_VERTEX_BIT;
@@ -64,7 +64,7 @@ VkShaderStageFlags RhiDeviceVulkan::toVkShaderStage(RhiShaderStage stage) {
     return flags;
 }
 
-uint32_t RhiDeviceVulkan::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+auto RhiDeviceVulkan::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t {
     VkPhysicalDeviceMemoryProperties memProps;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
     for (uint32_t i = 0; i < memProps.memoryTypeCount; i++) {
@@ -76,7 +76,7 @@ uint32_t RhiDeviceVulkan::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFl
     return UINT32_MAX;
 }
 
-void RhiDeviceVulkan::transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) {
+auto RhiDeviceVulkan::transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) -> void {
     VkCommandBufferAllocateInfo allocInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .commandPool = cmdPool,
@@ -138,9 +138,9 @@ void RhiDeviceVulkan::transitionImageLayout(VkImage image, VkImageLayout oldLayo
     vkFreeCommandBuffers(device, cmdPool, 1, &cmd);
 }
 
-int RhiDeviceVulkan::init(SDL_Window* window) {
+auto RhiDeviceVulkan::init(SDL_Window* window) -> int {
     uint32_t apiVersion = VK_API_VERSION_1_0;
-    VkResult result = vkEnumerateInstanceVersion(&apiVersion);
+    auto result = vkEnumerateInstanceVersion(&apiVersion);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkEnumerateInstanceVersion failed: %s(%d)\n", string_VkResult(result), result);
         return 1;
@@ -158,7 +158,7 @@ int RhiDeviceVulkan::init(SDL_Window* window) {
     };
 
     uint32_t extensionsCount = 0;
-    const char* const* extensions = SDL_Vulkan_GetInstanceExtensions(&extensionsCount);
+    const auto* const* extensions = SDL_Vulkan_GetInstanceExtensions(&extensionsCount);
     for (uint32_t i = 0; i < extensionsCount; i++) {
         printf("%s\n", extensions[i]);
     }
@@ -245,7 +245,7 @@ int RhiDeviceVulkan::init(SDL_Window* window) {
         "VK_KHR_portability_subset",
 #endif
     };
-    uint32_t deviceExtensionCount = sizeof(deviceExtensions) / sizeof(deviceExtensions[0]);
+    auto deviceExtensionCount = (uint32_t) (sizeof(deviceExtensions) / sizeof(deviceExtensions[0]));
 
     VkDeviceCreateInfo deviceCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -277,18 +277,18 @@ int RhiDeviceVulkan::init(SDL_Window* window) {
     return 0;
 }
 
-void RhiDeviceVulkan::destroy() {
+auto RhiDeviceVulkan::destroy() -> void {
     vkDestroyCommandPool(device, cmdPool, NULL);
     vkDestroyDevice(device, NULL);
     vkDestroySurfaceKHR(instance, surface, NULL);
     vkDestroyInstance(instance, NULL);
 }
 
-void RhiDeviceVulkan::waitIdle() {
+auto RhiDeviceVulkan::waitIdle() -> void {
     vkDeviceWaitIdle(device);
 }
 
-RhiSwapchain* RhiDeviceVulkan::createSwapchain(SDL_Window* window) {
+auto RhiDeviceVulkan::createSwapchain(SDL_Window* window) -> RhiSwapchain* {
     auto* sc = new RhiSwapchainVulkan();
     if (sc->init(physicalDevice, device, surface, queueFamilyIndex, window)) {
         delete sc;
@@ -297,7 +297,7 @@ RhiSwapchain* RhiDeviceVulkan::createSwapchain(SDL_Window* window) {
     return sc;
 }
 
-RhiBuffer* RhiDeviceVulkan::createBuffer(const RhiBufferDesc& desc) {
+auto RhiDeviceVulkan::createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* {
     VkBufferCreateInfo bufferInfo = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = desc.size,
@@ -306,7 +306,7 @@ RhiBuffer* RhiDeviceVulkan::createBuffer(const RhiBufferDesc& desc) {
     };
 
     auto* buf = new RhiBufferVulkan();
-    VkResult result = vkCreateBuffer(device, &bufferInfo, NULL, &buf->buffer);
+    auto result = vkCreateBuffer(device, &bufferInfo, NULL, &buf->buffer);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkCreateBuffer failed: %s(%d)\n", string_VkResult(result), result);
         delete buf;
@@ -316,7 +316,7 @@ RhiBuffer* RhiDeviceVulkan::createBuffer(const RhiBufferDesc& desc) {
     VkMemoryRequirements memReqs;
     vkGetBufferMemoryRequirements(device, buf->buffer, &memReqs);
 
-    uint32_t memTypeIndex = findMemoryType(memReqs.memoryTypeBits, toVkMemoryProps(desc.memory));
+    auto memTypeIndex = findMemoryType(memReqs.memoryTypeBits, toVkMemoryProps(desc.memory));
     if (memTypeIndex == UINT32_MAX) {
         vkDestroyBuffer(device, buf->buffer, NULL);
         delete buf;
@@ -348,7 +348,7 @@ RhiBuffer* RhiDeviceVulkan::createBuffer(const RhiBufferDesc& desc) {
     return buf;
 }
 
-RhiTexture* RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) {
+auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {
     auto* tex = new RhiTextureVulkan();
 
     VkImageCreateInfo imageInfo = {
@@ -364,7 +364,7 @@ RhiTexture* RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) {
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     };
-    VkResult result = vkCreateImage(device, &imageInfo, NULL, &tex->image);
+    auto result = vkCreateImage(device, &imageInfo, NULL, &tex->image);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkCreateImage failed: %s(%d)\n", string_VkResult(result), result);
         delete tex;
@@ -387,7 +387,7 @@ RhiTexture* RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) {
             .usage = RhiBufferUsage::TransferSrc,
             .memory = RhiMemoryUsage::CpuToGpu,
         };
-        RhiBuffer* staging = createBuffer(stagingDesc);
+        auto* staging = createBuffer(stagingDesc);
         auto* stagingVk = static_cast<RhiBufferVulkan*>(staging);
 
         void* data;
@@ -451,7 +451,7 @@ RhiTexture* RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) {
     return tex;
 }
 
-RhiSampler* RhiDeviceVulkan::createSampler(const RhiSamplerDesc& desc) {
+auto RhiDeviceVulkan::createSampler(const RhiSamplerDesc& desc) -> RhiSampler* {
     (void) desc;
     auto* sampler = new RhiSamplerVulkan();
     VkSamplerCreateInfo samplerInfo = {
@@ -467,18 +467,18 @@ RhiSampler* RhiDeviceVulkan::createSampler(const RhiSamplerDesc& desc) {
     return sampler;
 }
 
-RhiShaderModule* RhiDeviceVulkan::createShaderModule(const char* filepath) {
-    FILE* file = fopen(filepath, "rb");
+auto RhiDeviceVulkan::createShaderModule(const char* filepath) -> RhiShaderModule* {
+    auto* file = fopen(filepath, "rb");
     if (!file) {
         fprintf(stderr, "Failed to open shader file: %s\n", filepath);
         return nullptr;
     }
 
     fseek(file, 0, SEEK_END);
-    size_t size = ftell(file);
+    auto size = (size_t) ftell(file);
     rewind(file);
 
-    uint32_t* code = (uint32_t*) malloc(size);
+    auto* code = (uint32_t*) malloc(size);
     fread(code, 1, size, file);
     fclose(file);
 
@@ -489,7 +489,7 @@ RhiShaderModule* RhiDeviceVulkan::createShaderModule(const char* filepath) {
     };
 
     auto* sm = new RhiShaderModuleVulkan();
-    VkResult result = vkCreateShaderModule(device, &createInfo, NULL, &sm->module);
+    auto result = vkCreateShaderModule(device, &createInfo, NULL, &sm->module);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkCreateShaderModule failed: %s(%d)\n", string_VkResult(result), result);
         free(code);
@@ -502,7 +502,7 @@ RhiShaderModule* RhiDeviceVulkan::createShaderModule(const char* filepath) {
     return sm;
 }
 
-RhiPipeline* RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) {
+auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) -> RhiPipeline* {
     auto* vertMod = static_cast<RhiShaderModuleVulkan*>(desc.vertexShader);
     auto* fragMod = static_cast<RhiShaderModuleVulkan*>(desc.fragmentShader);
     auto* dsLayout = static_cast<RhiDescriptorSetLayoutVulkan*>(desc.descriptorSetLayout);
@@ -609,7 +609,7 @@ RhiPipeline* RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDe
 
     auto* pip = new RhiPipelineVulkan();
 
-    VkResult result = vkCreatePipelineLayout(device, &layoutInfo, NULL, &pip->layout);
+    auto result = vkCreatePipelineLayout(device, &layoutInfo, NULL, &pip->layout);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkCreatePipelineLayout failed: %s(%d)\n", string_VkResult(result), result);
         delete pip;
@@ -642,11 +642,11 @@ RhiPipeline* RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDe
     return pip;
 }
 
-RhiDescriptorSetLayout* RhiDeviceVulkan::createDescriptorSetLayout(const RhiDescriptorBinding* bindings, uint32_t count) {
+auto RhiDeviceVulkan::createDescriptorSetLayout(const RhiDescriptorBinding* bindings, uint32_t count) -> RhiDescriptorSetLayout* {
 
     std::vector<VkDescriptorSetLayoutBinding> vkBindings(count);
     for (uint32_t i = 0; i < count; i++) {
-        VkDescriptorType type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        auto type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         if (bindings[i].type == RhiDescriptorType::CombinedImageSampler) {
             type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         }
@@ -666,7 +666,7 @@ RhiDescriptorSetLayout* RhiDeviceVulkan::createDescriptorSetLayout(const RhiDesc
     };
 
     auto* layout = new RhiDescriptorSetLayoutVulkan();
-    VkResult result = vkCreateDescriptorSetLayout(device, &layoutInfo, NULL, &layout->layout);
+    auto result = vkCreateDescriptorSetLayout(device, &layoutInfo, NULL, &layout->layout);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkCreateDescriptorSetLayout failed: %s(%d)\n", string_VkResult(result), result);
         delete layout;
@@ -675,11 +675,11 @@ RhiDescriptorSetLayout* RhiDeviceVulkan::createDescriptorSetLayout(const RhiDesc
     return layout;
 }
 
-RhiDescriptorPool* RhiDeviceVulkan::createDescriptorPool(uint32_t maxSets, const RhiDescriptorBinding* bindings, uint32_t bindingCount) {
+auto RhiDeviceVulkan::createDescriptorPool(uint32_t maxSets, const RhiDescriptorBinding* bindings, uint32_t bindingCount) -> RhiDescriptorPool* {
 
     std::vector<VkDescriptorPoolSize> poolSizes(bindingCount);
     for (uint32_t i = 0; i < bindingCount; i++) {
-        VkDescriptorType type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        auto type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         if (bindings[i].type == RhiDescriptorType::CombinedImageSampler) {
             type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         }
@@ -698,7 +698,7 @@ RhiDescriptorPool* RhiDeviceVulkan::createDescriptorPool(uint32_t maxSets, const
     return pool;
 }
 
-std::vector<RhiDescriptorSet*> RhiDeviceVulkan::allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) {
+auto RhiDeviceVulkan::allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) -> std::vector<RhiDescriptorSet*> {
 
     auto* vkPool = static_cast<RhiDescriptorPoolVulkan*>(pool);
     auto* vkLayout = static_cast<RhiDescriptorSetLayoutVulkan*>(layout);
@@ -723,7 +723,7 @@ std::vector<RhiDescriptorSet*> RhiDeviceVulkan::allocateDescriptorSets(RhiDescri
     return result;
 }
 
-void RhiDeviceVulkan::updateDescriptorSet(RhiDescriptorSet* set, const RhiDescriptorWrite* writes, uint32_t writeCount) {
+auto RhiDeviceVulkan::updateDescriptorSet(RhiDescriptorSet* set, const RhiDescriptorWrite* writes, uint32_t writeCount) -> void {
 
     auto* vkSet = static_cast<RhiDescriptorSetVulkan*>(set);
 
@@ -760,7 +760,7 @@ void RhiDeviceVulkan::updateDescriptorSet(RhiDescriptorSet* set, const RhiDescri
     vkUpdateDescriptorSets(device, writeCount, vkWrites.data(), 0, NULL);
 }
 
-RhiCommandBuffer* RhiDeviceVulkan::createCommandBuffer() {
+auto RhiDeviceVulkan::createCommandBuffer() -> RhiCommandBuffer* {
     auto* cb = new RhiCommandBufferVulkan();
     VkCommandBufferAllocateInfo allocInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -768,7 +768,7 @@ RhiCommandBuffer* RhiDeviceVulkan::createCommandBuffer() {
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = 1,
     };
-    VkResult result = vkAllocateCommandBuffers(device, &allocInfo, &cb->cmd);
+    auto result = vkAllocateCommandBuffers(device, &allocInfo, &cb->cmd);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkAllocateCommandBuffers failed: %s(%d)\n", string_VkResult(result), result);
         delete cb;
@@ -777,10 +777,10 @@ RhiCommandBuffer* RhiDeviceVulkan::createCommandBuffer() {
     return cb;
 }
 
-RhiSemaphore* RhiDeviceVulkan::createSemaphore() {
+auto RhiDeviceVulkan::createSemaphore() -> RhiSemaphore* {
     auto* sem = new RhiSemaphoreVulkan();
     VkSemaphoreCreateInfo info = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-    VkResult result = vkCreateSemaphore(device, &info, NULL, &sem->semaphore);
+    auto result = vkCreateSemaphore(device, &info, NULL, &sem->semaphore);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkCreateSemaphore failed: %s(%d)\n", string_VkResult(result), result);
         delete sem;
@@ -789,13 +789,13 @@ RhiSemaphore* RhiDeviceVulkan::createSemaphore() {
     return sem;
 }
 
-RhiFence* RhiDeviceVulkan::createFence(bool signaled) {
+auto RhiDeviceVulkan::createFence(bool signaled) -> RhiFence* {
     auto* fence = new RhiFenceVulkan();
     VkFenceCreateInfo info = {
         .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
         .flags = signaled ? VK_FENCE_CREATE_SIGNALED_BIT : 0u,
     };
-    VkResult result = vkCreateFence(device, &info, NULL, &fence->fence);
+    auto result = vkCreateFence(device, &info, NULL, &fence->fence);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkCreateFence failed: %s(%d)\n", string_VkResult(result), result);
         delete fence;
@@ -804,17 +804,17 @@ RhiFence* RhiDeviceVulkan::createFence(bool signaled) {
     return fence;
 }
 
-void RhiDeviceVulkan::waitForFence(RhiFence* fence) {
+auto RhiDeviceVulkan::waitForFence(RhiFence* fence) -> void {
     auto* f = static_cast<RhiFenceVulkan*>(fence);
     vkWaitForFences(device, 1, &f->fence, VK_TRUE, UINT64_MAX);
 }
 
-void RhiDeviceVulkan::resetFence(RhiFence* fence) {
+auto RhiDeviceVulkan::resetFence(RhiFence* fence) -> void {
     auto* f = static_cast<RhiFenceVulkan*>(fence);
     vkResetFences(device, 1, &f->fence);
 }
 
-void RhiDeviceVulkan::submitCommandBuffer(RhiCommandBuffer* cmd, const RhiSubmitInfo& info) {
+auto RhiDeviceVulkan::submitCommandBuffer(RhiCommandBuffer* cmd, const RhiSubmitInfo& info) -> void {
     auto* cb = static_cast<RhiCommandBufferVulkan*>(cmd);
     auto* waitSem = static_cast<RhiSemaphoreVulkan*>(info.waitSemaphore);
     auto* signalSem = static_cast<RhiSemaphoreVulkan*>(info.signalSemaphore);
@@ -835,7 +835,7 @@ void RhiDeviceVulkan::submitCommandBuffer(RhiCommandBuffer* cmd, const RhiSubmit
     vkQueueSubmit(graphicsQueue, 1, &submit, fence ? fence->fence : VK_NULL_HANDLE);
 }
 
-void RhiDeviceVulkan::present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) {
+auto RhiDeviceVulkan::present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) -> void {
     auto* sc = static_cast<RhiSwapchainVulkan*>(swapchain);
     auto* sem = static_cast<RhiSemaphoreVulkan*>(waitSemaphore);
 
@@ -851,19 +851,19 @@ void RhiDeviceVulkan::present(RhiSwapchain* swapchain, RhiSemaphore* waitSemapho
     vkQueuePresentKHR(graphicsQueue, &presentInfo);
 }
 
-void* RhiDeviceVulkan::mapBuffer(RhiBuffer* buffer) {
+auto RhiDeviceVulkan::mapBuffer(RhiBuffer* buffer) -> void* {
     auto* buf = static_cast<RhiBufferVulkan*>(buffer);
     void* data;
     vkMapMemory(device, buf->memory, 0, VK_WHOLE_SIZE, 0, &data);
     return data;
 }
 
-void RhiDeviceVulkan::unmapBuffer(RhiBuffer* buffer) {
+auto RhiDeviceVulkan::unmapBuffer(RhiBuffer* buffer) -> void {
     auto* buf = static_cast<RhiBufferVulkan*>(buffer);
     vkUnmapMemory(device, buf->memory);
 }
 
-void RhiDeviceVulkan::copyBuffer(RhiBuffer* src, RhiBuffer* dst, uint64_t size) {
+auto RhiDeviceVulkan::copyBuffer(RhiBuffer* src, RhiBuffer* dst, uint64_t size) -> void {
     auto* srcBuf = static_cast<RhiBufferVulkan*>(src);
     auto* dstBuf = static_cast<RhiBufferVulkan*>(dst);
 
@@ -895,14 +895,14 @@ void RhiDeviceVulkan::copyBuffer(RhiBuffer* src, RhiBuffer* dst, uint64_t size) 
     vkFreeCommandBuffers(device, cmdPool, 1, &cmd);
 }
 
-void RhiDeviceVulkan::destroyBuffer(RhiBuffer* buffer) {
+auto RhiDeviceVulkan::destroyBuffer(RhiBuffer* buffer) -> void {
     auto* b = static_cast<RhiBufferVulkan*>(buffer);
     vkDestroyBuffer(device, b->buffer, NULL);
     vkFreeMemory(device, b->memory, NULL);
     delete b;
 }
 
-void RhiDeviceVulkan::destroyTexture(RhiTexture* texture) {
+auto RhiDeviceVulkan::destroyTexture(RhiTexture* texture) -> void {
     auto* t = static_cast<RhiTextureVulkan*>(texture);
     vkDestroyImageView(device, t->view, NULL);
     vkDestroyImage(device, t->image, NULL);
@@ -910,50 +910,50 @@ void RhiDeviceVulkan::destroyTexture(RhiTexture* texture) {
     delete t;
 }
 
-void RhiDeviceVulkan::destroySampler(RhiSampler* sampler) {
+auto RhiDeviceVulkan::destroySampler(RhiSampler* sampler) -> void {
     auto* s = static_cast<RhiSamplerVulkan*>(sampler);
     vkDestroySampler(device, s->sampler, NULL);
     delete s;
 }
 
-void RhiDeviceVulkan::destroyShaderModule(RhiShaderModule* module) {
+auto RhiDeviceVulkan::destroyShaderModule(RhiShaderModule* module) -> void {
     auto* m = static_cast<RhiShaderModuleVulkan*>(module);
     vkDestroyShaderModule(device, m->module, NULL);
     delete m;
 }
 
-void RhiDeviceVulkan::destroyPipeline(RhiPipeline* pipeline) {
+auto RhiDeviceVulkan::destroyPipeline(RhiPipeline* pipeline) -> void {
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
     vkDestroyPipeline(device, p->pipeline, NULL);
     vkDestroyPipelineLayout(device, p->layout, NULL);
     delete p;
 }
 
-void RhiDeviceVulkan::destroyDescriptorSetLayout(RhiDescriptorSetLayout* layout) {
+auto RhiDeviceVulkan::destroyDescriptorSetLayout(RhiDescriptorSetLayout* layout) -> void {
     auto* l = static_cast<RhiDescriptorSetLayoutVulkan*>(layout);
     vkDestroyDescriptorSetLayout(device, l->layout, NULL);
     delete l;
 }
 
-void RhiDeviceVulkan::destroyDescriptorPool(RhiDescriptorPool* pool) {
+auto RhiDeviceVulkan::destroyDescriptorPool(RhiDescriptorPool* pool) -> void {
     auto* p = static_cast<RhiDescriptorPoolVulkan*>(pool);
     vkDestroyDescriptorPool(device, p->pool, NULL);
     delete p;
 }
 
-void RhiDeviceVulkan::destroySemaphore(RhiSemaphore* semaphore) {
+auto RhiDeviceVulkan::destroySemaphore(RhiSemaphore* semaphore) -> void {
     auto* s = static_cast<RhiSemaphoreVulkan*>(semaphore);
     vkDestroySemaphore(device, s->semaphore, NULL);
     delete s;
 }
 
-void RhiDeviceVulkan::destroyFence(RhiFence* fence) {
+auto RhiDeviceVulkan::destroyFence(RhiFence* fence) -> void {
     auto* f = static_cast<RhiFenceVulkan*>(fence);
     vkDestroyFence(device, f->fence, NULL);
     delete f;
 }
 
-void RhiDeviceVulkan::destroyCommandBuffer(RhiCommandBuffer* cmd) {
+auto RhiDeviceVulkan::destroyCommandBuffer(RhiCommandBuffer* cmd) -> void {
     auto* cb = static_cast<RhiCommandBufferVulkan*>(cmd);
     vkFreeCommandBuffers(device, cmdPool, 1, &cb->cmd);
     delete cb;

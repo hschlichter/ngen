@@ -6,7 +6,7 @@
 
 #include <cstdio>
 
-uint32_t RhiSwapchainVulkan::findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+auto RhiSwapchainVulkan::findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t {
     VkPhysicalDeviceMemoryProperties memProps;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
     for (uint32_t i = 0; i < memProps.memoryTypeCount; i++) {
@@ -18,7 +18,7 @@ uint32_t RhiSwapchainVulkan::findMemoryType(VkPhysicalDevice physicalDevice, uin
     return UINT32_MAX;
 }
 
-int RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, SDL_Window* window) {
+auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, SDL_Window* window) -> int {
     vkDevice = device;
     VkResult result;
 
@@ -43,7 +43,7 @@ int RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, V
         return 1;
     }
 
-    VkSurfaceFormatKHR format = formats[0];
+    auto format = formats[0];
 
     {
         int w, h;
@@ -120,7 +120,7 @@ int RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, V
     }
 
     // Depth image
-    VkFormat depthFormat = VK_FORMAT_D32_SFLOAT;
+    auto depthFormat = VK_FORMAT_D32_SFLOAT;
 
     VkImageCreateInfo depthImageInfo = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -145,7 +145,7 @@ int RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, V
     VkMemoryRequirements depthMemReqs;
     vkGetImageMemoryRequirements(device, depthImage, &depthMemReqs);
 
-    uint32_t depthMemType = findMemoryType(physicalDevice, depthMemReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    auto depthMemType = findMemoryType(physicalDevice, depthMemReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (depthMemType == UINT32_MAX) {
         return 1;
     }
@@ -259,9 +259,9 @@ int RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, V
     return 0;
 }
 
-int RhiSwapchainVulkan::acquireNextImage(RhiSemaphore* signalSemaphore, uint32_t* outIndex) {
+auto RhiSwapchainVulkan::acquireNextImage(RhiSemaphore* signalSemaphore, uint32_t* outIndex) -> int {
     auto* sem = static_cast<RhiSemaphoreVulkan*>(signalSemaphore);
-    VkResult result = vkAcquireNextImageKHR(vkDevice, swapchain, UINT64_MAX, sem->semaphore, VK_NULL_HANDLE, outIndex);
+    auto result = vkAcquireNextImageKHR(vkDevice, swapchain, UINT64_MAX, sem->semaphore, VK_NULL_HANDLE, outIndex);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkAcquireNextImageKHR failed: %s(%d)\n", string_VkResult(result), result);
         return 1;
@@ -269,7 +269,7 @@ int RhiSwapchainVulkan::acquireNextImage(RhiSemaphore* signalSemaphore, uint32_t
     return 0;
 }
 
-void RhiSwapchainVulkan::destroy() {
+auto RhiSwapchainVulkan::destroy() -> void {
     vkDestroyImageView(vkDevice, depthImageView, NULL);
     vkDestroyImage(vkDevice, depthImage, NULL);
     vkFreeMemory(vkDevice, depthMemory, NULL);

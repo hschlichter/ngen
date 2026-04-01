@@ -12,42 +12,42 @@ class RhiDevice {
 public:
     virtual ~RhiDevice() = default;
 
-    virtual int init(SDL_Window* window) = 0;
-    virtual void destroy() = 0;
-    virtual void waitIdle() = 0;
+    virtual auto init(SDL_Window* window) -> int = 0;
+    virtual auto destroy() -> void = 0;
+    virtual auto waitIdle() -> void = 0;
 
-    virtual RhiSwapchain* createSwapchain(SDL_Window* window) = 0;
-    virtual RhiBuffer* createBuffer(const RhiBufferDesc& desc) = 0;
-    virtual RhiTexture* createTexture(const RhiTextureDesc& desc) = 0;
-    virtual RhiSampler* createSampler(const RhiSamplerDesc& desc) = 0;
-    virtual RhiShaderModule* createShaderModule(const char* filepath) = 0;
-    virtual RhiPipeline* createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) = 0;
-    virtual RhiDescriptorSetLayout* createDescriptorSetLayout(const RhiDescriptorBinding* bindings, uint32_t count) = 0;
-    virtual RhiDescriptorPool* createDescriptorPool(uint32_t maxSets, const RhiDescriptorBinding* bindings, uint32_t bindingCount) = 0;
-    virtual std::vector<RhiDescriptorSet*> allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) = 0;
-    virtual void updateDescriptorSet(RhiDescriptorSet* set, const RhiDescriptorWrite* writes, uint32_t writeCount) = 0;
+    virtual auto createSwapchain(SDL_Window* window) -> RhiSwapchain* = 0;
+    virtual auto createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* = 0;
+    virtual auto createTexture(const RhiTextureDesc& desc) -> RhiTexture* = 0;
+    virtual auto createSampler(const RhiSamplerDesc& desc) -> RhiSampler* = 0;
+    virtual auto createShaderModule(const char* filepath) -> RhiShaderModule* = 0;
+    virtual auto createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) -> RhiPipeline* = 0;
+    virtual auto createDescriptorSetLayout(const RhiDescriptorBinding* bindings, uint32_t count) -> RhiDescriptorSetLayout* = 0;
+    virtual auto createDescriptorPool(uint32_t maxSets, const RhiDescriptorBinding* bindings, uint32_t bindingCount) -> RhiDescriptorPool* = 0;
+    virtual auto allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) -> std::vector<RhiDescriptorSet*> = 0;
+    virtual auto updateDescriptorSet(RhiDescriptorSet* set, const RhiDescriptorWrite* writes, uint32_t writeCount) -> void = 0;
 
-    virtual RhiCommandBuffer* createCommandBuffer() = 0;
-    virtual RhiSemaphore* createSemaphore() = 0;
-    virtual RhiFence* createFence(bool signaled) = 0;
+    virtual auto createCommandBuffer() -> RhiCommandBuffer* = 0;
+    virtual auto createSemaphore() -> RhiSemaphore* = 0;
+    virtual auto createFence(bool signaled) -> RhiFence* = 0;
 
-    virtual void waitForFence(RhiFence* fence) = 0;
-    virtual void resetFence(RhiFence* fence) = 0;
-    virtual void submitCommandBuffer(RhiCommandBuffer* cmd, const RhiSubmitInfo& info) = 0;
-    virtual void present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) = 0;
+    virtual auto waitForFence(RhiFence* fence) -> void = 0;
+    virtual auto resetFence(RhiFence* fence) -> void = 0;
+    virtual auto submitCommandBuffer(RhiCommandBuffer* cmd, const RhiSubmitInfo& info) -> void = 0;
+    virtual auto present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) -> void = 0;
 
-    virtual void* mapBuffer(RhiBuffer* buffer) = 0;
-    virtual void unmapBuffer(RhiBuffer* buffer) = 0;
-    virtual void copyBuffer(RhiBuffer* src, RhiBuffer* dst, uint64_t size) = 0;
+    virtual auto mapBuffer(RhiBuffer* buffer) -> void* = 0;
+    virtual auto unmapBuffer(RhiBuffer* buffer) -> void = 0;
+    virtual auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, uint64_t size) -> void = 0;
 
-    virtual void destroyBuffer(RhiBuffer* buffer) = 0;
-    virtual void destroyTexture(RhiTexture* texture) = 0;
-    virtual void destroySampler(RhiSampler* sampler) = 0;
-    virtual void destroyShaderModule(RhiShaderModule* module) = 0;
-    virtual void destroyPipeline(RhiPipeline* pipeline) = 0;
-    virtual void destroyDescriptorSetLayout(RhiDescriptorSetLayout* layout) = 0;
-    virtual void destroyDescriptorPool(RhiDescriptorPool* pool) = 0;
-    virtual void destroySemaphore(RhiSemaphore* semaphore) = 0;
-    virtual void destroyFence(RhiFence* fence) = 0;
-    virtual void destroyCommandBuffer(RhiCommandBuffer* cmd) = 0;
+    virtual auto destroyBuffer(RhiBuffer* buffer) -> void = 0;
+    virtual auto destroyTexture(RhiTexture* texture) -> void = 0;
+    virtual auto destroySampler(RhiSampler* sampler) -> void = 0;
+    virtual auto destroyShaderModule(RhiShaderModule* module) -> void = 0;
+    virtual auto destroyPipeline(RhiPipeline* pipeline) -> void = 0;
+    virtual auto destroyDescriptorSetLayout(RhiDescriptorSetLayout* layout) -> void = 0;
+    virtual auto destroyDescriptorPool(RhiDescriptorPool* pool) -> void = 0;
+    virtual auto destroySemaphore(RhiSemaphore* semaphore) -> void = 0;
+    virtual auto destroyFence(RhiFence* fence) -> void = 0;
+    virtual auto destroyCommandBuffer(RhiCommandBuffer* cmd) -> void = 0;
 };

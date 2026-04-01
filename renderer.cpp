@@ -12,7 +12,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
-int Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) {
+auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> int {
     device = rhiDevice;
 
     swapchain = device->createSwapchain(window);
@@ -36,7 +36,7 @@ int Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) {
         {.location = 3, .binding = 0, .format = RhiFormat::R32G32_SFLOAT, .offset = offsetof(Vertex, texCoord)},
     };
 
-    RhiExtent2D ext = swapchain->extent();
+    auto ext = swapchain->extent();
     RhiGraphicsPipelineDesc pipelineDesc = {
         .vertexShader = vertShader,
         .fragmentShader = fragShader,
@@ -53,7 +53,7 @@ int Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) {
         return 1;
     }
 
-    uint32_t imgCount = swapchain->imageCount();
+    auto imgCount = swapchain->imageCount();
 
     uniformBuffers.resize(imgCount);
     uniformBuffersMapped.resize(imgCount);
@@ -84,7 +84,7 @@ int Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) {
     return 0;
 }
 
-void Renderer::uploadScene(const Scene& scene) {
+auto Renderer::uploadScene(const Scene& scene) -> void {
     gpuMeshes.resize(scene.meshes.size());
 
     textureSampler = device->createSampler({});
@@ -92,28 +92,28 @@ void Renderer::uploadScene(const Scene& scene) {
     std::vector<uint8_t> fallbackPixels(64 * 64 * 4);
     for (uint32_t y = 0; y < 64; y++) {
         for (uint32_t x = 0; x < 64; x++) {
-            uint8_t c = ((x / 8) + (y / 8)) % 2 ? 255 : 64;
-            uint32_t i = (y * 64 + x) * 4;
+            auto c = ((x / 8) + (y / 8)) % 2 ? (uint8_t) 255 : (uint8_t) 64;
+            auto i = (y * 64 + x) * 4;
             fallbackPixels[i] = fallbackPixels[i + 1] = fallbackPixels[i + 2] = c;
             fallbackPixels[i + 3] = 255;
         }
     }
 
     for (size_t m = 0; m < scene.meshes.size(); m++) {
-        const MeshData& md = scene.meshes[m];
-        GpuMesh& gm = gpuMeshes[m];
+        const auto& md = scene.meshes[m];
+        auto& gm = gpuMeshes[m];
         gm.transform = md.transform;
         gm.indexCount = (uint32_t) md.indices.size();
 
         // Vertex buffer
-        uint64_t vbSize = md.vertices.size() * sizeof(Vertex);
+        auto vbSize = (uint64_t) (md.vertices.size() * sizeof(Vertex));
         RhiBufferDesc stagingDesc = {
             .size = vbSize,
             .usage = RhiBufferUsage::TransferSrc,
             .memory = RhiMemoryUsage::CpuToGpu,
         };
-        RhiBuffer* vStaging = device->createBuffer(stagingDesc);
-        void* data = device->mapBuffer(vStaging);
+        auto* vStaging = device->createBuffer(stagingDesc);
+        auto* data = device->mapBuffer(vStaging);
         memcpy(data, md.vertices.data(), vbSize);
         device->unmapBuffer(vStaging);
 
@@ -127,9 +127,9 @@ void Renderer::uploadScene(const Scene& scene) {
         device->destroyBuffer(vStaging);
 
         // Index buffer
-        uint64_t ibSize = md.indices.size() * sizeof(uint32_t);
+        auto ibSize = (uint64_t) (md.indices.size() * sizeof(uint32_t));
         stagingDesc.size = ibSize;
-        RhiBuffer* iStaging = device->createBuffer(stagingDesc);
+        auto* iStaging = device->createBuffer(stagingDesc);
         data = device->mapBuffer(iStaging);
         memcpy(data, md.indices.data(), ibSize);
         device->unmapBuffer(iStaging);
@@ -155,7 +155,7 @@ void Renderer::uploadScene(const Scene& scene) {
             th = 64;
             texPtr = fallbackPixels.data();
         }
-        uint32_t texSize = tw * th * 4;
+        auto texSize = tw * th * 4;
 
         RhiTextureDesc texDesc = {
             .width = tw,
@@ -167,9 +167,9 @@ void Renderer::uploadScene(const Scene& scene) {
         gm.texture = device->createTexture(texDesc);
     }
 
-    uint32_t meshCount = (uint32_t) gpuMeshes.size();
-    uint32_t imgCount = swapchain->imageCount();
-    uint32_t totalSets = imgCount * meshCount;
+    auto meshCount = (uint32_t) gpuMeshes.size();
+    auto imgCount = swapchain->imageCount();
+    auto totalSets = imgCount * meshCount;
 
     RhiDescriptorBinding bindings[] = {
         {.binding = 0, .type = RhiDescriptorType::UniformBuffer, .stage = RhiShaderStage::Vertex},
@@ -199,7 +199,7 @@ void Renderer::uploadScene(const Scene& scene) {
     }
 }
 
-void Renderer::draw(const Camera& camera, SDL_Window* window) {
+auto Renderer::draw(const Camera& camera, SDL_Window* window) -> void {
     device->waitForFence(inflightFences[currentFrame]);
 
     uint32_t index;
@@ -211,8 +211,8 @@ void Renderer::draw(const Camera& camera, SDL_Window* window) {
 
     int winW, winH;
     SDL_GetWindowSizeInPixels(window, &winW, &winH);
-    float aspect = (float) winW / (float) winH;
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+    auto aspect = (float) winW / (float) winH;
+    auto proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
     proj[1][1] *= -1.0f;
     UniformBufferObject ubo = {
         .view = camera.viewMatrix(),
@@ -220,11 +220,11 @@ void Renderer::draw(const Camera& camera, SDL_Window* window) {
     };
     memcpy(uniformBuffersMapped[index], &ubo, sizeof(ubo));
 
-    RhiCommandBuffer* cmd = cmdBuffers[index];
+    auto* cmd = cmdBuffers[index];
     cmd->reset();
     cmd->begin();
 
-    RhiExtent2D ext = swapchain->extent();
+    auto ext = swapchain->extent();
     RhiRenderPassBeginDesc rpDesc = {
         .renderPass = swapchain->renderPass(),
         .framebuffer = swapchain->framebuffer(index),
@@ -235,10 +235,10 @@ void Renderer::draw(const Camera& camera, SDL_Window* window) {
     cmd->beginRenderPass(rpDesc);
     cmd->bindPipeline(pipeline);
 
-    uint32_t meshCount = (uint32_t) gpuMeshes.size();
+    auto meshCount = (uint32_t) gpuMeshes.size();
     for (uint32_t m = 0; m < meshCount; m++) {
-        GpuMesh& gm = gpuMeshes[m];
-        glm::mat4 model = gm.transform;
+        auto& gm = gpuMeshes[m];
+        auto model = gm.transform;
         cmd->pushConstants(pipeline, RhiShaderStage::Vertex, 0, sizeof(glm::mat4), &model);
         cmd->bindVertexBuffer(gm.vertexBuffer);
         cmd->bindIndexBuffer(gm.indexBuffer);
@@ -260,7 +260,7 @@ void Renderer::draw(const Camera& camera, SDL_Window* window) {
     currentFrame = (currentFrame + 1) % swapchain->imageCount();
 }
 
-void Renderer::destroy() {
+auto Renderer::destroy() -> void {
     device->waitIdle();
 
     for (auto* ds : descriptorSets) {

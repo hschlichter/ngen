@@ -8,13 +8,13 @@
 
 #include <cstdio>
 
-int main(int argc, char* argv[]) {
+auto main(int argc, char* argv[]) -> int {
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <model.gltf>\n", argv[0]);
         return 1;
     }
 
-    Scene scene = loadGltf(argv[1]);
+    auto scene = loadGltf(argv[1]);
     if (scene.meshes.empty()) {
         fprintf(stderr, "Failed to load model\n");
         return 1;
@@ -26,13 +26,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    SDL_PropertiesID windowProps = SDL_CreateProperties();
+    auto windowProps = SDL_CreateProperties();
     SDL_SetStringProperty(windowProps, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "ngen");
     SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, 2560);
     SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, 1440);
     SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_VULKAN_BOOLEAN, 1);
     SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, 1);
-    SDL_Window* window = SDL_CreateWindowWithProperties(windowProps);
+    auto* window = SDL_CreateWindowWithProperties(windowProps);
     if (window == NULL) {
         fprintf(stderr, "SDL_CreateWindowWithProperties failed: %s\n", SDL_GetError());
         return 1;
@@ -53,21 +53,21 @@ int main(int argc, char* argv[]) {
     renderer.uploadScene(scene);
 
     // Camera
-    Camera cam = {
+    auto cam = Camera{
         .position = glm::vec3(2.0f, 1.5f, 2.0f),
         .yaw = -135.0f,
         .pitch = -20.0f,
         .speed = 1.0f,
         .mouseSensitivity = 0.15f,
     };
-    bool mouseCapture = false;
+    auto mouseCapture = false;
 
     // Main loop
-    uint64_t lastTicks = SDL_GetTicksNS();
-    bool quit = false;
+    auto lastTicks = SDL_GetTicksNS();
+    auto quit = false;
     while (!quit) {
-        uint64_t nowTicks = SDL_GetTicksNS();
-        float dt = (float) (nowTicks - lastTicks) / 1.0e9f;
+        auto nowTicks = SDL_GetTicksNS();
+        auto dt = (float) (nowTicks - lastTicks) / 1.0e9f;
         lastTicks = nowTicks;
 
         SDL_Event ev;
@@ -89,7 +89,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        const bool* keys = SDL_GetKeyboardState(NULL);
+        const auto* keys = SDL_GetKeyboardState(NULL);
         cam.update(keys, dt);
         renderer.draw(cam, window);
     }

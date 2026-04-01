@@ -32,10 +32,10 @@ public:
     Renderer& operator=(const Renderer&) = delete;
     ~Renderer() = default;
 
-    int init(RhiDevice* rhiDevice, SDL_Window* window);
-    void uploadScene(const Scene& scene);
-    void draw(const Camera& camera, SDL_Window* window);
-    void destroy();
+    auto init(RhiDevice* rhiDevice, SDL_Window* window) -> int;
+    auto uploadScene(const Scene& scene) -> void;
+    auto draw(const Camera& camera, SDL_Window* window) -> void;
+    auto destroy() -> void;
 
 private:
     RhiDevice* device = nullptr;

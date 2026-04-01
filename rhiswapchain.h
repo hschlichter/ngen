@@ -6,10 +6,10 @@ class RhiSwapchain {
 public:
     virtual ~RhiSwapchain() = default;
 
-    virtual void destroy() = 0;
-    virtual int acquireNextImage(RhiSemaphore* signalSemaphore, uint32_t* outIndex) = 0;
-    virtual uint32_t imageCount() = 0;
-    virtual RhiExtent2D extent() = 0;
-    virtual RhiRenderPass* renderPass() = 0;
-    virtual RhiFramebuffer* framebuffer(uint32_t index) = 0;
+    virtual auto destroy() -> void = 0;
+    virtual auto acquireNextImage(RhiSemaphore* signalSemaphore, uint32_t* outIndex) -> int = 0;
+    virtual auto imageCount() -> uint32_t = 0;
+    virtual auto extent() -> RhiExtent2D = 0;
+    virtual auto renderPass() -> RhiRenderPass* = 0;
+    virtual auto framebuffer(uint32_t index) -> RhiFramebuffer* = 0;
 };

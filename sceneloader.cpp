@@ -13,9 +13,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-static void loadPrimitive(MeshData& mesh, cgltf_primitive* prim, const char* filepath) {
+static auto loadPrimitive(MeshData& mesh, cgltf_primitive* prim, const char* filepath) -> void {
     if (prim->indices) {
-        size_t count = prim->indices->count;
+        auto count = prim->indices->count;
         mesh.indices.resize(count);
         for (size_t i = 0; i < count; i++) {
             mesh.indices[i] = (uint32_t) cgltf_accessor_read_index(prim->indices, i);
@@ -39,11 +39,11 @@ static void loadPrimitive(MeshData& mesh, cgltf_primitive* prim, const char* fil
     if (!posAccessor) {
         return;
     }
-    size_t vertCount = posAccessor->count;
+    auto vertCount = posAccessor->count;
     mesh.vertices.resize(vertCount);
 
     for (size_t i = 0; i < vertCount; i++) {
-        Vertex& v = mesh.vertices[i];
+        auto& v = mesh.vertices[i];
         cgltf_accessor_read_float(posAccessor, i, v.position, 3);
         if (normAccessor) {
             cgltf_accessor_read_float(normAccessor, i, v.normal, 3);
@@ -67,17 +67,17 @@ static void loadPrimitive(MeshData& mesh, cgltf_primitive* prim, const char* fil
     }
 
     if (prim->material && prim->material->pbr_metallic_roughness.base_color_texture.texture) {
-        cgltf_image* img = prim->material->pbr_metallic_roughness.base_color_texture.texture->image;
+        auto* img = prim->material->pbr_metallic_roughness.base_color_texture.texture->image;
         if (img) {
             int channels;
             uint8_t* pixels = nullptr;
             if (img->buffer_view) {
-                const uint8_t* bufData = (const uint8_t*) img->buffer_view->buffer->data + img->buffer_view->offset;
+                const auto* bufData = (const uint8_t*) img->buffer_view->buffer->data + img->buffer_view->offset;
                 pixels = stbi_load_from_memory(bufData, (int) img->buffer_view->size, &mesh.texWidth, &mesh.texHeight, &channels, 4);
             } else if (img->uri) {
-                std::string dir(filepath);
-                size_t slash = dir.find_last_of("/\\");
-                std::string texPath = (slash != std::string::npos ? dir.substr(0, slash + 1) : "") + img->uri;
+                auto dir = std::string(filepath);
+                auto slash = dir.find_last_of("/\\");
+                auto texPath = (slash != std::string::npos ? dir.substr(0, slash + 1) : "") + img->uri;
                 pixels = stbi_load(texPath.c_str(), &mesh.texWidth, &mesh.texHeight, &channels, 4);
             }
             if (pixels) {
@@ -88,8 +88,8 @@ static void loadPrimitive(MeshData& mesh, cgltf_primitive* prim, const char* fil
     }
 }
 
-static glm::mat4 getNodeTransform(cgltf_node* node) {
-    glm::mat4 t(1.0f);
+static auto getNodeTransform(cgltf_node* node) -> glm::mat4 {
+    auto t = glm::mat4(1.0f);
     if (node->has_matrix) {
         memcpy(&t, node->matrix, sizeof(float) * 16);
     } else {
@@ -97,7 +97,7 @@ static glm::mat4 getNodeTransform(cgltf_node* node) {
             t = glm::translate(t, glm::vec3(node->translation[0], node->translation[1], node->translation[2]));
         }
         if (node->has_rotation) {
-            glm::quat q(node->rotation[3], node->rotation[0], node->rotation[1], node->rotation[2]);
+            auto q = glm::quat(node->rotation[3], node->rotation[0], node->rotation[1], node->rotation[2]);
             t *= glm::mat4_cast(q);
         }
         if (node->has_scale) {
@@ -107,8 +107,8 @@ static glm::mat4 getNodeTransform(cgltf_node* node) {
     return t;
 }
 
-static void processNode(Scene& scene, cgltf_node* node, const glm::mat4& parentTransform, const char* filepath) {
-    glm::mat4 world = parentTransform * getNodeTransform(node);
+static auto processNode(Scene& scene, cgltf_node* node, const glm::mat4& parentTransform, const char* filepath) -> void {
+    auto world = parentTransform * getNodeTransform(node);
     if (node->mesh) {
         for (size_t p = 0; p < node->mesh->primitives_count; p++) {
             MeshData md;
@@ -125,7 +125,7 @@ static void processNode(Scene& scene, cgltf_node* node, const glm::mat4& parentT
     }
 }
 
-Scene loadGltf(const char* filepath) {
+auto loadGltf(const char* filepath) -> Scene {
     Scene scene;
     cgltf_options options = {};
     cgltf_data* gltf = nullptr;

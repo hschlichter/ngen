@@ -12,9 +12,9 @@ struct Camera {
     float speed;
     float mouseSensitivity;
 
-    glm::vec3 forward() const;
-    glm::vec3 right() const;
-    void handleMouseMotion(float xrel, float yrel);
-    void update(const bool* keys, float dt);
-    glm::mat4 viewMatrix() const;
+    auto forward() const -> glm::vec3;
+    auto right() const -> glm::vec3;
+    auto handleMouseMotion(float xrel, float yrel) -> void;
+    auto update(const bool* keys, float dt) -> void;
+    auto viewMatrix() const -> glm::mat4;
 };

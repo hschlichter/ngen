@@ -2,4 +2,4 @@
 
 #include "types.h"
 
-Scene loadGltf(const char* filepath);
+auto loadGltf(const char* filepath) -> Scene;

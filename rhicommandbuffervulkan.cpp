@@ -1,21 +1,21 @@
 #include "rhicommandbuffervulkan.h"
 
-void RhiCommandBufferVulkan::begin() {
+auto RhiCommandBufferVulkan::begin() -> void {
     VkCommandBufferBeginInfo beginInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
     vkBeginCommandBuffer(cmd, &beginInfo);
 }
 
-void RhiCommandBufferVulkan::end() {
+auto RhiCommandBufferVulkan::end() -> void {
     vkEndCommandBuffer(cmd);
 }
 
-void RhiCommandBufferVulkan::reset() {
+auto RhiCommandBufferVulkan::reset() -> void {
     vkResetCommandBuffer(cmd, 0);
 }
 
-void RhiCommandBufferVulkan::beginRenderPass(const RhiRenderPassBeginDesc& desc) {
+auto RhiCommandBufferVulkan::beginRenderPass(const RhiRenderPassBeginDesc& desc) -> void {
     auto* rp = static_cast<RhiRenderPassVulkan*>(desc.renderPass);
     auto* fb = static_cast<RhiFramebufferVulkan*>(desc.framebuffer);
 
@@ -35,33 +35,33 @@ void RhiCommandBufferVulkan::beginRenderPass(const RhiRenderPassBeginDesc& desc)
     vkCmdBeginRenderPass(cmd, &passBegin, VK_SUBPASS_CONTENTS_INLINE);
 }
 
-void RhiCommandBufferVulkan::endRenderPass() {
+auto RhiCommandBufferVulkan::endRenderPass() -> void {
     vkCmdEndRenderPass(cmd);
 }
 
-void RhiCommandBufferVulkan::bindPipeline(RhiPipeline* pipeline) {
+auto RhiCommandBufferVulkan::bindPipeline(RhiPipeline* pipeline) -> void {
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p->pipeline);
 }
 
-void RhiCommandBufferVulkan::bindVertexBuffer(RhiBuffer* buffer) {
+auto RhiCommandBufferVulkan::bindVertexBuffer(RhiBuffer* buffer) -> void {
     auto* b = static_cast<RhiBufferVulkan*>(buffer);
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(cmd, 0, 1, &b->buffer, offsets);
 }
 
-void RhiCommandBufferVulkan::bindIndexBuffer(RhiBuffer* buffer) {
+auto RhiCommandBufferVulkan::bindIndexBuffer(RhiBuffer* buffer) -> void {
     auto* b = static_cast<RhiBufferVulkan*>(buffer);
     vkCmdBindIndexBuffer(cmd, b->buffer, 0, VK_INDEX_TYPE_UINT32);
 }
 
-void RhiCommandBufferVulkan::bindDescriptorSet(RhiPipeline* pipeline, RhiDescriptorSet* set) {
+auto RhiCommandBufferVulkan::bindDescriptorSet(RhiPipeline* pipeline, RhiDescriptorSet* set) -> void {
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
     auto* s = static_cast<RhiDescriptorSetVulkan*>(set);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p->layout, 0, 1, &s->set, 0, NULL);
 }
 
-void RhiCommandBufferVulkan::pushConstants(RhiPipeline* pipeline, RhiShaderStage stage, uint32_t offset, uint32_t size, const void* data) {
+auto RhiCommandBufferVulkan::pushConstants(RhiPipeline* pipeline, RhiShaderStage stage, uint32_t offset, uint32_t size, const void* data) -> void {
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
     VkShaderStageFlags vkStage = 0;
     if ((uint32_t) stage & (uint32_t) RhiShaderStage::Vertex) {
@@ -73,6 +73,7 @@ void RhiCommandBufferVulkan::pushConstants(RhiPipeline* pipeline, RhiShaderStage
     vkCmdPushConstants(cmd, p->layout, vkStage, offset, size, data);
 }
 
-void RhiCommandBufferVulkan::drawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
+auto RhiCommandBufferVulkan::drawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance)
+    -> void {
     vkCmdDrawIndexed(cmd, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }

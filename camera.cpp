@@ -3,17 +3,17 @@
 #include <SDL3/SDL.h>
 #include <cmath>
 
-glm::vec3 Camera::forward() const {
-    float yawRad = glm::radians(yaw);
-    float pitchRad = glm::radians(pitch);
+auto Camera::forward() const -> glm::vec3 {
+    auto yawRad = glm::radians(yaw);
+    auto pitchRad = glm::radians(pitch);
     return glm::normalize(glm::vec3(cosf(pitchRad) * cosf(yawRad), sinf(pitchRad), cosf(pitchRad) * sinf(yawRad)));
 }
 
-glm::vec3 Camera::right() const {
+auto Camera::right() const -> glm::vec3 {
     return glm::normalize(glm::cross(forward(), glm::vec3(0, 1, 0)));
 }
 
-void Camera::handleMouseMotion(float xrel, float yrel) {
+auto Camera::handleMouseMotion(float xrel, float yrel) -> void {
     yaw += xrel * mouseSensitivity;
     pitch -= yrel * mouseSensitivity;
     if (pitch > 89.0f) {
@@ -24,12 +24,12 @@ void Camera::handleMouseMotion(float xrel, float yrel) {
     }
 }
 
-void Camera::update(const bool* keys, float dt) {
-    glm::vec3 fwd = forward();
-    glm::vec3 r = right();
-    glm::vec3 up = glm::vec3(0, 1, 0);
+auto Camera::update(const bool* keys, float dt) -> void {
+    auto fwd = forward();
+    auto r = right();
+    auto up = glm::vec3(0, 1, 0);
 
-    float spd = keys[SDL_SCANCODE_LSHIFT] ? speed * 2.0f : speed;
+    auto spd = keys[SDL_SCANCODE_LSHIFT] ? speed * 2.0f : speed;
     if (keys[SDL_SCANCODE_W]) {
         position += fwd * spd * dt;
     }
@@ -50,7 +50,7 @@ void Camera::update(const bool* keys, float dt) {
     }
 }
 
-glm::mat4 Camera::viewMatrix() const {
-    glm::vec3 fwd = forward();
+auto Camera::viewMatrix() const -> glm::mat4 {
+    auto fwd = forward();
     return glm::lookAt(position, position + fwd, glm::vec3(0, 1, 0));
 }

@@ -9,44 +9,44 @@
 
 class RhiDeviceVulkan : public RhiDevice {
 public:
-    int init(SDL_Window* window) override;
-    void destroy() override;
-    void waitIdle() override;
+    auto init(SDL_Window* window) -> int override;
+    auto destroy() -> void override;
+    auto waitIdle() -> void override;
 
-    RhiSwapchain* createSwapchain(SDL_Window* window) override;
-    RhiBuffer* createBuffer(const RhiBufferDesc& desc) override;
-    RhiTexture* createTexture(const RhiTextureDesc& desc) override;
-    RhiSampler* createSampler(const RhiSamplerDesc& desc) override;
-    RhiShaderModule* createShaderModule(const char* filepath) override;
-    RhiPipeline* createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) override;
-    RhiDescriptorSetLayout* createDescriptorSetLayout(const RhiDescriptorBinding* bindings, uint32_t count) override;
-    RhiDescriptorPool* createDescriptorPool(uint32_t maxSets, const RhiDescriptorBinding* bindings, uint32_t bindingCount) override;
-    std::vector<RhiDescriptorSet*> allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) override;
-    void updateDescriptorSet(RhiDescriptorSet* set, const RhiDescriptorWrite* writes, uint32_t writeCount) override;
+    auto createSwapchain(SDL_Window* window) -> RhiSwapchain* override;
+    auto createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* override;
+    auto createTexture(const RhiTextureDesc& desc) -> RhiTexture* override;
+    auto createSampler(const RhiSamplerDesc& desc) -> RhiSampler* override;
+    auto createShaderModule(const char* filepath) -> RhiShaderModule* override;
+    auto createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) -> RhiPipeline* override;
+    auto createDescriptorSetLayout(const RhiDescriptorBinding* bindings, uint32_t count) -> RhiDescriptorSetLayout* override;
+    auto createDescriptorPool(uint32_t maxSets, const RhiDescriptorBinding* bindings, uint32_t bindingCount) -> RhiDescriptorPool* override;
+    auto allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) -> std::vector<RhiDescriptorSet*> override;
+    auto updateDescriptorSet(RhiDescriptorSet* set, const RhiDescriptorWrite* writes, uint32_t writeCount) -> void override;
 
-    RhiCommandBuffer* createCommandBuffer() override;
-    RhiSemaphore* createSemaphore() override;
-    RhiFence* createFence(bool signaled) override;
+    auto createCommandBuffer() -> RhiCommandBuffer* override;
+    auto createSemaphore() -> RhiSemaphore* override;
+    auto createFence(bool signaled) -> RhiFence* override;
 
-    void waitForFence(RhiFence* fence) override;
-    void resetFence(RhiFence* fence) override;
-    void submitCommandBuffer(RhiCommandBuffer* cmd, const RhiSubmitInfo& info) override;
-    void present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) override;
+    auto waitForFence(RhiFence* fence) -> void override;
+    auto resetFence(RhiFence* fence) -> void override;
+    auto submitCommandBuffer(RhiCommandBuffer* cmd, const RhiSubmitInfo& info) -> void override;
+    auto present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) -> void override;
 
-    void* mapBuffer(RhiBuffer* buffer) override;
-    void unmapBuffer(RhiBuffer* buffer) override;
-    void copyBuffer(RhiBuffer* src, RhiBuffer* dst, uint64_t size) override;
+    auto mapBuffer(RhiBuffer* buffer) -> void* override;
+    auto unmapBuffer(RhiBuffer* buffer) -> void override;
+    auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, uint64_t size) -> void override;
 
-    void destroyBuffer(RhiBuffer* buffer) override;
-    void destroyTexture(RhiTexture* texture) override;
-    void destroySampler(RhiSampler* sampler) override;
-    void destroyShaderModule(RhiShaderModule* module) override;
-    void destroyPipeline(RhiPipeline* pipeline) override;
-    void destroyDescriptorSetLayout(RhiDescriptorSetLayout* layout) override;
-    void destroyDescriptorPool(RhiDescriptorPool* pool) override;
-    void destroySemaphore(RhiSemaphore* semaphore) override;
-    void destroyFence(RhiFence* fence) override;
-    void destroyCommandBuffer(RhiCommandBuffer* cmd) override;
+    auto destroyBuffer(RhiBuffer* buffer) -> void override;
+    auto destroyTexture(RhiTexture* texture) -> void override;
+    auto destroySampler(RhiSampler* sampler) -> void override;
+    auto destroyShaderModule(RhiShaderModule* module) -> void override;
+    auto destroyPipeline(RhiPipeline* pipeline) -> void override;
+    auto destroyDescriptorSetLayout(RhiDescriptorSetLayout* layout) -> void override;
+    auto destroyDescriptorPool(RhiDescriptorPool* pool) -> void override;
+    auto destroySemaphore(RhiSemaphore* semaphore) -> void override;
+    auto destroyFence(RhiFence* fence) -> void override;
+    auto destroyCommandBuffer(RhiCommandBuffer* cmd) -> void override;
 
 private:
     VkInstance instance = VK_NULL_HANDLE;
@@ -57,11 +57,11 @@ private:
     uint32_t queueFamilyIndex = UINT32_MAX;
     VkCommandPool cmdPool = VK_NULL_HANDLE;
 
-    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
-    void transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout);
+    auto findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t;
+    auto transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) -> void;
 
-    VkBufferUsageFlags toVkBufferUsage(RhiBufferUsage usage);
-    VkMemoryPropertyFlags toVkMemoryProps(RhiMemoryUsage usage);
-    VkFormat toVkFormat(RhiFormat format);
-    VkShaderStageFlags toVkShaderStage(RhiShaderStage stage);
+    auto toVkBufferUsage(RhiBufferUsage usage) -> VkBufferUsageFlags;
+    auto toVkMemoryProps(RhiMemoryUsage usage) -> VkMemoryPropertyFlags;
+    auto toVkFormat(RhiFormat format) -> VkFormat;
+    auto toVkShaderStage(RhiShaderStage stage) -> VkShaderStageFlags;
 };

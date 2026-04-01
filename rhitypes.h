@@ -11,11 +11,11 @@ enum class RhiBufferUsage : uint32_t {
     Uniform = 1 << 4,
 };
 
-inline RhiBufferUsage operator|(RhiBufferUsage a, RhiBufferUsage b) {
+inline auto operator|(RhiBufferUsage a, RhiBufferUsage b) -> RhiBufferUsage {
     return (RhiBufferUsage) ((uint32_t) a | (uint32_t) b);
 }
 
-inline bool operator&(RhiBufferUsage a, RhiBufferUsage b) {
+inline auto operator&(RhiBufferUsage a, RhiBufferUsage b) -> bool {
     return ((uint32_t) a & (uint32_t) b) != 0;
 }
 
