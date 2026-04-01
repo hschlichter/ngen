@@ -11,36 +11,56 @@
 
 VkBufferUsageFlags RhiDeviceVulkan::toVkBufferUsage(RhiBufferUsage usage) {
     VkBufferUsageFlags flags = 0;
-    if (usage & RhiBufferUsage::TransferSrc) flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    if (usage & RhiBufferUsage::TransferDst) flags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    if (usage & RhiBufferUsage::Vertex)      flags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    if (usage & RhiBufferUsage::Index)       flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-    if (usage & RhiBufferUsage::Uniform)     flags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    if (usage & RhiBufferUsage::TransferSrc) {
+        flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    }
+    if (usage & RhiBufferUsage::TransferDst) {
+        flags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    }
+    if (usage & RhiBufferUsage::Vertex) {
+        flags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    }
+    if (usage & RhiBufferUsage::Index) {
+        flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    }
+    if (usage & RhiBufferUsage::Uniform) {
+        flags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    }
     return flags;
 }
 
 VkMemoryPropertyFlags RhiDeviceVulkan::toVkMemoryProps(RhiMemoryUsage usage) {
     switch (usage) {
-        case RhiMemoryUsage::GpuOnly:  return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-        case RhiMemoryUsage::CpuToGpu: return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        case RhiMemoryUsage::GpuOnly:
+            return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        case RhiMemoryUsage::CpuToGpu:
+            return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     }
     return 0;
 }
 
 VkFormat RhiDeviceVulkan::toVkFormat(RhiFormat format) {
     switch (format) {
-        case RhiFormat::R32G32_SFLOAT:    return VK_FORMAT_R32G32_SFLOAT;
-        case RhiFormat::R32G32B32_SFLOAT: return VK_FORMAT_R32G32B32_SFLOAT;
-        case RhiFormat::R8G8B8A8_SRGB:    return VK_FORMAT_R8G8B8A8_SRGB;
-        case RhiFormat::D32_SFLOAT:       return VK_FORMAT_D32_SFLOAT;
+        case RhiFormat::R32G32_SFLOAT:
+            return VK_FORMAT_R32G32_SFLOAT;
+        case RhiFormat::R32G32B32_SFLOAT:
+            return VK_FORMAT_R32G32B32_SFLOAT;
+        case RhiFormat::R8G8B8A8_SRGB:
+            return VK_FORMAT_R8G8B8A8_SRGB;
+        case RhiFormat::D32_SFLOAT:
+            return VK_FORMAT_D32_SFLOAT;
     }
     return VK_FORMAT_UNDEFINED;
 }
 
 VkShaderStageFlags RhiDeviceVulkan::toVkShaderStage(RhiShaderStage stage) {
     VkShaderStageFlags flags = 0;
-    if ((uint32_t)stage & (uint32_t)RhiShaderStage::Vertex)   flags |= VK_SHADER_STAGE_VERTEX_BIT;
-    if ((uint32_t)stage & (uint32_t)RhiShaderStage::Fragment) flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+    if ((uint32_t) stage & (uint32_t) RhiShaderStage::Vertex) {
+        flags |= VK_SHADER_STAGE_VERTEX_BIT;
+    }
+    if ((uint32_t) stage & (uint32_t) RhiShaderStage::Fragment) {
+        flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+    }
     return flags;
 }
 
@@ -79,13 +99,14 @@ void RhiDeviceVulkan::transitionImageLayout(VkImage image, VkImageLayout oldLayo
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .image = image,
-        .subresourceRange = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
+        .subresourceRange =
+            {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
     };
 
     VkPipelineStageFlags srcStage, dstStage;
@@ -137,7 +158,7 @@ int RhiDeviceVulkan::init(SDL_Window* window) {
     };
 
     uint32_t extensionsCount = 0;
-    char const* const* extensions = SDL_Vulkan_GetInstanceExtensions(&extensionsCount);
+    const char* const* extensions = SDL_Vulkan_GetInstanceExtensions(&extensionsCount);
     for (uint32_t i = 0; i < extensionsCount; i++) {
         printf("%s\n", extensions[i]);
     }
@@ -334,7 +355,7 @@ RhiTexture* RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
         .format = toVkFormat(desc.format),
-        .extent = { desc.width, desc.height, 1 },
+        .extent = {desc.width, desc.height, 1},
         .mipLevels = 1,
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -391,11 +412,10 @@ RhiTexture* RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) {
             };
             vkBeginCommandBuffer(cmd, &bi);
             VkBufferImageCopy region = {
-                .imageSubresource = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1 },
-                .imageExtent = { desc.width, desc.height, 1 },
+                .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
+                .imageExtent = {desc.width, desc.height, 1},
             };
-            vkCmdCopyBufferToImage(cmd, stagingVk->buffer, tex->image,
-                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+            vkCmdCopyBufferToImage(cmd, stagingVk->buffer, tex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
             vkEndCommandBuffer(cmd);
             VkSubmitInfo si = {
                 .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -407,8 +427,7 @@ RhiTexture* RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) {
             vkFreeCommandBuffers(device, cmdPool, 1, &cmd);
         }
 
-        transitionImageLayout(tex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        transitionImageLayout(tex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
         destroyBuffer(staging);
     }
@@ -418,13 +437,14 @@ RhiTexture* RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) {
         .image = tex->image,
         .viewType = VK_IMAGE_VIEW_TYPE_2D,
         .format = toVkFormat(desc.format),
-        .subresourceRange = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
+        .subresourceRange =
+            {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
     };
     vkCreateImageView(device, &viewInfo, NULL, &tex->view);
 
@@ -432,7 +452,7 @@ RhiTexture* RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) {
 }
 
 RhiSampler* RhiDeviceVulkan::createSampler(const RhiSamplerDesc& desc) {
-    (void)desc;
+    (void) desc;
     auto* sampler = new RhiSamplerVulkan();
     VkSamplerCreateInfo samplerInfo = {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -458,7 +478,7 @@ RhiShaderModule* RhiDeviceVulkan::createShaderModule(const char* filepath) {
     size_t size = ftell(file);
     rewind(file);
 
-    uint32_t* code = (uint32_t*)malloc(size);
+    uint32_t* code = (uint32_t*) malloc(size);
     fread(code, 1, size, file);
     fclose(file);
 
@@ -488,20 +508,18 @@ RhiPipeline* RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDe
     auto* dsLayout = static_cast<RhiDescriptorSetLayoutVulkan*>(desc.descriptorSetLayout);
     auto* rp = static_cast<RhiRenderPassVulkan*>(desc.renderPass);
 
-    VkPipelineShaderStageCreateInfo stages[2] = {
-        {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .stage = VK_SHADER_STAGE_VERTEX_BIT,
-            .module = vertMod->module,
-            .pName = "main",
-        },
-        {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = fragMod->module,
-            .pName = "main",
-        }
-    };
+    VkPipelineShaderStageCreateInfo stages[2] = {{
+                                                     .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                                     .stage = VK_SHADER_STAGE_VERTEX_BIT,
+                                                     .module = vertMod->module,
+                                                     .pName = "main",
+                                                 },
+                                                 {
+                                                     .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                                     .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+                                                     .module = fragMod->module,
+                                                     .pName = "main",
+                                                 }};
 
     VkVertexInputBindingDescription bindingDesc = {
         .binding = 0,
@@ -532,8 +550,8 @@ RhiPipeline* RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDe
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
     };
 
-    VkViewport viewport = { 0, 0, (float)desc.viewportExtent.width, (float)desc.viewportExtent.height, 0, 1 };
-    VkRect2D scissor = { { 0, 0 }, { desc.viewportExtent.width, desc.viewportExtent.height } };
+    VkViewport viewport = {0, 0, (float) desc.viewportExtent.width, (float) desc.viewportExtent.height, 0, 1};
+    VkRect2D scissor = {{0, 0}, {desc.viewportExtent.width, desc.viewportExtent.height}};
     VkPipelineViewportStateCreateInfo viewportState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
         .viewportCount = 1,
@@ -624,14 +642,14 @@ RhiPipeline* RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDe
     return pip;
 }
 
-RhiDescriptorSetLayout* RhiDeviceVulkan::createDescriptorSetLayout(
-    const RhiDescriptorBinding* bindings, uint32_t count) {
+RhiDescriptorSetLayout* RhiDeviceVulkan::createDescriptorSetLayout(const RhiDescriptorBinding* bindings, uint32_t count) {
 
     std::vector<VkDescriptorSetLayoutBinding> vkBindings(count);
     for (uint32_t i = 0; i < count; i++) {
         VkDescriptorType type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        if (bindings[i].type == RhiDescriptorType::CombinedImageSampler)
+        if (bindings[i].type == RhiDescriptorType::CombinedImageSampler) {
             type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        }
 
         vkBindings[i] = {
             .binding = bindings[i].binding,
@@ -657,15 +675,15 @@ RhiDescriptorSetLayout* RhiDeviceVulkan::createDescriptorSetLayout(
     return layout;
 }
 
-RhiDescriptorPool* RhiDeviceVulkan::createDescriptorPool(
-    uint32_t maxSets, const RhiDescriptorBinding* bindings, uint32_t bindingCount) {
+RhiDescriptorPool* RhiDeviceVulkan::createDescriptorPool(uint32_t maxSets, const RhiDescriptorBinding* bindings, uint32_t bindingCount) {
 
     std::vector<VkDescriptorPoolSize> poolSizes(bindingCount);
     for (uint32_t i = 0; i < bindingCount; i++) {
         VkDescriptorType type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        if (bindings[i].type == RhiDescriptorType::CombinedImageSampler)
+        if (bindings[i].type == RhiDescriptorType::CombinedImageSampler) {
             type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSizes[i] = { .type = type, .descriptorCount = maxSets };
+        }
+        poolSizes[i] = {.type = type, .descriptorCount = maxSets};
     }
 
     VkDescriptorPoolCreateInfo poolInfo = {
@@ -680,8 +698,7 @@ RhiDescriptorPool* RhiDeviceVulkan::createDescriptorPool(
     return pool;
 }
 
-std::vector<RhiDescriptorSet*> RhiDeviceVulkan::allocateDescriptorSets(
-    RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) {
+std::vector<RhiDescriptorSet*> RhiDeviceVulkan::allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) {
 
     auto* vkPool = static_cast<RhiDescriptorPoolVulkan*>(pool);
     auto* vkLayout = static_cast<RhiDescriptorSetLayoutVulkan*>(layout);
@@ -706,8 +723,7 @@ std::vector<RhiDescriptorSet*> RhiDeviceVulkan::allocateDescriptorSets(
     return result;
 }
 
-void RhiDeviceVulkan::updateDescriptorSet(RhiDescriptorSet* set,
-    const RhiDescriptorWrite* writes, uint32_t writeCount) {
+void RhiDeviceVulkan::updateDescriptorSet(RhiDescriptorSet* set, const RhiDescriptorWrite* writes, uint32_t writeCount) {
 
     auto* vkSet = static_cast<RhiDescriptorSetVulkan*>(set);
 
@@ -725,7 +741,7 @@ void RhiDeviceVulkan::updateDescriptorSet(RhiDescriptorSet* set,
 
         if (writes[i].type == RhiDescriptorType::UniformBuffer) {
             auto* buf = static_cast<RhiBufferVulkan*>(writes[i].buffer);
-            bufInfos[i] = { .buffer = buf->buffer, .offset = 0, .range = writes[i].bufferRange };
+            bufInfos[i] = {.buffer = buf->buffer, .offset = 0, .range = writes[i].bufferRange};
             vkWrites[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
             vkWrites[i].pBufferInfo = &bufInfos[i];
         } else {
@@ -763,7 +779,7 @@ RhiCommandBuffer* RhiDeviceVulkan::createCommandBuffer() {
 
 RhiSemaphore* RhiDeviceVulkan::createSemaphore() {
     auto* sem = new RhiSemaphoreVulkan();
-    VkSemaphoreCreateInfo info = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+    VkSemaphoreCreateInfo info = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
     VkResult result = vkCreateSemaphore(device, &info, NULL, &sem->semaphore);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkCreateSemaphore failed: %s(%d)\n", string_VkResult(result), result);
@@ -865,7 +881,7 @@ void RhiDeviceVulkan::copyBuffer(RhiBuffer* src, RhiBuffer* dst, uint64_t size) 
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     };
     vkBeginCommandBuffer(cmd, &beginInfo);
-    VkBufferCopy region = { .size = size };
+    VkBufferCopy region = {.size = size};
     vkCmdCopyBuffer(cmd, srcBuf->buffer, dstBuf->buffer, 1, &region);
     vkEndCommandBuffer(cmd);
 

@@ -22,14 +22,10 @@ public:
     virtual RhiSampler* createSampler(const RhiSamplerDesc& desc) = 0;
     virtual RhiShaderModule* createShaderModule(const char* filepath) = 0;
     virtual RhiPipeline* createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) = 0;
-    virtual RhiDescriptorSetLayout* createDescriptorSetLayout(
-        const RhiDescriptorBinding* bindings, uint32_t count) = 0;
-    virtual RhiDescriptorPool* createDescriptorPool(
-        uint32_t maxSets, const RhiDescriptorBinding* bindings, uint32_t bindingCount) = 0;
-    virtual std::vector<RhiDescriptorSet*> allocateDescriptorSets(
-        RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) = 0;
-    virtual void updateDescriptorSet(RhiDescriptorSet* set,
-        const RhiDescriptorWrite* writes, uint32_t writeCount) = 0;
+    virtual RhiDescriptorSetLayout* createDescriptorSetLayout(const RhiDescriptorBinding* bindings, uint32_t count) = 0;
+    virtual RhiDescriptorPool* createDescriptorPool(uint32_t maxSets, const RhiDescriptorBinding* bindings, uint32_t bindingCount) = 0;
+    virtual std::vector<RhiDescriptorSet*> allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) = 0;
+    virtual void updateDescriptorSet(RhiDescriptorSet* set, const RhiDescriptorWrite* writes, uint32_t writeCount) = 0;
 
     virtual RhiCommandBuffer* createCommandBuffer() = 0;
     virtual RhiSemaphore* createSemaphore() = 0;

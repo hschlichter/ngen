@@ -1,8 +1,8 @@
 #pragma once
 
+#include "rhicommandbuffervulkan.h"
 #include "rhidevice.h"
 #include "rhiresourcesvulkan.h"
-#include "rhicommandbuffervulkan.h"
 #include "rhiswapchainvulkan.h"
 
 #include <vulkan/vulkan.h>
@@ -19,14 +19,10 @@ public:
     RhiSampler* createSampler(const RhiSamplerDesc& desc) override;
     RhiShaderModule* createShaderModule(const char* filepath) override;
     RhiPipeline* createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) override;
-    RhiDescriptorSetLayout* createDescriptorSetLayout(
-        const RhiDescriptorBinding* bindings, uint32_t count) override;
-    RhiDescriptorPool* createDescriptorPool(
-        uint32_t maxSets, const RhiDescriptorBinding* bindings, uint32_t bindingCount) override;
-    std::vector<RhiDescriptorSet*> allocateDescriptorSets(
-        RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) override;
-    void updateDescriptorSet(RhiDescriptorSet* set,
-        const RhiDescriptorWrite* writes, uint32_t writeCount) override;
+    RhiDescriptorSetLayout* createDescriptorSetLayout(const RhiDescriptorBinding* bindings, uint32_t count) override;
+    RhiDescriptorPool* createDescriptorPool(uint32_t maxSets, const RhiDescriptorBinding* bindings, uint32_t bindingCount) override;
+    std::vector<RhiDescriptorSet*> allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) override;
+    void updateDescriptorSet(RhiDescriptorSet* set, const RhiDescriptorWrite* writes, uint32_t writeCount) override;
 
     RhiCommandBuffer* createCommandBuffer() override;
     RhiSemaphore* createSemaphore() override;

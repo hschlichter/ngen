@@ -6,9 +6,7 @@
 
 #include <cstdio>
 
-uint32_t RhiSwapchainVulkan::findMemoryType(VkPhysicalDevice physicalDevice,
-                                             uint32_t typeFilter,
-                                             VkMemoryPropertyFlags properties) {
+uint32_t RhiSwapchainVulkan::findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) {
     VkPhysicalDeviceMemoryProperties memProps;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
     for (uint32_t i = 0; i < memProps.memoryTypeCount; i++) {
@@ -20,9 +18,7 @@ uint32_t RhiSwapchainVulkan::findMemoryType(VkPhysicalDevice physicalDevice,
     return UINT32_MAX;
 }
 
-int RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device,
-                              VkSurfaceKHR surface, uint32_t queueFamilyIndex,
-                              SDL_Window* window) {
+int RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, SDL_Window* window) {
     vkDevice = device;
     VkResult result;
 
@@ -52,13 +48,21 @@ int RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device,
     {
         int w, h;
         SDL_GetWindowSizeInPixels(window, &w, &h);
-        ext.width = (uint32_t)w;
-        ext.height = (uint32_t)h;
+        ext.width = (uint32_t) w;
+        ext.height = (uint32_t) h;
     }
-    if (ext.width < capabilities.minImageExtent.width) ext.width = capabilities.minImageExtent.width;
-    if (ext.width > capabilities.maxImageExtent.width) ext.width = capabilities.maxImageExtent.width;
-    if (ext.height < capabilities.minImageExtent.height) ext.height = capabilities.minImageExtent.height;
-    if (ext.height > capabilities.maxImageExtent.height) ext.height = capabilities.maxImageExtent.height;
+    if (ext.width < capabilities.minImageExtent.width) {
+        ext.width = capabilities.minImageExtent.width;
+    }
+    if (ext.width > capabilities.maxImageExtent.width) {
+        ext.width = capabilities.maxImageExtent.width;
+    }
+    if (ext.height < capabilities.minImageExtent.height) {
+        ext.height = capabilities.minImageExtent.height;
+    }
+    if (ext.height > capabilities.maxImageExtent.height) {
+        ext.height = capabilities.maxImageExtent.height;
+    }
     printf("Swapchain extent: %dx%d\n", ext.width, ext.height);
 
     imgCount = capabilities.minImageCount + 1;
@@ -72,7 +76,7 @@ int RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device,
         .minImageCount = imgCount,
         .imageFormat = format.format,
         .imageColorSpace = format.colorSpace,
-        .imageExtent = { ext.width, ext.height },
+        .imageExtent = {ext.width, ext.height},
         .imageArrayLayers = 1,
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
@@ -98,13 +102,14 @@ int RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device,
             .image = images[i],
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
             .format = format.format,
-            .subresourceRange = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1,
-            },
+            .subresourceRange =
+                {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
         };
 
         result = vkCreateImageView(device, &viewInfo, NULL, &imageViews[i]);
@@ -121,7 +126,7 @@ int RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device,
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
         .format = depthFormat,
-        .extent = { ext.width, ext.height, 1 },
+        .extent = {ext.width, ext.height, 1},
         .mipLevels = 1,
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -140,9 +145,10 @@ int RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device,
     VkMemoryRequirements depthMemReqs;
     vkGetImageMemoryRequirements(device, depthImage, &depthMemReqs);
 
-    uint32_t depthMemType = findMemoryType(physicalDevice, depthMemReqs.memoryTypeBits,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    if (depthMemType == UINT32_MAX) return 1;
+    uint32_t depthMemType = findMemoryType(physicalDevice, depthMemReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (depthMemType == UINT32_MAX) {
+        return 1;
+    }
 
     VkMemoryAllocateInfo depthAllocInfo = {
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
@@ -161,13 +167,14 @@ int RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device,
         .image = depthImage,
         .viewType = VK_IMAGE_VIEW_TYPE_2D,
         .format = depthFormat,
-        .subresourceRange = {
-            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
+        .subresourceRange =
+            {
+                .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
     };
     result = vkCreateImageView(device, &depthViewInfo, NULL, &depthImageView);
     if (result != VK_SUCCESS) {
@@ -231,7 +238,7 @@ int RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device,
     // Framebuffers
     rhiFramebuffers.resize(imgCount);
     for (uint32_t i = 0; i < imgCount; i++) {
-        VkImageView fbAttachments[] = { imageViews[i], depthImageView };
+        VkImageView fbAttachments[] = {imageViews[i], depthImageView};
         VkFramebufferCreateInfo framebufferInfo = {
             .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             .renderPass = rhiRenderPass.renderPass,
@@ -254,8 +261,7 @@ int RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device,
 
 int RhiSwapchainVulkan::acquireNextImage(RhiSemaphore* signalSemaphore, uint32_t* outIndex) {
     auto* sem = static_cast<RhiSemaphoreVulkan*>(signalSemaphore);
-    VkResult result = vkAcquireNextImageKHR(vkDevice, swapchain, UINT64_MAX,
-                                             sem->semaphore, VK_NULL_HANDLE, outIndex);
+    VkResult result = vkAcquireNextImageKHR(vkDevice, swapchain, UINT64_MAX, sem->semaphore, VK_NULL_HANDLE, outIndex);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "vkAcquireNextImageKHR failed: %s(%d)\n", string_VkResult(result), result);
         return 1;

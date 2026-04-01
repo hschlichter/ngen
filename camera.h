@@ -7,8 +7,8 @@
 
 struct Camera {
     glm::vec3 position;
-    float yaw;              // degrees
-    float pitch;            // degrees
+    float yaw;   // degrees
+    float pitch; // degrees
     float speed;
     float mouseSensitivity;
 

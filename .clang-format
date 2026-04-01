@@ -9,7 +9,7 @@ IndentWidth: 4
 ContinuationIndentWidth: 4
 TabWidth: 4
 UseTab: Never
-ColumnLimit: 100
+ColumnLimit: 160
 AccessModifierOffset: -4
 IndentCaseLabels: true
 IndentCaseBlocks: false
@@ -21,6 +21,7 @@ AllowShortCaseLabelsOnASingleLine: false
 AllowShortEnumsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: InlineOnly
 AllowShortIfStatementsOnASingleLine: Never
+InsertBraces: true
 AllowShortLambdasOnASingleLine: Inline
 AllowShortLoopsOnASingleLine: false
 

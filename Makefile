@@ -40,10 +40,13 @@ $(OBJS): $(OUTDIR)/%.o: %.cpp
 
 -include $(OBJS:%.o=%.d)
 
+format:
+	clang-format -i $(SRCS) $(wildcard *.h **/*.h)
+
 clean:
 	@rm -rf $(OUTDIR)
 	@rm -f shaders/*.spv
 
 print-%  : ; @echo $* = $($*)
 
-.PHONY: all clean
+.PHONY: all clean format

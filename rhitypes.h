@@ -1,22 +1,22 @@
 #pragma once
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 enum class RhiBufferUsage : uint32_t {
     TransferSrc = 1 << 0,
     TransferDst = 1 << 1,
-    Vertex      = 1 << 2,
-    Index       = 1 << 3,
-    Uniform     = 1 << 4,
+    Vertex = 1 << 2,
+    Index = 1 << 3,
+    Uniform = 1 << 4,
 };
 
 inline RhiBufferUsage operator|(RhiBufferUsage a, RhiBufferUsage b) {
-    return (RhiBufferUsage)((uint32_t)a | (uint32_t)b);
+    return (RhiBufferUsage) ((uint32_t) a | (uint32_t) b);
 }
 
 inline bool operator&(RhiBufferUsage a, RhiBufferUsage b) {
-    return ((uint32_t)a & (uint32_t)b) != 0;
+    return ((uint32_t) a & (uint32_t) b) != 0;
 }
 
 enum class RhiMemoryUsage {
@@ -25,7 +25,7 @@ enum class RhiMemoryUsage {
 };
 
 enum class RhiShaderStage : uint32_t {
-    Vertex   = 1 << 0,
+    Vertex = 1 << 0,
     Fragment = 1 << 1,
 };
 
@@ -82,18 +82,54 @@ struct RhiPushConstantRange {
     uint32_t size;
 };
 
-class RhiBuffer { public: virtual ~RhiBuffer() = default; };
-class RhiTexture { public: virtual ~RhiTexture() = default; };
-class RhiSampler { public: virtual ~RhiSampler() = default; };
-class RhiShaderModule { public: virtual ~RhiShaderModule() = default; };
-class RhiPipeline { public: virtual ~RhiPipeline() = default; };
-class RhiDescriptorSetLayout { public: virtual ~RhiDescriptorSetLayout() = default; };
-class RhiDescriptorPool { public: virtual ~RhiDescriptorPool() = default; };
-class RhiDescriptorSet { public: virtual ~RhiDescriptorSet() = default; };
-class RhiSemaphore { public: virtual ~RhiSemaphore() = default; };
-class RhiFence { public: virtual ~RhiFence() = default; };
-class RhiRenderPass { public: virtual ~RhiRenderPass() = default; };
-class RhiFramebuffer { public: virtual ~RhiFramebuffer() = default; };
+class RhiBuffer {
+public:
+    virtual ~RhiBuffer() = default;
+};
+class RhiTexture {
+public:
+    virtual ~RhiTexture() = default;
+};
+class RhiSampler {
+public:
+    virtual ~RhiSampler() = default;
+};
+class RhiShaderModule {
+public:
+    virtual ~RhiShaderModule() = default;
+};
+class RhiPipeline {
+public:
+    virtual ~RhiPipeline() = default;
+};
+class RhiDescriptorSetLayout {
+public:
+    virtual ~RhiDescriptorSetLayout() = default;
+};
+class RhiDescriptorPool {
+public:
+    virtual ~RhiDescriptorPool() = default;
+};
+class RhiDescriptorSet {
+public:
+    virtual ~RhiDescriptorSet() = default;
+};
+class RhiSemaphore {
+public:
+    virtual ~RhiSemaphore() = default;
+};
+class RhiFence {
+public:
+    virtual ~RhiFence() = default;
+};
+class RhiRenderPass {
+public:
+    virtual ~RhiRenderPass() = default;
+};
+class RhiFramebuffer {
+public:
+    virtual ~RhiFramebuffer() = default;
+};
 
 struct RhiGraphicsPipelineDesc {
     RhiShaderModule* vertexShader;

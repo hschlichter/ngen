@@ -1,8 +1,8 @@
-#include "types.h"
-#include "sceneloader.h"
 #include "camera.h"
 #include "renderer.h"
 #include "rhidevicevulkan.h"
+#include "sceneloader.h"
+#include "types.h"
 
 #include <SDL3/SDL.h>
 
@@ -41,11 +41,15 @@ int main(int argc, char* argv[]) {
 
     // RHI device
     RhiDeviceVulkan rhiDevice;
-    if (rhiDevice.init(window)) return 1;
+    if (rhiDevice.init(window)) {
+        return 1;
+    }
 
     // Renderer
     Renderer renderer;
-    if (renderer.init(&rhiDevice, window)) return 1;
+    if (renderer.init(&rhiDevice, window)) {
+        return 1;
+    }
     renderer.uploadScene(scene);
 
     // Camera
@@ -63,7 +67,7 @@ int main(int argc, char* argv[]) {
     bool quit = false;
     while (!quit) {
         uint64_t nowTicks = SDL_GetTicksNS();
-        float dt = (float)(nowTicks - lastTicks) / 1.0e9f;
+        float dt = (float) (nowTicks - lastTicks) / 1.0e9f;
         lastTicks = nowTicks;
 
         SDL_Event ev;
@@ -73,10 +77,12 @@ int main(int argc, char* argv[]) {
                 quit = true;
             }
 
-            if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_RIGHT)
+            if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_RIGHT) {
                 mouseCapture = true;
-            if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_RIGHT)
+            }
+            if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_RIGHT) {
                 mouseCapture = false;
+            }
 
             if (ev.type == SDL_EVENT_MOUSE_MOTION && mouseCapture) {
                 cam.handleMouseMotion(ev.motion.xrel, ev.motion.yrel);

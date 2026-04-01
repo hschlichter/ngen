@@ -15,8 +15,6 @@ public:
     virtual void bindVertexBuffer(RhiBuffer* buffer) = 0;
     virtual void bindIndexBuffer(RhiBuffer* buffer) = 0;
     virtual void bindDescriptorSet(RhiPipeline* pipeline, RhiDescriptorSet* set) = 0;
-    virtual void pushConstants(RhiPipeline* pipeline, RhiShaderStage stage,
-                               uint32_t offset, uint32_t size, const void* data) = 0;
-    virtual void drawIndexed(uint32_t indexCount, uint32_t instanceCount,
-                             uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) = 0;
+    virtual void pushConstants(RhiPipeline* pipeline, RhiShaderStage stage, uint32_t offset, uint32_t size, const void* data) = 0;
+    virtual void drawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) = 0;
 };

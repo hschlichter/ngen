@@ -1,18 +1,18 @@
 #pragma once
 
-#include "rhiswapchain.h"
 #include "rhiresourcesvulkan.h"
+#include "rhiswapchain.h"
 
-#include <vulkan/vulkan.h>
 #include <vector>
+#include <vulkan/vulkan.h>
 
 struct SDL_Window;
 
 class RhiSwapchainVulkan : public RhiSwapchain {
     friend class RhiDeviceVulkan;
+
 public:
-    int init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface,
-             uint32_t queueFamilyIndex, SDL_Window* window);
+    int init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, SDL_Window* window);
     void destroy() override;
 
     int acquireNextImage(RhiSemaphore* signalSemaphore, uint32_t* outIndex) override;
@@ -37,6 +37,5 @@ private:
     RhiRenderPassVulkan rhiRenderPass;
     std::vector<RhiFramebufferVulkan> rhiFramebuffers;
 
-    uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter,
-                            VkMemoryPropertyFlags properties);
+    uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
 };
