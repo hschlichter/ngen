@@ -91,7 +91,7 @@ auto main(int argc, char* argv[]) -> int {
 
         const auto* keys = SDL_GetKeyboardState(NULL);
         cam.update(keys, dt);
-        renderer.draw(cam, window);
+        renderer.render(cam, window);
     }
 
     renderer.destroy();

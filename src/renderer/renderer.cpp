@@ -204,7 +204,7 @@ auto Renderer::uploadScene(const Scene& scene) -> void {
     }
 }
 
-auto Renderer::draw(const Camera& camera, SDL_Window* window) -> void {
+auto Renderer::render(const Camera& camera, SDL_Window* window) -> void {
     device->waitForFence(inflightFences[currentFrame]);
 
     auto index = swapchain->acquireNextImage(imageAvailableSemaphores[currentFrame]);
