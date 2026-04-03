@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -8,10 +9,10 @@
 #include <glm/glm.hpp>
 
 struct Vertex {
-    float position[3];
-    float normal[3];
-    float color[3];
-    float texCoord[2];
+    std::array<float, 3> position;
+    std::array<float, 3> normal;
+    std::array<float, 3> color;
+    std::array<float, 2> texCoord;
 };
 
 struct MeshData {

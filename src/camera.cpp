@@ -1,6 +1,7 @@
 #include "camera.h"
 
 #include <SDL3/SDL.h>
+#include <algorithm>
 #include <cmath>
 
 auto Camera::forward() const -> glm::vec3 {
@@ -16,12 +17,8 @@ auto Camera::right() const -> glm::vec3 {
 auto Camera::handleMouseMotion(float xrel, float yrel) -> void {
     yaw += xrel * mouseSensitivity;
     pitch -= yrel * mouseSensitivity;
-    if (pitch > 89.0f) {
-        pitch = 89.0f;
-    }
-    if (pitch < -89.0f) {
-        pitch = -89.0f;
-    }
+    pitch = std::min(pitch, 89.0f);
+    pitch = std::max(pitch, -89.0f);
 }
 
 auto Camera::update(const bool* keys, float dt) -> void {

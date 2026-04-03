@@ -40,6 +40,9 @@ $(OBJS): $(OUTDIR)/%.o: %.cpp
 
 -include $(OBJS:%.o=%.d)
 
+tidy:
+	clang-tidy $(SRCS) -- $(CXXFLAGS) $(INCLUDE)
+
 format:
 	clang-format -i $(SRCS) $(shell find src -name '*.h')
 
@@ -49,4 +52,4 @@ clean:
 
 print-%  : ; @echo $* = $($*)
 
-.PHONY: all clean format
+.PHONY: all clean format tidy

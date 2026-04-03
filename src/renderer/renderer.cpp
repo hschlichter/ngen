@@ -7,6 +7,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <array>
 #include <cstring>
 #include <print>
 
@@ -19,25 +20,25 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
     device = rhiDevice;
 
     swapchain = device->createSwapchain(window);
-    if (!swapchain) {
+    if (swapchain == nullptr) {
         return std::unexpected(1);
     }
 
     vertShader = device->createShaderModule("shaders/triangle.vert.spv");
     fragShader = device->createShaderModule("shaders/triangle.frag.spv");
 
-    RhiDescriptorBinding bindings[] = {
+    std::array<RhiDescriptorBinding, 2> bindings = {{
         {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
         {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
-    };
+    }};
     descriptorSetLayout = device->createDescriptorSetLayout(bindings);
 
-    RhiVertexAttribute vertexAttrs[] = {
+    std::array<RhiVertexAttribute, 4> vertexAttrs = {{
         {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
         {.location = 1, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, normal)},
         {.location = 2, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, color)},
         {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
-    };
+    }};
 
     auto ext = swapchain->extent();
     RhiGraphicsPipelineDesc pipelineDesc = {
@@ -51,7 +52,7 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
         .viewportExtent = ext,
     };
     pipeline = device->createGraphicsPipeline(pipelineDesc);
-    if (!pipeline) {
+    if (pipeline == nullptr) {
         return std::unexpected(1);
     }
 
@@ -94,10 +95,10 @@ auto Renderer::uploadScene(const Scene& scene) -> void {
 
     textureSampler = device->createSampler({});
 
-    std::vector<uint8_t> fallbackPixels(64 * 64 * 4);
+    std::vector<uint8_t> fallbackPixels(static_cast<size_t>(64) * 64 * 4);
     for (uint32_t y = 0; y < 64; y++) {
         for (uint32_t x = 0; x < 64; x++) {
-            auto c = ((x / 8) + (y / 8)) % 2 ? (uint8_t) 255 : (uint8_t) 64;
+            auto c = ((((x / 8) + (y / 8)) % 2) != 0u) ? (uint8_t) 255 : (uint8_t) 64;
             auto i = (y * 64 + x) * 4;
             fallbackPixels[i] = fallbackPixels[i + 1] = fallbackPixels[i + 2] = c;
             fallbackPixels[i + 3] = 255;
@@ -149,8 +150,9 @@ auto Renderer::uploadScene(const Scene& scene) -> void {
         device->destroyBuffer(iStaging);
 
         // Texture
-        uint32_t tw, th;
-        const uint8_t* texPtr;
+        uint32_t tw = 0;
+        uint32_t th = 0;
+        const uint8_t* texPtr = nullptr;
         if (!md.texPixels.empty()) {
             tw = md.texWidth;
             th = md.texHeight;
@@ -176,16 +178,16 @@ auto Renderer::uploadScene(const Scene& scene) -> void {
     auto imgCount = swapchain->imageCount();
     auto totalSets = imgCount * meshCount;
 
-    RhiDescriptorBinding bindings[] = {
+    std::array<RhiDescriptorBinding, 2> poolBindings = {{
         {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
         {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
-    };
-    descriptorPool = device->createDescriptorPool(totalSets, bindings);
+    }};
+    descriptorPool = device->createDescriptorPool(totalSets, poolBindings);
     descriptorSets = device->allocateDescriptorSets(descriptorPool, descriptorSetLayout, totalSets);
 
     for (uint32_t i = 0; i < imgCount; i++) {
         for (uint32_t m = 0; m < meshCount; m++) {
-            RhiDescriptorWrite writes[] = {
+            std::array<RhiDescriptorWrite, 2> writes = {{
                 {
                     .binding = 0,
                     .type = UniformBuffer,
@@ -198,8 +200,8 @@ auto Renderer::uploadScene(const Scene& scene) -> void {
                     .texture = gpuMeshes[m].texture,
                     .sampler = textureSampler,
                 },
-            };
-            device->updateDescriptorSet(descriptorSets[i * meshCount + m], writes);
+            }};
+            device->updateDescriptorSet(descriptorSets[(i * meshCount) + m], writes);
         }
     }
 }
@@ -214,7 +216,8 @@ auto Renderer::render(const Camera& camera, SDL_Window* window) -> void {
 
     device->resetFence(inflightFences[currentFrame]);
 
-    int winW, winH;
+    int winW = 0;
+    int winH = 0;
     SDL_GetWindowSizeInPixels(window, &winW, &winH);
     auto aspect = (float) winW / (float) winH;
     auto proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
@@ -247,7 +250,7 @@ auto Renderer::render(const Camera& camera, SDL_Window* window) -> void {
         cmd->pushConstants(pipeline, RhiShaderStage::Vertex, 0, sizeof(glm::mat4), &model);
         cmd->bindVertexBuffer(gm.vertexBuffer);
         cmd->bindIndexBuffer(gm.indexBuffer);
-        cmd->bindDescriptorSet(pipeline, descriptorSets[*index * meshCount + m]);
+        cmd->bindDescriptorSet(pipeline, descriptorSets[(*index * meshCount) + m]);
         cmd->drawIndexed(gm.indexCount, 1, 0, 0, 0);
     }
 

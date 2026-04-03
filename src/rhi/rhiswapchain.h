@@ -6,6 +6,11 @@
 
 class RhiSwapchain {
 public:
+    RhiSwapchain() = default;
+    RhiSwapchain(const RhiSwapchain&) = delete;
+    RhiSwapchain& operator=(const RhiSwapchain&) = delete;
+    RhiSwapchain(RhiSwapchain&&) = default;
+    RhiSwapchain& operator=(RhiSwapchain&&) = default;
     virtual ~RhiSwapchain() = default;
 
     virtual auto destroy() -> void = 0;

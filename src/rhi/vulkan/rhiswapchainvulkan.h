@@ -39,5 +39,5 @@ private:
     RhiRenderPassVulkan rhiRenderPass;
     std::vector<RhiFramebufferVulkan> rhiFramebuffers;
 
-    auto findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t;
+    static auto findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t;
 };
