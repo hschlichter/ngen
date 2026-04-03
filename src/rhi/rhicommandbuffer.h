@@ -4,6 +4,11 @@
 
 class RhiCommandBuffer {
 public:
+    RhiCommandBuffer() = default;
+    RhiCommandBuffer(const RhiCommandBuffer&) = delete;
+    RhiCommandBuffer& operator=(const RhiCommandBuffer&) = delete;
+    RhiCommandBuffer(RhiCommandBuffer&&) = default;
+    RhiCommandBuffer& operator=(RhiCommandBuffer&&) = default;
     virtual ~RhiCommandBuffer() = default;
 
     virtual auto begin() -> void = 0;

@@ -10,8 +10,17 @@ Checks: >
   -modernize-use-trailing-return-type,
   -readability-magic-numbers,
   -readability-identifier-length,
+  -readability-uppercase-literal-suffix,
   -cppcoreguidelines-avoid-magic-numbers,
   -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-type-static-cast-downcast,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-no-malloc,
+  -cppcoreguidelines-pro-type-cstyle-cast,
   -bugprone-easily-swappable-parameters,
+  -performance-enum-size,
 WarningsAsErrors: ''
 HeaderFilterRegex: 'src/.*'

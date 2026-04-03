@@ -12,6 +12,11 @@ struct SDL_Window;
 
 class RhiDevice {
 public:
+    RhiDevice() = default;
+    RhiDevice(const RhiDevice&) = delete;
+    RhiDevice& operator=(const RhiDevice&) = delete;
+    RhiDevice(RhiDevice&&) = default;
+    RhiDevice& operator=(RhiDevice&&) = default;
     virtual ~RhiDevice() = default;
 
     virtual auto init(SDL_Window* window) -> std::expected<void, int> = 0;

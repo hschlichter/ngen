@@ -31,6 +31,8 @@ public:
     Renderer() = default;
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
+    Renderer(Renderer&&) = default;
+    Renderer& operator=(Renderer&&) = default;
     ~Renderer() = default;
 
     auto init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<void, int>;

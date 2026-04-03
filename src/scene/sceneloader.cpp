@@ -14,7 +14,7 @@
 #include <stb_image.h>
 
 static auto loadPrimitive(MeshData& mesh, cgltf_primitive* prim, const char* filepath) -> void {
-    if (prim->indices) {
+    if (prim->indices != nullptr) {
         auto count = prim->indices->count;
         mesh.indices.resize(count);
         for (size_t i = 0; i < count; i++) {
@@ -36,7 +36,7 @@ static auto loadPrimitive(MeshData& mesh, cgltf_primitive* prim, const char* fil
         }
     }
 
-    if (!posAccessor) {
+    if (posAccessor == nullptr) {
         return;
     }
     auto vertCount = posAccessor->count;
@@ -44,15 +44,15 @@ static auto loadPrimitive(MeshData& mesh, cgltf_primitive* prim, const char* fil
 
     for (size_t i = 0; i < vertCount; i++) {
         auto& v = mesh.vertices[i];
-        cgltf_accessor_read_float(posAccessor, i, v.position, 3);
-        if (normAccessor) {
-            cgltf_accessor_read_float(normAccessor, i, v.normal, 3);
+        cgltf_accessor_read_float(posAccessor, i, v.position.data(), 3);
+        if (normAccessor != nullptr) {
+            cgltf_accessor_read_float(normAccessor, i, v.normal.data(), 3);
         } else {
             v.normal[0] = v.normal[1] = 0;
             v.normal[2] = 1;
         }
-        if (uvAccessor) {
-            cgltf_accessor_read_float(uvAccessor, i, v.texCoord, 2);
+        if (uvAccessor != nullptr) {
+            cgltf_accessor_read_float(uvAccessor, i, v.texCoord.data(), 2);
         } else {
             v.texCoord[0] = v.texCoord[1] = 0;
         }
@@ -66,22 +66,22 @@ static auto loadPrimitive(MeshData& mesh, cgltf_primitive* prim, const char* fil
         }
     }
 
-    if (prim->material && prim->material->pbr_metallic_roughness.base_color_texture.texture) {
+    if ((prim->material != nullptr) && (prim->material->pbr_metallic_roughness.base_color_texture.texture != nullptr)) {
         auto* img = prim->material->pbr_metallic_roughness.base_color_texture.texture->image;
-        if (img) {
-            int channels;
+        if (img != nullptr) {
+            int channels = 0;
             uint8_t* pixels = nullptr;
-            if (img->buffer_view) {
+            if (img->buffer_view != nullptr) {
                 const auto* bufData = (const uint8_t*) img->buffer_view->buffer->data + img->buffer_view->offset;
                 pixels = stbi_load_from_memory(bufData, (int) img->buffer_view->size, &mesh.texWidth, &mesh.texHeight, &channels, 4);
-            } else if (img->uri) {
+            } else if (img->uri != nullptr) {
                 auto dir = std::string(filepath);
                 auto slash = dir.find_last_of("/\\");
                 auto texPath = (slash != std::string::npos ? dir.substr(0, slash + 1) : "") + img->uri;
                 pixels = stbi_load(texPath.c_str(), &mesh.texWidth, &mesh.texHeight, &channels, 4);
             }
-            if (pixels) {
-                mesh.texPixels.assign(pixels, pixels + (size_t) mesh.texWidth * mesh.texHeight * 4);
+            if (pixels != nullptr) {
+                mesh.texPixels.assign(pixels, pixels + ((size_t) mesh.texWidth * mesh.texHeight * 4));
                 stbi_image_free(pixels);
             }
         }
@@ -90,17 +90,17 @@ static auto loadPrimitive(MeshData& mesh, cgltf_primitive* prim, const char* fil
 
 static auto getNodeTransform(cgltf_node* node) -> glm::mat4 {
     auto t = glm::mat4(1.0f);
-    if (node->has_matrix) {
+    if (node->has_matrix != 0) {
         memcpy(&t, node->matrix, sizeof(float) * 16);
     } else {
-        if (node->has_translation) {
+        if (node->has_translation != 0) {
             t = glm::translate(t, glm::vec3(node->translation[0], node->translation[1], node->translation[2]));
         }
-        if (node->has_rotation) {
+        if (node->has_rotation != 0) {
             auto q = glm::quat(node->rotation[3], node->rotation[0], node->rotation[1], node->rotation[2]);
             t *= glm::mat4_cast(q);
         }
-        if (node->has_scale) {
+        if (node->has_scale != 0) {
             t = glm::scale(t, glm::vec3(node->scale[0], node->scale[1], node->scale[2]));
         }
     }
@@ -109,7 +109,7 @@ static auto getNodeTransform(cgltf_node* node) -> glm::mat4 {
 
 static auto processNode(Scene& scene, cgltf_node* node, const glm::mat4& parentTransform, const char* filepath) -> void {
     auto world = parentTransform * getNodeTransform(node);
-    if (node->mesh) {
+    if (node->mesh != nullptr) {
         for (size_t p = 0; p < node->mesh->primitives_count; p++) {
             MeshData md;
             md.transform = world;
@@ -139,13 +139,13 @@ auto loadGltf(const char* filepath) -> Scene {
         return scene;
     }
 
-    if (gltf->scene) {
+    if (gltf->scene != nullptr) {
         for (size_t i = 0; i < gltf->scene->nodes_count; i++) {
             processNode(scene, gltf->scene->nodes[i], glm::mat4(1.0f), filepath);
         }
     } else {
         for (size_t i = 0; i < gltf->nodes_count; i++) {
-            if (!gltf->nodes[i].parent) {
+            if (gltf->nodes[i].parent == nullptr) {
                 processNode(scene, &gltf->nodes[i], glm::mat4(1.0f), filepath);
             }
         }

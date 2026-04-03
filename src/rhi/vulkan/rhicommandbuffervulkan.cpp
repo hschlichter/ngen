@@ -1,5 +1,6 @@
 #include "rhicommandbuffervulkan.h"
 
+#include <array>
 #include <utility>
 
 auto RhiCommandBufferVulkan::begin() -> void {
@@ -21,9 +22,9 @@ auto RhiCommandBufferVulkan::beginRenderPass(const RhiRenderPassBeginDesc& desc)
     auto* rp = static_cast<RhiRenderPassVulkan*>(desc.renderPass);
     auto* fb = static_cast<RhiFramebufferVulkan*>(desc.framebuffer);
 
-    VkClearValue clearValues[2] = {};
+    std::array<VkClearValue, 2> clearValues = {};
     clearValues[0].color = {{desc.clearColor[0], desc.clearColor[1], desc.clearColor[2], desc.clearColor[3]}};
-    clearValues[1].depthStencil = {desc.clearDepth, 0};
+    clearValues[1].depthStencil = {.depth = desc.clearDepth, .stencil = 0};
 
     VkRenderPassBeginInfo passBegin = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -31,7 +32,7 @@ auto RhiCommandBufferVulkan::beginRenderPass(const RhiRenderPassBeginDesc& desc)
         .framebuffer = fb->framebuffer,
         .renderArea = {{0, 0}, {desc.extent.width, desc.extent.height}},
         .clearValueCount = 2,
-        .pClearValues = clearValues,
+        .pClearValues = clearValues.data(),
     };
 
     vkCmdBeginRenderPass(cmd, &passBegin, VK_SUBPASS_CONTENTS_INLINE);
@@ -48,8 +49,8 @@ auto RhiCommandBufferVulkan::bindPipeline(RhiPipeline* pipeline) -> void {
 
 auto RhiCommandBufferVulkan::bindVertexBuffer(RhiBuffer* buffer) -> void {
     auto* b = static_cast<RhiBufferVulkan*>(buffer);
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(cmd, 0, 1, &b->buffer, offsets);
+    std::array<VkDeviceSize, 1> offsets = {0};
+    vkCmdBindVertexBuffers(cmd, 0, 1, &b->buffer, offsets.data());
 }
 
 auto RhiCommandBufferVulkan::bindIndexBuffer(RhiBuffer* buffer) -> void {
@@ -60,16 +61,16 @@ auto RhiCommandBufferVulkan::bindIndexBuffer(RhiBuffer* buffer) -> void {
 auto RhiCommandBufferVulkan::bindDescriptorSet(RhiPipeline* pipeline, RhiDescriptorSet* set) -> void {
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
     auto* s = static_cast<RhiDescriptorSetVulkan*>(set);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p->layout, 0, 1, &s->set, 0, NULL);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p->layout, 0, 1, &s->set, 0, nullptr);
 }
 
 auto RhiCommandBufferVulkan::pushConstants(RhiPipeline* pipeline, RhiShaderStage stage, uint32_t offset, uint32_t size, const void* data) -> void {
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
     VkShaderStageFlags vkStage = 0;
-    if (std::to_underlying(stage) & std::to_underlying(RhiShaderStage::Vertex)) {
+    if ((std::to_underlying(stage) & std::to_underlying(RhiShaderStage::Vertex)) != 0u) {
         vkStage |= VK_SHADER_STAGE_VERTEX_BIT;
     }
-    if (std::to_underlying(stage) & std::to_underlying(RhiShaderStage::Fragment)) {
+    if ((std::to_underlying(stage) & std::to_underlying(RhiShaderStage::Fragment)) != 0u) {
         vkStage |= VK_SHADER_STAGE_FRAGMENT_BIT;
     }
     vkCmdPushConstants(cmd, p->layout, vkStage, offset, size, data);

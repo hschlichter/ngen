@@ -33,7 +33,7 @@ auto main(int argc, char* argv[]) -> int {
     SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_VULKAN_BOOLEAN, 1);
     SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, 1);
     auto* window = SDL_CreateWindowWithProperties(windowProps);
-    if (window == NULL) {
+    if (window == nullptr) {
         std::println(stderr, "SDL_CreateWindowWithProperties failed: {}", SDL_GetError());
         return 1;
     }
@@ -89,7 +89,7 @@ auto main(int argc, char* argv[]) -> int {
             }
         }
 
-        const auto* keys = SDL_GetKeyboardState(NULL);
+        const auto* keys = SDL_GetKeyboardState(nullptr);
         cam.update(keys, dt);
         renderer.render(cam, window);
     }

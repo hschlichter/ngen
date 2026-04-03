@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -86,50 +87,110 @@ struct RhiPushConstantRange {
 
 class RhiBuffer {
 public:
+    RhiBuffer() = default;
+    RhiBuffer(const RhiBuffer&) = delete;
+    RhiBuffer& operator=(const RhiBuffer&) = delete;
+    RhiBuffer(RhiBuffer&&) = default;
+    RhiBuffer& operator=(RhiBuffer&&) = default;
     virtual ~RhiBuffer() = default;
 };
 class RhiTexture {
 public:
+    RhiTexture() = default;
+    RhiTexture(const RhiTexture&) = delete;
+    RhiTexture& operator=(const RhiTexture&) = delete;
+    RhiTexture(RhiTexture&&) = default;
+    RhiTexture& operator=(RhiTexture&&) = default;
     virtual ~RhiTexture() = default;
 };
 class RhiSampler {
 public:
+    RhiSampler() = default;
+    RhiSampler(const RhiSampler&) = delete;
+    RhiSampler& operator=(const RhiSampler&) = delete;
+    RhiSampler(RhiSampler&&) = default;
+    RhiSampler& operator=(RhiSampler&&) = default;
     virtual ~RhiSampler() = default;
 };
 class RhiShaderModule {
 public:
+    RhiShaderModule() = default;
+    RhiShaderModule(const RhiShaderModule&) = delete;
+    RhiShaderModule& operator=(const RhiShaderModule&) = delete;
+    RhiShaderModule(RhiShaderModule&&) = default;
+    RhiShaderModule& operator=(RhiShaderModule&&) = default;
     virtual ~RhiShaderModule() = default;
 };
 class RhiPipeline {
 public:
+    RhiPipeline() = default;
+    RhiPipeline(const RhiPipeline&) = delete;
+    RhiPipeline& operator=(const RhiPipeline&) = delete;
+    RhiPipeline(RhiPipeline&&) = default;
+    RhiPipeline& operator=(RhiPipeline&&) = default;
     virtual ~RhiPipeline() = default;
 };
 class RhiDescriptorSetLayout {
 public:
+    RhiDescriptorSetLayout() = default;
+    RhiDescriptorSetLayout(const RhiDescriptorSetLayout&) = delete;
+    RhiDescriptorSetLayout& operator=(const RhiDescriptorSetLayout&) = delete;
+    RhiDescriptorSetLayout(RhiDescriptorSetLayout&&) = default;
+    RhiDescriptorSetLayout& operator=(RhiDescriptorSetLayout&&) = default;
     virtual ~RhiDescriptorSetLayout() = default;
 };
 class RhiDescriptorPool {
 public:
+    RhiDescriptorPool() = default;
+    RhiDescriptorPool(const RhiDescriptorPool&) = delete;
+    RhiDescriptorPool& operator=(const RhiDescriptorPool&) = delete;
+    RhiDescriptorPool(RhiDescriptorPool&&) = default;
+    RhiDescriptorPool& operator=(RhiDescriptorPool&&) = default;
     virtual ~RhiDescriptorPool() = default;
 };
 class RhiDescriptorSet {
 public:
+    RhiDescriptorSet() = default;
+    RhiDescriptorSet(const RhiDescriptorSet&) = delete;
+    RhiDescriptorSet& operator=(const RhiDescriptorSet&) = delete;
+    RhiDescriptorSet(RhiDescriptorSet&&) = default;
+    RhiDescriptorSet& operator=(RhiDescriptorSet&&) = default;
     virtual ~RhiDescriptorSet() = default;
 };
 class RhiSemaphore {
 public:
+    RhiSemaphore() = default;
+    RhiSemaphore(const RhiSemaphore&) = delete;
+    RhiSemaphore& operator=(const RhiSemaphore&) = delete;
+    RhiSemaphore(RhiSemaphore&&) = default;
+    RhiSemaphore& operator=(RhiSemaphore&&) = default;
     virtual ~RhiSemaphore() = default;
 };
 class RhiFence {
 public:
+    RhiFence() = default;
+    RhiFence(const RhiFence&) = delete;
+    RhiFence& operator=(const RhiFence&) = delete;
+    RhiFence(RhiFence&&) = default;
+    RhiFence& operator=(RhiFence&&) = default;
     virtual ~RhiFence() = default;
 };
 class RhiRenderPass {
 public:
+    RhiRenderPass() = default;
+    RhiRenderPass(const RhiRenderPass&) = delete;
+    RhiRenderPass& operator=(const RhiRenderPass&) = delete;
+    RhiRenderPass(RhiRenderPass&&) = default;
+    RhiRenderPass& operator=(RhiRenderPass&&) = default;
     virtual ~RhiRenderPass() = default;
 };
 class RhiFramebuffer {
 public:
+    RhiFramebuffer() = default;
+    RhiFramebuffer(const RhiFramebuffer&) = delete;
+    RhiFramebuffer& operator=(const RhiFramebuffer&) = delete;
+    RhiFramebuffer(RhiFramebuffer&&) = default;
+    RhiFramebuffer& operator=(RhiFramebuffer&&) = default;
     virtual ~RhiFramebuffer() = default;
 };
 
@@ -148,7 +209,7 @@ struct RhiRenderPassBeginDesc {
     RhiRenderPass* renderPass;
     RhiFramebuffer* framebuffer;
     RhiExtent2D extent;
-    float clearColor[4];
+    std::array<float, 4> clearColor;
     float clearDepth;
 };
 

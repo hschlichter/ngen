@@ -60,8 +60,8 @@ private:
     auto findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t;
     auto transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) -> void;
 
-    auto toVkBufferUsage(RhiBufferUsage usage) -> VkBufferUsageFlags;
-    auto toVkMemoryProps(RhiMemoryUsage usage) -> VkMemoryPropertyFlags;
-    auto toVkFormat(RhiFormat format) -> VkFormat;
-    auto toVkShaderStage(RhiShaderStage stage) -> VkShaderStageFlags;
+    static auto toVkBufferUsage(RhiBufferUsage usage) -> VkBufferUsageFlags;
+    static auto toVkMemoryProps(RhiMemoryUsage usage) -> VkMemoryPropertyFlags;
+    static auto toVkFormat(RhiFormat format) -> VkFormat;
+    static auto toVkShaderStage(RhiShaderStage stage) -> VkShaderStageFlags;
 };
