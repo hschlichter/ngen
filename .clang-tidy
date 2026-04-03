@@ -1,0 +1,17 @@
+---
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  modernize-*,
+  readability-*,
+  performance-*,
+  cppcoreguidelines-*,
+  -modernize-use-trailing-return-type,
+  -readability-magic-numbers,
+  -readability-identifier-length,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -bugprone-easily-swappable-parameters,
+WarningsAsErrors: ''
+HeaderFilterRegex: 'src/.*'
