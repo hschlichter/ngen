@@ -4,6 +4,9 @@ A modern 3D graphics engine written in C++23 with a Vulkan rendering backend. Lo
 
 ## Features
 
+- **Frame Graph** — Declarative render pass system with automatic dependency resolution, topological sorting, pass culling, and barrier insertion
+- **Transient Resource Management** — Pool-based GPU resource allocation with lifetime tracking and intra-frame aliasing for non-overlapping resources
+- **Dynamic Rendering** — Vulkan 1.3 dynamic rendering (no VkRenderPass/VkFramebuffer), with synchronization2 barriers
 - **Rendering Hardware Interface (RHI)** — Backend-agnostic GPU abstraction layer, currently implemented for Vulkan
 - **glTF/GLB model loading** — Meshes with positions, normals, UVs, vertex colors, and embedded textures
 - **Texture sampling** — Base color textures with linear filtering
@@ -17,9 +20,11 @@ A modern 3D graphics engine written in C++23 with a Vulkan rendering backend. Lo
 ```
 App (main.cpp)
  └─ Scene (scene/)        — glTF loading, mesh/texture extraction
- └─ Renderer (renderer/)  — Frame orchestration, GPU mesh management
+ └─ Renderer (renderer/)  — Frame graph, resource pool, GPU mesh management
+     ├─ FrameGraph        — Pass declaration, compilation, execution
+     ├─ ResourcePool      — Transient texture pooling with descriptor-keyed reuse
      └─ RHI (rhi/)        — Abstract device, swapchain, command buffer interfaces
-         └─ Vulkan (rhi/vulkan/)  — Vulkan 1.2+ backend implementation
+         └─ Vulkan (rhi/vulkan/)  — Vulkan 1.3 backend (dynamic rendering, sync2)
 ```
 
 Additional backends (D3D12, Metal) can be added as sibling folders under `src/rhi/`.
@@ -63,5 +68,7 @@ Shaders are compiled from GLSL to SPIR-V automatically via `glslc`.
 | Input | Action |
 |-------|--------|
 | WASD | Move camera |
+| Q / E | Move down / up |
+| Shift | Sprint (3x speed) |
 | Right mouse button | Hold to look around |
 | ESC | Quit |
