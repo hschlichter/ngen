@@ -64,11 +64,6 @@ private:
     };
     std::vector<PassDataEntry> passData;
 
-    struct BarrierBatch {
-        std::vector<RhiBarrierDesc> barriers;
-    };
-    std::vector<BarrierBatch> passBarriers;
-
     ResourcePool* resourcePool = nullptr;
 };
 

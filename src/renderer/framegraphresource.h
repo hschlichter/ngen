@@ -45,4 +45,6 @@ struct FgResource {
     FgAccessFlags currentAccess = FgAccessFlags::None;
     RhiTexture* physical = nullptr;
     bool external = false;
+    uint32_t firstUseOrder = UINT32_MAX;
+    uint32_t lastUseOrder = 0;
 };

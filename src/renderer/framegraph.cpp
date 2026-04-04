@@ -11,7 +11,6 @@ auto FrameGraph::reset() -> void {
     resources.clear();
     passOrder.clear();
     passData.clear();
-    passBarriers.clear();
 }
 
 auto FrameGraph::importTexture(RhiTexture* texture, const FgTextureDesc& desc) -> FgTextureHandle {
@@ -167,29 +166,54 @@ auto FrameGraph::compile() -> void {
             std::println("Frame graph: culled pass '{}'", passes[i].name);
         }
     }
+
+    // 4. Compute transient resource lifetimes
+    for (auto& res : resources) {
+        res.firstUseOrder = UINT32_MAX;
+        res.lastUseOrder = 0;
+    }
+
+    for (uint32_t orderIdx = 0; orderIdx < (uint32_t) passOrder.size(); orderIdx++) {
+        auto passIdx = passOrder[orderIdx];
+        if (passes[passIdx].culled) {
+            continue;
+        }
+
+        auto updateLifetime = [&](uint32_t resIdx) {
+            auto& res = resources[resIdx];
+            if (res.external) {
+                return;
+            }
+            if (orderIdx < res.firstUseOrder) {
+                res.firstUseOrder = orderIdx;
+            }
+            if (orderIdx > res.lastUseOrder) {
+                res.lastUseOrder = orderIdx;
+            }
+        };
+
+        for (const auto& r : passes[passIdx].reads) {
+            updateLifetime(r.resourceIndex);
+        }
+        for (const auto& w : passes[passIdx].writes) {
+            updateLifetime(w.resourceIndex);
+        }
+    }
 }
 
 // --- Execution: allocate transients, compute barriers, run passes, release ---
 
-auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
-    // Allocate transient resources from pool
-    if (resourcePool != nullptr) {
-        for (auto& res : resources) {
-            if (!res.external && res.physical == nullptr) {
-                RhiTextureDesc rhiDesc = {
-                    .width = res.desc.width,
-                    .height = res.desc.height,
-                    .format = res.desc.format,
-                    .usage = res.desc.usage,
-                };
-                res.physical = resourcePool->acquireTexture(rhiDesc);
-            }
-        }
-    }
+static auto toRhiTextureDesc(const FgTextureDesc& desc) -> RhiTextureDesc {
+    return {
+        .width = desc.width,
+        .height = desc.height,
+        .format = desc.format,
+        .usage = desc.usage,
+    };
+}
 
-    // Compute barriers (now that all physical pointers are set)
-    passBarriers.clear();
-    passBarriers.resize(passOrder.size());
+auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
+    FrameGraphContext ctx(this, cmd);
     std::vector<FgAccessFlags> resourceAccess(resources.size(), FgAccessFlags::None);
 
     for (uint32_t orderIdx = 0; orderIdx < (uint32_t) passOrder.size(); orderIdx++) {
@@ -198,8 +222,18 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
             continue;
         }
 
-        auto& barriers = passBarriers[orderIdx].barriers;
+        // Allocate transient resources whose lifetime starts at this pass
+        if (resourcePool != nullptr) {
+            for (uint32_t resIdx = 0; resIdx < (uint32_t) resources.size(); resIdx++) {
+                auto& res = resources[resIdx];
+                if (!res.external && res.physical == nullptr && res.firstUseOrder == orderIdx) {
+                    res.physical = resourcePool->acquireTexture(toRhiTextureDesc(res.desc));
+                }
+            }
+        }
 
+        // Compute barriers for this pass
+        std::vector<RhiBarrierDesc> barriers;
         auto checkTransition = [&](uint32_t resIdx, FgAccessFlags newAccess) {
             auto oldAccess = resourceAccess[resIdx];
             if (std::to_underlying(oldAccess) != std::to_underlying(newAccess)) {
@@ -222,37 +256,22 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
         for (const auto& w : passes[passIdx].writes) {
             checkTransition(w.resourceIndex, w.access);
         }
-    }
 
-    // Execute passes
-    FrameGraphContext ctx(this, cmd);
-
-    for (uint32_t orderIdx = 0; orderIdx < (uint32_t) passOrder.size(); orderIdx++) {
-        auto passIdx = passOrder[orderIdx];
-        if (passes[passIdx].culled) {
-            continue;
-        }
-
-        auto& barriers = passBarriers[orderIdx].barriers;
         if (!barriers.empty()) {
             cmd->pipelineBarrier(barriers);
         }
 
+        // Execute pass
         passes[passIdx].execute(ctx);
-    }
 
-    // Release transient resources back to pool
-    if (resourcePool != nullptr) {
-        for (auto& res : resources) {
-            if (!res.external && res.physical != nullptr) {
-                RhiTextureDesc rhiDesc = {
-                    .width = res.desc.width,
-                    .height = res.desc.height,
-                    .format = res.desc.format,
-                    .usage = res.desc.usage,
-                };
-                resourcePool->releaseTexture(rhiDesc, res.physical);
-                res.physical = nullptr;
+        // Release transient resources whose lifetime ends at this pass
+        if (resourcePool != nullptr) {
+            for (uint32_t resIdx = 0; resIdx < (uint32_t) resources.size(); resIdx++) {
+                auto& res = resources[resIdx];
+                if (!res.external && res.physical != nullptr && res.lastUseOrder == orderIdx) {
+                    resourcePool->releaseTexture(toRhiTextureDesc(res.desc), res.physical);
+                    res.physical = nullptr;
+                }
             }
         }
     }
