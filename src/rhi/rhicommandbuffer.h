@@ -2,6 +2,8 @@
 
 #include "rhitypes.h"
 
+#include <span>
+
 class RhiCommandBuffer {
 public:
     RhiCommandBuffer() = default;
@@ -14,8 +16,9 @@ public:
     virtual auto begin() -> void = 0;
     virtual auto end() -> void = 0;
     virtual auto reset() -> void = 0;
-    virtual auto beginRenderPass(const RhiRenderPassBeginDesc& desc) -> void = 0;
-    virtual auto endRenderPass() -> void = 0;
+    virtual auto beginRendering(const RhiRenderingInfo& info) -> void = 0;
+    virtual auto endRendering() -> void = 0;
+    virtual auto pipelineBarrier(std::span<const RhiBarrierDesc> barriers) -> void = 0;
     virtual auto bindPipeline(RhiPipeline* pipeline) -> void = 0;
     virtual auto bindVertexBuffer(RhiBuffer* buffer) -> void = 0;
     virtual auto bindIndexBuffer(RhiBuffer* buffer) -> void = 0;

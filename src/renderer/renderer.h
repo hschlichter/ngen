@@ -1,5 +1,6 @@
 #pragma once
 
+#include "framegraph.h"
 #include "rhitypes.h"
 
 #include <expected>
@@ -61,4 +62,6 @@ private:
     std::vector<RhiSemaphore*> renderFinishedSemaphores;
     std::vector<RhiFence*> inflightFences;
     uint32_t currentFrame = 0;
+
+    FrameGraph frameGraph;
 };

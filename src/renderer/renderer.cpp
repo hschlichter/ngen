@@ -41,11 +41,14 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
     }};
 
     auto ext = swapchain->extent();
+    auto colorFmt = swapchain->colorFormat();
+    auto depthFmt = swapchain->depthFormat();
     RhiGraphicsPipelineDesc pipelineDesc = {
         .vertexShader = vertShader,
         .fragmentShader = fragShader,
         .descriptorSetLayout = descriptorSetLayout,
-        .renderPass = swapchain->renderPass(),
+        .colorFormats = {&colorFmt, 1},
+        .depthFormat = depthFmt,
         .vertexStride = sizeof(Vertex),
         .vertexAttributes = vertexAttrs,
         .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(glm::mat4)},
@@ -206,6 +209,11 @@ auto Renderer::uploadScene(const Scene& scene) -> void {
     }
 }
 
+struct ForwardPassData {
+    FgTextureHandle color;
+    FgTextureHandle depth;
+};
+
 auto Renderer::render(const Camera& camera, SDL_Window* window) -> void {
     device->waitForFence(inflightFences[currentFrame]);
 
@@ -220,7 +228,7 @@ auto Renderer::render(const Camera& camera, SDL_Window* window) -> void {
     int winH = 0;
     SDL_GetWindowSizeInPixels(window, &winW, &winH);
     auto aspect = (float) winW / (float) winH;
-    auto proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+    auto proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 3000.0f);
     proj[1][1] *= -1.0f;
     UniformBufferObject ubo = {
         .view = camera.viewMatrix(),
@@ -228,33 +236,80 @@ auto Renderer::render(const Camera& camera, SDL_Window* window) -> void {
     };
     memcpy(uniformBuffersMapped[*index], &ubo, sizeof(ubo));
 
+    // Build frame graph
+    auto ext = swapchain->extent();
+    frameGraph.reset();
+
+    auto colorHandle = frameGraph.importTexture(swapchain->image(*index), {ext.width, ext.height, swapchain->colorFormat()});
+    auto depthHandle = frameGraph.importTexture(swapchain->depthImage(), {ext.width, ext.height, swapchain->depthFormat()});
+
+    auto imageIdx = *index;
+    auto meshCount = (uint32_t) gpuMeshes.size();
+
+    frameGraph.addPass<ForwardPassData>(
+        "ForwardPass",
+        [&](FrameGraphBuilder& builder, ForwardPassData& data) {
+            data.color = builder.write(colorHandle, FgAccessFlags::ColorAttachment);
+            data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
+            builder.setSideEffects(true);
+        },
+        [this, imageIdx, meshCount, ext](FrameGraphContext& ctx, const ForwardPassData& data) {
+            auto* cmd = ctx.cmd();
+
+            RhiRenderingAttachmentInfo colorAtt = {
+                .texture = ctx.texture(data.color),
+                .layout = RhiImageLayout::ColorAttachment,
+                .clear = true,
+                .clearColor = {0.1f, 0.1f, 0.1f, 1.0f},
+            };
+            RhiRenderingAttachmentInfo depthAtt = {
+                .texture = ctx.texture(data.depth),
+                .layout = RhiImageLayout::DepthStencilAttachment,
+                .clear = true,
+                .clearDepth = 1.0f,
+            };
+            RhiRenderingInfo renderInfo = {
+                .extent = ext,
+                .colorAttachments = {&colorAtt, 1},
+                .depthAttachment = &depthAtt,
+            };
+            cmd->beginRendering(renderInfo);
+            cmd->bindPipeline(pipeline);
+
+            for (uint32_t m = 0; m < meshCount; m++) {
+                auto& gm = gpuMeshes[m];
+                auto model = gm.transform;
+                cmd->pushConstants(pipeline, RhiShaderStage::Vertex, 0, sizeof(glm::mat4), &model);
+                cmd->bindVertexBuffer(gm.vertexBuffer);
+                cmd->bindIndexBuffer(gm.indexBuffer);
+                cmd->bindDescriptorSet(pipeline, descriptorSets[(imageIdx * meshCount) + m]);
+                cmd->drawIndexed(gm.indexCount, 1, 0, 0, 0);
+            }
+
+            cmd->endRendering();
+        });
+
+    frameGraph.compile();
+
     auto* cmd = cmdBuffers[*index];
     cmd->reset();
     cmd->begin();
 
-    auto ext = swapchain->extent();
-    RhiRenderPassBeginDesc rpDesc = {
-        .renderPass = swapchain->renderPass(),
-        .framebuffer = swapchain->framebuffer(*index),
-        .extent = ext,
-        .clearColor = {0.1f, 0.1f, 0.1f, 1.0f},
-        .clearDepth = 1.0f,
-    };
-    cmd->beginRenderPass(rpDesc);
-    cmd->bindPipeline(pipeline);
+    // Transition swapchain image: Undefined -> ColorAttachment (before graph)
+    std::array<RhiBarrierDesc, 2> preBarriers = {{
+        {.texture = swapchain->image(*index), .oldLayout = RhiImageLayout::Undefined, .newLayout = RhiImageLayout::ColorAttachment},
+        {.texture = swapchain->depthImage(), .oldLayout = RhiImageLayout::Undefined, .newLayout = RhiImageLayout::DepthStencilAttachment},
+    }};
+    cmd->pipelineBarrier(preBarriers);
 
-    auto meshCount = (uint32_t) gpuMeshes.size();
-    for (uint32_t m = 0; m < meshCount; m++) {
-        auto& gm = gpuMeshes[m];
-        auto model = gm.transform;
-        cmd->pushConstants(pipeline, RhiShaderStage::Vertex, 0, sizeof(glm::mat4), &model);
-        cmd->bindVertexBuffer(gm.vertexBuffer);
-        cmd->bindIndexBuffer(gm.indexBuffer);
-        cmd->bindDescriptorSet(pipeline, descriptorSets[(*index * meshCount) + m]);
-        cmd->drawIndexed(gm.indexCount, 1, 0, 0, 0);
-    }
+    frameGraph.execute(cmd);
 
-    cmd->endRenderPass();
+    // Transition swapchain image: ColorAttachment -> PresentSrc (after graph)
+    std::array<RhiBarrierDesc, 1> postBarriers = {{
+        {.texture = swapchain->image(*index), .oldLayout = RhiImageLayout::ColorAttachment, .newLayout = RhiImageLayout::PresentSrc},
+    }};
+    cmd->pipelineBarrier(postBarriers);
+
     cmd->end();
 
     RhiSubmitInfo submitInfo = {

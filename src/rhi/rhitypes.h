@@ -33,15 +33,29 @@ enum class RhiShaderStage : uint32_t {
 };
 
 enum class RhiFormat {
+    Undefined,
     R32G32_SFLOAT,
     R32G32B32_SFLOAT,
     R8G8B8A8_SRGB,
+    R8G8B8A8_UNORM,
+    B8G8R8A8_SRGB,
+    B8G8R8A8_UNORM,
     D32_SFLOAT,
 };
 
 enum class RhiDescriptorType {
     UniformBuffer,
     CombinedImageSampler,
+};
+
+enum class RhiImageLayout {
+    Undefined,
+    ColorAttachment,
+    DepthStencilAttachment,
+    ShaderReadOnly,
+    TransferSrc,
+    TransferDst,
+    PresentSrc,
 };
 
 struct RhiExtent2D {
@@ -175,42 +189,37 @@ public:
     RhiFence& operator=(RhiFence&&) = default;
     virtual ~RhiFence() = default;
 };
-class RhiRenderPass {
-public:
-    RhiRenderPass() = default;
-    RhiRenderPass(const RhiRenderPass&) = delete;
-    RhiRenderPass& operator=(const RhiRenderPass&) = delete;
-    RhiRenderPass(RhiRenderPass&&) = default;
-    RhiRenderPass& operator=(RhiRenderPass&&) = default;
-    virtual ~RhiRenderPass() = default;
+
+struct RhiRenderingAttachmentInfo {
+    RhiTexture* texture = nullptr;
+    RhiImageLayout layout = RhiImageLayout::Undefined;
+    bool clear = false;
+    std::array<float, 4> clearColor = {0.0f, 0.0f, 0.0f, 1.0f};
+    float clearDepth = 1.0f;
 };
-class RhiFramebuffer {
-public:
-    RhiFramebuffer() = default;
-    RhiFramebuffer(const RhiFramebuffer&) = delete;
-    RhiFramebuffer& operator=(const RhiFramebuffer&) = delete;
-    RhiFramebuffer(RhiFramebuffer&&) = default;
-    RhiFramebuffer& operator=(RhiFramebuffer&&) = default;
-    virtual ~RhiFramebuffer() = default;
+
+struct RhiRenderingInfo {
+    RhiExtent2D extent;
+    std::span<const RhiRenderingAttachmentInfo> colorAttachments;
+    const RhiRenderingAttachmentInfo* depthAttachment = nullptr;
+};
+
+struct RhiBarrierDesc {
+    RhiTexture* texture;
+    RhiImageLayout oldLayout;
+    RhiImageLayout newLayout;
 };
 
 struct RhiGraphicsPipelineDesc {
     RhiShaderModule* vertexShader;
     RhiShaderModule* fragmentShader;
     RhiDescriptorSetLayout* descriptorSetLayout;
-    RhiRenderPass* renderPass;
+    std::span<const RhiFormat> colorFormats;
+    RhiFormat depthFormat = RhiFormat::Undefined;
     uint32_t vertexStride;
     std::span<const RhiVertexAttribute> vertexAttributes;
     RhiPushConstantRange pushConstant;
     RhiExtent2D viewportExtent;
-};
-
-struct RhiRenderPassBeginDesc {
-    RhiRenderPass* renderPass;
-    RhiFramebuffer* framebuffer;
-    RhiExtent2D extent;
-    std::array<float, 4> clearColor;
-    float clearDepth;
 };
 
 struct RhiDescriptorWrite {

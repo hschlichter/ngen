@@ -19,6 +19,22 @@ auto RhiSwapchainVulkan::findMemoryType(VkPhysicalDevice physicalDevice, uint32_
     return UINT32_MAX;
 }
 
+auto RhiSwapchainVulkan::vkFormatToRhiFormat(VkFormat format) -> RhiFormat {
+    switch (format) {
+        case VK_FORMAT_B8G8R8A8_SRGB:
+            return RhiFormat::B8G8R8A8_SRGB;
+        case VK_FORMAT_B8G8R8A8_UNORM:
+            return RhiFormat::B8G8R8A8_UNORM;
+        case VK_FORMAT_R8G8B8A8_SRGB:
+            return RhiFormat::R8G8B8A8_SRGB;
+        case VK_FORMAT_R8G8B8A8_UNORM:
+            return RhiFormat::R8G8B8A8_UNORM;
+        default:
+            std::println(stderr, "Unsupported swapchain format: {}", (int) format);
+            return RhiFormat::B8G8R8A8_SRGB;
+    }
+}
+
 auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, SDL_Window* window)
     -> std::expected<void, int> {
     vkDevice = device;
@@ -46,6 +62,7 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     }
 
     auto format = formats[0];
+    rhiColorFormat = vkFormatToRhiFormat(format.format);
 
     {
         int w = 0;
@@ -87,15 +104,18 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
         return std::unexpected(1);
     }
 
-    images.resize(imgCount);
+    std::vector<VkImage> images(imgCount);
     result = vkGetSwapchainImagesKHR(device, swapchain, &imgCount, images.data());
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkGetPhysicalDeviceSurfaceFormatsKHR failed: {}({})", string_VkResult(result), (int) result);
+        std::println(stderr, "vkGetSwapchainImagesKHR failed: {}({})", string_VkResult(result), (int) result);
         return std::unexpected(1);
     }
 
-    imageViews.resize(imgCount);
+    colorImages.resize(imgCount);
     for (uint32_t i = 0; i < imgCount; i++) {
+        colorImages[i].image = images[i];
+        colorImages[i].memory = VK_NULL_HANDLE;
+
         VkImageViewCreateInfo viewInfo = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .image = images[i],
@@ -111,7 +131,7 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
                 },
         };
 
-        result = vkCreateImageView(device, &viewInfo, nullptr, &imageViews[i]);
+        result = vkCreateImageView(device, &viewInfo, nullptr, &colorImages[i].view);
         if (result != VK_SUCCESS) {
             std::println(stderr, "vkCreateImageView failed: {}({})", string_VkResult(result), (int) result);
             return std::unexpected(1);
@@ -119,12 +139,12 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     }
 
     // Depth image
-    auto depthFormat = VK_FORMAT_D32_SFLOAT;
+    auto vkDepthFormat = VK_FORMAT_D32_SFLOAT;
 
     VkImageCreateInfo depthImageInfo = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
-        .format = depthFormat,
+        .format = vkDepthFormat,
         .extent = {ext.width, ext.height, 1},
         .mipLevels = 1,
         .arrayLayers = 1,
@@ -135,14 +155,14 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     };
 
-    result = vkCreateImage(device, &depthImageInfo, nullptr, &depthImage);
+    result = vkCreateImage(device, &depthImageInfo, nullptr, &vkDepthImage);
     if (result != VK_SUCCESS) {
         std::println(stderr, "vkCreateImage failed: {}({})", string_VkResult(result), (int) result);
         return std::unexpected(1);
     }
 
     VkMemoryRequirements depthMemReqs;
-    vkGetImageMemoryRequirements(device, depthImage, &depthMemReqs);
+    vkGetImageMemoryRequirements(device, vkDepthImage, &depthMemReqs);
 
     auto depthMemType = findMemoryType(physicalDevice, depthMemReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (depthMemType == UINT32_MAX) {
@@ -159,13 +179,13 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
         std::println(stderr, "vkAllocateMemory failed: {}({})", string_VkResult(result), (int) result);
         return std::unexpected(1);
     }
-    vkBindImageMemory(device, depthImage, depthMemory, 0);
+    vkBindImageMemory(device, vkDepthImage, depthMemory, 0);
 
     VkImageViewCreateInfo depthViewInfo = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = depthImage,
+        .image = vkDepthImage,
         .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = depthFormat,
+        .format = vkDepthFormat,
         .subresourceRange =
             {
                 .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
@@ -175,85 +195,13 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
                 .layerCount = 1,
             },
     };
-    result = vkCreateImageView(device, &depthViewInfo, nullptr, &depthImageView);
+    result = vkCreateImageView(device, &depthViewInfo, nullptr, &rhiDepthImage.view);
     if (result != VK_SUCCESS) {
         std::println(stderr, "vkCreateImageView failed: {}({})", string_VkResult(result), (int) result);
         return std::unexpected(1);
     }
-
-    // Render pass
-    VkAttachmentDescription attachments[] = { // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
-        {
-            .format = format.format,
-            .samples = VK_SAMPLE_COUNT_1_BIT,
-            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-        },
-        {
-            .format = depthFormat,
-            .samples = VK_SAMPLE_COUNT_1_BIT,
-            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-            .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        },
-    };
-
-    VkAttachmentReference colorRef = {
-        .attachment = 0,
-        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-    };
-
-    VkAttachmentReference depthRef = {
-        .attachment = 1,
-        .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-    };
-
-    VkSubpassDescription subpass = {
-        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &colorRef,
-        .pDepthStencilAttachment = &depthRef,
-    };
-
-    VkRenderPassCreateInfo renderPassInfo = {
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = 2,
-        .pAttachments = attachments,
-        .subpassCount = 1,
-        .pSubpasses = &subpass,
-    };
-
-    result = vkCreateRenderPass(device, &renderPassInfo, nullptr, &rhiRenderPass.renderPass);
-    if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateRenderPass failed: {}({})", string_VkResult(result), (int) result);
-        return std::unexpected(1);
-    }
-
-    // Framebuffers
-    rhiFramebuffers.resize(imgCount);
-    for (uint32_t i = 0; i < imgCount; i++) {
-        VkImageView fbAttachments[] = {imageViews[i], depthImageView}; // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
-        VkFramebufferCreateInfo framebufferInfo = {
-            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .renderPass = rhiRenderPass.renderPass,
-            .attachmentCount = 2,
-            .pAttachments = fbAttachments,
-            .width = ext.width,
-            .height = ext.height,
-            .layers = 1,
-        };
-
-        result = vkCreateFramebuffer(device, &framebufferInfo, nullptr, &rhiFramebuffers[i].framebuffer);
-        if (result != VK_SUCCESS) {
-            std::println(stderr, "vkCreateFramebuffer failed: {}({})", string_VkResult(result), (int) result);
-            return std::unexpected(1);
-        }
-    }
+    rhiDepthImage.image = vkDepthImage;
+    rhiDepthImage.memory = VK_NULL_HANDLE;
 
     return {};
 }
@@ -270,15 +218,13 @@ auto RhiSwapchainVulkan::acquireNextImage(RhiSemaphore* signalSemaphore) -> std:
 }
 
 auto RhiSwapchainVulkan::destroy() -> void {
-    vkDestroyImageView(vkDevice, depthImageView, nullptr);
-    vkDestroyImage(vkDevice, depthImage, nullptr);
+    vkDestroyImageView(vkDevice, rhiDepthImage.view, nullptr);
+    vkDestroyImage(vkDevice, vkDepthImage, nullptr);
     vkFreeMemory(vkDevice, depthMemory, nullptr);
 
     for (uint32_t i = 0; i < imgCount; i++) {
-        vkDestroyFramebuffer(vkDevice, rhiFramebuffers[i].framebuffer, nullptr);
-        vkDestroyImageView(vkDevice, imageViews[i], nullptr);
+        vkDestroyImageView(vkDevice, colorImages[i].view, nullptr);
     }
 
-    vkDestroyRenderPass(vkDevice, rhiRenderPass.renderPass, nullptr);
     vkDestroySwapchainKHR(vkDevice, swapchain, nullptr);
 }

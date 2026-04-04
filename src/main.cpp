@@ -57,7 +57,7 @@ auto main(int argc, char* argv[]) -> int {
         .position = glm::vec3(2.0f, 1.5f, 2.0f),
         .yaw = -135.0f,
         .pitch = -20.0f,
-        .speed = 1.0f,
+        .speed = 5.0f,
         .mouseSensitivity = 0.15f,
     };
     auto mouseCapture = false;

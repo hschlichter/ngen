@@ -46,12 +46,20 @@ auto RhiDeviceVulkan::toVkMemoryProps(RhiMemoryUsage usage) -> VkMemoryPropertyF
 auto RhiDeviceVulkan::toVkFormat(RhiFormat format) -> VkFormat {
     using enum RhiFormat;
     switch (format) {
+        case Undefined:
+            return VK_FORMAT_UNDEFINED;
         case R32G32_SFLOAT:
             return VK_FORMAT_R32G32_SFLOAT;
         case R32G32B32_SFLOAT:
             return VK_FORMAT_R32G32B32_SFLOAT;
         case R8G8B8A8_SRGB:
             return VK_FORMAT_R8G8B8A8_SRGB;
+        case R8G8B8A8_UNORM:
+            return VK_FORMAT_R8G8B8A8_UNORM;
+        case B8G8R8A8_SRGB:
+            return VK_FORMAT_B8G8R8A8_SRGB;
+        case B8G8R8A8_UNORM:
+            return VK_FORMAT_B8G8R8A8_UNORM;
         case D32_SFLOAT:
             return VK_FORMAT_D32_SFLOAT;
     }
@@ -169,7 +177,8 @@ auto RhiDeviceVulkan::init(SDL_Window* window) -> std::expected<void, int> {
         std::println("{}", extensions[i]);
     }
 
-    const char* validationLayers[] = { // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    const char* validationLayers[] = {
+        // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
         "VK_LAYER_KHRONOS_validation",
     };
     uint32_t validationLayersCount = 1;
@@ -245,7 +254,8 @@ auto RhiDeviceVulkan::init(SDL_Window* window) -> std::expected<void, int> {
         .pQueuePriorities = &queuePriority,
     };
 
-    const char* deviceExtensions[] = { // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    const char* deviceExtensions[] = {
+        // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
         "VK_KHR_swapchain",
 #ifdef __APPLE__
         "VK_KHR_portability_subset",
@@ -253,8 +263,20 @@ auto RhiDeviceVulkan::init(SDL_Window* window) -> std::expected<void, int> {
     };
     auto deviceExtensionCount = (uint32_t) (sizeof(deviceExtensions) / sizeof(deviceExtensions[0]));
 
+    VkPhysicalDeviceSynchronization2Features sync2Features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
+        .synchronization2 = VK_TRUE,
+    };
+
+    VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
+        .pNext = &sync2Features,
+        .dynamicRendering = VK_TRUE,
+    };
+
     VkDeviceCreateInfo deviceCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pNext = &dynamicRenderingFeatures,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queueCreateInfo,
         .enabledExtensionCount = deviceExtensionCount,
@@ -512,9 +534,9 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
     auto* vertMod = static_cast<RhiShaderModuleVulkan*>(desc.vertexShader);
     auto* fragMod = static_cast<RhiShaderModuleVulkan*>(desc.fragmentShader);
     auto* dsLayout = static_cast<RhiDescriptorSetLayoutVulkan*>(desc.descriptorSetLayout);
-    auto* rp = static_cast<RhiRenderPassVulkan*>(desc.renderPass);
 
-    VkPipelineShaderStageCreateInfo stages[2] = {{ // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    VkPipelineShaderStageCreateInfo stages[2] = {{
+                                                     // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
                                                      .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                                                      .stage = VK_SHADER_STAGE_VERTEX_BIT,
                                                      .module = vertMod->module,
@@ -623,8 +645,22 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
         return nullptr;
     }
 
+    std::vector<VkFormat> vkColorFormats;
+    vkColorFormats.reserve(desc.colorFormats.size());
+    for (auto f : desc.colorFormats) {
+        vkColorFormats.push_back(toVkFormat(f));
+    }
+
+    VkPipelineRenderingCreateInfo renderingInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = (uint32_t) vkColorFormats.size(),
+        .pColorAttachmentFormats = vkColorFormats.data(),
+        .depthAttachmentFormat = desc.depthFormat != RhiFormat::Undefined ? toVkFormat(desc.depthFormat) : VK_FORMAT_UNDEFINED,
+    };
+
     VkGraphicsPipelineCreateInfo pipelineInfo = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = &renderingInfo,
         .stageCount = 2,
         .pStages = stages,
         .pVertexInputState = &vertexInputState,
@@ -635,7 +671,6 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
         .pDepthStencilState = &depthStencilState,
         .pColorBlendState = &colorBlendState,
         .layout = pip->layout,
-        .renderPass = rp->renderPass,
     };
 
     result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pip->pipeline);

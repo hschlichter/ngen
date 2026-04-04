@@ -47,11 +47,3 @@ struct RhiSemaphoreVulkan : public RhiSemaphore {
 struct RhiFenceVulkan : public RhiFence {
     VkFence fence = VK_NULL_HANDLE;
 };
-
-struct RhiRenderPassVulkan : public RhiRenderPass {
-    VkRenderPass renderPass = VK_NULL_HANDLE;
-};
-
-struct RhiFramebufferVulkan : public RhiFramebuffer {
-    VkFramebuffer framebuffer = VK_NULL_HANDLE;
-};

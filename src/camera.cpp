@@ -26,7 +26,7 @@ auto Camera::update(const bool* keys, float dt) -> void {
     auto r = right();
     auto up = glm::vec3(0, 1, 0);
 
-    auto spd = keys[SDL_SCANCODE_LSHIFT] ? speed * 3.0f : speed;
+    auto spd = keys[SDL_SCANCODE_LSHIFT] ? speed * 5.0f : speed;
     if (keys[SDL_SCANCODE_W]) {
         position += fwd * spd * dt;
     }
