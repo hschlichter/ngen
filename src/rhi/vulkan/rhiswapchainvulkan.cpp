@@ -89,6 +89,10 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
 
     images.resize(imgCount);
     result = vkGetSwapchainImagesKHR(device, swapchain, &imgCount, images.data());
+    if (result != VK_SUCCESS) {
+        std::println(stderr, "vkGetPhysicalDeviceSurfaceFormatsKHR failed: {}({})", string_VkResult(result), (int) result);
+        return std::unexpected(1);
+    }
 
     imageViews.resize(imgCount);
     for (uint32_t i = 0; i < imgCount; i++) {
