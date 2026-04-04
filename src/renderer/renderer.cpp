@@ -24,6 +24,9 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
         return std::unexpected(1);
     }
 
+    resourcePool.init(device);
+    frameGraph.setResourcePool(&resourcePool);
+
     vertShader = device->createShaderModule("shaders/triangle.vert.spv");
     fragShader = device->createShaderModule("shaders/triangle.frag.spv");
 
@@ -354,6 +357,8 @@ auto Renderer::destroy() -> void {
         device->destroyFence(inflightFences[i]);
         device->destroyCommandBuffer(cmdBuffers[i]);
     }
+
+    resourcePool.destroy();
 
     swapchain->destroy();
     delete swapchain;

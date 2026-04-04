@@ -48,6 +48,23 @@ enum class RhiDescriptorType {
     CombinedImageSampler,
 };
 
+enum class RhiTextureUsage : uint32_t {
+    Sampled = 1 << 0,
+    ColorAttachment = 1 << 1,
+    DepthAttachment = 1 << 2,
+    Storage = 1 << 3,
+    TransferSrc = 1 << 4,
+    TransferDst = 1 << 5,
+};
+
+inline auto operator|(RhiTextureUsage a, RhiTextureUsage b) -> RhiTextureUsage {
+    return (RhiTextureUsage) (std::to_underlying(a) | std::to_underlying(b));
+}
+
+inline auto operator&(RhiTextureUsage a, RhiTextureUsage b) -> bool {
+    return (std::to_underlying(a) & std::to_underlying(b)) != 0;
+}
+
 enum class RhiImageLayout {
     Undefined,
     ColorAttachment,
@@ -72,8 +89,9 @@ struct RhiTextureDesc {
     uint32_t width;
     uint32_t height;
     RhiFormat format;
-    const void* initialData;
-    uint64_t initialDataSize;
+    RhiTextureUsage usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst;
+    const void* initialData = nullptr;
+    uint64_t initialDataSize = 0;
 };
 
 struct RhiSamplerDesc {

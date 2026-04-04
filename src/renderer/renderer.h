@@ -1,6 +1,7 @@
 #pragma once
 
 #include "framegraph.h"
+#include "resourcepool.h"
 #include "rhitypes.h"
 
 #include <expected>
@@ -64,4 +65,5 @@ private:
     uint32_t currentFrame = 0;
 
     FrameGraph frameGraph;
+    ResourcePool resourcePool;
 };

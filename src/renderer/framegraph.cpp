@@ -1,9 +1,10 @@
 #include "framegraph.h"
+#include "resourcepool.h"
 #include "rhicommandbuffer.h"
 
-#include <algorithm>
 #include <print>
 #include <queue>
+#include <utility>
 
 auto FrameGraph::reset() -> void {
     passes.clear();
@@ -21,6 +22,16 @@ auto FrameGraph::importTexture(RhiTexture* texture, const FgTextureDesc& desc) -
 
     auto index = (uint32_t) resources.size();
     resources.push_back(res);
+    return {index};
+}
+
+auto FrameGraphBuilder::createTexture(const FgTextureDesc& desc) -> FgTextureHandle {
+    FgResource res;
+    res.desc = desc;
+    res.external = false;
+
+    auto index = (uint32_t) graph->resources.size();
+    graph->resources.push_back(res);
     return {index};
 }
 
@@ -44,7 +55,7 @@ auto FrameGraphContext::texture(FgTextureHandle handle) -> RhiTexture* {
     return graph->resources[handle.index].physical;
 }
 
-// --- Compilation ---
+// --- Helpers ---
 
 static auto accessToLayout(FgAccessFlags access) -> RhiImageLayout {
     if (access & FgAccessFlags::ColorAttachment) {
@@ -68,18 +79,17 @@ static auto accessToLayout(FgAccessFlags access) -> RhiImageLayout {
     return RhiImageLayout::Undefined;
 }
 
+// --- Compilation: topo sort + culling ---
+
 auto FrameGraph::compile() -> void {
     auto passCount = (uint32_t) passes.size();
 
     // 1. Build adjacency from resource usage
-    // For each resource, find the writer pass and reader passes.
-    // Readers depend on the writer.
     std::vector<std::vector<uint32_t>> adj(passCount);
     std::vector<uint32_t> inDegree(passCount, 0);
 
     for (uint32_t resIdx = 0; resIdx < (uint32_t) resources.size(); resIdx++) {
         uint32_t writerPass = UINT32_MAX;
-
         for (uint32_t p = 0; p < passCount; p++) {
             for (const auto& w : passes[p].writes) {
                 if (w.resourceIndex == resIdx) {
@@ -88,11 +98,9 @@ auto FrameGraph::compile() -> void {
                 }
             }
         }
-
         if (writerPass == UINT32_MAX) {
             continue;
         }
-
         for (uint32_t p = 0; p < passCount; p++) {
             if (p == writerPass) {
                 continue;
@@ -115,15 +123,12 @@ auto FrameGraph::compile() -> void {
             q.push(i);
         }
     }
-
     while (!q.empty()) {
         auto cur = q.front();
         q.pop();
         passOrder.push_back(cur);
-
         for (auto next : adj[cur]) {
-            inDegree[next]--;
-            if (inDegree[next] == 0) {
+            if (--inDegree[next] == 0) {
                 q.push(next);
             }
         }
@@ -131,8 +136,6 @@ auto FrameGraph::compile() -> void {
 
     // 3. Pass culling — backward walk from side-effect passes
     std::vector<bool> alive(passCount, false);
-
-    // Build reverse adjacency
     std::vector<std::vector<uint32_t>> reverseAdj(passCount);
     for (uint32_t i = 0; i < passCount; i++) {
         for (auto next : adj[i]) {
@@ -147,7 +150,6 @@ auto FrameGraph::compile() -> void {
             aliveQ.push(i);
         }
     }
-
     while (!aliveQ.empty()) {
         auto cur = aliveQ.front();
         aliveQ.pop();
@@ -165,11 +167,30 @@ auto FrameGraph::compile() -> void {
             std::println("Frame graph: culled pass '{}'", passes[i].name);
         }
     }
+}
 
-    // 4. Barrier derivation
-    // Track per-resource current access. Emit barriers when access changes.
-    std::vector<FgAccessFlags> resourceAccess(resources.size(), FgAccessFlags::None);
+// --- Execution: allocate transients, compute barriers, run passes, release ---
+
+auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
+    // Allocate transient resources from pool
+    if (resourcePool != nullptr) {
+        for (auto& res : resources) {
+            if (!res.external && res.physical == nullptr) {
+                RhiTextureDesc rhiDesc = {
+                    .width = res.desc.width,
+                    .height = res.desc.height,
+                    .format = res.desc.format,
+                    .usage = res.desc.usage,
+                };
+                res.physical = resourcePool->acquireTexture(rhiDesc);
+            }
+        }
+    }
+
+    // Compute barriers (now that all physical pointers are set)
+    passBarriers.clear();
     passBarriers.resize(passOrder.size());
+    std::vector<FgAccessFlags> resourceAccess(resources.size(), FgAccessFlags::None);
 
     for (uint32_t orderIdx = 0; orderIdx < (uint32_t) passOrder.size(); orderIdx++) {
         auto passIdx = passOrder[orderIdx];
@@ -202,11 +223,8 @@ auto FrameGraph::compile() -> void {
             checkTransition(w.resourceIndex, w.access);
         }
     }
-}
 
-// --- Execution ---
-
-auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
+    // Execute passes
     FrameGraphContext ctx(this, cmd);
 
     for (uint32_t orderIdx = 0; orderIdx < (uint32_t) passOrder.size(); orderIdx++) {
@@ -215,13 +233,27 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
             continue;
         }
 
-        // Insert barriers before this pass
         auto& barriers = passBarriers[orderIdx].barriers;
         if (!barriers.empty()) {
             cmd->pipelineBarrier(barriers);
         }
 
-        // Execute pass
         passes[passIdx].execute(ctx);
+    }
+
+    // Release transient resources back to pool
+    if (resourcePool != nullptr) {
+        for (auto& res : resources) {
+            if (!res.external && res.physical != nullptr) {
+                RhiTextureDesc rhiDesc = {
+                    .width = res.desc.width,
+                    .height = res.desc.height,
+                    .format = res.desc.format,
+                    .usage = res.desc.usage,
+                };
+                resourcePool->releaseTexture(rhiDesc, res.physical);
+                res.physical = nullptr;
+            }
+        }
     }
 }

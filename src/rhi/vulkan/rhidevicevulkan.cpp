@@ -77,6 +77,29 @@ auto RhiDeviceVulkan::toVkShaderStage(RhiShaderStage stage) -> VkShaderStageFlag
     return flags;
 }
 
+auto RhiDeviceVulkan::toVkImageUsage(RhiTextureUsage usage) -> VkImageUsageFlags {
+    VkImageUsageFlags flags = 0;
+    if (usage & RhiTextureUsage::Sampled) {
+        flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    }
+    if (usage & RhiTextureUsage::ColorAttachment) {
+        flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    }
+    if (usage & RhiTextureUsage::DepthAttachment) {
+        flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    }
+    if (usage & RhiTextureUsage::Storage) {
+        flags |= VK_IMAGE_USAGE_STORAGE_BIT;
+    }
+    if (usage & RhiTextureUsage::TransferSrc) {
+        flags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    }
+    if (usage & RhiTextureUsage::TransferDst) {
+        flags |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    }
+    return flags;
+}
+
 auto RhiDeviceVulkan::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t {
     VkPhysicalDeviceMemoryProperties memProps;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
@@ -388,7 +411,7 @@ auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .usage = toVkImageUsage(desc.usage),
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     };
@@ -460,6 +483,7 @@ auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {
         destroyBuffer(staging);
     }
 
+    VkImageAspectFlags aspect = (desc.usage & RhiTextureUsage::DepthAttachment) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
     VkImageViewCreateInfo viewInfo = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = tex->image,
@@ -467,7 +491,7 @@ auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {
         .format = toVkFormat(desc.format),
         .subresourceRange =
             {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .aspectMask = aspect,
                 .baseMipLevel = 0,
                 .levelCount = 1,
                 .baseArrayLayer = 0,

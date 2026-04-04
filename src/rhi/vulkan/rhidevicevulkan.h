@@ -61,6 +61,7 @@ private:
     auto transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) -> void;
 
     static auto toVkBufferUsage(RhiBufferUsage usage) -> VkBufferUsageFlags;
+    static auto toVkImageUsage(RhiTextureUsage usage) -> VkImageUsageFlags;
     static auto toVkMemoryProps(RhiMemoryUsage usage) -> VkMemoryPropertyFlags;
     static auto toVkFormat(RhiFormat format) -> VkFormat;
     static auto toVkShaderStage(RhiShaderStage stage) -> VkShaderStageFlags;

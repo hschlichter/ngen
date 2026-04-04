@@ -11,12 +11,14 @@
 #include <vector>
 
 class RhiCommandBuffer;
+class ResourcePool;
 
 class FrameGraph {
     friend class FrameGraphBuilder;
     friend class FrameGraphContext;
 
 public:
+    auto setResourcePool(ResourcePool* pool) -> void { resourcePool = pool; }
     auto reset() -> void;
     auto importTexture(RhiTexture* texture, const FgTextureDesc& desc) -> FgTextureHandle;
 
@@ -66,6 +68,8 @@ private:
         std::vector<RhiBarrierDesc> barriers;
     };
     std::vector<BarrierBatch> passBarriers;
+
+    ResourcePool* resourcePool = nullptr;
 };
 
 template <typename DataT>

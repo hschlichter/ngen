@@ -37,6 +37,7 @@ struct FgTextureDesc {
     uint32_t width = 0;
     uint32_t height = 0;
     RhiFormat format = RhiFormat::Undefined;
+    RhiTextureUsage usage = RhiTextureUsage::Sampled;
 };
 
 struct FgResource {
