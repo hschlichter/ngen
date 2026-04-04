@@ -1,5 +1,9 @@
 # ngen
 
+## Tools
+Use 'rg' ripgrep for searching.
+Use 'fd' for finding files.
+
 ## File naming
 - No snake_case in filenames. Use lowercase concatenated names (e.g. `sceneloader.cpp`, `devicevulkan.h`).
 - Platform-specific files put the platform as the last part of the name (e.g. `devicevulkan`, `swapchainvulkan`).
@@ -11,3 +15,7 @@
 - `src/renderer/` — renderer front-end (render graph, resource management).
 - `src/scene/` — scene loading, ECS, materials.
 - Cross-cutting files (`main.cpp`, `types.h`, `camera.*`) live directly in `src/`.
+
+## Build
+Use 'make' to build.
+Use 'bear -- make' to generate compile_commands.json.

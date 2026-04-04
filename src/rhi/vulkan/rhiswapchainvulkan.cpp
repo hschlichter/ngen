@@ -262,7 +262,7 @@ auto RhiSwapchainVulkan::acquireNextImage(RhiSemaphore* signalSemaphore) -> std:
     auto* sem = static_cast<RhiSemaphoreVulkan*>(signalSemaphore);
     uint32_t index = 0;
     auto result = vkAcquireNextImageKHR(vkDevice, swapchain, UINT64_MAX, sem->semaphore, VK_NULL_HANDLE, &index);
-    if (result != VK_SUCCESS) {
+    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
         std::println(stderr, "vkAcquireNextImageKHR failed: {}({})", string_VkResult(result), (int) result);
         return std::unexpected(1);
     }
