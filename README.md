@@ -34,7 +34,13 @@ Additional backends (D3D12, Metal) can be added as sibling folders under `src/rh
 | [cgltf](https://github.com/jsmber/cgltf) | glTF file parsing |
 | [stb](https://github.com/nothings/stb) | Image loading (stb_image) |
 
-GLM, cgltf, and stb are included in `external/`. SDL3 and the Vulkan SDK must be installed on the system.
+GLM, cgltf, and stb are included as git submodules in `external/`. SDL3 and the Vulkan SDK must be installed on the system.
+
+After cloning, initialize the submodules:
+
+```bash
+git submodule update --init --recursive
+```
 
 ## Building
 
