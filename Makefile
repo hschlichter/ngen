@@ -7,17 +7,17 @@ EXE = ngen
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 	VULKAN_SDK ?= $(HOME)/VulkanSDK/1.4.309.0/macOS
-	INCLUDE = -Isrc -Isrc/rhi -Isrc/rhi/vulkan -Isrc/renderer -Isrc/scene -Iexternal/glm -Iexternal/cgltf -Iexternal/stb -I$(VULKAN_SDK)/include
+	INCLUDE = -Isrc -Isrc/rhi -Isrc/rhi/vulkan -Isrc/renderer -Isrc/scene -Iexternal/glm -Iexternal/cgltf -Iexternal/stb -Iexternal/imgui -Iexternal/imgui/backends -I$(VULKAN_SDK)/include
 	LDINCLUDE = -L$(VULKAN_SDK)/lib -Wl,-rpath,$(VULKAN_SDK)/lib
 	GLSLC = $(VULKAN_SDK)/bin/glslc
 else ifeq ($(OS),Windows_NT)
 	VULKAN_SDK ?= $(VULKAN_SDK)
-	INCLUDE = -Isrc -Isrc/rhi -Isrc/rhi/vulkan -Isrc/renderer -Isrc/scene -Iexternal/glm -Iexternal/cgltf -Iexternal/stb -I$(VULKAN_SDK)/Include
+	INCLUDE = -Isrc -Isrc/rhi -Isrc/rhi/vulkan -Isrc/renderer -Isrc/scene -Iexternal/glm -Iexternal/cgltf -Iexternal/stb -Iexternal/imgui -Iexternal/imgui/backends -I$(VULKAN_SDK)/Include
 	LDINCLUDE = -L$(VULKAN_SDK)/Lib
 	GLSLC = $(VULKAN_SDK)/Bin/glslc.exe
 	EXE = ngen.exe
 else
-	INCLUDE = -Isrc -Isrc/rhi -Isrc/rhi/vulkan -Isrc/renderer -Isrc/scene -Iexternal/glm -Iexternal/cgltf -Iexternal/stb
+	INCLUDE = -Isrc -Isrc/rhi -Isrc/rhi/vulkan -Isrc/renderer -Isrc/scene -Iexternal/glm -Iexternal/cgltf -Iexternal/stb -Iexternal/imgui -Iexternal/imgui/backends
 	LDINCLUDE =
 	GLSLC = glslc
 endif
@@ -25,7 +25,12 @@ endif
 SHADERS_SRCS = $(wildcard *.vert **/*.vert) $(wildcard *.frag **/*.frag)
 SHADERS_SPV = $(foreach spv, $(SHADERS_SRCS:=.spv), $(spv))
 
-SRCS = $(shell find src -name '*.cpp')
+IMGUI_DIR = external/imgui
+IMGUI_SRCS = $(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_draw.cpp $(IMGUI_DIR)/imgui_tables.cpp \
+             $(IMGUI_DIR)/imgui_widgets.cpp $(IMGUI_DIR)/imgui_demo.cpp \
+             $(IMGUI_DIR)/backends/imgui_impl_vulkan.cpp $(IMGUI_DIR)/backends/imgui_impl_sdl3.cpp
+
+SRCS = $(shell find src -name '*.cpp') $(IMGUI_SRCS)
 OBJS = $(foreach obj, $(SRCS:.cpp=.o), $(OUTDIR)/$(obj))
 
 all: $(OBJS) | $(SHADERS_SPV)

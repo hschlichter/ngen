@@ -71,20 +71,32 @@ UIVulkan::shutdown()
 
 Callers (main.cpp, renderer) only see `UI*` — they never touch Vulkan-specific ImGui code. A future D3D12 backend would add `src/rhi/d3d12/uid3d12.cpp` implementing the same interface.
 
-### 3. ImGui needs its own render pass or subpass
+### 3. ImGui as a frame graph pass
 
-Two options:
+The renderer now uses a frame graph (`FrameGraph` in `src/renderer/`) with topological sorting, automatic barrier insertion, and transient resource management. ImGui rendering becomes a dedicated pass in the graph.
 
-**Option A — Separate render pass (simpler, recommended to start)**
-- Create a second render pass that loads (not clears) the color attachment and has no depth attachment.
-- After the scene render pass ends, begin the ImGui render pass on the same command buffer, then end it.
-- Straightforward, easy to reason about.
+In `Renderer::render()`, after the existing `ForwardPass`, add a new `DebugUIPass`:
 
-**Option B — Render in the existing render pass**
-- Draw ImGui after all scene geometry, within the same render pass.
-- Slightly more efficient (no extra render pass transition), but couples ImGui into the scene render pass setup.
+```
+struct DebugDebugUIPassData {
+    FgTextureHandle color;
+};
 
-Recommend starting with **Option A** for clean separation.
+frameGraph.addPass<DebugDebugUIPassData>(
+    "DebugUIPass",
+    [&](FrameGraphBuilder& builder, DebugDebugUIPassData& data) {
+        data.color = builder.write(colorHandle, FgAccessFlags::ColorAttachment);
+        builder.setSideEffects(true);
+    },
+    [this](FrameGraphContext& ctx, const DebugDebugUIPassData& data) {
+        ui->render(ctx.cmd());
+    });
+```
+
+- The DebugUIPass writes to the same color attachment the ForwardPass writes to. The frame graph handles the layout transition automatically.
+- No depth attachment needed — ImGui draws 2D overlays.
+- `setSideEffects(true)` ensures the pass is never culled.
+- The frame graph's topological sort guarantees DebugUIPass executes after ForwardPass (since both write the same color resource, and DebugUIPass reads the result of ForwardPass's write).
 
 ### 4. Expose Vulkan internals for ImGui init
 
@@ -100,8 +112,8 @@ Update `main.cpp` event loop and frame logic:
 
 ```
 // Event loop
-while (SDL_PollEvent(&event)) {
-    ui.processEvent(&event);
+while (SDL_PollEvent(&ev)) {
+    ui.processEvent(&ev);
     if (!ImGui::GetIO().WantCaptureMouse) { /* camera mouse handling */ }
     if (!ImGui::GetIO().WantCaptureKeyboard) { /* camera key handling */ }
 }
@@ -109,19 +121,10 @@ while (SDL_PollEvent(&event)) {
 // Frame
 ui.beginFrame();
 ImGui::ShowDemoWindow();  // replace with actual tool UI later
-renderer.draw(camera, window);  // scene renders, then UI::render is called
+renderer.render(cam, window);  // frame graph includes DebugUIPass which calls ui->render()
 ```
 
-main.cpp coordinates both render calls. The renderer exposes the active command buffer so that `ui.render()` can record into it after scene drawing is done but before submission.
-
-```
-// Frame
-ui.beginFrame();
-ImGui::ShowDemoWindow();  // replace with actual tool UI later
-renderer.beginFrame(camera, window);  // acquire, begin command buffer, draw scene
-ui.render(renderer.commandBuffer());  // record ImGui draw commands
-renderer.endFrame();                  // end command buffer, submit, present
-```
+The renderer owns the `UI*` pointer and calls `ui->render()` from within the DebugUIPass execute lambda. No need to split `Renderer::draw()` into `beginFrame()`/`endFrame()` — the frame graph handles pass ordering and command buffer recording internally.
 
 ### 6. Build and verify
 
@@ -140,11 +143,11 @@ renderer.endFrame();                  // end command buffer, submit, present
 | `src/rhi/vulkan/uivulkan.h` | New — Vulkan ImGui implementation header |
 | `src/rhi/vulkan/uivulkan.cpp` | New — Vulkan ImGui implementation (all Vulkan-specific ImGui calls) |
 | `src/rhi/vulkan/rhidevicevulkan.h` | Edit — add accessors for raw Vulkan handles |
-| `src/main.cpp` | Edit — wire up UI init, events, frame calls |
-| `src/renderer/renderer.cpp` | Edit — add ImGui render pass (Option A) or call ImGui render at end of existing pass |
+| `src/main.cpp` | Edit — wire up UI init, events, beginFrame call |
+| `src/renderer/renderer.cpp` | Edit — add DebugUIPass to the frame graph after ForwardPass |
 
 ## Decisions made
 
-- **main.cpp coordinates rendering** — `renderer.beginFrame()` draws the scene, then `ui.render()` records ImGui commands, then `renderer.endFrame()` submits and presents. This means splitting `Renderer::draw()` into `beginFrame()`/`endFrame()`.
-- **Separate render pass for ImGui** (Option A) — its own render pass that loads (not clears) the color attachment with no depth. Clean separation and maps naturally to a future framegraph where the UI pass is an explicit node.
+- **ImGui as a frame graph pass** — the DebugUIPass is a dedicated node in the frame graph that writes the swapchain color attachment after the ForwardPass. The frame graph handles ordering, barriers, and command buffer recording. No need to split `Renderer::render()`.
+- **Renderer owns the UI pointer** — `main.cpp` calls `ui.beginFrame()` and issues ImGui draw calls, but the actual `ui->render()` happens inside the DebugUIPass execute lambda within `Renderer::render()`.
 - **No docking branch** — use ImGui `master` for now, keep it simple.

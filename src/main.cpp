@@ -1,8 +1,11 @@
 #include "camera.h"
 #include "renderer.h"
+#include "rhidebugui.h"
 #include "rhidevicevulkan.h"
 #include "sceneloader.h"
 #include "types.h"
+
+#include <imgui.h>
 
 #include <SDL3/SDL.h>
 
@@ -51,6 +54,7 @@ auto main(int argc, char* argv[]) -> int {
         return 1;
     }
     renderer.uploadScene(scene);
+    renderer.debugui()->setDrawCallback([] { ImGui::ShowDemoWindow(); });
 
     // Camera
     auto cam = Camera{
@@ -72,9 +76,15 @@ auto main(int argc, char* argv[]) -> int {
 
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
+            auto uiCaptured = renderer.debugui()->processEvent(&ev);
+
             if (ev.type == SDL_EVENT_QUIT) {
                 std::println("Quitting");
                 quit = true;
+            }
+
+            if (uiCaptured) {
+                continue;
             }
 
             if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_RIGHT) {
@@ -83,7 +93,6 @@ auto main(int argc, char* argv[]) -> int {
             if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_RIGHT) {
                 mouseCapture = false;
             }
-
             if (ev.type == SDL_EVENT_MOUSE_MOTION && mouseCapture) {
                 cam.handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
             }
@@ -91,6 +100,7 @@ auto main(int argc, char* argv[]) -> int {
 
         const auto* keys = SDL_GetKeyboardState(nullptr);
         cam.update(keys, dt);
+
         renderer.render(cam, window);
     }
 

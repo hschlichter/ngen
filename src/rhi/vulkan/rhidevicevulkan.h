@@ -48,6 +48,13 @@ public:
     auto destroyFence(RhiFence* fence) -> void override;
     auto destroyCommandBuffer(RhiCommandBuffer* cmd) -> void override;
 
+    [[nodiscard]] auto vkInstance() const -> VkInstance { return instance; }
+    [[nodiscard]] auto vkPhysicalDevice() const -> VkPhysicalDevice { return physicalDevice; }
+    [[nodiscard]] auto vkDevice() const -> VkDevice { return device; }
+    [[nodiscard]] auto vkGraphicsQueue() const -> VkQueue { return graphicsQueue; }
+    [[nodiscard]] auto vkQueueFamilyIndex() const -> uint32_t { return queueFamilyIndex; }
+    [[nodiscard]] auto vkCommandPool() const -> VkCommandPool { return cmdPool; }
+
 private:
     VkInstance instance = VK_NULL_HANDLE;
     VkSurfaceKHR surface = VK_NULL_HANDLE;
@@ -63,6 +70,8 @@ private:
     static auto toVkBufferUsage(RhiBufferUsage usage) -> VkBufferUsageFlags;
     static auto toVkImageUsage(RhiTextureUsage usage) -> VkImageUsageFlags;
     static auto toVkMemoryProps(RhiMemoryUsage usage) -> VkMemoryPropertyFlags;
-    static auto toVkFormat(RhiFormat format) -> VkFormat;
     static auto toVkShaderStage(RhiShaderStage stage) -> VkShaderStageFlags;
+
+public:
+    static auto toVkFormat(RhiFormat format) -> VkFormat;
 };

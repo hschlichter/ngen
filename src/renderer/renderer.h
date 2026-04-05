@@ -6,11 +6,13 @@
 
 #include <expected>
 #include <glm/glm.hpp>
+#include <memory>
 #include <vector>
 
 class RhiDevice;
 class RhiSwapchain;
 class RhiCommandBuffer;
+class RhiDebugUI;
 struct Scene;
 struct Camera;
 struct SDL_Window;
@@ -42,6 +44,8 @@ public:
     auto render(const Camera& camera, SDL_Window* window) -> void;
     auto destroy() -> void;
 
+    auto debugui() -> RhiDebugUI* { return debugUI.get(); }
+
 private:
     RhiDevice* device = nullptr;
     RhiSwapchain* swapchain = nullptr;
@@ -66,4 +70,6 @@ private:
 
     FrameGraph frameGraph;
     ResourcePool resourcePool;
+
+    std::unique_ptr<RhiDebugUI> debugUI;
 };

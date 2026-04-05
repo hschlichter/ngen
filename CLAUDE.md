@@ -19,3 +19,4 @@ Use 'fd' for finding files.
 ## Build
 Use 'make' to build.
 Use 'bear -- make' to generate compile_commands.json.
+Use 'make format' for formatting the code.

@@ -1,6 +1,8 @@
 #include "renderer.h"
 #include "camera.h"
 #include "rhicommandbuffer.h"
+#include "rhidebugui.h"
+#include "rhidebuguivulkan.h"
 #include "rhidevice.h"
 #include "rhiswapchain.h"
 #include "types.h"
@@ -90,6 +92,13 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
         inflightFences[i] = device->createFence(true);
     }
 
+    debugUI = std::make_unique<RhiDebugUIVulkan>();
+    debugUI->init({
+        .window = window,
+        .device = device,
+        .colorFormat = swapchain->colorFormat(),
+        .imageCount = swapchain->imageCount(),
+    });
     return {};
 }
 
@@ -292,6 +301,33 @@ auto Renderer::render(const Camera& camera, SDL_Window* window) -> void {
             cmd->endRendering();
         });
 
+    struct DebugUIPassData {
+        FgTextureHandle color;
+    };
+
+    frameGraph.addPass<DebugUIPassData>(
+        "DebugUIPass",
+        [&](FrameGraphBuilder& builder, DebugUIPassData& data) {
+            data.color = builder.write(colorHandle, FgAccessFlags::ColorAttachment);
+            builder.setSideEffects(true);
+        },
+        [this, ext](FrameGraphContext& ctx, const DebugUIPassData& data) {
+            auto* cmd = ctx.cmd();
+
+            RhiRenderingAttachmentInfo colorAtt = {
+                .texture = ctx.texture(data.color),
+                .layout = RhiImageLayout::ColorAttachment,
+                .clear = false,
+            };
+            RhiRenderingInfo renderInfo = {
+                .extent = ext,
+                .colorAttachments = {&colorAtt, 1},
+            };
+            cmd->beginRendering(renderInfo);
+            debugUI->render(cmd);
+            cmd->endRendering();
+        });
+
     frameGraph.compile();
 
     auto* cmd = cmdBuffers[*index];
@@ -328,6 +364,9 @@ auto Renderer::render(const Camera& camera, SDL_Window* window) -> void {
 
 auto Renderer::destroy() -> void {
     device->waitIdle();
+
+    debugUI->shutdown();
+    debugUI.reset();
 
     for (auto* ds : descriptorSets) {
         delete ds;
