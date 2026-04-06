@@ -1,4 +1,6 @@
 #include "usdscene.h"
+#include "material.h"
+#include "mesh.h"
 
 #include <pxr/base/tf/notice.h>
 #include <pxr/usd/sdf/layer.h>
@@ -8,14 +10,25 @@
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/usdGeom/mesh.h>
+#include <pxr/usd/usdGeom/metrics.h>
+#include <pxr/usd/usdGeom/primvarsAPI.h>
 #include <pxr/usd/usdGeom/xformable.h>
 #include <pxr/usd/usdLux/boundableLightBase.h>
 #include <pxr/usd/usdLux/nonboundableLightBase.h>
+#include <pxr/usd/usdShade/material.h>
+#include <pxr/usd/usdShade/materialBindingAPI.h>
+#include <pxr/usd/usdShade/shader.h>
+#include <pxr/usd/ar/resolver.h>
+#include <pxr/usd/ar/resolvedPath.h>
+#include <pxr/usd/ar/asset.h>
+#include <pxr/usd/sdf/assetPath.h>
 
 #include <algorithm>
 #include <cstdio>
 #include <mutex>
 #include <unordered_map>
+
+#include <stb_image.h>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -65,6 +78,7 @@ struct USDScene::Impl {
 
     USDChangeListener changeListener;
     uint32_t frame = 0;
+    double metersPerUnit = 1.0;
 
     // Prim cache
     std::vector<PrimRuntimeRecord> prims;
@@ -72,6 +86,10 @@ struct USDScene::Impl {
 
     // Transform cache (parallel to prims)
     std::vector<TransformCacheRecord> transforms;
+
+    // Asset binding cache (parallel to prims)
+    std::vector<AssetBindingCacheRecord> assetBindings;
+    bool assetBindingsBuilt = false;
 
     // Layer info
     std::vector<SceneLayerInfo> layerInfos;
@@ -94,6 +112,7 @@ struct USDScene::Impl {
 
         rootLayer = stage->GetRootLayer();
         sessionLayerRef = stage->GetSessionLayer();
+        metersPerUnit = UsdGeomGetStageMetersPerUnit(stage);
 
         changeListener.initialize(stage);
         rebuildLayerInfo();
@@ -109,6 +128,8 @@ struct USDScene::Impl {
         prims.clear();
         pathToIndex.clear();
         transforms.clear();
+        assetBindings.clear();
+        assetBindingsBuilt = false;
         layerInfos.clear();
         dirtySet.clear();
         stage = nullptr;
@@ -253,6 +274,15 @@ struct USDScene::Impl {
         for (size_t i = 1; i < prims.size(); i++) {
             updateTransformForPrim(i);
         }
+
+        // Apply metersPerUnit scale to all world transforms
+        if (metersPerUnit != 1.0) {
+            auto s = (float)metersPerUnit;
+            auto scaleMat = glm::scale(glm::mat4(1.0f), glm::vec3(s));
+            for (size_t i = 1; i < transforms.size(); i++) {
+                transforms[i].world = scaleMat * transforms[i].world;
+            }
+        }
     }
 
     void updateTransformForPrim(size_t idx) {
@@ -359,6 +389,191 @@ struct USDScene::Impl {
         }
     }
 
+    // ── Asset binding cache ────────────────────────────────────────────────
+
+    void updateAssetBindings(MeshLibrary& meshLib, MaterialLibrary& matLib) {
+        assetBindings.resize(prims.size());
+
+        for (size_t i = 1; i < prims.size(); i++) {
+            auto& rec = prims[i];
+            if (!(rec.flags & PrimFlagRenderable)) continue;
+            if (assetBindingsBuilt && assetBindings[i].mesh) continue;
+
+            auto prim = stage->GetPrimAtPath(SdfPath(rec.path));
+            if (!prim) continue;
+
+            assetBindings[i].mesh = extractMesh(prim, meshLib);
+            assetBindings[i].material = extractMaterial(prim, matLib);
+            assetBindings[i].revision++;
+        }
+
+        assetBindingsBuilt = true;
+    }
+
+    static MeshHandle extractMesh(const UsdPrim& prim, MeshLibrary& meshLib) {
+        UsdGeomMesh geomMesh(prim);
+        if (!geomMesh) return {};
+
+        VtArray<GfVec3f> points;
+        geomMesh.GetPointsAttr().Get(&points, UsdTimeCode::Default());
+        if (points.empty()) return {};
+
+        VtArray<int> faceVertexCounts;
+        VtArray<int> faceVertexIndices;
+        geomMesh.GetFaceVertexCountsAttr().Get(&faceVertexCounts, UsdTimeCode::Default());
+        geomMesh.GetFaceVertexIndicesAttr().Get(&faceVertexIndices, UsdTimeCode::Default());
+
+        // Get normals if available
+        VtArray<GfVec3f> normals;
+        geomMesh.GetNormalsAttr().Get(&normals, UsdTimeCode::Default());
+
+        // Get UVs if available — try common primvar names
+        VtArray<GfVec2f> uvs;
+        UsdGeomPrimvarsAPI primvarsAPI(prim);
+        for (const auto* name : {"st", "st0", "st1", "UVMap"}) {
+            auto pv = primvarsAPI.GetPrimvar(TfToken(name));
+            if (pv && pv.Get(&uvs, UsdTimeCode::Default()) && !uvs.empty()) break;
+        }
+
+        // Triangulate and build vertex/index arrays
+        MeshDesc meshDesc;
+        uint32_t fvIdx = 0;
+        for (size_t f = 0; f < faceVertexCounts.size(); f++) {
+            int count = faceVertexCounts[f];
+            // Fan triangulation
+            for (int t = 0; t < count - 2; t++) {
+                int indices[3] = {
+                    faceVertexIndices[fvIdx],
+                    faceVertexIndices[fvIdx + t + 1],
+                    faceVertexIndices[fvIdx + t + 2],
+                };
+                int fvIndices[3] = {
+                    (int)fvIdx,
+                    (int)(fvIdx + t + 1),
+                    (int)(fvIdx + t + 2),
+                };
+
+                for (int v = 0; v < 3; v++) {
+                    Vertex vert = {};
+                    auto& p = points[indices[v]];
+                    vert.position = {p[0], p[1], p[2]};
+
+                    if (!normals.empty()) {
+                        int ni = (normals.size() == points.size()) ? indices[v] : fvIndices[v];
+                        if (ni < (int)normals.size()) {
+                            auto& n = normals[ni];
+                            vert.normal = {n[0], n[1], n[2]};
+                        }
+                    }
+
+                    if (!uvs.empty()) {
+                        int ui = (uvs.size() == points.size()) ? indices[v] : fvIndices[v];
+                        if (ui < (int)uvs.size()) {
+                            auto& uv = uvs[ui];
+                            vert.texCoord = {uv[0], 1.0f - uv[1]};
+                        }
+                    }
+
+                    vert.color = {1.0f, 1.0f, 1.0f};
+
+                    meshDesc.indices.push_back((uint32_t)meshDesc.vertices.size());
+                    meshDesc.vertices.push_back(vert);
+                }
+            }
+            fvIdx += count;
+        }
+
+        if (meshDesc.vertices.empty()) return {};
+        return meshLib.add(std::move(meshDesc));
+    }
+
+    static bool loadTextureFromAssetPath(const std::string& path, MaterialDesc& matDesc) {
+        auto& resolver = ArGetResolver();
+
+        // Try opening with the path as-is (it may already be resolved)
+        auto asset = resolver.OpenAsset(ArResolvedPath(path));
+        if (!asset) {
+            // Try resolving first
+            auto resolved = resolver.Resolve(path);
+            if (resolved.empty()) return false;
+            asset = resolver.OpenAsset(resolved);
+            if (!asset) return false;
+        }
+
+        auto buffer = asset->GetBuffer();
+        if (!buffer) return false;
+
+        auto size = asset->GetSize();
+        int w = 0, h = 0, channels = 0;
+        auto* pixels = stbi_load_from_memory((const stbi_uc*)buffer.get(), (int)size, &w, &h, &channels, 4);
+        if (!pixels) return false;
+
+        matDesc.texWidth = w;
+        matDesc.texHeight = h;
+        matDesc.texPixels.assign(pixels, pixels + w * h * 4);
+        stbi_image_free(pixels);
+        return true;
+    }
+
+    static void extractShaderTexture(const UsdShadeShader& shader, const TfToken& inputName,
+                                     MaterialDesc& matDesc) {
+        auto input = shader.GetInput(inputName);
+        if (!input) return;
+
+        // Check if connected to a texture reader
+        UsdShadeConnectableAPI texSource;
+        TfToken texSourceName;
+        UsdShadeAttributeType texSourceType;
+        if (input.GetConnectedSource(&texSource, &texSourceName, &texSourceType)) {
+            UsdShadeShader texShader(texSource.GetPrim());
+            if (texShader) {
+                auto fileInput = texShader.GetInput(TfToken("file"));
+                if (fileInput) {
+                    SdfAssetPath assetPath;
+                    if (fileInput.Get(&assetPath, UsdTimeCode::Default())) {
+                        auto path = assetPath.GetResolvedPath();
+                        if (path.empty()) path = assetPath.GetAssetPath();
+                        if (!path.empty()) {
+                            loadTextureFromAssetPath(path, matDesc);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        // No texture — try to read a constant color value
+        GfVec3f color;
+        if (input.Get(&color, UsdTimeCode::Default())) {
+            matDesc.baseColorFactor = glm::vec4(color[0], color[1], color[2], 1.0f);
+        }
+    }
+
+    static MaterialHandle extractMaterial(const UsdPrim& prim, MaterialLibrary& matLib) {
+        UsdShadeMaterialBindingAPI bindingAPI(prim);
+        auto material = bindingAPI.ComputeBoundMaterial();
+        if (!material) {
+            return matLib.add({});
+        }
+
+        MaterialDesc matDesc;
+
+        auto surfaceOutput = material.GetSurfaceOutput();
+        if (surfaceOutput) {
+            UsdShadeConnectableAPI source;
+            TfToken sourceName;
+            UsdShadeAttributeType sourceType;
+            if (surfaceOutput.GetConnectedSource(&source, &sourceName, &sourceType)) {
+                UsdShadeShader shader(source.GetPrim());
+                if (shader) {
+                    extractShaderTexture(shader, TfToken("diffuseColor"), matDesc);
+                }
+            }
+        }
+
+        return matLib.add(std::move(matDesc));
+    }
+
     // ── Layer dirty state refresh ────────────────────────────────────────
 
     void refreshLayerDirtyState() {
@@ -383,6 +598,7 @@ bool USDScene::isOpen() const { return m_impl->stage != nullptr; }
 void USDScene::beginFrame() { m_impl->frame++; }
 
 void USDScene::processChanges() { m_impl->processChanges(); }
+void USDScene::updateAssetBindings(MeshLibrary& meshLib, MaterialLibrary& matLib) { m_impl->updateAssetBindings(meshLib, matLib); }
 
 void USDScene::endFrame() { m_impl->refreshLayerDirtyState(); }
 
@@ -402,6 +618,11 @@ const PrimRuntimeRecord* USDScene::getPrimRecord(PrimHandle h) const {
 const TransformCacheRecord* USDScene::getTransform(PrimHandle h) const {
     if (h.index == 0 || h.index >= m_impl->transforms.size()) return nullptr;
     return &m_impl->transforms[h.index];
+}
+
+const AssetBindingCacheRecord* USDScene::getAssetBinding(PrimHandle h) const {
+    if (h.index == 0 || h.index >= m_impl->assetBindings.size()) return nullptr;
+    return &m_impl->assetBindings[h.index];
 }
 
 std::span<const PrimRuntimeRecord> USDScene::allPrims() const {

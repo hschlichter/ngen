@@ -67,11 +67,20 @@ struct SceneDirtySet {
     }
 };
 
+struct AssetBindingCacheRecord {
+    MeshHandle mesh;
+    MaterialHandle material;
+    uint32_t revision = 0;
+};
+
 // Prim flag bits
 constexpr uint64_t PrimFlagRenderable = 1 << 0;
 constexpr uint64_t PrimFlagLight = 1 << 1;
 constexpr uint64_t PrimFlagCamera = 1 << 2;
 constexpr uint64_t PrimFlagXformable = 1 << 3;
+
+class MeshLibrary;
+class MaterialLibrary;
 
 class USDScene {
 public:
@@ -93,10 +102,14 @@ public:
 
     uint32_t frameIndex() const;
 
+    // Asset binding (call after processChanges, before extraction)
+    void updateAssetBindings(MeshLibrary& meshLib, MaterialLibrary& matLib);
+
     // Prim access
     PrimHandle findPrim(const char* path) const;
     const PrimRuntimeRecord* getPrimRecord(PrimHandle h) const;
     const TransformCacheRecord* getTransform(PrimHandle h) const;
+    const AssetBindingCacheRecord* getAssetBinding(PrimHandle h) const;
     std::span<const PrimRuntimeRecord> allPrims() const;
 
     // Hierarchy
