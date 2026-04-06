@@ -5,7 +5,6 @@
 #include "rhidebuguivulkan.h"
 #include "rhidevice.h"
 #include "rhiswapchain.h"
-#include "types.h"
 
 #include <SDL3/SDL.h>
 
@@ -102,11 +101,11 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
     return {};
 }
 
-auto Renderer::uploadScene(const Scene& scene) -> void {
+auto Renderer::uploadRenderWorld(const RenderWorld& world) -> void {
     using enum RhiDescriptorType;
     using enum RhiMemoryUsage;
 
-    gpuMeshes.resize(scene.meshes.size());
+    gpuMeshes.resize(world.meshInstances.size());
 
     textureSampler = device->createSampler({});
 
@@ -120,14 +119,14 @@ auto Renderer::uploadScene(const Scene& scene) -> void {
         }
     }
 
-    for (size_t m = 0; m < scene.meshes.size(); m++) {
-        const auto& md = scene.meshes[m];
+    for (size_t m = 0; m < world.meshInstances.size(); m++) {
+        const auto& inst = world.meshInstances[m];
         auto& gm = gpuMeshes[m];
-        gm.transform = md.transform;
-        gm.indexCount = (uint32_t) md.indices.size();
+        gm.transform = inst.worldTransform;
+        gm.indexCount = (uint32_t) inst.indices->size();
 
         // Vertex buffer
-        auto vbSize = (uint64_t) (md.vertices.size() * sizeof(Vertex));
+        auto vbSize = (uint64_t) (inst.vertices->size() * sizeof(Vertex));
         RhiBufferDesc stagingDesc = {
             .size = vbSize,
             .usage = RhiBufferUsage::TransferSrc,
@@ -135,7 +134,7 @@ auto Renderer::uploadScene(const Scene& scene) -> void {
         };
         auto* vStaging = device->createBuffer(stagingDesc);
         auto* data = device->mapBuffer(vStaging);
-        memcpy(data, md.vertices.data(), vbSize);
+        memcpy(data, inst.vertices->data(), vbSize);
         device->unmapBuffer(vStaging);
 
         RhiBufferDesc vbDesc = {
@@ -148,11 +147,11 @@ auto Renderer::uploadScene(const Scene& scene) -> void {
         device->destroyBuffer(vStaging);
 
         // Index buffer
-        auto ibSize = (uint64_t) (md.indices.size() * sizeof(uint32_t));
+        auto ibSize = (uint64_t) (inst.indices->size() * sizeof(uint32_t));
         stagingDesc.size = ibSize;
         auto* iStaging = device->createBuffer(stagingDesc);
         data = device->mapBuffer(iStaging);
-        memcpy(data, md.indices.data(), ibSize);
+        memcpy(data, inst.indices->data(), ibSize);
         device->unmapBuffer(iStaging);
 
         RhiBufferDesc ibDesc = {
@@ -168,10 +167,10 @@ auto Renderer::uploadScene(const Scene& scene) -> void {
         uint32_t tw = 0;
         uint32_t th = 0;
         const uint8_t* texPtr = nullptr;
-        if (!md.texPixels.empty()) {
-            tw = md.texWidth;
-            th = md.texHeight;
-            texPtr = md.texPixels.data();
+        if (inst.texPixels != nullptr) {
+            tw = inst.texWidth;
+            th = inst.texHeight;
+            texPtr = inst.texPixels;
         } else {
             tw = 64;
             th = 64;

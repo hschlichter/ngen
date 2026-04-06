@@ -1,5 +1,6 @@
 #include "camera.h"
 #include "renderer.h"
+#include "renderworld.h"
 #include "rhidebugui.h"
 #include "rhidevicevulkan.h"
 #include "sceneloader.h"
@@ -10,6 +11,22 @@
 #include <SDL3/SDL.h>
 
 #include <print>
+
+static auto buildRenderWorldFromScene(const Scene& scene) -> RenderWorld {
+    RenderWorld world;
+    for (const auto& md : scene.meshes) {
+        RenderMeshInstance inst = {
+            .worldTransform = md.transform,
+            .vertices = &md.vertices,
+            .indices = &md.indices,
+            .texPixels = md.texPixels.empty() ? nullptr : md.texPixels.data(),
+            .texWidth = md.texWidth,
+            .texHeight = md.texHeight,
+        };
+        world.meshInstances.push_back(inst);
+    }
+    return world;
+}
 
 auto main(int argc, char* argv[]) -> int {
     if (argc < 2) {
@@ -22,6 +39,8 @@ auto main(int argc, char* argv[]) -> int {
         std::println(stderr, "Failed to load model");
         return 1;
     }
+
+    auto renderWorld = buildRenderWorldFromScene(scene);
 
     // SDL init and window
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -53,7 +72,7 @@ auto main(int argc, char* argv[]) -> int {
     if (!renderer.init(&rhiDevice, window)) {
         return 1;
     }
-    renderer.uploadScene(scene);
+    renderer.uploadRenderWorld(renderWorld);
     renderer.debugui()->setDrawCallback([] { ImGui::ShowDemoWindow(); });
 
     // Camera

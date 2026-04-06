@@ -1,6 +1,7 @@
 #pragma once
 
 #include "framegraph.h"
+#include "renderworld.h"
 #include "resourcepool.h"
 #include "rhitypes.h"
 
@@ -13,7 +14,6 @@ class RhiDevice;
 class RhiSwapchain;
 class RhiCommandBuffer;
 class RhiDebugUI;
-struct Scene;
 struct Camera;
 struct SDL_Window;
 
@@ -40,7 +40,7 @@ public:
     ~Renderer() = default;
 
     auto init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<void, int>;
-    auto uploadScene(const Scene& scene) -> void;
+    auto uploadRenderWorld(const RenderWorld& world) -> void;
     auto render(const Camera& camera, SDL_Window* window) -> void;
     auto destroy() -> void;
 
