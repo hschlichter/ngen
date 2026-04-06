@@ -1,0 +1,467 @@
+#include "usdscene.h"
+
+#include <pxr/base/tf/notice.h>
+#include <pxr/usd/sdf/layer.h>
+#include <pxr/usd/sdf/path.h>
+#include <pxr/usd/usd/notice.h>
+#include <pxr/usd/usd/prim.h>
+#include <pxr/usd/usd/primRange.h>
+#include <pxr/usd/usd/stage.h>
+#include <pxr/usd/usdGeom/mesh.h>
+#include <pxr/usd/usdGeom/xformable.h>
+#include <pxr/usd/usdLux/boundableLightBase.h>
+#include <pxr/usd/usdLux/nonboundableLightBase.h>
+
+#include <algorithm>
+#include <cstdio>
+#include <mutex>
+#include <unordered_map>
+
+PXR_NAMESPACE_USING_DIRECTIVE
+
+// ── Change listener ──────────────────────────────────────────────────────────
+
+class USDChangeListener : public TfWeakBase {
+public:
+    void initialize(const UsdStageRefPtr& stage) {
+        m_key = TfNotice::Register(TfCreateWeakPtr(this), &USDChangeListener::onObjectsChanged, stage);
+    }
+
+    void shutdown() {
+        TfNotice::Revoke(m_key);
+    }
+
+    void drain(std::vector<SdfPath>& outResynced, std::vector<SdfPath>& outChanged) {
+        std::lock_guard lock(m_mutex);
+        outResynced.swap(m_resynced);
+        outChanged.swap(m_changed);
+        m_resynced.clear();
+        m_changed.clear();
+    }
+
+private:
+    void onObjectsChanged(const UsdNotice::ObjectsChanged& notice, const UsdStageWeakPtr&) {
+        std::lock_guard lock(m_mutex);
+        for (const auto& path : notice.GetResyncedPaths()) {
+            m_resynced.push_back(path);
+        }
+        for (const auto& path : notice.GetChangedInfoOnlyPaths()) {
+            m_changed.push_back(path);
+        }
+    }
+
+    TfNotice::Key m_key;
+    std::mutex m_mutex;
+    std::vector<SdfPath> m_resynced;
+    std::vector<SdfPath> m_changed;
+};
+
+// ── Impl ─────────────────────────────────────────────────────────────────────
+
+struct USDScene::Impl {
+    UsdStageRefPtr stage;
+    SdfLayerRefPtr rootLayer;
+    SdfLayerRefPtr sessionLayerRef;
+
+    USDChangeListener changeListener;
+    uint32_t frame = 0;
+
+    // Prim cache
+    std::vector<PrimRuntimeRecord> prims;
+    std::unordered_map<std::string, uint32_t> pathToIndex;
+
+    // Transform cache (parallel to prims)
+    std::vector<TransformCacheRecord> transforms;
+
+    // Layer info
+    std::vector<SceneLayerInfo> layerInfos;
+    LayerHandle editTarget;
+    LayerHandle sessionLayerHandle;
+
+    // Scratch buffers for change processing
+    std::vector<SdfPath> scratchResynced;
+    std::vector<SdfPath> scratchChanged;
+    SceneDirtySet dirtySet;
+
+    // ── Stage management ─────────────────────────────────────────────────
+
+    bool open(const char* path) {
+        stage = UsdStage::Open(path);
+        if (!stage) {
+            fprintf(stderr, "USDScene: failed to open stage: %s\n", path);
+            return false;
+        }
+
+        rootLayer = stage->GetRootLayer();
+        sessionLayerRef = stage->GetSessionLayer();
+
+        changeListener.initialize(stage);
+        rebuildLayerInfo();
+        rebuildPrimCache();
+        rebuildAllTransforms();
+
+        printf("USDScene: opened %s (%zu prims)\n", path, prims.size());
+        return true;
+    }
+
+    void close() {
+        changeListener.shutdown();
+        prims.clear();
+        pathToIndex.clear();
+        transforms.clear();
+        layerInfos.clear();
+        dirtySet.clear();
+        stage = nullptr;
+        rootLayer = nullptr;
+        sessionLayerRef = nullptr;
+        frame = 0;
+    }
+
+    // ── Layer info ───────────────────────────────────────────────────────
+
+    void rebuildLayerInfo() {
+        layerInfos.clear();
+        uint32_t idx = 1;
+
+        // Session layer
+        {
+            SceneLayerInfo info;
+            info.handle = {.index = idx++};
+            info.identifier = sessionLayerRef->GetIdentifier();
+            info.displayName = "Session";
+            info.role = SceneLayerRole::Session;
+            info.dirty = sessionLayerRef->IsDirty();
+            info.readOnly = false;
+            info.muted = false;
+            layerInfos.push_back(std::move(info));
+            sessionLayerHandle = layerInfos.back().handle;
+        }
+
+        // Root layer
+        {
+            SceneLayerInfo info;
+            info.handle = {.index = idx++};
+            info.identifier = rootLayer->GetIdentifier();
+            info.displayName = rootLayer->GetDisplayName().empty()
+                                   ? rootLayer->GetIdentifier()
+                                   : rootLayer->GetDisplayName();
+            info.role = SceneLayerRole::Root;
+            info.dirty = rootLayer->IsDirty();
+            info.readOnly = false;
+            info.muted = false;
+            layerInfos.push_back(std::move(info));
+            editTarget = layerInfos.back().handle;
+        }
+
+        // Sublayers of root
+        for (const auto& subPath : rootLayer->GetSubLayerPaths()) {
+            auto subLayer = SdfLayer::FindOrOpen(subPath);
+            if (!subLayer) continue;
+
+            SceneLayerInfo info;
+            info.handle = {.index = idx++};
+            info.identifier = subLayer->GetIdentifier();
+            info.displayName = subLayer->GetDisplayName().empty()
+                                   ? subLayer->GetIdentifier()
+                                   : subLayer->GetDisplayName();
+            info.role = SceneLayerRole::Unknown;
+            info.dirty = subLayer->IsDirty();
+            info.readOnly = false;
+            info.muted = stage->IsLayerMuted(subLayer->GetIdentifier());
+            layerInfos.push_back(std::move(info));
+        }
+    }
+
+    SdfLayerRefPtr resolveLayer(LayerHandle h) const {
+        if (!h) return nullptr;
+        for (const auto& info : layerInfos) {
+            if (info.handle == h) {
+                if (info.role == SceneLayerRole::Session) return sessionLayerRef;
+                return SdfLayer::FindOrOpen(info.identifier);
+            }
+        }
+        return nullptr;
+    }
+
+    // ── Prim cache ───────────────────────────────────────────────────────
+
+    void rebuildPrimCache() {
+        prims.clear();
+        pathToIndex.clear();
+
+        // Reserve index 0 as null
+        prims.push_back({});
+
+        auto range = UsdPrimRange::Stage(stage);
+        for (const auto& prim : range) {
+            auto pathStr = prim.GetPath().GetString();
+
+            PrimRuntimeRecord rec;
+            rec.handle = {.index = (uint32_t) prims.size()};
+            rec.path = pathStr;
+            rec.name = prim.GetName().GetString();
+            rec.active = prim.IsActive();
+            rec.loaded = prim.IsLoaded();
+            rec.flags = classifyPrim(prim);
+
+            prims.push_back(std::move(rec));
+            pathToIndex[pathStr] = prims.back().handle.index;
+        }
+
+        // Build hierarchy links
+        for (size_t i = 1; i < prims.size(); i++) {
+            auto& rec = prims[i];
+            auto prim = stage->GetPrimAtPath(SdfPath(rec.path));
+            if (!prim) continue;
+
+            auto parentPrim = prim.GetParent();
+            if (parentPrim && parentPrim.GetPath() != SdfPath::AbsoluteRootPath()) {
+                auto it = pathToIndex.find(parentPrim.GetPath().GetString());
+                if (it != pathToIndex.end()) {
+                    rec.parent = {.index = it->second};
+
+                    // Link as child
+                    auto& parent = prims[it->second];
+                    if (!parent.firstChild) {
+                        parent.firstChild = rec.handle;
+                    } else {
+                        // Append as sibling
+                        auto sibIdx = parent.firstChild.index;
+                        while (prims[sibIdx].nextSibling) {
+                            sibIdx = prims[sibIdx].nextSibling.index;
+                        }
+                        prims[sibIdx].nextSibling = rec.handle;
+                    }
+                }
+            }
+        }
+    }
+
+    static uint64_t classifyPrim(const UsdPrim& prim) {
+        uint64_t flags = 0;
+        if (prim.IsA<UsdGeomMesh>()) flags |= PrimFlagRenderable;
+        if (prim.IsA<UsdLuxBoundableLightBase>() || prim.IsA<UsdLuxNonboundableLightBase>()) flags |= PrimFlagLight;
+        if (prim.IsA<UsdGeomXformable>()) flags |= PrimFlagXformable;
+        return flags;
+    }
+
+    // ── Transform cache ──────────────────────────────────────────────────
+
+    void rebuildAllTransforms() {
+        transforms.resize(prims.size());
+
+        for (size_t i = 1; i < prims.size(); i++) {
+            updateTransformForPrim(i);
+        }
+    }
+
+    void updateTransformForPrim(size_t idx) {
+        auto& rec = prims[idx];
+        auto& xf = transforms[idx];
+
+        auto prim = stage->GetPrimAtPath(SdfPath(rec.path));
+        if (!prim) return;
+
+        UsdGeomXformable xformable(prim);
+        if (xformable) {
+            bool resetsXformStack = false;
+            GfMatrix4d localMat;
+            xformable.GetLocalTransformation(&localMat, &resetsXformStack, UsdTimeCode::Default());
+
+            // Copy into glm mat4
+            for (int c = 0; c < 4; c++) {
+                for (int r = 0; r < 4; r++) {
+                    xf.local.position = glm::vec3(0.0f); // will be set from matrix
+                    (&xf.world[0][0])[c * 4 + r] = (float) localMat[c][r];
+                }
+            }
+
+            // For now, store the local matrix directly. World = parent.world * local.
+            auto localGlm = xf.world; // local is stored in world temporarily
+
+            if (rec.parent && !resetsXformStack) {
+                xf.world = transforms[rec.parent.index].world * localGlm;
+            } else {
+                xf.world = localGlm;
+            }
+        } else {
+            // Inherit parent world transform
+            if (rec.parent) {
+                xf.world = transforms[rec.parent.index].world;
+            } else {
+                xf.world = glm::mat4(1.0f);
+            }
+        }
+
+        xf.lastFrame = frame;
+    }
+
+    void updateDirtyTransforms(std::span<const PrimHandle> dirty) {
+        // Mark dirty prims and all descendants
+        std::vector<bool> needsUpdate(prims.size(), false);
+        for (auto h : dirty) {
+            if (h.index < prims.size()) {
+                markSubtreeDirty(h.index, needsUpdate);
+            }
+        }
+
+        // Update in order (parents before children since prims are stored in traversal order)
+        for (size_t i = 1; i < prims.size(); i++) {
+            if (needsUpdate[i]) {
+                updateTransformForPrim(i);
+            }
+        }
+    }
+
+    void markSubtreeDirty(uint32_t idx, std::vector<bool>& needsUpdate) {
+        needsUpdate[idx] = true;
+        auto child = prims[idx].firstChild;
+        while (child) {
+            markSubtreeDirty(child.index, needsUpdate);
+            child = prims[child.index].nextSibling;
+        }
+    }
+
+    // ── Change processing ────────────────────────────────────────────────
+
+    void processChanges() {
+        dirtySet.clear();
+        changeListener.drain(scratchResynced, scratchChanged);
+
+        if (scratchResynced.empty() && scratchChanged.empty()) return;
+
+        // Structural resyncs — rebuild cache for now
+        if (!scratchResynced.empty()) {
+            rebuildPrimCache();
+            rebuildAllTransforms();
+            // Everything is dirty after a full rebuild
+            return;
+        }
+
+        // Property changes — categorize
+        for (const auto& path : scratchChanged) {
+            auto primPath = path.GetPrimPath();
+            auto it = pathToIndex.find(primPath.GetString());
+            if (it == pathToIndex.end()) continue;
+
+            PrimHandle h = {.index = it->second};
+            auto propName = path.GetNameToken().GetString();
+
+            if (propName.find("xformOp") != std::string::npos || propName == "xformOpOrder") {
+                dirtySet.transformDirty.push_back(h);
+            } else {
+                dirtySet.assetsDirty.push_back(h);
+            }
+        }
+
+        if (!dirtySet.transformDirty.empty()) {
+            updateDirtyTransforms(dirtySet.transformDirty);
+        }
+    }
+
+    // ── Layer dirty state refresh ────────────────────────────────────────
+
+    void refreshLayerDirtyState() {
+        for (auto& info : layerInfos) {
+            auto layer = resolveLayer(info.handle);
+            if (layer) {
+                info.dirty = layer->IsDirty();
+            }
+        }
+    }
+};
+
+// ── USDScene public API ──────────────────────────────────────────────────────
+
+USDScene::USDScene() : m_impl(std::make_unique<Impl>()) {}
+USDScene::~USDScene() = default;
+
+bool USDScene::open(const char* path) { return m_impl->open(path); }
+void USDScene::close() { m_impl->close(); }
+bool USDScene::isOpen() const { return m_impl->stage != nullptr; }
+
+void USDScene::beginFrame() { m_impl->frame++; }
+
+void USDScene::processChanges() { m_impl->processChanges(); }
+
+void USDScene::endFrame() { m_impl->refreshLayerDirtyState(); }
+
+uint32_t USDScene::frameIndex() const { return m_impl->frame; }
+
+PrimHandle USDScene::findPrim(const char* path) const {
+    auto it = m_impl->pathToIndex.find(path);
+    if (it == m_impl->pathToIndex.end()) return {};
+    return {.index = it->second};
+}
+
+const PrimRuntimeRecord* USDScene::getPrimRecord(PrimHandle h) const {
+    if (h.index == 0 || h.index >= m_impl->prims.size()) return nullptr;
+    return &m_impl->prims[h.index];
+}
+
+const TransformCacheRecord* USDScene::getTransform(PrimHandle h) const {
+    if (h.index == 0 || h.index >= m_impl->transforms.size()) return nullptr;
+    return &m_impl->transforms[h.index];
+}
+
+std::span<const PrimRuntimeRecord> USDScene::allPrims() const {
+    if (m_impl->prims.size() <= 1) return {};
+    return {m_impl->prims.data() + 1, m_impl->prims.size() - 1};
+}
+
+PrimHandle USDScene::firstChild(PrimHandle h) const {
+    auto* rec = getPrimRecord(h);
+    return rec ? rec->firstChild : PrimHandle{};
+}
+
+PrimHandle USDScene::nextSibling(PrimHandle h) const {
+    auto* rec = getPrimRecord(h);
+    return rec ? rec->nextSibling : PrimHandle{};
+}
+
+// ── Layer management ─────────────────────────────────────────────────────────
+
+std::span<const SceneLayerInfo> USDScene::layers() const {
+    return m_impl->layerInfos;
+}
+
+LayerHandle USDScene::findLayerByRole(SceneLayerRole role) const {
+    for (const auto& info : m_impl->layerInfos) {
+        if (info.role == role) return info.handle;
+    }
+    return {};
+}
+
+void USDScene::setEditTarget(LayerHandle layer) {
+    auto sdfLayer = m_impl->resolveLayer(layer);
+    if (sdfLayer) {
+        m_impl->stage->SetEditTarget(UsdEditTarget(sdfLayer));
+        m_impl->editTarget = layer;
+    }
+}
+
+LayerHandle USDScene::currentEditTarget() const { return m_impl->editTarget; }
+LayerHandle USDScene::sessionLayer() const { return m_impl->sessionLayerHandle; }
+
+void USDScene::clearSessionLayer() {
+    if (m_impl->sessionLayerRef) {
+        m_impl->sessionLayerRef->Clear();
+    }
+}
+
+bool USDScene::saveLayer(LayerHandle layer) {
+    auto sdfLayer = m_impl->resolveLayer(layer);
+    if (sdfLayer) return sdfLayer->Save();
+    return false;
+}
+
+bool USDScene::saveAllDirty() {
+    bool allOk = true;
+    for (const auto& info : m_impl->layerInfos) {
+        if (info.dirty && !info.readOnly) {
+            auto sdfLayer = m_impl->resolveLayer(info.handle);
+            if (sdfLayer && !sdfLayer->Save()) allOk = false;
+        }
+    }
+    return allOk;
+}

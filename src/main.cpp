@@ -7,6 +7,7 @@
 #include "rhidevicevulkan.h"
 #include "sceneloader.h"
 #include "types.h"
+#include "usdscene.h"
 
 #include <imgui.h>
 
@@ -39,6 +40,28 @@ auto main(int argc, char* argv[]) -> int {
     if (argc < 2) {
         std::println(stderr, "Usage: {} <model.gltf>", argv[0]);
         return 1;
+    }
+
+    // Test USD scene if .usda/.usd/.usdz file provided
+    std::string_view filepath = argv[1];
+    if (filepath.ends_with(".usda") || filepath.ends_with(".usd") || filepath.ends_with(".usdc") ||
+        filepath.ends_with(".usdz")) {
+        USDScene usdScene;
+        if (usdScene.open(argv[1])) {
+            std::println("Layer stack:");
+            for (const auto& layer : usdScene.layers()) {
+                std::println("  [{}] {} (dirty: {})", layer.identifier, layer.displayName, layer.dirty);
+            }
+            std::println("Prims:");
+            for (const auto& prim : usdScene.allPrims()) {
+                auto* xf = usdScene.getTransform(prim.handle);
+                std::println("  {} (flags: {:#x}, world[3]: [{:.1f}, {:.1f}, {:.1f}])", prim.path, prim.flags,
+                             xf->world[3][0], xf->world[3][1], xf->world[3][2]);
+            }
+            usdScene.close();
+        }
+        std::println("USD test complete, exiting.");
+        return 0;
     }
 
     auto scene = loadGltf(argv[1]);
