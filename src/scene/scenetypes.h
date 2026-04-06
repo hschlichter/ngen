@@ -27,8 +27,14 @@ struct AABB {
 
     AABB transformed(const glm::mat4& m) const {
         glm::vec3 corners[8] = {
-            {min.x, min.y, min.z}, {max.x, min.y, min.z}, {min.x, max.y, min.z}, {max.x, max.y, min.z},
-            {min.x, min.y, max.z}, {max.x, min.y, max.z}, {min.x, max.y, max.z}, {max.x, max.y, max.z},
+            {min.x, min.y, min.z},
+            {max.x, min.y, min.z},
+            {min.x, max.y, min.z},
+            {max.x, max.y, min.z},
+            {min.x, min.y, max.z},
+            {max.x, min.y, max.z},
+            {min.x, max.y, max.z},
+            {max.x, max.y, max.z},
         };
         AABB result = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
         for (auto& c : corners) {

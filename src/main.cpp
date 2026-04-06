@@ -1,4 +1,6 @@
 #include "camera.h"
+#include "material.h"
+#include "mesh.h"
 #include "renderer.h"
 #include "renderworld.h"
 #include "rhidebugui.h"
@@ -12,18 +14,23 @@
 
 #include <print>
 
-static auto buildRenderWorldFromScene(const Scene& scene) -> RenderWorld {
+static auto buildRenderWorldFromScene(const Scene& scene, MeshLibrary& meshLib, MaterialLibrary& matLib) -> RenderWorld {
     RenderWorld world;
     for (const auto& md : scene.meshes) {
-        RenderMeshInstance inst = {
-            .worldTransform = md.transform,
-            .vertices = &md.vertices,
-            .indices = &md.indices,
-            .texPixels = md.texPixels.empty() ? nullptr : md.texPixels.data(),
+        auto meshHandle = meshLib.add({
+            .vertices = md.vertices,
+            .indices = md.indices,
+        });
+        auto matHandle = matLib.add({
             .texWidth = md.texWidth,
             .texHeight = md.texHeight,
-        };
-        world.meshInstances.push_back(inst);
+            .texPixels = md.texPixels,
+        });
+        world.meshInstances.push_back({
+            .mesh = meshHandle,
+            .material = matHandle,
+            .worldTransform = md.transform,
+        });
     }
     return world;
 }
@@ -40,7 +47,9 @@ auto main(int argc, char* argv[]) -> int {
         return 1;
     }
 
-    auto renderWorld = buildRenderWorldFromScene(scene);
+    MeshLibrary meshLib;
+    MaterialLibrary matLib;
+    auto renderWorld = buildRenderWorldFromScene(scene, meshLib, matLib);
 
     // SDL init and window
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -72,7 +81,7 @@ auto main(int argc, char* argv[]) -> int {
     if (!renderer.init(&rhiDevice, window)) {
         return 1;
     }
-    renderer.uploadRenderWorld(renderWorld);
+    renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
     renderer.debugui()->setDrawCallback([] { ImGui::ShowDemoWindow(); });
 
     // Camera

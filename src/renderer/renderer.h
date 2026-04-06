@@ -14,6 +14,8 @@ class RhiDevice;
 class RhiSwapchain;
 class RhiCommandBuffer;
 class RhiDebugUI;
+class MeshLibrary;
+class MaterialLibrary;
 struct Camera;
 struct SDL_Window;
 
@@ -40,7 +42,7 @@ public:
     ~Renderer() = default;
 
     auto init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<void, int>;
-    auto uploadRenderWorld(const RenderWorld& world) -> void;
+    auto uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void;
     auto render(const Camera& camera, SDL_Window* window) -> void;
     auto destroy() -> void;
 

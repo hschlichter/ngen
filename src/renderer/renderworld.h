@@ -2,7 +2,6 @@
 
 #include "scenehandles.h"
 #include "scenetypes.h"
-#include "types.h"
 
 #include <vector>
 
@@ -11,13 +10,6 @@ struct RenderMeshInstance {
     MaterialHandle material;
     glm::mat4 worldTransform = glm::mat4(1.0f);
     AABB worldBounds;
-
-    // Temporary: raw mesh data pointers for GPU upload until proper asset libraries exist
-    const std::vector<Vertex>* vertices = nullptr;
-    const std::vector<uint32_t>* indices = nullptr;
-    const uint8_t* texPixels = nullptr;
-    int texWidth = 0;
-    int texHeight = 0;
 };
 
 enum class LightType : uint8_t {
