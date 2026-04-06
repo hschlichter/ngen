@@ -99,7 +99,52 @@ auto main(int argc, char* argv[]) -> int {
         return 1;
     }
     renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
-    renderer.debugui()->setDrawCallback([] { ImGui::ShowDemoWindow(); });
+    renderer.debugui()->setDrawCallback([&] {
+        if (!usdScene.isOpen()) return;
+
+        if (ImGui::Begin("USD Scene")) {
+            // Layer stack
+            if (ImGui::CollapsingHeader("Layers", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (const auto& layer : usdScene.layers()) {
+                    auto isCurrent = (layer.handle == usdScene.currentEditTarget());
+                    auto isSession = (layer.handle == usdScene.sessionLayer());
+
+                    ImGui::PushID(layer.handle.index);
+                    if (ImGui::Selectable(layer.displayName.c_str(), isCurrent)) {
+                        usdScene.setEditTarget(layer.handle);
+                    }
+                    ImGui::SameLine();
+                    if (layer.dirty) ImGui::TextColored({1, 0.7f, 0, 1}, "(dirty)");
+                    if (isSession) {
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("[session]");
+                    }
+                    ImGui::PopID();
+                }
+
+                if (ImGui::Button("Clear Session")) {
+                    usdScene.clearSessionLayer();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Save All")) {
+                    usdScene.saveAllDirty();
+                }
+            }
+
+            // Prim list
+            if (ImGui::CollapsingHeader("Prims", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (const auto& prim : usdScene.allPrims()) {
+                    auto flags = "";
+                    if (prim.flags & PrimFlagRenderable) flags = " [mesh]";
+                    else if (prim.flags & PrimFlagLight) flags = " [light]";
+                    else if (prim.flags & PrimFlagXformable) flags = " [xform]";
+
+                    ImGui::Text("%s%s", prim.name.c_str(), flags);
+                }
+            }
+        }
+        ImGui::End();
+    });
 
     // Camera
     auto cam = Camera{

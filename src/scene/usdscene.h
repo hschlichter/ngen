@@ -77,6 +77,15 @@ constexpr uint64_t PrimFlagLight = 1 << 1;
 constexpr uint64_t PrimFlagCamera = 1 << 2;
 constexpr uint64_t PrimFlagXformable = 1 << 3;
 
+struct SceneEditRequestContext {
+    enum class Purpose : uint8_t {
+        Authoring,
+        Preview,
+        Procedural,
+        Debug,
+    } purpose = Purpose::Authoring;
+};
+
 class MeshLibrary;
 class MaterialLibrary;
 
@@ -123,6 +132,13 @@ public:
     void clearSessionLayer();
     bool saveLayer(LayerHandle layer);
     bool saveAllDirty();
+
+    // Editing — routes to correct layer based on purpose
+    bool setTransform(PrimHandle h, const Transform& value, const SceneEditRequestContext& ctx = {});
+    bool setVisibility(PrimHandle h, bool visible, const SceneEditRequestContext& ctx = {});
+    PrimHandle createPrim(const char* parentPath, const char* name, const char* typeName,
+                          const SceneEditRequestContext& ctx = {});
+    bool removePrim(PrimHandle h, const SceneEditRequestContext& ctx = {});
 
 private:
     struct Impl;

@@ -9,10 +9,12 @@
 #include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/path.h>
+#include <pxr/usd/usd/editContext.h>
 #include <pxr/usd/usd/notice.h>
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usd/stage.h>
+#include <pxr/usd/usdGeom/imageable.h>
 #include <pxr/usd/usdGeom/mesh.h>
 #include <pxr/usd/usdGeom/metrics.h>
 #include <pxr/usd/usdGeom/primvarsAPI.h>
@@ -611,6 +613,20 @@ struct USDScene::Impl {
         return matLib.add(std::move(matDesc));
     }
 
+    // ── Edit layer routing ─────────────────────────────────────────────────
+
+    SdfLayerRefPtr chooseEditLayer(const SceneEditRequestContext& ctx) const {
+        switch (ctx.purpose) {
+        case SceneEditRequestContext::Purpose::Preview:
+        case SceneEditRequestContext::Purpose::Debug:
+            return sessionLayerRef;
+        case SceneEditRequestContext::Purpose::Authoring:
+        case SceneEditRequestContext::Purpose::Procedural:
+        default:
+            return resolveLayer(editTarget);
+        }
+    }
+
     // ── Layer dirty state refresh ────────────────────────────────────────
 
     void refreshLayerDirtyState() {
@@ -759,4 +775,87 @@ bool USDScene::saveAllDirty() {
         }
     }
     return allOk;
+}
+
+// ── Editing ──────────────────────────────────────────────────────────────────
+
+bool USDScene::setTransform(PrimHandle h, const Transform& value, const SceneEditRequestContext& ctx) {
+    auto* rec = getPrimRecord(h);
+    if (!rec) return false;
+
+    auto layer = m_impl->chooseEditLayer(ctx);
+    if (!layer) return false;
+
+    auto prim = m_impl->stage->GetPrimAtPath(SdfPath(rec->path));
+    if (!prim) return false;
+
+    {
+        UsdEditContext editCtx(m_impl->stage, layer);
+        UsdGeomXformable xformable(prim);
+        if (!xformable) return false;
+
+        // Clear existing xform ops and set a single matrix
+        xformable.ClearXformOpOrder();
+        auto op = xformable.AddTransformOp();
+        op.Set(GfMatrix4d(
+            value.toMat4()[0][0], value.toMat4()[0][1], value.toMat4()[0][2], value.toMat4()[0][3],
+            value.toMat4()[1][0], value.toMat4()[1][1], value.toMat4()[1][2], value.toMat4()[1][3],
+            value.toMat4()[2][0], value.toMat4()[2][1], value.toMat4()[2][2], value.toMat4()[2][3],
+            value.toMat4()[3][0], value.toMat4()[3][1], value.toMat4()[3][2], value.toMat4()[3][3]));
+    }
+
+    return true;
+}
+
+bool USDScene::setVisibility(PrimHandle h, bool visible, const SceneEditRequestContext& ctx) {
+    auto* rec = getPrimRecord(h);
+    if (!rec) return false;
+
+    auto layer = m_impl->chooseEditLayer(ctx);
+    if (!layer) return false;
+
+    auto prim = m_impl->stage->GetPrimAtPath(SdfPath(rec->path));
+    if (!prim) return false;
+
+    {
+        UsdEditContext editCtx(m_impl->stage, layer);
+        UsdGeomImageable imageable(prim);
+        if (!imageable) return false;
+
+        imageable.GetVisibilityAttr().Set(
+            visible ? UsdGeomTokens->inherited : UsdGeomTokens->invisible);
+    }
+
+    return true;
+}
+
+PrimHandle USDScene::createPrim(const char* parentPath, const char* name, const char* typeName,
+                                const SceneEditRequestContext& ctx) {
+    auto layer = m_impl->chooseEditLayer(ctx);
+    if (!layer) return {};
+
+    auto path = SdfPath(parentPath).AppendChild(TfToken(name));
+
+    {
+        UsdEditContext editCtx(m_impl->stage, layer);
+        auto prim = m_impl->stage->DefinePrim(path, TfToken(typeName));
+        if (!prim) return {};
+    }
+
+    // The TfNotice will trigger a cache rebuild on next processChanges()
+    // Return a handle by looking up the path (it won't exist until rebuild)
+    return findPrim(path.GetText());
+}
+
+bool USDScene::removePrim(PrimHandle h, const SceneEditRequestContext& ctx) {
+    auto* rec = getPrimRecord(h);
+    if (!rec) return false;
+
+    auto layer = m_impl->chooseEditLayer(ctx);
+    if (!layer) return false;
+
+    {
+        UsdEditContext editCtx(m_impl->stage, layer);
+        return m_impl->stage->RemovePrim(SdfPath(rec->path));
+    }
 }
