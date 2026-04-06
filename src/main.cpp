@@ -7,8 +7,8 @@
 #include "rhidevicevulkan.h"
 #include "sceneloader.h"
 #include "types.h"
-#include "usdscene.h"
 #include "usdrenderextractor.h"
+#include "usdscene.h"
 
 #include <imgui.h>
 
@@ -44,8 +44,7 @@ auto main(int argc, char* argv[]) -> int {
     }
 
     std::string_view filepath = argv[1];
-    bool isUsd = filepath.ends_with(".usda") || filepath.ends_with(".usd") || filepath.ends_with(".usdc") ||
-                 filepath.ends_with(".usdz");
+    bool isUsd = filepath.ends_with(".usda") || filepath.ends_with(".usd") || filepath.ends_with(".usdc") || filepath.ends_with(".usdz");
 
     USDScene usdScene;
     USDRenderExtractor usdExtractor;

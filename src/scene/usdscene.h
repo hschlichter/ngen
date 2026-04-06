@@ -55,9 +55,7 @@ struct SceneDirtySet {
     std::vector<PrimHandle> boundsDirty;
     std::vector<PrimHandle> assetsDirty;
 
-    bool empty() const {
-        return primsResynced.empty() && transformDirty.empty() && boundsDirty.empty() && assetsDirty.empty();
-    }
+    bool empty() const { return primsResynced.empty() && transformDirty.empty() && boundsDirty.empty() && assetsDirty.empty(); }
 
     void clear() {
         primsResynced.clear();

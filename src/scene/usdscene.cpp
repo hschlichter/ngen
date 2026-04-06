@@ -3,6 +3,10 @@
 #include "mesh.h"
 
 #include <pxr/base/tf/notice.h>
+#include <pxr/usd/ar/asset.h>
+#include <pxr/usd/ar/resolvedPath.h>
+#include <pxr/usd/ar/resolver.h>
+#include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/notice.h>
@@ -18,10 +22,6 @@
 #include <pxr/usd/usdShade/material.h>
 #include <pxr/usd/usdShade/materialBindingAPI.h>
 #include <pxr/usd/usdShade/shader.h>
-#include <pxr/usd/ar/resolver.h>
-#include <pxr/usd/ar/resolvedPath.h>
-#include <pxr/usd/ar/asset.h>
-#include <pxr/usd/sdf/assetPath.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -36,13 +36,9 @@ PXR_NAMESPACE_USING_DIRECTIVE
 
 class USDChangeListener : public TfWeakBase {
 public:
-    void initialize(const UsdStageRefPtr& stage) {
-        m_key = TfNotice::Register(TfCreateWeakPtr(this), &USDChangeListener::onObjectsChanged, stage);
-    }
+    void initialize(const UsdStageRefPtr& stage) { m_key = TfNotice::Register(TfCreateWeakPtr(this), &USDChangeListener::onObjectsChanged, stage); }
 
-    void shutdown() {
-        TfNotice::Revoke(m_key);
-    }
+    void shutdown() { TfNotice::Revoke(m_key); }
 
     void drain(std::vector<SdfPath>& outResynced, std::vector<SdfPath>& outChanged) {
         std::lock_guard lock(m_mutex);
@@ -163,9 +159,7 @@ struct USDScene::Impl {
             SceneLayerInfo info;
             info.handle = {.index = idx++};
             info.identifier = rootLayer->GetIdentifier();
-            info.displayName = rootLayer->GetDisplayName().empty()
-                                   ? rootLayer->GetIdentifier()
-                                   : rootLayer->GetDisplayName();
+            info.displayName = rootLayer->GetDisplayName().empty() ? rootLayer->GetIdentifier() : rootLayer->GetDisplayName();
             info.role = SceneLayerRole::Root;
             info.dirty = rootLayer->IsDirty();
             info.readOnly = false;
@@ -177,14 +171,14 @@ struct USDScene::Impl {
         // Sublayers of root
         for (const auto& subPath : rootLayer->GetSubLayerPaths()) {
             auto subLayer = SdfLayer::FindOrOpen(subPath);
-            if (!subLayer) continue;
+            if (!subLayer) {
+                continue;
+            }
 
             SceneLayerInfo info;
             info.handle = {.index = idx++};
             info.identifier = subLayer->GetIdentifier();
-            info.displayName = subLayer->GetDisplayName().empty()
-                                   ? subLayer->GetIdentifier()
-                                   : subLayer->GetDisplayName();
+            info.displayName = subLayer->GetDisplayName().empty() ? subLayer->GetIdentifier() : subLayer->GetDisplayName();
             info.role = SceneLayerRole::Unknown;
             info.dirty = subLayer->IsDirty();
             info.readOnly = false;
@@ -194,10 +188,14 @@ struct USDScene::Impl {
     }
 
     SdfLayerRefPtr resolveLayer(LayerHandle h) const {
-        if (!h) return nullptr;
+        if (!h) {
+            return nullptr;
+        }
         for (const auto& info : layerInfos) {
             if (info.handle == h) {
-                if (info.role == SceneLayerRole::Session) return sessionLayerRef;
+                if (info.role == SceneLayerRole::Session) {
+                    return sessionLayerRef;
+                }
                 return SdfLayer::FindOrOpen(info.identifier);
             }
         }
@@ -233,7 +231,9 @@ struct USDScene::Impl {
         for (size_t i = 1; i < prims.size(); i++) {
             auto& rec = prims[i];
             auto prim = stage->GetPrimAtPath(SdfPath(rec.path));
-            if (!prim) continue;
+            if (!prim) {
+                continue;
+            }
 
             auto parentPrim = prim.GetParent();
             if (parentPrim && parentPrim.GetPath() != SdfPath::AbsoluteRootPath()) {
@@ -260,9 +260,15 @@ struct USDScene::Impl {
 
     static uint64_t classifyPrim(const UsdPrim& prim) {
         uint64_t flags = 0;
-        if (prim.IsA<UsdGeomMesh>()) flags |= PrimFlagRenderable;
-        if (prim.IsA<UsdLuxBoundableLightBase>() || prim.IsA<UsdLuxNonboundableLightBase>()) flags |= PrimFlagLight;
-        if (prim.IsA<UsdGeomXformable>()) flags |= PrimFlagXformable;
+        if (prim.IsA<UsdGeomMesh>()) {
+            flags |= PrimFlagRenderable;
+        }
+        if (prim.IsA<UsdLuxBoundableLightBase>() || prim.IsA<UsdLuxNonboundableLightBase>()) {
+            flags |= PrimFlagLight;
+        }
+        if (prim.IsA<UsdGeomXformable>()) {
+            flags |= PrimFlagXformable;
+        }
         return flags;
     }
 
@@ -277,7 +283,7 @@ struct USDScene::Impl {
 
         // Apply metersPerUnit scale to all world transforms
         if (metersPerUnit != 1.0) {
-            auto s = (float)metersPerUnit;
+            auto s = (float) metersPerUnit;
             auto scaleMat = glm::scale(glm::mat4(1.0f), glm::vec3(s));
             for (size_t i = 1; i < transforms.size(); i++) {
                 transforms[i].world = scaleMat * transforms[i].world;
@@ -290,7 +296,9 @@ struct USDScene::Impl {
         auto& xf = transforms[idx];
 
         auto prim = stage->GetPrimAtPath(SdfPath(rec.path));
-        if (!prim) return;
+        if (!prim) {
+            return;
+        }
 
         UsdGeomXformable xformable(prim);
         if (xformable) {
@@ -358,7 +366,9 @@ struct USDScene::Impl {
         dirtySet.clear();
         changeListener.drain(scratchResynced, scratchChanged);
 
-        if (scratchResynced.empty() && scratchChanged.empty()) return;
+        if (scratchResynced.empty() && scratchChanged.empty()) {
+            return;
+        }
 
         // Structural resyncs — rebuild cache for now
         if (!scratchResynced.empty()) {
@@ -372,7 +382,9 @@ struct USDScene::Impl {
         for (const auto& path : scratchChanged) {
             auto primPath = path.GetPrimPath();
             auto it = pathToIndex.find(primPath.GetString());
-            if (it == pathToIndex.end()) continue;
+            if (it == pathToIndex.end()) {
+                continue;
+            }
 
             PrimHandle h = {.index = it->second};
             auto propName = path.GetNameToken().GetString();
@@ -396,11 +408,17 @@ struct USDScene::Impl {
 
         for (size_t i = 1; i < prims.size(); i++) {
             auto& rec = prims[i];
-            if (!(rec.flags & PrimFlagRenderable)) continue;
-            if (assetBindingsBuilt && assetBindings[i].mesh) continue;
+            if (!(rec.flags & PrimFlagRenderable)) {
+                continue;
+            }
+            if (assetBindingsBuilt && assetBindings[i].mesh) {
+                continue;
+            }
 
             auto prim = stage->GetPrimAtPath(SdfPath(rec.path));
-            if (!prim) continue;
+            if (!prim) {
+                continue;
+            }
 
             assetBindings[i].mesh = extractMesh(prim, meshLib);
             assetBindings[i].material = extractMaterial(prim, matLib);
@@ -412,11 +430,15 @@ struct USDScene::Impl {
 
     static MeshHandle extractMesh(const UsdPrim& prim, MeshLibrary& meshLib) {
         UsdGeomMesh geomMesh(prim);
-        if (!geomMesh) return {};
+        if (!geomMesh) {
+            return {};
+        }
 
         VtArray<GfVec3f> points;
         geomMesh.GetPointsAttr().Get(&points, UsdTimeCode::Default());
-        if (points.empty()) return {};
+        if (points.empty()) {
+            return {};
+        }
 
         VtArray<int> faceVertexCounts;
         VtArray<int> faceVertexIndices;
@@ -432,7 +454,9 @@ struct USDScene::Impl {
         UsdGeomPrimvarsAPI primvarsAPI(prim);
         for (const auto* name : {"st", "st0", "st1", "UVMap"}) {
             auto pv = primvarsAPI.GetPrimvar(TfToken(name));
-            if (pv && pv.Get(&uvs, UsdTimeCode::Default()) && !uvs.empty()) break;
+            if (pv && pv.Get(&uvs, UsdTimeCode::Default()) && !uvs.empty()) {
+                break;
+            }
         }
 
         // Triangulate and build vertex/index arrays
@@ -448,9 +472,9 @@ struct USDScene::Impl {
                     faceVertexIndices[fvIdx + t + 2],
                 };
                 int fvIndices[3] = {
-                    (int)fvIdx,
-                    (int)(fvIdx + t + 1),
-                    (int)(fvIdx + t + 2),
+                    (int) fvIdx,
+                    (int) (fvIdx + t + 1),
+                    (int) (fvIdx + t + 2),
                 };
 
                 for (int v = 0; v < 3; v++) {
@@ -460,7 +484,7 @@ struct USDScene::Impl {
 
                     if (!normals.empty()) {
                         int ni = (normals.size() == points.size()) ? indices[v] : fvIndices[v];
-                        if (ni < (int)normals.size()) {
+                        if (ni < (int) normals.size()) {
                             auto& n = normals[ni];
                             vert.normal = {n[0], n[1], n[2]};
                         }
@@ -468,7 +492,7 @@ struct USDScene::Impl {
 
                     if (!uvs.empty()) {
                         int ui = (uvs.size() == points.size()) ? indices[v] : fvIndices[v];
-                        if (ui < (int)uvs.size()) {
+                        if (ui < (int) uvs.size()) {
                             auto& uv = uvs[ui];
                             vert.texCoord = {uv[0], 1.0f - uv[1]};
                         }
@@ -476,14 +500,16 @@ struct USDScene::Impl {
 
                     vert.color = {1.0f, 1.0f, 1.0f};
 
-                    meshDesc.indices.push_back((uint32_t)meshDesc.vertices.size());
+                    meshDesc.indices.push_back((uint32_t) meshDesc.vertices.size());
                     meshDesc.vertices.push_back(vert);
                 }
             }
             fvIdx += count;
         }
 
-        if (meshDesc.vertices.empty()) return {};
+        if (meshDesc.vertices.empty()) {
+            return {};
+        }
         return meshLib.add(std::move(meshDesc));
     }
 
@@ -495,18 +521,26 @@ struct USDScene::Impl {
         if (!asset) {
             // Try resolving first
             auto resolved = resolver.Resolve(path);
-            if (resolved.empty()) return false;
+            if (resolved.empty()) {
+                return false;
+            }
             asset = resolver.OpenAsset(resolved);
-            if (!asset) return false;
+            if (!asset) {
+                return false;
+            }
         }
 
         auto buffer = asset->GetBuffer();
-        if (!buffer) return false;
+        if (!buffer) {
+            return false;
+        }
 
         auto size = asset->GetSize();
         int w = 0, h = 0, channels = 0;
-        auto* pixels = stbi_load_from_memory((const stbi_uc*)buffer.get(), (int)size, &w, &h, &channels, 4);
-        if (!pixels) return false;
+        auto* pixels = stbi_load_from_memory((const stbi_uc*) buffer.get(), (int) size, &w, &h, &channels, 4);
+        if (!pixels) {
+            return false;
+        }
 
         matDesc.texWidth = w;
         matDesc.texHeight = h;
@@ -515,10 +549,11 @@ struct USDScene::Impl {
         return true;
     }
 
-    static void extractShaderTexture(const UsdShadeShader& shader, const TfToken& inputName,
-                                     MaterialDesc& matDesc) {
+    static void extractShaderTexture(const UsdShadeShader& shader, const TfToken& inputName, MaterialDesc& matDesc) {
         auto input = shader.GetInput(inputName);
-        if (!input) return;
+        if (!input) {
+            return;
+        }
 
         // Check if connected to a texture reader
         UsdShadeConnectableAPI texSource;
@@ -532,7 +567,9 @@ struct USDScene::Impl {
                     SdfAssetPath assetPath;
                     if (fileInput.Get(&assetPath, UsdTimeCode::Default())) {
                         auto path = assetPath.GetResolvedPath();
-                        if (path.empty()) path = assetPath.GetAssetPath();
+                        if (path.empty()) {
+                            path = assetPath.GetAssetPath();
+                        }
                         if (!path.empty()) {
                             loadTextureFromAssetPath(path, matDesc);
                             return;
@@ -588,45 +625,72 @@ struct USDScene::Impl {
 
 // ── USDScene public API ──────────────────────────────────────────────────────
 
-USDScene::USDScene() : m_impl(std::make_unique<Impl>()) {}
+USDScene::USDScene() : m_impl(std::make_unique<Impl>()) {
+}
 USDScene::~USDScene() = default;
 
-bool USDScene::open(const char* path) { return m_impl->open(path); }
-void USDScene::close() { m_impl->close(); }
-bool USDScene::isOpen() const { return m_impl->stage != nullptr; }
+bool USDScene::open(const char* path) {
+    return m_impl->open(path);
+}
+void USDScene::close() {
+    m_impl->close();
+}
+bool USDScene::isOpen() const {
+    return m_impl->stage != nullptr;
+}
 
-void USDScene::beginFrame() { m_impl->frame++; }
+void USDScene::beginFrame() {
+    m_impl->frame++;
+}
 
-void USDScene::processChanges() { m_impl->processChanges(); }
-void USDScene::updateAssetBindings(MeshLibrary& meshLib, MaterialLibrary& matLib) { m_impl->updateAssetBindings(meshLib, matLib); }
+void USDScene::processChanges() {
+    m_impl->processChanges();
+}
+void USDScene::updateAssetBindings(MeshLibrary& meshLib, MaterialLibrary& matLib) {
+    m_impl->updateAssetBindings(meshLib, matLib);
+}
 
-void USDScene::endFrame() { m_impl->refreshLayerDirtyState(); }
+void USDScene::endFrame() {
+    m_impl->refreshLayerDirtyState();
+}
 
-uint32_t USDScene::frameIndex() const { return m_impl->frame; }
+uint32_t USDScene::frameIndex() const {
+    return m_impl->frame;
+}
 
 PrimHandle USDScene::findPrim(const char* path) const {
     auto it = m_impl->pathToIndex.find(path);
-    if (it == m_impl->pathToIndex.end()) return {};
+    if (it == m_impl->pathToIndex.end()) {
+        return {};
+    }
     return {.index = it->second};
 }
 
 const PrimRuntimeRecord* USDScene::getPrimRecord(PrimHandle h) const {
-    if (h.index == 0 || h.index >= m_impl->prims.size()) return nullptr;
+    if (h.index == 0 || h.index >= m_impl->prims.size()) {
+        return nullptr;
+    }
     return &m_impl->prims[h.index];
 }
 
 const TransformCacheRecord* USDScene::getTransform(PrimHandle h) const {
-    if (h.index == 0 || h.index >= m_impl->transforms.size()) return nullptr;
+    if (h.index == 0 || h.index >= m_impl->transforms.size()) {
+        return nullptr;
+    }
     return &m_impl->transforms[h.index];
 }
 
 const AssetBindingCacheRecord* USDScene::getAssetBinding(PrimHandle h) const {
-    if (h.index == 0 || h.index >= m_impl->assetBindings.size()) return nullptr;
+    if (h.index == 0 || h.index >= m_impl->assetBindings.size()) {
+        return nullptr;
+    }
     return &m_impl->assetBindings[h.index];
 }
 
 std::span<const PrimRuntimeRecord> USDScene::allPrims() const {
-    if (m_impl->prims.size() <= 1) return {};
+    if (m_impl->prims.size() <= 1) {
+        return {};
+    }
     return {m_impl->prims.data() + 1, m_impl->prims.size() - 1};
 }
 
@@ -648,7 +712,9 @@ std::span<const SceneLayerInfo> USDScene::layers() const {
 
 LayerHandle USDScene::findLayerByRole(SceneLayerRole role) const {
     for (const auto& info : m_impl->layerInfos) {
-        if (info.role == role) return info.handle;
+        if (info.role == role) {
+            return info.handle;
+        }
     }
     return {};
 }
@@ -661,8 +727,12 @@ void USDScene::setEditTarget(LayerHandle layer) {
     }
 }
 
-LayerHandle USDScene::currentEditTarget() const { return m_impl->editTarget; }
-LayerHandle USDScene::sessionLayer() const { return m_impl->sessionLayerHandle; }
+LayerHandle USDScene::currentEditTarget() const {
+    return m_impl->editTarget;
+}
+LayerHandle USDScene::sessionLayer() const {
+    return m_impl->sessionLayerHandle;
+}
 
 void USDScene::clearSessionLayer() {
     if (m_impl->sessionLayerRef) {
@@ -672,7 +742,9 @@ void USDScene::clearSessionLayer() {
 
 bool USDScene::saveLayer(LayerHandle layer) {
     auto sdfLayer = m_impl->resolveLayer(layer);
-    if (sdfLayer) return sdfLayer->Save();
+    if (sdfLayer) {
+        return sdfLayer->Save();
+    }
     return false;
 }
 
@@ -681,7 +753,9 @@ bool USDScene::saveAllDirty() {
     for (const auto& info : m_impl->layerInfos) {
         if (info.dirty && !info.readOnly) {
             auto sdfLayer = m_impl->resolveLayer(info.handle);
-            if (sdfLayer && !sdfLayer->Save()) allOk = false;
+            if (sdfLayer && !sdfLayer->Save()) {
+                allOk = false;
+            }
         }
     }
     return allOk;

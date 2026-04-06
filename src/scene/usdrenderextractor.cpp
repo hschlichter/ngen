@@ -6,13 +6,19 @@ void USDRenderExtractor::extract(const USDScene& scene, RenderWorld& out) {
     out.clear();
 
     for (const auto& prim : scene.allPrims()) {
-        if (!(prim.flags & PrimFlagRenderable)) continue;
+        if (!(prim.flags & PrimFlagRenderable)) {
+            continue;
+        }
 
         const auto* binding = scene.getAssetBinding(prim.handle);
-        if (!binding || !binding->mesh) continue;
+        if (!binding || !binding->mesh) {
+            continue;
+        }
 
         const auto* xf = scene.getTransform(prim.handle);
-        if (!xf) continue;
+        if (!xf) {
+            continue;
+        }
 
         out.meshInstances.push_back({
             .mesh = binding->mesh,
