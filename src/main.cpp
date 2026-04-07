@@ -6,9 +6,7 @@
 #include "renderworld.h"
 #include "rhidebugui.h"
 #include "rhidevicevulkan.h"
-#include "sceneloader.h"
 #include "scenequery.h"
-#include "types.h"
 #include "usdrenderextractor.h"
 #include "usdscene.h"
 
@@ -20,28 +18,6 @@
 #include <print>
 #include <unordered_set>
 
-static auto buildRenderWorldFromScene(const Scene& scene, MeshLibrary& meshLib, MaterialLibrary& matLib) -> RenderWorld {
-    RenderWorld world;
-    for (const auto& md : scene.meshes) {
-        auto meshHandle = meshLib.add({
-            .vertices = md.vertices,
-            .indices = md.indices,
-        });
-        auto matHandle = matLib.add({
-            .texWidth = md.texWidth,
-            .texHeight = md.texHeight,
-            .texPixels = md.texPixels,
-        });
-        world.meshInstances.push_back({
-            .mesh = meshHandle,
-            .material = matHandle,
-            .worldTransform = md.transform,
-            .worldBounds = meshLib.bounds(meshHandle).transformed(md.transform),
-        });
-    }
-    return world;
-}
-
 auto main(int argc, char* argv[]) -> int {
     USDScene usdScene;
     USDRenderExtractor usdExtractor;
@@ -50,28 +26,15 @@ auto main(int argc, char* argv[]) -> int {
     MaterialLibrary matLib;
     RenderWorld renderWorld;
     PrimHandle selectedPrim;
-    bool isUsd = false;
 
     if (argc >= 2) {
-        std::string_view filepath = argv[1];
-        isUsd = filepath.ends_with(".usda") || filepath.ends_with(".usd") || filepath.ends_with(".usdc") || filepath.ends_with(".usdz");
-
-        if (isUsd) {
-            if (!usdScene.open(argv[1])) {
-                std::println(stderr, "Failed to open USD scene");
-                return 1;
-            }
-            usdScene.updateAssetBindings(meshLib, matLib);
-            usdExtractor.extract(usdScene, meshLib, renderWorld);
-            sceneQuery.rebuild(usdScene, meshLib);
-        } else {
-            auto scene = loadGltf(argv[1]);
-            if (scene.meshes.empty()) {
-                std::println(stderr, "Failed to load model");
-                return 1;
-            }
-            renderWorld = buildRenderWorldFromScene(scene, meshLib, matLib);
+        if (!usdScene.open(argv[1])) {
+            std::println(stderr, "Failed to open USD scene: {}", argv[1]);
+            return 1;
         }
+        usdScene.updateAssetBindings(meshLib, matLib);
+        usdExtractor.extract(usdScene, meshLib, renderWorld);
+        sceneQuery.rebuild(usdScene, meshLib);
     }
 
     // SDL init and window
@@ -113,10 +76,6 @@ auto main(int argc, char* argv[]) -> int {
     std::string pendingOpenPath;
 
     auto openScene = [&](const char* path) {
-        std::string_view p = path;
-        bool usd = p.ends_with(".usda") || p.ends_with(".usd") || p.ends_with(".usdc") || p.ends_with(".usdz");
-
-        // Close previous
         if (usdScene.isOpen()) {
             usdScene.close();
         }
@@ -125,27 +84,15 @@ auto main(int argc, char* argv[]) -> int {
         renderWorld.clear();
         selectedPrim = {};
 
-        if (usd) {
-            if (!usdScene.open(path)) {
-                std::println(stderr, "Failed to open: {}", path);
-                return;
-            }
-            usdScene.updateAssetBindings(meshLib, matLib);
-            usdExtractor.extract(usdScene, meshLib, renderWorld);
-            sceneQuery.rebuild(usdScene, meshLib);
-            isUsd = true;
-        } else {
-            auto scene = loadGltf(path);
-            if (scene.meshes.empty()) {
-                std::println(stderr, "Failed to load: {}", path);
-                return;
-            }
-            renderWorld = buildRenderWorldFromScene(scene, meshLib, matLib);
-            isUsd = false;
+        if (!usdScene.open(path)) {
+            std::println(stderr, "Failed to open: {}", path);
+            return;
         }
-
+        usdScene.updateAssetBindings(meshLib, matLib);
+        usdExtractor.extract(usdScene, meshLib, renderWorld);
+        sceneQuery.rebuild(usdScene, meshLib);
         renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
-        showSceneWindow = usd;
+        showSceneWindow = true;
     };
     std::unordered_set<uint32_t> selectedAncestors;
 
@@ -202,7 +149,6 @@ auto main(int argc, char* argv[]) -> int {
                 if (ImGui::MenuItem("Open...")) {
                     static const SDL_DialogFileFilter filters[] = {
                         {"USD Files", "usd;usda;usdc;usdz"},
-                        {"glTF Files", "gltf;glb"},
                         {"All Files", "*"},
                     };
                     SDL_ShowOpenFileDialog(
@@ -211,7 +157,7 @@ auto main(int argc, char* argv[]) -> int {
                                 *static_cast<std::string*>(userdata) = filelist[0];
                             }
                         },
-                        &pendingOpenPath, window, filters, 3, nullptr, false);
+                        &pendingOpenPath, window, filters, 2, nullptr, false);
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Quit")) {
@@ -443,11 +389,11 @@ auto main(int argc, char* argv[]) -> int {
             pendingOpenPath.clear();
         }
 
-        if (isUsd) {
+        if (usdScene.isOpen()) {
             usdScene.endFrame();
         }
 
-        if (sceneChanged && isUsd) {
+        if (sceneChanged && usdScene.isOpen()) {
             usdExtractor.extract(usdScene, meshLib, renderWorld);
             renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
             sceneQuery.rebuild(usdScene, meshLib);

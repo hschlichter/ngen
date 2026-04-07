@@ -31,6 +31,7 @@
 #include <mutex>
 #include <unordered_map>
 
+#define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
 PXR_NAMESPACE_USING_DIRECTIVE

@@ -10,7 +10,7 @@ USD_INCLUDE = -I$(USD_DIR)/include
 USD_LDFLAGS = -L$(USD_DIR)/lib -Wl,-rpath,$(CURDIR)/$(USD_DIR)/lib \
 	-lusd_usd -lusd_usdGeom -lusd_usdShade -lusd_usdLux \
 	-lusd_sdf -lusd_pcp -lusd_tf -lusd_vt -lusd_gf -lusd_ar \
-	-lusd_arch -lusd_plug -lusd_js -lusd_work -lusd_trace -lusd_pegtl -lusd_kind
+	-lusd_arch -lusd_plug -lusd_js -lusd_work -lusd_trace -lusd_ts -lusd_pegtl -lusd_kind
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
