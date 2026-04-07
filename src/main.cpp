@@ -1,9 +1,15 @@
 #include "camera.h"
+#include "material.h"
+#include "mesh.h"
 #include "renderer.h"
+#include "renderworld.h"
 #include "rhidebugui.h"
 #include "rhidevicevulkan.h"
 #include "sceneloader.h"
+#include "scenequery.h"
 #include "types.h"
+#include "usdrenderextractor.h"
+#include "usdscene.h"
 
 #include <imgui.h>
 
@@ -11,16 +17,59 @@
 
 #include <print>
 
+static auto buildRenderWorldFromScene(const Scene& scene, MeshLibrary& meshLib, MaterialLibrary& matLib) -> RenderWorld {
+    RenderWorld world;
+    for (const auto& md : scene.meshes) {
+        auto meshHandle = meshLib.add({
+            .vertices = md.vertices,
+            .indices = md.indices,
+        });
+        auto matHandle = matLib.add({
+            .texWidth = md.texWidth,
+            .texHeight = md.texHeight,
+            .texPixels = md.texPixels,
+        });
+        world.meshInstances.push_back({
+            .mesh = meshHandle,
+            .material = matHandle,
+            .worldTransform = md.transform,
+        });
+    }
+    return world;
+}
+
 auto main(int argc, char* argv[]) -> int {
     if (argc < 2) {
         std::println(stderr, "Usage: {} <model.gltf>", argv[0]);
         return 1;
     }
 
-    auto scene = loadGltf(argv[1]);
-    if (scene.meshes.empty()) {
-        std::println(stderr, "Failed to load model");
-        return 1;
+    std::string_view filepath = argv[1];
+    bool isUsd = filepath.ends_with(".usda") || filepath.ends_with(".usd") || filepath.ends_with(".usdc") || filepath.ends_with(".usdz");
+
+    USDScene usdScene;
+    USDRenderExtractor usdExtractor;
+    SceneQuerySystem sceneQuery;
+    MeshLibrary meshLib;
+    MaterialLibrary matLib;
+    RenderWorld renderWorld;
+    std::string pickedPrimPath;
+
+    if (isUsd) {
+        if (!usdScene.open(argv[1])) {
+            std::println(stderr, "Failed to open USD scene");
+            return 1;
+        }
+        usdScene.updateAssetBindings(meshLib, matLib);
+        usdExtractor.extract(usdScene, renderWorld);
+        sceneQuery.rebuild(usdScene, meshLib);
+    } else {
+        auto scene = loadGltf(argv[1]);
+        if (scene.meshes.empty()) {
+            std::println(stderr, "Failed to load model");
+            return 1;
+        }
+        renderWorld = buildRenderWorldFromScene(scene, meshLib, matLib);
     }
 
     // SDL init and window
@@ -53,8 +102,70 @@ auto main(int argc, char* argv[]) -> int {
     if (!renderer.init(&rhiDevice, window)) {
         return 1;
     }
-    renderer.uploadScene(scene);
-    renderer.debugui()->setDrawCallback([] { ImGui::ShowDemoWindow(); });
+    renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
+    renderer.debugui()->setDrawCallback([&] {
+        if (!usdScene.isOpen()) {
+            return;
+        }
+
+        if (ImGui::Begin("USD Scene")) {
+            // Layer stack
+            if (ImGui::CollapsingHeader("Layers", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (const auto& layer : usdScene.layers()) {
+                    auto isCurrent = (layer.handle == usdScene.currentEditTarget());
+                    auto isSession = (layer.handle == usdScene.sessionLayer());
+
+                    ImGui::PushID(layer.handle.index);
+                    if (ImGui::Selectable(layer.displayName.c_str(), isCurrent)) {
+                        usdScene.setEditTarget(layer.handle);
+                    }
+                    ImGui::SameLine();
+                    if (layer.dirty) {
+                        ImGui::TextColored({1, 0.7f, 0, 1}, "(dirty)");
+                    }
+                    if (isSession) {
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("[session]");
+                    }
+                    ImGui::PopID();
+                }
+
+                if (ImGui::Button("Clear Session")) {
+                    usdScene.clearSessionLayer();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Save All")) {
+                    usdScene.saveAllDirty();
+                }
+            }
+
+            // Stats
+            ImGui::Text("Mesh instances: %zu", renderWorld.meshInstances.size());
+
+            // Picked prim
+            if (!pickedPrimPath.empty()) {
+                ImGui::Separator();
+                ImGui::Text("Picked: %s", pickedPrimPath.c_str());
+            }
+
+            // Prim list
+            if (ImGui::CollapsingHeader("Prims")) {
+                for (const auto& prim : usdScene.allPrims()) {
+                    const char* tag = "";
+                    if (prim.flags & PrimFlagRenderable) {
+                        tag = " [mesh]";
+                    } else if (prim.flags & PrimFlagLight) {
+                        tag = " [light]";
+                    } else if (prim.flags & PrimFlagXformable) {
+                        tag = " [xform]";
+                    }
+
+                    ImGui::Text("%s%s", prim.name.c_str(), tag);
+                }
+            }
+        }
+        ImGui::End();
+    });
 
     // Camera
     auto cam = Camera{
@@ -95,6 +206,39 @@ auto main(int argc, char* argv[]) -> int {
             }
             if (ev.type == SDL_EVENT_MOUSE_MOTION && mouseCapture) {
                 cam.handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
+            }
+
+            if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_LEFT && usdScene.isOpen()) {
+                int winW = 0, winH = 0;
+                SDL_GetWindowSizeInPixels(window, &winW, &winH);
+                float mx = ev.button.x;
+                float my = ev.button.y;
+
+                float ndcX = (2.0f * mx / (float) winW) - 1.0f;
+                float ndcY = 1.0f - (2.0f * my / (float) winH);
+
+                auto aspect = (float) winW / (float) winH;
+                auto proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 3000.0f);
+                proj[1][1] *= -1.0f;
+                auto invVP = glm::inverse(proj * cam.viewMatrix());
+
+                auto nearPt = invVP * glm::vec4(ndcX, ndcY, 0.0f, 1.0f);
+                auto farPt = invVP * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
+                nearPt /= nearPt.w;
+                farPt /= farPt.w;
+
+                Ray ray = {
+                    .origin = glm::vec3(nearPt),
+                    .direction = glm::normalize(glm::vec3(farPt - nearPt)),
+                };
+
+                RaycastHit hit;
+                if (sceneQuery.raycast(ray, 3000.0f, hit)) {
+                    auto* rec = usdScene.getPrimRecord(hit.prim);
+                    pickedPrimPath = rec ? rec->path : "";
+                } else {
+                    pickedPrimPath.clear();
+                }
             }
         }
 

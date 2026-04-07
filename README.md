@@ -38,8 +38,9 @@ Additional backends (D3D12, Metal) can be added as sibling folders under `src/rh
 | [GLM](https://github.com/g-truc/glm) | Math (vectors, matrices, quaternions) |
 | [cgltf](https://github.com/jsmber/cgltf) | glTF file parsing |
 | [stb](https://github.com/nothings/stb) | Image loading (stb_image) |
+| [OpenUSD](https://github.com/PixarAnimationStudios/OpenUSD) | USD scene format (stage, layers, composition) |
 
-GLM, cgltf, and stb are included as git submodules in `external/`. SDL3 and the Vulkan SDK must be installed on the system.
+GLM, cgltf, stb, and OpenUSD are included as git submodules in `external/`. SDL3 and the Vulkan SDK must be installed on the system.
 
 After cloning, initialize the submodules:
 
@@ -47,9 +48,26 @@ After cloning, initialize the submodules:
 git submodule update --init --recursive
 ```
 
+## Building OpenUSD
+
+OpenUSD must be built separately before building the engine. This only needs to be done once. Requires CMake and Python 3.
+
+```bash
+python3 external/openusd/build_scripts/build_usd.py \
+  --no-python --no-imaging --no-tests --no-examples \
+  --no-tutorials --no-tools --no-docs --no-materialx \
+  --no-alembic --no-draco --no-openimageio --no-opencolorio \
+  --no-openvdb --no-ptex --no-embree --no-prman \
+  --onetbb --build-variant release \
+  -j$(nproc) \
+  external/openusd_build
+```
+
+This builds the core USD libraries (usd, sdf, tf, usdGeom, usdShade, usdLux) with oneTBB into `external/openusd_build/`. The engine links against these at build time and loads them at runtime via rpath.
+
 ## Building
 
-Requires clang++ with C++23 support and the Vulkan SDK.
+Requires clang++ with C++23 support and the Vulkan SDK. OpenUSD must be built first (see above).
 
 ```bash
 make
