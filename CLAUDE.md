@@ -1,8 +1,8 @@
 # ngen
 
 ## Tools
-Use 'rg' ripgrep for searching.
-Use 'fd' for finding files.
+DO NOT USE THE TOOL 'grep' use 'rg' ripgrep for searching.
+DO NOT USE THE TOOL 'find' use 'fd' for finding files.
 
 ## File naming
 - No snake_case in filenames. Use lowercase concatenated names (e.g. `sceneloader.cpp`, `devicevulkan.h`).
