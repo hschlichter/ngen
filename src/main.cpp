@@ -56,6 +56,7 @@ auto main(int argc, char* argv[]) -> int {
     MaterialLibrary matLib;
     RenderWorld renderWorld;
     std::string pickedPrimPath;
+    AABB pickedBounds;
 
     if (isUsd) {
         if (!usdScene.open(argv[1])) {
@@ -219,7 +220,7 @@ auto main(int argc, char* argv[]) -> int {
                 float my = ev.button.y;
 
                 float ndcX = (2.0f * mx / (float) winW) - 1.0f;
-                float ndcY = 1.0f - (2.0f * my / (float) winH);
+                float ndcY = (2.0f * my / (float) winH) - 1.0f;
 
                 auto aspect = (float) winW / (float) winH;
                 auto proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 3000.0f);
@@ -240,8 +241,11 @@ auto main(int argc, char* argv[]) -> int {
                 if (sceneQuery.raycast(ray, 3000.0f, hit)) {
                     auto* rec = usdScene.getPrimRecord(hit.prim);
                     pickedPrimPath = rec ? rec->path : "";
+                    auto* bc = sceneQuery.bounds().get(hit.prim);
+                    pickedBounds = bc ? bc->worldBounds : AABB{};
                 } else {
                     pickedPrimPath.clear();
+                    pickedBounds = {};
                 }
             }
         }
@@ -254,6 +258,9 @@ auto main(int argc, char* argv[]) -> int {
             if (inst.worldBounds.valid()) {
                 debugDraw.box(inst.worldBounds, {0.0f, 1.0f, 0.0f, 1.0f});
             }
+        }
+        if (pickedBounds.valid()) {
+            debugDraw.box(pickedBounds, {1.0f, 0.0f, 0.6f, 1.0f});
         }
 
         renderer.render(cam, window, debugDraw.data());
