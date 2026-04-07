@@ -10,8 +10,8 @@ struct DebugLinePassData {
     FgTextureHandle depth;
 };
 
-auto DebugRenderer::addPass(FrameGraph& fg, FgTextureHandle color, FgTextureHandle depth, RhiExtent2D extent,
-                            const DebugDrawData& data, const DebugLinePassResources& res) -> void {
+auto DebugRenderer::addPass(
+    FrameGraph& fg, FgTextureHandle color, FgTextureHandle depth, RhiExtent2D extent, const DebugDrawData& data, const DebugLinePassResources& res) -> void {
     auto vertexCount = std::min((uint32_t) data.lines.size(), res.maxVertices);
     if (vertexCount == 0) {
         return;

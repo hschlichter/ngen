@@ -157,7 +157,12 @@ auto main(int argc, char* argv[]) -> int {
                                 *static_cast<std::string*>(userdata) = filelist[0];
                             }
                         },
-                        &pendingOpenPath, window, filters, 2, nullptr, false);
+                        &pendingOpenPath,
+                        window,
+                        filters,
+                        2,
+                        nullptr,
+                        false);
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Quit")) {
@@ -209,7 +214,8 @@ auto main(int argc, char* argv[]) -> int {
 
                 ImGui::Spacing();
                 static char newLayerPath[256] = "new_layer.usda";
-                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("Add").x - ImGui::GetStyle().ItemSpacing.x - ImGui::GetStyle().FramePadding.x * 2);
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("Add").x - ImGui::GetStyle().ItemSpacing.x -
+                                        ImGui::GetStyle().FramePadding.x * 2);
                 ImGui::InputText("##newlayer", newLayerPath, sizeof(newLayerPath));
                 ImGui::SameLine();
                 if (ImGui::Button("Add")) {

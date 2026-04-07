@@ -342,7 +342,6 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
     };
     memcpy(uniformBuffersMapped[*index], &ubo, sizeof(ubo));
 
-
     // Build frame graph
     auto ext = swapchain->extent();
     frameGraph.reset();
@@ -396,13 +395,18 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
             cmd->endRendering();
         });
 
-    debugRenderer.addPass(frameGraph, colorHandle, depthHandle, ext, debugData, {
-        .pipeline = debugLinePipeline,
-        .vertexBuffer = debugVertexBuffers[imageIdx],
-        .descriptorSet = debugDescriptorSets[imageIdx],
-        .vertexBufferMapped = debugVertexBuffersMapped[imageIdx],
-        .maxVertices = debugMaxVertices,
-    });
+    debugRenderer.addPass(frameGraph,
+                          colorHandle,
+                          depthHandle,
+                          ext,
+                          debugData,
+                          {
+                              .pipeline = debugLinePipeline,
+                              .vertexBuffer = debugVertexBuffers[imageIdx],
+                              .descriptorSet = debugDescriptorSets[imageIdx],
+                              .vertexBufferMapped = debugVertexBuffersMapped[imageIdx],
+                              .maxVertices = debugMaxVertices,
+                          });
 
     struct DebugUIPassData {
         FgTextureHandle color;

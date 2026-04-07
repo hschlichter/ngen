@@ -352,10 +352,7 @@ struct USDScene::Impl {
             s.z = glm::length(glm::vec3(localGlm[2]));
             xf.local.scale = s;
 
-            glm::mat3 rotMat(
-                glm::vec3(localGlm[0]) / s.x,
-                glm::vec3(localGlm[1]) / s.y,
-                glm::vec3(localGlm[2]) / s.z);
+            glm::mat3 rotMat(glm::vec3(localGlm[0]) / s.x, glm::vec3(localGlm[1]) / s.y, glm::vec3(localGlm[2]) / s.z);
             xf.local.rotation = glm::quat_cast(rotMat);
 
             if (rec.parent && !resetsXformStack) {
@@ -879,10 +876,7 @@ bool USDScene::setTransform(PrimHandle h, const Transform& value, const SceneEdi
 
         auto m = value.toMat4();
         transformOp.Set(GfMatrix4d(
-            m[0][0], m[0][1], m[0][2], m[0][3],
-            m[1][0], m[1][1], m[1][2], m[1][3],
-            m[2][0], m[2][1], m[2][2], m[2][3],
-            m[3][0], m[3][1], m[3][2], m[3][3]));
+            m[0][0], m[0][1], m[0][2], m[0][3], m[1][0], m[1][1], m[1][2], m[1][3], m[2][0], m[2][1], m[2][2], m[2][3], m[3][0], m[3][1], m[3][2], m[3][3]));
     }
 
     // Update cached transforms for this prim and descendants

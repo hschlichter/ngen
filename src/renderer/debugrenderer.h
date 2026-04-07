@@ -17,6 +17,7 @@ struct DebugLinePassResources {
 
 class DebugRenderer {
 public:
-    auto addPass(FrameGraph& fg, FgTextureHandle color, FgTextureHandle depth, RhiExtent2D extent,
-                 const DebugDrawData& data, const DebugLinePassResources& resources) -> void;
+    auto addPass(
+        FrameGraph& fg, FgTextureHandle color, FgTextureHandle depth, RhiExtent2D extent, const DebugDrawData& data, const DebugLinePassResources& resources)
+        -> void;
 };
