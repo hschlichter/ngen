@@ -7,6 +7,7 @@
 #include <pxr/usd/ar/resolvedPath.h>
 #include <pxr/usd/ar/resolver.h>
 #include <pxr/usd/sdf/assetPath.h>
+#include <pxr/usd/sdf/fileFormat.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/editContext.h>
@@ -139,6 +140,15 @@ struct USDScene::Impl {
     // ── Layer info ───────────────────────────────────────────────────────
 
     void rebuildLayerInfo() {
+        // Remember current edit target identifier so we can restore it
+        std::string prevEditTargetId;
+        for (const auto& info : layerInfos) {
+            if (info.handle == editTarget) {
+                prevEditTargetId = info.identifier;
+                break;
+            }
+        }
+
         layerInfos.clear();
         uint32_t idx = 1;
 
@@ -157,6 +167,7 @@ struct USDScene::Impl {
         }
 
         // Root layer
+        LayerHandle rootHandle;
         {
             SceneLayerInfo info;
             info.handle = {.index = idx++};
@@ -164,10 +175,10 @@ struct USDScene::Impl {
             info.displayName = rootLayer->GetDisplayName().empty() ? rootLayer->GetIdentifier() : rootLayer->GetDisplayName();
             info.role = SceneLayerRole::Root;
             info.dirty = rootLayer->IsDirty();
-            info.readOnly = false;
+            info.readOnly = rootLayer->GetFileFormat()->IsPackage();
             info.muted = false;
             layerInfos.push_back(std::move(info));
-            editTarget = layerInfos.back().handle;
+            rootHandle = layerInfos.back().handle;
         }
 
         // Sublayers of root
@@ -183,9 +194,20 @@ struct USDScene::Impl {
             info.displayName = subLayer->GetDisplayName().empty() ? subLayer->GetIdentifier() : subLayer->GetDisplayName();
             info.role = SceneLayerRole::Unknown;
             info.dirty = subLayer->IsDirty();
-            info.readOnly = false;
+            info.readOnly = subLayer->GetFileFormat()->IsPackage();
             info.muted = stage->IsLayerMuted(subLayer->GetIdentifier());
             layerInfos.push_back(std::move(info));
+        }
+
+        // Restore previous edit target, or fall back to root
+        editTarget = rootHandle;
+        if (!prevEditTargetId.empty()) {
+            for (const auto& info : layerInfos) {
+                if (info.identifier == prevEditTargetId) {
+                    editTarget = info.handle;
+                    break;
+                }
+            }
         }
     }
 
@@ -772,6 +794,28 @@ void USDScene::clearSessionLayer() {
     }
 }
 
+LayerHandle USDScene::addSubLayer(const char* filepath) {
+    // Try to open existing, otherwise create new
+    auto layer = SdfLayer::FindOrOpen(filepath);
+    if (!layer) {
+        layer = SdfLayer::CreateNew(filepath);
+    }
+    if (!layer) {
+        return {};
+    }
+
+    m_impl->rootLayer->GetSubLayerPaths().push_back(layer->GetIdentifier());
+    m_impl->rebuildLayerInfo();
+    m_impl->rebuildPrimCache();
+    m_impl->rebuildAllTransforms();
+
+    // Return handle of newly added layer (last in list)
+    if (!m_impl->layerInfos.empty()) {
+        return m_impl->layerInfos.back().handle;
+    }
+    return {};
+}
+
 bool USDScene::saveLayer(LayerHandle layer) {
     auto sdfLayer = m_impl->resolveLayer(layer);
     if (sdfLayer) {
@@ -818,25 +862,26 @@ bool USDScene::setTransform(PrimHandle h, const Transform& value, const SceneEdi
             return false;
         }
 
-        // Clear existing xform ops and set a single matrix
-        xformable.ClearXformOpOrder();
-        auto op = xformable.AddTransformOp();
-        op.Set(GfMatrix4d(value.toMat4()[0][0],
-                          value.toMat4()[0][1],
-                          value.toMat4()[0][2],
-                          value.toMat4()[0][3],
-                          value.toMat4()[1][0],
-                          value.toMat4()[1][1],
-                          value.toMat4()[1][2],
-                          value.toMat4()[1][3],
-                          value.toMat4()[2][0],
-                          value.toMat4()[2][1],
-                          value.toMat4()[2][2],
-                          value.toMat4()[2][3],
-                          value.toMat4()[3][0],
-                          value.toMat4()[3][1],
-                          value.toMat4()[3][2],
-                          value.toMat4()[3][3]));
+        // Find existing transform op or add one
+        bool resetXformStack = false;
+        auto ops = xformable.GetOrderedXformOps(&resetXformStack);
+        UsdGeomXformOp transformOp;
+        for (auto& op : ops) {
+            if (op.GetOpType() == UsdGeomXformOp::TypeTransform) {
+                transformOp = op;
+                break;
+            }
+        }
+        if (!transformOp) {
+            transformOp = xformable.AddTransformOp();
+        }
+
+        auto m = value.toMat4();
+        transformOp.Set(GfMatrix4d(
+            m[0][0], m[0][1], m[0][2], m[0][3],
+            m[1][0], m[1][1], m[1][2], m[1][3],
+            m[2][0], m[2][1], m[2][2], m[2][3],
+            m[3][0], m[3][1], m[3][2], m[3][3]));
     }
 
     // Update cached transforms for this prim and descendants

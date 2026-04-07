@@ -181,15 +181,33 @@ auto main(int argc, char* argv[]) -> int {
                         ImGui::SameLine();
                         ImGui::TextDisabled("[session]");
                     }
+                    if (layer.readOnly) {
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("[read-only]");
+                    }
                     ImGui::PopID();
                 }
 
-                if (ImGui::Button("Clear Session")) {
-                    usdScene.clearSessionLayer();
+                ImGui::Spacing();
+                static char newLayerPath[256] = "new_layer.usda";
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("Add").x - ImGui::GetStyle().ItemSpacing.x - ImGui::GetStyle().FramePadding.x * 2);
+                ImGui::InputText("##newlayer", newLayerPath, sizeof(newLayerPath));
+                ImGui::SameLine();
+                if (ImGui::Button("Add")) {
+                    auto h = usdScene.addSubLayer(newLayerPath);
+                    if (h) {
+                        usdScene.setEditTarget(h);
+                        sceneChanged = true;
+                    }
+                }
+
+                float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+                if (ImGui::Button("Save All", {buttonWidth, 0})) {
+                    usdScene.saveAllDirty();
                 }
                 ImGui::SameLine();
-                if (ImGui::Button("Save All")) {
-                    usdScene.saveAllDirty();
+                if (ImGui::Button("Clear Session", {buttonWidth, 0})) {
+                    usdScene.clearSessionLayer();
                 }
             }
 
@@ -346,6 +364,10 @@ auto main(int argc, char* argv[]) -> int {
         auto nowTicks = SDL_GetTicksNS();
         auto dt = (float) (nowTicks - lastTicks) / 1.0e9f;
         lastTicks = nowTicks;
+
+        if (isUsd) {
+            usdScene.endFrame();
+        }
 
         if (sceneChanged && isUsd) {
             usdExtractor.extract(usdScene, meshLib, renderWorld);

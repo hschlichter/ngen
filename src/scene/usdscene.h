@@ -131,6 +131,7 @@ public:
     LayerHandle currentEditTarget() const;
     LayerHandle sessionLayer() const;
     void clearSessionLayer();
+    LayerHandle addSubLayer(const char* filepath);
     bool saveLayer(LayerHandle layer);
     bool saveAllDirty();
 
