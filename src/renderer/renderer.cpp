@@ -168,6 +168,32 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
     using enum RhiDescriptorType;
     using enum RhiMemoryUsage;
 
+    device->waitIdle();
+
+    // Clean up previous upload
+    for (auto* ds : descriptorSets) {
+        delete ds;
+    }
+    descriptorSets.clear();
+    if (descriptorPool) {
+        device->destroyDescriptorPool(descriptorPool);
+        descriptorPool = nullptr;
+    }
+    for (auto& gm : gpuMeshes) {
+        if (gm.vertexBuffer) {
+            device->destroyBuffer(gm.vertexBuffer);
+        }
+        if (gm.indexBuffer) {
+            device->destroyBuffer(gm.indexBuffer);
+        }
+        if (gm.texture) {
+            device->destroyTexture(gm.texture);
+        }
+    }
+    if (textureSampler) {
+        device->destroySampler(textureSampler);
+    }
+
     gpuMeshes.resize(world.meshInstances.size());
 
     textureSampler = device->createSampler({});

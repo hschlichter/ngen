@@ -7,7 +7,7 @@ void USDRenderExtractor::extract(const USDScene& scene, const MeshLibrary& meshL
     out.clear();
 
     for (const auto& prim : scene.allPrims()) {
-        if (!(prim.flags & PrimFlagRenderable)) {
+        if (!(prim.flags & PrimFlagRenderable) || !prim.visible) {
             continue;
         }
 

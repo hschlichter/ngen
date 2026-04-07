@@ -41,6 +41,7 @@ struct PrimRuntimeRecord {
     uint64_t flags = 0;
     bool active = true;
     bool loaded = true;
+    bool visible = true;
 };
 
 struct TransformCacheRecord {

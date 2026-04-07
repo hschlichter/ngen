@@ -225,6 +225,11 @@ struct USDScene::Impl {
             rec.loaded = prim.IsLoaded();
             rec.flags = classifyPrim(prim);
 
+            UsdGeomImageable imageable(prim);
+            if (imageable) {
+                rec.visible = (imageable.ComputeVisibility() != UsdGeomTokens->invisible);
+            }
+
             prims.push_back(std::move(rec));
             pathToIndex[pathStr] = prims.back().handle.index;
         }
@@ -308,16 +313,27 @@ struct USDScene::Impl {
             GfMatrix4d localMat;
             xformable.GetLocalTransformation(&localMat, &resetsXformStack, UsdTimeCode::Default());
 
-            // Copy into glm mat4
+            // Copy USD local matrix into glm mat4
+            glm::mat4 localGlm;
             for (int c = 0; c < 4; c++) {
                 for (int r = 0; r < 4; r++) {
-                    xf.local.position = glm::vec3(0.0f); // will be set from matrix
-                    (&xf.world[0][0])[c * 4 + r] = (float) localMat[c][r];
+                    localGlm[c][r] = (float) localMat[c][r];
                 }
             }
 
-            // For now, store the local matrix directly. World = parent.world * local.
-            auto localGlm = xf.world; // local is stored in world temporarily
+            // Decompose into position, rotation, scale
+            xf.local.position = glm::vec3(localGlm[3]);
+            glm::vec3 s;
+            s.x = glm::length(glm::vec3(localGlm[0]));
+            s.y = glm::length(glm::vec3(localGlm[1]));
+            s.z = glm::length(glm::vec3(localGlm[2]));
+            xf.local.scale = s;
+
+            glm::mat3 rotMat(
+                glm::vec3(localGlm[0]) / s.x,
+                glm::vec3(localGlm[1]) / s.y,
+                glm::vec3(localGlm[2]) / s.z);
+            xf.local.rotation = glm::quat_cast(rotMat);
 
             if (rec.parent && !resetsXformStack) {
                 xf.world = transforms[rec.parent.index].world * localGlm;
@@ -823,6 +839,14 @@ bool USDScene::setTransform(PrimHandle h, const Transform& value, const SceneEdi
                           value.toMat4()[3][3]));
     }
 
+    // Update cached transforms for this prim and descendants
+    m_impl->updateTransformForPrim(h.index);
+    for (size_t i = h.index + 1; i < m_impl->prims.size(); i++) {
+        if (m_impl->prims[i].parent.index >= h.index) {
+            m_impl->updateTransformForPrim(i);
+        }
+    }
+
     return true;
 }
 
@@ -851,6 +875,8 @@ bool USDScene::setVisibility(PrimHandle h, bool visible, const SceneEditRequestC
 
         imageable.GetVisibilityAttr().Set(visible ? UsdGeomTokens->inherited : UsdGeomTokens->invisible);
     }
+
+    m_impl->prims[h.index].visible = visible;
 
     return true;
 }
