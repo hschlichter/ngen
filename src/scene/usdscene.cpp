@@ -617,13 +617,13 @@ struct USDScene::Impl {
 
     SdfLayerRefPtr chooseEditLayer(const SceneEditRequestContext& ctx) const {
         switch (ctx.purpose) {
-        case SceneEditRequestContext::Purpose::Preview:
-        case SceneEditRequestContext::Purpose::Debug:
-            return sessionLayerRef;
-        case SceneEditRequestContext::Purpose::Authoring:
-        case SceneEditRequestContext::Purpose::Procedural:
-        default:
-            return resolveLayer(editTarget);
+            case SceneEditRequestContext::Purpose::Preview:
+            case SceneEditRequestContext::Purpose::Debug:
+                return sessionLayerRef;
+            case SceneEditRequestContext::Purpose::Authoring:
+            case SceneEditRequestContext::Purpose::Procedural:
+            default:
+                return resolveLayer(editTarget);
         }
     }
 
@@ -781,27 +781,46 @@ bool USDScene::saveAllDirty() {
 
 bool USDScene::setTransform(PrimHandle h, const Transform& value, const SceneEditRequestContext& ctx) {
     auto* rec = getPrimRecord(h);
-    if (!rec) return false;
+    if (!rec) {
+        return false;
+    }
 
     auto layer = m_impl->chooseEditLayer(ctx);
-    if (!layer) return false;
+    if (!layer) {
+        return false;
+    }
 
     auto prim = m_impl->stage->GetPrimAtPath(SdfPath(rec->path));
-    if (!prim) return false;
+    if (!prim) {
+        return false;
+    }
 
     {
         UsdEditContext editCtx(m_impl->stage, layer);
         UsdGeomXformable xformable(prim);
-        if (!xformable) return false;
+        if (!xformable) {
+            return false;
+        }
 
         // Clear existing xform ops and set a single matrix
         xformable.ClearXformOpOrder();
         auto op = xformable.AddTransformOp();
-        op.Set(GfMatrix4d(
-            value.toMat4()[0][0], value.toMat4()[0][1], value.toMat4()[0][2], value.toMat4()[0][3],
-            value.toMat4()[1][0], value.toMat4()[1][1], value.toMat4()[1][2], value.toMat4()[1][3],
-            value.toMat4()[2][0], value.toMat4()[2][1], value.toMat4()[2][2], value.toMat4()[2][3],
-            value.toMat4()[3][0], value.toMat4()[3][1], value.toMat4()[3][2], value.toMat4()[3][3]));
+        op.Set(GfMatrix4d(value.toMat4()[0][0],
+                          value.toMat4()[0][1],
+                          value.toMat4()[0][2],
+                          value.toMat4()[0][3],
+                          value.toMat4()[1][0],
+                          value.toMat4()[1][1],
+                          value.toMat4()[1][2],
+                          value.toMat4()[1][3],
+                          value.toMat4()[2][0],
+                          value.toMat4()[2][1],
+                          value.toMat4()[2][2],
+                          value.toMat4()[2][3],
+                          value.toMat4()[3][0],
+                          value.toMat4()[3][1],
+                          value.toMat4()[3][2],
+                          value.toMat4()[3][3]));
     }
 
     return true;
@@ -809,37 +828,47 @@ bool USDScene::setTransform(PrimHandle h, const Transform& value, const SceneEdi
 
 bool USDScene::setVisibility(PrimHandle h, bool visible, const SceneEditRequestContext& ctx) {
     auto* rec = getPrimRecord(h);
-    if (!rec) return false;
+    if (!rec) {
+        return false;
+    }
 
     auto layer = m_impl->chooseEditLayer(ctx);
-    if (!layer) return false;
+    if (!layer) {
+        return false;
+    }
 
     auto prim = m_impl->stage->GetPrimAtPath(SdfPath(rec->path));
-    if (!prim) return false;
+    if (!prim) {
+        return false;
+    }
 
     {
         UsdEditContext editCtx(m_impl->stage, layer);
         UsdGeomImageable imageable(prim);
-        if (!imageable) return false;
+        if (!imageable) {
+            return false;
+        }
 
-        imageable.GetVisibilityAttr().Set(
-            visible ? UsdGeomTokens->inherited : UsdGeomTokens->invisible);
+        imageable.GetVisibilityAttr().Set(visible ? UsdGeomTokens->inherited : UsdGeomTokens->invisible);
     }
 
     return true;
 }
 
-PrimHandle USDScene::createPrim(const char* parentPath, const char* name, const char* typeName,
-                                const SceneEditRequestContext& ctx) {
+PrimHandle USDScene::createPrim(const char* parentPath, const char* name, const char* typeName, const SceneEditRequestContext& ctx) {
     auto layer = m_impl->chooseEditLayer(ctx);
-    if (!layer) return {};
+    if (!layer) {
+        return {};
+    }
 
     auto path = SdfPath(parentPath).AppendChild(TfToken(name));
 
     {
         UsdEditContext editCtx(m_impl->stage, layer);
         auto prim = m_impl->stage->DefinePrim(path, TfToken(typeName));
-        if (!prim) return {};
+        if (!prim) {
+            return {};
+        }
     }
 
     // The TfNotice will trigger a cache rebuild on next processChanges()
@@ -849,10 +878,14 @@ PrimHandle USDScene::createPrim(const char* parentPath, const char* name, const 
 
 bool USDScene::removePrim(PrimHandle h, const SceneEditRequestContext& ctx) {
     auto* rec = getPrimRecord(h);
-    if (!rec) return false;
+    if (!rec) {
+        return false;
+    }
 
     auto layer = m_impl->chooseEditLayer(ctx);
-    if (!layer) return false;
+    if (!layer) {
+        return false;
+    }
 
     {
         UsdEditContext editCtx(m_impl->stage, layer);

@@ -136,8 +136,7 @@ public:
     // Editing — routes to correct layer based on purpose
     bool setTransform(PrimHandle h, const Transform& value, const SceneEditRequestContext& ctx = {});
     bool setVisibility(PrimHandle h, bool visible, const SceneEditRequestContext& ctx = {});
-    PrimHandle createPrim(const char* parentPath, const char* name, const char* typeName,
-                          const SceneEditRequestContext& ctx = {});
+    PrimHandle createPrim(const char* parentPath, const char* name, const char* typeName, const SceneEditRequestContext& ctx = {});
     bool removePrim(PrimHandle h, const SceneEditRequestContext& ctx = {});
 
 private:

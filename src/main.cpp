@@ -6,6 +6,7 @@
 #include "rhidebugui.h"
 #include "rhidevicevulkan.h"
 #include "sceneloader.h"
+#include "scenequery.h"
 #include "types.h"
 #include "usdrenderextractor.h"
 #include "usdscene.h"
@@ -48,9 +49,11 @@ auto main(int argc, char* argv[]) -> int {
 
     USDScene usdScene;
     USDRenderExtractor usdExtractor;
+    SceneQuerySystem sceneQuery;
     MeshLibrary meshLib;
     MaterialLibrary matLib;
     RenderWorld renderWorld;
+    std::string pickedPrimPath;
 
     if (isUsd) {
         if (!usdScene.open(argv[1])) {
@@ -59,6 +62,7 @@ auto main(int argc, char* argv[]) -> int {
         }
         usdScene.updateAssetBindings(meshLib, matLib);
         usdExtractor.extract(usdScene, renderWorld);
+        sceneQuery.rebuild(usdScene, meshLib);
     } else {
         auto scene = loadGltf(argv[1]);
         if (scene.meshes.empty()) {
@@ -100,7 +104,9 @@ auto main(int argc, char* argv[]) -> int {
     }
     renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
     renderer.debugui()->setDrawCallback([&] {
-        if (!usdScene.isOpen()) return;
+        if (!usdScene.isOpen()) {
+            return;
+        }
 
         if (ImGui::Begin("USD Scene")) {
             // Layer stack
@@ -114,7 +120,9 @@ auto main(int argc, char* argv[]) -> int {
                         usdScene.setEditTarget(layer.handle);
                     }
                     ImGui::SameLine();
-                    if (layer.dirty) ImGui::TextColored({1, 0.7f, 0, 1}, "(dirty)");
+                    if (layer.dirty) {
+                        ImGui::TextColored({1, 0.7f, 0, 1}, "(dirty)");
+                    }
                     if (isSession) {
                         ImGui::SameLine();
                         ImGui::TextDisabled("[session]");
@@ -131,15 +139,28 @@ auto main(int argc, char* argv[]) -> int {
                 }
             }
 
-            // Prim list
-            if (ImGui::CollapsingHeader("Prims", ImGuiTreeNodeFlags_DefaultOpen)) {
-                for (const auto& prim : usdScene.allPrims()) {
-                    auto flags = "";
-                    if (prim.flags & PrimFlagRenderable) flags = " [mesh]";
-                    else if (prim.flags & PrimFlagLight) flags = " [light]";
-                    else if (prim.flags & PrimFlagXformable) flags = " [xform]";
+            // Stats
+            ImGui::Text("Mesh instances: %zu", renderWorld.meshInstances.size());
 
-                    ImGui::Text("%s%s", prim.name.c_str(), flags);
+            // Picked prim
+            if (!pickedPrimPath.empty()) {
+                ImGui::Separator();
+                ImGui::Text("Picked: %s", pickedPrimPath.c_str());
+            }
+
+            // Prim list
+            if (ImGui::CollapsingHeader("Prims")) {
+                for (const auto& prim : usdScene.allPrims()) {
+                    const char* tag = "";
+                    if (prim.flags & PrimFlagRenderable) {
+                        tag = " [mesh]";
+                    } else if (prim.flags & PrimFlagLight) {
+                        tag = " [light]";
+                    } else if (prim.flags & PrimFlagXformable) {
+                        tag = " [xform]";
+                    }
+
+                    ImGui::Text("%s%s", prim.name.c_str(), tag);
                 }
             }
         }
@@ -185,6 +206,39 @@ auto main(int argc, char* argv[]) -> int {
             }
             if (ev.type == SDL_EVENT_MOUSE_MOTION && mouseCapture) {
                 cam.handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
+            }
+
+            if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_LEFT && usdScene.isOpen()) {
+                int winW = 0, winH = 0;
+                SDL_GetWindowSizeInPixels(window, &winW, &winH);
+                float mx = ev.button.x;
+                float my = ev.button.y;
+
+                float ndcX = (2.0f * mx / (float) winW) - 1.0f;
+                float ndcY = 1.0f - (2.0f * my / (float) winH);
+
+                auto aspect = (float) winW / (float) winH;
+                auto proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 3000.0f);
+                proj[1][1] *= -1.0f;
+                auto invVP = glm::inverse(proj * cam.viewMatrix());
+
+                auto nearPt = invVP * glm::vec4(ndcX, ndcY, 0.0f, 1.0f);
+                auto farPt = invVP * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
+                nearPt /= nearPt.w;
+                farPt /= farPt.w;
+
+                Ray ray = {
+                    .origin = glm::vec3(nearPt),
+                    .direction = glm::normalize(glm::vec3(farPt - nearPt)),
+                };
+
+                RaycastHit hit;
+                if (sceneQuery.raycast(ray, 3000.0f, hit)) {
+                    auto* rec = usdScene.getPrimRecord(hit.prim);
+                    pickedPrimPath = rec ? rec->path : "";
+                } else {
+                    pickedPrimPath.clear();
+                }
             }
         }
 
