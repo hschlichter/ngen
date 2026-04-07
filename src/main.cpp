@@ -43,14 +43,6 @@ static auto buildRenderWorldFromScene(const Scene& scene, MeshLibrary& meshLib, 
 }
 
 auto main(int argc, char* argv[]) -> int {
-    if (argc < 2) {
-        std::println(stderr, "Usage: {} <model.gltf>", argv[0]);
-        return 1;
-    }
-
-    std::string_view filepath = argv[1];
-    bool isUsd = filepath.ends_with(".usda") || filepath.ends_with(".usd") || filepath.ends_with(".usdc") || filepath.ends_with(".usdz");
-
     USDScene usdScene;
     USDRenderExtractor usdExtractor;
     SceneQuerySystem sceneQuery;
@@ -58,22 +50,28 @@ auto main(int argc, char* argv[]) -> int {
     MaterialLibrary matLib;
     RenderWorld renderWorld;
     PrimHandle selectedPrim;
+    bool isUsd = false;
 
-    if (isUsd) {
-        if (!usdScene.open(argv[1])) {
-            std::println(stderr, "Failed to open USD scene");
-            return 1;
+    if (argc >= 2) {
+        std::string_view filepath = argv[1];
+        isUsd = filepath.ends_with(".usda") || filepath.ends_with(".usd") || filepath.ends_with(".usdc") || filepath.ends_with(".usdz");
+
+        if (isUsd) {
+            if (!usdScene.open(argv[1])) {
+                std::println(stderr, "Failed to open USD scene");
+                return 1;
+            }
+            usdScene.updateAssetBindings(meshLib, matLib);
+            usdExtractor.extract(usdScene, meshLib, renderWorld);
+            sceneQuery.rebuild(usdScene, meshLib);
+        } else {
+            auto scene = loadGltf(argv[1]);
+            if (scene.meshes.empty()) {
+                std::println(stderr, "Failed to load model");
+                return 1;
+            }
+            renderWorld = buildRenderWorldFromScene(scene, meshLib, matLib);
         }
-        usdScene.updateAssetBindings(meshLib, matLib);
-        usdExtractor.extract(usdScene, meshLib, renderWorld);
-        sceneQuery.rebuild(usdScene, meshLib);
-    } else {
-        auto scene = loadGltf(argv[1]);
-        if (scene.meshes.empty()) {
-            std::println(stderr, "Failed to load model");
-            return 1;
-        }
-        renderWorld = buildRenderWorldFromScene(scene, meshLib, matLib);
     }
 
     // SDL init and window
@@ -108,6 +106,47 @@ auto main(int argc, char* argv[]) -> int {
     }
     renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
     auto sceneChanged = false;
+    auto showSceneWindow = false;
+    auto showAABBs = false;
+    auto showSelectedAABB = true;
+    auto requestQuit = false;
+    std::string pendingOpenPath;
+
+    auto openScene = [&](const char* path) {
+        std::string_view p = path;
+        bool usd = p.ends_with(".usda") || p.ends_with(".usd") || p.ends_with(".usdc") || p.ends_with(".usdz");
+
+        // Close previous
+        if (usdScene.isOpen()) {
+            usdScene.close();
+        }
+        meshLib = {};
+        matLib = {};
+        renderWorld.clear();
+        selectedPrim = {};
+
+        if (usd) {
+            if (!usdScene.open(path)) {
+                std::println(stderr, "Failed to open: {}", path);
+                return;
+            }
+            usdScene.updateAssetBindings(meshLib, matLib);
+            usdExtractor.extract(usdScene, meshLib, renderWorld);
+            sceneQuery.rebuild(usdScene, meshLib);
+            isUsd = true;
+        } else {
+            auto scene = loadGltf(path);
+            if (scene.meshes.empty()) {
+                std::println(stderr, "Failed to load: {}", path);
+                return;
+            }
+            renderWorld = buildRenderWorldFromScene(scene, meshLib, matLib);
+            isUsd = false;
+        }
+
+        renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
+        showSceneWindow = usd;
+    };
     std::unordered_set<uint32_t> selectedAncestors;
 
     std::function<void(PrimHandle)> drawSceneNode;
@@ -158,11 +197,45 @@ auto main(int argc, char* argv[]) -> int {
     };
 
     renderer.debugui()->setDrawCallback([&] {
-        if (!usdScene.isOpen()) {
+        if (ImGui::BeginMainMenuBar()) {
+            if (ImGui::BeginMenu("File")) {
+                if (ImGui::MenuItem("Open...")) {
+                    static const SDL_DialogFileFilter filters[] = {
+                        {"USD Files", "usd;usda;usdc;usdz"},
+                        {"glTF Files", "gltf;glb"},
+                        {"All Files", "*"},
+                    };
+                    SDL_ShowOpenFileDialog(
+                        [](void* userdata, const char* const* filelist, int) {
+                            if (filelist && filelist[0]) {
+                                *static_cast<std::string*>(userdata) = filelist[0];
+                            }
+                        },
+                        &pendingOpenPath, window, filters, 3, nullptr, false);
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Quit")) {
+                    requestQuit = true;
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Windows")) {
+                ImGui::MenuItem("Scene", nullptr, &showSceneWindow, usdScene.isOpen());
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Debug")) {
+                ImGui::MenuItem("Show AABBs", nullptr, &showAABBs);
+                ImGui::MenuItem("Show Selected AABB", nullptr, &showSelectedAABB);
+                ImGui::EndMenu();
+            }
+            ImGui::EndMainMenuBar();
+        }
+
+        if (!showSceneWindow || !usdScene.isOpen()) {
             return;
         }
 
-        if (ImGui::Begin("USD Scene")) {
+        if (ImGui::Begin("USD Scene", &showSceneWindow)) {
             // Layer stack
             if (ImGui::CollapsingHeader("Layers", ImGuiTreeNodeFlags_DefaultOpen)) {
                 for (const auto& layer : usdScene.layers()) {
@@ -360,10 +433,15 @@ auto main(int argc, char* argv[]) -> int {
     // Main loop
     auto lastTicks = SDL_GetTicksNS();
     auto quit = false;
-    while (!quit) {
+    while (!quit && !requestQuit) {
         auto nowTicks = SDL_GetTicksNS();
         auto dt = (float) (nowTicks - lastTicks) / 1.0e9f;
         lastTicks = nowTicks;
+
+        if (!pendingOpenPath.empty()) {
+            openScene(pendingOpenPath.c_str());
+            pendingOpenPath.clear();
+        }
 
         if (isUsd) {
             usdScene.endFrame();
@@ -436,12 +514,14 @@ auto main(int argc, char* argv[]) -> int {
         cam.update(keys, dt);
 
         debugDraw.newFrame();
-        for (const auto& inst : renderWorld.meshInstances) {
-            if (inst.worldBounds.valid()) {
-                debugDraw.box(inst.worldBounds, {0.0f, 1.0f, 0.0f, 1.0f});
+        if (showAABBs) {
+            for (const auto& inst : renderWorld.meshInstances) {
+                if (inst.worldBounds.valid()) {
+                    debugDraw.box(inst.worldBounds, {0.0f, 1.0f, 0.0f, 1.0f});
+                }
             }
         }
-        if (selectedPrim) {
+        if (selectedPrim && showSelectedAABB) {
             std::function<void(PrimHandle)> highlightSubtree = [&](PrimHandle h) {
                 const auto* bc = sceneQuery.bounds().get(h);
                 if (bc && bc->worldBounds.valid()) {
