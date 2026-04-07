@@ -32,6 +32,11 @@ enum class RhiShaderStage : uint32_t {
     Fragment = 1 << 1,
 };
 
+enum class RhiPrimitiveTopology {
+    TriangleList,
+    LineList,
+};
+
 enum class RhiFormat {
     Undefined,
     R32G32_SFLOAT,
@@ -40,6 +45,7 @@ enum class RhiFormat {
     R8G8B8A8_UNORM,
     B8G8R8A8_SRGB,
     B8G8R8A8_UNORM,
+    R32G32B32A32_SFLOAT,
     D32_SFLOAT,
 };
 
@@ -238,6 +244,9 @@ struct RhiGraphicsPipelineDesc {
     std::span<const RhiVertexAttribute> vertexAttributes;
     RhiPushConstantRange pushConstant;
     RhiExtent2D viewportExtent;
+    RhiPrimitiveTopology topology = RhiPrimitiveTopology::TriangleList;
+    bool depthTestEnable = true;
+    bool depthWriteEnable = true;
 };
 
 struct RhiDescriptorWrite {

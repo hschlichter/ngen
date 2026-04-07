@@ -1,6 +1,7 @@
 #pragma once
 
 #include "scenehandles.h"
+#include "scenetypes.h"
 #include "types.h"
 
 #include <vector>
@@ -22,6 +23,20 @@ public:
             return nullptr;
         }
         return &m_meshes[h.index - 1];
+    }
+
+    AABB bounds(MeshHandle h) const {
+        const auto* m = get(h);
+        if (!m || m->vertices.empty()) {
+            return {};
+        }
+        AABB b = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
+        for (const auto& v : m->vertices) {
+            auto p = glm::vec3(v.position[0], v.position[1], v.position[2]);
+            b.min = glm::min(b.min, p);
+            b.max = glm::max(b.max, p);
+        }
+        return b;
     }
 
     uint32_t count() const { return (uint32_t) m_meshes.size(); }

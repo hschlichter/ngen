@@ -1,8 +1,9 @@
 #include "usdrenderextractor.h"
+#include "mesh.h"
 #include "renderworld.h"
 #include "usdscene.h"
 
-void USDRenderExtractor::extract(const USDScene& scene, RenderWorld& out) {
+void USDRenderExtractor::extract(const USDScene& scene, const MeshLibrary& meshLib, RenderWorld& out) {
     out.clear();
 
     for (const auto& prim : scene.allPrims()) {
@@ -24,6 +25,7 @@ void USDRenderExtractor::extract(const USDScene& scene, RenderWorld& out) {
             .mesh = binding->mesh,
             .material = binding->material,
             .worldTransform = xf->world,
+            .worldBounds = meshLib.bounds(binding->mesh).transformed(xf->world),
         });
     }
 }

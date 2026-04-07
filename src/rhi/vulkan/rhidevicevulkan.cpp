@@ -60,6 +60,8 @@ auto RhiDeviceVulkan::toVkFormat(RhiFormat format) -> VkFormat {
             return VK_FORMAT_B8G8R8A8_SRGB;
         case B8G8R8A8_UNORM:
             return VK_FORMAT_B8G8R8A8_UNORM;
+        case R32G32B32A32_SFLOAT:
+            return VK_FORMAT_R32G32B32A32_SFLOAT;
         case D32_SFLOAT:
             return VK_FORMAT_D32_SFLOAT;
     }
@@ -598,9 +600,14 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
         .pVertexAttributeDescriptions = attrDescs.data(),
     };
 
+    auto vkTopology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    if (desc.topology == RhiPrimitiveTopology::LineList) {
+        vkTopology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    }
+
     VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .topology = vkTopology,
     };
 
     VkViewport viewport = {0, 0, (float) desc.viewportExtent.width, (float) desc.viewportExtent.height, 0, 1};
@@ -628,8 +635,8 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
 
     VkPipelineDepthStencilStateCreateInfo depthStencilState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-        .depthTestEnable = VK_TRUE,
-        .depthWriteEnable = VK_TRUE,
+        .depthTestEnable = desc.depthTestEnable ? VK_TRUE : VK_FALSE,
+        .depthWriteEnable = desc.depthWriteEnable ? VK_TRUE : VK_FALSE,
         .depthCompareOp = VK_COMPARE_OP_LESS,
         .depthBoundsTestEnable = VK_FALSE,
         .stencilTestEnable = VK_FALSE,

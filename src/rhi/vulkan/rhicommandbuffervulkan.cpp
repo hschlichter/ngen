@@ -213,6 +213,10 @@ auto RhiCommandBufferVulkan::pushConstants(RhiPipeline* pipeline, RhiShaderStage
     vkCmdPushConstants(cmd, p->layout, vkStage, offset, size, data);
 }
 
+auto RhiCommandBufferVulkan::draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) -> void {
+    vkCmdDraw(cmd, vertexCount, instanceCount, firstVertex, firstInstance);
+}
+
 auto RhiCommandBufferVulkan::drawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance)
     -> void {
     vkCmdDrawIndexed(cmd, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);

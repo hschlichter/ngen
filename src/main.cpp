@@ -1,4 +1,5 @@
 #include "camera.h"
+#include "debugdraw.h"
 #include "material.h"
 #include "mesh.h"
 #include "renderer.h"
@@ -33,6 +34,7 @@ static auto buildRenderWorldFromScene(const Scene& scene, MeshLibrary& meshLib, 
             .mesh = meshHandle,
             .material = matHandle,
             .worldTransform = md.transform,
+            .worldBounds = meshLib.bounds(meshHandle).transformed(md.transform),
         });
     }
     return world;
@@ -61,7 +63,7 @@ auto main(int argc, char* argv[]) -> int {
             return 1;
         }
         usdScene.updateAssetBindings(meshLib, matLib);
-        usdExtractor.extract(usdScene, renderWorld);
+        usdExtractor.extract(usdScene, meshLib, renderWorld);
         sceneQuery.rebuild(usdScene, meshLib);
     } else {
         auto scene = loadGltf(argv[1]);
@@ -167,6 +169,8 @@ auto main(int argc, char* argv[]) -> int {
         ImGui::End();
     });
 
+    DebugDraw debugDraw;
+
     // Camera
     auto cam = Camera{
         .position = glm::vec3(2.0f, 1.5f, 2.0f),
@@ -245,7 +249,14 @@ auto main(int argc, char* argv[]) -> int {
         const auto* keys = SDL_GetKeyboardState(nullptr);
         cam.update(keys, dt);
 
-        renderer.render(cam, window);
+        debugDraw.newFrame();
+        for (const auto& inst : renderWorld.meshInstances) {
+            if (inst.worldBounds.valid()) {
+                debugDraw.box(inst.worldBounds, {0.0f, 1.0f, 0.0f, 1.0f});
+            }
+        }
+
+        renderer.render(cam, window, debugDraw.data());
     }
 
     renderer.destroy();

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "debugrenderer.h"
 #include "framegraph.h"
 #include "renderworld.h"
 #include "resourcepool.h"
@@ -17,6 +18,7 @@ class RhiDebugUI;
 class MeshLibrary;
 class MaterialLibrary;
 struct Camera;
+struct DebugDrawData;
 struct SDL_Window;
 
 struct UniformBufferObject {
@@ -43,7 +45,7 @@ public:
 
     auto init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<void, int>;
     auto uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void;
-    auto render(const Camera& camera, SDL_Window* window) -> void;
+    auto render(const Camera& camera, SDL_Window* window, const DebugDrawData& debugData) -> void;
     auto destroy() -> void;
 
     auto debugui() -> RhiDebugUI* { return debugUI.get(); }
@@ -52,6 +54,7 @@ private:
     RhiDevice* device = nullptr;
     RhiSwapchain* swapchain = nullptr;
 
+    // Forward pass
     RhiPipeline* pipeline = nullptr;
     RhiDescriptorSetLayout* descriptorSetLayout = nullptr;
     RhiDescriptorPool* descriptorPool = nullptr;
@@ -64,6 +67,18 @@ private:
     std::vector<RhiBuffer*> uniformBuffers;
     std::vector<void*> uniformBuffersMapped;
 
+    // Debug line pass
+    RhiPipeline* debugLinePipeline = nullptr;
+    RhiDescriptorSetLayout* debugDescriptorSetLayout = nullptr;
+    RhiDescriptorPool* debugDescriptorPool = nullptr;
+    std::vector<RhiDescriptorSet*> debugDescriptorSets;
+    RhiShaderModule* debugVertShader = nullptr;
+    RhiShaderModule* debugFragShader = nullptr;
+    std::vector<RhiBuffer*> debugVertexBuffers;
+    std::vector<void*> debugVertexBuffersMapped;
+    static constexpr uint32_t debugMaxVertices = 65536;
+
+    // Frame sync
     std::vector<RhiCommandBuffer*> cmdBuffers;
     std::vector<RhiSemaphore*> imageAvailableSemaphores;
     std::vector<RhiSemaphore*> renderFinishedSemaphores;
@@ -74,4 +89,5 @@ private:
     ResourcePool resourcePool;
 
     std::unique_ptr<RhiDebugUI> debugUI;
+    DebugRenderer debugRenderer;
 };

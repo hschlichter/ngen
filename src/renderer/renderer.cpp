@@ -1,5 +1,6 @@
 #include "renderer.h"
 #include "camera.h"
+#include "debugdraw.h"
 #include "material.h"
 #include "mesh.h"
 #include "rhicommandbuffer.h"
@@ -12,7 +13,6 @@
 
 #include <array>
 #include <cstring>
-#include <print>
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -30,6 +30,25 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
     resourcePool.init(device);
     frameGraph.setResourcePool(&resourcePool);
 
+    auto imgCount = swapchain->imageCount();
+    auto ext = swapchain->extent();
+    auto colorFmt = swapchain->colorFormat();
+    auto depthFmt = swapchain->depthFormat();
+
+    // Shared uniform buffers (view/proj)
+    uniformBuffers.resize(imgCount);
+    uniformBuffersMapped.resize(imgCount);
+    for (uint32_t i = 0; i < imgCount; i++) {
+        RhiBufferDesc uboDesc = {
+            .size = sizeof(UniformBufferObject),
+            .usage = RhiBufferUsage::Uniform,
+            .memory = RhiMemoryUsage::CpuToGpu,
+        };
+        uniformBuffers[i] = device->createBuffer(uboDesc);
+        uniformBuffersMapped[i] = device->mapBuffer(uniformBuffers[i]);
+    }
+
+    // Forward pass pipeline
     vertShader = device->createShaderModule("shaders/triangle.vert.spv");
     fragShader = device->createShaderModule("shaders/triangle.frag.spv");
 
@@ -46,9 +65,6 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
         {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
     }};
 
-    auto ext = swapchain->extent();
-    auto colorFmt = swapchain->colorFormat();
-    auto depthFmt = swapchain->depthFormat();
     RhiGraphicsPipelineDesc pipelineDesc = {
         .vertexShader = vertShader,
         .fragmentShader = fragShader,
@@ -65,20 +81,63 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
         return std::unexpected(1);
     }
 
-    auto imgCount = swapchain->imageCount();
+    // Debug line pipeline
+    debugVertShader = device->createShaderModule("shaders/debug.vert.spv");
+    debugFragShader = device->createShaderModule("shaders/debug.frag.spv");
 
-    uniformBuffers.resize(imgCount);
-    uniformBuffersMapped.resize(imgCount);
+    std::array<RhiDescriptorBinding, 1> debugBindings = {{
+        {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
+    }};
+    debugDescriptorSetLayout = device->createDescriptorSetLayout(debugBindings);
+
+    std::array<RhiVertexAttribute, 2> debugVertexAttrs = {{
+        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0},
+        {.location = 1, .binding = 0, .format = R32G32B32A32_SFLOAT, .offset = sizeof(float) * 3},
+    }};
+
+    RhiGraphicsPipelineDesc debugPipelineDesc = {
+        .vertexShader = debugVertShader,
+        .fragmentShader = debugFragShader,
+        .descriptorSetLayout = debugDescriptorSetLayout,
+        .colorFormats = {&colorFmt, 1},
+        .depthFormat = depthFmt,
+        .vertexStride = sizeof(DebugVertex),
+        .vertexAttributes = debugVertexAttrs,
+        .pushConstant = {},
+        .viewportExtent = ext,
+        .topology = RhiPrimitiveTopology::LineList,
+        .depthTestEnable = true,
+        .depthWriteEnable = false,
+    };
+    debugLinePipeline = device->createGraphicsPipeline(debugPipelineDesc);
+
+    debugVertexBuffers.resize(imgCount);
+    debugVertexBuffersMapped.resize(imgCount);
     for (uint32_t i = 0; i < imgCount; i++) {
-        RhiBufferDesc uboDesc = {
-            .size = sizeof(UniformBufferObject),
-            .usage = RhiBufferUsage::Uniform,
+        RhiBufferDesc vbDesc = {
+            .size = debugMaxVertices * sizeof(DebugVertex),
+            .usage = RhiBufferUsage::Vertex,
             .memory = RhiMemoryUsage::CpuToGpu,
         };
-        uniformBuffers[i] = device->createBuffer(uboDesc);
-        uniformBuffersMapped[i] = device->mapBuffer(uniformBuffers[i]);
+        debugVertexBuffers[i] = device->createBuffer(vbDesc);
+        debugVertexBuffersMapped[i] = device->mapBuffer(debugVertexBuffers[i]);
     }
 
+    debugDescriptorPool = device->createDescriptorPool(imgCount, debugBindings);
+    debugDescriptorSets = device->allocateDescriptorSets(debugDescriptorPool, debugDescriptorSetLayout, imgCount);
+    for (uint32_t i = 0; i < imgCount; i++) {
+        std::array<RhiDescriptorWrite, 1> writes = {{
+            {
+                .binding = 0,
+                .type = UniformBuffer,
+                .buffer = uniformBuffers[i],
+                .bufferRange = sizeof(UniformBufferObject),
+            },
+        }};
+        device->updateDescriptorSet(debugDescriptorSets[i], writes);
+    }
+
+    // Frame sync
     cmdBuffers.resize(imgCount);
     for (uint32_t i = 0; i < imgCount; i++) {
         cmdBuffers[i] = device->createCommandBuffer();
@@ -93,6 +152,7 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
         inflightFences[i] = device->createFence(true);
     }
 
+    // Debug UI
     debugUI = std::make_unique<RhiDebugUIVulkan>();
     debugUI->init({
         .window = window,
@@ -100,6 +160,7 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
         .colorFormat = swapchain->colorFormat(),
         .imageCount = swapchain->imageCount(),
     });
+
     return {};
 }
 
@@ -233,7 +294,7 @@ struct ForwardPassData {
     FgTextureHandle depth;
 };
 
-auto Renderer::render(const Camera& camera, SDL_Window* window) -> void {
+auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawData& debugData) -> void {
     device->waitForFence(inflightFences[currentFrame]);
 
     auto index = swapchain->acquireNextImage(imageAvailableSemaphores[currentFrame]);
@@ -254,6 +315,7 @@ auto Renderer::render(const Camera& camera, SDL_Window* window) -> void {
         .proj = proj,
     };
     memcpy(uniformBuffersMapped[*index], &ubo, sizeof(ubo));
+
 
     // Build frame graph
     auto ext = swapchain->extent();
@@ -307,6 +369,14 @@ auto Renderer::render(const Camera& camera, SDL_Window* window) -> void {
 
             cmd->endRendering();
         });
+
+    debugRenderer.addPass(frameGraph, colorHandle, depthHandle, ext, debugData, {
+        .pipeline = debugLinePipeline,
+        .vertexBuffer = debugVertexBuffers[imageIdx],
+        .descriptorSet = debugDescriptorSets[imageIdx],
+        .vertexBufferMapped = debugVertexBuffersMapped[imageIdx],
+        .maxVertices = debugMaxVertices,
+    });
 
     struct DebugUIPassData {
         FgTextureHandle color;
@@ -381,14 +451,27 @@ auto Renderer::destroy() -> void {
     device->destroyDescriptorPool(descriptorPool);
     device->destroyDescriptorSetLayout(descriptorSetLayout);
 
+    for (auto* ds : debugDescriptorSets) {
+        delete ds;
+    }
+    device->destroyDescriptorPool(debugDescriptorPool);
+    device->destroyDescriptorSetLayout(debugDescriptorSetLayout);
+
     for (uint32_t i = 0; i < swapchain->imageCount(); i++) {
         device->unmapBuffer(uniformBuffers[i]);
         device->destroyBuffer(uniformBuffers[i]);
+        device->unmapBuffer(debugVertexBuffers[i]);
+        device->destroyBuffer(debugVertexBuffers[i]);
     }
 
     device->destroyPipeline(pipeline);
     device->destroyShaderModule(vertShader);
     device->destroyShaderModule(fragShader);
+
+    device->destroyPipeline(debugLinePipeline);
+    device->destroyShaderModule(debugVertShader);
+    device->destroyShaderModule(debugFragShader);
+
     device->destroySampler(textureSampler);
 
     for (auto& gm : gpuMeshes) {
