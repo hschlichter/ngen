@@ -1,0 +1,927 @@
+#usda 1.0
+(
+    defaultPrim = "Blocks"
+    upAxis = "Y"
+)
+def Xform "Blocks" {
+    def Xform "Block_0_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (23.582241070575417, 0, 141.11127920849304)
+            double3 xformOp:scale = (13.362152466406165, 29.944771882600175, 5.586114364055115)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.65, 0.63, 0.58)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (12.859267150421909, 0, 136.05604707916757)
+            double3 xformOp:scale = (6.533127403350889, 10.352774376688792, 10.385200120420238)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.65, 0.63, 0.58)]
+            }
+        }
+        def Xform "Bldg_2" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (23.776028215038586, 0, 132.55848440512412)
+            double3 xformOp:scale = (7.9580830029505325, 38.846892390800676, 6.430893332431454)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.65, 0.63, 0.58)]
+            }
+        }
+        def Xform "Bldg_3" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (16.524010528825954, 0, 148.9237618710419)
+            double3 xformOp:scale = (6.48722256404895, 28.379951818956876, 8.999192065850016)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.48, 0.46, 0.44)]
+            }
+        }
+    }
+    def Xform "Block_1_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (66.82096553359875, 0, 133.4316812620047)
+            double3 xformOp:scale = (4.597751316094225, 28.949141180851107, 10.445748966479185)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.6, 0.58, 0.52)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (56.819230853557016, 0, 147.21550840648655)
+            double3 xformOp:scale = (7.167395590370573, 26.85190124808109, 9.583504422646897)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.55, 0.5, 0.45)]
+            }
+        }
+    }
+    def Xform "Block_2_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (94.06994320092788, 0, 130.68739425954686)
+            double3 xformOp:scale = (4.213528326842932, 29.802768841274755, 7.777689364415965)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.55, 0.5, 0.45)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (97.01041933207831, 0, 144.89273401783302)
+            double3 xformOp:scale = (8.375000041650592, 28.790397674839227, 6.9471459644089695)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.5, 0.52, 0.58)]
+            }
+        }
+        def Xform "Bldg_2" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (104.88892082028704, 0, 134.4135562478799)
+            double3 xformOp:scale = (12.676618399571597, 34.84075185296872, 9.986799442356379)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.48, 0.46, 0.44)]
+            }
+        }
+    }
+    def Xform "Block_3_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (138.52596614989056, 0, 136.00289435302236)
+            double3 xformOp:scale = (11.657340955098555, 13.475776090742658, 5.541315139311496)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.65, 0.63, 0.58)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (133.05160542656805, 0, 148.71478226386714)
+            double3 xformOp:scale = (9.232005391932354, 33.90215424223678, 4.666798430962656)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.6, 0.58, 0.52)]
+            }
+        }
+        def Xform "Bldg_2" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (139.76863356401745, 0, 142.73774353964424)
+            double3 xformOp:scale = (5.070551684898904, 4.177234546299653, 5.916166402306675)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.62, 0.6, 0.56)]
+            }
+        }
+        def Xform "Bldg_3" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (148.3568510401778, 0, 131.4578084150779)
+            double3 xformOp:scale = (6.559385303339781, 25.42028409660065, 7.663540200942962)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.48, 0.46, 0.44)]
+            }
+        }
+        def Xform "Bldg_4" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (150.40060841746893, 0, 148.4839162426892)
+            double3 xformOp:scale = (4.607001882860515, 37.715022734894845, 9.580198894700217)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.65, 0.63, 0.58)]
+            }
+        }
+    }
+    def Xform "Block_4_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (180.43867133236557, 0, 135.30604181853948)
+            double3 xformOp:scale = (11.25171932809189, 10.010035284947001, 9.316610514024726)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.48, 0.46, 0.44)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (174.2496005533478, 0, 145.38590411457398)
+            double3 xformOp:scale = (13.475033445574185, 23.65123946489267, 9.584234800129709)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.42, 0.44, 0.48)]
+            }
+        }
+    }
+    def Xform "Block_5_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (221.89371006824035, 0, 147.55394725838792)
+            double3 xformOp:scale = (9.046927805059617, 22.754317648277, 10.575318810207877)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.45, 0.48, 0.55)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (210.75402566817596, 0, 133.47062397458794)
+            double3 xformOp:scale = (9.500813423951191, 34.259598551345036, 13.968503141749956)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.5, 0.52, 0.58)]
+            }
+        }
+        def Xform "Bldg_2" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (211.3703583440894, 0, 146.0601669703012)
+            double3 xformOp:scale = (9.957628266237858, 39.75624435351795, 9.176093588403292)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.55, 0.5, 0.45)]
+            }
+        }
+        def Xform "Bldg_3" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (226.78783130435724, 0, 134.3806305368195)
+            double3 xformOp:scale = (12.223374581035758, 21.91704506862129, 13.19112082970613)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.6, 0.58, 0.52)]
+            }
+        }
+        def Xform "Bldg_4" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (218.3992619138748, 0, 137.64148070018376)
+            double3 xformOp:scale = (11.476786572693227, 37.360167133980035, 12.494781673126043)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.6, 0.58, 0.52)]
+            }
+        }
+    }
+    def Xform "Block_6_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (253.20162433864866, 0, 137.37816712437865)
+            double3 xformOp:scale = (7.445249095102931, 31.478207806336112, 10.554098578110846)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.68, 0.66, 0.64)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (265.4065150809486, 0, 136.18121691091292)
+            double3 xformOp:scale = (10.231821562783306, 37.195888655426806, 8.404634240633065)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.68, 0.66, 0.64)]
+            }
+        }
+        def Xform "Bldg_2" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (254.86545783354518, 0, 146.3360923228242)
+            double3 xformOp:scale = (4.22748115151202, 22.906201942558486, 6.090095411242022)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.62, 0.6, 0.56)]
+            }
+        }
+        def Xform "Bldg_3" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (263.4694203104154, 0, 147.98917266827618)
+            double3 xformOp:scale = (6.71281451382378, 37.97152984372053, 8.64960818400665)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.45, 0.48, 0.55)]
+            }
+        }
+    }
+    def Xform "Block_7_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (293.5993354047945, 0, 138.17163909480837)
+            double3 xformOp:scale = (4.1907832393419415, 27.02821235583245, 12.674104428544812)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.55, 0.5, 0.45)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (300.7260199098531, 0, 133.4632323681263)
+            double3 xformOp:scale = (4.996037118425374, 35.07059158454043, 7.154559693087798)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.42, 0.44, 0.48)]
+            }
+        }
+    }
+    def Xform "Block_8_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (347.7668668466674, 0, 136.70809184878195)
+            double3 xformOp:scale = (9.606875414129345, 4.47083892042569, 11.12469190519217)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.68, 0.66, 0.64)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (337.0284876389993, 0, 142.80892408736432)
+            double3 xformOp:scale = (7.933998178272748, 15.830856407579182, 5.570052505908327)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.6, 0.58, 0.52)]
+            }
+        }
+        def Xform "Bldg_2" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (334.9335112095006, 0, 145.50505931237456)
+            double3 xformOp:scale = (13.959944112468083, 13.207496322989728, 13.785878248605986)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.72, 0.68, 0.62)]
+            }
+        }
+        def Xform "Bldg_3" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (339.81163848784917, 0, 136.78759647788684)
+            double3 xformOp:scale = (11.270795332601914, 35.564880304017315, 11.654350125691849)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.68, 0.66, 0.64)]
+            }
+        }
+        def Xform "Bldg_4" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (336.97692190871, 0, 129.67898019502064)
+            double3 xformOp:scale = (12.875869158415782, 31.719944607820896, 8.275556832914557)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.68, 0.66, 0.64)]
+            }
+        }
+    }
+    def Xform "Block_9_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (373.83883277623505, 0, 137.35372388330654)
+            double3 xformOp:scale = (12.966175072836457, 35.654292552346575, 12.95794907226652)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.48, 0.46, 0.44)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (375.6784087391102, 0, 140.8538124513338)
+            double3 xformOp:scale = (13.071624630054067, 29.579864629586833, 11.964862224757226)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.62, 0.6, 0.56)]
+            }
+        }
+        def Xform "Bldg_2" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (388.74585008133516, 0, 134.64950770299197)
+            double3 xformOp:scale = (10.28635425549363, 10.682591235712138, 12.201213913057186)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.5, 0.52, 0.58)]
+            }
+        }
+        def Xform "Bldg_3" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (382.17598232297684, 0, 143.98085577774714)
+            double3 xformOp:scale = (10.11089756048654, 25.013852493274626, 10.915136180806666)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.6, 0.58, 0.52)]
+            }
+        }
+        def Xform "Bldg_4" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (380.93245504893287, 0, 132.484802715659)
+            double3 xformOp:scale = (4.015809172258312, 26.142047468417168, 4.23986797518176)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.48, 0.46, 0.44)]
+            }
+        }
+        def Xform "Bldg_5" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (373.31281609441396, 0, 132.19640882468903)
+            double3 xformOp:scale = (7.317192926968286, 32.44396358790274, 13.161864510776807)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.58, 0.56, 0.5)]
+            }
+        }
+    }
+    def Xform "Block_10_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (427.9517236818393, 0, 147.76854016778222)
+            double3 xformOp:scale = (5.1583598706208065, 4.6291086556087135, 7.1098131785048055)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.45, 0.48, 0.55)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (423.07336355702864, 0, 135.5860601281326)
+            double3 xformOp:scale = (8.66875902482762, 22.261375347887473, 4.461397700242908)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.62, 0.6, 0.56)]
+            }
+        }
+        def Xform "Bldg_2" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (416.90375098688696, 0, 146.90798609663614)
+            double3 xformOp:scale = (11.584938206683315, 10.764290413801175, 10.388508520434467)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.42, 0.44, 0.48)]
+            }
+        }
+        def Xform "Bldg_3" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (411.2707533309674, 0, 138.33082683313444)
+            double3 xformOp:scale = (8.436476383412344, 20.41721642331644, 5.300740020647099)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.72, 0.68, 0.62)]
+            }
+        }
+        def Xform "Bldg_4" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (412.5510284192156, 0, 140.9594461945962)
+            double3 xformOp:scale = (11.046775936791402, 26.29041552497784, 12.912758945879059)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.65, 0.63, 0.58)]
+            }
+        }
+        def Xform "Bldg_5" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (418.0113606051918, 0, 141.6110406299713)
+            double3 xformOp:scale = (11.92430939541147, 17.830209567024042, 9.327455659283313)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.6, 0.58, 0.52)]
+            }
+        }
+    }
+    def Xform "Block_11_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (467.100845929362, 0, 135.9279930100952)
+            double3 xformOp:scale = (10.815167879866461, 24.10022709064801, 7.165977172533819)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.58, 0.56, 0.5)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (466.74693054934, 0, 146.94775610016364)
+            double3 xformOp:scale = (11.177912219060978, 39.640702495751036, 13.151179145594284)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.55, 0.55, 0.55)]
+            }
+        }
+        def Xform "Bldg_2" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (453.79498340790485, 0, 133.23681271264164)
+            double3 xformOp:scale = (11.03354124427067, 16.29205133064715, 12.207532836399691)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.55, 0.55, 0.55)]
+            }
+        }
+    }
+    def Xform "Block_12_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (508.2290912324216, 0, 132.05337123237334)
+            double3 xformOp:scale = (11.213392323619773, 19.159199283078877, 8.867013369346164)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.48, 0.46, 0.44)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (503.11463896083666, 0, 146.62613223992935)
+            double3 xformOp:scale = (12.059416146267612, 36.062551358270284, 12.601527620556105)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.62, 0.6, 0.56)]
+            }
+        }
+        def Xform "Bldg_2" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (493.023924288612, 0, 141.9770464064401)
+            double3 xformOp:scale = (5.797973770975646, 23.425851124097722, 9.094149144301166)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.62, 0.6, 0.56)]
+            }
+        }
+    }
+    def Xform "Block_13_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (538.6151363872835, 0, 140.99869164243717)
+            double3 xformOp:scale = (12.468038866736991, 21.563965782242015, 6.367499672780186)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.45, 0.48, 0.55)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (550.9271998782428, 0, 130.08052377600364)
+            double3 xformOp:scale = (4.334618760513771, 20.880920887594325, 4.3786503201834535)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.55, 0.5, 0.45)]
+            }
+        }
+        def Xform "Bldg_2" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (533.1332268107914, 0, 136.4595845195055)
+            double3 xformOp:scale = (11.31293183016837, 39.39572997221009, 13.83579098130395)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.5, 0.52, 0.58)]
+            }
+        }
+        def Xform "Bldg_3" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (542.189448891144, 0, 132.01641086812614)
+            double3 xformOp:scale = (4.142030100630906, 9.460712363383657, 5.11549404291969)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.68, 0.66, 0.64)]
+            }
+        }
+        def Xform "Bldg_4" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (549.8277833611627, 0, 150.39657393485064)
+            double3 xformOp:scale = (7.6976682996631185, 31.953525095646604, 5.753993649874075)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.62, 0.6, 0.56)]
+            }
+        }
+    }
+    def Xform "Block_14_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (578.1746177109977, 0, 142.64657376111825)
+            double3 xformOp:scale = (12.376142196055373, 18.279071431633888, 11.527612968801378)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.55, 0.5, 0.45)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (584.5027135308842, 0, 131.59356653921338)
+            double3 xformOp:scale = (10.375746664947513, 30.171361104755267, 6.108567474615379)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.72, 0.68, 0.62)]
+            }
+        }
+        def Xform "Bldg_2" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (570.5248629313548, 0, 130.54422149846187)
+            double3 xformOp:scale = (8.640149280335367, 20.621850904878748, 8.762319423360163)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.65, 0.63, 0.58)]
+            }
+        }
+    }
+    def Xform "Block_15_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (617.0470309672729, 0, 144.2228545443943)
+            double3 xformOp:scale = (8.112487666137422, 28.363483432679335, 9.252642639272457)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.5, 0.52, 0.58)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (629.6774669230339, 0, 143.72141619712409)
+            double3 xformOp:scale = (5.930795314464104, 6.401827455346513, 4.237004728570374)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.6, 0.58, 0.52)]
+            }
+        }
+    }
+    def Xform "Block_16_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (666.2801918877112, 0, 133.7383086854639)
+            double3 xformOp:scale = (10.380828851594785, 7.439153061779556, 11.080751058295021)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.48, 0.46, 0.44)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (659.2382737777684, 0, 148.6772003183254)
+            double3 xformOp:scale = (11.638577662400692, 32.71840243626478, 10.479058382367253)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.58, 0.56, 0.5)]
+            }
+        }
+        def Xform "Bldg_2" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (654.4997489915603, 0, 132.54016973473864)
+            double3 xformOp:scale = (10.922214918091258, 31.494425564750674, 10.675792021295466)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.6, 0.58, 0.52)]
+            }
+        }
+        def Xform "Bldg_3" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (660.6889587699652, 0, 151.1615780681624)
+            double3 xformOp:scale = (10.103018849539342, 21.20611989507025, 5.784421700647709)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.65, 0.63, 0.58)]
+            }
+        }
+        def Xform "Bldg_4" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (667.1615370826424, 0, 142.1775100068706)
+            double3 xformOp:scale = (12.411815871271441, 13.728470720114744, 11.604530808814474)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.6, 0.58, 0.52)]
+            }
+        }
+        def Xform "Bldg_5" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (653.9130016766953, 0, 129.85399795388773)
+            double3 xformOp:scale = (11.012968111692846, 9.37321333146448, 5.3053773354265985)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.48, 0.46, 0.44)]
+            }
+        }
+    }
+    def Xform "Block_17_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (704.1241050713633, 0, 143.81596178239752)
+            double3 xformOp:scale = (12.86915141967919, 32.8742367201515, 8.162222422175372)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.6, 0.58, 0.52)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (694.1151864337666, 0, 133.07098329975588)
+            double3 xformOp:scale = (5.430878612386115, 19.665507847407156, 6.709497475854073)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.55, 0.5, 0.45)]
+            }
+        }
+        def Xform "Bldg_2" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (688.2960677457344, 0, 134.13118719722561)
+            double3 xformOp:scale = (4.376212119778392, 21.49584249143185, 5.800004669815208)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.65, 0.63, 0.58)]
+            }
+        }
+        def Xform "Bldg_3" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (706.3142715317219, 0, 133.07749801823638)
+            double3 xformOp:scale = (13.866035247608945, 25.900074775445074, 13.767914794063854)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.62, 0.6, 0.56)]
+            }
+        }
+        def Xform "Bldg_4" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (692.0785342167939, 0, 145.38855878771164)
+            double3 xformOp:scale = (8.844077159042609, 8.362827062592736, 12.90488843887039)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.68, 0.66, 0.64)]
+            }
+        }
+        def Xform "Bldg_5" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (694.5249840559997, 0, 148.85615039711982)
+            double3 xformOp:scale = (12.621990531359936, 20.51909273094381, 6.164426043002372)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.48, 0.46, 0.44)]
+            }
+        }
+    }
+    def Xform "Block_18_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (738.0474396380199, 0, 144.5754141583457)
+            double3 xformOp:scale = (11.03902063022571, 26.210285884259996, 4.013636489241023)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.42, 0.44, 0.48)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (750.5603553824579, 0, 140.83771048036084)
+            double3 xformOp:scale = (4.327141754075138, 12.982207080930724, 8.259022530383469)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.6, 0.58, 0.52)]
+            }
+        }
+        def Xform "Bldg_2" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (743.8011903670413, 0, 129.67590040599777)
+            double3 xformOp:scale = (11.876918441404788, 35.59134817436861, 4.809590415690482)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.48, 0.46, 0.44)]
+            }
+        }
+        def Xform "Bldg_3" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (737.4104764798864, 0, 138.88239388190365)
+            double3 xformOp:scale = (7.639905220864557, 17.16933481787787, 4.5156257831280335)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.42, 0.44, 0.48)]
+            }
+        }
+        def Xform "Bldg_4" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (745.6181513301058, 0, 150.14226246852863)
+            double3 xformOp:scale = (9.266825991091117, 29.263535683456553, 5.227094342571783)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.65, 0.63, 0.58)]
+            }
+        }
+    }
+    def Xform "Block_19_3" {
+        def Xform "Bldg_0" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (786.0014087255422, 0, 135.88993119822734)
+            double3 xformOp:scale = (12.919032132922037, 5.966304924005658, 8.578741199322696)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.65, 0.63, 0.58)]
+            }
+        }
+        def Xform "Bldg_1" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (779.9159047156568, 0, 147.96506901905704)
+            double3 xformOp:scale = (5.0936492059205625, 28.79203810151144, 6.759427362086219)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.42, 0.44, 0.48)]
+            }
+        }
+        def Xform "Bldg_2" (
+            references = @./building.usda@
+        ) {
+            double3 xformOp:translate = (783.4417808115502, 0, 128.6241521146025)
+            double3 xformOp:scale = (13.521047668701128, 18.411856374697834, 4.2269026855505585)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            over Mesh "Body" {
+                color3f[] primvars:displayColor = [(0.6, 0.58, 0.52)]
+            }
+        }
+    }
+}

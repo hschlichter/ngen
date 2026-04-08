@@ -1,0 +1,19 @@
+#usda 1.0
+(
+    defaultPrim = "City"
+    upAxis = "Y"
+)
+def Xform "City" {
+    def Xform "Ground" (
+        references = @./ground.usda@
+    ) {}
+    def Xform "Blocks_00" (
+        references = @./blocks_00.usda@
+    ) {}
+    def Xform "Blocks_01" (
+        references = @./blocks_01.usda@
+    ) {}
+    def Xform "Props" (
+        references = @./props.usda@
+    ) {}
+}

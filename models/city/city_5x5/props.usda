@@ -1,0 +1,3145 @@
+#usda 1.0
+(
+    defaultPrim = "Props"
+    upAxis = "Y"
+)
+class Xform "TreeProto" {
+    def Mesh "Trunk" {
+        int[] faceVertexCounts = [4, 4, 4, 4]
+        int[] faceVertexIndices = [4,0,1,5, 5,1,2,6, 6,2,3,7, 7,3,0,4]
+        point3f[] points = [
+            (-0.15, 0, -0.15), (0.15, 0, -0.15), (0.15, 0, 0.15), (-0.15, 0, 0.15),
+            (-0.15, 1.2, -0.15), (0.15, 1.2, -0.15), (0.15, 1.2, 0.15), (-0.15, 1.2, 0.15)
+        ]
+        color3f[] primvars:displayColor = [(0.4, 0.28, 0.16)]
+    }
+    def Mesh "Canopy" {
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3,2,1,0, 4,5,6,7, 0,1,5,4, 7,6,2,3, 4,7,3,0, 1,2,6,5]
+        point3f[] points = [
+            (-0.6, 1.2, -0.6), (0.6, 1.2, -0.6), (0.6, 1.2, 0.6), (-0.6, 1.2, 0.6),
+            (-0.6, 2.4, -0.6), (0.6, 2.4, -0.6), (0.6, 2.4, 0.6), (-0.6, 2.4, 0.6)
+        ]
+        color3f[] primvars:displayColor = [(0.22, 0.45, 0.2)]
+    }
+}
+
+class Xform "LampProto" {
+    def Mesh "Pole" {
+        int[] faceVertexCounts = [4, 4, 4, 4]
+        int[] faceVertexIndices = [4,0,1,5, 5,1,2,6, 6,2,3,7, 7,3,0,4]
+        point3f[] points = [
+            (-0.05, 0, -0.05), (0.05, 0, -0.05), (0.05, 0, 0.05), (-0.05, 0, 0.05),
+            (-0.05, 3.5, -0.05), (0.05, 3.5, -0.05), (0.05, 3.5, 0.05), (-0.05, 3.5, 0.05)
+        ]
+        color3f[] primvars:displayColor = [(0.3, 0.3, 0.32)]
+    }
+    def Mesh "Light" {
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3,2,1,0, 4,5,6,7, 0,1,5,4, 7,6,2,3, 4,7,3,0, 1,2,6,5]
+        point3f[] points = [
+            (-0.15, 3.5, -0.15), (0.15, 3.5, -0.15), (0.15, 3.5, 0.15), (-0.15, 3.5, 0.15),
+            (-0.15, 3.8, -0.15), (0.15, 3.8, -0.15), (0.15, 3.8, 0.15), (-0.15, 3.8, 0.15)
+        ]
+        color3f[] primvars:displayColor = [(0.95, 0.9, 0.6)]
+    }
+}
+
+def Xform "Props" {
+    def Xform "Tree_0" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 12.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_1" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 20.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_2" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 28.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_3" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 52.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_4" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 60.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_5" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 68.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_6" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 92.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_7" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 100.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_8" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 108.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_9" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 132.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_10" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 140.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_11" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 148.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_12" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 172.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_13" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 180.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_14" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 188.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_15" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 12.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_16" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 20.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_17" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 28.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_18" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 52.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_19" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 60.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_20" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 68.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_21" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 92.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_22" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 100.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_23" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 108.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_24" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 132.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_25" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 140.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_26" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 148.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_27" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 172.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_28" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 180.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_29" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 188.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_30" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (12.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_31" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (20.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_32" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (28.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_33" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (52.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_34" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (60.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_35" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (68.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_36" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (92.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_37" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (100.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_38" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (108.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_39" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (132.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_40" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (140.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_41" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (148.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_42" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (172.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_43" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (180.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_44" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (188.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_45" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (12.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_46" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (20.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_47" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (28.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_48" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (52.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_49" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (60.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_50" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (68.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_51" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (92.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_52" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (100.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_53" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (108.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_54" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (132.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_55" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (140.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_56" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (148.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_57" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (172.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_58" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (180.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_59" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (188.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_60" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 12.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_61" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 20.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_62" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 28.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_63" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 52.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_64" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 60.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_65" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 68.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_66" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 92.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_67" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 100.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_68" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 108.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_69" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 132.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_70" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 140.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_71" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 148.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_72" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 172.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_73" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 180.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_74" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 188.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_75" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 12.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_76" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 20.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_77" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 28.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_78" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 52.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_79" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 60.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_80" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 68.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_81" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 92.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_82" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 100.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_83" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 108.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_84" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 132.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_85" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 140.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_86" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 148.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_87" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 172.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_88" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 180.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_89" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 188.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_90" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (12.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_91" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (20.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_92" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (28.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_93" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (52.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_94" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (60.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_95" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (68.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_96" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (92.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_97" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (100.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_98" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (108.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_99" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (132.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_100" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (140.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_101" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (148.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_102" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (172.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_103" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (180.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_104" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (188.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_105" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (12.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_106" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (20.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_107" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (28.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_108" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (52.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_109" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (60.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_110" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (68.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_111" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (92.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_112" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (100.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_113" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (108.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_114" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (132.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_115" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (140.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_116" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (148.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_117" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (172.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_118" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (180.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_119" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (188.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_120" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (76.0, 0, 12.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_121" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (76.0, 0, 20.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_122" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (76.0, 0, 28.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_123" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (76.0, 0, 52.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_124" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (76.0, 0, 60.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_125" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (76.0, 0, 68.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_126" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (76.0, 0, 92.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_127" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (76.0, 0, 100.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_128" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (76.0, 0, 108.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_129" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (76.0, 0, 132.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_130" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (76.0, 0, 140.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_131" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (76.0, 0, 148.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_132" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (76.0, 0, 172.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_133" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (76.0, 0, 180.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_134" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (76.0, 0, 188.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_135" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (84.0, 0, 12.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_136" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (84.0, 0, 20.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_137" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (84.0, 0, 28.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_138" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (84.0, 0, 52.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_139" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (84.0, 0, 60.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_140" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (84.0, 0, 68.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_141" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (84.0, 0, 92.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_142" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (84.0, 0, 100.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_143" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (84.0, 0, 108.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_144" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (84.0, 0, 132.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_145" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (84.0, 0, 140.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_146" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (84.0, 0, 148.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_147" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (84.0, 0, 172.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_148" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (84.0, 0, 180.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_149" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (84.0, 0, 188.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_150" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (12.0, 0, 76.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_151" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (20.0, 0, 76.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_152" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (28.0, 0, 76.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_153" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (52.0, 0, 76.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_154" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (60.0, 0, 76.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_155" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (68.0, 0, 76.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_156" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (92.0, 0, 76.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_157" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (100.0, 0, 76.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_158" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (108.0, 0, 76.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_159" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (132.0, 0, 76.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_160" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (140.0, 0, 76.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_161" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (148.0, 0, 76.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_162" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (172.0, 0, 76.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_163" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (180.0, 0, 76.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_164" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (188.0, 0, 76.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_165" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (12.0, 0, 84.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_166" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (20.0, 0, 84.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_167" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (28.0, 0, 84.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_168" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (52.0, 0, 84.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_169" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (60.0, 0, 84.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_170" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (68.0, 0, 84.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_171" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (92.0, 0, 84.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_172" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (100.0, 0, 84.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_173" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (108.0, 0, 84.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_174" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (132.0, 0, 84.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_175" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (140.0, 0, 84.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_176" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (148.0, 0, 84.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_177" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (172.0, 0, 84.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_178" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (180.0, 0, 84.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_179" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (188.0, 0, 84.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_180" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (116.0, 0, 12.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_181" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (116.0, 0, 20.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_182" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (116.0, 0, 28.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_183" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (116.0, 0, 52.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_184" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (116.0, 0, 60.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_185" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (116.0, 0, 68.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_186" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (116.0, 0, 92.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_187" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (116.0, 0, 100.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_188" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (116.0, 0, 108.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_189" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (116.0, 0, 132.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_190" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (116.0, 0, 140.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_191" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (116.0, 0, 148.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_192" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (116.0, 0, 172.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_193" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (116.0, 0, 180.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_194" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (116.0, 0, 188.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_195" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (124.0, 0, 12.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_196" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (124.0, 0, 20.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_197" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (124.0, 0, 28.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_198" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (124.0, 0, 52.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_199" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (124.0, 0, 60.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_200" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (124.0, 0, 68.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_201" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (124.0, 0, 92.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_202" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (124.0, 0, 100.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_203" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (124.0, 0, 108.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_204" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (124.0, 0, 132.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_205" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (124.0, 0, 140.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_206" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (124.0, 0, 148.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_207" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (124.0, 0, 172.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_208" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (124.0, 0, 180.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_209" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (124.0, 0, 188.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_210" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (12.0, 0, 116.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_211" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (20.0, 0, 116.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_212" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (28.0, 0, 116.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_213" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (52.0, 0, 116.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_214" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (60.0, 0, 116.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_215" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (68.0, 0, 116.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_216" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (92.0, 0, 116.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_217" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (100.0, 0, 116.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_218" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (108.0, 0, 116.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_219" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (132.0, 0, 116.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_220" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (140.0, 0, 116.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_221" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (148.0, 0, 116.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_222" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (172.0, 0, 116.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_223" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (180.0, 0, 116.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_224" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (188.0, 0, 116.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_225" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (12.0, 0, 124.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_226" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (20.0, 0, 124.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_227" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (28.0, 0, 124.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_228" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (52.0, 0, 124.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_229" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (60.0, 0, 124.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_230" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (68.0, 0, 124.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_231" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (92.0, 0, 124.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_232" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (100.0, 0, 124.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_233" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (108.0, 0, 124.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_234" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (132.0, 0, 124.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_235" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (140.0, 0, 124.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_236" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (148.0, 0, 124.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_237" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (172.0, 0, 124.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_238" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (180.0, 0, 124.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_239" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (188.0, 0, 124.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_240" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (156.0, 0, 12.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_241" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (156.0, 0, 20.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_242" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (156.0, 0, 28.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_243" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (156.0, 0, 52.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_244" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (156.0, 0, 60.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_245" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (156.0, 0, 68.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_246" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (156.0, 0, 92.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_247" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (156.0, 0, 100.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_248" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (156.0, 0, 108.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_249" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (156.0, 0, 132.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_250" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (156.0, 0, 140.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_251" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (156.0, 0, 148.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_252" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (156.0, 0, 172.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_253" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (156.0, 0, 180.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_254" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (156.0, 0, 188.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_255" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (164.0, 0, 12.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_256" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (164.0, 0, 20.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_257" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (164.0, 0, 28.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_258" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (164.0, 0, 52.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_259" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (164.0, 0, 60.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_260" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (164.0, 0, 68.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_261" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (164.0, 0, 92.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_262" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (164.0, 0, 100.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_263" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (164.0, 0, 108.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_264" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (164.0, 0, 132.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_265" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (164.0, 0, 140.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_266" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (164.0, 0, 148.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_267" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (164.0, 0, 172.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_268" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (164.0, 0, 180.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_269" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (164.0, 0, 188.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_270" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (12.0, 0, 156.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_271" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (20.0, 0, 156.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_272" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (28.0, 0, 156.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_273" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (52.0, 0, 156.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_274" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (60.0, 0, 156.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_275" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (68.0, 0, 156.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_276" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (92.0, 0, 156.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_277" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (100.0, 0, 156.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_278" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (108.0, 0, 156.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_279" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (132.0, 0, 156.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_280" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (140.0, 0, 156.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_281" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (148.0, 0, 156.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_282" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (172.0, 0, 156.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_283" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (180.0, 0, 156.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_284" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (188.0, 0, 156.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_285" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (12.0, 0, 164.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_286" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (20.0, 0, 164.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_287" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (28.0, 0, 164.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_288" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (52.0, 0, 164.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_289" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (60.0, 0, 164.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_290" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (68.0, 0, 164.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_291" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (92.0, 0, 164.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_292" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (100.0, 0, 164.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_293" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (108.0, 0, 164.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_294" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (132.0, 0, 164.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_295" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (140.0, 0, 164.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_296" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (148.0, 0, 164.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_297" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (172.0, 0, 164.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_298" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (180.0, 0, 164.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_299" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (188.0, 0, 164.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_300" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (196.0, 0, 12.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_301" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (196.0, 0, 20.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_302" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (196.0, 0, 28.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_303" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (196.0, 0, 52.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_304" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (196.0, 0, 60.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_305" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (196.0, 0, 68.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_306" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (196.0, 0, 92.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_307" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (196.0, 0, 100.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_308" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (196.0, 0, 108.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_309" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (196.0, 0, 132.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_310" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (196.0, 0, 140.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_311" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (196.0, 0, 148.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_312" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (196.0, 0, 172.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_313" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (196.0, 0, 180.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_314" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (196.0, 0, 188.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_315" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (204.0, 0, 12.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_316" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (204.0, 0, 20.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_317" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (204.0, 0, 28.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_318" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (204.0, 0, 52.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_319" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (204.0, 0, 60.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_320" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (204.0, 0, 68.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_321" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (204.0, 0, 92.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_322" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (204.0, 0, 100.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_323" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (204.0, 0, 108.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_324" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (204.0, 0, 132.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_325" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (204.0, 0, 140.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_326" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (204.0, 0, 148.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_327" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (204.0, 0, 172.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_328" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (204.0, 0, 180.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_329" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (204.0, 0, 188.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_330" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (12.0, 0, 196.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_331" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (20.0, 0, 196.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_332" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (28.0, 0, 196.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_333" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (52.0, 0, 196.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_334" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (60.0, 0, 196.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_335" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (68.0, 0, 196.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_336" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (92.0, 0, 196.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_337" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (100.0, 0, 196.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_338" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (108.0, 0, 196.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_339" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (132.0, 0, 196.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_340" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (140.0, 0, 196.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_341" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (148.0, 0, 196.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_342" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (172.0, 0, 196.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_343" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (180.0, 0, 196.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_344" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (188.0, 0, 196.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_345" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (12.0, 0, 204.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_346" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (20.0, 0, 204.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_347" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (28.0, 0, 204.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_348" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (52.0, 0, 204.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_349" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (60.0, 0, 204.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_350" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (68.0, 0, 204.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_351" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (92.0, 0, 204.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_352" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (100.0, 0, 204.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_353" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (108.0, 0, 204.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_354" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (132.0, 0, 204.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_355" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (140.0, 0, 204.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_356" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (148.0, 0, 204.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_357" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (172.0, 0, 204.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_358" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (180.0, 0, 204.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_359" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (188.0, 0, 204.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_0" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (3.5, 0, 6.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_1" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (3.5, 0, 18.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_2" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (3.5, 0, 30.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_3" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (3.5, 0, 54.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_4" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (3.5, 0, 66.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_5" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (3.5, 0, 90.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_6" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (3.5, 0, 102.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_7" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (3.5, 0, 114.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_8" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (3.5, 0, 126.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_9" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (3.5, 0, 138.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_10" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (3.5, 0, 150.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_11" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (3.5, 0, 174.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_12" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (3.5, 0, 186.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_13" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (6.0, 0, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_14" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (18.0, 0, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_15" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (30.0, 0, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_16" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (54.0, 0, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_17" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (66.0, 0, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_18" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (90.0, 0, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_19" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (102.0, 0, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_20" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (114.0, 0, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_21" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (126.0, 0, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_22" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (138.0, 0, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_23" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (150.0, 0, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_24" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (174.0, 0, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_25" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (186.0, 0, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_26" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (43.5, 0, 6.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_27" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (43.5, 0, 18.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_28" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (43.5, 0, 30.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_29" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (43.5, 0, 54.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_30" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (43.5, 0, 66.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_31" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (43.5, 0, 90.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_32" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (43.5, 0, 102.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_33" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (43.5, 0, 114.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_34" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (43.5, 0, 126.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_35" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (43.5, 0, 138.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_36" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (43.5, 0, 150.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_37" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (43.5, 0, 174.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_38" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (43.5, 0, 186.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_39" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (6.0, 0, 43.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_40" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (18.0, 0, 43.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_41" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (30.0, 0, 43.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_42" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (54.0, 0, 43.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_43" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (66.0, 0, 43.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_44" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (90.0, 0, 43.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_45" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (102.0, 0, 43.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_46" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (114.0, 0, 43.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_47" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (126.0, 0, 43.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_48" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (138.0, 0, 43.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_49" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (150.0, 0, 43.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_50" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (174.0, 0, 43.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_51" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (186.0, 0, 43.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_52" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (83.5, 0, 6.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_53" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (83.5, 0, 18.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_54" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (83.5, 0, 30.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_55" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (83.5, 0, 54.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_56" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (83.5, 0, 66.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_57" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (83.5, 0, 90.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_58" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (83.5, 0, 102.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_59" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (83.5, 0, 114.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_60" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (83.5, 0, 126.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_61" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (83.5, 0, 138.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_62" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (83.5, 0, 150.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_63" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (83.5, 0, 174.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_64" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (83.5, 0, 186.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_65" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (6.0, 0, 83.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_66" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (18.0, 0, 83.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_67" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (30.0, 0, 83.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_68" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (54.0, 0, 83.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_69" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (66.0, 0, 83.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_70" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (90.0, 0, 83.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_71" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (102.0, 0, 83.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_72" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (114.0, 0, 83.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_73" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (126.0, 0, 83.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_74" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (138.0, 0, 83.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_75" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (150.0, 0, 83.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_76" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (174.0, 0, 83.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_77" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (186.0, 0, 83.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_78" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (123.5, 0, 6.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_79" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (123.5, 0, 18.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_80" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (123.5, 0, 30.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_81" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (123.5, 0, 54.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_82" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (123.5, 0, 66.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_83" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (123.5, 0, 90.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_84" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (123.5, 0, 102.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_85" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (123.5, 0, 114.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_86" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (123.5, 0, 126.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_87" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (123.5, 0, 138.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_88" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (123.5, 0, 150.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_89" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (123.5, 0, 174.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_90" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (123.5, 0, 186.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_91" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (6.0, 0, 123.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_92" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (18.0, 0, 123.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_93" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (30.0, 0, 123.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_94" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (54.0, 0, 123.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_95" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (66.0, 0, 123.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_96" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (90.0, 0, 123.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_97" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (102.0, 0, 123.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_98" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (114.0, 0, 123.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_99" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (126.0, 0, 123.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_100" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (138.0, 0, 123.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_101" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (150.0, 0, 123.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_102" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (174.0, 0, 123.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_103" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (186.0, 0, 123.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_104" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (163.5, 0, 6.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_105" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (163.5, 0, 18.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_106" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (163.5, 0, 30.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_107" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (163.5, 0, 54.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_108" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (163.5, 0, 66.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_109" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (163.5, 0, 90.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_110" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (163.5, 0, 102.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_111" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (163.5, 0, 114.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_112" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (163.5, 0, 126.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_113" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (163.5, 0, 138.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_114" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (163.5, 0, 150.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_115" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (163.5, 0, 174.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_116" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (163.5, 0, 186.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_117" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (6.0, 0, 163.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_118" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (18.0, 0, 163.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_119" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (30.0, 0, 163.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_120" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (54.0, 0, 163.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_121" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (66.0, 0, 163.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_122" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (90.0, 0, 163.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_123" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (102.0, 0, 163.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_124" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (114.0, 0, 163.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_125" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (126.0, 0, 163.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_126" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (138.0, 0, 163.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_127" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (150.0, 0, 163.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_128" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (174.0, 0, 163.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_129" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (186.0, 0, 163.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_130" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (203.5, 0, 6.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_131" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (203.5, 0, 18.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_132" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (203.5, 0, 30.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_133" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (203.5, 0, 54.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_134" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (203.5, 0, 66.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_135" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (203.5, 0, 90.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_136" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (203.5, 0, 102.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_137" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (203.5, 0, 114.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_138" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (203.5, 0, 126.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_139" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (203.5, 0, 138.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_140" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (203.5, 0, 150.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_141" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (203.5, 0, 174.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_142" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (203.5, 0, 186.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_143" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (6.0, 0, 203.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_144" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (18.0, 0, 203.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_145" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (30.0, 0, 203.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_146" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (54.0, 0, 203.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_147" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (66.0, 0, 203.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_148" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (90.0, 0, 203.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_149" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (102.0, 0, 203.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_150" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (114.0, 0, 203.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_151" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (126.0, 0, 203.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_152" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (138.0, 0, 203.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_153" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (150.0, 0, 203.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_154" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (174.0, 0, 203.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_155" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (186.0, 0, 203.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

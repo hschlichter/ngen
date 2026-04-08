@@ -1,0 +1,73 @@
+#usda 1.0
+(
+    defaultPrim = "City"
+    upAxis = "Y"
+)
+def Xform "City" {
+    def Xform "Ground" (
+        references = @./ground.usda@
+    ) {}
+    def Xform "Blocks_00" (
+        references = @./blocks_00.usda@
+    ) {}
+    def Xform "Blocks_01" (
+        references = @./blocks_01.usda@
+    ) {}
+    def Xform "Blocks_02" (
+        references = @./blocks_02.usda@
+    ) {}
+    def Xform "Blocks_03" (
+        references = @./blocks_03.usda@
+    ) {}
+    def Xform "Blocks_04" (
+        references = @./blocks_04.usda@
+    ) {}
+    def Xform "Blocks_05" (
+        references = @./blocks_05.usda@
+    ) {}
+    def Xform "Blocks_06" (
+        references = @./blocks_06.usda@
+    ) {}
+    def Xform "Blocks_07" (
+        references = @./blocks_07.usda@
+    ) {}
+    def Xform "Blocks_08" (
+        references = @./blocks_08.usda@
+    ) {}
+    def Xform "Blocks_09" (
+        references = @./blocks_09.usda@
+    ) {}
+    def Xform "Blocks_10" (
+        references = @./blocks_10.usda@
+    ) {}
+    def Xform "Blocks_11" (
+        references = @./blocks_11.usda@
+    ) {}
+    def Xform "Blocks_12" (
+        references = @./blocks_12.usda@
+    ) {}
+    def Xform "Blocks_13" (
+        references = @./blocks_13.usda@
+    ) {}
+    def Xform "Blocks_14" (
+        references = @./blocks_14.usda@
+    ) {}
+    def Xform "Blocks_15" (
+        references = @./blocks_15.usda@
+    ) {}
+    def Xform "Blocks_16" (
+        references = @./blocks_16.usda@
+    ) {}
+    def Xform "Blocks_17" (
+        references = @./blocks_17.usda@
+    ) {}
+    def Xform "Blocks_18" (
+        references = @./blocks_18.usda@
+    ) {}
+    def Xform "Blocks_19" (
+        references = @./blocks_19.usda@
+    ) {}
+    def Xform "Props" (
+        references = @./props.usda@
+    ) {}
+}

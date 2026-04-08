@@ -1,0 +1,20 @@
+#usda 1.0
+(
+    defaultPrim = "Building"
+    upAxis = "Y"
+)
+
+# A reusable box building. Instances override scale and color.
+def Xform "Building" {
+    def Mesh "Body" {
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [
+            3,2,1,0,  4,5,6,7,  0,1,5,4,  7,6,2,3,  4,7,3,0,  1,2,6,5
+        ]
+        point3f[] points = [
+            (-0.5, 0, -0.5), (0.5, 0, -0.5), (0.5, 0, 0.5), (-0.5, 0, 0.5),
+            (-0.5, 1, -0.5), (0.5, 1, -0.5), (0.5, 1, 0.5), (-0.5, 1, 0.5)
+        ]
+        color3f[] primvars:displayColor = [(0.7, 0.7, 0.72)]
+    }
+}

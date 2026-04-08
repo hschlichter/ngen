@@ -1,0 +1,117 @@
+#usda 1.0
+(
+    defaultPrim = "Ground"
+    upAxis = "Y"
+)
+def Xform "Ground" {
+    def Mesh "RoadPlane" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0.0, -0.05, 0.0),
+            (40.0, -0.05, 0.0),
+            (40.0, -0.05, 40.0),
+            (0.0, -0.05, 40.0)
+        ]
+        color3f[] primvars:displayColor = [(0.25, 0.25, 0.27)]
+    }
+    def Mesh "SidewalkH_0" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, -5.0),
+            (40.0, 0.02, -5.0),
+            (40.0, 0.02, -3.0),
+            (0, 0.02, -3.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_1" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 3.0),
+            (40.0, 0.02, 3.0),
+            (40.0, 0.02, 5.0),
+            (0, 0.02, 5.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_2" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (-5.0, 0.02, 0),
+            (-3.0, 0.02, 0),
+            (-3.0, 0.02, 40.0),
+            (-5.0, 0.02, 40.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_3" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (3.0, 0.02, 0),
+            (5.0, 0.02, 0),
+            (5.0, 0.02, 40.0),
+            (3.0, 0.02, 40.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_4" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 35.0),
+            (40.0, 0.02, 35.0),
+            (40.0, 0.02, 37.0),
+            (0, 0.02, 37.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_5" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 43.0),
+            (40.0, 0.02, 43.0),
+            (40.0, 0.02, 45.0),
+            (0, 0.02, 45.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_6" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (35.0, 0.02, 0),
+            (37.0, 0.02, 0),
+            (37.0, 0.02, 40.0),
+            (35.0, 0.02, 40.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_7" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (43.0, 0.02, 0),
+            (45.0, 0.02, 0),
+            (45.0, 0.02, 40.0),
+            (43.0, 0.02, 40.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "Grass_0_0" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (5.0, 0.0, 5.0),
+            (35.0, 0.0, 5.0),
+            (35.0, 0.0, 35.0),
+            (5.0, 0.0, 35.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+}

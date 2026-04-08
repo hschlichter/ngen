@@ -1,0 +1,1602 @@
+#usda 1.0
+(
+    defaultPrim = "Ground"
+    upAxis = "Y"
+)
+def Xform "Ground" {
+    def Mesh "RoadPlane" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0.0, -0.05, 0.0),
+            (400.0, -0.05, 0.0),
+            (400.0, -0.05, 400.0),
+            (0.0, -0.05, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.25, 0.25, 0.27)]
+    }
+    def Mesh "SidewalkH_0" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, -5.0),
+            (400.0, 0.02, -5.0),
+            (400.0, 0.02, -3.0),
+            (0, 0.02, -3.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_1" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 3.0),
+            (400.0, 0.02, 3.0),
+            (400.0, 0.02, 5.0),
+            (0, 0.02, 5.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_2" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (-5.0, 0.02, 0),
+            (-3.0, 0.02, 0),
+            (-3.0, 0.02, 400.0),
+            (-5.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_3" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (3.0, 0.02, 0),
+            (5.0, 0.02, 0),
+            (5.0, 0.02, 400.0),
+            (3.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_4" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 35.0),
+            (400.0, 0.02, 35.0),
+            (400.0, 0.02, 37.0),
+            (0, 0.02, 37.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_5" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 43.0),
+            (400.0, 0.02, 43.0),
+            (400.0, 0.02, 45.0),
+            (0, 0.02, 45.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_6" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (35.0, 0.02, 0),
+            (37.0, 0.02, 0),
+            (37.0, 0.02, 400.0),
+            (35.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_7" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (43.0, 0.02, 0),
+            (45.0, 0.02, 0),
+            (45.0, 0.02, 400.0),
+            (43.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_8" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 75.0),
+            (400.0, 0.02, 75.0),
+            (400.0, 0.02, 77.0),
+            (0, 0.02, 77.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_9" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 83.0),
+            (400.0, 0.02, 83.0),
+            (400.0, 0.02, 85.0),
+            (0, 0.02, 85.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_10" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (75.0, 0.02, 0),
+            (77.0, 0.02, 0),
+            (77.0, 0.02, 400.0),
+            (75.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_11" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (83.0, 0.02, 0),
+            (85.0, 0.02, 0),
+            (85.0, 0.02, 400.0),
+            (83.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_12" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 115.0),
+            (400.0, 0.02, 115.0),
+            (400.0, 0.02, 117.0),
+            (0, 0.02, 117.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_13" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 123.0),
+            (400.0, 0.02, 123.0),
+            (400.0, 0.02, 125.0),
+            (0, 0.02, 125.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_14" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (115.0, 0.02, 0),
+            (117.0, 0.02, 0),
+            (117.0, 0.02, 400.0),
+            (115.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_15" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (123.0, 0.02, 0),
+            (125.0, 0.02, 0),
+            (125.0, 0.02, 400.0),
+            (123.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_16" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 155.0),
+            (400.0, 0.02, 155.0),
+            (400.0, 0.02, 157.0),
+            (0, 0.02, 157.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_17" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 163.0),
+            (400.0, 0.02, 163.0),
+            (400.0, 0.02, 165.0),
+            (0, 0.02, 165.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_18" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (155.0, 0.02, 0),
+            (157.0, 0.02, 0),
+            (157.0, 0.02, 400.0),
+            (155.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_19" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (163.0, 0.02, 0),
+            (165.0, 0.02, 0),
+            (165.0, 0.02, 400.0),
+            (163.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_20" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 195.0),
+            (400.0, 0.02, 195.0),
+            (400.0, 0.02, 197.0),
+            (0, 0.02, 197.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_21" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 203.0),
+            (400.0, 0.02, 203.0),
+            (400.0, 0.02, 205.0),
+            (0, 0.02, 205.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_22" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (195.0, 0.02, 0),
+            (197.0, 0.02, 0),
+            (197.0, 0.02, 400.0),
+            (195.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_23" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (203.0, 0.02, 0),
+            (205.0, 0.02, 0),
+            (205.0, 0.02, 400.0),
+            (203.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_24" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 235.0),
+            (400.0, 0.02, 235.0),
+            (400.0, 0.02, 237.0),
+            (0, 0.02, 237.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_25" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 243.0),
+            (400.0, 0.02, 243.0),
+            (400.0, 0.02, 245.0),
+            (0, 0.02, 245.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_26" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (235.0, 0.02, 0),
+            (237.0, 0.02, 0),
+            (237.0, 0.02, 400.0),
+            (235.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_27" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (243.0, 0.02, 0),
+            (245.0, 0.02, 0),
+            (245.0, 0.02, 400.0),
+            (243.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_28" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 275.0),
+            (400.0, 0.02, 275.0),
+            (400.0, 0.02, 277.0),
+            (0, 0.02, 277.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_29" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 283.0),
+            (400.0, 0.02, 283.0),
+            (400.0, 0.02, 285.0),
+            (0, 0.02, 285.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_30" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (275.0, 0.02, 0),
+            (277.0, 0.02, 0),
+            (277.0, 0.02, 400.0),
+            (275.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_31" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (283.0, 0.02, 0),
+            (285.0, 0.02, 0),
+            (285.0, 0.02, 400.0),
+            (283.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_32" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 315.0),
+            (400.0, 0.02, 315.0),
+            (400.0, 0.02, 317.0),
+            (0, 0.02, 317.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_33" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 323.0),
+            (400.0, 0.02, 323.0),
+            (400.0, 0.02, 325.0),
+            (0, 0.02, 325.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_34" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (315.0, 0.02, 0),
+            (317.0, 0.02, 0),
+            (317.0, 0.02, 400.0),
+            (315.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_35" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (323.0, 0.02, 0),
+            (325.0, 0.02, 0),
+            (325.0, 0.02, 400.0),
+            (323.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_36" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 355.0),
+            (400.0, 0.02, 355.0),
+            (400.0, 0.02, 357.0),
+            (0, 0.02, 357.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_37" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 363.0),
+            (400.0, 0.02, 363.0),
+            (400.0, 0.02, 365.0),
+            (0, 0.02, 365.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_38" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (355.0, 0.02, 0),
+            (357.0, 0.02, 0),
+            (357.0, 0.02, 400.0),
+            (355.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_39" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (363.0, 0.02, 0),
+            (365.0, 0.02, 0),
+            (365.0, 0.02, 400.0),
+            (363.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_40" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 395.0),
+            (400.0, 0.02, 395.0),
+            (400.0, 0.02, 397.0),
+            (0, 0.02, 397.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkH_41" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (0, 0.02, 403.0),
+            (400.0, 0.02, 403.0),
+            (400.0, 0.02, 405.0),
+            (0, 0.02, 405.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_42" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (395.0, 0.02, 0),
+            (397.0, 0.02, 0),
+            (397.0, 0.02, 400.0),
+            (395.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "SidewalkV_43" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (403.0, 0.02, 0),
+            (405.0, 0.02, 0),
+            (405.0, 0.02, 400.0),
+            (403.0, 0.02, 400.0)
+        ]
+        color3f[] primvars:displayColor = [(0.62, 0.60, 0.58)]
+    }
+    def Mesh "Grass_0_0" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (5.0, 0.0, 5.0),
+            (35.0, 0.0, 5.0),
+            (35.0, 0.0, 35.0),
+            (5.0, 0.0, 35.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_1_0" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (45.0, 0.0, 5.0),
+            (75.0, 0.0, 5.0),
+            (75.0, 0.0, 35.0),
+            (45.0, 0.0, 35.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_2_0" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (85.0, 0.0, 5.0),
+            (115.0, 0.0, 5.0),
+            (115.0, 0.0, 35.0),
+            (85.0, 0.0, 35.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_3_0" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (125.0, 0.0, 5.0),
+            (155.0, 0.0, 5.0),
+            (155.0, 0.0, 35.0),
+            (125.0, 0.0, 35.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_4_0" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (165.0, 0.0, 5.0),
+            (195.0, 0.0, 5.0),
+            (195.0, 0.0, 35.0),
+            (165.0, 0.0, 35.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_5_0" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (205.0, 0.0, 5.0),
+            (235.0, 0.0, 5.0),
+            (235.0, 0.0, 35.0),
+            (205.0, 0.0, 35.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_6_0" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (245.0, 0.0, 5.0),
+            (275.0, 0.0, 5.0),
+            (275.0, 0.0, 35.0),
+            (245.0, 0.0, 35.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_7_0" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (285.0, 0.0, 5.0),
+            (315.0, 0.0, 5.0),
+            (315.0, 0.0, 35.0),
+            (285.0, 0.0, 35.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_8_0" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (325.0, 0.0, 5.0),
+            (355.0, 0.0, 5.0),
+            (355.0, 0.0, 35.0),
+            (325.0, 0.0, 35.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_9_0" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (365.0, 0.0, 5.0),
+            (395.0, 0.0, 5.0),
+            (395.0, 0.0, 35.0),
+            (365.0, 0.0, 35.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_0_1" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (5.0, 0.0, 45.0),
+            (35.0, 0.0, 45.0),
+            (35.0, 0.0, 75.0),
+            (5.0, 0.0, 75.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_1_1" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (45.0, 0.0, 45.0),
+            (75.0, 0.0, 45.0),
+            (75.0, 0.0, 75.0),
+            (45.0, 0.0, 75.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_2_1" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (85.0, 0.0, 45.0),
+            (115.0, 0.0, 45.0),
+            (115.0, 0.0, 75.0),
+            (85.0, 0.0, 75.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_3_1" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (125.0, 0.0, 45.0),
+            (155.0, 0.0, 45.0),
+            (155.0, 0.0, 75.0),
+            (125.0, 0.0, 75.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_4_1" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (165.0, 0.0, 45.0),
+            (195.0, 0.0, 45.0),
+            (195.0, 0.0, 75.0),
+            (165.0, 0.0, 75.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_5_1" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (205.0, 0.0, 45.0),
+            (235.0, 0.0, 45.0),
+            (235.0, 0.0, 75.0),
+            (205.0, 0.0, 75.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_6_1" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (245.0, 0.0, 45.0),
+            (275.0, 0.0, 45.0),
+            (275.0, 0.0, 75.0),
+            (245.0, 0.0, 75.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_7_1" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (285.0, 0.0, 45.0),
+            (315.0, 0.0, 45.0),
+            (315.0, 0.0, 75.0),
+            (285.0, 0.0, 75.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_8_1" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (325.0, 0.0, 45.0),
+            (355.0, 0.0, 45.0),
+            (355.0, 0.0, 75.0),
+            (325.0, 0.0, 75.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_9_1" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (365.0, 0.0, 45.0),
+            (395.0, 0.0, 45.0),
+            (395.0, 0.0, 75.0),
+            (365.0, 0.0, 75.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_0_2" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (5.0, 0.0, 85.0),
+            (35.0, 0.0, 85.0),
+            (35.0, 0.0, 115.0),
+            (5.0, 0.0, 115.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_1_2" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (45.0, 0.0, 85.0),
+            (75.0, 0.0, 85.0),
+            (75.0, 0.0, 115.0),
+            (45.0, 0.0, 115.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_2_2" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (85.0, 0.0, 85.0),
+            (115.0, 0.0, 85.0),
+            (115.0, 0.0, 115.0),
+            (85.0, 0.0, 115.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_3_2" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (125.0, 0.0, 85.0),
+            (155.0, 0.0, 85.0),
+            (155.0, 0.0, 115.0),
+            (125.0, 0.0, 115.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_4_2" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (165.0, 0.0, 85.0),
+            (195.0, 0.0, 85.0),
+            (195.0, 0.0, 115.0),
+            (165.0, 0.0, 115.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_5_2" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (205.0, 0.0, 85.0),
+            (235.0, 0.0, 85.0),
+            (235.0, 0.0, 115.0),
+            (205.0, 0.0, 115.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_6_2" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (245.0, 0.0, 85.0),
+            (275.0, 0.0, 85.0),
+            (275.0, 0.0, 115.0),
+            (245.0, 0.0, 115.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_7_2" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (285.0, 0.0, 85.0),
+            (315.0, 0.0, 85.0),
+            (315.0, 0.0, 115.0),
+            (285.0, 0.0, 115.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_8_2" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (325.0, 0.0, 85.0),
+            (355.0, 0.0, 85.0),
+            (355.0, 0.0, 115.0),
+            (325.0, 0.0, 115.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_9_2" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (365.0, 0.0, 85.0),
+            (395.0, 0.0, 85.0),
+            (395.0, 0.0, 115.0),
+            (365.0, 0.0, 115.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_0_3" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (5.0, 0.0, 125.0),
+            (35.0, 0.0, 125.0),
+            (35.0, 0.0, 155.0),
+            (5.0, 0.0, 155.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_1_3" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (45.0, 0.0, 125.0),
+            (75.0, 0.0, 125.0),
+            (75.0, 0.0, 155.0),
+            (45.0, 0.0, 155.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_2_3" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (85.0, 0.0, 125.0),
+            (115.0, 0.0, 125.0),
+            (115.0, 0.0, 155.0),
+            (85.0, 0.0, 155.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_3_3" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (125.0, 0.0, 125.0),
+            (155.0, 0.0, 125.0),
+            (155.0, 0.0, 155.0),
+            (125.0, 0.0, 155.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_4_3" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (165.0, 0.0, 125.0),
+            (195.0, 0.0, 125.0),
+            (195.0, 0.0, 155.0),
+            (165.0, 0.0, 155.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_5_3" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (205.0, 0.0, 125.0),
+            (235.0, 0.0, 125.0),
+            (235.0, 0.0, 155.0),
+            (205.0, 0.0, 155.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_6_3" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (245.0, 0.0, 125.0),
+            (275.0, 0.0, 125.0),
+            (275.0, 0.0, 155.0),
+            (245.0, 0.0, 155.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_7_3" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (285.0, 0.0, 125.0),
+            (315.0, 0.0, 125.0),
+            (315.0, 0.0, 155.0),
+            (285.0, 0.0, 155.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_8_3" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (325.0, 0.0, 125.0),
+            (355.0, 0.0, 125.0),
+            (355.0, 0.0, 155.0),
+            (325.0, 0.0, 155.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_9_3" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (365.0, 0.0, 125.0),
+            (395.0, 0.0, 125.0),
+            (395.0, 0.0, 155.0),
+            (365.0, 0.0, 155.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_0_4" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (5.0, 0.0, 165.0),
+            (35.0, 0.0, 165.0),
+            (35.0, 0.0, 195.0),
+            (5.0, 0.0, 195.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_1_4" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (45.0, 0.0, 165.0),
+            (75.0, 0.0, 165.0),
+            (75.0, 0.0, 195.0),
+            (45.0, 0.0, 195.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_2_4" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (85.0, 0.0, 165.0),
+            (115.0, 0.0, 165.0),
+            (115.0, 0.0, 195.0),
+            (85.0, 0.0, 195.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_3_4" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (125.0, 0.0, 165.0),
+            (155.0, 0.0, 165.0),
+            (155.0, 0.0, 195.0),
+            (125.0, 0.0, 195.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_4_4" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (165.0, 0.0, 165.0),
+            (195.0, 0.0, 165.0),
+            (195.0, 0.0, 195.0),
+            (165.0, 0.0, 195.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_5_4" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (205.0, 0.0, 165.0),
+            (235.0, 0.0, 165.0),
+            (235.0, 0.0, 195.0),
+            (205.0, 0.0, 195.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_6_4" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (245.0, 0.0, 165.0),
+            (275.0, 0.0, 165.0),
+            (275.0, 0.0, 195.0),
+            (245.0, 0.0, 195.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_7_4" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (285.0, 0.0, 165.0),
+            (315.0, 0.0, 165.0),
+            (315.0, 0.0, 195.0),
+            (285.0, 0.0, 195.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_8_4" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (325.0, 0.0, 165.0),
+            (355.0, 0.0, 165.0),
+            (355.0, 0.0, 195.0),
+            (325.0, 0.0, 195.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_9_4" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (365.0, 0.0, 165.0),
+            (395.0, 0.0, 165.0),
+            (395.0, 0.0, 195.0),
+            (365.0, 0.0, 195.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_0_5" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (5.0, 0.0, 205.0),
+            (35.0, 0.0, 205.0),
+            (35.0, 0.0, 235.0),
+            (5.0, 0.0, 235.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_1_5" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (45.0, 0.0, 205.0),
+            (75.0, 0.0, 205.0),
+            (75.0, 0.0, 235.0),
+            (45.0, 0.0, 235.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_2_5" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (85.0, 0.0, 205.0),
+            (115.0, 0.0, 205.0),
+            (115.0, 0.0, 235.0),
+            (85.0, 0.0, 235.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_3_5" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (125.0, 0.0, 205.0),
+            (155.0, 0.0, 205.0),
+            (155.0, 0.0, 235.0),
+            (125.0, 0.0, 235.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_4_5" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (165.0, 0.0, 205.0),
+            (195.0, 0.0, 205.0),
+            (195.0, 0.0, 235.0),
+            (165.0, 0.0, 235.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_5_5" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (205.0, 0.0, 205.0),
+            (235.0, 0.0, 205.0),
+            (235.0, 0.0, 235.0),
+            (205.0, 0.0, 235.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_6_5" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (245.0, 0.0, 205.0),
+            (275.0, 0.0, 205.0),
+            (275.0, 0.0, 235.0),
+            (245.0, 0.0, 235.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_7_5" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (285.0, 0.0, 205.0),
+            (315.0, 0.0, 205.0),
+            (315.0, 0.0, 235.0),
+            (285.0, 0.0, 235.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_8_5" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (325.0, 0.0, 205.0),
+            (355.0, 0.0, 205.0),
+            (355.0, 0.0, 235.0),
+            (325.0, 0.0, 235.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_9_5" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (365.0, 0.0, 205.0),
+            (395.0, 0.0, 205.0),
+            (395.0, 0.0, 235.0),
+            (365.0, 0.0, 235.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_0_6" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (5.0, 0.0, 245.0),
+            (35.0, 0.0, 245.0),
+            (35.0, 0.0, 275.0),
+            (5.0, 0.0, 275.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_1_6" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (45.0, 0.0, 245.0),
+            (75.0, 0.0, 245.0),
+            (75.0, 0.0, 275.0),
+            (45.0, 0.0, 275.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_2_6" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (85.0, 0.0, 245.0),
+            (115.0, 0.0, 245.0),
+            (115.0, 0.0, 275.0),
+            (85.0, 0.0, 275.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_3_6" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (125.0, 0.0, 245.0),
+            (155.0, 0.0, 245.0),
+            (155.0, 0.0, 275.0),
+            (125.0, 0.0, 275.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_4_6" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (165.0, 0.0, 245.0),
+            (195.0, 0.0, 245.0),
+            (195.0, 0.0, 275.0),
+            (165.0, 0.0, 275.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_5_6" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (205.0, 0.0, 245.0),
+            (235.0, 0.0, 245.0),
+            (235.0, 0.0, 275.0),
+            (205.0, 0.0, 275.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_6_6" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (245.0, 0.0, 245.0),
+            (275.0, 0.0, 245.0),
+            (275.0, 0.0, 275.0),
+            (245.0, 0.0, 275.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_7_6" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (285.0, 0.0, 245.0),
+            (315.0, 0.0, 245.0),
+            (315.0, 0.0, 275.0),
+            (285.0, 0.0, 275.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_8_6" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (325.0, 0.0, 245.0),
+            (355.0, 0.0, 245.0),
+            (355.0, 0.0, 275.0),
+            (325.0, 0.0, 275.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_9_6" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (365.0, 0.0, 245.0),
+            (395.0, 0.0, 245.0),
+            (395.0, 0.0, 275.0),
+            (365.0, 0.0, 275.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_0_7" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (5.0, 0.0, 285.0),
+            (35.0, 0.0, 285.0),
+            (35.0, 0.0, 315.0),
+            (5.0, 0.0, 315.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_1_7" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (45.0, 0.0, 285.0),
+            (75.0, 0.0, 285.0),
+            (75.0, 0.0, 315.0),
+            (45.0, 0.0, 315.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_2_7" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (85.0, 0.0, 285.0),
+            (115.0, 0.0, 285.0),
+            (115.0, 0.0, 315.0),
+            (85.0, 0.0, 315.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_3_7" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (125.0, 0.0, 285.0),
+            (155.0, 0.0, 285.0),
+            (155.0, 0.0, 315.0),
+            (125.0, 0.0, 315.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_4_7" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (165.0, 0.0, 285.0),
+            (195.0, 0.0, 285.0),
+            (195.0, 0.0, 315.0),
+            (165.0, 0.0, 315.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_5_7" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (205.0, 0.0, 285.0),
+            (235.0, 0.0, 285.0),
+            (235.0, 0.0, 315.0),
+            (205.0, 0.0, 315.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_6_7" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (245.0, 0.0, 285.0),
+            (275.0, 0.0, 285.0),
+            (275.0, 0.0, 315.0),
+            (245.0, 0.0, 315.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_7_7" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (285.0, 0.0, 285.0),
+            (315.0, 0.0, 285.0),
+            (315.0, 0.0, 315.0),
+            (285.0, 0.0, 315.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_8_7" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (325.0, 0.0, 285.0),
+            (355.0, 0.0, 285.0),
+            (355.0, 0.0, 315.0),
+            (325.0, 0.0, 315.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_9_7" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (365.0, 0.0, 285.0),
+            (395.0, 0.0, 285.0),
+            (395.0, 0.0, 315.0),
+            (365.0, 0.0, 315.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_0_8" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (5.0, 0.0, 325.0),
+            (35.0, 0.0, 325.0),
+            (35.0, 0.0, 355.0),
+            (5.0, 0.0, 355.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_1_8" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (45.0, 0.0, 325.0),
+            (75.0, 0.0, 325.0),
+            (75.0, 0.0, 355.0),
+            (45.0, 0.0, 355.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_2_8" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (85.0, 0.0, 325.0),
+            (115.0, 0.0, 325.0),
+            (115.0, 0.0, 355.0),
+            (85.0, 0.0, 355.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_3_8" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (125.0, 0.0, 325.0),
+            (155.0, 0.0, 325.0),
+            (155.0, 0.0, 355.0),
+            (125.0, 0.0, 355.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_4_8" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (165.0, 0.0, 325.0),
+            (195.0, 0.0, 325.0),
+            (195.0, 0.0, 355.0),
+            (165.0, 0.0, 355.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_5_8" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (205.0, 0.0, 325.0),
+            (235.0, 0.0, 325.0),
+            (235.0, 0.0, 355.0),
+            (205.0, 0.0, 355.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_6_8" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (245.0, 0.0, 325.0),
+            (275.0, 0.0, 325.0),
+            (275.0, 0.0, 355.0),
+            (245.0, 0.0, 355.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_7_8" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (285.0, 0.0, 325.0),
+            (315.0, 0.0, 325.0),
+            (315.0, 0.0, 355.0),
+            (285.0, 0.0, 355.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_8_8" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (325.0, 0.0, 325.0),
+            (355.0, 0.0, 325.0),
+            (355.0, 0.0, 355.0),
+            (325.0, 0.0, 355.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_9_8" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (365.0, 0.0, 325.0),
+            (395.0, 0.0, 325.0),
+            (395.0, 0.0, 355.0),
+            (365.0, 0.0, 355.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_0_9" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (5.0, 0.0, 365.0),
+            (35.0, 0.0, 365.0),
+            (35.0, 0.0, 395.0),
+            (5.0, 0.0, 395.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_1_9" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (45.0, 0.0, 365.0),
+            (75.0, 0.0, 365.0),
+            (75.0, 0.0, 395.0),
+            (45.0, 0.0, 395.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_2_9" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (85.0, 0.0, 365.0),
+            (115.0, 0.0, 365.0),
+            (115.0, 0.0, 395.0),
+            (85.0, 0.0, 395.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_3_9" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (125.0, 0.0, 365.0),
+            (155.0, 0.0, 365.0),
+            (155.0, 0.0, 395.0),
+            (125.0, 0.0, 395.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_4_9" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (165.0, 0.0, 365.0),
+            (195.0, 0.0, 365.0),
+            (195.0, 0.0, 395.0),
+            (165.0, 0.0, 395.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_5_9" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (205.0, 0.0, 365.0),
+            (235.0, 0.0, 365.0),
+            (235.0, 0.0, 395.0),
+            (205.0, 0.0, 395.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_6_9" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (245.0, 0.0, 365.0),
+            (275.0, 0.0, 365.0),
+            (275.0, 0.0, 395.0),
+            (245.0, 0.0, 395.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_7_9" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (285.0, 0.0, 365.0),
+            (315.0, 0.0, 365.0),
+            (315.0, 0.0, 395.0),
+            (285.0, 0.0, 395.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_8_9" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (325.0, 0.0, 365.0),
+            (355.0, 0.0, 365.0),
+            (355.0, 0.0, 395.0),
+            (325.0, 0.0, 395.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+    def Mesh "Grass_9_9" {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        point3f[] points = [
+            (365.0, 0.0, 365.0),
+            (395.0, 0.0, 365.0),
+            (395.0, 0.0, 395.0),
+            (365.0, 0.0, 395.0)
+        ]
+        color3f[] primvars:displayColor = [(0.32, 0.42, 0.28)]
+    }
+}

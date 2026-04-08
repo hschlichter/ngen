@@ -1,0 +1,265 @@
+#usda 1.0
+(
+    defaultPrim = "Props"
+    upAxis = "Y"
+)
+class Xform "TreeProto" {
+    def Mesh "Trunk" {
+        int[] faceVertexCounts = [4, 4, 4, 4]
+        int[] faceVertexIndices = [4,0,1,5, 5,1,2,6, 6,2,3,7, 7,3,0,4]
+        point3f[] points = [
+            (-0.15, 0, -0.15), (0.15, 0, -0.15), (0.15, 0, 0.15), (-0.15, 0, 0.15),
+            (-0.15, 1.2, -0.15), (0.15, 1.2, -0.15), (0.15, 1.2, 0.15), (-0.15, 1.2, 0.15)
+        ]
+        color3f[] primvars:displayColor = [(0.4, 0.28, 0.16)]
+    }
+    def Mesh "Canopy" {
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3,2,1,0, 4,5,6,7, 0,1,5,4, 7,6,2,3, 4,7,3,0, 1,2,6,5]
+        point3f[] points = [
+            (-0.6, 1.2, -0.6), (0.6, 1.2, -0.6), (0.6, 1.2, 0.6), (-0.6, 1.2, 0.6),
+            (-0.6, 2.4, -0.6), (0.6, 2.4, -0.6), (0.6, 2.4, 0.6), (-0.6, 2.4, 0.6)
+        ]
+        color3f[] primvars:displayColor = [(0.22, 0.45, 0.2)]
+    }
+}
+
+class Xform "LampProto" {
+    def Mesh "Pole" {
+        int[] faceVertexCounts = [4, 4, 4, 4]
+        int[] faceVertexIndices = [4,0,1,5, 5,1,2,6, 6,2,3,7, 7,3,0,4]
+        point3f[] points = [
+            (-0.05, 0, -0.05), (0.05, 0, -0.05), (0.05, 0, 0.05), (-0.05, 0, 0.05),
+            (-0.05, 3.5, -0.05), (0.05, 3.5, -0.05), (0.05, 3.5, 0.05), (-0.05, 3.5, 0.05)
+        ]
+        color3f[] primvars:displayColor = [(0.3, 0.3, 0.32)]
+    }
+    def Mesh "Light" {
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3,2,1,0, 4,5,6,7, 0,1,5,4, 7,6,2,3, 4,7,3,0, 1,2,6,5]
+        point3f[] points = [
+            (-0.15, 3.5, -0.15), (0.15, 3.5, -0.15), (0.15, 3.5, 0.15), (-0.15, 3.5, 0.15),
+            (-0.15, 3.8, -0.15), (0.15, 3.8, -0.15), (0.15, 3.8, 0.15), (-0.15, 3.8, 0.15)
+        ]
+        color3f[] primvars:displayColor = [(0.95, 0.9, 0.6)]
+    }
+}
+
+def Xform "Props" {
+    def Xform "Tree_0" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 12.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_1" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 20.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_2" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (-4.0, 0, 28.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_3" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 12.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_4" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 20.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_5" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (4.0, 0, 28.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_6" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (12.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_7" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (20.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_8" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (28.0, 0, -4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_9" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (12.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_10" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (20.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_11" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (28.0, 0, 4.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_12" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 12.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_13" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 20.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_14" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (36.0, 0, 28.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_15" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 12.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_16" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 20.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_17" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (44.0, 0, 28.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_18" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (12.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_19" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (20.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_20" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (28.0, 0, 36.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_21" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (12.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_22" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (20.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Tree_23" (
+        inherits = </TreeProto>
+    ) {
+        double3 xformOp:translate = (28.0, 0, 44.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_0" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (3.5, 0, 6.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_1" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (3.5, 0, 18.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_2" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (3.5, 0, 30.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_3" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (6.0, 0, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_4" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (18.0, 0, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_5" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (30.0, 0, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_6" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (43.5, 0, 6.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_7" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (43.5, 0, 18.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_8" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (43.5, 0, 30.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_9" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (6.0, 0, 43.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_10" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (18.0, 0, 43.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "Lamp_11" (
+        inherits = </LampProto>
+    ) {
+        double3 xformOp:translate = (30.0, 0, 43.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+}
