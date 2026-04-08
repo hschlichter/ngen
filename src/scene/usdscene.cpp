@@ -840,6 +840,21 @@ void USDScene::clearSessionLayer() {
     }
 }
 
+void USDScene::setLayerMuted(LayerHandle layer, bool muted) {
+    for (const auto& info : m_impl->layerInfos) {
+        if (info.handle == layer) {
+            if (muted) {
+                m_impl->stage->MuteLayer(info.identifier);
+            } else {
+                m_impl->stage->UnmuteLayer(info.identifier);
+            }
+            m_impl->rebuildLayerInfo();
+            m_impl->rebuildAllTransforms();
+            return;
+        }
+    }
+}
+
 LayerHandle USDScene::addSubLayer(const char* filepath) {
     // Try to open existing, otherwise create new
     auto layer = SdfLayer::FindOrOpen(filepath);

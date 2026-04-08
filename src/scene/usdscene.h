@@ -132,6 +132,7 @@ public:
     LayerHandle sessionLayer() const;
     void clearSessionLayer();
     LayerHandle addSubLayer(const char* filepath);
+    void setLayerMuted(LayerHandle layer, bool muted);
     bool saveLayer(LayerHandle layer);
     bool saveAllDirty();
 

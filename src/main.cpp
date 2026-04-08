@@ -71,6 +71,7 @@ auto main(int argc, char* argv[]) -> int {
     auto sceneChanged = false;
     auto showSceneWindow = false;
     auto showPropertiesWindow = false;
+    auto showLayersWindow = false;
     auto showAABBs = false;
     auto showSelectedAABB = true;
     auto requestQuit = false;
@@ -95,6 +96,7 @@ auto main(int argc, char* argv[]) -> int {
         renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
         showSceneWindow = true;
         showPropertiesWindow = true;
+        showLayersWindow = true;
     };
     std::unordered_set<uint32_t> selectedAncestors;
 
@@ -185,6 +187,7 @@ auto main(int argc, char* argv[]) -> int {
             if (ImGui::BeginMenu("Windows")) {
                 ImGui::MenuItem("Scene", nullptr, &showSceneWindow, usdScene.isOpen());
                 ImGui::MenuItem("Properties", nullptr, &showPropertiesWindow, usdScene.isOpen());
+                ImGui::MenuItem("Layers", nullptr, &showLayersWindow, usdScene.isOpen());
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Debug")) {
@@ -195,61 +198,83 @@ auto main(int argc, char* argv[]) -> int {
             ImGui::EndMainMenuBar();
         }
 
-        if (showSceneWindow && usdScene.isOpen()) {
-            ImGui::Begin("USD Scene", &showSceneWindow);
-            // Layer stack
-            if (ImGui::CollapsingHeader("Layers", ImGuiTreeNodeFlags_DefaultOpen)) {
+        // Layers window
+        if (showLayersWindow && usdScene.isOpen()) {
+            ImGui::Begin("Layers", &showLayersWindow);
+
+            // Layer list in a bordered child region
+            float bottomHeight = ImGui::GetFrameHeightWithSpacing() * 3;
+            if (ImGui::BeginChild("##layerlist", {0, -bottomHeight}, ImGuiChildFlags_Borders)) {
                 for (const auto& layer : usdScene.layers()) {
                     auto isCurrent = (layer.handle == usdScene.currentEditTarget());
                     auto isSession = (layer.handle == usdScene.sessionLayer());
 
                     ImGui::PushID(layer.handle.index);
-                    if (ImGui::Selectable(layer.displayName.c_str(), isCurrent)) {
-                        usdScene.setEditTarget(layer.handle);
+                    if (!isSession && layer.role != SceneLayerRole::Root) {
+                        bool active = !layer.muted;
+                        if (ImGui::Checkbox("##mute", &active)) {
+                            usdScene.setLayerMuted(layer.handle, !active);
+                            sceneChanged = true;
+                        }
+                        ImGui::SameLine();
                     }
-                    ImGui::SameLine();
+                    std::string label = layer.displayName;
                     if (layer.dirty) {
-                        ImGui::TextColored({1, 0.7f, 0, 1}, "(dirty)");
+                        label += " (dirty)";
                     }
                     if (isSession) {
-                        ImGui::SameLine();
-                        ImGui::TextDisabled("[session]");
+                        label += " [session]";
                     }
                     if (layer.readOnly) {
-                        ImGui::SameLine();
-                        ImGui::TextDisabled("[read-only]");
+                        label += " [read-only]";
+                    }
+
+                    if (layer.muted) {
+                        ImGui::BeginDisabled();
+                    }
+                    if (ImGui::Selectable(label.c_str(), isCurrent)) {
+                        usdScene.setEditTarget(layer.handle);
+                    }
+                    if (layer.muted) {
+                        ImGui::EndDisabled();
                     }
                     ImGui::PopID();
                 }
+            }
+            ImGui::EndChild();
 
-                ImGui::Spacing();
-                static char newLayerPath[256] = "new_layer.usda";
-                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("Add").x - ImGui::GetStyle().ItemSpacing.x -
-                                        ImGui::GetStyle().FramePadding.x * 2);
-                ImGui::InputText("##newlayer", newLayerPath, sizeof(newLayerPath));
-                ImGui::SameLine();
-                if (ImGui::Button("Add")) {
-                    auto h = usdScene.addSubLayer(newLayerPath);
-                    if (h) {
-                        usdScene.setEditTarget(h);
-                        sceneChanged = true;
-                    }
-                }
-
-                float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-                if (ImGui::Button("Save All", {buttonWidth, 0})) {
-                    usdScene.saveAllDirty();
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Clear Session", {buttonWidth, 0})) {
-                    usdScene.clearSessionLayer();
+            // Add layer section
+            ImGui::Separator();
+            static char newLayerPath[256] = "new_layer.usda";
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("Add").x - ImGui::GetStyle().ItemSpacing.x -
+                                    ImGui::GetStyle().FramePadding.x * 2);
+            ImGui::InputText("##newlayer", newLayerPath, sizeof(newLayerPath));
+            ImGui::SameLine();
+            if (ImGui::Button("Add")) {
+                auto h = usdScene.addSubLayer(newLayerPath);
+                if (h) {
+                    usdScene.setEditTarget(h);
+                    sceneChanged = true;
                 }
             }
 
-            // Stats
+            float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+            if (ImGui::Button("Save All", {buttonWidth, 0})) {
+                usdScene.saveAllDirty();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Clear Session", {buttonWidth, 0})) {
+                usdScene.clearSessionLayer();
+            }
+            ImGui::End();
+        }
+
+        // Scene window
+        if (showSceneWindow && usdScene.isOpen()) {
+            ImGui::Begin("Scene", &showSceneWindow);
+
             ImGui::Text("Mesh instances: %zu", renderWorld.meshInstances.size());
 
-            // Selected prim info
             if (selectedPrim) {
                 const auto* rec = usdScene.getPrimRecord(selectedPrim);
                 if (rec) {
