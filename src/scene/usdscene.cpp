@@ -15,6 +15,7 @@
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usd/stage.h>
+#include <pxr/usd/usdGeom/gprim.h>
 #include <pxr/usd/usdGeom/imageable.h>
 #include <pxr/usd/usdGeom/mesh.h>
 #include <pxr/usd/usdGeom/metrics.h>
@@ -79,6 +80,7 @@ struct USDScene::Impl {
     USDChangeListener changeListener;
     uint32_t frame = 0;
     double metersPerUnit = 1.0;
+    bool zUp = false;
 
     // Prim cache
     std::vector<PrimRuntimeRecord> prims;
@@ -113,6 +115,7 @@ struct USDScene::Impl {
         rootLayer = stage->GetRootLayer();
         sessionLayerRef = stage->GetSessionLayer();
         metersPerUnit = UsdGeomGetStageMetersPerUnit(stage);
+        zUp = (UsdGeomGetStageUpAxis(stage) == UsdGeomTokens->z);
 
         changeListener.initialize(stage);
         rebuildLayerInfo();
@@ -311,12 +314,18 @@ struct USDScene::Impl {
             updateTransformForPrim(i);
         }
 
-        // Apply metersPerUnit scale to all world transforms
+        // Apply stage corrections to all world transforms
+        auto correction = glm::mat4(1.0f);
         if (metersPerUnit != 1.0) {
-            auto s = (float) metersPerUnit;
-            auto scaleMat = glm::scale(glm::mat4(1.0f), glm::vec3(s));
+            correction = glm::scale(correction, glm::vec3((float) metersPerUnit));
+        }
+        if (zUp) {
+            // Rotate -90 degrees around X to convert Z-up to Y-up
+            correction = glm::rotate(correction, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+        }
+        if (correction != glm::mat4(1.0f)) {
             for (size_t i = 1; i < transforms.size(); i++) {
-                transforms[i].world = scaleMat * transforms[i].world;
+                transforms[i].world = correction * transforms[i].world;
             }
         }
     }
@@ -487,6 +496,13 @@ struct USDScene::Impl {
         VtArray<GfVec3f> normals;
         geomMesh.GetNormalsAttr().Get(&normals, UsdTimeCode::Default());
 
+        // Get display colors if available
+        VtArray<GfVec3f> displayColors;
+        UsdGeomGprim gprim(prim);
+        if (gprim) {
+            gprim.GetDisplayColorAttr().Get(&displayColors, UsdTimeCode::Default());
+        }
+
         // Get UVs if available — try common primvar names
         VtArray<GfVec2f> uvs;
         UsdGeomPrimvarsAPI primvarsAPI(prim);
@@ -536,7 +552,18 @@ struct USDScene::Impl {
                         }
                     }
 
-                    vert.color = {1.0f, 1.0f, 1.0f};
+                    if (!displayColors.empty()) {
+                        int ci = (displayColors.size() == points.size()) ? indices[v] : (displayColors.size() == 1 ? 0 : fvIndices[v]);
+                        if (ci < (int) displayColors.size()) {
+                            auto& c = displayColors[ci];
+                            vert.color = {c[0], c[1], c[2]};
+                        } else {
+                            auto& c = displayColors[0];
+                            vert.color = {c[0], c[1], c[2]};
+                        }
+                    } else {
+                        vert.color = {1.0f, 1.0f, 1.0f};
+                    }
 
                     meshDesc.indices.push_back((uint32_t) meshDesc.vertices.size());
                     meshDesc.vertices.push_back(vert);
@@ -625,25 +652,46 @@ struct USDScene::Impl {
     }
 
     static MaterialHandle extractMaterial(const UsdPrim& prim, MaterialLibrary& matLib) {
-        UsdShadeMaterialBindingAPI bindingAPI(prim);
-        auto material = bindingAPI.ComputeBoundMaterial();
-        if (!material) {
-            return matLib.add({});
-        }
-
         MaterialDesc matDesc;
 
-        auto surfaceOutput = material.GetSurfaceOutput();
-        if (surfaceOutput) {
-            UsdShadeConnectableAPI source;
-            TfToken sourceName;
-            UsdShadeAttributeType sourceType;
-            if (surfaceOutput.GetConnectedSource(&source, &sourceName, &sourceType)) {
-                UsdShadeShader shader(source.GetPrim());
-                if (shader) {
-                    extractShaderTexture(shader, TfToken("diffuseColor"), matDesc);
+        // Try UsdPreviewSurface material binding first
+        UsdShadeMaterialBindingAPI bindingAPI(prim);
+        auto material = bindingAPI.ComputeBoundMaterial();
+        if (material) {
+            auto surfaceOutput = material.GetSurfaceOutput();
+            if (surfaceOutput) {
+                UsdShadeConnectableAPI source;
+                TfToken sourceName;
+                UsdShadeAttributeType sourceType;
+                if (surfaceOutput.GetConnectedSource(&source, &sourceName, &sourceType)) {
+                    UsdShadeShader shader(source.GetPrim());
+                    if (shader) {
+                        extractShaderTexture(shader, TfToken("diffuseColor"), matDesc);
+                    }
                 }
             }
+        }
+
+        // Fall back to displayColor primvar
+        if (matDesc.texPixels.empty() && matDesc.baseColorFactor == glm::vec4(1.0f)) {
+            UsdGeomGprim gprim(prim);
+            if (gprim) {
+                VtArray<GfVec3f> displayColors;
+                if (gprim.GetDisplayColorAttr().Get(&displayColors) && !displayColors.empty()) {
+                    auto c = displayColors[0];
+                    matDesc.baseColorFactor = glm::vec4(c[0], c[1], c[2], 1.0f);
+                }
+            }
+        }
+
+        // If no texture was loaded, generate a 1x1 white pixel.
+        // Color comes from vertex data (displayColor) or is simply white.
+        // The renderer's diagnostic fallback only fires if texPixels is empty,
+        // which means the MaterialDesc itself was never populated (null material).
+        if (matDesc.texPixels.empty()) {
+            matDesc.texWidth = 1;
+            matDesc.texHeight = 1;
+            matDesc.texPixels = {255, 255, 255, 255};
         }
 
         return matLib.add(std::move(matDesc));

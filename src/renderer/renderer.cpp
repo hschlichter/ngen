@@ -201,9 +201,11 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
     std::vector<uint8_t> fallbackPixels(static_cast<size_t>(64) * 64 * 4);
     for (uint32_t y = 0; y < 64; y++) {
         for (uint32_t x = 0; x < 64; x++) {
-            auto c = ((((x / 8) + (y / 8)) % 2) != 0u) ? (uint8_t) 255 : (uint8_t) 64;
+            bool pink = (((x / 8) + (y / 8)) % 2) != 0;
             auto i = (y * 64 + x) * 4;
-            fallbackPixels[i] = fallbackPixels[i + 1] = fallbackPixels[i + 2] = c;
+            fallbackPixels[i + 0] = pink ? 255 : 64;
+            fallbackPixels[i + 1] = pink ? 0 : 64;
+            fallbackPixels[i + 2] = pink ? 128 : 64;
             fallbackPixels[i + 3] = 255;
         }
     }
