@@ -2,7 +2,7 @@
 
 A modern 3D engine written in C++23 with a Vulkan rendering backend and OpenUSD scene system.
 
-![ngen](docs/engine_1.png)
+![ngen](engine_1.png)
 
 ## Features
 
