@@ -70,6 +70,7 @@ auto main(int argc, char* argv[]) -> int {
     renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
     auto sceneChanged = false;
     auto showSceneWindow = false;
+    auto showPropertiesWindow = false;
     auto showAABBs = false;
     auto showSelectedAABB = true;
     auto requestQuit = false;
@@ -93,6 +94,7 @@ auto main(int argc, char* argv[]) -> int {
         sceneQuery.rebuild(usdScene, meshLib);
         renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
         showSceneWindow = true;
+        showPropertiesWindow = true;
     };
     std::unordered_set<uint32_t> selectedAncestors;
 
@@ -182,6 +184,7 @@ auto main(int argc, char* argv[]) -> int {
             }
             if (ImGui::BeginMenu("Windows")) {
                 ImGui::MenuItem("Scene", nullptr, &showSceneWindow, usdScene.isOpen());
+                ImGui::MenuItem("Properties", nullptr, &showPropertiesWindow, usdScene.isOpen());
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Debug")) {
@@ -192,11 +195,8 @@ auto main(int argc, char* argv[]) -> int {
             ImGui::EndMainMenuBar();
         }
 
-        if (!showSceneWindow || !usdScene.isOpen()) {
-            return;
-        }
-
-        if (ImGui::Begin("USD Scene", &showSceneWindow)) {
+        if (showSceneWindow && usdScene.isOpen()) {
+            ImGui::Begin("USD Scene", &showSceneWindow);
             // Layer stack
             if (ImGui::CollapsingHeader("Layers", ImGuiTreeNodeFlags_DefaultOpen)) {
                 for (const auto& layer : usdScene.layers()) {
@@ -281,103 +281,106 @@ auto main(int argc, char* argv[]) -> int {
                 }
             }
 
-            // Properties
-            if (selectedPrim) {
-                const auto* rec = usdScene.getPrimRecord(selectedPrim);
-                if (rec && ImGui::CollapsingHeader("Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    // Prim info
-                    if (ImGui::TreeNodeEx("Prim Info", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        ImGui::Text("Path: %s", rec->path.c_str());
-                        ImGui::Text("Name: %s", rec->name.c_str());
+            ImGui::End();
+        }
 
-                        std::string typeStr;
-                        if (rec->flags & PrimFlagRenderable) {
-                            typeStr += "Mesh ";
-                        }
-                        if (rec->flags & PrimFlagLight) {
-                            typeStr += "Light ";
-                        }
-                        if (rec->flags & PrimFlagCamera) {
-                            typeStr += "Camera ";
-                        }
-                        if (rec->flags & PrimFlagXformable) {
-                            typeStr += "Xform ";
-                        }
-                        if (typeStr.empty()) {
-                            typeStr = "None";
-                        }
-                        ImGui::Text("Flags: %s", typeStr.c_str());
-                        ImGui::Text("Active: %s", rec->active ? "yes" : "no");
-                        ImGui::Text("Loaded: %s", rec->loaded ? "yes" : "no");
-                        ImGui::TreePop();
+        // Properties window
+        if (showPropertiesWindow) {
+            ImGui::Begin("Properties", &showPropertiesWindow);
+            const auto* rec = selectedPrim ? usdScene.getPrimRecord(selectedPrim) : nullptr;
+            if (rec) {
+                ImGui::Text("%s", rec->path.c_str());
+                ImGui::Separator();
+
+                // Prim info
+                if (ImGui::TreeNodeEx("Prim Info", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    std::string typeStr;
+                    if (rec->flags & PrimFlagRenderable) {
+                        typeStr += "Mesh ";
                     }
+                    if (rec->flags & PrimFlagLight) {
+                        typeStr += "Light ";
+                    }
+                    if (rec->flags & PrimFlagCamera) {
+                        typeStr += "Camera ";
+                    }
+                    if (rec->flags & PrimFlagXformable) {
+                        typeStr += "Xform ";
+                    }
+                    if (typeStr.empty()) {
+                        typeStr = "None";
+                    }
+                    ImGui::Text("Flags: %s", typeStr.c_str());
+                    ImGui::Text("Active: %s", rec->active ? "yes" : "no");
+                    ImGui::Text("Loaded: %s", rec->loaded ? "yes" : "no");
+                    ImGui::TreePop();
+                }
 
-                    // Transform
-                    const auto* xf = usdScene.getTransform(selectedPrim);
-                    if (xf && ImGui::TreeNodeEx("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        // World (read-only)
-                        auto worldPos = glm::vec3(xf->world[3]);
-                        ImGui::BeginDisabled();
-                        ImGui::DragFloat3("World Pos", &worldPos.x);
-                        ImGui::EndDisabled();
+                // Transform
+                const auto* xf = usdScene.getTransform(selectedPrim);
+                if (xf && ImGui::TreeNodeEx("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto worldPos = glm::vec3(xf->world[3]);
+                    ImGui::BeginDisabled();
+                    ImGui::DragFloat3("World Pos", &worldPos.x);
+                    ImGui::EndDisabled();
 
-                        ImGui::Separator();
+                    ImGui::Separator();
 
-                        // Local (editable)
-                        auto local = xf->local;
-                        bool changed = false;
-                        changed |= ImGui::DragFloat3("Position", &local.position.x, 0.1f);
-                        auto euler = glm::degrees(glm::eulerAngles(local.rotation));
-                        if (ImGui::DragFloat3("Rotation", &euler.x, 0.5f)) {
-                            local.rotation = glm::quat(glm::radians(euler));
-                            changed = true;
-                        }
-                        changed |= ImGui::DragFloat3("Scale", &local.scale.x, 0.01f);
-                        if (changed) {
-                            usdScene.setTransform(selectedPrim, local);
-                            sceneChanged = true;
+                    auto local = xf->local;
+                    bool changed = false;
+                    changed |= ImGui::DragFloat3("Position", &local.position.x, 0.1f);
+                    auto euler = glm::degrees(glm::eulerAngles(local.rotation));
+                    if (ImGui::DragFloat3("Rotation", &euler.x, 0.5f)) {
+                        local.rotation = glm::quat(glm::radians(euler));
+                        changed = true;
+                    }
+                    changed |= ImGui::DragFloat3("Scale", &local.scale.x, 0.01f);
+                    if (changed) {
+                        usdScene.setTransform(selectedPrim, local);
+                        sceneChanged = true;
+                    }
+                    ImGui::TreePop();
+                }
+
+                // Visibility
+                if (ImGui::TreeNodeEx("Visibility", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    bool visible = rec->visible;
+                    if (ImGui::Checkbox("Visible", &visible)) {
+                        usdScene.setVisibility(selectedPrim, visible);
+                        sceneChanged = true;
+                    }
+                    ImGui::TreePop();
+                }
+
+                // Bounds
+                const auto* bc = sceneQuery.bounds().get(selectedPrim);
+                if (bc && bc->valid && ImGui::TreeNodeEx("Bounds", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    ImGui::Text("Local min: %.2f, %.2f, %.2f", bc->localBounds.min.x, bc->localBounds.min.y, bc->localBounds.min.z);
+                    ImGui::Text("Local max: %.2f, %.2f, %.2f", bc->localBounds.max.x, bc->localBounds.max.y, bc->localBounds.max.z);
+                    ImGui::Text("World min: %.2f, %.2f, %.2f", bc->worldBounds.min.x, bc->worldBounds.min.y, bc->worldBounds.min.z);
+                    ImGui::Text("World max: %.2f, %.2f, %.2f", bc->worldBounds.max.x, bc->worldBounds.max.y, bc->worldBounds.max.z);
+                    ImGui::TreePop();
+                }
+
+                // Material
+                const auto* binding = usdScene.getAssetBinding(selectedPrim);
+                if (binding && binding->material) {
+                    const auto* mat = matLib.get(binding->material);
+                    if (mat && ImGui::TreeNodeEx("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        ImGui::ColorEdit4("Base Color", (float*) &mat->baseColorFactor, ImGuiColorEditFlags_NoInputs);
+                        if (mat->texWidth > 0) {
+                            ImGui::Text("Texture: %dx%d", mat->texWidth, mat->texHeight);
+                        } else {
+                            ImGui::TextDisabled("No texture");
                         }
                         ImGui::TreePop();
-                    }
-
-                    // Visibility
-                    if (ImGui::TreeNodeEx("Visibility", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        bool visible = rec->visible;
-                        if (ImGui::Checkbox("Visible", &visible)) {
-                            usdScene.setVisibility(selectedPrim, visible);
-                            sceneChanged = true;
-                        }
-                        ImGui::TreePop();
-                    }
-
-                    // Bounds
-                    const auto* bc = sceneQuery.bounds().get(selectedPrim);
-                    if (bc && bc->valid && ImGui::TreeNodeEx("Bounds", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        ImGui::Text("Local min: %.2f, %.2f, %.2f", bc->localBounds.min.x, bc->localBounds.min.y, bc->localBounds.min.z);
-                        ImGui::Text("Local max: %.2f, %.2f, %.2f", bc->localBounds.max.x, bc->localBounds.max.y, bc->localBounds.max.z);
-                        ImGui::Text("World min: %.2f, %.2f, %.2f", bc->worldBounds.min.x, bc->worldBounds.min.y, bc->worldBounds.min.z);
-                        ImGui::Text("World max: %.2f, %.2f, %.2f", bc->worldBounds.max.x, bc->worldBounds.max.y, bc->worldBounds.max.z);
-                        ImGui::TreePop();
-                    }
-
-                    // Material
-                    const auto* binding = usdScene.getAssetBinding(selectedPrim);
-                    if (binding && binding->material) {
-                        const auto* mat = matLib.get(binding->material);
-                        if (mat && ImGui::TreeNodeEx("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
-                            ImGui::ColorEdit4("Base Color", (float*) &mat->baseColorFactor, ImGuiColorEditFlags_NoInputs);
-                            if (mat->texWidth > 0) {
-                                ImGui::Text("Texture: %dx%d", mat->texWidth, mat->texHeight);
-                            } else {
-                                ImGui::TextDisabled("No texture");
-                            }
-                            ImGui::TreePop();
-                        }
                     }
                 }
+            } else {
+                ImGui::TextDisabled("No prim selected");
             }
+            ImGui::End();
         }
-        ImGui::End();
     });
 
     DebugDraw debugDraw;
