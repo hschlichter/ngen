@@ -132,6 +132,16 @@ auto main(int argc, char* argv[]) -> int {
             selectedPrim = isSelected ? PrimHandle{} : h;
         }
 
+        if (ImGui::BeginPopupContextItem()) {
+            if (ImGui::MenuItem("Copy")) {
+                ImGui::SetClipboardText(rec->name.c_str());
+            }
+            if (ImGui::MenuItem("Copy Full Path")) {
+                ImGui::SetClipboardText(rec->path.c_str());
+            }
+            ImGui::EndPopup();
+        }
+
         if (open && hasChildren) {
             auto child = usdScene.firstChild(h);
             while (child) {
