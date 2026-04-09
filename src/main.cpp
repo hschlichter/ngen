@@ -19,6 +19,22 @@
 #include <print>
 #include <unordered_set>
 
+struct SceneEditCommand {
+    enum class Type {
+        MuteLayer,
+        SetTransform,
+        SetVisibility,
+        AddSubLayer,
+        ClearSession
+    };
+    Type type;
+    LayerHandle layer;
+    PrimHandle prim;
+    Transform transform;
+    bool boolValue = false;
+    std::string stringValue;
+};
+
 auto main(int argc, char* argv[]) -> int {
     USDScene usdScene;
     USDRenderExtractor usdExtractor;
@@ -27,6 +43,15 @@ auto main(int argc, char* argv[]) -> int {
     MaterialLibrary matLib;
     RenderWorld renderWorld;
     PrimHandle selectedPrim;
+
+    // Background scene update state
+    JobFence sceneUpdateFence;
+    bool editingBlocked = false;
+    std::vector<SceneEditCommand> pendingEdits;
+    RenderWorld pendingRenderWorld;
+    MeshLibrary pendingMeshLib;
+    MaterialLibrary pendingMatLib;
+    SceneQuerySystem pendingSceneQuery;
 
     if (argc >= 2) {
         if (!usdScene.open(argv[1])) {
@@ -81,6 +106,11 @@ auto main(int argc, char* argv[]) -> int {
     std::string pendingOpenPath;
 
     auto openScene = [&](const char* path) {
+        if (editingBlocked) {
+            JobSystem::wait(sceneUpdateFence);
+            editingBlocked = false;
+        }
+        pendingEdits.clear();
         if (usdScene.isOpen()) {
             usdScene.close();
         }
@@ -204,102 +234,100 @@ auto main(int argc, char* argv[]) -> int {
         // Layers window
         if (showLayersWindow && usdScene.isOpen()) {
             ImGui::Begin("Layers", &showLayersWindow);
+            if (editingBlocked) {
+                ImGui::TextDisabled("Scene updating...");
+            } else {
+                float bottomHeight = ImGui::GetFrameHeightWithSpacing() * 3;
+                if (ImGui::BeginChild("##layerlist", {0, -bottomHeight}, ImGuiChildFlags_Borders)) {
+                    auto drawLayerRow = [&](const SceneLayerInfo& layer) {
+                        auto isCurrent = (layer.handle == usdScene.currentEditTarget());
+                        bool canMute = (layer.role == SceneLayerRole::Sublayer || layer.role == SceneLayerRole::Referenced);
+                        bool canEdit = (layer.role != SceneLayerRole::Referenced);
 
-            // Layer list in a bordered child region
-            float bottomHeight = ImGui::GetFrameHeightWithSpacing() * 3;
-            if (ImGui::BeginChild("##layerlist", {0, -bottomHeight}, ImGuiChildFlags_Borders)) {
-                auto drawLayerRow = [&](const SceneLayerInfo& layer) {
-                    auto isCurrent = (layer.handle == usdScene.currentEditTarget());
-                    bool canMute = (layer.role == SceneLayerRole::Sublayer || layer.role == SceneLayerRole::Referenced);
-                    bool canEdit = (layer.role != SceneLayerRole::Referenced);
+                        ImGui::PushID(layer.handle.index);
 
-                    ImGui::PushID(layer.handle.index);
-
-                    if (canMute) {
-                        bool active = !layer.muted;
-                        if (ImGui::Checkbox("##mute", &active)) {
-                            usdScene.setLayerMuted(layer.handle, !active);
+                        if (canMute) {
+                            bool active = !layer.muted;
+                            if (ImGui::Checkbox("##mute", &active)) {
+                                pendingEdits.push_back({.type = SceneEditCommand::Type::MuteLayer, .layer = layer.handle, .boolValue = !active});
+                            }
+                            ImGui::SameLine();
                         }
-                        ImGui::SameLine();
-                    }
 
-                    std::string label = layer.displayName;
-                    if (layer.dirty) {
-                        label += " (dirty)";
-                    }
-                    if (layer.readOnly) {
-                        label += " [read-only]";
-                    }
-
-                    if (layer.muted) {
-                        ImGui::BeginDisabled();
-                    }
-                    if (ImGui::Selectable(label.c_str(), isCurrent && canEdit)) {
-                        if (canEdit) {
-                            usdScene.setEditTarget(layer.handle);
+                        std::string label = layer.displayName;
+                        if (layer.dirty) {
+                            label += " (dirty)";
                         }
-                    }
-                    if (layer.muted) {
-                        ImGui::EndDisabled();
-                    }
-                    ImGui::PopID();
-                };
-
-                struct {
-                    SceneLayerRole role;
-                    const char* label;
-                } sections[] = {
-                    {SceneLayerRole::Session, "Session"},
-                    {SceneLayerRole::Root, "Root"},
-                    {SceneLayerRole::Sublayer, "Sublayers"},
-                    {SceneLayerRole::Referenced, "Referenced"},
-                };
-
-                for (const auto& [role, sectionName] : sections) {
-                    bool hasAny = false;
-                    for (const auto& layer : usdScene.layers()) {
-                        if (layer.role == role) {
-                            hasAny = true;
-                            break;
+                        if (layer.readOnly) {
+                            label += " [read-only]";
                         }
-                    }
-                    if (!hasAny) {
-                        continue;
-                    }
 
-                    if (ImGui::TreeNodeEx(sectionName, ImGuiTreeNodeFlags_DefaultOpen)) {
-                        for (const auto& layer : usdScene.layers()) {
-                            if (layer.role == role) {
-                                drawLayerRow(layer);
+                        if (layer.muted) {
+                            ImGui::BeginDisabled();
+                        }
+                        if (ImGui::Selectable(label.c_str(), isCurrent && canEdit)) {
+                            if (canEdit) {
+                                usdScene.setEditTarget(layer.handle);
                             }
                         }
-                        ImGui::TreePop();
+                        if (layer.muted) {
+                            ImGui::EndDisabled();
+                        }
+                        ImGui::PopID();
+                    };
+
+                    struct {
+                        SceneLayerRole role;
+                        const char* label;
+                    } sections[] = {
+                        {SceneLayerRole::Session, "Session"},
+                        {SceneLayerRole::Root, "Root"},
+                        {SceneLayerRole::Sublayer, "Sublayers"},
+                        {SceneLayerRole::Referenced, "Referenced"},
+                    };
+
+                    for (const auto& [role, sectionName] : sections) {
+                        bool hasAny = false;
+                        for (const auto& layer : usdScene.layers()) {
+                            if (layer.role == role) {
+                                hasAny = true;
+                                break;
+                            }
+                        }
+                        if (!hasAny) {
+                            continue;
+                        }
+
+                        if (ImGui::TreeNodeEx(sectionName, ImGuiTreeNodeFlags_DefaultOpen)) {
+                            for (const auto& layer : usdScene.layers()) {
+                                if (layer.role == role) {
+                                    drawLayerRow(layer);
+                                }
+                            }
+                            ImGui::TreePop();
+                        }
                     }
                 }
-            }
-            ImGui::EndChild();
+                ImGui::EndChild();
 
-            // Add layer section
-            ImGui::Separator();
-            static char newLayerPath[256] = "new_layer.usda";
-            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("Add").x - ImGui::GetStyle().ItemSpacing.x -
-                                    ImGui::GetStyle().FramePadding.x * 2);
-            ImGui::InputText("##newlayer", newLayerPath, sizeof(newLayerPath));
-            ImGui::SameLine();
-            if (ImGui::Button("Add")) {
-                auto h = usdScene.addSubLayer(newLayerPath);
-                if (h) {
-                    usdScene.setEditTarget(h);
+                ImGui::Separator();
+                static char newLayerPath[256] = "new_layer.usda";
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("Add").x - ImGui::GetStyle().ItemSpacing.x -
+                                        ImGui::GetStyle().FramePadding.x * 2);
+                ImGui::InputText("##newlayer", newLayerPath, sizeof(newLayerPath));
+                ImGui::SameLine();
+                if (ImGui::Button("Add")) {
+                    pendingEdits.push_back({.type = SceneEditCommand::Type::AddSubLayer, .stringValue = newLayerPath});
                 }
-            }
 
-            float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-            if (ImGui::Button("Save All", {buttonWidth, 0})) {
-                usdScene.saveAllDirty();
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Clear Session", {buttonWidth, 0})) {
-                usdScene.clearSessionLayer();
+                float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+                if (ImGui::Button("Save All", {buttonWidth, 0})) {
+                    usdScene.saveAllDirty();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Clear Session", {buttonWidth, 0})) {
+                    pendingEdits.push_back({.type = SceneEditCommand::Type::ClearSession});
+                }
             }
             ImGui::End();
         }
@@ -307,135 +335,134 @@ auto main(int argc, char* argv[]) -> int {
         // Scene window
         if (showSceneWindow && usdScene.isOpen()) {
             ImGui::Begin("Scene", &showSceneWindow);
+            if (editingBlocked) {
+                ImGui::TextDisabled("Scene updating...");
+            } else {
+                ImGui::Text("Mesh instances: %zu", renderWorld.meshInstances.size());
 
-            ImGui::Text("Mesh instances: %zu", renderWorld.meshInstances.size());
-
-            if (selectedPrim) {
-                const auto* rec = usdScene.getPrimRecord(selectedPrim);
-                if (rec) {
-                    ImGui::Separator();
-                    ImGui::Text("Selected: %s", rec->path.c_str());
-                }
-            }
-
-            // Build ancestor set for auto-expanding to selected prim
-            selectedAncestors.clear();
-            if (selectedPrim) {
-                auto cur = selectedPrim;
-                while (cur) {
-                    const auto* r = usdScene.getPrimRecord(cur);
-                    if (!r || !r->parent) {
-                        break;
-                    }
-                    cur = r->parent;
-                    selectedAncestors.insert(cur.index);
-                }
-            }
-
-            // Scene graph
-            if (ImGui::CollapsingHeader("Scene Graph", ImGuiTreeNodeFlags_DefaultOpen)) {
-                for (const auto& prim : usdScene.allPrims()) {
-                    if (!prim.parent) {
-                        drawSceneNode(prim.handle);
+                if (selectedPrim) {
+                    const auto* rec = usdScene.getPrimRecord(selectedPrim);
+                    if (rec) {
+                        ImGui::Separator();
+                        ImGui::Text("Selected: %s", rec->path.c_str());
                     }
                 }
-            }
 
+                selectedAncestors.clear();
+                if (selectedPrim) {
+                    auto cur = selectedPrim;
+                    while (cur) {
+                        const auto* r = usdScene.getPrimRecord(cur);
+                        if (!r || !r->parent) {
+                            break;
+                        }
+                        cur = r->parent;
+                        selectedAncestors.insert(cur.index);
+                    }
+                }
+
+                if (ImGui::CollapsingHeader("Scene Graph", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    for (const auto& prim : usdScene.allPrims()) {
+                        if (!prim.parent) {
+                            drawSceneNode(prim.handle);
+                        }
+                    }
+                }
+            }
             ImGui::End();
         }
 
         // Properties window
         if (showPropertiesWindow) {
             ImGui::Begin("Properties", &showPropertiesWindow);
-            const auto* rec = selectedPrim ? usdScene.getPrimRecord(selectedPrim) : nullptr;
-            if (rec) {
-                ImGui::Text("%s", rec->path.c_str());
-                ImGui::Separator();
-
-                // Prim info
-                if (ImGui::TreeNodeEx("Prim Info", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    std::string typeStr;
-                    if (rec->flags & PrimFlagRenderable) {
-                        typeStr += "Mesh ";
-                    }
-                    if (rec->flags & PrimFlagLight) {
-                        typeStr += "Light ";
-                    }
-                    if (rec->flags & PrimFlagCamera) {
-                        typeStr += "Camera ";
-                    }
-                    if (rec->flags & PrimFlagXformable) {
-                        typeStr += "Xform ";
-                    }
-                    if (typeStr.empty()) {
-                        typeStr = "None";
-                    }
-                    ImGui::Text("Flags: %s", typeStr.c_str());
-                    ImGui::Text("Active: %s", rec->active ? "yes" : "no");
-                    ImGui::Text("Loaded: %s", rec->loaded ? "yes" : "no");
-                    ImGui::TreePop();
-                }
-
-                // Transform
-                const auto* xf = usdScene.getTransform(selectedPrim);
-                if (xf && ImGui::TreeNodeEx("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    auto worldPos = glm::vec3(xf->world[3]);
-                    ImGui::BeginDisabled();
-                    ImGui::DragFloat3("World Pos", &worldPos.x);
-                    ImGui::EndDisabled();
-
+            if (editingBlocked) {
+                ImGui::TextDisabled("Scene updating...");
+            } else {
+                const auto* rec = selectedPrim ? usdScene.getPrimRecord(selectedPrim) : nullptr;
+                if (rec) {
+                    ImGui::Text("%s", rec->path.c_str());
                     ImGui::Separator();
 
-                    auto local = xf->local;
-                    bool changed = false;
-                    changed |= ImGui::DragFloat3("Position", &local.position.x, 0.1f);
-                    auto euler = glm::degrees(glm::eulerAngles(local.rotation));
-                    if (ImGui::DragFloat3("Rotation", &euler.x, 0.5f)) {
-                        local.rotation = glm::quat(glm::radians(euler));
-                        changed = true;
+                    if (ImGui::TreeNodeEx("Prim Info", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        std::string typeStr;
+                        if (rec->flags & PrimFlagRenderable) {
+                            typeStr += "Mesh ";
+                        }
+                        if (rec->flags & PrimFlagLight) {
+                            typeStr += "Light ";
+                        }
+                        if (rec->flags & PrimFlagCamera) {
+                            typeStr += "Camera ";
+                        }
+                        if (rec->flags & PrimFlagXformable) {
+                            typeStr += "Xform ";
+                        }
+                        if (typeStr.empty()) {
+                            typeStr = "None";
+                        }
+                        ImGui::Text("Flags: %s", typeStr.c_str());
+                        ImGui::Text("Active: %s", rec->active ? "yes" : "no");
+                        ImGui::Text("Loaded: %s", rec->loaded ? "yes" : "no");
+                        ImGui::TreePop();
                     }
-                    changed |= ImGui::DragFloat3("Scale", &local.scale.x, 0.01f);
-                    if (changed) {
-                        usdScene.setTransform(selectedPrim, local);
-                    }
-                    ImGui::TreePop();
-                }
 
-                // Visibility
-                if (ImGui::TreeNodeEx("Visibility", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    bool visible = rec->visible;
-                    if (ImGui::Checkbox("Visible", &visible)) {
-                        usdScene.setVisibility(selectedPrim, visible);
-                    }
-                    ImGui::TreePop();
-                }
+                    const auto* xf = usdScene.getTransform(selectedPrim);
+                    if (xf && ImGui::TreeNodeEx("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        auto worldPos = glm::vec3(xf->world[3]);
+                        ImGui::BeginDisabled();
+                        ImGui::DragFloat3("World Pos", &worldPos.x);
+                        ImGui::EndDisabled();
 
-                // Bounds
-                const auto* bc = sceneQuery.bounds().get(selectedPrim);
-                if (bc && bc->valid && ImGui::TreeNodeEx("Bounds", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    ImGui::Text("Local min: %.2f, %.2f, %.2f", bc->localBounds.min.x, bc->localBounds.min.y, bc->localBounds.min.z);
-                    ImGui::Text("Local max: %.2f, %.2f, %.2f", bc->localBounds.max.x, bc->localBounds.max.y, bc->localBounds.max.z);
-                    ImGui::Text("World min: %.2f, %.2f, %.2f", bc->worldBounds.min.x, bc->worldBounds.min.y, bc->worldBounds.min.z);
-                    ImGui::Text("World max: %.2f, %.2f, %.2f", bc->worldBounds.max.x, bc->worldBounds.max.y, bc->worldBounds.max.z);
-                    ImGui::TreePop();
-                }
+                        ImGui::Separator();
 
-                // Material
-                const auto* binding = usdScene.getAssetBinding(selectedPrim);
-                if (binding && binding->material) {
-                    const auto* mat = matLib.get(binding->material);
-                    if (mat && ImGui::TreeNodeEx("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        ImGui::ColorEdit4("Base Color", (float*) &mat->baseColorFactor, ImGuiColorEditFlags_NoInputs);
-                        if (mat->texWidth > 0) {
-                            ImGui::Text("Texture: %dx%d", mat->texWidth, mat->texHeight);
-                        } else {
-                            ImGui::TextDisabled("No texture");
+                        auto local = xf->local;
+                        bool changed = false;
+                        changed |= ImGui::DragFloat3("Position", &local.position.x, 0.1f);
+                        auto euler = glm::degrees(glm::eulerAngles(local.rotation));
+                        if (ImGui::DragFloat3("Rotation", &euler.x, 0.5f)) {
+                            local.rotation = glm::quat(glm::radians(euler));
+                            changed = true;
+                        }
+                        changed |= ImGui::DragFloat3("Scale", &local.scale.x, 0.01f);
+                        if (changed) {
+                            pendingEdits.push_back({.type = SceneEditCommand::Type::SetTransform, .prim = selectedPrim, .transform = local});
                         }
                         ImGui::TreePop();
                     }
+
+                    if (ImGui::TreeNodeEx("Visibility", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        bool visible = rec->visible;
+                        if (ImGui::Checkbox("Visible", &visible)) {
+                            pendingEdits.push_back({.type = SceneEditCommand::Type::SetVisibility, .prim = selectedPrim, .boolValue = visible});
+                        }
+                        ImGui::TreePop();
+                    }
+
+                    const auto* bc = sceneQuery.bounds().get(selectedPrim);
+                    if (bc && bc->valid && ImGui::TreeNodeEx("Bounds", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        ImGui::Text("Local min: %.2f, %.2f, %.2f", bc->localBounds.min.x, bc->localBounds.min.y, bc->localBounds.min.z);
+                        ImGui::Text("Local max: %.2f, %.2f, %.2f", bc->localBounds.max.x, bc->localBounds.max.y, bc->localBounds.max.z);
+                        ImGui::Text("World min: %.2f, %.2f, %.2f", bc->worldBounds.min.x, bc->worldBounds.min.y, bc->worldBounds.min.z);
+                        ImGui::Text("World max: %.2f, %.2f, %.2f", bc->worldBounds.max.x, bc->worldBounds.max.y, bc->worldBounds.max.z);
+                        ImGui::TreePop();
+                    }
+
+                    const auto* binding = usdScene.getAssetBinding(selectedPrim);
+                    if (binding && binding->material) {
+                        const auto* mat = matLib.get(binding->material);
+                        if (mat && ImGui::TreeNodeEx("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
+                            ImGui::ColorEdit4("Base Color", (float*) &mat->baseColorFactor, ImGuiColorEditFlags_NoInputs);
+                            if (mat->texWidth > 0) {
+                                ImGui::Text("Texture: %dx%d", mat->texWidth, mat->texHeight);
+                            } else {
+                                ImGui::TextDisabled("No texture");
+                            }
+                            ImGui::TreePop();
+                        }
+                    }
+                } else {
+                    ImGui::TextDisabled("No prim selected");
                 }
-            } else {
-                ImGui::TextDisabled("No prim selected");
             }
             ImGui::End();
         }
@@ -467,23 +494,80 @@ auto main(int argc, char* argv[]) -> int {
         }
 
         if (usdScene.isOpen()) {
-            usdScene.beginFrame();
-            usdScene.processChanges();
-            usdScene.endFrame();
+            // Phase 1: Swap in results from completed background job
+            if (editingBlocked && sceneUpdateFence.ready()) {
+                JobSystem::wait(sceneUpdateFence);
+                renderWorld = std::move(pendingRenderWorld);
+                meshLib = std::move(pendingMeshLib);
+                matLib = std::move(pendingMatLib);
+                sceneQuery = std::move(pendingSceneQuery);
+                renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
+                editingBlocked = false;
+            }
 
-            const auto& dirty = usdScene.dirtySet();
-            if (!dirty.primsResynced.empty()) {
-                // Structural change — full re-extract
-                usdScene.updateAssetBindings(meshLib, matLib);
-                usdExtractor.extract(usdScene, meshLib, renderWorld);
-                renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
-                sceneQuery.rebuild(usdScene, meshLib);
-            } else if (!dirty.transformDirty.empty() || !dirty.assetsDirty.empty()) {
-                // Property change — re-extract affected data
-                // TODO: incremental update needs prim→instance mapping
-                usdExtractor.extract(usdScene, meshLib, renderWorld);
-                renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
-                sceneQuery.rebuild(usdScene, meshLib);
+            // Phase 2: Kick off background job if edits are pending
+            if (!editingBlocked && !pendingEdits.empty()) {
+                editingBlocked = true;
+                pendingMeshLib = meshLib;
+                pendingMatLib = matLib;
+                auto edits = std::move(pendingEdits);
+                pendingEdits.clear();
+
+                sceneUpdateFence = JobSystem::submit([&usdScene,
+                                                      &usdExtractor,
+                                                      &pendingRenderWorld = pendingRenderWorld,
+                                                      &pendingMeshLib = pendingMeshLib,
+                                                      &pendingMatLib = pendingMatLib,
+                                                      &pendingSceneQuery = pendingSceneQuery,
+                                                      edits = std::move(edits)] {
+                    for (const auto& cmd : edits) {
+                        switch (cmd.type) {
+                            case SceneEditCommand::Type::MuteLayer:
+                                usdScene.setLayerMuted(cmd.layer, cmd.boolValue);
+                                break;
+                            case SceneEditCommand::Type::SetTransform:
+                                usdScene.setTransform(cmd.prim, cmd.transform);
+                                break;
+                            case SceneEditCommand::Type::SetVisibility:
+                                usdScene.setVisibility(cmd.prim, cmd.boolValue);
+                                break;
+                            case SceneEditCommand::Type::AddSubLayer:
+                                usdScene.addSubLayer(cmd.stringValue.c_str());
+                                break;
+                            case SceneEditCommand::Type::ClearSession:
+                                usdScene.clearSessionLayer();
+                                break;
+                        }
+                    }
+
+                    usdScene.beginFrame();
+                    usdScene.processChanges();
+                    usdScene.endFrame();
+
+                    const auto& dirty = usdScene.dirtySet();
+                    if (!dirty.primsResynced.empty()) {
+                        usdScene.updateAssetBindings(pendingMeshLib, pendingMatLib);
+                    }
+                    usdExtractor.extract(usdScene, pendingMeshLib, pendingRenderWorld);
+                    pendingSceneQuery.rebuild(usdScene, pendingMeshLib);
+                });
+            }
+
+            // Phase 3: Normal frame processing (no edits, not blocked)
+            if (!editingBlocked) {
+                usdScene.beginFrame();
+                usdScene.processChanges();
+                usdScene.endFrame();
+
+                const auto& dirty = usdScene.dirtySet();
+                if (!dirty.primsResynced.empty() || !dirty.transformDirty.empty() || !dirty.assetsDirty.empty()) {
+                    if (!dirty.primsResynced.empty()) {
+                        usdScene.updateAssetBindings(meshLib, matLib);
+                    }
+                    usdExtractor.extract(usdScene, meshLib, renderWorld);
+                    renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
+                    sceneQuery.rebuild(usdScene, meshLib);
+                }
             }
         }
 
@@ -554,7 +638,7 @@ auto main(int argc, char* argv[]) -> int {
                 }
             }
         }
-        if (selectedPrim && showSelectedAABB) {
+        if (selectedPrim && showSelectedAABB && !editingBlocked) {
             std::function<void(PrimHandle)> highlightSubtree = [&](PrimHandle h) {
                 const auto* bc = sceneQuery.bounds().get(h);
                 if (bc && bc->worldBounds.valid()) {
