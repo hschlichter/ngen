@@ -11,23 +11,32 @@ A modern 3D engine written in C++23 with a Vulkan rendering backend and OpenUSD 
 - **Transient Resource Management** — Pool-based GPU resource allocation with lifetime tracking
 - **RHI Abstraction** — Backend-agnostic GPU interface, currently implemented for Vulkan
 - **OpenUSD Scene System** — Stage loading, layer stack, composition, sublayer management
-- **Scene Graph UI** — Hierarchical tree view with selection, raycast picking, property editing
-- **Debug Renderer** — Line-based debug drawing (AABBs, selection highlights)
+- **Scene Graph UI** — Hierarchical tree view with selection, raycast picking, context menus
 - **Property Inspector** — Transform (local + world), visibility, bounds, material inspection
-- **Layer Management** — Add/load sublayers, mute/unmute, save, edit target selection
+- **Layer Management** — Full layer stack (session, root, sublayers, referenced), mute/unmute, add/save
+- **Debug Renderer** — Line-based debug drawing (AABBs, selection highlights)
+- **Job System** — Thread pool with fence-based synchronization for background work
+- **Background Scene Updates** — Edit commands queued and processed on worker threads
+- **Incremental GPU Upload** — Resource caching, transform-only fast path
 - **Material Support** — UsdPreviewSurface textures, displayColor primvars, constant colors
+- **Up Axis Handling** — Automatic Z-up to Y-up conversion
 - **FPS Camera** — WASD movement, right-click mouse look
 
 ## Architecture
 
 ```
 App (main.cpp)
- └─ Scene (scene/)        — USD loading, mesh/texture/material extraction
- └─ Renderer (renderer/)  — Frame graph, resource pool, GPU mesh management
-     ├─ FrameGraph        — Pass declaration, compilation, execution
-     ├─ ResourcePool      — Transient texture pooling
-     ├─ DebugRenderer     — Debug line pass (AABBs, highlights)
-     └─ RHI (rhi/)        — Abstract device, swapchain, command buffer interfaces
+ ├─ JobSystem (jobsystem/)   — Static thread pool, fence-based sync
+ ├─ Scene (scene/)           — USD loading, mesh/texture/material extraction
+ │   ├─ USDScene             — Stage, layers, prim cache, transforms, change notifications
+ │   ├─ USDRenderExtractor   — Extract render data from composed stage
+ │   ├─ SceneQuerySystem     — Spatial queries (raycast, frustum culling)
+ │   └─ BoundsCache          — AABB caching for prims
+ └─ Renderer (renderer/)     — Frame graph, resource pool, GPU mesh management
+     ├─ FrameGraph           — Pass declaration, compilation, execution
+     ├─ ResourcePool         — Transient texture pooling
+     ├─ DebugRenderer        — Debug line pass (AABBs, highlights)
+     └─ RHI (rhi/)           — Abstract device, swapchain, command buffer interfaces
          └─ Vulkan (rhi/vulkan/)  — Vulkan 1.3 backend
 ```
 
@@ -92,3 +101,16 @@ Or launch without arguments and use File > Open.
 | Shift | Sprint (3x speed) |
 | Right mouse button | Hold to look around |
 | Left click | Pick object |
+
+### Test Scenes
+
+Generated city scenes of varying sizes are included:
+
+```bash
+./_out/ngen models/city/city_1x1/city.usda    # 1 block
+./_out/ngen models/city/city_5x5/city.usda    # 25 blocks
+./_out/ngen models/city/city_10x10/city.usda  # 100 blocks
+./_out/ngen models/city/city_20x20/city.usda  # 400 blocks
+```
+
+Regenerate with `python3 models/city/generate_city.py`.

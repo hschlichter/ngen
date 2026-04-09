@@ -4,19 +4,18 @@
 
 When muting/unmuting layers, changing transforms, or toggling visibility, the engine stalls visibly because all work (USD recomposition, prim cache rebuild, mesh extraction, GPU upload) runs sequentially on the main thread. For large scenes (20x20 city = ~1800 prims), this is noticeable. The goal is to move the expensive CPU work to a background thread so the main thread keeps rendering the old scene, then swap in results when ready. During background processing, editing UI is disabled to prevent concurrent USD stage mutation.
 
-## Approach: Edit Command Queue + Background Worker
+## Approach: Edit Command Queue + JobSystem Fence
 
-All changes are contained in `src/main.cpp`. No other files need modification.
+Uses the existing `JobSystem` for background execution. A `JobFence` tracks completion.
 
 ### New State in main()
 
-```
-std::atomic<int> sceneUpdateState = 0;  // 0=Idle, 1=Processing, 2=ResultReady
+```cpp
+JobFence sceneUpdateFence;
 bool editingBlocked = false;
 std::vector<SceneEditCommand> pendingEdits;
-std::jthread backgroundThread;
 
-// Pending results (written by background thread, swapped on main)
+// Pending results (written by background job, swapped on main)
 RenderWorld pendingRenderWorld;
 MeshLibrary pendingMeshLib;
 MaterialLibrary pendingMatLib;
@@ -58,50 +57,50 @@ When `editingBlocked` is true:
 - AABB highlight subtree walk is skipped (reads USDScene hierarchy)
 - Transform drags, visibility checkboxes, mute toggles are all behind the guard
 
-### Step 3: Main loop three-phase update
+### Step 3: Main loop update
 
 ```
 Each frame:
-  if (state == ResultReady):
-      join background thread
+  // Check if background work finished
+  if (editingBlocked && sceneUpdateFence.ready()):
       swap pending → active (RenderWorld, MeshLib, MatLib, SceneQuery)
       renderer.uploadRenderWorld()  ← only GPU work on main thread
-      state = Idle
       editingBlocked = false
-  
-  if (state == Idle && !pendingEdits.empty()):
+
+  // Kick off background work if edits are pending
+  if (!editingBlocked && !pendingEdits.empty()):
       editingBlocked = true
-      state = Processing
       copy meshLib/matLib to pending copies
-      move edits to background thread
-      launch jthread:
+      move edits into lambda capture
+      sceneUpdateFence = JobSystem::submit([...] {
           execute deferred edits on USDScene
-          processChanges() (prim rebuild + transforms)
+          beginFrame() + processChanges() + endFrame()
           updateAssetBindings()
           extract() → pendingRenderWorld
           rebuild() → pendingSceneQuery
-          state = ResultReady
-  
-  if (state == Idle && pendingEdits.empty()):
-      run processChanges() synchronously (for external changes)
-      if dirty: extract + upload synchronously (rare path)
+      })
+
+  // Normal frame processing (no edits pending, not blocked)
+  if (!editingBlocked):
+      beginFrame() + processChanges() + endFrame()
+      if dirty: extract + upload synchronously (rare — external changes only)
 ```
 
 ### Step 4: Thread safety guarantees
 
-- **No concurrent access**: When background thread runs, main thread only renders using OLD data (active RenderWorld/MeshLib/etc). Draw callback shows placeholder, doesn't read USDScene.
-- **No locks needed**: The atomic state variable is the only synchronization. Writes to pendingEdits happen only on main thread (before launch). Reads happen only on background thread (after launch).
-- **Clean shutdown**: `std::jthread` joins automatically on destruction. Explicit join before `openScene` and before program exit.
+- **No concurrent access**: When background job runs, main thread only renders using OLD data. Draw callback shows placeholder, doesn't read USDScene.
+- **No locks needed**: `pendingEdits` is written only on main thread, read only inside the job (after move). The fence is the only synchronization.
+- **Clean shutdown**: `JobSystem::shutdown()` waits for all jobs. The `openScene` lambda calls `JobSystem::wait(sceneUpdateFence)` before loading a new scene.
 
 ### Step 5: Rapid edit batching
 
-If user makes multiple edits while background is Processing, commands accumulate in `pendingEdits`. On next Idle transition, they're all batched into one background pass. Natural debouncing.
+If user makes multiple edits while a background job is running, commands accumulate in `pendingEdits`. On next frame after the fence is ready and results are swapped, the new batch is submitted. Natural debouncing.
 
 ## Files Modified
 
 | File | Changes |
 |------|---------|
-| `src/main.cpp` | Add SceneEditCommand struct, threading state, edit queue. Modify draw callback to queue edits + show placeholder. Modify main loop to use 3-phase background update. Guard AABB highlight and raycast. |
+| `src/main.cpp` | Add SceneEditCommand struct, JobFence + editingBlocked state, pendingEdits queue. Modify draw callback to queue edits + show placeholder. Modify main loop to submit/poll/swap. Guard AABB highlight. |
 
 ## Verification
 
@@ -110,7 +109,7 @@ If user makes multiple edits while background is Processing, commands accumulate
 3. Unmute — buildings reappear smoothly
 4. Open Properties, drag a transform — should queue and apply without stutter
 5. Toggle visibility checkbox — same smooth behavior
-6. While Processing, verify all edit controls are greyed out / disabled
+6. While processing, verify all edit controls are greyed out / disabled
 7. Rapid-click mute/unmute several times — should batch and not crash
 8. Open `models/Kitchen_set/Kitchen_set.usd`, repeat mute test with a referenced layer
-9. File > Open a different scene while background work is in progress — should join thread first, then open cleanly
+9. File > Open a different scene while background work is in progress — should wait for job, then open cleanly
