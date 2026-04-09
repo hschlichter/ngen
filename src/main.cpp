@@ -68,7 +68,6 @@ auto main(int argc, char* argv[]) -> int {
         return 1;
     }
     renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
-    auto sceneChanged = false;
     auto showSceneWindow = false;
     auto showPropertiesWindow = false;
     auto showLayersWindow = false;
@@ -205,25 +204,24 @@ auto main(int argc, char* argv[]) -> int {
             // Layer list in a bordered child region
             float bottomHeight = ImGui::GetFrameHeightWithSpacing() * 3;
             if (ImGui::BeginChild("##layerlist", {0, -bottomHeight}, ImGuiChildFlags_Borders)) {
-                for (const auto& layer : usdScene.layers()) {
+                auto drawLayerRow = [&](const SceneLayerInfo& layer) {
                     auto isCurrent = (layer.handle == usdScene.currentEditTarget());
-                    auto isSession = (layer.handle == usdScene.sessionLayer());
+                    bool canMute = (layer.role == SceneLayerRole::Sublayer || layer.role == SceneLayerRole::Referenced);
+                    bool canEdit = (layer.role != SceneLayerRole::Referenced);
 
                     ImGui::PushID(layer.handle.index);
-                    if (!isSession && layer.role != SceneLayerRole::Root) {
+
+                    if (canMute) {
                         bool active = !layer.muted;
                         if (ImGui::Checkbox("##mute", &active)) {
                             usdScene.setLayerMuted(layer.handle, !active);
-                            sceneChanged = true;
                         }
                         ImGui::SameLine();
                     }
+
                     std::string label = layer.displayName;
                     if (layer.dirty) {
                         label += " (dirty)";
-                    }
-                    if (isSession) {
-                        label += " [session]";
                     }
                     if (layer.readOnly) {
                         label += " [read-only]";
@@ -232,13 +230,47 @@ auto main(int argc, char* argv[]) -> int {
                     if (layer.muted) {
                         ImGui::BeginDisabled();
                     }
-                    if (ImGui::Selectable(label.c_str(), isCurrent)) {
-                        usdScene.setEditTarget(layer.handle);
+                    if (ImGui::Selectable(label.c_str(), isCurrent && canEdit)) {
+                        if (canEdit) {
+                            usdScene.setEditTarget(layer.handle);
+                        }
                     }
                     if (layer.muted) {
                         ImGui::EndDisabled();
                     }
                     ImGui::PopID();
+                };
+
+                struct {
+                    SceneLayerRole role;
+                    const char* label;
+                } sections[] = {
+                    {SceneLayerRole::Session, "Session"},
+                    {SceneLayerRole::Root, "Root"},
+                    {SceneLayerRole::Sublayer, "Sublayers"},
+                    {SceneLayerRole::Referenced, "Referenced"},
+                };
+
+                for (const auto& [role, sectionName] : sections) {
+                    bool hasAny = false;
+                    for (const auto& layer : usdScene.layers()) {
+                        if (layer.role == role) {
+                            hasAny = true;
+                            break;
+                        }
+                    }
+                    if (!hasAny) {
+                        continue;
+                    }
+
+                    if (ImGui::TreeNodeEx(sectionName, ImGuiTreeNodeFlags_DefaultOpen)) {
+                        for (const auto& layer : usdScene.layers()) {
+                            if (layer.role == role) {
+                                drawLayerRow(layer);
+                            }
+                        }
+                        ImGui::TreePop();
+                    }
                 }
             }
             ImGui::EndChild();
@@ -254,7 +286,6 @@ auto main(int argc, char* argv[]) -> int {
                 auto h = usdScene.addSubLayer(newLayerPath);
                 if (h) {
                     usdScene.setEditTarget(h);
-                    sceneChanged = true;
                 }
             }
 
@@ -362,7 +393,6 @@ auto main(int argc, char* argv[]) -> int {
                     changed |= ImGui::DragFloat3("Scale", &local.scale.x, 0.01f);
                     if (changed) {
                         usdScene.setTransform(selectedPrim, local);
-                        sceneChanged = true;
                     }
                     ImGui::TreePop();
                 }
@@ -372,7 +402,6 @@ auto main(int argc, char* argv[]) -> int {
                     bool visible = rec->visible;
                     if (ImGui::Checkbox("Visible", &visible)) {
                         usdScene.setVisibility(selectedPrim, visible);
-                        sceneChanged = true;
                     }
                     ImGui::TreePop();
                 }
@@ -434,14 +463,24 @@ auto main(int argc, char* argv[]) -> int {
         }
 
         if (usdScene.isOpen()) {
+            usdScene.beginFrame();
+            usdScene.processChanges();
             usdScene.endFrame();
-        }
 
-        if (sceneChanged && usdScene.isOpen()) {
-            usdExtractor.extract(usdScene, meshLib, renderWorld);
-            renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
-            sceneQuery.rebuild(usdScene, meshLib);
-            sceneChanged = false;
+            const auto& dirty = usdScene.dirtySet();
+            if (!dirty.primsResynced.empty()) {
+                // Structural change — full re-extract
+                usdScene.updateAssetBindings(meshLib, matLib);
+                usdExtractor.extract(usdScene, meshLib, renderWorld);
+                renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
+                sceneQuery.rebuild(usdScene, meshLib);
+            } else if (!dirty.transformDirty.empty() || !dirty.assetsDirty.empty()) {
+                // Property change — re-extract affected data
+                // TODO: incremental update needs prim→instance mapping
+                usdExtractor.extract(usdScene, meshLib, renderWorld);
+                renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
+                sceneQuery.rebuild(usdScene, meshLib);
+            }
         }
 
         SDL_Event ev;

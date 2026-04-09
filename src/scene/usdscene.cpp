@@ -29,7 +29,9 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <map>
 #include <mutex>
+#include <set>
 #include <unordered_map>
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -82,6 +84,9 @@ struct USDScene::Impl {
     double metersPerUnit = 1.0;
     bool zUp = false;
 
+    // Muted layer handles (kept alive so FindOrOpen works after muting)
+    std::map<std::string, SdfLayerRefPtr> mutedLayerRefs;
+
     // Prim cache
     std::vector<PrimRuntimeRecord> prims;
     std::unordered_map<std::string, uint32_t> pathToIndex;
@@ -102,6 +107,7 @@ struct USDScene::Impl {
     std::vector<SdfPath> scratchResynced;
     std::vector<SdfPath> scratchChanged;
     SceneDirtySet dirtySet;
+    bool needsResync = false;
 
     // ── Stage management ─────────────────────────────────────────────────
 
@@ -154,53 +160,58 @@ struct USDScene::Impl {
         }
 
         layerInfos.clear();
+        std::set<std::string> seen;
         uint32_t idx = 1;
 
-        // Session layer
-        {
+        auto addLayer = [&](const SdfLayerHandle& layer, SceneLayerRole role, const std::string& name) {
+            if (!layer || seen.count(layer->GetIdentifier())) {
+                return;
+            }
+            seen.insert(layer->GetIdentifier());
+
             SceneLayerInfo info;
             info.handle = {.index = idx++};
-            info.identifier = sessionLayerRef->GetIdentifier();
-            info.displayName = "Session";
-            info.role = SceneLayerRole::Session;
-            info.dirty = sessionLayerRef->IsDirty();
-            info.readOnly = false;
-            info.muted = false;
+            info.identifier = layer->GetIdentifier();
+            info.displayName = name.empty() ? (layer->GetDisplayName().empty() ? layer->GetIdentifier() : layer->GetDisplayName()) : name;
+            info.role = role;
+            info.dirty = layer->IsDirty();
+            info.readOnly = layer->GetFileFormat()->IsPackage();
+            info.muted = stage->IsLayerMuted(layer->GetIdentifier());
             layerInfos.push_back(std::move(info));
-            sessionLayerHandle = layerInfos.back().handle;
-        }
+        };
 
-        // Root layer
-        LayerHandle rootHandle;
-        {
-            SceneLayerInfo info;
-            info.handle = {.index = idx++};
-            info.identifier = rootLayer->GetIdentifier();
-            info.displayName = rootLayer->GetDisplayName().empty() ? rootLayer->GetIdentifier() : rootLayer->GetDisplayName();
-            info.role = SceneLayerRole::Root;
-            info.dirty = rootLayer->IsDirty();
-            info.readOnly = rootLayer->GetFileFormat()->IsPackage();
-            info.muted = false;
-            layerInfos.push_back(std::move(info));
-            rootHandle = layerInfos.back().handle;
-        }
+        // 1. Session layer
+        addLayer(sessionLayerRef, SceneLayerRole::Session, "Session");
+        sessionLayerHandle = layerInfos.back().handle;
 
-        // Sublayers of root
+        // 2. Root layer
+        addLayer(rootLayer, SceneLayerRole::Root, "");
+        LayerHandle rootHandle = layerInfos.back().handle;
+
+        // 3. Sublayers of root
         for (const auto& subPath : rootLayer->GetSubLayerPaths()) {
             auto subLayer = SdfLayer::FindOrOpen(subPath);
-            if (!subLayer) {
+            if (subLayer) {
+                addLayer(subLayer, SceneLayerRole::Sublayer, "");
+            }
+        }
+
+        // 4. Referenced/payloaded layers (used + muted, sorted by identifier for stability)
+        std::map<std::string, SdfLayerHandle> referencedLayers;
+        for (const auto& layer : stage->GetUsedLayers()) {
+            referencedLayers[layer->GetIdentifier()] = layer;
+        }
+        for (const auto& mutedId : stage->GetMutedLayers()) {
+            if (referencedLayers.count(mutedId)) {
                 continue;
             }
-
-            SceneLayerInfo info;
-            info.handle = {.index = idx++};
-            info.identifier = subLayer->GetIdentifier();
-            info.displayName = subLayer->GetDisplayName().empty() ? subLayer->GetIdentifier() : subLayer->GetDisplayName();
-            info.role = SceneLayerRole::Unknown;
-            info.dirty = subLayer->IsDirty();
-            info.readOnly = subLayer->GetFileFormat()->IsPackage();
-            info.muted = stage->IsLayerMuted(subLayer->GetIdentifier());
-            layerInfos.push_back(std::move(info));
+            auto layer = SdfLayer::FindOrOpen(mutedId);
+            if (layer) {
+                referencedLayers[layer->GetIdentifier()] = layer;
+            }
+        }
+        for (const auto& [id, layer] : referencedLayers) {
+            addLayer(layer, SceneLayerRole::Referenced, "");
         }
 
         // Restore previous edit target, or fall back to root
@@ -413,15 +424,19 @@ struct USDScene::Impl {
         dirtySet.clear();
         changeListener.drain(scratchResynced, scratchChanged);
 
-        if (scratchResynced.empty() && scratchChanged.empty()) {
+        bool resync = needsResync || !scratchResynced.empty();
+        needsResync = false;
+
+        if (resync) {
+            rebuildPrimCache();
+            rebuildAllTransforms();
+            dirtySet.primsResynced.push_back({.index = 0}); // sentinel: full resync
+            scratchResynced.clear();
+            scratchChanged.clear();
             return;
         }
 
-        // Structural resyncs — rebuild cache for now
-        if (!scratchResynced.empty()) {
-            rebuildPrimCache();
-            rebuildAllTransforms();
-            // Everything is dirty after a full rebuild
+        if (scratchChanged.empty()) {
             return;
         }
 
@@ -754,6 +769,10 @@ void USDScene::endFrame() {
     m_impl->refreshLayerDirtyState();
 }
 
+const SceneDirtySet& USDScene::dirtySet() const {
+    return m_impl->dirtySet;
+}
+
 uint32_t USDScene::frameIndex() const {
     return m_impl->frame;
 }
@@ -844,12 +863,17 @@ void USDScene::setLayerMuted(LayerHandle layer, bool muted) {
     for (const auto& info : m_impl->layerInfos) {
         if (info.handle == layer) {
             if (muted) {
+                auto layerRef = SdfLayer::FindOrOpen(info.identifier);
+                if (layerRef) {
+                    m_impl->mutedLayerRefs[info.identifier] = layerRef;
+                }
                 m_impl->stage->MuteLayer(info.identifier);
             } else {
                 m_impl->stage->UnmuteLayer(info.identifier);
+                m_impl->mutedLayerRefs.erase(info.identifier);
             }
             m_impl->rebuildLayerInfo();
-            m_impl->rebuildAllTransforms();
+            m_impl->needsResync = true;
             return;
         }
     }
@@ -867,8 +891,7 @@ LayerHandle USDScene::addSubLayer(const char* filepath) {
 
     m_impl->rootLayer->GetSubLayerPaths().push_back(layer->GetIdentifier());
     m_impl->rebuildLayerInfo();
-    m_impl->rebuildPrimCache();
-    m_impl->rebuildAllTransforms();
+    m_impl->needsResync = true;
 
     // Return handle of newly added layer (last in list)
     if (!m_impl->layerInfos.empty()) {

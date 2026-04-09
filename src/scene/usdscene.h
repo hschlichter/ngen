@@ -12,11 +12,8 @@
 
 enum class SceneLayerRole : uint8_t {
     Root,
-    BaseWorld,
-    Gameplay,
-    Lighting,
-    Procedural,
-    UserWorking,
+    Sublayer,
+    Referenced,
     Session,
     Unknown,
 };
@@ -107,6 +104,7 @@ public:
     void beginFrame();
     void processChanges();
     void endFrame();
+    const SceneDirtySet& dirtySet() const;
 
     uint32_t frameIndex() const;
 
