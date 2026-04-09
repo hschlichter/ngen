@@ -1,5 +1,6 @@
 #include "camera.h"
 #include "debugdraw.h"
+#include "jobsystem.h"
 #include "material.h"
 #include "mesh.h"
 #include "renderer.h"
@@ -55,6 +56,9 @@ auto main(int argc, char* argv[]) -> int {
         return 1;
     }
     SDL_DestroyProperties(windowProps);
+
+    // Job system
+    JobSystem::init();
 
     // RHI device
     RhiDeviceVulkan rhiDevice;
@@ -568,6 +572,7 @@ auto main(int argc, char* argv[]) -> int {
         renderer.render(cam, window, debugDraw.data());
     }
 
+    JobSystem::shutdown();
     renderer.destroy();
     rhiDevice.destroy();
     SDL_DestroyWindow(window);
