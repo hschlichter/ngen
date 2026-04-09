@@ -48,6 +48,29 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
         uniformBuffersMapped[i] = device->mapBuffer(uniformBuffers[i]);
     }
 
+    // Shared sampler and fallback texture
+    textureSampler = device->createSampler({});
+
+    std::vector<uint8_t> fallbackPixels(static_cast<size_t>(64) * 64 * 4);
+    for (uint32_t y = 0; y < 64; y++) {
+        for (uint32_t x = 0; x < 64; x++) {
+            bool pink = (((x / 8) + (y / 8)) % 2) != 0;
+            auto i = (y * 64 + x) * 4;
+            fallbackPixels[i + 0] = pink ? 255 : 64;
+            fallbackPixels[i + 1] = pink ? 0 : 64;
+            fallbackPixels[i + 2] = pink ? 128 : 64;
+            fallbackPixels[i + 3] = 255;
+        }
+    }
+    RhiTextureDesc fallbackDesc = {
+        .width = 64,
+        .height = 64,
+        .format = R8G8B8A8_SRGB,
+        .initialData = fallbackPixels.data(),
+        .initialDataSize = 64 * 64 * 4,
+    };
+    fallbackTexture = device->createTexture(fallbackDesc);
+
     // Forward pass pipeline
     vertShader = device->createShaderModule("shaders/triangle.vert.spv");
     fragShader = device->createShaderModule("shaders/triangle.frag.spv");
@@ -168,9 +191,113 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
     using enum RhiDescriptorType;
     using enum RhiMemoryUsage;
 
+    // Check if anything actually changed by comparing instance data
+    bool instancesChanged = (gpuInstances.size() != world.meshInstances.size());
+    if (!instancesChanged) {
+        for (size_t m = 0; m < world.meshInstances.size(); m++) {
+            const auto& inst = world.meshInstances[m];
+            if (gpuInstances[m].mesh != inst.mesh || gpuInstances[m].material != inst.material || gpuInstances[m].transform != inst.worldTransform) {
+                instancesChanged = true;
+                break;
+            }
+        }
+    }
+
+    if (!instancesChanged) {
+        return;
+    }
+
+    // Check if we can do a transform-only update (no mesh/material changes, same count)
+    bool geometryChanged = (gpuInstances.size() != world.meshInstances.size());
+    if (!geometryChanged) {
+        for (size_t m = 0; m < world.meshInstances.size(); m++) {
+            if (gpuInstances[m].mesh != world.meshInstances[m].mesh || gpuInstances[m].material != world.meshInstances[m].material) {
+                geometryChanged = true;
+                break;
+            }
+        }
+    }
+
+    // Update instance list
+    gpuInstances.resize(world.meshInstances.size());
+    for (size_t m = 0; m < world.meshInstances.size(); m++) {
+        const auto& inst = world.meshInstances[m];
+        gpuInstances[m] = {.mesh = inst.mesh, .material = inst.material, .transform = inst.worldTransform};
+    }
+
+    // Transform-only update: no GPU resources need changing
+    if (!geometryChanged) {
+        return;
+    }
+
+    // Full geometry update: need to rebuild GPU resources
     device->waitIdle();
 
-    // Clean up previous upload
+    // Destroy old caches
+    for (auto& [idx, cached] : meshCache) {
+        device->destroyBuffer(cached.vertexBuffer);
+        device->destroyBuffer(cached.indexBuffer);
+    }
+    meshCache.clear();
+    for (auto& [idx, cached] : textureCache) {
+        device->destroyTexture(cached.texture);
+    }
+    textureCache.clear();
+
+    // Upload unique meshes and textures
+    for (const auto& inst : world.meshInstances) {
+        // Mesh
+        if (inst.mesh && !meshCache.contains(inst.mesh.index)) {
+            const auto* meshData = meshLib.get(inst.mesh);
+            if (meshData && !meshData->vertices.empty()) {
+                CachedMesh cached;
+                cached.indexCount = (uint32_t) meshData->indices.size();
+
+                auto vbSize = (uint64_t) (meshData->vertices.size() * sizeof(Vertex));
+                RhiBufferDesc stagingDesc = {.size = vbSize, .usage = RhiBufferUsage::TransferSrc, .memory = CpuToGpu};
+                auto* vStaging = device->createBuffer(stagingDesc);
+                auto* data = device->mapBuffer(vStaging);
+                memcpy(data, meshData->vertices.data(), vbSize);
+                device->unmapBuffer(vStaging);
+
+                RhiBufferDesc vbDesc = {.size = vbSize, .usage = RhiBufferUsage::TransferDst | RhiBufferUsage::Vertex, .memory = GpuOnly};
+                cached.vertexBuffer = device->createBuffer(vbDesc);
+                device->copyBuffer(vStaging, cached.vertexBuffer, vbSize);
+                device->destroyBuffer(vStaging);
+
+                auto ibSize = (uint64_t) (meshData->indices.size() * sizeof(uint32_t));
+                stagingDesc.size = ibSize;
+                auto* iStaging = device->createBuffer(stagingDesc);
+                data = device->mapBuffer(iStaging);
+                memcpy(data, meshData->indices.data(), ibSize);
+                device->unmapBuffer(iStaging);
+
+                RhiBufferDesc ibDesc = {.size = ibSize, .usage = RhiBufferUsage::TransferDst | RhiBufferUsage::Index, .memory = GpuOnly};
+                cached.indexBuffer = device->createBuffer(ibDesc);
+                device->copyBuffer(iStaging, cached.indexBuffer, ibSize);
+                device->destroyBuffer(iStaging);
+
+                meshCache[inst.mesh.index] = cached;
+            }
+        }
+
+        // Texture
+        if (inst.material && !textureCache.contains(inst.material.index)) {
+            const auto* matData = matLib.get(inst.material);
+            if (matData && !matData->texPixels.empty()) {
+                RhiTextureDesc texDesc = {
+                    .width = (uint32_t) matData->texWidth,
+                    .height = (uint32_t) matData->texHeight,
+                    .format = RhiFormat::R8G8B8A8_SRGB,
+                    .initialData = matData->texPixels.data(),
+                    .initialDataSize = (uint64_t) (matData->texWidth * matData->texHeight * 4),
+                };
+                textureCache[inst.material.index] = {.texture = device->createTexture(texDesc)};
+            }
+        }
+    }
+
+    // Rebuild descriptor sets
     for (auto* ds : descriptorSets) {
         delete ds;
     }
@@ -179,116 +306,14 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         device->destroyDescriptorPool(descriptorPool);
         descriptorPool = nullptr;
     }
-    for (auto& gm : gpuMeshes) {
-        if (gm.vertexBuffer) {
-            device->destroyBuffer(gm.vertexBuffer);
-        }
-        if (gm.indexBuffer) {
-            device->destroyBuffer(gm.indexBuffer);
-        }
-        if (gm.texture) {
-            device->destroyTexture(gm.texture);
-        }
-    }
-    if (textureSampler) {
-        device->destroySampler(textureSampler);
-    }
 
-    gpuMeshes.resize(world.meshInstances.size());
-
-    textureSampler = device->createSampler({});
-
-    std::vector<uint8_t> fallbackPixels(static_cast<size_t>(64) * 64 * 4);
-    for (uint32_t y = 0; y < 64; y++) {
-        for (uint32_t x = 0; x < 64; x++) {
-            bool pink = (((x / 8) + (y / 8)) % 2) != 0;
-            auto i = (y * 64 + x) * 4;
-            fallbackPixels[i + 0] = pink ? 255 : 64;
-            fallbackPixels[i + 1] = pink ? 0 : 64;
-            fallbackPixels[i + 2] = pink ? 128 : 64;
-            fallbackPixels[i + 3] = 255;
-        }
-    }
-
-    for (size_t m = 0; m < world.meshInstances.size(); m++) {
-        const auto& inst = world.meshInstances[m];
-        const auto* meshData = meshLib.get(inst.mesh);
-        const auto* matData = matLib.get(inst.material);
-        auto& gm = gpuMeshes[m];
-        gm.transform = inst.worldTransform;
-        gm.indexCount = meshData ? (uint32_t) meshData->indices.size() : 0;
-
-        if (!meshData) {
-            continue;
-        }
-
-        // Vertex buffer
-        auto vbSize = (uint64_t) (meshData->vertices.size() * sizeof(Vertex));
-        RhiBufferDesc stagingDesc = {
-            .size = vbSize,
-            .usage = RhiBufferUsage::TransferSrc,
-            .memory = CpuToGpu,
-        };
-        auto* vStaging = device->createBuffer(stagingDesc);
-        auto* data = device->mapBuffer(vStaging);
-        memcpy(data, meshData->vertices.data(), vbSize);
-        device->unmapBuffer(vStaging);
-
-        RhiBufferDesc vbDesc = {
-            .size = vbSize,
-            .usage = RhiBufferUsage::TransferDst | RhiBufferUsage::Vertex,
-            .memory = GpuOnly,
-        };
-        gm.vertexBuffer = device->createBuffer(vbDesc);
-        device->copyBuffer(vStaging, gm.vertexBuffer, vbSize);
-        device->destroyBuffer(vStaging);
-
-        // Index buffer
-        auto ibSize = (uint64_t) (meshData->indices.size() * sizeof(uint32_t));
-        stagingDesc.size = ibSize;
-        auto* iStaging = device->createBuffer(stagingDesc);
-        data = device->mapBuffer(iStaging);
-        memcpy(data, meshData->indices.data(), ibSize);
-        device->unmapBuffer(iStaging);
-
-        RhiBufferDesc ibDesc = {
-            .size = ibSize,
-            .usage = RhiBufferUsage::TransferDst | RhiBufferUsage::Index,
-            .memory = GpuOnly,
-        };
-        gm.indexBuffer = device->createBuffer(ibDesc);
-        device->copyBuffer(iStaging, gm.indexBuffer, ibSize);
-        device->destroyBuffer(iStaging);
-
-        // Texture
-        uint32_t tw = 0;
-        uint32_t th = 0;
-        const uint8_t* texPtr = nullptr;
-        if (matData && !matData->texPixels.empty()) {
-            tw = matData->texWidth;
-            th = matData->texHeight;
-            texPtr = matData->texPixels.data();
-        } else {
-            tw = 64;
-            th = 64;
-            texPtr = fallbackPixels.data();
-        }
-        auto texSize = tw * th * 4;
-
-        RhiTextureDesc texDesc = {
-            .width = tw,
-            .height = th,
-            .format = RhiFormat::R8G8B8A8_SRGB,
-            .initialData = texPtr,
-            .initialDataSize = texSize,
-        };
-        gm.texture = device->createTexture(texDesc);
-    }
-
-    auto meshCount = (uint32_t) gpuMeshes.size();
+    auto instanceCount = (uint32_t) gpuInstances.size();
     auto imgCount = swapchain->imageCount();
-    auto totalSets = imgCount * meshCount;
+    if (instanceCount == 0) {
+        return;
+    }
 
+    auto totalSets = imgCount * instanceCount;
     std::array<RhiDescriptorBinding, 2> poolBindings = {{
         {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
         {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
@@ -297,7 +322,14 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
     descriptorSets = device->allocateDescriptorSets(descriptorPool, descriptorSetLayout, totalSets);
 
     for (uint32_t i = 0; i < imgCount; i++) {
-        for (uint32_t m = 0; m < meshCount; m++) {
+        for (uint32_t m = 0; m < instanceCount; m++) {
+            auto& inst = gpuInstances[m];
+            auto* tex = fallbackTexture;
+            auto texIt = textureCache.find(inst.material.index);
+            if (texIt != textureCache.end()) {
+                tex = texIt->second.texture;
+            }
+
             std::array<RhiDescriptorWrite, 2> writes = {{
                 {
                     .binding = 0,
@@ -308,11 +340,11 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
                 {
                     .binding = 1,
                     .type = CombinedImageSampler,
-                    .texture = gpuMeshes[m].texture,
+                    .texture = tex,
                     .sampler = textureSampler,
                 },
             }};
-            device->updateDescriptorSet(descriptorSets[(i * meshCount) + m], writes);
+            device->updateDescriptorSet(descriptorSets[(i * instanceCount) + m], writes);
         }
     }
 }
@@ -352,7 +384,7 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
     auto depthHandle = frameGraph.importTexture(swapchain->depthImage(), {ext.width, ext.height, swapchain->depthFormat()});
 
     auto imageIdx = *index;
-    auto meshCount = (uint32_t) gpuMeshes.size();
+    auto instanceCount = (uint32_t) gpuInstances.size();
 
     frameGraph.addPass<ForwardPassData>(
         "ForwardPass",
@@ -361,7 +393,7 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
             data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
             builder.setSideEffects(true);
         },
-        [this, imageIdx, meshCount, ext](FrameGraphContext& ctx, const ForwardPassData& data) {
+        [this, imageIdx, instanceCount, ext](FrameGraphContext& ctx, const ForwardPassData& data) {
             auto* cmd = ctx.cmd();
 
             RhiRenderingAttachmentInfo colorAtt = {
@@ -384,14 +416,20 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
             cmd->beginRendering(renderInfo);
             cmd->bindPipeline(pipeline);
 
-            for (uint32_t m = 0; m < meshCount; m++) {
-                auto& gm = gpuMeshes[m];
-                auto model = gm.transform;
+            for (uint32_t m = 0; m < instanceCount; m++) {
+                auto& inst = gpuInstances[m];
+                auto meshIt = meshCache.find(inst.mesh.index);
+                if (meshIt == meshCache.end()) {
+                    continue;
+                }
+                auto& cached = meshIt->second;
+
+                auto model = inst.transform;
                 cmd->pushConstants(pipeline, RhiShaderStage::Vertex, 0, sizeof(glm::mat4), &model);
-                cmd->bindVertexBuffer(gm.vertexBuffer);
-                cmd->bindIndexBuffer(gm.indexBuffer);
-                cmd->bindDescriptorSet(pipeline, descriptorSets[(imageIdx * meshCount) + m]);
-                cmd->drawIndexed(gm.indexCount, 1, 0, 0, 0);
+                cmd->bindVertexBuffer(cached.vertexBuffer);
+                cmd->bindIndexBuffer(cached.indexBuffer);
+                cmd->bindDescriptorSet(pipeline, descriptorSets[(imageIdx * instanceCount) + m]);
+                cmd->drawIndexed(cached.indexCount, 1, 0, 0, 0);
             }
 
             cmd->endRendering();
@@ -443,7 +481,6 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
     cmd->reset();
     cmd->begin();
 
-    // Transition swapchain image: Undefined -> ColorAttachment (before graph)
     std::array<RhiBarrierDesc, 2> preBarriers = {{
         {.texture = swapchain->image(*index), .oldLayout = RhiImageLayout::Undefined, .newLayout = RhiImageLayout::ColorAttachment},
         {.texture = swapchain->depthImage(), .oldLayout = RhiImageLayout::Undefined, .newLayout = RhiImageLayout::DepthStencilAttachment},
@@ -452,7 +489,6 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
 
     frameGraph.execute(cmd);
 
-    // Transition swapchain image: ColorAttachment -> PresentSrc (after graph)
     std::array<RhiBarrierDesc, 1> postBarriers = {{
         {.texture = swapchain->image(*index), .oldLayout = RhiImageLayout::ColorAttachment, .newLayout = RhiImageLayout::PresentSrc},
     }};
@@ -480,7 +516,9 @@ auto Renderer::destroy() -> void {
     for (auto* ds : descriptorSets) {
         delete ds;
     }
-    device->destroyDescriptorPool(descriptorPool);
+    if (descriptorPool) {
+        device->destroyDescriptorPool(descriptorPool);
+    }
     device->destroyDescriptorSetLayout(descriptorSetLayout);
 
     for (auto* ds : debugDescriptorSets) {
@@ -505,12 +543,17 @@ auto Renderer::destroy() -> void {
     device->destroyShaderModule(debugFragShader);
 
     device->destroySampler(textureSampler);
+    device->destroyTexture(fallbackTexture);
 
-    for (auto& gm : gpuMeshes) {
-        device->destroyTexture(gm.texture);
-        device->destroyBuffer(gm.vertexBuffer);
-        device->destroyBuffer(gm.indexBuffer);
+    for (auto& [idx, cached] : meshCache) {
+        device->destroyBuffer(cached.vertexBuffer);
+        device->destroyBuffer(cached.indexBuffer);
     }
+    for (auto& [idx, cached] : textureCache) {
+        device->destroyTexture(cached.texture);
+    }
+    meshCache.clear();
+    textureCache.clear();
 
     for (uint32_t i = 0; i < swapchain->imageCount(); i++) {
         device->destroySemaphore(imageAvailableSemaphores[i]);

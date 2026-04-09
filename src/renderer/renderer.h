@@ -9,6 +9,7 @@
 #include <expected>
 #include <glm/glm.hpp>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 class RhiDevice;
@@ -26,11 +27,19 @@ struct UniformBufferObject {
     glm::mat4 proj;
 };
 
-struct GpuMesh {
-    RhiBuffer* vertexBuffer;
-    RhiBuffer* indexBuffer;
-    uint32_t indexCount;
-    RhiTexture* texture;
+struct CachedMesh {
+    RhiBuffer* vertexBuffer = nullptr;
+    RhiBuffer* indexBuffer = nullptr;
+    uint32_t indexCount = 0;
+};
+
+struct CachedTexture {
+    RhiTexture* texture = nullptr;
+};
+
+struct GpuInstance {
+    MeshHandle mesh;
+    MaterialHandle material;
     glm::mat4 transform;
 };
 
@@ -63,7 +72,14 @@ private:
     RhiShaderModule* vertShader = nullptr;
     RhiShaderModule* fragShader = nullptr;
 
-    std::vector<GpuMesh> gpuMeshes;
+    // GPU resource caches (keyed by library handle index)
+    std::unordered_map<uint32_t, CachedMesh> meshCache;
+    std::unordered_map<uint32_t, CachedTexture> textureCache;
+    RhiTexture* fallbackTexture = nullptr;
+
+    // Per-instance data (parallel to RenderWorld::meshInstances)
+    std::vector<GpuInstance> gpuInstances;
+
     std::vector<RhiBuffer*> uniformBuffers;
     std::vector<void*> uniformBuffersMapped;
 
