@@ -2,12 +2,13 @@
 
 #include "debugrenderer.h"
 #include "framegraph.h"
-#include "renderworld.h"
+#include "geometrypass.h"
+#include "lightingpass.h"
+#include "renderertypes.h"
 #include "resourcepool.h"
 #include "rhitypes.h"
 
 #include <expected>
-#include <glm/glm.hpp>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -20,40 +21,11 @@ class MeshLibrary;
 class MaterialLibrary;
 struct Camera;
 struct DebugDrawData;
+struct RenderWorld;
 struct SDL_Window;
-
-struct UniformBufferObject {
-    glm::mat4 view;
-    glm::mat4 proj;
-};
-
-struct LightingUBO {
-    glm::vec4 lightDirection; // xyz = direction, w = intensity
-    glm::vec4 lightColor;     // xyz = color, w = ambient
-    glm::vec4 depthParams;    // x = near, y = far, zw = unused
-};
-
-enum class GBufferView : int {
-    Lit = 0,
-    Albedo,
-    Normals,
-    Depth,
-};
-
-struct CachedMesh {
-    RhiBuffer* vertexBuffer = nullptr;
-    RhiBuffer* indexBuffer = nullptr;
-    uint32_t indexCount = 0;
-};
 
 struct CachedTexture {
     RhiTexture* texture = nullptr;
-};
-
-struct GpuInstance {
-    MeshHandle mesh;
-    MaterialHandle material;
-    glm::mat4 transform;
 };
 
 class Renderer {
@@ -78,46 +50,23 @@ private:
     RhiDevice* device = nullptr;
     RhiSwapchain* swapchain = nullptr;
 
-    // Geometry pass
-    RhiPipeline* geometryPipeline = nullptr;
-    RhiDescriptorSetLayout* geometryDescriptorSetLayout = nullptr;
-    RhiDescriptorPool* geometryDescriptorPool = nullptr;
-    std::vector<RhiDescriptorSet*> geometryDescriptorSets;
+    // Shared resources
     RhiSampler* textureSampler = nullptr;
-    RhiShaderModule* geometryVertShader = nullptr;
-    RhiShaderModule* geometryFragShader = nullptr;
-
-    // Lighting pass
-    RhiPipeline* lightingPipeline = nullptr;
-    RhiDescriptorSetLayout* lightingDescriptorSetLayout = nullptr;
-    RhiDescriptorPool* lightingDescriptorPool = nullptr;
-    std::vector<RhiDescriptorSet*> lightingDescriptorSets;
-    RhiShaderModule* lightingVertShader = nullptr;
-    RhiShaderModule* lightingFragShader = nullptr;
-    std::vector<RhiBuffer*> lightingUniformBuffers;
-    std::vector<void*> lightingUniformBuffersMapped;
-
-    // GPU resource caches (keyed by library handle index)
-    std::unordered_map<uint32_t, CachedMesh> meshCache;
-    std::unordered_map<uint32_t, CachedTexture> textureCache;
     RhiTexture* fallbackTexture = nullptr;
-
-    // Per-instance data (parallel to RenderWorld::meshInstances)
-    std::vector<GpuInstance> gpuInstances;
-
     std::vector<RhiBuffer*> uniformBuffers;
     std::vector<void*> uniformBuffersMapped;
 
-    // Debug line pass
-    RhiPipeline* debugLinePipeline = nullptr;
-    RhiDescriptorSetLayout* debugDescriptorSetLayout = nullptr;
-    RhiDescriptorPool* debugDescriptorPool = nullptr;
-    std::vector<RhiDescriptorSet*> debugDescriptorSets;
-    RhiShaderModule* debugVertShader = nullptr;
-    RhiShaderModule* debugFragShader = nullptr;
-    std::vector<RhiBuffer*> debugVertexBuffers;
-    std::vector<void*> debugVertexBuffersMapped;
-    static constexpr uint32_t debugMaxVertices = 65536;
+    // Scene GPU resources
+    std::unordered_map<uint32_t, CachedMesh> meshCache;
+    std::unordered_map<uint32_t, CachedTexture> textureCache;
+    std::vector<GpuInstance> gpuInstances;
+    RhiDescriptorPool* geometryDescriptorPool = nullptr;
+    std::vector<RhiDescriptorSet*> geometryDescriptorSets;
+
+    // Passes
+    GeometryPass geometryPass;
+    LightingPass lightingPass;
+    DebugRenderer debugRenderer;
 
     // Frame sync
     std::vector<RhiCommandBuffer*> cmdBuffers;
@@ -133,5 +82,4 @@ private:
     ResourcePool resourcePool;
 
     std::unique_ptr<RhiEditorUI> editorUI;
-    DebugRenderer debugRenderer;
 };

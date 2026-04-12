@@ -3,6 +3,7 @@
 #include "debugdraw.h"
 #include "material.h"
 #include "mesh.h"
+#include "renderworld.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "rhieditorui.h"
@@ -17,7 +18,6 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<void, int> {
-    using enum RhiDescriptorType;
     using enum RhiFormat;
 
     device = rhiDevice;
@@ -71,139 +71,15 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
     };
     fallbackTexture = device->createTexture(fallbackDesc);
 
-    // Geometry pass pipeline
-    geometryVertShader = device->createShaderModule("shaders/gbuffer.vert.spv");
-    geometryFragShader = device->createShaderModule("shaders/gbuffer.frag.spv");
-
-    std::array<RhiDescriptorBinding, 2> bindings = {{
-        {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
-        {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
-    }};
-    geometryDescriptorSetLayout = device->createDescriptorSetLayout(bindings);
-
-    std::array<RhiVertexAttribute, 4> vertexAttrs = {{
-        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
-        {.location = 1, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, normal)},
-        {.location = 2, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, color)},
-        {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
-    }};
-
-    std::array<RhiFormat, 2> geometryColorFormats = {R8G8B8A8_UNORM, R32G32B32A32_SFLOAT};
-
-    RhiGraphicsPipelineDesc geometryPipelineDesc = {
-        .vertexShader = geometryVertShader,
-        .fragmentShader = geometryFragShader,
-        .descriptorSetLayout = geometryDescriptorSetLayout,
-        .colorFormats = geometryColorFormats,
-        .depthFormat = depthFmt,
-        .vertexStride = sizeof(Vertex),
-        .vertexAttributes = vertexAttrs,
-        .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(glm::mat4)},
-        .viewportExtent = ext,
-    };
-    geometryPipeline = device->createGraphicsPipeline(geometryPipelineDesc);
-    if (geometryPipeline == nullptr) {
+    // Passes
+    if (!geometryPass.init(device, ext, depthFmt)) {
         return std::unexpected(1);
     }
-
-    // Lighting pass pipeline
-    lightingVertShader = device->createShaderModule("shaders/lighting.vert.spv");
-    lightingFragShader = device->createShaderModule("shaders/lighting.frag.spv");
-
-    std::array<RhiDescriptorBinding, 4> lightBindings = {{
-        {.binding = 0, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
-        {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
-        {.binding = 2, .type = UniformBuffer, .stage = RhiShaderStage::Fragment},
-        {.binding = 3, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
-    }};
-    lightingDescriptorSetLayout = device->createDescriptorSetLayout(lightBindings);
-
-    RhiGraphicsPipelineDesc lightingPipelineDesc = {
-        .vertexShader = lightingVertShader,
-        .fragmentShader = lightingFragShader,
-        .descriptorSetLayout = lightingDescriptorSetLayout,
-        .colorFormats = {&colorFmt, 1},
-        .vertexStride = 0,
-        .pushConstant = {.stage = RhiShaderStage::Fragment, .offset = 0, .size = 2 * sizeof(int32_t)},
-        .viewportExtent = ext,
-        .depthTestEnable = false,
-        .depthWriteEnable = false,
-        .backfaceCulling = false,
-    };
-    lightingPipeline = device->createGraphicsPipeline(lightingPipelineDesc);
-    if (lightingPipeline == nullptr) {
+    if (!lightingPass.init(device, imgCount, ext, colorFmt)) {
         return std::unexpected(1);
     }
-
-    lightingDescriptorPool = device->createDescriptorPool(imgCount, lightBindings);
-    lightingDescriptorSets = device->allocateDescriptorSets(lightingDescriptorPool, lightingDescriptorSetLayout, imgCount);
-
-    lightingUniformBuffers.resize(imgCount);
-    lightingUniformBuffersMapped.resize(imgCount);
-    for (uint32_t i = 0; i < imgCount; i++) {
-        RhiBufferDesc lightUboDesc = {
-            .size = sizeof(LightingUBO),
-            .usage = RhiBufferUsage::Uniform,
-            .memory = RhiMemoryUsage::CpuToGpu,
-        };
-        lightingUniformBuffers[i] = device->createBuffer(lightUboDesc);
-        lightingUniformBuffersMapped[i] = device->mapBuffer(lightingUniformBuffers[i]);
-    }
-
-    // Debug line pipeline
-    debugVertShader = device->createShaderModule("shaders/debug.vert.spv");
-    debugFragShader = device->createShaderModule("shaders/debug.frag.spv");
-
-    std::array<RhiDescriptorBinding, 1> debugBindings = {{
-        {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
-    }};
-    debugDescriptorSetLayout = device->createDescriptorSetLayout(debugBindings);
-
-    std::array<RhiVertexAttribute, 2> debugVertexAttrs = {{
-        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0},
-        {.location = 1, .binding = 0, .format = R32G32B32A32_SFLOAT, .offset = sizeof(float) * 3},
-    }};
-
-    RhiGraphicsPipelineDesc debugPipelineDesc = {
-        .vertexShader = debugVertShader,
-        .fragmentShader = debugFragShader,
-        .descriptorSetLayout = debugDescriptorSetLayout,
-        .colorFormats = {&colorFmt, 1},
-        .depthFormat = depthFmt,
-        .vertexStride = sizeof(DebugVertex),
-        .vertexAttributes = debugVertexAttrs,
-        .pushConstant = {},
-        .viewportExtent = ext,
-        .topology = RhiPrimitiveTopology::LineList,
-        .depthTestEnable = true,
-        .depthWriteEnable = false,
-    };
-    debugLinePipeline = device->createGraphicsPipeline(debugPipelineDesc);
-
-    debugVertexBuffers.resize(imgCount);
-    debugVertexBuffersMapped.resize(imgCount);
-    for (uint32_t i = 0; i < imgCount; i++) {
-        RhiBufferDesc vbDesc = {
-            .size = debugMaxVertices * sizeof(DebugVertex),
-            .usage = RhiBufferUsage::Vertex,
-            .memory = RhiMemoryUsage::CpuToGpu,
-        };
-        debugVertexBuffers[i] = device->createBuffer(vbDesc);
-        debugVertexBuffersMapped[i] = device->mapBuffer(debugVertexBuffers[i]);
-    }
-
-    debugDescriptorPool = device->createDescriptorPool(imgCount, debugBindings);
-    debugDescriptorSets = device->allocateDescriptorSets(debugDescriptorPool, debugDescriptorSetLayout, imgCount);
-    for (uint32_t i = 0; i < imgCount; i++) {
-        std::array<RhiDescriptorWrite, 1> writes = {{
-            {
-                .binding = 0,
-                .type = UniformBuffer,
-                .buffer = uniformBuffers[i],
-                .bufferRange = sizeof(UniformBufferObject),
-            },
-        }};
-        device->updateDescriptorSet(debugDescriptorSets[i], writes);
+    if (!debugRenderer.init(device, imgCount, ext, colorFmt, depthFmt, uniformBuffers)) {
+        return std::unexpected(1);
     }
 
     // Frame sync
@@ -221,7 +97,7 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
         inflightFences[i] = device->createFence(true);
     }
 
-    // Debug UI
+    // Editor UI
     editorUI = std::make_unique<RhiEditorUIVulkan>();
     editorUI->init({
         .window = window,
@@ -237,7 +113,6 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
     using enum RhiDescriptorType;
     using enum RhiMemoryUsage;
 
-    // Check if anything actually changed by comparing instance data
     bool instancesChanged = (gpuInstances.size() != world.meshInstances.size());
     if (!instancesChanged) {
         for (size_t m = 0; m < world.meshInstances.size(); m++) {
@@ -253,7 +128,6 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         return;
     }
 
-    // Check if we can do a transform-only update (no mesh/material changes, same count)
     bool geometryChanged = (gpuInstances.size() != world.meshInstances.size());
     if (!geometryChanged) {
         for (size_t m = 0; m < world.meshInstances.size(); m++) {
@@ -264,22 +138,18 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         }
     }
 
-    // Update instance list
     gpuInstances.resize(world.meshInstances.size());
     for (size_t m = 0; m < world.meshInstances.size(); m++) {
         const auto& inst = world.meshInstances[m];
         gpuInstances[m] = {.mesh = inst.mesh, .material = inst.material, .transform = inst.worldTransform};
     }
 
-    // Transform-only update: no GPU resources need changing
     if (!geometryChanged) {
         return;
     }
 
-    // Full geometry update: need to rebuild GPU resources
     device->waitIdle();
 
-    // Destroy old caches
     for (auto& [idx, cached] : meshCache) {
         device->destroyBuffer(cached.vertexBuffer);
         device->destroyBuffer(cached.indexBuffer);
@@ -290,9 +160,7 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
     }
     textureCache.clear();
 
-    // Upload unique meshes and textures
     for (const auto& inst : world.meshInstances) {
-        // Mesh
         if (inst.mesh && !meshCache.contains(inst.mesh.index)) {
             const auto* meshData = meshLib.get(inst.mesh);
             if (meshData && !meshData->vertices.empty()) {
@@ -327,7 +195,6 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
             }
         }
 
-        // Texture
         if (inst.material && !textureCache.contains(inst.material.index)) {
             const auto* matData = matLib.get(inst.material);
             if (matData && !matData->texPixels.empty()) {
@@ -343,7 +210,6 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         }
     }
 
-    // Rebuild descriptor sets
     for (auto* ds : geometryDescriptorSets) {
         delete ds;
     }
@@ -365,7 +231,7 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
     }};
     geometryDescriptorPool = device->createDescriptorPool(totalSets, poolBindings);
-    geometryDescriptorSets = device->allocateDescriptorSets(geometryDescriptorPool, geometryDescriptorSetLayout, totalSets);
+    geometryDescriptorSets = device->allocateDescriptorSets(geometryDescriptorPool, geometryPass.descriptorSetLayout(), totalSets);
 
     for (uint32_t i = 0; i < imgCount; i++) {
         for (uint32_t m = 0; m < instanceCount; m++) {
@@ -394,12 +260,6 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         }
     }
 }
-
-struct GeometryPassData {
-    FgTextureHandle albedo;
-    FgTextureHandle normal;
-    FgTextureHandle depth;
-};
 
 auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawData& debugData, const RenderWorld& world) -> void {
     device->waitForFence(inflightFences[currentFrame]);
@@ -433,181 +293,9 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
     auto imageIdx = *index;
     auto instanceCount = (uint32_t) gpuInstances.size();
 
-    FgTextureDesc albedoDesc = {
-        .width = ext.width,
-        .height = ext.height,
-        .format = RhiFormat::R8G8B8A8_UNORM,
-        .usage = RhiTextureUsage::ColorAttachment | RhiTextureUsage::Sampled,
-    };
-    FgTextureDesc normalDesc = {
-        .width = ext.width,
-        .height = ext.height,
-        .format = RhiFormat::R32G32B32A32_SFLOAT,
-        .usage = RhiTextureUsage::ColorAttachment | RhiTextureUsage::Sampled,
-    };
-
-    auto& geomData = frameGraph.addPass<GeometryPassData>(
-        "GeometryPass",
-        [&](FrameGraphBuilder& builder, GeometryPassData& data) {
-            data.albedo = builder.write(builder.createTexture(albedoDesc), FgAccessFlags::ColorAttachment);
-            data.normal = builder.write(builder.createTexture(normalDesc), FgAccessFlags::ColorAttachment);
-            data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
-            builder.setSideEffects(true);
-        },
-        [this, imageIdx, instanceCount, ext](FrameGraphContext& ctx, const GeometryPassData& data) {
-            auto* cmd = ctx.cmd();
-
-            std::array<RhiRenderingAttachmentInfo, 2> colorAtts = {{
-                {
-                    .texture = ctx.texture(data.albedo),
-                    .layout = RhiImageLayout::ColorAttachment,
-                    .clear = true,
-                    .clearColor = {0.0f, 0.0f, 0.0f, 1.0f},
-                },
-                {
-                    .texture = ctx.texture(data.normal),
-                    .layout = RhiImageLayout::ColorAttachment,
-                    .clear = true,
-                    .clearColor = {0.0f, 0.0f, 0.0f, 0.0f},
-                },
-            }};
-            RhiRenderingAttachmentInfo depthAtt = {
-                .texture = ctx.texture(data.depth),
-                .layout = RhiImageLayout::DepthStencilAttachment,
-                .clear = true,
-                .clearDepth = 1.0f,
-            };
-            RhiRenderingInfo renderInfo = {
-                .extent = ext,
-                .colorAttachments = {colorAtts.data(), colorAtts.size()},
-                .depthAttachment = &depthAtt,
-            };
-            cmd->beginRendering(renderInfo);
-            cmd->bindPipeline(geometryPipeline);
-
-            for (uint32_t m = 0; m < instanceCount; m++) {
-                auto& inst = gpuInstances[m];
-                auto meshIt = meshCache.find(inst.mesh.index);
-                if (meshIt == meshCache.end()) {
-                    continue;
-                }
-                auto& cached = meshIt->second;
-
-                auto model = inst.transform;
-                cmd->pushConstants(geometryPipeline, RhiShaderStage::Vertex, 0, sizeof(glm::mat4), &model);
-                cmd->bindVertexBuffer(cached.vertexBuffer);
-                cmd->bindIndexBuffer(cached.indexBuffer);
-                cmd->bindDescriptorSet(geometryPipeline, geometryDescriptorSets[(imageIdx * instanceCount) + m]);
-                cmd->drawIndexed(cached.indexCount, 1, 0, 0, 0);
-            }
-
-            cmd->endRendering();
-        });
-
-    struct LightingPassData {
-        FgTextureHandle albedo;
-        FgTextureHandle normal;
-        FgTextureHandle depth;
-        FgTextureHandle color;
-    };
-
-    frameGraph.addPass<LightingPassData>(
-        "LightingPass",
-        [&](FrameGraphBuilder& builder, LightingPassData& data) {
-            data.albedo = builder.read(geomData.albedo, FgAccessFlags::ShaderRead);
-            data.normal = builder.read(geomData.normal, FgAccessFlags::ShaderRead);
-            data.depth = builder.read(depthHandle, FgAccessFlags::ShaderRead);
-            data.color = builder.write(colorHandle, FgAccessFlags::ColorAttachment);
-            builder.setSideEffects(true);
-        },
-        [this, imageIdx, ext, &world](FrameGraphContext& ctx, const LightingPassData& data) {
-            auto* cmd = ctx.cmd();
-
-            // Build lighting UBO from RenderWorld lights or use defaults
-            LightingUBO lightUbo = {
-                .lightDirection = glm::vec4(glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f)), 1.0f),
-                .lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 0.15f),
-                .depthParams = glm::vec4(0.1f, 3000.0f, 0.0f, 0.0f),
-            };
-            for (const auto& light : world.lights) {
-                if (light.type == LightType::Directional) {
-                    auto dir = glm::normalize(glm::vec3(light.worldTransform[2]));
-                    lightUbo.lightDirection = glm::vec4(dir, light.intensity);
-                    lightUbo.lightColor = glm::vec4(light.color, 0.15f);
-                    break;
-                }
-            }
-            memcpy(lightingUniformBuffersMapped[imageIdx], &lightUbo, sizeof(lightUbo));
-
-            // Update descriptor set with this frame's G-buffer textures
-            std::array<RhiDescriptorWrite, 4> writes = {{
-                {
-                    .binding = 0,
-                    .type = RhiDescriptorType::CombinedImageSampler,
-                    .texture = ctx.texture(data.albedo),
-                    .sampler = textureSampler,
-                },
-                {
-                    .binding = 1,
-                    .type = RhiDescriptorType::CombinedImageSampler,
-                    .texture = ctx.texture(data.normal),
-                    .sampler = textureSampler,
-                },
-                {
-                    .binding = 2,
-                    .type = RhiDescriptorType::UniformBuffer,
-                    .buffer = lightingUniformBuffers[imageIdx],
-                    .bufferRange = sizeof(LightingUBO),
-                },
-                {
-                    .binding = 3,
-                    .type = RhiDescriptorType::CombinedImageSampler,
-                    .texture = ctx.texture(data.depth),
-                    .sampler = textureSampler,
-                },
-            }};
-            device->updateDescriptorSet(lightingDescriptorSets[imageIdx], writes);
-
-            RhiRenderingAttachmentInfo colorAtt = {
-                .texture = ctx.texture(data.color),
-                .layout = RhiImageLayout::ColorAttachment,
-                .clear = true,
-                .clearColor = {0.12f, 0.12f, 0.15f, 1.0f},
-            };
-            RhiRenderingInfo renderInfo = {
-                .extent = ext,
-                .colorAttachments = {&colorAtt, 1},
-            };
-            cmd->beginRendering(renderInfo);
-            cmd->bindPipeline(lightingPipeline);
-            cmd->bindDescriptorSet(lightingPipeline, lightingDescriptorSets[imageIdx]);
-
-            struct LightingPush {
-                int32_t viewMode;
-                int32_t showOverlay;
-            };
-            LightingPush push = {
-                .viewMode = static_cast<int32_t>(gbufferView),
-                .showOverlay = showBufferOverlay ? 1 : 0,
-            };
-            cmd->pushConstants(lightingPipeline, RhiShaderStage::Fragment, 0, sizeof(push), &push);
-
-            cmd->draw(3, 1, 0, 0);
-            cmd->endRendering();
-        });
-
-    debugRenderer.addPass(frameGraph,
-                          colorHandle,
-                          depthHandle,
-                          ext,
-                          debugData,
-                          {
-                              .pipeline = debugLinePipeline,
-                              .vertexBuffer = debugVertexBuffers[imageIdx],
-                              .descriptorSet = debugDescriptorSets[imageIdx],
-                              .vertexBufferMapped = debugVertexBuffersMapped[imageIdx],
-                              .maxVertices = debugMaxVertices,
-                          });
+    const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, imageIdx, instanceCount, gpuInstances, meshCache, geometryDescriptorSets);
+    lightingPass.addPass(frameGraph, geomData, depthHandle, colorHandle, ext, imageIdx, textureSampler, world, gbufferView, showBufferOverlay);
+    debugRenderer.addPass(frameGraph, colorHandle, depthHandle, ext, debugData, imageIdx);
 
     struct EditorUIPassData {
         FgTextureHandle color;
@@ -680,43 +368,6 @@ auto Renderer::destroy() -> void {
     if (geometryDescriptorPool) {
         device->destroyDescriptorPool(geometryDescriptorPool);
     }
-    device->destroyDescriptorSetLayout(geometryDescriptorSetLayout);
-
-    for (auto* ds : lightingDescriptorSets) {
-        delete ds;
-    }
-    device->destroyDescriptorPool(lightingDescriptorPool);
-    device->destroyDescriptorSetLayout(lightingDescriptorSetLayout);
-
-    for (auto* ds : debugDescriptorSets) {
-        delete ds;
-    }
-    device->destroyDescriptorPool(debugDescriptorPool);
-    device->destroyDescriptorSetLayout(debugDescriptorSetLayout);
-
-    for (uint32_t i = 0; i < swapchain->imageCount(); i++) {
-        device->unmapBuffer(uniformBuffers[i]);
-        device->destroyBuffer(uniformBuffers[i]);
-        device->unmapBuffer(lightingUniformBuffers[i]);
-        device->destroyBuffer(lightingUniformBuffers[i]);
-        device->unmapBuffer(debugVertexBuffers[i]);
-        device->destroyBuffer(debugVertexBuffers[i]);
-    }
-
-    device->destroyPipeline(geometryPipeline);
-    device->destroyShaderModule(geometryVertShader);
-    device->destroyShaderModule(geometryFragShader);
-
-    device->destroyPipeline(lightingPipeline);
-    device->destroyShaderModule(lightingVertShader);
-    device->destroyShaderModule(lightingFragShader);
-
-    device->destroyPipeline(debugLinePipeline);
-    device->destroyShaderModule(debugVertShader);
-    device->destroyShaderModule(debugFragShader);
-
-    device->destroySampler(textureSampler);
-    device->destroyTexture(fallbackTexture);
 
     for (auto& [idx, cached] : meshCache) {
         device->destroyBuffer(cached.vertexBuffer);
@@ -727,6 +378,18 @@ auto Renderer::destroy() -> void {
     }
     meshCache.clear();
     textureCache.clear();
+
+    geometryPass.destroy(device);
+    lightingPass.destroy(device);
+    debugRenderer.destroy(device);
+
+    for (uint32_t i = 0; i < swapchain->imageCount(); i++) {
+        device->unmapBuffer(uniformBuffers[i]);
+        device->destroyBuffer(uniformBuffers[i]);
+    }
+
+    device->destroySampler(textureSampler);
+    device->destroyTexture(fallbackTexture);
 
     for (uint32_t i = 0; i < swapchain->imageCount(); i++) {
         device->destroySemaphore(imageAvailableSemaphores[i]);
