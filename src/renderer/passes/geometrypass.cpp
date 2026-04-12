@@ -37,6 +37,7 @@ auto GeometryPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFo
         .vertexAttributes = vertexAttrs,
         .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(glm::mat4)},
         .viewportExtent = extent,
+        .backfaceCulling = false,
     };
     pipeline = device->createGraphicsPipeline(pipelineDesc);
     return pipeline != nullptr;
