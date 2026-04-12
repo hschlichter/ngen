@@ -77,6 +77,9 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
     if (!debugRenderer.init(device, imgCount, ext, colorFmt, depthFmt, uniformBuffers)) {
         return std::unexpected(1);
     }
+    if (!gizmoPass.init(device, imgCount, ext, colorFmt)) {
+        return std::unexpected(1);
+    }
 
     // Frame sync
     cmdBuffers.resize(imgCount);
@@ -294,6 +297,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     lightingPass.addPass(
         frameGraph, geomData, depthHandle, colorHandle, ext, imageIdx, textureSampler, lights, snapshot.gbufferViewMode, snapshot.showBufferOverlay);
     debugRenderer.addPass(frameGraph, colorHandle, depthHandle, ext, snapshot.debugData, imageIdx);
+    gizmoPass.addPass(frameGraph, colorHandle, ext, snapshot.viewMatrix, imageIdx);
     editorUIPass.addPass(frameGraph, colorHandle, ext, editorUI.get(), snapshot.imguiSnapshot);
 
     frameGraph.compile();
@@ -359,6 +363,7 @@ auto Renderer::destroy() -> void {
     geometryPass.destroy(device);
     lightingPass.destroy(device);
     debugRenderer.destroy(device);
+    gizmoPass.destroy(device);
 
     for (uint32_t i = 0; i < swapchain->imageCount(); i++) {
         device->unmapBuffer(uniformBuffers[i]);

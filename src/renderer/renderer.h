@@ -4,6 +4,7 @@
 #include "editoruipass.h"
 #include "framegraph.h"
 #include "geometrypass.h"
+#include "gizmopass.h"
 #include "lightingpass.h"
 #include "renderertypes.h"
 #include "renderworld.h"
@@ -66,6 +67,7 @@ private:
     GeometryPass geometryPass;
     LightingPass lightingPass;
     DebugRenderer debugRenderer;
+    GizmoPass gizmoPass;
     EditorUIPass editorUIPass;
 
     // Frame sync
