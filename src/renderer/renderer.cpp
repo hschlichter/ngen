@@ -294,33 +294,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     lightingPass.addPass(
         frameGraph, geomData, depthHandle, colorHandle, ext, imageIdx, textureSampler, lights, snapshot.gbufferViewMode, snapshot.showBufferOverlay);
     debugRenderer.addPass(frameGraph, colorHandle, depthHandle, ext, snapshot.debugData, imageIdx);
-
-    struct EditorUIPassData {
-        FgTextureHandle color;
-    };
-
-    frameGraph.addPass<EditorUIPassData>(
-        "EditorUIPass",
-        [&](FrameGraphBuilder& builder, EditorUIPassData& data) {
-            data.color = builder.write(colorHandle, FgAccessFlags::ColorAttachment);
-            builder.setSideEffects(true);
-        },
-        [this, ext, &snapshot](FrameGraphContext& ctx, const EditorUIPassData& data) {
-            auto* cmd = ctx.cmd();
-
-            RhiRenderingAttachmentInfo colorAtt = {
-                .texture = ctx.texture(data.color),
-                .layout = RhiImageLayout::ColorAttachment,
-                .clear = false,
-            };
-            RhiRenderingInfo renderInfo = {
-                .extent = ext,
-                .colorAttachments = {&colorAtt, 1},
-            };
-            cmd->beginRendering(renderInfo);
-            editorUI->renderDrawData(cmd, snapshot.imguiSnapshot);
-            cmd->endRendering();
-        });
+    editorUIPass.addPass(frameGraph, colorHandle, ext, editorUI.get(), snapshot.imguiSnapshot);
 
     frameGraph.compile();
 

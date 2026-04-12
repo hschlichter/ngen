@@ -1,6 +1,7 @@
 #pragma once
 
 #include "debugrenderer.h"
+#include "editoruipass.h"
 #include "framegraph.h"
 #include "geometrypass.h"
 #include "lightingpass.h"
@@ -65,6 +66,7 @@ private:
     GeometryPass geometryPass;
     LightingPass lightingPass;
     DebugRenderer debugRenderer;
+    EditorUIPass editorUIPass;
 
     // Frame sync
     std::vector<RhiCommandBuffer*> cmdBuffers;
