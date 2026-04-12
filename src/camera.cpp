@@ -49,9 +49,9 @@ auto Camera::update(const bool* keys, float dt) -> void {
 
 auto Camera::snapToAxis(int axis, bool negative) -> void {
     switch (axis) {
-        case 0: yaw = negative ? 180.0f : 0.0f; pitch = 0.0f; break;   // ±X
-        case 1: pitch = negative ? 89.0f : -89.0f; break;               // ±Y
-        case 2: yaw = negative ? -90.0f : 90.0f; pitch = 0.0f; break;   // ±Z
+        case 0: yaw = negative ? 180.0f : 0.0f; pitch = 0.0f; break;
+        case 1: pitch = negative ? -89.0f : 89.0f; break;
+        case 2: yaw = negative ? -90.0f : 90.0f; pitch = 0.0f; break;
     }
 }
 

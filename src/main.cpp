@@ -92,6 +92,8 @@ auto main(int argc, char* argv[]) -> int {
     };
     auto mouseCapture = false;
 
+    renderer.initGizmos(&cam);
+
     // Main loop
     auto lastTicks = SDL_GetTicksNS();
     auto quit = false;
@@ -148,10 +150,7 @@ auto main(int argc, char* argv[]) -> int {
                 float mx = ev.button.x;
                 float my = ev.button.y;
 
-                bool gizmoNeg = false;
-                auto gizmoAxis = renderer.gizmo().hitTest(mx, my, {(uint32_t) winW, (uint32_t) winH}, gizmoNeg);
-                if (gizmoAxis >= 0) {
-                    cam.snapToAxis(gizmoAxis, gizmoNeg);
+                if (renderer.gizmoHitTest(mx, my, {(uint32_t) winW, (uint32_t) winH})) {
                     continue;
                 }
 
@@ -201,11 +200,16 @@ auto main(int argc, char* argv[]) -> int {
         auto proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 3000.0f);
         proj[1][1] *= -1.0f;
 
+        float mouseX = 0, mouseY = 0;
+        SDL_GetMouseState(&mouseX, &mouseY);
+
         RenderSnapshot snapshot = {
             .viewMatrix = cam.viewMatrix(),
             .projMatrix = proj,
             .windowWidth = winW,
             .windowHeight = winH,
+            .mouseX = mouseX,
+            .mouseY = mouseY,
             .gbufferViewMode = static_cast<GBufferView>(editorUI.getGBufferViewMode()),
             .showBufferOverlay = editorUI.getShowBufferOverlay(),
             .debugData = debugDraw.data(),

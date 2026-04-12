@@ -262,6 +262,24 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
     }
 }
 
+auto Renderer::initGizmos(Camera* camera) -> void {
+    axisGizmo = Axis3DGizmo(camera);
+}
+
+auto Renderer::gizmoUpdate(RhiExtent2D extent, const glm::mat4& viewMatrix, float mouseX, float mouseY) -> std::vector<GizmoDrawRequest> {
+    axisGizmo.updateHover(mouseX, mouseY);
+    // Add more gizmo updates here
+
+    std::vector<GizmoDrawRequest> requests;
+    requests.push_back(axisGizmo.draw(extent, viewMatrix));
+    // Add more gizmo draw requests here
+    return requests;
+}
+
+auto Renderer::gizmoHitTest(float mouseX, float mouseY, RhiExtent2D windowExtent) -> bool {
+    return axisGizmo.hitTest(mouseX, mouseY, windowExtent);
+}
+
 auto Renderer::render(RenderSnapshot& snapshot) -> void {
     device->waitForFence(inflightFences[currentFrame]);
 
@@ -297,7 +315,10 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     lightingPass.addPass(
         frameGraph, geomData, depthHandle, colorHandle, ext, imageIdx, textureSampler, lights, snapshot.gbufferViewMode, snapshot.showBufferOverlay);
     debugRenderer.addPass(frameGraph, colorHandle, depthHandle, ext, snapshot.debugData, imageIdx);
-    gizmoPass.addPass(frameGraph, colorHandle, ext, snapshot.viewMatrix, imageIdx);
+
+    auto gizmoRequests = gizmoUpdate(ext, snapshot.viewMatrix, snapshot.mouseX, snapshot.mouseY);
+    gizmoPass.addPass(frameGraph, colorHandle, ext, gizmoRequests, imageIdx);
+
     editorUIPass.addPass(frameGraph, colorHandle, ext, editorUI.get(), snapshot.imguiSnapshot);
 
     frameGraph.compile();

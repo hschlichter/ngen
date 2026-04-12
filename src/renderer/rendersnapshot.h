@@ -13,6 +13,9 @@ struct RenderSnapshot {
     int windowWidth = 0;
     int windowHeight = 0;
 
+    float mouseX = 0;
+    float mouseY = 0;
+
     GBufferView gbufferViewMode = GBufferView::Lit;
     bool showBufferOverlay = false;
 

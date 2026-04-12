@@ -1,10 +1,7 @@
 #include "gizmopass.h"
-#include "debugdraw.h"
 #include "renderertypes.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-
-#include <glm/gtc/matrix_transform.hpp>
 
 #include <array>
 #include <cstring>
@@ -32,7 +29,7 @@ auto GizmoPass::init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent,
         .descriptorSetLayout = descriptorSetLayout,
         .colorFormats = {&colorFormat, 1},
         .depthFormat = Undefined,
-        .vertexStride = sizeof(DebugVertex),
+        .vertexStride = sizeof(GizmoVertex),
         .vertexAttributes = vertexAttrs,
         .pushConstant = {},
         .viewportExtent = extent,
@@ -43,27 +40,18 @@ auto GizmoPass::init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent,
     };
     pipeline = device->createGraphicsPipeline(pipelineDesc);
 
-    // Static vertex buffer: 3 axes from origin outward
-    std::array<DebugVertex, 6> axes = {{
-        {{0, 0, 0}, {1, 0, 0, 1}},
-        {{1, 0, 0}, {1, 0, 0, 1}},
-        {{0, 0, 0}, {0, 1, 0, 1}},
-        {{0, 1, 0}, {0, 1, 0, 1}},
-        {{0, 0, 0}, {0, 0.4f, 1, 1}},
-        {{0, 0, 1}, {0, 0.4f, 1, 1}},
-    }};
+    vertexBuffers.resize(imageCount);
+    vertexBuffersMapped.resize(imageCount);
+    for (uint32_t i = 0; i < imageCount; i++) {
+        RhiBufferDesc vbDesc = {
+            .size = maxVertices * sizeof(GizmoVertex),
+            .usage = RhiBufferUsage::Vertex,
+            .memory = RhiMemoryUsage::CpuToGpu,
+        };
+        vertexBuffers[i] = device->createBuffer(vbDesc);
+        vertexBuffersMapped[i] = device->mapBuffer(vertexBuffers[i]);
+    }
 
-    RhiBufferDesc vbDesc = {
-        .size = sizeof(axes),
-        .usage = RhiBufferUsage::Vertex,
-        .memory = RhiMemoryUsage::CpuToGpu,
-    };
-    vertexBuffer = device->createBuffer(vbDesc);
-    auto* mapped = device->mapBuffer(vertexBuffer);
-    memcpy(mapped, axes.data(), sizeof(axes));
-    device->unmapBuffer(vertexBuffer);
-
-    // Per-frame UBOs
     uniformBuffers.resize(imageCount);
     uniformBuffersMapped.resize(imageCount);
     for (uint32_t i = 0; i < imageCount; i++) {
@@ -100,44 +88,66 @@ auto GizmoPass::destroy(RhiDevice* device) -> void {
     device->destroyDescriptorPool(descriptorPool);
     device->destroyDescriptorSetLayout(descriptorSetLayout);
 
+    for (size_t i = 0; i < vertexBuffers.size(); i++) {
+        device->unmapBuffer(vertexBuffers[i]);
+        device->destroyBuffer(vertexBuffers[i]);
+    }
     for (size_t i = 0; i < uniformBuffers.size(); i++) {
         device->unmapBuffer(uniformBuffers[i]);
         device->destroyBuffer(uniformBuffers[i]);
     }
 
-    device->destroyBuffer(vertexBuffer);
     device->destroyPipeline(pipeline);
     device->destroyShaderModule(vertShader);
     device->destroyShaderModule(fragShader);
 }
 
-auto GizmoPass::addPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D fullExtent, const glm::mat4& viewMatrix, uint32_t imageIndex) -> void {
-    constexpr uint32_t gizmoSize = 120;
-    constexpr uint32_t margin = 50;
+struct GizmoPassData {
+    FgTextureHandle color;
+};
 
-    // Push the gizmo back so it's fully visible with perspective
-    auto rotView = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -4.0f)) * glm::mat4(glm::mat3(viewMatrix));
-    auto proj = glm::perspective(glm::radians(30.0f), 1.0f, 0.1f, 100.0f);
-    proj[1][1] *= -1.0f;
+auto GizmoPass::addPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D fullExtent, std::span<GizmoDrawRequest> requests, uint32_t imageIndex) -> void {
+    if (requests.empty()) {
+        return;
+    }
 
-    UniformBufferObject ubo = {.view = rotView, .proj = proj};
-    memcpy(uniformBuffersMapped[imageIndex], &ubo, sizeof(ubo));
+    struct DrawCmd {
+        uint32_t vertexOffset;
+        uint32_t vertexCount;
+        glm::mat4 viewProj;
+        int32_t vpX, vpY;
+        RhiExtent2D vpExtent;
+    };
 
-    lastViewProj = proj * rotView;
-    lastViewMatrix = viewMatrix;
-    lastFullExtent = fullExtent;
+    std::vector<DrawCmd> drawCmds;
+    uint32_t totalVertices = 0;
+    auto* vbMapped = static_cast<GizmoVertex*>(vertexBuffersMapped[imageIndex]);
 
-    auto vpX = (int32_t) (fullExtent.width - gizmoSize - margin);
-    auto vpY = (int32_t) margin;
-    RhiExtent2D gizmoExtent = {gizmoSize, gizmoSize};
+    for (auto& req : requests) {
+        auto count = (uint32_t) req.vertices.size();
+        if (count == 0 || totalVertices + count > maxVertices) {
+            continue;
+        }
+        memcpy(vbMapped + totalVertices, req.vertices.data(), count * sizeof(GizmoVertex));
+        drawCmds.push_back({
+            .vertexOffset = totalVertices,
+            .vertexCount = count,
+            .viewProj = req.viewProj,
+            .vpX = req.vpX,
+            .vpY = req.vpY,
+            .vpExtent = req.vpExtent,
+        });
+        totalVertices += count;
+    }
 
-    auto* vb = vertexBuffer;
+    if (drawCmds.empty()) {
+        return;
+    }
+
+    auto* vb = vertexBuffers[imageIndex];
     auto* ds = descriptorSets[imageIndex];
     auto* pip = pipeline;
-
-    struct GizmoPassData {
-        FgTextureHandle color;
-    };
+    auto* uboMapped = uniformBuffersMapped[imageIndex];
 
     fg.addPass<GizmoPassData>(
         "GizmoPass",
@@ -145,7 +155,7 @@ auto GizmoPass::addPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D fullE
             data.color = builder.write(color, FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);
         },
-        [pip, ds, vb, fullExtent, gizmoExtent, vpX, vpY](FrameGraphContext& ctx, const GizmoPassData& data) {
+        [pip, ds, vb, uboMapped, fullExtent, drawCmds = std::move(drawCmds)](FrameGraphContext& ctx, const GizmoPassData& data) {
             auto* cmd = ctx.cmd();
 
             RhiRenderingAttachmentInfo colorAtt = {
@@ -159,67 +169,17 @@ auto GizmoPass::addPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D fullE
             };
             cmd->beginRendering(renderInfo);
             cmd->bindPipeline(pip);
-            cmd->setViewport(vpX, vpY, gizmoExtent);
-            cmd->setScissor(vpX, vpY, gizmoExtent);
             cmd->bindVertexBuffer(vb);
-            cmd->bindDescriptorSet(pip, ds);
-            cmd->draw(6, 1, 0, 0);
+
+            for (const auto& dc : drawCmds) {
+                UniformBufferObject ubo = {.view = glm::mat4(1.0f), .proj = dc.viewProj};
+                memcpy(uboMapped, &ubo, sizeof(ubo));
+                cmd->bindDescriptorSet(pip, ds);
+                cmd->setViewport(dc.vpX, dc.vpY, dc.vpExtent);
+                cmd->setScissor(dc.vpX, dc.vpY, dc.vpExtent);
+                cmd->draw(dc.vertexCount, 1, dc.vertexOffset, 0);
+            }
+
             cmd->endRendering();
         });
-}
-
-auto GizmoPass::hitTest(float mouseX, float mouseY, RhiExtent2D windowExtent, bool& negative) const -> int {
-    constexpr uint32_t gizmoSize = 120;
-    constexpr uint32_t margin = 50;
-
-    auto vpX = (float) (lastFullExtent.width - gizmoSize - margin);
-    auto vpY = (float) margin;
-
-    // Check if click is within gizmo region
-    if (mouseX < vpX || mouseX > vpX + gizmoSize || mouseY < vpY || mouseY > vpY + gizmoSize) {
-        return -1;
-    }
-
-    // Project the origin and each positive axis tip to find closest line
-    auto projToScreen = [&](glm::vec3 pt) -> glm::vec2 {
-        auto clip = lastViewProj * glm::vec4(pt, 1.0f);
-        auto ndc = glm::vec3(clip) / clip.w;
-        return {vpX + (ndc.x * 0.5f + 0.5f) * gizmoSize, vpY + (ndc.y * 0.5f + 0.5f) * gizmoSize};
-    };
-
-    auto mouse = glm::vec2(mouseX, mouseY);
-    auto origin = projToScreen({0, 0, 0});
-
-    // Distance from point to line segment
-    auto distToSegment = [](glm::vec2 p, glm::vec2 a, glm::vec2 b) -> float {
-        auto ab = b - a;
-        auto ap = p - a;
-        float t = glm::clamp(glm::dot(ap, ab) / glm::dot(ab, ab), 0.0f, 1.0f);
-        auto closest = a + t * ab;
-        return glm::length(p - closest);
-    };
-
-    glm::vec3 axisTips[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
-    float bestDist = 15.0f;
-    int bestAxis = -1;
-
-    for (int i = 0; i < 3; i++) {
-        auto tip = projToScreen(axisTips[i]);
-        float dist = distToSegment(mouse, origin, tip);
-        if (dist < bestDist) {
-            bestDist = dist;
-            bestAxis = i;
-        }
-    }
-
-    if (bestAxis < 0) {
-        return -1;
-    }
-
-    // Camera forward is the negative Z axis of the view matrix (3rd row, negated)
-    auto camForward = -glm::vec3(lastViewMatrix[0][2], lastViewMatrix[1][2], lastViewMatrix[2][2]);
-    // Snap to whichever direction (+ or -) has smaller angle to camera forward
-    negative = glm::dot(camForward, axisTips[bestAxis]) < 0.0f;
-
-    return bestAxis;
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "axis3dgizmo.h"
 #include "debugrenderer.h"
 #include "editoruipass.h"
 #include "framegraph.h"
@@ -44,7 +45,9 @@ public:
     auto destroy() -> void;
 
     auto editorui() -> RhiEditorUI* { return editorUI.get(); }
-    auto gizmo() -> GizmoPass& { return gizmoPass; }
+    auto initGizmos(Camera* camera) -> void;
+    auto gizmoUpdate(RhiExtent2D extent, const glm::mat4& viewMatrix, float mouseX, float mouseY) -> std::vector<GizmoDrawRequest>;
+    auto gizmoHitTest(float mouseX, float mouseY, RhiExtent2D windowExtent) -> bool;
 
 private:
     RhiDevice* device = nullptr;
@@ -69,6 +72,7 @@ private:
     LightingPass lightingPass;
     DebugRenderer debugRenderer;
     GizmoPass gizmoPass;
+    Axis3DGizmo axisGizmo;
     EditorUIPass editorUIPass;
 
     // Frame sync
