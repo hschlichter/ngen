@@ -4,7 +4,6 @@
 #include "layerswindow.h"
 #include "mainmenubar.h"
 #include "propertieswindow.h"
-#include "renderer.h"
 #include "renderworld.h"
 #include "scenequery.h"
 #include "sceneupdater.h"
@@ -49,8 +48,7 @@ auto EditorUI::openScene(const char* path,
                          RenderWorld& renderWorld,
                          SceneQuerySystem& sceneQuery,
                          SceneUpdater& sceneUpdater,
-                         Renderer& renderer,
-                         PrimHandle& selectedPrim) -> void {
+                         PrimHandle& selectedPrim) -> bool {
     sceneUpdater.waitIfBlocked();
     sceneUpdater.edits().clear();
     if (usdScene.isOpen()) {
@@ -63,15 +61,15 @@ auto EditorUI::openScene(const char* path,
 
     if (!usdScene.open(path)) {
         std::println(stderr, "Failed to open: {}", path);
-        return;
+        return false;
     }
     usdScene.updateAssetBindings(meshLib, matLib);
     usdExtractor.extract(usdScene, meshLib, renderWorld);
     sceneQuery.rebuild(usdScene, meshLib);
-    renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
     showSceneWindow = true;
     showPropertiesWindow = true;
     showLayersWindow = true;
+    return true;
 }
 
 auto EditorUI::drawDebug(DebugDraw& debugDraw,

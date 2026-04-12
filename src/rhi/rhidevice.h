@@ -41,7 +41,7 @@ public:
     virtual auto waitForFence(RhiFence* fence) -> void = 0;
     virtual auto resetFence(RhiFence* fence) -> void = 0;
     virtual auto submitCommandBuffer(RhiCommandBuffer* cmd, const RhiSubmitInfo& info) -> void = 0;
-    virtual auto present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) -> void = 0;
+    virtual auto present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) -> bool = 0;
 
     virtual auto mapBuffer(RhiBuffer* buffer) -> void* = 0;
     virtual auto unmapBuffer(RhiBuffer* buffer) -> void = 0;

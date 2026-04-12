@@ -1,9 +1,7 @@
 #include "renderer.h"
-#include "camera.h"
-#include "debugdraw.h"
 #include "material.h"
 #include "mesh.h"
-#include "renderworld.h"
+#include "rendersnapshot.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "rhieditorui.h"
@@ -14,8 +12,6 @@
 
 #include <array>
 #include <cstring>
-
-#include <glm/gtc/matrix_transform.hpp>
 
 auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<void, int> {
     using enum RhiFormat;
@@ -112,6 +108,8 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
 auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void {
     using enum RhiDescriptorType;
     using enum RhiMemoryUsage;
+
+    lights = world.lights;
 
     bool instancesChanged = (gpuInstances.size() != world.meshInstances.size());
     if (!instancesChanged) {
@@ -261,25 +259,24 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
     }
 }
 
-auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawData& debugData, const RenderWorld& world) -> void {
+auto Renderer::render(RenderSnapshot& snapshot) -> void {
     device->waitForFence(inflightFences[currentFrame]);
 
     auto index = swapchain->acquireNextImage(imageAvailableSemaphores[currentFrame]);
     if (!index) {
+        if (index.error() == 2) {
+            swapchain->recreate();
+            resourcePool.flush();
+            currentFrame = 0;
+        }
         return;
     }
 
     device->resetFence(inflightFences[currentFrame]);
 
-    int winW = 0;
-    int winH = 0;
-    SDL_GetWindowSizeInPixels(window, &winW, &winH);
-    auto aspect = (float) winW / (float) winH;
-    auto proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 3000.0f);
-    proj[1][1] *= -1.0f;
     UniformBufferObject ubo = {
-        .view = camera.viewMatrix(),
-        .proj = proj,
+        .view = snapshot.viewMatrix,
+        .proj = snapshot.projMatrix,
     };
     memcpy(uniformBuffersMapped[*index], &ubo, sizeof(ubo));
 
@@ -294,8 +291,9 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
     auto instanceCount = (uint32_t) gpuInstances.size();
 
     const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, imageIdx, instanceCount, gpuInstances, meshCache, geometryDescriptorSets);
-    lightingPass.addPass(frameGraph, geomData, depthHandle, colorHandle, ext, imageIdx, textureSampler, world, gbufferView, showBufferOverlay);
-    debugRenderer.addPass(frameGraph, colorHandle, depthHandle, ext, debugData, imageIdx);
+    lightingPass.addPass(
+        frameGraph, geomData, depthHandle, colorHandle, ext, imageIdx, textureSampler, lights, snapshot.gbufferViewMode, snapshot.showBufferOverlay);
+    debugRenderer.addPass(frameGraph, colorHandle, depthHandle, ext, snapshot.debugData, imageIdx);
 
     struct EditorUIPassData {
         FgTextureHandle color;
@@ -307,7 +305,7 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
             data.color = builder.write(colorHandle, FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);
         },
-        [this, ext](FrameGraphContext& ctx, const EditorUIPassData& data) {
+        [this, ext, &snapshot](FrameGraphContext& ctx, const EditorUIPassData& data) {
             auto* cmd = ctx.cmd();
 
             RhiRenderingAttachmentInfo colorAtt = {
@@ -320,7 +318,7 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
                 .colorAttachments = {&colorAtt, 1},
             };
             cmd->beginRendering(renderInfo);
-            editorUI->render(cmd);
+            editorUI->renderDrawData(cmd, snapshot.imguiSnapshot);
             cmd->endRendering();
         });
 
@@ -351,7 +349,12 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
         .fence = inflightFences[currentFrame],
     };
     device->submitCommandBuffer(cmd, submitInfo);
-    device->present(swapchain, renderFinishedSemaphores[currentFrame], *index);
+    if (!device->present(swapchain, renderFinishedSemaphores[currentFrame], *index)) {
+        swapchain->recreate();
+        resourcePool.flush();
+        currentFrame = 0;
+        return;
+    }
 
     currentFrame = (currentFrame + 1) % swapchain->imageCount();
 }

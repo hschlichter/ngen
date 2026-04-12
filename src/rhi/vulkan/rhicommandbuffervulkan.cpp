@@ -179,6 +179,16 @@ auto RhiCommandBufferVulkan::pipelineBarrier(std::span<const RhiBarrierDesc> bar
     vkCmdPipelineBarrier2(cmd, &depInfo);
 }
 
+auto RhiCommandBufferVulkan::setViewport(RhiExtent2D extent) -> void {
+    VkViewport viewport = {0, 0, (float) extent.width, (float) extent.height, 0, 1};
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+}
+
+auto RhiCommandBufferVulkan::setScissor(RhiExtent2D extent) -> void {
+    VkRect2D scissor = {{0, 0}, {extent.width, extent.height}};
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+}
+
 auto RhiCommandBufferVulkan::bindPipeline(RhiPipeline* pipeline) -> void {
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p->pipeline);

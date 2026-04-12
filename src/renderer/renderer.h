@@ -5,6 +5,7 @@
 #include "geometrypass.h"
 #include "lightingpass.h"
 #include "renderertypes.h"
+#include "renderworld.h"
 #include "resourcepool.h"
 #include "rhitypes.h"
 
@@ -19,9 +20,7 @@ class RhiCommandBuffer;
 class RhiEditorUI;
 class MeshLibrary;
 class MaterialLibrary;
-struct Camera;
-struct DebugDrawData;
-struct RenderWorld;
+struct RenderSnapshot;
 struct SDL_Window;
 
 struct CachedTexture {
@@ -39,12 +38,10 @@ public:
 
     auto init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<void, int>;
     auto uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void;
-    auto render(const Camera& camera, SDL_Window* window, const DebugDrawData& debugData, const RenderWorld& world) -> void;
+    auto render(RenderSnapshot& snapshot) -> void;
     auto destroy() -> void;
 
     auto editorui() -> RhiEditorUI* { return editorUI.get(); }
-    inline auto gbufferViewMode() -> GBufferView& { return gbufferView; }
-    inline auto bufferOverlayEnabled() -> bool& { return showBufferOverlay; }
 
 private:
     RhiDevice* device = nullptr;
@@ -60,6 +57,7 @@ private:
     std::unordered_map<uint32_t, CachedMesh> meshCache;
     std::unordered_map<uint32_t, CachedTexture> textureCache;
     std::vector<GpuInstance> gpuInstances;
+    std::vector<RenderLight> lights;
     RhiDescriptorPool* geometryDescriptorPool = nullptr;
     std::vector<RhiDescriptorSet*> geometryDescriptorSets;
 
@@ -74,9 +72,6 @@ private:
     std::vector<RhiSemaphore*> renderFinishedSemaphores;
     std::vector<RhiFence*> inflightFences;
     uint32_t currentFrame = 0;
-
-    GBufferView gbufferView = GBufferView::Lit;
-    bool showBufferOverlay = false;
 
     FrameGraph frameGraph;
     ResourcePool resourcePool;

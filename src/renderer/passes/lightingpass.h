@@ -8,7 +8,7 @@
 #include <vector>
 
 class RhiDevice;
-struct RenderWorld;
+struct RenderLight;
 struct GeometryPassData;
 
 struct LightingUBO {
@@ -36,7 +36,7 @@ public:
                  RhiExtent2D extent,
                  uint32_t imageIndex,
                  RhiSampler* sampler,
-                 const RenderWorld& world,
+                 const std::vector<RenderLight>& lights,
                  GBufferView viewMode,
                  bool showOverlay) -> void;
 

@@ -82,7 +82,7 @@ auto LightingPass::addPass(FrameGraph& fg,
                            RhiExtent2D extent,
                            uint32_t imageIndex,
                            RhiSampler* sampler,
-                           const RenderWorld& world,
+                           const std::vector<RenderLight>& lights,
                            GBufferView viewMode,
                            bool showOverlay) -> void {
     struct LightingPassData {
@@ -101,7 +101,7 @@ auto LightingPass::addPass(FrameGraph& fg,
             data.color = builder.write(colorHandle, FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);
         },
-        [this, imageIndex, extent, sampler, &world, viewMode, showOverlay](FrameGraphContext& ctx, const LightingPassData& data) {
+        [this, imageIndex, extent, sampler, &lights, viewMode, showOverlay](FrameGraphContext& ctx, const LightingPassData& data) {
             auto* cmd = ctx.cmd();
 
             LightingUBO lightUbo = {
@@ -109,7 +109,7 @@ auto LightingPass::addPass(FrameGraph& fg,
                 .lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 0.15f),
                 .depthParams = glm::vec4(0.1f, 3000.0f, 0.0f, 0.0f),
             };
-            for (const auto& light : world.lights) {
+            for (const auto& light : lights) {
                 if (light.type == LightType::Directional) {
                     auto dir = glm::normalize(glm::vec3(light.worldTransform[2]));
                     lightUbo.lightDirection = glm::vec4(dir, light.intensity);
@@ -159,6 +159,8 @@ auto LightingPass::addPass(FrameGraph& fg,
             };
             cmd->beginRendering(renderInfo);
             cmd->bindPipeline(pipeline);
+            cmd->setViewport(extent);
+            cmd->setScissor(extent);
             cmd->bindDescriptorSet(pipeline, descriptorSets[imageIndex]);
 
             struct LightingPush {

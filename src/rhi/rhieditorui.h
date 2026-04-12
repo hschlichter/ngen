@@ -2,12 +2,40 @@
 
 #include "rhitypes.h"
 
-#include <functional>
+#include <vector>
 
 class RhiDevice;
 class RhiCommandBuffer;
 union SDL_Event;
 struct SDL_Window;
+struct ImDrawData;
+struct ImDrawList;
+struct ImTextureData;
+template <typename T> struct ImVector;
+
+struct ImGuiFrameSnapshot {
+    bool valid = false;
+    int totalIdxCount = 0;
+    int totalVtxCount = 0;
+    float displayPosX = 0;
+    float displayPosY = 0;
+    float displaySizeX = 0;
+    float displaySizeY = 0;
+    float framebufferScaleX = 0;
+    float framebufferScaleY = 0;
+    std::vector<ImDrawList*> cmdLists;
+    ImVector<ImTextureData*>* textures = nullptr;
+
+    ImGuiFrameSnapshot() = default;
+    ImGuiFrameSnapshot(const ImGuiFrameSnapshot&) = delete;
+    ImGuiFrameSnapshot& operator=(const ImGuiFrameSnapshot&) = delete;
+    ImGuiFrameSnapshot(ImGuiFrameSnapshot&& other) noexcept;
+    ImGuiFrameSnapshot& operator=(ImGuiFrameSnapshot&& other) noexcept;
+    ~ImGuiFrameSnapshot();
+
+    void cloneFrom(const ImDrawData* drawData);
+    void fillDrawData(ImDrawData& out) const;
+};
 
 struct RhiEditorUIInitInfo {
     SDL_Window* window;
@@ -27,11 +55,8 @@ public:
 
     virtual auto init(const RhiEditorUIInitInfo& info) -> void = 0;
     virtual auto processEvent(SDL_Event* event) -> bool = 0;
-    virtual auto render(RhiCommandBuffer* cmd) -> void = 0;
+    virtual auto beginFrame() -> void = 0;
+    virtual auto endFrame() -> ImGuiFrameSnapshot = 0;
+    virtual auto renderDrawData(RhiCommandBuffer* cmd, ImGuiFrameSnapshot& snapshot) -> void = 0;
     virtual auto shutdown() -> void = 0;
-
-    void setDrawCallback(std::function<void()> cb) { drawCallback = std::move(cb); }
-
-protected:
-    std::function<void()> drawCallback;
 };

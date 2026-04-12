@@ -19,6 +19,8 @@ public:
     virtual auto beginRendering(const RhiRenderingInfo& info) -> void = 0;
     virtual auto endRendering() -> void = 0;
     virtual auto pipelineBarrier(std::span<const RhiBarrierDesc> barriers) -> void = 0;
+    virtual auto setViewport(RhiExtent2D extent) -> void = 0;
+    virtual auto setScissor(RhiExtent2D extent) -> void = 0;
     virtual auto bindPipeline(RhiPipeline* pipeline) -> void = 0;
     virtual auto bindVertexBuffer(RhiBuffer* buffer) -> void = 0;
     virtual auto bindIndexBuffer(RhiBuffer* buffer) -> void = 0;

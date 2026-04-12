@@ -133,6 +133,8 @@ auto DebugRenderer::addPass(FrameGraph& fg, FgTextureHandle color, FgTextureHand
             };
             cmd->beginRendering(renderInfo);
             cmd->bindPipeline(pip);
+            cmd->setViewport(extent);
+            cmd->setScissor(extent);
             cmd->bindVertexBuffer(vb);
             cmd->bindDescriptorSet(pip, ds);
             cmd->draw(vertexCount, 1, 0, 0);

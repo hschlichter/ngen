@@ -31,7 +31,7 @@ public:
     auto waitForFence(RhiFence* fence) -> void override;
     auto resetFence(RhiFence* fence) -> void override;
     auto submitCommandBuffer(RhiCommandBuffer* cmd, const RhiSubmitInfo& info) -> void override;
-    auto present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) -> void override;
+    auto present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) -> bool override;
 
     auto mapBuffer(RhiBuffer* buffer) -> void* override;
     auto unmapBuffer(RhiBuffer* buffer) -> void override;

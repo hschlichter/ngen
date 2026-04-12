@@ -63,18 +63,27 @@ auto RhiEditorUIVulkan::processEvent(SDL_Event* event) -> bool {
     return io.WantCaptureMouse || io.WantCaptureKeyboard;
 }
 
-auto RhiEditorUIVulkan::render(RhiCommandBuffer* cmd) -> void {
+auto RhiEditorUIVulkan::beginFrame() -> void {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
+}
 
-    if (drawCallback) {
-        drawCallback();
-    }
-
+auto RhiEditorUIVulkan::endFrame() -> ImGuiFrameSnapshot {
     ImGui::Render();
+    ImGuiFrameSnapshot snapshot;
+    snapshot.cloneFrom(ImGui::GetDrawData());
+    return snapshot;
+}
+
+auto RhiEditorUIVulkan::renderDrawData(RhiCommandBuffer* cmd, ImGuiFrameSnapshot& snapshot) -> void {
+    if (!snapshot.valid) {
+        return;
+    }
+    ImDrawData drawData;
+    snapshot.fillDrawData(drawData);
     auto* vkCmd = static_cast<RhiCommandBufferVulkan*>(cmd);
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), vkCmd->cmd);
+    ImGui_ImplVulkan_RenderDrawData(&drawData, vkCmd->cmd);
 }
 
 auto RhiEditorUIVulkan::shutdown() -> void {

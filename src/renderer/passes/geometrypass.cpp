@@ -111,6 +111,8 @@ auto GeometryPass::addPass(FrameGraph& fg,
             };
             cmd->beginRendering(renderInfo);
             cmd->bindPipeline(pip);
+            cmd->setViewport(extent);
+            cmd->setScissor(extent);
 
             for (uint32_t m = 0; m < instanceCount; m++) {
                 auto& inst = instances[m];

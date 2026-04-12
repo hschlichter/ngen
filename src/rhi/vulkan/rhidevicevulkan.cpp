@@ -610,14 +610,17 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
         .topology = vkTopology,
     };
 
-    VkViewport viewport = {0, 0, (float) desc.viewportExtent.width, (float) desc.viewportExtent.height, 0, 1};
-    VkRect2D scissor = {{0, 0}, {desc.viewportExtent.width, desc.viewportExtent.height}};
     VkPipelineViewportStateCreateInfo viewportState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
         .viewportCount = 1,
-        .pViewports = &viewport,
         .scissorCount = 1,
-        .pScissors = &scissor,
+    };
+
+    std::array<VkDynamicState, 2> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamicState = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = (uint32_t) dynamicStates.size(),
+        .pDynamicStates = dynamicStates.data(),
     };
 
     VkPipelineRasterizationStateCreateInfo rasterizationState = {
@@ -702,6 +705,7 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
         .pMultisampleState = &multisampleState,
         .pDepthStencilState = &depthStencilState,
         .pColorBlendState = &colorBlendState,
+        .pDynamicState = &dynamicState,
         .layout = pip->layout,
     };
 
@@ -909,7 +913,7 @@ auto RhiDeviceVulkan::submitCommandBuffer(RhiCommandBuffer* cmd, const RhiSubmit
     vkQueueSubmit(graphicsQueue, 1, &submit, (fence != nullptr) ? fence->fence : VK_NULL_HANDLE);
 }
 
-auto RhiDeviceVulkan::present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) -> void {
+auto RhiDeviceVulkan::present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) -> bool {
     auto* sc = static_cast<RhiSwapchainVulkan*>(swapchain);
     auto* sem = static_cast<RhiSemaphoreVulkan*>(waitSemaphore);
 
@@ -922,7 +926,8 @@ auto RhiDeviceVulkan::present(RhiSwapchain* swapchain, RhiSemaphore* waitSemapho
         .pImageIndices = &imageIndex,
     };
 
-    vkQueuePresentKHR(graphicsQueue, &presentInfo);
+    auto result = vkQueuePresentKHR(graphicsQueue, &presentInfo);
+    return result != VK_ERROR_OUT_OF_DATE_KHR && result != VK_SUBOPTIMAL_KHR;
 }
 
 auto RhiDeviceVulkan::mapBuffer(RhiBuffer* buffer) -> void* {

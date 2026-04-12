@@ -25,6 +25,7 @@ public:
 
     auto acquireTexture(const RhiTextureDesc& desc) -> RhiTexture*;
     auto releaseTexture(const RhiTextureDesc& desc, RhiTexture* texture) -> void;
+    auto flush() -> void;
 
 private:
     RhiDevice* device = nullptr;

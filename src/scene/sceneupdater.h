@@ -9,17 +9,15 @@
 
 class USDScene;
 class USDRenderExtractor;
-class Renderer;
 
 class SceneUpdater {
 public:
     auto update(USDScene& usdScene,
                 USDRenderExtractor& usdExtractor,
-                Renderer& renderer,
                 RenderWorld& renderWorld,
                 MeshLibrary& meshLib,
                 MaterialLibrary& matLib,
-                SceneQuerySystem& sceneQuery) -> void;
+                SceneQuerySystem& sceneQuery) -> bool;
 
     auto waitIfBlocked() -> void;
 

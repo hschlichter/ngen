@@ -37,7 +37,11 @@ auto RhiSwapchainVulkan::vkFormatToRhiFormat(VkFormat format) -> RhiFormat {
 
 auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, SDL_Window* window)
     -> std::expected<void, int> {
+    vkPhysicalDevice = physicalDevice;
     vkDevice = device;
+    vkSurface = surface;
+    vkQueueFamilyIndex = queueFamilyIndex;
+    sdlWindow = window;
     VkResult result = VK_SUCCESS;
 
     VkSurfaceCapabilitiesKHR capabilities;
@@ -206,10 +210,20 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     return {};
 }
 
+auto RhiSwapchainVulkan::recreate() -> bool {
+    vkDeviceWaitIdle(vkDevice);
+    destroy();
+    auto result = init(vkPhysicalDevice, vkDevice, vkSurface, vkQueueFamilyIndex, sdlWindow);
+    return result.has_value();
+}
+
 auto RhiSwapchainVulkan::acquireNextImage(RhiSemaphore* signalSemaphore) -> std::expected<uint32_t, int> {
     auto* sem = static_cast<RhiSemaphoreVulkan*>(signalSemaphore);
     uint32_t index = 0;
     auto result = vkAcquireNextImageKHR(vkDevice, swapchain, UINT64_MAX, sem->semaphore, VK_NULL_HANDLE, &index);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        return std::unexpected(2); // needs recreate, semaphore not signaled
+    }
     if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
         std::println(stderr, "vkAcquireNextImageKHR failed: {}({})", string_VkResult(result), (int) result);
         return std::unexpected(1);

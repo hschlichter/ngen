@@ -19,6 +19,13 @@ auto ResourcePool::destroy() -> void {
     inUse.clear();
 }
 
+auto ResourcePool::flush() -> void {
+    for (auto& entry : available) {
+        device->destroyTexture(entry.texture);
+    }
+    available.clear();
+}
+
 auto ResourcePool::acquireTexture(const RhiTextureDesc& desc) -> RhiTexture* {
     ResourcePoolKey key = {
         .width = desc.width,

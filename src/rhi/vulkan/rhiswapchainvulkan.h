@@ -16,6 +16,7 @@ public:
     auto init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, SDL_Window* window)
         -> std::expected<void, int>;
     auto destroy() -> void override;
+    auto recreate() -> bool override;
 
     auto acquireNextImage(RhiSemaphore* signalSemaphore) -> std::expected<uint32_t, int> override;
     auto imageCount() -> uint32_t override { return imgCount; }
@@ -26,7 +27,11 @@ public:
     auto depthFormat() -> RhiFormat override { return RhiFormat::D32_SFLOAT; }
 
 private:
+    VkPhysicalDevice vkPhysicalDevice = VK_NULL_HANDLE;
     VkDevice vkDevice = VK_NULL_HANDLE;
+    VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
+    uint32_t vkQueueFamilyIndex = 0;
+    SDL_Window* sdlWindow = nullptr;
 
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     RhiExtent2D ext = {};

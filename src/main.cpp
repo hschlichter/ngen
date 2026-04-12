@@ -4,6 +4,8 @@
 #include "jobsystem.h"
 #include "mesh.h"
 #include "renderer.h"
+#include "rendersnapshot.h"
+#include "renderthread.h"
 #include "renderworld.h"
 #include "rhidevicevulkan.h"
 #include "rhieditorui.h"
@@ -13,6 +15,8 @@
 #include "usdscene.h"
 
 #include <SDL3/SDL.h>
+
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <print>
 
@@ -71,7 +75,10 @@ auto main(int argc, char* argv[]) -> int {
     }
     renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
     EditorUI editorUI;
-    renderer.editorui()->setDrawCallback([&] { editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib); });
+
+    // Render thread
+    RenderThread renderThread;
+    renderThread.start(&renderer);
 
     DebugDraw debugDraw;
 
@@ -93,13 +100,23 @@ auto main(int argc, char* argv[]) -> int {
         auto dt = (float) (nowTicks - lastTicks) / 1.0e9f;
         lastTicks = nowTicks;
 
+        bool sceneChanged = false;
+
         if (editorUI.hasPendingOpen()) {
             auto path = editorUI.consumePendingOpenPath();
-            editorUI.openScene(path.c_str(), usdScene, usdExtractor, meshLib, matLib, renderWorld, sceneQuery, sceneUpdater, renderer, selectedPrim);
+            sceneChanged = editorUI.openScene(path.c_str(), usdScene, usdExtractor, meshLib, matLib, renderWorld, sceneQuery, sceneUpdater, selectedPrim);
         }
 
         if (usdScene.isOpen()) {
-            sceneUpdater.update(usdScene, usdExtractor, renderer, renderWorld, meshLib, matLib, sceneQuery);
+            sceneChanged |= sceneUpdater.update(usdScene, usdExtractor, renderWorld, meshLib, matLib, sceneQuery);
+        }
+
+        if (sceneChanged) {
+            renderThread.submitRenderUpload(RenderUpload{
+                .world = renderWorld,
+                .meshLib = std::make_shared<const MeshLibrary>(meshLib),
+                .matLib = std::make_shared<const MaterialLibrary>(matLib),
+            });
         }
 
         SDL_Event ev;
@@ -163,11 +180,31 @@ auto main(int argc, char* argv[]) -> int {
 
         editorUI.drawDebug(debugDraw, renderWorld, selectedPrim, sceneQuery, sceneUpdater, usdScene);
 
-        renderer.gbufferViewMode() = static_cast<GBufferView>(editorUI.getGBufferViewMode());
-        renderer.bufferOverlayEnabled() = editorUI.getShowBufferOverlay();
-        renderer.render(cam, window, debugDraw.data(), renderWorld);
+        renderer.editorui()->beginFrame();
+        editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib);
+        auto imguiSnapshot = renderer.editorui()->endFrame();
+
+        int winW = 0, winH = 0;
+        SDL_GetWindowSizeInPixels(window, &winW, &winH);
+        auto aspect = (float) winW / (float) winH;
+        auto proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 3000.0f);
+        proj[1][1] *= -1.0f;
+
+        RenderSnapshot snapshot = {
+            .viewMatrix = cam.viewMatrix(),
+            .projMatrix = proj,
+            .windowWidth = winW,
+            .windowHeight = winH,
+            .gbufferViewMode = static_cast<GBufferView>(editorUI.getGBufferViewMode()),
+            .showBufferOverlay = editorUI.getShowBufferOverlay(),
+            .debugData = debugDraw.data(),
+            .imguiSnapshot = std::move(imguiSnapshot),
+        };
+
+        renderThread.submitSnapshot(std::move(snapshot));
     }
 
+    renderThread.stop();
     JobSystem::shutdown();
     renderer.destroy();
     rhiDevice.destroy();

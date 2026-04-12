@@ -1,16 +1,13 @@
 #include "sceneupdater.h"
 
-#include "renderer.h"
 #include "usdrenderextractor.h"
 #include "usdscene.h"
 
-auto SceneUpdater::update(USDScene& usdScene,
-                          USDRenderExtractor& usdExtractor,
-                          Renderer& renderer,
-                          RenderWorld& renderWorld,
-                          MeshLibrary& meshLib,
-                          MaterialLibrary& matLib,
-                          SceneQuerySystem& sceneQuery) -> void {
+auto SceneUpdater::update(
+    USDScene& usdScene, USDRenderExtractor& usdExtractor, RenderWorld& renderWorld, MeshLibrary& meshLib, MaterialLibrary& matLib, SceneQuerySystem& sceneQuery)
+    -> bool {
+    bool sceneChanged = false;
+
     // Phase 1: Swap in results from completed background job
     if (editingBlocked && sceneUpdateFence.ready()) {
         JobSystem::wait(sceneUpdateFence);
@@ -18,8 +15,8 @@ auto SceneUpdater::update(USDScene& usdScene,
         meshLib = std::move(pendingMeshLib);
         matLib = std::move(pendingMatLib);
         sceneQuery = std::move(pendingSceneQuery);
-        renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
         editingBlocked = false;
+        sceneChanged = true;
     }
 
     // Phase 2: Kick off background job if edits are pending
@@ -82,10 +79,12 @@ auto SceneUpdater::update(USDScene& usdScene,
                 usdScene.updateAssetBindings(meshLib, matLib);
             }
             usdExtractor.extract(usdScene, meshLib, renderWorld);
-            renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
             sceneQuery.rebuild(usdScene, meshLib);
+            sceneChanged = true;
         }
     }
+
+    return sceneChanged;
 }
 
 auto SceneUpdater::waitIfBlocked() -> void {

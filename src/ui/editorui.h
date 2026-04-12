@@ -8,7 +8,6 @@
 class DebugDraw;
 class MaterialLibrary;
 class MeshLibrary;
-class Renderer;
 class SceneQuerySystem;
 class SceneUpdater;
 class USDRenderExtractor;
@@ -34,8 +33,7 @@ public:
                    RenderWorld& renderWorld,
                    SceneQuerySystem& sceneQuery,
                    SceneUpdater& sceneUpdater,
-                   Renderer& renderer,
-                   PrimHandle& selectedPrim) -> void;
+                   PrimHandle& selectedPrim) -> bool;
 
     auto drawDebug(DebugDraw& debugDraw,
                    const RenderWorld& renderWorld,
