@@ -17,4 +17,5 @@ struct Camera {
     auto handleMouseMotion(float xrel, float yrel) -> void;
     auto update(const bool* keys, float dt) -> void;
     [[nodiscard]] auto viewMatrix() const -> glm::mat4;
+    auto snapToAxis(int axis, bool negative) -> void;
 };

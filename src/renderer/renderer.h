@@ -44,6 +44,7 @@ public:
     auto destroy() -> void;
 
     auto editorui() -> RhiEditorUI* { return editorUI.get(); }
+    auto gizmo() -> GizmoPass& { return gizmoPass; }
 
 private:
     RhiDevice* device = nullptr;

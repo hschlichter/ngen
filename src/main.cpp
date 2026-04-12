@@ -142,11 +142,22 @@ auto main(int argc, char* argv[]) -> int {
                 cam.handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
             }
 
-            if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_LEFT && usdScene.isOpen()) {
+            if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_LEFT) {
                 int winW = 0, winH = 0;
                 SDL_GetWindowSizeInPixels(window, &winW, &winH);
                 float mx = ev.button.x;
                 float my = ev.button.y;
+
+                bool gizmoNeg = false;
+                auto gizmoAxis = renderer.gizmo().hitTest(mx, my, {(uint32_t) winW, (uint32_t) winH}, gizmoNeg);
+                if (gizmoAxis >= 0) {
+                    cam.snapToAxis(gizmoAxis, gizmoNeg);
+                    continue;
+                }
+
+                if (!usdScene.isOpen()) {
+                    continue;
+                }
 
                 float ndcX = (2.0f * mx / (float) winW) - 1.0f;
                 float ndcY = (2.0f * my / (float) winH) - 1.0f;

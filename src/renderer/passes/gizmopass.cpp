@@ -123,6 +123,10 @@ auto GizmoPass::addPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D fullE
     UniformBufferObject ubo = {.view = rotView, .proj = proj};
     memcpy(uniformBuffersMapped[imageIndex], &ubo, sizeof(ubo));
 
+    lastViewProj = proj * rotView;
+    lastViewMatrix = viewMatrix;
+    lastFullExtent = fullExtent;
+
     auto vpX = (int32_t) (fullExtent.width - gizmoSize - margin);
     auto vpY = (int32_t) margin;
     RhiExtent2D gizmoExtent = {gizmoSize, gizmoSize};
@@ -162,4 +166,60 @@ auto GizmoPass::addPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D fullE
             cmd->draw(6, 1, 0, 0);
             cmd->endRendering();
         });
+}
+
+auto GizmoPass::hitTest(float mouseX, float mouseY, RhiExtent2D windowExtent, bool& negative) const -> int {
+    constexpr uint32_t gizmoSize = 120;
+    constexpr uint32_t margin = 50;
+
+    auto vpX = (float) (lastFullExtent.width - gizmoSize - margin);
+    auto vpY = (float) margin;
+
+    // Check if click is within gizmo region
+    if (mouseX < vpX || mouseX > vpX + gizmoSize || mouseY < vpY || mouseY > vpY + gizmoSize) {
+        return -1;
+    }
+
+    // Project the origin and each positive axis tip to find closest line
+    auto projToScreen = [&](glm::vec3 pt) -> glm::vec2 {
+        auto clip = lastViewProj * glm::vec4(pt, 1.0f);
+        auto ndc = glm::vec3(clip) / clip.w;
+        return {vpX + (ndc.x * 0.5f + 0.5f) * gizmoSize, vpY + (ndc.y * 0.5f + 0.5f) * gizmoSize};
+    };
+
+    auto mouse = glm::vec2(mouseX, mouseY);
+    auto origin = projToScreen({0, 0, 0});
+
+    // Distance from point to line segment
+    auto distToSegment = [](glm::vec2 p, glm::vec2 a, glm::vec2 b) -> float {
+        auto ab = b - a;
+        auto ap = p - a;
+        float t = glm::clamp(glm::dot(ap, ab) / glm::dot(ab, ab), 0.0f, 1.0f);
+        auto closest = a + t * ab;
+        return glm::length(p - closest);
+    };
+
+    glm::vec3 axisTips[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    float bestDist = 15.0f;
+    int bestAxis = -1;
+
+    for (int i = 0; i < 3; i++) {
+        auto tip = projToScreen(axisTips[i]);
+        float dist = distToSegment(mouse, origin, tip);
+        if (dist < bestDist) {
+            bestDist = dist;
+            bestAxis = i;
+        }
+    }
+
+    if (bestAxis < 0) {
+        return -1;
+    }
+
+    // Camera forward is the negative Z axis of the view matrix (3rd row, negated)
+    auto camForward = -glm::vec3(lastViewMatrix[0][2], lastViewMatrix[1][2], lastViewMatrix[2][2]);
+    // Snap to whichever direction (+ or -) has smaller angle to camera forward
+    negative = glm::dot(camForward, axisTips[bestAxis]) < 0.0f;
+
+    return bestAxis;
 }
