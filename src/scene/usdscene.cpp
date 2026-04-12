@@ -546,6 +546,23 @@ struct USDScene::Impl {
                     (int) (fvIdx + t + 2),
                 };
 
+                // Compute flat face normal as fallback when normals aren't authored
+                std::array<float, 3> faceNormal = {0.0f, 1.0f, 0.0f};
+                if (normals.empty()) {
+                    auto& p0 = points[indices[0]];
+                    auto& p1 = points[indices[1]];
+                    auto& p2 = points[indices[2]];
+                    float e1x = p1[0] - p0[0], e1y = p1[1] - p0[1], e1z = p1[2] - p0[2];
+                    float e2x = p2[0] - p0[0], e2y = p2[1] - p0[1], e2z = p2[2] - p0[2];
+                    float nx = e1y * e2z - e1z * e2y;
+                    float ny = e1z * e2x - e1x * e2z;
+                    float nz = e1x * e2y - e1y * e2x;
+                    float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+                    if (len > 0.0f) {
+                        faceNormal = {nx / len, ny / len, nz / len};
+                    }
+                }
+
                 for (int v = 0; v < 3; v++) {
                     Vertex vert = {};
                     auto& p = points[indices[v]];
@@ -557,6 +574,8 @@ struct USDScene::Impl {
                             auto& n = normals[ni];
                             vert.normal = {n[0], n[1], n[2]};
                         }
+                    } else {
+                        vert.normal = faceNormal;
                     }
 
                     if (!uvs.empty()) {

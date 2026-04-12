@@ -27,6 +27,17 @@ struct UniformBufferObject {
     glm::mat4 proj;
 };
 
+struct LightingUBO {
+    glm::vec4 lightDirection; // xyz = direction, w = intensity
+    glm::vec4 lightColor;     // xyz = color, w = ambient
+};
+
+enum class GBufferView : int {
+    Lit = 0,
+    Albedo,
+    Normals,
+};
+
 struct CachedMesh {
     RhiBuffer* vertexBuffer = nullptr;
     RhiBuffer* indexBuffer = nullptr;
@@ -54,23 +65,35 @@ public:
 
     auto init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<void, int>;
     auto uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void;
-    auto render(const Camera& camera, SDL_Window* window, const DebugDrawData& debugData) -> void;
+    auto render(const Camera& camera, SDL_Window* window, const DebugDrawData& debugData, const RenderWorld& world) -> void;
     auto destroy() -> void;
 
     auto editorui() -> RhiEditorUI* { return editorUI.get(); }
+    inline auto gbufferViewMode() -> GBufferView& { return gbufferView; }
+    inline auto bufferOverlayEnabled() -> bool& { return showBufferOverlay; }
 
 private:
     RhiDevice* device = nullptr;
     RhiSwapchain* swapchain = nullptr;
 
-    // Forward pass
-    RhiPipeline* pipeline = nullptr;
-    RhiDescriptorSetLayout* descriptorSetLayout = nullptr;
-    RhiDescriptorPool* descriptorPool = nullptr;
-    std::vector<RhiDescriptorSet*> descriptorSets;
+    // Geometry pass
+    RhiPipeline* geometryPipeline = nullptr;
+    RhiDescriptorSetLayout* geometryDescriptorSetLayout = nullptr;
+    RhiDescriptorPool* geometryDescriptorPool = nullptr;
+    std::vector<RhiDescriptorSet*> geometryDescriptorSets;
     RhiSampler* textureSampler = nullptr;
-    RhiShaderModule* vertShader = nullptr;
-    RhiShaderModule* fragShader = nullptr;
+    RhiShaderModule* geometryVertShader = nullptr;
+    RhiShaderModule* geometryFragShader = nullptr;
+
+    // Lighting pass
+    RhiPipeline* lightingPipeline = nullptr;
+    RhiDescriptorSetLayout* lightingDescriptorSetLayout = nullptr;
+    RhiDescriptorPool* lightingDescriptorPool = nullptr;
+    std::vector<RhiDescriptorSet*> lightingDescriptorSets;
+    RhiShaderModule* lightingVertShader = nullptr;
+    RhiShaderModule* lightingFragShader = nullptr;
+    std::vector<RhiBuffer*> lightingUniformBuffers;
+    std::vector<void*> lightingUniformBuffersMapped;
 
     // GPU resource caches (keyed by library handle index)
     std::unordered_map<uint32_t, CachedMesh> meshCache;
@@ -100,6 +123,9 @@ private:
     std::vector<RhiSemaphore*> renderFinishedSemaphores;
     std::vector<RhiFence*> inflightFences;
     uint32_t currentFrame = 0;
+
+    GBufferView gbufferView = GBufferView::Lit;
+    bool showBufferOverlay = false;
 
     FrameGraph frameGraph;
     ResourcePool resourcePool;

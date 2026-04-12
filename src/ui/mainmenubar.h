@@ -10,6 +10,8 @@ struct MainMenuBarState {
     bool& showLayersWindow;
     bool& showAABBs;
     bool& showSelectedAABB;
+    int& gbufferView;
+    bool& showBufferOverlay;
     bool& requestQuit;
     std::string& pendingOpenPath;
     SDL_Window* window;

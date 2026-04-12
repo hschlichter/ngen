@@ -88,27 +88,36 @@ auto FrameGraph::compile() -> void {
     std::vector<uint32_t> inDegree(passCount, 0);
 
     for (uint32_t resIdx = 0; resIdx < (uint32_t) resources.size(); resIdx++) {
-        uint32_t writerPass = UINT32_MAX;
+        // Collect all writers and readers for this resource
+        std::vector<uint32_t> writers;
         for (uint32_t p = 0; p < passCount; p++) {
             for (const auto& w : passes[p].writes) {
                 if (w.resourceIndex == resIdx) {
-                    writerPass = p;
+                    writers.push_back(p);
                     break;
                 }
             }
         }
-        if (writerPass == UINT32_MAX) {
-            continue;
+
+        // Chain consecutive writers: write-after-write ordering
+        for (size_t i = 1; i < writers.size(); i++) {
+            adj[writers[i - 1]].push_back(writers[i]);
+            inDegree[writers[i]]++;
         }
-        for (uint32_t p = 0; p < passCount; p++) {
-            if (p == writerPass) {
-                continue;
-            }
-            for (const auto& r : passes[p].reads) {
-                if (r.resourceIndex == resIdx) {
-                    adj[writerPass].push_back(p);
-                    inDegree[p]++;
-                    break;
+
+        // Last writer → readers
+        if (!writers.empty()) {
+            auto lastWriter = writers.back();
+            for (uint32_t p = 0; p < passCount; p++) {
+                if (p == lastWriter) {
+                    continue;
+                }
+                for (const auto& r : passes[p].reads) {
+                    if (r.resourceIndex == resIdx) {
+                        adj[lastWriter].push_back(p);
+                        inDegree[p]++;
+                        break;
+                    }
                 }
             }
         }

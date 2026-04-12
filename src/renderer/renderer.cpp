@@ -71,15 +71,15 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
     };
     fallbackTexture = device->createTexture(fallbackDesc);
 
-    // Forward pass pipeline
-    vertShader = device->createShaderModule("shaders/triangle.vert.spv");
-    fragShader = device->createShaderModule("shaders/triangle.frag.spv");
+    // Geometry pass pipeline
+    geometryVertShader = device->createShaderModule("shaders/gbuffer.vert.spv");
+    geometryFragShader = device->createShaderModule("shaders/gbuffer.frag.spv");
 
     std::array<RhiDescriptorBinding, 2> bindings = {{
         {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
         {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
     }};
-    descriptorSetLayout = device->createDescriptorSetLayout(bindings);
+    geometryDescriptorSetLayout = device->createDescriptorSetLayout(bindings);
 
     std::array<RhiVertexAttribute, 4> vertexAttrs = {{
         {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
@@ -88,20 +88,65 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
         {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
     }};
 
-    RhiGraphicsPipelineDesc pipelineDesc = {
-        .vertexShader = vertShader,
-        .fragmentShader = fragShader,
-        .descriptorSetLayout = descriptorSetLayout,
-        .colorFormats = {&colorFmt, 1},
+    std::array<RhiFormat, 2> geometryColorFormats = {R8G8B8A8_UNORM, R32G32B32A32_SFLOAT};
+
+    RhiGraphicsPipelineDesc geometryPipelineDesc = {
+        .vertexShader = geometryVertShader,
+        .fragmentShader = geometryFragShader,
+        .descriptorSetLayout = geometryDescriptorSetLayout,
+        .colorFormats = geometryColorFormats,
         .depthFormat = depthFmt,
         .vertexStride = sizeof(Vertex),
         .vertexAttributes = vertexAttrs,
         .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(glm::mat4)},
         .viewportExtent = ext,
     };
-    pipeline = device->createGraphicsPipeline(pipelineDesc);
-    if (pipeline == nullptr) {
+    geometryPipeline = device->createGraphicsPipeline(geometryPipelineDesc);
+    if (geometryPipeline == nullptr) {
         return std::unexpected(1);
+    }
+
+    // Lighting pass pipeline
+    lightingVertShader = device->createShaderModule("shaders/lighting.vert.spv");
+    lightingFragShader = device->createShaderModule("shaders/lighting.frag.spv");
+
+    std::array<RhiDescriptorBinding, 3> lightBindings = {{
+        {.binding = 0, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
+        {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
+        {.binding = 2, .type = UniformBuffer, .stage = RhiShaderStage::Fragment},
+    }};
+    lightingDescriptorSetLayout = device->createDescriptorSetLayout(lightBindings);
+
+    RhiGraphicsPipelineDesc lightingPipelineDesc = {
+        .vertexShader = lightingVertShader,
+        .fragmentShader = lightingFragShader,
+        .descriptorSetLayout = lightingDescriptorSetLayout,
+        .colorFormats = {&colorFmt, 1},
+        .vertexStride = 0,
+        .pushConstant = {.stage = RhiShaderStage::Fragment, .offset = 0, .size = 2 * sizeof(int32_t)},
+        .viewportExtent = ext,
+        .depthTestEnable = false,
+        .depthWriteEnable = false,
+        .backfaceCulling = false,
+    };
+    lightingPipeline = device->createGraphicsPipeline(lightingPipelineDesc);
+    if (lightingPipeline == nullptr) {
+        return std::unexpected(1);
+    }
+
+    lightingDescriptorPool = device->createDescriptorPool(imgCount, lightBindings);
+    lightingDescriptorSets = device->allocateDescriptorSets(lightingDescriptorPool, lightingDescriptorSetLayout, imgCount);
+
+    lightingUniformBuffers.resize(imgCount);
+    lightingUniformBuffersMapped.resize(imgCount);
+    for (uint32_t i = 0; i < imgCount; i++) {
+        RhiBufferDesc lightUboDesc = {
+            .size = sizeof(LightingUBO),
+            .usage = RhiBufferUsage::Uniform,
+            .memory = RhiMemoryUsage::CpuToGpu,
+        };
+        lightingUniformBuffers[i] = device->createBuffer(lightUboDesc);
+        lightingUniformBuffersMapped[i] = device->mapBuffer(lightingUniformBuffers[i]);
     }
 
     // Debug line pipeline
@@ -298,13 +343,13 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
     }
 
     // Rebuild descriptor sets
-    for (auto* ds : descriptorSets) {
+    for (auto* ds : geometryDescriptorSets) {
         delete ds;
     }
-    descriptorSets.clear();
-    if (descriptorPool) {
-        device->destroyDescriptorPool(descriptorPool);
-        descriptorPool = nullptr;
+    geometryDescriptorSets.clear();
+    if (geometryDescriptorPool) {
+        device->destroyDescriptorPool(geometryDescriptorPool);
+        geometryDescriptorPool = nullptr;
     }
 
     auto instanceCount = (uint32_t) gpuInstances.size();
@@ -318,8 +363,8 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
         {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
     }};
-    descriptorPool = device->createDescriptorPool(totalSets, poolBindings);
-    descriptorSets = device->allocateDescriptorSets(descriptorPool, descriptorSetLayout, totalSets);
+    geometryDescriptorPool = device->createDescriptorPool(totalSets, poolBindings);
+    geometryDescriptorSets = device->allocateDescriptorSets(geometryDescriptorPool, geometryDescriptorSetLayout, totalSets);
 
     for (uint32_t i = 0; i < imgCount; i++) {
         for (uint32_t m = 0; m < instanceCount; m++) {
@@ -344,17 +389,18 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
                     .sampler = textureSampler,
                 },
             }};
-            device->updateDescriptorSet(descriptorSets[(i * instanceCount) + m], writes);
+            device->updateDescriptorSet(geometryDescriptorSets[(i * instanceCount) + m], writes);
         }
     }
 }
 
-struct ForwardPassData {
-    FgTextureHandle color;
+struct GeometryPassData {
+    FgTextureHandle albedo;
+    FgTextureHandle normal;
     FgTextureHandle depth;
 };
 
-auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawData& debugData) -> void {
+auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawData& debugData, const RenderWorld& world) -> void {
     device->waitForFence(inflightFences[currentFrame]);
 
     auto index = swapchain->acquireNextImage(imageAvailableSemaphores[currentFrame]);
@@ -386,22 +432,44 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
     auto imageIdx = *index;
     auto instanceCount = (uint32_t) gpuInstances.size();
 
-    frameGraph.addPass<ForwardPassData>(
-        "ForwardPass",
-        [&](FrameGraphBuilder& builder, ForwardPassData& data) {
-            data.color = builder.write(colorHandle, FgAccessFlags::ColorAttachment);
+    FgTextureDesc albedoDesc = {
+        .width = ext.width,
+        .height = ext.height,
+        .format = RhiFormat::R8G8B8A8_UNORM,
+        .usage = RhiTextureUsage::ColorAttachment | RhiTextureUsage::Sampled,
+    };
+    FgTextureDesc normalDesc = {
+        .width = ext.width,
+        .height = ext.height,
+        .format = RhiFormat::R32G32B32A32_SFLOAT,
+        .usage = RhiTextureUsage::ColorAttachment | RhiTextureUsage::Sampled,
+    };
+
+    auto& geomData = frameGraph.addPass<GeometryPassData>(
+        "GeometryPass",
+        [&](FrameGraphBuilder& builder, GeometryPassData& data) {
+            data.albedo = builder.write(builder.createTexture(albedoDesc), FgAccessFlags::ColorAttachment);
+            data.normal = builder.write(builder.createTexture(normalDesc), FgAccessFlags::ColorAttachment);
             data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
             builder.setSideEffects(true);
         },
-        [this, imageIdx, instanceCount, ext](FrameGraphContext& ctx, const ForwardPassData& data) {
+        [this, imageIdx, instanceCount, ext](FrameGraphContext& ctx, const GeometryPassData& data) {
             auto* cmd = ctx.cmd();
 
-            RhiRenderingAttachmentInfo colorAtt = {
-                .texture = ctx.texture(data.color),
-                .layout = RhiImageLayout::ColorAttachment,
-                .clear = true,
-                .clearColor = {0.1f, 0.1f, 0.1f, 1.0f},
-            };
+            std::array<RhiRenderingAttachmentInfo, 2> colorAtts = {{
+                {
+                    .texture = ctx.texture(data.albedo),
+                    .layout = RhiImageLayout::ColorAttachment,
+                    .clear = true,
+                    .clearColor = {0.0f, 0.0f, 0.0f, 1.0f},
+                },
+                {
+                    .texture = ctx.texture(data.normal),
+                    .layout = RhiImageLayout::ColorAttachment,
+                    .clear = true,
+                    .clearColor = {0.0f, 0.0f, 0.0f, 0.0f},
+                },
+            }};
             RhiRenderingAttachmentInfo depthAtt = {
                 .texture = ctx.texture(data.depth),
                 .layout = RhiImageLayout::DepthStencilAttachment,
@@ -410,11 +478,11 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
             };
             RhiRenderingInfo renderInfo = {
                 .extent = ext,
-                .colorAttachments = {&colorAtt, 1},
+                .colorAttachments = {colorAtts.data(), colorAtts.size()},
                 .depthAttachment = &depthAtt,
             };
             cmd->beginRendering(renderInfo);
-            cmd->bindPipeline(pipeline);
+            cmd->bindPipeline(geometryPipeline);
 
             for (uint32_t m = 0; m < instanceCount; m++) {
                 auto& inst = gpuInstances[m];
@@ -425,13 +493,96 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
                 auto& cached = meshIt->second;
 
                 auto model = inst.transform;
-                cmd->pushConstants(pipeline, RhiShaderStage::Vertex, 0, sizeof(glm::mat4), &model);
+                cmd->pushConstants(geometryPipeline, RhiShaderStage::Vertex, 0, sizeof(glm::mat4), &model);
                 cmd->bindVertexBuffer(cached.vertexBuffer);
                 cmd->bindIndexBuffer(cached.indexBuffer);
-                cmd->bindDescriptorSet(pipeline, descriptorSets[(imageIdx * instanceCount) + m]);
+                cmd->bindDescriptorSet(geometryPipeline, geometryDescriptorSets[(imageIdx * instanceCount) + m]);
                 cmd->drawIndexed(cached.indexCount, 1, 0, 0, 0);
             }
 
+            cmd->endRendering();
+        });
+
+    struct LightingPassData {
+        FgTextureHandle albedo;
+        FgTextureHandle normal;
+        FgTextureHandle color;
+    };
+
+    frameGraph.addPass<LightingPassData>(
+        "LightingPass",
+        [&](FrameGraphBuilder& builder, LightingPassData& data) {
+            data.albedo = builder.read(geomData.albedo, FgAccessFlags::ShaderRead);
+            data.normal = builder.read(geomData.normal, FgAccessFlags::ShaderRead);
+            data.color = builder.write(colorHandle, FgAccessFlags::ColorAttachment);
+            builder.setSideEffects(true);
+        },
+        [this, imageIdx, ext, &world](FrameGraphContext& ctx, const LightingPassData& data) {
+            auto* cmd = ctx.cmd();
+
+            // Build lighting UBO from RenderWorld lights or use defaults
+            LightingUBO lightUbo = {
+                .lightDirection = glm::vec4(glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f)), 1.0f),
+                .lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 0.15f),
+            };
+            for (const auto& light : world.lights) {
+                if (light.type == LightType::Directional) {
+                    auto dir = glm::normalize(glm::vec3(light.worldTransform[2]));
+                    lightUbo.lightDirection = glm::vec4(dir, light.intensity);
+                    lightUbo.lightColor = glm::vec4(light.color, 0.15f);
+                    break;
+                }
+            }
+            memcpy(lightingUniformBuffersMapped[imageIdx], &lightUbo, sizeof(lightUbo));
+
+            // Update descriptor set with this frame's G-buffer textures
+            std::array<RhiDescriptorWrite, 3> writes = {{
+                {
+                    .binding = 0,
+                    .type = RhiDescriptorType::CombinedImageSampler,
+                    .texture = ctx.texture(data.albedo),
+                    .sampler = textureSampler,
+                },
+                {
+                    .binding = 1,
+                    .type = RhiDescriptorType::CombinedImageSampler,
+                    .texture = ctx.texture(data.normal),
+                    .sampler = textureSampler,
+                },
+                {
+                    .binding = 2,
+                    .type = RhiDescriptorType::UniformBuffer,
+                    .buffer = lightingUniformBuffers[imageIdx],
+                    .bufferRange = sizeof(LightingUBO),
+                },
+            }};
+            device->updateDescriptorSet(lightingDescriptorSets[imageIdx], writes);
+
+            RhiRenderingAttachmentInfo colorAtt = {
+                .texture = ctx.texture(data.color),
+                .layout = RhiImageLayout::ColorAttachment,
+                .clear = true,
+                .clearColor = {0.1f, 0.1f, 0.1f, 1.0f},
+            };
+            RhiRenderingInfo renderInfo = {
+                .extent = ext,
+                .colorAttachments = {&colorAtt, 1},
+            };
+            cmd->beginRendering(renderInfo);
+            cmd->bindPipeline(lightingPipeline);
+            cmd->bindDescriptorSet(lightingPipeline, lightingDescriptorSets[imageIdx]);
+
+            struct LightingPush {
+                int32_t viewMode;
+                int32_t showOverlay;
+            };
+            LightingPush push = {
+                .viewMode = static_cast<int32_t>(gbufferView),
+                .showOverlay = showBufferOverlay ? 1 : 0,
+            };
+            cmd->pushConstants(lightingPipeline, RhiShaderStage::Fragment, 0, sizeof(push), &push);
+
+            cmd->draw(3, 1, 0, 0);
             cmd->endRendering();
         });
 
@@ -513,13 +664,19 @@ auto Renderer::destroy() -> void {
     editorUI->shutdown();
     editorUI.reset();
 
-    for (auto* ds : descriptorSets) {
+    for (auto* ds : geometryDescriptorSets) {
         delete ds;
     }
-    if (descriptorPool) {
-        device->destroyDescriptorPool(descriptorPool);
+    if (geometryDescriptorPool) {
+        device->destroyDescriptorPool(geometryDescriptorPool);
     }
-    device->destroyDescriptorSetLayout(descriptorSetLayout);
+    device->destroyDescriptorSetLayout(geometryDescriptorSetLayout);
+
+    for (auto* ds : lightingDescriptorSets) {
+        delete ds;
+    }
+    device->destroyDescriptorPool(lightingDescriptorPool);
+    device->destroyDescriptorSetLayout(lightingDescriptorSetLayout);
 
     for (auto* ds : debugDescriptorSets) {
         delete ds;
@@ -530,13 +687,19 @@ auto Renderer::destroy() -> void {
     for (uint32_t i = 0; i < swapchain->imageCount(); i++) {
         device->unmapBuffer(uniformBuffers[i]);
         device->destroyBuffer(uniformBuffers[i]);
+        device->unmapBuffer(lightingUniformBuffers[i]);
+        device->destroyBuffer(lightingUniformBuffers[i]);
         device->unmapBuffer(debugVertexBuffers[i]);
         device->destroyBuffer(debugVertexBuffers[i]);
     }
 
-    device->destroyPipeline(pipeline);
-    device->destroyShaderModule(vertShader);
-    device->destroyShaderModule(fragShader);
+    device->destroyPipeline(geometryPipeline);
+    device->destroyShaderModule(geometryVertShader);
+    device->destroyShaderModule(geometryFragShader);
+
+    device->destroyPipeline(lightingPipeline);
+    device->destroyShaderModule(lightingVertShader);
+    device->destroyShaderModule(lightingFragShader);
 
     device->destroyPipeline(debugLinePipeline);
     device->destroyShaderModule(debugVertShader);

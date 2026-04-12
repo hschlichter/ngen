@@ -594,8 +594,8 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
 
     VkPipelineVertexInputStateCreateInfo vertexInputState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &bindingDesc,
+        .vertexBindingDescriptionCount = attrCount > 0 ? 1u : 0u,
+        .pVertexBindingDescriptions = attrCount > 0 ? &bindingDesc : nullptr,
         .vertexAttributeDescriptionCount = attrCount,
         .pVertexAttributeDescriptions = attrDescs.data(),
     };
@@ -623,7 +623,7 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
     VkPipelineRasterizationStateCreateInfo rasterizationState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .polygonMode = VK_POLYGON_MODE_FILL,
-        .cullMode = VK_CULL_MODE_BACK_BIT,
+        .cullMode = desc.backfaceCulling ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE,
         .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .lineWidth = 1.0f,
     };
@@ -642,15 +642,16 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
         .stencilTestEnable = VK_FALSE,
     };
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachment = {
+    auto colorAttachmentCount = (uint32_t) desc.colorFormats.size();
+    std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachments(colorAttachmentCount, {
         .blendEnable = VK_FALSE,
         .colorWriteMask = 0xF,
-    };
+    });
 
     VkPipelineColorBlendStateCreateInfo colorBlendState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .attachmentCount = 1,
-        .pAttachments = &colorBlendAttachment,
+        .attachmentCount = colorAttachmentCount,
+        .pAttachments = colorBlendAttachments.data(),
     };
 
     VkPushConstantRange pushConstRange = {

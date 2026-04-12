@@ -47,6 +47,8 @@ public:
     auto hasPendingOpen() const -> bool { return !pendingOpenPath.empty(); }
     auto consumePendingOpenPath() -> std::string { return std::exchange(pendingOpenPath, {}); }
     auto wantsQuit() const -> bool { return requestQuit; }
+    auto getGBufferViewMode() const -> int { return gbufferViewMode; }
+    auto getShowBufferOverlay() const -> bool { return showBufferOverlayFlag; }
 
 private:
     bool showSceneWindow = false;
@@ -54,6 +56,8 @@ private:
     bool showLayersWindow = false;
     bool showAABBsFlag = false;
     bool showSelectedAABBFlag = true;
+    int gbufferViewMode = 0;
+    bool showBufferOverlayFlag = false;
     bool requestQuit = false;
     std::string pendingOpenPath;
 };

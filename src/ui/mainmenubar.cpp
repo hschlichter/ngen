@@ -40,6 +40,13 @@ void drawMainMenuBar(MainMenuBarState& state) {
         if (ImGui::BeginMenu("Debug")) {
             ImGui::MenuItem("Show AABBs", nullptr, &state.showAABBs);
             ImGui::MenuItem("Show Selected AABB", nullptr, &state.showSelectedAABB);
+            ImGui::Separator();
+            ImGui::MenuItem("Show Buffer Overlay", nullptr, &state.showBufferOverlay);
+            ImGui::Separator();
+            ImGui::Text("Fullscreen Buffer View");
+            ImGui::RadioButton("Lit", &state.gbufferView, 0);
+            ImGui::RadioButton("Albedo", &state.gbufferView, 1);
+            ImGui::RadioButton("Normals", &state.gbufferView, 2);
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();

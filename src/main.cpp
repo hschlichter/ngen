@@ -163,7 +163,9 @@ auto main(int argc, char* argv[]) -> int {
 
         editorUI.drawDebug(debugDraw, renderWorld, selectedPrim, sceneQuery, sceneUpdater, usdScene);
 
-        renderer.render(cam, window, debugDraw.data());
+        renderer.gbufferViewMode() = static_cast<GBufferView>(editorUI.getGBufferViewMode());
+        renderer.bufferOverlayEnabled() = editorUI.getShowBufferOverlay();
+        renderer.render(cam, window, debugDraw.data(), renderWorld);
     }
 
     JobSystem::shutdown();

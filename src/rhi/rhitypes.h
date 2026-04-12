@@ -247,6 +247,7 @@ struct RhiGraphicsPipelineDesc {
     RhiPrimitiveTopology topology = RhiPrimitiveTopology::TriangleList;
     bool depthTestEnable = true;
     bool depthWriteEnable = true;
+    bool backfaceCulling = true;
 };
 
 struct RhiDescriptorWrite {
