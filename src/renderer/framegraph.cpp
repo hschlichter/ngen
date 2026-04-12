@@ -105,19 +105,22 @@ auto FrameGraph::compile() -> void {
             inDegree[writers[i]]++;
         }
 
-        // Last writer → readers
-        if (!writers.empty()) {
-            auto lastWriter = writers.back();
-            for (uint32_t p = 0; p < passCount; p++) {
-                if (p == lastWriter) {
-                    continue;
-                }
-                for (const auto& r : passes[p].reads) {
-                    if (r.resourceIndex == resIdx) {
-                        adj[lastWriter].push_back(p);
-                        inDegree[p]++;
-                        break;
+        // For each reader, connect to the latest writer declared before it
+        for (uint32_t p = 0; p < passCount; p++) {
+            for (const auto& r : passes[p].reads) {
+                if (r.resourceIndex == resIdx) {
+                    // Find the latest writer with index < p
+                    uint32_t bestWriter = UINT32_MAX;
+                    for (auto w : writers) {
+                        if (w < p) {
+                            bestWriter = w;
+                        }
                     }
+                    if (bestWriter != UINT32_MAX) {
+                        adj[bestWriter].push_back(p);
+                        inDegree[p]++;
+                    }
+                    break;
                 }
             }
         }

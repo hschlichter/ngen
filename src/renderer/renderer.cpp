@@ -110,10 +110,11 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
     lightingVertShader = device->createShaderModule("shaders/lighting.vert.spv");
     lightingFragShader = device->createShaderModule("shaders/lighting.frag.spv");
 
-    std::array<RhiDescriptorBinding, 3> lightBindings = {{
+    std::array<RhiDescriptorBinding, 4> lightBindings = {{
         {.binding = 0, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
         {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
         {.binding = 2, .type = UniformBuffer, .stage = RhiShaderStage::Fragment},
+        {.binding = 3, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
     }};
     lightingDescriptorSetLayout = device->createDescriptorSetLayout(lightBindings);
 
@@ -506,6 +507,7 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
     struct LightingPassData {
         FgTextureHandle albedo;
         FgTextureHandle normal;
+        FgTextureHandle depth;
         FgTextureHandle color;
     };
 
@@ -514,6 +516,7 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
         [&](FrameGraphBuilder& builder, LightingPassData& data) {
             data.albedo = builder.read(geomData.albedo, FgAccessFlags::ShaderRead);
             data.normal = builder.read(geomData.normal, FgAccessFlags::ShaderRead);
+            data.depth = builder.read(depthHandle, FgAccessFlags::ShaderRead);
             data.color = builder.write(colorHandle, FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);
         },
@@ -524,6 +527,7 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
             LightingUBO lightUbo = {
                 .lightDirection = glm::vec4(glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f)), 1.0f),
                 .lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 0.15f),
+                .depthParams = glm::vec4(0.1f, 3000.0f, 0.0f, 0.0f),
             };
             for (const auto& light : world.lights) {
                 if (light.type == LightType::Directional) {
@@ -536,7 +540,7 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
             memcpy(lightingUniformBuffersMapped[imageIdx], &lightUbo, sizeof(lightUbo));
 
             // Update descriptor set with this frame's G-buffer textures
-            std::array<RhiDescriptorWrite, 3> writes = {{
+            std::array<RhiDescriptorWrite, 4> writes = {{
                 {
                     .binding = 0,
                     .type = RhiDescriptorType::CombinedImageSampler,
@@ -555,6 +559,12 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
                     .buffer = lightingUniformBuffers[imageIdx],
                     .bufferRange = sizeof(LightingUBO),
                 },
+                {
+                    .binding = 3,
+                    .type = RhiDescriptorType::CombinedImageSampler,
+                    .texture = ctx.texture(data.depth),
+                    .sampler = textureSampler,
+                },
             }};
             device->updateDescriptorSet(lightingDescriptorSets[imageIdx], writes);
 
@@ -562,7 +572,7 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
                 .texture = ctx.texture(data.color),
                 .layout = RhiImageLayout::ColorAttachment,
                 .clear = true,
-                .clearColor = {0.1f, 0.1f, 0.1f, 1.0f},
+                .clearColor = {0.12f, 0.12f, 0.15f, 1.0f},
             };
             RhiRenderingInfo renderInfo = {
                 .extent = ext,

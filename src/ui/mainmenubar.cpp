@@ -44,9 +44,10 @@ void drawMainMenuBar(MainMenuBarState& state) {
             ImGui::MenuItem("Show Buffer Overlay", nullptr, &state.showBufferOverlay);
             ImGui::Separator();
             ImGui::Text("Fullscreen Buffer View");
-            ImGui::RadioButton("Lit", &state.gbufferView, 0);
             ImGui::RadioButton("Albedo", &state.gbufferView, 1);
             ImGui::RadioButton("Normals", &state.gbufferView, 2);
+            ImGui::RadioButton("Depth", &state.gbufferView, 3);
+            ImGui::RadioButton("Lit", &state.gbufferView, 0);
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();

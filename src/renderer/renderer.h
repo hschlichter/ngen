@@ -30,12 +30,14 @@ struct UniformBufferObject {
 struct LightingUBO {
     glm::vec4 lightDirection; // xyz = direction, w = intensity
     glm::vec4 lightColor;     // xyz = color, w = ambient
+    glm::vec4 depthParams;    // x = near, y = far, zw = unused
 };
 
 enum class GBufferView : int {
     Lit = 0,
     Albedo,
     Normals,
+    Depth,
 };
 
 struct CachedMesh {

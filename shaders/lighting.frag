@@ -5,7 +5,9 @@ layout(set = 0, binding = 1) uniform sampler2D gbufferNormal;
 layout(set = 0, binding = 2) uniform LightUBO {
     vec4 lightDirection;
     vec4 lightColor;
+    vec4 depthParams;
 } light;
+layout(set = 0, binding = 3) uniform sampler2D gbufferDepth;
 
 layout(push_constant) uniform Push {
     int viewMode;
@@ -18,9 +20,31 @@ layout(location = 0) out vec4 outColor;
 const float STRIP_HEIGHT = 0.25;
 const float PREVIEW_WIDTH = 0.25;
 const float BORDER = 0.003;
-const int NUM_PREVIEWS = 3;
+const int NUM_PREVIEWS = 4;
+
+float linearizeDepth(float d) {
+    float near = light.depthParams.x;
+    float far = light.depthParams.y;
+    return near * far / (far - d * (far - near));
+}
+
+const vec3 BACKGROUND_COLOR = vec3(0.12, 0.12, 0.15);
+
+bool isBackground(vec2 uv) {
+    return texture(gbufferDepth, uv).r >= 1.0;
+}
 
 vec3 sampleBuffer(int mode, vec2 uv) {
+    if (mode == 3) {
+        float d = texture(gbufferDepth, uv).r;
+        if (d >= 1.0) return vec3(0.0);
+        float near = light.depthParams.x;
+        float far = light.depthParams.y;
+        float lin = linearizeDepth(d);
+        float v = 1.0 - clamp(log(lin / near) / log(far / near), 0.0, 1.0);
+        return vec3(v);
+    }
+    if (isBackground(uv)) return BACKGROUND_COLOR;
     vec3 albedo = texture(gbufferAlbedo, uv).rgb;
     if (mode == 1) return albedo;
     vec3 normal = texture(gbufferNormal, uv).rgb * 2.0 - 1.0;
@@ -50,7 +74,7 @@ void main() {
                 return;
             }
 
-            int modes[3] = int[3](1, 2, 0);
+            int modes[4] = int[4](1, 2, 3, 0);
             vec2 sampleUV = vec2(localX, localY);
             outColor = vec4(sampleBuffer(modes[previewIdx], sampleUV), 1.0);
             return;
