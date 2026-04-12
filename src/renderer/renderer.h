@@ -15,7 +15,7 @@
 class RhiDevice;
 class RhiSwapchain;
 class RhiCommandBuffer;
-class RhiDebugUI;
+class RhiEditorUI;
 class MeshLibrary;
 class MaterialLibrary;
 struct Camera;
@@ -57,7 +57,7 @@ public:
     auto render(const Camera& camera, SDL_Window* window, const DebugDrawData& debugData) -> void;
     auto destroy() -> void;
 
-    auto debugui() -> RhiDebugUI* { return debugUI.get(); }
+    auto editorui() -> RhiEditorUI* { return editorUI.get(); }
 
 private:
     RhiDevice* device = nullptr;
@@ -104,6 +104,6 @@ private:
     FrameGraph frameGraph;
     ResourcePool resourcePool;
 
-    std::unique_ptr<RhiDebugUI> debugUI;
+    std::unique_ptr<RhiEditorUI> editorUI;
     DebugRenderer debugRenderer;
 };

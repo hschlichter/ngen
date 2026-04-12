@@ -4,9 +4,9 @@
 #include "material.h"
 #include "mesh.h"
 #include "rhicommandbuffer.h"
-#include "rhidebugui.h"
-#include "rhidebuguivulkan.h"
 #include "rhidevice.h"
+#include "rhieditorui.h"
+#include "rhieditoruivulkan.h"
 #include "rhiswapchain.h"
 
 #include <SDL3/SDL.h>
@@ -176,8 +176,8 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
     }
 
     // Debug UI
-    debugUI = std::make_unique<RhiDebugUIVulkan>();
-    debugUI->init({
+    editorUI = std::make_unique<RhiEditorUIVulkan>();
+    editorUI->init({
         .window = window,
         .device = device,
         .colorFormat = swapchain->colorFormat(),
@@ -448,17 +448,17 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
                               .maxVertices = debugMaxVertices,
                           });
 
-    struct DebugUIPassData {
+    struct EditorUIPassData {
         FgTextureHandle color;
     };
 
-    frameGraph.addPass<DebugUIPassData>(
-        "DebugUIPass",
-        [&](FrameGraphBuilder& builder, DebugUIPassData& data) {
+    frameGraph.addPass<EditorUIPassData>(
+        "EditorUIPass",
+        [&](FrameGraphBuilder& builder, EditorUIPassData& data) {
             data.color = builder.write(colorHandle, FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);
         },
-        [this, ext](FrameGraphContext& ctx, const DebugUIPassData& data) {
+        [this, ext](FrameGraphContext& ctx, const EditorUIPassData& data) {
             auto* cmd = ctx.cmd();
 
             RhiRenderingAttachmentInfo colorAtt = {
@@ -471,7 +471,7 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
                 .colorAttachments = {&colorAtt, 1},
             };
             cmd->beginRendering(renderInfo);
-            debugUI->render(cmd);
+            editorUI->render(cmd);
             cmd->endRendering();
         });
 
@@ -510,8 +510,8 @@ auto Renderer::render(const Camera& camera, SDL_Window* window, const DebugDrawD
 auto Renderer::destroy() -> void {
     device->waitIdle();
 
-    debugUI->shutdown();
-    debugUI.reset();
+    editorUI->shutdown();
+    editorUI.reset();
 
     for (auto* ds : descriptorSets) {
         delete ds;

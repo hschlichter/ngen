@@ -1,12 +1,12 @@
 #pragma once
 
-#include "rhidebugui.h"
+#include "rhieditorui.h"
 
 #include <vulkan/vulkan.h>
 
-class RhiDebugUIVulkan : public RhiDebugUI {
+class RhiEditorUIVulkan : public RhiEditorUI {
 public:
-    auto init(const RhiDebugUIInitInfo& info) -> void override;
+    auto init(const RhiEditorUIInitInfo& info) -> void override;
     auto processEvent(SDL_Event* event) -> bool override;
     auto render(RhiCommandBuffer* cmd) -> void override;
     auto shutdown() -> void override;

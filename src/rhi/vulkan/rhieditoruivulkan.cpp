@@ -1,4 +1,4 @@
-#include "rhidebuguivulkan.h"
+#include "rhieditoruivulkan.h"
 #include "rhicommandbuffervulkan.h"
 #include "rhidevicevulkan.h"
 
@@ -10,7 +10,7 @@
 
 #include <print>
 
-auto RhiDebugUIVulkan::init(const RhiDebugUIInitInfo& info) -> void {
+auto RhiEditorUIVulkan::init(const RhiEditorUIInitInfo& info) -> void {
     auto* vkDev = static_cast<RhiDeviceVulkan*>(info.device);
     vkDevice = vkDev->vkDevice();
 
@@ -57,13 +57,13 @@ auto RhiDebugUIVulkan::init(const RhiDebugUIInitInfo& info) -> void {
     std::println("Dear ImGui initialized");
 }
 
-auto RhiDebugUIVulkan::processEvent(SDL_Event* event) -> bool {
+auto RhiEditorUIVulkan::processEvent(SDL_Event* event) -> bool {
     ImGui_ImplSDL3_ProcessEvent(event);
     auto& io = ImGui::GetIO();
     return io.WantCaptureMouse || io.WantCaptureKeyboard;
 }
 
-auto RhiDebugUIVulkan::render(RhiCommandBuffer* cmd) -> void {
+auto RhiEditorUIVulkan::render(RhiCommandBuffer* cmd) -> void {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
@@ -77,7 +77,7 @@ auto RhiDebugUIVulkan::render(RhiCommandBuffer* cmd) -> void {
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), vkCmd->cmd);
 }
 
-auto RhiDebugUIVulkan::shutdown() -> void {
+auto RhiEditorUIVulkan::shutdown() -> void {
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
