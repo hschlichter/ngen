@@ -2,12 +2,15 @@
 
 A modern 3D engine written in C++23 with a Vulkan rendering backend and OpenUSD scene system.
 
-![ngen](engine_1.png)
+![Deferred lighting with G-buffer debug overlay](docs/engine_lighting.png)
+![Editor UI with scene hierarchy and properties](docs/engine_editor.png)
 
 ## Features
 
+- **Deferred Lighting** — G-buffer pass (albedo + normals MRT) followed by a fullscreen lighting pass with directional + ambient shading
+- **G-buffer Debug Views** — Fullscreen buffer visualization (Albedo, Normals, Depth, Lit) and a toggleable bottom-strip overlay showing all buffers simultaneously
 - **Vulkan Renderer** — Dynamic rendering (VK_KHR_dynamic_rendering), synchronization2 barriers
-- **Frame Graph** — Declarative render pass system with automatic dependency resolution, topological sorting, pass culling, and barrier insertion
+- **Frame Graph** — Declarative render pass system with automatic dependency resolution, topological sorting, pass culling, write-chain ordering, and barrier insertion
 - **Transient Resource Management** — Pool-based GPU resource allocation with lifetime tracking
 - **RHI Abstraction** — Backend-agnostic GPU interface, currently implemented for Vulkan
 - **OpenUSD Scene System** — Stage loading, layer stack, composition, sublayer management
@@ -34,8 +37,12 @@ App (main.cpp)
  │   └─ BoundsCache          — AABB caching for prims
  └─ Renderer (renderer/)     — Frame graph, resource pool, GPU mesh management
      ├─ FrameGraph           — Pass declaration, compilation, execution
+     │   ├─ GeometryPass     — G-buffer MRT (albedo + normals + depth)
+     │   ├─ LightingPass     — Fullscreen deferred shading from G-buffer
+     │   ├─ DebugLinePass    — Debug line drawing (AABBs, highlights)
+     │   └─ EditorUIPass     — ImGui overlay
      ├─ ResourcePool         — Transient texture pooling
-     ├─ DebugRenderer        — Debug line pass (AABBs, highlights)
+     ├─ DebugRenderer        — Debug line pass setup
      └─ RHI (rhi/)           — Abstract device, swapchain, command buffer interfaces
          └─ Vulkan (rhi/vulkan/)  — Vulkan 1.3 backend
 ```
