@@ -16,6 +16,7 @@ struct RenderSnapshot {
     float mouseX = 0;
     float mouseY = 0;
 
+    bool showGizmo = true;
     GBufferView gbufferViewMode = GBufferView::Lit;
     bool showBufferOverlay = false;
 

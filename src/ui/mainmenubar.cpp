@@ -38,6 +38,10 @@ void drawMainMenuBar(MainMenuBarState& state) {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Debug")) {
+            ImGui::MenuItem("Show Grid", nullptr, &state.showGrid);
+            ImGui::MenuItem("Show Origin", nullptr, &state.showOrigin);
+            ImGui::MenuItem("Show Gizmos", nullptr, &state.showGizmo);
+            ImGui::Separator();
             ImGui::MenuItem("Show AABBs", nullptr, &state.showAABBs);
             ImGui::MenuItem("Show Selected AABB", nullptr, &state.showSelectedAABB);
             ImGui::Separator();

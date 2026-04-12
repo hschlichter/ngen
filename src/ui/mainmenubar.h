@@ -8,6 +8,9 @@ struct MainMenuBarState {
     bool& showSceneWindow;
     bool& showPropertiesWindow;
     bool& showLayersWindow;
+    bool& showGrid;
+    bool& showOrigin;
+    bool& showGizmo;
     bool& showAABBs;
     bool& showSelectedAABB;
     int& gbufferView;

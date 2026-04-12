@@ -2,6 +2,7 @@
 
 #include "scenehandles.h"
 
+#include <glm/glm.hpp>
 #include <string>
 #include <utility>
 
@@ -40,11 +41,13 @@ public:
                    PrimHandle selectedPrim,
                    const SceneQuerySystem& sceneQuery,
                    const SceneUpdater& sceneUpdater,
-                   USDScene& usdScene) -> void;
+                   USDScene& usdScene,
+                   glm::vec3 cameraPos) -> void;
 
     auto hasPendingOpen() const -> bool { return !pendingOpenPath.empty(); }
     auto consumePendingOpenPath() -> std::string { return std::exchange(pendingOpenPath, {}); }
     auto wantsQuit() const -> bool { return requestQuit; }
+    auto getShowGizmo() const -> bool { return showGizmoFlag; }
     auto getGBufferViewMode() const -> int { return gbufferViewMode; }
     auto getShowBufferOverlay() const -> bool { return showBufferOverlayFlag; }
 
@@ -52,6 +55,9 @@ private:
     bool showSceneWindow = false;
     bool showPropertiesWindow = false;
     bool showLayersWindow = false;
+    bool showGridFlag = true;
+    bool showOriginFlag = true;
+    bool showGizmoFlag = true;
     bool showAABBsFlag = false;
     bool showSelectedAABBFlag = true;
     int gbufferViewMode = 0;

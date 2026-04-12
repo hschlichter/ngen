@@ -18,6 +18,8 @@ class DebugDraw {
 public:
     auto line(glm::vec3 a, glm::vec3 b, glm::vec4 color) -> void;
     auto box(const AABB& box, glm::vec4 color) -> void;
+    auto sphere(glm::vec3 center, float radius, glm::vec4 color, int segments = 24) -> void;
+    auto grid(glm::vec3 cameraPos, float spacing, int halfCount, glm::vec4 color) -> void;
     auto newFrame() -> void;
     auto data() const -> const DebugDrawData& { return frameData; }
 

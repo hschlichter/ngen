@@ -188,7 +188,7 @@ auto main(int argc, char* argv[]) -> int {
         const auto* keys = SDL_GetKeyboardState(nullptr);
         cam.update(keys, dt);
 
-        editorUI.drawDebug(debugDraw, renderWorld, selectedPrim, sceneQuery, sceneUpdater, usdScene);
+        editorUI.drawDebug(debugDraw, renderWorld, selectedPrim, sceneQuery, sceneUpdater, usdScene, cam.position);
 
         renderer.editorui()->beginFrame();
         editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib);
@@ -210,6 +210,7 @@ auto main(int argc, char* argv[]) -> int {
             .windowHeight = winH,
             .mouseX = mouseX,
             .mouseY = mouseY,
+            .showGizmo = editorUI.getShowGizmo(),
             .gbufferViewMode = static_cast<GBufferView>(editorUI.getGBufferViewMode()),
             .showBufferOverlay = editorUI.getShowBufferOverlay(),
             .debugData = debugDraw.data(),

@@ -25,6 +25,9 @@ auto EditorUI::draw(SDL_Window* window,
         .showSceneWindow = showSceneWindow,
         .showPropertiesWindow = showPropertiesWindow,
         .showLayersWindow = showLayersWindow,
+        .showGrid = showGridFlag,
+        .showOrigin = showOriginFlag,
+        .showGizmo = showGizmoFlag,
         .showAABBs = showAABBsFlag,
         .showSelectedAABB = showSelectedAABBFlag,
         .gbufferView = gbufferViewMode,
@@ -77,8 +80,15 @@ auto EditorUI::drawDebug(DebugDraw& debugDraw,
                          PrimHandle selectedPrim,
                          const SceneQuerySystem& sceneQuery,
                          const SceneUpdater& sceneUpdater,
-                         USDScene& usdScene) -> void {
+                         USDScene& usdScene,
+                         glm::vec3 cameraPos) -> void {
     debugDraw.newFrame();
+    if (showGridFlag) {
+        debugDraw.grid(cameraPos, 1.0f, 50, {0.25f, 0.25f, 0.25f, 1.0f});
+    }
+    if (showOriginFlag) {
+        debugDraw.sphere({0, 0, 0}, 0.1f, {1.0f, 0.9f, 0.2f, 1.0f}, 16);
+    }
     if (showAABBsFlag) {
         for (const auto& inst : renderWorld.meshInstances) {
             if (inst.worldBounds.valid()) {
