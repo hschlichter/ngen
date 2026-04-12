@@ -66,7 +66,7 @@ tidy:
 	clang-tidy $(SRCS) -- $(CXXFLAGS) $(INCLUDE)
 
 format:
-	clang-format -i $(SRCS) $(shell find src -name '*.h')
+	clang-format -i src/**/*.cpp src/**/*.h
 
 clean:
 	@rm -rf $(OUTDIR)
