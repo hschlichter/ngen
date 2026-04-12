@@ -2,7 +2,6 @@
 
 A modern 3D engine written in C++23 with a Vulkan rendering backend and OpenUSD scene system.
 
-![Deferred lighting with G-buffer debug overlay](docs/engine_lighting.png)
 ![Editor UI with scene hierarchy and properties](docs/engine_editor.png)
 
 ## Features
@@ -134,3 +133,8 @@ Generated city scenes of varying sizes are included:
 ```
 
 Regenerate with `python3 models/city/generate_city.py`.
+
+## Screenshots
+
+![Gizmos, grid, and origin marker](docs/engine_gizmos.png)
+![Deferred lighting with G-buffer debug overlay](docs/engine_lighting.png)
