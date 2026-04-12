@@ -9,10 +9,12 @@ A modern 3D engine written in C++23 with a Vulkan rendering backend and OpenUSD 
 
 - **Deferred Lighting** — G-buffer pass (albedo + normals MRT) followed by a fullscreen lighting pass with directional + ambient shading
 - **G-buffer Debug Views** — Fullscreen buffer visualization (Albedo, Normals, Depth, Lit) and a toggleable bottom-strip overlay showing all buffers simultaneously
-- **Vulkan Renderer** — Dynamic rendering (VK_KHR_dynamic_rendering), synchronization2 barriers
+- **Threaded Rendering** — Pipelined main/render thread architecture with snapshot-based handoff, allowing the main thread to run one frame ahead of the render thread
+- **Vulkan Renderer** — Dynamic rendering (VK_KHR_dynamic_rendering), synchronization2 barriers, dynamic viewport/scissor
 - **Frame Graph** — Declarative render pass system with automatic dependency resolution, topological sorting, pass culling, write-chain ordering, and barrier insertion
 - **Transient Resource Management** — Pool-based GPU resource allocation with lifetime tracking
 - **RHI Abstraction** — Backend-agnostic GPU interface, currently implemented for Vulkan
+- **Swapchain Recreation** — Automatic resize handling with resource pool flushing
 - **OpenUSD Scene System** — Stage loading, layer stack, composition, sublayer management
 - **Scene Graph UI** — Hierarchical tree view with selection, raycast picking, context menus
 - **Property Inspector** — Transform (local + world), visibility, bounds, material inspection
@@ -36,16 +38,27 @@ App (main.cpp)
  │   ├─ SceneQuerySystem     — Spatial queries (raycast, frustum culling)
  │   └─ BoundsCache          — AABB caching for prims
  └─ Renderer (renderer/)     — Frame graph, resource pool, GPU mesh management
+     ├─ RenderThread         — Dedicated render thread with snapshot-based handoff
+     ├─ RenderSnapshot       — Per-frame value-type snapshot (matrices, settings, ImGui, debug)
      ├─ FrameGraph           — Pass declaration, compilation, execution
      │   ├─ GeometryPass     — G-buffer MRT (albedo + normals + depth)
      │   ├─ LightingPass     — Fullscreen deferred shading from G-buffer
      │   ├─ DebugLinePass    — Debug line drawing (AABBs, highlights)
-     │   └─ EditorUIPass     — ImGui overlay
+     │   └─ EditorUIPass     — ImGui overlay (cloned draw data from main thread)
      ├─ ResourcePool         — Transient texture pooling
      ├─ DebugRenderer        — Debug line pass setup
      └─ RHI (rhi/)           — Abstract device, swapchain, command buffer interfaces
          └─ Vulkan (rhi/vulkan/)  — Vulkan 1.3 backend
 ```
+
+### Threading Model
+
+```
+Frame N:   [Main: update + prepare]  -->  [Render: build FG + record CB + submit]  -->  [GPU: execute]
+Frame N+1: [Main: update + prepare]  -->  [Render: ...]                             -->  ...
+```
+
+The main thread prepares a `RenderSnapshot` each frame containing view/projection matrices, render settings, deep-copied ImGui draw data, and debug geometry. This snapshot is handed off to a dedicated render thread via a single-slot condvar with back-pressure (main blocks if the render thread hasn't consumed the previous snapshot). Scene uploads (mesh/texture data) travel through a separate channel and are processed at the start of each render frame.
 
 ## Dependencies
 
