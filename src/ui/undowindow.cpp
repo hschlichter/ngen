@@ -8,11 +8,16 @@
 
 static auto labelFor(const SceneEditCommand& cmd) -> const char* {
     switch (cmd.type) {
-        case SceneEditCommand::Type::SetTransform: return "Move";
-        case SceneEditCommand::Type::SetVisibility: return cmd.boolValue ? "Show" : "Hide";
-        case SceneEditCommand::Type::MuteLayer: return cmd.boolValue ? "Mute" : "Unmute";
-        case SceneEditCommand::Type::AddSubLayer: return "AddLayer";
-        case SceneEditCommand::Type::ClearSession: return "ClearSession";
+        case SceneEditCommand::Type::SetTransform:
+            return "Move";
+        case SceneEditCommand::Type::SetVisibility:
+            return cmd.boolValue ? "Show" : "Hide";
+        case SceneEditCommand::Type::MuteLayer:
+            return cmd.boolValue ? "Mute" : "Unmute";
+        case SceneEditCommand::Type::AddSubLayer:
+            return "AddLayer";
+        case SceneEditCommand::Type::ClearSession:
+            return "ClearSession";
     }
     return "?";
 }

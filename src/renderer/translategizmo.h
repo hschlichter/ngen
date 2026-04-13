@@ -68,7 +68,7 @@ private:
     int dragAxis = -1;
     float dragStartT = 0.0f;
     Transform dragStartLocal{};
-    glm::vec3 dragStartAnchor{0.0f};   // visual anchor / axis line passes through this
+    glm::vec3 dragStartAnchor{0.0f};    // visual anchor / axis line passes through this
     glm::vec3 dragStartPrimWorld{0.0f}; // prim's world translation; new world = this + delta
     glm::mat4 dragStartParentInv{1.0f};
 

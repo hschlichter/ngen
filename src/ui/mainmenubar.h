@@ -27,7 +27,7 @@ struct MainMenuBarState {
     std::string& pendingOpenPath;
     SDL_Window* window;
     bool sceneOpen;
-    SceneUpdater* sceneUpdater; // for Edit > Undo/Redo
+    SceneUpdater* sceneUpdater;         // for Edit > Undo/Redo
     USDScene* usdScene;                 // for Edit > Select Parent
     const SceneQuerySystem* sceneQuery; // for Edit > Frame Selected (read-only)
     Camera* camera;                     // for Edit > Frame Selected

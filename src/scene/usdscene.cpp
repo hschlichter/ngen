@@ -1006,8 +1006,22 @@ bool USDScene::setTransform(PrimHandle h, const Transform& value, const SceneEdi
             xformable.ClearXformOpOrder();
             auto op = xformable.AddTransformOp();
             auto m = value.toMat4();
-            op.Set(GfMatrix4d(
-                m[0][0], m[0][1], m[0][2], m[0][3], m[1][0], m[1][1], m[1][2], m[1][3], m[2][0], m[2][1], m[2][2], m[2][3], m[3][0], m[3][1], m[3][2], m[3][3]));
+            op.Set(GfMatrix4d(m[0][0],
+                              m[0][1],
+                              m[0][2],
+                              m[0][3],
+                              m[1][0],
+                              m[1][1],
+                              m[1][2],
+                              m[1][3],
+                              m[2][0],
+                              m[2][1],
+                              m[2][2],
+                              m[2][3],
+                              m[3][0],
+                              m[3][1],
+                              m[3][2],
+                              m[3][3]));
         }
     }
 

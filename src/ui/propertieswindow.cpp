@@ -129,10 +129,8 @@ void drawPropertiesWindow(bool& show,
                                             .purpose = SceneEditRequestContext::Purpose::Preview});
                 }
                 if (committed) {
-                    pendingEdits.push_back({.type = SceneEditCommand::Type::SetTransform,
-                                            .prim = selectedPrim,
-                                            .transform = local,
-                                            .inverseTransform = state.preEditLocal});
+                    pendingEdits.push_back(
+                        {.type = SceneEditCommand::Type::SetTransform, .prim = selectedPrim, .transform = local, .inverseTransform = state.preEditLocal});
                     state.preEditLocal.reset();
                 }
                 ImGui::TreePop();

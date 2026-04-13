@@ -102,8 +102,14 @@ auto TranslateGizmo::axisParam(float mouseX, float mouseY, RhiExtent2D ext, cons
     return (b * glm::dot(rd, w0) - glm::dot(ad, w0)) / denom;
 }
 
-auto TranslateGizmo::tryGrab(float mouseX, float mouseY, RhiExtent2D ext, const glm::mat4& view, const glm::mat4& proj, const glm::vec3& gizmoAnchor,
-    const Transform& currentLocal, const glm::mat4& currentWorld) -> bool {
+auto TranslateGizmo::tryGrab(float mouseX,
+                             float mouseY,
+                             RhiExtent2D ext,
+                             const glm::mat4& view,
+                             const glm::mat4& proj,
+                             const glm::vec3& gizmoAnchor,
+                             const Transform& currentLocal,
+                             const glm::mat4& currentWorld) -> bool {
     if (!visible) {
         return false;
     }

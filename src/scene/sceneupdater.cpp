@@ -38,8 +38,8 @@ auto SceneUpdater::update(
     // Preview edits skip the USD layer write entirely (they only touch the runtime
     // transform cache); Authoring edits commit to USD as usual. Both paths drive
     // the same downstream patch — RenderWorld instance + BVH refit.
-    if (!editingBlocked && !pendingEdits.empty()
-        && std::ranges::all_of(pendingEdits, [](const auto& e) { return e.type == SceneEditCommand::Type::SetTransform; })) {
+    if (!editingBlocked && !pendingEdits.empty() &&
+        std::ranges::all_of(pendingEdits, [](const auto& e) { return e.type == SceneEditCommand::Type::SetTransform; })) {
         // Record inverses BEFORE applying — recordBatch reads current scene
         // state to compute the reverse for each Authoring cmd. Preview/replay
         // cmds are skipped inside recordBatch.
