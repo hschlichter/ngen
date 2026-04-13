@@ -8,6 +8,28 @@
 
 #include <glm/gtc/quaternion.hpp>
 
+#include <cstdarg>
+#include <cstdio>
+
+// Render a line of text that the user can click into, drag-select, and Ctrl+C
+// from. Looks like ImGui::Text (no frame/padding) but is a read-only input.
+static void selectableText(const char* fmt, ...) {
+    char buf[256];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+    ImGui::PushID(fmt); // disambiguate by call-site format string
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputText("##v", buf, sizeof(buf), ImGuiInputTextFlags_ReadOnly);
+    ImGui::PopID();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+}
+
 void drawPropertiesWindow(bool& show,
                           bool editingBlocked,
                           USDScene& usdScene,
@@ -26,7 +48,7 @@ void drawPropertiesWindow(bool& show,
     } else {
         const auto* rec = selectedPrim ? usdScene.getPrimRecord(selectedPrim) : nullptr;
         if (rec) {
-            ImGui::Text("%s", rec->path.c_str());
+            selectableText("%s", rec->path.c_str());
             ImGui::Separator();
 
             if (ImGui::TreeNodeEx("Prim Info", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -46,9 +68,15 @@ void drawPropertiesWindow(bool& show,
                 if (typeStr.empty()) {
                     typeStr = "None";
                 }
-                ImGui::Text("Flags: %s", typeStr.c_str());
-                ImGui::Text("Active: %s", rec->active ? "yes" : "no");
-                ImGui::Text("Loaded: %s", rec->loaded ? "yes" : "no");
+                selectableText("Flags: %s", typeStr.c_str());
+                selectableText("Active: %s", rec->active ? "yes" : "no");
+                selectableText("Loaded: %s", rec->loaded ? "yes" : "no");
+                if (rec->parent) {
+                    const auto* parentRec = usdScene.getPrimRecord(rec->parent);
+                    selectableText("Parent: %s", parentRec ? parentRec->path.c_str() : "<missing>");
+                } else {
+                    selectableText("Parent: %s", "(none — top-level)");
+                }
                 ImGui::TreePop();
             }
 
@@ -119,11 +147,24 @@ void drawPropertiesWindow(bool& show,
             }
 
             const auto* bc = sceneQuery.bounds().get(selectedPrim);
-            if (bc && bc->valid && ImGui::TreeNodeEx("Bounds", ImGuiTreeNodeFlags_DefaultOpen)) {
-                ImGui::Text("Local min: %.2f, %.2f, %.2f", bc->localBounds.min.x, bc->localBounds.min.y, bc->localBounds.min.z);
-                ImGui::Text("Local max: %.2f, %.2f, %.2f", bc->localBounds.max.x, bc->localBounds.max.y, bc->localBounds.max.z);
-                ImGui::Text("World min: %.2f, %.2f, %.2f", bc->worldBounds.min.x, bc->worldBounds.min.y, bc->worldBounds.min.z);
-                ImGui::Text("World max: %.2f, %.2f, %.2f", bc->worldBounds.max.x, bc->worldBounds.max.y, bc->worldBounds.max.z);
+            if (ImGui::TreeNodeEx("Bounds", ImGuiTreeNodeFlags_DefaultOpen)) {
+                if (bc && bc->valid) {
+                    selectableText("Local min: %.2f, %.2f, %.2f", bc->localBounds.min.x, bc->localBounds.min.y, bc->localBounds.min.z);
+                    selectableText("Local max: %.2f, %.2f, %.2f", bc->localBounds.max.x, bc->localBounds.max.y, bc->localBounds.max.z);
+                    selectableText("World min: %.2f, %.2f, %.2f", bc->worldBounds.min.x, bc->worldBounds.min.y, bc->worldBounds.min.z);
+                    selectableText("World max: %.2f, %.2f, %.2f", bc->worldBounds.max.x, bc->worldBounds.max.y, bc->worldBounds.max.z);
+                } else {
+                    ImGui::TextDisabled("(no own bounds)");
+                }
+                auto sub = sceneQuery.subtreeBounds(usdScene, selectedPrim);
+                if (sub.valid()) {
+                    auto c = (sub.min + sub.max) * 0.5f;
+                    selectableText("Subtree min:  %.2f, %.2f, %.2f", sub.min.x, sub.min.y, sub.min.z);
+                    selectableText("Subtree max:  %.2f, %.2f, %.2f", sub.max.x, sub.max.y, sub.max.z);
+                    selectableText("Subtree ctr:  %.2f, %.2f, %.2f", c.x, c.y, c.z);
+                } else {
+                    ImGui::TextDisabled("(no subtree bounds)");
+                }
                 ImGui::TreePop();
             }
 
@@ -133,7 +174,7 @@ void drawPropertiesWindow(bool& show,
                 if (mat && ImGui::TreeNodeEx("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
                     ImGui::ColorEdit4("Base Color", (float*) &mat->baseColorFactor, ImGuiColorEditFlags_NoInputs);
                     if (mat->texWidth > 0) {
-                        ImGui::Text("Texture: %dx%d", mat->texWidth, mat->texHeight);
+                        selectableText("Texture: %dx%d", mat->texWidth, mat->texHeight);
                     } else {
                         ImGui::TextDisabled("No texture");
                     }

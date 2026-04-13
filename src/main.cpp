@@ -189,8 +189,9 @@ auto main(int argc, char* argv[]) -> int {
             // F: frame the selected prim in the camera view.
             if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_F && (ev.key.mod & SDL_KMOD_CTRL) == 0) {
                 if ((bool) selectedPrim) {
-                    if (const auto* bc = sceneQuery.bounds().get(selectedPrim); bc && bc->worldBounds.valid()) {
-                        cam.frame(bc->worldBounds, glm::radians(45.0f));
+                    auto bb = sceneQuery.anchorBounds(usdScene, selectedPrim);
+                    if (bb.valid()) {
+                        cam.frame(bb, glm::radians(45.0f));
                     }
                 }
                 continue;
@@ -242,9 +243,11 @@ auto main(int argc, char* argv[]) -> int {
 
                 if ((bool) selectedPrim && editorUI.activeTool() == EditorTool::Translate) {
                     if (const auto* xf = usdScene.getTransform(selectedPrim)) {
-                        auto anchor = glm::vec3(xf->world[3]);
-                        if (auto* bc = sceneQuery.bounds().get(selectedPrim); bc && bc->worldBounds.valid()) {
-                            anchor = (bc->worldBounds.min + bc->worldBounds.max) * 0.5f;
+                        auto pivot = sceneQuery.anchorPivot(usdScene, selectedPrim);
+                        auto anchor = pivot;
+                        auto bb = sceneQuery.anchorBounds(usdScene, selectedPrim);
+                        if (bb.valid() && !bb.contains(pivot)) {
+                            anchor = (bb.min + bb.max) * 0.5f;
                         }
                         if (translateGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, anchor, xf->local, xf->world)) {
                             continue;
@@ -284,14 +287,15 @@ auto main(int argc, char* argv[]) -> int {
 
         const auto* selXf = ((bool) selectedPrim && usdScene.isOpen()) ? usdScene.getTransform(selectedPrim) : nullptr;
         bool translateActive = selXf != nullptr && editorUI.activeTool() == EditorTool::Translate;
-        // Anchor at the selected prim's world bounds center when available, so
-        // the gizmo lands on the visible mesh regardless of how the prim's
-        // transform vs vertex coordinates split up its world position.
+        // Anchor at the prim's pivot when it falls within the anchor bounds;
+        // fall back to bounds center when the pivot is decoupled from the
+        // visible mesh. anchorPivot walks up reset-stack ancestors.
         glm::vec3 gizmoAnchor(0.0f);
         if (selXf) {
-            gizmoAnchor = glm::vec3(selXf->world[3]);
-            if (auto* bc = sceneQuery.bounds().get(selectedPrim); bc && bc->worldBounds.valid()) {
-                gizmoAnchor = (bc->worldBounds.min + bc->worldBounds.max) * 0.5f;
+            gizmoAnchor = sceneQuery.anchorPivot(usdScene, selectedPrim);
+            auto bb = sceneQuery.anchorBounds(usdScene, selectedPrim);
+            if (bb.valid() && !bb.contains(gizmoAnchor)) {
+                gizmoAnchor = (bb.min + bb.max) * 0.5f;
             }
         }
         translateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, translateActive, gizmoAnchor);

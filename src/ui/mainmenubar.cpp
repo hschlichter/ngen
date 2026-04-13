@@ -59,10 +59,11 @@ void drawMainMenuBar(MainMenuBarState& state) {
             if (ImGui::MenuItem("Select Parent", "R", false, hasParent)) {
                 *state.selectedPrim = selRec->parent;
             }
-            bool canFrame = hasSelection && state.sceneQuery && state.camera;
+            bool canFrame = hasSelection && state.sceneQuery && state.camera && state.usdScene;
             if (ImGui::MenuItem("Frame Selected", "F", false, canFrame)) {
-                if (const auto* bc = state.sceneQuery->bounds().get(*state.selectedPrim); bc && bc->worldBounds.valid()) {
-                    state.camera->frame(bc->worldBounds, glm::radians(45.0f));
+                auto bb = state.sceneQuery->anchorBounds(*state.usdScene, *state.selectedPrim);
+                if (bb.valid()) {
+                    state.camera->frame(bb, glm::radians(45.0f));
                 }
             }
             ImGui::EndMenu();
