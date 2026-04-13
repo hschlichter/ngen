@@ -3,6 +3,7 @@
 #include "scenehandles.h"
 #include "scenetypes.h"
 
+#include <unordered_map>
 #include <vector>
 
 struct RenderMeshInstance {
@@ -28,9 +29,12 @@ struct RenderLight {
 struct RenderWorld {
     std::vector<RenderMeshInstance> meshInstances;
     std::vector<RenderLight> lights;
+    // Reverse lookup for incremental transform patching: prim.index -> meshInstances index.
+    std::unordered_map<uint32_t, uint32_t> primToInstance;
 
     void clear() {
         meshInstances.clear();
         lights.clear();
+        primToInstance.clear();
     }
 };

@@ -96,6 +96,16 @@ auto main(int argc, char* argv[]) -> int {
     renderer.initGizmos(&cam);
     TranslateGizmo translateGizmo;
 
+    // Cached shared_ptrs to the libraries — handed to the render thread via
+    // RenderUpload. Rebuilt only when the libs actually change (initial load,
+    // openScene, or async batch swap), NOT on the per-frame transform fast path.
+    auto cachedMeshLib = std::make_shared<const MeshLibrary>(meshLib);
+    auto cachedMatLib = std::make_shared<const MaterialLibrary>(matLib);
+    auto refreshCachedLibs = [&] {
+        cachedMeshLib = std::make_shared<const MeshLibrary>(meshLib);
+        cachedMatLib = std::make_shared<const MaterialLibrary>(matLib);
+    };
+
     // Main loop
     auto lastTicks = SDL_GetTicksNS();
     auto quit = false;
@@ -114,18 +124,27 @@ auto main(int argc, char* argv[]) -> int {
 
         if (editorUI.hasPendingOpen()) {
             auto path = editorUI.consumePendingOpenPath();
-            sceneChanged = editorUI.openScene(path.c_str(), usdScene, usdExtractor, meshLib, matLib, renderWorld, sceneQuery, sceneUpdater, selectedPrim);
+            if (editorUI.openScene(path.c_str(), usdScene, usdExtractor, meshLib, matLib, renderWorld, sceneQuery, sceneUpdater, selectedPrim)) {
+                refreshCachedLibs();
+                sceneChanged = true;
+            }
         }
 
         if (usdScene.isOpen()) {
-            sceneChanged |= sceneUpdater.update(usdScene, usdExtractor, renderWorld, meshLib, matLib, sceneQuery);
+            auto r = sceneUpdater.update(usdScene, usdExtractor, renderWorld, meshLib, matLib, sceneQuery);
+            if (r == SceneUpdateResult::Full) {
+                refreshCachedLibs();
+            }
+            if (r != SceneUpdateResult::None) {
+                sceneChanged = true;
+            }
         }
 
         if (sceneChanged) {
             renderThread.submitRenderUpload(RenderUpload{
                 .world = renderWorld,
-                .meshLib = std::make_shared<const MeshLibrary>(meshLib),
-                .matLib = std::make_shared<const MaterialLibrary>(matLib),
+                .meshLib = cachedMeshLib,
+                .matLib = cachedMatLib,
             });
         }
 
@@ -154,12 +173,21 @@ auto main(int argc, char* argv[]) -> int {
 
             if (ev.type == SDL_EVENT_MOUSE_MOTION && translateGizmo.isDragging()) {
                 if (auto newLocal = translateGizmo.dragUpdate(ev.motion.x, ev.motion.y, winExtent, cam.viewMatrix(), proj)) {
-                    sceneUpdater.addEdit({.type = SceneEditCommand::Type::SetTransform, .prim = selectedPrim, .transform = *newLocal});
+                    // Preview edit: cache-only, no USD write. The final position
+                    // is committed below on mouse-up.
+                    sceneUpdater.addEdit({.type = SceneEditCommand::Type::SetTransform,
+                                          .prim = selectedPrim,
+                                          .transform = *newLocal,
+                                          .purpose = SceneEditRequestContext::Purpose::Preview});
                 }
                 continue;
             }
 
             if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_LEFT && translateGizmo.isDragging()) {
+                // Commit: one Authoring edit with the final position writes to the USD layer.
+                if (auto finalLocal = translateGizmo.dragUpdate(ev.button.x, ev.button.y, winExtent, cam.viewMatrix(), proj)) {
+                    sceneUpdater.addEdit({.type = SceneEditCommand::Type::SetTransform, .prim = selectedPrim, .transform = *finalLocal});
+                }
                 translateGizmo.release();
                 continue;
             }

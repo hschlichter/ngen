@@ -10,6 +10,15 @@
 class USDScene;
 class USDRenderExtractor;
 
+// Result of a single SceneUpdater::update() call. Lets callers cheaply decide
+// whether to refresh shared_ptrs to the mesh/material libraries (which only
+// change on the async batch swap path).
+enum class SceneUpdateResult : uint8_t {
+    None,           // nothing changed this frame
+    TransformsOnly, // fast path applied — RenderWorld changed, libraries did not
+    Full,           // async batch swap — libraries may have changed
+};
+
 class SceneUpdater {
 public:
     auto update(USDScene& usdScene,
@@ -17,7 +26,7 @@ public:
                 RenderWorld& renderWorld,
                 MeshLibrary& meshLib,
                 MaterialLibrary& matLib,
-                SceneQuerySystem& sceneQuery) -> bool;
+                SceneQuerySystem& sceneQuery) -> SceneUpdateResult;
 
     auto waitIfBlocked() -> void;
 

@@ -948,6 +948,31 @@ bool USDScene::setTransform(PrimHandle h, const Transform& value, const SceneEdi
         return false;
     }
 
+    if (ctx.purpose == SceneEditRequestContext::Purpose::Preview) {
+        // Preview path: skip the USD layer write entirely. Just patch the
+        // runtime transform cache so the renderer + scene query see the new
+        // value this frame. The authored layer stays unchanged until a
+        // subsequent Authoring edit commits.
+        auto& xf = m_impl->transforms[h.index];
+        xf.local = value;
+        auto localMat = value.toMat4();
+        if (rec->parent) {
+            xf.world = m_impl->transforms[rec->parent.index].world * localMat;
+        } else {
+            xf.world = localMat;
+        }
+        // Descendants: recompute world from existing local + new parent.world.
+        // updateTransformForPrim() reads back from USD, which still has the
+        // OLD local for `h`. That's harmless for descendants since their *own*
+        // local hasn't changed; we just need their world refreshed.
+        for (size_t i = h.index + 1; i < m_impl->prims.size(); i++) {
+            if (m_impl->prims[i].parent.index >= h.index) {
+                m_impl->updateTransformForPrim(i);
+            }
+        }
+        return true;
+    }
+
     auto layer = m_impl->chooseEditLayer(ctx);
     if (!layer) {
         return false;

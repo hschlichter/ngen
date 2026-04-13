@@ -62,14 +62,30 @@ void drawPropertiesWindow(bool& show,
 
                 auto local = xf->local;
                 bool changed = false;
+                bool committed = false;
+
                 changed |= ImGui::DragFloat3("Position", &local.position.x, 0.1f);
+                committed |= ImGui::IsItemDeactivatedAfterEdit();
+
                 auto euler = glm::degrees(glm::eulerAngles(local.rotation));
                 if (ImGui::DragFloat3("Rotation", &euler.x, 0.5f)) {
                     local.rotation = glm::quat(glm::radians(euler));
                     changed = true;
                 }
+                committed |= ImGui::IsItemDeactivatedAfterEdit();
+
                 changed |= ImGui::DragFloat3("Scale", &local.scale.x, 0.01f);
+                committed |= ImGui::IsItemDeactivatedAfterEdit();
+
+                // Preview while the user is dragging the slider; commit one
+                // Authoring edit on release. Same pattern as the translate gizmo.
                 if (changed) {
+                    pendingEdits.push_back({.type = SceneEditCommand::Type::SetTransform,
+                                            .prim = selectedPrim,
+                                            .transform = local,
+                                            .purpose = SceneEditRequestContext::Purpose::Preview});
+                }
+                if (committed) {
                     pendingEdits.push_back({.type = SceneEditCommand::Type::SetTransform, .prim = selectedPrim, .transform = local});
                 }
                 ImGui::TreePop();
