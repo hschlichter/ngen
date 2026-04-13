@@ -248,6 +248,7 @@ struct RhiGraphicsPipelineDesc {
     bool depthTestEnable = true;
     bool depthWriteEnable = true;
     bool backfaceCulling = true;
+    float lineWidth = 1.0f; // Only honored when topology is LineList; requires wideLines feature for >1.
 };
 
 struct RhiDescriptorWrite {

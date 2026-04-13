@@ -1,10 +1,13 @@
 #pragma once
 
 #include "debugdraw.h"
+#include "gizmo.h"
 #include "lightingpass.h"
 #include "rhieditorui.h"
 
 #include <glm/glm.hpp>
+
+#include <vector>
 
 struct RenderSnapshot {
     glm::mat4 viewMatrix;
@@ -19,6 +22,8 @@ struct RenderSnapshot {
     bool showGizmo = true;
     GBufferView gbufferViewMode = GBufferView::Lit;
     bool showBufferOverlay = false;
+
+    std::vector<GizmoVertex> translateGizmoVerts;
 
     DebugDrawData debugData;
     ImGuiFrameSnapshot imguiSnapshot;

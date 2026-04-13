@@ -11,6 +11,7 @@
 #include "rhieditorui.h"
 #include "scenequery.h"
 #include "sceneupdater.h"
+#include "translategizmo.h"
 #include "usdrenderextractor.h"
 #include "usdscene.h"
 
@@ -93,6 +94,7 @@ auto main(int argc, char* argv[]) -> int {
     auto mouseCapture = false;
 
     renderer.initGizmos(&cam);
+    TranslateGizmo translateGizmo;
 
     // Main loop
     auto lastTicks = SDL_GetTicksNS();
@@ -101,6 +103,12 @@ auto main(int argc, char* argv[]) -> int {
         auto nowTicks = SDL_GetTicksNS();
         auto dt = (float) (nowTicks - lastTicks) / 1.0e9f;
         lastTicks = nowTicks;
+
+        int winW = 0, winH = 0;
+        SDL_GetWindowSizeInPixels(window, &winW, &winH);
+        RhiExtent2D winExtent = {(uint32_t) winW, (uint32_t) winH};
+        auto proj = glm::perspective(glm::radians(45.0f), (float) winW / (float) winH, 0.1f, 3000.0f);
+        proj[1][1] *= -1.0f;
 
         bool sceneChanged = false;
 
@@ -144,14 +152,31 @@ auto main(int argc, char* argv[]) -> int {
                 cam.handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
             }
 
+            if (ev.type == SDL_EVENT_MOUSE_MOTION && translateGizmo.isDragging()) {
+                if (auto newLocal = translateGizmo.dragUpdate(ev.motion.x, ev.motion.y, winExtent, cam.viewMatrix(), proj)) {
+                    sceneUpdater.addEdit({.type = SceneEditCommand::Type::SetTransform, .prim = selectedPrim, .transform = *newLocal});
+                }
+                continue;
+            }
+
+            if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_LEFT && translateGizmo.isDragging()) {
+                translateGizmo.release();
+                continue;
+            }
+
             if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_LEFT) {
-                int winW = 0, winH = 0;
-                SDL_GetWindowSizeInPixels(window, &winW, &winH);
                 float mx = ev.button.x;
                 float my = ev.button.y;
 
-                if (renderer.gizmoHitTest(mx, my, {(uint32_t) winW, (uint32_t) winH})) {
+                if (renderer.gizmoHitTest(mx, my, winExtent)) {
                     continue;
+                }
+
+                if ((bool) selectedPrim) {
+                    if (const auto* xf = usdScene.getTransform(selectedPrim);
+                        xf && translateGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, xf->local, xf->world)) {
+                        continue;
+                    }
                 }
 
                 if (!usdScene.isOpen()) {
@@ -160,28 +185,15 @@ auto main(int argc, char* argv[]) -> int {
 
                 float ndcX = (2.0f * mx / (float) winW) - 1.0f;
                 float ndcY = (2.0f * my / (float) winH) - 1.0f;
-
-                auto aspect = (float) winW / (float) winH;
-                auto proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 3000.0f);
-                proj[1][1] *= -1.0f;
                 auto invVP = glm::inverse(proj * cam.viewMatrix());
-
                 auto nearPt = invVP * glm::vec4(ndcX, ndcY, 0.0f, 1.0f);
                 auto farPt = invVP * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
                 nearPt /= nearPt.w;
                 farPt /= farPt.w;
 
-                Ray ray = {
-                    .origin = glm::vec3(nearPt),
-                    .direction = glm::normalize(glm::vec3(farPt - nearPt)),
-                };
-
+                Ray ray = {.origin = glm::vec3(nearPt), .direction = glm::normalize(glm::vec3(farPt - nearPt))};
                 RaycastHit hit;
-                if (sceneQuery.raycast(ray, 3000.0f, hit)) {
-                    selectedPrim = hit.prim;
-                } else {
-                    selectedPrim = {};
-                }
+                selectedPrim = sceneQuery.raycast(ray, 3000.0f, hit) ? hit.prim : PrimHandle{};
             }
         }
 
@@ -194,14 +206,11 @@ auto main(int argc, char* argv[]) -> int {
         editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib);
         auto imguiSnapshot = renderer.editorui()->endFrame();
 
-        int winW = 0, winH = 0;
-        SDL_GetWindowSizeInPixels(window, &winW, &winH);
-        auto aspect = (float) winW / (float) winH;
-        auto proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 3000.0f);
-        proj[1][1] *= -1.0f;
-
         float mouseX = 0, mouseY = 0;
         SDL_GetMouseState(&mouseX, &mouseY);
+
+        const auto* selXf = ((bool) selectedPrim && usdScene.isOpen()) ? usdScene.getTransform(selectedPrim) : nullptr;
+        translateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, selXf != nullptr, selXf ? glm::vec3(selXf->world[3]) : glm::vec3(0));
 
         RenderSnapshot snapshot = {
             .viewMatrix = cam.viewMatrix(),
@@ -213,6 +222,7 @@ auto main(int argc, char* argv[]) -> int {
             .showGizmo = editorUI.getShowGizmo(),
             .gbufferViewMode = static_cast<GBufferView>(editorUI.getGBufferViewMode()),
             .showBufferOverlay = editorUI.getShowBufferOverlay(),
+            .translateGizmoVerts = {translateGizmo.vertices().begin(), translateGizmo.vertices().end()},
             .debugData = debugDraw.data(),
             .imguiSnapshot = std::move(imguiSnapshot),
         };

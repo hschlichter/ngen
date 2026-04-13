@@ -299,6 +299,11 @@ auto RhiDeviceVulkan::init(SDL_Window* window) -> std::expected<void, int> {
         .dynamicRendering = VK_TRUE,
     };
 
+    VkPhysicalDeviceFeatures supportedFeatures = {};
+    vkGetPhysicalDeviceFeatures(physicalDevice, &supportedFeatures);
+    VkPhysicalDeviceFeatures enabledFeatures = {};
+    enabledFeatures.wideLines = supportedFeatures.wideLines;
+
     VkDeviceCreateInfo deviceCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = &dynamicRenderingFeatures,
@@ -306,6 +311,7 @@ auto RhiDeviceVulkan::init(SDL_Window* window) -> std::expected<void, int> {
         .pQueueCreateInfos = &queueCreateInfo,
         .enabledExtensionCount = deviceExtensionCount,
         .ppEnabledExtensionNames = deviceExtensions,
+        .pEnabledFeatures = &enabledFeatures,
     };
 
     result = vkCreateDevice(physicalDevice, &deviceCreateInfo, nullptr, &device);
@@ -628,7 +634,7 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
         .polygonMode = VK_POLYGON_MODE_FILL,
         .cullMode = desc.backfaceCulling ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE,
         .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-        .lineWidth = 1.0f,
+        .lineWidth = desc.lineWidth,
     };
 
     VkPipelineMultisampleStateCreateInfo multisampleState = {

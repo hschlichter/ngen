@@ -46,7 +46,7 @@ public:
 
     auto editorui() -> RhiEditorUI* { return editorUI.get(); }
     auto initGizmos(Camera* camera) -> void;
-    auto gizmoUpdate(RhiExtent2D extent, const glm::mat4& viewMatrix, float mouseX, float mouseY, bool showGizmo) -> std::vector<GizmoDrawRequest>;
+    auto gizmoUpdate(const RenderSnapshot& snapshot, RhiExtent2D extent) -> std::vector<GizmoDrawRequest>;
     auto gizmoHitTest(float mouseX, float mouseY, RhiExtent2D windowExtent) -> bool;
 
 private:

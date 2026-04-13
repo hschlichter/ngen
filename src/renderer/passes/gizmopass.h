@@ -20,13 +20,9 @@ public:
 private:
     RhiPipeline* pipeline = nullptr;
     RhiDescriptorSetLayout* descriptorSetLayout = nullptr;
-    RhiDescriptorPool* descriptorPool = nullptr;
-    std::vector<RhiDescriptorSet*> descriptorSets;
     RhiShaderModule* vertShader = nullptr;
     RhiShaderModule* fragShader = nullptr;
     std::vector<RhiBuffer*> vertexBuffers;
     std::vector<void*> vertexBuffersMapped;
-    std::vector<RhiBuffer*> uniformBuffers;
-    std::vector<void*> uniformBuffersMapped;
     static constexpr uint32_t maxVertices = 4096;
 };

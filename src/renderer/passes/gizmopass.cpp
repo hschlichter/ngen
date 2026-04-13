@@ -1,5 +1,4 @@
 #include "gizmopass.h"
-#include "renderertypes.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 
@@ -7,15 +6,13 @@
 #include <cstring>
 
 auto GizmoPass::init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent, RhiFormat colorFormat) -> bool {
-    using enum RhiDescriptorType;
     using enum RhiFormat;
 
-    vertShader = device->createShaderModule("shaders/debug.vert.spv");
-    fragShader = device->createShaderModule("shaders/debug.frag.spv");
+    vertShader = device->createShaderModule("shaders/gizmo.vert.spv");
+    fragShader = device->createShaderModule("shaders/gizmo.frag.spv");
 
-    std::array<RhiDescriptorBinding, 1> bindings = {{
-        {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
-    }};
+    // Empty descriptor set layout: pipeline has no descriptors, viewProj is a push constant.
+    std::array<RhiDescriptorBinding, 0> bindings = {};
     descriptorSetLayout = device->createDescriptorSetLayout(bindings);
 
     std::array<RhiVertexAttribute, 2> vertexAttrs = {{
@@ -31,12 +28,13 @@ auto GizmoPass::init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent,
         .depthFormat = Undefined,
         .vertexStride = sizeof(GizmoVertex),
         .vertexAttributes = vertexAttrs,
-        .pushConstant = {},
+        .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(glm::mat4)},
         .viewportExtent = extent,
         .topology = RhiPrimitiveTopology::LineList,
         .depthTestEnable = false,
         .depthWriteEnable = false,
         .backfaceCulling = false,
+        .lineWidth = 4.0f,
     };
     pipeline = device->createGraphicsPipeline(pipelineDesc);
 
@@ -52,49 +50,15 @@ auto GizmoPass::init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent,
         vertexBuffersMapped[i] = device->mapBuffer(vertexBuffers[i]);
     }
 
-    uniformBuffers.resize(imageCount);
-    uniformBuffersMapped.resize(imageCount);
-    for (uint32_t i = 0; i < imageCount; i++) {
-        RhiBufferDesc uboDesc = {
-            .size = sizeof(UniformBufferObject),
-            .usage = RhiBufferUsage::Uniform,
-            .memory = RhiMemoryUsage::CpuToGpu,
-        };
-        uniformBuffers[i] = device->createBuffer(uboDesc);
-        uniformBuffersMapped[i] = device->mapBuffer(uniformBuffers[i]);
-    }
-
-    descriptorPool = device->createDescriptorPool(imageCount, bindings);
-    descriptorSets = device->allocateDescriptorSets(descriptorPool, descriptorSetLayout, imageCount);
-    for (uint32_t i = 0; i < imageCount; i++) {
-        std::array<RhiDescriptorWrite, 1> writes = {{
-            {
-                .binding = 0,
-                .type = UniformBuffer,
-                .buffer = uniformBuffers[i],
-                .bufferRange = sizeof(UniformBufferObject),
-            },
-        }};
-        device->updateDescriptorSet(descriptorSets[i], writes);
-    }
-
     return pipeline != nullptr;
 }
 
 auto GizmoPass::destroy(RhiDevice* device) -> void {
-    for (auto* ds : descriptorSets) {
-        delete ds;
-    }
-    device->destroyDescriptorPool(descriptorPool);
     device->destroyDescriptorSetLayout(descriptorSetLayout);
 
     for (size_t i = 0; i < vertexBuffers.size(); i++) {
         device->unmapBuffer(vertexBuffers[i]);
         device->destroyBuffer(vertexBuffers[i]);
-    }
-    for (size_t i = 0; i < uniformBuffers.size(); i++) {
-        device->unmapBuffer(uniformBuffers[i]);
-        device->destroyBuffer(uniformBuffers[i]);
     }
 
     device->destroyPipeline(pipeline);
@@ -145,9 +109,7 @@ auto GizmoPass::addPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D fullE
     }
 
     auto* vb = vertexBuffers[imageIndex];
-    auto* ds = descriptorSets[imageIndex];
     auto* pip = pipeline;
-    auto* uboMapped = uniformBuffersMapped[imageIndex];
 
     fg.addPass<GizmoPassData>(
         "GizmoPass",
@@ -155,7 +117,7 @@ auto GizmoPass::addPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D fullE
             data.color = builder.write(color, FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);
         },
-        [pip, ds, vb, uboMapped, fullExtent, drawCmds = std::move(drawCmds)](FrameGraphContext& ctx, const GizmoPassData& data) {
+        [pip, vb, fullExtent, drawCmds = std::move(drawCmds)](FrameGraphContext& ctx, const GizmoPassData& data) {
             auto* cmd = ctx.cmd();
 
             RhiRenderingAttachmentInfo colorAtt = {
@@ -172,9 +134,7 @@ auto GizmoPass::addPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D fullE
             cmd->bindVertexBuffer(vb);
 
             for (const auto& dc : drawCmds) {
-                UniformBufferObject ubo = {.view = glm::mat4(1.0f), .proj = dc.viewProj};
-                memcpy(uboMapped, &ubo, sizeof(ubo));
-                cmd->bindDescriptorSet(pip, ds);
+                cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(glm::mat4), &dc.viewProj);
                 cmd->setViewport(dc.vpX, dc.vpY, dc.vpExtent);
                 cmd->setScissor(dc.vpX, dc.vpY, dc.vpExtent);
                 cmd->draw(dc.vertexCount, 1, dc.vertexOffset, 0);

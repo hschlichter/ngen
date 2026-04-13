@@ -266,14 +266,19 @@ auto Renderer::initGizmos(Camera* camera) -> void {
     axisGizmo = Axis3DGizmo(camera);
 }
 
-auto Renderer::gizmoUpdate(RhiExtent2D extent, const glm::mat4& viewMatrix, float mouseX, float mouseY, bool showGizmo) -> std::vector<GizmoDrawRequest> {
+auto Renderer::gizmoUpdate(const RenderSnapshot& snapshot, RhiExtent2D extent) -> std::vector<GizmoDrawRequest> {
     std::vector<GizmoDrawRequest> requests;
-    if (!showGizmo) {
-        return requests;
+    if (snapshot.showGizmo) {
+        axisGizmo.updateHover(snapshot.mouseX, snapshot.mouseY);
+        requests.push_back(axisGizmo.draw(extent, snapshot.viewMatrix));
     }
-
-    axisGizmo.updateHover(mouseX, mouseY);
-    requests.push_back(axisGizmo.draw(extent, viewMatrix));
+    if (!snapshot.translateGizmoVerts.empty()) {
+        requests.push_back({
+            .vertices = snapshot.translateGizmoVerts,
+            .viewProj = snapshot.projMatrix * snapshot.viewMatrix,
+            .vpExtent = extent,
+        });
+    }
     return requests;
 }
 
@@ -317,7 +322,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         frameGraph, geomData, depthHandle, colorHandle, ext, imageIdx, textureSampler, lights, snapshot.gbufferViewMode, snapshot.showBufferOverlay);
     debugRenderer.addPass(frameGraph, colorHandle, depthHandle, ext, snapshot.debugData, imageIdx);
 
-    auto gizmoRequests = gizmoUpdate(ext, snapshot.viewMatrix, snapshot.mouseX, snapshot.mouseY, snapshot.showGizmo);
+    auto gizmoRequests = gizmoUpdate(snapshot, ext);
     gizmoPass.addPass(frameGraph, colorHandle, ext, gizmoRequests, imageIdx);
 
     editorUIPass.addPass(frameGraph, colorHandle, ext, editorUI.get(), snapshot.imguiSnapshot);
