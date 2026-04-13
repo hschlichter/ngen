@@ -20,6 +20,7 @@
 #include <pxr/usd/usdGeom/mesh.h>
 #include <pxr/usd/usdGeom/metrics.h>
 #include <pxr/usd/usdGeom/primvarsAPI.h>
+#include <pxr/usd/usdGeom/xformCommonAPI.h>
 #include <pxr/usd/usdGeom/xformable.h>
 #include <pxr/usd/usdLux/boundableLightBase.h>
 #include <pxr/usd/usdLux/nonboundableLightBase.h>
@@ -990,23 +991,24 @@ bool USDScene::setTransform(PrimHandle h, const Transform& value, const SceneEdi
             return false;
         }
 
-        // Find existing transform op or add one
-        bool resetXformStack = false;
-        auto ops = xformable.GetOrderedXformOps(&resetXformStack);
-        UsdGeomXformOp transformOp;
-        for (auto& op : ops) {
-            if (op.GetOpType() == UsdGeomXformOp::TypeTransform) {
-                transformOp = op;
-                break;
-            }
+        // Prefer XformCommonAPI: writes to the existing translate/rotate/scale ops
+        // (or creates the standard set on a fresh prim), preserving op-stack
+        // structure and per-layer composition. Falls back to clobbering the stack
+        // with a single transform op only when the prim's existing ops aren't
+        // common-compatible (e.g. shear, custom matrix-only authoring).
+        UsdGeomXformCommonAPI common(prim);
+        if (common) {
+            common.SetTranslate(GfVec3d(value.position.x, value.position.y, value.position.z));
+            auto euler = glm::degrees(glm::eulerAngles(value.rotation));
+            common.SetRotate(GfVec3f(euler.x, euler.y, euler.z), UsdGeomXformCommonAPI::RotationOrderXYZ);
+            common.SetScale(GfVec3f(value.scale.x, value.scale.y, value.scale.z));
+        } else {
+            xformable.ClearXformOpOrder();
+            auto op = xformable.AddTransformOp();
+            auto m = value.toMat4();
+            op.Set(GfMatrix4d(
+                m[0][0], m[0][1], m[0][2], m[0][3], m[1][0], m[1][1], m[1][2], m[1][3], m[2][0], m[2][1], m[2][2], m[2][3], m[3][0], m[3][1], m[3][2], m[3][3]));
         }
-        if (!transformOp) {
-            transformOp = xformable.AddTransformOp();
-        }
-
-        auto m = value.toMat4();
-        transformOp.Set(GfMatrix4d(
-            m[0][0], m[0][1], m[0][2], m[0][3], m[1][0], m[1][1], m[1][2], m[1][3], m[2][0], m[2][1], m[2][2], m[2][3], m[3][0], m[3][1], m[3][2], m[3][3]));
     }
 
     // Update cached transforms for this prim and descendants
