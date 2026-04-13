@@ -65,3 +65,15 @@ auto Camera::viewMatrix() const -> glm::mat4 {
     auto fwd = forward();
     return glm::lookAt(position, position + fwd, glm::vec3(0, 1, 0));
 }
+
+auto Camera::frame(const AABB& bounds, float fovRadians) -> void {
+    if (!bounds.valid()) {
+        return;
+    }
+    auto center = (bounds.min + bounds.max) * 0.5f;
+    auto radius = glm::length(bounds.max - bounds.min) * 0.5f;
+    // Distance such that the bounding sphere fits in the vertical FOV, with a
+    // small padding so the object isn't right against the screen edge.
+    auto dist = std::max(radius / std::sin(fovRadians * 0.5f), 0.01f) * 1.2f;
+    position = center - forward() * dist;
+}

@@ -2,6 +2,7 @@
 
 #include "propertieswindow.h" // PropertiesWindowState
 #include "scenehandles.h"
+#include "scenewindow.h" // SceneWindowState
 
 #include <glm/glm.hpp>
 #include <string>
@@ -14,6 +15,7 @@ class SceneQuerySystem;
 class SceneUpdater;
 class USDRenderExtractor;
 class USDScene;
+struct Camera;
 struct RenderWorld;
 struct SDL_Window;
 
@@ -31,7 +33,8 @@ public:
               RenderWorld& renderWorld,
               PrimHandle& selectedPrim,
               const SceneQuerySystem& sceneQuery,
-              const MaterialLibrary& matLib) -> void;
+              const MaterialLibrary& matLib,
+              Camera& camera) -> void;
 
     auto openScene(const char* path,
                    USDScene& usdScene,
@@ -79,5 +82,6 @@ private:
     bool requestQuit = false;
     EditorTool activeToolValue = EditorTool::Translate;
     PropertiesWindowState propertiesState;
+    SceneWindowState sceneState;
     std::string pendingOpenPath;
 };

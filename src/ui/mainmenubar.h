@@ -1,8 +1,13 @@
 #pragma once
 
+#include "scenehandles.h"
+
 #include <string>
 
+class SceneQuerySystem;
 class SceneUpdater;
+class USDScene;
+struct Camera;
 struct SDL_Window;
 
 struct MainMenuBarState {
@@ -23,6 +28,10 @@ struct MainMenuBarState {
     SDL_Window* window;
     bool sceneOpen;
     SceneUpdater* sceneUpdater; // for Edit > Undo/Redo
+    USDScene* usdScene;                 // for Edit > Select Parent
+    const SceneQuerySystem* sceneQuery; // for Edit > Frame Selected (read-only)
+    Camera* camera;                     // for Edit > Frame Selected
+    PrimHandle* selectedPrim;           // mutated by Edit > Select Parent
 };
 
 void drawMainMenuBar(MainMenuBarState& state);

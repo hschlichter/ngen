@@ -175,6 +175,27 @@ auto main(int argc, char* argv[]) -> int {
                 continue;
             }
 
+            // R: select parent of currently selected prim. Filter key-repeat so
+            // holding R doesn't walk straight up the hierarchy at 25Hz.
+            if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_R && (ev.key.mod & SDL_KMOD_CTRL) == 0 && !ev.key.repeat) {
+                if ((bool) selectedPrim) {
+                    if (const auto* rec = usdScene.getPrimRecord(selectedPrim); rec && rec->parent) {
+                        selectedPrim = rec->parent;
+                    }
+                }
+                continue;
+            }
+
+            // F: frame the selected prim in the camera view.
+            if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_F && (ev.key.mod & SDL_KMOD_CTRL) == 0) {
+                if ((bool) selectedPrim) {
+                    if (const auto* bc = sceneQuery.bounds().get(selectedPrim); bc && bc->worldBounds.valid()) {
+                        cam.frame(bc->worldBounds, glm::radians(45.0f));
+                    }
+                }
+                continue;
+            }
+
             if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_RIGHT) {
                 mouseCapture = true;
             }
@@ -255,7 +276,7 @@ auto main(int argc, char* argv[]) -> int {
         editorUI.drawDebug(debugDraw, renderWorld, selectedPrim, sceneQuery, sceneUpdater, usdScene, cam.position);
 
         renderer.editorui()->beginFrame();
-        editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib);
+        editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib, cam);
         auto imguiSnapshot = renderer.editorui()->endFrame();
 
         float mouseX = 0, mouseY = 0;

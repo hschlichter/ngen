@@ -7,10 +7,16 @@
 #include <functional>
 #include <unordered_set>
 
-void drawSceneWindow(bool& show, bool editingBlocked, USDScene& usdScene, const RenderWorld& renderWorld, PrimHandle& selectedPrim) {
+void drawSceneWindow(bool& show, bool editingBlocked, USDScene& usdScene, const RenderWorld& renderWorld, PrimHandle& selectedPrim, SceneWindowState& state) {
     if (!show || !usdScene.isOpen()) {
         return;
     }
+
+    // Only scroll to the selected node when the selection changed externally
+    // (viewport pick, R = select parent, etc.) — not on every frame, otherwise
+    // the user couldn't scroll the tree freely.
+    bool scrollToSelected = (selectedPrim != state.lastSelectedPrim) && (bool) selectedPrim;
+    state.lastSelectedPrim = selectedPrim;
 
     ImGui::Begin("Scene", &show);
     if (editingBlocked) {
@@ -70,6 +76,10 @@ void drawSceneWindow(bool& show, bool editingBlocked, USDScene& usdScene, const 
 
             ImGui::PushID(h.index);
             bool open = ImGui::TreeNodeEx(rec->name.c_str(), flags, "%s%s", rec->name.c_str(), tag);
+
+            if (isSelected && scrollToSelected) {
+                ImGui::SetScrollHereY();
+            }
 
             if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
                 selectedPrim = isSelected ? PrimHandle{} : h;

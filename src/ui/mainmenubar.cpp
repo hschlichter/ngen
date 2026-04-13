@@ -1,7 +1,12 @@
 #include "mainmenubar.h"
 
+#include "camera.h"
+#include "scenequery.h"
 #include "sceneupdater.h"
 #include "undostack.h"
+#include "usdscene.h"
+
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <imgui.h>
 
@@ -44,6 +49,20 @@ void drawMainMenuBar(MainMenuBarState& state) {
             if (ImGui::MenuItem("Redo", "Ctrl+Shift+Z", false, stack.canRedo())) {
                 for (auto& c : stack.redo()) {
                     state.sceneUpdater->addEdit(std::move(c));
+                }
+            }
+            ImGui::Separator();
+
+            bool hasSelection = state.selectedPrim && (bool) *state.selectedPrim;
+            const auto* selRec = (hasSelection && state.usdScene) ? state.usdScene->getPrimRecord(*state.selectedPrim) : nullptr;
+            bool hasParent = selRec && (bool) selRec->parent;
+            if (ImGui::MenuItem("Select Parent", "R", false, hasParent)) {
+                *state.selectedPrim = selRec->parent;
+            }
+            bool canFrame = hasSelection && state.sceneQuery && state.camera;
+            if (ImGui::MenuItem("Frame Selected", "F", false, canFrame)) {
+                if (const auto* bc = state.sceneQuery->bounds().get(*state.selectedPrim); bc && bc->worldBounds.valid()) {
+                    state.camera->frame(bc->worldBounds, glm::radians(45.0f));
                 }
             }
             ImGui::EndMenu();

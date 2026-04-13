@@ -30,7 +30,8 @@ auto EditorUI::draw(SDL_Window* window,
                     RenderWorld& renderWorld,
                     PrimHandle& selectedPrim,
                     const SceneQuerySystem& sceneQuery,
-                    const MaterialLibrary& matLib) -> void {
+                    const MaterialLibrary& matLib,
+                    Camera& camera) -> void {
     MainMenuBarState menuState{
         .showSceneWindow = showSceneWindow,
         .showPropertiesWindow = showPropertiesWindow,
@@ -49,10 +50,14 @@ auto EditorUI::draw(SDL_Window* window,
         .window = window,
         .sceneOpen = usdScene.isOpen(),
         .sceneUpdater = &sceneUpdater,
+        .usdScene = &usdScene,
+        .sceneQuery = &sceneQuery,
+        .camera = &camera,
+        .selectedPrim = &selectedPrim,
     };
     drawMainMenuBar(menuState);
     drawLayersWindow(showLayersWindow, sceneUpdater.isBlocked(), usdScene, sceneUpdater.edits());
-    drawSceneWindow(showSceneWindow, sceneUpdater.isBlocked(), usdScene, renderWorld, selectedPrim);
+    drawSceneWindow(showSceneWindow, sceneUpdater.isBlocked(), usdScene, renderWorld, selectedPrim, sceneState);
     drawPropertiesWindow(showPropertiesWindow, sceneUpdater.isBlocked(), usdScene, selectedPrim, sceneQuery, matLib, sceneUpdater.edits(), propertiesState);
     drawToolsWindow(showToolsWindow, activeToolValue);
     drawUndoWindow(showUndoWindow, sceneUpdater, usdScene);
