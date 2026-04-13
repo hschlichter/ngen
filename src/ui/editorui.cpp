@@ -14,6 +14,13 @@
 #include <functional>
 #include <print>
 
+auto EditorUI::togglePanels() -> void {
+    bool target = !(showSceneWindow || showPropertiesWindow || showLayersWindow);
+    showSceneWindow = target;
+    showPropertiesWindow = target;
+    showLayersWindow = target;
+}
+
 auto EditorUI::draw(SDL_Window* window,
                     USDScene& usdScene,
                     SceneUpdater& sceneUpdater,

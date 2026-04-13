@@ -47,6 +47,10 @@ public:
     auto hasPendingOpen() const -> bool { return !pendingOpenPath.empty(); }
     auto consumePendingOpenPath() -> std::string { return std::exchange(pendingOpenPath, {}); }
     auto wantsQuit() const -> bool { return requestQuit; }
+
+    // Hide all editor panels (Scene / Properties / Layers) if any are visible,
+    // otherwise show all three. Bound to Ctrl+E and the Windows menu.
+    auto togglePanels() -> void;
     auto getShowGizmo() const -> bool { return showGizmoFlag; }
     auto getGBufferViewMode() const -> int { return gbufferViewMode; }
     auto getShowBufferOverlay() const -> bool { return showBufferOverlayFlag; }

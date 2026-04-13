@@ -22,6 +22,12 @@ auto Camera::handleMouseMotion(float xrel, float yrel) -> void {
 }
 
 auto Camera::update(const bool* keys, float dt) -> void {
+    // Reserve Ctrl-modified keystrokes for editor shortcuts (Ctrl+E, etc.)
+    // so they don't double as camera movement.
+    if (keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL]) {
+        return;
+    }
+
     auto fwd = forward();
     auto r = right();
     auto up = glm::vec3(0, 1, 0);

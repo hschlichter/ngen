@@ -161,6 +161,11 @@ auto main(int argc, char* argv[]) -> int {
                 continue;
             }
 
+            if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_E && (ev.key.mod & SDL_KMOD_CTRL) != 0) {
+                editorUI.togglePanels();
+                continue;
+            }
+
             if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_RIGHT) {
                 mouseCapture = true;
             }
