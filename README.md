@@ -15,16 +15,21 @@ A modern 3D engine written in C++23 with a Vulkan rendering backend and OpenUSD 
 - **RHI Abstraction** — Backend-agnostic GPU interface, currently implemented for Vulkan
 - **Swapchain Recreation** — Automatic resize handling with resource pool flushing
 - **OpenUSD Scene System** — Stage loading, layer stack, composition, sublayer management
-- **Scene Graph UI** — Hierarchical tree view with selection, raycast picking, context menus
-- **Property Inspector** — Transform (local + world), visibility, bounds, material inspection
+- **Scene Graph UI** — Hierarchical tree view with selection, raycast picking, context menus, auto-scroll-to-selection
+- **Property Inspector** — Transform (local + world), visibility, bounds (own + subtree), material inspection; values are click-to-select-and-copy
+- **Translate Gizmo** — World-space drag handles for the active tool; anchors on the visible mesh (walks up `!resetXformStack!` ancestors and unions subtree bounds for Xform parents)
+- **Tools Window** — Translate / Rotate / Scale tool selector (rotate + scale are stubs)
+- **Undo / Redo** — Per-frame snapshot stack with `Ctrl+Z` / `Ctrl+Shift+Z`, an Edit menu, and a History panel listing entries with their target prim
+- **Preview / Authoring Edit Pipeline** — Interactive operations (gizmo drag, Properties slider scrub) emit transient `Preview` edits that only touch the runtime cache; one final `Authoring` edit commits to the USD layer on operation end. Keeps interactive frames at microseconds and gives undo a meaningful commit boundary
+- **Incremental Scene Updates** — Fast path applies transform edits inline (no async batch, no library copies, no descriptor rebuilds) and patches only the affected `RenderWorld` instances + BVH leaves
 - **Layer Management** — Full layer stack (session, root, sublayers, referenced), mute/unmute, add/save
 - **Debug Renderer** — Line-based debug drawing (AABBs, selection highlights)
 - **Job System** — Thread pool with fence-based synchronization for background work
-- **Background Scene Updates** — Edit commands queued and processed on worker threads
+- **Background Scene Updates** — Heavyweight edits (visibility, sublayer ops, resyncs) processed on worker threads
 - **Incremental GPU Upload** — Resource caching, transform-only fast path
 - **Material Support** — UsdPreviewSurface textures, displayColor primvars, constant colors
 - **Up Axis Handling** — Automatic Z-up to Y-up conversion
-- **FPS Camera** — WASD movement, right-click mouse look
+- **FPS Camera** — WASD movement, right-click mouse look, snap-to-axis via the corner orientation gizmo
 
 ## Architecture
 
@@ -33,16 +38,22 @@ App (main.cpp)
  ├─ JobSystem (jobsystem/)   — Static thread pool, fence-based sync
  ├─ Scene (scene/)           — USD loading, mesh/texture/material extraction
  │   ├─ USDScene             — Stage, layers, prim cache, transforms, change notifications
- │   ├─ USDRenderExtractor   — Extract render data from composed stage
- │   ├─ SceneQuerySystem     — Spatial queries (raycast, frustum culling)
+ │   ├─ USDRenderExtractor   — Extract render data from composed stage; incremental patchTransforms
+ │   ├─ SceneUpdater         — Fast path for transform edits + async batch for heavier ops
+ │   ├─ UndoStack            — Per-frame snapshot stack of inverse SceneEditCommands
+ │   ├─ SceneQuerySystem     — Spatial queries (raycast, frustum), gizmo anchor resolution
  │   └─ BoundsCache          — AABB caching for prims
+ ├─ EditorUI (ui/)           — ImGui panels: Scene, Properties, Layers, Tools, History
+ │   ├─ TranslateGizmo       — World-space translate manipulator
+ │   └─ Edit/Windows menus   — Undo/Redo, Select Parent, Frame Selected, panel toggles
  └─ Renderer (renderer/)     — Frame graph, resource pool, GPU mesh management
      ├─ RenderThread         — Dedicated render thread with snapshot-based handoff
-     ├─ RenderSnapshot       — Per-frame value-type snapshot (matrices, settings, ImGui, debug)
+     ├─ RenderSnapshot       — Per-frame value-type snapshot (matrices, settings, ImGui, debug, gizmo verts)
      ├─ FrameGraph           — Pass declaration, compilation, execution
      │   ├─ GeometryPass     — G-buffer MRT (albedo + normals + depth)
      │   ├─ LightingPass     — Fullscreen deferred shading from G-buffer
      │   ├─ DebugLinePass    — Debug line drawing (AABBs, highlights)
+     │   ├─ GizmoPass        — Wide-line world-space gizmo geometry
      │   └─ EditorUIPass     — ImGui overlay (cloned draw data from main thread)
      ├─ ResourcePool         — Transient texture pooling
      ├─ DebugRenderer        — Debug line pass setup
@@ -57,7 +68,11 @@ Frame N:   [Main: update + prepare]  -->  [Render: build FG + record CB + submit
 Frame N+1: [Main: update + prepare]  -->  [Render: ...]                             -->  ...
 ```
 
-The main thread prepares a `RenderSnapshot` each frame containing view/projection matrices, render settings, deep-copied ImGui draw data, and debug geometry. This snapshot is handed off to a dedicated render thread via a single-slot condvar with back-pressure (main blocks if the render thread hasn't consumed the previous snapshot). Scene uploads (mesh/texture data) travel through a separate channel and are processed at the start of each render frame.
+The main thread prepares a `RenderSnapshot` each frame containing view/projection matrices, render settings, deep-copied ImGui draw data, debug geometry, and the translate-gizmo vertex buffer. This snapshot is handed off to a dedicated render thread via a single-slot condvar with back-pressure (main blocks if the render thread hasn't consumed the previous snapshot). Scene uploads (mesh/texture data) travel through a separate channel and are processed at the start of each render frame.
+
+### Edit Pipeline
+
+Interactive operations follow a **Preview → Authoring** lifecycle (see `docs/architecture_preview_vs_authoring.md`). Each frame the user is dragging a gizmo or scrubbing a slider, the engine emits one or more `Preview` `SceneEditCommand`s — the `SceneUpdater` fast path applies them directly to the runtime transform cache, patches only the affected `RenderWorld` instances and BVH leaves, and skips USD entirely. On operation end (mouse-up, slider release) one `Authoring` edit commits the final value to the active USD layer; that commit is the undo step. Heavyweight edits (`SetVisibility`, layer mutes, sublayer ops, resyncs) take the existing async batch path through a worker thread.
 
 ## Dependencies
 
@@ -117,9 +132,14 @@ Or launch without arguments and use File > Open.
 |-------|--------|
 | WASD | Move camera |
 | Q / E | Move down / up |
-| Shift | Sprint (3x speed) |
+| Shift | Sprint (3× speed) |
 | Right mouse button | Hold to look around |
-| Left click | Pick object |
+| Left click | Pick object (or grab translate-gizmo handle) |
+| **R** | Select parent of current selection |
+| **F** | Frame the selected prim in the camera view |
+| **Ctrl+Z** | Undo last commit |
+| **Ctrl+Shift+Z** | Redo |
+| **Ctrl+E** | Toggle Scene / Properties / Layers / Tools panels |
 
 ### Test Scenes
 
