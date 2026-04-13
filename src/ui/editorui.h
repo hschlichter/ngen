@@ -16,6 +16,12 @@ class USDScene;
 struct RenderWorld;
 struct SDL_Window;
 
+enum class EditorTool : uint8_t {
+    Translate,
+    Rotate, // not yet implemented — dummy entry
+    Scale,  // not yet implemented — dummy entry
+};
+
 class EditorUI {
 public:
     auto draw(SDL_Window* window,
@@ -54,11 +60,13 @@ public:
     auto getShowGizmo() const -> bool { return showGizmoFlag; }
     auto getGBufferViewMode() const -> int { return gbufferViewMode; }
     auto getShowBufferOverlay() const -> bool { return showBufferOverlayFlag; }
+    auto activeTool() const -> EditorTool { return activeToolValue; }
 
 private:
     bool showSceneWindow = false;
     bool showPropertiesWindow = false;
     bool showLayersWindow = false;
+    bool showToolsWindow = false;
     bool showGridFlag = true;
     bool showOriginFlag = true;
     bool showGizmoFlag = true;
@@ -67,5 +75,6 @@ private:
     int gbufferViewMode = 0;
     bool showBufferOverlayFlag = false;
     bool requestQuit = false;
+    EditorTool activeToolValue = EditorTool::Translate;
     std::string pendingOpenPath;
 };

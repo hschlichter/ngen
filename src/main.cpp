@@ -205,7 +205,7 @@ auto main(int argc, char* argv[]) -> int {
                     continue;
                 }
 
-                if ((bool) selectedPrim) {
+                if ((bool) selectedPrim && editorUI.activeTool() == EditorTool::Translate) {
                     if (const auto* xf = usdScene.getTransform(selectedPrim);
                         xf && translateGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, xf->local, xf->world)) {
                         continue;
@@ -243,7 +243,8 @@ auto main(int argc, char* argv[]) -> int {
         SDL_GetMouseState(&mouseX, &mouseY);
 
         const auto* selXf = ((bool) selectedPrim && usdScene.isOpen()) ? usdScene.getTransform(selectedPrim) : nullptr;
-        translateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, selXf != nullptr, selXf ? glm::vec3(selXf->world[3]) : glm::vec3(0));
+        bool translateActive = selXf != nullptr && editorUI.activeTool() == EditorTool::Translate;
+        translateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, translateActive, selXf ? glm::vec3(selXf->world[3]) : glm::vec3(0));
 
         RenderSnapshot snapshot = {
             .viewMatrix = cam.viewMatrix(),

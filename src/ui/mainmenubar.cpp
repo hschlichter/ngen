@@ -35,12 +35,14 @@ void drawMainMenuBar(MainMenuBarState& state) {
             ImGui::MenuItem("Scene", nullptr, &state.showSceneWindow, state.sceneOpen);
             ImGui::MenuItem("Properties", nullptr, &state.showPropertiesWindow, state.sceneOpen);
             ImGui::MenuItem("Layers", nullptr, &state.showLayersWindow, state.sceneOpen);
+            ImGui::MenuItem("Tools", nullptr, &state.showToolsWindow);
             ImGui::Separator();
             if (ImGui::MenuItem("Toggle Panels", "Ctrl+E")) {
-                bool target = !(state.showSceneWindow || state.showPropertiesWindow || state.showLayersWindow);
+                bool target = !(state.showSceneWindow || state.showPropertiesWindow || state.showLayersWindow || state.showToolsWindow);
                 state.showSceneWindow = target;
                 state.showPropertiesWindow = target;
                 state.showLayersWindow = target;
+                state.showToolsWindow = target;
             }
             ImGui::EndMenu();
         }

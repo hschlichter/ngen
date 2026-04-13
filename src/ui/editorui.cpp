@@ -8,6 +8,7 @@
 #include "scenequery.h"
 #include "sceneupdater.h"
 #include "scenewindow.h"
+#include "toolswindow.h"
 #include "usdrenderextractor.h"
 #include "usdscene.h"
 
@@ -15,10 +16,11 @@
 #include <print>
 
 auto EditorUI::togglePanels() -> void {
-    bool target = !(showSceneWindow || showPropertiesWindow || showLayersWindow);
+    bool target = !(showSceneWindow || showPropertiesWindow || showLayersWindow || showToolsWindow);
     showSceneWindow = target;
     showPropertiesWindow = target;
     showLayersWindow = target;
+    showToolsWindow = target;
 }
 
 auto EditorUI::draw(SDL_Window* window,
@@ -32,6 +34,7 @@ auto EditorUI::draw(SDL_Window* window,
         .showSceneWindow = showSceneWindow,
         .showPropertiesWindow = showPropertiesWindow,
         .showLayersWindow = showLayersWindow,
+        .showToolsWindow = showToolsWindow,
         .showGrid = showGridFlag,
         .showOrigin = showOriginFlag,
         .showGizmo = showGizmoFlag,
@@ -48,6 +51,7 @@ auto EditorUI::draw(SDL_Window* window,
     drawLayersWindow(showLayersWindow, sceneUpdater.isBlocked(), usdScene, sceneUpdater.edits());
     drawSceneWindow(showSceneWindow, sceneUpdater.isBlocked(), usdScene, renderWorld, selectedPrim);
     drawPropertiesWindow(showPropertiesWindow, sceneUpdater.isBlocked(), usdScene, selectedPrim, sceneQuery, matLib, sceneUpdater.edits());
+    drawToolsWindow(showToolsWindow, activeToolValue);
 }
 
 auto EditorUI::openScene(const char* path,
@@ -79,6 +83,7 @@ auto EditorUI::openScene(const char* path,
     showSceneWindow = true;
     showPropertiesWindow = true;
     showLayersWindow = true;
+    showToolsWindow = true;
     return true;
 }
 
