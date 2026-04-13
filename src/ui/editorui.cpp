@@ -9,6 +9,7 @@
 #include "sceneupdater.h"
 #include "scenewindow.h"
 #include "toolswindow.h"
+#include "undowindow.h"
 #include "usdrenderextractor.h"
 #include "usdscene.h"
 
@@ -35,6 +36,7 @@ auto EditorUI::draw(SDL_Window* window,
         .showPropertiesWindow = showPropertiesWindow,
         .showLayersWindow = showLayersWindow,
         .showToolsWindow = showToolsWindow,
+        .showUndoWindow = showUndoWindow,
         .showGrid = showGridFlag,
         .showOrigin = showOriginFlag,
         .showGizmo = showGizmoFlag,
@@ -46,12 +48,14 @@ auto EditorUI::draw(SDL_Window* window,
         .pendingOpenPath = pendingOpenPath,
         .window = window,
         .sceneOpen = usdScene.isOpen(),
+        .sceneUpdater = &sceneUpdater,
     };
     drawMainMenuBar(menuState);
     drawLayersWindow(showLayersWindow, sceneUpdater.isBlocked(), usdScene, sceneUpdater.edits());
     drawSceneWindow(showSceneWindow, sceneUpdater.isBlocked(), usdScene, renderWorld, selectedPrim);
-    drawPropertiesWindow(showPropertiesWindow, sceneUpdater.isBlocked(), usdScene, selectedPrim, sceneQuery, matLib, sceneUpdater.edits());
+    drawPropertiesWindow(showPropertiesWindow, sceneUpdater.isBlocked(), usdScene, selectedPrim, sceneQuery, matLib, sceneUpdater.edits(), propertiesState);
     drawToolsWindow(showToolsWindow, activeToolValue);
+    drawUndoWindow(showUndoWindow, sceneUpdater, usdScene);
 }
 
 auto EditorUI::openScene(const char* path,
@@ -65,6 +69,7 @@ auto EditorUI::openScene(const char* path,
                          PrimHandle& selectedPrim) -> bool {
     sceneUpdater.waitIfBlocked();
     sceneUpdater.edits().clear();
+    sceneUpdater.undoStack().clear();
     if (usdScene.isOpen()) {
         usdScene.close();
     }
@@ -84,6 +89,7 @@ auto EditorUI::openScene(const char* path,
     showPropertiesWindow = true;
     showLayersWindow = true;
     showToolsWindow = true;
+    showUndoWindow = true;
     return true;
 }
 

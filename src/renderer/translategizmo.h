@@ -46,6 +46,12 @@ public:
     auto release() -> void { dragAxis = -1; }
     auto isDragging() const -> bool { return dragAxis >= 0; }
 
+    // The prim's local transform captured at tryGrab() — i.e. the true
+    // pre-drag state, before any per-frame Preview edits mutated the cache.
+    // Callers attach this as `SceneEditCommand::inverseTransform` on the
+    // commit edit so the undo stack records the right "before" value.
+    auto dragStartLocalTransform() const -> const Transform& { return dragStartLocal; }
+
 private:
     auto findClosestAxis(float mouseX, float mouseY) const -> int;
     auto axisParam(float mouseX, float mouseY, RhiExtent2D extent, const glm::mat4& view, const glm::mat4& proj, int axis) const -> float;

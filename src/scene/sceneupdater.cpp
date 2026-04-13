@@ -40,6 +40,11 @@ auto SceneUpdater::update(
     // the same downstream patch — RenderWorld instance + BVH refit.
     if (!editingBlocked && !pendingEdits.empty()
         && std::ranges::all_of(pendingEdits, [](const auto& e) { return e.type == SceneEditCommand::Type::SetTransform; })) {
+        // Record inverses BEFORE applying — recordBatch reads current scene
+        // state to compute the reverse for each Authoring cmd. Preview/replay
+        // cmds are skipped inside recordBatch.
+        m_undoStack.recordBatch(pendingEdits, usdScene);
+
         // Dedup by prim — for a 1000Hz mouse @ 60Hz frame we get ~16 motion events
         // per frame all targeting the same prim; only the latest matters.
         std::unordered_map<uint32_t, const SceneEditCommand*> latest;
@@ -62,6 +67,10 @@ auto SceneUpdater::update(
 
     // Phase 2: Kick off background job if edits are pending
     if (!editingBlocked && !pendingEdits.empty()) {
+        // Record inverses while we still have the pre-edit scene state on the
+        // main thread; the job will mutate USD asynchronously.
+        m_undoStack.recordBatch(pendingEdits, usdScene);
+
         editingBlocked = true;
         pendingMeshLib = meshLib;
         pendingMatLib = matLib;

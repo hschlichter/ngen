@@ -166,6 +166,15 @@ auto main(int argc, char* argv[]) -> int {
                 continue;
             }
 
+            if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_Z && (ev.key.mod & SDL_KMOD_CTRL) != 0) {
+                bool isRedo = (ev.key.mod & SDL_KMOD_SHIFT) != 0;
+                auto cmds = isRedo ? sceneUpdater.undoStack().redo() : sceneUpdater.undoStack().undo();
+                for (auto& c : cmds) {
+                    sceneUpdater.addEdit(std::move(c));
+                }
+                continue;
+            }
+
             if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_RIGHT) {
                 mouseCapture = true;
             }
@@ -190,8 +199,13 @@ auto main(int argc, char* argv[]) -> int {
 
             if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_LEFT && translateGizmo.isDragging()) {
                 // Commit: one Authoring edit with the final position writes to the USD layer.
+                // Carry the drag-start local as the inverse hint so the undo stack
+                // records the pre-drag state, not the post-Preview cache value.
                 if (auto finalLocal = translateGizmo.dragUpdate(ev.button.x, ev.button.y, winExtent, cam.viewMatrix(), proj)) {
-                    sceneUpdater.addEdit({.type = SceneEditCommand::Type::SetTransform, .prim = selectedPrim, .transform = *finalLocal});
+                    sceneUpdater.addEdit({.type = SceneEditCommand::Type::SetTransform,
+                                          .prim = selectedPrim,
+                                          .transform = *finalLocal,
+                                          .inverseTransform = translateGizmo.dragStartLocalTransform()});
                 }
                 translateGizmo.release();
                 continue;

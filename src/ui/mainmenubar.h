@@ -2,6 +2,7 @@
 
 #include <string>
 
+class SceneUpdater;
 struct SDL_Window;
 
 struct MainMenuBarState {
@@ -9,6 +10,7 @@ struct MainMenuBarState {
     bool& showPropertiesWindow;
     bool& showLayersWindow;
     bool& showToolsWindow;
+    bool& showUndoWindow;
     bool& showGrid;
     bool& showOrigin;
     bool& showGizmo;
@@ -20,6 +22,7 @@ struct MainMenuBarState {
     std::string& pendingOpenPath;
     SDL_Window* window;
     bool sceneOpen;
+    SceneUpdater* sceneUpdater; // for Edit > Undo/Redo
 };
 
 void drawMainMenuBar(MainMenuBarState& state);

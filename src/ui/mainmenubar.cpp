@@ -1,5 +1,8 @@
 #include "mainmenubar.h"
 
+#include "sceneupdater.h"
+#include "undostack.h"
+
 #include <imgui.h>
 
 #include <SDL3/SDL.h>
@@ -31,11 +34,26 @@ void drawMainMenuBar(MainMenuBarState& state) {
             }
             ImGui::EndMenu();
         }
+        if (state.sceneUpdater && ImGui::BeginMenu("Edit")) {
+            auto& stack = state.sceneUpdater->undoStack();
+            if (ImGui::MenuItem("Undo", "Ctrl+Z", false, stack.canUndo())) {
+                for (auto& c : stack.undo()) {
+                    state.sceneUpdater->addEdit(std::move(c));
+                }
+            }
+            if (ImGui::MenuItem("Redo", "Ctrl+Shift+Z", false, stack.canRedo())) {
+                for (auto& c : stack.redo()) {
+                    state.sceneUpdater->addEdit(std::move(c));
+                }
+            }
+            ImGui::EndMenu();
+        }
         if (ImGui::BeginMenu("Windows")) {
             ImGui::MenuItem("Scene", nullptr, &state.showSceneWindow, state.sceneOpen);
             ImGui::MenuItem("Properties", nullptr, &state.showPropertiesWindow, state.sceneOpen);
             ImGui::MenuItem("Layers", nullptr, &state.showLayersWindow, state.sceneOpen);
             ImGui::MenuItem("Tools", nullptr, &state.showToolsWindow);
+            ImGui::MenuItem("History", nullptr, &state.showUndoWindow);
             ImGui::Separator();
             if (ImGui::MenuItem("Toggle Panels", "Ctrl+E")) {
                 bool target = !(state.showSceneWindow || state.showPropertiesWindow || state.showLayersWindow || state.showToolsWindow);

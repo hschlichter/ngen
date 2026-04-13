@@ -1,5 +1,6 @@
 #pragma once
 
+#include "propertieswindow.h" // PropertiesWindowState
 #include "scenehandles.h"
 
 #include <glm/glm.hpp>
@@ -67,6 +68,7 @@ private:
     bool showPropertiesWindow = false;
     bool showLayersWindow = false;
     bool showToolsWindow = false;
+    bool showUndoWindow = false;
     bool showGridFlag = true;
     bool showOriginFlag = true;
     bool showGizmoFlag = true;
@@ -76,5 +78,6 @@ private:
     bool showBufferOverlayFlag = false;
     bool requestQuit = false;
     EditorTool activeToolValue = EditorTool::Translate;
+    PropertiesWindowState propertiesState;
     std::string pendingOpenPath;
 };

@@ -6,6 +6,7 @@
 #include "mesh.h"
 #include "renderworld.h"
 #include "scenequery.h"
+#include "undostack.h"
 
 class USDScene;
 class USDRenderExtractor;
@@ -34,10 +35,14 @@ public:
     auto edits() -> std::vector<SceneEditCommand>& { return pendingEdits; }
     auto isBlocked() const -> bool { return editingBlocked; }
 
+    auto undoStack() -> UndoStack& { return m_undoStack; }
+    auto undoStack() const -> const UndoStack& { return m_undoStack; }
+
 private:
     JobFence sceneUpdateFence;
     bool editingBlocked = false;
     std::vector<SceneEditCommand> pendingEdits;
+    UndoStack m_undoStack;
     RenderWorld pendingRenderWorld;
     MeshLibrary pendingMeshLib;
     MaterialLibrary pendingMatLib;

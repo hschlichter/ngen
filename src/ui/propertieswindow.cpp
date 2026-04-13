@@ -14,7 +14,8 @@ void drawPropertiesWindow(bool& show,
                           PrimHandle selectedPrim,
                           const SceneQuerySystem& sceneQuery,
                           const MaterialLibrary& matLib,
-                          std::vector<SceneEditCommand>& pendingEdits) {
+                          std::vector<SceneEditCommand>& pendingEdits,
+                          PropertiesWindowState& state) {
     if (!show) {
         return;
     }
@@ -63,8 +64,10 @@ void drawPropertiesWindow(bool& show,
                 auto local = xf->local;
                 bool changed = false;
                 bool committed = false;
+                bool justActivated = false;
 
                 changed |= ImGui::DragFloat3("Position", &local.position.x, 0.1f);
+                justActivated |= ImGui::IsItemActivated();
                 committed |= ImGui::IsItemDeactivatedAfterEdit();
 
                 auto euler = glm::degrees(glm::eulerAngles(local.rotation));
@@ -72,10 +75,22 @@ void drawPropertiesWindow(bool& show,
                     local.rotation = glm::quat(glm::radians(euler));
                     changed = true;
                 }
+                justActivated |= ImGui::IsItemActivated();
                 committed |= ImGui::IsItemDeactivatedAfterEdit();
 
                 changed |= ImGui::DragFloat3("Scale", &local.scale.x, 0.01f);
+                justActivated |= ImGui::IsItemActivated();
                 committed |= ImGui::IsItemDeactivatedAfterEdit();
+
+                // Capture the pre-edit transform on the frame any slider becomes
+                // active; remember it across frames (in `state`) until commit so
+                // the undo stack records the *operation start* state, not the
+                // post-Preview cache value (which has already been mutated by
+                // per-frame Previews fired during the drag).
+                if (justActivated && (!state.preEditLocal || state.preEditPrim != selectedPrim)) {
+                    state.preEditLocal = local; // captured BEFORE this frame's Preview applies
+                    state.preEditPrim = selectedPrim;
+                }
 
                 // Preview while the user is dragging the slider; commit one
                 // Authoring edit on release. Same pattern as the translate gizmo.
@@ -86,7 +101,11 @@ void drawPropertiesWindow(bool& show,
                                             .purpose = SceneEditRequestContext::Purpose::Preview});
                 }
                 if (committed) {
-                    pendingEdits.push_back({.type = SceneEditCommand::Type::SetTransform, .prim = selectedPrim, .transform = local});
+                    pendingEdits.push_back({.type = SceneEditCommand::Type::SetTransform,
+                                            .prim = selectedPrim,
+                                            .transform = local,
+                                            .inverseTransform = state.preEditLocal});
+                    state.preEditLocal.reset();
                 }
                 ImGui::TreePop();
             }
