@@ -30,9 +30,9 @@ auto TranslateGizmo::update(RhiExtent2D ext,
     this->extent = ext;
     this->viewProj = proj * view;
     this->visible = vis;
-    // While dragging, keep the gizmo anchored at the drag origin so it doesn't
-    // chase the prim (which lags due to async scene updates).
-    this->origin = isDragging() ? dragStartWorld : originWorld;
+    // While dragging, keep the gizmo anchored at the visual position captured
+    // at drag-start so the handles don't slide out from under the cursor.
+    this->origin = isDragging() ? dragStartAnchor : originWorld;
 
     // Constant pixel length: derive world scale from camera distance + vertical FOV.
     // proj[1][1] = ±cot(fov/2); sign depends on Vulkan Y-flip — magnitude is what we want.
@@ -89,11 +89,11 @@ auto TranslateGizmo::findClosestAxis(float mouseX, float mouseY) const -> int {
 }
 
 auto TranslateGizmo::axisParam(float mouseX, float mouseY, RhiExtent2D ext, const glm::mat4& view, const glm::mat4& proj, int axis) const -> float {
-    // Closest-point parameter along the axis line through dragStartWorld for the
+    // Closest-point parameter along the axis line through dragStartAnchor for the
     // mouse pick ray. Standard skew-line solve.
     auto [ro, rd] = mouseRay(mouseX, mouseY, ext, view, proj);
     auto ad = kAxisDirs[axis];
-    auto w0 = dragStartWorld - ro;
+    auto w0 = dragStartAnchor - ro;
     float b = glm::dot(ad, rd);
     float denom = 1.0f - b * b; // a = c = 1 since both dirs unit
     if (std::abs(denom) < 1e-6f) {
@@ -102,9 +102,8 @@ auto TranslateGizmo::axisParam(float mouseX, float mouseY, RhiExtent2D ext, cons
     return (b * glm::dot(rd, w0) - glm::dot(ad, w0)) / denom;
 }
 
-auto TranslateGizmo::tryGrab(
-    float mouseX, float mouseY, RhiExtent2D ext, const glm::mat4& view, const glm::mat4& proj, const Transform& currentLocal, const glm::mat4& currentWorld)
-    -> bool {
+auto TranslateGizmo::tryGrab(float mouseX, float mouseY, RhiExtent2D ext, const glm::mat4& view, const glm::mat4& proj, const glm::vec3& gizmoAnchor,
+    const Transform& currentLocal, const glm::mat4& currentWorld) -> bool {
     if (!visible) {
         return false;
     }
@@ -114,7 +113,8 @@ auto TranslateGizmo::tryGrab(
     }
     dragAxis = axis;
     dragStartLocal = currentLocal;
-    dragStartWorld = glm::vec3(currentWorld[3]);
+    dragStartAnchor = gizmoAnchor;
+    dragStartPrimWorld = glm::vec3(currentWorld[3]);
     dragStartParentInv = glm::inverse(currentWorld * glm::inverse(currentLocal.toMat4()));
     dragStartT = axisParam(mouseX, mouseY, ext, view, proj, axis);
     return true;
@@ -125,8 +125,11 @@ auto TranslateGizmo::dragUpdate(float mouseX, float mouseY, RhiExtent2D ext, con
         return std::nullopt;
     }
     float t = axisParam(mouseX, mouseY, ext, view, proj, dragAxis);
-    auto desiredWorld = dragStartWorld + (t - dragStartT) * kAxisDirs[dragAxis];
+    // Delta is computed along the axis line through dragStartAnchor (where the
+    // user grabbed). Apply that delta to the prim's *actual* world translation
+    // — the visual anchor is decoupled from the prim's pivot.
+    auto desiredPrimWorld = dragStartPrimWorld + (t - dragStartT) * kAxisDirs[dragAxis];
     auto newLocal = dragStartLocal;
-    newLocal.position = glm::vec3(dragStartParentInv * glm::vec4(desiredWorld, 1.0f));
+    newLocal.position = glm::vec3(dragStartParentInv * glm::vec4(desiredPrimWorld, 1.0f));
     return newLocal;
 }

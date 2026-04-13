@@ -27,11 +27,16 @@ public:
 
     // Try to grab a handle at the cursor. Captures the prim's transform so
     // subsequent dragUpdate() calls produce a complete new local Transform.
+    // `gizmoAnchor` is where the gizmo handles are visually drawn (e.g. the
+    // selected prim's bounds center); the axis line passes through it.
+    // `currentWorld` is the prim's *actual* world transform — its translation
+    // column is what dragUpdate will offset to compute the new local position.
     auto tryGrab(float mouseX,
                  float mouseY,
                  RhiExtent2D extent,
                  const glm::mat4& view,
                  const glm::mat4& proj,
+                 const glm::vec3& gizmoAnchor,
                  const Transform& currentLocal,
                  const glm::mat4& currentWorld) -> bool;
 
@@ -57,7 +62,8 @@ private:
     int dragAxis = -1;
     float dragStartT = 0.0f;
     Transform dragStartLocal{};
-    glm::vec3 dragStartWorld{0.0f};
+    glm::vec3 dragStartAnchor{0.0f};   // visual anchor / axis line passes through this
+    glm::vec3 dragStartPrimWorld{0.0f}; // prim's world translation; new world = this + delta
     glm::mat4 dragStartParentInv{1.0f};
 
     std::vector<GizmoVertex> frameVertices;
