@@ -5,8 +5,14 @@
 static constexpr glm::vec3 kAxisDirs[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
 static constexpr glm::vec4 kAxisColors[3] = {{1, 0, 0, 1}, {0, 1, 0, 1}, {0, 0.4f, 1, 1}};
 static constexpr glm::vec4 kHotColor = {1, 1, 0, 1};
+// Plane handle colors: use the normal axis's color at reduced brightness.
+static constexpr glm::vec4 kPlaneColors[3] = {{0.6f, 0, 0, 1}, {0, 0.6f, 0, 1}, {0, 0.2f, 0.6f, 1}};
 static constexpr float kPixelLength = 90.0f;
 static constexpr float kHitThresholdPx = 10.0f;
+// Plane handle quad: fraction of gizmo scale for the inner/outer edges.
+static constexpr float kPlaneHandleLo = 0.0f;
+static constexpr float kPlaneHandleHi = 0.25f;
+static constexpr int kPlaneFillLines = 8; // parallel lines to approximate a solid fill
 
 static auto mouseRay(float mx, float my, RhiExtent2D ext, const glm::mat4& view, const glm::mat4& proj) -> std::pair<glm::vec3, glm::vec3> {
     float ndcX = (2.0f * mx / (float) ext.width) - 1.0f;
@@ -19,43 +25,67 @@ static auto mouseRay(float mx, float my, RhiExtent2D ext, const glm::mat4& view,
     return {glm::vec3(n), glm::normalize(glm::vec3(f - n))};
 }
 
-auto TranslateGizmo::update(RhiExtent2D ext,
-                            const glm::mat4& view,
-                            const glm::mat4& proj,
-                            const glm::vec3& cameraPos,
-                            float mouseX,
-                            float mouseY,
-                            bool vis,
-                            const glm::vec3& originWorld) -> void {
+auto TranslateGizmo::update(RhiExtent2D ext, const glm::mat4& view, const glm::mat4& proj, const glm::vec3& cameraPos, float mouseX, float mouseY, bool vis,
+    const glm::vec3& originWorld) -> void {
     this->extent = ext;
     this->viewProj = proj * view;
     this->visible = vis;
-    // While dragging, keep the gizmo anchored at the visual position captured
-    // at drag-start so the handles don't slide out from under the cursor.
     this->origin = isDragging() ? dragStartAnchor : originWorld;
 
-    // Constant pixel length: derive world scale from camera distance + vertical FOV.
-    // proj[1][1] = ±cot(fov/2); sign depends on Vulkan Y-flip — magnitude is what we want.
     float dist = glm::length(cameraPos - this->origin);
     this->scale = std::max(1e-4f, kPixelLength * (dist * 2.0f) / (std::abs(proj[1][1]) * (float) ext.height));
 
-    hoveredAxis = (vis && !isDragging()) ? findClosestAxis(mouseX, mouseY) : hoveredAxis;
+    hoveredHandle = (vis && !isDragging()) ? findClosestHandle(mouseX, mouseY) : hoveredHandle;
     if (!vis) {
-        hoveredAxis = -1;
+        hoveredHandle = -1;
     }
 
     frameVertices.clear();
     if (!vis) {
         return;
     }
+
+    // Single-axis arrows.
     for (int i = 0; i < 3; i++) {
-        auto color = (i == hoveredAxis || i == dragAxis) ? kHotColor : kAxisColors[i];
+        auto color = (i == hoveredHandle || i == dragHandle) ? kHotColor : kAxisColors[i];
         frameVertices.push_back({this->origin, color});
         frameVertices.push_back({this->origin + kAxisDirs[i] * this->scale, color});
     }
+
+    // Plane handles: small filled quads between pairs of axes, close to the origin.
+    // Filled by drawing parallel lines with the pipeline's lineWidth=4.
+    for (int n = 0; n < 3; n++) {
+        int a = (n + 1) % 3;
+        int b = (n + 2) % 3;
+        bool hot = ((3 + n) == hoveredHandle) || ((3 + n) == dragHandle);
+        auto color = hot ? kHotColor : kPlaneColors[n];
+        float lo = kPlaneHandleLo * this->scale;
+        float hi = kPlaneHandleHi * this->scale;
+        // Outline.
+        auto p0 = this->origin + kAxisDirs[a] * lo + kAxisDirs[b] * lo;
+        auto p1 = this->origin + kAxisDirs[a] * hi + kAxisDirs[b] * lo;
+        auto p2 = this->origin + kAxisDirs[a] * hi + kAxisDirs[b] * hi;
+        auto p3 = this->origin + kAxisDirs[a] * lo + kAxisDirs[b] * hi;
+        frameVertices.push_back({p0, color});
+        frameVertices.push_back({p1, color});
+        frameVertices.push_back({p1, color});
+        frameVertices.push_back({p2, color});
+        frameVertices.push_back({p2, color});
+        frameVertices.push_back({p3, color});
+        frameVertices.push_back({p3, color});
+        frameVertices.push_back({p0, color});
+        // Fill: parallel lines along axis `a`, spaced evenly along axis `b`.
+        for (int f = 0; f < kPlaneFillLines; f++) {
+            float t = lo + (hi - lo) * ((float) f + 0.5f) / (float) kPlaneFillLines;
+            auto lineStart = this->origin + kAxisDirs[a] * lo + kAxisDirs[b] * t;
+            auto lineEnd = this->origin + kAxisDirs[a] * hi + kAxisDirs[b] * t;
+            frameVertices.push_back({lineStart, color});
+            frameVertices.push_back({lineEnd, color});
+        }
+    }
 }
 
-auto TranslateGizmo::findClosestAxis(float mouseX, float mouseY) const -> int {
+auto TranslateGizmo::findClosestHandle(float mouseX, float mouseY) const -> int {
     auto toScreen = [&](glm::vec3 p) -> glm::vec2 {
         auto clip = viewProj * glm::vec4(p, 1.0f);
         if (clip.w <= 0.0f) {
@@ -73,8 +103,36 @@ auto TranslateGizmo::findClosestAxis(float mouseX, float mouseY) const -> int {
         float t = glm::clamp(glm::dot(p - a, ab) / denom, 0.0f, 1.0f);
         return glm::length(p - (a + t * ab));
     };
+    // Point-in-quad test via cross-product winding.
+    auto pointInQuad = [](glm::vec2 p, glm::vec2 a, glm::vec2 b, glm::vec2 c, glm::vec2 d) {
+        auto cross2d = [](glm::vec2 e, glm::vec2 f) { return e.x * f.y - e.y * f.x; };
+        float d0 = cross2d(b - a, p - a);
+        float d1 = cross2d(c - b, p - b);
+        float d2 = cross2d(d - c, p - c);
+        float d3 = cross2d(a - d, p - d);
+        bool allPos = (d0 >= 0) && (d1 >= 0) && (d2 >= 0) && (d3 >= 0);
+        bool allNeg = (d0 <= 0) && (d1 <= 0) && (d2 <= 0) && (d3 <= 0);
+        return allPos || allNeg;
+    };
 
     auto mouse = glm::vec2(mouseX, mouseY);
+
+    // Check plane handles first (take priority when cursor is inside the quad).
+    for (int n = 0; n < 3; n++) {
+        int a = (n + 1) % 3;
+        int b = (n + 2) % 3;
+        float lo = kPlaneHandleLo * scale;
+        float hi = kPlaneHandleHi * scale;
+        auto p0 = toScreen(origin + kAxisDirs[a] * lo + kAxisDirs[b] * lo);
+        auto p1 = toScreen(origin + kAxisDirs[a] * hi + kAxisDirs[b] * lo);
+        auto p2 = toScreen(origin + kAxisDirs[a] * hi + kAxisDirs[b] * hi);
+        auto p3 = toScreen(origin + kAxisDirs[a] * lo + kAxisDirs[b] * hi);
+        if (pointInQuad(mouse, p0, p1, p2, p3)) {
+            return 3 + n;
+        }
+    }
+
+    // Then check single-axis handles.
     auto originScreen = toScreen(origin);
     float bestDist = kHitThresholdPx;
     int best = -1;
@@ -89,40 +147,48 @@ auto TranslateGizmo::findClosestAxis(float mouseX, float mouseY) const -> int {
 }
 
 auto TranslateGizmo::axisParam(float mouseX, float mouseY, RhiExtent2D ext, const glm::mat4& view, const glm::mat4& proj, int axis) const -> float {
-    // Closest-point parameter along the axis line through dragStartAnchor for the
-    // mouse pick ray. Standard skew-line solve.
     auto [ro, rd] = mouseRay(mouseX, mouseY, ext, view, proj);
     auto ad = kAxisDirs[axis];
     auto w0 = dragStartAnchor - ro;
     float b = glm::dot(ad, rd);
-    float denom = 1.0f - b * b; // a = c = 1 since both dirs unit
+    float denom = 1.0f - b * b;
     if (std::abs(denom) < 1e-6f) {
-        return dragStartT; // ray parallel to axis
+        return dragStartT;
     }
     return (b * glm::dot(rd, w0) - glm::dot(ad, w0)) / denom;
 }
 
-auto TranslateGizmo::tryGrab(float mouseX,
-                             float mouseY,
-                             RhiExtent2D ext,
-                             const glm::mat4& view,
-                             const glm::mat4& proj,
-                             const glm::vec3& gizmoAnchor,
-                             const Transform& currentLocal,
-                             const glm::mat4& currentWorld) -> bool {
+auto TranslateGizmo::planeHit(float mouseX, float mouseY, RhiExtent2D ext, const glm::mat4& view, const glm::mat4& proj, int normalAxis) const -> glm::vec3 {
+    auto [ro, rd] = mouseRay(mouseX, mouseY, ext, view, proj);
+    auto normal = kAxisDirs[normalAxis];
+    float denom = glm::dot(rd, normal);
+    if (std::abs(denom) < 1e-6f) {
+        return dragStartPlaneHit; // ray parallel to plane
+    }
+    float t = glm::dot(dragStartAnchor - ro, normal) / denom;
+    return ro + rd * t;
+}
+
+auto TranslateGizmo::tryGrab(float mouseX, float mouseY, RhiExtent2D ext, const glm::mat4& view, const glm::mat4& proj, const glm::vec3& gizmoAnchor,
+    const Transform& currentLocal, const glm::mat4& currentWorld) -> bool {
     if (!visible) {
         return false;
     }
-    int axis = findClosestAxis(mouseX, mouseY);
-    if (axis < 0) {
+    int handle = findClosestHandle(mouseX, mouseY);
+    if (handle < 0) {
         return false;
     }
-    dragAxis = axis;
+    dragHandle = handle;
     dragStartLocal = currentLocal;
     dragStartAnchor = gizmoAnchor;
     dragStartPrimWorld = glm::vec3(currentWorld[3]);
     dragStartParentInv = glm::inverse(currentWorld * glm::inverse(currentLocal.toMat4()));
-    dragStartT = axisParam(mouseX, mouseY, ext, view, proj, axis);
+
+    if (handle < 3) {
+        dragStartT = axisParam(mouseX, mouseY, ext, view, proj, handle);
+    } else {
+        dragStartPlaneHit = planeHit(mouseX, mouseY, ext, view, proj, handle - 3);
+    }
     return true;
 }
 
@@ -130,11 +196,19 @@ auto TranslateGizmo::dragUpdate(float mouseX, float mouseY, RhiExtent2D ext, con
     if (!isDragging()) {
         return std::nullopt;
     }
-    float t = axisParam(mouseX, mouseY, ext, view, proj, dragAxis);
-    // Delta is computed along the axis line through dragStartAnchor (where the
-    // user grabbed). Apply that delta to the prim's *actual* world translation
-    // — the visual anchor is decoupled from the prim's pivot.
-    auto desiredPrimWorld = dragStartPrimWorld + (t - dragStartT) * kAxisDirs[dragAxis];
+
+    glm::vec3 desiredPrimWorld;
+    if (dragHandle < 3) {
+        // Single-axis drag.
+        float t = axisParam(mouseX, mouseY, ext, view, proj, dragHandle);
+        desiredPrimWorld = dragStartPrimWorld + (t - dragStartT) * kAxisDirs[dragHandle];
+    } else {
+        // Plane drag: ray-plane intersection gives a 2D delta on the plane.
+        auto hit = planeHit(mouseX, mouseY, ext, view, proj, dragHandle - 3);
+        auto delta = hit - dragStartPlaneHit;
+        desiredPrimWorld = dragStartPrimWorld + delta;
+    }
+
     auto newLocal = dragStartLocal;
     newLocal.position = glm::vec3(dragStartParentInv * glm::vec4(desiredPrimWorld, 1.0f));
     return newLocal;

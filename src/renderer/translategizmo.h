@@ -43,33 +43,32 @@ public:
     // Returns the new local Transform under the cursor, or nullopt if not dragging.
     auto dragUpdate(float mouseX, float mouseY, RhiExtent2D extent, const glm::mat4& view, const glm::mat4& proj) const -> std::optional<Transform>;
 
-    auto release() -> void { dragAxis = -1; }
-    auto isDragging() const -> bool { return dragAxis >= 0; }
+    auto release() -> void { dragHandle = -1; }
+    auto isDragging() const -> bool { return dragHandle >= 0; }
 
-    // The prim's local transform captured at tryGrab() — i.e. the true
-    // pre-drag state, before any per-frame Preview edits mutated the cache.
-    // Callers attach this as `SceneEditCommand::inverseTransform` on the
-    // commit edit so the undo stack records the right "before" value.
     auto dragStartLocalTransform() const -> const Transform& { return dragStartLocal; }
 
 private:
-    auto findClosestAxis(float mouseX, float mouseY) const -> int;
+    // Returns 0-2 for single-axis (X/Y/Z), 3-5 for plane handles
+    // (3=YZ normal-X, 4=XZ normal-Y, 5=XY normal-Z), -1 for miss.
+    auto findClosestHandle(float mouseX, float mouseY) const -> int;
     auto axisParam(float mouseX, float mouseY, RhiExtent2D extent, const glm::mat4& view, const glm::mat4& proj, int axis) const -> float;
+    auto planeHit(float mouseX, float mouseY, RhiExtent2D extent, const glm::mat4& view, const glm::mat4& proj, int normalAxis) const -> glm::vec3;
 
-    // Layout from the most recent update() — used for hit testing.
     glm::mat4 viewProj{1.0f};
     glm::vec3 origin{0.0f};
     float scale = 1.0f;
     RhiExtent2D extent{};
     bool visible = false;
-    int hoveredAxis = -1;
+    int hoveredHandle = -1; // 0-2 axes, 3-5 planes
 
     // Drag state — captured at tryGrab().
-    int dragAxis = -1;
-    float dragStartT = 0.0f;
+    int dragHandle = -1; // 0-2 single-axis, 3-5 plane
+    float dragStartT = 0.0f;           // for axis drag (0-2)
+    glm::vec3 dragStartPlaneHit{0.0f}; // for plane drag (3-5)
     Transform dragStartLocal{};
-    glm::vec3 dragStartAnchor{0.0f};    // visual anchor / axis line passes through this
-    glm::vec3 dragStartPrimWorld{0.0f}; // prim's world translation; new world = this + delta
+    glm::vec3 dragStartAnchor{0.0f};
+    glm::vec3 dragStartPrimWorld{0.0f};
     glm::mat4 dragStartParentInv{1.0f};
 
     std::vector<GizmoVertex> frameVertices;
