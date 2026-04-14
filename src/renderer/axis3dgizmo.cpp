@@ -7,6 +7,7 @@
 
 static constexpr glm::vec3 axisDirs[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
 static constexpr glm::vec4 axisColors[3] = {{1, 0, 0, 1}, {0, 1, 0, 1}, {0, 0.4f, 1, 1}};
+static constexpr float axisLen = 0.75f; // shortened from 1.0 to leave room for labels
 
 Axis3DGizmo::Axis3DGizmo(Camera* camera) : camera(camera) {
 }
@@ -26,7 +27,7 @@ auto Axis3DGizmo::draw(RhiExtent2D fullExtent, const glm::mat4& viewMatrix) -> G
         auto dir = axisDirs[i];
         auto color = axisColors[i];
         auto origin = glm::vec3(0.0f);
-        auto tip = dir;
+        auto tip = dir * axisLen;
 
         frameVertices.push_back({origin, color});
         frameVertices.push_back({tip, color});
@@ -45,6 +46,30 @@ auto Axis3DGizmo::draw(RhiExtent2D fullExtent, const glm::mat4& viewMatrix) -> G
                 frameVertices.push_back({origin - offset, color});
                 frameVertices.push_back({tip - offset, color});
             }
+        }
+
+        // Label: draw the letter (X / Y / Z) as line segments beyond the tip,
+        // billboarded to always face the camera so they stay readable edge-on.
+        auto camBasis = glm::transpose(glm::mat3(lastViewMatrix));
+        auto camRight = glm::vec3(camBasis[0]);
+        auto camUp = glm::vec3(camBasis[1]);
+        auto center = tip + dir * 0.15f;
+        constexpr float s = 0.07f; // half-size of each letter
+        auto line = [&](float ax, float ay, float bx, float by) {
+            frameVertices.push_back({center + camRight * ax * s + camUp * ay * s, color});
+            frameVertices.push_back({center + camRight * bx * s + camUp * by * s, color});
+        };
+        if (i == 0) { // X: two diagonals
+            line(-1, -1, 1, 1);
+            line(-1, 1, 1, -1);
+        } else if (i == 1) { // Y: fork from top to center, stem down
+            line(-1, 1, 0, 0);
+            line(1, 1, 0, 0);
+            line(0, 0, 0, -1);
+        } else { // Z: top bar, diagonal, bottom bar
+            line(-1, 1, 1, 1);
+            line(1, 1, -1, -1);
+            line(-1, -1, 1, -1);
         }
     }
 
@@ -93,7 +118,7 @@ auto Axis3DGizmo::findClosestAxis(float mouseX, float mouseY) const -> int {
     int bestAxis = -1;
 
     for (int i = 0; i < 3; i++) {
-        auto tip = projToScreen(axisDirs[i]);
+        auto tip = projToScreen(axisDirs[i] * axisLen);
         float dist = distToSegment(mouse, origin, tip);
         if (dist < bestDist) {
             bestDist = dist;
