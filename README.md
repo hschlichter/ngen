@@ -17,8 +17,9 @@ A modern 3D engine written in C++23 with a Vulkan rendering backend and OpenUSD 
 - **OpenUSD Scene System** — Stage loading, layer stack, composition, sublayer management
 - **Scene Graph UI** — Hierarchical tree view with selection, raycast picking, context menus, auto-scroll-to-selection
 - **Property Inspector** — Transform (local + world), visibility, bounds (own + subtree), material inspection; values are click-to-select-and-copy
-- **Translate Gizmo** — World-space drag handles for the active tool; anchors on the visible mesh (walks up `!resetXformStack!` ancestors and unions subtree bounds for Xform parents)
-- **Tools Window** — Translate / Rotate / Scale tool selector (rotate + scale are stubs)
+- **Gizmos** — Translate (single-axis arrows + plane handles for 2-axis movement), Rotate (per-axis circles), Scale (per-axis with position compensation to scale from the anchor). All gizmos anchor on the visible mesh (walks up `!resetXformStack!` ancestors and uses subtree bounds for Xform parents)
+- **Tools Window** — Select / Translate / Rotate / Scale tool selector; Select mode disables gizmo handles for click-through picking
+- **Orientation Gizmo** — Corner viewport with X/Y/Z axis indicator, billboarded labels, and click-to-snap-to-axis
 - **Undo / Redo** — Per-frame snapshot stack with `Ctrl+Z` / `Ctrl+Shift+Z`, an Edit menu, and a History panel listing entries with their target prim
 - **Preview / Authoring Edit Pipeline** — Interactive operations (gizmo drag, Properties slider scrub) emit transient `Preview` edits that only touch the runtime cache; one final `Authoring` edit commits to the USD layer on operation end. Keeps interactive frames at microseconds and gives undo a meaningful commit boundary
 - **Incremental Scene Updates** — Fast path applies transform edits inline (no async batch, no library copies, no descriptor rebuilds) and patches only the affected `RenderWorld` instances + BVH leaves
@@ -44,7 +45,9 @@ App (main.cpp)
  │   ├─ SceneQuerySystem     — Spatial queries (raycast, frustum), gizmo anchor resolution
  │   └─ BoundsCache          — AABB caching for prims
  ├─ EditorUI (ui/)           — ImGui panels: Scene, Properties, Layers, Tools, History
- │   ├─ TranslateGizmo       — World-space translate manipulator
+ │   ├─ TranslateGizmo       — Axis arrows + plane handles for 1- or 2-axis translation
+ │   ├─ RotateGizmo          — Per-axis ring drag with world→local rotation conversion
+ │   ├─ ScaleGizmo           — Per-axis scale with position compensation + local axis mapping
  │   └─ Edit/Windows menus   — Undo/Redo, Select Parent, Frame Selected, panel toggles
  └─ Renderer (renderer/)     — Frame graph, resource pool, GPU mesh management
      ├─ RenderThread         — Dedicated render thread with snapshot-based handoff
@@ -68,7 +71,7 @@ Frame N:   [Main: update + prepare]  -->  [Render: build FG + record CB + submit
 Frame N+1: [Main: update + prepare]  -->  [Render: ...]                             -->  ...
 ```
 
-The main thread prepares a `RenderSnapshot` each frame containing view/projection matrices, render settings, deep-copied ImGui draw data, debug geometry, and the translate-gizmo vertex buffer. This snapshot is handed off to a dedicated render thread via a single-slot condvar with back-pressure (main blocks if the render thread hasn't consumed the previous snapshot). Scene uploads (mesh/texture data) travel through a separate channel and are processed at the start of each render frame.
+The main thread prepares a `RenderSnapshot` each frame containing view/projection matrices, render settings, deep-copied ImGui draw data, debug geometry, and the active gizmo's vertex buffer (translate, rotate, or scale). This snapshot is handed off to a dedicated render thread via a single-slot condvar with back-pressure (main blocks if the render thread hasn't consumed the previous snapshot). Scene uploads (mesh/texture data) travel through a separate channel and are processed at the start of each render frame.
 
 ### Edit Pipeline
 
@@ -134,7 +137,7 @@ Or launch without arguments and use File > Open.
 | Q / E | Move down / up |
 | Shift | Sprint (3× speed) |
 | Right mouse button | Hold to look around |
-| Left click | Pick object (or grab translate-gizmo handle) |
+| Left click | Pick object (Select tool) or grab gizmo handle (Translate / Rotate / Scale) |
 | **R** | Select parent of current selection |
 | **F** | Frame the selected prim in the camera view |
 | **Ctrl+Z** | Undo last commit |
