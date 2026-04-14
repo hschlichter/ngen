@@ -9,13 +9,25 @@
 
 class ScaleGizmo {
 public:
-    auto update(RhiExtent2D extent, const glm::mat4& view, const glm::mat4& proj, const glm::vec3& cameraPos, float mouseX, float mouseY, bool visible,
-        const glm::vec3& originWorld) -> void;
+    auto update(RhiExtent2D extent,
+                const glm::mat4& view,
+                const glm::mat4& proj,
+                const glm::vec3& cameraPos,
+                float mouseX,
+                float mouseY,
+                bool visible,
+                const glm::vec3& originWorld) -> void;
 
     auto vertices() const -> std::span<const GizmoVertex> { return frameVertices; }
 
-    auto tryGrab(float mouseX, float mouseY, RhiExtent2D extent, const glm::mat4& view, const glm::mat4& proj, const glm::vec3& gizmoAnchor,
-        const Transform& currentLocal, const glm::mat4& currentWorld) -> bool;
+    auto tryGrab(float mouseX,
+                 float mouseY,
+                 RhiExtent2D extent,
+                 const glm::mat4& view,
+                 const glm::mat4& proj,
+                 const glm::vec3& gizmoAnchor,
+                 const Transform& currentLocal,
+                 const glm::mat4& currentWorld) -> bool;
 
     auto dragUpdate(float mouseX, float mouseY, RhiExtent2D extent, const glm::mat4& view, const glm::mat4& proj) const -> std::optional<Transform>;
 

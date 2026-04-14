@@ -63,7 +63,7 @@ private:
     int hoveredHandle = -1; // 0-2 axes, 3-5 planes
 
     // Drag state — captured at tryGrab().
-    int dragHandle = -1; // 0-2 single-axis, 3-5 plane
+    int dragHandle = -1;               // 0-2 single-axis, 3-5 plane
     float dragStartT = 0.0f;           // for axis drag (0-2)
     glm::vec3 dragStartPlaneHit{0.0f}; // for plane drag (3-5)
     Transform dragStartLocal{};

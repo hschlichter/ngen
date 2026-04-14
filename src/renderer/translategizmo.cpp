@@ -25,8 +25,14 @@ static auto mouseRay(float mx, float my, RhiExtent2D ext, const glm::mat4& view,
     return {glm::vec3(n), glm::normalize(glm::vec3(f - n))};
 }
 
-auto TranslateGizmo::update(RhiExtent2D ext, const glm::mat4& view, const glm::mat4& proj, const glm::vec3& cameraPos, float mouseX, float mouseY, bool vis,
-    const glm::vec3& originWorld) -> void {
+auto TranslateGizmo::update(RhiExtent2D ext,
+                            const glm::mat4& view,
+                            const glm::mat4& proj,
+                            const glm::vec3& cameraPos,
+                            float mouseX,
+                            float mouseY,
+                            bool vis,
+                            const glm::vec3& originWorld) -> void {
     this->extent = ext;
     this->viewProj = proj * view;
     this->visible = vis;
@@ -105,7 +111,9 @@ auto TranslateGizmo::findClosestHandle(float mouseX, float mouseY) const -> int 
     };
     // Point-in-quad test via cross-product winding.
     auto pointInQuad = [](glm::vec2 p, glm::vec2 a, glm::vec2 b, glm::vec2 c, glm::vec2 d) {
-        auto cross2d = [](glm::vec2 e, glm::vec2 f) { return e.x * f.y - e.y * f.x; };
+        auto cross2d = [](glm::vec2 e, glm::vec2 f) {
+            return e.x * f.y - e.y * f.x;
+        };
         float d0 = cross2d(b - a, p - a);
         float d1 = cross2d(c - b, p - b);
         float d2 = cross2d(d - c, p - c);
@@ -169,8 +177,14 @@ auto TranslateGizmo::planeHit(float mouseX, float mouseY, RhiExtent2D ext, const
     return ro + rd * t;
 }
 
-auto TranslateGizmo::tryGrab(float mouseX, float mouseY, RhiExtent2D ext, const glm::mat4& view, const glm::mat4& proj, const glm::vec3& gizmoAnchor,
-    const Transform& currentLocal, const glm::mat4& currentWorld) -> bool {
+auto TranslateGizmo::tryGrab(float mouseX,
+                             float mouseY,
+                             RhiExtent2D ext,
+                             const glm::mat4& view,
+                             const glm::mat4& proj,
+                             const glm::vec3& gizmoAnchor,
+                             const Transform& currentLocal,
+                             const glm::mat4& currentWorld) -> bool {
     if (!visible) {
         return false;
     }

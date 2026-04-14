@@ -19,8 +19,14 @@ static auto mouseRay(float mx, float my, RhiExtent2D ext, const glm::mat4& view,
     return {glm::vec3(n), glm::normalize(glm::vec3(f - n))};
 }
 
-auto ScaleGizmo::update(RhiExtent2D ext, const glm::mat4& view, const glm::mat4& proj, const glm::vec3& cameraPos, float mouseX, float mouseY, bool vis,
-    const glm::vec3& originWorld) -> void {
+auto ScaleGizmo::update(RhiExtent2D ext,
+                        const glm::mat4& view,
+                        const glm::mat4& proj,
+                        const glm::vec3& cameraPos,
+                        float mouseX,
+                        float mouseY,
+                        bool vis,
+                        const glm::vec3& originWorld) -> void {
     this->extent = ext;
     this->viewProj = proj * view;
     this->visible = vis;
@@ -114,8 +120,14 @@ auto ScaleGizmo::axisParam(float mouseX, float mouseY, RhiExtent2D ext, const gl
     return (b * glm::dot(rd, w0) - glm::dot(ad, w0)) / denom;
 }
 
-auto ScaleGizmo::tryGrab(float mouseX, float mouseY, RhiExtent2D ext, const glm::mat4& view, const glm::mat4& proj, const glm::vec3& gizmoAnchor,
-    const Transform& currentLocal, const glm::mat4& currentWorld) -> bool {
+auto ScaleGizmo::tryGrab(float mouseX,
+                         float mouseY,
+                         RhiExtent2D ext,
+                         const glm::mat4& view,
+                         const glm::mat4& proj,
+                         const glm::vec3& gizmoAnchor,
+                         const Transform& currentLocal,
+                         const glm::mat4& currentWorld) -> bool {
     if (!visible) {
         return false;
     }
