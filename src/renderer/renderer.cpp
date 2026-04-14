@@ -279,6 +279,13 @@ auto Renderer::gizmoUpdate(const RenderSnapshot& snapshot, RhiExtent2D extent) -
             .vpExtent = extent,
         });
     }
+    if (!snapshot.rotateGizmoVerts.empty()) {
+        requests.push_back({
+            .vertices = snapshot.rotateGizmoVerts,
+            .viewProj = snapshot.projMatrix * snapshot.viewMatrix,
+            .vpExtent = extent,
+        });
+    }
     return requests;
 }
 

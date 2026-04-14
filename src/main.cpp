@@ -9,6 +9,7 @@
 #include "renderworld.h"
 #include "rhidevicevulkan.h"
 #include "rhieditorui.h"
+#include "rotategizmo.h"
 #include "scenequery.h"
 #include "sceneupdater.h"
 #include "translategizmo.h"
@@ -95,6 +96,7 @@ auto main(int argc, char* argv[]) -> int {
 
     renderer.initGizmos(&cam);
     TranslateGizmo translateGizmo;
+    RotateGizmo rotateGizmo;
 
     // Cached shared_ptrs to the libraries — handed to the render thread via
     // RenderUpload. Rebuilt only when the libs actually change (initial load,
@@ -207,10 +209,15 @@ auto main(int argc, char* argv[]) -> int {
                 cam.handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
             }
 
-            if (ev.type == SDL_EVENT_MOUSE_MOTION && translateGizmo.isDragging()) {
-                if (auto newLocal = translateGizmo.dragUpdate(ev.motion.x, ev.motion.y, winExtent, cam.viewMatrix(), proj)) {
-                    // Preview edit: cache-only, no USD write. The final position
-                    // is committed below on mouse-up.
+            // Active gizmo drag (translate or rotate — whichever is in progress).
+            if (ev.type == SDL_EVENT_MOUSE_MOTION && (translateGizmo.isDragging() || rotateGizmo.isDragging())) {
+                std::optional<Transform> newLocal;
+                if (translateGizmo.isDragging()) {
+                    newLocal = translateGizmo.dragUpdate(ev.motion.x, ev.motion.y, winExtent, cam.viewMatrix(), proj);
+                } else {
+                    newLocal = rotateGizmo.dragUpdate(ev.motion.x, ev.motion.y, winExtent, cam.viewMatrix(), proj);
+                }
+                if (newLocal) {
                     sceneUpdater.addEdit({.type = SceneEditCommand::Type::SetTransform,
                                           .prim = selectedPrim,
                                           .transform = *newLocal,
@@ -219,17 +226,25 @@ auto main(int argc, char* argv[]) -> int {
                 continue;
             }
 
-            if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_LEFT && translateGizmo.isDragging()) {
-                // Commit: one Authoring edit with the final position writes to the USD layer.
-                // Carry the drag-start local as the inverse hint so the undo stack
-                // records the pre-drag state, not the post-Preview cache value.
-                if (auto finalLocal = translateGizmo.dragUpdate(ev.button.x, ev.button.y, winExtent, cam.viewMatrix(), proj)) {
+            if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_LEFT &&
+                (translateGizmo.isDragging() || rotateGizmo.isDragging())) {
+                std::optional<Transform> finalLocal;
+                const Transform* inverseHint = nullptr;
+                if (translateGizmo.isDragging()) {
+                    finalLocal = translateGizmo.dragUpdate(ev.button.x, ev.button.y, winExtent, cam.viewMatrix(), proj);
+                    inverseHint = &translateGizmo.dragStartLocalTransform();
+                    translateGizmo.release();
+                } else {
+                    finalLocal = rotateGizmo.dragUpdate(ev.button.x, ev.button.y, winExtent, cam.viewMatrix(), proj);
+                    inverseHint = &rotateGizmo.dragStartLocalTransform();
+                    rotateGizmo.release();
+                }
+                if (finalLocal && inverseHint) {
                     sceneUpdater.addEdit({.type = SceneEditCommand::Type::SetTransform,
                                           .prim = selectedPrim,
                                           .transform = *finalLocal,
-                                          .inverseTransform = translateGizmo.dragStartLocalTransform()});
+                                          .inverseTransform = *inverseHint});
                 }
-                translateGizmo.release();
                 continue;
             }
 
@@ -241,7 +256,7 @@ auto main(int argc, char* argv[]) -> int {
                     continue;
                 }
 
-                if ((bool) selectedPrim && editorUI.activeTool() == EditorTool::Translate) {
+                if ((bool) selectedPrim && (editorUI.activeTool() == EditorTool::Translate || editorUI.activeTool() == EditorTool::Rotate)) {
                     if (const auto* xf = usdScene.getTransform(selectedPrim)) {
                         auto pivot = sceneQuery.anchorPivot(usdScene, selectedPrim);
                         auto anchor = pivot;
@@ -249,7 +264,13 @@ auto main(int argc, char* argv[]) -> int {
                         if (bb.valid() && !bb.contains(pivot)) {
                             anchor = (bb.min + bb.max) * 0.5f;
                         }
-                        if (translateGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, anchor, xf->local, xf->world)) {
+                        bool grabbed = false;
+                        if (editorUI.activeTool() == EditorTool::Translate) {
+                            grabbed = translateGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, anchor, xf->local, xf->world);
+                        } else {
+                            grabbed = rotateGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, anchor, xf->local, xf->world);
+                        }
+                        if (grabbed) {
                             continue;
                         }
                     }
@@ -286,7 +307,7 @@ auto main(int argc, char* argv[]) -> int {
         SDL_GetMouseState(&mouseX, &mouseY);
 
         const auto* selXf = ((bool) selectedPrim && usdScene.isOpen()) ? usdScene.getTransform(selectedPrim) : nullptr;
-        bool translateActive = selXf != nullptr && editorUI.activeTool() == EditorTool::Translate;
+        auto activeTool = editorUI.activeTool();
         // Anchor at the prim's pivot when it falls within the anchor bounds;
         // fall back to bounds center when the pivot is decoupled from the
         // visible mesh. anchorPivot walks up reset-stack ancestors.
@@ -298,7 +319,8 @@ auto main(int argc, char* argv[]) -> int {
                 gizmoAnchor = (bb.min + bb.max) * 0.5f;
             }
         }
-        translateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, translateActive, gizmoAnchor);
+        translateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, selXf && activeTool == EditorTool::Translate, gizmoAnchor);
+        rotateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, selXf && activeTool == EditorTool::Rotate, gizmoAnchor);
 
         RenderSnapshot snapshot = {
             .viewMatrix = cam.viewMatrix(),
@@ -311,6 +333,7 @@ auto main(int argc, char* argv[]) -> int {
             .gbufferViewMode = static_cast<GBufferView>(editorUI.getGBufferViewMode()),
             .showBufferOverlay = editorUI.getShowBufferOverlay(),
             .translateGizmoVerts = {translateGizmo.vertices().begin(), translateGizmo.vertices().end()},
+            .rotateGizmoVerts = {rotateGizmo.vertices().begin(), rotateGizmo.vertices().end()},
             .debugData = debugDraw.data(),
             .imguiSnapshot = std::move(imguiSnapshot),
         };

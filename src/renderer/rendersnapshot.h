@@ -24,6 +24,7 @@ struct RenderSnapshot {
     bool showBufferOverlay = false;
 
     std::vector<GizmoVertex> translateGizmoVerts;
+    std::vector<GizmoVertex> rotateGizmoVerts;
 
     DebugDrawData debugData;
     ImGuiFrameSnapshot imguiSnapshot;
