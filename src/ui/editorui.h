@@ -20,9 +20,10 @@ struct RenderWorld;
 struct SDL_Window;
 
 enum class EditorTool : uint8_t {
+    Select,
     Translate,
-    Rotate, // not yet implemented — dummy entry
-    Scale,  // not yet implemented — dummy entry
+    Rotate,
+    Scale,
 };
 
 class EditorUI {
@@ -80,7 +81,7 @@ private:
     int gbufferViewMode = 0;
     bool showBufferOverlayFlag = false;
     bool requestQuit = false;
-    EditorTool activeToolValue = EditorTool::Translate;
+    EditorTool activeToolValue = EditorTool::Select;
     PropertiesWindowState propertiesState;
     SceneWindowState sceneState;
     std::string pendingOpenPath;

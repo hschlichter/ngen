@@ -25,6 +25,8 @@ void drawToolsWindow(bool& show, EditorTool& activeTool) {
         }
     };
 
+    toolButton("Select", EditorTool::Select, true);
+    ImGui::SameLine();
     toolButton("Translate", EditorTool::Translate, true);
     ImGui::SameLine();
     toolButton("Rotate", EditorTool::Rotate, true);
