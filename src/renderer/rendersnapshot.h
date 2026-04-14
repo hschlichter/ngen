@@ -25,6 +25,7 @@ struct RenderSnapshot {
 
     std::vector<GizmoVertex> translateGizmoVerts;
     std::vector<GizmoVertex> rotateGizmoVerts;
+    std::vector<GizmoVertex> scaleGizmoVerts;
 
     DebugDrawData debugData;
     ImGuiFrameSnapshot imguiSnapshot;

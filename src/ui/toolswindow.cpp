@@ -29,7 +29,7 @@ void drawToolsWindow(bool& show, EditorTool& activeTool) {
     ImGui::SameLine();
     toolButton("Rotate", EditorTool::Rotate, true);
     ImGui::SameLine();
-    toolButton("Scale", EditorTool::Scale, false);
+    toolButton("Scale", EditorTool::Scale, true);
 
     ImGui::End();
 }

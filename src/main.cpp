@@ -10,6 +10,7 @@
 #include "rhidevicevulkan.h"
 #include "rhieditorui.h"
 #include "rotategizmo.h"
+#include "scalegizmo.h"
 #include "scenequery.h"
 #include "sceneupdater.h"
 #include "translategizmo.h"
@@ -97,6 +98,7 @@ auto main(int argc, char* argv[]) -> int {
     renderer.initGizmos(&cam);
     TranslateGizmo translateGizmo;
     RotateGizmo rotateGizmo;
+    ScaleGizmo scaleGizmo;
 
     // Cached shared_ptrs to the libraries — handed to the render thread via
     // RenderUpload. Rebuilt only when the libs actually change (initial load,
@@ -209,13 +211,16 @@ auto main(int argc, char* argv[]) -> int {
                 cam.handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
             }
 
-            // Active gizmo drag (translate or rotate — whichever is in progress).
-            if (ev.type == SDL_EVENT_MOUSE_MOTION && (translateGizmo.isDragging() || rotateGizmo.isDragging())) {
+            // Active gizmo drag (translate, rotate, or scale — whichever is in progress).
+            bool anyGizmoDragging = translateGizmo.isDragging() || rotateGizmo.isDragging() || scaleGizmo.isDragging();
+            if (ev.type == SDL_EVENT_MOUSE_MOTION && anyGizmoDragging) {
                 std::optional<Transform> newLocal;
                 if (translateGizmo.isDragging()) {
                     newLocal = translateGizmo.dragUpdate(ev.motion.x, ev.motion.y, winExtent, cam.viewMatrix(), proj);
-                } else {
+                } else if (rotateGizmo.isDragging()) {
                     newLocal = rotateGizmo.dragUpdate(ev.motion.x, ev.motion.y, winExtent, cam.viewMatrix(), proj);
+                } else {
+                    newLocal = scaleGizmo.dragUpdate(ev.motion.x, ev.motion.y, winExtent, cam.viewMatrix(), proj);
                 }
                 if (newLocal) {
                     sceneUpdater.addEdit({.type = SceneEditCommand::Type::SetTransform,
@@ -226,18 +231,21 @@ auto main(int argc, char* argv[]) -> int {
                 continue;
             }
 
-            if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_LEFT &&
-                (translateGizmo.isDragging() || rotateGizmo.isDragging())) {
+            if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_LEFT && anyGizmoDragging) {
                 std::optional<Transform> finalLocal;
                 const Transform* inverseHint = nullptr;
                 if (translateGizmo.isDragging()) {
                     finalLocal = translateGizmo.dragUpdate(ev.button.x, ev.button.y, winExtent, cam.viewMatrix(), proj);
                     inverseHint = &translateGizmo.dragStartLocalTransform();
                     translateGizmo.release();
-                } else {
+                } else if (rotateGizmo.isDragging()) {
                     finalLocal = rotateGizmo.dragUpdate(ev.button.x, ev.button.y, winExtent, cam.viewMatrix(), proj);
                     inverseHint = &rotateGizmo.dragStartLocalTransform();
                     rotateGizmo.release();
+                } else {
+                    finalLocal = scaleGizmo.dragUpdate(ev.button.x, ev.button.y, winExtent, cam.viewMatrix(), proj);
+                    inverseHint = &scaleGizmo.dragStartLocalTransform();
+                    scaleGizmo.release();
                 }
                 if (finalLocal && inverseHint) {
                     sceneUpdater.addEdit({.type = SceneEditCommand::Type::SetTransform,
@@ -256,7 +264,8 @@ auto main(int argc, char* argv[]) -> int {
                     continue;
                 }
 
-                if ((bool) selectedPrim && (editorUI.activeTool() == EditorTool::Translate || editorUI.activeTool() == EditorTool::Rotate)) {
+                if ((bool) selectedPrim) {
+                    auto tool = editorUI.activeTool();
                     if (const auto* xf = usdScene.getTransform(selectedPrim)) {
                         auto pivot = sceneQuery.anchorPivot(usdScene, selectedPrim);
                         auto anchor = pivot;
@@ -265,10 +274,12 @@ auto main(int argc, char* argv[]) -> int {
                             anchor = (bb.min + bb.max) * 0.5f;
                         }
                         bool grabbed = false;
-                        if (editorUI.activeTool() == EditorTool::Translate) {
+                        if (tool == EditorTool::Translate) {
                             grabbed = translateGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, anchor, xf->local, xf->world);
-                        } else {
+                        } else if (tool == EditorTool::Rotate) {
                             grabbed = rotateGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, anchor, xf->local, xf->world);
+                        } else if (tool == EditorTool::Scale) {
+                            grabbed = scaleGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, anchor, xf->local, xf->world);
                         }
                         if (grabbed) {
                             continue;
@@ -321,6 +332,7 @@ auto main(int argc, char* argv[]) -> int {
         }
         translateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, selXf && activeTool == EditorTool::Translate, gizmoAnchor);
         rotateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, selXf && activeTool == EditorTool::Rotate, gizmoAnchor);
+        scaleGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, selXf && activeTool == EditorTool::Scale, gizmoAnchor);
 
         RenderSnapshot snapshot = {
             .viewMatrix = cam.viewMatrix(),
@@ -334,6 +346,7 @@ auto main(int argc, char* argv[]) -> int {
             .showBufferOverlay = editorUI.getShowBufferOverlay(),
             .translateGizmoVerts = {translateGizmo.vertices().begin(), translateGizmo.vertices().end()},
             .rotateGizmoVerts = {rotateGizmo.vertices().begin(), rotateGizmo.vertices().end()},
+            .scaleGizmoVerts = {scaleGizmo.vertices().begin(), scaleGizmo.vertices().end()},
             .debugData = debugDraw.data(),
             .imguiSnapshot = std::move(imguiSnapshot),
         };

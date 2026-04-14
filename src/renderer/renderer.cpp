@@ -286,6 +286,13 @@ auto Renderer::gizmoUpdate(const RenderSnapshot& snapshot, RhiExtent2D extent) -
             .vpExtent = extent,
         });
     }
+    if (!snapshot.scaleGizmoVerts.empty()) {
+        requests.push_back({
+            .vertices = snapshot.scaleGizmoVerts,
+            .viewProj = snapshot.projMatrix * snapshot.viewMatrix,
+            .vpExtent = extent,
+        });
+    }
     return requests;
 }
 
