@@ -310,8 +310,11 @@ auto main(int argc, char* argv[]) -> int {
 
         editorUI.drawDebug(debugDraw, renderWorld, selectedPrim, sceneQuery, sceneUpdater, usdScene, cam.position);
 
+        renderThread.setFrameGraphDebugEnabled(editorUI.getShowFrameGraphWindow());
+        auto fgDebugSnap = renderThread.latestFrameGraphDebug();
+
         renderer.editorui()->beginFrame();
-        editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib, cam);
+        editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib, cam, std::move(fgDebugSnap));
         auto imguiSnapshot = renderer.editorui()->endFrame();
 
         float mouseX = 0, mouseY = 0;

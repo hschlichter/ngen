@@ -179,6 +179,18 @@ auto RhiCommandBufferVulkan::pipelineBarrier(std::span<const RhiBarrierDesc> bar
     vkCmdPipelineBarrier2(cmd, &depInfo);
 }
 
+auto RhiCommandBufferVulkan::blitTexture(RhiTexture* src, RhiTexture* dst, RhiExtent2D srcExtent, RhiExtent2D dstExtent) -> void {
+    auto* srcTex = static_cast<RhiTextureVulkan*>(src);
+    auto* dstTex = static_cast<RhiTextureVulkan*>(dst);
+    VkImageBlit region = {
+        .srcSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
+        .srcOffsets = {{0, 0, 0}, {(int32_t) srcExtent.width, (int32_t) srcExtent.height, 1}},
+        .dstSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
+        .dstOffsets = {{0, 0, 0}, {(int32_t) dstExtent.width, (int32_t) dstExtent.height, 1}},
+    };
+    vkCmdBlitImage(cmd, srcTex->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstTex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, VK_FILTER_LINEAR);
+}
+
 auto RhiCommandBufferVulkan::setViewport(int32_t x, int32_t y, RhiExtent2D extent) -> void {
     VkViewport viewport = {(float) x, (float) y, (float) extent.width, (float) extent.height, 0, 1};
     vkCmdSetViewport(cmd, 0, 1, &viewport);

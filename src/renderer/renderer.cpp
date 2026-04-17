@@ -105,7 +105,27 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
         .imageCount = swapchain->imageCount(),
     });
 
+    fgPreviews.init(device, editorUI.get(), textureSampler);
+
     return {};
+}
+
+auto Renderer::setFrameGraphDebugEnabled(bool enabled) -> void {
+    if (enabled == fgDebugEnabled) {
+        return;
+    }
+    fgDebugEnabled = enabled;
+    if (enabled) {
+        frameGraph.setDebugCaptureHook([this](RhiCommandBuffer* cmd, const FgCapturedResource& view) { fgPreviews.capture(cmd, view); });
+    } else {
+        frameGraph.setDebugCaptureHook(nullptr);
+    }
+}
+
+auto Renderer::buildFrameGraphDebugSnapshot() const -> FrameGraphDebugSnapshot {
+    auto snap = frameGraph.buildDebugSnapshot();
+    fgPreviews.annotate(snap);
+    return snap;
 }
 
 auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void {
@@ -325,8 +345,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     auto ext = swapchain->extent();
     frameGraph.reset();
 
-    auto colorHandle = frameGraph.importTexture(swapchain->image(*index), {ext.width, ext.height, swapchain->colorFormat()});
-    auto depthHandle = frameGraph.importTexture(swapchain->depthImage(), {ext.width, ext.height, swapchain->depthFormat()});
+    auto colorHandle = frameGraph.importTexture("backbuffer", swapchain->image(*index), {ext.width, ext.height, swapchain->colorFormat()});
+    auto depthHandle = frameGraph.importTexture("depth", swapchain->depthImage(), {ext.width, ext.height, swapchain->depthFormat()});
 
     auto imageIdx = *index;
     auto instanceCount = (uint32_t) gpuInstances.size();
@@ -380,6 +400,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
 
 auto Renderer::destroy() -> void {
     device->waitIdle();
+
+    fgPreviews.shutdown();
 
     editorUI->shutdown();
     editorUI.reset();

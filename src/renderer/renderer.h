@@ -4,6 +4,8 @@
 #include "debugrenderer.h"
 #include "editoruipass.h"
 #include "framegraph.h"
+#include "framegraphdebug.h"
+#include "framegraphpreviews.h"
 #include "geometrypass.h"
 #include "gizmopass.h"
 #include "lightingpass.h"
@@ -45,6 +47,9 @@ public:
     auto destroy() -> void;
 
     auto editorui() -> RhiEditorUI* { return editorUI.get(); }
+    auto frameGraphRef() const -> const FrameGraph& { return frameGraph; }
+    auto setFrameGraphDebugEnabled(bool enabled) -> void;
+    auto buildFrameGraphDebugSnapshot() const -> FrameGraphDebugSnapshot;
     auto initGizmos(Camera* camera) -> void;
     auto gizmoUpdate(const RenderSnapshot& snapshot, RhiExtent2D extent) -> std::vector<GizmoDrawRequest>;
     auto gizmoHitTest(float mouseX, float mouseY, RhiExtent2D windowExtent) -> bool;
@@ -84,6 +89,8 @@ private:
 
     FrameGraph frameGraph;
     ResourcePool resourcePool;
+    FrameGraphPreviews fgPreviews;
+    bool fgDebugEnabled = false;
 
     std::unique_ptr<RhiEditorUI> editorUI;
 };

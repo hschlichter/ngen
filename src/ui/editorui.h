@@ -1,10 +1,13 @@
 #pragma once
 
+#include "framegraphdebug.h"
 #include "propertieswindow.h" // PropertiesWindowState
 #include "scenehandles.h"
 #include "scenewindow.h" // SceneWindowState
 
+#include <cstdint>
 #include <glm/glm.hpp>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -35,7 +38,8 @@ public:
               PrimHandle& selectedPrim,
               const SceneQuerySystem& sceneQuery,
               const MaterialLibrary& matLib,
-              Camera& camera) -> void;
+              Camera& camera,
+              std::optional<FrameGraphDebugSnapshot> freshFrameGraphSnap) -> void;
 
     auto openScene(const char* path,
                    USDScene& usdScene,
@@ -65,6 +69,7 @@ public:
     auto getShowGizmo() const -> bool { return showGizmoFlag; }
     auto getGBufferViewMode() const -> int { return gbufferViewMode; }
     auto getShowBufferOverlay() const -> bool { return showBufferOverlayFlag; }
+    auto getShowFrameGraphWindow() const -> bool { return showFrameGraphWindow; }
     auto activeTool() const -> EditorTool { return activeToolValue; }
 
 private:
@@ -80,9 +85,13 @@ private:
     bool showSelectedAABBFlag = true;
     int gbufferViewMode = 0;
     bool showBufferOverlayFlag = false;
+    bool showFrameGraphWindow = false;
     bool requestQuit = false;
     EditorTool activeToolValue = EditorTool::Select;
     PropertiesWindowState propertiesState;
     SceneWindowState sceneState;
     std::string pendingOpenPath;
+    std::optional<FrameGraphDebugSnapshot> fgLastSnapshot;
+    std::optional<uint32_t> fgSelectedPass;
+    std::optional<uint32_t> fgSelectedResource;
 };

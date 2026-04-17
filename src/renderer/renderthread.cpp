@@ -1,5 +1,8 @@
 #include "renderthread.h"
+#include "framegraph.h"
 #include "renderer.h"
+
+#include <utility>
 
 auto RenderThread::start(Renderer* r) -> void {
     renderer = r;
@@ -34,6 +37,11 @@ auto RenderThread::submitRenderUpload(RenderUpload upload) -> void {
     pendingUpload = std::move(upload);
 }
 
+auto RenderThread::latestFrameGraphDebug() -> std::optional<FrameGraphDebugSnapshot> {
+    std::lock_guard lock(fgDebugMutex);
+    return std::exchange(fgDebugSlot, std::nullopt);
+}
+
 auto RenderThread::threadLoop() -> void {
     while (true) {
         RenderSnapshot snapshot;
@@ -58,6 +66,16 @@ auto RenderThread::threadLoop() -> void {
             }
         }
 
+        bool wantDebug = fgDebugWanted.load(std::memory_order_relaxed);
+        renderer->setFrameGraphDebugEnabled(wantDebug);
+
         renderer->render(snapshot);
+
+        if (wantDebug) {
+            auto fgSnap = renderer->buildFrameGraphDebugSnapshot();
+            fgSnap.frameIndex = ++fgDebugFrameCounter;
+            std::lock_guard lock(fgDebugMutex);
+            fgDebugSlot = std::move(fgSnap);
+        }
     }
 }

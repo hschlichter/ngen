@@ -19,6 +19,7 @@ public:
     virtual auto beginRendering(const RhiRenderingInfo& info) -> void = 0;
     virtual auto endRendering() -> void = 0;
     virtual auto pipelineBarrier(std::span<const RhiBarrierDesc> barriers) -> void = 0;
+    virtual auto blitTexture(RhiTexture* src, RhiTexture* dst, RhiExtent2D srcExtent, RhiExtent2D dstExtent) -> void = 0;
     virtual auto setViewport(int32_t x, int32_t y, RhiExtent2D extent) -> void = 0;
     virtual auto setScissor(int32_t x, int32_t y, RhiExtent2D extent) -> void = 0;
     auto setViewport(RhiExtent2D extent) -> void { setViewport(0, 0, extent); }

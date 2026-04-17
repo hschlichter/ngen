@@ -12,6 +12,8 @@ public:
     auto endFrame() -> ImGuiFrameSnapshot override;
     auto renderDrawData(RhiCommandBuffer* cmd, ImGuiFrameSnapshot& snapshot) -> void override;
     auto shutdown() -> void override;
+    auto registerTexture(RhiTexture* texture, RhiSampler* sampler) -> uint64_t override;
+    auto unregisterTexture(uint64_t id) -> void override;
 
 private:
     VkDevice vkDevice = VK_NULL_HANDLE;

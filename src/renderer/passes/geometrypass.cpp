@@ -76,8 +76,8 @@ auto GeometryPass::addPass(FrameGraph& fg,
     return fg.addPass<GeometryPassData>(
         "GeometryPass",
         [&](FrameGraphBuilder& builder, GeometryPassData& data) {
-            data.albedo = builder.write(builder.createTexture(albedoDesc), FgAccessFlags::ColorAttachment);
-            data.normal = builder.write(builder.createTexture(normalDesc), FgAccessFlags::ColorAttachment);
+            data.albedo = builder.write(builder.createTexture("gbuffer.albedo", albedoDesc), FgAccessFlags::ColorAttachment);
+            data.normal = builder.write(builder.createTexture("gbuffer.normal", normalDesc), FgAccessFlags::ColorAttachment);
             data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
             builder.setSideEffects(true);
         },

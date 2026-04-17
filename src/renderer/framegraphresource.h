@@ -41,6 +41,7 @@ struct FgTextureDesc {
 };
 
 struct FgResource {
+    const char* name = "";
     FgTextureDesc desc;
     FgAccessFlags currentAccess = FgAccessFlags::None;
     RhiTexture* physical = nullptr;

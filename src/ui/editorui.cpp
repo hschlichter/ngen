@@ -1,6 +1,7 @@
 #include "editorui.h"
 
 #include "debugdraw.h"
+#include "framegraphwindow.h"
 #include "layerswindow.h"
 #include "mainmenubar.h"
 #include "propertieswindow.h"
@@ -15,6 +16,7 @@
 
 #include <functional>
 #include <print>
+#include <utility>
 
 auto EditorUI::togglePanels() -> void {
     bool target = !(showSceneWindow || showPropertiesWindow || showLayersWindow || showToolsWindow);
@@ -31,7 +33,11 @@ auto EditorUI::draw(SDL_Window* window,
                     PrimHandle& selectedPrim,
                     const SceneQuerySystem& sceneQuery,
                     const MaterialLibrary& matLib,
-                    Camera& camera) -> void {
+                    Camera& camera,
+                    std::optional<FrameGraphDebugSnapshot> freshFrameGraphSnap) -> void {
+    if (freshFrameGraphSnap.has_value()) {
+        fgLastSnapshot = std::move(freshFrameGraphSnap);
+    }
     MainMenuBarState menuState{
         .showSceneWindow = showSceneWindow,
         .showPropertiesWindow = showPropertiesWindow,
@@ -45,6 +51,7 @@ auto EditorUI::draw(SDL_Window* window,
         .showSelectedAABB = showSelectedAABBFlag,
         .gbufferView = gbufferViewMode,
         .showBufferOverlay = showBufferOverlayFlag,
+        .showFrameGraph = showFrameGraphWindow,
         .requestQuit = requestQuit,
         .pendingOpenPath = pendingOpenPath,
         .window = window,
@@ -61,6 +68,7 @@ auto EditorUI::draw(SDL_Window* window,
     drawPropertiesWindow(showPropertiesWindow, sceneUpdater.isBlocked(), usdScene, selectedPrim, sceneQuery, matLib, sceneUpdater.edits(), propertiesState);
     drawToolsWindow(showToolsWindow, activeToolValue);
     drawUndoWindow(showUndoWindow, sceneUpdater, usdScene);
+    drawFrameGraphWindow(showFrameGraphWindow, fgLastSnapshot, fgSelectedPass, fgSelectedResource);
 }
 
 auto EditorUI::openScene(const char* path,

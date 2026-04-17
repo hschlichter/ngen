@@ -12,6 +12,17 @@
 
 class RhiCommandBuffer;
 class ResourcePool;
+struct FrameGraphDebugSnapshot;
+
+struct FgCapturedResource {
+    const char* name = "";
+    RhiTexture* physical = nullptr;
+    FgTextureDesc desc;
+    FgAccessFlags currentAccess = FgAccessFlags::None;
+    bool external = false;
+};
+
+using FgDebugCaptureFn = std::function<void(RhiCommandBuffer*, const FgCapturedResource&)>;
 
 class FrameGraph {
     friend class FrameGraphBuilder;
@@ -20,7 +31,7 @@ class FrameGraph {
 public:
     auto setResourcePool(ResourcePool* pool) -> void { resourcePool = pool; }
     auto reset() -> void;
-    auto importTexture(RhiTexture* texture, const FgTextureDesc& desc) -> FgTextureHandle;
+    auto importTexture(const char* name, RhiTexture* texture, const FgTextureDesc& desc) -> FgTextureHandle;
 
     template <typename DataT>
     auto addPass(const char* name, std::function<void(FrameGraphBuilder&, DataT&)> setup, std::function<void(FrameGraphContext&, const DataT&)> exec)
@@ -28,6 +39,10 @@ public:
 
     auto compile() -> void;
     auto execute(RhiCommandBuffer* cmd) -> void;
+
+    auto buildDebugSnapshot() const -> FrameGraphDebugSnapshot;
+
+    auto setDebugCaptureHook(FgDebugCaptureFn fn) -> void { debugCaptureHook = std::move(fn); }
 
 private:
     std::vector<PassNode> passes;
@@ -65,6 +80,7 @@ private:
     std::vector<PassDataEntry> passData;
 
     ResourcePool* resourcePool = nullptr;
+    FgDebugCaptureFn debugCaptureHook;
 };
 
 template <typename DataT>

@@ -1,6 +1,7 @@
 #include "rhieditoruivulkan.h"
 #include "rhicommandbuffervulkan.h"
 #include "rhidevicevulkan.h"
+#include "rhiresourcesvulkan.h"
 
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
@@ -95,4 +96,18 @@ auto RhiEditorUIVulkan::shutdown() -> void {
         vkDestroyDescriptorPool(vkDevice, imguiPool, nullptr);
         imguiPool = VK_NULL_HANDLE;
     }
+}
+
+auto RhiEditorUIVulkan::registerTexture(RhiTexture* texture, RhiSampler* sampler) -> uint64_t {
+    auto* vkTex = static_cast<RhiTextureVulkan*>(texture);
+    auto* vkSampler = static_cast<RhiSamplerVulkan*>(sampler);
+    auto set = ImGui_ImplVulkan_AddTexture(vkSampler->sampler, vkTex->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    return (uint64_t) set;
+}
+
+auto RhiEditorUIVulkan::unregisterTexture(uint64_t id) -> void {
+    if (id == 0) {
+        return;
+    }
+    ImGui_ImplVulkan_RemoveTexture((VkDescriptorSet) id);
 }

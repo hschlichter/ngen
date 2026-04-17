@@ -15,6 +15,7 @@ public:
     auto beginRendering(const RhiRenderingInfo& info) -> void override;
     auto endRendering() -> void override;
     auto pipelineBarrier(std::span<const RhiBarrierDesc> barriers) -> void override;
+    auto blitTexture(RhiTexture* src, RhiTexture* dst, RhiExtent2D srcExtent, RhiExtent2D dstExtent) -> void override;
     auto setViewport(int32_t x, int32_t y, RhiExtent2D extent) -> void override;
     auto setScissor(int32_t x, int32_t y, RhiExtent2D extent) -> void override;
     auto bindPipeline(RhiPipeline* pipeline) -> void override;

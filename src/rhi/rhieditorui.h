@@ -59,4 +59,9 @@ public:
     virtual auto endFrame() -> ImGuiFrameSnapshot = 0;
     virtual auto renderDrawData(RhiCommandBuffer* cmd, ImGuiFrameSnapshot& snapshot) -> void = 0;
     virtual auto shutdown() -> void = 0;
+
+    // Register a sampled texture (expected in ShaderReadOnly layout) with ImGui.
+    // Returns an opaque ID to be cast to ImTextureID in ImGui::Image.
+    virtual auto registerTexture(RhiTexture* texture, RhiSampler* sampler) -> uint64_t = 0;
+    virtual auto unregisterTexture(uint64_t id) -> void = 0;
 };
