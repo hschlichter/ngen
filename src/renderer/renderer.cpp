@@ -1,12 +1,16 @@
 #include "renderer.h"
+#include "aapass.h"
+#include "blitpass.h"
 #include "material.h"
 #include "mesh.h"
+#include "presentpass.h"
 #include "rendersnapshot.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "rhieditorui.h"
 #include "rhieditoruivulkan.h"
 #include "rhiswapchain.h"
+#include "shadowpass.h"
 
 #include <SDL3/SDL.h>
 
@@ -351,15 +355,27 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     auto imageIdx = *index;
     auto instanceCount = (uint32_t) gpuInstances.size();
 
+    RhiExtent2D shadowExtent{1024, 1024};
+    const auto& shadowData = addShadowPass(frameGraph, shadowExtent, swapchain->depthFormat());
+
     const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, imageIdx, instanceCount, gpuInstances, meshCache, geometryDescriptorSets);
-    lightingPass.addPass(
-        frameGraph, geomData, depthHandle, colorHandle, ext, imageIdx, textureSampler, lights, snapshot.gbufferViewMode, snapshot.showBufferOverlay);
-    debugRenderer.addPass(frameGraph, colorHandle, depthHandle, ext, snapshot.debugData, imageIdx);
+    const auto& lightData = lightingPass.addPass(
+        frameGraph, geomData, depthHandle, shadowData.shadowMap, ext, imageIdx, textureSampler, lights, snapshot.gbufferViewMode, snapshot.showBufferOverlay);
+
+    // AA sits between the scene render and the overlays, so debug lines, gizmos and UI
+    // are drawn on top of the anti-aliased image instead of being smeared by it.
+    const auto& aaData = addAAPass(frameGraph, lightData.sceneColor, ext, swapchain->colorFormat());
+    auto sceneColor = aaData.sceneColorAA;
+
+    debugRenderer.addPass(frameGraph, sceneColor, depthHandle, ext, snapshot.debugData, imageIdx);
 
     auto gizmoRequests = gizmoUpdate(snapshot, ext);
-    gizmoPass.addPass(frameGraph, colorHandle, ext, gizmoRequests, imageIdx);
+    gizmoPass.addPass(frameGraph, sceneColor, ext, gizmoRequests, imageIdx);
 
-    editorUIPass.addPass(frameGraph, colorHandle, ext, editorUI.get(), snapshot.imguiSnapshot);
+    editorUIPass.addPass(frameGraph, sceneColor, ext, editorUI.get(), snapshot.imguiSnapshot);
+
+    addBlitPass(frameGraph, "BlitToBackbuffer", sceneColor, colorHandle, ext, ext);
+    addPresentPass(frameGraph, colorHandle);
 
     frameGraph.compile();
 
@@ -367,18 +383,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     cmd->reset();
     cmd->begin();
 
-    std::array<RhiBarrierDesc, 2> preBarriers = {{
-        {.texture = swapchain->image(*index), .oldLayout = RhiImageLayout::Undefined, .newLayout = RhiImageLayout::ColorAttachment},
-        {.texture = swapchain->depthImage(), .oldLayout = RhiImageLayout::Undefined, .newLayout = RhiImageLayout::DepthStencilAttachment},
-    }};
-    cmd->pipelineBarrier(preBarriers);
-
     frameGraph.execute(cmd);
-
-    std::array<RhiBarrierDesc, 1> postBarriers = {{
-        {.texture = swapchain->image(*index), .oldLayout = RhiImageLayout::ColorAttachment, .newLayout = RhiImageLayout::PresentSrc},
-    }};
-    cmd->pipelineBarrier(postBarriers);
 
     cmd->end();
 

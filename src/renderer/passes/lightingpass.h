@@ -24,6 +24,13 @@ enum class GBufferView : int {
     Depth,
 };
 
+struct LightingPassData {
+    FgTextureHandle albedo;
+    FgTextureHandle normal;
+    FgTextureHandle depth;
+    FgTextureHandle sceneColor;
+};
+
 class LightingPass {
 public:
     auto init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent, RhiFormat colorFormat) -> bool;
@@ -32,13 +39,13 @@ public:
     auto addPass(FrameGraph& fg,
                  const GeometryPassData& geomData,
                  FgTextureHandle depthHandle,
-                 FgTextureHandle colorHandle,
+                 FgTextureHandle shadowHandle,
                  RhiExtent2D extent,
                  uint32_t imageIndex,
                  RhiSampler* sampler,
                  const std::vector<RenderLight>& lights,
                  GBufferView viewMode,
-                 bool showOverlay) -> void;
+                 bool showOverlay) -> const LightingPassData&;
 
 private:
     RhiDevice* device = nullptr;
@@ -50,4 +57,5 @@ private:
     RhiShaderModule* fragShader = nullptr;
     std::vector<RhiBuffer*> uniformBuffers;
     std::vector<void*> uniformBuffersMapped;
+    RhiFormat sceneColorFormat = RhiFormat::Undefined;
 };

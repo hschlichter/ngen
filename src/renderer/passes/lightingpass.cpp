@@ -11,6 +11,7 @@ auto LightingPass::init(RhiDevice* dev, uint32_t imageCount, RhiExtent2D extent,
     using enum RhiDescriptorType;
 
     device = dev;
+    sceneColorFormat = colorFormat;
 
     vertShader = device->createShaderModule("shaders/lighting.vert.spv");
     fragShader = device->createShaderModule("shaders/lighting.frag.spv");
@@ -78,27 +79,30 @@ auto LightingPass::destroy(RhiDevice* dev) -> void {
 auto LightingPass::addPass(FrameGraph& fg,
                            const GeometryPassData& geomData,
                            FgTextureHandle depthHandle,
-                           FgTextureHandle colorHandle,
+                           FgTextureHandle shadowHandle,
                            RhiExtent2D extent,
                            uint32_t imageIndex,
                            RhiSampler* sampler,
                            const std::vector<RenderLight>& lights,
                            GBufferView viewMode,
-                           bool showOverlay) -> void {
-    struct LightingPassData {
-        FgTextureHandle albedo;
-        FgTextureHandle normal;
-        FgTextureHandle depth;
-        FgTextureHandle color;
+                           bool showOverlay) -> const LightingPassData& {
+    FgTextureDesc sceneColorDesc = {
+        .width = extent.width,
+        .height = extent.height,
+        .format = sceneColorFormat,
+        .usage = RhiTextureUsage::ColorAttachment | RhiTextureUsage::Sampled,
     };
 
-    fg.addPass<LightingPassData>(
+    return fg.addPass<LightingPassData>(
         "LightingPass",
         [&](FrameGraphBuilder& builder, LightingPassData& data) {
             data.albedo = builder.read(geomData.albedo, FgAccessFlags::ShaderRead);
             data.normal = builder.read(geomData.normal, FgAccessFlags::ShaderRead);
             data.depth = builder.read(depthHandle, FgAccessFlags::ShaderRead);
-            data.color = builder.write(colorHandle, FgAccessFlags::ColorAttachment);
+            // Dummy: the shader doesn't sample this yet, but the read keeps ShadowPass in the graph
+            // and models the future data dependency.
+            builder.read(shadowHandle, FgAccessFlags::ShaderRead);
+            data.sceneColor = builder.write(builder.createTexture("sceneColor", sceneColorDesc), FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);
         },
         [this, imageIndex, extent, sampler, &lights, viewMode, showOverlay](FrameGraphContext& ctx, const LightingPassData& data) {
@@ -148,7 +152,7 @@ auto LightingPass::addPass(FrameGraph& fg,
             device->updateDescriptorSet(descriptorSets[imageIndex], writes);
 
             RhiRenderingAttachmentInfo colorAtt = {
-                .texture = ctx.texture(data.color),
+                .texture = ctx.texture(data.sceneColor),
                 .layout = RhiImageLayout::ColorAttachment,
                 .clear = true,
                 .clearColor = {0.12f, 0.12f, 0.15f, 1.0f},

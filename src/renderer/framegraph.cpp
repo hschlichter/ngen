@@ -220,11 +220,14 @@ auto FrameGraph::compile() -> void {
 // --- Execution: allocate transients, compute barriers, run passes, release ---
 
 static auto toRhiTextureDesc(const FgTextureDesc& desc) -> RhiTextureDesc {
+    // Always request TransferSrc/TransferDst on pooled transients so any pass can blit
+    // to or from them (debug-preview capture, dummy AA, compositing, etc.) without the
+    // pass author having to remember to request those usage bits.
     return {
         .width = desc.width,
         .height = desc.height,
         .format = desc.format,
-        .usage = desc.usage | RhiTextureUsage::TransferSrc,
+        .usage = desc.usage | RhiTextureUsage::TransferSrc | RhiTextureUsage::TransferDst,
     };
 }
 
