@@ -15,6 +15,8 @@ struct LightingUBO {
     glm::vec4 lightDirection; // xyz = direction, w = intensity
     glm::vec4 lightColor;     // xyz = color, w = ambient
     glm::vec4 depthParams;    // x = near, y = far, zw = unused
+    glm::mat4 invViewProj;    // inverse(proj * view), for world-pos reconstruction from gbuffer
+    glm::mat4 lightViewProj;  // shadow camera view-projection
 };
 
 enum class GBufferView : int {
@@ -22,12 +24,17 @@ enum class GBufferView : int {
     Albedo,
     Normals,
     Depth,
+    ShadowFactor,
+    ShadowMap,
+    ShadowUV,
+    WorldPos,
 };
 
 struct LightingPassData {
     FgTextureHandle albedo;
     FgTextureHandle normal;
     FgTextureHandle depth;
+    FgTextureHandle shadowMap;
     FgTextureHandle sceneColor;
 };
 
@@ -45,7 +52,10 @@ public:
                  RhiSampler* sampler,
                  const std::vector<RenderLight>& lights,
                  GBufferView viewMode,
-                 bool showOverlay) -> const LightingPassData&;
+                 bool showOverlay,
+                 bool showShadowOverlay,
+                 const glm::mat4& invViewProj,
+                 const glm::mat4& lightViewProj) -> const LightingPassData&;
 
 private:
     RhiDevice* device = nullptr;

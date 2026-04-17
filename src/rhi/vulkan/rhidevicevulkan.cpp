@@ -671,8 +671,8 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
 
     VkPipelineLayoutCreateInfo layoutInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,
-        .pSetLayouts = &dsLayout->layout,
+        .setLayoutCount = dsLayout != nullptr ? 1u : 0u,
+        .pSetLayouts = dsLayout != nullptr ? &dsLayout->layout : nullptr,
         .pushConstantRangeCount = desc.pushConstant.size > 0 ? 1u : 0u,
         .pPushConstantRanges = desc.pushConstant.size > 0 ? &pushConstRange : nullptr,
     };

@@ -16,11 +16,12 @@ auto LightingPass::init(RhiDevice* dev, uint32_t imageCount, RhiExtent2D extent,
     vertShader = device->createShaderModule("shaders/lighting.vert.spv");
     fragShader = device->createShaderModule("shaders/lighting.frag.spv");
 
-    std::array<RhiDescriptorBinding, 4> bindings = {{
+    std::array<RhiDescriptorBinding, 5> bindings = {{
         {.binding = 0, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
         {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
         {.binding = 2, .type = UniformBuffer, .stage = RhiShaderStage::Fragment},
         {.binding = 3, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
+        {.binding = 4, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
     }};
     descriptorSetLayout = device->createDescriptorSetLayout(bindings);
 
@@ -30,7 +31,7 @@ auto LightingPass::init(RhiDevice* dev, uint32_t imageCount, RhiExtent2D extent,
         .descriptorSetLayout = descriptorSetLayout,
         .colorFormats = {&colorFormat, 1},
         .vertexStride = 0,
-        .pushConstant = {.stage = RhiShaderStage::Fragment, .offset = 0, .size = 2 * sizeof(int32_t)},
+        .pushConstant = {.stage = RhiShaderStage::Fragment, .offset = 0, .size = 3 * sizeof(int32_t)},
         .viewportExtent = extent,
         .depthTestEnable = false,
         .depthWriteEnable = false,
@@ -85,7 +86,10 @@ auto LightingPass::addPass(FrameGraph& fg,
                            RhiSampler* sampler,
                            const std::vector<RenderLight>& lights,
                            GBufferView viewMode,
-                           bool showOverlay) -> const LightingPassData& {
+                           bool showOverlay,
+                           bool showShadowOverlay,
+                           const glm::mat4& invViewProj,
+                           const glm::mat4& lightViewProj) -> const LightingPassData& {
     FgTextureDesc sceneColorDesc = {
         .width = extent.width,
         .height = extent.height,
@@ -99,19 +103,20 @@ auto LightingPass::addPass(FrameGraph& fg,
             data.albedo = builder.read(geomData.albedo, FgAccessFlags::ShaderRead);
             data.normal = builder.read(geomData.normal, FgAccessFlags::ShaderRead);
             data.depth = builder.read(depthHandle, FgAccessFlags::ShaderRead);
-            // Dummy: the shader doesn't sample this yet, but the read keeps ShadowPass in the graph
-            // and models the future data dependency.
-            builder.read(shadowHandle, FgAccessFlags::ShaderRead);
+            data.shadowMap = builder.read(shadowHandle, FgAccessFlags::ShaderRead);
             data.sceneColor = builder.write(builder.createTexture("sceneColor", sceneColorDesc), FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);
         },
-        [this, imageIndex, extent, sampler, &lights, viewMode, showOverlay](FrameGraphContext& ctx, const LightingPassData& data) {
+        [this, imageIndex, extent, sampler, &lights, viewMode, showOverlay, showShadowOverlay, invViewProj, lightViewProj](FrameGraphContext& ctx,
+                                                                                                                           const LightingPassData& data) {
             auto* cmd = ctx.cmd();
 
             LightingUBO lightUbo = {
                 .lightDirection = glm::vec4(glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f)), 1.0f),
                 .lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 0.15f),
                 .depthParams = glm::vec4(0.1f, 3000.0f, 0.0f, 0.0f),
+                .invViewProj = invViewProj,
+                .lightViewProj = lightViewProj,
             };
             for (const auto& light : lights) {
                 if (light.type == LightType::Directional) {
@@ -123,7 +128,7 @@ auto LightingPass::addPass(FrameGraph& fg,
             }
             memcpy(uniformBuffersMapped[imageIndex], &lightUbo, sizeof(lightUbo));
 
-            std::array<RhiDescriptorWrite, 4> writes = {{
+            std::array<RhiDescriptorWrite, 5> writes = {{
                 {
                     .binding = 0,
                     .type = RhiDescriptorType::CombinedImageSampler,
@@ -148,6 +153,12 @@ auto LightingPass::addPass(FrameGraph& fg,
                     .texture = ctx.texture(data.depth),
                     .sampler = sampler,
                 },
+                {
+                    .binding = 4,
+                    .type = RhiDescriptorType::CombinedImageSampler,
+                    .texture = ctx.texture(data.shadowMap),
+                    .sampler = sampler,
+                },
             }};
             device->updateDescriptorSet(descriptorSets[imageIndex], writes);
 
@@ -170,10 +181,12 @@ auto LightingPass::addPass(FrameGraph& fg,
             struct LightingPush {
                 int32_t viewMode;
                 int32_t showOverlay;
+                int32_t showShadowOverlay;
             };
             LightingPush push = {
                 .viewMode = static_cast<int32_t>(viewMode),
                 .showOverlay = showOverlay ? 1 : 0,
+                .showShadowOverlay = showShadowOverlay ? 1 : 0,
             };
             cmd->pushConstants(pipeline, RhiShaderStage::Fragment, 0, sizeof(push), &push);
 

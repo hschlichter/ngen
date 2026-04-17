@@ -23,6 +23,7 @@ struct MainMenuBarState {
     bool& showSelectedAABB;
     int& gbufferView;
     bool& showBufferOverlay;
+    bool& showShadowOverlay;
     bool& showFrameGraph;
     bool& requestQuit;
     std::string& pendingOpenPath;

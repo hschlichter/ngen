@@ -93,6 +93,7 @@ void drawMainMenuBar(MainMenuBarState& state) {
             ImGui::MenuItem("Show Selected AABB", nullptr, &state.showSelectedAABB);
             ImGui::Separator();
             ImGui::MenuItem("Show Buffer Overlay", nullptr, &state.showBufferOverlay);
+            ImGui::MenuItem("Show Shadow Overlay", nullptr, &state.showShadowOverlay);
             ImGui::Separator();
             ImGui::MenuItem("Frame Graph", nullptr, &state.showFrameGraph);
             ImGui::Separator();
@@ -100,6 +101,10 @@ void drawMainMenuBar(MainMenuBarState& state) {
             ImGui::RadioButton("Albedo", &state.gbufferView, 1);
             ImGui::RadioButton("Normals", &state.gbufferView, 2);
             ImGui::RadioButton("Depth", &state.gbufferView, 3);
+            ImGui::RadioButton("Shadow Factor", &state.gbufferView, 4);
+            ImGui::RadioButton("Shadow Map", &state.gbufferView, 5);
+            ImGui::RadioButton("Shadow UV", &state.gbufferView, 6);
+            ImGui::RadioButton("World Pos", &state.gbufferView, 7);
             ImGui::RadioButton("Lit", &state.gbufferView, 0);
             ImGui::EndMenu();
         }

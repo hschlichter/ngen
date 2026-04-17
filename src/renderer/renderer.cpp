@@ -16,6 +16,7 @@
 
 #include <array>
 #include <cstring>
+#include <limits>
 
 auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<void, int> {
     using enum RhiFormat;
@@ -72,6 +73,10 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
     fallbackTexture = device->createTexture(fallbackDesc);
 
     // Passes
+    RhiExtent2D shadowExtent{1024, 1024};
+    if (!shadowPass.init(device, shadowExtent, depthFmt)) {
+        return std::unexpected(1);
+    }
     if (!geometryPass.init(device, ext, depthFmt)) {
         return std::unexpected(1);
     }
@@ -356,11 +361,69 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     auto instanceCount = (uint32_t) gpuInstances.size();
 
     RhiExtent2D shadowExtent{1024, 1024};
-    const auto& shadowData = addShadowPass(frameGraph, shadowExtent, swapchain->depthFormat());
+
+    // Simple directional light: pick the first directional light, else default to a corner sun.
+    glm::vec3 lightDir{1.0f, 1.0f, 1.0f};
+    for (const auto& l : lights) {
+        if (l.type == LightType::Directional) {
+            lightDir = glm::vec3(l.worldTransform[2]);
+            break;
+        }
+    }
+    // Guard against a zero light direction from a malformed transform.
+    if (glm::dot(lightDir, lightDir) < 1e-6f) {
+        lightDir = glm::vec3(1.0f, 1.0f, 1.0f);
+    }
+    lightDir = glm::normalize(lightDir);
+
+    // Fit a scene-bounding sphere around the instance origins, then size the ortho frustum to
+    // that sphere with some padding. Instance origins are a coarse approximation of scene
+    // bounds (ignores per-mesh extent) but good enough for a first-pass shadow frustum.
+    glm::vec3 sceneMin{std::numeric_limits<float>::max()};
+    glm::vec3 sceneMax{std::numeric_limits<float>::lowest()};
+    for (const auto& inst : gpuInstances) {
+        glm::vec3 p{inst.transform[3]};
+        sceneMin = glm::min(sceneMin, p);
+        sceneMax = glm::max(sceneMax, p);
+    }
+    glm::vec3 sceneCenter{0.0f};
+    float sceneRadius = 1.0f;
+    if (!gpuInstances.empty()) {
+        sceneCenter = (sceneMin + sceneMax) * 0.5f;
+        sceneRadius = glm::length(sceneMax - sceneMin) * 0.5f + 1.0f; // +1 as safety padding
+    }
+    // Pad generously so per-mesh extents that stick out of instance-origin bounds still fit.
+    float shadowHalf = sceneRadius * 2.0f;
+    float lightDistance = sceneRadius * 4.0f + 1.0f;
+
+    auto lightPos = sceneCenter + lightDir * lightDistance;
+    // glm::lookAt is degenerate when the light direction is parallel to the up vector — the
+    // cross product to compute "right" becomes zero. That happens for the very common case of
+    // a sun shining straight down. Pick a non-collinear up when lightDir is vertical.
+    auto up = std::abs(glm::dot(lightDir, glm::vec3(0.0f, 1.0f, 0.0f))) > 0.99f ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+    auto lightView = glm::lookAt(lightPos, sceneCenter, up);
+    auto lightProj = glm::ortho(-shadowHalf, shadowHalf, -shadowHalf, shadowHalf, 0.1f, 2.0f * lightDistance);
+    auto lightViewProj = lightProj * lightView;
+
+    auto invViewProj = glm::inverse(snapshot.projMatrix * snapshot.viewMatrix);
+
+    const auto& shadowData = shadowPass.addPass(frameGraph, shadowExtent, swapchain->depthFormat(), lightViewProj, gpuInstances, meshCache);
 
     const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, imageIdx, instanceCount, gpuInstances, meshCache, geometryDescriptorSets);
-    const auto& lightData = lightingPass.addPass(
-        frameGraph, geomData, depthHandle, shadowData.shadowMap, ext, imageIdx, textureSampler, lights, snapshot.gbufferViewMode, snapshot.showBufferOverlay);
+
+    const auto& lightData = lightingPass.addPass(frameGraph,
+                                                 geomData,
+                                                 depthHandle,
+                                                 shadowData.shadowMap,
+                                                 ext,
+                                                 imageIdx,
+                                                 textureSampler,
+                                                 lights,
+                                                 snapshot.gbufferViewMode,
+                                                 snapshot.showBufferOverlay,
+                                                 snapshot.showShadowOverlay,
+                                                 invViewProj,
+                                                 lightViewProj);
 
     // AA sits between the scene render and the overlays, so debug lines, gizmos and UI
     // are drawn on top of the anti-aliased image instead of being smeared by it.
@@ -428,6 +491,7 @@ auto Renderer::destroy() -> void {
     meshCache.clear();
     textureCache.clear();
 
+    shadowPass.destroy(device);
     geometryPass.destroy(device);
     lightingPass.destroy(device);
     debugRenderer.destroy(device);

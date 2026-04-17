@@ -69,6 +69,7 @@ public:
     auto getShowGizmo() const -> bool { return showGizmoFlag; }
     auto getGBufferViewMode() const -> int { return gbufferViewMode; }
     auto getShowBufferOverlay() const -> bool { return showBufferOverlayFlag; }
+    auto getShowShadowOverlay() const -> bool { return showShadowOverlayFlag; }
     auto getShowFrameGraphWindow() const -> bool { return showFrameGraphWindow; }
     auto activeTool() const -> EditorTool { return activeToolValue; }
 
@@ -85,6 +86,7 @@ private:
     bool showSelectedAABBFlag = true;
     int gbufferViewMode = 0;
     bool showBufferOverlayFlag = false;
+    bool showShadowOverlayFlag = false;
     bool showFrameGraphWindow = false;
     bool requestQuit = false;
     EditorTool activeToolValue = EditorTool::Select;

@@ -13,6 +13,7 @@
 #include "renderworld.h"
 #include "resourcepool.h"
 #include "rhitypes.h"
+#include "shadowpass.h"
 
 #include <expected>
 #include <memory>
@@ -73,6 +74,7 @@ private:
     std::vector<RhiDescriptorSet*> geometryDescriptorSets;
 
     // Passes
+    ShadowPass shadowPass;
     GeometryPass geometryPass;
     LightingPass lightingPass;
     DebugRenderer debugRenderer;

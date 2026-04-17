@@ -347,6 +347,7 @@ auto main(int argc, char* argv[]) -> int {
             .showGizmo = editorUI.getShowGizmo(),
             .gbufferViewMode = static_cast<GBufferView>(editorUI.getGBufferViewMode()),
             .showBufferOverlay = editorUI.getShowBufferOverlay(),
+            .showShadowOverlay = editorUI.getShowShadowOverlay(),
             .translateGizmoVerts = {translateGizmo.vertices().begin(), translateGizmo.vertices().end()},
             .rotateGizmoVerts = {rotateGizmo.vertices().begin(), rotateGizmo.vertices().end()},
             .scaleGizmoVerts = {scaleGizmo.vertices().begin(), scaleGizmo.vertices().end()},
