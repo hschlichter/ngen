@@ -1,5 +1,7 @@
 #include "framegraphwindow.h"
 
+#include "framegraphnodeview.h"
+
 #include <imgui.h>
 
 #include <algorithm>
@@ -219,60 +221,14 @@ void drawFrameGraphWindow(bool& show,
                 previewCount);
     ImGui::Separator();
 
-    if (ImGui::BeginTable("##fg_split", 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV)) {
-        ImGui::TableSetupColumn("Passes", ImGuiTableColumnFlags_WidthStretch, 0.45f);
-        ImGui::TableSetupColumn("Details", ImGuiTableColumnFlags_WidthStretch, 0.55f);
-        ImGui::TableNextRow();
-
-        // Left: pass list in execution order
-        ImGui::TableSetColumnIndex(0);
-        if (ImGui::BeginTable(
-                "##fg_passes", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY)) {
-            ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 28.0f);
-            ImGui::TableSetupColumn("Name");
-            ImGui::TableSetupColumn("R", ImGuiTableColumnFlags_WidthFixed, 28.0f);
-            ImGui::TableSetupColumn("W", ImGuiTableColumnFlags_WidthFixed, 28.0f);
-            ImGui::TableHeadersRow();
-
-            for (uint32_t i = 0; i < s.executionOrder.size(); i++) {
-                auto passIdx = s.executionOrder[i];
-                const auto& pass = s.passes[passIdx];
-                ImGui::TableNextRow();
-                ImGui::PushID((int) passIdx);
-
-                bool selected = selPass == passIdx;
-                if (pass.culled) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-                }
-
-                ImGui::TableSetColumnIndex(0);
-                ImGui::Text("%u", i);
-                ImGui::TableSetColumnIndex(1);
-                if (ImGui::Selectable(pass.name.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns)) {
-                    selPass = passIdx;
-                }
-                ImGui::TableSetColumnIndex(2);
-                ImGui::Text("%zu", pass.reads.size());
-                ImGui::TableSetColumnIndex(3);
-                ImGui::Text("%zu", pass.writes.size());
-
-                if (pass.culled) {
-                    ImGui::PopStyleColor();
-                }
-                ImGui::PopID();
-            }
-            ImGui::EndTable();
-        }
-
-        // Right: stacked detail panes — pass detail on top, resource detail pinned below
-        ImGui::TableSetColumnIndex(1);
+    auto drawDetailPanes = [&]() {
         float bottomHeight = std::min(420.0f, ImGui::GetContentRegionAvail().y * 0.55f);
 
         ImGui::BeginChild("##fg_pass_detail", ImVec2(0, -bottomHeight), ImGuiChildFlags_Borders);
         if (selPass.has_value()) {
             drawPassDetail(s, *selPass, selResource);
         } else {
-            ImGui::TextDisabled("Select a pass on the left to inspect its reads and writes.");
+            ImGui::TextDisabled("Select a pass to inspect its reads and writes.");
         }
         ImGui::EndChild();
 
@@ -280,11 +236,83 @@ void drawFrameGraphWindow(bool& show,
         if (selResource.has_value()) {
             drawResourceDetail(s, *selResource, selPass);
         } else {
-            ImGui::TextDisabled("Click a row in the pass detail above to see the full resource here.");
+            ImGui::TextDisabled("Click a resource to see its details and preview here.");
         }
         ImGui::EndChild();
+    };
 
-        ImGui::EndTable();
+    if (ImGui::BeginTabBar("##fg_tabs")) {
+        if (ImGui::BeginTabItem("List")) {
+            if (ImGui::BeginTable("##fg_split", 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV)) {
+                ImGui::TableSetupColumn("Passes", ImGuiTableColumnFlags_WidthStretch, 0.45f);
+                ImGui::TableSetupColumn("Details", ImGuiTableColumnFlags_WidthStretch, 0.55f);
+                ImGui::TableNextRow();
+
+                ImGui::TableSetColumnIndex(0);
+                if (ImGui::BeginTable(
+                        "##fg_passes", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY)) {
+                    ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 28.0f);
+                    ImGui::TableSetupColumn("Name");
+                    ImGui::TableSetupColumn("R", ImGuiTableColumnFlags_WidthFixed, 28.0f);
+                    ImGui::TableSetupColumn("W", ImGuiTableColumnFlags_WidthFixed, 28.0f);
+                    ImGui::TableHeadersRow();
+
+                    for (uint32_t i = 0; i < s.executionOrder.size(); i++) {
+                        auto passIdx = s.executionOrder[i];
+                        const auto& pass = s.passes[passIdx];
+                        ImGui::TableNextRow();
+                        ImGui::PushID((int) passIdx);
+
+                        bool selected = selPass == passIdx;
+                        if (pass.culled) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                        }
+
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::Text("%u", i);
+                        ImGui::TableSetColumnIndex(1);
+                        if (ImGui::Selectable(pass.name.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns)) {
+                            selPass = passIdx;
+                        }
+                        ImGui::TableSetColumnIndex(2);
+                        ImGui::Text("%zu", pass.reads.size());
+                        ImGui::TableSetColumnIndex(3);
+                        ImGui::Text("%zu", pass.writes.size());
+
+                        if (pass.culled) {
+                            ImGui::PopStyleColor();
+                        }
+                        ImGui::PopID();
+                    }
+                    ImGui::EndTable();
+                }
+
+                ImGui::TableSetColumnIndex(1);
+                drawDetailPanes();
+
+                ImGui::EndTable();
+            }
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Graph")) {
+            if (ImGui::BeginTable("##fg_graph_split", 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV)) {
+                ImGui::TableSetupColumn("Canvas", ImGuiTableColumnFlags_WidthStretch, 0.55f);
+                ImGui::TableSetupColumn("Details", ImGuiTableColumnFlags_WidthStretch, 0.45f);
+                ImGui::TableNextRow();
+
+                ImGui::TableSetColumnIndex(0);
+                drawFrameGraphNodeView(s, selPass, selResource);
+
+                ImGui::TableSetColumnIndex(1);
+                drawDetailPanes();
+
+                ImGui::EndTable();
+            }
+            ImGui::EndTabItem();
+        }
+
+        ImGui::EndTabBar();
     }
 
     ImGui::End();

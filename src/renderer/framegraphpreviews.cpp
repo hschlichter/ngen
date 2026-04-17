@@ -49,9 +49,13 @@ auto FrameGraphPreviews::previewExtent(uint32_t srcW, uint32_t srcH) -> RhiExten
     if (srcW == 0 || srcH == 0) {
         return {maxDim, maxDim};
     }
-    auto scale = std::min(1.0f, (float) maxDim / (float) std::max(srcW, srcH));
-    auto w = std::max(1u, (uint32_t) (srcW * scale));
-    auto h = std::max(1u, (uint32_t) (srcH * scale));
+    auto maxSrc = std::max(srcW, srcH);
+    if (maxSrc <= maxDim) {
+        return {srcW, srcH};
+    }
+    // Integer math so repeat calls for the same source are bit-identical.
+    auto w = std::max(1u, (srcW * maxDim + maxSrc / 2) / maxSrc);
+    auto h = std::max(1u, (srcH * maxDim + maxSrc / 2) / maxSrc);
     return {w, h};
 }
 
@@ -70,6 +74,11 @@ auto FrameGraphPreviews::entryFor(const FgCapturedResource& view) -> Entry* {
     bool needRecreate = inserted || e.texture == nullptr || e.width != ext.width || e.height != ext.height || e.format != view.desc.format;
 
     if (needRecreate) {
+        // If we're replacing a live descriptor set / texture, the previous frame's command
+        // buffer may still reference it on the GPU. Drain before freeing.
+        if (e.texture != nullptr || e.imguiId != 0) {
+            device->waitIdle();
+        }
         destroyEntry(e);
         RhiTextureDesc desc = {
             .width = ext.width,
