@@ -2,7 +2,7 @@
 
 A modern 3D engine written in C++23 with a Vulkan rendering backend and OpenUSD scene system.
 
-![Editor UI with scene hierarchy and properties](docs/engine_editor.png)
+![Editor UI with scene hierarchy and properties](docs/engine_editor_v2.png)
 
 ## Features
 
@@ -76,6 +76,24 @@ The main thread prepares a `RenderSnapshot` each frame containing view/projectio
 ### Edit Pipeline
 
 Interactive operations follow a **Preview → Authoring** lifecycle (see `docs/architecture_preview_vs_authoring.md`). Each frame the user is dragging a gizmo or scrubbing a slider, the engine emits one or more `Preview` `SceneEditCommand`s — the `SceneUpdater` fast path applies them directly to the runtime transform cache, patches only the affected `RenderWorld` instances and BVH leaves, and skips USD entirely. On operation end (mouse-up, slider release) one `Authoring` edit commits the final value to the active USD layer; that commit is the undo step. Heavyweight edits (`SetVisibility`, layer mutes, sublayer ops, resyncs) take the existing async batch path through a worker thread.
+
+### Lighting & Shadows
+
+Deferred directional lighting with hard shadow mapping. The `GeometryPass` writes albedo / normals / depth into a G-buffer; `ShadowPass` renders the scene's depth from the first directional light's point of view into a 1024² shadow map; the fullscreen `LightingPass` reconstructs each fragment's world-space position from the G-buffer depth and the inverse view-projection, projects it into light-clip space, and compares against the shadow map to modulate the diffuse term. The shadow ortho is auto-fitted to a bounding sphere around the instance origins each frame, so it scales to whatever scene you load. Dedicated debug views (`Shadow Map`, `Shadow Factor`, `Shadow UV`, `World Pos`) are available under **Debug → Fullscreen Buffer View** and as a top-strip overlay via **Debug → Show Shadow Overlay**.
+
+![Deferred lighting with shadow-mapped scene and shadow-map debug overlay](docs/engine_lighting_shadows.png)
+
+### Frame Graph Debugger
+
+The Frame Graph window (**Debug → Frame Graph**) exposes every render pass and the resources flowing between them, with live thumbnails blitted from each color target each frame. Two views of the same graph:
+
+**List view** — passes in execution order with their reads and writes; clicking any row pins the full resource details (size, format, lifetime, producer, consumers) in the bottom pane.
+
+![Frame graph list view](docs/engine_framegraph_list.png)
+
+**Graph view** — passes arranged across a single row at the top, with resources stacked directly beneath their producer. Edges are access-colored and highlight when either endpoint is selected. Pan with middle-drag (or left-drag on empty canvas); scroll to zoom.
+
+![Frame graph node view](docs/engine_framegraph_nodes.png)
 
 ## Dependencies
 
@@ -159,5 +177,4 @@ Regenerate with `python3 models/city/generate_city.py`.
 
 ## Screenshots
 
-![Gizmos, grid, and origin marker](docs/engine_gizmos.png)
-![Deferred lighting with G-buffer debug overlay](docs/engine_lighting.png)
+![Gizmos, grid, and origin marker](docs/engine_city.png)
