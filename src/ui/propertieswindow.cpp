@@ -11,6 +11,54 @@
 #include <cstdarg>
 #include <cstdio>
 
+// DragFloat3 with a left-aligned property label and per-axis X/Y/Z colored tags
+// before each component. Sets `justActivated` and `committed` based on whichever
+// sub-drag the user touched this frame — the caller uses them to drive undo
+// capture and commit.
+static bool axisDragFloat3(const char* label, float* values, float speed, bool& justActivated, bool& committed) {
+    bool changed = false;
+    ImGui::PushID(label);
+
+    const char* axes[3] = {"X", "Y", "Z"};
+    const ImU32 tags[3] = {IM_COL32(180, 70, 70, 255), IM_COL32(70, 150, 70, 255), IM_COL32(70, 110, 200, 255)};
+
+    auto spacing = ImGui::GetStyle().ItemInnerSpacing.x;
+    auto tagW = ImGui::GetFrameHeight();
+    auto labelColumnW = 90.0f;
+
+    if (label[0] != '\0') {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(label);
+        ImGui::SameLine(labelColumnW);
+    }
+
+    auto avail = ImGui::GetContentRegionAvail().x;
+    auto dragW = (avail - tagW * 3.0f - spacing * 5.0f) / 3.0f;
+
+    for (int i = 0; i < 3; i++) {
+        if (i > 0) {
+            ImGui::SameLine(0, spacing);
+        }
+        ImGui::PushStyleColor(ImGuiCol_Button, tags[i]);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, tags[i]);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, tags[i]);
+        ImGui::Button(axes[i], ImVec2(tagW, 0));
+        ImGui::PopStyleColor(3);
+        ImGui::SameLine(0, spacing);
+        ImGui::SetNextItemWidth(dragW);
+        ImGui::PushID(i);
+        if (ImGui::DragFloat("##v", &values[i], speed)) {
+            changed = true;
+        }
+        justActivated |= ImGui::IsItemActivated();
+        committed |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::PopID();
+    }
+
+    ImGui::PopID();
+    return changed;
+}
+
 // Render a line of text that the user can click into, drag-select, and Ctrl+C
 // from. Looks like ImGui::Text (no frame/padding) but is a read-only input.
 static void selectableText(const char* fmt, ...) {
@@ -84,7 +132,8 @@ void drawPropertiesWindow(bool& show,
             if (xf && ImGui::TreeNodeEx("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
                 auto worldPos = glm::vec3(xf->world[3]);
                 ImGui::BeginDisabled();
-                ImGui::DragFloat3("World Pos", &worldPos.x);
+                bool dummyA = false, dummyC = false;
+                axisDragFloat3("World Pos", &worldPos.x, 0.1f, dummyA, dummyC);
                 ImGui::EndDisabled();
 
                 ImGui::Separator();
@@ -94,21 +143,15 @@ void drawPropertiesWindow(bool& show,
                 bool committed = false;
                 bool justActivated = false;
 
-                changed |= ImGui::DragFloat3("Position", &local.position.x, 0.1f);
-                justActivated |= ImGui::IsItemActivated();
-                committed |= ImGui::IsItemDeactivatedAfterEdit();
+                changed |= axisDragFloat3("Position", &local.position.x, 0.1f, justActivated, committed);
 
                 auto euler = glm::degrees(glm::eulerAngles(local.rotation));
-                if (ImGui::DragFloat3("Rotation", &euler.x, 0.5f)) {
+                if (axisDragFloat3("Rotation", &euler.x, 0.5f, justActivated, committed)) {
                     local.rotation = glm::quat(glm::radians(euler));
                     changed = true;
                 }
-                justActivated |= ImGui::IsItemActivated();
-                committed |= ImGui::IsItemDeactivatedAfterEdit();
 
-                changed |= ImGui::DragFloat3("Scale", &local.scale.x, 0.01f);
-                justActivated |= ImGui::IsItemActivated();
-                committed |= ImGui::IsItemDeactivatedAfterEdit();
+                changed |= axisDragFloat3("Scale", &local.scale.x, 0.01f, justActivated, committed);
 
                 // Capture the pre-edit transform on the frame any slider becomes
                 // active; remember it across frames (in `state`) until commit so
