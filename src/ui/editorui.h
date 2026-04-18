@@ -57,7 +57,8 @@ public:
                    const SceneQuerySystem& sceneQuery,
                    const SceneUpdater& sceneUpdater,
                    USDScene& usdScene,
-                   glm::vec3 cameraPos) -> void;
+                   glm::vec3 cameraPos,
+                   glm::vec3 worldUp) -> void;
 
     auto hasPendingOpen() const -> bool { return !pendingOpenPath.empty(); }
     auto consumePendingOpenPath() -> std::string { return std::exchange(pendingOpenPath, {}); }

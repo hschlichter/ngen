@@ -85,9 +85,11 @@ auto main(int argc, char* argv[]) -> int {
 
     DebugDraw debugDraw;
 
-    // Camera
+    // Camera — worldUp tracks the stage's authored up-axis so the controls stay
+    // consistent whether we're looking at a Y-up or Z-up asset.
     auto cam = Camera{
         .position = glm::vec3(2.0f, 1.5f, 2.0f),
+        .worldUp = usdScene.worldUp(),
         .yaw = -135.0f,
         .pitch = -20.0f,
         .speed = 5.0f,
@@ -110,6 +112,23 @@ auto main(int argc, char* argv[]) -> int {
         cachedMatLib = std::make_shared<const MaterialLibrary>(matLib);
     };
 
+    // Union the world bounds of all mesh instances and frame the camera on them.
+    // Used at startup and after openScene so the initial view works for any up-axis
+    // and asset scale.
+    auto frameSceneView = [&] {
+        AABB sceneBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
+        for (const auto& inst : renderWorld.meshInstances) {
+            if (inst.worldBounds.valid()) {
+                sceneBounds.min = glm::min(sceneBounds.min, inst.worldBounds.min);
+                sceneBounds.max = glm::max(sceneBounds.max, inst.worldBounds.max);
+            }
+        }
+        if (sceneBounds.valid()) {
+            cam.frame(sceneBounds, glm::radians(45.0f));
+        }
+    };
+    frameSceneView();
+
     // Main loop
     auto lastTicks = SDL_GetTicksNS();
     auto quit = false;
@@ -130,6 +149,8 @@ auto main(int argc, char* argv[]) -> int {
             auto path = editorUI.consumePendingOpenPath();
             if (editorUI.openScene(path.c_str(), usdScene, usdExtractor, meshLib, matLib, renderWorld, sceneQuery, sceneUpdater, selectedPrim)) {
                 refreshCachedLibs();
+                cam.worldUp = usdScene.worldUp();
+                frameSceneView();
                 sceneChanged = true;
             }
         }
@@ -308,7 +329,7 @@ auto main(int argc, char* argv[]) -> int {
         const auto* keys = SDL_GetKeyboardState(nullptr);
         cam.update(keys, dt);
 
-        editorUI.drawDebug(debugDraw, renderWorld, selectedPrim, sceneQuery, sceneUpdater, usdScene, cam.position);
+        editorUI.drawDebug(debugDraw, renderWorld, selectedPrim, sceneQuery, sceneUpdater, usdScene, cam.position, cam.worldUp);
 
         renderThread.setFrameGraphDebugEnabled(editorUI.getShowFrameGraphWindow());
         auto fgDebugSnap = renderThread.latestFrameGraphDebug();
@@ -340,6 +361,7 @@ auto main(int argc, char* argv[]) -> int {
         RenderSnapshot snapshot = {
             .viewMatrix = cam.viewMatrix(),
             .projMatrix = proj,
+            .worldUp = cam.worldUp,
             .windowWidth = winW,
             .windowHeight = winH,
             .mouseX = mouseX,

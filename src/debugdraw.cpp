@@ -43,49 +43,52 @@ auto DebugDraw::sphere(glm::vec3 center, float radius, glm::vec4 color, int segm
     }
 }
 
-auto DebugDraw::grid(glm::vec3 cameraPos, float spacing, int halfCount, glm::vec4 color) -> void {
-    float centerX = std::round(cameraPos.x / spacing) * spacing;
-    float centerZ = std::round(cameraPos.z / spacing) * spacing;
+auto DebugDraw::grid(glm::vec3 cameraPos, glm::vec3 worldUp, float spacing, int halfCount, glm::vec4 color) -> void {
+    auto up = glm::normalize(worldUp);
+    // Build two orthonormal axes in the plane perpendicular to up. Pick a seed that isn't
+    // parallel to up, then Gram–Schmidt.
+    auto seed = std::abs(up.x) > 0.9f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0);
+    auto axisA = glm::normalize(seed - up * glm::dot(seed, up));
+    auto axisB = glm::normalize(glm::cross(up, axisA));
+
+    // Project camera onto the grid plane (plane passes through origin, normal = up).
+    auto planePos = cameraPos - up * glm::dot(cameraPos, up);
+    float centerA = std::round(glm::dot(planePos, axisA) / spacing) * spacing;
+    float centerB = std::round(glm::dot(planePos, axisB) / spacing) * spacing;
     float extent = halfCount * spacing;
     float maxDist = extent;
 
     for (int i = -halfCount; i <= halfCount; i++) {
         float offset = i * spacing;
+        float distA = std::abs(centerA + offset - glm::dot(planePos, axisA));
+        float distB = std::abs(centerB + offset - glm::dot(planePos, axisB));
+        bool majorA = std::abs(std::fmod(centerA + offset, spacing * 10.0f)) < spacing * 0.5f;
+        bool majorB = std::abs(std::fmod(centerB + offset, spacing * 10.0f)) < spacing * 0.5f;
 
-        // Fade based on distance from camera
-        float distX = std::abs(centerX + offset - cameraPos.x);
-        float distZ = std::abs(centerZ + offset - cameraPos.z);
-
-        // Major lines every 10 grid units
-        bool majorX = std::abs(std::fmod(centerX + offset, spacing * 10.0f)) < spacing * 0.5f;
-        bool majorZ = std::abs(std::fmod(centerZ + offset, spacing * 10.0f)) < spacing * 0.5f;
-
-        // Z-aligned line (varies X)
+        // Line parallel to axisB (varies along axisA)
         {
-            float fade = 1.0f - (distX / maxDist);
-            fade = std::max(fade, 0.0f);
+            float fade = std::max(1.0f - (distA / maxDist), 0.0f);
             fade *= fade;
             auto c = color;
-            if (majorX) c = glm::vec4(color.r * 1.5f, color.g * 1.5f, color.b * 1.5f, color.a);
+            if (majorA) c = glm::vec4(color.r * 1.5f, color.g * 1.5f, color.b * 1.5f, color.a);
             c.r *= fade;
             c.g *= fade;
             c.b *= fade;
-            float x = centerX + offset;
-            line({x, 0, centerZ - extent}, {x, 0, centerZ + extent}, c);
+            auto base = axisA * (centerA + offset) + axisB * centerB;
+            line(base - axisB * extent, base + axisB * extent, c);
         }
 
-        // X-aligned line (varies Z)
+        // Line parallel to axisA (varies along axisB)
         {
-            float fade = 1.0f - (distZ / maxDist);
-            fade = std::max(fade, 0.0f);
+            float fade = std::max(1.0f - (distB / maxDist), 0.0f);
             fade *= fade;
             auto c = color;
-            if (majorZ) c = glm::vec4(color.r * 1.5f, color.g * 1.5f, color.b * 1.5f, color.a);
+            if (majorB) c = glm::vec4(color.r * 1.5f, color.g * 1.5f, color.b * 1.5f, color.a);
             c.r *= fade;
             c.g *= fade;
             c.b *= fade;
-            float z = centerZ + offset;
-            line({centerX - extent, 0, z}, {centerX + extent, 0, z}, c);
+            auto base = axisA * centerA + axisB * (centerB + offset);
+            line(base - axisA * extent, base + axisA * extent, c);
         }
     }
 }

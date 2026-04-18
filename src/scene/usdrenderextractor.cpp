@@ -7,6 +7,25 @@ void USDRenderExtractor::extract(const USDScene& scene, const MeshLibrary& meshL
     out.clear();
 
     for (const auto& prim : scene.allPrims()) {
+        if ((prim.flags & PrimFlagLight) != 0 && prim.visible) {
+            const auto* desc = scene.getLightDesc(prim.handle);
+            const auto* xf = scene.getTransform(prim.handle);
+            // Only Distant lights have a real shading path today; skip everything else
+            // so it doesn't masquerade as a directional source in RenderWorld::lights.
+            if (desc != nullptr && xf != nullptr && desc->kind == LightKind::Distant) {
+                out.lights.push_back({
+                    .type = LightType::Directional,
+                    .color = desc->color,
+                    .intensity = desc->intensity,
+                    .exposure = desc->exposure,
+                    .angle = desc->angle,
+                    .shadowEnable = desc->shadowEnable,
+                    .shadowColor = desc->shadowColor,
+                    .worldTransform = xf->world,
+                });
+            }
+        }
+
         if (!(prim.flags & PrimFlagRenderable) || !prim.visible) {
             continue;
         }

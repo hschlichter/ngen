@@ -12,6 +12,7 @@
 struct RenderSnapshot {
     glm::mat4 viewMatrix;
     glm::mat4 projMatrix;
+    glm::vec3 worldUp = glm::vec3(0.0f, 1.0f, 0.0f); // stage's up axis (from USDScene::worldUp())
 
     int windowWidth = 0;
     int windowHeight = 0;

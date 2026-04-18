@@ -6,6 +6,7 @@ layout(set = 0, binding = 2) uniform LightUBO {
     vec4 lightDirection;
     vec4 lightColor;
     vec4 depthParams;
+    vec4 shadowTint;
     mat4 invViewProj;
     mat4 lightViewProj;
 } light;
@@ -49,6 +50,8 @@ vec3 reconstructWorld(vec2 uv, float depth) {
     return world.xyz / world.w;
 }
 
+// Returns 1.0 when lit, 0.0 when shadowed. Caller blends between the light's radiance
+// and the UsdLuxShadowAPI shadowColor tint based on the result.
 float sampleShadow(vec3 worldPos) {
     vec4 lightClip = light.lightViewProj * vec4(worldPos, 1.0);
     vec3 lightNdc = lightClip.xyz / lightClip.w;
@@ -58,7 +61,7 @@ float sampleShadow(vec3 worldPos) {
     }
     float sampled = texture(shadowMap, shadowUV).r;
     float bias = 0.005;
-    return (lightNdc.z - bias) > sampled ? 0.35 : 1.0;
+    return (lightNdc.z - bias) > sampled ? 0.0 : 1.0;
 }
 
 vec3 sampleBuffer(int mode, vec2 uv) {
@@ -84,6 +87,8 @@ vec3 sampleBuffer(int mode, vec2 uv) {
     float depth = texture(gbufferDepth, uv).r;
     vec3 worldPos = reconstructWorld(uv, depth);
     float shadow = sampleShadow(worldPos);
+    // shadow factor per channel: full light where lit, shadowTint where shadowed
+    vec3 shadowFactor = mix(light.shadowTint.rgb, vec3(1.0), shadow);
     if (mode == 4) return vec3(shadow);
     if (mode == 6) {
         // Visualize where this fragment lands in shadow-map UV space.
@@ -106,7 +111,7 @@ vec3 sampleBuffer(int mode, vec2 uv) {
     float diff = max(dot(normalize(normal), lightDir), 0.0);
     float ambient = light.lightColor.w;
 
-    return albedo * light.lightColor.rgb * (ambient + diff * light.lightDirection.w * shadow);
+    return albedo * (ambient * light.lightColor.rgb + diff * light.lightColor.rgb * shadowFactor);
 }
 
 void main() {

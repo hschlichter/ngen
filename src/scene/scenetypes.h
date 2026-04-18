@@ -1,8 +1,30 @@
 #pragma once
 
+#include <cstdint>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
+
+enum class LightKind : uint8_t {
+    Distant,
+    Sphere,
+    Rect,
+    Disk,
+    Cylinder,
+    Dome,
+};
+
+struct LightDesc {
+    LightKind kind = LightKind::Distant;
+    glm::vec3 color = glm::vec3(1.0f);
+    float intensity = 1.0f;
+    float exposure = 0.0f;
+    // Distant light solid angle in degrees (sun ≈ 0.53°). Unused for other kinds.
+    float angle = 0.53f;
+    bool shadowEnable = true;
+    glm::vec3 shadowColor = glm::vec3(0.0f);
+};
 
 struct Transform {
     glm::vec3 position = glm::vec3(0.0f);

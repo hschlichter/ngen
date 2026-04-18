@@ -108,6 +108,12 @@ public:
 
     uint32_t frameIndex() const;
 
+    // Stage's authored up-axis as a world-space unit vector. USD natively supports
+    // either Y-up or Z-up; the engine preserves whichever the stage declares rather
+    // than forcing one convention. Callers that need a vertical reference (camera,
+    // shadow lookAt, grid orientation) read this.
+    glm::vec3 worldUp() const;
+
     // Asset binding (call after processChanges, before extraction)
     void updateAssetBindings(MeshLibrary& meshLib, MaterialLibrary& matLib);
 
@@ -116,6 +122,7 @@ public:
     const PrimRuntimeRecord* getPrimRecord(PrimHandle h) const;
     const TransformCacheRecord* getTransform(PrimHandle h) const;
     const AssetBindingCacheRecord* getAssetBinding(PrimHandle h) const;
+    const LightDesc* getLightDesc(PrimHandle h) const;
     std::span<const PrimRuntimeRecord> allPrims() const;
 
     // Hierarchy

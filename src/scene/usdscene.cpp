@@ -22,8 +22,17 @@
 #include <pxr/usd/usdGeom/primvarsAPI.h>
 #include <pxr/usd/usdGeom/xformCommonAPI.h>
 #include <pxr/usd/usdGeom/xformable.h>
+#include <pxr/base/gf/matrix4d.h>
 #include <pxr/usd/usdLux/boundableLightBase.h>
+#include <pxr/usd/usdLux/cylinderLight.h>
+#include <pxr/usd/usdLux/diskLight.h>
+#include <pxr/usd/usdLux/distantLight.h>
+#include <pxr/usd/usdLux/domeLight.h>
+#include <pxr/usd/usdLux/lightAPI.h>
 #include <pxr/usd/usdLux/nonboundableLightBase.h>
+#include <pxr/usd/usdLux/rectLight.h>
+#include <pxr/usd/usdLux/shadowAPI.h>
+#include <pxr/usd/usdLux/sphereLight.h>
 #include <pxr/usd/usdShade/material.h>
 #include <pxr/usd/usdShade/materialBindingAPI.h>
 #include <pxr/usd/usdShade/shader.h>
@@ -99,6 +108,9 @@ struct USDScene::Impl {
     std::vector<AssetBindingCacheRecord> assetBindings;
     bool assetBindingsBuilt = false;
 
+    // Light cache (sparse: only prims with PrimFlagLight). Keyed by prim index.
+    std::unordered_map<uint32_t, LightDesc> lights;
+
     // Layer info
     std::vector<SceneLayerInfo> layerInfos;
     LayerHandle editTarget;
@@ -124,13 +136,51 @@ struct USDScene::Impl {
         metersPerUnit = UsdGeomGetStageMetersPerUnit(stage);
         zUp = (UsdGeomGetStageUpAxis(stage) == UsdGeomTokens->z);
 
+        // Author a default distant light into the session layer if the composed stage has
+        // none. Done before the change listener starts so it doesn't pollute the dirty set.
+        ensureDefaultDistantLight();
+
         changeListener.initialize(stage);
         rebuildLayerInfo();
         rebuildPrimCache();
         rebuildAllTransforms();
+        rebuildAllLights();
 
         printf("USDScene: opened %s (%zu prims)\n", path, prims.size());
         return true;
+    }
+
+    // If the composed stage has no UsdLuxDistantLight, author one into the session layer so
+    // the engine always has a shadow-casting light. Session-layer edits are non-persistent —
+    // the user's source file is not modified.
+    void ensureDefaultDistantLight() {
+        for (const auto& prim : stage->Traverse()) {
+            if (prim.IsA<UsdLuxDistantLight>()) {
+                return;
+            }
+        }
+
+        UsdEditContext ctx(stage, sessionLayerRef);
+        auto distant = UsdLuxDistantLight::Define(stage, SdfPath("/__DefaultEngineLight"));
+        if (!distant) {
+            return;
+        }
+        distant.CreateIntensityAttr().Set(1.0f);
+        distant.CreateColorAttr().Set(GfVec3f(1.0f, 0.95f, 0.88f));
+        distant.CreateAngleAttr().Set(0.53f);
+
+        // Orient the light's +Z axis (the "toward-light" direction the renderer reads)
+        // upper-front-right in the stage's native coordinate frame. For Y-up scenes this
+        // is (X+2Y+Z) normalized; for Z-up scenes (X+Y+2Z) normalized. The renderer no
+        // longer rotates USD content into an "engine space", so this direction is what
+        // the engine sees directly.
+        auto dir = zUp ? glm::normalize(glm::vec3(1.0f, 1.0f, 2.0f)) : glm::normalize(glm::vec3(1.0f, 2.0f, 1.0f));
+        auto sceneUp = zUp ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+        auto xAxis = glm::normalize(glm::cross(sceneUp, dir));
+        auto yAxis = glm::cross(dir, xAxis);
+        GfMatrix4d m(xAxis.x, xAxis.y, xAxis.z, 0, yAxis.x, yAxis.y, yAxis.z, 0, dir.x, dir.y, dir.z, 0, 0, 0, 0, 1);
+        UsdGeomXformable xformable(distant.GetPrim());
+        xformable.AddTransformOp().Set(m);
     }
 
     void close() {
@@ -140,12 +190,74 @@ struct USDScene::Impl {
         transforms.clear();
         assetBindings.clear();
         assetBindingsBuilt = false;
+        lights.clear();
         layerInfos.clear();
         dirtySet.clear();
         stage = nullptr;
         rootLayer = nullptr;
         sessionLayerRef = nullptr;
         frame = 0;
+    }
+
+    // ── Light cache ──────────────────────────────────────────────────────
+
+    void rebuildAllLights() {
+        lights.clear();
+        for (size_t i = 1; i < prims.size(); i++) {
+            if ((prims[i].flags & PrimFlagLight) != 0) {
+                updateLightForPrim((uint32_t) i);
+            }
+        }
+    }
+
+    void updateLightForPrim(uint32_t idx) {
+        const auto& rec = prims[idx];
+        auto prim = stage->GetPrimAtPath(SdfPath(rec.path));
+        if (!prim) {
+            return;
+        }
+
+        LightDesc desc;
+        if (prim.IsA<UsdLuxDistantLight>()) {
+            desc.kind = LightKind::Distant;
+            UsdLuxDistantLight distant(prim);
+            float angle = 0.53f;
+            distant.GetAngleAttr().Get(&angle);
+            desc.angle = angle;
+        } else if (prim.IsA<UsdLuxSphereLight>()) {
+            desc.kind = LightKind::Sphere;
+        } else if (prim.IsA<UsdLuxRectLight>()) {
+            desc.kind = LightKind::Rect;
+        } else if (prim.IsA<UsdLuxDiskLight>()) {
+            desc.kind = LightKind::Disk;
+        } else if (prim.IsA<UsdLuxCylinderLight>()) {
+            desc.kind = LightKind::Cylinder;
+        } else if (prim.IsA<UsdLuxDomeLight>()) {
+            desc.kind = LightKind::Dome;
+        }
+        // Non-distant lights are stored with the correct kind but the shading/shadow paths
+        // only use Distant today — other kinds fall through to LightType::Directional with
+        // whatever transform they have, which isn't meaningful yet. Filtered out in the
+        // extractor so they don't masquerade as directional sources.
+
+        UsdLuxLightAPI lightAPI(prim);
+        if (lightAPI) {
+            GfVec3f color(1.0f);
+            lightAPI.GetColorAttr().Get(&color);
+            desc.color = glm::vec3(color[0], color[1], color[2]);
+            lightAPI.GetIntensityAttr().Get(&desc.intensity);
+            lightAPI.GetExposureAttr().Get(&desc.exposure);
+        }
+
+        UsdLuxShadowAPI shadowAPI(prim);
+        if (shadowAPI) {
+            shadowAPI.GetShadowEnableAttr().Get(&desc.shadowEnable);
+            GfVec3f sColor(0.0f);
+            shadowAPI.GetShadowColorAttr().Get(&sColor);
+            desc.shadowColor = glm::vec3(sColor[0], sColor[1], sColor[2]);
+        }
+
+        lights[idx] = desc;
     }
 
     // ── Layer info ───────────────────────────────────────────────────────
@@ -326,18 +438,13 @@ struct USDScene::Impl {
             updateTransformForPrim(i);
         }
 
-        // Apply stage corrections to all world transforms
-        auto correction = glm::mat4(1.0f);
+        // Scene-unit → meter conversion is still applied: metersPerUnit is a uniform
+        // scale, not a coordinate flip. Up-axis is *not* baked into world transforms —
+        // consumers read USDScene::worldUp() when they need a vertical reference.
         if (metersPerUnit != 1.0) {
-            correction = glm::scale(correction, glm::vec3((float) metersPerUnit));
-        }
-        if (zUp) {
-            // Rotate -90 degrees around X to convert Z-up to Y-up
-            correction = glm::rotate(correction, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-        }
-        if (correction != glm::mat4(1.0f)) {
+            auto scale = glm::scale(glm::mat4(1.0f), glm::vec3((float) metersPerUnit));
             for (size_t i = 1; i < transforms.size(); i++) {
-                transforms[i].world = correction * transforms[i].world;
+                transforms[i].world = scale * transforms[i].world;
             }
         }
     }
@@ -824,6 +931,18 @@ const AssetBindingCacheRecord* USDScene::getAssetBinding(PrimHandle h) const {
         return nullptr;
     }
     return &m_impl->assetBindings[h.index];
+}
+
+const LightDesc* USDScene::getLightDesc(PrimHandle h) const {
+    auto it = m_impl->lights.find(h.index);
+    if (it == m_impl->lights.end()) {
+        return nullptr;
+    }
+    return &it->second;
+}
+
+glm::vec3 USDScene::worldUp() const {
+    return m_impl->zUp ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
 }
 
 std::span<const PrimRuntimeRecord> USDScene::allPrims() const {

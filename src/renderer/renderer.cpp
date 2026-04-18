@@ -73,7 +73,7 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
     fallbackTexture = device->createTexture(fallbackDesc);
 
     // Passes
-    RhiExtent2D shadowExtent{1024, 1024};
+    RhiExtent2D shadowExtent { 2048, 2048 };
     if (!shadowPass.init(device, shadowExtent, depthFmt)) {
         return std::unexpected(1);
     }
@@ -360,21 +360,38 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     auto imageIdx = *index;
     auto instanceCount = (uint32_t) gpuInstances.size();
 
-    RhiExtent2D shadowExtent{1024, 1024};
+    RhiExtent2D shadowExtent{2048, 2048};
 
-    // Simple directional light: pick the first directional light, else default to a corner sun.
-    glm::vec3 lightDir{1.0f, 1.0f, 1.0f};
+    // Pick a shadow-casting directional light: first directional with shadowEnable,
+    // else first directional. USDScene authors a session-layer UsdLuxDistantLight when
+    // the scene has none, so this search almost always succeeds.
+    const RenderLight* shadowLight = nullptr;
+    const RenderLight* fallbackDirectional = nullptr;
     for (const auto& l : lights) {
-        if (l.type == LightType::Directional) {
-            lightDir = glm::vec3(l.worldTransform[2]);
-            break;
+        if (l.type != LightType::Directional) {
+            continue;
+        }
+        if (fallbackDirectional == nullptr) {
+            fallbackDirectional = &l;
+        }
+        if (l.shadowEnable && shadowLight == nullptr) {
+            shadowLight = &l;
         }
     }
-    // Guard against a zero light direction from a malformed transform.
-    if (glm::dot(lightDir, lightDir) < 1e-6f) {
-        lightDir = glm::vec3(1.0f, 1.0f, 1.0f);
+    const RenderLight* picked = shadowLight != nullptr ? shadowLight : fallbackDirectional;
+
+    // Resolve into the small value struct LightingPass consumes. If no directional light
+    // exists at all (pathological — USDScene would usually author one) just aim the sun
+    // straight up the scene's up axis with unit radiance.
+    LightingInputs lighting;
+    if (picked != nullptr) {
+        auto raw = glm::vec3(picked->worldTransform[2]);
+        lighting.direction = glm::dot(raw, raw) > 1e-6f ? glm::normalize(raw) : snapshot.worldUp;
+        lighting.radiance = picked->color * (picked->intensity * std::exp2(picked->exposure));
+        lighting.shadowColor = picked->shadowColor;
+    } else {
+        lighting.direction = snapshot.worldUp;
     }
-    lightDir = glm::normalize(lightDir);
 
     // Fit a scene-bounding sphere around the instance origins, then size the ortho frustum to
     // that sphere with some padding. Instance origins are a coarse approximation of scene
@@ -396,12 +413,14 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     float shadowHalf = sceneRadius * 2.0f;
     float lightDistance = sceneRadius * 4.0f + 1.0f;
 
-    auto lightPos = sceneCenter + lightDir * lightDistance;
+    auto lightPos = sceneCenter + lighting.direction * lightDistance;
     // glm::lookAt is degenerate when the light direction is parallel to the up vector — the
-    // cross product to compute "right" becomes zero. That happens for the very common case of
-    // a sun shining straight down. Pick a non-collinear up when lightDir is vertical.
-    auto up = std::abs(glm::dot(lightDir, glm::vec3(0.0f, 1.0f, 0.0f))) > 0.99f ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
-    auto lightView = glm::lookAt(lightPos, sceneCenter, up);
+    // cross product to compute "right" becomes zero. That's common for a sun shining straight
+    // down; fall back to a perpendicular axis in that case.
+    auto shadowUp = std::abs(glm::dot(lighting.direction, snapshot.worldUp)) > 0.99f
+                        ? glm::normalize(glm::cross(lighting.direction, glm::vec3(1.0f, 0.0f, 0.0f)))
+                        : snapshot.worldUp;
+    auto lightView = glm::lookAt(lightPos, sceneCenter, shadowUp);
     auto lightProj = glm::ortho(-shadowHalf, shadowHalf, -shadowHalf, shadowHalf, 0.1f, 2.0f * lightDistance);
     auto lightViewProj = lightProj * lightView;
 
@@ -418,7 +437,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
                                                  ext,
                                                  imageIdx,
                                                  textureSampler,
-                                                 lights,
+                                                 lighting,
                                                  snapshot.gbufferViewMode,
                                                  snapshot.showBufferOverlay,
                                                  snapshot.showShadowOverlay,

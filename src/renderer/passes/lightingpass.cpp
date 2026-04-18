@@ -84,7 +84,7 @@ auto LightingPass::addPass(FrameGraph& fg,
                            RhiExtent2D extent,
                            uint32_t imageIndex,
                            RhiSampler* sampler,
-                           const std::vector<RenderLight>& lights,
+                           const LightingInputs& lightInputs,
                            GBufferView viewMode,
                            bool showOverlay,
                            bool showShadowOverlay,
@@ -107,25 +107,18 @@ auto LightingPass::addPass(FrameGraph& fg,
             data.sceneColor = builder.write(builder.createTexture("sceneColor", sceneColorDesc), FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);
         },
-        [this, imageIndex, extent, sampler, &lights, viewMode, showOverlay, showShadowOverlay, invViewProj, lightViewProj](FrameGraphContext& ctx,
-                                                                                                                           const LightingPassData& data) {
+        [this, imageIndex, extent, sampler, lightInputs, viewMode, showOverlay, showShadowOverlay, invViewProj, lightViewProj](FrameGraphContext& ctx,
+                                                                                                                                const LightingPassData& data) {
             auto* cmd = ctx.cmd();
 
             LightingUBO lightUbo = {
-                .lightDirection = glm::vec4(glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f)), 1.0f),
-                .lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 0.15f),
+                .lightDirection = glm::vec4(lightInputs.direction, 1.0f),
+                .lightColor = glm::vec4(lightInputs.radiance, 0.15f),
                 .depthParams = glm::vec4(0.1f, 3000.0f, 0.0f, 0.0f),
+                .shadowTint = glm::vec4(lightInputs.shadowColor, 0.0f),
                 .invViewProj = invViewProj,
                 .lightViewProj = lightViewProj,
             };
-            for (const auto& light : lights) {
-                if (light.type == LightType::Directional) {
-                    auto dir = glm::normalize(glm::vec3(light.worldTransform[2]));
-                    lightUbo.lightDirection = glm::vec4(dir, light.intensity);
-                    lightUbo.lightColor = glm::vec4(light.color, 0.15f);
-                    break;
-                }
-            }
             memcpy(uniformBuffersMapped[imageIndex], &lightUbo, sizeof(lightUbo));
 
             std::array<RhiDescriptorWrite, 5> writes = {{

@@ -113,10 +113,11 @@ auto EditorUI::drawDebug(DebugDraw& debugDraw,
                          const SceneQuerySystem& sceneQuery,
                          const SceneUpdater& sceneUpdater,
                          USDScene& usdScene,
-                         glm::vec3 cameraPos) -> void {
+                         glm::vec3 cameraPos,
+                         glm::vec3 worldUp) -> void {
     debugDraw.newFrame();
     if (showGridFlag) {
-        debugDraw.grid(cameraPos, 1.0f, 50, {0.25f, 0.25f, 0.25f, 1.0f});
+        debugDraw.grid(cameraPos, worldUp, 1.0f, 50, {0.25f, 0.25f, 0.25f, 1.0f});
     }
     if (showOriginFlag) {
         debugDraw.sphere({0, 0, 0}, 0.1f, {1.0f, 0.9f, 0.2f, 1.0f}, 16);
