@@ -1,5 +1,8 @@
 CXX = clang++
-CXXFLAGS = -std=c++23 -O0 -g -Wall -MMD -fPIC `pkg-config --cflags sdl3`
+# GLM defaults to OpenGL [-1,1] depth in projection matrices; we render with Vulkan, so
+# force [0,1] depth globally. Must be set for every TU that creates a projection matrix —
+# a TU-local define leads to mismatched matrices between files.
+CXXFLAGS = -std=c++23 -O0 -g -Wall -MMD -fPIC -DGLM_FORCE_RADIANS -DGLM_FORCE_DEPTH_ZERO_TO_ONE `pkg-config --cflags sdl3`
 LDFLAGS = `pkg-config --libs sdl3` -lvulkan -lm
 OUTDIR = ./_out
 EXE = ngen
