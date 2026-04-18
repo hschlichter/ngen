@@ -16,8 +16,9 @@ constexpr float kNodeHeightPass = 56.0f;
 constexpr float kNodeWidthResource = 160.0f;
 constexpr float kNodeHeightResourceNoThumb = 44.0f;
 constexpr float kThumbMaxHeight = 64.0f;
-constexpr float kColumnStride = 220.0f;
-constexpr float kRowGap = 18.0f;
+constexpr float kPassStride = 180.0f;  // horizontal distance between adjacent pass columns
+constexpr float kResourceRowGap = 14.0f;
+constexpr float kPassToResourceGap = 48.0f;  // vertical gap between pass row and first resource row
 constexpr float kMarginX = 40.0f;
 constexpr float kMarginY = 40.0f;
 
@@ -65,122 +66,65 @@ auto buildLayout(const FrameGraphDebugSnapshot& snap) -> Layout {
         return layout;
     }
 
-    int maxCol = 0;
+    // Passes: one horizontal row, indexed by execution order. Unscheduled/culled passes
+    // pile up in a trailing column so they still appear but don't widen the main row.
+    auto unscheduledCol = (int) snap.executionOrder.size();
     for (uint32_t p = 0; p < passCount; p++) {
         auto exec = snap.passes[p].executionIndex;
-        int col = exec != UINT32_MAX ? (int) (exec * 2) : (int) (snap.executionOrder.size() * 2);
+        int col = exec != UINT32_MAX ? (int) exec : unscheduledCol;
         LaidOutNode n;
         n.kind = NodeKind::Pass;
         n.index = p;
         n.column = col;
         n.size = {kNodeWidthPass, kNodeHeightPass};
+        n.pos = {kMarginX + (float) col * kPassStride, kMarginY};
         layout.nodes.push_back(n);
-        maxCol = std::max(maxCol, col);
     }
 
+    // Resources: stacked in a band below the pass row, anchored under their producer pass.
+    // Each producer column gets a vertical "stack" of its written resources.
+    std::unordered_map<int, std::vector<uint32_t>> resourcesByColumn;
+    std::vector<int> resCols(resCount, 0);
     for (uint32_t r = 0; r < resCount; r++) {
         const auto& res = snap.resources[r];
-        int col = 1;
+        int col = 0;
         if (res.producerPass != UINT32_MAX) {
             auto exec = snap.passes[res.producerPass].executionIndex;
-            col = exec != UINT32_MAX ? (int) (exec * 2 + 1) : 1;
+            col = exec != UINT32_MAX ? (int) exec : unscheduledCol;
         } else if (!res.consumerPasses.empty()) {
             auto exec = snap.passes[res.consumerPasses.front()].executionIndex;
-            col = exec != UINT32_MAX ? std::max(0, (int) (exec * 2) - 1) : 1;
+            col = exec != UINT32_MAX ? (int) exec : unscheduledCol;
         }
+        resCols[r] = col;
+        resourcesByColumn[col].push_back(r);
+    }
+
+    float resourceBandTop = kMarginY + kNodeHeightPass + kPassToResourceGap;
+    auto resStart = (uint32_t) layout.nodes.size();
+    for (uint32_t r = 0; r < resCount; r++) {
         LaidOutNode n;
         n.kind = NodeKind::Resource;
         n.index = r;
-        n.column = col;
-        n.size = resourceSize(res);
+        n.column = resCols[r];
+        n.size = resourceSize(snap.resources[r]);
+        float passX = kMarginX + (float) resCols[r] * kPassStride;
+        n.pos.x = passX + (kNodeWidthPass - n.size.x) * 0.5f;
+        n.pos.y = 0.0f; // filled below
         layout.nodes.push_back(n);
-        maxCol = std::max(maxCol, col);
     }
 
-    std::vector<float> columnCursor((size_t) maxCol + 1, kMarginY);
-    for (auto& n : layout.nodes) {
-        n.pos.x = kMarginX + (float) n.column * kColumnStride;
-        n.pos.y = columnCursor[(size_t) n.column];
-        columnCursor[(size_t) n.column] += n.size.y + kRowGap;
+    // Assign y within each column by stacking vertically.
+    for (auto& [col, resList] : resourcesByColumn) {
+        float y = resourceBandTop;
+        for (auto rIdx : resList) {
+            auto& node = layout.nodes[resStart + rIdx];
+            node.pos.y = y;
+            y += node.size.y + kResourceRowGap;
+        }
     }
 
     for (uint32_t i = 0; i < layout.nodes.size(); i++) {
         layout.lookup.emplace(encode(layout.nodes[i].kind, layout.nodes[i].index), i);
-    }
-
-    std::vector<std::vector<uint32_t>> byColumn((size_t) maxCol + 1);
-    for (uint32_t i = 0; i < layout.nodes.size(); i++) {
-        byColumn[(size_t) layout.nodes[i].column].push_back(i);
-    }
-
-    auto centerY = [&](uint32_t nodeIdx) -> float {
-        return layout.nodes[nodeIdx].pos.y + layout.nodes[nodeIdx].size.y * 0.5f;
-    };
-
-    auto neighbors = [&](uint32_t nodeIdx, bool lookLeft) -> std::vector<uint32_t> {
-        std::vector<uint32_t> out;
-        const auto& node = layout.nodes[nodeIdx];
-        if (node.kind == NodeKind::Pass) {
-            const auto& pass = snap.passes[node.index];
-            const auto& list = lookLeft ? pass.reads : pass.writes;
-            for (const auto& a : list) {
-                auto it = layout.lookup.find(encode(NodeKind::Resource, a.resourceIndex));
-                if (it != layout.lookup.end()) {
-                    out.push_back(it->second);
-                }
-            }
-        } else {
-            const auto& res = snap.resources[node.index];
-            if (lookLeft) {
-                if (res.producerPass != UINT32_MAX) {
-                    auto it = layout.lookup.find(encode(NodeKind::Pass, res.producerPass));
-                    if (it != layout.lookup.end()) {
-                        out.push_back(it->second);
-                    }
-                }
-            } else {
-                for (auto c : res.consumerPasses) {
-                    auto it = layout.lookup.find(encode(NodeKind::Pass, c));
-                    if (it != layout.lookup.end()) {
-                        out.push_back(it->second);
-                    }
-                }
-            }
-        }
-        return out;
-    };
-
-    auto sweep = [&](bool leftToRight) {
-        int start = leftToRight ? 1 : maxCol - 1;
-        int end = leftToRight ? maxCol + 1 : -1;
-        int step = leftToRight ? 1 : -1;
-        for (int c = start; c != end; c += step) {
-            for (auto idx : byColumn[(size_t) c]) {
-                auto ns = neighbors(idx, leftToRight);
-                if (ns.empty()) {
-                    continue;
-                }
-                float sum = 0.0f;
-                for (auto n : ns) {
-                    sum += centerY(n);
-                }
-                float mean = sum / (float) ns.size();
-                layout.nodes[idx].pos.y = mean - layout.nodes[idx].size.y * 0.5f;
-            }
-        }
-    };
-
-    sweep(true);
-    sweep(false);
-
-    for (auto& column : byColumn) {
-        std::sort(column.begin(), column.end(), [&](uint32_t a, uint32_t b) { return layout.nodes[a].pos.y < layout.nodes[b].pos.y; });
-        float minY = kMarginY;
-        for (auto idx : column) {
-            auto& n = layout.nodes[idx];
-            n.pos.y = std::max(n.pos.y, minY);
-            minY = n.pos.y + n.size.y + kRowGap;
-        }
     }
 
     return layout;
@@ -294,17 +238,22 @@ void drawEdge(ImDrawList* dl, ImVec2 from, ImVec2 to, FgAccessFlags access, bool
     if (!highlighted) {
         color = (color & 0x00FFFFFF) | 0xC0000000;
     }
-    float dx = to.x - from.x;
-    ImVec2 cp1{from.x + dx * 0.4f, from.y};
-    ImVec2 cp2{to.x - dx * 0.4f, to.y};
+    // Vertical-flow bezier: passes above, resources below, so edges curl out of the top/
+    // bottom of each node. Control-point offset scales with distance so short edges stay
+    // tight and long ones bow out enough to read.
+    float dy = to.y - from.y;
+    float curl = std::max(40.0f * zoom, std::abs(dy) * 0.45f);
+    float sign = dy >= 0.0f ? 1.0f : -1.0f;
+    ImVec2 cp1{from.x, from.y + sign * curl};
+    ImVec2 cp2{to.x, to.y - sign * curl};
     dl->AddBezierCubic(from, cp1, cp2, to, color, thickness);
 }
 
-auto rightEdge(const LaidOutNode& n) -> ImVec2 {
-    return {n.pos.x + n.size.x, n.pos.y + n.size.y * 0.5f};
+auto topEdge(const LaidOutNode& n) -> ImVec2 {
+    return {n.pos.x + n.size.x * 0.5f, n.pos.y};
 }
-auto leftEdge(const LaidOutNode& n) -> ImVec2 {
-    return {n.pos.x, n.pos.y + n.size.y * 0.5f};
+auto bottomEdge(const LaidOutNode& n) -> ImVec2 {
+    return {n.pos.x + n.size.x * 0.5f, n.pos.y + n.size.y};
 }
 
 auto hitTest(const Layout& layout, ImVec2 pointCanvas) -> std::optional<uint32_t> {
@@ -372,7 +321,8 @@ void drawFrameGraphNodeView(const FrameGraphDebugSnapshot& snap, std::optional<u
             }
             const auto& resNode = layout.nodes[resEntry->second];
             bool highlighted = (selPass && *selPass == p) || (selResource && *selResource == r.resourceIndex);
-            drawEdge(dl, canvasToScreen(rightEdge(resNode)), canvasToScreen(leftEdge(passNode)), r.access, highlighted, zoom);
+            // Reads: resource (below) up into the consuming pass (above).
+            drawEdge(dl, canvasToScreen(topEdge(resNode)), canvasToScreen(bottomEdge(passNode)), r.access, highlighted, zoom);
         }
         for (const auto& w : pass.writes) {
             auto resEntry = layout.lookup.find(encode(NodeKind::Resource, w.resourceIndex));
@@ -381,7 +331,8 @@ void drawFrameGraphNodeView(const FrameGraphDebugSnapshot& snap, std::optional<u
             }
             const auto& resNode = layout.nodes[resEntry->second];
             bool highlighted = (selPass && *selPass == p) || (selResource && *selResource == w.resourceIndex);
-            drawEdge(dl, canvasToScreen(rightEdge(passNode)), canvasToScreen(leftEdge(resNode)), w.access, highlighted, zoom);
+            // Writes: pass (above) down into the resource (below).
+            drawEdge(dl, canvasToScreen(bottomEdge(passNode)), canvasToScreen(topEdge(resNode)), w.access, highlighted, zoom);
         }
     }
 
