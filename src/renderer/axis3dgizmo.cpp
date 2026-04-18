@@ -135,15 +135,6 @@ auto Axis3DGizmo::hitTest(float mouseX, float mouseY, RhiExtent2D windowExtent) 
         return false;
     }
 
-    auto vpX = (float) (lastFullExtent.width - gizmoSize - margin);
-    auto vpY = (float) margin;
-
-    auto projToScreen = [&](glm::vec3 pt) -> glm::vec2 {
-        auto clip = lastViewProj * glm::vec4(pt, 1.0f);
-        auto ndc = glm::vec3(clip) / clip.w;
-        return {vpX + (ndc.x * 0.5f + 0.5f) * gizmoSize, vpY + (ndc.y * 0.5f + 0.5f) * gizmoSize};
-    };
-
     // Snap to whichever direction the camera is already closest to looking along
     auto camForward = camera->forward();
     float d = glm::dot(camForward, axisDirs[bestAxis]);
