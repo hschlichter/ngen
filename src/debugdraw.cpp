@@ -93,6 +93,46 @@ auto DebugDraw::grid(glm::vec3 cameraPos, glm::vec3 worldUp, float spacing, int 
     }
 }
 
+auto DebugDraw::sunLight(glm::vec3 origin, glm::vec3 outgoingDir, float radius, float shaftLen, glm::vec4 color) -> void {
+    auto len2 = glm::dot(outgoingDir, outgoingDir);
+    if (len2 < 1e-6f) {
+        return;
+    }
+    auto n = outgoingDir / std::sqrt(len2);
+
+    // Build an orthonormal basis (u, v) in the plane perpendicular to n.
+    auto seed = std::abs(n.y) > 0.9f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
+    auto u = glm::normalize(seed - n * glm::dot(seed, n));
+    auto v = glm::cross(n, u);
+
+    const int segments = 16;
+    for (int i = 0; i < segments; i++) {
+        float a0 = (float) i / (float) segments * glm::two_pi<float>();
+        float a1 = (float) (i + 1) / (float) segments * glm::two_pi<float>();
+        auto p0 = origin + (u * std::cos(a0) + v * std::sin(a0)) * radius;
+        auto p1 = origin + (u * std::cos(a1) + v * std::sin(a1)) * radius;
+        line(p0, p1, color);
+    }
+
+    // 8 short rays radiating outward from the disc.
+    const int rayCount = 8;
+    for (int i = 0; i < rayCount; i++) {
+        float a = (float) i / (float) rayCount * glm::two_pi<float>();
+        auto dir = u * std::cos(a) + v * std::sin(a);
+        line(origin + dir * radius, origin + dir * radius * 1.6f, color);
+    }
+
+    // Long shaft along the outgoing direction.
+    line(origin, origin + n * shaftLen, color);
+    // Arrowhead: two short barbs against the tip.
+    auto tip = origin + n * shaftLen;
+    auto barbBase = tip - n * (radius * 0.8f);
+    line(tip, barbBase + u * (radius * 0.4f), color);
+    line(tip, barbBase - u * (radius * 0.4f), color);
+    line(tip, barbBase + v * (radius * 0.4f), color);
+    line(tip, barbBase - v * (radius * 0.4f), color);
+}
+
 auto DebugDraw::newFrame() -> void {
     frameData.lines.clear();
 }

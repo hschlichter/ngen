@@ -853,6 +853,28 @@ struct USDScene::Impl {
         }
     }
 
+    // A prim is session-only if every primSpec contributing to it lives in the session
+    // layer — i.e. the engine authored it (e.g. the default distant light). Edits to
+    // such prims must target the session layer, otherwise writes to a weaker edit
+    // target would be shadowed by the session-layer ops and fail the xformOp checks.
+    //
+    // NOTE: SdfPrimSpec::GetLayer() returns SdfLayerHandle (TfWeakPtr). Comparing a
+    // TfWeakPtr with a TfRefPtr directly in this USD version recurses into operator==
+    // and blows the stack, so convert to a SdfLayerHandle once and compare weak-to-weak.
+    bool isSessionOnlyPrim(const UsdPrim& prim) const {
+        auto stack = prim.GetPrimStack();
+        if (stack.empty()) {
+            return false;
+        }
+        SdfLayerHandle sessionHandle(sessionLayerRef);
+        for (const auto& spec : stack) {
+            if (spec->GetLayer() != sessionHandle) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     // ── Layer dirty state refresh ────────────────────────────────────────
 
     void refreshLayerDirtyState() {
@@ -1093,13 +1115,13 @@ bool USDScene::setTransform(PrimHandle h, const Transform& value, const SceneEdi
         return true;
     }
 
-    auto layer = m_impl->chooseEditLayer(ctx);
-    if (!layer) {
+    auto prim = m_impl->stage->GetPrimAtPath(SdfPath(rec->path));
+    if (!prim) {
         return false;
     }
 
-    auto prim = m_impl->stage->GetPrimAtPath(SdfPath(rec->path));
-    if (!prim) {
+    auto layer = m_impl->isSessionOnlyPrim(prim) ? m_impl->sessionLayerRef : m_impl->chooseEditLayer(ctx);
+    if (!layer) {
         return false;
     }
 
@@ -1161,13 +1183,13 @@ bool USDScene::setVisibility(PrimHandle h, bool visible, const SceneEditRequestC
         return false;
     }
 
-    auto layer = m_impl->chooseEditLayer(ctx);
-    if (!layer) {
+    auto prim = m_impl->stage->GetPrimAtPath(SdfPath(rec->path));
+    if (!prim) {
         return false;
     }
 
-    auto prim = m_impl->stage->GetPrimAtPath(SdfPath(rec->path));
-    if (!prim) {
+    auto layer = m_impl->isSessionOnlyPrim(prim) ? m_impl->sessionLayerRef : m_impl->chooseEditLayer(ctx);
+    if (!layer) {
         return false;
     }
 
@@ -1213,7 +1235,8 @@ bool USDScene::removePrim(PrimHandle h, const SceneEditRequestContext& ctx) {
         return false;
     }
 
-    auto layer = m_impl->chooseEditLayer(ctx);
+    auto prim = m_impl->stage->GetPrimAtPath(SdfPath(rec->path));
+    auto layer = prim && m_impl->isSessionOnlyPrim(prim) ? m_impl->sessionLayerRef : m_impl->chooseEditLayer(ctx);
     if (!layer) {
         return false;
     }

@@ -28,6 +28,7 @@ struct RenderLight {
     bool shadowEnable = true;
     glm::vec3 shadowColor = glm::vec3(0.0f);
     glm::mat4 worldTransform = glm::mat4(1.0f);
+    PrimHandle primHandle;         // identifies the source prim for incremental updates
 };
 
 struct RenderWorld {

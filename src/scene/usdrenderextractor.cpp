@@ -22,6 +22,7 @@ void USDRenderExtractor::extract(const USDScene& scene, const MeshLibrary& meshL
                     .shadowEnable = desc->shadowEnable,
                     .shadowColor = desc->shadowColor,
                     .worldTransform = xf->world,
+                    .primHandle = prim.handle,
                 });
             }
         }
@@ -64,5 +65,20 @@ void USDRenderExtractor::patchTransforms(const USDScene& scene, const MeshLibrar
         auto& inst = out.meshInstances[it->second];
         inst.worldTransform = xf->world;
         inst.worldBounds = meshLib.bounds(binding->mesh).transformed(xf->world);
+    }
+
+    // Refresh light world transforms for dirty prims. Small N, linear scan.
+    if (!out.lights.empty()) {
+        for (auto h : dirty) {
+            for (auto& light : out.lights) {
+                if (light.primHandle.index != h.index) {
+                    continue;
+                }
+                const auto* xf = scene.getTransform(h);
+                if (xf) {
+                    light.worldTransform = xf->world;
+                }
+            }
+        }
     }
 }

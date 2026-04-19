@@ -91,6 +91,7 @@ void drawMainMenuBar(MainMenuBarState& state) {
             ImGui::Separator();
             ImGui::MenuItem("Show AABBs", nullptr, &state.showAABBs);
             ImGui::MenuItem("Show Selected AABB", nullptr, &state.showSelectedAABB);
+            ImGui::MenuItem("Show Light Gizmos", nullptr, &state.showLightGizmos);
             ImGui::Separator();
             ImGui::MenuItem("Show Buffer Overlay", nullptr, &state.showBufferOverlay);
             ImGui::MenuItem("Show Shadow Overlay", nullptr, &state.showShadowOverlay);

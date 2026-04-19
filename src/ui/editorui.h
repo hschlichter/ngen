@@ -85,6 +85,7 @@ private:
     bool showGizmoFlag = true;
     bool showAABBsFlag = false;
     bool showSelectedAABBFlag = true;
+    bool showLightGizmosFlag = true;
     int gbufferViewMode = 0;
     bool showBufferOverlayFlag = false;
     bool showShadowOverlayFlag = false;

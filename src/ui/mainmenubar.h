@@ -21,6 +21,7 @@ struct MainMenuBarState {
     bool& showGizmo;
     bool& showAABBs;
     bool& showSelectedAABB;
+    bool& showLightGizmos;
     int& gbufferView;
     bool& showBufferOverlay;
     bool& showShadowOverlay;
