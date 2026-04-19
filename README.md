@@ -83,6 +83,12 @@ Deferred directional lighting with hard shadow mapping. The `GeometryPass` write
 
 ![Deferred lighting with shadow-mapped scene and shadow-map debug overlay](docs/engine_lighting_shadows.png)
 
+### Directional Light
+
+Directional lights are authored as `UsdLuxDistantLight` prims; color, intensity, exposure, and `UsdLuxShadowAPI::shadow:color` all drive the lighting pass directly. When a loaded stage has no distant light, the engine authors one into the session layer so the scene is never unlit — edits to that default light round-trip through the Properties panel but stay in-session and don't touch the source file. Rotation and position edits flow through the fast transform path, so the shadow frustum and shading direction update live as you drag. **Debug → Show Light Gizmos** draws a sun disc and arrow anchored along the toward-light direction, sized to the scene bounds, so the visualized position always agrees with the direction the shader actually uses.
+
+![Directional light gizmo anchored to the scene, with shadows following the light](docs/engine_lighting_sun.png)
+
 ### Frame Graph Debugger
 
 The Frame Graph window (**Debug → Frame Graph**) exposes every render pass and the resources flowing between them, with live thumbnails blitted from each color target each frame. Two views of the same graph:
