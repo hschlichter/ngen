@@ -73,6 +73,7 @@ public:
     auto getShowShadowOverlay() const -> bool { return showShadowOverlayFlag; }
     auto getShowFrameGraphWindow() const -> bool { return showFrameGraphWindow; }
     auto activeTool() const -> EditorTool { return activeToolValue; }
+    auto setActiveTool(EditorTool t) -> void { activeToolValue = t; }
 
 private:
     bool showSceneWindow = false;

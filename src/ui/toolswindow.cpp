@@ -9,7 +9,10 @@ void drawToolsWindow(bool& show, EditorTool& activeTool) {
 
     ImGui::Begin("Tools", &show);
 
-    auto toolButton = [&](const char* label, EditorTool tool, bool implemented) {
+    auto toolButton = [&](const char* shortcut, const char* label, EditorTool tool, bool implemented) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", shortcut);
+        ImGui::SameLine();
         bool isActive = activeTool == tool;
         if (isActive) {
             ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
@@ -25,13 +28,13 @@ void drawToolsWindow(bool& show, EditorTool& activeTool) {
         }
     };
 
-    toolButton("Select", EditorTool::Select, true);
+    toolButton("1", "Select", EditorTool::Select, true);
     ImGui::SameLine();
-    toolButton("Translate", EditorTool::Translate, true);
+    toolButton("2", "Translate", EditorTool::Translate, true);
     ImGui::SameLine();
-    toolButton("Rotate", EditorTool::Rotate, true);
+    toolButton("3", "Rotate", EditorTool::Rotate, true);
     ImGui::SameLine();
-    toolButton("Scale", EditorTool::Scale, true);
+    toolButton("4", "Scale", EditorTool::Scale, true);
 
     ImGui::End();
 }

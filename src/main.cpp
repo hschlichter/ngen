@@ -211,6 +211,17 @@ auto main(int argc, char* argv[]) -> int {
                 continue;
             }
 
+            // 1-4: switch the active editor tool.
+            if (ev.type == SDL_EVENT_KEY_DOWN && (ev.key.mod & SDL_KMOD_CTRL) == 0 && !ev.key.repeat) {
+                switch (ev.key.key) {
+                    case SDLK_1: editorUI.setActiveTool(EditorTool::Select); continue;
+                    case SDLK_2: editorUI.setActiveTool(EditorTool::Translate); continue;
+                    case SDLK_3: editorUI.setActiveTool(EditorTool::Rotate); continue;
+                    case SDLK_4: editorUI.setActiveTool(EditorTool::Scale); continue;
+                    default: break;
+                }
+            }
+
             // F: frame the selected prim in the camera view.
             if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_F && (ev.key.mod & SDL_KMOD_CTRL) == 0) {
                 if ((bool) selectedPrim) {
