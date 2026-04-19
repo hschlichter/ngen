@@ -114,6 +114,11 @@ public:
     // shadow lookAt, grid orientation) read this.
     glm::vec3 worldUp() const;
 
+    // Filesystem directory of the stage's root layer (parent_path of the layer's
+    // identifier). Returned as an absolute path; empty if no stage is open. The
+    // asset browser scopes its scan here.
+    std::string rootLayerDirectory() const;
+
     // Asset binding (call after processChanges, before extraction)
     void updateAssetBindings(MeshLibrary& meshLib, MaterialLibrary& matLib);
 

@@ -1,0 +1,46 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+    doc = """A standalone directional sunlight layer (Z-up). Load directly
+
+    ./_out/ngen models/lights/sun.usda
+
+or sublayer into another scene — see models/lights/kitchen_with_sun.usda for the pattern.
+
+The matrix below orients the light's +Z axis at (X+Y+2Z) normalized — roughly upper-back-right in Z-up world space. The engine reads USD world transforms directly (no up-axis correction), so this is also the direction the renderer sees. For Y-up target scenes, swap column assignments so row 2 points along your desired sun direction in that frame."""
+)
+
+def Xform "World"
+{
+    def DistantLight "Sun" (
+        prepend apiSchemas = ["ShadowAPI"]
+    )
+    {
+        # Sun disc solid angle in degrees (real sun ≈ 0.53°).
+        float inputs:angle = 0.53
+
+        # Warm-white sunlight tint.
+        color3f inputs:color = (1.0, 0.95, 0.88)
+
+        # Radiance = color * intensity * 2^exposure.
+        float inputs:exposure = 0
+        float inputs:intensity = 3
+
+        # ShadowAPI: fraction of the light reaching shadowed fragments. Black = fully
+        # shadowed, white = no shadow; tint for cool ambient fill.
+        bool inputs:shadow:enable = 1
+        color3f inputs:shadow:color = (0.05, 0.06, 0.1)
+
+        # Row 2 = (0.408, 0.408, 0.816) — direction toward the sun. Rows 0 and 1 form an
+        # orthonormal basis so the transform is a pure rotation.
+        matrix4d xformOp:transform = (
+            ( 0.7071068, -0.7071068,  0.0,       0),
+            (-0.5773503, -0.5773503,  0.5773503, 0),
+            ( 0.4082483,  0.4082483,  0.8164966, 0),
+            ( 0,          0,          0,         1)
+        )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
+    }
+}

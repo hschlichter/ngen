@@ -26,6 +26,7 @@ struct MainMenuBarState {
     bool& showBufferOverlay;
     bool& showShadowOverlay;
     bool& showFrameGraph;
+    bool& showAssetBrowser;
     bool& requestQuit;
     std::string& pendingOpenPath;
     SDL_Window* window;

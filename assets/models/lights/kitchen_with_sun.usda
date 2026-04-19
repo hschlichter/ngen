@@ -1,0 +1,14 @@
+#usda 1.0
+(
+    doc = "Kitchen_set + sun.usda sublayer. Load with ./_out/ngen models/lights/kitchen_with_sun.usda"
+
+    # USD only reads upAxis / metersPerUnit from the ROOT layer's pseudoroot, not from
+    # sublayers, so we have to repeat Kitchen_set's value here or the composed stage
+    # defaults to Y-up and the kitchen renders flipped.
+    upAxis = "Z"
+
+    subLayers = [
+        @../Kitchen_set/Kitchen_set.usd@,
+        @sun.usda@,
+    ]
+)

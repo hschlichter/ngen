@@ -1,5 +1,6 @@
 #pragma once
 
+#include "assetbrowser.h"     // AssetBrowserState
 #include "framegraphdebug.h"
 #include "propertieswindow.h" // PropertiesWindowState
 #include "scenehandles.h"
@@ -72,8 +73,14 @@ public:
     auto getShowBufferOverlay() const -> bool { return showBufferOverlayFlag; }
     auto getShowShadowOverlay() const -> bool { return showShadowOverlayFlag; }
     auto getShowFrameGraphWindow() const -> bool { return showFrameGraphWindow; }
+    auto getShowAssetBrowserWindow() const -> bool { return showAssetBrowserWindow; }
     auto activeTool() const -> EditorTool { return activeToolValue; }
     auto setActiveTool(EditorTool t) -> void { activeToolValue = t; }
+    auto setAssetBrowserRoot(std::string rootDir) -> void {
+        assetBrowser.rootDir = std::move(rootDir);
+        assetBrowser.selected.clear();
+        invalidateAssetBrowser(assetBrowser);
+    }
 
 private:
     bool showSceneWindow = false;
@@ -91,10 +98,12 @@ private:
     bool showBufferOverlayFlag = false;
     bool showShadowOverlayFlag = false;
     bool showFrameGraphWindow = false;
+    bool showAssetBrowserWindow = false;
     bool requestQuit = false;
     EditorTool activeToolValue = EditorTool::Select;
     PropertiesWindowState propertiesState;
     SceneWindowState sceneState;
+    AssetBrowserState assetBrowser;
     std::string pendingOpenPath;
     std::optional<FrameGraphDebugSnapshot> fgLastSnapshot;
     std::optional<uint32_t> fgSelectedPass;

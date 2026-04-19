@@ -1,5 +1,6 @@
 #include "editorui.h"
 
+#include "assetbrowserwindow.h"
 #include "debugdraw.h"
 #include "framegraphwindow.h"
 #include "layerswindow.h"
@@ -54,6 +55,7 @@ auto EditorUI::draw(SDL_Window* window,
         .showBufferOverlay = showBufferOverlayFlag,
         .showShadowOverlay = showShadowOverlayFlag,
         .showFrameGraph = showFrameGraphWindow,
+        .showAssetBrowser = showAssetBrowserWindow,
         .requestQuit = requestQuit,
         .pendingOpenPath = pendingOpenPath,
         .window = window,
@@ -71,6 +73,7 @@ auto EditorUI::draw(SDL_Window* window,
     drawToolsWindow(showToolsWindow, activeToolValue);
     drawUndoWindow(showUndoWindow, sceneUpdater, usdScene);
     drawFrameGraphWindow(showFrameGraphWindow, fgLastSnapshot, fgSelectedPass, fgSelectedResource);
+    drawAssetBrowserWindow(showAssetBrowserWindow, usdScene, assetBrowser, sceneUpdater.edits());
 }
 
 auto EditorUI::openScene(const char* path,
@@ -100,6 +103,9 @@ auto EditorUI::openScene(const char* path,
     usdScene.updateAssetBindings(meshLib, matLib);
     usdExtractor.extract(usdScene, meshLib, renderWorld);
     sceneQuery.rebuild(usdScene, meshLib);
+    // Browser root is the CWD, set once at startup — don't touch it on scene change.
+    // Just clear any stale selection from the previous scene.
+    assetBrowser.selected.clear();
     showSceneWindow = true;
     showPropertiesWindow = true;
     showLayersWindow = true;

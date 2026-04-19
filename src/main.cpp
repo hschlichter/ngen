@@ -21,6 +21,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <filesystem>
 #include <print>
 
 auto main(int argc, char* argv[]) -> int {
@@ -78,6 +79,10 @@ auto main(int argc, char* argv[]) -> int {
     }
     renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
     EditorUI editorUI;
+    // Asset browser root = current working directory (the "project" root), so the
+    // browser shows the same tree regardless of which scene is open. Captured once
+    // here; doesn't change per-scene.
+    editorUI.setAssetBrowserRoot(std::filesystem::current_path().string());
 
     // Render thread
     RenderThread renderThread;

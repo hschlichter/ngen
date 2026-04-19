@@ -39,6 +39,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <filesystem>
 #include <map>
 #include <mutex>
 #include <set>
@@ -965,6 +966,17 @@ const LightDesc* USDScene::getLightDesc(PrimHandle h) const {
 
 glm::vec3 USDScene::worldUp() const {
     return m_impl->zUp ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+}
+
+std::string USDScene::rootLayerDirectory() const {
+    if (!m_impl->rootLayer) {
+        return {};
+    }
+    auto id = m_impl->rootLayer->GetIdentifier();
+    if (id.empty()) {
+        return {};
+    }
+    return std::filesystem::path(id).parent_path().string();
 }
 
 std::span<const PrimRuntimeRecord> USDScene::allPrims() const {

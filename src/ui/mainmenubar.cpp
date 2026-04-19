@@ -74,6 +74,7 @@ void drawMainMenuBar(MainMenuBarState& state) {
             ImGui::MenuItem("Layers", nullptr, &state.showLayersWindow, state.sceneOpen);
             ImGui::MenuItem("Tools", nullptr, &state.showToolsWindow);
             ImGui::MenuItem("History", nullptr, &state.showUndoWindow);
+            ImGui::MenuItem("Asset Browser", nullptr, &state.showAssetBrowser, state.sceneOpen);
             ImGui::Separator();
             if (ImGui::MenuItem("Toggle Panels", "Ctrl+E")) {
                 bool target = !(state.showSceneWindow || state.showPropertiesWindow || state.showLayersWindow || state.showToolsWindow);
