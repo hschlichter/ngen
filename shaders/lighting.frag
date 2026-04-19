@@ -52,7 +52,13 @@ vec3 reconstructWorld(vec2 uv, float depth) {
 
 // Returns 1.0 when lit, 0.0 when shadowed. Caller blends between the light's radiance
 // and the UsdLuxShadowAPI shadowColor tint based on the result.
-float sampleShadow(vec3 worldPos) {
+//
+// Slope-scale depth bias: the bias scales with the angle between the receiver normal
+// and the light direction, so surfaces facing the light get a tiny floor bias (just
+// enough to cover fp precision) while grazing surfaces get a larger bias to avoid
+// acne on near-tangent polygons. A fixed NDC-Z bias would scale with the ortho far
+// plane and swamp small casters — e.g. a 10cm cup in a ~30m frustum at bias 0.005.
+float sampleShadow(vec3 worldPos, vec3 normal) {
     vec4 lightClip = light.lightViewProj * vec4(worldPos, 1.0);
     vec3 lightNdc = lightClip.xyz / lightClip.w;
     vec2 shadowUV = lightNdc.xy * 0.5 + 0.5;
@@ -60,7 +66,10 @@ float sampleShadow(vec3 worldPos) {
         return 1.0; // outside shadow frustum — treat as lit
     }
     float sampled = texture(shadowMap, shadowUV).r;
-    float bias = 0.005;
+    vec3 N = normalize(normal);
+    vec3 L = normalize(light.lightDirection.xyz);
+    float slope = clamp(1.0 - dot(N, L), 0.0, 1.0);
+    float bias = max(0.001 * slope, 0.00005);
     return (lightNdc.z - bias) > sampled ? 0.0 : 1.0;
 }
 
@@ -86,7 +95,7 @@ vec3 sampleBuffer(int mode, vec2 uv) {
 
     float depth = texture(gbufferDepth, uv).r;
     vec3 worldPos = reconstructWorld(uv, depth);
-    float shadow = sampleShadow(worldPos);
+    float shadow = sampleShadow(worldPos, normal);
     // shadow factor per channel: full light where lit, shadowTint where shadowed
     vec3 shadowFactor = mix(light.shadowTint.rgb, vec3(1.0), shadow);
     if (mode == 4) return vec3(shadow);
