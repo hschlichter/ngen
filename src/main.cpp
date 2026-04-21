@@ -39,10 +39,17 @@ auto main(int argc, char* argv[]) -> int {
             std::println(stderr, "Failed to open USD scene: {}", argv[1]);
             return 1;
         }
-        usdScene.updateAssetBindings(meshLib, matLib);
-        usdExtractor.extract(usdScene, meshLib, renderWorld);
-        sceneQuery.rebuild(usdScene, meshLib);
+    } else {
+        // No scene argument — start with a blank in-memory stage so the editor has
+        // something to act on (default light, empty Scene tree, ready to create prims).
+        if (!usdScene.newScene()) {
+            std::println(stderr, "Failed to create new scene");
+            return 1;
+        }
     }
+    usdScene.updateAssetBindings(meshLib, matLib);
+    usdExtractor.extract(usdScene, meshLib, renderWorld);
+    sceneQuery.rebuild(usdScene, meshLib);
 
     // SDL init and window
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -159,6 +166,22 @@ auto main(int argc, char* argv[]) -> int {
                 sceneChanged = true;
             }
         }
+        if (editorUI.consumePendingNewScene()) {
+            if (editorUI.newScene(usdScene, usdExtractor, meshLib, matLib, renderWorld, sceneQuery, sceneUpdater, selectedPrim)) {
+                refreshCachedLibs();
+                cam.worldUp = usdScene.worldUp();
+                // No bounds to frame on a blank stage; keep the current camera view.
+                sceneChanged = true;
+            }
+        }
+        if (editorUI.hasPendingSave()) {
+            auto path = editorUI.consumePendingSavePath();
+            if (!usdScene.exportRootLayerTo(path.c_str())) {
+                std::println(stderr, "Failed to save scene to: {}", path);
+            } else {
+                std::println("Saved scene to {}", path);
+            }
+        }
 
         if (usdScene.isOpen()) {
             auto r = sceneUpdater.update(usdScene, usdExtractor, renderWorld, meshLib, matLib, sceneQuery);
@@ -202,6 +225,13 @@ auto main(int argc, char* argv[]) -> int {
                 for (auto& c : cmds) {
                     sceneUpdater.addEdit(std::move(c));
                 }
+                continue;
+            }
+
+            // Z (no modifier): deselect. Ctrl+Z / Ctrl+Shift+Z stay bound to undo/redo
+            // above, so we only act on the unmodified key.
+            if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_Z && (ev.key.mod & SDL_KMOD_CTRL) == 0 && !ev.key.repeat) {
+                selectedPrim = {};
                 continue;
             }
 

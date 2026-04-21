@@ -34,6 +34,21 @@ static auto inverseOf(const SceneEditCommand& cmd, const USDScene& scene) -> std
             inv.boolValue = rec->visible;
             return inv;
         }
+        case SceneEditCommand::Type::CreatePrim:
+        case SceneEditCommand::Type::CreateReferencePrim: {
+            // Inverse = RemovePrim. The new prim's handle isn't known at record-time
+            // (the forward edit hasn't run yet), so the inverse carries the path
+            // instead; SceneUpdater re-resolves by path when it replays.
+            inv.type = SceneEditCommand::Type::RemovePrim;
+            inv.parentPath = cmd.parentPath;
+            inv.primName = cmd.primName;
+            inv.prim = {}; // force path-based lookup at replay
+            return inv;
+        }
+        case SceneEditCommand::Type::RemovePrim:
+            // Redo requires reconstructing the removed subtree. Skipped in v1 —
+            // Delete is a one-way op until we snapshot into an anonymous layer.
+            return std::nullopt;
         default:
             return std::nullopt; // unsupported in v1
     }

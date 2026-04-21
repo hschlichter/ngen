@@ -97,6 +97,10 @@ public:
 
     // Lifecycle
     bool open(const char* path);
+    // Create an anonymous in-memory stage with sane defaults (Y-up). No file backing
+    // until the user saves. Useful for starting from scratch or launching ngen
+    // without a scene argument.
+    bool newScene();
     void close();
     bool isOpen() const;
 
@@ -145,12 +149,31 @@ public:
     void setLayerMuted(LayerHandle layer, bool muted);
     bool saveLayer(LayerHandle layer);
     bool saveAllDirty();
+    // Export the root layer's opinions to `path`. Intended for saving an anonymous
+    // stage for the first time (File → Save As); SdfLayer::Export preserves the in-
+    // memory layer identity, so subsequent saves still need to go through this path
+    // until we wire up a proper "reopen after save" flow.
+    bool exportRootLayerTo(const char* path) const;
+    // True when the root layer has no filesystem backing (e.g. fresh newScene()).
+    bool hasAnonymousRootLayer() const;
 
     // Editing — routes to correct layer based on purpose
     bool setTransform(PrimHandle h, const Transform& value, const SceneEditRequestContext& ctx = {});
     bool setVisibility(PrimHandle h, bool visible, const SceneEditRequestContext& ctx = {});
+    // Author primvars:displayColor on a UsdGeomGprim (or legacy displayColor attr). Clears
+    // the prim's cached mesh binding so the next extract re-tessellates with the new tint,
+    // and marks the stage for resync so extract actually runs.
+    bool setDisplayColor(PrimHandle h, const glm::vec3& color, const SceneEditRequestContext& ctx = {});
+    // Current authored primvars:displayColor, or white if unauthored / non-gprim.
+    glm::vec3 getDisplayColor(PrimHandle h) const;
     PrimHandle createPrim(const char* parentPath, const char* name, const char* typeName, const SceneEditRequestContext& ctx = {});
+    PrimHandle createReferencePrim(const char* parentPath, const char* name, const char* referenceAsset, const SceneEditRequestContext& ctx = {});
     bool removePrim(PrimHandle h, const SceneEditRequestContext& ctx = {});
+
+    // Return a child name under `parentPath` that doesn't collide with existing children.
+    // Appends `_1`, `_2`, … to `baseName` until unique. Used by the Add Child menu so
+    // creating two Sphere Lights in a row yields SphereLight / SphereLight_1.
+    std::string uniqueChildName(const char* parentPath, const char* baseName) const;
 
 private:
     struct Impl;

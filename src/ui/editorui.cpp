@@ -57,7 +57,9 @@ auto EditorUI::draw(SDL_Window* window,
         .showFrameGraph = showFrameGraphWindow,
         .showAssetBrowser = showAssetBrowserWindow,
         .requestQuit = requestQuit,
+        .pendingNewScene = pendingNewSceneFlag,
         .pendingOpenPath = pendingOpenPath,
+        .pendingSavePath = pendingSavePath,
         .window = window,
         .sceneOpen = usdScene.isOpen(),
         .sceneUpdater = &sceneUpdater,
@@ -68,7 +70,7 @@ auto EditorUI::draw(SDL_Window* window,
     };
     drawMainMenuBar(menuState);
     drawLayersWindow(showLayersWindow, sceneUpdater.isBlocked(), usdScene, sceneUpdater.edits());
-    drawSceneWindow(showSceneWindow, sceneUpdater.isBlocked(), usdScene, renderWorld, selectedPrim, sceneState);
+    drawSceneWindow(showSceneWindow, sceneUpdater.isBlocked(), usdScene, renderWorld, selectedPrim, sceneState, sceneUpdater.edits());
     drawPropertiesWindow(showPropertiesWindow, sceneUpdater.isBlocked(), usdScene, selectedPrim, sceneQuery, matLib, sceneUpdater.edits(), propertiesState);
     drawToolsWindow(showToolsWindow, activeToolValue);
     drawUndoWindow(showUndoWindow, sceneUpdater, usdScene);
@@ -114,6 +116,41 @@ auto EditorUI::openScene(const char* path,
     return true;
 }
 
+auto EditorUI::newScene(USDScene& usdScene,
+                        USDRenderExtractor& usdExtractor,
+                        MeshLibrary& meshLib,
+                        MaterialLibrary& matLib,
+                        RenderWorld& renderWorld,
+                        SceneQuerySystem& sceneQuery,
+                        SceneUpdater& sceneUpdater,
+                        PrimHandle& selectedPrim) -> bool {
+    sceneUpdater.waitIfBlocked();
+    sceneUpdater.edits().clear();
+    sceneUpdater.undoStack().clear();
+    if (usdScene.isOpen()) {
+        usdScene.close();
+    }
+    meshLib = {};
+    matLib = {};
+    renderWorld.clear();
+    selectedPrim = {};
+
+    if (!usdScene.newScene()) {
+        std::println(stderr, "Failed to create new scene");
+        return false;
+    }
+    usdScene.updateAssetBindings(meshLib, matLib);
+    usdExtractor.extract(usdScene, meshLib, renderWorld);
+    sceneQuery.rebuild(usdScene, meshLib);
+    assetBrowser.selected.clear();
+    showSceneWindow = true;
+    showPropertiesWindow = true;
+    showLayersWindow = true;
+    showToolsWindow = true;
+    showUndoWindow = true;
+    return true;
+}
+
 auto EditorUI::drawDebug(DebugDraw& debugDraw,
                          const RenderWorld& renderWorld,
                          PrimHandle selectedPrim,
@@ -137,22 +174,14 @@ auto EditorUI::drawDebug(DebugDraw& debugDraw,
         }
     }
     if (showLightGizmosFlag && !renderWorld.lights.empty()) {
-        // Size the gizmo to the scene: compute a bounding sphere over the mesh instances and
-        // place each directional light's sun disc "up in the sky" along the toward-light
-        // direction. A distant light's authored origin is physically meaningless, so anchoring
-        // to the scene makes the visualization match what the shader actually does.
-        glm::vec3 mn(std::numeric_limits<float>::max());
-        glm::vec3 mx(std::numeric_limits<float>::lowest());
-        bool haveBounds = false;
-        for (const auto& inst : renderWorld.meshInstances) {
-            if (inst.worldBounds.valid()) {
-                mn = glm::min(mn, inst.worldBounds.min);
-                mx = glm::max(mx, inst.worldBounds.max);
-                haveBounds = true;
-            }
-        }
-        auto sceneCenter = haveBounds ? (mn + mx) * 0.5f : glm::vec3(0.0f);
-        auto sceneRadius = haveBounds ? std::max(0.5f, glm::length(mx - mn) * 0.5f) : 1.0f;
+        // Camera-relative anchor: the sun floats a fixed distance in front of the camera
+        // along the toward-light direction. Constant world size, so it reads the same at
+        // any scene scale and never interacts with scene geometry. The gizmo visibly
+        // follows the camera, which is the point — it's a directional compass, not an
+        // object in the scene.
+        constexpr float kSunDistance = 3.0f;
+        constexpr float kDiscRadius = 0.25f;
+        constexpr float kShaftLength = 0.75f;
 
         for (const auto& l : renderWorld.lights) {
             if (l.type != LightType::Directional) {
@@ -164,9 +193,9 @@ auto EditorUI::drawDebug(DebugDraw& debugDraw,
                 continue;
             }
             auto towardUnit = glm::normalize(toward);
-            auto sunPos = sceneCenter + towardUnit * (sceneRadius * 1.5f);
+            auto sunPos = cameraPos + towardUnit * kSunDistance;
             auto outgoing = -towardUnit;
-            debugDraw.sunLight(sunPos, outgoing, sceneRadius * 0.1f, sceneRadius * 0.5f, {1.0f, 0.85f, 0.2f, 1.0f});
+            debugDraw.sunLight(sunPos, outgoing, kDiscRadius, kShaftLength, {1.0f, 0.85f, 0.2f, 1.0f});
         }
     }
     if (selectedPrim && showSelectedAABBFlag && !sceneUpdater.isBlocked()) {

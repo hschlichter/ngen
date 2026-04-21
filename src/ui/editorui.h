@@ -52,6 +52,17 @@ public:
                    SceneUpdater& sceneUpdater,
                    PrimHandle& selectedPrim) -> bool;
 
+    // Initialize an empty anonymous scene. Same setup as openScene but skips the file
+    // read. Used from File → New and at startup when ngen is launched without a scene.
+    auto newScene(USDScene& usdScene,
+                  USDRenderExtractor& usdExtractor,
+                  MeshLibrary& meshLib,
+                  MaterialLibrary& matLib,
+                  RenderWorld& renderWorld,
+                  SceneQuerySystem& sceneQuery,
+                  SceneUpdater& sceneUpdater,
+                  PrimHandle& selectedPrim) -> bool;
+
     auto drawDebug(DebugDraw& debugDraw,
                    const RenderWorld& renderWorld,
                    PrimHandle selectedPrim,
@@ -63,6 +74,10 @@ public:
 
     auto hasPendingOpen() const -> bool { return !pendingOpenPath.empty(); }
     auto consumePendingOpenPath() -> std::string { return std::exchange(pendingOpenPath, {}); }
+    auto hasPendingNewScene() const -> bool { return pendingNewSceneFlag; }
+    auto consumePendingNewScene() -> bool { return std::exchange(pendingNewSceneFlag, false); }
+    auto hasPendingSave() const -> bool { return !pendingSavePath.empty(); }
+    auto consumePendingSavePath() -> std::string { return std::exchange(pendingSavePath, {}); }
     auto wantsQuit() const -> bool { return requestQuit; }
 
     // Hide all editor panels (Scene / Properties / Layers) if any are visible,
@@ -100,11 +115,13 @@ private:
     bool showFrameGraphWindow = false;
     bool showAssetBrowserWindow = false;
     bool requestQuit = false;
+    bool pendingNewSceneFlag = false;
     EditorTool activeToolValue = EditorTool::Select;
     PropertiesWindowState propertiesState;
     SceneWindowState sceneState;
     AssetBrowserState assetBrowser;
     std::string pendingOpenPath;
+    std::string pendingSavePath;
     std::optional<FrameGraphDebugSnapshot> fgLastSnapshot;
     std::optional<uint32_t> fgSelectedPass;
     std::optional<uint32_t> fgSelectedResource;

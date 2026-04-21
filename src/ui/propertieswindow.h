@@ -2,6 +2,8 @@
 
 #include "editcommand.h"
 
+#include <glm/glm.hpp>
+
 #include <optional>
 
 class USDScene;
@@ -17,6 +19,13 @@ struct PropertiesWindowState {
     // so undo records the pre-operation state, not the post-Preview cache.
     std::optional<Transform> preEditLocal;
     PrimHandle preEditPrim;
+
+    // Active display-color edit. ColorEdit3 writes to a local each frame, but USD
+    // isn't updated until commit — without this cache, the release frame would
+    // re-fetch the OLD USD color and commit a no-op. We hold the in-flight color
+    // here from first drag until IsItemDeactivatedAfterEdit fires.
+    std::optional<glm::vec3> displayColorEdit;
+    PrimHandle displayColorEditPrim;
 };
 
 void drawPropertiesWindow(bool& show,

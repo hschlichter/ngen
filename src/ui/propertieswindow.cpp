@@ -209,11 +209,49 @@ void drawPropertiesWindow(bool& show,
                 ImGui::TreePop();
             }
 
+            // Display Color section — for any renderable prim (UsdGeomGprim). Authors
+            // primvars:displayColor; the extractor re-tessellates on commit so the change
+            // actually shows up. Shown in addition to the UsdShade material info below for
+            // imported assets that have both.
+            if (rec->flags & PrimFlagRenderable) {
+                if (ImGui::TreeNodeEx("Display Color", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    // If we're mid-edit on this prim, show the cached in-flight value —
+                    // otherwise reading from USD each frame would snap the picker back to
+                    // the old color during the drag and clobber what ColorEdit3 wrote to
+                    // the local. Selection change to a different prim drops the cache.
+                    if (state.displayColorEdit && state.displayColorEditPrim != selectedPrim) {
+                        state.displayColorEdit.reset();
+                    }
+                    glm::vec3 editing = state.displayColorEdit.value_or(usdScene.getDisplayColor(selectedPrim));
+
+                    bool changed = ImGui::ColorEdit3("Color", &editing.r);
+                    if (changed) {
+                        state.displayColorEdit = editing;
+                        state.displayColorEditPrim = selectedPrim;
+                    }
+                    if (ImGui::IsItemDeactivatedAfterEdit() && state.displayColorEdit) {
+                        SceneEditCommand cmd{};
+                        cmd.type = SceneEditCommand::Type::SetDisplayColor;
+                        cmd.prim = selectedPrim;
+                        cmd.colorValue = *state.displayColorEdit;
+                        pendingEdits.push_back(std::move(cmd));
+                        state.displayColorEdit.reset();
+                    }
+                    ImGui::TreePop();
+                }
+            }
+
             const auto* binding = usdScene.getAssetBinding(selectedPrim);
             if (binding && binding->material) {
                 const auto* mat = matLib.get(binding->material);
                 if (mat && ImGui::TreeNodeEx("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    ImGui::ColorEdit4("Base Color", (float*) &mat->baseColorFactor, ImGuiColorEditFlags_NoInputs);
+                    // Read-only preview; editing the UsdShade material goes through its
+                    // own (not-yet-built) flow. Display Color above is what drives per-prim
+                    // tinting for procedural shapes.
+                    auto baseColor = mat->baseColorFactor;
+                    ImGui::BeginDisabled();
+                    ImGui::ColorEdit4("Base Color", (float*) &baseColor, ImGuiColorEditFlags_NoInputs);
+                    ImGui::EndDisabled();
                     if (mat->texWidth > 0) {
                         selectableText("Texture: %dx%d", mat->texWidth, mat->texHeight);
                     } else {

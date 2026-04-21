@@ -28,7 +28,9 @@ struct MainMenuBarState {
     bool& showFrameGraph;
     bool& showAssetBrowser;
     bool& requestQuit;
+    bool& pendingNewScene;
     std::string& pendingOpenPath;
+    std::string& pendingSavePath;
     SDL_Window* window;
     bool sceneOpen;
     SceneUpdater* sceneUpdater;         // for Edit > Undo/Redo

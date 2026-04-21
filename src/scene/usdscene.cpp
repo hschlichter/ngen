@@ -1,6 +1,7 @@
 #include "usdscene.h"
 #include "material.h"
 #include "mesh.h"
+#include "primshapemesh.h"
 
 #include <pxr/base/tf/notice.h>
 #include <pxr/usd/ar/asset.h>
@@ -15,9 +16,13 @@
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usd/stage.h>
+#include <pxr/usd/usdGeom/cone.h>
+#include <pxr/usd/usdGeom/cube.h>
+#include <pxr/usd/usdGeom/cylinder.h>
 #include <pxr/usd/usdGeom/gprim.h>
 #include <pxr/usd/usdGeom/imageable.h>
 #include <pxr/usd/usdGeom/mesh.h>
+#include <pxr/usd/usdGeom/sphere.h>
 #include <pxr/usd/usdGeom/metrics.h>
 #include <pxr/usd/usdGeom/primvarsAPI.h>
 #include <pxr/usd/usdGeom/xformCommonAPI.h>
@@ -125,20 +130,15 @@ struct USDScene::Impl {
 
     // ── Stage management ─────────────────────────────────────────────────
 
-    bool open(const char* path) {
-        stage = UsdStage::Open(path);
-        if (!stage) {
-            fprintf(stderr, "USDScene: failed to open stage: %s\n", path);
-            return false;
-        }
-
+    // Finish stage init: capture root/session layers, read stage metadata, seed the
+    // default light, start the change listener, and populate the runtime caches.
+    // Shared by open() and newScene(); always runs after `stage` is set.
+    void postStageInit() {
         rootLayer = stage->GetRootLayer();
         sessionLayerRef = stage->GetSessionLayer();
         metersPerUnit = UsdGeomGetStageMetersPerUnit(stage);
         zUp = (UsdGeomGetStageUpAxis(stage) == UsdGeomTokens->z);
 
-        // Author a default distant light into the session layer if the composed stage has
-        // none. Done before the change listener starts so it doesn't pollute the dirty set.
         ensureDefaultDistantLight();
 
         changeListener.initialize(stage);
@@ -146,8 +146,41 @@ struct USDScene::Impl {
         rebuildPrimCache();
         rebuildAllTransforms();
         rebuildAllLights();
+    }
 
+    bool open(const char* path) {
+        stage = UsdStage::Open(path);
+        if (!stage) {
+            fprintf(stderr, "USDScene: failed to open stage: %s\n", path);
+            return false;
+        }
+        postStageInit();
         printf("USDScene: opened %s (%zu prims)\n", path, prims.size());
+        return true;
+    }
+
+    // Anonymous in-memory stage. Y-up by default. Root layer is a session-level
+    // SdfLayer with no filesystem backing; the user saves to disk via an explicit
+    // save-as flow. No prims initially beyond the default light ensureDefaultDistantLight
+    // adds to the session layer.
+    bool newScene() {
+        stage = UsdStage::CreateInMemory();
+        if (!stage) {
+            fprintf(stderr, "USDScene: failed to create in-memory stage\n");
+            return false;
+        }
+        UsdGeomSetStageUpAxis(stage, UsdGeomTokens->y);
+        UsdGeomSetStageMetersPerUnit(stage, 1.0);
+        // Seed a default /World Xform so the Scene tree has a root node for the
+        // right-click Add Child menu to hang children off — otherwise a brand-new
+        // stage has no prim to target. Defined in the root layer (not session)
+        // so it persists when the user saves the scene.
+        auto world = stage->DefinePrim(SdfPath("/World"), TfToken("Xform"));
+        if (world) {
+            stage->SetDefaultPrim(world);
+        }
+        postStageInit();
+        printf("USDScene: created new in-memory stage\n");
         return true;
     }
 
@@ -418,7 +451,7 @@ struct USDScene::Impl {
 
     static uint64_t classifyPrim(const UsdPrim& prim) {
         uint64_t flags = 0;
-        if (prim.IsA<UsdGeomMesh>()) {
+        if (prim.IsA<UsdGeomMesh>() || prim.IsA<UsdGeomCube>() || prim.IsA<UsdGeomSphere>() || prim.IsA<UsdGeomCylinder>() || prim.IsA<UsdGeomCone>()) {
             flags |= PrimFlagRenderable;
         }
         if (prim.IsA<UsdLuxBoundableLightBase>() || prim.IsA<UsdLuxNonboundableLightBase>()) {
@@ -539,6 +572,11 @@ struct USDScene::Impl {
         if (resync) {
             rebuildPrimCache();
             rebuildAllTransforms();
+            // Light cache is keyed by prim index. rebuildPrimCache reassigns indices,
+            // so any stale entries from the previous prim set would either be missing
+            // (light drops out of the extract) or point at a non-light prim that now
+            // occupies the old slot. Rebuild so the cache tracks the new indices.
+            rebuildAllLights();
             dirtySet.primsResynced.push_back({.index = 0}); // sentinel: full resync
             scratchResynced.clear();
             scratchChanged.clear();
@@ -600,6 +638,52 @@ struct USDScene::Impl {
     }
 
     static MeshHandle extractMesh(const UsdPrim& prim, MeshLibrary& meshLib) {
+        // Procedural shape schemas (Cube / Sphere / Cylinder / Cone) tessellate into a
+        // MeshDesc on first extract. Each prim gets its own cached MeshDesc — we don't
+        // share across prims even with identical parameters, because edits to `size` /
+        // `radius` etc. would otherwise stomp one another. Cheap enough for now.
+        // Display color (primvars:displayColor) feeds vertex colors so editing the
+        // prim's color in the Properties panel re-tessellates with the new tint.
+        auto readDisplayColor = [](const UsdPrim& p) -> ShapeColor {
+            UsdGeomGprim gprim(p);
+            if (!gprim) {
+                return {};
+            }
+            VtArray<GfVec3f> colors;
+            gprim.GetDisplayColorAttr().Get(&colors, UsdTimeCode::Default());
+            if (colors.empty()) {
+                return {};
+            }
+            return {colors[0][0], colors[0][1], colors[0][2]};
+        };
+
+        if (auto cube = UsdGeomCube(prim); cube) {
+            double size = 2.0;
+            cube.GetSizeAttr().Get(&size, UsdTimeCode::Default());
+            return meshLib.add(tessellateCube(size, readDisplayColor(prim)));
+        }
+        if (auto sphere = UsdGeomSphere(prim); sphere) {
+            double radius = 1.0;
+            sphere.GetRadiusAttr().Get(&radius, UsdTimeCode::Default());
+            return meshLib.add(tessellateSphere(radius, readDisplayColor(prim)));
+        }
+        if (auto cyl = UsdGeomCylinder(prim); cyl) {
+            double radius = 1.0, height = 2.0;
+            cyl.GetRadiusAttr().Get(&radius, UsdTimeCode::Default());
+            cyl.GetHeightAttr().Get(&height, UsdTimeCode::Default());
+            TfToken axis = UsdGeomTokens->z;
+            cyl.GetAxisAttr().Get(&axis, UsdTimeCode::Default());
+            return meshLib.add(tessellateCylinder(radius, height, axis.GetText(), readDisplayColor(prim)));
+        }
+        if (auto cone = UsdGeomCone(prim); cone) {
+            double radius = 1.0, height = 2.0;
+            cone.GetRadiusAttr().Get(&radius, UsdTimeCode::Default());
+            cone.GetHeightAttr().Get(&height, UsdTimeCode::Default());
+            TfToken axis = UsdGeomTokens->z;
+            cone.GetAxisAttr().Get(&axis, UsdTimeCode::Default());
+            return meshLib.add(tessellateCone(radius, height, axis.GetText(), readDisplayColor(prim)));
+        }
+
         UsdGeomMesh geomMesh(prim);
         if (!geomMesh) {
             return {};
@@ -897,6 +981,9 @@ USDScene::~USDScene() = default;
 bool USDScene::open(const char* path) {
     return m_impl->open(path);
 }
+bool USDScene::newScene() {
+    return m_impl->newScene();
+}
 void USDScene::close() {
     m_impl->close();
 }
@@ -1081,6 +1168,17 @@ bool USDScene::saveLayer(LayerHandle layer) {
     return false;
 }
 
+bool USDScene::exportRootLayerTo(const char* path) const {
+    if (!m_impl->rootLayer) {
+        return false;
+    }
+    return m_impl->rootLayer->Export(path);
+}
+
+bool USDScene::hasAnonymousRootLayer() const {
+    return m_impl->rootLayer && m_impl->rootLayer->IsAnonymous();
+}
+
 bool USDScene::saveAllDirty() {
     bool allOk = true;
     for (const auto& info : m_impl->layerInfos) {
@@ -1239,6 +1337,115 @@ PrimHandle USDScene::createPrim(const char* parentPath, const char* name, const 
     // The TfNotice will trigger a cache rebuild on next processChanges()
     // Return a handle by looking up the path (it won't exist until rebuild)
     return findPrim(path.GetText());
+}
+
+glm::vec3 USDScene::getDisplayColor(PrimHandle h) const {
+    auto* rec = getPrimRecord(h);
+    if (!rec) {
+        return glm::vec3(1.0f);
+    }
+    auto prim = m_impl->stage->GetPrimAtPath(SdfPath(rec->path));
+    if (!prim) {
+        return glm::vec3(1.0f);
+    }
+    UsdGeomGprim gprim(prim);
+    if (!gprim) {
+        return glm::vec3(1.0f);
+    }
+    VtArray<GfVec3f> colors;
+    gprim.GetDisplayColorAttr().Get(&colors, UsdTimeCode::Default());
+    if (colors.empty()) {
+        return glm::vec3(1.0f);
+    }
+    return glm::vec3(colors[0][0], colors[0][1], colors[0][2]);
+}
+
+bool USDScene::setDisplayColor(PrimHandle h, const glm::vec3& color, const SceneEditRequestContext& ctx) {
+    auto* rec = getPrimRecord(h);
+    if (!rec) {
+        return false;
+    }
+    auto prim = m_impl->stage->GetPrimAtPath(SdfPath(rec->path));
+    if (!prim) {
+        return false;
+    }
+    auto layer = m_impl->isSessionOnlyPrim(prim) ? m_impl->sessionLayerRef : m_impl->chooseEditLayer(ctx);
+    if (!layer) {
+        return false;
+    }
+
+    UsdGeomGprim gprim(prim);
+    if (!gprim) {
+        return false;
+    }
+
+    {
+        UsdEditContext editCtx(m_impl->stage, layer);
+        VtArray<GfVec3f> colors = {GfVec3f(color.r, color.g, color.b)};
+        gprim.CreateDisplayColorAttr().Set(colors);
+    }
+
+    // Procedural shape prims bake displayColor into their tessellated vertices; invalidate
+    // the cached mesh binding so the next updateAssetBindings re-runs extractMesh and picks
+    // up the new color. UsdGeomMesh would want similar treatment if we tessellated there,
+    // but the existing mesh extractor already re-reads colors on full extract.
+    // Clearing the mesh handle defeats the skip guard in updateAssetBindings, so the
+    // prim re-extracts next pass. `needsResync` steers SceneUpdater into the full-
+    // extract branch so updateAssetBindings actually runs.
+    if (h.index < m_impl->assetBindings.size()) {
+        m_impl->assetBindings[h.index].mesh = {};
+    }
+    m_impl->needsResync = true;
+    return true;
+}
+
+PrimHandle USDScene::createReferencePrim(const char* parentPath, const char* name, const char* referenceAsset, const SceneEditRequestContext& ctx) {
+    auto layer = m_impl->chooseEditLayer(ctx);
+    if (!layer) {
+        return {};
+    }
+
+    auto path = SdfPath(parentPath).AppendChild(TfToken(name));
+
+    {
+        UsdEditContext editCtx(m_impl->stage, layer);
+        // Define as an Xform so the prim has a sensible default typeName. The referenced
+        // layer contributes its own typeName via composition — USD picks the strongest.
+        auto prim = m_impl->stage->DefinePrim(path, TfToken("Xform"));
+        if (!prim) {
+            return {};
+        }
+        prim.GetReferences().AddReference(referenceAsset);
+    }
+    return findPrim(path.GetText());
+}
+
+std::string USDScene::uniqueChildName(const char* parentPath, const char* baseName) const {
+    if (!m_impl->stage) {
+        return baseName;
+    }
+    auto parent = m_impl->stage->GetPrimAtPath(SdfPath(parentPath));
+    if (!parent) {
+        return baseName;
+    }
+    auto hasChild = [&](const std::string& candidate) {
+        for (const auto& child : parent.GetChildren()) {
+            if (child.GetName().GetString() == candidate) {
+                return true;
+            }
+        }
+        return false;
+    };
+    if (!hasChild(baseName)) {
+        return baseName;
+    }
+    for (int i = 1; i < 10000; i++) {
+        auto candidate = std::string(baseName) + "_" + std::to_string(i);
+        if (!hasChild(candidate)) {
+            return candidate;
+        }
+    }
+    return baseName; // pathological; caller will see a DefinePrim conflict
 }
 
 bool USDScene::removePrim(PrimHandle h, const SceneEditRequestContext& ctx) {

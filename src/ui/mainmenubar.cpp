@@ -15,6 +15,9 @@
 void drawMainMenuBar(MainMenuBarState& state) {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
+            if (ImGui::MenuItem("New")) {
+                state.pendingNewScene = true;
+            }
             if (ImGui::MenuItem("Open...")) {
                 static const SDL_DialogFileFilter filters[] = {
                     {"USD Files", "usd;usda;usdc;usdz"},
@@ -32,6 +35,48 @@ void drawMainMenuBar(MainMenuBarState& state) {
                     2,
                     nullptr,
                     false);
+            }
+            ImGui::Separator();
+            bool canSave = state.usdScene && state.usdScene->isOpen();
+            bool anonymousRoot = canSave && state.usdScene->hasAnonymousRootLayer();
+            if (ImGui::MenuItem("Save", nullptr, false, canSave)) {
+                if (anonymousRoot) {
+                    // First save of a new in-memory scene → fall through to Save As.
+                    static const SDL_DialogFileFilter filters[] = {
+                        {"USD ASCII", "usda"},
+                        {"USD Binary", "usdc"},
+                    };
+                    SDL_ShowSaveFileDialog(
+                        [](void* userdata, const char* const* filelist, int) {
+                            if (filelist && filelist[0]) {
+                                *static_cast<std::string*>(userdata) = filelist[0];
+                            }
+                        },
+                        &state.pendingSavePath,
+                        state.window,
+                        filters,
+                        2,
+                        nullptr);
+                } else {
+                    state.usdScene->saveAllDirty();
+                }
+            }
+            if (ImGui::MenuItem("Save As...", nullptr, false, canSave)) {
+                static const SDL_DialogFileFilter filters[] = {
+                    {"USD ASCII", "usda"},
+                    {"USD Binary", "usdc"},
+                };
+                SDL_ShowSaveFileDialog(
+                    [](void* userdata, const char* const* filelist, int) {
+                        if (filelist && filelist[0]) {
+                            *static_cast<std::string*>(userdata) = filelist[0];
+                        }
+                    },
+                    &state.pendingSavePath,
+                    state.window,
+                    filters,
+                    2,
+                    nullptr);
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Quit")) {
@@ -56,6 +101,9 @@ void drawMainMenuBar(MainMenuBarState& state) {
             bool hasSelection = state.selectedPrim && (bool) *state.selectedPrim;
             const auto* selRec = (hasSelection && state.usdScene) ? state.usdScene->getPrimRecord(*state.selectedPrim) : nullptr;
             bool hasParent = selRec && (bool) selRec->parent;
+            if (ImGui::MenuItem("Deselect", "Z", false, hasSelection)) {
+                *state.selectedPrim = {};
+            }
             if (ImGui::MenuItem("Select Parent", "R", false, hasParent)) {
                 *state.selectedPrim = selRec->parent;
             }

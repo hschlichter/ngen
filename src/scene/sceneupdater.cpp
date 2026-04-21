@@ -101,6 +101,28 @@ auto SceneUpdater::update(
                     case SceneEditCommand::Type::ClearSession:
                         usdScene.clearSessionLayer();
                         break;
+                    case SceneEditCommand::Type::CreatePrim:
+                        usdScene.createPrim(cmd.parentPath.c_str(), cmd.primName.c_str(), cmd.typeName.c_str(), {.purpose = cmd.purpose});
+                        break;
+                    case SceneEditCommand::Type::CreateReferencePrim:
+                        usdScene.createReferencePrim(cmd.parentPath.c_str(), cmd.primName.c_str(), cmd.referenceAsset.c_str(), {.purpose = cmd.purpose});
+                        break;
+                    case SceneEditCommand::Type::SetDisplayColor:
+                        usdScene.setDisplayColor(cmd.prim, cmd.colorValue, {.purpose = cmd.purpose});
+                        break;
+                    case SceneEditCommand::Type::RemovePrim: {
+                        // Undo-replay of a create edit arrives with `prim` unset — look it up
+                        // by path. User-initiated deletes arrive with a live handle.
+                        auto h = cmd.prim;
+                        if (!h && !cmd.parentPath.empty() && !cmd.primName.empty()) {
+                            auto fullPath = cmd.parentPath + "/" + cmd.primName;
+                            h = usdScene.findPrim(fullPath.c_str());
+                        }
+                        if (h) {
+                            usdScene.removePrim(h, {.purpose = cmd.purpose});
+                        }
+                        break;
+                    }
                 }
             }
 
