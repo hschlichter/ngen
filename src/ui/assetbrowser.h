@@ -9,7 +9,7 @@
 // Layers window's sublayer picker and (planned) the prim-creation reference dialog.
 struct AssetBrowserState {
     std::string rootDir;                  // absolute filesystem root to scan
-    std::string selected;                  // path relative to rootDir; empty = nothing picked
+    std::string selected;                 // path relative to rootDir; empty = nothing picked
     std::vector<std::string> cachedFiles; // relative paths, alphabetically sorted
     bool dirty = true;                    // next draw re-scans before rendering the list
 };

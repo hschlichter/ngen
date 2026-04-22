@@ -12,27 +12,27 @@ namespace {
 
 struct AddChildChoice {
     const char* label;
-    const char* typeName;  // USD schema type name; fed to DefinePrim
-    const char* baseName;  // unique-name base ("SphereLight", etc.)
+    const char* typeName; // USD schema type name; fed to DefinePrim
+    const char* baseName; // unique-name base ("SphereLight", etc.)
 };
 
 // Typed-prim entries shown under the Add Child submenu. Lights are in display
 // order; geometry entries author valid USD shape schemas even if Phase B hasn't
 // tessellated them yet (they just won't render until it lands).
-constexpr AddChildChoice kAddChildXform      = {"Xform",          "Xform",         "Xform"};
-constexpr AddChildChoice kAddChildLights[]   = {
-    {"Distant Light",  "DistantLight",  "DistantLight"},
-    {"Sphere Light",   "SphereLight",   "SphereLight"},
-    {"Rect Light",     "RectLight",     "RectLight"},
-    {"Disk Light",     "DiskLight",     "DiskLight"},
+constexpr AddChildChoice kAddChildXform = {"Xform", "Xform", "Xform"};
+constexpr AddChildChoice kAddChildLights[] = {
+    {"Distant Light", "DistantLight", "DistantLight"},
+    {"Sphere Light", "SphereLight", "SphereLight"},
+    {"Rect Light", "RectLight", "RectLight"},
+    {"Disk Light", "DiskLight", "DiskLight"},
     {"Cylinder Light", "CylinderLight", "CylinderLight"},
-    {"Dome Light",     "DomeLight",     "DomeLight"},
+    {"Dome Light", "DomeLight", "DomeLight"},
 };
 constexpr AddChildChoice kAddChildGeometry[] = {
-    {"Cube",     "Cube",     "Cube"},
-    {"Sphere",   "Sphere",   "Sphere"},
+    {"Cube", "Cube", "Cube"},
+    {"Sphere", "Sphere", "Sphere"},
     {"Cylinder", "Cylinder", "Cylinder"},
-    {"Cone",     "Cone",     "Cone"},
+    {"Cone", "Cone", "Cone"},
 };
 
 // Derive a USD-valid prim name from a file stem — used as the default child
@@ -55,12 +55,12 @@ std::string sanitizeIdentifier(std::string_view stem) {
 } // namespace
 
 void drawSceneWindow(bool& show,
-                    bool editingBlocked,
-                    USDScene& usdScene,
-                    const RenderWorld& renderWorld,
-                    PrimHandle& selectedPrim,
-                    SceneWindowState& state,
-                    std::vector<SceneEditCommand>& pendingEdits) {
+                     bool editingBlocked,
+                     USDScene& usdScene,
+                     const RenderWorld& renderWorld,
+                     PrimHandle& selectedPrim,
+                     SceneWindowState& state,
+                     std::vector<SceneEditCommand>& pendingEdits) {
     if (!show || !usdScene.isOpen()) {
         return;
     }

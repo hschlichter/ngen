@@ -28,10 +28,10 @@ struct SceneEditCommand {
     bool boolValue = false;
     std::string stringValue;
     // Populated only for CreatePrim / CreateReferencePrim / RemovePrim.
-    std::string parentPath;     // absolute USD path of the parent
-    std::string primName;       // child name (valid USD identifier)
-    std::string typeName;       // e.g. "Xform", "SphereLight"; empty for referenced prims
-    std::string referenceAsset; // asset path (relative or absolute) for CreateReferencePrim
+    std::string parentPath;                 // absolute USD path of the parent
+    std::string primName;                   // child name (valid USD identifier)
+    std::string typeName;                   // e.g. "Xform", "SphereLight"; empty for referenced prims
+    std::string referenceAsset;             // asset path (relative or absolute) for CreateReferencePrim
     glm::vec3 colorValue = glm::vec3(1.0f); // for SetDisplayColor
     // Authoring (default) writes to the USD layer. Preview only updates the
     // runtime transform cache — used during interactive operations like a gizmo

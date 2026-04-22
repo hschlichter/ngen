@@ -1,6 +1,6 @@
 #pragma once
 
-#include "assetbrowser.h"     // AssetBrowserState
+#include "assetbrowser.h" // AssetBrowserState
 #include "framegraphdebug.h"
 #include "propertieswindow.h" // PropertiesWindowState
 #include "scenehandles.h"

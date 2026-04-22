@@ -6,10 +6,7 @@
 
 #include <filesystem>
 
-void drawAssetBrowserWindow(bool& show,
-                            USDScene& usdScene,
-                            AssetBrowserState& browser,
-                            std::vector<SceneEditCommand>& pendingEdits) {
+void drawAssetBrowserWindow(bool& show, USDScene& usdScene, AssetBrowserState& browser, std::vector<SceneEditCommand>& pendingEdits) {
     if (!show) {
         return;
     }

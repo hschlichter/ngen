@@ -16,9 +16,9 @@ constexpr float kNodeHeightPass = 56.0f;
 constexpr float kNodeWidthResource = 160.0f;
 constexpr float kNodeHeightResourceNoThumb = 44.0f;
 constexpr float kThumbMaxHeight = 64.0f;
-constexpr float kPassStride = 180.0f;  // horizontal distance between adjacent pass columns
+constexpr float kPassStride = 180.0f; // horizontal distance between adjacent pass columns
 constexpr float kResourceRowGap = 14.0f;
-constexpr float kPassToResourceGap = 48.0f;  // vertical gap between pass row and first resource row
+constexpr float kPassToResourceGap = 48.0f; // vertical gap between pass row and first resource row
 constexpr float kMarginX = 40.0f;
 constexpr float kMarginY = 40.0f;
 

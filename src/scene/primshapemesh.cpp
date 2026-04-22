@@ -150,7 +150,8 @@ MeshDesc tessellateCylinder(double radius, double height, const char* axis, Shap
         float t = static_cast<float>(i) / static_cast<float>(segments) * 2.0f * kPi;
         float ct = std::cos(t);
         float st = std::sin(t);
-        std::array<float, 3> p = {(s0[0] * ct + s1[0] * st) * r + ax[0] * h, (s0[1] * ct + s1[1] * st) * r + ax[1] * h, (s0[2] * ct + s1[2] * st) * r + ax[2] * h};
+        std::array<float, 3> p = {
+            (s0[0] * ct + s1[0] * st) * r + ax[0] * h, (s0[1] * ct + s1[1] * st) * r + ax[1] * h, (s0[2] * ct + s1[2] * st) * r + ax[2] * h};
         pushVertex(out, p, ax, color);
     }
     for (int i = 0; i < segments; i++) {
@@ -165,7 +166,8 @@ MeshDesc tessellateCylinder(double radius, double height, const char* axis, Shap
         float t = static_cast<float>(i) / static_cast<float>(segments) * 2.0f * kPi;
         float ct = std::cos(t);
         float st = std::sin(t);
-        std::array<float, 3> p = {(s0[0] * ct + s1[0] * st) * r - ax[0] * h, (s0[1] * ct + s1[1] * st) * r - ax[1] * h, (s0[2] * ct + s1[2] * st) * r - ax[2] * h};
+        std::array<float, 3> p = {
+            (s0[0] * ct + s1[0] * st) * r - ax[0] * h, (s0[1] * ct + s1[1] * st) * r - ax[1] * h, (s0[2] * ct + s1[2] * st) * r - ax[2] * h};
         pushVertex(out, p, naxNeg, color);
     }
     for (int i = 0; i < segments; i++) {
@@ -216,7 +218,8 @@ MeshDesc tessellateCone(double radius, double height, const char* axis, ShapeCol
         float t = static_cast<float>(i) / static_cast<float>(segments) * 2.0f * kPi;
         float ct = std::cos(t);
         float st = std::sin(t);
-        std::array<float, 3> p = {(s0[0] * ct + s1[0] * st) * r - ax[0] * h, (s0[1] * ct + s1[1] * st) * r - ax[1] * h, (s0[2] * ct + s1[2] * st) * r - ax[2] * h};
+        std::array<float, 3> p = {
+            (s0[0] * ct + s1[0] * st) * r - ax[0] * h, (s0[1] * ct + s1[1] * st) * r - ax[1] * h, (s0[2] * ct + s1[2] * st) * r - ax[2] * h};
         pushVertex(out, p, nAxNeg, color);
     }
     for (int i = 0; i < segments; i++) {

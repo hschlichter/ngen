@@ -73,7 +73,7 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<v
     fallbackTexture = device->createTexture(fallbackDesc);
 
     // Passes
-    RhiExtent2D shadowExtent { 2048, 2048 };
+    RhiExtent2D shadowExtent{2048, 2048};
     if (!shadowPass.init(device, shadowExtent, depthFmt)) {
         return std::unexpected(1);
     }

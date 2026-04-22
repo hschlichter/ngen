@@ -25,8 +25,7 @@ static void rescan(AssetBrowserState& state) {
     if (!fs::is_directory(rootPath, ec)) {
         return;
     }
-    for (auto it = fs::recursive_directory_iterator(rootPath, fs::directory_options::skip_permission_denied, ec);
-         it != fs::recursive_directory_iterator();
+    for (auto it = fs::recursive_directory_iterator(rootPath, fs::directory_options::skip_permission_denied, ec); it != fs::recursive_directory_iterator();
          it.increment(ec)) {
         if (ec) {
             break;

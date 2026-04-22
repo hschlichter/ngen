@@ -23,12 +23,12 @@ struct RenderLight {
     LightType type = LightType::Directional;
     glm::vec3 color = glm::vec3(1.0f);
     float intensity = 1.0f;
-    float exposure = 0.0f;         // stops; final radiance = color * intensity * 2^exposure
-    float angle = 0.53f;           // distant-light solid angle in degrees
+    float exposure = 0.0f; // stops; final radiance = color * intensity * 2^exposure
+    float angle = 0.53f;   // distant-light solid angle in degrees
     bool shadowEnable = true;
     glm::vec3 shadowColor = glm::vec3(0.0f);
     glm::mat4 worldTransform = glm::mat4(1.0f);
-    PrimHandle primHandle;         // identifies the source prim for incremental updates
+    PrimHandle primHandle; // identifies the source prim for incremental updates
 };
 
 struct RenderWorld {
