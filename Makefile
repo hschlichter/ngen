@@ -18,17 +18,17 @@ USD_LDFLAGS = -L$(USD_DIR)/lib -Wl,-rpath,$(CURDIR)/$(USD_DIR)/lib \
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 	VULKAN_SDK ?= $(HOME)/VulkanSDK/1.4.309.0/macOS
-	INCLUDE = -Isrc -Isrc/rhi -Isrc/rhi/vulkan -Isrc/renderer -Isrc/renderer/passes -Isrc/scene -Isrc/ui -Iexternal/glm -Iexternal/cgltf -Iexternal/stb -Iexternal/imgui -Iexternal/imgui/backends -I$(VULKAN_SDK)/include
+	INCLUDE = -Isrc -Isrc/rhi -Isrc/rhi/vulkan -Isrc/renderer -Isrc/renderer/passes -Isrc/scene -Isrc/ui -Isrc/obs -Iexternal/glm -Iexternal/cgltf -Iexternal/stb -Iexternal/imgui -Iexternal/imgui/backends -Iexternal/concurrentqueue -I$(VULKAN_SDK)/include
 	LDINCLUDE = -L$(VULKAN_SDK)/lib -Wl,-rpath,$(VULKAN_SDK)/lib
 	GLSLC = $(VULKAN_SDK)/bin/glslc
 else ifeq ($(OS),Windows_NT)
 	VULKAN_SDK ?= $(VULKAN_SDK)
-	INCLUDE = -Isrc -Isrc/rhi -Isrc/rhi/vulkan -Isrc/renderer -Isrc/renderer/passes -Isrc/scene -Isrc/ui -Iexternal/glm -Iexternal/cgltf -Iexternal/stb -Iexternal/imgui -Iexternal/imgui/backends -I$(VULKAN_SDK)/Include
+	INCLUDE = -Isrc -Isrc/rhi -Isrc/rhi/vulkan -Isrc/renderer -Isrc/renderer/passes -Isrc/scene -Isrc/ui -Isrc/obs -Iexternal/glm -Iexternal/cgltf -Iexternal/stb -Iexternal/imgui -Iexternal/imgui/backends -Iexternal/concurrentqueue -I$(VULKAN_SDK)/Include
 	LDINCLUDE = -L$(VULKAN_SDK)/Lib
 	GLSLC = $(VULKAN_SDK)/Bin/glslc.exe
 	EXE = ngen.exe
 else
-	INCLUDE = -Isrc -Isrc/rhi -Isrc/rhi/vulkan -Isrc/renderer -Isrc/renderer/passes -Isrc/scene -Isrc/ui -Iexternal/glm -Iexternal/cgltf -Iexternal/stb -Iexternal/imgui -Iexternal/imgui/backends
+	INCLUDE = -Isrc -Isrc/rhi -Isrc/rhi/vulkan -Isrc/renderer -Isrc/renderer/passes -Isrc/scene -Isrc/ui -Isrc/obs -Iexternal/glm -Iexternal/cgltf -Iexternal/stb -Iexternal/imgui -Iexternal/imgui/backends -Iexternal/concurrentqueue
 	LDINCLUDE =
 	GLSLC = glslc
 endif

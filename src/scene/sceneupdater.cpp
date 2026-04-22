@@ -1,10 +1,25 @@
 #include "sceneupdater.h"
 
+#include "observationmacros.h"
 #include "usdrenderextractor.h"
 #include "usdscene.h"
 
 #include <algorithm>
 #include <unordered_map>
+
+namespace {
+auto resultToString(SceneUpdateResult r) -> const char* {
+    switch (r) {
+        case SceneUpdateResult::None:
+            return "None";
+        case SceneUpdateResult::TransformsOnly:
+            return "TransformsOnly";
+        case SceneUpdateResult::Full:
+            return "Full";
+    }
+    return "Unknown";
+}
+} // namespace
 
 // Walk the subtree under `root` and append all prim handles (including root) to `out`.
 static auto appendSubtree(const USDScene& scene, PrimHandle root, std::vector<PrimHandle>& out) -> void {
@@ -56,13 +71,23 @@ auto SceneUpdater::update(
         for (auto& [_, cmd] : latest) {
             usdScene.setTransform(cmd->prim, cmd->transform, {.purpose = cmd->purpose});
             appendSubtree(usdScene, cmd->prim, dirty);
+
+            // Name the observation by the USD prim path — stable across runs,
+            // unlike PrimHandle::index (see §5.4).
+            const auto* rec = usdScene.getPrimRecord(cmd->prim);
+            OBS_EVENT("Scene", "PrimTransformed", rec != nullptr ? rec->path : std::string{}).field("path", "fast");
         }
         pendingEdits.clear();
 
         usdExtractor.patchTransforms(usdScene, meshLib, dirty, renderWorld);
         sceneQuery.updateDirty(usdScene, meshLib, dirty, usdScene.frameIndex());
         // Promote None -> TransformsOnly; preserve Full from a Phase 1 swap above.
-        return result == SceneUpdateResult::Full ? SceneUpdateResult::Full : SceneUpdateResult::TransformsOnly;
+        auto finalResult = result == SceneUpdateResult::Full ? SceneUpdateResult::Full : SceneUpdateResult::TransformsOnly;
+        OBS_EVENT("Scene", "SystemExecuted", "SceneUpdater")
+            .field("edits", (int64_t) latest.size())
+            .field("path", "fast")
+            .field("result", resultToString(finalResult));
+        return finalResult;
     }
 
     // Phase 2: Kick off background job if edits are pending
@@ -174,6 +199,13 @@ auto SceneUpdater::update(
                 result = SceneUpdateResult::TransformsOnly;
             }
         }
+    }
+
+    // Silent frames (result == None) are the common case — don't spam an
+    // observation for every tick that did nothing. Only narrate ticks that
+    // actually changed something.
+    if (result != SceneUpdateResult::None) {
+        OBS_EVENT("Scene", "SystemExecuted", "SceneUpdater").field("path", "async").field("result", resultToString(result));
     }
 
     return result;

@@ -2,7 +2,10 @@
 #include "debugdraw.h"
 #include "editorui.h"
 #include "jobsystem.h"
+#include "jsonlinesfilesink.h"
 #include "mesh.h"
+#include "observationbus.h"
+#include "observationmacros.h"
 #include "renderer.h"
 #include "rendersnapshot.h"
 #include "renderthread.h"
@@ -23,8 +26,92 @@
 
 #include <filesystem>
 #include <print>
+#include <string>
+#include <string_view>
+#include <vector>
+
+// Split a comma-separated category list into individual names. Trims whitespace
+// around each token; empty tokens are dropped.
+static auto splitCategoryList(std::string_view s) -> std::vector<std::string> {
+    std::vector<std::string> out;
+    size_t i = 0;
+    while (i < s.size()) {
+        size_t j = s.find(',', i);
+        if (j == std::string_view::npos) {
+            j = s.size();
+        }
+        auto tok = s.substr(i, j - i);
+        while (!tok.empty() && (tok.front() == ' ' || tok.front() == '\t')) {
+            tok.remove_prefix(1);
+        }
+        while (!tok.empty() && (tok.back() == ' ' || tok.back() == '\t')) {
+            tok.remove_suffix(1);
+        }
+        if (!tok.empty()) {
+            out.emplace_back(tok);
+        }
+        i = j + 1;
+    }
+    return out;
+}
 
 auto main(int argc, char* argv[]) -> int {
+    // Parse --obs-* flags out of argv before anything else. The rest of argv
+    // (scene path, etc.) is collected into `positional` and consumed as before.
+    // Done before any thread starts so the category filter is frozen by the
+    // time producer threads read it.
+    std::string obsOutputPath;
+    std::vector<std::string> obsOnly;
+    std::vector<std::string> obsExclude;
+    std::vector<const char*> positional;
+    positional.push_back(argv[0]);
+    for (int i = 1; i < argc; ++i) {
+        std::string_view arg = argv[i];
+        if (arg.starts_with("--obs-output=")) {
+            obsOutputPath = std::string(arg.substr(std::string_view("--obs-output=").size()));
+        } else if (arg.starts_with("--obs-only=")) {
+            obsOnly = splitCategoryList(arg.substr(std::string_view("--obs-only=").size()));
+        } else if (arg.starts_with("--obs-exclude=")) {
+            obsExclude = splitCategoryList(arg.substr(std::string_view("--obs-exclude=").size()));
+        } else {
+            positional.push_back(argv[i]);
+        }
+    }
+    if (!obsOnly.empty() && !obsExclude.empty()) {
+        std::println(stderr, "--obs-only and --obs-exclude are mutually exclusive");
+        return 1;
+    }
+
+    // Canonical category set. Anything not in this set defaults to enabled
+    // (see observationbus.h::categoryEnabled). We still list them explicitly
+    // so --obs-only / --obs-exclude affect the known vocabulary.
+    static constexpr std::string_view canonicalCategories[] = {"Scene", "Render", "Engine"};
+
+    if (!obsOutputPath.empty()) {
+        auto sink = std::make_unique<obs::JsonLinesFileSink>();
+        if (!sink->open(obsOutputPath)) {
+            std::println(stderr, "Failed to open observation output: {}", obsOutputPath);
+            return 1;
+        }
+        if (!obsOnly.empty()) {
+            // Allowlist: disable every canonical category, then re-enable the
+            // listed ones. Unknown names in obsOnly are still honored (users
+            // may emit from their own categories).
+            for (auto cat : canonicalCategories) {
+                obs::bus().setCategoryEnabled(cat, false);
+            }
+            for (const auto& cat : obsOnly) {
+                obs::bus().setCategoryEnabled(cat, true);
+            }
+        } else if (!obsExclude.empty()) {
+            for (const auto& cat : obsExclude) {
+                obs::bus().setCategoryEnabled(cat, false);
+            }
+        }
+        obs::bus().setSink(std::move(sink));
+        OBS_EVENT("Engine", "BusStarted", "ObservationBus").field("output", obsOutputPath);
+    }
+
     USDScene usdScene;
     USDRenderExtractor usdExtractor;
     SceneQuerySystem sceneQuery;
@@ -34,9 +121,9 @@ auto main(int argc, char* argv[]) -> int {
     PrimHandle selectedPrim;
     SceneUpdater sceneUpdater;
 
-    if (argc >= 2) {
-        if (!usdScene.open(argv[1])) {
-            std::println(stderr, "Failed to open USD scene: {}", argv[1]);
+    if (positional.size() >= 2) {
+        if (!usdScene.open(positional[1])) {
+            std::println(stderr, "Failed to open USD scene: {}", positional[1]);
             return 1;
         }
     } else {
@@ -249,11 +336,20 @@ auto main(int argc, char* argv[]) -> int {
             // 1-4: switch the active editor tool.
             if (ev.type == SDL_EVENT_KEY_DOWN && (ev.key.mod & SDL_KMOD_CTRL) == 0 && !ev.key.repeat) {
                 switch (ev.key.key) {
-                    case SDLK_1: editorUI.setActiveTool(EditorTool::Select); continue;
-                    case SDLK_2: editorUI.setActiveTool(EditorTool::Translate); continue;
-                    case SDLK_3: editorUI.setActiveTool(EditorTool::Rotate); continue;
-                    case SDLK_4: editorUI.setActiveTool(EditorTool::Scale); continue;
-                    default: break;
+                    case SDLK_1:
+                        editorUI.setActiveTool(EditorTool::Select);
+                        continue;
+                    case SDLK_2:
+                        editorUI.setActiveTool(EditorTool::Translate);
+                        continue;
+                    case SDLK_3:
+                        editorUI.setActiveTool(EditorTool::Rotate);
+                        continue;
+                    case SDLK_4:
+                        editorUI.setActiveTool(EditorTool::Scale);
+                        continue;
+                    default:
+                        break;
                 }
             }
 
@@ -315,10 +411,8 @@ auto main(int argc, char* argv[]) -> int {
                     scaleGizmo.release();
                 }
                 if (finalLocal && inverseHint) {
-                    sceneUpdater.addEdit({.type = SceneEditCommand::Type::SetTransform,
-                                          .prim = selectedPrim,
-                                          .transform = *finalLocal,
-                                          .inverseTransform = *inverseHint});
+                    sceneUpdater.addEdit(
+                        {.type = SceneEditCommand::Type::SetTransform, .prim = selectedPrim, .transform = *finalLocal, .inverseTransform = *inverseHint});
                 }
                 continue;
             }
@@ -432,6 +526,10 @@ auto main(int argc, char* argv[]) -> int {
     rhiDevice.destroy();
     SDL_DestroyWindow(window);
     SDL_Quit();
+
+    // Drain and flush the observation stream before exit. No-op if no sink was
+    // installed (common case when --obs-output wasn't passed).
+    obs::bus().shutdown();
 
     return 0;
 }
