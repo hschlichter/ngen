@@ -1,5 +1,6 @@
 #include "renderthread.h"
 #include "framegraph.h"
+#include "observationmacros.h"
 #include "renderer.h"
 
 #include <utility>
@@ -7,6 +8,7 @@
 auto RenderThread::start(Renderer* r) -> void {
     renderer = r;
     thread = std::jthread([this] { threadLoop(); });
+    OBS_EVENT("Render", "RenderThreadStart", "RenderThread");
 }
 
 auto RenderThread::stop() -> void {
@@ -18,6 +20,7 @@ auto RenderThread::stop() -> void {
     if (thread.joinable()) {
         thread.join();
     }
+    OBS_EVENT("Render", "RenderThreadStop", "RenderThread");
 }
 
 auto RenderThread::submitSnapshot(RenderSnapshot snapshot) -> void {
@@ -62,6 +65,7 @@ auto RenderThread::threadLoop() -> void {
             if (pendingUpload) {
                 auto upload = std::move(*pendingUpload);
                 pendingUpload.reset();
+                OBS_EVENT("Render", "SceneUploadReceived", "RenderWorld").field("mesh_count", (int64_t) upload.world.meshInstances.size());
                 renderer->uploadRenderWorld(upload.world, *upload.meshLib, *upload.matLib);
             }
         }

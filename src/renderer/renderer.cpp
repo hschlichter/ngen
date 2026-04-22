@@ -3,6 +3,7 @@
 #include "blitpass.h"
 #include "material.h"
 #include "mesh.h"
+#include "observationmacros.h"
 #include "presentpass.h"
 #include "rendersnapshot.h"
 #include "rhicommandbuffer.h"
@@ -222,6 +223,10 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
                 device->destroyBuffer(iStaging);
 
                 meshCache[inst.mesh.index] = cached;
+
+                OBS_EVENT("Render", "MeshUploaded", "Mesh")
+                    .field("vertex_count", (int64_t) meshData->vertices.size())
+                    .field("index_count", (int64_t) meshData->indices.size());
             }
         }
 
@@ -236,6 +241,8 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
                     .initialDataSize = (uint64_t) (matData->texWidth * matData->texHeight * 4),
                 };
                 textureCache[inst.material.index] = {.texture = device->createTexture(texDesc)};
+
+                OBS_EVENT("Render", "TextureUploaded", "Texture").field("width", (int64_t) matData->texWidth).field("height", (int64_t) matData->texHeight);
             }
         }
     }
@@ -330,15 +337,20 @@ auto Renderer::gizmoHitTest(float mouseX, float mouseY, RhiExtent2D windowExtent
 }
 
 auto Renderer::render(RenderSnapshot& snapshot) -> void {
+    auto frame = ++m_frameIndex;
+    OBS_EVENT("Render", "FrameBegin", "frame").field("frame", (int64_t) frame);
+
     device->waitForFence(inflightFences[currentFrame]);
 
     auto index = swapchain->acquireNextImage(imageAvailableSemaphores[currentFrame]);
     if (!index) {
         if (index.error() == 2) {
+            OBS_EVENT("Render", "SwapchainRecreate", "swapchain").field("reason", "acquire_failed");
             swapchain->recreate();
             resourcePool.flush();
             currentFrame = 0;
         }
+        OBS_EVENT("Render", "FrameEnd", "frame").field("frame", (int64_t) frame);
         return;
     }
 
@@ -460,6 +472,9 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     addPresentPass(frameGraph, colorHandle);
 
     frameGraph.compile();
+    OBS_EVENT("Render", "FrameGraphCompiled", "frame")
+        .field("pass_count", (int64_t) frameGraph.passCount())
+        .field("culled_count", (int64_t) frameGraph.culledCount());
 
     auto* cmd = cmdBuffers[*index];
     cmd->reset();
@@ -476,13 +491,16 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     };
     device->submitCommandBuffer(cmd, submitInfo);
     if (!device->present(swapchain, renderFinishedSemaphores[currentFrame], *index)) {
+        OBS_EVENT("Render", "SwapchainRecreate", "swapchain").field("reason", "present_failed");
         swapchain->recreate();
         resourcePool.flush();
         currentFrame = 0;
+        OBS_EVENT("Render", "FrameEnd", "frame").field("frame", (int64_t) frame);
         return;
     }
 
     currentFrame = (currentFrame + 1) % swapchain->imageCount();
+    OBS_EVENT("Render", "FrameEnd", "frame").field("frame", (int64_t) frame);
 }
 
 auto Renderer::destroy() -> void {

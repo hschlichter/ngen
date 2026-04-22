@@ -6,6 +6,7 @@
 #include "passnode.h"
 #include "rhitypes.h"
 
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -39,6 +40,11 @@ public:
 
     auto compile() -> void;
     auto execute(RhiCommandBuffer* cmd) -> void;
+
+    auto passCount() const -> size_t { return passes.size(); }
+    auto culledCount() const -> size_t {
+        return std::count_if(passes.begin(), passes.end(), [](const PassNode& p) { return p.culled; });
+    }
 
     auto buildDebugSnapshot() const -> FrameGraphDebugSnapshot;
 

@@ -89,6 +89,12 @@ private:
     std::vector<RhiFence*> inflightFences;
     uint32_t currentFrame = 0;
 
+    // Monotonic frame counter — pre-incremented at the top of render(), so frame 0
+    // never appears in observation streams (readers don't have to distinguish
+    // "first frame" from "uninitialized"). Render-thread-only; don't read from
+    // main.
+    uint64_t m_frameIndex = 0;
+
     FrameGraph frameGraph;
     ResourcePool resourcePool;
     FrameGraphPreviews fgPreviews;

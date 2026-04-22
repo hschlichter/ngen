@@ -1,5 +1,6 @@
 #include "framegraph.h"
 #include "framegraphdebug.h"
+#include "observationmacros.h"
 #include "resourcepool.h"
 #include "rhicommandbuffer.h"
 
@@ -180,6 +181,11 @@ auto FrameGraph::compile() -> void {
         passes[i].culled = !alive[i];
         if (passes[i].culled) {
             std::println("Frame graph: culled pass '{}'", passes[i].name);
+            // Only one cull reason exists today: the pass has no downstream reads
+            // and no side effects, so its outputs are dead. Keep `reason` as a
+            // field so future reasons extend the vocabulary without breaking the
+            // observation shape.
+            OBS_EVENT("Render", "PassCulled", passes[i].name != nullptr ? passes[i].name : "(unnamed)").field("reason", "no_downstream_reads");
         }
     }
 
@@ -299,7 +305,9 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
             cmd->pipelineBarrier(barriers);
         }
 
-        // Execute pass
+        // Execute pass. Single emission site covers all passes automatically;
+        // new passes added later get narrated without per-file edits.
+        OBS_EVENT("Render", "PassExecuted", passes[passIdx].name != nullptr ? passes[passIdx].name : "(unnamed)");
         passes[passIdx].execute(ctx);
 
         // Release transient resources whose lifetime ends at this pass (after capturing)
