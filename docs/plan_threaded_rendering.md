@@ -37,11 +37,13 @@ The main thread runs at most one frame ahead of the render thread. The render th
 
 ## 3. Data Types
 
-Two separate channels pass data from the main thread to the render thread: a per-frame snapshot (every frame, lightweight) and a scene upload channel (infrequent, heavy).
+Two separate channels pass data from the main thread to the render thread: a per-frame snapshot (every frame, lightweight) and a scene upload channel
+(infrequent, heavy).
 
 ### RenderSnapshot (per-frame, every frame)
 
-A self-contained, value-type snapshot of everything the render thread needs to draw one frame. No pointers or references to main-thread data that could be mutated.
+A self-contained, value-type snapshot of everything the render thread needs to draw one frame. No pointers or references to main-thread data that could be
+mutated.
 
 ```cpp
 struct RenderSnapshot {
@@ -79,7 +81,8 @@ struct RenderUpload {
 };
 ```
 
-Use `shared_ptr` for libraries to avoid copying vertex/texture data. The main thread pushes a `RenderUpload` into a separate slot; the render thread checks for pending uploads before each frame.
+Use `shared_ptr` for libraries to avoid copying vertex/texture data. The main thread pushes a `RenderUpload` into a separate slot; the render thread checks for
+pending uploads before each frame.
 
 ## 4. Thread Lifecycle
 
@@ -116,7 +119,8 @@ while not shutdown:
 4. Main thread calls `renderer.destroy()` (waitIdle + cleanup)
 
 ### Why a dedicated thread, not the JobSystem
-The render thread blocks on GPU fences and swapchain acquire. Using the JobSystem (work-stealing pool) would tie up a worker indefinitely. A dedicated `std::jthread` is simpler.
+The render thread blocks on GPU fences and swapchain acquire. Using the JobSystem (work-stealing pool) would tie up a worker indefinitely. A dedicated
+`std::jthread` is simpler.
 
 ## 5. Synchronization: Double-Buffered Snapshot Slot
 
@@ -137,7 +141,8 @@ struct SnapshotSlot {
 1. **Main produces**: Lock. If `hasSnapshot`, wait on `slotAvailable`. Move snapshot in. Set `hasSnapshot = true`. Notify `snapshotReady`.
 2. **Render consumes**: Lock. Wait on `snapshotReady` until `hasSnapshot`. Move snapshot out. Set `hasSnapshot = false`. Notify `slotAvailable`.
 
-**Frame pacing** is automatic: if the GPU is slow, the render thread blocks on `waitForFence`, which delays consuming the snapshot, which causes the main thread to block on `slotAvailable`.
+**Frame pacing** is automatic: if the GPU is slow, the render thread blocks on `waitForFence`, which delays consuming the snapshot, which causes the main thread
+to block on `slotAvailable`.
 
 ## 6. ImGui Integration
 
@@ -170,7 +175,8 @@ Split the current `render()` method:
 
 ## 7. Scene Uploads
 
-Currently `uploadRenderWorld` calls `device->waitIdle()` which stalls the GPU. Scene changes are infrequent (file open, edits) and fundamentally different from per-frame rendering.
+Currently `uploadRenderWorld` calls `device->waitIdle()` which stalls the GPU. Scene changes are infrequent (file open, edits) and fundamentally different from
+per-frame rendering.
 
 ### Separate channel
 
@@ -185,10 +191,13 @@ struct RenderUploadSlot {
 
 **Protocol:**
 1. **Main thread** detects scene change. Locks mutex, moves `RenderUpload` into `pending`.
-2. **Render thread** checks `pending` at the top of each frame (after fence wait). If set, locks mutex, takes the upload, processes it (`waitIdle` + GPU resource upload). The stall is contained to the render thread.
-3. **Main thread** can continue preparing frames. If the render thread is still uploading, the main thread is naturally throttled by the snapshot slot back-pressure (render thread hasn't consumed the previous snapshot yet).
+2. **Render thread** checks `pending` at the top of each frame (after fence wait). If set, locks mutex, takes the upload, processes it (`waitIdle` + GPU
+   resource upload). The stall is contained to the render thread.
+3. **Main thread** can continue preparing frames. If the render thread is still uploading, the main thread is naturally throttled by the snapshot slot
+   back-pressure (render thread hasn't consumed the previous snapshot yet).
 
-No version counters needed — the `std::optional` is either empty or contains the latest upload. If the main thread pushes two uploads before the render thread processes one, the second overwrites the first (latest wins).
+No version counters needed — the `std::optional` is either empty or contains the latest upload. If the main thread pushes two uploads before the render thread
+processes one, the second overwrites the first (latest wins).
 
 ## 8. Updated Main Loop
 
@@ -268,13 +277,16 @@ renderThread.stop()
 ## 10. Edge Cases
 
 ### Window resize
-Swapchain is render-thread-owned. On `acquireNextImage` failure, the render thread recreates it. Main thread's window dimensions may be 1 frame stale — acceptable.
+Swapchain is render-thread-owned. On `acquireNextImage` failure, the render thread recreates it. Main thread's window dimensions may be 1 frame stale —
+acceptable.
 
 ### Vulkan threading
-Command buffer recording and queue submission happen only on the render thread. Device functions are thread-safe when objects aren't used concurrently. `waitIdle()` in scene upload is safe (only the render thread submits).
+Command buffer recording and queue submission happen only on the render thread. Device functions are thread-safe when objects aren't used concurrently.
+`waitIdle()` in scene upload is safe (only the render thread submits).
 
 ### ImGui context
-All ImGui calls on main thread. Only `ImGui_ImplVulkan_RenderDrawData` on render thread — it reads cloned data, not the ImGui context. Font descriptor sets are allocated at init (before render thread starts) and immutable.
+All ImGui calls on main thread. Only `ImGui_ImplVulkan_RenderDrawData` on render thread — it reads cloned data, not the ImGui context. Font descriptor sets are
+allocated at init (before render thread starts) and immutable.
 
 ### Shutdown ordering
 1. Main thread pushes sentinel

@@ -2,39 +2,50 @@
 
 ## Context
 
-Today every `SetTransform` edit (Properties panel, translate gizmo) causes the entire scene pipeline to re-run on a background thread. Concretely, `SceneUpdater::update` (`src/scene/sceneupdater.cpp:23-68`) submits an async job that:
+Today every `SetTransform` edit (Properties panel, translate gizmo) causes the entire scene pipeline to re-run on a background thread. Concretely,
+`SceneUpdater::update` (`src/scene/sceneupdater.cpp:23-68`) submits an async job that:
 
 1. Applies the edit(s) to USD,
 2. Calls `usdExtractor.extract()` — **clears `RenderWorld` and re-walks every prim** (`src/scene/usdrenderextractor.cpp:7-30`),
 3. Calls `sceneQuery.rebuild()` — **rebuilds bounds cache + BVH from scratch** (`src/scene/scenequery.cpp:5-8`),
 4. Sets `editingBlocked = true` so further edits queue up until the job completes and Phase 1 swaps the results in.
 
-For a translate-gizmo drag, this means: every motion event queues an edit; only the first edit per "round trip" actually triggers work; further edits sit in `pendingEdits` until the previous job's results swap in. User sees the prim trail behind the cursor by the round-trip cost (extract + BVH rebuild + descriptor-set rebuild on render thread, even when only one transform changed).
+For a translate-gizmo drag, this means: every motion event queues an edit; only the first edit per "round trip" actually triggers work; further edits sit in
+`pendingEdits` until the previous job's results swap in. User sees the prim trail behind the cursor by the round-trip cost (extract + BVH rebuild +
+descriptor-set rebuild on render thread, even when only one transform changed).
 
-The good news: `Renderer::uploadRenderWorld` (`src/renderer/renderer.cpp:111-150`) already short-circuits when only transforms change — same instance count, same mesh/material per slot → it just copies the new transforms into `gpuInstances` and returns without touching GPU descriptor sets or calling `waitIdle()`. The transforms are pushed per-draw via push constants (`src/renderer/passes/geometrypass.cpp:125-126`), so updating the CPU vector is enough. The bottleneck is **upstream** — in `SceneUpdater` and `USDRenderExtractor`.
+The good news: `Renderer::uploadRenderWorld` (`src/renderer/renderer.cpp:111-150`) already short-circuits when only transforms change — same instance count,
+same mesh/material per slot → it just copies the new transforms into `gpuInstances` and returns without touching GPU descriptor sets or calling `waitIdle()`.
+The transforms are pushed per-draw via push constants (`src/renderer/passes/geometrypass.cpp:125-126`), so updating the CPU vector is enough. The bottleneck is
+**upstream** — in `SceneUpdater` and `USDRenderExtractor`.
 
 Better news: the incremental machinery already exists but is dead code:
 - `SceneQuerySystem::updateDirty` (`src/scene/scenequery.cpp:10-13`) — calls `BoundsCache::updateDirty` and `SpatialIndex::refit`. **Never called.**
 - `BoundsCache::updateDirty` (`src/scene/boundscache.cpp:50-71`) — patches only the listed prims.
 - `SpatialIndex::refit` — walks existing tree and recomputes node AABBs from leaves (no rebuild).
 - `USDScene::dirtySet().transformDirty` (`src/scene/usdscene.cpp:443-464`) — already populated by `processChanges()` from USD notices.
-- `USDScene::setTransform` (`src/scene/usdscene.cpp:945-996`) already updates the local transform cache for the prim **and its descendants** synchronously, before any notice fires.
+- `USDScene::setTransform` (`src/scene/usdscene.cpp:945-996`) already updates the local transform cache for the prim **and its descendants** synchronously,
+  before any notice fires.
 
 ## Goal
 
-A `SetTransform` edit should patch only the affected instances and BVH nodes on the **main thread, synchronously, in microseconds**, without involving the async job queue or rebuilding any descriptor state. Other edits (visibility, layer mute, asset changes, resyncs) keep using the existing async batch path — they're rare and genuinely heavy.
+A `SetTransform` edit should patch only the affected instances and BVH nodes on the **main thread, synchronously, in microseconds**, without involving the async
+job queue or rebuilding any descriptor state. Other edits (visibility, layer mute, asset changes, resyncs) keep using the existing async batch path — they're
+rare and genuinely heavy.
 
 ## Design
 
 ### 1. Track prim → instance index in `RenderWorld`
 
-`USDRenderExtractor::extract` currently produces a flat `meshInstances` array with no link back to the source prim. To patch a specific prim's instance we need a reverse map.
+`USDRenderExtractor::extract` currently produces a flat `meshInstances` array with no link back to the source prim. To patch a specific prim's instance we need
+a reverse map.
 
 **Modify `src/renderer/renderworld.h`:**
 - Add `std::vector<PrimHandle> instancePrim` parallel to `meshInstances` (extractor sets one entry per pushed instance).
 - Add `std::unordered_map<uint32_t, uint32_t> primToInstance` (prim index → instance index). Populated by extractor; cleared by `RenderWorld::clear()`.
 
-(`PrimHandle` is already in `src/scene/scenehandles.h`; `RenderWorld` already includes `scenetypes.h` which transitively gets it via `scenehandles.h` — verify `#include "scenehandles.h"` lands.)
+(`PrimHandle` is already in `src/scene/scenehandles.h`; `RenderWorld` already includes `scenetypes.h` which transitively gets it via `scenehandles.h` — verify
+`#include "scenehandles.h"` lands.)
 
 ### 2. Add `USDRenderExtractor::patchTransforms`
 
@@ -94,13 +105,17 @@ if (!editingBlocked && !pendingEdits.empty()) {
 }
 ```
 
-`expandTransformDirty` walks each dirty prim's subtree using `USDScene::firstChild` / `nextSibling` (already in `src/scene/usdscene.h:122-123`) and returns the flat list. Implement as a free function in `sceneupdater.cpp` — small, single-use.
+`expandTransformDirty` walks each dirty prim's subtree using `USDScene::firstChild` / `nextSibling` (already in `src/scene/usdscene.h:122-123`) and returns the
+flat list. Implement as a free function in `sceneupdater.cpp` — small, single-use.
 
 ### 4. Render-thread side: nothing to do
 
-`Renderer::uploadRenderWorld` (`src/renderer/renderer.cpp:117-150`) already detects "only transforms differ" and exits at line 150 after copying transforms into `gpuInstances`. The geometry pass reads transforms via push-constants per draw (`src/renderer/passes/geometrypass.cpp:125-126`), so no GPU resource rebuild, no `waitIdle()`. The full `RenderWorld` is still copied into `RenderUpload` (~tens of bytes per instance), which is cheap and keeps the contract simple.
+`Renderer::uploadRenderWorld` (`src/renderer/renderer.cpp:117-150`) already detects "only transforms differ" and exits at line 150 after copying transforms into
+`gpuInstances`. The geometry pass reads transforms via push-constants per draw (`src/renderer/passes/geometrypass.cpp:125-126`), so no GPU resource rebuild, no
+`waitIdle()`. The full `RenderWorld` is still copied into `RenderUpload` (~tens of bytes per instance), which is cheap and keeps the contract simple.
 
-Confirm by inspection: lines 132-150 short-circuit when meshes/materials are unchanged — they still hit the `gpuInstances.resize` + per-instance copy at lines 142-146 and the `if (!geometryChanged) return;` at 148. ✓
+Confirm by inspection: lines 132-150 short-circuit when meshes/materials are unchanged — they still hit the `gpuInstances.resize` + per-instance copy at lines
+142-146 and the `if (!geometryChanged) return;` at 148. ✓
 
 ## Files to modify
 

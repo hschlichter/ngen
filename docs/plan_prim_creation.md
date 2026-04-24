@@ -2,11 +2,16 @@
 
 ## Context
 
-`USDScene::createPrim(parentPath, name, typeName, ctx)` exists (`src/scene/usdscene.cpp:1211-1230`) but is **unused**. There's no UI surface, no `SceneEditCommand::CreatePrim` / `RemovePrim`, no way to author USD reference arcs, and the Scene tree's right-click menu stops at Copy / Copy Full Path (`src/ui/scenewindow.cpp:88-95`). Adding a point light to a scene means hand-editing USD.
+`USDScene::createPrim(parentPath, name, typeName, ctx)` exists (`src/scene/usdscene.cpp:1211-1230`) but is **unused**. There's no UI surface, no
+`SceneEditCommand::CreatePrim` / `RemovePrim`, no way to author USD reference arcs, and the Scene tree's right-click menu stops at Copy / Copy Full Path
+(`src/ui/scenewindow.cpp:88-95`). Adding a point light to a scene means hand-editing USD.
 
-**Goal.** Right-click a Scene tree node → **Add Child** → typed prims (Xform, lights, geometry) *or* **Reference…** (reuses the asset browser from `plan_layer_browser.md` to pick an asset). Plus **Delete**. All changes route through the existing `SceneEditCommand` → `SceneUpdater` → `UndoStack` pipeline so undo/redo works for free.
+**Goal.** Right-click a Scene tree node → **Add Child** → typed prims (Xform, lights, geometry) *or* **Reference…** (reuses the asset browser from
+`plan_layer_browser.md` to pick an asset). Plus **Delete**. All changes route through the existing `SceneEditCommand` → `SceneUpdater` → `UndoStack` pipeline so
+undo/redo works for free.
 
-Split into two phases so Phase A (infrastructure + lights + Xform + Reference) can ship independently of Phase B (procedural geometry rendering). After Phase A alone, creating a Cube/Sphere/Cylinder/Cone will author a valid USD prim but it won't render until Phase B lands.
+Split into two phases so Phase A (infrastructure + lights + Xform + Reference) can ship independently of Phase B (procedural geometry rendering). After Phase A
+alone, creating a Cube/Sphere/Cylinder/Cone will author a valid USD prim but it won't render until Phase B lands.
 
 ---
 
@@ -82,14 +87,19 @@ case SceneEditCommand::Type::RemovePrim:
     usdScene.removePrim(cmd.prim, {.purpose = cmd.purpose});
     break;
 ```
-These are structural changes, not transform-only, so they must go through the existing async path (they'll produce a `primsResynced` dirty set → full re-extract). Not eligible for the fast path at `sceneupdater.cpp:42`.
+These are structural changes, not transform-only, so they must go through the existing async path (they'll produce a `primsResynced` dirty set → full
+re-extract). Not eligible for the fast path at `sceneupdater.cpp:42`.
 
 ### Undo integration
 
 Extend `src/scene/undostack.cpp::recordBatch`:
-- `CreatePrim` / `CreateReferencePrim` → inverse is `RemovePrim` against the path `parentPath + "/" + primName`. Path is known at record-time, so this is straightforward.
-- `RemovePrim` → redo requires reconstructing the removed subtree. v1 approach: at record-time, `SdfCopySpec` the removed prim into a temporary `SdfLayer::CreateAnonymous()` and keep the anonymous layer pinned in the undo entry. On undo, flatten that anonymous layer into the current edit target at the original path.
-  - If the anonymous-layer snapshot is too much for v1, skip pushing an inverse for `RemovePrim` — Delete won't be undoable, and we can note this in a follow-up. **Recommended:** ship the anonymous-layer snapshot since `SdfCopySpec` is a one-liner per prim.
+- `CreatePrim` / `CreateReferencePrim` → inverse is `RemovePrim` against the path `parentPath + "/" + primName`. Path is known at record-time, so this is
+  straightforward.
+- `RemovePrim` → redo requires reconstructing the removed subtree. v1 approach: at record-time, `SdfCopySpec` the removed prim into a temporary
+  `SdfLayer::CreateAnonymous()` and keep the anonymous layer pinned in the undo entry. On undo, flatten that anonymous layer into the current edit target at the
+  original path.
+  - If the anonymous-layer snapshot is too much for v1, skip pushing an inverse for `RemovePrim` — Delete won't be undoable, and we can note this in a
+    follow-up. **Recommended:** ship the anonymous-layer snapshot since `SdfCopySpec` is a one-liner per prim.
 
 ### Scene-tree right-click menu
 
@@ -127,7 +137,8 @@ if (ImGui::BeginPopupContextItem()) {
     ImGui::EndPopup();
 }
 ```
-Where `addTypedItem(label, type)` is a lambda that pushes a `CreatePrim` edit with an auto-generated unique child name (`usdScene.uniqueChildName(parentPath, typeBaseName)`).
+Where `addTypedItem(label, type)` is a lambda that pushes a `CreatePrim` edit with an auto-generated unique child name (`usdScene.uniqueChildName(parentPath,
+typeBaseName)`).
 
 ### Reference dialog (reuses the asset browser)
 
@@ -136,7 +147,8 @@ In `src/ui/scenewindow.cpp`, add an `ImGui::BeginPopupModal("Add Reference")` tr
 2. "Create" / "Cancel" buttons. Create is enabled when a file is selected.
 3. On Create: push `CreateReferencePrim{parentPath = sceneState.referenceParent, primName = stem-of-selected-file, referenceAsset = selected}`.
 
-`SceneWindowState` gains `bool openReferenceDialog; std::string referenceParent; AssetBrowserState referenceBrowser;`. The browser's `rootDir` is refreshed from `usdScene.rootLayerDirectory()` each time the modal opens.
+`SceneWindowState` gains `bool openReferenceDialog; std::string referenceParent; AssetBrowserState referenceBrowser;`. The browser's `rootDir` is refreshed from
+`usdScene.rootLayerDirectory()` each time the modal opens.
 
 ### Critical files (Phase A)
 
@@ -150,7 +162,8 @@ In `src/ui/scenewindow.cpp`, add an `ImGui::BeginPopupModal("Add Reference")` tr
 ### Verification (Phase A)
 
 1. Right-click root prim in Scene → **Add Child → Sphere Light** → new `SphereLight_1` appears under it; Properties panel shows the new prim's attributes.
-2. Right-click same prim → **Add Child → Reference…** → modal with the asset browser; pick `models/Kitchen_set/assets/Cup/Cup.usd` → the cup composes in as a child with full geometry.
+2. Right-click same prim → **Add Child → Reference…** → modal with the asset browser; pick `models/Kitchen_set/assets/Cup/Cup.usd` → the cup composes in as a
+   child with full geometry.
 3. Right-click the created prim → **Delete** → removed from tree and render.
 4. `Ctrl+Z` undoes each create; `Ctrl+Shift+Z` redoes. Delete also round-trips.
 5. Layers window shows the edit target layer as dirty after each create/delete.
@@ -159,7 +172,8 @@ In `src/ui/scenewindow.cpp`, add an `ImGui::BeginPopupModal("Add Reference")` tr
 
 ## Phase B — Procedural geometry rendering
 
-The extractor at `src/scene/usdrenderextractor.cpp:6` only handles `UsdGeomMesh`. For `UsdGeomCube/Sphere/Cylinder/Cone` to render after Phase A creates them, the extractor must tessellate them.
+The extractor at `src/scene/usdrenderextractor.cpp:6` only handles `UsdGeomMesh`. For `UsdGeomCube/Sphere/Cylinder/Cone` to render after Phase A creates them,
+the extractor must tessellate them.
 
 ### Approach
 
@@ -177,7 +191,9 @@ The extractor at `src/scene/usdrenderextractor.cpp:6` only handles `UsdGeomMesh`
   }
   ```
 
-- **`src/scene/usdrenderextractor.cpp`** — in the renderable branch, when the prim isn't a Mesh, read the schema attributes (`size`, `radius`, `height`, `axis`) and ask the `MeshLibrary` for a cached tessellation keyed by `(type, params)`. Falls through to the existing UsdGeomMesh path for everything else. One cache entry per distinct parameter combination so hundreds of identically-sized cubes share a vertex buffer.
+- **`src/scene/usdrenderextractor.cpp`** — in the renderable branch, when the prim isn't a Mesh, read the schema attributes (`size`, `radius`, `height`, `axis`)
+  and ask the `MeshLibrary` for a cached tessellation keyed by `(type, params)`. Falls through to the existing UsdGeomMesh path for everything else. One cache
+  entry per distinct parameter combination so hundreds of identically-sized cubes share a vertex buffer.
 
 ### Critical files (Phase B)
 
@@ -189,7 +205,8 @@ The extractor at `src/scene/usdrenderextractor.cpp:6` only handles `UsdGeomMesh`
 
 1. Right-click any Xform → **Add Child → Cube** → a unit cube renders at the parent's origin.
 2. Same for Sphere / Cylinder / Cone.
-3. Selecting the new prim in the Scene tree anchors the gizmos on the tessellated bounds (the existing anchor walker in `sceneQuery` should pick it up automatically once `PrimFlagRenderable` fires).
+3. Selecting the new prim in the Scene tree anchors the gizmos on the tessellated bounds (the existing anchor walker in `sceneQuery` should pick it up
+   automatically once `PrimFlagRenderable` fires).
 4. Re-running with `./_out/ngen` on a scene that already contains tessellated shapes (e.g. saved then reopened) renders them identically.
 
 ---

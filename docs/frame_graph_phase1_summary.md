@@ -2,7 +2,8 @@
 
 ## What Changed
 
-Phase 1 delivered dynamic rendering (RHI prerequisite), frame graph core types, compilation, and renderer integration. The existing forward pass now runs through the frame graph.
+Phase 1 delivered dynamic rendering (RHI prerequisite), frame graph core types, compilation, and renderer integration. The existing forward pass now runs
+through the frame graph.
 
 ---
 
@@ -30,7 +31,8 @@ Replaced the legacy VkRenderPass/VkFramebuffer path with Vulkan 1.3 dynamic rend
 
 ### Pipeline creation
 
-`RhiGraphicsPipelineDesc` now takes `colorFormats` + `depthFormat` instead of `RhiRenderPass*`. The Vulkan backend chains `VkPipelineRenderingCreateInfo` into the pipeline create info.
+`RhiGraphicsPipelineDesc` now takes `colorFormats` + `depthFormat` instead of `RhiRenderPass*`. The Vulkan backend chains `VkPipelineRenderingCreateInfo` into
+the pipeline create info.
 
 ### Swapchain
 

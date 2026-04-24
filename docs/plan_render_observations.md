@@ -2,16 +2,19 @@
 
 Iterable. Push back on anything.
 
-Companion to [`plan_observability.md`](plan_observability.md), which defined the bus and shipped Phase 1 (`Scene` + `Engine` categories). This doc covers the `Render` category only — Phase 2 for the renderer. RHI is explicitly out of scope; emissions live in `src/renderer/`, never in `src/rhi/`.
+Companion to [`plan_observability.md`](plan_observability.md), which defined the bus and shipped Phase 1 (`Scene` + `Engine` categories). This doc covers the
+`Render` category only — Phase 2 for the renderer. RHI is explicitly out of scope; emissions live in `src/renderer/`, never in `src/rhi/`.
 
 ---
 
 ## 1. Scope
 
-**In:** decisions and state changes inside the renderer frontend — frame lifecycle, frame graph compile/execute, pass execution and culling, swapchain recreation, GPU resource upload on cache miss, render-world handoff from main thread, render-thread lifecycle.
+**In:** decisions and state changes inside the renderer frontend — frame lifecycle, frame graph compile/execute, pass execution and culling, swapchain
+recreation, GPU resource upload on cache miss, render-world handoff from main thread, render-thread lifecycle.
 
 **Out (by design):**
-- Anything in `src/rhi/` — that's a hardware abstraction layer, not a Claude-relevant concern. No RHI command recording, queue submits, resource creation, or device events.
+- Anything in `src/rhi/` — that's a hardware abstraction layer, not a Claude-relevant concern. No RHI command recording, queue submits, resource creation, or
+  device events.
 - Per-draw / per-instance / per-vertex emissions — hot-loop noise (see `plan_observability.md` §3.2 "Explicitly not instrumented").
 - Transient resource pool allocate/reuse/release (chatty; behind a future opt-in category if ever needed).
 - Descriptor-pool recreation, `RenderSnapshotProcessed`, `FrameGraphDebugSnapshotCaptured` — internal/redundant (see parent plan).
@@ -36,7 +39,8 @@ All sites run on the **render thread** unless noted. Line numbers below were ver
 | `RenderThreadStart` | `renderthread.cpp:~9`, in `RenderThread::start()` | — | **Main thread** — the only main-thread emission in this category. |
 | `RenderThreadStop` | `renderthread.cpp:~20`, in `RenderThread::stop()` after join | — | **Main thread.** |
 
-`name` convention: for frame-scope events, use a stable string like `"frame"` or the frame graph name; for pass events use the pass's own `name` member; for swapchain/thread events use `"swapchain"` / `"RenderThread"`.
+`name` convention: for frame-scope events, use a stable string like `"frame"` or the frame graph name; for pass events use the pass's own `name` member; for
+swapchain/thread events use `"swapchain"` / `"RenderThread"`.
 
 ---
 
@@ -44,7 +48,9 @@ All sites run on the **render thread** unless noted. Line numbers below were ver
 
 ### 3.1 Frame counter on `Renderer`
 
-A monotonic `uint64_t` incremented once per `Renderer::render()` call. Lives on the render thread; never read from any other thread. One of the existing debug paths already has `fgDebugFrameCounter` (`renderthread.cpp:76`) but it only increments when the frame-graph debug snapshot is enabled, so it's not a reliable counter for always-on observations.
+A monotonic `uint64_t` incremented once per `Renderer::render()` call. Lives on the render thread; never read from any other thread. One of the existing debug
+paths already has `fgDebugFrameCounter` (`renderthread.cpp:76`) but it only increments when the frame-graph debug snapshot is enabled, so it's not a reliable
+counter for always-on observations.
 
 ```cpp
 // src/renderer/renderer.h — private member
@@ -57,7 +63,8 @@ OBS_EVENT("Render", "FrameBegin", "frame").field("frame", frame);
 OBS_EVENT("Render", "FrameEnd", "frame").field("frame", frame);
 ```
 
-Keep the counter on `Renderer`, not on `RenderThread` — `Renderer::render()` is the single frame boundary and owning it there means no plumbing. Pre-increment (start at 1) so frame 0 never appears; readers don't have to guess whether 0 means "first frame" or "uninitialized."
+Keep the counter on `Renderer`, not on `RenderThread` — `Renderer::render()` is the single frame boundary and owning it there means no plumbing. Pre-increment
+(start at 1) so frame 0 never appears; readers don't have to guess whether 0 means "first frame" or "uninitialized."
 
 ### 3.2 FrameGraph counts
 
@@ -78,14 +85,17 @@ Trivial, observation-only. Alternative (return a struct from `compile()`) is mor
 
 ## 4. `PassExecuted`: one site, not nine
 
-The abstract plan said "Execute lambda in each of 9 `src/renderer/passes/*.cpp`." Reconsidered: a single hook inside `framegraph.cpp`'s execute loop is strictly better here.
+The abstract plan said "Execute lambda in each of 9 `src/renderer/passes/*.cpp`." Reconsidered: a single hook inside `framegraph.cpp`'s execute loop is strictly
+better here.
 
 - **Nine per-pass emissions:** boilerplate in every pass, nine opportunities to forget one, and every new pass added later needs the same copy-paste.
-- **One centralized emission at `framegraph.cpp:303`:** fires for every pass by construction, automatically picks up new passes, reads `passes[i].name` which the passes already author. Same observation shape as the per-pass version — the observation says "this pass ran," which is the intent.
+- **One centralized emission at `framegraph.cpp:303`:** fires for every pass by construction, automatically picks up new passes, reads `passes[i].name` which
+  the passes already author. Same observation shape as the per-pass version — the observation says "this pass ran," which is the intent.
 
 Pick centralized. The parent plan's per-pass wording is a finding-worth-correcting, not a requirement.
 
-(If a specific pass later wants to emit *additional* observations — `shadowpass` emitting cascade counts, `lightingpass` emitting light-cluster stats — those go in the pass file as ordinary observations, not as replacements for `PassExecuted`.)
+(If a specific pass later wants to emit *additional* observations — `shadowpass` emitting cascade counts, `lightingpass` emitting light-cluster stats — those go
+in the pass file as ordinary observations, not as replacements for `PassExecuted`.)
 
 ---
 
@@ -94,10 +104,12 @@ Pick centralized. The parent plan's per-pass wording is a finding-worth-correcti
 `RenderWorld` exposes `meshInstances` (countable). Material and instance counts are not directly surfaced:
 
 - **`mesh_count`**: `world.meshInstances.size()` — trivial.
-- **`material_count`**: no direct accessor. Options: (a) iterate `meshInstances` unique-by-material (O(N), fine for current scales); (b) add a `materialCount()` accessor on `RenderWorld`; (c) drop the field in Phase 2 and add later when needed.
+- **`material_count`**: no direct accessor. Options: (a) iterate `meshInstances` unique-by-material (O(N), fine for current scales); (b) add a `materialCount()`
+  accessor on `RenderWorld`; (c) drop the field in Phase 2 and add later when needed.
 - **`instance_count`**: same situation as materials.
 
-Recommendation: ship `mesh_count` only in Phase 2; treat materials/instances as a follow-up. The parent plan listed all three but this is exactly the kind of thing that gets adjusted when the code is in front of us.
+Recommendation: ship `mesh_count` only in Phase 2; treat materials/instances as a follow-up. The parent plan listed all three but this is exactly the kind of
+thing that gets adjusted when the code is in front of us.
 
 ---
 
@@ -105,9 +117,12 @@ Recommendation: ship `mesh_count` only in Phase 2; treat materials/instances as 
 
 All render-thread emissions are already safe — `emit()` is lock-free and the bus is MPSC-ready. No new synchronization.
 
-One subtle thing: `RenderThreadStart` emits *before* the render thread exists. Emitting from `start()` is on the main thread, which is fine. `RenderThreadStop` emits on the main thread *after* the join completes, so any in-flight render-thread emissions are already enqueued ahead of the stop marker — ordering is honest.
+One subtle thing: `RenderThreadStart` emits *before* the render thread exists. Emitting from `start()` is on the main thread, which is fine. `RenderThreadStop`
+emits on the main thread *after* the join completes, so any in-flight render-thread emissions are already enqueued ahead of the stop marker — ordering is
+honest.
 
-Category filter is still frozen by the time any of these hooks fire: `main.cpp` installs the sink and configures categories before `RenderThread::start()` is called.
+Category filter is still frozen by the time any of these hooks fire: `main.cpp` installs the sink and configures categories before `RenderThread::start()` is
+called.
 
 ---
 
@@ -126,7 +141,8 @@ One phase; the whole set is small enough.
 6. `SwapchainRecreate` (rare; tests the error-path emissions)
 7. `MeshUploaded` / `TextureUploaded` (upload-path emissions)
 
-**Step 3.** Smoke-test by running the editor, moving the camera to force a frame or two, loading a fresh scene to force uploads, and resizing the window to force swapchain recreation. Confirm each observation type appears at least once in the resulting `.jsonl`.
+**Step 3.** Smoke-test by running the editor, moving the camera to force a frame or two, loading a fresh scene to force uploads, and resizing the window to
+force swapchain recreation. Confirm each observation type appears at least once in the resulting `.jsonl`.
 
 **Step 4.** Update `obs.md` only if we find emissions whose field shape differs from what §9 of the parent plan documented.
 
@@ -138,5 +154,6 @@ Estimate: ~1 hour of code, most of it repetitive `OBS_EVENT(...)` lines.
 
 - Timing / duration fields on any Render emission. Observations answer "what happened," not "how fast" (parent plan §8). Profiling is a separate system.
 - GPU-side observations (pipeline binds, draw counts, descriptor writes). That's RHI territory.
-- Frame-number fields on emissions *other than* `FrameBegin`/`FrameEnd`. Those two bracket everything; readers can compute frame membership from ordering without every row carrying the number.
+- Frame-number fields on emissions *other than* `FrameBegin`/`FrameEnd`. Those two bracket everything; readers can compute frame membership from ordering
+  without every row carrying the number.
 - Per-pass custom shape (e.g. `ShadowCascadesRendered`, `LightClusterBinned`). Those are follow-ups once the basic `PassExecuted` narration proves useful.

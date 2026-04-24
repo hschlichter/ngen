@@ -7,22 +7,29 @@ A modern 3D engine written in C++23 with a Vulkan rendering backend and OpenUSD 
 ## Features
 
 - **Deferred Lighting** — G-buffer pass (albedo + normals MRT) followed by a fullscreen lighting pass with directional + ambient shading
-- **G-buffer Debug Views** — Fullscreen buffer visualization (Albedo, Normals, Depth, Lit) and a toggleable bottom-strip overlay showing all buffers simultaneously
-- **Threaded Rendering** — Pipelined main/render thread architecture with snapshot-based handoff, allowing the main thread to run one frame ahead of the render thread
+- **G-buffer Debug Views** — Fullscreen buffer visualization (Albedo, Normals, Depth, Lit) and a toggleable bottom-strip overlay showing all buffers
+  simultaneously
+- **Threaded Rendering** — Pipelined main/render thread architecture with snapshot-based handoff, allowing the main thread to run one frame ahead of the render
+  thread
 - **Vulkan Renderer** — Dynamic rendering (VK_KHR_dynamic_rendering), synchronization2 barriers, dynamic viewport/scissor
-- **Frame Graph** — Declarative render pass system with automatic dependency resolution, topological sorting, pass culling, write-chain ordering, and barrier insertion
+- **Frame Graph** — Declarative render pass system with automatic dependency resolution, topological sorting, pass culling, write-chain ordering, and barrier
+  insertion
 - **Transient Resource Management** — Pool-based GPU resource allocation with lifetime tracking
 - **RHI Abstraction** — Backend-agnostic GPU interface, currently implemented for Vulkan
 - **Swapchain Recreation** — Automatic resize handling with resource pool flushing
 - **OpenUSD Scene System** — Stage loading, layer stack, composition, sublayer management
 - **Scene Graph UI** — Hierarchical tree view with selection, raycast picking, context menus, auto-scroll-to-selection
 - **Property Inspector** — Transform (local + world), visibility, bounds (own + subtree), material inspection; values are click-to-select-and-copy
-- **Gizmos** — Translate (single-axis arrows + plane handles for 2-axis movement), Rotate (per-axis circles), Scale (per-axis with position compensation to scale from the anchor). All gizmos anchor on the visible mesh (walks up `!resetXformStack!` ancestors and uses subtree bounds for Xform parents)
+- **Gizmos** — Translate (single-axis arrows + plane handles for 2-axis movement), Rotate (per-axis circles), Scale (per-axis with position compensation to
+  scale from the anchor). All gizmos anchor on the visible mesh (walks up `!resetXformStack!` ancestors and uses subtree bounds for Xform parents)
 - **Tools Window** — Select / Translate / Rotate / Scale tool selector; Select mode disables gizmo handles for click-through picking
 - **Orientation Gizmo** — Corner viewport with X/Y/Z axis indicator, billboarded labels, and click-to-snap-to-axis
 - **Undo / Redo** — Per-frame snapshot stack with `Ctrl+Z` / `Ctrl+Shift+Z`, an Edit menu, and a History panel listing entries with their target prim
-- **Preview / Authoring Edit Pipeline** — Interactive operations (gizmo drag, Properties slider scrub) emit transient `Preview` edits that only touch the runtime cache; one final `Authoring` edit commits to the USD layer on operation end. Keeps interactive frames at microseconds and gives undo a meaningful commit boundary
-- **Incremental Scene Updates** — Fast path applies transform edits inline (no async batch, no library copies, no descriptor rebuilds) and patches only the affected `RenderWorld` instances + BVH leaves
+- **Preview / Authoring Edit Pipeline** — Interactive operations (gizmo drag, Properties slider scrub) emit transient `Preview` edits that only touch the
+  runtime cache; one final `Authoring` edit commits to the USD layer on operation end. Keeps interactive frames at microseconds and gives undo a meaningful
+  commit boundary
+- **Incremental Scene Updates** — Fast path applies transform edits inline (no async batch, no library copies, no descriptor rebuilds) and patches only the
+  affected `RenderWorld` instances + BVH leaves
 - **Layer Management** — Full layer stack (session, root, sublayers, referenced), mute/unmute, add/save
 - **Debug Renderer** — Line-based debug drawing (AABBs, selection highlights)
 - **Job System** — Thread pool with fence-based synchronization for background work
@@ -71,33 +78,52 @@ Frame N:   [Main: update + prepare]  -->  [Render: build FG + record CB + submit
 Frame N+1: [Main: update + prepare]  -->  [Render: ...]                             -->  ...
 ```
 
-The main thread prepares a `RenderSnapshot` each frame containing view/projection matrices, render settings, deep-copied ImGui draw data, debug geometry, and the active gizmo's vertex buffer (translate, rotate, or scale). This snapshot is handed off to a dedicated render thread via a single-slot condvar with back-pressure (main blocks if the render thread hasn't consumed the previous snapshot). Scene uploads (mesh/texture data) travel through a separate channel and are processed at the start of each render frame.
+The main thread prepares a `RenderSnapshot` each frame containing view/projection matrices, render settings, deep-copied ImGui draw data, debug geometry, and
+the active gizmo's vertex buffer (translate, rotate, or scale). This snapshot is handed off to a dedicated render thread via a single-slot condvar with
+back-pressure (main blocks if the render thread hasn't consumed the previous snapshot). Scene uploads (mesh/texture data) travel through a separate channel and
+are processed at the start of each render frame.
 
 ### Edit Pipeline
 
-Interactive operations follow a **Preview → Authoring** lifecycle (see `docs/architecture_preview_vs_authoring.md`). Each frame the user is dragging a gizmo or scrubbing a slider, the engine emits one or more `Preview` `SceneEditCommand`s — the `SceneUpdater` fast path applies them directly to the runtime transform cache, patches only the affected `RenderWorld` instances and BVH leaves, and skips USD entirely. On operation end (mouse-up, slider release) one `Authoring` edit commits the final value to the active USD layer; that commit is the undo step. Heavyweight edits (`SetVisibility`, layer mutes, sublayer ops, resyncs) take the existing async batch path through a worker thread.
+Interactive operations follow a **Preview → Authoring** lifecycle (see `docs/architecture_preview_vs_authoring.md`). Each frame the user is dragging a gizmo or
+scrubbing a slider, the engine emits one or more `Preview` `SceneEditCommand`s — the `SceneUpdater` fast path applies them directly to the runtime transform
+cache, patches only the affected `RenderWorld` instances and BVH leaves, and skips USD entirely. On operation end (mouse-up, slider release) one `Authoring`
+edit commits the final value to the active USD layer; that commit is the undo step. Heavyweight edits (`SetVisibility`, layer mutes, sublayer ops, resyncs) take
+the existing async batch path through a worker thread.
 
 ### Lighting & Shadows
 
-Deferred directional lighting with hard shadow mapping. The `GeometryPass` writes albedo / normals / depth into a G-buffer; `ShadowPass` renders the scene's depth from the first directional light's point of view into a 1024² shadow map; the fullscreen `LightingPass` reconstructs each fragment's world-space position from the G-buffer depth and the inverse view-projection, projects it into light-clip space, and compares against the shadow map to modulate the diffuse term. The shadow ortho is auto-fitted to a bounding sphere around the instance origins each frame, so it scales to whatever scene you load. Dedicated debug views (`Shadow Map`, `Shadow Factor`, `Shadow UV`, `World Pos`) are available under **Debug → Fullscreen Buffer View** and as a top-strip overlay via **Debug → Show Shadow Overlay**.
+Deferred directional lighting with hard shadow mapping. The `GeometryPass` writes albedo / normals / depth into a G-buffer; `ShadowPass` renders the scene's
+depth from the first directional light's point of view into a 1024² shadow map; the fullscreen `LightingPass` reconstructs each fragment's world-space position
+from the G-buffer depth and the inverse view-projection, projects it into light-clip space, and compares against the shadow map to modulate the diffuse term.
+The shadow ortho is auto-fitted to a bounding sphere around the instance origins each frame, so it scales to whatever scene you load. Dedicated debug views
+(`Shadow Map`, `Shadow Factor`, `Shadow UV`, `World Pos`) are available under **Debug → Fullscreen Buffer View** and as a top-strip overlay via **Debug → Show
+Shadow Overlay**.
 
 ![Deferred lighting with shadow-mapped scene and shadow-map debug overlay](docs/engine_lighting_shadows.png)
 
 ### Directional Light
 
-Directional lights are authored as `UsdLuxDistantLight` prims; color, intensity, exposure, and `UsdLuxShadowAPI::shadow:color` all drive the lighting pass directly. When a loaded stage has no distant light, the engine authors one into the session layer so the scene is never unlit — edits to that default light round-trip through the Properties panel but stay in-session and don't touch the source file. Rotation and position edits flow through the fast transform path, so the shadow frustum and shading direction update live as you drag. **Debug → Show Light Gizmos** draws a sun disc and arrow anchored along the toward-light direction, sized to the scene bounds, so the visualized position always agrees with the direction the shader actually uses.
+Directional lights are authored as `UsdLuxDistantLight` prims; color, intensity, exposure, and `UsdLuxShadowAPI::shadow:color` all drive the lighting pass
+directly. When a loaded stage has no distant light, the engine authors one into the session layer so the scene is never unlit — edits to that default light
+round-trip through the Properties panel but stay in-session and don't touch the source file. Rotation and position edits flow through the fast transform path,
+so the shadow frustum and shading direction update live as you drag. **Debug → Show Light Gizmos** draws a sun disc and arrow anchored along the toward-light
+direction, sized to the scene bounds, so the visualized position always agrees with the direction the shader actually uses.
 
 ![Directional light gizmo anchored to the scene, with shadows following the light](docs/engine_lighting_sun.png)
 
 ### Frame Graph Debugger
 
-The Frame Graph window (**Debug → Frame Graph**) exposes every render pass and the resources flowing between them, with live thumbnails blitted from each color target each frame. Two views of the same graph:
+The Frame Graph window (**Debug → Frame Graph**) exposes every render pass and the resources flowing between them, with live thumbnails blitted from each color
+target each frame. Two views of the same graph:
 
-**List view** — passes in execution order with their reads and writes; clicking any row pins the full resource details (size, format, lifetime, producer, consumers) in the bottom pane.
+**List view** — passes in execution order with their reads and writes; clicking any row pins the full resource details (size, format, lifetime, producer,
+consumers) in the bottom pane.
 
 ![Frame graph list view](docs/engine_framegraph_list.png)
 
-**Graph view** — passes arranged across a single row at the top, with resources stacked directly beneath their producer. Edges are access-colored and highlight when either endpoint is selected. Pan with middle-drag (or left-drag on empty canvas); scroll to zoom.
+**Graph view** — passes arranged across a single row at the top, with resources stacked directly beneath their producer. Edges are access-colored and highlight
+when either endpoint is selected. Pan with middle-drag (or left-drag on empty canvas); scroll to zoom.
 
 ![Frame graph node view](docs/engine_framegraph_nodes.png)
 

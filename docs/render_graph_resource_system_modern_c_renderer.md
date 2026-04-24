@@ -2,7 +2,8 @@
 
 ## 1. Overview
 
-A **render graph** is a data-driven system that describes *what work happens each frame* and *how GPU resources flow between passes*. It replaces hardcoded render pipelines with a dependency graph that the engine can analyze, optimize, and execute.
+A **render graph** is a data-driven system that describes *what work happens each frame* and *how GPU resources flow between passes*. It replaces hardcoded
+render pipelines with a dependency graph that the engine can analyze, optimize, and execute.
 
 The render graph is tightly coupled with the **resource system** because:
 
@@ -316,5 +317,6 @@ private:
 
 Think of the render graph as:
 
-> A compiler that transforms high-level rendering intent into optimized GPU command execution, while managing resource lifetimes and synchronization automatically.
+> A compiler that transforms high-level rendering intent into optimized GPU command execution, while managing resource lifetimes and synchronization
+> automatically.
 

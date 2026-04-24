@@ -2,11 +2,14 @@
 
 ## Context
 
-`uploadRenderWorld` takes 1.2 seconds on the 5x5 city (~100 meshes) because it calls `waitIdle()`, destroys every GPU resource, and recreates everything from scratch. This runs on the main thread and can't be backgrounded (Vulkan). The fix is to make it incremental — only create/destroy resources that actually changed.
+`uploadRenderWorld` takes 1.2 seconds on the 5x5 city (~100 meshes) because it calls `waitIdle()`, destroys every GPU resource, and recreates everything from
+scratch. This runs on the main thread and can't be backgrounded (Vulkan). The fix is to make it incremental — only create/destroy resources that actually
+changed.
 
 ## Root Causes
 
-1. **No resource caching** — every mesh instance gets its own vertex buffer, index buffer, and texture, even when multiple instances reference the same MeshHandle/MaterialHandle
+1. **No resource caching** — every mesh instance gets its own vertex buffer, index buffer, and texture, even when multiple instances reference the same
+   MeshHandle/MaterialHandle
 2. **Full teardown on every upload** — all GPU resources destroyed before any are created
 3. **Descriptor pool rebuilt from scratch** — pool + all sets reallocated every time
 4. **Fallback texture recreated** — the checkerboard is regenerated every upload
@@ -16,7 +19,8 @@
 
 ### Phase 1: Resource Caching (biggest win)
 
-Cache GPU resources by their library handle. If 50 building instances all reference the same `MeshHandle`, they share one vertex buffer and one index buffer. Same for textures by `MaterialHandle`.
+Cache GPU resources by their library handle. If 50 building instances all reference the same `MeshHandle`, they share one vertex buffer and one index buffer.
+Same for textures by `MaterialHandle`.
 
 **New members in Renderer:**
 ```cpp
@@ -47,7 +51,8 @@ struct GpuMesh {
 
 Draw calls look up the cached buffers/textures by handle at render time instead of storing pointers per-instance.
 
-For the 5x5 city: 100 building instances all reference 1 MeshHandle → 1 vertex buffer + 1 index buffer instead of 100. Upload drops from ~100 buffer creates to ~1.
+For the 5x5 city: 100 building instances all reference 1 MeshHandle → 1 vertex buffer + 1 index buffer instead of 100. Upload drops from ~100 buffer creates to
+~1.
 
 ### Phase 2: Diff-Based Upload
 
@@ -63,13 +68,15 @@ for each entry in meshCache not referenced by any instance → destroy, remove
 for each entry in textureCache not referenced by any instance → destroy, remove
 ```
 
-Only `waitIdle()` if resources are actually being destroyed (to ensure the GPU isn't using them). If only transforms changed, no GPU stall needed — transforms are push constants, updated per-draw.
+Only `waitIdle()` if resources are actually being destroyed (to ensure the GPU isn't using them). If only transforms changed, no GPU stall needed — transforms
+are push constants, updated per-draw.
 
 ### Phase 3: Descriptor Set Management
 
 Current: `imgCount * meshCount` sets, all recreated every upload.
 
-New: Descriptor sets bind UBO + texture. Since textures are now cached and shared, sets can be organized by `{frameIndex, materialHandle}` instead of `{frameIndex, instanceIndex}`. This dramatically reduces the set count and eliminates per-upload reallocation.
+New: Descriptor sets bind UBO + texture. Since textures are now cached and shared, sets can be organized by `{frameIndex, materialHandle}` instead of
+`{frameIndex, instanceIndex}`. This dramatically reduces the set count and eliminates per-upload reallocation.
 
 Alternatively, keep per-instance sets but only recreate when the texture binding changes (rare — only on material reassignment or first upload).
 

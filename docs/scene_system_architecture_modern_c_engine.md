@@ -2,7 +2,8 @@
 
 ## 1. Overview
 
-A **scene system** sits above the rendering system and is responsible for organizing the world in a form that gameplay, tools, simulation, and rendering can all use.
+A **scene system** sits above the rendering system and is responsible for organizing the world in a form that gameplay, tools, simulation, and rendering can all
+use.
 
 It should not be thought of as part of the renderer itself. Instead, it acts as the layer that owns and manages:
 
@@ -623,5 +624,6 @@ Engine
 
 ## 24. Mental Model
 
-> The scene system describes what exists in the world and how it is organized; the renderer consumes an extracted, GPU-friendly view of that world to draw a frame.
+> The scene system describes what exists in the world and how it is organized; the renderer consumes an extracted, GPU-friendly view of that world to draw a
+> frame.
 

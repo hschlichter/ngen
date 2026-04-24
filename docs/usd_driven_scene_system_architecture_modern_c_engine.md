@@ -2,9 +2,11 @@
 
 ## 1. Overview
 
-If the goal is to fully embrace **USD features such as layering, composition, references, payloads, and variants**, then the earlier scene-system model needs to be adjusted.
+If the goal is to fully embrace **USD features such as layering, composition, references, payloads, and variants**, then the earlier scene-system model needs to
+be adjusted.
 
-In that case, USD should no longer be treated only as an import format. Instead, it becomes a **core scene description model** that the engine understands directly.
+In that case, USD should no longer be treated only as an import format. Instead, it becomes a **core scene description model** that the engine understands
+directly.
 
 The architecture then shifts from:
 
@@ -28,7 +30,8 @@ Renderer
 
 This is a fundamentally different design.
 
-The scene system is no longer just an engine-native hierarchy with an importer at the front. It becomes a **USD-aware scene runtime** that uses a USD stage as an authoritative or semi-authoritative source of world state.
+The scene system is no longer just an engine-native hierarchy with an importer at the front. It becomes a **USD-aware scene runtime** that uses a USD stage as
+an authoritative or semi-authoritative source of world state.
 
 ---
 
@@ -313,7 +316,8 @@ USDScene
 
 This is not a classic ECS-first design.
 
-Instead, the USD scene system becomes the source of truth for authored object structure, and ECS-style runtime components may exist only for dynamic subsystems that need them.
+Instead, the USD scene system becomes the source of truth for authored object structure, and ECS-style runtime components may exist only for dynamic subsystems
+that need them.
 
 ---
 
@@ -719,7 +723,8 @@ public:
 
 ## 24. Mental Model
 
-> A USD-driven scene system is not just an importer; it is a layer-aware scene runtime where the USD stage defines authored world structure and composition, while the engine builds fast caches, query systems, and render extraction on top of that composed scene.
+> A USD-driven scene system is not just an importer; it is a layer-aware scene runtime where the USD stage defines authored world structure and composition,
+> while the engine builds fast caches, query systems, and render extraction on top of that composed scene.
 
 ---
 

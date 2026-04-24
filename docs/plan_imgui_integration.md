@@ -6,9 +6,11 @@ Add Dear ImGui to the engine as the UI library for engine tooling (scene inspect
 
 ## Approach: Platform-agnostic UI layer with backend-specific implementations
 
-Dear ImGui ships with battle-tested backend implementations (`imgui_impl_vulkan`, `imgui_impl_sdl3`, etc.). We use these directly rather than reimplementing ImGui rendering through our RHI abstraction — this avoids unnecessary work and keeps us on the well-maintained upstream path.
+Dear ImGui ships with battle-tested backend implementations (`imgui_impl_vulkan`, `imgui_impl_sdl3`, etc.). We use these directly rather than reimplementing
+ImGui rendering through our RHI abstraction — this avoids unnecessary work and keeps us on the well-maintained upstream path.
 
-The UI layer follows the same pattern as the rest of the engine: a platform-agnostic interface in `src/ui/` with backend-specific implementations in `src/ui/vulkan/`. All Vulkan-specific ImGui calls live in the Vulkan implementation, never in the shared UI code.
+The UI layer follows the same pattern as the rest of the engine: a platform-agnostic interface in `src/ui/` with backend-specific implementations in
+`src/ui/vulkan/`. All Vulkan-specific ImGui calls live in the Vulkan implementation, never in the shared UI code.
 
 ---
 
@@ -39,7 +41,8 @@ class UI {
 };
 ```
 
-**`src/rhi/vulkan/uivulkan.h`** / **`src/rhi/vulkan/uivulkan.cpp`** — Vulkan implementation. All `imgui_impl_vulkan` and `imgui_impl_sdl3` calls live here, alongside the rest of the Vulkan backend code.
+**`src/rhi/vulkan/uivulkan.h`** / **`src/rhi/vulkan/uivulkan.cpp`** — Vulkan implementation. All `imgui_impl_vulkan` and `imgui_impl_sdl3` calls live here,
+alongside the rest of the Vulkan backend code.
 
 ```
 UIVulkan::init(SDL_Window*, RhiDevice*)
@@ -69,11 +72,13 @@ UIVulkan::shutdown()
   - ImGui::DestroyContext()
 ```
 
-Callers (main.cpp, renderer) only see `UI*` — they never touch Vulkan-specific ImGui code. A future D3D12 backend would add `src/rhi/d3d12/uid3d12.cpp` implementing the same interface.
+Callers (main.cpp, renderer) only see `UI*` — they never touch Vulkan-specific ImGui code. A future D3D12 backend would add `src/rhi/d3d12/uid3d12.cpp`
+implementing the same interface.
 
 ### 3. ImGui as a frame graph pass
 
-The renderer now uses a frame graph (`FrameGraph` in `src/renderer/`) with topological sorting, automatic barrier insertion, and transient resource management. ImGui rendering becomes a dedicated pass in the graph.
+The renderer now uses a frame graph (`FrameGraph` in `src/renderer/`) with topological sorting, automatic barrier insertion, and transient resource management.
+ImGui rendering becomes a dedicated pass in the graph.
 
 In `Renderer::render()`, after the existing `ForwardPass`, add a new `DebugUIPass`:
 
@@ -96,14 +101,16 @@ frameGraph.addPass<DebugDebugUIPassData>(
 - The DebugUIPass writes to the same color attachment the ForwardPass writes to. The frame graph handles the layout transition automatically.
 - No depth attachment needed — ImGui draws 2D overlays.
 - `setSideEffects(true)` ensures the pass is never culled.
-- The frame graph's topological sort guarantees DebugUIPass executes after ForwardPass (since both write the same color resource, and DebugUIPass reads the result of ForwardPass's write).
+- The frame graph's topological sort guarantees DebugUIPass executes after ForwardPass (since both write the same color resource, and DebugUIPass reads the
+  result of ForwardPass's write).
 
 ### 4. Expose Vulkan internals for ImGui init
 
 `ImGui_ImplVulkan_Init` needs raw Vulkan handles: `VkInstance`, `VkPhysicalDevice`, `VkDevice`, `VkQueue`, `VkDescriptorPool`, `VkRenderPass`, etc.
 
 Options:
-- **a)** Add accessor methods to `RhiDeviceVulkan` that return the raw handles. These are Vulkan-specific so they live on the concrete class, not the abstract interface.
+- **a)** Add accessor methods to `RhiDeviceVulkan` that return the raw handles. These are Vulkan-specific so they live on the concrete class, not the abstract
+  interface.
 - **b)** Create a dedicated descriptor pool for ImGui (recommended — keeps it isolated from scene descriptor allocation).
 
 ### 5. Wire into main loop
@@ -124,7 +131,8 @@ ImGui::ShowDemoWindow();  // replace with actual tool UI later
 renderer.render(cam, window);  // frame graph includes DebugUIPass which calls ui->render()
 ```
 
-The renderer owns the `UI*` pointer and calls `ui->render()` from within the DebugUIPass execute lambda. No need to split `Renderer::draw()` into `beginFrame()`/`endFrame()` — the frame graph handles pass ordering and command buffer recording internally.
+The renderer owns the `UI*` pointer and calls `ui->render()` from within the DebugUIPass execute lambda. No need to split `Renderer::draw()` into
+`beginFrame()`/`endFrame()` — the frame graph handles pass ordering and command buffer recording internally.
 
 ### 6. Build and verify
 
@@ -148,6 +156,8 @@ The renderer owns the `UI*` pointer and calls `ui->render()` from within the Deb
 
 ## Decisions made
 
-- **ImGui as a frame graph pass** — the DebugUIPass is a dedicated node in the frame graph that writes the swapchain color attachment after the ForwardPass. The frame graph handles ordering, barriers, and command buffer recording. No need to split `Renderer::render()`.
-- **Renderer owns the UI pointer** — `main.cpp` calls `ui.beginFrame()` and issues ImGui draw calls, but the actual `ui->render()` happens inside the DebugUIPass execute lambda within `Renderer::render()`.
+- **ImGui as a frame graph pass** — the DebugUIPass is a dedicated node in the frame graph that writes the swapchain color attachment after the ForwardPass. The
+  frame graph handles ordering, barriers, and command buffer recording. No need to split `Renderer::render()`.
+- **Renderer owns the UI pointer** — `main.cpp` calls `ui.beginFrame()` and issues ImGui draw calls, but the actual `ui->render()` happens inside the
+  DebugUIPass execute lambda within `Renderer::render()`.
 - **No docking branch** — use ImGui `master` for now, keep it simple.

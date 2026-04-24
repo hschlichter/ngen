@@ -2,7 +2,8 @@
 
 ## What Changed
 
-Phase 3 added transient resource lifetime tracking and intra-frame aliasing. Transient resources are now allocated at first use and released at last use, allowing resources with non-overlapping lifetimes to share the same GPU memory through pool reuse.
+Phase 3 added transient resource lifetime tracking and intra-frame aliasing. Transient resources are now allocated at first use and released at last use,
+allowing resources with non-overlapping lifetimes to share the same GPU memory through pool reuse.
 
 ---
 
@@ -21,7 +22,8 @@ These store the index into the sorted pass order where a transient resource is f
 
 ### compile() (framegraph.cpp)
 
-After topological sort and pass culling, a new step scans all non-culled passes in execution order. For each transient (non-external) resource referenced by a pass's reads or writes, updates its `firstUseOrder` and `lastUseOrder`.
+After topological sort and pass culling, a new step scans all non-culled passes in execution order. For each transient (non-external) resource referenced by a
+pass's reads or writes, updates its `firstUseOrder` and `lastUseOrder`.
 
 ---
 
@@ -29,7 +31,8 @@ After topological sort and pass culling, a new step scans all non-culled passes 
 
 ### Previous behavior
 
-All transients were allocated before any pass ran and released after all passes completed. Two transients with the same descriptor always consumed separate GPU memory, even if their lifetimes didn't overlap.
+All transients were allocated before any pass ran and released after all passes completed. Two transients with the same descriptor always consumed separate GPU
+memory, even if their lifetimes didn't overlap.
 
 ### New behavior
 

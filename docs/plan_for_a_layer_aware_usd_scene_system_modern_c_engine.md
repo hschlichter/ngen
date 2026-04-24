@@ -23,7 +23,8 @@ This plan goes deeper on the earlier recommendation:
 
 The most important architectural decision is this:
 
-> The composed USD stage is the authoritative description of authored world state, but engine systems mostly operate on synchronized runtime caches and extracted views.
+> The composed USD stage is the authoritative description of authored world state, but engine systems mostly operate on synchronized runtime caches and
+> extracted views.
 
 That gives the engine both:
 
@@ -940,7 +941,8 @@ Because of that, a parser-only or importer-oriented approach is no longer the na
 
 So the practical recommendation becomes:
 
-> If layering and composition are central to the runtime scene system, the architecture should be designed around a fuller USD runtime model, with an internal abstraction layer to keep the engine code insulated from direct library spread.
+> If layering and composition are central to the runtime scene system, the architecture should be designed around a fuller USD runtime model, with an internal
+> abstraction layer to keep the engine code insulated from direct library spread.
 
 That abstraction layer is important even if you later choose a specific USD implementation.
 
@@ -960,5 +962,6 @@ That abstraction layer is important even if you later choose a specific USD impl
 
 ## 25. Mental Model
 
-> A layer-aware USD scene system is a composition runtime plus a set of engine caches and policies: USD decides what the world is, layers decide where edits live, caches make it fast, and extraction turns the result into something rendering and runtime systems can consume.
+> A layer-aware USD scene system is a composition runtime plus a set of engine caches and policies: USD decides what the world is, layers decide where edits
+> live, caches make it fast, and extraction turns the result into something rendering and runtime systems can consume.
 

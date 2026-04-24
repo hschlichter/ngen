@@ -26,7 +26,8 @@ Debug lines and editor UI continue to draw after the lighting pass, unchanged.
 
 ## Scope
 
-- One directional light + ambient. Light params come from `RenderWorld::lights` if populated, otherwise sensible defaults (direction `(1,1,1)`, white, intensity 1.0, ambient 0.15).
+- One directional light + ambient. Light params come from `RenderWorld::lights` if populated, otherwise sensible defaults (direction `(1,1,1)`, white, intensity
+  1.0, ambient 0.15).
 - No changes to mesh upload, material system, or descriptor set allocation for the geometry pass.
 - Overlay passes (debug lines, editor UI) stay exactly as-is.
 
@@ -114,14 +115,20 @@ std::vector<void*> lightingUniformBuffersMapped;
 - Allocate per-frame `lightingUniformBuffers` (same pattern as existing UBOs — CpuToGpu, size = `sizeof(LightingUBO)`).
 - Map each lighting UBO.
 
-**Note on descriptor set updates**: The lighting descriptor sets reference G-buffer textures which are transient frame-graph resources — they get (re)allocated each frame by the `ResourcePool`. This means the descriptor sets must be updated every frame inside the render function, not at init time. At init, only allocate the sets and UBO buffers.
+**Note on descriptor set updates**: The lighting descriptor sets reference G-buffer textures which are transient frame-graph resources — they get (re)allocated
+each frame by the `ResourcePool`. This means the descriptor sets must be updated every frame inside the render function, not at init time. At init, only
+allocate the sets and UBO buffers.
 
 #### Lighting descriptor set update (each frame, in `Renderer::render`)
 
-After the frame graph allocates the G-buffer transient textures (but before execute), or more practically: inside the geometry pass execute callback after we know the physical textures, we update the lighting descriptor sets. However, since the frame graph allocates transients during `execute()` and we need the physical texture pointers, the cleanest approach is:
+After the frame graph allocates the G-buffer transient textures (but before execute), or more practically: inside the geometry pass execute callback after we
+know the physical textures, we update the lighting descriptor sets. However, since the frame graph allocates transients during `execute()` and we need the
+physical texture pointers, the cleanest approach is:
 
-- **Option A**: Update lighting descriptors inside the lighting pass execute callback, just before the draw. The physical textures are available via `ctx.texture(handle)` at that point.
-- **Option B**: Make the G-buffer textures non-transient (imported external textures that persist across frames, manually managed). Simpler descriptor management but wastes memory when window resizes.
+- **Option A**: Update lighting descriptors inside the lighting pass execute callback, just before the draw. The physical textures are available via
+  `ctx.texture(handle)` at that point.
+- **Option B**: Make the G-buffer textures non-transient (imported external textures that persist across frames, manually managed). Simpler descriptor
+  management but wastes memory when window resizes.
 
 **Go with Option A** — update descriptors in the lighting pass execute lambda. This is one `updateDescriptorSet` call per frame, which is cheap.
 
@@ -146,7 +153,8 @@ auto gbufferAlbedo = frameGraph.createTexture(albedoDesc);  // note: this is bui
 auto gbufferNormal = frameGraph.createTexture(normalDesc);
 ```
 
-Wait — `createTexture` is on `FrameGraphBuilder`, only available inside a pass setup lambda. So the transient textures must be created in the geometry pass setup:
+Wait — `createTexture` is on `FrameGraphBuilder`, only available inside a pass setup lambda. So the transient textures must be created in the geometry pass
+setup:
 
 ```cpp
 // Inside GeometryPass setup lambda:
@@ -257,7 +265,8 @@ Rename existing forward pass cleanup to use `geometry*` names.
 
 ### 5. `src/renderer/renderer.cpp` — `Renderer::uploadRenderWorld`
 
-Rename all references from `descriptorPool`/`descriptorSets`/`descriptorSetLayout` to `geometryDescriptorPool`/`geometryDescriptorSets`/`geometryDescriptorSetLayout`. No logic changes.
+Rename all references from `descriptorPool`/`descriptorSets`/`descriptorSetLayout` to
+`geometryDescriptorPool`/`geometryDescriptorSets`/`geometryDescriptorSetLayout`. No logic changes.
 
 ---
 
@@ -265,7 +274,8 @@ Rename all references from `descriptorPool`/`descriptorSets`/`descriptorSetLayou
 
 #### `shaders/gbuffer.vert`
 
-Identical to current `triangle.vert`. Same UBO (set 0 binding 0), same push constant (model matrix), same vertex inputs. Outputs `fragNormal`, `fragColor`, `fragTexCoord` to the fragment stage.
+Identical to current `triangle.vert`. Same UBO (set 0 binding 0), same push constant (model matrix), same vertex inputs. Outputs `fragNormal`, `fragColor`,
+`fragTexCoord` to the fragment stage.
 
 ```glsl
 #version 450
@@ -399,7 +409,8 @@ auto bufferOverlayEnabled() -> bool& { return showBufferOverlay; }
 
 #### `shaders/lighting.frag` — push constant for view mode + overlay
 
-The push constant carries both the fullscreen view mode and the overlay toggle. All debug visualization is handled purely in the fragment shader by checking UV coordinates — no extra draw calls or passes.
+The push constant carries both the fullscreen view mode and the overlay toggle. All debug visualization is handled purely in the fragment shader by checking UV
+coordinates — no extra draw calls or passes.
 
 ```glsl
 layout(push_constant) uniform Push {
@@ -408,7 +419,8 @@ layout(push_constant) uniform Push {
 } push;
 ```
 
-**Overlay layout**: a horizontal strip along the bottom of the viewport showing side-by-side preview rectangles for each buffer. Each preview is 1/4 viewport width, with a fixed height (e.g. 1/4 viewport height), anchored to the bottom-left. A thin dark border separates them.
+**Overlay layout**: a horizontal strip along the bottom of the viewport showing side-by-side preview rectangles for each buffer. Each preview is 1/4 viewport
+width, with a fixed height (e.g. 1/4 viewport height), anchored to the bottom-left. A thin dark border separates them.
 
 ```glsl
 // Preview strip constants
@@ -463,7 +475,8 @@ void main() {
 }
 ```
 
-The preview strip renders at the bottom-left: `[Albedo][Normals][Lit]`, each 25% of viewport width and height. The remaining bottom-right 25% shows the normal lit scene through. The border gives visual separation. When the overlay is off, the shader skips straight to the fullscreen output — zero cost.
+The preview strip renders at the bottom-left: `[Albedo][Normals][Lit]`, each 25% of viewport width and height. The remaining bottom-right 25% shows the normal
+lit scene through. The border gives visual separation. When the overlay is off, the shader skips straight to the fullscreen output — zero cost.
 
 #### Lighting pipeline push constant
 
@@ -534,19 +547,26 @@ renderer.bufferOverlayEnabled() = editorUI.bufferOverlayEnabled();
 
 ### 8. `Makefile`
 
-No changes needed. The wildcard `$(wildcard *.vert **/*.vert)` discovers shaders in `shaders/`. The generic `%.spv: %` rule compiles them. Verify at build time that `shaders/gbuffer.vert.spv`, `shaders/gbuffer.frag.spv`, `shaders/lighting.vert.spv`, `shaders/lighting.frag.spv` appear in the build output.
+No changes needed. The wildcard `$(wildcard *.vert **/*.vert)` discovers shaders in `shaders/`. The generic `%.spv: %` rule compiles them. Verify at build time
+that `shaders/gbuffer.vert.spv`, `shaders/gbuffer.frag.spv`, `shaders/lighting.vert.spv`, `shaders/lighting.frag.spv` appear in the build output.
 
 ---
 
 ## Known issues to resolve during implementation
 
-1. **Normal format**: `R32G32B32A32_SFLOAT` is 16 bytes/pixel — heavy for a normal buffer. If `R16G16B16A16_SFLOAT` or `R8G8B8A8_SNORM` are needed, add them to `RhiFormat` enum and handle the Vulkan format mapping in the backend. For v1 this is acceptable; optimize later.
+1. **Normal format**: `R32G32B32A32_SFLOAT` is 16 bytes/pixel — heavy for a normal buffer. If `R16G16B16A16_SFLOAT` or `R8G8B8A8_SNORM` are needed, add them to
+   `RhiFormat` enum and handle the Vulkan format mapping in the backend. For v1 this is acceptable; optimize later.
 
-2. **ResourcePool key matching**: The resource pool matches on `{width, height, format, usage}`. Confirm that the `FgTextureDesc.usage` field flows through correctly so transient G-buffer textures get `ColorAttachment | Sampled` usage flags (needed for both writing as RT and reading as sampled texture).
+2. **ResourcePool key matching**: The resource pool matches on `{width, height, format, usage}`. Confirm that the `FgTextureDesc.usage` field flows through
+   correctly so transient G-buffer textures get `ColorAttachment | Sampled` usage flags (needed for both writing as RT and reading as sampled texture).
 
-3. **Descriptor set update per frame**: Calling `updateDescriptorSet` every frame inside the lighting pass execute callback works but assumes the Vulkan backend doesn't require the previous frame's descriptor set to be idle. Since we wait on the in-flight fence at the top of `render()`, the previous use of that descriptor set is guaranteed complete — this is safe.
+3. **Descriptor set update per frame**: Calling `updateDescriptorSet` every frame inside the lighting pass execute callback works but assumes the Vulkan backend
+   doesn't require the previous frame's descriptor set to be idle. Since we wait on the in-flight fence at the top of `render()`, the previous use of that
+   descriptor set is guaranteed complete — this is safe.
 
-4. **Pipeline creation with zero vertex stride**: The Vulkan backend's `createGraphicsPipeline` needs to handle the case where `vertexStride = 0` and `vertexAttributes` is empty (no vertex input state). Verify the Vulkan pipeline creation code doesn't assert on empty vertex input. If it does, add a conditional skip for the vertex input binding description.
+4. **Pipeline creation with zero vertex stride**: The Vulkan backend's `createGraphicsPipeline` needs to handle the case where `vertexStride = 0` and
+   `vertexAttributes` is empty (no vertex input state). Verify the Vulkan pipeline creation code doesn't assert on empty vertex input. If it does, add a
+   conditional skip for the vertex input binding description.
 
 ---
 
@@ -570,7 +590,8 @@ Rename all forward-pass members to `geometry*` names throughout `renderer.h` and
 - Verify the scene looks the same as before (same directional light params).
 
 ### Step 4 — Wire up RenderLight
-- In `Renderer::render`, if `RenderWorld::lights` has a directional light, use its direction/color/intensity for the `LightingUBO`. Otherwise use hardcoded defaults matching the old `triangle.frag` behavior.
+- In `Renderer::render`, if `RenderWorld::lights` has a directional light, use its direction/color/intensity for the `LightingUBO`. Otherwise use hardcoded
+  defaults matching the old `triangle.frag` behavior.
 
 ### Step 5 — G-buffer debug visualization
 - Add `GBufferView` enum, `gbufferView`, and `showBufferOverlay` members to `Renderer`.
@@ -582,7 +603,8 @@ Rename all forward-pass members to `geometry*` names throughout `renderer.h` and
 - Add `gbufferViewMode` and `showBufferOverlay` to `EditorUI`, thread through `MainMenuBarState`.
 - Add "Show Buffer Overlay" checkbox and Lit/Albedo/Normals radio buttons to the Debug menu in `mainmenubar.cpp`.
 - Bridge values from `EditorUI` to `Renderer` in the main loop.
-- Test: toggle overlay on, confirm three preview rectangles appear at bottom with correct content. Switch fullscreen mode, confirm each buffer fills the viewport. Confirm overlay + fullscreen mode work together (overlay shows all three, main viewport shows selected).
+- Test: toggle overlay on, confirm three preview rectangles appear at bottom with correct content. Switch fullscreen mode, confirm each buffer fills the
+  viewport. Confirm overlay + fullscreen mode work together (overlay shows all three, main viewport shows selected).
 
 ### Step 6 — Cleanup
 - Delete `shaders/triangle.vert` and `shaders/triangle.frag` (no longer used).

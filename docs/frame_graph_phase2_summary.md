@@ -2,7 +2,8 @@
 
 ## What Changed
 
-Phase 2 added resource management: texture usage flags in the RHI, a pooled resource allocator, and transient texture support in the frame graph. The frame graph can now create and manage GPU resources that live only for a single frame.
+Phase 2 added resource management: texture usage flags in the RHI, a pooled resource allocator, and transient texture support in the frame graph. The frame
+graph can now create and manage GPU resources that live only for a single frame.
 
 ---
 
@@ -67,7 +68,8 @@ auto setup = [&](FrameGraphBuilder& builder, MyPassData& data) {
 };
 ```
 
-`FrameGraphBuilder::createTexture(desc)` registers a non-external resource in the graph. The frame graph allocates it from the pool before execution and releases it after.
+`FrameGraphBuilder::createTexture(desc)` registers a non-external resource in the graph. The frame graph allocates it from the pool before execution and
+releases it after.
 
 ### FgTextureDesc update
 

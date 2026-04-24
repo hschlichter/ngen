@@ -2,7 +2,10 @@
 
 ## Context
 
-When muting/unmuting layers, changing transforms, or toggling visibility, the engine stalls visibly because all work (USD recomposition, prim cache rebuild, mesh extraction, GPU upload) runs sequentially on the main thread. For large scenes (20x20 city = ~1800 prims), this is noticeable. The goal is to move the expensive CPU work to a background thread so the main thread keeps rendering the old scene, then swap in results when ready. During background processing, editing UI is disabled to prevent concurrent USD stage mutation.
+When muting/unmuting layers, changing transforms, or toggling visibility, the engine stalls visibly because all work (USD recomposition, prim cache rebuild,
+mesh extraction, GPU upload) runs sequentially on the main thread. For large scenes (20x20 city = ~1800 prims), this is noticeable. The goal is to move the
+expensive CPU work to a background thread so the main thread keeps rendering the old scene, then swap in results when ready. During background processing,
+editing UI is disabled to prevent concurrent USD stage mutation.
 
 ## Approach: Edit Command Queue + JobSystem Fence
 
@@ -94,7 +97,8 @@ Each frame:
 
 ### Step 5: Rapid edit batching
 
-If user makes multiple edits while a background job is running, commands accumulate in `pendingEdits`. On next frame after the fence is ready and results are swapped, the new batch is submitted. Natural debouncing.
+If user makes multiple edits while a background job is running, commands accumulate in `pendingEdits`. On next frame after the fence is ready and results are
+swapped, the new batch is submitted. Natural debouncing.
 
 ## Files Modified
 

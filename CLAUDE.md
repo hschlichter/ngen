@@ -13,8 +13,21 @@ Questions that start with "Why", "Shouldn't", "Is this correct", "What's the dif
 are analysis requests — treat them as discussion, not action items.
 
 ## Tools
-DO NOT USE THE TOOL 'grep' use 'rg' ripgrep for searching.
-DO NOT USE THE TOOL 'find' use 'fd' for finding files.
+
+For searching this codebase, prefer the built-in `Grep` and `Glob` tools — they already use ripgrep internally and are the fastest option.
+
+When shelling out via Bash, **never** run these commands:
+- `grep`, `egrep`, `fgrep` — use `rg` (ripgrep) instead.
+- `find` — use `fd` instead.
+
+This applies to every invocation: standalone, in pipelines (`… | grep foo`), and in compound commands (`cd src && find . -name '*.cpp'`). If you catch yourself typing `grep` or `find`, stop and rewrite with `rg` / `fd`. No exceptions, no "just this once."
+
+## Markdown style
+
+When writing prose-heavy markdown (design docs, READMEs, CONCEPTS, long-form
+explanations), hard-wrap lines at ~160 columns rather than one long line per
+paragraph. Keep code blocks, tables, and link-heavy lines unwrapped — those
+break if wrapped.     
 
 ## File naming
 - No snake_case in filenames. Use lowercase concatenated names (e.g. `sceneloader.cpp`, `devicevulkan.h`).
@@ -32,3 +45,4 @@ DO NOT USE THE TOOL 'find' use 'fd' for finding files.
 Use 'make' to build.
 Use 'bear -- make' to generate compile_commands.json.
 Use 'make format' for formatting the code.
+

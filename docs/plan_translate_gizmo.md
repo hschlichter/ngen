@@ -1,7 +1,11 @@
 # Translate Gizmo Plan
 
 ## Context
-The editor currently has only an orientation gizmo (`Axis3DGizmo`, top-right corner) used to snap the camera to cardinal axes. The only way to change a selected prim's position is by typing into the Properties panel `DragFloat3` for `Transform::position`. We want a direct-manipulation **translate gizmo**: 3 colored arrows pinned to the selected prim's world origin, world-aligned, draggable to update the prim's local position. Edits commit every frame through the existing `SceneEditCommand::SetTransform` pipeline so the change flows through `SceneUpdater` → `USDScene::setTransform` → render extraction, identical to Properties-panel edits.
+The editor currently has only an orientation gizmo (`Axis3DGizmo`, top-right corner) used to snap the camera to cardinal axes. The only way to change a selected
+prim's position is by typing into the Properties panel `DragFloat3` for `Transform::position`. We want a direct-manipulation **translate gizmo**: 3 colored
+arrows pinned to the selected prim's world origin, world-aligned, draggable to update the prim's local position. Edits commit every frame through the existing
+`SceneEditCommand::SetTransform` pipeline so the change flows through `SceneUpdater` → `USDScene::setTransform` → render extraction, identical to
+Properties-panel edits.
 
 ## Scope (v1)
 - 3 axis arrows only (no plane handles, no screen-space center).
@@ -11,7 +15,10 @@ The editor currently has only an orientation gizmo (`Axis3DGizmo`, top-right cor
 - Constant pixel size (scaled by distance to camera) so it stays usable up close and far away.
 
 ## Architecture
-Mirrors the existing `Axis3DGizmo` + `GizmoPass` split. Add a new gizmo class; reuse `GizmoVertex`, `GizmoDrawRequest`, and `GizmoPass` unchanged. Unlike `Axis3DGizmo` (which renders into a fixed 120×120 corner viewport with its own viewProj), the translate gizmo renders into the **full window viewport** using the **main camera's viewProj** so it lives in world space at the prim. `GizmoDrawRequest` already supports arbitrary `viewProj` + viewport offsets — no pass changes needed.
+Mirrors the existing `Axis3DGizmo` + `GizmoPass` split. Add a new gizmo class; reuse `GizmoVertex`, `GizmoDrawRequest`, and `GizmoPass` unchanged. Unlike
+`Axis3DGizmo` (which renders into a fixed 120×120 corner viewport with its own viewProj), the translate gizmo renders into the **full window viewport** using
+the **main camera's viewProj** so it lives in world space at the prim. `GizmoDrawRequest` already supports arbitrary `viewProj` + viewport offsets — no pass
+changes needed.
 
 ## Files to add
 - `src/renderer/translategizmo.h`
@@ -20,7 +27,8 @@ Mirrors the existing `Axis3DGizmo` + `GizmoPass` split. Add a new gizmo class; r
 ## Files to modify
 - `src/renderer/renderer.h` / `src/renderer/renderer.cpp` — own a `TranslateGizmo`, expose update/hit/drag entry points, pass selection + transform in.
 - `src/main.cpp` — wire mouse down/move/up to the new gizmo before falling through to scene picking; queue `SceneEditCommand::SetTransform` on drag deltas.
-- `src/main.cpp` `RenderSnapshot` build site (and `src/renderer/rendersnapshot.h` if needed) — pass current selected prim's world position so renderer can place the gizmo.
+- `src/main.cpp` `RenderSnapshot` build site (and `src/renderer/rendersnapshot.h` if needed) — pass current selected prim's world position so renderer can place
+  the gizmo.
 - `Makefile` — add new source.
 
 ## TranslateGizmo class
@@ -67,20 +75,26 @@ private:
 ```
 
 ### Geometry (per frame, in `draw`)
-- Compute `lastScale = distance(cameraPos, originWorld) * k` (e.g. `k = 0.12`) so arrows are ~constant pixel length. Pick `k` to roughly match the orientation gizmo's visual weight.
-- For each axis i ∈ {0,1,2}: emit a line from `originWorld` to `originWorld + axisDirs[i] * lastScale`, color = same `axisColors` palette as `Axis3DGizmo` (X red, Y green, Z blue). When `hoveredAxis == i` or `dragAxis == i`, also emit the same offset-line "thickening" trick used in `axis3dgizmo.cpp:34-48`.
+- Compute `lastScale = distance(cameraPos, originWorld) * k` (e.g. `k = 0.12`) so arrows are ~constant pixel length. Pick `k` to roughly match the orientation
+  gizmo's visual weight.
+- For each axis i ∈ {0,1,2}: emit a line from `originWorld` to `originWorld + axisDirs[i] * lastScale`, color = same `axisColors` palette as `Axis3DGizmo` (X
+  red, Y green, Z blue). When `hoveredAxis == i` or `dragAxis == i`, also emit the same offset-line "thickening" trick used in `axis3dgizmo.cpp:34-48`.
 - Arrow tip: 4 short lines from the tip toward `tip - axisDir * tipLen ± perpA*tipLen*0.3 ± perpB*...` to suggest a cone (cheap; we're stuck with `LineList`).
 - Return `GizmoDrawRequest{vertices, viewProj=proj*view, vpX=0, vpY=0, vpExtent=fullExtent}`.
 
 ### Hover / hit (`findClosestAxis`)
-Same screen-space technique as `axis3dgizmo.cpp:67-105`: project axis endpoints with `lastViewProj` and `lastExtent`, screen-space distance to segment, threshold ~10 px. Reuse the math; it works identically once the viewport is the full window.
+Same screen-space technique as `axis3dgizmo.cpp:67-105`: project axis endpoints with `lastViewProj` and `lastExtent`, screen-space distance to segment,
+threshold ~10 px. Reuse the math; it works identically once the viewport is the full window.
 
 ### Drag math (`projectMouseOntoAxis`)
 Translation along a single world axis = closest-point between two skew lines:
 1. Build mouse ray exactly as `main.cpp:161-177` (NDC → invVP → near/far → ray).
-2. Closest point between mouse ray and axis line: standard solve using `dirCross = cross(rayDir, axisDir)`. Parameter `t` along axis = `dot(cross(originDelta, rayDir), dirCross) / dot(dirCross, dirCross)`.
+2. Closest point between mouse ray and axis line: standard solve using `dirCross = cross(rayDir, axisDir)`. Parameter `t` along axis = `dot(cross(originDelta,
+   rayDir), dirCross) / dot(dirCross, dirCross)`.
 3. On `beginDrag`: store `dragStartT` and `dragStartOrigin = originWorld`.
-4. On `updateDrag`: compute current `t`; world-space delta to apply this frame = `(t - dragStartT) * axisDir` *minus* what we already applied last frame. Simplest: each frame compute new desired world origin = `dragStartOrigin + (t - dragStartT) * axisDir`, return delta from *current* `originWorld` to that. Caller adds delta to local position (world-aligned axes ⇒ delta_world == delta_local for translation).
+4. On `updateDrag`: compute current `t`; world-space delta to apply this frame = `(t - dragStartT) * axisDir` *minus* what we already applied last frame.
+   Simplest: each frame compute new desired world origin = `dragStartOrigin + (t - dragStartT) * axisDir`, return delta from *current* `originWorld` to that.
+   Caller adds delta to local position (world-aligned axes ⇒ delta_world == delta_local for translation).
 
 ## Renderer integration
 
@@ -95,10 +109,14 @@ auto translateGizmoIsDragging() const -> bool;
 ```
 
 `src/renderer/renderer.cpp`:
-- In `gizmoUpdate(...)`, also call `translateGizmo.updateHover(...)` and `translateGizmo.draw(...)` when `snapshot.hasSelection`. Append its `GizmoDrawRequest` to the returned vector. Existing `gizmoPass.addPass` already handles N requests.
-- In `gizmoHitTest`: first check translate gizmo `findClosestAxis` (only meaningful when selection exists). Order: orientation gizmo (corner) takes priority over translate gizmo, since they don't overlap geometrically anyway. Actually — orientation gizmo lives in a fixed corner, translate gizmo near the prim. Pick orientation first to keep current behavior; otherwise hand off to translate.
+- In `gizmoUpdate(...)`, also call `translateGizmo.updateHover(...)` and `translateGizmo.draw(...)` when `snapshot.hasSelection`. Append its `GizmoDrawRequest`
+  to the returned vector. Existing `gizmoPass.addPass` already handles N requests.
+- In `gizmoHitTest`: first check translate gizmo `findClosestAxis` (only meaningful when selection exists). Order: orientation gizmo (corner) takes priority
+  over translate gizmo, since they don't overlap geometrically anyway. Actually — orientation gizmo lives in a fixed corner, translate gizmo near the prim. Pick
+  orientation first to keep current behavior; otherwise hand off to translate.
 
-`RenderSnapshot` (extend in `src/renderer/rendersnapshot.h`): add `bool hasSelection; glm::vec3 selectionWorldPos;`. Populate in `main.cpp` from `usdScene.getTransform(selectedPrim)->world` (column 3).
+`RenderSnapshot` (extend in `src/renderer/rendersnapshot.h`): add `bool hasSelection; glm::vec3 selectionWorldPos;`. Populate in `main.cpp` from
+`usdScene.getTransform(selectedPrim)->world` (column 3).
 
 ## main.cpp wiring
 
@@ -111,21 +129,25 @@ if (renderer.translateGizmoBeginDrag(mx, my, winExtent)) continue;
 ```
 
 Add new handlers in the SDL event loop:
-- `SDL_EVENT_MOUSE_MOTION` (always, not gated on capture): if `renderer.translateGizmoIsDragging()`, call `updateDrag`. If it returns a delta and `selectedPrim` is valid:
+- `SDL_EVENT_MOUSE_MOTION` (always, not gated on capture): if `renderer.translateGizmoIsDragging()`, call `updateDrag`. If it returns a delta and `selectedPrim`
+  is valid:
   - Read `xf = usdScene.getTransform(selectedPrim)->local`.
   - `xf.position += *delta;`
   - `sceneUpdater.addEdit({.type=SetTransform, .prim=selectedPrim, .transform=xf});` — same path the Properties panel uses (`src/ui/propertieswindow.cpp`).
 - `SDL_EVENT_MOUSE_BUTTON_UP` (LEFT): `renderer.translateGizmoEndDrag();`.
 
-While dragging, suppress camera pan / scene re-pick — guard the existing right-button capture and the left-down picking branch with `!renderer.translateGizmoIsDragging()`.
+While dragging, suppress camera pan / scene re-pick — guard the existing right-button capture and the left-down picking branch with
+`!renderer.translateGizmoIsDragging()`.
 
 ## Reused existing pieces (do NOT reimplement)
 - `GizmoVertex` (`src/renderer/gizmo.h:8`)
 - `GizmoDrawRequest` (`src/renderer/gizmo.h`)
 - `GizmoPass` (`src/renderer/passes/gizmopass.{h,cpp}`) — handles upload, pipeline, viewport switching. Already supports multiple requests per frame.
 - `axisColors` palette — copy the constants from `axis3dgizmo.cpp:8-9` (or lift to `gizmo.h`).
-- Mouse-ray construction — same formula as `src/main.cpp:161-177`; factor into a helper `pickRay(mx,my,winW,winH,view,proj)` either in `camera.{h,cpp}` or a new tiny header, and call from both the picking site and `TranslateGizmo`.
-- `SceneEditCommand::SetTransform` queue (`src/ui/editcommand.h`, `SceneUpdater::addEdit` in `src/scene/sceneupdater.{h,cpp}`) — same path as `propertieswindow.cpp`.
+- Mouse-ray construction — same formula as `src/main.cpp:161-177`; factor into a helper `pickRay(mx,my,winW,winH,view,proj)` either in `camera.{h,cpp}` or a new
+  tiny header, and call from both the picking site and `TranslateGizmo`.
+- `SceneEditCommand::SetTransform` queue (`src/ui/editcommand.h`, `SceneUpdater::addEdit` in `src/scene/sceneupdater.{h,cpp}`) — same path as
+  `propertieswindow.cpp`.
 - `USDScene::getTransform(PrimHandle)` — for reading current local + world transform.
 
 ## Key files at a glance

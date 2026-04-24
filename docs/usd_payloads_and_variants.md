@@ -2,7 +2,8 @@
 
 ## Overview
 
-In Universal Scene Description (USD), **payloads** and **variants** are core composition mechanisms that enable scalable, modular, and efficient scene construction. While USD does not implement a streaming system itself, these features form the **foundation upon which streaming workflows are built**.
+In Universal Scene Description (USD), **payloads** and **variants** are core composition mechanisms that enable scalable, modular, and efficient scene
+construction. While USD does not implement a streaming system itself, these features form the **foundation upon which streaming workflows are built**.
 
 This document describes their behavior and how they support such systems purely from a USD perspective.
 

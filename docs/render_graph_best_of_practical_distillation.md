@@ -10,7 +10,8 @@ This document distills what actually matters when designing a render graph, base
 
 A render graph is:
 
-> A declarative description of frame work (passes + resources) that is compiled into an optimized execution plan with automatic synchronization and memory management.
+> A declarative description of frame work (passes + resources) that is compiled into an optimized execution plan with automatic synchronization and memory
+> management.
 
 ---
 

@@ -2,7 +2,8 @@
 
 ## Context
 
-The engine currently has a monolithic `Renderer::render()` that hardcodes a single forward pass with manual sync and no resource management. New passes will be added from now on, so getting the frame graph in place early means each new pass slots in cleanly instead of retrofitting later.
+The engine currently has a monolithic `Renderer::render()` that hardcodes a single forward pass with manual sync and no resource management. New passes will be
+added from now on, so getting the frame graph in place early means each new pass slots in cleanly instead of retrofitting later.
 
 The frame graph sits in `src/renderer/` and consumes the existing RHI layer without replacing it.
 
@@ -10,11 +11,13 @@ The frame graph sits in `src/renderer/` and consumes the existing RHI layer with
 
 ## Phase 1: Dynamic Rendering + Frame Graph Core + Compilation
 
-**Goal**: In one milestone, deliver a working frame graph that new passes can be added to. This combines dynamic rendering (RHI prerequisite), core types, and compilation — because a frame graph that can't compile is just a wrapper.
+**Goal**: In one milestone, deliver a working frame graph that new passes can be added to. This combines dynamic rendering (RHI prerequisite), core types, and
+compilation — because a frame graph that can't compile is just a wrapper.
 
 ### Step 1a: Dynamic Rendering RHI Extension
 
-Dynamic rendering (`VK_KHR_dynamic_rendering` / Vulkan 1.3) eliminates `VkRenderPass` and `VkFramebuffer` boilerplate. Without it, every new pass needs manual render pass + framebuffer setup — the exact problem the frame graph solves.
+Dynamic rendering (`VK_KHR_dynamic_rendering` / Vulkan 1.3) eliminates `VkRenderPass` and `VkFramebuffer` boilerplate. Without it, every new pass needs manual
+render pass + framebuffer setup — the exact problem the frame graph solves.
 
 **RHI changes**:
 
@@ -24,7 +27,8 @@ Dynamic rendering (`VK_KHR_dynamic_rendering` / Vulkan 1.3) eliminates `VkRender
 | `src/rhi/rhicommandbuffer.h` | Add `beginRendering(const RhiRenderingInfo&)`, `endRendering()`, `pipelineBarrier(std::span<const RhiBarrierDesc>)` |
 | `src/rhi/vulkan/rhicommandbuffervulkan.h/.cpp` | Implement via `vkCmdBeginRendering`/`vkCmdEndRendering`, `vkCmdPipelineBarrier` |
 
-**Pipeline creation change**: Current `RhiGraphicsPipelineDesc` takes `RhiRenderPass*`. With dynamic rendering, replace with format info (`VkPipelineRenderingCreateInfo`). This touches:
+**Pipeline creation change**: Current `RhiGraphicsPipelineDesc` takes `RhiRenderPass*`. With dynamic rendering, replace with format info
+(`VkPipelineRenderingCreateInfo`). This touches:
 - `src/rhi/rhitypes.h` — update `RhiGraphicsPipelineDesc`
 - `src/rhi/vulkan/rhidevicevulkan.cpp` — update pipeline creation
 
@@ -66,7 +70,8 @@ Implement `FrameGraph::compile()`:
 - `src/renderer/renderer.h` — add `FrameGraph` member
 - `src/renderer/renderer.cpp` — refactor `render()`: reset graph → import swapchain → addPass("ForwardPass", ...) → compile → execute
 
-The existing forward pass becomes the first frame graph pass. Swapchain acquire/present and fence sync stay in `Renderer::render()` surrounding the frame graph calls.
+The existing forward pass becomes the first frame graph pass. Swapchain acquire/present and fence sync stay in `Renderer::render()` surrounding the frame graph
+calls.
 
 **Verify**: Engine renders the same scene as before, now through the frame graph. Adding a dummy pass with no readers confirms culling works.
 
@@ -74,7 +79,8 @@ The existing forward pass becomes the first frame graph pass. Swapchain acquire/
 
 ## Phase 2: Resource Management — Transient Pool + External Import
 
-**Goal**: Frame graph creates and manages GPU resources. Add this when the first intermediate render target is needed (e.g., depth prepass writing a depth buffer that a lighting pass reads).
+**Goal**: Frame graph creates and manages GPU resources. Add this when the first intermediate render target is needed (e.g., depth prepass writing a depth
+buffer that a lighting pass reads).
 
 **New files**:
 
@@ -100,7 +106,8 @@ The existing forward pass becomes the first frame graph pass. Swapchain acquire/
 
 ## Phase 3: Memory Optimization — Lifetime Tracking + Aliasing
 
-**Goal**: Reduce VRAM by aliasing transient resources with non-overlapping lifetimes. Add this when enough transient resources exist that VRAM pressure matters — not needed early.
+**Goal**: Reduce VRAM by aliasing transient resources with non-overlapping lifetimes. Add this when enough transient resources exist that VRAM pressure matters
+— not needed early.
 
 **No new files.** Extend `framegraph.cpp` compile step and `resourcepool.cpp`.
 
@@ -111,7 +118,8 @@ The existing forward pass becomes the first frame graph pass. Swapchain acquire/
 
 This is pool-based reuse within a single frame. True `VkBindImageMemory` aliasing is a future optimization.
 
-**Verify**: Create a pipeline where IntermediateA is used only in passes 1-2 and IntermediateC only in passes 3-4 with the same descriptor — confirm they alias to the same physical resource.
+**Verify**: Create a pipeline where IntermediateA is used only in passes 1-2 and IntermediateC only in passes 3-4 with the same descriptor — confirm they alias
+to the same physical resource.
 
 ---
 
@@ -138,6 +146,9 @@ This is pool-based reuse within a single frame. True `VkBindImageMemory` aliasin
 
 ## Key Pitfalls to Watch
 
-- **Pipeline creation**: Current `RhiGraphicsPipelineDesc` takes `RhiRenderPass*`. Dynamic rendering requires pipelines created with rendering format info instead — non-trivial RHI change that must happen in Phase 1.
-- **Swapchain refactor**: Currently owns VkRenderPass + VkFramebuffer. Phase 1 makes these unnecessary. Needs careful refactoring to not break the existing render path during transition.
-- **Descriptor sets**: Current pre-allocation per mesh x swapchain image is orthogonal to the frame graph. Leave it alone until a separate descriptor management refactor.
+- **Pipeline creation**: Current `RhiGraphicsPipelineDesc` takes `RhiRenderPass*`. Dynamic rendering requires pipelines created with rendering format info
+  instead — non-trivial RHI change that must happen in Phase 1.
+- **Swapchain refactor**: Currently owns VkRenderPass + VkFramebuffer. Phase 1 makes these unnecessary. Needs careful refactoring to not break the existing
+  render path during transition.
+- **Descriptor sets**: Current pre-allocation per mesh x swapchain image is orthogonal to the frame graph. Leave it alone until a separate descriptor management
+  refactor.

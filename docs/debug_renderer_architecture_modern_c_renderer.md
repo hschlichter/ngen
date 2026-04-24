@@ -303,5 +303,6 @@ Avoid:
 
 ## 15. Mental Model
 
-> The debug renderer is a bridge between engine diagnostics and the GPU, translating simple draw requests into efficient, batched rendering integrated into the frame pipeline.
+> The debug renderer is a bridge between engine diagnostics and the GPU, translating simple draw requests into efficient, batched rendering integrated into the
+> frame pipeline.
 

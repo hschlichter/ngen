@@ -1,12 +1,14 @@
 # Frame Graph: Future Phases
 
-Ambitious features to add once the core frame graph (see `frame_graph_implementation_plan.md`) is stable and the renderer has enough passes to benefit. These are ordered roughly by expected need, not by difficulty.
+Ambitious features to add once the core frame graph (see `frame_graph_implementation_plan.md`) is stable and the renderer has enough passes to benefit. These
+are ordered roughly by expected need, not by difficulty.
 
 ---
 
 ## Multi-Queue Scheduling + Async Compute
 
-**Problem**: All passes run on the graphics queue sequentially. Compute-heavy passes (SSAO, light culling, particle simulation) could overlap with graphics work on a separate hardware queue.
+**Problem**: All passes run on the graphics queue sequentially. Compute-heavy passes (SSAO, light culling, particle simulation) could overlap with graphics work
+on a separate hardware queue.
 
 **What to build**:
 - `FgQueue` enum: `Graphics`, `Compute0`, `Compute1` (extensible per hardware)
@@ -19,7 +21,8 @@ Ambitious features to add once the core frame graph (see `frame_graph_implementa
 - Multiple command pools/buffers per queue
 - Fence-based synchronization between queue submissions
 
-**Prerequisite**: The compiler must handle split dependency graphs — a compute pass on `Compute0` depends on a graphics pass's output, and a later graphics pass depends on the compute result. The topological sort must span queues.
+**Prerequisite**: The compiler must handle split dependency graphs — a compute pass on `Compute0` depends on a graphics pass's output, and a later graphics pass
+depends on the compute result. The topological sort must span queues.
 
 **When needed**: When a compute-heavy pass (SSGI, light clustering, GPU culling) is bottlenecked behind graphics work.
 
@@ -27,7 +30,8 @@ Ambitious features to add once the core frame graph (see `frame_graph_implementa
 
 ## Named Priority Classes + Scheduling Barriers
 
-**Problem**: Topological sort alone produces a valid ordering but not necessarily an optimal one. Independent passes that could overlap are arbitrarily ordered instead of being grouped for maximum GPU utilization.
+**Problem**: Topological sort alone produces a valid ordering but not necessarily an optimal one. Independent passes that could overlap are arbitrarily ordered
+instead of being grouped for maximum GPU utilization.
 
 **What to build**:
 - Named priority enum covering the engine's pass categories:
@@ -69,13 +73,15 @@ Ambitious features to add once the core frame graph (see `frame_graph_implementa
 - Execute phase: per-pass, fanned out to worker threads when `numJobs > 1`
 - GPU submission: command lists batched with fence-based sync
 
-**When needed**: When CPU command recording time shows up in profiling as a bottleneck — typically with many draw calls per pass (large scenes, shadow maps with many casters).
+**When needed**: When CPU command recording time shows up in profiling as a bottleneck — typically with many draw calls per pass (large scenes, shadow maps with
+many casters).
 
 ---
 
 ## Persistent Resource Tokens
 
-**Problem**: Some resources survive across frames (TAA history, SSGI accumulators, reprojection buffers) but still need frame graph tracking for barrier insertion and lifetime management.
+**Problem**: Some resources survive across frames (TAA history, SSGI accumulators, reprojection buffers) but still need frame graph tracking for barrier
+insertion and lifetime management.
 
 **What to build**:
 - `frameGraph.allocPersistentToken(name, lifetimeFrames)` — creates a token tracking a named resource
@@ -94,7 +100,8 @@ Ambitious features to add once the core frame graph (see `frame_graph_implementa
 
 ## Optimal Scheduling (Pass Reordering)
 
-**Problem**: Even with priorities, the compiler may not find the best execution order for GPU utilization. Independent passes on different queues could overlap more aggressively.
+**Problem**: Even with priorities, the compiler may not find the best execution order for GPU utilization. Independent passes on different queues could overlap
+more aggressively.
 
 **What to build**:
 - Reorder independent passes to minimize barrier stalls
@@ -108,7 +115,8 @@ Ambitious features to add once the core frame graph (see `frame_graph_implementa
 
 ## Debug and Profiling Infrastructure
 
-**Problem**: As the frame graph grows complex, developers need visibility into what it's doing — pass ordering, resource lifetimes, aliasing decisions, per-pass timing.
+**Problem**: As the frame graph grows complex, developers need visibility into what it's doing — pass ordering, resource lifetimes, aliasing decisions, per-pass
+timing.
 
 **What to build**:
 
@@ -146,13 +154,15 @@ Ambitious features to add once the core frame graph (see `frame_graph_implementa
 | `FrameGraphIsolatePasses` | Barrier between every pass (debug) |
 | `EnableAutomaticUAVBarriers` | Auto UAV sync between writing passes |
 
-**When needed**: Incrementally, as the frame graph grows. Debug labels should come first (cheap, high value). Visual inspection UI when the pass count makes mental tracking impractical.
+**When needed**: Incrementally, as the frame graph grows. Debug labels should come first (cheap, high value). Visual inspection UI when the pass count makes
+mental tracking impractical.
 
 ---
 
 ## Platform Extensions
 
-**Problem**: Each GPU API has operations that can't be expressed in the common frame graph API. Extensions provide an escape hatch without polluting the shared interface.
+**Problem**: Each GPU API has operations that can't be expressed in the common frame graph API. Extensions provide an escape hatch without polluting the shared
+interface.
 
 **What to build**:
 - Extension point in `FrameGraphContext` for platform-specific operations
@@ -197,11 +207,13 @@ Ambitious features to add once the core frame graph (see `frame_graph_implementa
 
 ## Early Graph Pattern
 
-**Problem**: Some work must complete before the main frame graph begins building (environment reflections, acceleration structure builds, GPU-driven instance setup).
+**Problem**: Some work must complete before the main frame graph begins building (environment reflections, acceleration structure builds, GPU-driven instance
+setup).
 
 **What to build**:
 - Support multiple `FrameGraph` instances per viewport
 - Early graph runs and completes first; its outputs become external resources for the main graph
 - Pattern: `earlyGraph.execute()` → `mainGraph.importTexture(earlyGraph.output)` → `mainGraph.execute()`
 
-**When needed**: When the renderer has pre-frame compute work that the main pipeline depends on (environment probes, GPU culling, acceleration structure builds).
+**When needed**: When the renderer has pre-frame compute work that the main pipeline depends on (environment probes, GPU culling, acceleration structure
+builds).

@@ -1,12 +1,14 @@
 # Frame Graph: Implementation Guide
 
-A reference for implementing a frame graph rendering system in any engine. Covers the data model, APIs, scheduling, resource management, and threading — all engine-agnostic.
+A reference for implementing a frame graph rendering system in any engine. Covers the data model, APIs, scheduling, resource management, and threading — all
+engine-agnostic.
 
 ---
 
 ## 1. What a Frame Graph Is
 
-A frame graph replaces a traditional fixed-order render loop with a declarative model. Instead of passes calling the GPU device directly in a hardcoded sequence, each pass declares what resources it reads and writes. The frame graph then:
+A frame graph replaces a traditional fixed-order render loop with a declarative model. Instead of passes calling the GPU device directly in a hardcoded
+sequence, each pass declares what resources it reads and writes. The frame graph then:
 
 1. Compiles an optimal execution schedule from those declarations
 2. Allocates GPU memory and determines aliasing opportunities
@@ -14,7 +16,8 @@ A frame graph replaces a traditional fixed-order render loop with a declarative 
 4. Manages resource lifetimes
 5. Culls passes whose outputs are unused
 
-The key insight is **separating declaration from execution**. Setup lambdas are pure descriptions of intent — no GPU work happens until the entire frame's dependency graph is known. This gives the system full global visibility before committing to any execution order.
+The key insight is **separating declaration from execution**. Setup lambdas are pure descriptions of intent — no GPU work happens until the entire frame's
+dependency graph is known. This gives the system full global visibility before committing to any execution order.
 
 ### Multiple Graphs per Viewport
 
@@ -68,20 +71,24 @@ Execute()
 
 ### 3.1 Build Phase
 
-`BeginBuild()` resets the graph state for a new frame. Between `BeginBuild()` and `EndBuild()`, passes are registered. Each pass's setup lambda runs immediately and populates a data struct with typed resource handles.
+`BeginBuild()` resets the graph state for a new frame. Between `BeginBuild()` and `EndBuild()`, passes are registered. Each pass's setup lambda runs immediately
+and populates a data struct with typed resource handles.
 
-Setup lambdas must be single-threaded and must not issue GPU work. This constraint is non-negotiable — it is what enables the frame graph to reason globally before committing to an execution plan.
+Setup lambdas must be single-threaded and must not issue GPU work. This constraint is non-negotiable — it is what enables the frame graph to reason globally
+before committing to an execution plan.
 
 `EndBuild()` triggers compilation in four steps:
 
-1. **Dependency graph construction** — For each resource, record which passes write it and which passes read it. This produces a directed acyclic graph of pass dependencies.
+1. **Dependency graph construction** — For each resource, record which passes write it and which passes read it. This produces a directed acyclic graph of pass
+   dependencies.
 2. **Topological sort** — Order passes respecting data dependencies, queue assignments, and priority classes.
 3. **Pass culling** — Remove passes whose outputs are never read by any subsequent pass (unless marked as having side effects).
 4. **Memory allocation** — Assign GPU memory to transient resources. Identify non-overlapping lifetimes and alias them to the same memory.
 
 ### 3.2 Execute Phase
 
-Walk the sorted pass list and invoke each pass's execute lambda. The context object resolves frame graph handles into real GPU objects and wraps the platform device context.
+Walk the sorted pass list and invoke each pass's execute lambda. The context object resolves frame graph handles into real GPU objects and wraps the platform
+device context.
 
 Between passes, automatically insert resource barriers based on declared access flags. Platform-specific extensions handle native state transitions.
 
@@ -115,7 +122,8 @@ const auto& passData = frameGraph.AddPass("MyPass", MyPassData{}, setup, execute
 ### Design Rationale
 
 - The **data struct** bridges phases: setup populates it with opaque handles, execute reads those handles and resolves them to real GPU objects via the context.
-- Returning a `const&` to the data struct allows subsequent passes to reference this pass's outputs (e.g., passing the underlying texture of `passData.ColorRTV` to a later pass's shader resource input).
+- Returning a `const&` to the data struct allows subsequent passes to reference this pass's outputs (e.g., passing the underlying texture of `passData.ColorRTV`
+  to a later pass's shader resource input).
 - For compute-only passes, the context type parameter should be the compute context rather than the graphics context.
 
 ---
@@ -126,7 +134,8 @@ The frame graph manages three categories of resources.
 
 ### 5.1 External Resources
 
-Owned outside the frame graph (swap chain back buffer, persistent shadow atlas, etc.). Imported with an initial state indicating whether to preserve existing content:
+Owned outside the frame graph (swap chain back buffer, persistent shadow atlas, etc.). Imported with an initial state indicating whether to preserve existing
+content:
 
 ```cpp
 auto backBuffer = builder.ImportTexture2D(swapChainTexture, InitialState::Preserve);
@@ -136,17 +145,20 @@ The frame graph does not allocate or free external resources — it only tracks 
 
 ### 5.2 Transient Resources
 
-Single-frame lifetime. Created from a pool, returned after the frame completes. This is the workhorse for all intermediate buffers — GBuffer surfaces, blur temporaries, lighting accumulation targets.
+Single-frame lifetime. Created from a pool, returned after the frame completes. This is the workhorse for all intermediate buffers — GBuffer surfaces, blur
+temporaries, lighting accumulation targets.
 
 ```cpp
 auto gbuffer0 = builder.CreateTransientTexture2D("GBuffer0", Format::RGBA8_UNORM, w, h);
 ```
 
-Transient resources with non-overlapping lifetimes should be aliased to the same GPU memory. The allocator tracks per-pass allocation/deallocation windows and finds compatible overlaps, significantly reducing VRAM usage.
+Transient resources with non-overlapping lifetimes should be aliased to the same GPU memory. The allocator tracks per-pass allocation/deallocation windows and
+finds compatible overlaps, significantly reducing VRAM usage.
 
 ### 5.3 Persistent Resources
 
-Survive across frames (temporal AA history, screen-space GI accumulators, reprojection buffers). Managed through tokens that track a lifetime in frames and auto-reallocate if the descriptor changes (e.g., after a resolution change):
+Survive across frames (temporal AA history, screen-space GI accumulators, reprojection buffers). Managed through tokens that track a lifetime in frames and
+auto-reallocate if the descriptor changes (e.g., after a resolution change):
 
 ```cpp
 auto token = frameGraph.AllocPersistentToken("TAA_History", lifetimeFrames);
@@ -193,7 +205,8 @@ Provide specialized helpers matching common GPU usage patterns:
 
 ## 6. Typed Resource Handles
 
-All resource references must be strongly typed at compile time. A read-only texture handle must not be assignable where a writable one is expected. This prevents write-after-read hazards at the API level rather than relying on runtime checks.
+All resource references must be strongly typed at compile time. A read-only texture handle must not be assignable where a writable one is expected. This
+prevents write-after-read hazards at the API level rather than relying on runtime checks.
 
 ### 6.1 Recommended Handle Types
 
@@ -225,7 +238,8 @@ The underlying access flags map directly to GPU resource states and drive barrie
 | `IndirectArgument` | Indirect draw/dispatch |
 | `VertexBuffer` / `IndexBuffer` / `ConstantBuffer` | Fixed-function bindings |
 
-When a resource transitions between access modes across passes (e.g., `RenderTarget` in pass A to `ShaderResource` in pass B), the frame graph emits the appropriate GPU barrier.
+When a resource transitions between access modes across passes (e.g., `RenderTarget` in pass A to `ShaderResource` in pass B), the frame graph emits the
+appropriate GPU barrier.
 
 ---
 
@@ -333,7 +347,9 @@ ctx.CopySubresource(dst, dstMip, dstSlice, src, srcMip, srcSlice);
 
 ### 8.5 Access Boundary
 
-The context must not expose the raw device context through the frame graph handle API — all resource accesses should go through the typed handle system so barriers remain correct. However, the underlying device context should be accessible for draw loop functions that need direct command recording (e.g., iterating a sorted primitive list and recording individual draw calls). This bridges the declarative frame graph with imperative draw call recording.
+The context must not expose the raw device context through the frame graph handle API — all resource accesses should go through the typed handle system so
+barriers remain correct. However, the underlying device context should be accessible for draw loop functions that need direct command recording (e.g., iterating
+a sorted primitive list and recording individual draw calls). This bridges the declarative frame graph with imperative draw call recording.
 
 ---
 
@@ -364,13 +380,15 @@ ScreenSpaceGI, ScreenSpaceReflections, VolumetricLighting,
 Composition, Upscaling, PostProcessing, ...
 ```
 
-`builder.SetSchedulingPriority(prio)` assigns a pass to a class. The scheduler uses priorities to order passes within a queue and to determine which independent passes can overlap.
+`builder.SetSchedulingPriority(prio)` assigns a pass to a class. The scheduler uses priorities to order passes within a queue and to determine which independent
+passes can overlap.
 
 Define enough classes to express the engine's pass ordering requirements — 30-50+ is typical for a production renderer.
 
 ### 9.3 Scheduling Barriers
 
-`builder.SchedulingBarrier()` forces all prior passes to complete before subsequent ones — a hard sync point. Use sparingly: only when a full pipeline flush is required (e.g., before CPU readback of GPU results).
+`builder.SchedulingBarrier()` forces all prior passes to complete before subsequent ones — a hard sync point. Use sparingly: only when a full pipeline flush is
+required (e.g., before CPU readback of GPU results).
 
 ### 9.4 Optimal Scheduling
 
@@ -423,11 +441,13 @@ Maintain hash-keyed caches for both resources and views:
 | RTV pool | Render target view descriptors |
 | DSV pool | Depth-stencil view descriptors |
 
-When a pass requests a transient resource, check the pool first for a matching descriptor (format, dimensions, flags). Only allocate a new GPU resource on cache miss.
+When a pass requests a transient resource, check the pool first for a matching descriptor (format, dimensions, flags). Only allocate a new GPU resource on cache
+miss.
 
 ### 11.2 Memory Aliasing
 
-Track the lifetime of each transient resource (which passes allocate and deallocate it) and identify non-overlapping lifetimes. Resources that never coexist alias to the same GPU memory region.
+Track the lifetime of each transient resource (which passes allocate and deallocate it) and identify non-overlapping lifetimes. Resources that never coexist
+alias to the same GPU memory region.
 
 Example:
 
@@ -438,7 +458,8 @@ Pass C reads IntermediateB, writes IntermediateC
 -> IntermediateA and IntermediateC can alias (non-overlapping lifetimes)
 ```
 
-This is particularly effective for intermediate buffers in the pipeline — GBuffer surfaces used only during the lighting pass, blur temporaries used only during post-processing, etc.
+This is particularly effective for intermediate buffers in the pipeline — GBuffer surfaces used only during the lighting pass, blur temporaries used only during
+post-processing, etc.
 
 ### 11.3 Persistent Resource Tokens
 
@@ -447,7 +468,8 @@ Persistent resources use a separate token system:
 - `AllocPersistentToken(name, lifetimeFrames)` — creates a token tracking a named persistent resource
 - `FreePersistentToken(token)` — releases the token and its backing resource
 
-Tokens monitor the resource descriptor. If it changes (e.g., due to a resolution change), the token automatically reallocates its backing GPU resource with the new parameters.
+Tokens monitor the resource descriptor. If it changes (e.g., due to a resolution change), the token automatically reallocates its backing GPU resource with the
+new parameters.
 
 ---
 
@@ -455,9 +477,11 @@ Tokens monitor the resource descriptor. If it changes (e.g., due to a resolution
 
 ### 12.1 Intra-Frame Barriers
 
-The frame graph inserts resource barriers automatically based on declared access flags. When a resource transitions between access modes across passes (e.g., `RenderTarget` to `ShaderResource`), emit the appropriate GPU barrier.
+The frame graph inserts resource barriers automatically based on declared access flags. When a resource transitions between access modes across passes (e.g.,
+`RenderTarget` to `ShaderResource`), emit the appropriate GPU barrier.
 
-Optionally support automatic UAV barriers between passes that both write to the same resource. Provide a toggle to disable this when passes are known to write non-overlapping regions.
+Optionally support automatic UAV barriers between passes that both write to the same resource. Provide a toggle to disable this when passes are known to write
+non-overlapping regions.
 
 ### 12.2 Cross-Queue Synchronization
 
@@ -485,7 +509,8 @@ Use cases: temporal AA (reading previous frame's history), GPU readback (waiting
 
 ## 13. Platform Extensions
 
-Each backend should be able to extend the frame graph with platform-specific operations that cannot be expressed in the common API. These extensions are accessed through the context during execute and should be conditionally compiled per platform.
+Each backend should be able to extend the frame graph with platform-specific operations that cannot be expressed in the common API. These extensions are
+accessed through the context during execute and should be conditionally compiled per platform.
 
 ### Recommended Extension Points
 
@@ -500,7 +525,8 @@ Each backend should be able to extend the frame graph with platform-specific ope
 
 - Keep the common API minimal — it should cover 90%+ of pass needs
 - Extensions should be `#ifdef`-guarded per platform and accessed through the context
-- A new backend only needs to implement extensions for operations its API handles differently — a stub/no-op extension is valid for platforms that don't need specialized behavior
+- A new backend only needs to implement extensions for operations its API handles differently — a stub/no-op extension is valid for platforms that don't need
+  specialized behavior
 
 ---
 
@@ -545,7 +571,8 @@ State management within the loop:
 
 ### Pipeline State Lookup
 
-The draw loop selects pipeline state objects (PSOs) based on each primitive's material. Use a compact, hashable pipeline state descriptor encoding all relevant fields (shader IDs, input layout, blend/rasterizer/depth-stencil state, topology, render target format). This enables O(1) cache lookups.
+The draw loop selects pipeline state objects (PSOs) based on each primitive's material. Use a compact, hashable pipeline state descriptor encoding all relevant
+fields (shader IDs, input layout, blend/rasterizer/depth-stencil state, topology, render target format). This enables O(1) cache lookups.
 
 Provide async PSO compilation for cache misses to avoid stalls on first use.
 
@@ -649,7 +676,8 @@ ctx.PushEvent(name, color, sourceLocation);
 ctx.PopEvent();
 ```
 
-Each pass should automatically emit events using its registration name and color. Events produce a hierarchical timeline visible in GPU profilers (PIX, RenderDoc, Nsight, platform tools).
+Each pass should automatically emit events using its registration name and color. Events produce a hierarchical timeline visible in GPU profilers (PIX,
+RenderDoc, Nsight, platform tools).
 
 ### 17.2 Priority Visualization
 
@@ -666,7 +694,8 @@ In non-shipping builds, support:
 - **Resource annotation**: `SetResourceDescription(handle, text)` for naming resources in GPU captures
 - **Event annotation**: `SetEventDescription(text)` for adding detail to profiler events
 - **Visual inspection**: real-time UI (e.g., ImGui) showing the pass schedule, resource lifetimes, memory aliasing decisions, and per-pass timing
-- **Pass isolation mode**: `FrameGraphIsolatePasses` inserts barriers between every pass, making each independently timeable at the cost of disabling all overlap
+- **Pass isolation mode**: `FrameGraphIsolatePasses` inserts barriers between every pass, making each independently timeable at the cost of disabling all
+  overlap
 
 ---
 

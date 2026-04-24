@@ -2,7 +2,9 @@
 
 ## Context
 
-The engine needs a general-purpose job system for scheduling parallel work. The immediate use case is background scene updates (see `plan_background_scene_updates.md`), but it should also serve future needs like parallel mesh extraction, spatial index rebuilds, and frame graph pass execution.
+The engine needs a general-purpose job system for scheduling parallel work. The immediate use case is background scene updates (see
+`plan_background_scene_updates.md`), but it should also serve future needs like parallel mesh extraction, spatial index rebuilds, and frame graph pass
+execution.
 
 The engine uses C++23. No external threading libraries — pure standard library (`std::jthread`, `std::mutex`, `std::condition_variable`, `std::atomic`).
 
@@ -136,7 +138,8 @@ while !fence.done->load():
         doneCV.wait(lock, [&] { return fence.done->load() || stopping; })
 ```
 
-The wait implementation does useful work instead of blocking — the calling thread becomes a temporary worker. This prevents deadlocks when the pool is saturated and the main thread is waiting.
+The wait implementation does useful work instead of blocking — the calling thread becomes a temporary worker. This prevents deadlocks when the pool is saturated
+and the main thread is waiting.
 
 **waitAll(fences):**
 ```
@@ -144,7 +147,8 @@ for each fence in fences:
     wait(fence)
 ```
 
-Since `wait()` does useful work, waiting sequentially on N fences still processes jobs from the queue. If all fences complete while working on earlier ones, subsequent waits return immediately.
+Since `wait()` does useful work, waiting sequentially on N fences still processes jobs from the queue. If all fences complete while working on earlier ones,
+subsequent waits return immediately.
 
 **ready():**
 ```

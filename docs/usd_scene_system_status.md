@@ -2,7 +2,9 @@
 
 ## 1. Context
 
-The core architectural decision: **the USD stage IS the scene system**. There is no separate engine scene graph, entity system, or hierarchy. The composed `UsdStage` owns world state directly. The engine builds runtime caches (transforms, bounds, spatial index) and render extraction on top of it. Layering is a first-class engine feature.
+The core architectural decision: **the USD stage IS the scene system**. There is no separate engine scene graph, entity system, or hierarchy. The composed
+`UsdStage` owns world state directly. The engine builds runtime caches (transforms, bounds, spatial index) and render extraction on top of it. Layering is a
+first-class engine feature.
 
 ```text
 UsdStage (layers, composition, hierarchy, transforms, bindings)
@@ -16,11 +18,14 @@ Renderer (frame graph, RHI)
 
 ### Why OpenUSD, Not tinyusdz
 
-tinyusdz is a lightweight USD parser suitable for import-only workflows. It cannot provide the layering, composition, edit targets, session layers, and change notifications the engine needs. Since layering is a first-class engine feature and the USD stage is the authoritative scene model, full OpenUSD (pxr) is required.
+tinyusdz is a lightweight USD parser suitable for import-only workflows. It cannot provide the layering, composition, edit targets, session layers, and change
+notifications the engine needs. Since layering is a first-class engine feature and the USD stage is the authoritative scene model, full OpenUSD (pxr) is
+required.
 
 ### Why Not Hydra
 
-Hydra is USD's built-in rendering architecture (`HdSceneDelegate → HdRenderIndex → HdRenderDelegate`). It provides change-tracked scene-to-renderer translation with pluggable render backends.
+Hydra is USD's built-in rendering architecture (`HdSceneDelegate → HdRenderIndex → HdRenderDelegate`). It provides change-tracked scene-to-renderer translation
+with pluggable render backends.
 
 It is not the right fit here because:
 
@@ -36,7 +41,9 @@ What IS borrowed from Hydra's design:
 
 ### C++20 Containment
 
-OpenUSD v26.03 headers are incompatible with GCC 15's libstdc++ in C++23 mode (`unique_ptr` incomplete type errors in `schemaRegistry.h`). All `src/scene/usd*.cpp` files are compiled with `-std=c++20`. The rest of the engine stays C++23. The pimpl pattern in `usdscene.h` ensures no pxr headers leak into engine-facing code.
+OpenUSD v26.03 headers are incompatible with GCC 15's libstdc++ in C++23 mode (`unique_ptr` incomplete type errors in `schemaRegistry.h`). All
+`src/scene/usd*.cpp` files are compiled with `-std=c++20`. The rest of the engine stays C++23. The pimpl pattern in `usdscene.h` ensures no pxr headers leak
+into engine-facing code.
 
 ### OpenUSD Build
 
@@ -154,7 +161,8 @@ struct MaterialDesc {
 };
 ```
 
-`MeshLibrary` and `MaterialLibrary` store these by handle (1-based index). The renderer resolves handles through the libraries to get vertex/index/texture data for GPU upload.
+`MeshLibrary` and `MaterialLibrary` store these by handle (1-based index). The renderer resolves handles through the libraries to get vertex/index/texture data
+for GPU upload.
 
 ### 3.4 RenderWorld — `src/renderer/renderworld.h`
 
@@ -242,12 +250,19 @@ All pxr usage is contained here. Compiled with `-std=c++20 -Wno-deprecated-decla
 **Internal structure (Impl):**
 
 - **Stage management** — `UsdStage::Open()`, root/session layer setup, `metersPerUnit` from `UsdGeomGetStageMetersPerUnit()`
-- **Change listener** — `TfWeakBase` subclass, registers `TfNotice` for `UsdNotice::ObjectsChanged`, accumulates changed `SdfPath`s behind a mutex, drained each frame
-- **Prim cache** — Full rebuild on open via `UsdPrimRange::Stage()`. Classifies prims (`UsdGeomMesh` → Renderable, `UsdLuxBoundableLightBase`/`NonboundableLightBase` → Light, `UsdGeomXformable` → Xformable). Hierarchy stored as first-child/next-sibling linked list.
-- **Transform cache** — Reads `UsdGeomXformable::GetLocalTransformation()`, computes world = parent.world * local. `metersPerUnit` applied as root scale. Dirty propagation marks entire subtrees.
-- **Asset binding cache** — For renderable prims: extracts `UsdGeomMesh` geometry (points, faceVertexCounts, faceVertexIndices, normals, UVs via primvarsAPI), triangulates with fan triangulation, flips V coordinate for Vulkan (USD uses bottom-left origin). Extracts materials via `UsdShadeMaterialBindingAPI::ComputeBoundMaterial()` → follows `UsdPreviewSurface.diffuseColor` connection → `UsdUVTexture` file input → loads via `ArResolver::OpenAsset()` + stb_image.
+- **Change listener** — `TfWeakBase` subclass, registers `TfNotice` for `UsdNotice::ObjectsChanged`, accumulates changed `SdfPath`s behind a mutex, drained each
+  frame
+- **Prim cache** — Full rebuild on open via `UsdPrimRange::Stage()`. Classifies prims (`UsdGeomMesh` → Renderable,
+  `UsdLuxBoundableLightBase`/`NonboundableLightBase` → Light, `UsdGeomXformable` → Xformable). Hierarchy stored as first-child/next-sibling linked list.
+- **Transform cache** — Reads `UsdGeomXformable::GetLocalTransformation()`, computes world = parent.world * local. `metersPerUnit` applied as root scale. Dirty
+  propagation marks entire subtrees.
+- **Asset binding cache** — For renderable prims: extracts `UsdGeomMesh` geometry (points, faceVertexCounts, faceVertexIndices, normals, UVs via primvarsAPI),
+  triangulates with fan triangulation, flips V coordinate for Vulkan (USD uses bottom-left origin). Extracts materials via
+  `UsdShadeMaterialBindingAPI::ComputeBoundMaterial()` → follows `UsdPreviewSurface.diffuseColor` connection → `UsdUVTexture` file input → loads via
+  `ArResolver::OpenAsset()` + stb_image.
 - **Layer info** — Catalogs session layer, root layer, and sublayers with roles
-- **Edit routing** — `chooseEditLayer()`: Preview/Debug → session layer, Authoring/Procedural → current edit target. Edit methods use scoped `UsdEditContext` to author opinions on the chosen layer.
+- **Edit routing** — `chooseEditLayer()`: Preview/Debug → session layer, Authoring/Procedural → current edit target. Edit methods use scoped `UsdEditContext` to
+  author opinions on the chosen layer.
 
 **Key implementation details:**
 - UV primvar lookup tries `st`, `st0`, `st1`, `UVMap` (different USD exporters use different names)
@@ -271,7 +286,8 @@ void USDRenderExtractor::extract(const USDScene& scene, RenderWorld& out) {
 
 ### 3.8 ImGui Debug UI — in `main.cpp`
 
-- **USD Scene window** with layer stack panel (click to switch edit target, dirty/session indicators), Clear Session / Save All buttons, prim list with type tags
+- **USD Scene window** with layer stack panel (click to switch edit target, dirty/session indicators), Clear Session / Save All buttons, prim list with type
+  tags
 
 ### 3.9 Frame Loop
 
@@ -369,7 +385,8 @@ Non-USD source files continue to use `-std=c++23`.
 
 ### Goal
 
-Complete the runtime cache stack with per-prim world bounds, a spatial acceleration structure, and query APIs for picking, frustum culling, and overlap tests. This enables the render extractor to skip offscreen prims and gives editor tools object picking.
+Complete the runtime cache stack with per-prim world bounds, a spatial acceleration structure, and query APIs for picking, frustum culling, and overlap tests.
+This enables the render extractor to skip offscreen prims and gives editor tools object picking.
 
 ### 7.1 Bounds Cache
 
@@ -399,7 +416,8 @@ private:
 };
 ```
 
-**Local bounds source:** For each renderable prim, compute AABB from the mesh vertices in `MeshLibrary`. This avoids needing pxr headers — the bounds cache operates on engine-side data only.
+**Local bounds source:** For each renderable prim, compute AABB from the mesh vertices in `MeshLibrary`. This avoids needing pxr headers — the bounds cache
+operates on engine-side data only.
 
 **World bounds:** `localBounds.transformed(worldTransform)` using the AABB::transformed() method from scenetypes.h.
 
@@ -410,7 +428,8 @@ private:
 
 ### 7.2 Spatial Index
 
-Acceleration structure for spatial queries. BVH (bounding volume hierarchy) is the recommended approach — good balance of build speed and query performance, handles dynamic scenes with incremental updates.
+Acceleration structure for spatial queries. BVH (bounding volume hierarchy) is the recommended approach — good balance of build speed and query performance,
+handles dynamic scenes with incremental updates.
 
 **New file:** `src/scene/spatialindex.h` / `.cpp`
 
@@ -430,7 +449,8 @@ private:
 ```
 
 **Implementation options:**
-- **BVH** — Binary tree of AABBs. Top-down build with SAH (surface area heuristic) or median split. Incremental refit when bounds change without topology changes. Full rebuild on structural resyncs.
+- **BVH** — Binary tree of AABBs. Top-down build with SAH (surface area heuristic) or median split. Incremental refit when bounds change without topology
+  changes. Full rebuild on structural resyncs.
 - **Uniform grid** — Simpler, good for evenly distributed scenes. Less efficient for scenes with large scale variance.
 
 BVH is recommended. For the initial implementation, a simple flat BVH with refit-on-dirty is sufficient.
@@ -525,7 +545,8 @@ USDScene::endFrame()
 | `src/scene/spatialindex.h/cpp` | BVH for spatial acceleration | No |
 | `src/scene/scenequery.h/cpp` | Raycast, frustum cull, overlap queries | No |
 
-None of these files need pxr headers — they operate entirely on engine-side cached data (PrimRuntimeRecord, TransformCacheRecord, MeshLibrary). They compile with C++23 like the rest of the engine.
+None of these files need pxr headers — they operate entirely on engine-side cached data (PrimRuntimeRecord, TransformCacheRecord, MeshLibrary). They compile
+with C++23 like the rest of the engine.
 
 ---
 
@@ -543,4 +564,5 @@ None of these files need pxr headers — they operate entirely on engine-side ca
 
 ## 9. Mental Model
 
-> The USD stage is the scene. Layers decide where edits live. Runtime caches make it fast. Render extraction turns the composed result into flat data the renderer can consume. The renderer never knows USD exists.
+> The USD stage is the scene. Layers decide where edits live. Runtime caches make it fast. Render extraction turns the composed result into flat data the
+> renderer can consume. The renderer never knows USD exists.

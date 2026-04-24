@@ -60,7 +60,8 @@ virtual auto draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVe
 
 ### 2a. `shaders/debug.vert`
 
-Minimal vertex shader: position (vec3) + color (vec4), UBO with view/proj. No model matrix push constant (vertices are pre-transformed to world space by the CPU batcher).
+Minimal vertex shader: position (vec3) + color (vec4), UBO with view/proj. No model matrix push constant (vertices are pre-transformed to world space by the CPU
+batcher).
 
 ```glsl
 #version 450
@@ -161,7 +162,8 @@ Adds a **DebugWorldPass** that:
 - `beginRendering` with color + depth attachments (clear = false)
 - Binds `debugLinePipeline`, binds vertex buffer, binds descriptor set, calls `draw(lineVertexCount, 1, 0, 0)`
 
-This pass slots between ForwardPass and DebugUIPass in the frame graph. Since the frame graph handles ordering via resource dependencies, declaring `write(color)` and `read(depth)` after ForwardPass writes both ensures correct ordering.
+This pass slots between ForwardPass and DebugUIPass in the frame graph. Since the frame graph handles ordering via resource dependencies, declaring
+`write(color)` and `read(depth)` after ForwardPass writes both ensures correct ordering.
 
 **Note:** A separate DebugOverlayPass (no depth) can be added later. For Phase 4, depth-tested world lines are the priority.
 
@@ -186,12 +188,14 @@ DebugRenderer debugRenderer;
 
 **`src/renderer/renderer.cpp`**:
 - `init()` — call `debugRenderer.init(device, swapchain, uniformBuffers)`
-- `render()` — call `debugRenderer.prepare(debugDrawData, frameIndex)` before frame graph build, then `debugRenderer.addPasses(fg, colorHandle, depthHandle, frameIndex)` between ForwardPass and DebugUIPass
+- `render()` — call `debugRenderer.prepare(debugDrawData, frameIndex)` before frame graph build, then `debugRenderer.addPasses(fg, colorHandle, depthHandle,
+  frameIndex)` between ForwardPass and DebugUIPass
 - `destroy()` — call `debugRenderer.destroy()`
 
 ### 5b. Exposing DebugDraw
 
-The `DebugDraw` instance lives in `main.cpp` (or wherever the application loop is). Systems call into it during update. The renderer receives `const DebugDrawData&` — it never owns or manages the debug draw state.
+The `DebugDraw` instance lives in `main.cpp` (or wherever the application loop is). Systems call into it during update. The renderer receives `const
+DebugDrawData&` — it never owns or manages the debug draw state.
 
 ### 5c. Frame order
 

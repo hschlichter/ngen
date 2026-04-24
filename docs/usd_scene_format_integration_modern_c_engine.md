@@ -2,7 +2,8 @@
 
 ## 1. Overview
 
-If the engine already has a **scene system** above the renderer, then **USD** should usually be treated as a **scene description and interchange format**, not as the engine's in-memory scene model.
+If the engine already has a **scene system** above the renderer, then **USD** should usually be treated as a **scene description and interchange format**, not
+as the engine's in-memory scene model.
 
 That means the architecture should generally look like this:
 
@@ -345,7 +346,8 @@ Do not feel forced to reproduce every USD composition rule in the runtime scene 
 
 ## 10. tinyusdz vs OpenUSD
 
-If the goal is to use USD as a **scene file format** for a custom engine, then using **tinyusdz** instead of the full OpenUSD library can make sense depending on scope.
+If the goal is to use USD as a **scene file format** for a custom engine, then using **tinyusdz** instead of the full OpenUSD library can make sense depending
+on scope.
 
 ### tinyusdz is appealing when:
 
@@ -692,5 +694,6 @@ Avoid these early design traps:
 
 ## 24. Mental Model
 
-> USD is the authored description of a scene; the engine imports that description into its own scene assets and runtime world model, then the renderer consumes extracted render data from that runtime scene.
+> USD is the authored description of a scene; the engine imports that description into its own scene assets and runtime world model, then the renderer consumes
+> extracted render data from that runtime scene.
 

@@ -2,11 +2,13 @@
 
 ## Context
 
-The engine has no orientation reference in the viewport. A coordinate system gizmo (XYZ axes indicator) in the top-right corner shows the camera's orientation at a glance, standard in 3D editors.
+The engine has no orientation reference in the viewport. A coordinate system gizmo (XYZ axes indicator) in the top-right corner shows the camera's orientation
+at a glance, standard in 3D editors.
 
 ## Approach: Dedicated GizmoPass
 
-A new `GizmoPass` renders three colored axis lines (X=red, Y=green, Z=blue) in a small viewport region in the top-right corner. It reuses the existing `debug.vert/frag` shaders and `DebugVertex` format. No new shaders needed.
+A new `GizmoPass` renders three colored axis lines (X=red, Y=green, Z=blue) in a small viewport region in the top-right corner. It reuses the existing
+`debug.vert/frag` shaders and `DebugVertex` format. No new shaders needed.
 
 Key rendering differences from the debug renderer:
 - **Rotation-only view matrix** (strip translation so position doesn't matter)
@@ -20,7 +22,8 @@ Key rendering differences from the debug renderer:
 
 The current `setViewport(RhiExtent2D)` hardcodes origin to (0,0). The gizmo needs an offset.
 
-- `src/rhi/rhicommandbuffer.h` — Add overloads: `setViewport(int32_t x, int32_t y, RhiExtent2D)`, `setScissor(int32_t x, int32_t y, RhiExtent2D)`. Make existing single-arg versions non-virtual wrappers that call these with (0,0).
+- `src/rhi/rhicommandbuffer.h` — Add overloads: `setViewport(int32_t x, int32_t y, RhiExtent2D)`, `setScissor(int32_t x, int32_t y, RhiExtent2D)`. Make existing
+  single-arg versions non-virtual wrappers that call these with (0,0).
 - `src/rhi/vulkan/rhicommandbuffervulkan.h/.cpp` — Implement the new overrides.
 
 ### 2. Create GizmoPass

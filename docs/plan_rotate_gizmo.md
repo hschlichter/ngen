@@ -2,11 +2,13 @@
 
 ## Context
 
-The translate gizmo is working. The tools window already has a dummy "Rotate" button bound to `EditorTool::Rotate`. We need the actual rotate gizmo — same architecture (main-thread class, Preview/Authoring, undo integration), different visual (circles) and math (angle on a plane instead of parameter along a line).
+The translate gizmo is working. The tools window already has a dummy "Rotate" button bound to `EditorTool::Rotate`. We need the actual rotate gizmo — same
+architecture (main-thread class, Preview/Authoring, undo integration), different visual (circles) and math (angle on a plane instead of parameter along a line).
 
 ## Visual
 
-Three circles, one per axis, colored X=red, Y=green, Z=blue. Each circle lies in the plane perpendicular to its axis, centered on the gizmo anchor. Drawn as ~32 line segments approximating the ring. Hovered/dragged axis turns yellow. Same `lineWidth = 4.0` via the existing `GizmoPass` pipeline.
+Three circles, one per axis, colored X=red, Y=green, Z=blue. Each circle lies in the plane perpendicular to its axis, centered on the gizmo anchor. Drawn as ~32
+line segments approximating the ring. Hovered/dragged axis turns yellow. Same `lineWidth = 4.0` via the existing `GizmoPass` pipeline.
 
 Circle points for axis `i` at angle `θ`:
 ```
@@ -19,7 +21,8 @@ Same constant-pixel-size scale factor as the translate gizmo: `scale = kPixelLen
 
 ## Hit testing
 
-Project each circle's sample points to screen. For each axis, compute screen-space distance from cursor to the nearest line segment on that circle (same `distToSegment` helper as translate). Pick the closest within `kHitThresholdPx`.
+Project each circle's sample points to screen. For each axis, compute screen-space distance from cursor to the nearest line segment on that circle (same
+`distToSegment` helper as translate). Pick the closest within `kHitThresholdPx`.
 
 ## Drag math
 
@@ -34,7 +37,8 @@ On drag:
 4. Convert to local space: `localDelta = inverse(parentWorldRot) * deltaQuat * parentWorldRot`.
 5. `newLocal.rotation = localDelta * dragStartLocal.rotation`. Position and scale unchanged.
 
-Parent world rotation is extracted at `tryGrab` time from `parentWorld = currentWorld * inverse(currentLocal.toMat4())`, with column normalization for scale safety.
+Parent world rotation is extracted at `tryGrab` time from `parentWorld = currentWorld * inverse(currentLocal.toMat4())`, with column normalization for scale
+safety.
 
 ## Class
 
@@ -92,7 +96,8 @@ Identical structure to the existing translate gizmo wiring:
 // Per-frame: rotateGizmo.update(); snapshot.rotateGizmoVerts = ...;
 ```
 
-The input priority: orientation gizmo (corner) → translate/rotate gizmo (whichever is active) → scene raycast. Only one tool-gizmo is active at a time (tools window ensures mutual exclusion).
+The input priority: orientation gizmo (corner) → translate/rotate gizmo (whichever is active) → scene raycast. Only one tool-gizmo is active at a time (tools
+window ensures mutual exclusion).
 
 ## Verification
 1. `bear -- make` builds clean.

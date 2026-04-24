@@ -2,9 +2,12 @@
 
 ## 1. Context
 
-The engine currently has a flat glTF loader producing `std::vector<MeshData>` consumed directly by the renderer. glTF has always been intermediate — it will be replaced by USD as the scene format.
+The engine currently has a flat glTF loader producing `std::vector<MeshData>` consumed directly by the renderer. glTF has always been intermediate — it will be
+replaced by USD as the scene format.
 
-The core architectural decision: **the USD stage IS the scene system**. There is no separate engine scene graph, entity system, or hierarchy. The composed `UsdStage` owns world state directly. The engine builds runtime caches (transforms, bounds, spatial index) and render extraction on top of it. Layering is a first-class engine feature. OpenUSD (pxr) is required, integrated via **prebuilt libraries**.
+The core architectural decision: **the USD stage IS the scene system**. There is no separate engine scene graph, entity system, or hierarchy. The composed
+`UsdStage` owns world state directly. The engine builds runtime caches (transforms, bounds, spatial index) and render extraction on top of it. Layering is a
+first-class engine feature. OpenUSD (pxr) is required, integrated via **prebuilt libraries**.
 
 ```text
 UsdStage (layers, composition, hierarchy, transforms, bindings)
@@ -18,11 +21,14 @@ Renderer (frame graph, RHI)
 
 ### Why OpenUSD, Not tinyusdz
 
-tinyusdz is a lightweight USD parser suitable for import-only workflows. It cannot provide the layering, composition, edit targets, session layers, and change notifications the engine needs. Since layering is a first-class engine feature and the USD stage is the authoritative scene model, full OpenUSD (pxr) is required.
+tinyusdz is a lightweight USD parser suitable for import-only workflows. It cannot provide the layering, composition, edit targets, session layers, and change
+notifications the engine needs. Since layering is a first-class engine feature and the USD stage is the authoritative scene model, full OpenUSD (pxr) is
+required.
 
 ### Why Not Hydra
 
-Hydra is USD's built-in rendering architecture (`HdSceneDelegate → HdRenderIndex → HdRenderDelegate`). It provides change-tracked scene-to-renderer translation with pluggable render backends.
+Hydra is USD's built-in rendering architecture (`HdSceneDelegate → HdRenderIndex → HdRenderDelegate`). It provides change-tracked scene-to-renderer translation
+with pluggable render backends.
 
 It is not the right fit here because:
 
@@ -145,7 +151,8 @@ private:
 };
 ```
 
-`USDScene` is the single entry point. External code (main loop, editor, tools) never reaches past it to touch the stage or caches directly. This keeps pxr headers contained to the `src/scene/usd*.cpp` implementation files.
+`USDScene` is the single entry point. External code (main loop, editor, tools) never reaches past it to touch the stage or caches directly. This keeps pxr
+headers contained to the `src/scene/usd*.cpp` implementation files.
 
 ### 3.2 USDStageManager — owns the UsdStage
 
@@ -163,7 +170,8 @@ public:
 };
 ```
 
-Thin wrapper around `UsdStage` lifetime. On `open()`, it opens the stage and creates an anonymous session layer. All other systems receive the `UsdStageRefPtr` from here.
+Thin wrapper around `UsdStage` lifetime. On `open()`, it opens the stage and creates an anonymous session layer. All other systems receive the `UsdStageRefPtr`
+from here.
 
 ### 3.3 USDLayerManager — layer stack awareness and edit routing
 
@@ -204,7 +212,8 @@ public:
 };
 ```
 
-On `initialize()`, walks the stage's `SdfLayerStack` and catalogs each layer with a role (derived from naming convention or metadata). Exposes the stack to editor UI and to the `LayerEditRouter`.
+On `initialize()`, walks the stage's `SdfLayerStack` and catalogs each layer with a role (derived from naming convention or metadata). Exposes the stack to
+editor UI and to the `LayerEditRouter`.
 
 ### 3.4 USDChangeProcessor — stage changes → dirty sets
 
@@ -225,7 +234,9 @@ public:
 };
 ```
 
-On `initialize()`, registers a `TfNotice::Listener` for `UsdNotice::ObjectsChanged`. The listener callback accumulates changed `SdfPath`s into an internal pending set. On `gatherChanges()`, it drains the pending set, resolves paths to `PrimHandle`s via the `PrimCache`, categorizes changes (transform vs asset vs structural), and populates the `SceneDirtySet`. The dirty set then drives all cache updates downstream.
+On `initialize()`, registers a `TfNotice::Listener` for `UsdNotice::ObjectsChanged`. The listener callback accumulates changed `SdfPath`s into an internal
+pending set. On `gatherChanges()`, it drains the pending set, resolves paths to `PrimHandle`s via the `PrimCache`, categorizes changes (transform vs asset vs
+structural), and populates the `SceneDirtySet`. The dirty set then drives all cache updates downstream.
 
 ### 3.5 PrimCache — fast engine-side prim records
 
@@ -258,7 +269,8 @@ public:
 };
 ```
 
-On `rebuild()`, traverses the composed stage (`UsdPrimRange`), creates a `PrimRuntimeRecord` for each prim, and populates the path→handle map. Sets `flags` by checking prim type (`UsdGeomMesh` → renderable, `UsdLuxLight` → light, etc.). Hierarchy is stored as first-child/next-sibling linked list via handles.
+On `rebuild()`, traverses the composed stage (`UsdPrimRange`), creates a `PrimRuntimeRecord` for each prim, and populates the path→handle map. Sets `flags` by
+checking prim type (`UsdGeomMesh` → renderable, `UsdLuxLight` → light, etc.). Hierarchy is stored as first-child/next-sibling linked list via handles.
 
 On `applyResyncs()`, handles added/removed prims incrementally without full rebuild.
 
@@ -284,7 +296,9 @@ public:
 };
 ```
 
-On `update()`, for each dirty prim: calls `UsdGeomXformable::GetLocalTransformation()` to get the composed local transform, decomposes into SRT, computes world matrix as `parent.world * local`, and stamps the frame. Dirty propagation: when a prim's transform is dirty, all descendants are also marked dirty (walked via `PrimCache` hierarchy).
+On `update()`, for each dirty prim: calls `UsdGeomXformable::GetLocalTransformation()` to get the composed local transform, decomposes into SRT, computes world
+matrix as `parent.world * local`, and stamps the frame. Dirty propagation: when a prim's transform is dirty, all descendants are also marked dirty (walked via
+`PrimCache` hierarchy).
 
 ### 3.7 BoundsCache — per-prim world AABB
 
@@ -308,7 +322,8 @@ public:
 };
 ```
 
-Local bounds are computed from mesh extent (`UsdGeomMesh::GetExtentAttr()`). World bounds are transformed local bounds using the world matrix from `TransformCache`. Updated whenever transforms or mesh geometry change.
+Local bounds are computed from mesh extent (`UsdGeomMesh::GetExtentAttr()`). World bounds are transformed local bounds using the world matrix from
+`TransformCache`. Updated whenever transforms or mesh geometry change.
 
 ### 3.8 AssetBindingCache — resolved mesh/material per prim
 
@@ -331,7 +346,9 @@ public:
 };
 ```
 
-For each dirty prim with the renderable flag: reads `UsdGeomMesh` topology (points, indices, normals, UVs) and registers/updates in `MeshLibrary` to get a `MeshHandle`. Reads `UsdShadeMaterialBindingAPI::GetBoundMaterial()`, translates `UsdPreviewSurface` parameters into engine `MaterialDesc`, registers in `MaterialLibrary` to get a `MaterialHandle`.
+For each dirty prim with the renderable flag: reads `UsdGeomMesh` topology (points, indices, normals, UVs) and registers/updates in `MeshLibrary` to get a
+`MeshHandle`. Reads `UsdShadeMaterialBindingAPI::GetBoundMaterial()`, translates `UsdPreviewSurface` parameters into engine `MaterialDesc`, registers in
+`MaterialLibrary` to get a `MaterialHandle`.
 
 ### 3.9 USDRenderExtractor — caches → RenderWorld
 
@@ -377,7 +394,8 @@ struct RenderWorld {
 };
 ```
 
-The renderer only ever sees `RenderWorld`. It never includes pxr headers. The boundary is absolute — USD is an implementation detail of the scene system, invisible to the renderer.
+The renderer only ever sees `RenderWorld`. It never includes pxr headers. The boundary is absolute — USD is an implementation detail of the scene system,
+invisible to the renderer.
 
 ### 3.11 SceneEditContext — layer-aware edits
 
@@ -410,7 +428,8 @@ private:
 };
 ```
 
-Each edit method: (1) calls `m_router` with the prim and request context to determine the target `SdfLayer`, (2) creates a `UsdEditContext` scoped to that layer, (3) authors the opinion. The `TfNotice` system then picks up the change, and `processChanges()` propagates it through caches on the next frame.
+Each edit method: (1) calls `m_router` with the prim and request context to determine the target `SdfLayer`, (2) creates a `UsdEditContext` scoped to that
+layer, (3) authors the opinion. The `TfNotice` system then picks up the change, and `processChanges()` propagates it through caches on the next frame.
 
 ### 3.12 LayerEditRouter — policy-based layer selection
 
@@ -683,4 +702,5 @@ Efficient spatial queries for picking and culling.
 
 ## 9. Mental Model
 
-> The USD stage is the scene. Layers decide where edits live. Runtime caches make it fast. Render extraction turns the composed result into flat data the renderer can consume. The renderer never knows USD exists.
+> The USD stage is the scene. Layers decide where edits live. Runtime caches make it fast. Render extraction turns the composed result into flat data the
+> renderer can consume. The renderer never knows USD exists.
