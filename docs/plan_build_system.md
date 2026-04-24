@@ -33,8 +33,13 @@ links a `StaticLibrary` inherits its archive output as a dependency and (opt-in)
 **Fluent, composable API.** Reading a build program should feel like reading a declarative description, not a pile of tuples. Builders return `*this`; target
 references compose via `.link(other)` / `.depend_on(other)`; intent verbs (`.define`, `.include`, `.warning_off`) are toolchain-agnostic.
 
-**Toolchain-aware from day one.** Even though Phase 1 only ships Clang/Linux, the interface is designed so GCC, Clang/macOS, and MSVC are drop-in additions
-later, not rewrites. Intent stays in the target; the toolchain object owns translation to flags and argv.
+**Toolchain-aware from day one, concrete toolchains project-local.** The framework ships only the abstract `Toolchain` interface and reusable helpers;
+each project writes its own concrete impls under `build/toolchains/` (Clang, Emscripten, GCC, MSVC — whichever it needs). Intent stays in the target; the
+toolchain object owns translation to flags and argv. New toolchains are drop-in additions on the project side, not framework rewrites.
+
+**Platform as a first-class axis, orthogonal to Configuration.** The framework models *what OS + graphics API you target* (Linux/Vulkan, Wasm/WebGPU, …) as
+`Platform`, separately from *how you build* (debug/release/gamerelease) as `Configuration`. Each platform owns its toolchain. Artifacts for each
+platform × config combination live in their own `_out/<platform>/<config>/` subtree so they coexist on disk.
 
 **Pluggable backends.** Ninja is Phase 1. An in-process backend (thread pool, spawning processes, mtime/hash incrementality) is Phase N. Both consume the
 same expanded graph.
@@ -54,18 +59,26 @@ build/
   framework/              # portable — extracts to its own repo / submodule with no edits
     build.hpp             # umbrella header, users include just this
     path.hpp              # Path alias, tiny helpers
+    glob.hpp              / glob.cpp        # glob({.include=…, .exclude=…}) → vector<Path>
     command.hpp           # Command (argv), tokenisation helpers
     flags.hpp             # Flag intent types (Define, Include, Std, WarningOff, Raw, …)
     target.hpp            # Target abstract base
     program.hpp           / program.cpp
+    library.hpp           / library.cpp         # Library: linkage decided by active Configuration
     staticlibrary.hpp     / staticlibrary.cpp
     sharedlibrary.hpp     / sharedlibrary.cpp
     tool.hpp              / tool.cpp
-    graph.hpp             / graph.cpp          # Graph: owns targets, expansion, traversal
-    toolchain.hpp                              # Toolchain interface
-    toolchainclang.hpp    / toolchainclang.cpp # first concrete impl
+    graph.hpp             / graph.cpp          # Graph: owns targets/platforms/configs, expansion, traversal
+    configuration.hpp                          # Configuration struct (opt, debug_info, linkage, defines, …)
+    platform.hpp                               # Platform struct (os, graphics_api, toolchain, system_libs, …)
+    toolchain.hpp                              # abstract Toolchain interface (concrete impls live per-project)
+    toolchainhelpers.hpp  / toolchainhelpers.cpp   # optional utilities for impls (depfile formatting, quoting, …)
     backend.hpp                                # Backend interface
     backendninja.hpp      / backendninja.cpp
+
+  toolchains/             # project-local: ngen's concrete toolchain implementations
+    clang.hpp    / clang.cpp       # ClangToolchain — Linux/macOS native; uses framework toolchainhelpers
+    emscripten.hpp / emscripten.cpp   # EmscriptenToolchain — wasm/wasi via emcc (Phase 4)
 
   bootstrap.ninja         # project-local: compiles prebuild.cpp → ./prebuild
   prebuild.cpp            # project-local: build program that builds ./ngen-build
@@ -92,6 +105,7 @@ Concrete Target subclasses:
 | `Program`         | executable           | N × compile(.cpp→.o) + 1 × link-exe                            |
 | `StaticLibrary`   | `.a` archive         | N × compile + 1 × archive                                      |
 | `SharedLibrary`   | `.so` / `.dylib`/DLL | N × compile + 1 × link-shared (+ import lib on Windows)        |
+| `Library`         | `.a` or `.so`/…      | Resolves to Static or Shared at expansion, per active `Configuration::default_linkage` (overridable via `.linkage(...)`). |
 | `Tool`            | user-declared        | 1 × invoke-command (or N×M with `.for_each()`)                 |
 
 Expansion is the step where the graph of composite Targets is lowered to a flat list of primitive `Rule`s (compile, archive, link-exe, link-shared,
@@ -152,13 +166,23 @@ No print / explain / graphviz / list methods. When something is wrong, attach a 
 
 All types in `namespace build`. Fluent builders return `*this` (method chaining). Target handles are references owned by the `Graph`.
 
-### 4.1 `Program`, `StaticLibrary`, `SharedLibrary`
+### 4.1 `Program`, `Library`, `StaticLibrary`, `SharedLibrary`
 
-Shared intent-setting surface (present on all three):
+Four build-target kinds. `Program` always produces an executable. The three library types differ only in how linkage is chosen:
+
+- **`Library`** — linkage decided at expansion time. Picks up `Configuration::default_linkage` unless the target sets `.linkage(Linkage::Static|Shared)`
+  explicitly. This is the everyday choice.
+- **`StaticLibrary`** — always produces a `.a`, regardless of config.
+- **`SharedLibrary`** — always produces a `.so` / `.dylib` / `.dll`, regardless of config.
+
+Use `Library` by default. Reach for `StaticLibrary` or `SharedLibrary` only when a specific library genuinely *must* be one or the other no matter the
+configuration (vendored deps with ABI quirks, loadable plugins, etc.).
+
+All four share the same intent-setting surface:
 
 ```cpp
 T& cxx(std::vector<Path> sources);        // add source TUs
-T& std(std::string_view version);         // "c++20", "c++23", "c++26" — toolchain translates
+T& std(std::string_view version);         // "c++20", "c++23", "c++26" — overrides the toolchain's default_std
 T& define(std::string macro);             // "FOO" or "FOO=1"
 T& include(Path dir);                     // private include
 T& public_include(Path dir);              // propagated to anything linking this target
@@ -179,23 +203,24 @@ Per-kind additions:
 
 ```cpp
 Program& install_to(Path dir);            // copy exe into dir after link (optional step)
+Library& linkage(Linkage);                // override default_linkage for this Library only
 StaticLibrary& position_independent();    // shorthand for .pic(true)
 SharedLibrary& soname(std::string);
 ```
 
-Example — ngen engine split into two static libraries plus the executable:
+Example — ngen engine split into two libraries plus the executable. `core` follows the active config's linkage; `usdbind` is forced static by a project-level
+decision about OpenUSD:
 
 ```cpp
-auto& core = g.add<StaticLibrary>("enginecore")
+auto& core = g.add<Library>("enginecore")
     .cxx(coreSrcs)
-    .std("c++23")
-    .define("GLM_FORCE_RADIANS").define("GLM_FORCE_DEPTH_ZERO_TO_ONE")
+        .define("GLM_FORCE_RADIANS").define("GLM_FORCE_DEPTH_ZERO_TO_ONE")
     .public_include("src").public_include("external/glm")
     .optimize(OptLevel::O0).debug().pic();
 
-auto& usdbind = g.add<StaticLibrary>("enginensdbind")
+auto& usdbind = g.add<StaticLibrary>("enginensdbind")   // always static regardless of config
     .cxx(usdSrcs)
-    .std("c++20")                                     // OpenUSD forces C++20 on consumers
+    .std("c++20")                                        // OpenUSD forces C++20 on consumers
     .warning_off("deprecated-declarations")
     .public_include("external/openusd_build/include")
     .optimize(OptLevel::O0).debug().pic();
@@ -235,12 +260,37 @@ auto& shaders = g.add<Tool>("shaders")
 view.depend_on(shaders);                              // ngen-view pulls shaders in
 ```
 
-### 4.3 Intent vs. raw flags
+### 4.3 File selection: `glob`
+
+Every build program ends up listing source files; `glob` is the framework-provided helper for that. One shape, used consistently:
+
+```cpp
+struct GlobSpec {
+    std::string include;          // required — a single shell-style pattern
+    std::string exclude;          // optional — empty means no filtering
+};
+
+std::vector<Path> glob(GlobSpec);
+```
+
+Supports `**` for recursive descent. Both fields are single patterns — for multiple patterns, call `glob` twice and concatenate the results with `+`. Typical
+uses:
+
+```cpp
+glob({.include = "src/ui/**/*.cpp"})                                    // one pattern
+glob({.include = "src/scene/*.cpp", .exclude = "src/scene/usd*.cpp"})   // with filter
+glob({.include = "shaders/*.vert"}) + glob({.include = "shaders/*.frag"})   // union
+```
+
+Keeping `glob` in the framework (rather than project-local) means every consumer of the framework gets consistent file-selection semantics without each
+project re-implementing its own helper.
+
+### 4.4 Intent vs. raw flags
 
 The API separates *intent* (portable) from *raw* (toolchain-specific). `.define("X")` works on any toolchain; `.flag_raw("-fno-rtti")` is an escape hatch and
 is silently passed through. Prefer intent. When intent is missing, we either add an intent verb (preferred) or the user reaches for `flag_raw`.
 
-### 4.4 Configurations
+### 4.5 Configurations
 
 A **Configuration** is a named bundle of build-wide choices — optimization level, debug info, default library linkage, extra compile/link flags, which
 targets are active, and an output directory. Exactly one is active per invocation; you select it on the command line:
@@ -275,9 +325,9 @@ g.addConfig(Configuration{...});
 **Per-target overrides** — `.when(name, fn)`:
 
 ```cpp
-auto& renderer = g.add<StaticLibrary>("renderer")
-    .cxx(glob("src/renderer/**/*.cpp"))
-    .when("release",     [](auto& t){ t.define("TRACY_ENABLE"); })
+auto& renderer = g.add<Library>("renderer")
+    .cxx(glob({.include = "src/renderer/**/*.cpp"}))
+    .when("release",     [](auto& t){ t.define("ENABLE_PROFILER"); })
     .when("gamerelease", [](auto& t){ t.flag_raw("-flto").define("SHIPPING=1"); });
 ```
 
@@ -286,43 +336,99 @@ auto& renderer = g.add<StaticLibrary>("renderer")
 **Per-target inclusion** — `.only_in({...})` / `.except_in({...})`:
 
 ```cpp
-auto& tracy = g.add<StaticLibrary>("tracy")
-    .cxx(glob("external/tracy/*.cpp"))
-    .only_in({"debug", "release"});            // not built in gamerelease
+auto& devtools = g.add<Library>("devtools")            // hypothetical dev-only library
+    .cxx(glob({.include = "src/devtools/*.cpp"}))
+    .only_in({"debug", "release"});                    // not built in gamerelease
 
 auto& view = g.add<Program>("ngen-view")
-    .link(core).link(renderer).link(tracy);    // automatically drops the tracy edge in gamerelease
+    .link(core).link(renderer).link(devtools);         // automatically drops the devtools edge in gamerelease
 ```
 
 A target excluded from the active config is absent from the expanded graph. Other targets that `.link()` it have that edge dropped automatically; explicit
-`.link_if_present(tracy)` is redundant.
+`.link_if_present(devtools)` is redundant.
 
-**Static vs shared linkage per config.** The framework does *not* silently swap `StaticLibrary` for `SharedLibrary` based on a config flag — types stay honest
-about what they produce. If a library's linkage differs per config, express it as conditional construction in `build.cpp`:
-
-```cpp
-Target& rhi = (active.default_linkage == Linkage::Shared)
-    ? (Target&) g.add<SharedLibrary>("rhi").cxx(glob("src/rhi/*.cpp"))
-    : (Target&) g.add<StaticLibrary>("rhi").cxx(glob("src/rhi/*.cpp"));
-```
-
-The branch is plain C++, visible and stepped-through-with-a-debugger like everything else. `Configuration::default_linkage` is a hint your build program
-reads; the framework doesn't enforce it.
+**Static vs shared linkage per config.** Use `Library` (§4.1) for any library whose linkage should follow the active config. At expansion the framework lowers
+each `Library` to either a `StaticLibrary` or `SharedLibrary` subgraph, based on `Configuration::default_linkage`. `StaticLibrary` and `SharedLibrary` remain
+available for libraries that genuinely must be one or the other regardless of config (vendored deps with ABI quirks, loadable plugins). Per-target override
+is `.linkage(Linkage::Static|Shared)` on a `Library`.
 
 **Starting set of configs for ngen:**
 
 | Config         | Opt | Debug info | Default linkage | Key defines          | Notes                                                              |
 |----------------|-----|------------|-----------------|----------------------|--------------------------------------------------------------------|
-| `debug`        | O0  | full       | Static          | `DEBUG=1`            | Default. Asserts on; Tracy on; extra diagnostic code paths on.     |
-| `release`      | O2  | yes        | Static          | `NDEBUG`             | Optimised with debug info for profiling and crash dumps. Tracy on. |
-| `gamerelease`  | O3  | none       | Shared          | `NDEBUG`, `SHIPPING=1` | LTO, hidden visibility, stripped. Shared libs for smaller binary and easier patching. Tracy off. |
+| `debug`        | O0  | full       | Static          | `DEBUG=1`            | Default. Asserts on; extra diagnostic code paths on.               |
+| `release`      | O2  | yes        | Static          | `NDEBUG`             | Optimised with debug info for profiling and crash dumps.           |
+| `gamerelease`  | O3  | none       | Shared          | `NDEBUG`, `SHIPPING=1` | LTO, hidden visibility, stripped. Shared libs for smaller binary and easier patching. |
 
 These are starting points, not framework defaults — they live in ngen's `build.cpp`. Other projects define their own configs.
 
-### 4.5 What lives on the `Graph` vs. on Targets
+### 4.6 Platforms
 
-On the `Graph`: toolchain, registered configs, default target, active config selection. On Targets: everything about how that target is built, including
-per-config `.when()` blocks. No hidden global state.
+A **Platform** is an orthogonal axis to Configuration. Where a Configuration says *how* to build (opt, debug, linkage, asserts), a Platform says *what* you are
+building for: operating system, graphics API, toolchain, system libraries, artifact naming. One platform is active per invocation; you pick it alongside the
+config:
+
+```
+./ngen-build --platform linux-vulkan --config debug ngen-view
+./ngen-build --platform wasm-webgpu  --config release
+./ngen-build                                               # first-registered platform + first-registered config
+```
+
+Artifacts go under `<out_dir>/<platform>/<config>/`, so all combinations coexist on disk: `_out/linux-vulkan/debug/`, `_out/wasm-webgpu/release/`, etc.
+
+**Why Platform owns the toolchain.** The choice of compiler is dictated by the target OS, not by the developer's build mode. Linux/Vulkan builds call `clang++`;
+Wasm/WebGPU builds call `emcc`. Toolchain therefore moves out of `Graph` and into each `Platform`. The user still writes the toolchain config inline in
+`build.cpp` — just now it lives inside the `addPlatform` call rather than a top-level `setToolchain`. Same visibility; different locus.
+
+**The `Platform` type:**
+
+```cpp
+struct Platform {
+    std::string name;                                  // "linux-vulkan", "wasm-webgpu"
+    std::string os;                                    // "linux", "wasi"
+    std::string graphics_api;                          // "vulkan", "webgpu"
+    std::unique_ptr<Toolchain> toolchain;              // native clang vs emscripten, etc.
+    std::vector<std::string> defines;                  // applied to every compile on this platform
+    std::vector<std::string> extra_cxx_flags;
+    std::vector<std::string> extra_link_flags;
+    std::vector<std::string> system_libs;              // linked into every Program on this platform
+    std::string exe_suffix = "";                       // "" / ".exe" / ".wasm"
+};
+
+g.addPlatform(Platform{...});                          // first registered = default
+const Platform& active = g.activePlatform();
+```
+
+**Per-target platform conditionals.** Mirrors the config API — different verbs so the two axes don't collide:
+
+- `.when_platform(name, fn)` — run `fn` only if the active platform matches.
+- `.only_on({names…})` / `.except_on({names…})` — presence filter by platform. Edges to targets excluded on this platform drop automatically.
+
+**Starting pair for ngen:**
+
+| Platform       | OS      | Graphics | Toolchain     | Key defines                              | Notes                                                              |
+|----------------|---------|----------|---------------|------------------------------------------|--------------------------------------------------------------------|
+| `linux-vulkan` | linux   | vulkan   | `clang++`     | `NGEN_PLATFORM_LINUX`, `NGEN_GFX_VULKAN` | Primary. System libs: vulkan, m. `exe_suffix = ""`.                |
+| `wasm-webgpu`  | wasi    | webgpu   | `emcc`        | `NGEN_PLATFORM_WASM`,  `NGEN_GFX_WEBGPU` | Secondary. Emscripten provides WebGPU. `exe_suffix = ".wasm"`.     |
+
+Additional platforms (Windows/Vulkan, Windows/DX12, macOS/Metal) are not Phase 1 scope — they come online as Toolchain impls land.
+
+**Prebuild is platform-agnostic.** `./ngen-build` itself is always a native host binary (you run it from your dev machine). Platforms only affect the *engine
+artifacts* that `./ngen-build` produces. `build/prebuild.cpp` and `build.cpp`'s own compile use the host's default toolchain; platform selection starts at the
+engine graph.
+
+**Source file selection per platform.** Platform-specific libraries (`rhivulkan` vs a future `rhiwebgpu`) use `.only_on({...})` and the framework drops them
+from the expanded graph on the other platform. The `Program` declares `.link(rhivulkan).link(rhiwebgpu)` unconditionally; the framework resolves which edge
+survives based on the active platform.
+
+**Platform × Configuration matrix.** The two axes multiply: three configs × two platforms = six buildable variants, each in its own `_out/<platform>/<config>/`
+subtree. They're independent — you don't need a new config entry per platform, and vice versa. A target's `.when("release", ...)` applies whatever the
+platform; `.when_platform("wasm-webgpu", ...)` applies whatever the config; combining them is chaining two `.when...` calls on the same target.
+
+### 4.7 What lives on the `Graph` vs. on Targets
+
+On the `Graph`: registered platforms (each owning its toolchain), registered configs, default target, active platform + config selection. On Targets:
+everything about how that target is built, including per-config and per-platform `.when...()` blocks. No hidden global state.
 
 ---
 
@@ -374,25 +480,59 @@ public:
     virtual std::string shared_lib_name(std::string_view stem) const = 0;   // libfoo.so / foo.dll
     virtual std::string exe_name(std::string_view stem) const = 0;
 };
+```
 
-class ClangToolchain : public Toolchain {
+**Concrete toolchains are project-local, not framework.** The framework ships the interface above and a small `toolchainhelpers.hpp` with utilities
+implementations commonly need (gcc-style depfile flag assembly, shell-quoting, joining argv vectors). It does *not* ship a `ClangToolchain` or any other
+compiler-specific implementation. Reasons: toolchain choice is genuinely project-specific (ccache wrappers, mold linker, distributed/deterministic builds,
+in-house compilers), and a single blessed `ClangToolchain` in the framework would either be wrong for most consumers or pressure everyone into the same
+narrow opinions.
+
+Projects put their concrete toolchains under `build/toolchains/` (see §2 folder layout). For ngen those files are:
+
+```cpp
+// build/toolchains/clang.hpp  — ngen-local, not framework.
+class ClangToolchain : public build::Toolchain {
 public:
     struct Config {
-        Path cxx       = "clang++";      // compiler + driver
-        Path ar        = "ar";
-        Path linker    = {};             // empty → use cxx as the link driver
+        Path cxx         = "clang++";     // compiler + driver
+        Path ar          = "ar";
+        Path linker      = {};            // empty → use cxx as the link driver
+        std::string default_std = "c++23"; // used by CompileIntent when the target didn't set .std(...)
         std::vector<std::string> extra_cxx_flags;   // appended to every compile
         std::vector<std::string> extra_link_flags;  // appended to every link
     };
     explicit ClangToolchain(Config = {});
+    /* … implements the Toolchain virtuals using framework helpers … */
+};
+
+// build/toolchains/emscripten.hpp  — ngen-local, Phase 4.
+class EmscriptenToolchain : public build::Toolchain {
+public:
+    struct Config {
+        Path emcc        = "emcc";
+        Path emar        = "emar";
+        std::string default_std = "c++23";
+        std::vector<std::string> extra_cxx_flags;
+        std::vector<std::string> extra_link_flags;   // e.g. "-sUSE_WEBGPU=1", "-sWASM=1"
+    };
+    explicit EmscriptenToolchain(Config = {});
     /* … */
 };
-// Later: GccToolchain, MsvcToolchain, ClangClToolchain.
 ```
 
-Concrete toolchains expose a `Config` struct so users can see and override the compiler/linker/archiver paths directly in `build.cpp`. No `detectToolchain()`
-magic — see §9 for the call site. The graph stores intent on targets; at expansion time, each primitive rule's intent is handed to the current Toolchain to
-produce a `Command`. Swapping toolchain means constructing a different one and calling `g.setToolchain(...)` before expansion. No target code changes.
+A `Config` struct per concrete toolchain makes its knobs visible in `build.cpp`; the `default_std` field lives here because it's a project-language
+opinion. The framework's `Toolchain` interface knows nothing about C++ standards specifically — a hypothetical `RustToolchain` in another project would carry
+an `edition` field instead; a `CToolchain` would carry `c_std`. Targets that don't call `.std(...)` inherit the active toolchain's default; `.std(...)` on a
+target overrides.
+
+**The toolchain is owned by the active `Platform` (§4.6), not by `Graph` directly.** At expansion time, each primitive rule's intent is handed to the active
+platform's Toolchain to produce a `Command`. Adding a new platform means constructing a `Platform` with its own toolchain and calling `g.addPlatform(...)` —
+see §9 for the call site. No target code changes.
+
+**Reference implementations.** There's a first-time cost to writing a `ClangToolchain` (~100–200 lines of argv assembly). ngen's copy becomes the de facto
+reference — other projects adopting the framework can copy it and modify. A curated "reference toolchains" repo external to the framework is a reasonable
+future artefact; it is explicitly *not* part of the framework itself.
 
 ---
 
@@ -556,31 +696,55 @@ splits into two libraries — `scene` (non-USD) and `sceneusd` (USD-specific). T
 
 ```cpp
 #include "build/framework/build.hpp"
+#include "build/toolchains/clang.hpp"            // ngen-local toolchain
+#include "build/toolchains/emscripten.hpp"       // ngen-local toolchain (Phase 4)
 using namespace build;
-
-// Common engine flag set. Optimization, debug info, and linkage come from the active Configuration,
-// so they're NOT set here.
-static StaticLibrary& applyEngineCxx(StaticLibrary& l, const std::vector<std::string>& sdl3Cflags) {
-    return l.std("c++23")
-            .define("GLM_FORCE_RADIANS").define("GLM_FORCE_DEPTH_ZERO_TO_ONE")
-            .pic()
-            .public_include("src")
-            .public_include("external/glm").public_include("external/cgltf")
-            .public_include("external/stb").public_include("external/imgui")
-            .public_include("external/imgui/backends").public_include("external/concurrentqueue")
-            .flag_raw_many(sdl3Cflags);
-}
 
 int main(int argc, char** argv) {
     Graph g;
 
-    // Toolchain is declared here, visible and editable.
-    ClangToolchain clang{{
-        .cxx    = "clang++",
-        .ar     = "ar",
-        .linker = {},                                    // empty: use cxx as link driver
-    }};
-    g.setToolchain(clang);
+    // --- platforms --------------------------------------------------------
+    // Each platform owns its toolchain, so the compiler choice is visible and
+    // editable right here. First-registered is the default. The toolchain
+    // implementations (ClangToolchain, EmscriptenToolchain) are project-local
+    // under build/toolchains/, not framework.
+    // Project-wide defines and cxx flags live on Platform so they are applied once
+    // rather than repeated on every library declaration below.
+    const std::vector<std::string> ngenDefines = { "GLM_FORCE_RADIANS", "GLM_FORCE_DEPTH_ZERO_TO_ONE" };
+    auto sdl3Cflags = captureTokens("pkg-config --cflags sdl3");     // Linux-only
+    auto sdl3Libs   = captureTokens("pkg-config --libs   sdl3");
+
+    g.addPlatform(Platform{
+        .name            = "linux-vulkan",
+        .os              = "linux",
+        .graphics_api    = "vulkan",
+        .toolchain       = std::make_unique<ClangToolchain>(ClangToolchain::Config{
+            .cxx         = "clang++",
+            .ar          = "ar",
+            .linker      = {},                           // empty: use cxx as link driver
+            .default_std = "c++23",                      // ngen-wide default; targets override with .std(...)
+        }),
+        .defines         = concat({"NGEN_PLATFORM_LINUX", "NGEN_GFX_VULKAN"}, ngenDefines),
+        .extra_cxx_flags = concat({"-fPIC"}, sdl3Cflags),
+        .system_libs     = {"vulkan", "m"},
+        .exe_suffix      = "",
+    });
+    g.addPlatform(Platform{
+        .name             = "wasm-webgpu",
+        .os               = "wasi",
+        .graphics_api     = "webgpu",
+        .toolchain        = std::make_unique<EmscriptenToolchain>(EmscriptenToolchain::Config{
+            .emcc             = "emcc",
+            .emar             = "emar",
+            .default_std      = "c++23",
+            .extra_link_flags = {"-sUSE_WEBGPU=1", "-sWASM=1", "-sALLOW_MEMORY_GROWTH=1"},
+        }),
+        .defines          = concat({"NGEN_PLATFORM_WASM", "NGEN_GFX_WEBGPU"}, ngenDefines),
+        .extra_cxx_flags  = {"-fPIC"},
+        .system_libs      = {},                          // emcc bundles webgpu
+        .exe_suffix       = ".wasm",
+    });
+    const Platform& activePlatform = g.activePlatform();
 
     // --- configurations ---------------------------------------------------
     g.addConfig(Configuration{
@@ -608,81 +772,93 @@ int main(int argc, char** argv) {
     });
     const Configuration& active = g.activeConfig();      // chosen from --config, default = first
 
-    auto sdl3Cflags = captureTokens("pkg-config --cflags sdl3");
-    auto sdl3Libs   = captureTokens("pkg-config --libs   sdl3");
-
     // --- one library per src/ folder -------------------------------------
-    // Helper that picks Static or Shared based on active.default_linkage.
-    auto addLib = [&](std::string name) -> Target& {
-        return (active.default_linkage == Linkage::Shared)
-            ? (Target&) g.add<SharedLibrary>(name)
-            : (Target&) g.add<StaticLibrary>(name);
-    };
+    // Library picks static/shared from active Configuration.default_linkage.
+    // sceneusd is explicitly StaticLibrary — OpenUSD's compile quirks stay contained
+    // in a static archive regardless of config.
+    // Per-library: sources, std, exposed includes, inter-library links. The
+    // ngen-wide concerns (GLM defines, -fPIC, sdl3 cflags) live on Platform above.
+    const Path src = "src";
 
-    auto& obs      = applyEngineCxx(g.add<StaticLibrary>("obs"),      sdl3Cflags)   // always static; tiny
-                        .cxx(glob("src/obs/**/*.cpp"));
+    auto& obs = g.add<Library>("obs")
+        .cxx(glob({.include = "src/obs/**/*.cpp"}))
+        .public_include(src);
 
-    auto& rhi      = applyEngineCxx(g.add<StaticLibrary>("rhi"),      sdl3Cflags)
-                        .cxx(glob("src/rhi/*.cpp"));                 // non-recursive: excludes vulkan/
+    auto& rhi = g.add<Library>("rhi")
+        .cxx(glob({.include = "src/rhi/*.cpp"}))        // non-recursive: excludes vulkan/
+        .public_include(src);
 
-    auto& rhivk    = applyEngineCxx(g.add<StaticLibrary>("rhivulkan"),sdl3Cflags)
-                        .cxx(glob("src/rhi/vulkan/**/*.cpp"))
-                        .link(rhi);
+    auto& rhivk = g.add<Library>("rhivulkan")
+        .cxx(glob({.include = "src/rhi/vulkan/**/*.cpp"}))
+        .only_on({"linux-vulkan"})
+        .public_include(src)
+        .link(rhi);
 
-    auto& renderer = applyEngineCxx(g.add<StaticLibrary>("renderer"), sdl3Cflags)
-                        .cxx(glob("src/renderer/**/*.cpp"))
-                        .link(rhi);
+    auto& rhiwgpu = g.add<Library>("rhiwebgpu")
+        .cxx(glob({.include = "src/rhi/webgpu/**/*.cpp"}))   // future implementation
+        .only_on({"wasm-webgpu"})
+        .public_include(src)
+        .link(rhi);
 
-    auto& scene    = applyEngineCxx(g.add<StaticLibrary>("scene"),    sdl3Cflags)
-                        .cxx(glob("src/scene/*.cpp",
-                                  /*exclude=*/ glob("src/scene/usd*.cpp")));
+    auto& renderer = g.add<Library>("renderer")
+        .cxx(glob({.include = "src/renderer/**/*.cpp"}))
+        .public_include(src)
+        .link(rhi);
 
-    auto& sceneusd = g.add<StaticLibrary>("sceneusd")                // USD-specific flag set
-                        .cxx(glob("src/scene/usd*.cpp"))
-                        .std("c++20")
-                        .warning_off("deprecated-declarations")
-                        .define("GLM_FORCE_RADIANS").define("GLM_FORCE_DEPTH_ZERO_TO_ONE")
-                        .pic()
-                        .public_include("src")
-                        .public_include("external/openusd_build/include")
-                        .public_include("external/glm").public_include("external/imgui")
-                        .flag_raw_many(sdl3Cflags);
+    auto& scene = g.add<Library>("scene")
+        .cxx(glob({.include = "src/scene/*.cpp",
+                    .exclude = "src/scene/usd*.cpp"}))
+        .public_include(src);
 
-    auto& ui       = applyEngineCxx(g.add<StaticLibrary>("ui"),       sdl3Cflags)
-                        .cxx(glob("src/ui/**/*.cpp"))
-                        .link(renderer).link(scene);
+    auto& sceneusd = g.add<StaticLibrary>("sceneusd")
+        .std("c++20")                            // explicit: OpenUSD requires C++20
+        .cxx(glob({.include = "src/scene/usd*.cpp"}))
+        .warning_off("deprecated-declarations")
+        .public_include(src)
+        .public_include("external/openusd_build/include");
 
-    auto& imgui    = applyEngineCxx(g.add<StaticLibrary>("imgui"),    sdl3Cflags)
-                        .cxx(imguiSources());
-
-    // --- optional profiler: debug/release only ---------------------------
-    auto& tracy    = applyEngineCxx(g.add<StaticLibrary>("tracy"),    sdl3Cflags)
-                        .cxx(glob("external/tracy/*.cpp"))
-                        .only_in({"debug", "release"})
-                        .when("release", [](auto& t){ t.define("TRACY_ON_DEMAND"); });
+    auto& ui = g.add<Library>("ui")
+        .cxx(glob({.include = "src/ui/**/*.cpp"}))
+        .public_include(src)
+        .link(renderer).link(scene);
 
     // --- shaders ---------------------------------------------------------
     auto& shaders  = g.add<Tool>("shaders")
-                        .command({"glslc", "$in", "-o", "$out"})
-                        .for_each(glob("shaders/*.vert") + glob("shaders/*.frag"),
-                                  [](const Path& s){ return s.string() + ".spv"; });
+    .command({"glslc", "$in", "-o", "$out"})
+    .for_each(glob({.include = "shaders/*.vert"}) + glob({.include = "shaders/*.frag"}),
+            [](const Path& s){ return s.string() + ".spv"; });
 
     // --- executable ------------------------------------------------------
     auto& view = g.add<Program>("ngen-view")
         .cxx({"src/main.cpp", "src/camera.cpp", "src/debugdraw.cpp", "src/jobsystem.cpp"})
-        .std("c++23")
-        .define("GLM_FORCE_RADIANS").define("GLM_FORCE_DEPTH_ZERO_TO_ONE")
-        .link(obs).link(rhi).link(rhivk).link(renderer).link(scene).link(sceneusd).link(ui).link(imgui)
-        .link(tracy)                                              // dropped automatically in gamerelease
-        .link("vulkan").link("m")
-        .flag_raw_many(sdl3Cflags).flag_raw_many(sdl3Libs)
-        .link_raw("-lusd_usd").link_raw("-lusd_usdGeom").link_raw("-lusd_usdShade")
-        // … full USD library list …
-        .rpath("$ORIGIN/../external/openusd_build/lib")
+        .link(obs)
+        .link(rhi)
+        .link(rhivk)
+        .link(rhiwgpu)           // only the active-platform backend survives
+        .link(renderer)
+        .link(scene)
+        .link(sceneusd)
+        .link(ui)
+        .flag_raw_many(sdl3Libs)                                  // link-time sdl3 libs; cflags are on Platform
+        .when_platform("linux-vulkan", [](auto& t) {
+            t
+                .link_raw("-lusd_usd")
+                .link_raw("-lusd_usdGeom")
+                .link_raw("-lusd_usdShade")
+                // … full USD library list, Linux-only …
+                .rpath("$ORIGIN/../external/openusd_build/lib");
+        })
+        .when_platform("wasm-webgpu", [](auto& t) {
+            // USD + SDL are Linux-only; the wasm build uses minimal replacements.
+            t
+                .flag_raw("-sUSE_SDL=3")                          // emcc port
+                .link_raw("--preload-file=assets@/assets");        // bundle assets into the .wasm
+        })
         .depend_on(shaders)
         .when("gamerelease", [](auto& t){
-            // In gamerelease, strip harder + hide the console on Windows-like builds
-            t.flag_raw("-flto").link_raw("-Wl,--strip-all");
+            t
+                .flag_raw("-flto")
+                .link_raw("-Wl,--strip-all");
         });
 
     g.setDefault(view);
@@ -693,20 +869,26 @@ int main(int argc, char** argv) {
 
 Observations:
 
-- Nine libraries in the `debug`/`release` configs (obs, rhi, rhivulkan, renderer, scene, sceneusd, ui, imgui, tracy); eight in `gamerelease` (tracy drops).
+- Eight libraries on `linux-vulkan` (obs, rhi, rhivulkan, renderer, scene, sceneusd, ui, imgui); eight on `wasm-webgpu` (`rhivulkan` swaps for `rhiwebgpu`).
   The Program itself compiles the four cross-cutting `src/*.cpp` files directly.
-- `applyEngineCxx` stops short of setting `.optimize()` / `.debug()` — those come from the active `Configuration` during expansion.
-- The `addLib` helper is sketched but unused in the current ngen layout, because a mid-size engine benefits from explicit `StaticLibrary` declarations
-  (compile-time checked, graph clearer). The helper is the pattern to reach for when a project genuinely wants linkage to flow from config.
-- `tracy.only_in({"debug", "release"})` + `view.link(tracy)` is the clean pattern: the Program declares the edge unconditionally; the framework drops it
-  when the target isn't present in the active config. No `.link_if_present` needed.
+- `glob` is a framework helper (§4.3). One form, `glob({.include = "…", .exclude = "…"})`, used consistently — designated-initialiser fields are
+  self-labelling and let `.exclude` be added later without changing the call shape. `scene` uses it to exclude `usd*.cpp`, which live in `sceneusd` with
+  their own flag set.
+- **Project-wide flags live on `Platform`.** `GLM_FORCE_*` defines, `-fPIC`, and SDL3 cflags are set once on the active platform rather than repeated on
+  every library. Each library declaration is short: sources, std version, its own exposed includes, and its inter-library link edges.
+- `Configuration` supplies opt level, debug info, and linkage at expansion. `Platform` supplies OS/gfx defines, toolchain, and cross-cutting cxx flags.
+  Targets carry only what is genuinely per-target.
+- Every engine library is `Library` (linkage flows from config) except `sceneusd`, which is explicitly `StaticLibrary` because OpenUSD's compile quirks are
+  easier to contain inside a static archive regardless of config. In `gamerelease`, all the `Library`-typed ones expand to `SharedLibrary` subgraphs;
+  `sceneusd` stays static and gets absorbed into the `Program` link like any other `.a`.
 - Inter-library `.link()` edges (rhivulkan→rhi, renderer→rhi, ui→renderer+scene) reflect compile-time header dependencies; they propagate `.public_include`
   from the linked library into the consumer's compile commands. Exact edges will firm up in Phase 1 as we verify compiles.
-- Artifacts per config land in `_out/debug/`, `_out/release/`, `_out/gamerelease/`. `./ngen-build --config release ngen-view` produces
-  `_out/release/ngen-view`.
-- `applyEngineCxx` is a one-function helper in `build.cpp` to avoid repeating the common flag set. Not part of the framework — it's project-local shorthand.
-- `sceneusd` does not use the helper because its flag set diverges meaningfully (C++20, extra include, warning suppression).
-- `sdl3Cflags` / `sdl3Libs` resolved in-process via `popen` (no backticks reach the backend).
+- Artifacts per platform × config land in `_out/<platform>/<config>/`. `./ngen-build --platform linux-vulkan --config release ngen-view` produces
+  `_out/linux-vulkan/release/ngen-view`. `./ngen-build --platform wasm-webgpu --config release` produces `_out/wasm-webgpu/release/ngen-view.wasm`.
+- On `linux-vulkan`, `rhivulkan` is in the graph and `rhiwebgpu` is not; the `Program` `.link(rhivk).link(rhiwgpu)` declarations both appear, and the
+  framework drops the edge to whichever library is excluded from the active platform. No conditional `.link()` on the Program.
+- `sdl3Cflags` / `sdl3Libs` resolved in-process via `popen` (no backticks reach the backend). `sdl3Cflags` goes on the linux platform's `extra_cxx_flags`;
+  `sdl3Libs` goes on the Program's link flags because it's a link-time concern, not a compile-time concern.
 - Splitting the monolithic `enginecore` into folder-matched libraries gives faster incremental builds (a change in `src/ui/` only recompiles `ui`'s TUs and
   relinks the Program) and clearer archive-level ownership.
 
@@ -717,7 +899,8 @@ Observations:
 Each phase is independently shippable; the Makefile remains usable until phase 5.
 
 **Phase 0 — Framework skeleton, one Target type, Ninja backend.**
-- Implement `Graph`, `Target`, `Program`, `Toolchain` interface + `ClangToolchain`, `NinjaBackend`, `Command`, `Flags`.
+- Implement `Graph`, `Target`, `Program`, the abstract `Toolchain` interface, `toolchainhelpers`, `NinjaBackend`, `Command`, `Flags`, `glob`.
+- Write `build/toolchains/clang.hpp/.cpp` in the toy project (project-local, not framework) implementing `Toolchain` against Clang.
 - Toy program builds a two-file hello-world via `Program("hello").cxx({…})`.
 - Accept: `./hello` runs.
 
@@ -740,17 +923,25 @@ Each phase is independently shippable; the Makefile remains usable until phase 5
 - Accept: developer workflow is `./ngen-build` instead of `make`; problems in the build are debugged with `gdb ./ngen-build`. Default config (debug) only —
   other configs land in the next phase.
 
-**Phase 3b — Configurations.**
-- Implement `Configuration`, `Graph::addConfig` / `activeConfig`, `--config <name>` CLI parsing, per-config `_out/<name>/` output dirs.
+**Phase 3b — Configurations and `Library`.**
+- Implement `Configuration`, `Graph::addConfig` / `activeConfig`, `--config <name>` CLI parsing, per-config output dirs (nested under the platform dir).
 - Implement `.when(name, fn)` and `.only_in({...})` / `.except_in({...})` on targets; wire into expansion so excluded targets and their incoming edges drop.
-- Register `debug` / `release` / `gamerelease` in ngen's `build.cpp`; move `.optimize()` / `.debug()` off `applyEngineCxx`.
+- Implement the `Library` type (§4.1): lowers to `StaticLibrary` or `SharedLibrary` subgraph at expansion per `Configuration::default_linkage`, overridable
+  via `.linkage(Linkage)`.
+- Register `debug` / `release` / `gamerelease` in ngen's `build.cpp`; convert the engine libraries to `Library` (keeping `sceneusd` as `StaticLibrary`).
+  Put project-wide GLM defines, SDL3 cflags, and `-fPIC` on the linux platform's `defines` / `extra_cxx_flags` so per-library declarations stay small.
 - Accept: `./ngen-build --config release ngen-view` and `./ngen-build --config gamerelease ngen-view` both produce working binaries in their own output
-  dirs; `tracy` is absent from the gamerelease build.
+  dirs; the `gamerelease` build produces `.so`s for the `Library`-typed engine libraries and still links `sceneusd` as a static archive.
 
-**Phase 4 — Toolchain and platform breadth.**
-- Implement `ClangMacOsToolchain` (or fold into `ClangToolchain` with platform dispatch).
-- Implement `MsvcToolchain` and/or `GccToolchain` as demand emerges.
-- Accept: green build on each platform we target.
+**Phase 4 — Platforms.**
+- Implement `Platform` (owns `Toolchain`, defines + system_libs + exe_suffix), `Graph::addPlatform` / `activePlatform`, `--platform <name>` CLI parsing,
+  per-platform output dirs: `_out/<platform>/<config>/`.
+- Implement `.when_platform(name, fn)` and `.only_on({...})` / `.except_on({...})` on targets.
+- Move existing Linux/Vulkan setup to a registered `linux-vulkan` platform, constructing ngen's existing `ClangToolchain` (under `build/toolchains/`).
+- Add `build/toolchains/emscripten.hpp/.cpp` (ngen-local implementation of `Toolchain` against emcc). Register the `wasm-webgpu` platform. Create the
+  `rhiwebgpu` library skeleton (`only_on({"wasm-webgpu"})`).
+- Accept: `./ngen-build --platform linux-vulkan` produces a working native binary; `./ngen-build --platform wasm-webgpu` produces a loadable `.wasm`/`.html`
+  artifact under `_out/wasm-webgpu/debug/`. Unused backend libraries are absent from each build's expanded graph.
 
 **Phase 5 — Retire `Makefile`.**
 - Delete or shrink to a one-line forwarder.
@@ -779,8 +970,9 @@ Each phase is independently shippable; the Makefile remains usable until phase 5
   (public-then-private) so overrides are predictable.
 - **Windows.** `bootstrap.ninja` is Unix-shaped. For Windows, either ship a `bootstrap.bat` that compiles `prebuild.cpp` with `cl.exe` or require
   `ninja`+`clang` on PATH. Defer to Phase 4.
-- **Fluent API mistakes are silent.** `.cxx()` on a target that forgot `.std()` would inherit toolchain default. Maybe require `.std()` as a mandatory step
-  (fail at expansion if absent). Discuss when we see real usage.
+- **Fluent API mistakes are silent.** `.cxx()` on a target that forgot `.std()` inherits the active toolchain's `default_std`. If a build program constructs
+  a toolchain without setting `default_std` (or relies on the framework default being right), this can pick up an unintended standard version. Consider
+  making expansion fail if any resolved std is empty.
 - **Namespace collision.** The name `build::` is generic enough to clash with user code. Acceptable because it's scoped to build programs, not ngen engine
   code. Revisit if it proves awkward.
 - **No cycle detection at API level.** Adding `.link(a)` on `b` and `.link(b)` on `a` silently produces a cycle; backend detects but late. Add cycle check
