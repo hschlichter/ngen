@@ -240,10 +240,89 @@ view.depend_on(shaders);                              // ngen-view pulls shaders
 The API separates *intent* (portable) from *raw* (toolchain-specific). `.define("X")` works on any toolchain; `.flag_raw("-fno-rtti")` is an escape hatch and
 is silently passed through. Prefer intent. When intent is missing, we either add an intent verb (preferred) or the user reaches for `flag_raw`.
 
-### 4.4 What lives on the `Graph` vs. on Targets
+### 4.4 Configurations
 
-On the `Graph`: toolchain, default target, top-level behaviours (output dir, verbosity). On Targets: everything about how that target is built. No hidden
-global state.
+A **Configuration** is a named bundle of build-wide choices — optimization level, debug info, default library linkage, extra compile/link flags, which
+targets are active, and an output directory. Exactly one is active per invocation; you select it on the command line:
+
+```
+./ngen-build --config release ngen-view
+./ngen-build --config gamerelease
+./ngen-build                                   # defaults to the first-registered config
+```
+
+Each config's artifacts land under `<out_dir>/<config_name>/` so all three coexist on disk without colliding. Prebuild is *not* parameterized by config —
+`./ngen-build` itself is always built the same way, in `_out/build/`. Configuration only affects what `./ngen-build` produces.
+
+**The `Configuration` type:**
+
+```cpp
+struct Configuration {
+    std::string name;                                // "debug", "release", "gamerelease"
+    OptLevel    opt             = OptLevel::O0;      // applied to every target unless overridden
+    bool        debug_info      = true;              // -g equivalent
+    Linkage     default_linkage = Linkage::Static;   // policy hint; see below
+    std::vector<std::string> defines;                // added to every compile
+    std::vector<std::string> extra_cxx_flags;        // added to every compile
+    std::vector<std::string> extra_link_flags;       // added to every exe/shared link
+    Path        out_dir         = "_out";            // actual dir: out_dir / name
+};
+
+g.addConfig(Configuration{...});    // first registered becomes the default
+g.addConfig(Configuration{...});
+```
+
+**Per-target overrides** — `.when(name, fn)`:
+
+```cpp
+auto& renderer = g.add<StaticLibrary>("renderer")
+    .cxx(glob("src/renderer/**/*.cpp"))
+    .when("release",     [](auto& t){ t.define("TRACY_ENABLE"); })
+    .when("gamerelease", [](auto& t){ t.flag_raw("-flto").define("SHIPPING=1"); });
+```
+
+`.when()` runs the lambda only if the active config's name matches. Multiple `.when()`s per target are fine; they stack in registration order.
+
+**Per-target inclusion** — `.only_in({...})` / `.except_in({...})`:
+
+```cpp
+auto& tracy = g.add<StaticLibrary>("tracy")
+    .cxx(glob("external/tracy/*.cpp"))
+    .only_in({"debug", "release"});            // not built in gamerelease
+
+auto& view = g.add<Program>("ngen-view")
+    .link(core).link(renderer).link(tracy);    // automatically drops the tracy edge in gamerelease
+```
+
+A target excluded from the active config is absent from the expanded graph. Other targets that `.link()` it have that edge dropped automatically; explicit
+`.link_if_present(tracy)` is redundant.
+
+**Static vs shared linkage per config.** The framework does *not* silently swap `StaticLibrary` for `SharedLibrary` based on a config flag — types stay honest
+about what they produce. If a library's linkage differs per config, express it as conditional construction in `build.cpp`:
+
+```cpp
+Target& rhi = (active.default_linkage == Linkage::Shared)
+    ? (Target&) g.add<SharedLibrary>("rhi").cxx(glob("src/rhi/*.cpp"))
+    : (Target&) g.add<StaticLibrary>("rhi").cxx(glob("src/rhi/*.cpp"));
+```
+
+The branch is plain C++, visible and stepped-through-with-a-debugger like everything else. `Configuration::default_linkage` is a hint your build program
+reads; the framework doesn't enforce it.
+
+**Starting set of configs for ngen:**
+
+| Config         | Opt | Debug info | Default linkage | Key defines          | Notes                                                              |
+|----------------|-----|------------|-----------------|----------------------|--------------------------------------------------------------------|
+| `debug`        | O0  | full       | Static          | `DEBUG=1`            | Default. Asserts on; Tracy on; extra diagnostic code paths on.     |
+| `release`      | O2  | yes        | Static          | `NDEBUG`             | Optimised with debug info for profiling and crash dumps. Tracy on. |
+| `gamerelease`  | O3  | none       | Shared          | `NDEBUG`, `SHIPPING=1` | LTO, hidden visibility, stripped. Shared libs for smaller binary and easier patching. Tracy off. |
+
+These are starting points, not framework defaults — they live in ngen's `build.cpp`. Other projects define their own configs.
+
+### 4.5 What lives on the `Graph` vs. on Targets
+
+On the `Graph`: toolchain, registered configs, default target, active config selection. On Targets: everything about how that target is built, including
+per-config `.when()` blocks. No hidden global state.
 
 ---
 
@@ -379,38 +458,43 @@ output. The separation is the debugging boundary: you can inspect `prebuild`'s b
 except `sceneusd` at C++20. Each standard is scoped to the code that needs it; the build system gets the latest because it's the most constrained in its
 external dependencies (stdlib only) and benefits most from modern language features when expressing graph construction.
 
-### 7.2 Entry protocol — always run the full chain
+### 7.2 Entry protocol — always run prebuild
 
-Every invocation of a stage runs the entire upstream chain unconditionally. Correctness does not depend on any staleness comparison we perform ourselves —
-it's delegated to ninja, which is authoritative. The chain is fast when nothing has changed (ninja no-ops all the way down); it is always correct when
-something has.
+The chain is a one-way pipeline driven by `execv`. Each stage's last act is to hand control to the next one. Nothing ever re-execs itself.
 
-The protocol at the top of each stage's `main()`:
+**`./prebuild` main()**:
 
 ```
-if not --no-self-rebuild:
-    invoke parent stage (blocking)          # parent may rebuild us on disk
-    execv(argv[0], argv + [--no-self-rebuild])   # replace this process with the fresh binary
-else:
-    # --no-self-rebuild is set: parent already ran and re-exec'd us.
-    # Proceed with this stage's own work.
-    ...emit ninja, run it, etc.
+1. system("ninja -f build/bootstrap.ninja")   # idempotent; rebuilds on-disk prebuild if needed
+2. emit _out/prebuild.ninja
+3. system("ninja -f _out/prebuild.ninja")     # idempotent; rebuilds on-disk ngen-build if needed
+4. execv("./ngen-build", argv)                # hand off to fresh ngen-build
 ```
 
-Per stage:
+**`./ngen-build` main()**:
 
-- **`./ngen-build`.** Parent is `./prebuild`. Invokes `./prebuild` with no args (prebuild runs its own chain), then execs self with `--no-self-rebuild`
-  appended.
-- **`./prebuild`.** Parent is `ninja -f build/bootstrap.ninja`. Invokes ninja on the bootstrap file (which checks and rebuilds `./prebuild` if sources
-  changed), then execs self with `--no-self-rebuild` appended.
-- **`bootstrap.ninja`.** No parent. Ninja's own incrementality decides whether any work is needed.
+```
+1. if this process was not reached via prebuild's execv:
+       execv("./prebuild", argv)              # user invoked us directly; delegate
+2. emit _out/build.ninja
+3. system("ninja -f _out/build.ninja")        # builds engine
+```
 
-The `--no-self-rebuild` flag is strictly a loop-breaker: it says "the chain above me has already run this pass; don't run it again." There is no user-facing
-meaning beyond that. Users do not pass it; only the entry protocol itself does, during the self-exec.
+The "reached via prebuild" signal is an **internal env var** (e.g. `NGEN_FROM_PREBUILD=1`) that `./prebuild` sets just before its `execv` in step 4. Users
+do not interact with it; it's not a CLI flag. Its only job is to tell `./ngen-build` "you are already fresh — don't bounce back through prebuild."
 
-No mtime comparison in user code, no heuristic to get wrong. If `prebuild.cpp` is stale, ninja-on-bootstrap rebuilds `./prebuild`; `./prebuild` then runs and
-ninja-on-prebuild.ninja rebuilds `./ngen-build`; `./ngen-build` then runs and ninja-on-build.ninja rebuilds the engine. Each link in the chain is a
-ninja-level operation, which is what ninja is good at.
+What this gives:
+
+- **`build.cpp` edits** — first invocation is correct. Prebuild's step 3 rebuilds `./ngen-build` from the new `build.cpp`, then step 4 execs the fresh binary,
+  which emits the updated engine ninja.
+- **Engine source edits** — first invocation is correct. Ninja in step 3 of `./ngen-build` detects source changes and rebuilds.
+- **`prebuild.cpp` edits** — takes two invocations to fully propagate. Step 1 rebuilds `./prebuild` on disk, but the currently-running prebuild process is
+  still the *old* binary — so its step 2 (emitting `_out/prebuild.ninja`) uses old logic. On the next invocation, the user's process starts from the fresh
+  prebuild and everything is consistent. Acceptable: `prebuild.cpp` changes are rare and usually produce an equivalent prebuild.ninja anyway.
+- **`bootstrap.ninja` edits** — hand-edited, no chain involvement. Changes take effect on the next run.
+
+No re-exec, no loop-breaker flag, no mtime heuristic. One env var, hidden, that prevents the direct-user-invokes-`./ngen-build` path from bouncing more than
+once.
 
 ### 7.3 Why three stages, not two
 
@@ -451,12 +535,9 @@ the `Graph` structure, intent lists, and expanded rules directly in C++ memory. 
 This replaces a parallel introspection surface (no `--print`, `--explain`, `--graphviz`, `--list`, `--dry-run` flags, no `introspection.cpp`). Those would be
 duplicated work against a medium the debugger already gives us for free.
 
-One flag that is *not* introspection but is part of the entry protocol (§7.2) remains:
-
-- `./ngen-build --no-self-rebuild` — skip the "invoke parent and re-exec" step. Used only by the entry protocol itself, to break the otherwise-infinite
-  recursion after it has re-exec'd. Users do not pass it.
-
-Same flag works on `./prebuild`.
+No special CLI flags on `./ngen-build` or `./prebuild` beyond the normal target name. The "are we being handed off from prebuild" signal used by the entry
+protocol (§7.2) is an env var, not a flag, and is invisible to users. To debug `./ngen-build` in isolation, set that env var yourself so it skips the
+prebuild delegation: `NGEN_FROM_PREBUILD=1 gdb --args ./ngen-build <target>`.
 
 ---
 
@@ -477,11 +558,12 @@ splits into two libraries — `scene` (non-USD) and `sceneusd` (USD-specific). T
 #include "build/framework/build.hpp"
 using namespace build;
 
-// Common engine flag set applied to non-USD libraries and to the Program.
+// Common engine flag set. Optimization, debug info, and linkage come from the active Configuration,
+// so they're NOT set here.
 static StaticLibrary& applyEngineCxx(StaticLibrary& l, const std::vector<std::string>& sdl3Cflags) {
     return l.std("c++23")
             .define("GLM_FORCE_RADIANS").define("GLM_FORCE_DEPTH_ZERO_TO_ONE")
-            .optimize(OptLevel::O0).debug().pic()
+            .pic()
             .public_include("src")
             .public_include("external/glm").public_include("external/cgltf")
             .public_include("external/stb").public_include("external/imgui")
@@ -492,9 +574,7 @@ static StaticLibrary& applyEngineCxx(StaticLibrary& l, const std::vector<std::st
 int main(int argc, char** argv) {
     Graph g;
 
-    // Toolchain is declared here, in the build program, so it's visible and
-    // editable. No auto-detection — if you want a different compiler/linker,
-    // change this block.
+    // Toolchain is declared here, visible and editable.
     ClangToolchain clang{{
         .cxx    = "clang++",
         .ar     = "ar",
@@ -502,11 +582,44 @@ int main(int argc, char** argv) {
     }};
     g.setToolchain(clang);
 
+    // --- configurations ---------------------------------------------------
+    g.addConfig(Configuration{
+        .name            = "debug",
+        .opt             = OptLevel::O0,
+        .debug_info      = true,
+        .default_linkage = Linkage::Static,
+        .defines         = {"DEBUG=1"},
+    });
+    g.addConfig(Configuration{
+        .name            = "release",
+        .opt             = OptLevel::O2,
+        .debug_info      = true,                         // keep -g for profiling / crash dumps
+        .default_linkage = Linkage::Static,
+        .defines         = {"NDEBUG"},
+    });
+    g.addConfig(Configuration{
+        .name             = "gamerelease",
+        .opt              = OptLevel::O3,
+        .debug_info       = false,
+        .default_linkage  = Linkage::Shared,
+        .defines          = {"NDEBUG", "SHIPPING=1"},
+        .extra_cxx_flags  = {"-fvisibility=hidden"},
+        .extra_link_flags = {"-flto", "-Wl,-s", "-Wl,--gc-sections"},
+    });
+    const Configuration& active = g.activeConfig();      // chosen from --config, default = first
+
     auto sdl3Cflags = captureTokens("pkg-config --cflags sdl3");
     auto sdl3Libs   = captureTokens("pkg-config --libs   sdl3");
 
-    // --- one static library per src/ folder -------------------------------
-    auto& obs      = applyEngineCxx(g.add<StaticLibrary>("obs"),      sdl3Cflags)
+    // --- one library per src/ folder -------------------------------------
+    // Helper that picks Static or Shared based on active.default_linkage.
+    auto addLib = [&](std::string name) -> Target& {
+        return (active.default_linkage == Linkage::Shared)
+            ? (Target&) g.add<SharedLibrary>(name)
+            : (Target&) g.add<StaticLibrary>(name);
+    };
+
+    auto& obs      = applyEngineCxx(g.add<StaticLibrary>("obs"),      sdl3Cflags)   // always static; tiny
                         .cxx(glob("src/obs/**/*.cpp"));
 
     auto& rhi      = applyEngineCxx(g.add<StaticLibrary>("rhi"),      sdl3Cflags)
@@ -514,10 +627,10 @@ int main(int argc, char** argv) {
 
     auto& rhivk    = applyEngineCxx(g.add<StaticLibrary>("rhivulkan"),sdl3Cflags)
                         .cxx(glob("src/rhi/vulkan/**/*.cpp"))
-                        .link(rhi);                                  // uses rhi interfaces
+                        .link(rhi);
 
     auto& renderer = applyEngineCxx(g.add<StaticLibrary>("renderer"), sdl3Cflags)
-                        .cxx(glob("src/renderer/**/*.cpp"))          // includes passes/
+                        .cxx(glob("src/renderer/**/*.cpp"))
                         .link(rhi);
 
     auto& scene    = applyEngineCxx(g.add<StaticLibrary>("scene"),    sdl3Cflags)
@@ -529,7 +642,7 @@ int main(int argc, char** argv) {
                         .std("c++20")
                         .warning_off("deprecated-declarations")
                         .define("GLM_FORCE_RADIANS").define("GLM_FORCE_DEPTH_ZERO_TO_ONE")
-                        .optimize(OptLevel::O0).debug().pic()
+                        .pic()
                         .public_include("src")
                         .public_include("external/openusd_build/include")
                         .public_include("external/glm").public_include("external/imgui")
@@ -539,42 +652,58 @@ int main(int argc, char** argv) {
                         .cxx(glob("src/ui/**/*.cpp"))
                         .link(renderer).link(scene);
 
-    // ImGui stays as its own library (vendored third-party TUs).
     auto& imgui    = applyEngineCxx(g.add<StaticLibrary>("imgui"),    sdl3Cflags)
-                        .cxx(imguiSources());                         // the 6 imgui TUs
+                        .cxx(imguiSources());
 
-    // --- shaders ----------------------------------------------------------
+    // --- optional profiler: debug/release only ---------------------------
+    auto& tracy    = applyEngineCxx(g.add<StaticLibrary>("tracy"),    sdl3Cflags)
+                        .cxx(glob("external/tracy/*.cpp"))
+                        .only_in({"debug", "release"})
+                        .when("release", [](auto& t){ t.define("TRACY_ON_DEMAND"); });
+
+    // --- shaders ---------------------------------------------------------
     auto& shaders  = g.add<Tool>("shaders")
                         .command({"glslc", "$in", "-o", "$out"})
                         .for_each(glob("shaders/*.vert") + glob("shaders/*.frag"),
                                   [](const Path& s){ return s.string() + ".spv"; });
 
-    // --- executable -------------------------------------------------------
+    // --- executable ------------------------------------------------------
     auto& view = g.add<Program>("ngen-view")
         .cxx({"src/main.cpp", "src/camera.cpp", "src/debugdraw.cpp", "src/jobsystem.cpp"})
         .std("c++23")
         .define("GLM_FORCE_RADIANS").define("GLM_FORCE_DEPTH_ZERO_TO_ONE")
         .link(obs).link(rhi).link(rhivk).link(renderer).link(scene).link(sceneusd).link(ui).link(imgui)
+        .link(tracy)                                              // dropped automatically in gamerelease
         .link("vulkan").link("m")
         .flag_raw_many(sdl3Cflags).flag_raw_many(sdl3Libs)
         .link_raw("-lusd_usd").link_raw("-lusd_usdGeom").link_raw("-lusd_usdShade")
         // … full USD library list …
         .rpath("$ORIGIN/../external/openusd_build/lib")
-        .depend_on(shaders);
+        .depend_on(shaders)
+        .when("gamerelease", [](auto& t){
+            // In gamerelease, strip harder + hide the console on Windows-like builds
+            t.flag_raw("-flto").link_raw("-Wl,--strip-all");
+        });
 
     g.setDefault(view);
 
-    // Non-graph verbs (clean/format/tidy) handled by main dispatch before here.
     return NinjaBackend{}.build(g, resolveDesiredFromArgs(argc, argv, view)) ? 0 : 1;
 }
 ```
 
 Observations:
 
-- Eight libraries total: six per user spec (obs, rhi, rhivulkan, renderer, scene, ui), plus `sceneusd` (forced by the USD compile requirements), plus `imgui`
-  (vendored third-party, naturally its own library). The Program itself compiles the four cross-cutting `src/*.cpp` files directly.
+- Nine libraries in the `debug`/`release` configs (obs, rhi, rhivulkan, renderer, scene, sceneusd, ui, imgui, tracy); eight in `gamerelease` (tracy drops).
+  The Program itself compiles the four cross-cutting `src/*.cpp` files directly.
+- `applyEngineCxx` stops short of setting `.optimize()` / `.debug()` — those come from the active `Configuration` during expansion.
+- The `addLib` helper is sketched but unused in the current ngen layout, because a mid-size engine benefits from explicit `StaticLibrary` declarations
+  (compile-time checked, graph clearer). The helper is the pattern to reach for when a project genuinely wants linkage to flow from config.
+- `tracy.only_in({"debug", "release"})` + `view.link(tracy)` is the clean pattern: the Program declares the edge unconditionally; the framework drops it
+  when the target isn't present in the active config. No `.link_if_present` needed.
 - Inter-library `.link()` edges (rhivulkan→rhi, renderer→rhi, ui→renderer+scene) reflect compile-time header dependencies; they propagate `.public_include`
   from the linked library into the consumer's compile commands. Exact edges will firm up in Phase 1 as we verify compiles.
+- Artifacts per config land in `_out/debug/`, `_out/release/`, `_out/gamerelease/`. `./ngen-build --config release ngen-view` produces
+  `_out/release/ngen-view`.
 - `applyEngineCxx` is a one-function helper in `build.cpp` to avoid repeating the common flag set. Not part of the framework — it's project-local shorthand.
 - `sceneusd` does not use the helper because its flag set diverges meaningfully (C++20, extra include, warning suppression).
 - `sdl3Cflags` / `sdl3Libs` resolved in-process via `popen` (no backticks reach the backend).
@@ -599,7 +728,8 @@ Each phase is independently shippable; the Makefile remains usable until phase 5
 
 **Phase 2 — Bootstrap chain and entry protocol on Linux.**
 - Write `build/bootstrap.ninja`, `build/prebuild.cpp`, ngen's `build.cpp`.
-- Implement the entry protocol (§7.2) in `./prebuild` and `./ngen-build`: unconditional parent invocation + execv-self-with-`--no-self-rebuild`.
+- Implement the entry protocol (§7.2): `./prebuild` always runs bootstrap-ninja, emits + runs prebuild.ninja, `execv`s `./ngen-build`; `./ngen-build`
+  delegates to `./prebuild` unless an internal env var marks it as already handed off.
 - Accept: every `./ngen-build` invocation runs the full chain; editing `build.cpp` or `prebuild.cpp` is picked up on the next invocation without any manual
   step; unchanged state is fast (ninja no-ops end-to-end).
 
@@ -607,7 +737,15 @@ Each phase is independently shippable; the Makefile remains usable until phase 5
 - `ngen-view` builds and runs on Linux matching Makefile output.
 - `compile_commands.json` emitted; `bear` dropped.
 - `clean` / `format` / `tidy` as dispatch verbs.
-- Accept: developer workflow is `./ngen-build` instead of `make`; problems in the build are debugged with `gdb ./ngen-build`.
+- Accept: developer workflow is `./ngen-build` instead of `make`; problems in the build are debugged with `gdb ./ngen-build`. Default config (debug) only —
+  other configs land in the next phase.
+
+**Phase 3b — Configurations.**
+- Implement `Configuration`, `Graph::addConfig` / `activeConfig`, `--config <name>` CLI parsing, per-config `_out/<name>/` output dirs.
+- Implement `.when(name, fn)` and `.only_in({...})` / `.except_in({...})` on targets; wire into expansion so excluded targets and their incoming edges drop.
+- Register `debug` / `release` / `gamerelease` in ngen's `build.cpp`; move `.optimize()` / `.debug()` off `applyEngineCxx`.
+- Accept: `./ngen-build --config release ngen-view` and `./ngen-build --config gamerelease ngen-view` both produce working binaries in their own output
+  dirs; `tracy` is absent from the gamerelease build.
 
 **Phase 4 — Toolchain and platform breadth.**
 - Implement `ClangMacOsToolchain` (or fold into `ClangToolchain` with platform dispatch).
