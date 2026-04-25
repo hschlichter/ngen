@@ -11,7 +11,7 @@ The v2 changes are mostly corrective:
   `Graph::setToolchain()` idea is removed.
 - The CLI explicitly supports target names plus build flags such as `--config`
   and `--platform`; only parallel introspection flags are out of scope.
-- The bootstrap protocol avoids relinking over an executing binary.
+- The bootstrap protocol has a stable orchestrator binary: `_out/ngen-build`.
 - The concrete ngen graph includes the targets and include roots needed to match
   the current Makefile.
 - Generated shader outputs live under `_out/<platform>/<config>/`, not next to
@@ -28,6 +28,7 @@ It can be moved to another repository or consumed as a submodule later. Project
 code lives outside the framework, specifically in:
 
 - `build/bootstrap.ninja`
+- `build/bootstrap.cpp`
 - `build/prebuild.cpp`
 - `build.cpp`
 
@@ -46,9 +47,10 @@ incrementality, depfiles, and command reruns. An in-process backend remains a
 future option behind the same expanded primitive graph.
 
 **Debugging uses the debugger.** Build programs are plain C++ binaries. Use
-`gdb --args ./_out/ngen-build ...` or `gdb --args ./_out/prebuild ...` to inspect graph
-construction and expansion. The framework should not grow a parallel
-introspection subsystem in v1.
+`gdb --args ./_out/ngen-build ...`, `gdb --args ./_out/ngen-build-pre ...`, or
+`gdb --args ./_out/ngen-build-graph ...` to inspect orchestration, stage
+freshness, graph construction, and expansion. The framework should not grow a
+parallel introspection subsystem in v1.
 
 **Ngen parity comes before expansion.** The first production milestone is a Linux
 Vulkan build that matches the current Makefile. Configurations and additional
@@ -82,6 +84,7 @@ build/
     backendninja.hpp / backendninja.cpp
 
   bootstrap.ninja
+  bootstrap.cpp
   prebuild.cpp
 
 build.cpp
@@ -130,7 +133,12 @@ public:
 There is no `Graph::setToolchain()`. Each registered `Platform` owns its
 toolchain. The Ninja backend expands every registered platform/configuration
 variant into one generated Ninja file, so switching from debug to release or
-from one platform to another does not require rebuilding `_out/ngen-build`.
+from one platform to another does not require rebuilding `_out/ngen-build-graph`.
+
+`expandAll()` must detect cycles before emitting backend rules. Cycle diagnostics
+should report the target names in the discovered cycle, for example
+`renderer -> rhi-backend -> renderer`, so graph errors are fixed in the build
+description instead of being discovered later by Ninja.
 
 ### 3.2 Targets
 
@@ -226,10 +234,14 @@ struct GlobSpec {
 
 std::vector<Path> glob(GlobSpec);
 std::vector<Path> concat(std::initializer_list<std::vector<Path>> lists);
+std::vector<std::string> concat_tokens(
+    std::initializer_list<std::vector<std::string>> lists);
 ```
 
 `glob()` supports `**`. Multiple include patterns are expressed with `concat()`,
-not with an implicit `operator+` on vectors.
+not with an implicit `operator+` on vectors. The same rule applies to command
+tokens and flags: use `concat_tokens()` for string-token vectors. The framework
+does not define vector arithmetic or other non-standard collection operators.
 
 Example:
 
@@ -411,71 +423,83 @@ their output directories are missing.
 
 ---
 
-## 7. Bootstrap and Self-Rebuild
+## 7. Bootstrap and Stage Freshness
 
-There are three build programs/artifacts:
+There are four build-system stages:
 
 ```text
-build/bootstrap.ninja -> ./_out/prebuild -> ./_out/ngen-build -> ngen-view executable
+build/bootstrap.ninja
+  -> ./_out/ngen-build
+  -> ./_out/ngen-build-pre
+  -> ./_out/ngen-build-graph
+  -> _out/build.ninja
+  -> requested project target
 ```
+
+Each binary can be executed directly, but the normal user entry point is
+`./_out/ngen-build`.
 
 ### 7.1 Stage Ownership
 
 `build/bootstrap.ninja`
-: Hand-written. Builds the build system itself from source, producing both
-  `_out/prebuild` and the initial `_out/ngen-build`. After
-  `ninja -f build/bootstrap.ninja`, the normal user entry point exists.
-
-`./_out/prebuild`
-: Builds `_out/ngen-build` from `build.cpp` and the framework sources it needs.
-  Then it execs the freshly built `_out/ngen-build`.
+: Hand-written seed. It compiles `build/bootstrap.cpp` into `_out/ngen-build`.
+  It does not know the engine graph and does not build engine programs.
 
 `./_out/ngen-build`
-: Builds the engine graph. If invoked directly by the user, it delegates to
-  `_out/prebuild` first unless an internal environment variable says it was already
-  reached through prebuild.
+: Built from `build/bootstrap.cpp`. This is the stable orchestrator and the
+  command users run. It generates the stage manifest needed to build
+  `_out/ngen-build-pre`, runs that manifest, runs `_out/ngen-build-pre`, runs
+  `_out/ngen-build-graph` to refresh `_out/build.ninja`, and finally invokes the
+  selected project target through the chosen executor.
 
-### 7.2 No Self-Rebuild of Prebuild
+`./_out/ngen-build-pre`
+: Built from `build/prebuild.cpp`. This is the graph-binary builder. Its job is
+  narrow: describe and build `_out/ngen-build-graph` from `build.cpp` and the
+  framework files needed to compile the graph program.
 
-`_out/prebuild` does not rebuild itself and does not invoke
-`build/bootstrap.ninja`. Bootstrap creates `_out/prebuild`; later invocations of
-`_out/ngen-build` run `_out/prebuild` only to refresh `_out/ngen-build`.
+`./_out/ngen-build-graph`
+: Built from `build.cpp`. This program constructs the project build graph and
+  emits `_out/build.ninja`. It contains the ngen target model; it is not the
+  user-facing build command.
 
-This avoids the running-binary overwrite problem for `_out/prebuild`: there is
-no path where prebuild links over its own executable. When `_out/ngen-build`
-needs to refresh itself, it first `execv`s into `_out/prebuild`, so the old
-`_out/ngen-build` process is no longer running while prebuild links the new one.
-
-### 7.3 Entry Protocol
-
-`prebuild`:
-
-```text
-1. emit _out/prebuild.ninja
-2. run ninja -f _out/prebuild.ninja
-3. set NGEN_FROM_PREBUILD=1
-4. execv("./_out/ngen-build", original argv)
-```
+### 7.2 Entry Protocol
 
 `ngen-build`:
 
 ```text
-1. if NGEN_FROM_PREBUILD is not set:
-       execv("./_out/prebuild", original argv)
-2. parse CLI
-3. emit engine build.ninja
-4. run ninja for the requested target
+1. parse CLI enough to know the requested executor and target
+2. emit _out/ngen-build-pre.ninja with write-if-changed
+3. run ninja -f _out/ngen-build-pre.ninja
+4. run ./_out/ngen-build-pre
+5. run ./_out/ngen-build-graph to emit _out/build.ninja
+6. run ninja -f _out/build.ninja <selected target>
+```
+
+`ngen-build-pre`:
+
+```text
+1. emit _out/ngen-build-graph.ninja with write-if-changed
+2. run ninja -f _out/ngen-build-graph.ninja
+```
+
+`ngen-build-graph`:
+
+```text
+1. construct the Graph from build.cpp
+2. expand every registered platform/configuration variant
+3. emit _out/build.ninja and compile_commands.json files with write-if-changed
 ```
 
 Fresh clone:
 
 ```sh
 ninja -f build/bootstrap.ninja
+./_out/ngen-build
 ```
 
-This is the only fresh-clone setup command. Bootstrap creates `_out/prebuild`
-and the initial `_out/ngen-build`; it does not build the engine programs. After
-bootstrap has produced `_out/ngen-build`, the normal workflow is:
+The first command exists because a fresh clone has no executable build
+orchestrator yet. It compiles `build/bootstrap.cpp` into `_out/ngen-build`.
+After that bootstrap step, the normal workflow is always:
 
 ```sh
 ./_out/ngen-build
@@ -483,12 +507,51 @@ bootstrap has produced `_out/ngen-build`, the normal workflow is:
 ./_out/ngen-build ngen-view
 ```
 
-`_out/ngen-build` regenerates `_out/build.ninja` from `build.cpp` when needed.
-That generated Ninja file contains all registered platform/configuration
-variants, so changing `--config` or `--platform` selects a different Ninja
-target; it does not require a different build-graph binary.
+### 7.3 Stage Dependency Boundaries
 
-### 7.4 CLI
+Stage freshness should be delegated to the active executor where possible. For
+the Ninja backend, `ngen-build` and `ngen-build-pre` generate small Ninja files
+and let Ninja decide whether a compile or link command is out of date.
+
+The stage manifests have deliberately narrow dependencies:
+
+- `build/bootstrap.ninja` lists `build/bootstrap.cpp` and only the framework
+  files required to compile the orchestrator.
+- `_out/ngen-build-pre.ninja` lists `build/prebuild.cpp` and only the framework
+  files required to compile `_out/ngen-build-pre`.
+- `_out/ngen-build-graph.ninja` lists `build.cpp` and only the framework files
+  required to compile `_out/ngen-build-graph`. This is the prebuild dependency
+  set for graph compilation.
+- Engine sources under `src/`, shaders under `shaders/`, and external engine
+  dependencies are not prebuild dependencies. They belong to the project graph
+  emitted by `_out/ngen-build-graph`.
+
+This boundary matters for caching. Editing `src/renderer/renderer.cpp` should
+not rebuild `_out/ngen-build-pre` or `_out/ngen-build-graph`; it should be
+handled by `_out/build.ninja`. Editing `build.cpp` should rebuild
+`_out/ngen-build-graph`, because the graph description changed. Editing
+`build/prebuild.cpp` or the framework pieces it uses should rebuild
+`_out/ngen-build-pre`.
+
+Generated manifests and generated build files should be written only when their
+contents change. It is acceptable for `_out/ngen-build-graph` to run on each
+`./_out/ngen-build` invocation if `_out/build.ninja` is stable when the graph is
+unchanged; this prevents needless downstream rebuild churn without introducing a
+second ad hoc freshness system.
+
+### 7.4 Executor Boundary
+
+The prototype generated the prebuild Ninja file from `bootstrap.cpp`. Keep that
+shape: `_out/ngen-build` owns the stage orchestration and emits the stage
+manifest for `_out/ngen-build-pre`. When a non-Ninja executor is added, this
+logic should move behind a small stage-build executor interface rather than
+being replaced by project-graph code.
+
+Ninja is still the first executor. The important design point is that
+`bootstrap.cpp` orchestrates the build-system stages; `build.cpp` describes the
+project graph.
+
+### 7.5 CLI
 
 The build programs accept target names and build-control flags:
 
@@ -500,6 +563,10 @@ For the Ninja backend, these flags are mapped to generated Ninja target names
 such as `ngen-view:linux-vulkan:debug` or
 `ngen-view:linux-vulkan:release`. The default target name `ngen-view` points at
 the first registered platform/configuration pair.
+
+`_out/build.ninja` contains all registered platform/configuration variants.
+Changing `--config` or `--platform` selects a different already-emitted Ninja
+target; it does not require rebuilding `_out/ngen-build-graph`.
 
 Supported Phase 3 target names:
 
@@ -902,17 +969,28 @@ Acceptance:
 ### Phase 2 - Bootstrap Chain
 
 - Add `build/bootstrap.ninja`.
+- Add `build/bootstrap.cpp` as the `_out/ngen-build` orchestrator.
 - Add `build/prebuild.cpp`.
-- Implement the `NGEN_FROM_PREBUILD` handoff.
-- Build `_out/ngen-build` from `build.cpp`.
-- Make `build/bootstrap.ninja` produce `_out/ngen-build` without starting the
-  engine build.
+- Make `build/bootstrap.ninja` build `_out/ngen-build` from
+  `build/bootstrap.cpp` without starting the engine build.
+- Make `_out/ngen-build` generate `_out/ngen-build-pre.ninja`, run it to refresh
+  `_out/ngen-build-pre`, then run `_out/ngen-build-pre`.
+- Make `_out/ngen-build-pre` generate `_out/ngen-build-graph.ninja` and run it
+  to refresh `_out/ngen-build-graph`.
+- Make `_out/ngen-build-graph` emit `_out/build.ninja`.
+- Write generated stage manifests only when their contents change.
+- Keep stage dependency lists narrow: prebuild dependencies are only the files
+  needed to compile the next build-system stage, not engine sources.
 
 Acceptance:
 
 - `ninja -f build/bootstrap.ninja` produces `_out/ngen-build`.
-- Subsequent `./_out/ngen-build` invocations run through prebuild.
-- Editing `build.cpp` is picked up on the next invocation.
+- `./_out/ngen-build` produces or refreshes `_out/ngen-build-pre`,
+  `_out/ngen-build-graph`, and `_out/build.ninja`.
+- Editing `build/prebuild.cpp` rebuilds `_out/ngen-build-pre`.
+- Editing `build.cpp` rebuilds `_out/ngen-build-graph`.
+- Editing engine source does not rebuild the build-system stage binaries; it is
+  handled by `_out/build.ninja`.
 
 ### Phase 3 - Linux Vulkan Makefile Parity
 
@@ -1007,13 +1085,6 @@ Make that explicit in Phase 3.
 
 **pkg-config is still raw.** Day 1 can capture `pkg-config` tokens for SDL3.
 Later, a `.use_pkg_config("sdl3")` intent would be cleaner.
-
-**No silent cycles.** `Graph::expand()` must detect cycles and report target
-names. Letting Ninja discover cycles later makes debugging worse.
-
-**No hidden vector magic.** Use explicit helpers such as `concat()` and
-`concat_tokens()`. Do not rely on non-standard operators in examples unless the
-framework defines them.
 
 ---
 
