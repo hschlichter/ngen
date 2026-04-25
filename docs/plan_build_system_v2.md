@@ -110,21 +110,27 @@ public:
     void addPlatform(Platform);
     void addConfig(Configuration);
 
-    const Platform& activePlatform() const;
-    const Configuration& activeConfig() const;
-
     void setDefault(Target&);
 
-    struct Expanded {
-        std::vector<PrimitiveRule> rules;
-        Path out_dir;
+    struct BuildVariant {
+        const Platform* platform;
+        const Configuration* config;
+        Path out_dir;                         // _out/<platform>/<config>
     };
-    Expanded expand(Target& desired) const;
+
+    struct Expanded {
+        BuildVariant variant;
+        std::vector<PrimitiveRule> rules;
+    };
+
+    std::vector<Expanded> expandAll(Target& desired) const;
 };
 ```
 
-There is no `Graph::setToolchain()`. The active `Platform` owns the active
-toolchain.
+There is no `Graph::setToolchain()`. Each registered `Platform` owns its
+toolchain. The Ninja backend expands every registered platform/configuration
+variant into one generated Ninja file, so switching from debug to release or
+from one platform to another does not require rebuilding `_out/ngen-build`.
 
 ### 3.2 Targets
 
@@ -207,7 +213,7 @@ Tool& command(std::vector<std::string> argv_template);
 Tool& inputs(std::vector<Path>);
 Tool& outputs(std::vector<Path>);
 Tool& for_each(std::vector<Path> inputs,
-               std::function<Path(const Path&)> output_for);
+               std::function<Path(const BuildVariant&, const Path&)> output_for);
 ```
 
 ### 3.3 File Selection
@@ -381,16 +387,22 @@ The Ninja backend owns filesystem materialization and backend output.
 
 It must:
 
-1. Expand the graph for the requested target.
+1. Expand the graph for the requested root target across every registered
+   platform/configuration variant.
 2. Create all required parent directories before writing generated files.
-3. Emit `_out/<platform>/<config>/build.ninja`.
+3. Emit one top-level `_out/build.ninja` containing all variants. Variant
+   artifacts still live under `_out/<platform>/<config>/`.
 4. Emit one rule per primitive kind: `cxx`, `archive`, `link_exe`,
    `link_shared`, and tool rules.
 5. Emit depfile metadata for compile rules when the toolchain supports it.
-6. Emit phony target groups as `build <name>: phony <deps...>`.
-7. Emit `default <target>` when a default target is set.
-8. Emit `_out/<platform>/<config>/compile_commands.json`.
-9. Invoke `ninja -f <generated-ninja> <desired-output-or-phony>`.
+6. Emit variant phony targets such as
+   `ngen-view:linux-vulkan:debug`,
+   `ngen-view:linux-vulkan:release`, and `ngen-view:linux-vulkan:gamerelease`.
+7. Emit convenience phony targets for defaults, for example `ngen-view` points
+   at the first registered platform/config variant.
+8. Emit `_out/<platform>/<config>/compile_commands.json` per variant, and
+   optionally a merged `_out/compile_commands.json` for editor tooling.
+9. Invoke `ninja -f _out/build.ninja <desired-variant-or-phony>`.
 
 Directory creation can be implemented by the build program/backend before
 emitting Ninja and by command prefixes for dynamically computed outputs. The
@@ -471,6 +483,11 @@ bootstrap has produced `_out/ngen-build`, the normal workflow is:
 ./_out/ngen-build ngen-view
 ```
 
+`_out/ngen-build` regenerates `_out/build.ninja` from `build.cpp` when needed.
+That generated Ninja file contains all registered platform/configuration
+variants, so changing `--config` or `--platform` selects a different Ninja
+target; it does not require a different build-graph binary.
+
 ### 7.4 CLI
 
 The build programs accept target names and build-control flags:
@@ -478,6 +495,11 @@ The build programs accept target names and build-control flags:
 ```text
 ./_out/ngen-build [--platform <name>] [--config <name>] [--backend ninja] [target]
 ```
+
+For the Ninja backend, these flags are mapped to generated Ninja target names
+such as `ngen-view:linux-vulkan:debug` or
+`ngen-view:linux-vulkan:release`. The default target name `ngen-view` points at
+the first registered platform/configuration pair.
 
 Supported Phase 3 target names:
 
@@ -724,8 +746,6 @@ int main(int argc, char** argv) {
         .extra_link_flags = {"-flto", "-Wl,-s", "-Wl,--gc-sections"},
     });
 
-    g.selectFromArgs(argc, argv); // resolves active platform/config before expansion.
-
     auto& obs = g.add<Library>("obs")
         .cxx(glob({.include = "src/obs/**/*.cpp"}))
         .public_include({"src/obs", "external/concurrentqueue"});
@@ -794,8 +814,8 @@ int main(int argc, char** argv) {
         .for_each(concat({
             glob({.include = "shaders/*.vert"}),
             glob({.include = "shaders/*.frag"}),
-        }), [&](const Path& source) {
-            return g.activeOutputDir() / "shaders" / (source.filename().string() + ".spv");
+        }), [](const BuildVariant& variant, const Path& source) {
+            return variant.out_dir / "shaders" / (source.filename().string() + ".spv");
         });
 
     auto& view = g.add<Program>("ngen-view")
@@ -840,8 +860,7 @@ int main(int argc, char** argv) {
 
     g.setDefault(view);
 
-    Target& desired = resolve_desired_target(g, argc, argv, view);
-    return NinjaBackend{}.build(g, desired) ? 0 : 1;
+    return NinjaBackend{}.build(g, view, parse_ninja_target(argc, argv, view)) ? 0 : 1;
 }
 ```
 
@@ -908,12 +927,14 @@ Acceptance:
 
 - `./_out/ngen-build` builds a working Linux Vulkan `ngen-view` binary.
 - The binary can run from the same workflow as the Makefile output.
-- `compile_commands.json` exists under the active output directory.
+- `_out/build.ninja` contains the debug Linux Vulkan variant, and
+  `compile_commands.json` exists under that variant's output directory.
 - The Makefile remains available during validation.
 
 ### Phase 4 - Configurations
 
-- Implement `Configuration`, `--config`, config-specific output dirs.
+- Implement `Configuration`, `--config`, config-specific output dirs, and
+  all-config variant emission into `_out/build.ninja`.
 - Add `debug`, `release`, and `gamerelease`.
 - Convert internal libraries to `Library` where config-driven linkage is useful.
 
@@ -923,20 +944,23 @@ Acceptance:
 - `./_out/ngen-build --config release`
 - `./_out/ngen-build --config gamerelease`
 
-all build into separate output directories. Shared-library gamerelease can be
-deferred if it exposes unresolved symbol/export issues; do not block release
-config on that.
+all select already-emitted Ninja variants in separate output directories.
+Shared-library gamerelease can be deferred if it exposes unresolved
+symbol/export issues; do not block release config on that.
 
 ### Phase 5 - Platform Axis
 
-- Implement `Platform`, `--platform`, and platform-specific output dirs.
+- Implement `Platform`, `--platform`, platform-specific output dirs, and
+  all-platform variant emission into `_out/build.ninja`.
 - Move Linux Vulkan setup into a registered platform.
 - Keep `wasm-webgpu` as a skeleton until the app has real portability seams.
 
 Acceptance:
 
-- `./_out/ngen-build --platform linux-vulkan` matches the prior default.
-- Excluded platform-specific targets are absent from the expanded graph.
+- `./_out/ngen-build --platform linux-vulkan` selects the already-emitted Linux
+  Vulkan variant and matches the prior default.
+- Excluded platform-specific targets are absent from variants where they do not
+  apply.
 
 ### Phase 6 - Retire or Shrink Makefile
 
