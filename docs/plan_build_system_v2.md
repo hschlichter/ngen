@@ -136,6 +136,7 @@ Concrete target types:
 | `Library` | `.a` or shared library | lowers according to active config linkage |
 | `StaticLibrary` | `.a` | compile objects, then archive |
 | `SharedLibrary` | `.so`, `.dylib`, or `.dll` | compile objects, then link shared |
+| `Alias` | selected target output | resolves to another target by graph policy |
 | `Tool` | declared outputs | invoke arbitrary commands |
 
 Common target surface:
@@ -177,6 +178,27 @@ T& except_on(std::initializer_list<std::string_view> platform_names);
 ```cpp
 Library& linkage(Linkage);
 ```
+
+`Alias` additionally has:
+
+```cpp
+Alias& to(Target& target);
+Alias& select(std::string_view key, std::string_view value, Target& target);
+Alias& fallback(Target& target);
+```
+
+At expansion, an `Alias` is replaced by the target it resolves to. The simplest
+form is `.to(target)`, which gives a stable graph name to another target.
+Conditional forms use graph-context keys, for example
+`.select("platform", "linux-vulkan", target)` or
+`.select("config", "gamerelease", target)`. The framework only needs a small
+well-known context map at expansion time; `platform` and `config` are the first
+keys, and project-defined feature keys can be added later if needed.
+
+This keeps `Alias` general: it is a named indirection point in the graph. It can
+represent a stable public name for an implementation target, the active RHI
+backend, a default asset pipeline, a preferred test runner, or a system-vs-bundled
+dependency choice.
 
 `Tool` supports:
 
@@ -518,7 +540,8 @@ Suggested initial target split:
 | `obs` | `Library` | `src/obs/**/*.cpp` | Needs `external/concurrentqueue` include root |
 | `rhi` | `Library` | `src/rhi/*.cpp` | Backend-agnostic interfaces |
 | `rhivulkan` | `Library` | `src/rhi/vulkan/**/*.cpp` | Linux Vulkan only, links `rhi` |
-| `renderer` | `Library` | `src/renderer/**/*.cpp` | Links `rhi`, `rhivulkan` initially because current renderer includes Vulkan header |
+| `rhi-backend` | `Alias` | selected backend | Stable capability name; resolves to `rhivulkan` on `linux-vulkan` |
+| `renderer` | `Library` | `src/renderer/**/*.cpp` | Links `rhi` and `rhi-backend` |
 | `scene` | `Library` | `src/scene/*.cpp` excluding `src/scene/usd*.cpp` | Non-USD scene code |
 | `sceneusd` | `StaticLibrary` | `src/scene/usd*.cpp` | C++20, USD includes, warning suppression |
 | `ui` | `Library` | `src/ui/**/*.cpp` | Links renderer, scene, sceneusd |
@@ -526,10 +549,12 @@ Suggested initial target split:
 | `ngen-view` | `Program` | `src/main.cpp`, `src/camera.cpp`, `src/debugdraw.cpp`, `src/jobsystem.cpp` | First application program; links all libraries |
 | `shaders` | `Tool` | `shaders/*.vert`, `shaders/*.frag` | Emits SPIR-V under `_out/.../shaders` |
 
-`renderer -> rhivulkan` is not architecturally ideal, but it reflects current
-code: `src/renderer/renderer.cpp` includes `rhieditoruivulkan.h`. Cleanly
-removing that dependency is a renderer/RHI refactor, not part of the build-system
-migration.
+`rhi-backend` is an alias target. The renderer depends on "the active RHI
+backend" rather than spelling `rhivulkan` directly. This is one use of `Alias`,
+not the definition of it. Today that alias still resolves to Vulkan because
+`src/renderer/renderer.cpp` includes `rhieditoruivulkan.h`;
+cleanly removing that implementation dependency is a renderer/RHI refactor, not
+part of the build-system migration.
 
 ### 8.3 Linux Vulkan Platform Sketch
 
@@ -717,13 +742,16 @@ int main(int argc, char** argv) {
         .only_on({"linux-vulkan"})
         .link(rhi);
 
+    auto& rhi_backend = g.add<Alias>("rhi-backend")
+        .select("platform", "linux-vulkan", rhivulkan);
+
     auto& renderer = g.add<Library>("renderer")
         .cxx(glob({.include = "src/renderer/**/*.cpp"}))
         .public_include({"src/renderer", "src/renderer/passes"})
         .include({"src", "src/scene", "src/obs"})
         .link(obs)
         .link(rhi)
-        .link(rhivulkan);
+        .link(rhi_backend);
 
     auto& scene = g.add<Library>("scene")
         .cxx(glob({
@@ -781,7 +809,6 @@ int main(int argc, char** argv) {
                   "src/renderer/passes", "src/scene", "src/ui"})
         .link(obs)
         .link(rhi)
-        .link(rhivulkan)
         .link(renderer)
         .link(scene)
         .link(sceneusd)
@@ -909,7 +936,7 @@ config on that.
 Acceptance:
 
 - `./_out/ngen-build --platform linux-vulkan` matches the prior default.
-- Excluded platform targets are absent from the expanded graph.
+- Excluded platform-specific targets are absent from the expanded graph.
 
 ### Phase 6 - Retire or Shrink Makefile
 
@@ -942,8 +969,9 @@ Moving the executable deeper into `_out/<platform>/<config>/` changes relative
 runtime lookup. Use an absolute rpath first if needed.
 
 **Current renderer leaks Vulkan.** `renderer.cpp` includes a Vulkan RHI header.
-The build graph should reflect this instead of pretending the renderer is
-backend-neutral. Fixing that is a renderer architecture task.
+The build graph reflects this through the `rhi-backend` alias, which currently resolves to
+`rhivulkan` on `linux-vulkan`. Fixing the implementation dependency is a
+renderer architecture task.
 
 **Shared-library gamerelease can expose symbol visibility problems.** Treat
 shared linkage as config infrastructure plus a later hardening task. Static
