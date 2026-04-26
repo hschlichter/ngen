@@ -1,5 +1,6 @@
 #pragma once
 
+#include <expected>
 #include <filesystem>
 #include <functional>
 #include <initializer_list>
@@ -14,6 +15,10 @@
 #include <vector>
 
 namespace build {
+
+struct Error {
+    std::string message;
+};
 
 struct Path {
     std::filesystem::path value;
@@ -50,7 +55,7 @@ std::vector<std::string> concat_tokens(std::initializer_list<std::vector<std::st
 std::vector<std::string> concat_tokens(std::vector<std::string> a, std::vector<std::string> b);
 std::vector<std::string> capture_tokens(std::initializer_list<std::string> argv);
 std::string repo_root();
-bool write_if_changed(const Path& path, const std::string& text);
+std::expected<void, Error> write_if_changed(const Path& path, const std::string& text);
 
 struct CompileIntent {
     Path source;
@@ -308,12 +313,12 @@ struct ParsedTarget {
     std::string backend = "ninja";
 };
 
-ParsedTarget parse_ninja_target(int argc, char** argv, std::string_view default_target);
+std::expected<ParsedTarget, Error> parse_ninja_target(int argc, char** argv, std::string_view default_target);
 
 class NinjaBackend {
 public:
-    bool build(const Graph& graph, Target& desired, const ParsedTarget& parsed) const;
-    bool emit(const Graph& graph, Target& desired, Path output = "_out/build.ninja") const;
+    std::expected<void, Error> build(const Graph& graph, Target& desired, const ParsedTarget& parsed) const;
+    std::expected<void, Error> emit(const Graph& graph, Target& desired, Path output = "_out/build.ninja") const;
 };
 
 } // namespace build
