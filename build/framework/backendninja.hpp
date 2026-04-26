@@ -33,7 +33,7 @@ struct ParsedTarget {
     std::string backend = "ninja";
 };
 
-inline std::expected<ParsedTarget, Error> parse_ninja_target(int argc, char** argv, std::string_view default_target) {
+inline auto parse_ninja_target(int argc, char** argv, std::string_view default_target) -> std::expected<ParsedTarget, Error> {
     ParsedTarget parsed;
     parsed.target = std::string(default_target);
     for (int i = 1; i < argc; ++i) {
@@ -71,7 +71,7 @@ inline std::expected<ParsedTarget, Error> parse_ninja_target(int argc, char** ar
 
 namespace detail {
 
-inline void append_unique(std::vector<Path>& out, const std::vector<Path>& values) {
+inline auto append_unique(std::vector<Path>& out, const std::vector<Path>& values) -> void {
     std::set<Path> existing(out.begin(), out.end());
     for (const auto& value : values) {
         if (!existing.contains(value)) {
@@ -81,7 +81,7 @@ inline void append_unique(std::vector<Path>& out, const std::vector<Path>& value
     }
 }
 
-inline void append_unique_str(std::vector<std::string>& out, const std::vector<std::string>& values) {
+inline auto append_unique_str(std::vector<std::string>& out, const std::vector<std::string>& values) -> void {
     std::set<std::string> existing(out.begin(), out.end());
     for (const auto& value : values) {
         if (!existing.contains(value)) {
@@ -91,7 +91,7 @@ inline void append_unique_str(std::vector<std::string>& out, const std::vector<s
     }
 }
 
-inline Target* resolve_alias(Target* target, const BuildVariant& variant) {
+inline auto resolve_alias(Target* target, const BuildVariant& variant) -> Target* {
     while (target && target->kind() == "alias") {
         auto* alias = static_cast<Alias*>(target);
         target = alias->resolve({{"platform", variant.platform->name}, {"config", variant.config->name}});
@@ -99,7 +99,7 @@ inline Target* resolve_alias(Target* target, const BuildVariant& variant) {
     return target;
 }
 
-inline std::vector<Path> collect_public_includes(Target* target, const BuildVariant& variant, std::set<std::string>& seen) {
+inline auto collect_public_includes(Target* target, const BuildVariant& variant, std::set<std::string>& seen) -> std::vector<Path> {
     target = resolve_alias(target, variant);
     if (!target || !seen.insert(target->name()).second) {
         return {};
@@ -115,7 +115,7 @@ inline std::vector<Path> collect_public_includes(Target* target, const BuildVari
     return out;
 }
 
-inline std::vector<Path> collect_includes(Target& target, const BuildVariant& variant) {
+inline auto collect_includes(Target& target, const BuildVariant& variant) -> std::vector<Path> {
     std::vector<Path> out = target.private_includes;
     append_unique(out, target.public_includes);
     for (auto* dep : target.links) {
@@ -125,8 +125,8 @@ inline std::vector<Path> collect_includes(Target& target, const BuildVariant& va
     return out;
 }
 
-inline Command
-substitute(const std::vector<std::string>& argv_template, const std::vector<Path>& inputs, const std::vector<Path>& outputs, const Path& out_dir) {
+inline auto substitute(const std::vector<std::string>& argv_template, const std::vector<Path>& inputs, const std::vector<Path>& outputs, const Path& out_dir)
+    -> Command {
     Command cmd;
     for (const auto& token : argv_template) {
         if (token == "$in") {
@@ -146,7 +146,7 @@ substitute(const std::vector<std::string>& argv_template, const std::vector<Path
     return cmd;
 }
 
-inline Path object_path(const BuildVariant& variant, const Target& target, const Path& source) {
+inline auto object_path(const BuildVariant& variant, const Target& target, const Path& source) -> Path {
     auto path = source.string();
     for (auto& ch : path) {
         if (ch == '\\') {
@@ -162,7 +162,7 @@ class Emitter {
 public:
     explicit Emitter(const Graph& graph) : graph_(graph) {}
 
-    std::expected<std::string, Error> emit(Target& desired) {
+    auto emit(Target& desired) -> std::expected<std::string, Error> {
         out_ << "ninja_required_version = 1.10\n\n";
         out_ << "builddir = _out/.ninja\n\n";
         out_ << "rule cxx\n  command = $cmd\n  depfile = $depfile\n  deps = gcc\n  description = CXX $out\n\n";
@@ -213,7 +213,7 @@ public:
         return out_.str();
     }
 
-    std::expected<void, Error> write_compile_commands() const {
+    auto write_compile_commands() const -> std::expected<void, Error> {
         std::vector<std::string> merged;
         for (const auto& [dir, commands] : compile_commands_by_variant_) {
             auto json = compile_commands_json(commands);
@@ -230,7 +230,7 @@ public:
         return {};
     }
 
-    std::expected<void, Error> materialize_dirs() const {
+    auto materialize_dirs() const -> std::expected<void, Error> {
         std::error_code ec;
         for (const auto& dir : ensure_dirs_) {
             std::filesystem::create_directories(dir, ec);
@@ -242,7 +242,7 @@ public:
     }
 
 private:
-    std::expected<Path, Error> emit_target(Target* unresolved, const BuildVariant& variant) {
+    auto emit_target(Target* unresolved, const BuildVariant& variant) -> std::expected<Path, Error> {
         assert(variant.platform);
         assert(variant.config);
         assert(variant.platform->toolchain);
@@ -307,7 +307,7 @@ private:
         return *output;
     }
 
-    std::expected<std::vector<Path>, Error> emit_objects(Target& target, const BuildVariant& variant) {
+    auto emit_objects(Target& target, const BuildVariant& variant) -> std::expected<std::vector<Path>, Error> {
         assert(variant.platform);
         assert(variant.config);
         assert(variant.platform->toolchain);
@@ -349,7 +349,7 @@ private:
         return objects;
     }
 
-    std::expected<Path, Error> emit_library(Target& target, const BuildVariant& variant, bool shared) {
+    auto emit_library(Target& target, const BuildVariant& variant, bool shared) -> std::expected<Path, Error> {
         auto objects = emit_objects(target, variant);
         if (!objects) {
             return std::unexpected(objects.error());
@@ -369,8 +369,8 @@ private:
         return output;
     }
 
-    std::expected<Path, Error>
-    emit_program(Target& target, const BuildVariant& variant, const std::vector<Path>& linked_outputs, const std::vector<Path>& order_only) {
+    auto emit_program(Target& target, const BuildVariant& variant, const std::vector<Path>& linked_outputs, const std::vector<Path>& order_only)
+        -> std::expected<Path, Error> {
         auto objects = emit_objects(target, variant);
         if (!objects) {
             return std::unexpected(objects.error());
@@ -410,7 +410,7 @@ private:
         return output;
     }
 
-    std::expected<Path, Error> emit_tool(Tool& target, const BuildVariant& variant, const std::vector<Path>& order_only) {
+    auto emit_tool(Tool& target, const BuildVariant& variant, const std::vector<Path>& order_only) -> std::expected<Path, Error> {
         if (target.is_global) {
             return Path{};
         }
@@ -480,7 +480,7 @@ private:
         return phony;
     }
 
-    void emit_global_tool(Tool& target) {
+    auto emit_global_tool(Tool& target) -> void {
         Command command = substitute(target.argv_template, target.tool_inputs, target.tool_outputs, Path{});
         out_ << "build " << ninja_escape_path(target.name()) << ": tool";
         for (const auto& input : target.tool_inputs) {
@@ -489,7 +489,7 @@ private:
         out_ << "\n  cmd = " << join_command(command) << "\n\n";
     }
 
-    static std::string json_escape(const std::string& in) {
+    static auto json_escape(const std::string& in) -> std::string {
         std::string out;
         for (char ch : in) {
             if (ch == '\\' || ch == '"') {
@@ -504,14 +504,14 @@ private:
         return out;
     }
 
-    std::string compile_command_json(const Path& source, const Command& command) const {
+    auto compile_command_json(const Path& source, const Command& command) const -> std::string {
         std::ostringstream json;
         json << "{\"directory\":\"" << json_escape(repo_root()) << "\",\"file\":\"" << json_escape(source.string()) << "\",\"command\":\""
              << json_escape(join_command(command)) << "\"}";
         return json.str();
     }
 
-    static std::string compile_commands_json(const std::vector<std::string>& commands) {
+    static auto compile_commands_json(const std::vector<std::string>& commands) -> std::string {
         std::ostringstream json;
         json << "[\n";
         for (size_t i = 0; i < commands.size(); ++i) {
@@ -538,7 +538,7 @@ private:
 
 class NinjaBackend {
 public:
-    std::expected<void, Error> emit(const Graph& graph, Target& desired, Path output = "_out/build.ninja") const {
+    auto emit(const Graph& graph, Target& desired, Path output = "_out/build.ninja") const -> std::expected<void, Error> {
         detail::Emitter emitter(graph);
         auto text = emitter.emit(desired);
         if (!text) {
@@ -559,7 +559,7 @@ public:
         return {};
     }
 
-    std::expected<void, Error> build(const Graph& graph, Target& desired, const ParsedTarget& parsed) const {
+    auto build(const Graph& graph, Target& desired, const ParsedTarget& parsed) const -> std::expected<void, Error> {
         if (parsed.backend != "ninja") {
             return std::unexpected(Error{"unsupported backend: " + parsed.backend});
         }

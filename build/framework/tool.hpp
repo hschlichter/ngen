@@ -16,26 +16,26 @@ public:
     using OutputFor = std::function<Path(const BuildVariant&, const Path&)>;
 
     using Target::Target;
-    std::string kind() const override { return "tool"; }
+    auto kind() const -> std::string override { return "tool"; }
 
-    Tool& command(std::vector<std::string> argv) {
+    auto command(std::vector<std::string> argv) -> Tool& {
         argv_template = std::move(argv);
         return *this;
     }
-    Tool& inputs(std::vector<Path> paths) {
+    auto inputs(std::vector<Path> paths) -> Tool& {
         tool_inputs = std::move(paths);
         return *this;
     }
-    Tool& outputs(std::vector<Path> paths) {
+    auto outputs(std::vector<Path> paths) -> Tool& {
         tool_outputs = std::move(paths);
         return *this;
     }
-    Tool& for_each(std::vector<Path> paths, OutputFor fn) {
+    auto for_each(std::vector<Path> paths, OutputFor fn) -> Tool& {
         tool_inputs = std::move(paths);
         output_for = std::move(fn);
         return *this;
     }
-    Tool& global(bool flag = true) {
+    auto global(bool flag = true) -> Tool& {
         is_global = flag;
         return *this;
     }

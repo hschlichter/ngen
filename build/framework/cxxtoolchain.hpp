@@ -24,10 +24,10 @@ public:
 
     explicit CxxToolchain(Config config) : config_(std::move(config)) {}
 
-    std::string name() const override { return config_.name; }
-    std::string default_std() const { return config_.default_std; }
+    auto name() const -> std::string override { return config_.name; }
+    auto default_std() const -> std::string { return config_.default_std; }
 
-    Command compile_cxx(const CompileIntent& intent) const override {
+    auto compile_cxx(const CompileIntent& intent) const -> Command override {
         Command c{{config_.cxx, "-c", "-std=" + intent.std, opt_flag(intent.opt)}};
         if (intent.debug) {
             c.argv.push_back("-g");
@@ -59,7 +59,7 @@ public:
         return c;
     }
 
-    Command archive(std::vector<Path> objects, Path output) const override {
+    auto archive(std::vector<Path> objects, Path output) const -> Command override {
         Command c{{config_.ar, "rcs", output.string()}};
         for (const auto& object : objects) {
             c.argv.push_back(object.string());
@@ -67,7 +67,7 @@ public:
         return c;
     }
 
-    Command link_exe(const LinkIntent& intent) const override {
+    auto link_exe(const LinkIntent& intent) const -> Command override {
         Command c{{config_.linker.empty() ? config_.cxx : config_.linker}};
         for (const auto& object : intent.objects) {
             c.argv.push_back(object.string());
@@ -104,17 +104,19 @@ public:
         return c;
     }
 
-    Command link_shared(const LinkIntent& intent) const override {
+    auto link_shared(const LinkIntent& intent) const -> Command override {
         auto c = link_exe(intent);
         c.argv.insert(c.argv.begin() + 1, "-shared");
         return c;
     }
 
-    std::optional<DepSupport> dep_support(Path object) const override { return DepSupport{object.string() + ".d", "gcc"}; }
+    auto dep_support(Path object) const -> std::optional<DepSupport> override { return DepSupport{object.string() + ".d", "gcc"}; }
 
-    std::string static_lib_name(std::string_view stem) const override { return "lib" + std::string(stem) + ".a"; }
-    std::string shared_lib_name(std::string_view stem) const override { return "lib" + std::string(stem) + ".so"; }
-    std::string exe_name(std::string_view stem, std::string_view platform_suffix) const override { return std::string(stem) + std::string(platform_suffix); }
+    auto static_lib_name(std::string_view stem) const -> std::string override { return "lib" + std::string(stem) + ".a"; }
+    auto shared_lib_name(std::string_view stem) const -> std::string override { return "lib" + std::string(stem) + ".so"; }
+    auto exe_name(std::string_view stem, std::string_view platform_suffix) const -> std::string override {
+        return std::string(stem) + std::string(platform_suffix);
+    }
 
 private:
     Config config_;

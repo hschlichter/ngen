@@ -28,7 +28,7 @@ struct GlobSpec {
 
 namespace detail {
 
-inline bool glob_match(std::string pattern, std::string text) {
+inline auto glob_match(std::string pattern, std::string text) -> bool {
     std::ranges::replace(pattern, '\\', '/');
     std::ranges::replace(text, '\\', '/');
     std::string re = "^";
@@ -61,7 +61,7 @@ inline bool glob_match(std::string pattern, std::string text) {
 
 } // namespace detail
 
-inline std::vector<Path> glob(GlobSpec spec) {
+inline auto glob(GlobSpec spec) -> std::vector<Path> {
     std::vector<Path> out;
     auto root = std::filesystem::current_path();
     auto wildcard = spec.include.find_first_of("*?");
@@ -89,7 +89,7 @@ inline std::vector<Path> glob(GlobSpec spec) {
     return out;
 }
 
-inline std::vector<Path> concat(std::initializer_list<std::vector<Path>> lists) {
+inline auto concat(std::initializer_list<std::vector<Path>> lists) -> std::vector<Path> {
     std::vector<Path> out;
     for (const auto& list : lists) {
         out.insert(out.end(), list.begin(), list.end());
@@ -97,7 +97,7 @@ inline std::vector<Path> concat(std::initializer_list<std::vector<Path>> lists) 
     return out;
 }
 
-inline std::vector<std::string> concat_tokens(std::initializer_list<std::vector<std::string>> lists) {
+inline auto concat_tokens(std::initializer_list<std::vector<std::string>> lists) -> std::vector<std::string> {
     std::vector<std::string> out;
     for (const auto& list : lists) {
         out.insert(out.end(), list.begin(), list.end());
@@ -105,12 +105,12 @@ inline std::vector<std::string> concat_tokens(std::initializer_list<std::vector<
     return out;
 }
 
-inline std::vector<std::string> concat_tokens(std::vector<std::string> a, std::vector<std::string> b) {
+inline auto concat_tokens(std::vector<std::string> a, std::vector<std::string> b) -> std::vector<std::string> {
     a.insert(a.end(), b.begin(), b.end());
     return a;
 }
 
-inline std::vector<std::string> capture_tokens(std::initializer_list<std::string> argv) {
+inline auto capture_tokens(std::initializer_list<std::string> argv) -> std::vector<std::string> {
     std::string command;
     for (const auto& token : argv) {
         if (!command.empty()) {
@@ -134,11 +134,11 @@ inline std::vector<std::string> capture_tokens(std::initializer_list<std::string
     return split_ws(output);
 }
 
-inline std::string repo_root() {
+inline auto repo_root() -> std::string {
     return std::filesystem::current_path().string();
 }
 
-inline std::expected<void, Error> write_if_changed(const Path& path, const std::string& text) {
+inline auto write_if_changed(const Path& path, const std::string& text) -> std::expected<void, Error> {
     std::error_code ec;
     if (!path.parent_path().empty()) {
         std::filesystem::create_directories(path.parent_path().value, ec);

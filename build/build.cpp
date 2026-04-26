@@ -23,7 +23,7 @@ using namespace build;
 
 namespace {
 
-void add_usd_linkage(Target& target) {
+auto add_usd_linkage(Target& target) -> void {
     target.lib_search("external/openusd_build/lib")
         .rpath((std::filesystem::current_path() / "external/openusd_build/lib").string())
         .link_raw("-lusd_usd")
@@ -48,7 +48,7 @@ void add_usd_linkage(Target& target) {
 
 } // namespace
 
-int main(int argc, char** argv) {
+auto main(int argc, char** argv) -> int {
     Graph g;
 
     auto sdl3_cflags = capture_tokens({"pkg-config", "--cflags", "sdl3"});

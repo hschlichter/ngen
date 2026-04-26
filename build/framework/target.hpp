@@ -20,127 +20,127 @@ public:
     explicit Target(std::string name) : name_(std::move(name)) {}
     virtual ~Target() = default;
 
-    const std::string& name() const { return name_; }
-    virtual std::string kind() const = 0;
+    auto name() const -> const std::string& { return name_; }
+    virtual auto kind() const -> std::string = 0;
 
-    Target& cxx(std::vector<Path> s) {
+    auto cxx(std::vector<Path> s) -> Target& {
         sources = std::move(s);
         return *this;
     }
-    Target& cxx(std::initializer_list<Path> s) {
+    auto cxx(std::initializer_list<Path> s) -> Target& {
         sources.assign(s.begin(), s.end());
         return *this;
     }
-    Target& std(std::string_view version) {
+    auto std(std::string_view version) -> Target& {
         cxx_std = std::string(version);
         return *this;
     }
-    Target& define(std::string macro) {
+    auto define(std::string macro) -> Target& {
         defines.push_back(std::move(macro));
         return *this;
     }
-    Target& include(Path dir) {
+    auto include(Path dir) -> Target& {
         private_includes.push_back(std::move(dir));
         return *this;
     }
-    Target& include(std::vector<Path> dirs) {
+    auto include(std::vector<Path> dirs) -> Target& {
         private_includes.insert(private_includes.end(), dirs.begin(), dirs.end());
         return *this;
     }
-    Target& include(std::initializer_list<Path> dirs) {
+    auto include(std::initializer_list<Path> dirs) -> Target& {
         private_includes.insert(private_includes.end(), dirs.begin(), dirs.end());
         return *this;
     }
-    Target& public_include(Path dir) {
+    auto public_include(Path dir) -> Target& {
         public_includes.push_back(std::move(dir));
         return *this;
     }
-    Target& public_include(std::vector<Path> dirs) {
+    auto public_include(std::vector<Path> dirs) -> Target& {
         public_includes.insert(public_includes.end(), dirs.begin(), dirs.end());
         return *this;
     }
-    Target& public_include(std::initializer_list<Path> dirs) {
+    auto public_include(std::initializer_list<Path> dirs) -> Target& {
         public_includes.insert(public_includes.end(), dirs.begin(), dirs.end());
         return *this;
     }
-    Target& warning_off(std::string_view name) {
+    auto warning_off(std::string_view name) -> Target& {
         warning_suppressions.emplace_back(name);
         return *this;
     }
-    Target& flag_raw(std::string token) {
+    auto flag_raw(std::string token) -> Target& {
         raw_compile_flags.push_back(std::move(token));
         return *this;
     }
-    Target& flags_raw(std::vector<std::string> tokens) {
+    auto flags_raw(std::vector<std::string> tokens) -> Target& {
         raw_compile_flags.insert(raw_compile_flags.end(), tokens.begin(), tokens.end());
         return *this;
     }
-    Target& optimize(OptLevel level) {
+    auto optimize(OptLevel level) -> Target& {
         opt = level;
         return *this;
     }
-    Target& debug(bool enabled = true) {
+    auto debug(bool enabled = true) -> Target& {
         debug_info = enabled;
         return *this;
     }
-    Target& pic(bool enabled = true) {
+    auto pic(bool enabled = true) -> Target& {
         needs_pic = enabled;
         return *this;
     }
-    Target& depend_on(Target& other) {
+    auto depend_on(Target& other) -> Target& {
         deps.push_back(&other);
         return *this;
     }
-    Target& link(Target& other) {
+    auto link(Target& other) -> Target& {
         links.push_back(&other);
         return *this;
     }
-    Target& link(std::string_view system_lib) {
+    auto link(std::string_view system_lib) -> Target& {
         system_libs.emplace_back(system_lib);
         return *this;
     }
-    Target& link_raw(std::string token) {
+    auto link_raw(std::string token) -> Target& {
         raw_link_flags.push_back(std::move(token));
         return *this;
     }
-    Target& link_raw_many(std::vector<std::string> tokens) {
+    auto link_raw_many(std::vector<std::string> tokens) -> Target& {
         raw_link_flags.insert(raw_link_flags.end(), tokens.begin(), tokens.end());
         return *this;
     }
-    Target& lib_search(Path dir) {
+    auto lib_search(Path dir) -> Target& {
         lib_search_dirs.push_back(std::move(dir));
         return *this;
     }
-    Target& rpath(std::string path) {
+    auto rpath(std::string path) -> Target& {
         rpaths.push_back(std::move(path));
         return *this;
     }
-    Target& only_in(std::initializer_list<std::string_view> names) {
+    auto only_in(std::initializer_list<std::string_view> names) -> Target& {
         for (auto n : names) {
             only_configs_.emplace(n);
         }
         return *this;
     }
-    Target& except_in(std::initializer_list<std::string_view> names) {
+    auto except_in(std::initializer_list<std::string_view> names) -> Target& {
         for (auto n : names) {
             except_configs_.emplace(n);
         }
         return *this;
     }
-    Target& only_on(std::initializer_list<std::string_view> names) {
+    auto only_on(std::initializer_list<std::string_view> names) -> Target& {
         for (auto n : names) {
             only_platforms_.emplace(n);
         }
         return *this;
     }
-    Target& except_on(std::initializer_list<std::string_view> names) {
+    auto except_on(std::initializer_list<std::string_view> names) -> Target& {
         for (auto n : names) {
             except_platforms_.emplace(n);
         }
         return *this;
     }
 
-    bool enabled_for(std::string_view platform, std::string_view config) const {
+    auto enabled_for(std::string_view platform, std::string_view config) const -> bool {
         if (!only_platforms_.empty() && !only_platforms_.contains(std::string(platform))) {
             return false;
         }
@@ -184,22 +184,22 @@ private:
 class Alias final : public Target {
 public:
     using Target::Target;
-    std::string kind() const override { return "alias"; }
+    auto kind() const -> std::string override { return "alias"; }
 
-    Alias& to(Target& target) {
+    auto to(Target& target) -> Alias& {
         fallback_ = &target;
         return *this;
     }
-    Alias& select(std::string_view key, std::string_view value, Target& target) {
+    auto select(std::string_view key, std::string_view value, Target& target) -> Alias& {
         selections_.emplace_back(key, value, &target);
         return *this;
     }
-    Alias& fallback(Target& target) {
+    auto fallback(Target& target) -> Alias& {
         fallback_ = &target;
         return *this;
     }
 
-    Target* resolve(const std::map<std::string, std::string>& context) const {
+    auto resolve(const std::map<std::string, std::string>& context) const -> Target* {
         for (const auto& [key, value, target] : selections_) {
             if (auto it = context.find(key); it != context.end() && it->second == value) {
                 return target;

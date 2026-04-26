@@ -10,8 +10,8 @@ namespace build {
 class Library final : public Target {
 public:
     using Target::Target;
-    std::string kind() const override { return "library"; }
-    Library& linkage(Linkage linkage) {
+    auto kind() const -> std::string override { return "library"; }
+    auto linkage(Linkage linkage) -> Library& {
         forced_linkage = linkage;
         return *this;
     }

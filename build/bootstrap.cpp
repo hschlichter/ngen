@@ -14,7 +14,7 @@ struct Error {
     std::string message;
 };
 
-std::expected<void, Error> write_if_changed(const std::filesystem::path& path, const std::string& text) {
+auto write_if_changed(const std::filesystem::path& path, const std::string& text) -> std::expected<void, Error> {
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
     if (ec) {
@@ -37,7 +37,7 @@ std::expected<void, Error> write_if_changed(const std::filesystem::path& path, c
     return {};
 }
 
-std::string shell_quote(const std::string& value) {
+auto shell_quote(const std::string& value) -> std::string {
     if (value.empty()) {
         return "''";
     }
@@ -61,7 +61,7 @@ struct Args {
     int verbosity = 0;
 };
 
-std::expected<Args, Error> parse(int argc, char** argv) {
+auto parse(int argc, char** argv) -> std::expected<Args, Error> {
     Args args;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -100,7 +100,7 @@ std::expected<Args, Error> parse(int argc, char** argv) {
     return args;
 }
 
-std::string forward_args(int argc, char** argv) {
+auto forward_args(int argc, char** argv) -> std::string {
     std::string out;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -113,7 +113,7 @@ std::string forward_args(int argc, char** argv) {
     return out;
 }
 
-std::string ninja_target(const Args& args) {
+auto ninja_target(const Args& args) -> std::string {
     if (args.target == "format" || args.target == "tidy") {
         return args.target;
     }
@@ -127,7 +127,7 @@ std::string ninja_target(const Args& args) {
 
 } // namespace
 
-int main(int argc, char** argv) {
+auto main(int argc, char** argv) -> int {
     auto args = parse(argc, argv);
     if (!args) {
         std::cerr << args.error().message << "\n";

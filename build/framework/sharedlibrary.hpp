@@ -7,7 +7,7 @@ namespace build {
 class SharedLibrary final : public Target {
 public:
     using Target::Target;
-    std::string kind() const override { return "shared_library"; }
+    auto kind() const -> std::string override { return "shared_library"; }
 };
 
 } // namespace build

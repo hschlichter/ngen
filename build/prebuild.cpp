@@ -12,7 +12,7 @@ struct Error {
     std::string message;
 };
 
-std::expected<void, Error> write_if_changed(const std::filesystem::path& path, const std::string& text) {
+auto write_if_changed(const std::filesystem::path& path, const std::string& text) -> std::expected<void, Error> {
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
     if (ec) {
@@ -37,7 +37,7 @@ std::expected<void, Error> write_if_changed(const std::filesystem::path& path, c
 
 } // namespace
 
-int main() {
+auto main() -> int {
     auto written = write_if_changed("_out/ngen-build-graph.ninja", R"(cxx = clang++
 cxxflags = -std=c++23 -O0 -g -Wall -Wextra -Ibuild/framework
 builddir = _out/.ninja

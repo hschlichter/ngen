@@ -14,17 +14,17 @@ struct Path {
     Path(std::string path) : value(std::move(path)) {}
     Path(std::filesystem::path path) : value(std::move(path)) {}
 
-    std::string string() const { return value.generic_string(); }
-    Path filename() const { return value.filename(); }
-    Path parent_path() const { return value.parent_path(); }
-    bool empty() const { return value.empty(); }
+    auto string() const -> std::string { return value.generic_string(); }
+    auto filename() const -> Path { return value.filename(); }
+    auto parent_path() const -> Path { return value.parent_path(); }
+    auto empty() const -> bool { return value.empty(); }
 };
 
-inline Path operator/(const Path& lhs, const Path& rhs) {
+inline auto operator/(const Path& lhs, const Path& rhs) -> Path {
     return lhs.value / rhs.value;
 }
 
-inline bool operator<(const Path& lhs, const Path& rhs) {
+inline auto operator<(const Path& lhs, const Path& rhs) -> bool {
     return lhs.string() < rhs.string();
 }
 

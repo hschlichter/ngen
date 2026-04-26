@@ -12,7 +12,7 @@
 
 namespace build {
 
-inline std::string shell_quote(const std::string& value) {
+inline auto shell_quote(const std::string& value) -> std::string {
     if (value.empty()) {
         return "''";
     }
@@ -38,7 +38,7 @@ inline std::string shell_quote(const std::string& value) {
     return out;
 }
 
-inline std::string join_command(const Command& command) {
+inline auto join_command(const Command& command) -> std::string {
     std::string out;
     for (const auto& token : command.argv) {
         if (!out.empty()) {
@@ -49,7 +49,7 @@ inline std::string join_command(const Command& command) {
     return out;
 }
 
-inline std::string ninja_escape_path(const Path& path) {
+inline auto ninja_escape_path(const Path& path) -> std::string {
     std::string out;
     for (char ch : path.string()) {
         if (ch == ' ' || ch == ':' || ch == '$') {
@@ -60,7 +60,7 @@ inline std::string ninja_escape_path(const Path& path) {
     return out;
 }
 
-inline std::string opt_flag(OptLevel opt) {
+inline auto opt_flag(OptLevel opt) -> std::string {
     switch (opt) {
         case OptLevel::O0:
             return "-O0";
@@ -74,7 +74,7 @@ inline std::string opt_flag(OptLevel opt) {
     return "-O0";
 }
 
-inline std::vector<std::string> split_ws(const std::string& text) {
+inline auto split_ws(const std::string& text) -> std::vector<std::string> {
     std::istringstream in(text);
     std::vector<std::string> tokens;
     std::string token;

@@ -43,15 +43,15 @@ public:
     };
 
     virtual ~Toolchain() = default;
-    virtual std::string name() const = 0;
-    virtual Command compile_cxx(const CompileIntent& intent) const = 0;
-    virtual Command archive(std::vector<Path> objects, Path output) const = 0;
-    virtual Command link_exe(const LinkIntent& intent) const = 0;
-    virtual Command link_shared(const LinkIntent& intent) const = 0;
-    virtual std::optional<DepSupport> dep_support(Path object) const = 0;
-    virtual std::string static_lib_name(std::string_view stem) const = 0;
-    virtual std::string shared_lib_name(std::string_view stem) const = 0;
-    virtual std::string exe_name(std::string_view stem, std::string_view platform_suffix) const = 0;
+    virtual auto name() const -> std::string = 0;
+    virtual auto compile_cxx(const CompileIntent& intent) const -> Command = 0;
+    virtual auto archive(std::vector<Path> objects, Path output) const -> Command = 0;
+    virtual auto link_exe(const LinkIntent& intent) const -> Command = 0;
+    virtual auto link_shared(const LinkIntent& intent) const -> Command = 0;
+    virtual auto dep_support(Path object) const -> std::optional<DepSupport> = 0;
+    virtual auto static_lib_name(std::string_view stem) const -> std::string = 0;
+    virtual auto shared_lib_name(std::string_view stem) const -> std::string = 0;
+    virtual auto exe_name(std::string_view stem, std::string_view platform_suffix) const -> std::string = 0;
 };
 
 } // namespace build
