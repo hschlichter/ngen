@@ -1,2 +1,12 @@
 #pragma once
-#include "build.hpp"
+
+#include <string>
+#include <vector>
+
+namespace build {
+
+struct Command {
+    std::vector<std::string> argv;
+};
+
+} // namespace build

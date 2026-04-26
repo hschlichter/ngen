@@ -1,4 +1,17 @@
-#include "framework/build.hpp"
+#include "framework/backend.hpp"
+#include "framework/backendninja.hpp"
+#include "framework/configuration.hpp"
+#include "framework/cxxtoolchain.hpp"
+#include "framework/flags.hpp"
+#include "framework/glob.hpp"
+#include "framework/graph.hpp"
+#include "framework/library.hpp"
+#include "framework/path.hpp"
+#include "framework/platform.hpp"
+#include "framework/program.hpp"
+#include "framework/staticlibrary.hpp"
+#include "framework/target.hpp"
+#include "framework/tool.hpp"
 
 #include <filesystem>
 #include <iostream>
