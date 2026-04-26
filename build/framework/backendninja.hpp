@@ -119,6 +119,25 @@ inline std::vector<Path> collect_includes(Target& target, const BuildVariant& va
     return out;
 }
 
+inline Command substitute(const std::vector<std::string>& argv_template,
+                          const std::vector<Path>& inputs,
+                          const std::vector<Path>& outputs,
+                          const Path& out_dir) {
+    Command cmd;
+    for (const auto& token : argv_template) {
+        if (token == "$in") {
+            for (const auto& p : inputs) cmd.argv.push_back(p.string());
+        } else if (token == "$out") {
+            for (const auto& p : outputs) cmd.argv.push_back(p.string());
+        } else if (token == "$out_dir") {
+            cmd.argv.push_back(out_dir.string());
+        } else {
+            cmd.argv.push_back(token);
+        }
+    }
+    return cmd;
+}
+
 inline Path object_path(const BuildVariant& variant, const Target& target, const Path& source) {
     auto path = source.string();
     for (auto& ch : path) {
@@ -143,13 +162,6 @@ public:
         out_ << "rule link_exe\n  command = $cmd\n  description = LINK $out\n\n";
         out_ << "rule link_shared\n  command = $cmd\n  description = LINK-SHARED $out\n\n";
         out_ << "rule tool\n  command = $cmd\n  description = TOOL $out\n\n";
-        out_ << "rule clean_rule\n  command = rm -rf _out/linux-vulkan/debug _out/linux-vulkan/release _out/linux-vulkan/gamerelease shaders/*.spv\n  description = CLEAN\n\n";
-        out_ << "rule format_rule\n  command = clang-format -i src/**/*.cpp src/**/*.h\n  description = FORMAT\n\n";
-        out_ << "rule tidy_rule\n  command = clang-tidy ";
-        for (const auto& file : glob({.include = "src/**/*.cpp", .exclude = ""})) {
-            out_ << ninja_escape_path(file) << " ";
-        }
-        out_ << "-- -std=c++23\n  description = TIDY\n\n";
 
         std::vector<std::string> variant_targets;
         for (const auto& platform : graph_.platforms()) {
@@ -157,26 +169,38 @@ public:
                 BuildVariant variant{&platform, &config, Path("_out") / platform.name / config.name};
                 ensure_dirs_.insert(variant.out_dir.string());
                 outputs_.clear();
-                auto output = emit_target(&desired, variant);
-                if (!output) {
-                    return std::unexpected(output.error());
+
+                std::optional<Path> desired_output;
+                for (const auto& tgt : graph_.targets()) {
+                    auto output = emit_target(tgt.get(), variant);
+                    if (!output) {
+                        return std::unexpected(output.error());
+                    }
+                    if (tgt.get() == &desired) {
+                        desired_output = *output;
+                    }
                 }
-                if (!output->empty()) {
+
+                if (desired_output && !desired_output->empty()) {
                     auto name = desired.name() + ":" + platform.name + ":" + config.name;
                     variant_targets.push_back(name);
-                    out_ << "build " << ninja_escape_path(name) << ": phony " << ninja_escape_path(*output) << "\n\n";
-                    compile_commands_by_variant_[variant.out_dir.string()] = compile_commands_;
-                    compile_commands_.clear();
+                    out_ << "build " << ninja_escape_path(name) << ": phony " << ninja_escape_path(*desired_output) << "\n\n";
                 }
+                compile_commands_by_variant_[variant.out_dir.string()] = compile_commands_;
+                compile_commands_.clear();
             }
         }
 
         if (!variant_targets.empty()) {
             out_ << "build " << ninja_escape_path(desired.name()) << ": phony " << ninja_escape_path(variant_targets.front()) << "\n";
         }
-        out_ << "build clean: clean_rule\n";
-        out_ << "build format: format_rule\n";
-        out_ << "build tidy: tidy_rule\n";
+
+        for (const auto& tgt : graph_.targets()) {
+            if (auto* tool = dynamic_cast<Tool*>(tgt.get()); tool && tool->is_global) {
+                emit_global_tool(*tool);
+            }
+        }
+
         out_ << "default " << desired.name() << "\n";
         return out_.str();
     }
@@ -378,6 +402,10 @@ private:
     }
 
     std::expected<Path, Error> emit_tool(Tool& target, const BuildVariant& variant, const std::vector<Path>& order_only) {
+        if (target.is_global) {
+            return Path{};
+        }
+
         std::vector<Path> outputs;
         if (target.output_for) {
             for (const auto& input : target.tool_inputs) {
@@ -387,17 +415,34 @@ private:
             outputs = target.tool_outputs;
         }
 
+        if (outputs.empty()) {
+            auto stamp = variant.out_dir / ("." + target.name() + ".stamp");
+            ensure_dirs_.insert(stamp.parent_path().string());
+            Command command = substitute(target.argv_template, target.tool_inputs, {}, variant.out_dir);
+            out_ << "build " << ninja_escape_path(stamp) << ": tool";
+            for (const auto& input : target.tool_inputs) {
+                out_ << " " << ninja_escape_path(input);
+            }
+            if (!order_only.empty()) {
+                out_ << " ||";
+                for (const auto& dep : order_only) {
+                    out_ << " " << ninja_escape_path(dep);
+                }
+            }
+            out_ << "\n  cmd = " << join_command(command) << "\n\n";
+            return stamp;
+        }
+
         for (size_t i = 0; i < outputs.size(); ++i) {
             const auto& input = target.tool_inputs.empty() ? Path{} : target.tool_inputs[std::min(i, target.tool_inputs.size() - 1)];
             const auto& output = outputs[i];
             ensure_dirs_.insert(output.parent_path().string());
             auto compatibility = Path("shaders") / output.filename();
-            Command command;
-            for (auto token : target.argv_template) {
-                if (token == "$in") token = input.string();
-                if (token == "$out") token = output.string();
-                command.argv.push_back(token);
-            }
+
+            std::vector<Path> inputs_one;
+            if (!input.empty()) inputs_one.push_back(input);
+            Command command = substitute(target.argv_template, inputs_one, {output}, variant.out_dir);
+
             std::string cmd = join_command(command);
             if (target.name() == "shaders") {
                 cmd += " && cp " + shell_quote(output.string()) + " " + shell_quote(compatibility.string());
@@ -422,6 +467,15 @@ private:
         }
         out_ << "\n\n";
         return phony;
+    }
+
+    void emit_global_tool(Tool& target) {
+        Command command = substitute(target.argv_template, target.tool_inputs, target.tool_outputs, Path{});
+        out_ << "build " << ninja_escape_path(target.name()) << ": tool";
+        for (const auto& input : target.tool_inputs) {
+            out_ << " " << ninja_escape_path(input);
+        }
+        out_ << "\n  cmd = " << join_command(command) << "\n\n";
     }
 
     static std::string json_escape(const std::string& in) {

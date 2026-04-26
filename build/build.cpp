@@ -112,7 +112,10 @@ int main(int argc, char** argv) {
 
     auto& obs = g.add<Library>("obs");
     obs.cxx(glob({.include = "src/obs/**/*.cpp"}))
-        .public_include({"src/obs", "external/concurrentqueue"});
+        .public_include({
+            "src/obs",
+            "external/concurrentqueue",
+        });
 
     auto& rhi = g.add<Library>("rhi");
     rhi.cxx(glob({.include = "src/rhi/*.cpp"}))
@@ -122,7 +125,11 @@ int main(int argc, char** argv) {
     auto& rhivulkan = g.add<Library>("rhivulkan");
     rhivulkan.cxx(glob({.include = "src/rhi/vulkan/**/*.cpp"}))
         .public_include({"src/rhi/vulkan"})
-        .include({"src", "external/imgui", "external/imgui/backends"})
+        .include({
+            "src",
+            "external/imgui",
+            "external/imgui/backends",
+        })
         .only_on({"linux-vulkan"})
         .link(rhi);
 
@@ -131,26 +138,54 @@ int main(int argc, char** argv) {
 
     auto& renderer = g.add<Library>("renderer");
     renderer.cxx(glob({.include = "src/renderer/**/*.cpp"}))
-        .public_include({"src/renderer", "src/renderer/passes"})
-        .include({"src", "src/rhi", "src/rhi/vulkan", "src/scene", "src/obs"})
+        .public_include({
+            "src/renderer",
+            "src/renderer/passes",
+        })
+        .include({
+            "src",
+            "src/rhi",
+            "src/rhi/vulkan",
+            "src/scene",
+            "src/obs",
+        })
         .link(obs)
         .link(rhi)
         .link(rhi_backend);
 
     auto& scene = g.add<Library>("scene");
     scene.cxx(glob({.include = "src/scene/*.cpp", .exclude = "src/scene/usd*.cpp"}))
-        .public_include({"src", "src/scene"})
-        .include({"src/ui", "src/renderer", "src/obs"});
+        .public_include({
+            "src",
+            "src/scene",
+        })
+        .include({
+            "src/ui",
+            "src/renderer",
+            "src/obs",
+        });
 
     auto& sceneusd = g.add<StaticLibrary>("sceneusd");
     sceneusd.std("c++20")
         .cxx(glob({.include = "src/scene/usd*.cpp"}))
-        .public_include({"src", "src/scene"})
+        .public_include({
+            "src",
+            "src/scene",
+        })
         .include({
-            "src/obs", "src/rhi", "src/rhi/vulkan", "src/renderer",
-            "src/renderer/passes", "src/ui", "external/openusd_build/include",
-            "external/glm", "external/cgltf", "external/stb", "external/imgui",
-            "external/imgui/backends", "external/concurrentqueue"
+            "src/obs",
+            "src/rhi",
+            "src/rhi/vulkan",
+            "src/renderer",
+            "src/renderer/passes",
+            "src/ui",
+            "external/openusd_build/include",
+            "external/glm",
+            "external/cgltf",
+            "external/stb",
+            "external/imgui",
+            "external/imgui/backends",
+            "external/concurrentqueue",
         })
         .warning_off("deprecated-declarations");
 
@@ -163,12 +198,24 @@ int main(int argc, char** argv) {
         "external/imgui/imgui_demo.cpp",
         "external/imgui/backends/imgui_impl_vulkan.cpp",
         "external/imgui/backends/imgui_impl_sdl3.cpp",
-    }).public_include({"external/imgui", "external/imgui/backends"});
+    }).public_include({
+        "external/imgui",
+        "external/imgui/backends",
+    });
 
     auto& ui = g.add<Library>("ui");
     ui.cxx(glob({.include = "src/ui/**/*.cpp"}))
         .public_include({"src/ui"})
-        .include({"src", "src/obs", "src/rhi", "src/rhi/vulkan", "src/renderer", "src/renderer/passes", "src/scene", "external/imgui"})
+        .include({
+            "src",
+            "src/obs",
+            "src/rhi",
+            "src/rhi/vulkan",
+            "src/renderer",
+            "src/renderer/passes",
+            "src/scene",
+            "external/imgui",
+        })
         .link(renderer)
         .link(scene)
         .link(sceneusd)
@@ -183,6 +230,26 @@ int main(int argc, char** argv) {
             return variant.out_dir / "shaders" / (source.filename().string() + ".spv");
         });
 
+    g.add<Tool>("clean").command({"rm", "-rf", "$out_dir"});
+
+    g.add<Tool>("format")
+        .global()
+        .inputs(concat({
+            glob({.include = "src/**/*.cpp"}),
+            glob({.include = "src/**/*.h"}),
+            glob({.include = "build/**/*.cpp"}),
+            glob({.include = "build/**/*.hpp"}),
+        }))
+        .command({"clang-format", "-i", "$in"});
+
+    g.add<Tool>("tidy")
+        .global()
+        .inputs(concat({
+            glob({.include = "src/**/*.cpp"}),
+            glob({.include = "build/**/*.cpp"}),
+        }))
+        .command({"clang-tidy", "$in", "--", "-std=c++23", "-Ibuild/framework"});
+
     auto& view = g.add<Program>("ngen-view");
     view.cxx({
         "src/main.cpp",
@@ -190,10 +257,20 @@ int main(int argc, char** argv) {
         "src/debugdraw.cpp",
         "src/jobsystem.cpp",
     }).include({
-        "src", "src/obs", "src/rhi", "src/rhi/vulkan", "src/renderer",
-        "src/renderer/passes", "src/scene", "src/ui", "external/glm",
-        "external/cgltf", "external/stb", "external/imgui",
-        "external/imgui/backends", "external/concurrentqueue"
+        "src",
+        "src/obs",
+        "src/rhi",
+        "src/rhi/vulkan",
+        "src/renderer",
+        "src/renderer/passes",
+        "src/scene",
+        "src/ui",
+        "external/glm",
+        "external/cgltf",
+        "external/stb",
+        "external/imgui",
+        "external/imgui/backends",
+        "external/concurrentqueue",
     }).link(obs)
       .link(rhi)
       .link(rhivulkan)
@@ -215,7 +292,7 @@ int main(int argc, char** argv) {
     }
 
     Target* desired = g.find(parsed->target);
-    if (!desired || parsed->target == "clean" || parsed->target == "format" || parsed->target == "tidy") {
+    if (!desired) {
         desired = &view;
     }
 

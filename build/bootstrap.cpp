@@ -108,7 +108,7 @@ std::string forward_args(int argc, char** argv) {
 }
 
 std::string ninja_target(const Args& args) {
-    if (args.target == "clean" || args.target == "format" || args.target == "tidy") {
+    if (args.target == "format" || args.target == "tidy") {
         return args.target;
     }
     if (args.platform.empty() && args.config.empty()) {

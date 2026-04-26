@@ -22,11 +22,13 @@ public:
     Tool& inputs(std::vector<Path> paths) { tool_inputs = std::move(paths); return *this; }
     Tool& outputs(std::vector<Path> paths) { tool_outputs = std::move(paths); return *this; }
     Tool& for_each(std::vector<Path> paths, OutputFor fn) { tool_inputs = std::move(paths); output_for = std::move(fn); return *this; }
+    Tool& global(bool flag = true) { is_global = flag; return *this; }
 
     std::vector<std::string> argv_template;
     std::vector<Path> tool_inputs;
     std::vector<Path> tool_outputs;
     OutputFor output_for;
+    bool is_global = false;
 };
 
 } // namespace build
