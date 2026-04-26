@@ -43,6 +43,7 @@ struct Args {
     std::string platform;
     std::string config;
     std::string backend = "ninja";
+    int verbosity = 0;
 };
 
 Args parse(int argc, char** argv) {
@@ -57,10 +58,14 @@ Args parse(int argc, char** argv) {
         };
         if (arg == "--platform") {
             args.platform = value();
-        } else if (arg == "--config") {
+        } else if (arg == "--config" || arg == "-c") {
             args.config = value();
         } else if (arg == "--backend") {
             args.backend = value();
+        } else if (arg == "-v" || arg == "--verbose") {
+            args.verbosity = std::max(args.verbosity, 1);
+        } else if (arg == "-vv") {
+            args.verbosity = std::max(args.verbosity, 2);
         } else {
             args.target = arg;
         }
@@ -71,6 +76,10 @@ Args parse(int argc, char** argv) {
 std::string forward_args(int argc, char** argv) {
     std::string out;
     for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "-v" || arg == "--verbose" || arg == "-vv") {
+            continue;
+        }
         out += " ";
         out += shell_quote(argv[i]);
     }
@@ -112,7 +121,11 @@ build _out/ngen-build-pre: cxx build/prebuild.cpp
 default _out/ngen-build-pre
 )");
 
-        if (std::system("ninja -f _out/ngen-build-pre.ninja") != 0) {
+        auto prebuild_cmd = std::string(args.verbosity == 1 ? "TERM=dumb ninja -f _out/ngen-build-pre.ninja" : "ninja -f _out/ngen-build-pre.ninja");
+        if (args.verbosity >= 2) {
+            prebuild_cmd += " -v";
+        }
+        if (std::system(prebuild_cmd.c_str()) != 0) {
             return 1;
         }
         if (std::system("./_out/ngen-build-pre") != 0) {
@@ -124,7 +137,11 @@ default _out/ngen-build-pre
             return 1;
         }
 
-        auto build_cmd = "ninja -f _out/build.ninja " + shell_quote(ninja_target(args));
+        auto build_cmd = std::string(args.verbosity == 1 ? "TERM=dumb ninja -f _out/build.ninja" : "ninja -f _out/build.ninja");
+        if (args.verbosity >= 2) {
+            build_cmd += " -v";
+        }
+        build_cmd += " " + shell_quote(ninja_target(args));
         return std::system(build_cmd.c_str()) == 0 ? 0 : 1;
     } catch (const std::exception& err) {
         std::cerr << err.what() << "\n";

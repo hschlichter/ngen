@@ -725,7 +725,7 @@ ParsedTarget parse_ninja_target(int argc, char** argv, std::string_view default_
             out = argv[++i];
         };
         if (arg == "--platform") read_value(parsed.platform);
-        else if (arg == "--config") read_value(parsed.config);
+        else if (arg == "--config" || arg == "-c") read_value(parsed.config);
         else if (arg == "--backend") read_value(parsed.backend);
         else parsed.target = arg;
     }
