@@ -70,7 +70,9 @@ auto DebugDraw::grid(glm::vec3 cameraPos, glm::vec3 worldUp, float spacing, int 
             float fade = std::max(1.0f - (distA / maxDist), 0.0f);
             fade *= fade;
             auto c = color;
-            if (majorA) c = glm::vec4(color.r * 1.5f, color.g * 1.5f, color.b * 1.5f, color.a);
+            if (majorA) {
+                c = glm::vec4(color.r * 1.5f, color.g * 1.5f, color.b * 1.5f, color.a);
+            }
             c.r *= fade;
             c.g *= fade;
             c.b *= fade;
@@ -83,7 +85,9 @@ auto DebugDraw::grid(glm::vec3 cameraPos, glm::vec3 worldUp, float spacing, int 
             float fade = std::max(1.0f - (distB / maxDist), 0.0f);
             fade *= fade;
             auto c = color;
-            if (majorB) c = glm::vec4(color.r * 1.5f, color.g * 1.5f, color.b * 1.5f, color.a);
+            if (majorB) {
+                c = glm::vec4(color.r * 1.5f, color.g * 1.5f, color.b * 1.5f, color.a);
+            }
             c.r *= fade;
             c.g *= fade;
             c.b *= fade;

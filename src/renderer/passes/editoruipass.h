@@ -8,9 +8,5 @@ struct ImGuiFrameSnapshot;
 
 class EditorUIPass {
 public:
-    auto addPass(FrameGraph& fg,
-                 FgTextureHandle colorHandle,
-                 RhiExtent2D extent,
-                 RhiEditorUI* editorUI,
-                 ImGuiFrameSnapshot& imguiSnapshot) -> void;
+    auto addPass(FrameGraph& fg, FgTextureHandle colorHandle, RhiExtent2D extent, RhiEditorUI* editorUI, ImGuiFrameSnapshot& imguiSnapshot) -> void;
 };

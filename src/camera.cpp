@@ -17,8 +17,7 @@ auto Camera::forward() const -> glm::vec3 {
     // axisA × worldUp (not worldUp × axisA) so yaw increases clockwise viewed from +worldUp,
     // matching the original Y-up behavior (yaw=90° → +Z).
     auto axisB = glm::normalize(glm::cross(axisA, worldUp));
-    return glm::normalize(axisA * (std::cos(pitchRad) * std::cos(yawRad)) + axisB * (std::cos(pitchRad) * std::sin(yawRad))
-                          + worldUp * std::sin(pitchRad));
+    return glm::normalize(axisA * (std::cos(pitchRad) * std::cos(yawRad)) + axisB * (std::cos(pitchRad) * std::sin(yawRad)) + worldUp * std::sin(pitchRad));
 }
 
 auto Camera::right() const -> glm::vec3 {
@@ -66,9 +65,17 @@ auto Camera::update(const bool* keys, float dt) -> void {
 
 auto Camera::snapToAxis(int axis, bool negative) -> void {
     switch (axis) {
-        case 0: yaw = negative ? 180.0f : 0.0f; pitch = 0.0f; break;
-        case 1: pitch = negative ? -89.0f : 89.0f; break;
-        case 2: yaw = negative ? -90.0f : 90.0f; pitch = 0.0f; break;
+        case 0:
+            yaw = negative ? 180.0f : 0.0f;
+            pitch = 0.0f;
+            break;
+        case 1:
+            pitch = negative ? -89.0f : 89.0f;
+            break;
+        case 2:
+            yaw = negative ? -90.0f : 90.0f;
+            pitch = 0.0f;
+            break;
     }
 }
 

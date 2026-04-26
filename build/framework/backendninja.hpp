@@ -46,15 +46,21 @@ inline std::expected<ParsedTarget, Error> parse_ninja_target(int argc, char** ar
         };
         if (arg == "--platform") {
             auto value = read_value();
-            if (!value) return std::unexpected(value.error());
+            if (!value) {
+                return std::unexpected(value.error());
+            }
             parsed.platform = *value;
         } else if (arg == "--config" || arg == "-c") {
             auto value = read_value();
-            if (!value) return std::unexpected(value.error());
+            if (!value) {
+                return std::unexpected(value.error());
+            }
             parsed.config = *value;
         } else if (arg == "--backend") {
             auto value = read_value();
-            if (!value) return std::unexpected(value.error());
+            if (!value) {
+                return std::unexpected(value.error());
+            }
             parsed.backend = *value;
         } else {
             parsed.target = arg;
@@ -119,16 +125,18 @@ inline std::vector<Path> collect_includes(Target& target, const BuildVariant& va
     return out;
 }
 
-inline Command substitute(const std::vector<std::string>& argv_template,
-                          const std::vector<Path>& inputs,
-                          const std::vector<Path>& outputs,
-                          const Path& out_dir) {
+inline Command
+substitute(const std::vector<std::string>& argv_template, const std::vector<Path>& inputs, const std::vector<Path>& outputs, const Path& out_dir) {
     Command cmd;
     for (const auto& token : argv_template) {
         if (token == "$in") {
-            for (const auto& p : inputs) cmd.argv.push_back(p.string());
+            for (const auto& p : inputs) {
+                cmd.argv.push_back(p.string());
+            }
         } else if (token == "$out") {
-            for (const auto& p : outputs) cmd.argv.push_back(p.string());
+            for (const auto& p : outputs) {
+                cmd.argv.push_back(p.string());
+            }
         } else if (token == "$out_dir") {
             cmd.argv.push_back(out_dir.string());
         } else {
@@ -346,13 +354,13 @@ private:
         if (!objects) {
             return std::unexpected(objects.error());
         }
-        auto output = variant.out_dir / "lib" / (shared ? variant.platform->toolchain->shared_lib_name(target.name()) : variant.platform->toolchain->static_lib_name(target.name()));
+        auto output = variant.out_dir / "lib" /
+                      (shared ? variant.platform->toolchain->shared_lib_name(target.name()) : variant.platform->toolchain->static_lib_name(target.name()));
         ensure_dirs_.insert(output.parent_path().string());
         LinkIntent link_intent;
         link_intent.objects = *objects;
         link_intent.output = output;
-        Command command = shared ? variant.platform->toolchain->link_shared(link_intent)
-                                 : variant.platform->toolchain->archive(*objects, output);
+        Command command = shared ? variant.platform->toolchain->link_shared(link_intent) : variant.platform->toolchain->archive(*objects, output);
         out_ << "build " << ninja_escape_path(output) << ": " << (shared ? "link_shared" : "archive");
         for (const auto& object : *objects) {
             out_ << " " << ninja_escape_path(object);
@@ -361,7 +369,8 @@ private:
         return output;
     }
 
-    std::expected<Path, Error> emit_program(Target& target, const BuildVariant& variant, const std::vector<Path>& linked_outputs, const std::vector<Path>& order_only) {
+    std::expected<Path, Error>
+    emit_program(Target& target, const BuildVariant& variant, const std::vector<Path>& linked_outputs, const std::vector<Path>& order_only) {
         auto objects = emit_objects(target, variant);
         if (!objects) {
             return std::unexpected(objects.error());
@@ -440,7 +449,9 @@ private:
             auto compatibility = Path("shaders") / output.filename();
 
             std::vector<Path> inputs_one;
-            if (!input.empty()) inputs_one.push_back(input);
+            if (!input.empty()) {
+                inputs_one.push_back(input);
+            }
             Command command = substitute(target.argv_template, inputs_one, {output}, variant.out_dir);
 
             std::string cmd = join_command(command);
@@ -495,8 +506,8 @@ private:
 
     std::string compile_command_json(const Path& source, const Command& command) const {
         std::ostringstream json;
-        json << "{\"directory\":\"" << json_escape(repo_root()) << "\",\"file\":\""
-             << json_escape(source.string()) << "\",\"command\":\"" << json_escape(join_command(command)) << "\"}";
+        json << "{\"directory\":\"" << json_escape(repo_root()) << "\",\"file\":\"" << json_escape(source.string()) << "\",\"command\":\""
+             << json_escape(join_command(command)) << "\"}";
         return json.str();
     }
 

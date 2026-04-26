@@ -14,8 +14,7 @@ namespace build {
 
 class Graph {
 public:
-    template<class T, class... Args>
-    T& add(std::string name, Args&&... args) {
+    template <class T, class... Args> T& add(std::string name, Args&&... args) {
         auto target = std::make_unique<T>(std::move(name), std::forward<Args>(args)...);
         T& ref = *target;
         targets_.push_back(std::move(target));

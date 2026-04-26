@@ -27,7 +27,7 @@ auto ShadowPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthForm
         .vertexShader = vertShader,
         .fragmentShader = fragShader,
         .descriptorSetLayout = nullptr, // no descriptors; all data via push constants
-        .colorFormats = {}, // depth-only
+        .colorFormats = {},             // depth-only
         .depthFormat = depthFormat,
         .vertexStride = sizeof(Vertex),
         .vertexAttributes = vertexAttrs,

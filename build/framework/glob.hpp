@@ -85,9 +85,7 @@ inline std::vector<Path> glob(GlobSpec spec) {
             out.emplace_back(rel);
         }
     }
-    std::ranges::sort(out, [](const Path& lhs, const Path& rhs) {
-        return lhs.string() < rhs.string();
-    });
+    std::ranges::sort(out, [](const Path& lhs, const Path& rhs) { return lhs.string() < rhs.string(); });
     return out;
 }
 

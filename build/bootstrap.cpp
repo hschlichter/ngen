@@ -1,11 +1,11 @@
 #include <algorithm>
+#include <cstdlib>
 #include <expected>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <cstdlib>
 #include <vector>
 
 namespace {
@@ -73,15 +73,21 @@ std::expected<Args, Error> parse(int argc, char** argv) {
         };
         if (arg == "--platform") {
             auto parsed = value();
-            if (!parsed) return std::unexpected(parsed.error());
+            if (!parsed) {
+                return std::unexpected(parsed.error());
+            }
             args.platform = *parsed;
         } else if (arg == "--config" || arg == "-c") {
             auto parsed = value();
-            if (!parsed) return std::unexpected(parsed.error());
+            if (!parsed) {
+                return std::unexpected(parsed.error());
+            }
             args.config = *parsed;
         } else if (arg == "--backend") {
             auto parsed = value();
-            if (!parsed) return std::unexpected(parsed.error());
+            if (!parsed) {
+                return std::unexpected(parsed.error());
+            }
             args.backend = *parsed;
         } else if (arg == "-v" || arg == "--verbose") {
             args.verbosity = std::max(args.verbosity, 1);

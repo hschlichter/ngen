@@ -652,10 +652,11 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
     };
 
     auto colorAttachmentCount = (uint32_t) desc.colorFormats.size();
-    std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachments(colorAttachmentCount, {
-        .blendEnable = VK_FALSE,
-        .colorWriteMask = 0xF,
-    });
+    std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachments(colorAttachmentCount,
+                                                                           {
+                                                                               .blendEnable = VK_FALSE,
+                                                                               .colorWriteMask = 0xF,
+                                                                           });
 
     VkPipelineColorBlendStateCreateInfo colorBlendState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,

@@ -108,7 +108,7 @@ auto LightingPass::addPass(FrameGraph& fg,
             builder.setSideEffects(true);
         },
         [this, imageIndex, extent, sampler, lightInputs, viewMode, showOverlay, showShadowOverlay, invViewProj, lightViewProj](FrameGraphContext& ctx,
-                                                                                                                                const LightingPassData& data) {
+                                                                                                                               const LightingPassData& data) {
             auto* cmd = ctx.cmd();
 
             LightingUBO lightUbo = {

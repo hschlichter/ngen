@@ -24,8 +24,7 @@ using namespace build;
 namespace {
 
 void add_usd_linkage(Target& target) {
-    target
-        .lib_search("external/openusd_build/lib")
+    target.lib_search("external/openusd_build/lib")
         .rpath((std::filesystem::current_path() / "external/openusd_build/lib").string())
         .link_raw("-lusd_usd")
         .link_raw("-lusd_usdGeom")
@@ -66,48 +65,49 @@ int main(int argc, char** argv) {
     });
 
     g.addPlatform(Platform{
-            .name = "linux-vulkan",
-            .os = "linux",
-            .graphics_api = "vulkan",
-            .toolchain = std::move(cxx),
-            .defines = {
+        .name = "linux-vulkan",
+        .os = "linux",
+        .graphics_api = "vulkan",
+        .toolchain = std::move(cxx),
+        .defines =
+            {
                 "NGEN_PLATFORM_LINUX",
                 "NGEN_GFX_VULKAN",
                 "GLM_FORCE_RADIANS",
                 "GLM_FORCE_DEPTH_ZERO_TO_ONE",
             },
-            .extra_cxx_flags = concat_tokens({{"-fPIC", "-Wall"}, sdl3_cflags}),
-            .extra_link_flags = {},
-            .system_libs = {"vulkan", "m"},
-            .exe_suffix = "",
+        .extra_cxx_flags = concat_tokens({{"-fPIC", "-Wall"}, sdl3_cflags}),
+        .extra_link_flags = {},
+        .system_libs = {"vulkan", "m"},
+        .exe_suffix = "",
     });
 
     g.addConfig(Configuration{
-            .name = "debug",
-            .opt = OptLevel::O0,
-            .debug_info = true,
-            .default_linkage = Linkage::Static,
-            .defines = {"DEBUG=1"},
-            .extra_cxx_flags = {},
-            .extra_link_flags = {},
+        .name = "debug",
+        .opt = OptLevel::O0,
+        .debug_info = true,
+        .default_linkage = Linkage::Static,
+        .defines = {"DEBUG=1"},
+        .extra_cxx_flags = {},
+        .extra_link_flags = {},
     });
     g.addConfig(Configuration{
-            .name = "release",
-            .opt = OptLevel::O2,
-            .debug_info = true,
-            .default_linkage = Linkage::Static,
-            .defines = {"NDEBUG"},
-            .extra_cxx_flags = {},
-            .extra_link_flags = {},
+        .name = "release",
+        .opt = OptLevel::O2,
+        .debug_info = true,
+        .default_linkage = Linkage::Static,
+        .defines = {"NDEBUG"},
+        .extra_cxx_flags = {},
+        .extra_link_flags = {},
     });
     g.addConfig(Configuration{
-            .name = "gamerelease",
-            .opt = OptLevel::O3,
-            .debug_info = false,
-            .default_linkage = Linkage::Static,
-            .defines = {"NDEBUG", "SHIPPING=1"},
-            .extra_cxx_flags = {"-fvisibility=hidden"},
-            .extra_link_flags = {"-flto", "-Wl,-s", "-Wl,--gc-sections"},
+        .name = "gamerelease",
+        .opt = OptLevel::O3,
+        .debug_info = false,
+        .default_linkage = Linkage::Static,
+        .defines = {"NDEBUG", "SHIPPING=1"},
+        .extra_cxx_flags = {"-fvisibility=hidden"},
+        .extra_link_flags = {"-flto", "-Wl,-s", "-Wl,--gc-sections"},
     });
 
     auto& obs = g.add<Library>("obs");
@@ -118,9 +118,7 @@ int main(int argc, char** argv) {
         });
 
     auto& rhi = g.add<Library>("rhi");
-    rhi.cxx(glob({.include = "src/rhi/*.cpp"}))
-        .public_include({"src/rhi"})
-        .include({"external/imgui"});
+    rhi.cxx(glob({.include = "src/rhi/*.cpp"})).public_include({"src/rhi"}).include({"external/imgui"});
 
     auto& rhivulkan = g.add<Library>("rhivulkan");
     rhivulkan.cxx(glob({.include = "src/rhi/vulkan/**/*.cpp"}))
@@ -190,18 +188,20 @@ int main(int argc, char** argv) {
         .warning_off("deprecated-declarations");
 
     auto& imgui = g.add<StaticLibrary>("imgui");
-    imgui.cxx({
-        "external/imgui/imgui.cpp",
-        "external/imgui/imgui_draw.cpp",
-        "external/imgui/imgui_tables.cpp",
-        "external/imgui/imgui_widgets.cpp",
-        "external/imgui/imgui_demo.cpp",
-        "external/imgui/backends/imgui_impl_vulkan.cpp",
-        "external/imgui/backends/imgui_impl_sdl3.cpp",
-    }).public_include({
-        "external/imgui",
-        "external/imgui/backends",
-    });
+    imgui
+        .cxx({
+            "external/imgui/imgui.cpp",
+            "external/imgui/imgui_draw.cpp",
+            "external/imgui/imgui_tables.cpp",
+            "external/imgui/imgui_widgets.cpp",
+            "external/imgui/imgui_demo.cpp",
+            "external/imgui/backends/imgui_impl_vulkan.cpp",
+            "external/imgui/backends/imgui_impl_sdl3.cpp",
+        })
+        .public_include({
+            "external/imgui",
+            "external/imgui/backends",
+        });
 
     auto& ui = g.add<Library>("ui");
     ui.cxx(glob({.include = "src/ui/**/*.cpp"}))
@@ -224,11 +224,10 @@ int main(int argc, char** argv) {
     auto& shaders = g.add<Tool>("shaders");
     shaders.command({"glslc", "$in", "-o", "$out"})
         .for_each(concat({
-            glob({.include = "shaders/*.vert"}),
-            glob({.include = "shaders/*.frag"}),
-        }), [](const BuildVariant& variant, const Path& source) {
-            return variant.out_dir / "shaders" / (source.filename().string() + ".spv");
-        });
+                      glob({.include = "shaders/*.vert"}),
+                      glob({.include = "shaders/*.frag"}),
+                  }),
+                  [](const BuildVariant& variant, const Path& source) { return variant.out_dir / "shaders" / (source.filename().string() + ".spv"); });
 
     g.add<Tool>("clean").command({"rm", "-rf", "$out_dir"});
 
@@ -252,35 +251,37 @@ int main(int argc, char** argv) {
 
     auto& view = g.add<Program>("ngen-view");
     view.cxx({
-        "src/main.cpp",
-        "src/camera.cpp",
-        "src/debugdraw.cpp",
-        "src/jobsystem.cpp",
-    }).include({
-        "src",
-        "src/obs",
-        "src/rhi",
-        "src/rhi/vulkan",
-        "src/renderer",
-        "src/renderer/passes",
-        "src/scene",
-        "src/ui",
-        "external/glm",
-        "external/cgltf",
-        "external/stb",
-        "external/imgui",
-        "external/imgui/backends",
-        "external/concurrentqueue",
-    }).link(obs)
-      .link(rhi)
-      .link(rhivulkan)
-      .link(renderer)
-      .link(scene)
-      .link(sceneusd)
-      .link(ui)
-      .link(imgui)
-      .link_raw_many(sdl3_libs)
-      .depend_on(shaders);
+                 "src/main.cpp",
+                 "src/camera.cpp",
+                 "src/debugdraw.cpp",
+                 "src/jobsystem.cpp",
+             })
+        .include({
+            "src",
+            "src/obs",
+            "src/rhi",
+            "src/rhi/vulkan",
+            "src/renderer",
+            "src/renderer/passes",
+            "src/scene",
+            "src/ui",
+            "external/glm",
+            "external/cgltf",
+            "external/stb",
+            "external/imgui",
+            "external/imgui/backends",
+            "external/concurrentqueue",
+        })
+        .link(obs)
+        .link(rhi)
+        .link(rhivulkan)
+        .link(renderer)
+        .link(scene)
+        .link(sceneusd)
+        .link(ui)
+        .link(imgui)
+        .link_raw_many(sdl3_libs)
+        .depend_on(shaders);
     add_usd_linkage(view);
 
     g.setDefault(view);

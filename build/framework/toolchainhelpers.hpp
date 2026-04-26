@@ -62,10 +62,14 @@ inline std::string ninja_escape_path(const Path& path) {
 
 inline std::string opt_flag(OptLevel opt) {
     switch (opt) {
-    case OptLevel::O0: return "-O0";
-    case OptLevel::O1: return "-O1";
-    case OptLevel::O2: return "-O2";
-    case OptLevel::O3: return "-O3";
+        case OptLevel::O0:
+            return "-O0";
+        case OptLevel::O1:
+            return "-O1";
+        case OptLevel::O2:
+            return "-O2";
+        case OptLevel::O3:
+            return "-O3";
     }
     return "-O0";
 }
