@@ -23,7 +23,7 @@ namespace build {
 
 struct GlobSpec {
     std::string include;
-    std::string exclude;
+    std::string exclude = "";
 };
 
 namespace detail {

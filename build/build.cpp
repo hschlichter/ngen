@@ -23,14 +23,10 @@ using namespace build;
 
 namespace {
 
-std::string absolute_openusd_lib_path() {
-    return (std::filesystem::current_path() / "external/openusd_build/lib").string();
-}
-
 void add_usd_linkage(Target& target) {
     target
         .lib_search("external/openusd_build/lib")
-        .rpath(absolute_openusd_lib_path())
+        .rpath((std::filesystem::current_path() / "external/openusd_build/lib").string())
         .link_raw("-lusd_usd")
         .link_raw("-lusd_usdGeom")
         .link_raw("-lusd_usdShade")
@@ -58,9 +54,6 @@ int main(int argc, char** argv) {
 
     auto sdl3_cflags = capture_tokens({"pkg-config", "--cflags", "sdl3"});
     auto sdl3_libs = capture_tokens({"pkg-config", "--libs", "sdl3"});
-    auto files = [](std::string include) {
-        return GlobSpec{.include = std::move(include), .exclude = ""};
-    };
 
     auto cxx = std::make_unique<CxxToolchain>(CxxToolchain::Config{
         .name = "clang",
@@ -118,16 +111,16 @@ int main(int argc, char** argv) {
     });
 
     auto& obs = g.add<Library>("obs");
-    obs.cxx(glob(files("src/obs/**/*.cpp")))
+    obs.cxx(glob({.include = "src/obs/**/*.cpp"}))
         .public_include({"src/obs", "external/concurrentqueue"});
 
     auto& rhi = g.add<Library>("rhi");
-    rhi.cxx(glob(files("src/rhi/*.cpp")))
+    rhi.cxx(glob({.include = "src/rhi/*.cpp"}))
         .public_include({"src/rhi"})
         .include({"external/imgui"});
 
     auto& rhivulkan = g.add<Library>("rhivulkan");
-    rhivulkan.cxx(glob(files("src/rhi/vulkan/**/*.cpp")))
+    rhivulkan.cxx(glob({.include = "src/rhi/vulkan/**/*.cpp"}))
         .public_include({"src/rhi/vulkan"})
         .include({"src", "external/imgui", "external/imgui/backends"})
         .only_on({"linux-vulkan"})
@@ -137,7 +130,7 @@ int main(int argc, char** argv) {
     rhi_backend.select("platform", "linux-vulkan", rhivulkan);
 
     auto& renderer = g.add<Library>("renderer");
-    renderer.cxx(glob(files("src/renderer/**/*.cpp")))
+    renderer.cxx(glob({.include = "src/renderer/**/*.cpp"}))
         .public_include({"src/renderer", "src/renderer/passes"})
         .include({"src", "src/rhi", "src/rhi/vulkan", "src/scene", "src/obs"})
         .link(obs)
@@ -151,7 +144,7 @@ int main(int argc, char** argv) {
 
     auto& sceneusd = g.add<StaticLibrary>("sceneusd");
     sceneusd.std("c++20")
-        .cxx(glob(files("src/scene/usd*.cpp")))
+        .cxx(glob({.include = "src/scene/usd*.cpp"}))
         .public_include({"src", "src/scene"})
         .include({
             "src/obs", "src/rhi", "src/rhi/vulkan", "src/renderer",
@@ -173,7 +166,7 @@ int main(int argc, char** argv) {
     }).public_include({"external/imgui", "external/imgui/backends"});
 
     auto& ui = g.add<Library>("ui");
-    ui.cxx(glob(files("src/ui/**/*.cpp")))
+    ui.cxx(glob({.include = "src/ui/**/*.cpp"}))
         .public_include({"src/ui"})
         .include({"src", "src/obs", "src/rhi", "src/rhi/vulkan", "src/renderer", "src/renderer/passes", "src/scene", "external/imgui"})
         .link(renderer)
@@ -184,8 +177,8 @@ int main(int argc, char** argv) {
     auto& shaders = g.add<Tool>("shaders");
     shaders.command({"glslc", "$in", "-o", "$out"})
         .for_each(concat({
-            glob(files("shaders/*.vert")),
-            glob(files("shaders/*.frag")),
+            glob({.include = "shaders/*.vert"}),
+            glob({.include = "shaders/*.frag"}),
         }), [](const BuildVariant& variant, const Path& source) {
             return variant.out_dir / "shaders" / (source.filename().string() + ".spv");
         });
