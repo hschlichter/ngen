@@ -43,28 +43,12 @@ cxxflags = -std=c++23 -O0 -g -Wall -Wextra -Ibuild/framework
 builddir = _out/.ninja
 
 rule cxx
-  command = mkdir -p _out && $cxx $cxxflags -o $out build/build.cpp
+  command = mkdir -p _out && $cxx $cxxflags -MMD -MF $out.d -o $out build/build.cpp
   description = GRAPH $out
+  depfile = $out.d
+  deps = gcc
 
-build _out/ngen-build-graph: cxx build/build.cpp $
-    build/framework/backend.hpp $
-    build/framework/backendninja.hpp $
-    build/framework/command.hpp $
-    build/framework/configuration.hpp $
-    build/framework/cxxtoolchain.hpp $
-    build/framework/flags.hpp $
-    build/framework/glob.hpp $
-    build/framework/graph.hpp $
-    build/framework/library.hpp $
-    build/framework/path.hpp $
-    build/framework/platform.hpp $
-    build/framework/program.hpp $
-    build/framework/sharedlibrary.hpp $
-    build/framework/staticlibrary.hpp $
-    build/framework/target.hpp $
-    build/framework/tool.hpp $
-    build/framework/toolchain.hpp $
-    build/framework/toolchainhelpers.hpp
+build _out/ngen-build-graph: cxx build/build.cpp
 
 default _out/ngen-build-graph
 )");
