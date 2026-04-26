@@ -173,7 +173,9 @@ std::vector<Path> collect_includes(Target& target, const BuildVariant& variant) 
 Path object_path(const BuildVariant& variant, const Target& target, const Path& source) {
     auto path = source.string();
     for (auto& ch : path) {
-        if (ch == '/' || ch == '\\' || ch == ':') {
+        if (ch == '\\') {
+            ch = '/';
+        } else if (ch == ':') {
             ch = '_';
         }
     }
