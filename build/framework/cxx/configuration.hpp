@@ -97,10 +97,7 @@ inline auto configuration(std::string name) -> Configuration {
 }
 
 inline auto find_configuration(const build::Configuration& c) -> const Configuration* {
-    if (!c.extensions().has<Configuration>()) {
-        return nullptr;
-    }
-    return &c.extensions().get<Configuration>();
+    return c.extensions().get<Configuration>();
 }
 
 } // namespace build::cxx

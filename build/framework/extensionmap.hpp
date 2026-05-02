@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <stdexcept>
 #include <typeindex>
 #include <unordered_map>
 #include <utility>
@@ -19,27 +18,31 @@ namespace build {
 // add() is for extensions that have no other home (e.g. build::cxx::Platform — created on demand on a build::Platform).
 // attach() is for extensions whose data lives elsewhere (e.g. build::cxx::Target — the fluent wrapper owns the data
 // and registers a back-pointer in build::Target's map).
+//
+// get<Ext>() returns nullptr if the extension is absent. No exceptions.
 class ExtensionMap {
 public:
     template <typename Ext>
-    auto has() const -> bool { return entries_.contains(std::type_index(typeid(Ext))); }
-
-    template <typename Ext>
-    auto get() -> Ext& {
-        auto it = entries_.find(std::type_index(typeid(Ext)));
-        if (it == entries_.end()) {
-            throw std::runtime_error("extension not found");
-        }
-        return *static_cast<Ext*>(it->second.ptr.get());
+    auto has() const -> bool {
+        return entries_.contains(std::type_index(typeid(Ext)));
     }
 
     template <typename Ext>
-    auto get() const -> const Ext& {
+    auto get() -> Ext* {
         auto it = entries_.find(std::type_index(typeid(Ext)));
         if (it == entries_.end()) {
-            throw std::runtime_error("extension not found");
+            return nullptr;
         }
-        return *static_cast<const Ext*>(it->second.ptr.get());
+        return static_cast<Ext*>(it->second.ptr.get());
+    }
+
+    template <typename Ext>
+    auto get() const -> const Ext* {
+        auto it = entries_.find(std::type_index(typeid(Ext)));
+        if (it == entries_.end()) {
+            return nullptr;
+        }
+        return static_cast<const Ext*>(it->second.ptr.get());
     }
 
     template <typename Ext, typename... Args>

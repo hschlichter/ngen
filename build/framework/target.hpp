@@ -81,10 +81,7 @@ public:
 
     template <typename Ext>
     auto extension() const -> Ext* {
-        if (!extensions_.has<Ext>()) {
-            return nullptr;
-        }
-        return const_cast<Ext*>(&extensions_.get<Ext>());
+        return const_cast<Ext*>(extensions_.get<Ext>());
     }
 
     template <typename Ext>

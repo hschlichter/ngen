@@ -141,10 +141,7 @@ inline auto platform(std::string name) -> Platform {
 }
 
 inline auto find_platform(const build::Platform& p) -> const Platform* {
-    if (!p.extensions().has<Platform>()) {
-        return nullptr;
-    }
-    return &p.extensions().get<Platform>();
+    return p.extensions().get<Platform>();
 }
 
 } // namespace build::cxx
