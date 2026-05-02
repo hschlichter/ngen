@@ -21,9 +21,11 @@ namespace build {
 // and registers a back-pointer in build::Target's map).
 class ExtensionMap {
 public:
-    template <typename Ext> auto has() const -> bool { return entries_.contains(std::type_index(typeid(Ext))); }
+    template <typename Ext>
+    auto has() const -> bool { return entries_.contains(std::type_index(typeid(Ext))); }
 
-    template <typename Ext> auto get() -> Ext& {
+    template <typename Ext>
+    auto get() -> Ext& {
         auto it = entries_.find(std::type_index(typeid(Ext)));
         if (it == entries_.end()) {
             throw std::runtime_error("extension not found");
@@ -31,7 +33,8 @@ public:
         return *static_cast<Ext*>(it->second.ptr.get());
     }
 
-    template <typename Ext> auto get() const -> const Ext& {
+    template <typename Ext>
+    auto get() const -> const Ext& {
         auto it = entries_.find(std::type_index(typeid(Ext)));
         if (it == entries_.end()) {
             throw std::runtime_error("extension not found");
@@ -39,7 +42,8 @@ public:
         return *static_cast<const Ext*>(it->second.ptr.get());
     }
 
-    template <typename Ext, typename... Args> auto add(Args&&... args) -> Ext& {
+    template <typename Ext, typename... Args>
+    auto add(Args&&... args) -> Ext& {
         auto key = std::type_index(typeid(Ext));
         if (auto it = entries_.find(key); it != entries_.end()) {
             return *static_cast<Ext*>(it->second.ptr.get());
@@ -56,7 +60,8 @@ public:
         return *raw;
     }
 
-    template <typename Ext> auto attach(Ext& ext) -> void {
+    template <typename Ext>
+    auto attach(Ext& ext) -> void {
         auto key = std::type_index(typeid(Ext));
         entries_.insert_or_assign(
             key,

@@ -13,31 +13,6 @@ using namespace build;
 
 namespace {
 
-auto add_usd_linkage(cxx::Target& target) -> void {
-    target.lib_search("external/openusd_build/lib")
-        .rpath((std::filesystem::current_path() / "external/openusd_build/lib").string())
-        .link_flag("-lusd_usd")
-        .link_flag("-lusd_usdGeom")
-        .link_flag("-lusd_usdShade")
-        .link_flag("-lusd_usdLux")
-        .link_flag("-lusd_sdf")
-        .link_flag("-lusd_pcp")
-        .link_flag("-lusd_tf")
-        .link_flag("-lusd_vt")
-        .link_flag("-lusd_gf")
-        .link_flag("-lusd_ar")
-        .link_flag("-lusd_arch")
-        .link_flag("-lusd_plug")
-        .link_flag("-lusd_js")
-        .link_flag("-lusd_work")
-        .link_flag("-lusd_trace")
-        .link_flag("-lusd_ts")
-        .link_flag("-lusd_pegtl")
-        .link_flag("-lusd_kind");
-}
-
-} // namespace
-
 auto main() -> int {
     auto clean = tool("clean").command({"rm", "-rf", "$out_dir"});
 
@@ -64,11 +39,10 @@ auto main() -> int {
     auto sdl3_cflags = capture_tokens({"pkg-config", "--cflags", "sdl3"});
     auto sdl3_libs = capture_tokens({"pkg-config", "--libs", "sdl3"});
 
-    auto clang =
-        cxx::toolchain()
-            .compiler("clang++")
-            .archiver("ar")
-            .default_std("c++23");
+    auto clang = cxx::toolchain()
+        .compiler("clang++")
+        .archiver("ar")
+        .default_std("c++23");
 
     auto linux_vulkan =
         cxx::platform("linux-vulkan")
@@ -86,17 +60,19 @@ auto main() -> int {
             .system_lib("vulkan")
             .system_lib("m");
 
-    auto debug = cxx::configuration("debug")
-        .out_dir("_out")
-        .compile_flag("-O0")
-        .compile_flag("-g")
-        .define("DEBUG=1");
+    auto debug =
+        cxx::configuration("debug")
+            .out_dir("_out")
+            .compile_flag("-O0")
+            .compile_flag("-g")
+            .define("DEBUG=1");
 
-    auto release = cxx::configuration("release")
-        .out_dir("_out")
-        .compile_flag("-O2")
-        .compile_flag("-g")
-        .define("NDEBUG");
+    auto release =
+        cxx::configuration("release")
+            .out_dir("_out")
+            .compile_flag("-O2")
+            .compile_flag("-g")
+            .define("NDEBUG");
 
     auto gamerelease =
         cxx::configuration("gamerelease")
@@ -123,7 +99,10 @@ auto main() -> int {
                 "external/concurrentqueue",
             });
 
-    auto rhi = cxx::static_library("rhi").sources(glob({.include = "src/rhi/*.cpp"})).public_include({"src/rhi"}).include({"external/imgui"});
+    auto rhi = cxx::static_library("rhi")
+        .sources(glob({.include = "src/rhi/*.cpp"}))
+        .public_include({"src/rhi"})
+        .include({"external/imgui"});
 
     auto rhivulkan =
         cxx::static_library("rhivulkan")
@@ -273,8 +252,26 @@ auto main() -> int {
             .link(ui)
             .link(imgui)
             .link_flags(sdl3_libs)
-            .depend_on(shaders);
-    add_usd_linkage(view);
+            .depend_on(shaders)
+            .rpath((std::filesystem::current_path() / "external/openusd_build/lib").string())
+            .link_flag("-lusd_usd")
+            .link_flag("-lusd_usdGeom")
+            .link_flag("-lusd_usdShade")
+            .link_flag("-lusd_usdLux")
+            .link_flag("-lusd_sdf")
+            .link_flag("-lusd_pcp")
+            .link_flag("-lusd_tf")
+            .link_flag("-lusd_vt")
+            .link_flag("-lusd_gf")
+            .link_flag("-lusd_ar")
+            .link_flag("-lusd_arch")
+            .link_flag("-lusd_plug")
+            .link_flag("-lusd_js")
+            .link_flag("-lusd_work")
+            .link_flag("-lusd_trace")
+            .link_flag("-lusd_ts")
+            .link_flag("-lusd_pegtl")
+            .link_flag("-lusd_kind");
 
     p.target(view);
     p.target(clean);

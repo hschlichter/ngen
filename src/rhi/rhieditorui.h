@@ -11,7 +11,8 @@ struct SDL_Window;
 struct ImDrawData;
 struct ImDrawList;
 struct ImTextureData;
-template <typename T> struct ImVector;
+template <typename T>
+struct ImVector;
 
 struct ImGuiFrameSnapshot {
     bool valid = false;

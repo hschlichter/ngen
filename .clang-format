@@ -9,7 +9,12 @@ IndentWidth: 4
 ContinuationIndentWidth: 4
 TabWidth: 4
 UseTab: Never
-ColumnLimit: 160
+# ColumnLimit: 0 disables automatic line wrapping. Developers are responsible
+# for breaking long lines manually; clang-format preserves those breaks.
+# This is a deliberate trade-off — auto-wrap was reshaping fluent chains
+# (e.g. cxx::configuration("debug").out_dir("...").compile_flag("...")) onto a
+# single line whenever they fit, breaking the per-line structure of build/build.cpp.
+ColumnLimit: 0
 AccessModifierOffset: -4
 IndentCaseLabels: true
 IndentCaseBlocks: false
@@ -37,10 +42,6 @@ AllowAllArgumentsOnNextLine: true
 AllowAllParametersOfDeclarationOnNextLine: true
 PenaltyBreakBeforeFirstCallParameter: 1
 
-# Method chain indent: prefer breaking the receiver to its own line
-# and indenting the chain by ContinuationIndentWidth, instead of aligning
-# every .method() under the column of the first '.'.
-PenaltyIndentedWhitespace: 100
 
 # Whitespace and operators
 SpaceBeforeParens: ControlStatements
