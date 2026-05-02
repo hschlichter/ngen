@@ -16,7 +16,6 @@ public:
     using OutputFor = std::function<Path(const BuildVariant&, const Path&)>;
 
     using Target::Target;
-    auto kind() const -> std::string override { return "tool"; }
 
     auto command(std::vector<std::string> argv) -> Tool& {
         argv_template = std::move(argv);

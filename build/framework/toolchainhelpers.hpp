@@ -1,13 +1,11 @@
 #pragma once
 
 #include "command.hpp"
-#include "flags.hpp"
 #include "path.hpp"
 
 #include <cctype>
 #include <sstream>
 #include <string>
-#include <string_view>
 #include <vector>
 
 namespace build {
@@ -58,20 +56,6 @@ inline auto ninja_escape_path(const Path& path) -> std::string {
         out += ch;
     }
     return out;
-}
-
-inline auto opt_flag(OptLevel opt) -> std::string {
-    switch (opt) {
-        case OptLevel::O0:
-            return "-O0";
-        case OptLevel::O1:
-            return "-O1";
-        case OptLevel::O2:
-            return "-O2";
-        case OptLevel::O3:
-            return "-O3";
-    }
-    return "-O0";
 }
 
 inline auto split_ws(const std::string& text) -> std::vector<std::string> {

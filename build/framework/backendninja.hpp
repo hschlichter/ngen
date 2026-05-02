@@ -1,11 +1,15 @@
 #pragma once
 
-#include "cxxtoolchain.hpp"
+#include "alias.hpp"
+#include "cxx/backendninja.hpp"
+#include "cxx/configuration.hpp"
+#include "cxx/platform.hpp"
+#include "cxx/target.hpp"
+#include "cxx/toolchain.hpp"
 #include "flags.hpp"
 #include "glob.hpp"
-#include "graph.hpp"
-#include "library.hpp"
 #include "path.hpp"
+#include "project.hpp"
 #include "target.hpp"
 #include "tool.hpp"
 #include "toolchainhelpers.hpp"
@@ -25,49 +29,6 @@
 #include <vector>
 
 namespace build {
-
-struct ParsedTarget {
-    std::string target;
-    std::string platform;
-    std::string config;
-    std::string backend = "ninja";
-};
-
-inline auto parse_ninja_target(int argc, char** argv, std::string_view default_target) -> std::expected<ParsedTarget, Error> {
-    ParsedTarget parsed;
-    parsed.target = std::string(default_target);
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        auto read_value = [&]() -> std::expected<std::string, Error> {
-            if (i + 1 >= argc) {
-                return std::unexpected(Error{"missing value for " + arg});
-            }
-            return std::string(argv[++i]);
-        };
-        if (arg == "--platform") {
-            auto value = read_value();
-            if (!value) {
-                return std::unexpected(value.error());
-            }
-            parsed.platform = *value;
-        } else if (arg == "--config" || arg == "-c") {
-            auto value = read_value();
-            if (!value) {
-                return std::unexpected(value.error());
-            }
-            parsed.config = *value;
-        } else if (arg == "--backend") {
-            auto value = read_value();
-            if (!value) {
-                return std::unexpected(value.error());
-            }
-            parsed.backend = *value;
-        } else {
-            parsed.target = arg;
-        }
-    }
-    return parsed;
-}
 
 namespace detail {
 
@@ -91,10 +52,13 @@ inline auto append_unique_str(std::vector<std::string>& out, const std::vector<s
     }
 }
 
+inline auto append_all_str(std::vector<std::string>& out, const std::vector<std::string>& values) -> void {
+    out.insert(out.end(), values.begin(), values.end());
+}
+
 inline auto resolve_alias(Target* target, const BuildVariant& variant) -> Target* {
-    while (target && target->kind() == "alias") {
-        auto* alias = static_cast<Alias*>(target);
-        target = alias->resolve({{"platform", variant.platform->name}, {"config", variant.config->name}});
+    while (auto* alias = dynamic_cast<Alias*>(target)) {
+        target = alias->resolve({{"platform", variant.platform->name()}, {"config", variant.config->name()}});
     }
     return target;
 }
@@ -105,9 +69,12 @@ inline auto collect_public_includes(Target* target, const BuildVariant& variant,
         return {};
     }
 
-    std::vector<Path> out = target->public_includes;
-    for (auto* dep : target->links) {
-        append_unique(out, collect_public_includes(dep, variant, seen));
+    std::vector<Path> out;
+    if (auto* cxx_t = target->extension<cxx::Target>()) {
+        out = cxx_t->public_includes_data;
+        for (auto* dep : cxx_t->linked_targets_data) {
+            append_unique(out, collect_public_includes(dep, variant, seen));
+        }
     }
     for (auto* dep : target->deps) {
         append_unique(out, collect_public_includes(dep, variant, seen));
@@ -115,18 +82,20 @@ inline auto collect_public_includes(Target* target, const BuildVariant& variant,
     return out;
 }
 
-inline auto collect_includes(Target& target, const BuildVariant& variant) -> std::vector<Path> {
-    std::vector<Path> out = target.private_includes;
-    append_unique(out, target.public_includes);
-    for (auto* dep : target.links) {
+inline auto collect_includes(cxx::Target& target, const BuildVariant& variant) -> std::vector<Path> {
+    std::vector<Path> out = target.includes_data;
+    append_unique(out, target.public_includes_data);
+    for (auto* dep : target.linked_targets_data) {
         std::set<std::string> seen;
         append_unique(out, collect_public_includes(dep, variant, seen));
     }
     return out;
 }
 
-inline auto substitute(const std::vector<std::string>& argv_template, const std::vector<Path>& inputs, const std::vector<Path>& outputs, const Path& out_dir)
-    -> Command {
+inline auto substitute(const std::vector<std::string>& argv_template,
+                       const std::vector<Path>& inputs,
+                       const std::vector<Path>& outputs,
+                       const Path& out_dir) -> Command {
     Command cmd;
     for (const auto& token : argv_template) {
         if (token == "$in") {
@@ -146,7 +115,7 @@ inline auto substitute(const std::vector<std::string>& argv_template, const std:
     return cmd;
 }
 
-inline auto object_path(const BuildVariant& variant, const Target& target, const Path& source) -> Path {
+inline auto object_path(const BuildVariant& variant, std::string_view target_name, const Path& source) -> Path {
     auto path = source.string();
     for (auto& ch : path) {
         if (ch == '\\') {
@@ -155,14 +124,14 @@ inline auto object_path(const BuildVariant& variant, const Target& target, const
             ch = '_';
         }
     }
-    return variant.out_dir / "obj" / target.name() / (path + ".o");
+    return variant.out_dir / "obj" / std::string(target_name) / (path + ".o");
 }
 
 class Emitter {
 public:
-    explicit Emitter(const Graph& graph) : graph_(graph) {}
+    explicit Emitter(const Project& project) : project_(project) {}
 
-    auto emit(Target& desired) -> std::expected<std::string, Error> {
+    auto emit() -> std::expected<std::string, Error> {
         out_ << "ninja_required_version = 1.10\n\n";
         out_ << "builddir = _out/.ninja\n\n";
         out_ << "rule cxx\n  command = $cmd\n  depfile = $depfile\n  deps = gcc\n  description = CXX $out\n\n";
@@ -171,45 +140,52 @@ public:
         out_ << "rule link_shared\n  command = $cmd\n  description = LINK-SHARED $out\n\n";
         out_ << "rule tool\n  command = $cmd\n  description = TOOL $out\n\n";
 
-        std::vector<std::string> variant_targets;
-        for (const auto& platform : graph_.platforms()) {
-            for (const auto& config : graph_.configs()) {
-                BuildVariant variant{&platform, &config, Path("_out") / platform.name / config.name};
+        std::map<std::string, std::vector<std::string>> per_root_variants;
+
+        for (auto* platform : project_.platforms()) {
+            for (auto* config : project_.configs()) {
+                BuildVariant variant{platform, config, Path("_out") / platform->name() / config->name()};
                 ensure_dirs_.insert(variant.out_dir.string());
                 outputs_.clear();
 
-                std::optional<Path> desired_output;
-                for (const auto& tgt : graph_.targets()) {
-                    auto output = emit_target(tgt.get(), variant);
+                for (auto* tgt : project_.build_all()) {
+                    auto output = emit_target(tgt, variant);
                     if (!output) {
                         return std::unexpected(output.error());
                     }
-                    if (tgt.get() == &desired) {
-                        desired_output = *output;
-                    }
                 }
 
-                if (desired_output && !desired_output->empty()) {
-                    auto name = desired.name() + ":" + platform.name + ":" + config.name;
-                    variant_targets.push_back(name);
-                    out_ << "build " << ninja_escape_path(name) << ": phony " << ninja_escape_path(*desired_output) << "\n\n";
+                for (auto* root : project_.roots()) {
+                    auto cached = outputs_.find(root->name() + "|" + platform->name() + "|" + config->name());
+                    if (cached == outputs_.end() || cached->second.empty()) {
+                        continue;
+                    }
+                    auto name = root->name() + ":" + platform->name() + ":" + config->name();
+                    per_root_variants[root->name()].push_back(name);
+                    out_ << "build " << ninja_escape_path(name) << ": phony " << ninja_escape_path(cached->second) << "\n\n";
                 }
+
                 compile_commands_by_variant_[variant.out_dir.string()] = compile_commands_;
                 compile_commands_.clear();
             }
         }
 
-        if (!variant_targets.empty()) {
-            out_ << "build " << ninja_escape_path(desired.name()) << ": phony " << ninja_escape_path(variant_targets.front()) << "\n";
+        for (auto* root : project_.roots()) {
+            const auto& variants = per_root_variants[root->name()];
+            if (!variants.empty()) {
+                out_ << "build " << ninja_escape_path(root->name()) << ": phony " << ninja_escape_path(variants.front()) << "\n";
+            }
         }
 
-        for (const auto& tgt : graph_.targets()) {
-            if (auto* tool = dynamic_cast<Tool*>(tgt.get()); tool && tool->is_global) {
+        for (auto* root : project_.roots()) {
+            if (auto* tool = dynamic_cast<Tool*>(root); tool && tool->is_global) {
                 emit_global_tool(*tool);
             }
         }
 
-        out_ << "default " << desired.name() << "\n";
+        if (auto* def = project_.default_target()) {
+            out_ << "default " << def->name() << "\n";
+        }
         return out_.str();
     }
 
@@ -245,12 +221,11 @@ private:
     auto emit_target(Target* unresolved, const BuildVariant& variant) -> std::expected<Path, Error> {
         assert(variant.platform);
         assert(variant.config);
-        assert(variant.platform->toolchain);
         Target* target = resolve_alias(unresolved, variant);
-        if (!target || !target->enabled_for(variant.platform->name, variant.config->name)) {
+        if (!target || !target->enabled_for(variant.platform->name(), variant.config->name())) {
             return Path{};
         }
-        auto key = target->name() + "|" + variant.platform->name + "|" + variant.config->name;
+        auto key = target->name() + "|" + variant.platform->name() + "|" + variant.config->name();
         if (auto it = outputs_.find(key); it != outputs_.end()) {
             return it->second;
         }
@@ -270,32 +245,11 @@ private:
             }
         }
 
-        std::vector<Path> linked_outputs;
-        for (auto* link : target->links) {
-            auto output = emit_target(link, variant);
-            if (!output) {
-                visiting_.erase(key);
-                return std::unexpected(output.error());
-            }
-            if (!output->empty()) {
-                linked_outputs.push_back(*output);
-            }
-        }
-
         std::expected<Path, Error> output = Path{};
-        if (target->kind() == "tool") {
-            output = emit_tool(static_cast<Tool&>(*target), variant, order_only);
-        } else if (target->kind() == "program") {
-            output = emit_program(*target, variant, linked_outputs, order_only);
-        } else if (target->kind() == "shared_library") {
-            output = emit_library(*target, variant, true);
-        } else {
-            auto shared = false;
-            if (target->kind() == "library") {
-                auto* library = static_cast<Library*>(target);
-                shared = library->forced_linkage.value_or(variant.config->default_linkage) == Linkage::Shared;
-            }
-            output = emit_library(*target, variant, shared);
+        if (auto* tool = dynamic_cast<Tool*>(target)) {
+            output = emit_tool(*tool, variant, order_only);
+        } else if (auto* cxx_t = target->extension<cxx::Target>()) {
+            output = emit_cxx(*cxx_t, variant, order_only);
         }
         if (!output) {
             visiting_.erase(key);
@@ -307,41 +261,61 @@ private:
         return *output;
     }
 
-    auto emit_objects(Target& target, const BuildVariant& variant) -> std::expected<std::vector<Path>, Error> {
-        assert(variant.platform);
-        assert(variant.config);
-        assert(variant.platform->toolchain);
+    auto emit_cxx(cxx::Target& target, const BuildVariant& variant, const std::vector<Path>& order_only) -> std::expected<Path, Error> {
+        if (target.kind() == cxx::Kind::Program) {
+            return emit_cxx_program(target, variant, order_only);
+        }
+        bool shared = target.kind() == cxx::Kind::SharedLibrary;
+        return emit_cxx_library(target, variant, shared);
+    }
+
+    auto emit_cxx_objects(cxx::Target& target, const BuildVariant& variant) -> std::expected<std::vector<Path>, Error> {
         std::vector<Path> objects;
-        const auto* toolchain = variant.platform->toolchain.get();
+        const auto* platform_ext = cxx::find_platform(*variant.platform);
+        if (!platform_ext) {
+            return std::unexpected(Error{"platform " + variant.platform->name() + " has no cxx::Platform extension"});
+        }
+        const auto* config_ext = cxx::find_configuration(*variant.config);
+        const auto& tc = platform_ext->toolchain();
+        if (tc.compiler().empty()) {
+            return std::unexpected(Error{"platform " + variant.platform->name() + " has no compiler set"});
+        }
+
         auto includes = collect_includes(target, variant);
 
-        for (const auto& source : target.sources) {
-            auto object = object_path(variant, target, source);
-            ensure_dirs_.insert(object.parent_path().string());
-            CompileIntent intent;
-            intent.source = source;
-            intent.object = object;
-            intent.std = target.cxx_std.empty() ? static_cast<const CxxToolchain*>(toolchain)->default_std() : target.cxx_std;
-            if (intent.std.empty()) {
-                return std::unexpected(Error{"empty C++ standard for " + target.name()});
-            }
-            intent.opt = target.opt.value_or(variant.config->opt);
-            intent.debug = target.debug_info.value_or(variant.config->debug_info);
-            intent.pic = target.needs_pic;
-            intent.defines = variant.platform->defines;
-            append_unique_str(intent.defines, variant.config->defines);
-            append_unique_str(intent.defines, target.defines);
-            intent.includes = includes;
-            intent.warning_off = target.warning_suppressions;
-            intent.raw = variant.platform->extra_cxx_flags;
-            append_unique_str(intent.raw, variant.config->extra_cxx_flags);
-            append_unique_str(intent.raw, target.raw_compile_flags);
+        std::string std_value = target.std_data.empty() ? tc.default_std() : target.std_data;
+        if (std_value.empty()) {
+            return std::unexpected(Error{"empty C++ standard for " + target.owner().name()});
+        }
 
-            auto command = toolchain->compile_cxx(intent);
-            auto dep = toolchain->dep_support(object);
+        for (const auto& source : target.sources_data) {
+            auto object = object_path(variant, target.owner().name(), source);
+            ensure_dirs_.insert(object.parent_path().string());
+
+            cxx::ninja::CompileInputs in;
+            in.source = source;
+            in.object = object;
+            in.std = std_value;
+
+            in.defines = platform_ext->defines();
+            if (config_ext) {
+                append_all_str(in.defines, config_ext->defines());
+            }
+            append_all_str(in.defines, target.defines_data);
+
+            in.includes = includes;
+            in.warning_off = target.warning_suppressions_data;
+
+            in.compile_flags = platform_ext->compile_flags();
+            if (config_ext) {
+                append_all_str(in.compile_flags, config_ext->compile_flags());
+            }
+            append_all_str(in.compile_flags, target.compile_flags_data);
+
+            auto command = cxx::ninja::compile_command(tc, in);
             out_ << "build " << ninja_escape_path(object) << ": cxx " << ninja_escape_path(source) << "\n";
             out_ << "  cmd = " << join_command(command) << "\n";
-            out_ << "  depfile = " << (dep ? dep->depfile : object.string() + ".d") << "\n\n";
+            out_ << "  depfile = " << object.string() << ".d\n\n";
 
             compile_commands_.push_back(compile_command_json(source, command));
             objects.push_back(object);
@@ -349,18 +323,28 @@ private:
         return objects;
     }
 
-    auto emit_library(Target& target, const BuildVariant& variant, bool shared) -> std::expected<Path, Error> {
-        auto objects = emit_objects(target, variant);
+    auto emit_cxx_library(cxx::Target& target, const BuildVariant& variant, bool shared) -> std::expected<Path, Error> {
+        auto objects = emit_cxx_objects(target, variant);
         if (!objects) {
             return std::unexpected(objects.error());
         }
-        auto output = variant.out_dir / "lib" /
-                      (shared ? variant.platform->toolchain->shared_lib_name(target.name()) : variant.platform->toolchain->static_lib_name(target.name()));
+        const auto* platform_ext = cxx::find_platform(*variant.platform);
+        const auto& tc = platform_ext->toolchain();
+
+        auto output_name = shared ? cxx::ninja::shared_lib_name(target.owner().name()) : cxx::ninja::static_lib_name(target.owner().name());
+        auto output = variant.out_dir / "lib" / output_name;
         ensure_dirs_.insert(output.parent_path().string());
-        LinkIntent link_intent;
-        link_intent.objects = *objects;
-        link_intent.output = output;
-        Command command = shared ? variant.platform->toolchain->link_shared(link_intent) : variant.platform->toolchain->archive(*objects, output);
+
+        Command command;
+        if (shared) {
+            cxx::ninja::LinkInputs link_inputs;
+            link_inputs.objects = *objects;
+            link_inputs.output = output;
+            command = cxx::ninja::link_command(tc, link_inputs, true);
+        } else {
+            command = cxx::ninja::archive_command(tc, *objects, output);
+        }
+
         out_ << "build " << ninja_escape_path(output) << ": " << (shared ? "link_shared" : "archive");
         for (const auto& object : *objects) {
             out_ << " " << ninja_escape_path(object);
@@ -369,30 +353,49 @@ private:
         return output;
     }
 
-    auto emit_program(Target& target, const BuildVariant& variant, const std::vector<Path>& linked_outputs, const std::vector<Path>& order_only)
-        -> std::expected<Path, Error> {
-        auto objects = emit_objects(target, variant);
+    auto emit_cxx_program(cxx::Target& target, const BuildVariant& variant, const std::vector<Path>& order_only) -> std::expected<Path, Error> {
+        auto objects = emit_cxx_objects(target, variant);
         if (!objects) {
             return std::unexpected(objects.error());
         }
-        auto output = variant.out_dir / variant.platform->toolchain->exe_name(target.name(), variant.platform->exe_suffix);
+        const auto* platform_ext = cxx::find_platform(*variant.platform);
+        const auto* config_ext = cxx::find_configuration(*variant.config);
+        const auto& tc = platform_ext->toolchain();
+
+        auto output = variant.out_dir / cxx::ninja::exe_name(target.owner().name(), variant.platform->exe_suffix());
         ensure_dirs_.insert(output.parent_path().string());
 
-        LinkIntent intent;
-        intent.objects = *objects;
-        intent.output = output;
-        intent.external_libs = variant.platform->system_libs;
-        append_unique_str(intent.external_libs, target.system_libs);
-        intent.lib_search = target.lib_search_dirs;
-        intent.rpaths = target.rpaths;
-        intent.raw = variant.platform->extra_link_flags;
-        append_unique_str(intent.raw, variant.config->extra_link_flags);
-        append_unique_str(intent.raw, target.raw_link_flags);
-        for (const auto& linked : linked_outputs) {
-            intent.archives.push_back(linked);
+        std::vector<Path> linked_outputs;
+        for (auto* link : target.linked_targets_data) {
+            auto* resolved = resolve_alias(link, variant);
+            if (!resolved) {
+                continue;
+            }
+            auto cached = outputs_.find(resolved->name() + "|" + variant.platform->name() + "|" + variant.config->name());
+            if (cached != outputs_.end() && !cached->second.empty()) {
+                linked_outputs.push_back(cached->second);
+            }
         }
 
-        auto command = variant.platform->toolchain->link_exe(intent);
+        cxx::ninja::LinkInputs in;
+        in.objects = *objects;
+        in.archives = linked_outputs;
+        in.output = output;
+
+        in.external_libs = platform_ext->system_libs();
+        append_unique_str(in.external_libs, target.system_libs_data);
+
+        in.lib_search = target.lib_search_dirs_data;
+        in.rpaths = target.rpaths_data;
+
+        in.link_flags = platform_ext->link_flags();
+        if (config_ext) {
+            append_all_str(in.link_flags, config_ext->link_flags());
+        }
+        append_all_str(in.link_flags, target.link_flags_data);
+
+        auto command = cxx::ninja::link_command(tc, in, false);
+
         out_ << "build " << ninja_escape_path(output) << ": link_exe";
         for (const auto& object : *objects) {
             out_ << " " << ninja_escape_path(object);
@@ -446,7 +449,6 @@ private:
             const auto& input = target.tool_inputs.empty() ? Path{} : target.tool_inputs[std::min(i, target.tool_inputs.size() - 1)];
             const auto& output = outputs[i];
             ensure_dirs_.insert(output.parent_path().string());
-            auto compatibility = Path("shaders") / output.filename();
 
             std::vector<Path> inputs_one;
             if (!input.empty()) {
@@ -455,9 +457,6 @@ private:
             Command command = substitute(target.argv_template, inputs_one, {output}, variant.out_dir);
 
             std::string cmd = join_command(command);
-            if (target.name() == "shaders") {
-                cmd += " && cp " + shell_quote(output.string()) + " " + shell_quote(compatibility.string());
-            }
             out_ << "build " << ninja_escape_path(output);
             out_ << ": tool";
             if (!input.empty()) {
@@ -525,7 +524,7 @@ private:
         return json.str();
     }
 
-    const Graph& graph_;
+    const Project& project_;
     std::ostringstream out_;
     std::set<std::string> ensure_dirs_;
     std::unordered_map<std::string, Path> outputs_;
@@ -538,9 +537,9 @@ private:
 
 class NinjaBackend {
 public:
-    auto emit(const Graph& graph, Target& desired, Path output = "_out/build.ninja") const -> std::expected<void, Error> {
-        detail::Emitter emitter(graph);
-        auto text = emitter.emit(desired);
+    auto emit(const Project& project, Path output = "_out/build.ninja") const -> std::expected<void, Error> {
+        detail::Emitter emitter(project);
+        auto text = emitter.emit();
         if (!text) {
             return std::unexpected(text.error());
         }
@@ -555,28 +554,6 @@ public:
         auto dirs = emitter.materialize_dirs();
         if (!dirs) {
             return std::unexpected(dirs.error());
-        }
-        return {};
-    }
-
-    auto build(const Graph& graph, Target& desired, const ParsedTarget& parsed) const -> std::expected<void, Error> {
-        if (parsed.backend != "ninja") {
-            return std::unexpected(Error{"unsupported backend: " + parsed.backend});
-        }
-        auto emitted = emit(graph, desired);
-        if (!emitted) {
-            return std::unexpected(emitted.error());
-        }
-
-        std::string ninja_target = parsed.target.empty() ? desired.name() : parsed.target;
-        if (!parsed.platform.empty() || !parsed.config.empty()) {
-            auto platform = parsed.platform.empty() ? graph.platforms().front().name : parsed.platform;
-            auto config = parsed.config.empty() ? graph.configs().front().name : parsed.config;
-            ninja_target += ":" + platform + ":" + config;
-        }
-        auto command = "ninja -f _out/build.ninja " + shell_quote(ninja_target);
-        if (std::system(command.c_str()) != 0) {
-            return std::unexpected(Error{"command failed: " + command});
         }
         return {};
     }

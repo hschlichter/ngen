@@ -1,127 +1,61 @@
-#include "framework/backend.hpp"
 #include "framework/backendninja.hpp"
-#include "framework/configuration.hpp"
-#include "framework/cxxtoolchain.hpp"
-#include "framework/flags.hpp"
+#include "framework/cxx/configuration.hpp"
+#include "framework/cxx/platform.hpp"
+#include "framework/cxx/target.hpp"
 #include "framework/glob.hpp"
-#include "framework/graph.hpp"
-#include "framework/library.hpp"
-#include "framework/path.hpp"
-#include "framework/platform.hpp"
-#include "framework/program.hpp"
-#include "framework/staticlibrary.hpp"
-#include "framework/target.hpp"
+#include "framework/project.hpp"
 #include "framework/tool.hpp"
 
 #include <filesystem>
 #include <iostream>
-#include <memory>
-#include <string>
-#include <utility>
 
 using namespace build;
 
 namespace {
 
-auto add_usd_linkage(Target& target) -> void {
+auto add_usd_linkage(cxx::Target& target) -> void {
     target.lib_search("external/openusd_build/lib")
         .rpath((std::filesystem::current_path() / "external/openusd_build/lib").string())
-        .link_raw("-lusd_usd")
-        .link_raw("-lusd_usdGeom")
-        .link_raw("-lusd_usdShade")
-        .link_raw("-lusd_usdLux")
-        .link_raw("-lusd_sdf")
-        .link_raw("-lusd_pcp")
-        .link_raw("-lusd_tf")
-        .link_raw("-lusd_vt")
-        .link_raw("-lusd_gf")
-        .link_raw("-lusd_ar")
-        .link_raw("-lusd_arch")
-        .link_raw("-lusd_plug")
-        .link_raw("-lusd_js")
-        .link_raw("-lusd_work")
-        .link_raw("-lusd_trace")
-        .link_raw("-lusd_ts")
-        .link_raw("-lusd_pegtl")
-        .link_raw("-lusd_kind");
+        .link_flag("-lusd_usd")
+        .link_flag("-lusd_usdGeom")
+        .link_flag("-lusd_usdShade")
+        .link_flag("-lusd_usdLux")
+        .link_flag("-lusd_sdf")
+        .link_flag("-lusd_pcp")
+        .link_flag("-lusd_tf")
+        .link_flag("-lusd_vt")
+        .link_flag("-lusd_gf")
+        .link_flag("-lusd_ar")
+        .link_flag("-lusd_arch")
+        .link_flag("-lusd_plug")
+        .link_flag("-lusd_js")
+        .link_flag("-lusd_work")
+        .link_flag("-lusd_trace")
+        .link_flag("-lusd_ts")
+        .link_flag("-lusd_pegtl")
+        .link_flag("-lusd_kind");
 }
 
 } // namespace
 
-auto main(int argc, char** argv) -> int {
-    Graph g;
-
+auto main() -> int {
     auto sdl3_cflags = capture_tokens({"pkg-config", "--cflags", "sdl3"});
     auto sdl3_libs = capture_tokens({"pkg-config", "--libs", "sdl3"});
 
-    auto cxx = std::make_unique<CxxToolchain>(CxxToolchain::Config{
-        .name = "clang",
-        .cxx = "clang++",
-        .ar = "ar",
-        .linker = "",
-        .default_std = "c++23",
-        .extra_cxx_flags = {},
-        .extra_link_flags = {},
-    });
-
-    g.addPlatform(Platform{
-        .name = "linux-vulkan",
-        .os = "linux",
-        .graphics_api = "vulkan",
-        .toolchain = std::move(cxx),
-        .defines =
-            {
-                "NGEN_PLATFORM_LINUX",
-                "NGEN_GFX_VULKAN",
-                "GLM_FORCE_RADIANS",
-                "GLM_FORCE_DEPTH_ZERO_TO_ONE",
-            },
-        .extra_cxx_flags = concat_tokens({{"-fPIC", "-Wall"}, sdl3_cflags}),
-        .extra_link_flags = {},
-        .system_libs = {"vulkan", "m"},
-        .exe_suffix = "",
-    });
-
-    g.addConfig(Configuration{
-        .name = "debug",
-        .opt = OptLevel::O0,
-        .debug_info = true,
-        .default_linkage = Linkage::Static,
-        .defines = {"DEBUG=1"},
-        .extra_cxx_flags = {},
-        .extra_link_flags = {},
-    });
-    g.addConfig(Configuration{
-        .name = "release",
-        .opt = OptLevel::O2,
-        .debug_info = true,
-        .default_linkage = Linkage::Static,
-        .defines = {"NDEBUG"},
-        .extra_cxx_flags = {},
-        .extra_link_flags = {},
-    });
-    g.addConfig(Configuration{
-        .name = "gamerelease",
-        .opt = OptLevel::O3,
-        .debug_info = false,
-        .default_linkage = Linkage::Static,
-        .defines = {"NDEBUG", "SHIPPING=1"},
-        .extra_cxx_flags = {"-fvisibility=hidden"},
-        .extra_link_flags = {"-flto", "-Wl,-s", "-Wl,--gc-sections"},
-    });
-
-    auto& obs = g.add<Library>("obs");
-    obs.cxx(glob({.include = "src/obs/**/*.cpp"}))
+    auto obs = cxx::static_library("obs");
+    obs.sources(glob({.include = "src/obs/**/*.cpp"}))
         .public_include({
             "src/obs",
             "external/concurrentqueue",
         });
 
-    auto& rhi = g.add<Library>("rhi");
-    rhi.cxx(glob({.include = "src/rhi/*.cpp"})).public_include({"src/rhi"}).include({"external/imgui"});
+    auto rhi = cxx::static_library("rhi");
+    rhi.sources(glob({.include = "src/rhi/*.cpp"}))
+        .public_include({"src/rhi"})
+        .include({"external/imgui"});
 
-    auto& rhivulkan = g.add<Library>("rhivulkan");
-    rhivulkan.cxx(glob({.include = "src/rhi/vulkan/**/*.cpp"}))
+    auto rhivulkan = cxx::static_library("rhivulkan");
+    rhivulkan.sources(glob({.include = "src/rhi/vulkan/**/*.cpp"}))
         .public_include({"src/rhi/vulkan"})
         .include({
             "src",
@@ -131,11 +65,11 @@ auto main(int argc, char** argv) -> int {
         .only_on({"linux-vulkan"})
         .link(rhi);
 
-    auto& rhi_backend = g.add<Alias>("rhi-backend");
-    rhi_backend.select("platform", "linux-vulkan", rhivulkan);
+    Alias rhi_backend("rhi-backend");
+    rhi_backend.select("platform", "linux-vulkan", rhivulkan.owner());
 
-    auto& renderer = g.add<Library>("renderer");
-    renderer.cxx(glob({.include = "src/renderer/**/*.cpp"}))
+    auto renderer = cxx::static_library("renderer");
+    renderer.sources(glob({.include = "src/renderer/**/*.cpp"}))
         .public_include({
             "src/renderer",
             "src/renderer/passes",
@@ -151,8 +85,8 @@ auto main(int argc, char** argv) -> int {
         .link(rhi)
         .link(rhi_backend);
 
-    auto& scene = g.add<Library>("scene");
-    scene.cxx(glob({.include = "src/scene/*.cpp", .exclude = "src/scene/usd*.cpp"}))
+    auto scene = cxx::static_library("scene");
+    scene.sources(glob({.include = "src/scene/*.cpp", .exclude = "src/scene/usd*.cpp"}))
         .public_include({
             "src",
             "src/scene",
@@ -163,9 +97,9 @@ auto main(int argc, char** argv) -> int {
             "src/obs",
         });
 
-    auto& sceneusd = g.add<StaticLibrary>("sceneusd");
+    auto sceneusd = cxx::static_library("sceneusd");
     sceneusd.std("c++20")
-        .cxx(glob({.include = "src/scene/usd*.cpp"}))
+        .sources(glob({.include = "src/scene/usd*.cpp"}))
         .public_include({
             "src",
             "src/scene",
@@ -187,9 +121,8 @@ auto main(int argc, char** argv) -> int {
         })
         .warning_off("deprecated-declarations");
 
-    auto& imgui = g.add<StaticLibrary>("imgui");
-    imgui
-        .cxx({
+    auto imgui = cxx::static_library("imgui");
+    imgui.sources({
             "external/imgui/imgui.cpp",
             "external/imgui/imgui_draw.cpp",
             "external/imgui/imgui_tables.cpp",
@@ -203,8 +136,8 @@ auto main(int argc, char** argv) -> int {
             "external/imgui/backends",
         });
 
-    auto& ui = g.add<Library>("ui");
-    ui.cxx(glob({.include = "src/ui/**/*.cpp"}))
+    auto ui = cxx::static_library("ui");
+    ui.sources(glob({.include = "src/ui/**/*.cpp"}))
         .public_include({"src/ui"})
         .include({
             "src",
@@ -221,18 +154,21 @@ auto main(int argc, char** argv) -> int {
         .link(sceneusd)
         .link(imgui);
 
-    auto& shaders = g.add<Tool>("shaders");
+    Tool shaders("shaders");
     shaders.command({"glslc", "$in", "-o", "$out"})
         .for_each(concat({
                       glob({.include = "shaders/*.vert"}),
                       glob({.include = "shaders/*.frag"}),
                   }),
-                  [](const BuildVariant& variant, const Path& source) { return variant.out_dir / "shaders" / (source.filename().string() + ".spv"); });
+                  [](const BuildVariant& variant, const Path& source) {
+                      return variant.out_dir / "shaders" / (source.filename().string() + ".spv");
+                  });
 
-    g.add<Tool>("clean").command({"rm", "-rf", "$out_dir"});
+    Tool clean("clean");
+    clean.command({"rm", "-rf", "$out_dir"});
 
-    g.add<Tool>("format")
-        .global()
+    Tool format("format");
+    format.global()
         .inputs(concat({
             glob({.include = "src/**/*.cpp"}),
             glob({.include = "src/**/*.h"}),
@@ -241,21 +177,21 @@ auto main(int argc, char** argv) -> int {
         }))
         .command({"clang-format", "-i", "$in"});
 
-    g.add<Tool>("tidy")
-        .global()
+    Tool tidy("tidy");
+    tidy.global()
         .inputs(concat({
             glob({.include = "src/**/*.cpp"}),
             glob({.include = "build/**/*.cpp"}),
         }))
         .command({"clang-tidy", "$in", "--", "-std=c++23", "-Ibuild/framework"});
 
-    auto& view = g.add<Program>("ngen-view");
-    view.cxx({
-                 "src/main.cpp",
-                 "src/camera.cpp",
-                 "src/debugdraw.cpp",
-                 "src/jobsystem.cpp",
-             })
+    auto view = cxx::program("ngen-view");
+    view.sources({
+            "src/main.cpp",
+            "src/camera.cpp",
+            "src/debugdraw.cpp",
+            "src/jobsystem.cpp",
+        })
         .include({
             "src",
             "src/obs",
@@ -280,24 +216,66 @@ auto main(int argc, char** argv) -> int {
         .link(sceneusd)
         .link(ui)
         .link(imgui)
-        .link_raw_many(sdl3_libs)
+        .link_flags(sdl3_libs)
         .depend_on(shaders);
     add_usd_linkage(view);
 
-    g.setDefault(view);
+    Project p;
 
-    auto parsed = parse_ninja_target(argc, argv, view.name());
-    if (!parsed) {
-        std::cerr << parsed.error().message << "\n";
-        return 1;
+    auto& linux_vulkan = p.platform("linux-vulkan")
+                             .os("linux")
+                             .graphics_api("vulkan")
+                             .exe_suffix("");
+
+    cxx::platform(linux_vulkan)
+        .compile_flag("-fPIC")
+        .compile_flag("-Wall")
+        .define("NGEN_PLATFORM_LINUX")
+        .define("NGEN_GFX_VULKAN")
+        .define("GLM_FORCE_RADIANS")
+        .define("GLM_FORCE_DEPTH_ZERO_TO_ONE")
+        .system_lib("vulkan")
+        .system_lib("m");
+
+    for (const auto& flag : sdl3_cflags) {
+        cxx::platform(linux_vulkan).compile_flag(flag);
     }
 
-    Target* desired = g.find(parsed->target);
-    if (!desired) {
-        desired = &view;
-    }
+    cxx::platform(linux_vulkan)
+        .toolchain()
+        .compiler("clang++")
+        .archiver("ar")
+        .default_std("c++23");
 
-    auto emitted = NinjaBackend{}.emit(g, *desired);
+    auto& debug = p.config("debug").out_dir("_out");
+    cxx::configuration(debug)
+        .compile_flag("-O0")
+        .compile_flag("-g")
+        .define("DEBUG=1");
+
+    auto& release = p.config("release").out_dir("_out");
+    cxx::configuration(release)
+        .compile_flag("-O2")
+        .compile_flag("-g")
+        .define("NDEBUG");
+
+    auto& gamerelease = p.config("gamerelease").out_dir("_out");
+    cxx::configuration(gamerelease)
+        .compile_flag("-O3")
+        .compile_flag("-fvisibility=hidden")
+        .link_flag("-flto")
+        .link_flag("-Wl,-s")
+        .link_flag("-Wl,--gc-sections")
+        .define("NDEBUG")
+        .define("SHIPPING=1");
+
+    p.target(view);
+    p.target(clean);
+    p.target(format);
+    p.target(tidy);
+    p.default_target(view);
+
+    auto emitted = NinjaBackend{}.emit(p);
     if (!emitted) {
         std::cerr << emitted.error().message << "\n";
         return 1;

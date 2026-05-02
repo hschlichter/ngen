@@ -1,22 +1,42 @@
 #pragma once
 
-#include "flags.hpp"
+#include "extensionmap.hpp"
 #include "path.hpp"
 
 #include <string>
-#include <vector>
+#include <utility>
 
 namespace build {
 
-struct Configuration {
-    std::string name;
-    OptLevel opt = OptLevel::O0;
-    bool debug_info = true;
-    Linkage default_linkage = Linkage::Static;
-    std::vector<std::string> defines;
-    std::vector<std::string> extra_cxx_flags;
-    std::vector<std::string> extra_link_flags;
-    Path out_dir = "_out";
+class Configuration {
+public:
+    explicit Configuration(std::string name) : name_(std::move(name)) {}
+
+    auto name() const -> const std::string& {
+        return name_;
+    }
+
+    auto out_dir(Path value) -> Configuration& {
+        out_dir_ = std::move(value);
+        return *this;
+    }
+
+    auto out_dir() const -> const Path& {
+        return out_dir_;
+    }
+
+    auto extensions() -> ExtensionMap& {
+        return extensions_;
+    }
+
+    auto extensions() const -> const ExtensionMap& {
+        return extensions_;
+    }
+
+private:
+    std::string name_;
+    Path out_dir_ = "_out";
+    ExtensionMap extensions_;
 };
 
 } // namespace build

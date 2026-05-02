@@ -4,8 +4,8 @@
 
 namespace build {
 
-struct Platform;
-struct Configuration;
+class Platform;
+class Configuration;
 
 struct BuildVariant {
     const Platform* platform = nullptr;
