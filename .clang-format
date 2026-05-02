@@ -37,6 +37,11 @@ AllowAllArgumentsOnNextLine: true
 AllowAllParametersOfDeclarationOnNextLine: true
 PenaltyBreakBeforeFirstCallParameter: 1
 
+# Method chain indent: prefer breaking the receiver to its own line
+# and indenting the chain by ContinuationIndentWidth, instead of aligning
+# every .method() under the column of the first '.'.
+PenaltyIndentedWhitespace: 100
+
 # Whitespace and operators
 SpaceBeforeParens: ControlStatements
 SpacesInParentheses: false

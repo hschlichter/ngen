@@ -19,19 +19,13 @@ public:
     auto operator=(const Alias&) -> Alias& = delete;
     auto operator=(Alias&&) -> Alias& = delete;
 
-    Alias(const Alias& other)
-        : selections_(other.selections_)
-        , fallback_(other.fallback_)
-        , base_(other.base_) {
+    Alias(const Alias& other) : selections_(other.selections_), fallback_(other.fallback_), base_(other.base_) {
         if (base_) {
             base_->extensions().attach(*this);
         }
     }
 
-    Alias(Alias&& other) noexcept
-        : selections_(std::move(other.selections_))
-        , fallback_(other.fallback_)
-        , base_(std::move(other.base_)) {
+    Alias(Alias&& other) noexcept : selections_(std::move(other.selections_)), fallback_(other.fallback_), base_(std::move(other.base_)) {
         if (base_) {
             base_->extensions().attach(*this);
         }

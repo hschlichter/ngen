@@ -18,10 +18,7 @@ public:
     auto operator=(Configuration&&) -> Configuration& = delete;
 
     Configuration(const Configuration& other)
-        : defines_(other.defines_)
-        , compile_flags_(other.compile_flags_)
-        , link_flags_(other.link_flags_)
-        , base_(other.base_) {
+        : defines_(other.defines_), compile_flags_(other.compile_flags_), link_flags_(other.link_flags_), base_(other.base_) {
         if (base_) {
             base_->extensions().attach(*this);
         }

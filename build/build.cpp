@@ -50,10 +50,7 @@ auto main() -> int {
                 "external/concurrentqueue",
             });
 
-    auto rhi = cxx::static_library("rhi")
-        .sources(glob({.include = "src/rhi/*.cpp"}))
-        .public_include({"src/rhi"})
-        .include({"external/imgui"});
+    auto rhi = cxx::static_library("rhi").sources(glob({.include = "src/rhi/*.cpp"})).public_include({"src/rhi"}).include({"external/imgui"});
 
     auto rhivulkan =
         cxx::static_library("rhivulkan")
@@ -248,19 +245,9 @@ auto main() -> int {
         linux_vulkan.compile_flag(flag);
     }
 
-    auto debug =
-        cxx::configuration("debug")
-            .out_dir("_out")
-            .compile_flag("-O0")
-            .compile_flag("-g")
-            .define("DEBUG=1");
+    auto debug = cxx::configuration("debug").out_dir("_out").compile_flag("-O0").compile_flag("-g").define("DEBUG=1");
 
-    auto release =
-        cxx::configuration("release")
-            .out_dir("_out")
-            .compile_flag("-O2")
-            .compile_flag("-g")
-            .define("NDEBUG");
+    auto release = cxx::configuration("release").out_dir("_out").compile_flag("-O2").compile_flag("-g").define("NDEBUG");
 
     auto gamerelease =
         cxx::configuration("gamerelease")
