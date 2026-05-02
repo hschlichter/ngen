@@ -39,8 +39,77 @@ auto add_usd_linkage(cxx::Target& target) -> void {
 } // namespace
 
 auto main() -> int {
+    auto clean = tool("clean").command({"rm", "-rf", "$out_dir"});
+
+    auto format =
+        tool("format")
+            .global()
+            .inputs(concat({
+                glob({.include = "src/**/*.cpp"}),
+                glob({.include = "src/**/*.h"}),
+                glob({.include = "build/**/*.cpp"}),
+                glob({.include = "build/**/*.hpp"}),
+            }))
+            .command({"clang-format", "-i", "$in"});
+
+    auto tidy =
+        tool("tidy")
+            .global()
+            .inputs(concat({
+                glob({.include = "src/**/*.cpp"}),
+                glob({.include = "build/**/*.cpp"}),
+            }))
+            .command({"clang-tidy", "$in", "--", "-std=c++23", "-Ibuild/framework"});
+
     auto sdl3_cflags = capture_tokens({"pkg-config", "--cflags", "sdl3"});
     auto sdl3_libs = capture_tokens({"pkg-config", "--libs", "sdl3"});
+
+    auto linux_vulkan =
+        cxx::platform("linux-vulkan")
+            .os("linux")
+            .graphics_api("vulkan")
+            .exe_suffix("")
+            .compile_flag("-fPIC")
+            .compile_flag("-Wall")
+            .define("NGEN_PLATFORM_LINUX")
+            .define("NGEN_GFX_VULKAN")
+            .define("GLM_FORCE_RADIANS")
+            .define("GLM_FORCE_DEPTH_ZERO_TO_ONE")
+            .system_lib("vulkan")
+            .system_lib("m");
+
+    linux_vulkan.compile_flags(sdl3_cflags);
+
+    linux_vulkan.toolchain().compiler("clang++").archiver("ar").default_std("c++23");
+
+    auto debug = cxx::configuration("debug")
+        .out_dir("_out")
+        .compile_flag("-O0")
+        .compile_flag("-g")
+        .define("DEBUG=1");
+
+    auto release = cxx::configuration("release")
+        .out_dir("_out")
+        .compile_flag("-O2")
+        .compile_flag("-g")
+        .define("NDEBUG");
+
+    auto gamerelease =
+        cxx::configuration("gamerelease")
+            .out_dir("_out")
+            .compile_flag("-O3")
+            .compile_flag("-fvisibility=hidden")
+            .link_flag("-flto")
+            .link_flag("-Wl,-s")
+            .link_flag("-Wl,--gc-sections")
+            .define("NDEBUG")
+            .define("SHIPPING=1");
+
+    Project p;
+    p.platform(linux_vulkan);
+    p.config(debug);
+    p.config(release);
+    p.config(gamerelease);
 
     auto obs =
         cxx::static_library("obs")
@@ -167,28 +236,6 @@ auto main() -> int {
                 }),
                 [](const BuildVariant& variant, const Path& source) { return variant.out_dir / "shaders" / (source.filename().string() + ".spv"); });
 
-    auto clean = tool("clean").command({"rm", "-rf", "$out_dir"});
-
-    auto format =
-        tool("format")
-            .global()
-            .inputs(concat({
-                glob({.include = "src/**/*.cpp"}),
-                glob({.include = "src/**/*.h"}),
-                glob({.include = "build/**/*.cpp"}),
-                glob({.include = "build/**/*.hpp"}),
-            }))
-            .command({"clang-format", "-i", "$in"});
-
-    auto tidy =
-        tool("tidy")
-            .global()
-            .inputs(concat({
-                glob({.include = "src/**/*.cpp"}),
-                glob({.include = "build/**/*.cpp"}),
-            }))
-            .command({"clang-tidy", "$in", "--", "-std=c++23", "-Ibuild/framework"});
-
     auto view =
         cxx::program("ngen-view")
             .sources({
@@ -224,47 +271,6 @@ auto main() -> int {
             .link_flags(sdl3_libs)
             .depend_on(shaders);
     add_usd_linkage(view);
-
-    auto linux_vulkan =
-        cxx::platform("linux-vulkan")
-            .os("linux")
-            .graphics_api("vulkan")
-            .exe_suffix("")
-            .compile_flag("-fPIC")
-            .compile_flag("-Wall")
-            .define("NGEN_PLATFORM_LINUX")
-            .define("NGEN_GFX_VULKAN")
-            .define("GLM_FORCE_RADIANS")
-            .define("GLM_FORCE_DEPTH_ZERO_TO_ONE")
-            .system_lib("vulkan")
-            .system_lib("m");
-
-    linux_vulkan.toolchain().compiler("clang++").archiver("ar").default_std("c++23");
-
-    for (const auto& flag : sdl3_cflags) {
-        linux_vulkan.compile_flag(flag);
-    }
-
-    auto debug = cxx::configuration("debug").out_dir("_out").compile_flag("-O0").compile_flag("-g").define("DEBUG=1");
-
-    auto release = cxx::configuration("release").out_dir("_out").compile_flag("-O2").compile_flag("-g").define("NDEBUG");
-
-    auto gamerelease =
-        cxx::configuration("gamerelease")
-            .out_dir("_out")
-            .compile_flag("-O3")
-            .compile_flag("-fvisibility=hidden")
-            .link_flag("-flto")
-            .link_flag("-Wl,-s")
-            .link_flag("-Wl,--gc-sections")
-            .define("NDEBUG")
-            .define("SHIPPING=1");
-
-    Project p;
-    p.platform(linux_vulkan);
-    p.config(debug);
-    p.config(release);
-    p.config(gamerelease);
 
     p.target(view);
     p.target(clean);

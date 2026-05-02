@@ -54,13 +54,28 @@ public:
         return *this;
     }
 
+    auto defines(std::vector<std::string> values) -> Configuration& {
+        defines_.insert(defines_.end(), values.begin(), values.end());
+        return *this;
+    }
+
     auto compile_flag(std::string value) -> Configuration& {
         compile_flags_.push_back(std::move(value));
         return *this;
     }
 
+    auto compile_flags(std::vector<std::string> values) -> Configuration& {
+        compile_flags_.insert(compile_flags_.end(), values.begin(), values.end());
+        return *this;
+    }
+
     auto link_flag(std::string value) -> Configuration& {
         link_flags_.push_back(std::move(value));
+        return *this;
+    }
+
+    auto link_flags(std::vector<std::string> values) -> Configuration& {
+        link_flags_.insert(link_flags_.end(), values.begin(), values.end());
         return *this;
     }
 

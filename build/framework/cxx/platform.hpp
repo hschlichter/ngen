@@ -79,8 +79,18 @@ public:
         return *this;
     }
 
+    auto defines(std::vector<std::string> values) -> Platform& {
+        defines_.insert(defines_.end(), values.begin(), values.end());
+        return *this;
+    }
+
     auto compile_flag(std::string value) -> Platform& {
         compile_flags_.push_back(std::move(value));
+        return *this;
+    }
+
+    auto compile_flags(std::vector<std::string> values) -> Platform& {
+        compile_flags_.insert(compile_flags_.end(), values.begin(), values.end());
         return *this;
     }
 
@@ -89,8 +99,18 @@ public:
         return *this;
     }
 
+    auto link_flags(std::vector<std::string> values) -> Platform& {
+        link_flags_.insert(link_flags_.end(), values.begin(), values.end());
+        return *this;
+    }
+
     auto system_lib(std::string value) -> Platform& {
         system_libs_.push_back(std::move(value));
+        return *this;
+    }
+
+    auto system_libs(std::vector<std::string> values) -> Platform& {
+        system_libs_.insert(system_libs_.end(), values.begin(), values.end());
         return *this;
     }
 

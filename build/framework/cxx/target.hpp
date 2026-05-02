@@ -93,6 +93,11 @@ public:
         return *this;
     }
 
+    auto defines(std::vector<std::string> values) -> Target& {
+        defines_data.insert(defines_data.end(), values.begin(), values.end());
+        return *this;
+    }
+
     auto include(Path dir) -> Target& {
         includes_data.push_back(std::move(dir));
         return *this;
@@ -126,6 +131,11 @@ public:
 
     auto compile_flag(std::string token) -> Target& {
         compile_flags_data.push_back(std::move(token));
+        return *this;
+    }
+
+    auto compile_flags(std::vector<std::string> values) -> Target& {
+        compile_flags_data.insert(compile_flags_data.end(), values.begin(), values.end());
         return *this;
     }
 
@@ -187,6 +197,11 @@ public:
 
     auto link(std::string_view system_lib) -> Target& {
         system_libs_data.emplace_back(system_lib);
+        return *this;
+    }
+
+    auto system_libs(std::vector<std::string> values) -> Target& {
+        system_libs_data.insert(system_libs_data.end(), values.begin(), values.end());
         return *this;
     }
 
