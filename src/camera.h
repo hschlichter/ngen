@@ -8,8 +8,8 @@
 struct Camera {
     glm::vec3 position;
     glm::vec3 worldUp = glm::vec3(0.0f, 1.0f, 0.0f); // set from the stage's up axis
-    float yaw;                                        // degrees, azimuth around worldUp
-    float pitch;                                      // degrees, elevation toward worldUp
+    float yaw;                                       // degrees, azimuth around worldUp
+    float pitch;                                     // degrees, elevation toward worldUp
     float speed;
     float mouseSensitivity;
 

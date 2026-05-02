@@ -34,14 +34,15 @@ public:
     auto init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFormat) -> bool;
     auto destroy(RhiDevice* device) -> void;
 
-    auto addPass(FrameGraph& fg,
-                 FgTextureHandle depthHandle,
-                 RhiExtent2D extent,
-                 uint32_t imageIndex,
-                 uint32_t instanceCount,
-                 std::span<const GpuInstance> instances,
-                 const std::unordered_map<uint32_t, CachedMesh>& meshCache,
-                 std::span<RhiDescriptorSet*> descriptorSets) -> const GeometryPassData&;
+    auto addPass(
+        FrameGraph& fg,
+        FgTextureHandle depthHandle,
+        RhiExtent2D extent,
+        uint32_t imageIndex,
+        uint32_t instanceCount,
+        std::span<const GpuInstance> instances,
+        const std::unordered_map<uint32_t, CachedMesh>& meshCache,
+        std::span<RhiDescriptorSet*> descriptorSets) -> const GeometryPassData&;
 
     auto descriptorSetLayout() const -> RhiDescriptorSetLayout* { return descSetLayout; }
 

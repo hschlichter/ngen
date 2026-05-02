@@ -27,7 +27,8 @@ namespace obs::detail {
 // argument via templated .field() without evaluating it meaningfully. Stays in
 // a dead `while (false)` branch so arguments aren't even executed.
 struct NoopBuilder {
-    template <class T> constexpr NoopBuilder& field(std::string_view, const T&) noexcept { return *this; }
+    template <class T>
+    constexpr NoopBuilder& field(std::string_view, const T&) noexcept { return *this; }
 };
 
 // Active builder. Accumulates fields into a stack-resident Observation and
@@ -103,15 +104,15 @@ private:
 } // namespace obs::detail
 
 #ifdef OBSERVABILITY_DISABLED
-#define OBS_EVENT(cat, type, name)                                                                                                                             \
-    while (false)                                                                                                                                              \
-        ::obs::detail::NoopBuilder {                                                                                                                           \
+#define OBS_EVENT(cat, type, name)   \
+    while (false)                    \
+        ::obs::detail::NoopBuilder { \
         }
 #else
-#define OBS_EVENT(cat, type, name)                                                                                                                             \
-    if (!::obs::bus().categoryEnabled(cat)) {                                                                                                                  \
-    } else                                                                                                                                                     \
-        ::obs::detail::Builder {                                                                                                                               \
-            (cat), (type), (name)                                                                                                                              \
+#define OBS_EVENT(cat, type, name)            \
+    if (!::obs::bus().categoryEnabled(cat)) { \
+    } else                                    \
+        ::obs::detail::Builder {              \
+            (cat), (type), (name)             \
         }
 #endif

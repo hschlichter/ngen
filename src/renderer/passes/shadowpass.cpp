@@ -27,7 +27,7 @@ auto ShadowPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthForm
         .vertexShader = vertShader,
         .fragmentShader = fragShader,
         .descriptorSetLayout = nullptr, // no descriptors; all data via push constants
-        .colorFormats = {}, // depth-only
+        .colorFormats = {},             // depth-only
         .depthFormat = depthFormat,
         .vertexStride = sizeof(Vertex),
         .vertexAttributes = vertexAttrs,
@@ -45,12 +45,13 @@ auto ShadowPass::destroy(RhiDevice* device) -> void {
     device->destroyShaderModule(fragShader);
 }
 
-auto ShadowPass::addPass(FrameGraph& fg,
-                         RhiExtent2D extent,
-                         RhiFormat depthFormat,
-                         const glm::mat4& lightViewProj,
-                         std::span<const GpuInstance> instances,
-                         const std::unordered_map<uint32_t, CachedMesh>& meshCache) -> const ShadowPassData& {
+auto ShadowPass::addPass(
+    FrameGraph& fg,
+    RhiExtent2D extent,
+    RhiFormat depthFormat,
+    const glm::mat4& lightViewProj,
+    std::span<const GpuInstance> instances,
+    const std::unordered_map<uint32_t, CachedMesh>& meshCache) -> const ShadowPassData& {
     FgTextureDesc desc = {
         .width = extent.width,
         .height = extent.height,

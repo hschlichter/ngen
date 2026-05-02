@@ -28,11 +28,12 @@ struct PropertiesWindowState {
     PrimHandle displayColorEditPrim;
 };
 
-void drawPropertiesWindow(bool& show,
-                          bool editingBlocked,
-                          USDScene& usdScene,
-                          PrimHandle selectedPrim,
-                          const SceneQuerySystem& sceneQuery,
-                          const MaterialLibrary& matLib,
-                          std::vector<SceneEditCommand>& pendingEdits,
-                          PropertiesWindowState& state);
+void drawPropertiesWindow(
+    bool& show,
+    bool editingBlocked,
+    USDScene& usdScene,
+    PrimHandle selectedPrim,
+    const SceneQuerySystem& sceneQuery,
+    const MaterialLibrary& matLib,
+    std::vector<SceneEditCommand>& pendingEdits,
+    PropertiesWindowState& state);

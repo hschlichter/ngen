@@ -163,18 +163,33 @@ python3 external/openusd/build_scripts/build_usd.py \
 
 ## Building
 
-Requires clang++ with C++23 support and the Vulkan SDK. OpenUSD must be built first (see above).
+The engine is built by its own self-hosted build system (`ngen-build`). Requires `clang++` with C++23 support, the Vulkan SDK, and `ninja`. OpenUSD must be built first (see above).
+
+Bootstrap once, then build:
 
 ```bash
-make
+ninja -f build/bootstrap.ninja    # produces _out/ngen-build
+./_out/ngen-build                 # builds the engine (debug config)
 ```
 
-Shaders are compiled from GLSL to SPIR-V automatically via `glslc`.
+The resulting binary is at `_out/linux-vulkan/debug/ngen-view`. Shaders are compiled from GLSL to SPIR-V automatically via `glslc`.
+
+Other configs and helpers:
+
+```bash
+./_out/ngen-build --config release       # release build
+./_out/ngen-build --config gamerelease   # shipping build
+./_out/ngen-build clean                  # remove build outputs
+./_out/ngen-build format                 # clang-format the tree
+./_out/ngen-build tidy                   # clang-tidy build/*.cpp
+```
+
+See [build_system.md](./build_system.md) for the build system internals (framework layout, extension model, Ninja backend, adding platforms/configurations).
 
 ## Usage
 
 ```bash
-./_out/ngen [scene.usd]
+./_out/linux-vulkan/debug/ngen-view [scene.usd]
 ```
 
 Or launch without arguments and use File > Open.

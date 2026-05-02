@@ -27,14 +27,15 @@ static auto circlePoint(int axis, float theta, const glm::vec3& center, float ra
     return center + (perpA * std::cos(theta) + perpB * std::sin(theta)) * radius;
 }
 
-auto RotateGizmo::update(RhiExtent2D ext,
-                         const glm::mat4& view,
-                         const glm::mat4& proj,
-                         const glm::vec3& cameraPos,
-                         float mouseX,
-                         float mouseY,
-                         bool vis,
-                         const glm::vec3& originWorld) -> void {
+auto RotateGizmo::update(
+    RhiExtent2D ext,
+    const glm::mat4& view,
+    const glm::mat4& proj,
+    const glm::vec3& cameraPos,
+    float mouseX,
+    float mouseY,
+    bool vis,
+    const glm::vec3& originWorld) -> void {
     this->extent = ext;
     this->viewProj = proj * view;
     this->visible = vis;
@@ -118,14 +119,15 @@ auto RotateGizmo::planeAngle(float mouseX, float mouseY, RhiExtent2D ext, const 
     return std::atan2(glm::dot(local, perpB), glm::dot(local, perpA));
 }
 
-auto RotateGizmo::tryGrab(float mouseX,
-                          float mouseY,
-                          RhiExtent2D ext,
-                          const glm::mat4& view,
-                          const glm::mat4& proj,
-                          const glm::vec3& gizmoAnchor,
-                          const Transform& currentLocal,
-                          const glm::mat4& currentWorld) -> bool {
+auto RotateGizmo::tryGrab(
+    float mouseX,
+    float mouseY,
+    RhiExtent2D ext,
+    const glm::mat4& view,
+    const glm::mat4& proj,
+    const glm::vec3& gizmoAnchor,
+    const Transform& currentLocal,
+    const glm::mat4& currentWorld) -> bool {
     if (!visible) {
         return false;
     }

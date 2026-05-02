@@ -20,12 +20,13 @@ public:
     auto init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFormat) -> bool;
     auto destroy(RhiDevice* device) -> void;
 
-    auto addPass(FrameGraph& fg,
-                 RhiExtent2D extent,
-                 RhiFormat depthFormat,
-                 const glm::mat4& lightViewProj,
-                 std::span<const GpuInstance> instances,
-                 const std::unordered_map<uint32_t, CachedMesh>& meshCache) -> const ShadowPassData&;
+    auto addPass(
+        FrameGraph& fg,
+        RhiExtent2D extent,
+        RhiFormat depthFormat,
+        const glm::mat4& lightViewProj,
+        std::span<const GpuInstance> instances,
+        const std::unordered_map<uint32_t, CachedMesh>& meshCache) -> const ShadowPassData&;
 
 private:
     RhiPipeline* pipeline = nullptr;

@@ -32,45 +32,49 @@ enum class EditorTool : uint8_t {
 
 class EditorUI {
 public:
-    auto draw(SDL_Window* window,
-              USDScene& usdScene,
-              SceneUpdater& sceneUpdater,
-              RenderWorld& renderWorld,
-              PrimHandle& selectedPrim,
-              const SceneQuerySystem& sceneQuery,
-              const MaterialLibrary& matLib,
-              Camera& camera,
-              std::optional<FrameGraphDebugSnapshot> freshFrameGraphSnap) -> void;
+    auto draw(
+        SDL_Window* window,
+        USDScene& usdScene,
+        SceneUpdater& sceneUpdater,
+        RenderWorld& renderWorld,
+        PrimHandle& selectedPrim,
+        const SceneQuerySystem& sceneQuery,
+        const MaterialLibrary& matLib,
+        Camera& camera,
+        std::optional<FrameGraphDebugSnapshot> freshFrameGraphSnap) -> void;
 
-    auto openScene(const char* path,
-                   USDScene& usdScene,
-                   USDRenderExtractor& usdExtractor,
-                   MeshLibrary& meshLib,
-                   MaterialLibrary& matLib,
-                   RenderWorld& renderWorld,
-                   SceneQuerySystem& sceneQuery,
-                   SceneUpdater& sceneUpdater,
-                   PrimHandle& selectedPrim) -> bool;
+    auto openScene(
+        const char* path,
+        USDScene& usdScene,
+        USDRenderExtractor& usdExtractor,
+        MeshLibrary& meshLib,
+        MaterialLibrary& matLib,
+        RenderWorld& renderWorld,
+        SceneQuerySystem& sceneQuery,
+        SceneUpdater& sceneUpdater,
+        PrimHandle& selectedPrim) -> bool;
 
     // Initialize an empty anonymous scene. Same setup as openScene but skips the file
     // read. Used from File → New and at startup when ngen is launched without a scene.
-    auto newScene(USDScene& usdScene,
-                  USDRenderExtractor& usdExtractor,
-                  MeshLibrary& meshLib,
-                  MaterialLibrary& matLib,
-                  RenderWorld& renderWorld,
-                  SceneQuerySystem& sceneQuery,
-                  SceneUpdater& sceneUpdater,
-                  PrimHandle& selectedPrim) -> bool;
+    auto newScene(
+        USDScene& usdScene,
+        USDRenderExtractor& usdExtractor,
+        MeshLibrary& meshLib,
+        MaterialLibrary& matLib,
+        RenderWorld& renderWorld,
+        SceneQuerySystem& sceneQuery,
+        SceneUpdater& sceneUpdater,
+        PrimHandle& selectedPrim) -> bool;
 
-    auto drawDebug(DebugDraw& debugDraw,
-                   const RenderWorld& renderWorld,
-                   PrimHandle selectedPrim,
-                   const SceneQuerySystem& sceneQuery,
-                   const SceneUpdater& sceneUpdater,
-                   USDScene& usdScene,
-                   glm::vec3 cameraPos,
-                   glm::vec3 worldUp) -> void;
+    auto drawDebug(
+        DebugDraw& debugDraw,
+        const RenderWorld& renderWorld,
+        PrimHandle selectedPrim,
+        const SceneQuerySystem& sceneQuery,
+        const SceneUpdater& sceneUpdater,
+        USDScene& usdScene,
+        glm::vec3 cameraPos,
+        glm::vec3 worldUp) -> void;
 
     auto hasPendingOpen() const -> bool { return !pendingOpenPath.empty(); }
     auto consumePendingOpenPath() -> std::string { return std::exchange(pendingOpenPath, {}); }

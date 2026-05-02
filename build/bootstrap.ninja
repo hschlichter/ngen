@@ -1,0 +1,11 @@
+cxx = clang++
+cxxflags = -std=c++23 -O0 -g -Wall -Wextra
+builddir = _out/.ninja
+
+rule cxx
+  command = mkdir -p _out && $cxx $cxxflags -o $out $in
+  description = BOOTSTRAP $out
+
+build _out/ngen-build: cxx build/bootstrap.cpp
+
+default _out/ngen-build

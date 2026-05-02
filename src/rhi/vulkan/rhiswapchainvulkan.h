@@ -13,8 +13,8 @@ class RhiSwapchainVulkan : public RhiSwapchain {
     friend class RhiDeviceVulkan;
 
 public:
-    auto init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, SDL_Window* window)
-        -> std::expected<void, int>;
+    auto
+    init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, SDL_Window* window) -> std::expected<void, int>;
     auto destroy() -> void override;
     auto recreate() -> bool override;
 

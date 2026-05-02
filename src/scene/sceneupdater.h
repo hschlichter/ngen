@@ -22,12 +22,13 @@ enum class SceneUpdateResult : uint8_t {
 
 class SceneUpdater {
 public:
-    auto update(USDScene& usdScene,
-                USDRenderExtractor& usdExtractor,
-                RenderWorld& renderWorld,
-                MeshLibrary& meshLib,
-                MaterialLibrary& matLib,
-                SceneQuerySystem& sceneQuery) -> SceneUpdateResult;
+    auto update(
+        USDScene& usdScene,
+        USDRenderExtractor& usdExtractor,
+        RenderWorld& renderWorld,
+        MeshLibrary& meshLib,
+        MaterialLibrary& matLib,
+        SceneQuerySystem& sceneQuery) -> SceneUpdateResult;
 
     auto waitIfBlocked() -> void;
 

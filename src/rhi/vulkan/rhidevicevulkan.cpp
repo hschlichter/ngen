@@ -567,19 +567,20 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
     auto* fragMod = static_cast<RhiShaderModuleVulkan*>(desc.fragmentShader);
     auto* dsLayout = static_cast<RhiDescriptorSetLayoutVulkan*>(desc.descriptorSetLayout);
 
-    VkPipelineShaderStageCreateInfo stages[2] = {{
-                                                     // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
-                                                     .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                                                     .stage = VK_SHADER_STAGE_VERTEX_BIT,
-                                                     .module = vertMod->module,
-                                                     .pName = "main",
-                                                 },
-                                                 {
-                                                     .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                                                     .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-                                                     .module = fragMod->module,
-                                                     .pName = "main",
-                                                 }};
+    VkPipelineShaderStageCreateInfo stages[2] = {
+        {
+            // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_VERTEX_BIT,
+            .module = vertMod->module,
+            .pName = "main",
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = fragMod->module,
+            .pName = "main",
+        }};
 
     VkVertexInputBindingDescription bindingDesc = {
         .binding = 0,
@@ -652,10 +653,12 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
     };
 
     auto colorAttachmentCount = (uint32_t) desc.colorFormats.size();
-    std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachments(colorAttachmentCount, {
-        .blendEnable = VK_FALSE,
-        .colorWriteMask = 0xF,
-    });
+    std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachments(
+        colorAttachmentCount,
+        {
+            .blendEnable = VK_FALSE,
+            .colorWriteMask = 0xF,
+        });
 
     VkPipelineColorBlendStateCreateInfo colorBlendState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
