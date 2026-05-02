@@ -74,6 +74,11 @@ public:
 
     auto toolchain() const -> const Toolchain& { return toolchain_; }
 
+    auto toolchain(Toolchain value) -> Platform& {
+        toolchain_ = std::move(value);
+        return *this;
+    }
+
     auto define(std::string value) -> Platform& {
         defines_.push_back(std::move(value));
         return *this;

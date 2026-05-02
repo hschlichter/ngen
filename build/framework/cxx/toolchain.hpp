@@ -42,4 +42,8 @@ private:
     std::string default_std_ = "c++23";
 };
 
+inline auto toolchain() -> Toolchain {
+    return Toolchain();
+}
+
 } // namespace build::cxx

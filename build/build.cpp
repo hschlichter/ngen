@@ -64,23 +64,27 @@ auto main() -> int {
     auto sdl3_cflags = capture_tokens({"pkg-config", "--cflags", "sdl3"});
     auto sdl3_libs = capture_tokens({"pkg-config", "--libs", "sdl3"});
 
+    auto clang =
+        cxx::toolchain()
+            .compiler("clang++")
+            .archiver("ar")
+            .default_std("c++23");
+
     auto linux_vulkan =
         cxx::platform("linux-vulkan")
             .os("linux")
             .graphics_api("vulkan")
             .exe_suffix("")
+            .toolchain(clang)
             .compile_flag("-fPIC")
             .compile_flag("-Wall")
+            .compile_flags(sdl3_cflags)
             .define("NGEN_PLATFORM_LINUX")
             .define("NGEN_GFX_VULKAN")
             .define("GLM_FORCE_RADIANS")
             .define("GLM_FORCE_DEPTH_ZERO_TO_ONE")
             .system_lib("vulkan")
             .system_lib("m");
-
-    linux_vulkan.compile_flags(sdl3_cflags);
-
-    linux_vulkan.toolchain().compiler("clang++").archiver("ar").default_std("c++23");
 
     auto debug = cxx::configuration("debug")
         .out_dir("_out")
