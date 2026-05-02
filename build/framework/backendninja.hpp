@@ -57,7 +57,11 @@ inline auto append_all_str(std::vector<std::string>& out, const std::vector<std:
 }
 
 inline auto resolve_alias(Target* target, const BuildVariant& variant) -> Target* {
-    while (auto* alias = dynamic_cast<Alias*>(target)) {
+    while (target) {
+        auto* alias = target->extension<Alias>();
+        if (!alias) {
+            return target;
+        }
         target = alias->resolve({{"platform", variant.platform->name()}, {"config", variant.config->name()}});
     }
     return target;
@@ -176,7 +180,7 @@ public:
         }
 
         for (auto* root : project_.roots()) {
-            if (auto* tool = dynamic_cast<Tool*>(root); tool && tool->is_global) {
+            if (auto* tool = root->extension<Tool>(); tool && tool->is_global) {
                 emit_global_tool(*tool);
             }
         }
@@ -244,7 +248,7 @@ private:
         }
 
         std::expected<Path, Error> output = Path{};
-        if (auto* tool = dynamic_cast<Tool*>(target)) {
+        if (auto* tool = target->extension<Tool>()) {
             output = emit_tool(*tool, variant, order_only);
         } else if (auto* cxx_t = target->extension<cxx::Target>()) {
             output = emit_cxx(*cxx_t, variant, order_only);

@@ -67,8 +67,7 @@ auto main() -> int {
             .only_on({"linux-vulkan"})
             .link(rhi);
 
-    Alias rhi_backend("rhi-backend");
-    rhi_backend.select("platform", "linux-vulkan", rhivulkan.owner());
+    auto rhi_backend = alias("rhi-backend").select("platform", "linux-vulkan", rhivulkan.owner());
 
     auto renderer =
         cxx::static_library("renderer")
@@ -161,35 +160,37 @@ auto main() -> int {
             .link(sceneusd)
             .link(imgui);
 
-    Tool shaders("shaders");
-    shaders.command({"glslc", "$in", "-o", "$out"})
-        .for_each(
-            concat({
-                glob({.include = "shaders/*.vert"}),
-                glob({.include = "shaders/*.frag"}),
-            }),
-            [](const BuildVariant& variant, const Path& source) { return variant.out_dir / "shaders" / (source.filename().string() + ".spv"); });
+    auto shaders =
+        tool("shaders")
+            .command({"glslc", "$in", "-o", "$out"})
+            .for_each(
+                concat({
+                    glob({.include = "shaders/*.vert"}),
+                    glob({.include = "shaders/*.frag"}),
+                }),
+                [](const BuildVariant& variant, const Path& source) { return variant.out_dir / "shaders" / (source.filename().string() + ".spv"); });
 
-    Tool clean("clean");
-    clean.command({"rm", "-rf", "$out_dir"});
+    auto clean = tool("clean").command({"rm", "-rf", "$out_dir"});
 
-    Tool format("format");
-    format.global()
-        .inputs(concat({
-            glob({.include = "src/**/*.cpp"}),
-            glob({.include = "src/**/*.h"}),
-            glob({.include = "build/**/*.cpp"}),
-            glob({.include = "build/**/*.hpp"}),
-        }))
-        .command({"clang-format", "-i", "$in"});
+    auto format =
+        tool("format")
+            .global()
+            .inputs(concat({
+                glob({.include = "src/**/*.cpp"}),
+                glob({.include = "src/**/*.h"}),
+                glob({.include = "build/**/*.cpp"}),
+                glob({.include = "build/**/*.hpp"}),
+            }))
+            .command({"clang-format", "-i", "$in"});
 
-    Tool tidy("tidy");
-    tidy.global()
-        .inputs(concat({
-            glob({.include = "src/**/*.cpp"}),
-            glob({.include = "build/**/*.cpp"}),
-        }))
-        .command({"clang-tidy", "$in", "--", "-std=c++23", "-Ibuild/framework"});
+    auto tidy =
+        tool("tidy")
+            .global()
+            .inputs(concat({
+                glob({.include = "src/**/*.cpp"}),
+                glob({.include = "build/**/*.cpp"}),
+            }))
+            .command({"clang-tidy", "$in", "--", "-std=c++23", "-Ibuild/framework"});
 
     auto view =
         cxx::program("ngen-view")
