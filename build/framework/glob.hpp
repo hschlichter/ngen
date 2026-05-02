@@ -1,6 +1,5 @@
 #pragma once
 
-#include "flags.hpp"
 #include "path.hpp"
 #include "toolchainhelpers.hpp"
 
@@ -20,6 +19,10 @@
 #include <vector>
 
 namespace build {
+
+struct Error {
+    std::string message;
+};
 
 struct GlobSpec {
     std::string include;

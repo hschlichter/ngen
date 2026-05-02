@@ -6,7 +6,6 @@
 #include "cxx/platform.hpp"
 #include "cxx/target.hpp"
 #include "cxx/toolchain.hpp"
-#include "flags.hpp"
 #include "glob.hpp"
 #include "path.hpp"
 #include "project.hpp"

@@ -3,7 +3,6 @@
 #include "../command.hpp"
 #include "../path.hpp"
 #include "configuration.hpp"
-#include "flags.hpp"
 #include "platform.hpp"
 #include "target.hpp"
 #include "toolchain.hpp"

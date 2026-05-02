@@ -2,7 +2,6 @@
 
 #include "../path.hpp"
 #include "../target.hpp"
-#include "flags.hpp"
 
 #include <initializer_list>
 #include <memory>
@@ -17,6 +16,13 @@ enum class Kind {
     StaticLibrary,
     SharedLibrary,
     Program,
+};
+
+enum class OptLevel {
+    O0,
+    O1,
+    O2,
+    O3,
 };
 
 class Target {
@@ -140,7 +146,20 @@ public:
     }
 
     auto optimize(OptLevel level) -> Target& {
-        compile_flags_data.push_back(opt_flag(level));
+        switch (level) {
+            case OptLevel::O0:
+                compile_flags_data.emplace_back("-O0");
+                break;
+            case OptLevel::O1:
+                compile_flags_data.emplace_back("-O1");
+                break;
+            case OptLevel::O2:
+                compile_flags_data.emplace_back("-O2");
+                break;
+            case OptLevel::O3:
+                compile_flags_data.emplace_back("-O3");
+                break;
+        }
         return *this;
     }
 
