@@ -1,6 +1,7 @@
 #pragma once
 
 #include "alias.hpp"
+#include "command.hpp"
 #include "cxx/backendninja.hpp"
 #include "cxx/configuration.hpp"
 #include "cxx/platform.hpp"
@@ -11,7 +12,6 @@
 #include "project.hpp"
 #include "target.hpp"
 #include "tool.hpp"
-#include "toolchainhelpers.hpp"
 
 #include <cassert>
 #include <cstdlib>
@@ -28,6 +28,28 @@
 #include <vector>
 
 namespace build {
+
+inline auto join_command(const Command& command) -> std::string {
+    std::string out;
+    for (const auto& token : command.argv) {
+        if (!out.empty()) {
+            out += ' ';
+        }
+        out += shell_quote(token);
+    }
+    return out;
+}
+
+inline auto ninja_escape_path(const Path& path) -> std::string {
+    std::string out;
+    for (char ch : path.string()) {
+        if (ch == ' ' || ch == ':' || ch == '$') {
+            out += '$';
+        }
+        out += ch;
+    }
+    return out;
+}
 
 namespace detail {
 

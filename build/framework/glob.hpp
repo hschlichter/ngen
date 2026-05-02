@@ -1,10 +1,10 @@
 #pragma once
 
 #include "path.hpp"
-#include "toolchainhelpers.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdio>
 #include <expected>
 #include <filesystem>
@@ -23,6 +23,42 @@ namespace build {
 struct Error {
     std::string message;
 };
+
+inline auto shell_quote(const std::string& value) -> std::string {
+    if (value.empty()) {
+        return "''";
+    }
+    bool simple = true;
+    for (char ch : value) {
+        if (!std::isalnum(static_cast<unsigned char>(ch)) && ch != '_' && ch != '-' && ch != '.' && ch != '/' && ch != ':' && ch != '=' && ch != '$') {
+            simple = false;
+            break;
+        }
+    }
+    if (simple) {
+        return value;
+    }
+    std::string out = "'";
+    for (char ch : value) {
+        if (ch == '\'') {
+            out += "'\\''";
+        } else {
+            out += ch;
+        }
+    }
+    out += "'";
+    return out;
+}
+
+inline auto split_ws(const std::string& text) -> std::vector<std::string> {
+    std::istringstream in(text);
+    std::vector<std::string> tokens;
+    std::string token;
+    while (in >> token) {
+        tokens.push_back(token);
+    }
+    return tokens;
+}
 
 struct GlobSpec {
     std::string include;
