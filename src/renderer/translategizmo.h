@@ -14,14 +14,15 @@ class TranslateGizmo {
 public:
     // Per-frame: rebuild arrow vertices and snapshot screen layout for picking.
     // Pass `visible = false` (or no selection) to clear vertices.
-    auto update(RhiExtent2D extent,
-                const glm::mat4& view,
-                const glm::mat4& proj,
-                const glm::vec3& cameraPos,
-                float mouseX,
-                float mouseY,
-                bool visible,
-                const glm::vec3& originWorld) -> void;
+    auto update(
+        RhiExtent2D extent,
+        const glm::mat4& view,
+        const glm::mat4& proj,
+        const glm::vec3& cameraPos,
+        float mouseX,
+        float mouseY,
+        bool visible,
+        const glm::vec3& originWorld) -> void;
 
     auto vertices() const -> std::span<const GizmoVertex> { return frameVertices; }
 
@@ -31,14 +32,15 @@ public:
     // selected prim's bounds center); the axis line passes through it.
     // `currentWorld` is the prim's *actual* world transform — its translation
     // column is what dragUpdate will offset to compute the new local position.
-    auto tryGrab(float mouseX,
-                 float mouseY,
-                 RhiExtent2D extent,
-                 const glm::mat4& view,
-                 const glm::mat4& proj,
-                 const glm::vec3& gizmoAnchor,
-                 const Transform& currentLocal,
-                 const glm::mat4& currentWorld) -> bool;
+    auto tryGrab(
+        float mouseX,
+        float mouseY,
+        RhiExtent2D extent,
+        const glm::mat4& view,
+        const glm::mat4& proj,
+        const glm::vec3& gizmoAnchor,
+        const Transform& currentLocal,
+        const glm::mat4& currentWorld) -> bool;
 
     // Returns the new local Transform under the cursor, or nullopt if not dragging.
     auto dragUpdate(float mouseX, float mouseY, RhiExtent2D extent, const glm::mat4& view, const glm::mat4& proj) const -> std::optional<Transform>;

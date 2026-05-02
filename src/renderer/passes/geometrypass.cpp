@@ -50,14 +50,15 @@ auto GeometryPass::destroy(RhiDevice* device) -> void {
     device->destroyShaderModule(fragShader);
 }
 
-auto GeometryPass::addPass(FrameGraph& fg,
-                           FgTextureHandle depthHandle,
-                           RhiExtent2D extent,
-                           uint32_t imageIndex,
-                           uint32_t instanceCount,
-                           std::span<const GpuInstance> instances,
-                           const std::unordered_map<uint32_t, CachedMesh>& meshCache,
-                           std::span<RhiDescriptorSet*> descriptorSets) -> const GeometryPassData& {
+auto GeometryPass::addPass(
+    FrameGraph& fg,
+    FgTextureHandle depthHandle,
+    RhiExtent2D extent,
+    uint32_t imageIndex,
+    uint32_t instanceCount,
+    std::span<const GpuInstance> instances,
+    const std::unordered_map<uint32_t, CachedMesh>& meshCache,
+    std::span<RhiDescriptorSet*> descriptorSets) -> const GeometryPassData& {
     FgTextureDesc albedoDesc = {
         .width = extent.width,
         .height = extent.height,

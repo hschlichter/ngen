@@ -72,31 +72,20 @@ public:
         return true;
     }
 
-    auto extensions() -> ExtensionMap& {
-        return extensions_;
-    }
+    auto extensions() -> ExtensionMap& { return extensions_; }
 
-    auto extensions() const -> const ExtensionMap& {
-        return extensions_;
-    }
+    auto extensions() const -> const ExtensionMap& { return extensions_; }
 
-    template <typename Ext>
-    auto register_extension(Ext& ext) -> void {
-        extensions_.attach(ext);
-    }
+    template <typename Ext> auto register_extension(Ext& ext) -> void { extensions_.attach(ext); }
 
-    template <typename Ext>
-    auto extension() const -> Ext* {
+    template <typename Ext> auto extension() const -> Ext* {
         if (!extensions_.has<Ext>()) {
             return nullptr;
         }
         return const_cast<Ext*>(&extensions_.get<Ext>());
     }
 
-    template <typename Ext>
-    auto has_extension() const -> bool {
-        return extensions_.has<Ext>();
-    }
+    template <typename Ext> auto has_extension() const -> bool { return extensions_.has<Ext>(); }
 
     std::vector<Target*> deps;
 

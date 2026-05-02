@@ -45,12 +45,13 @@ auto ShadowPass::destroy(RhiDevice* device) -> void {
     device->destroyShaderModule(fragShader);
 }
 
-auto ShadowPass::addPass(FrameGraph& fg,
-                         RhiExtent2D extent,
-                         RhiFormat depthFormat,
-                         const glm::mat4& lightViewProj,
-                         std::span<const GpuInstance> instances,
-                         const std::unordered_map<uint32_t, CachedMesh>& meshCache) -> const ShadowPassData& {
+auto ShadowPass::addPass(
+    FrameGraph& fg,
+    RhiExtent2D extent,
+    RhiFormat depthFormat,
+    const glm::mat4& lightViewProj,
+    std::span<const GpuInstance> instances,
+    const std::unordered_map<uint32_t, CachedMesh>& meshCache) -> const ShadowPassData& {
     FgTextureDesc desc = {
         .width = extent.width,
         .height = extent.height,

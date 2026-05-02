@@ -25,17 +25,11 @@ public:
         return *this;
     }
 
-    auto defines() const -> const std::vector<std::string>& {
-        return defines_;
-    }
+    auto defines() const -> const std::vector<std::string>& { return defines_; }
 
-    auto compile_flags() const -> const std::vector<std::string>& {
-        return compile_flags_;
-    }
+    auto compile_flags() const -> const std::vector<std::string>& { return compile_flags_; }
 
-    auto link_flags() const -> const std::vector<std::string>& {
-        return link_flags_;
-    }
+    auto link_flags() const -> const std::vector<std::string>& { return link_flags_; }
 
 private:
     std::vector<std::string> defines_;

@@ -54,13 +54,14 @@ std::string sanitizeIdentifier(std::string_view stem) {
 
 } // namespace
 
-void drawSceneWindow(bool& show,
-                     bool editingBlocked,
-                     USDScene& usdScene,
-                     const RenderWorld& renderWorld,
-                     PrimHandle& selectedPrim,
-                     SceneWindowState& state,
-                     std::vector<SceneEditCommand>& pendingEdits) {
+void drawSceneWindow(
+    bool& show,
+    bool editingBlocked,
+    USDScene& usdScene,
+    const RenderWorld& renderWorld,
+    PrimHandle& selectedPrim,
+    SceneWindowState& state,
+    std::vector<SceneEditCommand>& pendingEdits) {
     if (!show || !usdScene.isOpen()) {
         return;
     }

@@ -88,8 +88,8 @@ void drawLayersWindow(bool& show, bool editingBlocked, USDScene& usdScene, std::
 
         ImGui::Separator();
         static char newLayerPath[256] = "new_layer.usda";
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("Add").x - ImGui::GetStyle().ItemSpacing.x -
-                                ImGui::GetStyle().FramePadding.x * 2);
+        ImGui::SetNextItemWidth(
+            ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("Add").x - ImGui::GetStyle().ItemSpacing.x - ImGui::GetStyle().FramePadding.x * 2);
         ImGui::InputText("##newlayer", newLayerPath, sizeof(newLayerPath));
         ImGui::SameLine();
         if (ImGui::Button("Add")) {

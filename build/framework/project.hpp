@@ -94,13 +94,9 @@ public:
         return reachable_from(*default_);
     }
 
-    auto default_target() const -> Target* {
-        return default_;
-    }
+    auto default_target() const -> Target* { return default_; }
 
-    auto roots() const -> const std::vector<Target*>& {
-        return roots_;
-    }
+    auto roots() const -> const std::vector<Target*>& { return roots_; }
 
     auto platforms() const -> std::vector<Platform*> {
         std::vector<Platform*> out;

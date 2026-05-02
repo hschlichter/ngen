@@ -181,10 +181,8 @@ void drawResourceDetail(const FrameGraphDebugSnapshot& snap, uint32_t resIdx, st
 
 } // namespace
 
-void drawFrameGraphWindow(bool& show,
-                          const std::optional<FrameGraphDebugSnapshot>& snap,
-                          std::optional<uint32_t>& selPass,
-                          std::optional<uint32_t>& selResource) {
+void drawFrameGraphWindow(
+    bool& show, const std::optional<FrameGraphDebugSnapshot>& snap, std::optional<uint32_t>& selPass, std::optional<uint32_t>& selResource) {
     if (!show) {
         return;
     }
@@ -213,12 +211,13 @@ void drawFrameGraphWindow(bool& show,
             previewCount++;
         }
     }
-    ImGui::Text("Frame #%llu — %zu passes (%u culled), %zu resources, %u previews",
-                (unsigned long long) s.frameIndex,
-                s.passes.size(),
-                culledCount,
-                s.resources.size(),
-                previewCount);
+    ImGui::Text(
+        "Frame #%llu — %zu passes (%u culled), %zu resources, %u previews",
+        (unsigned long long) s.frameIndex,
+        s.passes.size(),
+        culledCount,
+        s.resources.size(),
+        previewCount);
     ImGui::Separator();
 
     auto drawDetailPanes = [&]() {

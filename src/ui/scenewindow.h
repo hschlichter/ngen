@@ -23,10 +23,11 @@ struct SceneWindowState {
     AssetBrowserState referenceBrowser;
 };
 
-void drawSceneWindow(bool& show,
-                     bool editingBlocked,
-                     USDScene& usdScene,
-                     const RenderWorld& renderWorld,
-                     PrimHandle& selectedPrim,
-                     SceneWindowState& state,
-                     std::vector<SceneEditCommand>& pendingEdits);
+void drawSceneWindow(
+    bool& show,
+    bool editingBlocked,
+    USDScene& usdScene,
+    const RenderWorld& renderWorld,
+    PrimHandle& selectedPrim,
+    SceneWindowState& state,
+    std::vector<SceneEditCommand>& pendingEdits);

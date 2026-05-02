@@ -78,14 +78,15 @@ static void selectableText(const char* fmt, ...) {
     ImGui::PopStyleColor();
 }
 
-void drawPropertiesWindow(bool& show,
-                          bool editingBlocked,
-                          USDScene& usdScene,
-                          PrimHandle selectedPrim,
-                          const SceneQuerySystem& sceneQuery,
-                          const MaterialLibrary& matLib,
-                          std::vector<SceneEditCommand>& pendingEdits,
-                          PropertiesWindowState& state) {
+void drawPropertiesWindow(
+    bool& show,
+    bool editingBlocked,
+    USDScene& usdScene,
+    PrimHandle selectedPrim,
+    const SceneQuerySystem& sceneQuery,
+    const MaterialLibrary& matLib,
+    std::vector<SceneEditCommand>& pendingEdits,
+    PropertiesWindowState& state) {
     if (!show) {
         return;
     }
@@ -166,10 +167,11 @@ void drawPropertiesWindow(bool& show,
                 // Preview while the user is dragging the slider; commit one
                 // Authoring edit on release. Same pattern as the translate gizmo.
                 if (changed) {
-                    pendingEdits.push_back({.type = SceneEditCommand::Type::SetTransform,
-                                            .prim = selectedPrim,
-                                            .transform = local,
-                                            .purpose = SceneEditRequestContext::Purpose::Preview});
+                    pendingEdits.push_back(
+                        {.type = SceneEditCommand::Type::SetTransform,
+                         .prim = selectedPrim,
+                         .transform = local,
+                         .purpose = SceneEditRequestContext::Purpose::Preview});
                 }
                 if (committed) {
                     pendingEdits.push_back(

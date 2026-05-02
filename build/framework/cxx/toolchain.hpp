@@ -27,21 +27,13 @@ public:
         return *this;
     }
 
-    auto compiler() const -> const std::string& {
-        return compiler_;
-    }
+    auto compiler() const -> const std::string& { return compiler_; }
 
-    auto archiver() const -> const std::string& {
-        return archiver_;
-    }
+    auto archiver() const -> const std::string& { return archiver_; }
 
-    auto linker() const -> const std::string& {
-        return linker_;
-    }
+    auto linker() const -> const std::string& { return linker_; }
 
-    auto default_std() const -> const std::string& {
-        return default_std_;
-    }
+    auto default_std() const -> const std::string& { return default_std_; }
 
 private:
     std::string compiler_;

@@ -77,19 +77,20 @@ auto LightingPass::destroy(RhiDevice* dev) -> void {
     dev->destroyShaderModule(fragShader);
 }
 
-auto LightingPass::addPass(FrameGraph& fg,
-                           const GeometryPassData& geomData,
-                           FgTextureHandle depthHandle,
-                           FgTextureHandle shadowHandle,
-                           RhiExtent2D extent,
-                           uint32_t imageIndex,
-                           RhiSampler* sampler,
-                           const LightingInputs& lightInputs,
-                           GBufferView viewMode,
-                           bool showOverlay,
-                           bool showShadowOverlay,
-                           const glm::mat4& invViewProj,
-                           const glm::mat4& lightViewProj) -> const LightingPassData& {
+auto LightingPass::addPass(
+    FrameGraph& fg,
+    const GeometryPassData& geomData,
+    FgTextureHandle depthHandle,
+    FgTextureHandle shadowHandle,
+    RhiExtent2D extent,
+    uint32_t imageIndex,
+    RhiSampler* sampler,
+    const LightingInputs& lightInputs,
+    GBufferView viewMode,
+    bool showOverlay,
+    bool showShadowOverlay,
+    const glm::mat4& invViewProj,
+    const glm::mat4& lightViewProj) -> const LightingPassData& {
     FgTextureDesc sceneColorDesc = {
         .width = extent.width,
         .height = extent.height,
@@ -107,8 +108,8 @@ auto LightingPass::addPass(FrameGraph& fg,
             data.sceneColor = builder.write(builder.createTexture("sceneColor", sceneColorDesc), FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);
         },
-        [this, imageIndex, extent, sampler, lightInputs, viewMode, showOverlay, showShadowOverlay, invViewProj, lightViewProj](FrameGraphContext& ctx,
-                                                                                                                               const LightingPassData& data) {
+        [this, imageIndex, extent, sampler, lightInputs, viewMode, showOverlay, showShadowOverlay, invViewProj, lightViewProj](
+            FrameGraphContext& ctx, const LightingPassData& data) {
             auto* cmd = ctx.cmd();
 
             LightingUBO lightUbo = {

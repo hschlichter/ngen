@@ -429,9 +429,10 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     // glm::lookAt is degenerate when the light direction is parallel to the up vector — the
     // cross product to compute "right" becomes zero. That's common for a sun shining straight
     // down; fall back to a perpendicular axis in that case.
-    auto shadowUp = std::abs(glm::dot(lighting.direction, snapshot.worldUp)) > 0.99f
-                        ? glm::normalize(glm::cross(lighting.direction, glm::vec3(1.0f, 0.0f, 0.0f)))
-                        : snapshot.worldUp;
+    auto shadowUp =
+        std::abs(glm::dot(lighting.direction, snapshot.worldUp)) > 0.99f
+            ? glm::normalize(glm::cross(lighting.direction, glm::vec3(1.0f, 0.0f, 0.0f)))
+            : snapshot.worldUp;
     auto lightView = glm::lookAt(lightPos, sceneCenter, shadowUp);
     auto lightProj = glm::ortho(-shadowHalf, shadowHalf, -shadowHalf, shadowHalf, 0.1f, 2.0f * lightDistance);
     auto lightViewProj = lightProj * lightView;
@@ -442,19 +443,20 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
 
     const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, imageIdx, instanceCount, gpuInstances, meshCache, geometryDescriptorSets);
 
-    const auto& lightData = lightingPass.addPass(frameGraph,
-                                                 geomData,
-                                                 depthHandle,
-                                                 shadowData.shadowMap,
-                                                 ext,
-                                                 imageIdx,
-                                                 textureSampler,
-                                                 lighting,
-                                                 snapshot.gbufferViewMode,
-                                                 snapshot.showBufferOverlay,
-                                                 snapshot.showShadowOverlay,
-                                                 invViewProj,
-                                                 lightViewProj);
+    const auto& lightData = lightingPass.addPass(
+        frameGraph,
+        geomData,
+        depthHandle,
+        shadowData.shadowMap,
+        ext,
+        imageIdx,
+        textureSampler,
+        lighting,
+        snapshot.gbufferViewMode,
+        snapshot.showBufferOverlay,
+        snapshot.showShadowOverlay,
+        invViewProj,
+        lightViewProj);
 
     // AA sits between the scene render and the overlays, so debug lines, gizmos and UI
     // are drawn on top of the anti-aliased image instead of being smeared by it.

@@ -102,66 +102,67 @@ auto SceneUpdater::update(
         auto edits = std::move(pendingEdits);
         pendingEdits.clear();
 
-        sceneUpdateFence = JobSystem::submit([&usdScene,
-                                              &usdExtractor,
-                                              &pendingRenderWorld = pendingRenderWorld,
-                                              &pendingMeshLib = pendingMeshLib,
-                                              &pendingMatLib = pendingMatLib,
-                                              &pendingSceneQuery = pendingSceneQuery,
-                                              edits = std::move(edits)] {
-            for (const auto& cmd : edits) {
-                switch (cmd.type) {
-                    case SceneEditCommand::Type::MuteLayer:
-                        usdScene.setLayerMuted(cmd.layer, cmd.boolValue);
-                        break;
-                    case SceneEditCommand::Type::SetTransform:
-                        usdScene.setTransform(cmd.prim, cmd.transform);
-                        break;
-                    case SceneEditCommand::Type::SetVisibility:
-                        usdScene.setVisibility(cmd.prim, cmd.boolValue);
-                        break;
-                    case SceneEditCommand::Type::AddSubLayer:
-                        usdScene.addSubLayer(cmd.stringValue.c_str());
-                        break;
-                    case SceneEditCommand::Type::ClearSession:
-                        usdScene.clearSessionLayer();
-                        break;
-                    case SceneEditCommand::Type::CreatePrim:
-                        usdScene.createPrim(cmd.parentPath.c_str(), cmd.primName.c_str(), cmd.typeName.c_str(), {.purpose = cmd.purpose});
-                        break;
-                    case SceneEditCommand::Type::CreateReferencePrim:
-                        usdScene.createReferencePrim(cmd.parentPath.c_str(), cmd.primName.c_str(), cmd.referenceAsset.c_str(), {.purpose = cmd.purpose});
-                        break;
-                    case SceneEditCommand::Type::SetDisplayColor:
-                        usdScene.setDisplayColor(cmd.prim, cmd.colorValue, {.purpose = cmd.purpose});
-                        break;
-                    case SceneEditCommand::Type::RemovePrim: {
-                        // Undo-replay of a create edit arrives with `prim` unset — look it up
-                        // by path. User-initiated deletes arrive with a live handle.
-                        auto h = cmd.prim;
-                        if (!h && !cmd.parentPath.empty() && !cmd.primName.empty()) {
-                            auto fullPath = cmd.parentPath + "/" + cmd.primName;
-                            h = usdScene.findPrim(fullPath.c_str());
+        sceneUpdateFence = JobSystem::submit(
+            [&usdScene,
+             &usdExtractor,
+             &pendingRenderWorld = pendingRenderWorld,
+             &pendingMeshLib = pendingMeshLib,
+             &pendingMatLib = pendingMatLib,
+             &pendingSceneQuery = pendingSceneQuery,
+             edits = std::move(edits)] {
+                for (const auto& cmd : edits) {
+                    switch (cmd.type) {
+                        case SceneEditCommand::Type::MuteLayer:
+                            usdScene.setLayerMuted(cmd.layer, cmd.boolValue);
+                            break;
+                        case SceneEditCommand::Type::SetTransform:
+                            usdScene.setTransform(cmd.prim, cmd.transform);
+                            break;
+                        case SceneEditCommand::Type::SetVisibility:
+                            usdScene.setVisibility(cmd.prim, cmd.boolValue);
+                            break;
+                        case SceneEditCommand::Type::AddSubLayer:
+                            usdScene.addSubLayer(cmd.stringValue.c_str());
+                            break;
+                        case SceneEditCommand::Type::ClearSession:
+                            usdScene.clearSessionLayer();
+                            break;
+                        case SceneEditCommand::Type::CreatePrim:
+                            usdScene.createPrim(cmd.parentPath.c_str(), cmd.primName.c_str(), cmd.typeName.c_str(), {.purpose = cmd.purpose});
+                            break;
+                        case SceneEditCommand::Type::CreateReferencePrim:
+                            usdScene.createReferencePrim(cmd.parentPath.c_str(), cmd.primName.c_str(), cmd.referenceAsset.c_str(), {.purpose = cmd.purpose});
+                            break;
+                        case SceneEditCommand::Type::SetDisplayColor:
+                            usdScene.setDisplayColor(cmd.prim, cmd.colorValue, {.purpose = cmd.purpose});
+                            break;
+                        case SceneEditCommand::Type::RemovePrim: {
+                            // Undo-replay of a create edit arrives with `prim` unset — look it up
+                            // by path. User-initiated deletes arrive with a live handle.
+                            auto h = cmd.prim;
+                            if (!h && !cmd.parentPath.empty() && !cmd.primName.empty()) {
+                                auto fullPath = cmd.parentPath + "/" + cmd.primName;
+                                h = usdScene.findPrim(fullPath.c_str());
+                            }
+                            if (h) {
+                                usdScene.removePrim(h, {.purpose = cmd.purpose});
+                            }
+                            break;
                         }
-                        if (h) {
-                            usdScene.removePrim(h, {.purpose = cmd.purpose});
-                        }
-                        break;
                     }
                 }
-            }
 
-            usdScene.beginFrame();
-            usdScene.processChanges();
-            usdScene.endFrame();
+                usdScene.beginFrame();
+                usdScene.processChanges();
+                usdScene.endFrame();
 
-            const auto& dirty = usdScene.dirtySet();
-            if (!dirty.primsResynced.empty()) {
-                usdScene.updateAssetBindings(pendingMeshLib, pendingMatLib);
-            }
-            usdExtractor.extract(usdScene, pendingMeshLib, pendingRenderWorld);
-            pendingSceneQuery.rebuild(usdScene, pendingMeshLib);
-        });
+                const auto& dirty = usdScene.dirtySet();
+                if (!dirty.primsResynced.empty()) {
+                    usdScene.updateAssetBindings(pendingMeshLib, pendingMatLib);
+                }
+                usdExtractor.extract(usdScene, pendingMeshLib, pendingRenderWorld);
+                pendingSceneQuery.rebuild(usdScene, pendingMeshLib);
+            });
     }
 
     // Phase 3: Drain USD notices when nothing is queued/in-flight. Most notices

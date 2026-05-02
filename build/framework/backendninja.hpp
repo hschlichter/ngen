@@ -92,10 +92,8 @@ inline auto collect_includes(cxx::Target& target, const BuildVariant& variant) -
     return out;
 }
 
-inline auto substitute(const std::vector<std::string>& argv_template,
-                       const std::vector<Path>& inputs,
-                       const std::vector<Path>& outputs,
-                       const Path& out_dir) -> Command {
+inline auto
+substitute(const std::vector<std::string>& argv_template, const std::vector<Path>& inputs, const std::vector<Path>& outputs, const Path& out_dir) -> Command {
     Command cmd;
     for (const auto& token : argv_template) {
         if (token == "$in") {

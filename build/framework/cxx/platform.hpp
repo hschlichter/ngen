@@ -11,13 +11,9 @@ namespace build::cxx {
 
 class Platform {
 public:
-    auto toolchain() -> Toolchain& {
-        return toolchain_;
-    }
+    auto toolchain() -> Toolchain& { return toolchain_; }
 
-    auto toolchain() const -> const Toolchain& {
-        return toolchain_;
-    }
+    auto toolchain() const -> const Toolchain& { return toolchain_; }
 
     auto define(std::string value) -> Platform& {
         defines_.push_back(std::move(value));
@@ -39,21 +35,13 @@ public:
         return *this;
     }
 
-    auto defines() const -> const std::vector<std::string>& {
-        return defines_;
-    }
+    auto defines() const -> const std::vector<std::string>& { return defines_; }
 
-    auto compile_flags() const -> const std::vector<std::string>& {
-        return compile_flags_;
-    }
+    auto compile_flags() const -> const std::vector<std::string>& { return compile_flags_; }
 
-    auto link_flags() const -> const std::vector<std::string>& {
-        return link_flags_;
-    }
+    auto link_flags() const -> const std::vector<std::string>& { return link_flags_; }
 
-    auto system_libs() const -> const std::vector<std::string>& {
-        return system_libs_;
-    }
+    auto system_libs() const -> const std::vector<std::string>& { return system_libs_; }
 
 private:
     Toolchain toolchain_;

@@ -27,15 +27,16 @@ auto EditorUI::togglePanels() -> void {
     showToolsWindow = target;
 }
 
-auto EditorUI::draw(SDL_Window* window,
-                    USDScene& usdScene,
-                    SceneUpdater& sceneUpdater,
-                    RenderWorld& renderWorld,
-                    PrimHandle& selectedPrim,
-                    const SceneQuerySystem& sceneQuery,
-                    const MaterialLibrary& matLib,
-                    Camera& camera,
-                    std::optional<FrameGraphDebugSnapshot> freshFrameGraphSnap) -> void {
+auto EditorUI::draw(
+    SDL_Window* window,
+    USDScene& usdScene,
+    SceneUpdater& sceneUpdater,
+    RenderWorld& renderWorld,
+    PrimHandle& selectedPrim,
+    const SceneQuerySystem& sceneQuery,
+    const MaterialLibrary& matLib,
+    Camera& camera,
+    std::optional<FrameGraphDebugSnapshot> freshFrameGraphSnap) -> void {
     if (freshFrameGraphSnap.has_value()) {
         fgLastSnapshot = std::move(freshFrameGraphSnap);
     }
@@ -78,15 +79,16 @@ auto EditorUI::draw(SDL_Window* window,
     drawAssetBrowserWindow(showAssetBrowserWindow, usdScene, assetBrowser, sceneUpdater.edits());
 }
 
-auto EditorUI::openScene(const char* path,
-                         USDScene& usdScene,
-                         USDRenderExtractor& usdExtractor,
-                         MeshLibrary& meshLib,
-                         MaterialLibrary& matLib,
-                         RenderWorld& renderWorld,
-                         SceneQuerySystem& sceneQuery,
-                         SceneUpdater& sceneUpdater,
-                         PrimHandle& selectedPrim) -> bool {
+auto EditorUI::openScene(
+    const char* path,
+    USDScene& usdScene,
+    USDRenderExtractor& usdExtractor,
+    MeshLibrary& meshLib,
+    MaterialLibrary& matLib,
+    RenderWorld& renderWorld,
+    SceneQuerySystem& sceneQuery,
+    SceneUpdater& sceneUpdater,
+    PrimHandle& selectedPrim) -> bool {
     sceneUpdater.waitIfBlocked();
     sceneUpdater.edits().clear();
     sceneUpdater.undoStack().clear();
@@ -116,14 +118,15 @@ auto EditorUI::openScene(const char* path,
     return true;
 }
 
-auto EditorUI::newScene(USDScene& usdScene,
-                        USDRenderExtractor& usdExtractor,
-                        MeshLibrary& meshLib,
-                        MaterialLibrary& matLib,
-                        RenderWorld& renderWorld,
-                        SceneQuerySystem& sceneQuery,
-                        SceneUpdater& sceneUpdater,
-                        PrimHandle& selectedPrim) -> bool {
+auto EditorUI::newScene(
+    USDScene& usdScene,
+    USDRenderExtractor& usdExtractor,
+    MeshLibrary& meshLib,
+    MaterialLibrary& matLib,
+    RenderWorld& renderWorld,
+    SceneQuerySystem& sceneQuery,
+    SceneUpdater& sceneUpdater,
+    PrimHandle& selectedPrim) -> bool {
     sceneUpdater.waitIfBlocked();
     sceneUpdater.edits().clear();
     sceneUpdater.undoStack().clear();
@@ -151,14 +154,15 @@ auto EditorUI::newScene(USDScene& usdScene,
     return true;
 }
 
-auto EditorUI::drawDebug(DebugDraw& debugDraw,
-                         const RenderWorld& renderWorld,
-                         PrimHandle selectedPrim,
-                         const SceneQuerySystem& sceneQuery,
-                         const SceneUpdater& sceneUpdater,
-                         USDScene& usdScene,
-                         glm::vec3 cameraPos,
-                         glm::vec3 worldUp) -> void {
+auto EditorUI::drawDebug(
+    DebugDraw& debugDraw,
+    const RenderWorld& renderWorld,
+    PrimHandle selectedPrim,
+    const SceneQuerySystem& sceneQuery,
+    const SceneUpdater& sceneUpdater,
+    USDScene& usdScene,
+    glm::vec3 cameraPos,
+    glm::vec3 worldUp) -> void {
     debugDraw.newFrame();
     if (showGridFlag) {
         debugDraw.grid(cameraPos, worldUp, 1.0f, 50, {0.25f, 0.25f, 0.25f, 1.0f});

@@ -53,19 +53,20 @@ public:
     auto init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent, RhiFormat colorFormat) -> bool;
     auto destroy(RhiDevice* device) -> void;
 
-    auto addPass(FrameGraph& fg,
-                 const GeometryPassData& geomData,
-                 FgTextureHandle depthHandle,
-                 FgTextureHandle shadowHandle,
-                 RhiExtent2D extent,
-                 uint32_t imageIndex,
-                 RhiSampler* sampler,
-                 const LightingInputs& lightInputs,
-                 GBufferView viewMode,
-                 bool showOverlay,
-                 bool showShadowOverlay,
-                 const glm::mat4& invViewProj,
-                 const glm::mat4& lightViewProj) -> const LightingPassData&;
+    auto addPass(
+        FrameGraph& fg,
+        const GeometryPassData& geomData,
+        FgTextureHandle depthHandle,
+        FgTextureHandle shadowHandle,
+        RhiExtent2D extent,
+        uint32_t imageIndex,
+        RhiSampler* sampler,
+        const LightingInputs& lightInputs,
+        GBufferView viewMode,
+        bool showOverlay,
+        bool showShadowOverlay,
+        const glm::mat4& invViewProj,
+        const glm::mat4& lightViewProj) -> const LightingPassData&;
 
 private:
     RhiDevice* device = nullptr;

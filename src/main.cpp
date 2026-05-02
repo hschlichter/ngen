@@ -386,10 +386,11 @@ auto main(int argc, char* argv[]) -> int {
                     newLocal = scaleGizmo.dragUpdate(ev.motion.x, ev.motion.y, winExtent, cam.viewMatrix(), proj);
                 }
                 if (newLocal) {
-                    sceneUpdater.addEdit({.type = SceneEditCommand::Type::SetTransform,
-                                          .prim = selectedPrim,
-                                          .transform = *newLocal,
-                                          .purpose = SceneEditRequestContext::Purpose::Preview});
+                    sceneUpdater.addEdit(
+                        {.type = SceneEditCommand::Type::SetTransform,
+                         .prim = selectedPrim,
+                         .transform = *newLocal,
+                         .purpose = SceneEditRequestContext::Purpose::Preview});
                 }
                 continue;
             }
