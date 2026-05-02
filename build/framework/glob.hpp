@@ -11,7 +11,6 @@
 #include <fstream>
 #include <initializer_list>
 #include <ranges>
-#include <regex>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -67,35 +66,68 @@ struct GlobSpec {
 
 namespace detail {
 
+// Recursive glob matcher. Supports:
+//   *    — any sequence of non-'/' chars (single path segment)
+//   **   — any sequence including '/' (multiple path segments)
+//   **/  — zero or more path segments followed by '/'
+//   ?    — any single non-'/' char
+// All other characters match literally. No exceptions; std::regex is avoided
+// so the matcher is safe to call from noexcept paths.
+inline auto glob_match_view(std::string_view pattern, std::string_view text) -> bool {
+    if (pattern.size() >= 3 && pattern.substr(0, 3) == "**/") {
+        auto rest = pattern.substr(3);
+        if (glob_match_view(rest, text)) {
+            return true;
+        }
+        for (size_t i = 0; i < text.size(); ++i) {
+            if (text[i] == '/' && glob_match_view(rest, text.substr(i + 1))) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (pattern.size() >= 2 && pattern.substr(0, 2) == "**") {
+        auto rest = pattern.substr(2);
+        for (size_t i = 0; i <= text.size(); ++i) {
+            if (glob_match_view(rest, text.substr(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (!pattern.empty() && pattern[0] == '*') {
+        auto rest = pattern.substr(1);
+        size_t slash = text.find('/');
+        size_t limit = (slash == std::string_view::npos) ? text.size() : slash;
+        for (size_t i = 0; i <= limit; ++i) {
+            if (glob_match_view(rest, text.substr(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (pattern.empty()) {
+        return text.empty();
+    }
+    if (text.empty()) {
+        return false;
+    }
+    if (pattern[0] == '?') {
+        if (text[0] == '/') {
+            return false;
+        }
+        return glob_match_view(pattern.substr(1), text.substr(1));
+    }
+    if (pattern[0] != text[0]) {
+        return false;
+    }
+    return glob_match_view(pattern.substr(1), text.substr(1));
+}
+
 inline auto glob_match(std::string pattern, std::string text) -> bool {
     std::ranges::replace(pattern, '\\', '/');
     std::ranges::replace(text, '\\', '/');
-    std::string re = "^";
-    for (size_t i = 0; i < pattern.size(); ++i) {
-        char ch = pattern[i];
-        if (ch == '*') {
-            if (i + 1 < pattern.size() && pattern[i + 1] == '*') {
-                if (i + 2 < pattern.size() && pattern[i + 2] == '/') {
-                    re += "(?:.*/)?";
-                    i += 2;
-                } else {
-                    re += ".*";
-                    ++i;
-                }
-            } else {
-                re += "[^/]*";
-            }
-        } else if (ch == '?') {
-            re += "[^/]";
-        } else {
-            if (std::string_view(R"(\.^$|()[]{}+)").find(ch) != std::string_view::npos) {
-                re += '\\';
-            }
-            re += ch;
-        }
-    }
-    re += "$";
-    return std::regex_match(text, std::regex(re));
+    return glob_match_view(pattern, text);
 }
 
 } // namespace detail

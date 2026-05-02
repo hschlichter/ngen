@@ -56,5 +56,6 @@ default _out/ngen-build-graph
         std::cerr << written.error().message << "\n";
         return 1;
     }
-    return std::system("ninja -f _out/ngen-build-graph.ninja") == 0 ? 0 : 1;
+    // Orchestrator stage must shell out to ninja; std::system is intentional here.
+    return std::system("ninja -f _out/ngen-build-graph.ninja") == 0 ? 0 : 1; // NOLINT(bugprone-command-processor)
 }

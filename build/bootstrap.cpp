@@ -159,15 +159,16 @@ default _out/ngen-build-pre
     if (args->verbosity >= 2) {
         prebuild_cmd += " -v";
     }
-    if (std::system(prebuild_cmd.c_str()) != 0) {
+    // Orchestrator stages must shell out to ninja; std::system is intentional here.
+    if (std::system(prebuild_cmd.c_str()) != 0) { // NOLINT(bugprone-command-processor)
         return 1;
     }
-    if (std::system("./_out/ngen-build-pre") != 0) {
+    if (std::system("./_out/ngen-build-pre") != 0) { // NOLINT(bugprone-command-processor)
         return 1;
     }
 
     auto graph_cmd = "./_out/ngen-build-graph" + forward_args(argc, argv);
-    if (std::system(graph_cmd.c_str()) != 0) {
+    if (std::system(graph_cmd.c_str()) != 0) { // NOLINT(bugprone-command-processor)
         return 1;
     }
 
@@ -176,5 +177,5 @@ default _out/ngen-build-pre
         build_cmd += " -v";
     }
     build_cmd += " " + shell_quote(ninja_target(*args));
-    return std::system(build_cmd.c_str()) == 0 ? 0 : 1;
+    return std::system(build_cmd.c_str()) == 0 ? 0 : 1; // NOLINT(bugprone-command-processor)
 }

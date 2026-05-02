@@ -29,7 +29,7 @@ auto main() -> int {
         tool("tidy")
             .global()
             .inputs(concat({
-                glob({.include = "src/**/*.cpp"}),
+                // glob({.include = "src/**/*.cpp"}),
                 glob({.include = "build/**/*.cpp"}),
             }))
             .command({"clang-tidy", "$in", "--", "-std=c++23", "-Ibuild/framework"});
@@ -215,7 +215,7 @@ auto main() -> int {
                     glob({.include = "shaders/*.vert"}),
                     glob({.include = "shaders/*.frag"}),
                 }),
-                [](const BuildVariant& variant, const Path& source) { return variant.out_dir / "shaders" / (source.filename().string() + ".spv"); });
+                [](const BuildVariant& variant, const Path& source) -> Path { return variant.out_dir / "shaders" / (source.filename().string() + ".spv"); });
 
     auto view =
         cxx::program("ngen-view")
