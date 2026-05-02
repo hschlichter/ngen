@@ -11,8 +11,6 @@
 
 using namespace build;
 
-namespace {
-
 auto main() -> int {
     auto clean = tool("clean").command({"rm", "-rf", "$out_dir"});
 
@@ -40,9 +38,9 @@ auto main() -> int {
     auto sdl3_libs = capture_tokens({"pkg-config", "--libs", "sdl3"});
 
     auto clang = cxx::toolchain()
-        .compiler("clang++")
-        .archiver("ar")
-        .default_std("c++23");
+                     .compiler("clang++")
+                     .archiver("ar")
+                     .default_std("c++23");
 
     auto linux_vulkan =
         cxx::platform("linux-vulkan")
@@ -100,9 +98,9 @@ auto main() -> int {
             });
 
     auto rhi = cxx::static_library("rhi")
-        .sources(glob({.include = "src/rhi/*.cpp"}))
-        .public_include({"src/rhi"})
-        .include({"external/imgui"});
+                   .sources(glob({.include = "src/rhi/*.cpp"}))
+                   .public_include({"src/rhi"})
+                   .include({"external/imgui"});
 
     auto rhivulkan =
         cxx::static_library("rhivulkan")
@@ -253,6 +251,7 @@ auto main() -> int {
             .link(imgui)
             .link_flags(sdl3_libs)
             .depend_on(shaders)
+            .lib_search("external/openusd_build/lib")
             .rpath((std::filesystem::current_path() / "external/openusd_build/lib").string())
             .link_flag("-lusd_usd")
             .link_flag("-lusd_usdGeom")
