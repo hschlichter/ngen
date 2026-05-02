@@ -22,13 +22,32 @@ enum class Kind {
 class Target {
 public:
     explicit Target(std::string name, Kind kind)
-        : base_(std::make_unique<build::Target>(std::move(name))), kind_(kind) {
+        : base_(std::make_shared<build::Target>(std::move(name))), kind_(kind) {
         base_->extensions().attach(*this);
     }
 
-    Target(const Target&) = delete;
     auto operator=(const Target&) -> Target& = delete;
     auto operator=(Target&&) -> Target& = delete;
+
+    Target(const Target& other)
+        : sources_data(other.sources_data),
+          includes_data(other.includes_data),
+          public_includes_data(other.public_includes_data),
+          defines_data(other.defines_data),
+          warning_suppressions_data(other.warning_suppressions_data),
+          compile_flags_data(other.compile_flags_data),
+          std_data(other.std_data),
+          linked_targets_data(other.linked_targets_data),
+          system_libs_data(other.system_libs_data),
+          link_flags_data(other.link_flags_data),
+          lib_search_dirs_data(other.lib_search_dirs_data),
+          rpaths_data(other.rpaths_data),
+          base_(other.base_),
+          kind_(other.kind_) {
+        if (base_) {
+            base_->extensions().attach(*this);
+        }
+    }
 
     Target(Target&& other) noexcept
         : sources_data(std::move(other.sources_data)),
@@ -210,7 +229,7 @@ public:
     std::vector<std::string> rpaths_data;
 
 private:
-    std::unique_ptr<build::Target> base_;
+    std::shared_ptr<build::Target> base_;
     Kind kind_;
 };
 
