@@ -5,11 +5,8 @@
 #include "target.hpp"
 
 #include <algorithm>
-#include <memory>
-#include <string>
 #include <string_view>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
 namespace build {
@@ -27,35 +24,31 @@ public:
         target(t);
     }
 
-    auto platform(std::string name) -> Platform& {
-        if (auto* existing = find_platform(name)) {
-            return *existing;
+    auto platform(Platform& p) -> void {
+        if (std::find(platforms_.begin(), platforms_.end(), &p) == platforms_.end()) {
+            platforms_.push_back(&p);
         }
-        platforms_.push_back(std::make_unique<Platform>(std::move(name)));
-        return *platforms_.back();
     }
 
-    auto config(std::string name) -> Configuration& {
-        if (auto* existing = find_config(name)) {
-            return *existing;
+    auto config(Configuration& c) -> void {
+        if (std::find(configs_.begin(), configs_.end(), &c) == configs_.end()) {
+            configs_.push_back(&c);
         }
-        configs_.push_back(std::make_unique<Configuration>(std::move(name)));
-        return *configs_.back();
     }
 
-    auto find_platform(std::string_view name) -> Platform* {
-        for (auto& p : platforms_) {
+    auto find_platform(std::string_view name) const -> Platform* {
+        for (auto* p : platforms_) {
             if (p->name() == name) {
-                return p.get();
+                return p;
             }
         }
         return nullptr;
     }
 
-    auto find_config(std::string_view name) -> Configuration* {
-        for (auto& c : configs_) {
+    auto find_config(std::string_view name) const -> Configuration* {
+        for (auto* c : configs_) {
             if (c->name() == name) {
-                return c.get();
+                return c;
             }
         }
         return nullptr;
@@ -98,23 +91,9 @@ public:
 
     auto roots() const -> const std::vector<Target*>& { return roots_; }
 
-    auto platforms() const -> std::vector<Platform*> {
-        std::vector<Platform*> out;
-        out.reserve(platforms_.size());
-        for (const auto& p : platforms_) {
-            out.push_back(p.get());
-        }
-        return out;
-    }
+    auto platforms() const -> const std::vector<Platform*>& { return platforms_; }
 
-    auto configs() const -> std::vector<Configuration*> {
-        std::vector<Configuration*> out;
-        out.reserve(configs_.size());
-        for (const auto& c : configs_) {
-            out.push_back(c.get());
-        }
-        return out;
-    }
+    auto configs() const -> const std::vector<Configuration*>& { return configs_; }
 
 private:
     static auto visit(Target* t, std::unordered_set<Target*>& seen, std::vector<Target*>& out) -> void {
@@ -137,8 +116,8 @@ private:
 
     std::vector<Target*> roots_;
     Target* default_ = nullptr;
-    std::vector<std::unique_ptr<Platform>> platforms_;
-    std::vector<std::unique_ptr<Configuration>> configs_;
+    std::vector<Platform*> platforms_;
+    std::vector<Configuration*> configs_;
 };
 
 } // namespace build

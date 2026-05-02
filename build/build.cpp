@@ -50,7 +50,10 @@ auto main() -> int {
                 "external/concurrentqueue",
             });
 
-    auto rhi = cxx::static_library("rhi").sources(glob({.include = "src/rhi/*.cpp"})).public_include({"src/rhi"}).include({"external/imgui"});
+    auto rhi = cxx::static_library("rhi")
+        .sources(glob({.include = "src/rhi/*.cpp"}))
+        .public_include({"src/rhi"})
+        .include({"external/imgui"});
 
     auto rhivulkan =
         cxx::static_library("rhivulkan")
@@ -224,40 +227,56 @@ auto main() -> int {
             .depend_on(shaders);
     add_usd_linkage(view);
 
-    Project p;
+    auto linux_vulkan =
+        cxx::platform("linux-vulkan")
+            .os("linux")
+            .graphics_api("vulkan")
+            .exe_suffix("")
+            .compile_flag("-fPIC")
+            .compile_flag("-Wall")
+            .define("NGEN_PLATFORM_LINUX")
+            .define("NGEN_GFX_VULKAN")
+            .define("GLM_FORCE_RADIANS")
+            .define("GLM_FORCE_DEPTH_ZERO_TO_ONE")
+            .system_lib("vulkan")
+            .system_lib("m");
 
-    auto& linux_vulkan = p.platform("linux-vulkan").os("linux").graphics_api("vulkan").exe_suffix("");
-
-    cxx::platform(linux_vulkan)
-        .compile_flag("-fPIC")
-        .compile_flag("-Wall")
-        .define("NGEN_PLATFORM_LINUX")
-        .define("NGEN_GFX_VULKAN")
-        .define("GLM_FORCE_RADIANS")
-        .define("GLM_FORCE_DEPTH_ZERO_TO_ONE")
-        .system_lib("vulkan")
-        .system_lib("m")
-        .toolchain()
-        .compiler("clang++")
-        .archiver("ar")
-        .default_std("c++23");
+    linux_vulkan.toolchain().compiler("clang++").archiver("ar").default_std("c++23");
 
     for (const auto& flag : sdl3_cflags) {
-        cxx::platform(linux_vulkan).compile_flag(flag);
+        linux_vulkan.compile_flag(flag);
     }
 
-    cxx::configuration(p.config("debug").out_dir("_out")).compile_flag("-O0").compile_flag("-g").define("DEBUG=1");
+    auto debug =
+        cxx::configuration("debug")
+            .out_dir("_out")
+            .compile_flag("-O0")
+            .compile_flag("-g")
+            .define("DEBUG=1");
 
-    cxx::configuration(p.config("release").out_dir("_out")).compile_flag("-O2").compile_flag("-g").define("NDEBUG");
+    auto release =
+        cxx::configuration("release")
+            .out_dir("_out")
+            .compile_flag("-O2")
+            .compile_flag("-g")
+            .define("NDEBUG");
 
-    cxx::configuration(p.config("gamerelease").out_dir("_out"))
-        .compile_flag("-O3")
-        .compile_flag("-fvisibility=hidden")
-        .link_flag("-flto")
-        .link_flag("-Wl,-s")
-        .link_flag("-Wl,--gc-sections")
-        .define("NDEBUG")
-        .define("SHIPPING=1");
+    auto gamerelease =
+        cxx::configuration("gamerelease")
+            .out_dir("_out")
+            .compile_flag("-O3")
+            .compile_flag("-fvisibility=hidden")
+            .link_flag("-flto")
+            .link_flag("-Wl,-s")
+            .link_flag("-Wl,--gc-sections")
+            .define("NDEBUG")
+            .define("SHIPPING=1");
+
+    Project p;
+    p.platform(linux_vulkan);
+    p.config(debug);
+    p.config(release);
+    p.config(gamerelease);
 
     p.target(view);
     p.target(clean);
