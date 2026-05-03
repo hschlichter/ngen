@@ -42,7 +42,22 @@ break if wrapped.
 - Cross-cutting files (`main.cpp`, `types.h`, `camera.*`) live directly in `src/`.
 
 ## Build
-Use 'make' to build.
-Use 'bear -- make' to generate compile_commands.json.
-Use 'make format' for formatting the code.
+
+The engine uses its own self-hosted build system (`ngen-build`). Bootstrap once with
+`ninja -f build/bootstrap.ninja` (produces `_out/ngen-build`), then drive everything
+through that binary:
+
+- `./_out/ngen-build` — debug build (default config)
+- `./_out/ngen-build --config release` — release build
+- `./_out/ngen-build --config gamerelease` — shipping build
+- `./_out/ngen-build clean` — remove build outputs
+- `./_out/ngen-build format` — clang-format the tree
+- `./_out/ngen-build tidy` — clang-tidy on `build/*.cpp`
+
+`compile_commands.json` is regenerated at `_out/compile_commands.json` on every
+build — no `bear` wrapper needed. The engine binary lands at
+`_out/linux-vulkan/debug/ngen-view` (or the equivalent under the active config).
+
+See `build_system.md` for the framework internals (extension model, Ninja backend,
+adding platforms/configurations).
 

@@ -18,6 +18,14 @@ static auto labelFor(const SceneEditCommand& cmd) -> const char* {
             return "AddLayer";
         case SceneEditCommand::Type::ClearSession:
             return "ClearSession";
+        case SceneEditCommand::Type::CreatePrim:
+            return "Create";
+        case SceneEditCommand::Type::CreateReferencePrim:
+            return "Reference";
+        case SceneEditCommand::Type::RemovePrim:
+            return "Remove";
+        case SceneEditCommand::Type::SetDisplayColor:
+            return "Color";
     }
     return "?";
 }
