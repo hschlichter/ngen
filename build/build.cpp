@@ -38,7 +38,7 @@ auto main(int argc, char** argv) -> int {
         tool("tidy")
             .global()
             .inputs(concat({
-                // glob({.include = "src/**/*.cpp"}),
+                glob({.include = "src/**/*.cpp"}),
                 glob({.include = "build/**/*.cpp"}),
             }))
             .command({"clang-tidy", "$in", "--", "-std=c++23", "-Ibuild/framework"});
