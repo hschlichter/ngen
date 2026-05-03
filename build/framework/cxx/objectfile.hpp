@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -49,8 +50,38 @@ public:
     auto parent() const -> const Target* { return parent_base_->extensions().get<Target>(); }
     auto parent() -> Target* { return parent_base_->extensions().get<Target>(); }
 
+    auto define(std::string macro) -> ObjectFile& {
+        defines_data.push_back(std::move(macro));
+        return *this;
+    }
+
+    auto defines(std::vector<std::string> values) -> ObjectFile& {
+        defines_data.insert(defines_data.end(), values.begin(), values.end());
+        return *this;
+    }
+
+    auto warning_off(std::string_view name) -> ObjectFile& {
+        warning_suppressions_data.emplace_back(name);
+        return *this;
+    }
+
+    auto compile_flag(std::string token) -> ObjectFile& {
+        compile_flags_data.push_back(std::move(token));
+        return *this;
+    }
+
+    auto compile_flags(std::vector<std::string> values) -> ObjectFile& {
+        compile_flags_data.insert(compile_flags_data.end(), values.begin(), values.end());
+        return *this;
+    }
+
+    auto std(std::string_view value) -> ObjectFile& {
+        std_data = std::string(value);
+        return *this;
+    }
+
     // Per-TU overrides — empty by default. Merged on top of parent values
-    // at emit time. Fluent surface for these is a phase 4 concern.
+    // at emit time (platform → config → parent → ObjectFile).
     std::vector<std::string> defines_data;
     std::vector<std::string> warning_suppressions_data;
     std::vector<std::string> compile_flags_data;

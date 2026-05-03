@@ -4,7 +4,9 @@
 #include "../target.hpp"
 #include "objectfile.hpp"
 
+#include <cstdlib>
 #include <initializer_list>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -94,6 +96,19 @@ public:
             objects_data.push_back(std::make_shared<ObjectFile>(base_, path));
         }
         return *this;
+    }
+
+    template <typename Fn>
+    auto for_source(const Path& path, Fn&& fn) -> Target& {
+        auto needle = path.string();
+        for (auto& obj : objects_data) {
+            if (obj->source().string() == needle) {
+                std::forward<Fn>(fn)(*obj);
+                return *this;
+            }
+        }
+        std::cerr << "for_source: no source '" << needle << "' in target '" << base_->name() << "'\n";
+        std::abort();
     }
 
     auto std(std::string_view v) -> Target& {

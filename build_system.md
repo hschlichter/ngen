@@ -32,6 +32,7 @@ build/
     cxx/
       backendninja.hpp         # CompileInputs/LinkInputs + compile_/archive_/link_command
       configuration.hpp        # build::cxx::Configuration — fluent wrapper, attached as extension on build::Configuration
+      objectfile.hpp           # build::cxx::ObjectFile — per-translation-unit node, attached as extension on build::Target
       platform.hpp             # build::cxx::Platform — fluent wrapper, attached as extension on build::Platform (composes Toolchain)
       target.hpp               # build::cxx::Target — fluent wrapper, attached as extension on build::Target; OptLevel + Kind enums
       toolchain.hpp            # build::cxx::Toolchain — tools only (compiler / archiver / linker / default_std)
@@ -70,8 +71,13 @@ as the cxx extension on that core type's `ExtensionMap`:
 build::cxx::Toolchain      → compiler / archiver / linker / default_std (tools only — composed inside cxx::Platform, not its own extension)
 build::cxx::Platform       → wraps build::Platform; per-platform compile_flags / link_flags / defines / system_libs + a Toolchain
 build::cxx::Configuration  → wraps build::Configuration; per-config compile_flags / link_flags / defines
-build::cxx::Target         → wraps build::Target; sources / includes / defines / std / link / etc.
+build::cxx::Target         → wraps build::Target; one node per library/program; sources / includes / defines / std / link / etc.
+build::cxx::ObjectFile     → wraps build::Target; one node per translation unit; per-TU defines / compile_flags / std / warning suppressions
 ```
+
+A library or program is `cxx::Target`; each `.cpp` it owns is a `cxx::ObjectFile` child whose base is dep-edged to the parent's base. Compile edges
+(`build .../foo.cpp.o: cxx ...`) are emitted from the ObjectFile node, archive/link edges from the parent. The framework graph is therefore one node per
+TU plus one node per library/program — sources are first-class, not an opaque list inside the parent.
 
 Adding another language is purely additive: a new `build::csharp::Platform`/`Configuration`/`Target` plus a backend dispatch branch, no edits to anything in
 `build::`.
@@ -196,7 +202,11 @@ Lookup helper: `cxx::find_configuration(const build::Configuration&) -> const Co
 
 Methods:
 
-- **Sources / std**: `sources({...})`, `std("c++20")`.
+- **Sources / std**: `sources({...})`, `std("c++20")`. Each path passed to `sources(...)` materializes a `cxx::ObjectFile` child stored in
+  `objects_data` and dep-edged to the parent's base; sources are not an opaque list. `std(...)` sets the library/program-wide default that ObjectFiles
+  inherit unless they set their own `std(...)`.
+- **Per-TU access**: `for_source(path, fn)` looks up the `ObjectFile` whose source matches `path` and runs `fn(ObjectFile&)`. A miss is a configuration
+  error and aborts with a clear message naming the missing source and the parent target.
 - **Includes**: `include(path | vec | init_list)`, `public_include(...)` (propagates to dependents), `warning_off("name")`.
 - **Defines**: `define("FOO=1")`, `defines(vec)` (bulk).
 - **Compile flags**: `compile_flag(string)`, `compile_flags(vec)`. Plus typed sugar `optimize(O3)`, `debug(true)`, `pic(true)` — all desugar at method-call time
@@ -207,6 +217,47 @@ Methods:
 
 Factory functions: `cxx::static_library(name)`, `cxx::shared_library(name)`, `cxx::program(name)` — each constructs a `cxx::Target` with the appropriate
 `Kind`. The `OptLevel` and `Kind` enums live at the top of `cxx/target.hpp`.
+
+### `cxx::ObjectFile`
+
+One node per translation unit. Constructed implicitly by `cxx::Target::sources(...)` — there is no public factory and there is no fluent surface on the
+parent for "add this single source"; everything goes through `sources(...)`.
+
+Identity: the underlying `build::Target` is named `<parent-target-name>/<source-path>` (e.g. `renderer/src/renderer/renderthread.cpp`). This naming
+guarantees uniqueness even when the same source is compiled into two libraries (each gets its own ObjectFile with its own object output).
+
+Lifetime: held by `std::shared_ptr` in `cxx::Target::objects_data`. The parent owns the children; the framework's `Project` only sees the underlying
+`build::Target*` via dep edges. ObjectFile is non-copyable and non-movable — only the `shared_ptr` moves.
+
+Inheritance: ObjectFile holds a `shared_ptr<build::Target>` back to its parent's base and resolves the live `cxx::Target` extension through the base's
+`ExtensionMap` whenever needed. This keeps the back-pointer correct across the parent's copy/move into its final home.
+
+Gating: an ObjectFile is enabled exactly when its parent is. The check is performed in `emit_object_file` against the parent — ObjectFile's own base has
+no `only_on/except_on` sets.
+
+Per-TU fluent surface (mirrors a subset of `cxx::Target`):
+
+- `define(string)`, `defines(vec)`
+- `warning_off(string_view)`
+- `compile_flag(string)`, `compile_flags(vec)`
+- `std(string_view)` — overrides parent + toolchain default for this TU only
+
+Use via `for_source` on the parent:
+
+```cpp
+auto sceneusd =
+    cxx::static_library("sceneusd")
+        .sources(glob({.include = "src/scene/usd*.cpp"}))
+        .for_source("src/scene/usdscene.cpp", [](cxx::ObjectFile& obj) {
+            obj.warning_off("deprecated-declarations").std("c++20");
+        });
+```
+
+Library- and per-TU surfaces coexist. A library-wide `cxx::Target::define("FOO=1")` and a per-TU `obj.define("BAR=1")` both end up on the targeted TU's
+command line; siblings only get `FOO=1`. For `std`, the ObjectFile value wins if set, otherwise the parent's, otherwise the toolchain default.
+
+There is no `optimize/debug/pic` per-TU sugar by design — those live at platform/config level. Use `compile_flag("-O3")` directly if you need it on a
+single TU.
 
 ---
 
@@ -236,27 +287,39 @@ The backend dispatches `Tool` and `Alias` via `target->extension<Tool>()` / `tar
 `NinjaBackend::emit(project)` writes `_out/build.ninja`, all per-variant `compile_commands.json`, the merged `_out/compile_commands.json`, and creates required
 output directories.
 
-`detail::Emitter::emit_target` resolves aliases (walking `target->extension<Alias>()` chains), then dispatches:
+`detail::Emitter::emit_target` resolves aliases (walking `target->extension<Alias>()` chains), then dispatches by extension type:
 
 ```cpp
-if (auto* tool = target->extension<Tool>())          { emit_tool(*tool, ...); }
-else if (auto* cxx_t = target->extension<cxx::Target>()) { emit_cxx(*cxx_t, ...); }
+if      (auto* tool = target->extension<Tool>())              { emit_tool(*tool, ...); }
+else if (auto* obj  = target->extension<cxx::ObjectFile>())   { emit_object_file(*obj, variant); }
+else if (auto* cxx_t = target->extension<cxx::Target>())      { emit_cxx(*cxx_t, variant, order_only); }
 ```
 
-`emit_cxx_objects` reads:
+ObjectFile is checked before `cxx::Target` so a TU node never falls through to library/program emit. The dep-walk preceding dispatch filters out
+`cxx::ObjectFile` outputs from the `order_only` accumulator — those object paths flow into the parent's archive/link edge as direct inputs via
+`gather_object_outputs`, so adding them to `order_only` would just double-list them.
+
+`emit_object_file(ObjectFile&, BuildVariant&)` emits one `build .../foo.cpp.o: cxx src/.../foo.cpp` edge. It reads:
 
 - `cxx::find_platform(*variant.platform)` — required; emit error if absent or `compiler()` is empty.
 - `cxx::find_configuration(*variant.config)` — optional; if absent, no per-config flags/defines.
-- `cxx::Target` extension on the target itself.
+- `obj.parent()` — required; resolved live through the parent's `ExtensionMap`. If parent is disabled for the variant, returns `Path{}` (no edge).
+
+`gather_object_outputs(cxx::Target&, BuildVariant&)` is what `emit_cxx_library` and `emit_cxx_program` call to assemble the parent's input list — it
+looks up each child ObjectFile in the emitter's `outputs_` cache (keyed by `name|platform|config`). Children are always emitted before their parent
+because `Project::build_all()` is post-order and `emit_target` recurses into deps before emitting self.
 
 Compile-flag composition order (compiler last-wins picks innermost):
 
 1. `cxx::Platform::compile_flags()`
 2. `cxx::Configuration::compile_flags()`
-3. `cxx::Target::compile_flags_data` (raw + desugared `optimize` / `debug` / `pic`)
+3. `cxx::Target::compile_flags_data` (raw + desugared `optimize` / `debug` / `pic`) — the parent library/program
+4. `cxx::ObjectFile::compile_flags_data` — the per-TU layer
 
-Defines and link flags follow the same precedence. Includes come from `cxx::Target::includes_data` plus transitive `public_includes_data` from linked targets.
-System libs come from `cxx::Platform::system_libs()` + `cxx::Target::system_libs_data`.
+Defines follow the same four-step precedence (platform → config → parent → ObjectFile). Warning suppressions are appended in the same order. `std`
+resolves as: ObjectFile's `std_data` if set, else parent's `std_data`, else toolchain `default_std()`. Includes come from `cxx::Target::includes_data`
+plus transitive `public_includes_data` from linked targets — ObjectFile inherits the include set from its parent verbatim and does not currently extend
+it. Link flags and system libs are parent-level concerns; ObjectFile has no link-side fields.
 
 `-Wl,--start-group` / `-Wl,--end-group` wraps archive inputs at link time so over-linking still works without the user having to curate transitive link order.
 
@@ -372,6 +435,12 @@ structs, no string-keyed lookup at construction time.
   heredoc update — the depfile picks it up.
 - **Wrapper move/copy invariant.** Every cxx wrapper (and `Tool`, `Alias`) re-attaches itself to the base's `ExtensionMap` in both move and copy constructors.
   If a future field is added, both constructors must be updated. Silent footgun otherwise — the back-pointer would point at a stale or destroyed object.
+  `cxx::ObjectFile` is the exception — it lives behind `shared_ptr` from the moment `sources(...)` constructs it, never gets copied or moved by user code,
+  and is `=delete`d for both. Don't try to value-store an ObjectFile.
+- **Per-TU graph nodes.** Each `.cpp` is its own `build::Target` (with a `cxx::ObjectFile` extension) registered as a dep of its parent library/program.
+  This is the *only* place in the framework where dep edges and the user-visible "what to address" surface diverge: ObjectFile names like
+  `renderer/src/renderer/foo.cpp` are unique build edges in the graph but are not surfaced via `Project::roots()`. If anything walks
+  `Project::build_all()` looking only for "real" libraries, filter on `extension<cxx::ObjectFile>()` first.
 - **`ExtensionMap` ownership modes.** `add<T>` heap-allocates and owns; `attach<T>(ref)` is non-owning. Don't mix on the same key — `add<T>` returns existing,
   `attach` replaces. The cxx wrappers all use `attach` (they own their data themselves).
 - **No exceptions.** `ExtensionMap::get` returns nullable pointers; `glob_match` doesn't use `std::regex`. The convention is `std::expected<T, Error>` at the
