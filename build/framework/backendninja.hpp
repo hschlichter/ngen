@@ -4,6 +4,7 @@
 #include "command.hpp"
 #include "cxx/backendninja.hpp"
 #include "cxx/configuration.hpp"
+#include "cxx/objectfile.hpp"
 #include "cxx/platform.hpp"
 #include "cxx/target.hpp"
 #include "cxx/toolchain.hpp"
@@ -263,14 +264,24 @@ private:
                 visiting_.erase(key);
                 return std::unexpected(output.error());
             }
-            if (!output->empty()) {
-                order_only.push_back(*output);
+            if (output->empty()) {
+                continue;
             }
+            // ObjectFile children flow into the parent as direct inputs via
+            // gather_object_outputs; keeping them out of order_only avoids
+            // listing the same .o twice on the archive/link edge.
+            auto* resolved = resolve_alias(dep, variant);
+            if (resolved && resolved->has_extension<cxx::ObjectFile>()) {
+                continue;
+            }
+            order_only.push_back(*output);
         }
 
         std::expected<Path, Error> output = Path{};
         if (auto* tool = target->extension<Tool>()) {
             output = emit_tool(*tool, variant, order_only);
+        } else if (auto* obj = target->extension<cxx::ObjectFile>()) {
+            output = emit_object_file(*obj, variant);
         } else if (auto* cxx_t = target->extension<cxx::Target>()) {
             output = emit_cxx(*cxx_t, variant, order_only);
         }
@@ -292,11 +303,19 @@ private:
         return emit_cxx_library(target, variant, shared);
     }
 
-    auto emit_cxx_objects(cxx::Target& target, const BuildVariant& variant) -> std::expected<std::vector<Path>, Error> {
-        std::vector<Path> objects;
+    auto emit_object_file(cxx::ObjectFile& obj, const BuildVariant& variant) -> std::expected<Path, Error> {
         const auto* platform_ext = cxx::find_platform(*variant.platform);
         if (!platform_ext) {
             return std::unexpected(Error{"platform " + variant.platform->name() + " has no cxx::Platform extension"});
+        }
+        auto* parent = obj.parent();
+        if (!parent) {
+            return std::unexpected(Error{"object " + obj.owner().name() + " has no parent cxx::Target"});
+        }
+        // Object inherits its parent's gating; if the parent is disabled for
+        // this variant we emit nothing rather than producing a stray .o.
+        if (!parent->owner().enabled_for(variant.platform->name(), variant.config->name())) {
+            return Path{};
         }
         const auto* config_ext = cxx::find_configuration(*variant.config);
         const auto& tc = platform_ext->toolchain();
@@ -304,50 +323,64 @@ private:
             return std::unexpected(Error{"platform " + variant.platform->name() + " has no compiler set"});
         }
 
-        auto includes = collect_includes(target, variant);
+        auto includes = collect_includes(*parent, variant);
 
-        std::string std_value = target.std_data.empty() ? tc.default_std() : target.std_data;
+        std::string std_value = !obj.std_data.empty() ? obj.std_data : (!parent->std_data.empty() ? parent->std_data : tc.default_std());
         if (std_value.empty()) {
-            return std::unexpected(Error{"empty C++ standard for " + target.owner().name()});
+            return std::unexpected(Error{"empty C++ standard for " + obj.owner().name()});
         }
 
-        for (const auto& source : target.sources_data) {
-            auto object = object_path(variant, target.owner().name(), source);
-            ensure_dirs_.insert(object.parent_path().string());
+        auto object = object_path(variant, parent->owner().name(), obj.source());
+        ensure_dirs_.insert(object.parent_path().string());
 
-            cxx::ninja::CompileInputs in;
-            in.source = source;
-            in.object = object;
-            in.std = std_value;
+        cxx::ninja::CompileInputs in;
+        in.source = obj.source();
+        in.object = object;
+        in.std = std_value;
 
-            in.defines = platform_ext->defines();
-            if (config_ext) {
-                append_all_str(in.defines, config_ext->defines());
+        in.defines = platform_ext->defines();
+        if (config_ext) {
+            append_all_str(in.defines, config_ext->defines());
+        }
+        append_all_str(in.defines, parent->defines_data);
+        append_all_str(in.defines, obj.defines_data);
+
+        in.includes = includes;
+        in.warning_off = parent->warning_suppressions_data;
+        append_all_str(in.warning_off, obj.warning_suppressions_data);
+
+        in.compile_flags = platform_ext->compile_flags();
+        if (config_ext) {
+            append_all_str(in.compile_flags, config_ext->compile_flags());
+        }
+        append_all_str(in.compile_flags, parent->compile_flags_data);
+        append_all_str(in.compile_flags, obj.compile_flags_data);
+
+        auto command = cxx::ninja::compile_command(tc, in);
+        out_ << "build " << ninja_escape_path(object) << ": cxx " << ninja_escape_path(obj.source()) << "\n";
+        out_ << "  cmd = " << join_command(command) << "\n";
+        out_ << "  depfile = " << object.string() << ".d\n\n";
+
+        compile_commands_.push_back(compile_command_json(obj.source(), command));
+        return object;
+    }
+
+    auto gather_object_outputs(cxx::Target& target, const BuildVariant& variant) -> std::expected<std::vector<Path>, Error> {
+        std::vector<Path> objects;
+        objects.reserve(target.objects_data.size());
+        for (const auto& child : target.objects_data) {
+            auto key = child->owner().name() + "|" + variant.platform->name() + "|" + variant.config->name();
+            auto cached = outputs_.find(key);
+            if (cached == outputs_.end() || cached->second.empty()) {
+                return std::unexpected(Error{"object " + child->owner().name() + " not emitted before " + target.owner().name()});
             }
-            append_all_str(in.defines, target.defines_data);
-
-            in.includes = includes;
-            in.warning_off = target.warning_suppressions_data;
-
-            in.compile_flags = platform_ext->compile_flags();
-            if (config_ext) {
-                append_all_str(in.compile_flags, config_ext->compile_flags());
-            }
-            append_all_str(in.compile_flags, target.compile_flags_data);
-
-            auto command = cxx::ninja::compile_command(tc, in);
-            out_ << "build " << ninja_escape_path(object) << ": cxx " << ninja_escape_path(source) << "\n";
-            out_ << "  cmd = " << join_command(command) << "\n";
-            out_ << "  depfile = " << object.string() << ".d\n\n";
-
-            compile_commands_.push_back(compile_command_json(source, command));
-            objects.push_back(object);
+            objects.push_back(cached->second);
         }
         return objects;
     }
 
     auto emit_cxx_library(cxx::Target& target, const BuildVariant& variant, bool shared) -> std::expected<Path, Error> {
-        auto objects = emit_cxx_objects(target, variant);
+        auto objects = gather_object_outputs(target, variant);
         if (!objects) {
             return std::unexpected(objects.error());
         }
@@ -377,7 +410,7 @@ private:
     }
 
     auto emit_cxx_program(cxx::Target& target, const BuildVariant& variant, const std::vector<Path>& order_only) -> std::expected<Path, Error> {
-        auto objects = emit_cxx_objects(target, variant);
+        auto objects = gather_object_outputs(target, variant);
         if (!objects) {
             return std::unexpected(objects.error());
         }

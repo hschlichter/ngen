@@ -2,6 +2,7 @@
 
 #include "../path.hpp"
 #include "../target.hpp"
+#include "objectfile.hpp"
 
 #include <initializer_list>
 #include <memory>
@@ -33,7 +34,7 @@ public:
     auto operator=(Target&&) -> Target& = delete;
 
     Target(const Target& other)
-        : sources_data(other.sources_data)
+        : objects_data(other.objects_data)
         , includes_data(other.includes_data)
         , public_includes_data(other.public_includes_data)
         , defines_data(other.defines_data)
@@ -53,7 +54,7 @@ public:
     }
 
     Target(Target&& other) noexcept
-        : sources_data(std::move(other.sources_data))
+        : objects_data(std::move(other.objects_data))
         , includes_data(std::move(other.includes_data))
         , public_includes_data(std::move(other.public_includes_data))
         , defines_data(std::move(other.defines_data))
@@ -81,11 +82,17 @@ public:
     auto kind() const -> Kind { return kind_; }
 
     auto sources(std::vector<Path> v) -> Target& {
-        sources_data.insert(sources_data.end(), v.begin(), v.end());
+        objects_data.reserve(objects_data.size() + v.size());
+        for (auto& path : v) {
+            objects_data.push_back(std::make_shared<ObjectFile>(base_, std::move(path)));
+        }
         return *this;
     }
     auto sources(std::initializer_list<Path> v) -> Target& {
-        sources_data.insert(sources_data.end(), v.begin(), v.end());
+        objects_data.reserve(objects_data.size() + v.size());
+        for (const auto& path : v) {
+            objects_data.push_back(std::make_shared<ObjectFile>(base_, path));
+        }
         return *this;
     }
 
@@ -246,7 +253,7 @@ public:
 
     // Public data, exposed for backend emit.
     // Mutated through the fluent API above; collected by cxx::ninja::emit_*.
-    std::vector<Path> sources_data;
+    std::vector<std::shared_ptr<ObjectFile>> objects_data;
     std::vector<Path> includes_data;
     std::vector<Path> public_includes_data;
     std::vector<std::string> defines_data;
