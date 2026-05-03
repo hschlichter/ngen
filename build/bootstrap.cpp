@@ -59,6 +59,7 @@ struct Args {
     std::string config;
     std::string backend = "ninja";
     int verbosity = 0;
+    bool list = false;
 };
 
 auto parse(int argc, char** argv) -> std::expected<Args, Error> {
@@ -93,6 +94,8 @@ auto parse(int argc, char** argv) -> std::expected<Args, Error> {
             args.verbosity = std::max(args.verbosity, 1);
         } else if (arg == "-vv") {
             args.verbosity = std::max(args.verbosity, 2);
+        } else if (arg == "--list") {
+            args.list = true;
         } else {
             args.target = arg;
         }
@@ -170,6 +173,10 @@ default _out/ngen-build-pre
     auto graph_cmd = "./_out/ngen-build-graph" + forward_args(argc, argv);
     if (std::system(graph_cmd.c_str()) != 0) { // NOLINT(bugprone-command-processor)
         return 1;
+    }
+
+    if (args->list) {
+        return 0;
     }
 
     auto build_cmd = std::string(args->verbosity == 1 ? "TERM=dumb ninja -f _out/build.ninja" : "ninja -f _out/build.ninja");

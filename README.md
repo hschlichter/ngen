@@ -182,6 +182,7 @@ Other configs and helpers:
 ./_out/ngen-build clean                  # remove build outputs
 ./_out/ngen-build format                 # clang-format the tree
 ./_out/ngen-build tidy                   # clang-tidy build/*.cpp
+./_out/ngen-build --list                 # list top-level targets
 ```
 
 See [build_system.md](./build_system.md) for the build system internals (framework layout, extension model, Ninja backend, adding platforms/configurations).

@@ -3,15 +3,24 @@
 #include "framework/cxx/platform.hpp"
 #include "framework/cxx/target.hpp"
 #include "framework/glob.hpp"
+#include "framework/inspect.hpp"
 #include "framework/project.hpp"
 #include "framework/tool.hpp"
 
 #include <filesystem>
 #include <iostream>
+#include <string_view>
 
 using namespace build;
 
-auto main() -> int {
+auto main(int argc, char** argv) -> int {
+    bool list_only = false;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string_view{argv[i]} == "--list") {
+            list_only = true;
+        }
+    }
+
     auto clean = tool("clean").command({"rm", "-rf", "$out_dir"});
 
     auto format =
@@ -277,6 +286,12 @@ auto main() -> int {
     p.target(format);
     p.target(tidy);
     p.default_target(view);
+
+    if (list_only) {
+        std::cout << "Top-level targets:\n";
+        list_roots(p, std::cout);
+        return 0;
+    }
 
     auto emitted = NinjaBackend{}.emit(p);
     if (!emitted) {

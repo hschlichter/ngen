@@ -53,6 +53,7 @@ through that binary:
 - `./_out/ngen-build clean` — remove build outputs
 - `./_out/ngen-build format` — clang-format the tree
 - `./_out/ngen-build tidy` — clang-tidy on `build/*.cpp`
+- `./_out/ngen-build --list` — list top-level targets (program/library/tool/alias)
 
 `compile_commands.json` is regenerated at `_out/compile_commands.json` on every
 build — no `bear` wrapper needed. The engine binary lands at
