@@ -435,8 +435,13 @@ Each phase is independently demoable and reversible. Both backends coexist until
 
 ## 14. Open questions / future work
 
-- **Single-process mode.** Once stage 3 and 4 are stable, a `--in-process` flag could collapse them: graph emit → in-memory IR → execute, no file in between.
-  Saves one mmap and a process boundary on no-op rebuilds. Plumbing a shared `IR` type across the boundary is most of the work; phase 7 candidate.
+- **Removing ninja from the build-system self-bootstrap.** Tracked separately in `plan_remove_ninja_from_bootstrap.md`. Replaces `bootstrap.ninja` and the
+  prebuild stage with a three-line shell seed plus a stat-and-compile loop inside `ngen-build`. Starts after this plan's phase 5 lands.
+- **Unified runner (end state).** Tracked separately in `plan_unified_runner.md`. Replaces the stat-and-compile loop above with the runner itself, exposing
+  `ngen::run::execute()` as a library entry point so `ngen-build` can hand the runner an in-memory IR describing its own dependencies. Starts after
+  `plan_remove_ninja_from_bootstrap.md` lands.
+- **Single-process mode for the project build.** A `--in-process` flag could collapse stages 3 and 4: graph emit → in-memory IR → execute, no file in
+  between. Saves one mmap and a process boundary on no-op rebuilds. Largely subsumed by `plan_unified_runner.md` if we ever want it for the project path too.
 - **Watch mode.** Long-running `ngen-build --watch` that holds the IR + build log + recursive inotify watches in memory. Order-of-magnitude inner-loop win for
   iterative dev. Defer until the runner has shipped and we have measurements.
 - **Windows.** The `Process` abstraction is in place. `process_win.cpp` is the only file that needs to land; `posix_spawn` calls don't leak into schedulers
