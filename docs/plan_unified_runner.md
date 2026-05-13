@@ -27,11 +27,13 @@ The unified-runner shape is the right target. We arrive there in three deliberat
 ## 2. End state
 
 ```text
-bootstrap.sh
-  → _out/ngen-build              (compiled from build/bootstrap.cpp)
-  → _out/ngen-build-run          (compiled from build/run/*.cpp)            ← NEW: also built by the seed
+one-time bootstrap (documented in CLAUDE.md, two `c++` invocations run by hand on a fresh clone):
+  $ c++ -std=c++23 -O2 -o _out/ngen-build     build/bootstrap.cpp -Ibuild/framework -Ibuild/run
+  $ c++ -std=c++23 -O2 -o _out/ngen-build-run build/run/main.cpp  -Ibuild/framework -Ibuild/run
+  → produces _out/ngen-build and _out/ngen-build-run
 
-ngen-build invocation
+every subsequent invocation:
+ngen-build
   → build a small in-memory IR describing the build-system's own graph:
       • edge: compile build/build.cpp     → _out/ngen-build-graph
       • edge: compile build/run/*.cpp     → _out/ngen-build-run
@@ -41,7 +43,9 @@ ngen-build invocation
   → _out/ngen-build-run executes the project IR
 ```
 
-`bootstrap.sh` compiles two binaries: `ngen-build` and `ngen-build-run`. From that point on, everything else flows through them.
+The fresh-clone bootstrap is two documented `c++` invocations — one per binary — that contributors run by hand. From that point on, everything else flows
+through `ngen-build`. Both invocations are single-TU header-only compiles (no archives, no per-TU object files); the runner is header-only by
+`plan_custom_build_backend.md` §3, so each binary's TU instantiates the runner code it needs and linking is trivial.
 
 The runner executes two kinds of work, distinguished only by which IR was handed to it:
 
@@ -80,8 +84,8 @@ from disk, call `execute()`. Nothing else changes for the project-build path.
 `ngen-build` includes the runner's headers and calls `ngen::run::execute()` directly with an in-memory IR. No file gets written, no second process gets
 spawned. The runner is a library and a binary; this plan exposes the library face.
 
-This requires `bootstrap.sh` to link the runner's TUs into both binaries (`ngen-build` and `ngen-build-run`), or to build a small static archive in between.
-See §5.
+Because the runner is header-only, both binaries get `execute()` simply by `#include`-ing `build/run/execute.hpp`. No archive, no separately-compiled TUs to
+link. See §5 for the bootstrap invocations.
 
 ---
 
@@ -147,28 +151,22 @@ simpler and the keyspaces are tiny.
 
 ## 5. Bootstrap changes
 
-`bootstrap.sh` grows from three lines to roughly five:
+The fresh-clone bootstrap, documented in `CLAUDE.md`, becomes two `c++` invocations:
 
 ```sh
-#!/usr/bin/env sh
-set -eu
 mkdir -p _out
-CXX="${CXX:-c++}"
-# Compile the runner's TUs once into a static archive, then link both binaries against it.
-$CXX -std=c++23 -O2 -c build/run/process.cpp build/run/buildlog.cpp build/run/hash.cpp \
-     build/run/scheduler.cpp build/run/depfile.cpp build/run/progress.cpp \
-     -Ibuild/framework
-ar rcs _out/libngenrun.a process.o buildlog.o hash.o scheduler.o depfile.o progress.o
-rm -f *.o
-$CXX -std=c++23 -O2 -o _out/ngen-build     build/bootstrap.cpp  -Ibuild/framework _out/libngenrun.a
-$CXX -std=c++23 -O2 -o _out/ngen-build-run build/run/main.cpp   -Ibuild/framework _out/libngenrun.a
+c++ -std=c++23 -O2 -o _out/ngen-build     build/bootstrap.cpp -Ibuild/framework -Ibuild/run
+c++ -std=c++23 -O2 -o _out/ngen-build-run build/run/main.cpp  -Ibuild/framework -Ibuild/run
 ```
 
-Five lines is still small enough to read at a glance. Once the runner is up, all subsequent rebuilds of these binaries go through the runner itself, so the
-shell script only runs on initial clone.
+Two `c++` lines, no shell script, no archive, no per-TU object files. The runner is header-only (per `plan_custom_build_backend.md` §3), so both binaries
+`#include` what they need and compile in one TU each. The commands stay in docs; nothing is checked in.
+
+Run once on a fresh clone. After this, every subsequent rebuild of `ngen-build-graph` or `ngen-build-run` goes through the runner itself (driven by the
+in-memory build-system IR built by `self_build_ir()`). The documented bootstrap commands only matter on initial clone.
 
 Alternative considered: build `ngen-build-run` first, then have it bootstrap `ngen-build` via its CLI. Rejected — it requires writing a build-system IR to
-disk before `ngen-build` exists to construct it. Two `cc` lines in the seed script is much simpler.
+disk before `ngen-build` exists to construct it. Two manual `c++` invocations are simpler and more inspectable.
 
 ---
 
@@ -217,9 +215,9 @@ After phase 2, the build system has one execution engine, one CLI affordance for
 ## 8. Risks and mitigations
 
 - **A runner bug now breaks the build system itself, not just the project build.** This is the main reason for the staging: the runner gets a full release
-  cycle as the project executor before we put it on the self-build critical path. Mitigation: keep `bootstrap.sh` self-contained — if `ngen-build` won't
-  start, running the three lines manually still gets you a `_out/ngen-build` binary, which contains enough error reporting to diagnose what the runner
-  refused to do.
+  cycle as the project executor before we put it on the self-build critical path. Mitigation: the documented bootstrap commands are short enough to run by hand —
+  if `ngen-build` won't start, the one-line `c++` invocation from §5 rebuilds `_out/ngen-build` directly, and it contains enough error reporting to diagnose
+  what the runner refused to do.
 - **In-memory IR construction has to stay simple.** Twenty lines of `ir::Builder` calls in `bootstrap.cpp`. If `self_build_ir()` starts growing flags,
   defines, or platform conditionals, that's a smell — pull the structure into a helper but keep the IR shape obvious. Two edges is two edges; if we add more
   binaries to the build system, it's still small.
@@ -242,8 +240,8 @@ After phase 2, the build system has one execution engine, one CLI affordance for
   the build-system grows to many internal binaries, revisit.
 - **Variants for the build-system itself?** Today we don't build the build-system in debug vs release configurations — there's no platform/config axis on
   it. If we ever want one (e.g. ASan'd `ngen-build-run` for debugging), the IR shape supports it trivially; we just don't expose it as a CLI option yet.
-- **`bootstrap.sh` portability.** Still Linux-shell. When Windows lands (out of scope for this plan and the chain it sits in), it gets a `bootstrap.bat` or
-  similar. The four `cc` invocations have direct PowerShell/cmd equivalents.
+- **Bootstrap portability.** The documented `c++` invocations are POSIX-shell snippets. When Windows lands (out of scope for this plan and the chain it sits
+  in), the docs gain a parallel pair of `cl.exe` / PowerShell equivalents. Same two-binary shape, different invocation syntax. No script file in either case.
 
 ---
 

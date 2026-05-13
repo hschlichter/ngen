@@ -31,10 +31,12 @@ two more ninja runs) is actually noticeable on no-op rebuilds. The answer inform
 Bootstrap chain after this lands:
 
 ```text
-bootstrap.sh
-  → _out/ngen-build                          (compiled from build/bootstrap.cpp; only stage built by the shell script)
+one-time bootstrap (documented `c++` invocation, run by hand on a fresh clone)
+  $ c++ -std=c++23 -O2 -o _out/ngen-build build/bootstrap.cpp
+  → produces _out/ngen-build
 
-ngen-build invocation
+every subsequent invocation:
+ngen-build
   → stat-and-compile loop inside ngen-build:
       → recompile _out/ngen-build-graph if any source/header changed
       → recompile _out/ngen-build-run     if any source/header changed
@@ -50,7 +52,8 @@ What changes:
 - `_out/ngen-build-graph.ninja`, `_out/ngen-build-run.ninja` — no longer emitted; nothing reads them.
 - `build/bootstrap.cpp` — gains an internal "build the build-system if stale" pass that runs before any project work. Uses `Process::run` and the depfile
   parser from `build/run/`.
-- `bootstrap.sh` — new, three lines, replaces `bootstrap.ninja` as the seed.
+- Bootstrap is no longer a checked-in file. It becomes a one-line `c++` invocation that contributors run once on a fresh clone, documented in `CLAUDE.md`'s
+  build section. No `bootstrap.sh`, no `Makefile`, no wrapper — the command is short enough to print, paste, and read.
 
 What stays the same:
 
@@ -64,25 +67,24 @@ stage remains a separate process because it still emits the project IR.
 
 ---
 
-## 3. The new `bootstrap.sh`
+## 3. The new bootstrap step
 
-A three-line POSIX shell script:
+Bootstrap becomes a single documented `c++` invocation — not a checked-in script:
 
 ```sh
-#!/usr/bin/env sh
-set -eu
-mkdir -p _out
-${CXX:-c++} -std=c++23 -O2 -o _out/ngen-build build/bootstrap.cpp
+mkdir -p _out && c++ -std=c++23 -O2 -o _out/ngen-build build/bootstrap.cpp
 ```
 
-Run once after a fresh clone, never again unless `bootstrap.cpp` itself changes. Documented in `CLAUDE.md` as the entry point. Everything else flows through
-`./_out/ngen-build`.
+Run once after a fresh clone, never again unless `bootstrap.cpp` itself changes. The command lives in `CLAUDE.md`'s build section as the documented entry
+point. Everything else flows through `./_out/ngen-build`.
 
-Rationale for shell, not Make/CMake/Python:
+Rationale for "documented command, not script":
 
-- One file, dependency-free.
-- Anyone who reads it sees exactly what's happening.
-- No portability layer to maintain (we're Linux-only by `plan_custom_build_backend.md` §1).
+- The invocation is short enough to print, paste, and read. There is no `bootstrap.sh` to maintain, no `set -eu` wrapping, no shell-portability layer.
+- Anyone copying the command knows exactly what's happening — no indirection through a file.
+- We're Linux-only by `plan_custom_build_backend.md` §1, so we don't need cross-platform script handling.
+- One fewer file in the repo. The build system has consciously avoided checked-in tooling so far (bootstrap.ninja being the sole exception); this preserves
+  that discipline.
 
 ---
 
@@ -152,8 +154,9 @@ This plan adds no new primitives. Everything it needs already exists in `build/r
 - Depfile parser — `build/run/depfile.hpp`. Used identically to how the runner consumes compile-edge depfiles.
 - Path utilities — `build/framework/path.hpp` / `glob.hpp`. Header-only, already used by `bootstrap.cpp`.
 
-`bootstrap.cpp` and `build/run/*.cpp` end up sharing object files: `process.cpp` and `depfile.cpp` get compiled twice (once into `ngen-build`, once into
-`ngen-build-run`). That's fine at this scale. If duplication grows uncomfortable, factor a tiny static library, but don't bother yet.
+Because the runner is header-only (see `plan_custom_build_backend.md` §3), `bootstrap.cpp` simply `#include`s the runner headers it needs and gets `inline`
+definitions of `Process::run`, `parse_depfile`, etc. There is no link-time sharing to worry about; each binary's TU instantiates its own copies and the
+linker drops duplicates. Compile-time cost is two TUs' worth — bounded and accepted.
 
 ---
 
@@ -173,7 +176,8 @@ Two phases. Each is a self-contained PR.
 - Flip the default to inline. Smoke-test all configs.
 - Delete `build/bootstrap.ninja`, `build/prebuild.cpp`. Remove `_out/ngen-build-pre` from the chain.
 - Remove the `--self-build` flag (only one path now).
-- Add `bootstrap.sh`. Update `CLAUDE.md` build section: `./bootstrap.sh` replaces `ninja -f build/bootstrap.ninja`.
+- Document the one-shot bootstrap `c++` invocation in `CLAUDE.md`'s build section. It replaces `ninja -f build/bootstrap.ninja` as the entry point for a
+  fresh clone. No file is added to the repo for this — the command stays in docs.
 - Update `build_system.md` — rewrite §3 (Bootstrap chain), trim §1 file list.
 
 After phase 2, ninja is no longer required to build the engine. Contributors clone, run `./bootstrap.sh`, and have a working `ngen-build` with zero ninja
@@ -183,7 +187,8 @@ involvement from then on.
 
 ## 7. Risks and mitigations
 
-- **First-run experience regresses if `bootstrap.sh` is wrong.** It's three lines; we test it on a clean container before merging.
+- **First-run experience regresses if the documented bootstrap command is wrong.** It's one line; we test it on a clean container before merging and keep the
+  command verbatim in `CLAUDE.md`.
 - **Header dependency tracking subtly differs from ninja's.** Both use `-MMD`. Same compiler output, same parser semantics, so behavior matches. If we
   discover a corner case (multi-output edges, generated headers), it's the same corner case the project runner already handles.
 - **Two compile paths for build-system vs project.** Plan D removes this duplication. Until then, it's a known wart and explicitly documented in
