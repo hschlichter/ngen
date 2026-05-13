@@ -1,3 +1,4 @@
+#include "framework/backendir.hpp"
 #include "framework/backendninja.hpp"
 #include "framework/cxx/configuration.hpp"
 #include "framework/cxx/platform.hpp"
@@ -9,15 +10,23 @@
 
 #include <filesystem>
 #include <iostream>
+#include <string>
 #include <string_view>
 
 using namespace build;
 
 auto main(int argc, char** argv) -> int {
     bool list_only = false;
+    bool dump_graph = false;
+    std::string backend = "ninja";
     for (int i = 1; i < argc; ++i) {
-        if (std::string_view{argv[i]} == "--list") {
+        std::string_view arg = argv[i];
+        if (arg == "--list") {
             list_only = true;
+        } else if (arg == "--dump-graph") {
+            dump_graph = true;
+        } else if (arg == "--backend" && i + 1 < argc) {
+            backend = argv[++i];
         }
     }
 
@@ -293,6 +302,27 @@ auto main(int argc, char** argv) -> int {
         return 0;
     }
 
+    if (dump_graph) {
+        auto dumped = IrBackend{}.dump(p, std::cout);
+        if (!dumped) {
+            std::cerr << dumped.error().message << "\n";
+            return 1;
+        }
+        return 0;
+    }
+
+    if (backend == "ir") {
+        auto emitted = IrBackend{}.emit(p);
+        if (!emitted) {
+            std::cerr << emitted.error().message << "\n";
+            return 1;
+        }
+        return 0;
+    }
+    if (backend != "ninja") {
+        std::cerr << "unknown backend: " << backend << "\n";
+        return 1;
+    }
     auto emitted = NinjaBackend{}.emit(p);
     if (!emitted) {
         std::cerr << emitted.error().message << "\n";
