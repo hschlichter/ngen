@@ -103,11 +103,20 @@ auto parse(int argc, char** argv) -> std::expected<Args, Error> {
     return args;
 }
 
-auto forward_args(int argc, char** argv) -> std::string {
+// Forward the user's original argv to the graph stage, dropping verbosity flags
+// (the graph stage doesn't need them) and translating --backend run into
+// --backend ir (the graph stage doesn't know about the runner-level "run" name).
+auto graph_forward_args(int argc, char** argv) -> std::string {
     std::string out;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "-v" || arg == "--verbose" || arg == "-vv") {
+            continue;
+        }
+        if (arg == "--backend" && i + 1 < argc) {
+            std::string value = argv[++i];
+            out += " --backend ";
+            out += shell_quote(value == "run" ? std::string("ir") : value);
             continue;
         }
         out += " ";
@@ -128,6 +137,12 @@ auto ninja_target(const Args& args) -> std::string {
     return args.target + ":" + platform + ":" + config;
 }
 
+auto chosen_variant(const Args& args) -> std::pair<std::string, std::string> {
+    auto platform = args.platform.empty() ? std::string("linux-vulkan") : args.platform;
+    auto config = args.config.empty() ? std::string("debug") : args.config;
+    return {platform, config};
+}
+
 } // namespace
 
 auto main(int argc, char** argv) -> int {
@@ -136,8 +151,8 @@ auto main(int argc, char** argv) -> int {
         std::cerr << args.error().message << "\n";
         return 1;
     }
-    if (args->backend != "ninja") {
-        std::cerr << "unsupported backend: " << args->backend << "\n";
+    if (args->backend != "ninja" && args->backend != "run") {
+        std::cerr << "unknown backend: " << args->backend << " (expected ninja or run)\n";
         return 1;
     }
 
@@ -170,13 +185,27 @@ default _out/ngen-build-pre
         return 1;
     }
 
-    auto graph_cmd = "./_out/ngen-build-graph" + forward_args(argc, argv);
+    auto graph_cmd = "./_out/ngen-build-graph" + graph_forward_args(argc, argv);
     if (std::system(graph_cmd.c_str()) != 0) { // NOLINT(bugprone-command-processor)
         return 1;
     }
 
     if (args->list) {
         return 0;
+    }
+
+    if (args->backend == "run") {
+        auto [platform, config] = chosen_variant(*args);
+        auto ir_path = "_out/" + platform + "/" + config + "/build.ngenir";
+        std::string cmd = "./_out/ngen-build-run --ir " + shell_quote(ir_path);
+        if (args->verbosity == 1) {
+            cmd = "TERM=dumb " + cmd + " -v";
+        }
+        if (args->verbosity >= 2) {
+            cmd += " -vv";
+        }
+        cmd += " " + shell_quote(args->target);
+        return std::system(cmd.c_str()) == 0 ? 0 : 1; // NOLINT(bugprone-command-processor)
     }
 
     auto build_cmd = std::string(args->verbosity == 1 ? "TERM=dumb ninja -f _out/build.ninja" : "ninja -f _out/build.ninja");

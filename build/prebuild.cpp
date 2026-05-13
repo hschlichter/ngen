@@ -38,7 +38,7 @@ auto write_if_changed(const std::filesystem::path& path, const std::string& text
 } // namespace
 
 auto main() -> int {
-    auto written = write_if_changed("_out/ngen-build-graph.ninja", R"(cxx = clang++
+    auto graph_written = write_if_changed("_out/ngen-build-graph.ninja", R"(cxx = clang++
 cxxflags = -std=c++23 -O0 -g -Wall -Wextra -Ibuild/framework
 builddir = _out/.ninja
 
@@ -52,10 +52,32 @@ build _out/ngen-build-graph: cxx build/build.cpp
 
 default _out/ngen-build-graph
 )");
-    if (!written) {
-        std::cerr << written.error().message << "\n";
+    if (!graph_written) {
+        std::cerr << graph_written.error().message << "\n";
+        return 1;
+    }
+
+    auto run_written = write_if_changed("_out/ngen-build-run.ninja", R"(cxx = clang++
+cxxflags = -std=c++23 -O0 -g -Wall -Wextra
+builddir = _out/.ninja
+
+rule cxx
+  command = mkdir -p _out && $cxx $cxxflags -MMD -MF $out.d -o $out build/run/main.cpp
+  description = RUNNER $out
+  depfile = $out.d
+  deps = gcc
+
+build _out/ngen-build-run: cxx build/run/main.cpp
+
+default _out/ngen-build-run
+)");
+    if (!run_written) {
+        std::cerr << run_written.error().message << "\n";
         return 1;
     }
     // Orchestrator stage must shell out to ninja; std::system is intentional here.
-    return std::system("ninja -f _out/ngen-build-graph.ninja") == 0 ? 0 : 1; // NOLINT(bugprone-command-processor)
+    if (std::system("ninja -f _out/ngen-build-graph.ninja") != 0) { // NOLINT(bugprone-command-processor)
+        return 1;
+    }
+    return std::system("ninja -f _out/ngen-build-run.ninja") == 0 ? 0 : 1; // NOLINT(bugprone-command-processor)
 }
