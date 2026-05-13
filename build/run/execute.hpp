@@ -7,6 +7,7 @@
 #include "depfile.hpp"
 #include "hash.hpp"
 #include "process.hpp"
+#include "progress.hpp"
 #include "scheduler.hpp"
 
 #include <atomic>
@@ -380,38 +381,25 @@ inline auto execute(const build::ir::IR& ir, const RunOptions& opts) -> std::exp
         return out;
     };
 
+    Verbosity verbosity = Verbosity::Default;
+    if (opts.very_verbose) {
+        verbosity = Verbosity::FullCommand;
+    } else if (opts.verbose) {
+        verbosity = Verbosity::NonTty;
+    }
+    Progress progress(plan.order.size(), verbosity);
+
     auto on_progress = [&](std::size_t done, std::size_t total, std::uint32_t edge_idx, const EdgeOutcome& outcome) {
+        (void)total;
         const auto& edge = ir.edges[edge_idx];
+        progress.on_edge(done, edge_idx, edge, outcome);
+
         if (outcome.skipped) {
             return;
         }
         if (outcome.exit_code != 0 || !outcome.err_message.empty()) {
-            std::cout << "[" << done << "/" << total << "] FAILED: " << edge.description << "\n";
-            if (!outcome.captured_output.empty()) {
-                std::cout << outcome.captured_output;
-                if (outcome.captured_output.back() != '\n') {
-                    std::cout << '\n';
-                }
-            }
-            std::cout << "$ " << edge.command << "\n";
-            if (!outcome.err_message.empty()) {
-                std::cout << outcome.err_message << "\n";
-            }
-            std::cout.flush();
             return;
         }
-        const auto& desc = edge.description.empty() ? edge.name : edge.description;
-        std::cout << "[" << done << "/" << total << "] " << desc << "\n";
-        if (opts.very_verbose) {
-            std::cout << "$ " << edge.command << "\n";
-        }
-        if (!outcome.captured_output.empty()) {
-            std::cout << outcome.captured_output;
-            if (outcome.captured_output.back() != '\n') {
-                std::cout << '\n';
-            }
-        }
-        std::cout.flush();
 
         // Update log entry for this edge: re-hash outputs and parse depfile.
         std::lock_guard lk(log_mtx);
@@ -471,6 +459,7 @@ inline auto execute(const build::ir::IR& ir, const RunOptions& opts) -> std::exp
     result.skipped = sched_result.skipped;
     result.failures = sched_result.failures;
     result.interrupted = sched_result.interrupted;
+    progress.on_finish(result.executed, result.failures, result.skipped, result.interrupted);
 
     if (auto r = log.save(log_path); !r) {
         std::cerr << "warning: failed to save build log: " << r.error().message << "\n";

@@ -60,6 +60,7 @@ struct Args {
     std::string backend = "ninja";
     int verbosity = 0;
     bool list = false;
+    bool dump_graph = false;
 };
 
 auto parse(int argc, char** argv) -> std::expected<Args, Error> {
@@ -96,6 +97,8 @@ auto parse(int argc, char** argv) -> std::expected<Args, Error> {
             args.verbosity = std::max(args.verbosity, 2);
         } else if (arg == "--list") {
             args.list = true;
+        } else if (arg == "--dump-graph") {
+            args.dump_graph = true;
         } else {
             args.target = arg;
         }
@@ -190,7 +193,7 @@ default _out/ngen-build-pre
         return 1;
     }
 
-    if (args->list) {
+    if (args->list || args->dump_graph) {
         return 0;
     }
 
