@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <thread>
 
 namespace {
 
@@ -77,10 +78,19 @@ auto main(int argc, char** argv) -> int {
         return 1;
     }
 
+    args->options.ir_path = args->ir_path;
+    if (args->options.jobs <= 0) {
+        auto hc = std::thread::hardware_concurrency();
+        args->options.jobs = static_cast<int>(hc == 0 ? 1u : hc);
+    }
     auto result = ngen::run::execute(*ir, args->options);
     if (!result) {
         std::cerr << result.error().message << "\n";
         return 1;
+    }
+    if (result->interrupted) {
+        std::cerr << "interrupted\n";
+        return 130;
     }
     if (result->failures > 0) {
         std::cerr << result->failures << " edge(s) failed (of " << result->total_edges << ")\n";
