@@ -1,3 +1,17 @@
+// build::Project — the registry of entry points for a single build run.
+//
+// Holds *pointers* (not ownership) to user-declared root targets, registered platforms, and registered
+// configurations. The actual objects live in user code (typically `main()` locals in `build.cpp`); the Project
+// just records the set the build should consider.
+//
+// `target` and `default_target` add roots; `platform` and `config` register variant axes. All registration calls
+// are idempotent — registering the same reference twice is a no-op, so user code can re-register through
+// multiple paths without bookkeeping.
+//
+// `build_all()` returns the transitive closure of every root in *post-order* (deps before dependents). This is
+// what `ir::Emitter` walks: the post-order guarantees a child `cxx::ObjectFile`'s output already exists in the
+// emitter's cache before its parent library's archive edge tries to look it up.
+
 #pragma once
 
 #include "configuration.hpp"

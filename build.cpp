@@ -1,11 +1,11 @@
-#include "framework/backendninja.hpp"
-#include "framework/cxx/configuration.hpp"
-#include "framework/cxx/platform.hpp"
-#include "framework/cxx/target.hpp"
-#include "framework/glob.hpp"
-#include "framework/inspect.hpp"
-#include "framework/project.hpp"
-#include "framework/tool.hpp"
+#include "build/framework/cxx/configuration.hpp"
+#include "build/framework/cxx/platform.hpp"
+#include "build/framework/cxx/target.hpp"
+#include "build/framework/glob.hpp"
+#include "build/framework/inspect.hpp"
+#include "build/framework/project.hpp"
+#include "build/framework/tool.hpp"
+#include "build/ir/emit.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -15,9 +15,13 @@ using namespace build;
 
 auto main(int argc, char** argv) -> int {
     bool list_only = false;
+    bool dump_graph = false;
     for (int i = 1; i < argc; ++i) {
-        if (std::string_view{argv[i]} == "--list") {
+        std::string_view arg = argv[i];
+        if (arg == "--list") {
             list_only = true;
+        } else if (arg == "--dump-graph") {
+            dump_graph = true;
         }
     }
 
@@ -288,12 +292,20 @@ auto main(int argc, char** argv) -> int {
     p.default_target(view);
 
     if (list_only) {
-        std::cout << "Top-level targets:\n";
-        list_roots(p, std::cout);
+        print_summary(p, std::cout);
         return 0;
     }
 
-    auto emitted = NinjaBackend{}.emit(p);
+    if (dump_graph) {
+        auto dumped = ir::Emitter{}.dump(p, std::cout);
+        if (!dumped) {
+            std::cerr << dumped.error().message << "\n";
+            return 1;
+        }
+        return 0;
+    }
+
+    auto emitted = ir::Emitter{}.emit(p);
     if (!emitted) {
         std::cerr << emitted.error().message << "\n";
         return 1;

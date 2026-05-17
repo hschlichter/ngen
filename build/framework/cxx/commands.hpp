@@ -1,3 +1,18 @@
+// build::cxx::cmd — argv builders for the cxx command lines.
+//
+// Three free functions turn (`Toolchain` + per-edge inputs) into a `Command` (argv list, no shell quoting yet):
+//   - `compile_command(tc, CompileInputs) -> Command`
+//   - `archive_command(tc, objects, output) -> Command`
+//   - `link_command(tc, LinkInputs, shared) -> Command`
+//
+// The resulting `Command` is then baked into a single string in `ir/emit.hpp::bake_command` and stored on the
+// edge's `command` field. Plus three small filename helpers: `static_lib_name` / `shared_lib_name` / `exe_name`.
+// They live here so the same name decisions get made at both link time (where the resolved output path is
+// needed) and at output-path emission inside the IR emitter.
+//
+// Pure data marshalling — no I/O, no global state. The caller (the IR emitter) supplies the per-edge inputs
+// and consumes the `Command`.
+
 #pragma once
 
 #include "../command.hpp"
@@ -11,7 +26,7 @@
 #include <string_view>
 #include <vector>
 
-namespace build::cxx::ninja {
+namespace build::cxx::cmd {
 
 struct CompileInputs {
     Path source;
@@ -110,4 +125,4 @@ inline auto exe_name(std::string_view stem, std::string_view platform_suffix) ->
     return std::string(stem) + std::string(platform_suffix);
 }
 
-} // namespace build::cxx::ninja
+} // namespace build::cxx::cmd

@@ -1,3 +1,21 @@
+// build::Target — the node type for every build edge.
+//
+// One Target per "thing that has a name and a place in the dependency graph": libraries, programs, tools,
+// aliases, phony stamps. The Target itself is language-agnostic — it carries only identity (`name`), dependency
+// edges (`deps`), variant gating (`only_on` / `except_on` / `only_in` / `except_in`), and an `ExtensionMap`.
+// Every language-specific concern (compile flags, includes, link list, source files) lives in an extension
+// attached through that map. This is the seam that lets `build::cxx::Target` and a future `build::csharp::Target`
+// coexist without changing this class.
+//
+// Targets are non-copyable, non-movable. Once a `Target*` is in hand, its address must stay valid for the rest
+// of the build. The fluent wrapper types (`cxx::Target`, `Tool`, `Alias`) hold their `Target` behind
+// `std::shared_ptr` and attach themselves to its `ExtensionMap` — that lets the wrapper move freely while the
+// underlying node stays put.
+//
+// Constructed by user code in `build.cpp` via factory helpers (`cxx::static_library`, `tool`, `alias`). Walked
+// by `ir::Emitter` (`build/ir/emit.hpp`) to produce build edges. `Project` does not own targets; user code does
+// (typically `main()` locals), so the framework only ever borrows `Target*`.
+
 #pragma once
 
 #include "extensionmap.hpp"

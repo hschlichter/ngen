@@ -1,8 +1,29 @@
+// build::Tool — a Target that runs an opaque shell command.
+//
+// Wraps a `build::Target` (held behind `std::shared_ptr`) and attaches as the Tool extension. Used for things
+// that don't fit the cxx model: shader compilation (`glslc`), cleanup (`rm -rf $out_dir`), source-tree
+// maintenance (`clang-format`, `clang-tidy`). The fluent API records the command template (`argv_template`),
+// inputs, outputs, and a few flags; the IR emitter does the actual substitution and command-baking at emit time
+// (see `ir/emit.hpp::emit_tool` / `emit_global_tool`).
+//
+// Three shapes the emitter recognises:
+//   - **Outputs declared** — either explicitly (`outputs({...})`) or via the `for_each(inputs, fn)` form (one
+//     output per input, output path computed by the user-supplied callback). Produces one edge per output plus
+//     a phony aggregating stamp.
+//   - **No outputs** — produces one stamp edge; the command runs whenever the stamp is rebuilt. `clean` uses
+//     this shape with `$out_dir` substitution to nuke the variant tree.
+//   - **`is_global`** — a single edge across all variants. The emitter still drops the edge into each variant's
+//     IR for uniform addressability; `format` and `tidy` use this.
+//
+// `$in` / `$out` / `$out_dir` in `argv_template` are substituted at emit time.
+//
+// Same wrapper move/copy invariant as `Alias` — both constructors re-attach the extension back-pointer.
+
 #pragma once
 
-#include "backend.hpp"
 #include "path.hpp"
 #include "target.hpp"
+#include "variant.hpp"
 
 #include <functional>
 #include <memory>

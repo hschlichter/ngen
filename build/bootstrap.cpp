@@ -1,40 +1,101 @@
+// ngen-build — the user-facing orchestrator binary.
+//
+// `bootstrap.cpp` is the only `.cpp` file a fresh-clone contributor compiles by hand:
+//
+//     mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstrap.cpp
+//
+// (Documented in `CLAUDE.md` and `build/build_system.md`.) The resulting binary then drives every subsequent build.
+// Three things happen in order on each invocation:
+//
+//   1. **Self-build.** `self_build_ir()` constructs an in-memory `build::ir::IR` with two edges — one to
+//      compile `build.cpp` into `_out/ngen-build-graph`, one to compile `build/run/main.cpp` into
+//      `_out/ngen-build-run`. `ngen::run::execute()` runs the IR in-process against the build log at
+//      `_out/.system/.ngen-buildlog`, so the two binaries are recompiled only when their sources or
+//      depfile-tracked headers actually change. This is the seam where the build system is "self-hosted": the
+//      runner that builds the project also builds the binaries the build system itself uses.
+//
+//   2. **Graph stage.** `./_out/ngen-build-graph` is invoked as a subprocess. It walks the `Project` defined
+//      in `build.cpp`, runs `ir::Emitter`, and writes one `_out/<platform>/<config>/build.ngenir` per
+//      variant plus the per-variant and merged `compile_commands.json`. Short-circuits with `--list` /
+//      `--dump-graph` if the user asked for those.
+//
+//   3. **Project run.** `./_out/ngen-build-run --ir _out/<platform>/<config>/build.ngenir <target>` is invoked
+//      as a subprocess. It loads the IR, computes the dirty set against
+//      `_out/<plat>/<cfg>/.ngen-buildlog`, and runs the dirty edges in parallel.
+//
+// Platform / config selection: `--platform <name>` / `--config <name>`, both required. There are no defaults
+// here — the build-system code under `build/` carries zero project knowledge, so it cannot pick a sensible
+// platform or config on the user's behalf. When either flag is missing, the orchestrator invokes the graph
+// stage's `--list` (which prints registered platforms, configs, and top-level targets via
+// `build::print_summary`) and then reports the missing flag. Target: first positional argument; empty means
+// "use the IR's default_targets". Verbosity (`-v`, `-vv`) is forwarded to the runner; `--list` and
+// `--dump-graph` are forwarded to the graph stage.
+//
+// `std::system` is used to spawn the two subprocesses (graph and runner). It's marked with
+// `// NOLINT(bugprone-command-processor)` since this is the deliberate orchestration boundary; the in-process
+// self-build path uses the runner library directly without `std::system`.
+
+#include "ir/schema.hpp"
+#include "run/execute.hpp"
+
 #include <algorithm>
 #include <cstdlib>
 #include <expected>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
-#include <sstream>
 #include <string>
-#include <vector>
+#include <thread>
+#include <utility>
 
 namespace {
 
-struct Error {
-    std::string message;
+struct Args {
+    std::string target; // empty = let the runner use the IR's default_targets
+    std::string platform;
+    std::string config;
+    int verbosity = 0;
+    bool list = false;
+    bool dump_graph = false;
+    bool help = false;
 };
 
-auto write_if_changed(const std::filesystem::path& path, const std::string& text) -> std::expected<void, Error> {
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-    if (ec) {
-        return std::unexpected(Error{"failed to create directory " + path.parent_path().string() + ": " + ec.message()});
+auto parse(int argc, char** argv) -> std::expected<Args, build::Error> {
+    Args args;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        auto value = [&]() -> std::expected<std::string, build::Error> {
+            if (i + 1 >= argc) {
+                return std::unexpected(build::Error{"missing value for " + arg});
+            }
+            return std::string(argv[++i]);
+        };
+        if (arg == "--platform" || arg == "-p") {
+            auto parsed = value();
+            if (!parsed) {
+                return std::unexpected(parsed.error());
+            }
+            args.platform = *parsed;
+        } else if (arg == "--config" || arg == "-c") {
+            auto parsed = value();
+            if (!parsed) {
+                return std::unexpected(parsed.error());
+            }
+            args.config = *parsed;
+        } else if (arg == "-v" || arg == "--verbose") {
+            args.verbosity = std::max(args.verbosity, 1);
+        } else if (arg == "-vv") {
+            args.verbosity = std::max(args.verbosity, 2);
+        } else if (arg == "--list") {
+            args.list = true;
+        } else if (arg == "--dump-graph") {
+            args.dump_graph = true;
+        } else if (arg == "--help" || arg == "-h") {
+            args.help = true;
+        } else {
+            args.target = arg;
+        }
     }
-    std::ifstream in(path);
-    std::ostringstream current;
-    current << in.rdbuf();
-    if (in && current.str() == text) {
-        return {};
-    }
-    std::ofstream out(path);
-    if (!out) {
-        return std::unexpected(Error{"failed to open " + path.string() + " for writing"});
-    }
-    out << text;
-    if (!out) {
-        return std::unexpected(Error{"failed to write " + path.string()});
-    }
-    return {};
+    return args;
 }
 
 auto shell_quote(const std::string& value) -> std::string {
@@ -53,57 +114,7 @@ auto shell_quote(const std::string& value) -> std::string {
     return out;
 }
 
-struct Args {
-    std::string target = "ngen-view";
-    std::string platform;
-    std::string config;
-    std::string backend = "ninja";
-    int verbosity = 0;
-    bool list = false;
-};
-
-auto parse(int argc, char** argv) -> std::expected<Args, Error> {
-    Args args;
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        auto value = [&]() -> std::expected<std::string, Error> {
-            if (i + 1 >= argc) {
-                return std::unexpected(Error{"missing value for " + arg});
-            }
-            return std::string(argv[++i]);
-        };
-        if (arg == "--platform") {
-            auto parsed = value();
-            if (!parsed) {
-                return std::unexpected(parsed.error());
-            }
-            args.platform = *parsed;
-        } else if (arg == "--config" || arg == "-c") {
-            auto parsed = value();
-            if (!parsed) {
-                return std::unexpected(parsed.error());
-            }
-            args.config = *parsed;
-        } else if (arg == "--backend") {
-            auto parsed = value();
-            if (!parsed) {
-                return std::unexpected(parsed.error());
-            }
-            args.backend = *parsed;
-        } else if (arg == "-v" || arg == "--verbose") {
-            args.verbosity = std::max(args.verbosity, 1);
-        } else if (arg == "-vv") {
-            args.verbosity = std::max(args.verbosity, 2);
-        } else if (arg == "--list") {
-            args.list = true;
-        } else {
-            args.target = arg;
-        }
-    }
-    return args;
-}
-
-auto forward_args(int argc, char** argv) -> std::string {
+auto graph_forward_args(int argc, char** argv) -> std::string {
     std::string out;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -116,16 +127,90 @@ auto forward_args(int argc, char** argv) -> std::string {
     return out;
 }
 
-auto ninja_target(const Args& args) -> std::string {
-    if (args.target == "format" || args.target == "tidy") {
-        return args.target;
+// The flag list ngen-build itself accepts; the project section (platforms / configs / targets) below comes
+// from the graph stage via `--list`. Always goes to stdout — the missing-args fallback in `main()` follows
+// this with its own stderr error line.
+auto print_help() -> void {
+    std::cout << "Usage: ngen-build [options] [target]\n"
+              << "\n"
+              << "Options:\n"
+              << "  -p, --platform <name>   Build for this platform.    (required for builds)\n"
+              << "  -c, --config <name>     Build with this config.     (required for builds)\n"
+              << "  -v, --verbose           One line per edge; same effect as TERM=dumb.\n"
+              << "  -vv                     Echo each shell command before running.\n"
+              << "      --list              Show available platforms, configs, and targets; exit.\n"
+              << "      --dump-graph        Print the project IR as JSON to stdout; exit.\n"
+              << "  -h, --help              Show this message.\n"
+              << "\n"
+              << "Target is positional and optional; empty means \"use the project's default_target\".\n"
+              << "\n"
+              << std::flush;
+    // Shell out to the graph stage for the project-specific listing. `std::system` writes directly to fd 1
+    // and does not see the iostream buffer, so flushing before the call is required to preserve order.
+    std::system("./_out/ngen-build-graph --list"); // NOLINT(bugprone-command-processor)
+}
+
+
+// In-memory IR describing how to compile the two binaries that drive the rest
+// of the build (`ngen-build-graph` and `ngen-build-run`). The runner library
+// turns this into either a no-op (binaries fresh) or a parallel recompile.
+auto self_build_ir() -> build::ir::IR {
+    build::ir::IR ir;
+    ir.variant = "system";
+    ir.project_root = std::filesystem::current_path().string();
+    ir.pools = build::ir::make_default_pools();
+
+    auto cxxflags = std::string("-std=c++23 -O0 -g -Wall -Wextra -pthread");
+
+    {
+        build::ir::Edge edge;
+        edge.name = "ngen-build-graph";
+        edge.command = "c++ " + cxxflags + " -MMD -MF _out/ngen-build-graph.d -o _out/ngen-build-graph build.cpp";
+        edge.inputs = {"build.cpp"};
+        edge.outputs = {"_out/ngen-build-graph"};
+        edge.depfile = "_out/ngen-build-graph.d";
+        edge.description = "GRAPH _out/ngen-build-graph";
+        edge.pool = build::ir::kPoolDefault;
+        ir.edges.push_back(std::move(edge));
     }
-    if (args.platform.empty() && args.config.empty()) {
-        return args.target;
+    {
+        build::ir::Edge edge;
+        edge.name = "ngen-build-run";
+        edge.command = "c++ " + cxxflags + " -MMD -MF _out/ngen-build-run.d -o _out/ngen-build-run build/run/main.cpp";
+        edge.inputs = {"build/run/main.cpp"};
+        edge.outputs = {"_out/ngen-build-run"};
+        edge.depfile = "_out/ngen-build-run.d";
+        edge.description = "RUNNER _out/ngen-build-run";
+        edge.pool = build::ir::kPoolDefault;
+        ir.edges.push_back(std::move(edge));
     }
-    auto platform = args.platform.empty() ? "linux-vulkan" : args.platform;
-    auto config = args.config.empty() ? "debug" : args.config;
-    return args.target + ":" + platform + ":" + config;
+    ir.default_targets = {0, 1};
+    return ir;
+}
+
+auto run_self_build(const Args& args) -> bool {
+    auto ir = self_build_ir();
+    ngen::run::RunOptions opts;
+    // Synthetic IR path: execute() derives the build log location from it
+    // (_out/.system/.ngen-buildlog) but never reads or writes the IR file itself.
+    opts.ir_path = "_out/.system/build.ngenir";
+    auto hc = std::thread::hardware_concurrency();
+    opts.jobs = static_cast<int>(hc == 0 ? 2u : hc);
+    if (args.verbosity >= 2) {
+        opts.very_verbose = true;
+    } else if (args.verbosity >= 1) {
+        opts.verbose = true;
+    }
+    auto result = ngen::run::execute(ir, opts);
+    if (!result) {
+        std::cerr << "self-build failed: " << result.error().message << "\n";
+        return false;
+    }
+    if (result->failures > 0) {
+        std::cerr << result->failures << " self-build edge(s) failed (of " << result->total_edges << ")\n";
+        return false;
+    }
+    return true;
 }
 
 } // namespace
@@ -136,53 +221,45 @@ auto main(int argc, char** argv) -> int {
         std::cerr << args.error().message << "\n";
         return 1;
     }
-    if (args->backend != "ninja") {
-        std::cerr << "unsupported backend: " << args->backend << "\n";
+
+    if (!run_self_build(*args)) {
         return 1;
     }
 
-    auto written = write_if_changed("_out/ngen-build-pre.ninja", R"(cxx = clang++
-cxxflags = -std=c++23 -O0 -g -Wall -Wextra
-builddir = _out/.ninja
-
-rule cxx
-  command = mkdir -p _out && $cxx $cxxflags -o $out $in
-  description = PREBUILD $out
-
-build _out/ngen-build-pre: cxx build/prebuild.cpp
-
-default _out/ngen-build-pre
-)");
-    if (!written) {
-        std::cerr << written.error().message << "\n";
-        return 1;
+    if (args->help) {
+        print_help();
+        return 0;
     }
 
-    auto prebuild_cmd = std::string(args->verbosity == 1 ? "TERM=dumb ninja -f _out/ngen-build-pre.ninja" : "ninja -f _out/ngen-build-pre.ninja");
-    if (args->verbosity >= 2) {
-        prebuild_cmd += " -v";
-    }
-    // Orchestrator stages must shell out to ninja; std::system is intentional here.
-    if (std::system(prebuild_cmd.c_str()) != 0) { // NOLINT(bugprone-command-processor)
-        return 1;
-    }
-    if (std::system("./_out/ngen-build-pre") != 0) { // NOLINT(bugprone-command-processor)
-        return 1;
-    }
-
-    auto graph_cmd = "./_out/ngen-build-graph" + forward_args(argc, argv);
+    auto graph_cmd = "./_out/ngen-build-graph" + graph_forward_args(argc, argv);
     if (std::system(graph_cmd.c_str()) != 0) { // NOLINT(bugprone-command-processor)
         return 1;
     }
 
-    if (args->list) {
+    if (args->list || args->dump_graph) {
         return 0;
     }
 
-    auto build_cmd = std::string(args->verbosity == 1 ? "TERM=dumb ninja -f _out/build.ninja" : "ninja -f _out/build.ninja");
-    if (args->verbosity >= 2) {
-        build_cmd += " -v";
+    if (args->platform.empty() || args->config.empty()) {
+        // Friendly fallback: the build system has no project knowledge to fall back on, so show the same panel
+        // `--help` would print and then report what was missing on stderr.
+        print_help();
+        std::cerr << "\n"
+                  << "Error: --platform and --config are required.\n";
+        return 1;
     }
-    build_cmd += " " + shell_quote(ninja_target(*args));
-    return std::system(build_cmd.c_str()) == 0 ? 0 : 1; // NOLINT(bugprone-command-processor)
+
+    auto ir_path = "_out/" + args->platform + "/" + args->config + "/build.ngenir";
+    std::string cmd = "./_out/ngen-build-run --ir " + shell_quote(ir_path);
+    if (args->verbosity == 1) {
+        cmd = "TERM=dumb " + cmd + " -v";
+    }
+    if (args->verbosity >= 2) {
+        cmd += " -vv";
+    }
+    // Empty target means "let the runner use the IR's default_targets". Don't pass an empty positional arg.
+    if (!args->target.empty()) {
+        cmd += " " + shell_quote(args->target);
+    }
+    return std::system(cmd.c_str()) == 0 ? 0 : 1; // NOLINT(bugprone-command-processor)
 }

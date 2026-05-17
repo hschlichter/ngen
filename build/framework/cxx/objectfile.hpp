@@ -1,3 +1,24 @@
+// build::cxx::ObjectFile — one node per translation unit.
+//
+// Every `.cpp` declared via `cxx::Target::sources(...)` becomes one `ObjectFile`. Each owns its own
+// `build::Target` (so it shows up in the dependency graph), holds a `shared_ptr` back to its parent's *base*
+// (not to the parent wrapper, which is a value type that gets moved during the fluent builder dance), and
+// attaches itself as the `cxx::ObjectFile` extension on its own base. The parent's base dep-edges into this
+// object's base, so the IR emitter walks ObjectFiles via the normal post-order traversal.
+//
+// Naming: `<parent-name>/<source-path>`, e.g. `mylib/src/mylib/foo.cpp`. Composite by design — uniqueness is
+// guaranteed even when the same source is compiled into two libraries (each gets its own ObjectFile with its
+// own output path).
+//
+// `parent() -> cxx::Target*` looks the live wrapper up through the parent base's `ExtensionMap`. The
+// indirection keeps `parent()` correct even after `cxx::Target` has been copied/moved into its final home.
+//
+// Non-copyable, non-movable — the `shared_ptr` is what moves between `objects_data` slots, never the object.
+//
+// Per-TU overrides (`defines_data`, `warning_suppressions_data`, `compile_flags_data`, `std_data`) start empty
+// and are layered on top in the order (platform → config → parent → object) at emit time. See
+// `ir/emit.hpp::emit_object_file`.
+
 #pragma once
 
 #include "../path.hpp"
@@ -13,16 +34,6 @@ namespace build::cxx {
 
 class Target;
 
-// One translation unit, addressable as its own build::Target node.
-//
-// Lifetime: held by shared_ptr in the parent cxx::Target's objects_data.
-// The parent's build::Target depends on this object's build::Target, so the
-// emitter visits it as part of the normal dep walk.
-//
-// parent_base_ holds the parent's shared base (not the cxx::Target wrapper),
-// because cxx::Target itself is a value type that gets copied/moved into
-// place. The cxx extension on parent_base_ always points to the live
-// cxx::Target instance via its ExtensionMap.
 class ObjectFile {
 public:
     ObjectFile(std::shared_ptr<build::Target> parent_base, Path source)
@@ -44,9 +55,6 @@ public:
 
     auto source() const -> const Path& { return source_; }
 
-    // Returns the live parent cxx::Target. The ExtensionMap re-binds the
-    // back-pointer when the parent value gets copied/moved into its final
-    // home, so this stays correct across the fluent-builder dance.
     auto parent() const -> const Target* { return parent_base_->extensions().get<Target>(); }
     auto parent() -> Target* { return parent_base_->extensions().get<Target>(); }
 
@@ -80,8 +88,6 @@ public:
         return *this;
     }
 
-    // Per-TU overrides — empty by default. Merged on top of parent values
-    // at emit time (platform → config → parent → ObjectFile).
     std::vector<std::string> defines_data;
     std::vector<std::string> warning_suppressions_data;
     std::vector<std::string> compile_flags_data;

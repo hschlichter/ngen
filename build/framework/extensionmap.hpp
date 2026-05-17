@@ -1,3 +1,20 @@
+// build::ExtensionMap — type-erased payload table on Target / Platform / Configuration.
+//
+// The framework's core types (`build::Target`, `build::Platform`, `build::Configuration`) carry no language
+// vocabulary. Anything language- or kind-specific — `cxx::Target`'s sources list, `Tool`'s argv template,
+// `Alias`'s selector rules — attaches here, keyed by the extension's concrete type via
+// `std::type_index(typeid(Ext))`. Two attachment modes:
+//
+//   - `add<Ext>(args...)` — owning. The map heap-allocates and deletes on destruction. Idempotent: a second
+//     `add<T>` returns the existing instance rather than replacing.
+//   - `attach<Ext>(ext)` — non-owning. Stores a back-pointer with a no-op deleter; replaces any existing entry.
+//
+// `add` is for extensions whose data has no other home. `attach` is what the fluent wrappers (`cxx::Target`,
+// `Tool`, `Alias`) use: each wrapper owns its data and attaches itself as the back-pointer, so the rest of the
+// framework can look it up via `target->extension<cxx::Target>()`.
+//
+// `get<Ext>()` returns `nullptr` when absent. No exceptions; the framework follows the `std::expected` discipline.
+
 #pragma once
 
 #include <memory>
@@ -7,19 +24,6 @@
 
 namespace build {
 
-// Type-erased map of extension instances keyed by their concrete type.
-//
-// Two attachment modes:
-//   - add<Ext>(args...)    : ExtensionMap owns the new Ext (heap-allocated, deleted on map destruction).
-//                            Idempotent: calling add<T>() twice returns the existing instance instead of replacing.
-//   - attach<Ext>(ext)     : non-owning. The map stores a back-pointer with a no-op deleter.
-//                            Replaces any previous entry of the same type.
-//
-// add() is for extensions that have no other home (e.g. build::cxx::Platform — created on demand on a build::Platform).
-// attach() is for extensions whose data lives elsewhere (e.g. build::cxx::Target — the fluent wrapper owns the data
-// and registers a back-pointer in build::Target's map).
-//
-// get<Ext>() returns nullptr if the extension is absent. No exceptions.
 class ExtensionMap {
 public:
     template <typename Ext>

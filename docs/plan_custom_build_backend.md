@@ -59,20 +59,15 @@ build/
   bootstrap.cpp                  # updated: invokes ngen-build-run instead of `ninja` for the project build
   prebuild.cpp                   # updated: emits ngen-build-graph.ninja AND ngen-build-run.ninja
   build.cpp                      # updated: graph emits IR via the new IR backend
-  run/                           # NEW — runner binary lives here, multi-TU
-    main.cpp                     # entry point + CLI parsing
+  run/                           # NEW — runner sources; header-only like the framework, with one .cpp entry point
+    main.cpp                     # the only translation unit; CLI parsing + dispatch into execute.hpp
+    execute.hpp                  # ngen::run::execute(IR&, RunOptions&); top-level entry point
     buildlog.hpp                 # persistent edge state (single binary file at _out/.ngen-buildlog)
-    buildlog.cpp
     hash.hpp                     # xxhash3 file hashing with (path,size,mtime,ctime) fast-path
-    hash.cpp
     process.hpp                  # thin spawn/wait abstraction; POSIX impl
-    process.cpp
     scheduler.hpp                # ready-queue driven worker pool, console pool, -k N, Ctrl+C
-    scheduler.cpp
     depfile.hpp                  # parse Make-style .d files
-    depfile.cpp
     progress.hpp                 # ninja-style progress line + verbosity modes
-    progress.cpp
   framework/
     ... (existing headers unchanged)
     ir/                          # NEW — shared IR schema, used by stage 3 (writer) and stage 4 (reader)
@@ -86,8 +81,12 @@ build/
 
 `framework/backendninja.hpp` is deleted at the end of phase 5. During phases 1-4 both backends coexist behind `--backend ir|ninja` so we can validate.
 
-The runner is the first part of the build system that is multi-TU. Framework stays header-only as it has been; the runner under `build/run/` uses regular
-`.hpp/.cpp` split because the implementations are real (subprocess management, file hashing) and there's no benefit to forcing them into one TU.
+The runner is header-only, matching the framework. Free functions are `inline`; class methods are implicitly inline by virtue of being defined in-class. The
+single translation unit is `build/run/main.cpp`, which `#include`s `execute.hpp` and transitively pulls in the rest. Header-only is a deliberate choice for
+symmetry with the framework and for cheap bootstrap once `plan_remove_ninja_from_bootstrap.md` and `plan_unified_runner.md` land — at that point compiling the
+runner is one `c++` invocation against `build/run/main.cpp`, and `ngen-build` itself can include the runner headers directly without any link-time archive.
+The cost is that the runner's TU pulls in `<thread>`, `<atomic>`, `<poll.h>`, `<spawn.h>`, and so on; bounded and acceptable for a system with at most two
+consumers (`main.cpp` and, eventually, `bootstrap.cpp`).
 
 ---
 
@@ -393,7 +392,8 @@ Each phase is independently demoable and reversible. Both backends coexist until
 
 ### Phase 2 — Runner skeleton (serial, no caching)
 
-- Add `build/run/main.cpp` + minimal `process.{hpp,cpp}` (synchronous `Process::run`). No build log, no parallelism, no progress display, no depfile parsing.
+- Add `build/run/main.cpp` + minimal `build/run/process.hpp` (header-only, synchronous `Process::run`). No build log, no parallelism, no progress display, no
+  depfile parsing.
 - `prebuild.cpp` learns to emit `_out/ngen-build-run.ninja`. `bootstrap.cpp` builds it alongside the graph.
 - `ngen-build-run --ir <path> [target]` walks the IR in topological order and runs every edge. Always rebuilds everything.
 - `ngen-build` learns `--backend run` flag (still defaulting to ninja). With `--backend run`, the orchestrator uses the new runner end to end.
@@ -401,7 +401,7 @@ Each phase is independently demoable and reversible. Both backends coexist until
 
 ### Phase 3 — Caching and parallelism
 
-- `build/run/{buildlog,hash,depfile,scheduler}.{hpp,cpp}`.
+- `build/run/{buildlog,hash,depfile,scheduler}.hpp` (header-only).
 - Async `Process::spawn` / `wait` / `signal`.
 - Build log read at start, written atomically at end. Hashing with mtime fast-path. Depfile parsing after each compile edge.
 - Scheduler with `-j N`, console pool, `-k N`, Ctrl+C handling.
@@ -409,7 +409,7 @@ Each phase is independently demoable and reversible. Both backends coexist until
 
 ### Phase 4 — UX polish
 
-- `progress.{hpp,cpp}` — ninja-style line, `-v` / `-vv` modes, color/NO_COLOR.
+- `build/run/progress.hpp` — ninja-style line, `-v` / `-vv` modes, color/NO_COLOR.
 - Failure formatting (`FAILED: ... $ command ... <output>`).
 - `--dump-graph` JSON wired up end to end.
 - Error messages on missing IR, version mismatch, malformed depfile, missing inputs.
@@ -435,8 +435,13 @@ Each phase is independently demoable and reversible. Both backends coexist until
 
 ## 14. Open questions / future work
 
-- **Single-process mode.** Once stage 3 and 4 are stable, a `--in-process` flag could collapse them: graph emit → in-memory IR → execute, no file in between.
-  Saves one mmap and a process boundary on no-op rebuilds. Plumbing a shared `IR` type across the boundary is most of the work; phase 7 candidate.
+- **Removing ninja from the build-system self-bootstrap.** Tracked separately in `plan_remove_ninja_from_bootstrap.md`. Replaces `bootstrap.ninja` and the
+  prebuild stage with a three-line shell seed plus a stat-and-compile loop inside `ngen-build`. Starts after this plan's phase 5 lands.
+- **Unified runner (end state).** Tracked separately in `plan_unified_runner.md`. Replaces the stat-and-compile loop above with the runner itself, exposing
+  `ngen::run::execute()` as a library entry point so `ngen-build` can hand the runner an in-memory IR describing its own dependencies. Starts after
+  `plan_remove_ninja_from_bootstrap.md` lands.
+- **Single-process mode for the project build.** A `--in-process` flag could collapse stages 3 and 4: graph emit → in-memory IR → execute, no file in
+  between. Saves one mmap and a process boundary on no-op rebuilds. Largely subsumed by `plan_unified_runner.md` if we ever want it for the project path too.
 - **Watch mode.** Long-running `ngen-build --watch` that holds the IR + build log + recursive inotify watches in memory. Order-of-magnitude inner-loop win for
   iterative dev. Defer until the runner has shipped and we have measurements.
 - **Windows.** The `Process` abstraction is in place. `process_win.cpp` is the only file that needs to land; `posix_spawn` calls don't leak into schedulers

@@ -1,3 +1,36 @@
+// build::cxx::Target — the user-facing surface for cxx libraries and programs.
+//
+// Wraps a `build::Target` (held behind `std::shared_ptr`) and attaches itself as the cxx extension. Where the
+// base `build::Target` carries only identity, deps, and gating, this wrapper carries everything a cxx library
+// or program needs at emit time: a `Kind` (`StaticLibrary` / `SharedLibrary` / `Program`), the source list
+// (materialised as `cxx::ObjectFile` children — see `objectfile.hpp`), per-target compile flags, defines,
+// warning suppressions, the include search path (private `include` plus `public_include` which propagates to
+// dependents), link inputs (other `cxx::Target`s, system libs, raw link flags, `lib_search` dirs, `rpath`s),
+// and the C++ standard override.
+//
+// The fluent API is the only intended way to build one of these:
+//
+//     cxx::static_library("name")
+//         .sources(glob({.include = "src/foo/**/*.cpp"}))
+//         .include({"src/foo"})
+//         .link(other_lib);
+//
+// Factory functions `cxx::static_library` / `cxx::shared_library` / `cxx::program` differ only in the `Kind`.
+//
+// `sources(...)` materialises one `cxx::ObjectFile` per `.cpp` and dep-edges it into this target's base.
+// `for_source(path, fn)` looks the child up and calls `fn(ObjectFile&)` to apply per-TU overrides; missing
+// source aborts (configuration error).
+//
+// `optimize(O3)` / `debug(true)` / `pic(true)` are sugar that append the right `-O3` / `-g` / `-fPIC` token to
+// `compile_flags_data`; equivalent to the raw flag through `compile_flag("-O3")`.
+//
+// The public `*_data` fields exist for the IR emitter — it reads them directly when assembling per-edge inputs
+// (see `build/ir/emit.hpp::emit_object_file` / `emit_cxx_library` / `emit_cxx_program`). User code mutates them
+// through the fluent setters only.
+//
+// Same wrapper move/copy invariant as `cxx::Platform` / `Alias` / `Tool`: both constructors re-attach `*this`
+// on the base's `ExtensionMap`.
+
 #pragma once
 
 #include "../path.hpp"
@@ -266,8 +299,8 @@ public:
         return *this;
     }
 
-    // Public data, exposed for backend emit.
-    // Mutated through the fluent API above; collected by cxx::ninja::emit_*.
+    // Public data, exposed for the IR emitter.
+    // Mutated through the fluent API above; consumed by build::ir::detail::VariantEmitter.
     std::vector<std::shared_ptr<ObjectFile>> objects_data;
     std::vector<Path> includes_data;
     std::vector<Path> public_includes_data;

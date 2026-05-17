@@ -1,3 +1,12 @@
+// build::Configuration — language-agnostic build-configuration identity.
+//
+// Symmetric to `build::Platform`: carries only the identity (`name`) and an output root (`out_dir`, defaulting
+// to `_out`) plus an `ExtensionMap`. Per-config compile flags, link flags, and defines live in
+// `build::cxx::Configuration`, attached here as the cxx extension.
+//
+// Constructed by user code via `cxx::configuration("debug")`. Registered with `Project::config()`. Read at emit
+// time via `BuildVariant::config`; `out_dir` participates in `variant.out_dir = root / platform / config`.
+
 #pragma once
 
 #include "extensionmap.hpp"

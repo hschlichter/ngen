@@ -1,3 +1,18 @@
+// build::cxx::Platform — the cxx-language extension on build::Platform.
+//
+// Wraps a `build::Platform` (held behind `std::shared_ptr`) and attaches itself as the cxx extension on that
+// platform's `ExtensionMap`. Carries the per-platform values the cxx emit path needs but that don't belong on
+// the language-agnostic base: a composed `Toolchain`, plus per-platform `compile_flags` / `link_flags` /
+// `defines` / `system_libs`. Setters for `os` / `graphics_api` / `exe_suffix` delegate to the base.
+//
+// Constructed by user code via the fluent factory `cxx::platform("my-platform")`. Registered with
+// `Project::platform()` (implicitly via the conversion to `build::Platform&`). The IR emitter looks the wrapper
+// up at emit time via `cxx::find_platform(variant.platform)` and reads its data into per-edge `CompileInputs` /
+// `LinkInputs`.
+//
+// Wrapper invariant: move and copy constructors re-attach `*this` on the base's `ExtensionMap` so the
+// back-pointer always reflects the live wrapper, even after the fluent-build dance has copied a prvalue.
+
 #pragma once
 
 #include "../platform.hpp"
