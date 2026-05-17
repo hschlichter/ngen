@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../glob.hpp"
-#include "../path.hpp"
+#include "../framework/glob.hpp"
+#include "../framework/path.hpp"
 #include "schema.hpp"
 
 #include <cassert>

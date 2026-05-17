@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../framework/ir/schema.hpp"
+#include "../ir/schema.hpp"
 #include "scheduler.hpp"
 
 #include <cstdio>

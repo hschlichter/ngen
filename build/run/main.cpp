@@ -1,4 +1,4 @@
-#include "../framework/ir/reader.hpp"
+#include "../ir/reader.hpp"
 #include "execute.hpp"
 
 #include <iostream>

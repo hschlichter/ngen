@@ -1,21 +1,21 @@
 #pragma once
 
-#include "alias.hpp"
-#include "command.hpp"
-#include "cxx/commands.hpp"
-#include "cxx/configuration.hpp"
-#include "cxx/objectfile.hpp"
-#include "cxx/platform.hpp"
-#include "cxx/target.hpp"
-#include "cxx/toolchain.hpp"
-#include "glob.hpp"
-#include "ir/json.hpp"
-#include "ir/schema.hpp"
-#include "ir/writer.hpp"
-#include "path.hpp"
-#include "project.hpp"
-#include "target.hpp"
-#include "tool.hpp"
+#include "../framework/alias.hpp"
+#include "../framework/command.hpp"
+#include "../framework/cxx/commands.hpp"
+#include "../framework/cxx/configuration.hpp"
+#include "../framework/cxx/objectfile.hpp"
+#include "../framework/cxx/platform.hpp"
+#include "../framework/cxx/target.hpp"
+#include "../framework/cxx/toolchain.hpp"
+#include "../framework/glob.hpp"
+#include "../framework/path.hpp"
+#include "../framework/project.hpp"
+#include "../framework/target.hpp"
+#include "../framework/tool.hpp"
+#include "json.hpp"
+#include "schema.hpp"
+#include "writer.hpp"
 
 #include <cassert>
 #include <cstdint>
@@ -32,9 +32,9 @@
 #include <utility>
 #include <vector>
 
-namespace build {
+namespace build::ir {
 
-namespace detail::ir {
+namespace detail {
 
 inline auto bake_command(const Command& command) -> std::string {
     std::string out;
@@ -192,10 +192,10 @@ class VariantEmitter {
 public:
     VariantEmitter(const Project& project, BuildVariant variant) : project_(project), variant_(std::move(variant)) {}
 
-    auto emit() -> std::expected<build::ir::IR, Error> {
+    auto emit() -> std::expected<IR, Error> {
         ir_.variant = variant_.platform->name() + "/" + variant_.config->name();
         ir_.project_root = repo_root();
-        ir_.pools = build::ir::make_default_pools();
+        ir_.pools = make_default_pools();
         ensure_dirs_.insert(variant_.out_dir.string());
 
         for (auto* tgt : project_.build_all()) {
@@ -234,7 +234,7 @@ public:
     }
 
 private:
-    auto add_edge(build::ir::Edge edge) -> std::uint32_t {
+    auto add_edge(Edge edge) -> std::uint32_t {
         auto idx = static_cast<std::uint32_t>(ir_.edges.size());
         name_to_edge_[edge.name] = idx;
         ir_.edges.push_back(std::move(edge));
@@ -351,14 +351,14 @@ private:
 
         auto command = cxx::cmd::compile_command(tc, in);
 
-        build::ir::Edge edge;
+        Edge edge;
         edge.name = obj.owner().name();
         edge.command = bake_command(command);
         edge.inputs = {obj.source().string()};
         edge.outputs = {object.string()};
         edge.depfile = object.string() + ".d";
         edge.description = "CXX " + object.string();
-        edge.pool = build::ir::kPoolDefault;
+        edge.pool = kPoolDefault;
         add_edge(std::move(edge));
 
         compile_commands_.push_back(compile_command_entry(obj.source(), command));
@@ -400,13 +400,13 @@ private:
             command = cxx::cmd::archive_command(tc, *objects, output);
         }
 
-        build::ir::Edge edge;
+        Edge edge;
         edge.name = target.owner().name();
         edge.command = bake_command(command);
         edge.inputs = paths_to_strings(*objects);
         edge.outputs = {output.string()};
         edge.description = (shared ? std::string("LINK-SHARED ") : std::string("AR ")) + output.string();
-        edge.pool = build::ir::kPoolDefault;
+        edge.pool = kPoolDefault;
         add_edge(std::move(edge));
 
         return output;
@@ -455,7 +455,7 @@ private:
 
         auto command = cxx::cmd::link_command(tc, in, false);
 
-        build::ir::Edge edge;
+        Edge edge;
         edge.name = target.owner().name();
         edge.command = bake_command(command);
         auto inputs = paths_to_strings(*objects);
@@ -465,7 +465,7 @@ private:
         edge.outputs = {output.string()};
         edge.order_only_deps = paths_to_strings(order_only);
         edge.description = "LINK " + output.string();
-        edge.pool = build::ir::kPoolDefault;
+        edge.pool = kPoolDefault;
         add_edge(std::move(edge));
 
         return output;
@@ -490,7 +490,7 @@ private:
             ensure_dirs_.insert(stamp.parent_path().string());
             Command command = substitute(target.argv_template, target.tool_inputs, {}, variant_.out_dir);
 
-            build::ir::Edge edge;
+            Edge edge;
             edge.name = target.name();
             edge.command = bake_command(command);
             edge.inputs = paths_to_strings(target.tool_inputs);
@@ -498,7 +498,7 @@ private:
             edge.order_only_deps = paths_to_strings(order_only);
             edge.description = "TOOL " + stamp.string();
             // clean and similar tools mutate top-level state — keep them in the console pool.
-            edge.pool = build::ir::kPoolConsole;
+            edge.pool = kPoolConsole;
             add_edge(std::move(edge));
             return stamp;
         }
@@ -515,33 +515,33 @@ private:
             }
             Command command = substitute(target.argv_template, inputs_one, {output}, variant_.out_dir);
 
-            build::ir::Edge edge;
+            Edge edge;
             edge.name = target.name() + "/" + output.string();
             edge.command = bake_command(command);
             edge.inputs = paths_to_strings(inputs_one);
             edge.outputs = {output.string()};
             edge.order_only_deps = paths_to_strings(order_only);
             edge.description = "TOOL " + output.string();
-            edge.pool = build::ir::kPoolDefault;
+            edge.pool = kPoolDefault;
             add_edge(std::move(edge));
             all_outputs.push_back(output.string());
         }
 
         auto phony = variant_.out_dir / ("." + target.name() + ".stamp");
-        build::ir::Edge phony_edge;
+        Edge phony_edge;
         phony_edge.name = target.name();
         phony_edge.inputs = std::move(all_outputs);
         phony_edge.outputs = {phony.string()};
         phony_edge.description = "PHONY " + target.name();
-        phony_edge.pool = build::ir::kPoolDefault;
-        phony_edge.flags = build::ir::kEdgeFlagPhony;
+        phony_edge.pool = kPoolDefault;
+        phony_edge.flags = kEdgeFlagPhony;
         add_edge(std::move(phony_edge));
         return phony;
     }
 
     auto emit_global_tool(Tool& target) -> void {
         Command command = substitute(target.argv_template, target.tool_inputs, target.tool_outputs, Path{});
-        build::ir::Edge edge;
+        Edge edge;
         edge.name = target.name();
         edge.command = bake_command(command);
         edge.inputs = paths_to_strings(target.tool_inputs);
@@ -552,13 +552,13 @@ private:
             edge.outputs.push_back(target.name());
         }
         edge.description = "TOOL " + target.name();
-        edge.pool = build::ir::kPoolConsole; // global tools (format/tidy) touch many files; serialize.
+        edge.pool = kPoolConsole; // global tools (format/tidy) touch many files; serialize.
         add_edge(std::move(edge));
     }
 
     const Project& project_;
     BuildVariant variant_;
-    build::ir::IR ir_;
+    IR ir_;
     std::unordered_map<std::string, std::uint32_t> name_to_edge_;
     std::unordered_map<std::string, Path> primary_output_;
     std::set<std::string> visiting_;
@@ -566,9 +566,9 @@ private:
     std::vector<std::string> compile_commands_;
 };
 
-} // namespace detail::ir
+} // namespace detail
 
-class IrBackend {
+class Emitter {
 public:
     auto emit(const Project& project, const Path& root_out_dir = Path("_out")) const -> std::expected<void, Error> {
         std::vector<std::string> merged_compile_commands;
@@ -576,7 +576,7 @@ public:
         for (auto* platform : project.platforms()) {
             for (auto* config : project.configs()) {
                 BuildVariant variant{platform, config, root_out_dir / platform->name() / config->name()};
-                detail::ir::VariantEmitter emitter(project, variant);
+                detail::VariantEmitter emitter(project, variant);
                 auto ir = emitter.emit();
                 if (!ir) {
                     return std::unexpected(ir.error());
@@ -587,12 +587,12 @@ public:
                     return std::unexpected(dirs.error());
                 }
 
-                auto written = build::ir::write(*ir, variant.out_dir / "build.ngenir");
+                auto written = write(*ir, variant.out_dir / "build.ngenir");
                 if (!written) {
                     return std::unexpected(written.error());
                 }
 
-                auto cc_json = detail::ir::compile_commands_json(emitter.compile_commands());
+                auto cc_json = detail::compile_commands_json(emitter.compile_commands());
                 auto cc_written = write_if_changed(variant.out_dir / "compile_commands.json", cc_json);
                 if (!cc_written) {
                     return std::unexpected(cc_written.error());
@@ -601,7 +601,7 @@ public:
             }
         }
 
-        auto merged_json = detail::ir::compile_commands_json(merged_compile_commands);
+        auto merged_json = detail::compile_commands_json(merged_compile_commands);
         auto merged_written = write_if_changed(root_out_dir / "compile_commands.json", merged_json);
         if (!merged_written) {
             return std::unexpected(merged_written.error());
@@ -614,12 +614,12 @@ public:
         for (auto* platform : project.platforms()) {
             for (auto* config : project.configs()) {
                 BuildVariant variant{platform, config, Path("_out") / platform->name() / config->name()};
-                detail::ir::VariantEmitter emitter(project, variant);
+                detail::VariantEmitter emitter(project, variant);
                 auto ir = emitter.emit();
                 if (!ir) {
                     return std::unexpected(ir.error());
                 }
-                build::ir::dump_json(*ir, out);
+                dump_json(*ir, out);
                 out << "\n";
             }
         }
@@ -627,4 +627,4 @@ public:
     }
 };
 
-} // namespace build
+} // namespace build::ir

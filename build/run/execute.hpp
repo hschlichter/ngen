@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../framework/glob.hpp"
-#include "../framework/ir/schema.hpp"
+#include "../ir/schema.hpp"
 #include "../framework/path.hpp"
 #include "buildlog.hpp"
 #include "depfile.hpp"

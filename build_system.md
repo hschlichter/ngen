@@ -16,6 +16,13 @@ build/
   bootstrap.cpp                # ngen-build orchestrator (stage 1)
   prebuild.cpp                 # ngen-build-pre (stage 2) — emits ninja manifests for stages 3 and 4
   build.cpp                    # project graph; compiled into ngen-build-graph (stage 3)
+  ir/                          # binary IR transport + emitter; shared by graph (writer) and runner (reader); header-only
+    schema.hpp                 # Edge, Pool, IR; binary wire-format constants
+    writer.hpp                 # build::ir::write(IR&, Path)
+    reader.hpp                 # build::ir::read(Path) -> expected<IR, Error>
+    json.hpp                   # build::ir::dump_json(IR&, ostream&) for --dump-graph
+    emit.hpp                   # build::ir::Emitter; walks Project and produces an IR per variant
+    xxhash.h                   # vendored single-header xxhash (BSD-2)
   run/                         # ngen-build-run sources; header-only with one .cpp entry point
     main.cpp                   # CLI entry; loads IR via reader and calls ngen::run::execute()
     execute.hpp                # ngen::run::execute(IR&, RunOptions&) — dirty detection + scheduler driver
@@ -25,10 +32,8 @@ build/
     process.hpp                # POSIX spawn/wait/signal + synchronous run convenience wrapper
     progress.hpp               # ninja-style [done/total] progress; tty \r-overwrite; NO_COLOR
     scheduler.hpp              # -j N ready-queue scheduler; console pool depth 1; SIGINT cancel token
-  framework/                   # header-only library, no .cpp files, no umbrella
+  framework/                   # configuration-API library; header-only, no .cpp files, no umbrella
     alias.hpp                  # Alias — fluent wrapper, attached as extension on build::Target
-    backend.hpp                # BuildVariant + forward decls of Platform/Configuration
-    backendir.hpp              # detail::ir::VariantEmitter, IrBackend (writes _out/<plat>/<cfg>/build.ngenir + compile_commands.json)
     command.hpp                # Command (argv vector)
     configuration.hpp          # build::Configuration — fluent class with ExtensionMap
     extensionmap.hpp           # ExtensionMap (type-erased; owning add + non-owning attach; nullable get)
@@ -39,6 +44,7 @@ build/
     project.hpp                # Project — registers entry targets / platforms / configs
     target.hpp                 # build::Target — identity + deps + gating + ExtensionMap
     tool.hpp                   # Tool — fluent wrapper, attached as extension on build::Target
+    variant.hpp                # BuildVariant — (platform, config, out_dir) identity tuple
 
     cxx/
       commands.hpp             # cxx::cmd::CompileInputs/LinkInputs + compile_/archive_/link_command
@@ -47,18 +53,16 @@ build/
       platform.hpp             # build::cxx::Platform — fluent wrapper, attached as extension on build::Platform (composes Toolchain)
       target.hpp               # build::cxx::Target — fluent wrapper, attached as extension on build::Target; OptLevel + Kind enums
       toolchain.hpp            # build::cxx::Toolchain — tools only (compiler / archiver / linker / default_std)
-
-    ir/                        # binary IR shared by graph (writer) and runner (reader); header-only
-      schema.hpp               # Edge, Pool, IR; binary wire-format constants
-      writer.hpp               # build::ir::write(IR&, Path)
-      reader.hpp               # build::ir::read(Path) -> expected<IR, Error>
-      json.hpp                 # build::ir::dump_json(IR&, ostream&) for --dump-graph
-      xxhash.h                 # vendored single-header xxhash (BSD-2)
 ```
+
+The three top-level directories under `build/` carry distinct responsibilities: `framework/` is the configuration API (Target/Project/Platform/Configuration
++ the cxx language module); `ir/` is the transport format and its emitter (schema + writer + reader + JSON dump + `Emitter` that walks a `Project` to
+produce an `IR`); `run/` is the executor that reads an IR and runs it. `build/build.cpp` includes `framework/` to describe the project and `ir/emit.hpp` to
+serialize it. Direction of dependency: `ir/` depends on `framework/`, never the reverse.
 
 **Header-only framework + runner.** The framework and `build/run/` are both header-only with the runner having a single `.cpp` entry point (`main.cpp`).
 Free functions are marked `inline`; class methods are defined inside their class bodies (implicitly inline). Implementation-only helpers live in
-`namespace build::detail::ir` (graph-traversal helpers `append_unique`, `resolve_alias`, `collect_includes`, `object_path`, etc.) and
+`namespace build::ir::detail` (graph-traversal helpers `append_unique`, `resolve_alias`, `collect_includes`, `object_path`, etc.) and
 `build::detail` (`glob_match` in `glob.hpp`).
 
 There is no umbrella `build.hpp`. `build/build.cpp` includes the specific headers it needs.
@@ -307,12 +311,12 @@ The backend dispatches `Tool` and `Alias` via `target->extension<Tool>()` / `tar
 
 ## 8. IR backend and runner
 
-### 8.1 Graph stage (`IrBackend`)
+### 8.1 Graph stage (`ir::Emitter`)
 
-`IrBackend::emit(project)` writes `_out/<platform>/<config>/build.ngenir` for every variant, all per-variant `compile_commands.json`, the merged
+`build::ir::Emitter::emit(project)` writes `_out/<platform>/<config>/build.ngenir` for every variant, all per-variant `compile_commands.json`, the merged
 `_out/compile_commands.json`, and creates required output directories.
 
-`detail::ir::VariantEmitter::emit_target` resolves aliases (walking `target->extension<Alias>()` chains), then dispatches by extension type:
+`ir::detail::VariantEmitter::emit_target` resolves aliases (walking `target->extension<Alias>()` chains), then dispatches by extension type:
 
 ```cpp
 if      (auto* tool = target->extension<Tool>())              { emit_tool(*tool, ...); }
@@ -341,7 +345,7 @@ it. Link flags and system libs are parent-level concerns; ObjectFile has no link
 
 `-Wl,--start-group` / `-Wl,--end-group` wraps archive inputs at link time so over-linking still works without the user having to curate transitive link order.
 
-### 8.2 IR file (`build/framework/ir/`)
+### 8.2 IR file (`build/ir/`)
 
 Per-variant binary file at `_out/<platform>/<config>/build.ngenir`. Contains:
 
@@ -552,7 +556,7 @@ The framework is designed so that adding a new language module is purely additiv
 2. Each follows the same pattern as the cxx files: a wrapper that owns a `shared_ptr` to the corresponding `build::*` base, attaches itself as an extension,
    and exposes a fluent surface.
 3. Add a free factory `<lang>::<lang>(name)` for the language target equivalent (`cxx::program`, `cxx::static_library`, …).
-4. Add a backend dispatch branch in `build/framework/backendir.hpp`'s `emit_target`:
+4. Add a backend dispatch branch in `build/ir/emit.hpp`'s `emit_target`:
 
    ```cpp
    else if (auto* x = target->extension<lang::Target>()) { /* push edges into ir_ */ }

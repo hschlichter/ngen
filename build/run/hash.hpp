@@ -1,7 +1,7 @@
 #pragma once
 
 #define XXH_INLINE_ALL
-#include "../framework/ir/xxhash.h"
+#include "../ir/xxhash.h"
 
 #include "../framework/glob.hpp"
 #include "../framework/path.hpp"

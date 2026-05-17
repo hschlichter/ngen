@@ -1,4 +1,3 @@
-#include "framework/backendir.hpp"
 #include "framework/cxx/configuration.hpp"
 #include "framework/cxx/platform.hpp"
 #include "framework/cxx/target.hpp"
@@ -6,6 +5,7 @@
 #include "framework/inspect.hpp"
 #include "framework/project.hpp"
 #include "framework/tool.hpp"
+#include "ir/emit.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -298,7 +298,7 @@ auto main(int argc, char** argv) -> int {
     }
 
     if (dump_graph) {
-        auto dumped = IrBackend{}.dump(p, std::cout);
+        auto dumped = ir::Emitter{}.dump(p, std::cout);
         if (!dumped) {
             std::cerr << dumped.error().message << "\n";
             return 1;
@@ -306,7 +306,7 @@ auto main(int argc, char** argv) -> int {
         return 0;
     }
 
-    auto emitted = IrBackend{}.emit(p);
+    auto emitted = ir::Emitter{}.emit(p);
     if (!emitted) {
         std::cerr << emitted.error().message << "\n";
         return 1;
