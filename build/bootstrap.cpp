@@ -1,58 +1,16 @@
+#include "ir/schema.hpp"
+#include "run/execute.hpp"
+
 #include <algorithm>
 #include <cstdlib>
 #include <expected>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
-#include <sstream>
 #include <string>
+#include <thread>
 #include <utility>
-#include <vector>
 
 namespace {
-
-struct Error {
-    std::string message;
-};
-
-auto write_if_changed(const std::filesystem::path& path, const std::string& text) -> std::expected<void, Error> {
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-    if (ec) {
-        return std::unexpected(Error{"failed to create directory " + path.parent_path().string() + ": " + ec.message()});
-    }
-    std::ifstream in(path);
-    std::ostringstream current;
-    current << in.rdbuf();
-    if (in && current.str() == text) {
-        return {};
-    }
-    std::ofstream out(path);
-    if (!out) {
-        return std::unexpected(Error{"failed to open " + path.string() + " for writing"});
-    }
-    out << text;
-    if (!out) {
-        return std::unexpected(Error{"failed to write " + path.string()});
-    }
-    return {};
-}
-
-auto shell_quote(const std::string& value) -> std::string {
-    if (value.empty()) {
-        return "''";
-    }
-    std::string out = "'";
-    for (char ch : value) {
-        if (ch == '\'') {
-            out += "'\\''";
-        } else {
-            out += ch;
-        }
-    }
-    out += "'";
-    return out;
-}
 
 struct Args {
     std::string target = "ngen-view";
@@ -63,13 +21,13 @@ struct Args {
     bool dump_graph = false;
 };
 
-auto parse(int argc, char** argv) -> std::expected<Args, Error> {
+auto parse(int argc, char** argv) -> std::expected<Args, build::Error> {
     Args args;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        auto value = [&]() -> std::expected<std::string, Error> {
+        auto value = [&]() -> std::expected<std::string, build::Error> {
             if (i + 1 >= argc) {
-                return std::unexpected(Error{"missing value for " + arg});
+                return std::unexpected(build::Error{"missing value for " + arg});
             }
             return std::string(argv[++i]);
         };
@@ -100,6 +58,22 @@ auto parse(int argc, char** argv) -> std::expected<Args, Error> {
     return args;
 }
 
+auto shell_quote(const std::string& value) -> std::string {
+    if (value.empty()) {
+        return "''";
+    }
+    std::string out = "'";
+    for (char ch : value) {
+        if (ch == '\'') {
+            out += "'\\''";
+        } else {
+            out += ch;
+        }
+    }
+    out += "'";
+    return out;
+}
+
 auto graph_forward_args(int argc, char** argv) -> std::string {
     std::string out;
     for (int i = 1; i < argc; ++i) {
@@ -119,6 +93,68 @@ auto chosen_variant(const Args& args) -> std::pair<std::string, std::string> {
     return {platform, config};
 }
 
+// In-memory IR describing how to compile the two binaries that drive the rest
+// of the build (`ngen-build-graph` and `ngen-build-run`). The runner library
+// turns this into either a no-op (binaries fresh) or a parallel recompile.
+auto self_build_ir() -> build::ir::IR {
+    build::ir::IR ir;
+    ir.variant = "system";
+    ir.project_root = std::filesystem::current_path().string();
+    ir.pools = build::ir::make_default_pools();
+
+    auto cxxflags = std::string("-std=c++23 -O0 -g -Wall -Wextra -pthread");
+
+    {
+        build::ir::Edge edge;
+        edge.name = "ngen-build-graph";
+        edge.command = "c++ " + cxxflags + " -MMD -MF _out/ngen-build-graph.d -o _out/ngen-build-graph build/build.cpp";
+        edge.inputs = {"build/build.cpp"};
+        edge.outputs = {"_out/ngen-build-graph"};
+        edge.depfile = "_out/ngen-build-graph.d";
+        edge.description = "GRAPH _out/ngen-build-graph";
+        edge.pool = build::ir::kPoolDefault;
+        ir.edges.push_back(std::move(edge));
+    }
+    {
+        build::ir::Edge edge;
+        edge.name = "ngen-build-run";
+        edge.command = "c++ " + cxxflags + " -MMD -MF _out/ngen-build-run.d -o _out/ngen-build-run build/run/main.cpp";
+        edge.inputs = {"build/run/main.cpp"};
+        edge.outputs = {"_out/ngen-build-run"};
+        edge.depfile = "_out/ngen-build-run.d";
+        edge.description = "RUNNER _out/ngen-build-run";
+        edge.pool = build::ir::kPoolDefault;
+        ir.edges.push_back(std::move(edge));
+    }
+    ir.default_targets = {0, 1};
+    return ir;
+}
+
+auto run_self_build(const Args& args) -> bool {
+    auto ir = self_build_ir();
+    ngen::run::RunOptions opts;
+    // Synthetic IR path: execute() derives the build log location from it
+    // (_out/.system/.ngen-buildlog) but never reads or writes the IR file itself.
+    opts.ir_path = "_out/.system/build.ngenir";
+    auto hc = std::thread::hardware_concurrency();
+    opts.jobs = static_cast<int>(hc == 0 ? 2u : hc);
+    if (args.verbosity >= 2) {
+        opts.very_verbose = true;
+    } else if (args.verbosity >= 1) {
+        opts.verbose = true;
+    }
+    auto result = ngen::run::execute(ir, opts);
+    if (!result) {
+        std::cerr << "self-build failed: " << result.error().message << "\n";
+        return false;
+    }
+    if (result->failures > 0) {
+        std::cerr << result->failures << " self-build edge(s) failed (of " << result->total_edges << ")\n";
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 auto main(int argc, char** argv) -> int {
@@ -128,32 +164,7 @@ auto main(int argc, char** argv) -> int {
         return 1;
     }
 
-    auto written = write_if_changed("_out/ngen-build-pre.ninja", R"(cxx = clang++
-cxxflags = -std=c++23 -O0 -g -Wall -Wextra
-builddir = _out/.ninja
-
-rule cxx
-  command = mkdir -p _out && $cxx $cxxflags -o $out $in
-  description = PREBUILD $out
-
-build _out/ngen-build-pre: cxx build/prebuild.cpp
-
-default _out/ngen-build-pre
-)");
-    if (!written) {
-        std::cerr << written.error().message << "\n";
-        return 1;
-    }
-
-    auto prebuild_cmd = std::string(args->verbosity == 1 ? "TERM=dumb ninja -f _out/ngen-build-pre.ninja" : "ninja -f _out/ngen-build-pre.ninja");
-    if (args->verbosity >= 2) {
-        prebuild_cmd += " -v";
-    }
-    // Orchestrator stages must shell out to ninja; std::system is intentional here.
-    if (std::system(prebuild_cmd.c_str()) != 0) { // NOLINT(bugprone-command-processor)
-        return 1;
-    }
-    if (std::system("./_out/ngen-build-pre") != 0) { // NOLINT(bugprone-command-processor)
+    if (!run_self_build(*args)) {
         return 1;
     }
 

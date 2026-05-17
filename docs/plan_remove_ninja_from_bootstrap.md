@@ -1,7 +1,9 @@
 # Plan: Remove Ninja From the Build-System Self-Bootstrap
 
-**Status.** Follow-up to `plan_custom_build_backend.md`. Do not start until that plan's phase 5 (project runner is the default backend) has landed and is
-stable. Stepping stone toward `plan_unified_runner.md` — that plan replaces the stat-and-compile loop introduced here with the runner itself.
+**Status. Superseded — not implemented.** After `plan_custom_build_backend.md` phase 5 landed, the runner had hardened enough that the risk-staging argument
+for doing this plan as a stepping stone collapsed. We went straight to `plan_unified_runner.md` instead, which replaces ninja with the runner library
+directly. This document is kept as a record of the path-not-taken; the analysis of what `Process::run` + depfile + buildlog primitives are needed remained
+correct, the choice to insert a separate stat-and-compile loop did not.
 
 This plan removes ninja from the build-system's self-bootstrap chain. After it lands, the repo contains zero ninja files (no `bootstrap.ninja`, no generated
 `.ninja` manifests). The user-facing binary `ngen-build` orchestrates its own dependencies — it compiles `ngen-build-graph` and `ngen-build-run` on demand

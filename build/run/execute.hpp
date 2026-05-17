@@ -1,8 +1,8 @@
 #pragma once
 
 #include "../framework/glob.hpp"
-#include "../ir/schema.hpp"
 #include "../framework/path.hpp"
+#include "../ir/schema.hpp"
 #include "buildlog.hpp"
 #include "depfile.hpp"
 #include "hash.hpp"
@@ -64,8 +64,7 @@ inline auto build_name_index(const build::ir::IR& ir) -> std::unordered_map<std:
     return out;
 }
 
-inline auto resolve_target(const std::string& target, const std::unordered_map<std::string, std::uint32_t>& by_name,
-                           const std::unordered_map<std::string, std::uint32_t>& by_output) -> std::optional<std::uint32_t> {
+inline auto resolve_target(const std::string& target, const std::unordered_map<std::string, std::uint32_t>& by_name, const std::unordered_map<std::string, std::uint32_t>& by_output) -> std::optional<std::uint32_t> {
     if (auto it = by_name.find(target); it != by_name.end()) {
         return it->second;
     }
@@ -75,8 +74,7 @@ inline auto resolve_target(const std::string& target, const std::unordered_map<s
     return std::nullopt;
 }
 
-inline auto collect_reachable(const build::ir::IR& ir, std::uint32_t root_edge, const std::unordered_map<std::string, std::uint32_t>& by_output,
-                              std::unordered_set<std::uint32_t>& out) -> void {
+inline auto collect_reachable(const build::ir::IR& ir, std::uint32_t root_edge, const std::unordered_map<std::string, std::uint32_t>& by_output, std::unordered_set<std::uint32_t>& out) -> void {
     if (!out.insert(root_edge).second) {
         return;
     }
@@ -104,8 +102,7 @@ inline auto find_tracked(const std::vector<TrackedFile>& list, const std::string
 
 // Refresh a list of paths into TrackedFiles, reusing prior content_hash via the
 // mtime fast-path. Returns false in `any_missing` if any path is absent on disk.
-inline auto refresh_list(const std::vector<std::string>& paths, const std::vector<TrackedFile>& previous, std::vector<TrackedFile>& out,
-                         bool& any_missing) -> std::expected<void, build::Error> {
+inline auto refresh_list(const std::vector<std::string>& paths, const std::vector<TrackedFile>& previous, std::vector<TrackedFile>& out, bool& any_missing) -> std::expected<void, build::Error> {
     out.clear();
     out.reserve(paths.size());
     for (const auto& p : paths) {
@@ -225,7 +222,9 @@ inline auto compute_dirty(const build::ir::Edge& edge, const LogEntry* prev) -> 
     return out;
 }
 
-inline auto buildlog_path(const build::Path& ir_path) -> build::Path { return ir_path.parent_path() / build::Path(".ngen-buildlog"); }
+inline auto buildlog_path(const build::Path& ir_path) -> build::Path {
+    return ir_path.parent_path() / build::Path(".ngen-buildlog");
+}
 
 } // namespace detail
 
@@ -390,7 +389,7 @@ inline auto execute(const build::ir::IR& ir, const RunOptions& opts) -> std::exp
     Progress progress(plan.order.size(), verbosity);
 
     auto on_progress = [&](std::size_t done, std::size_t total, std::uint32_t edge_idx, const EdgeOutcome& outcome) {
-        (void)total;
+        (void) total;
         const auto& edge = ir.edges[edge_idx];
         progress.on_edge(done, edge_idx, edge, outcome);
 

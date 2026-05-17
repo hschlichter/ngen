@@ -1,7 +1,8 @@
 # Plan: Unified Runner — One Execution Engine for Everything
 
-**Status.** Follow-up to `plan_remove_ninja_from_bootstrap.md`. Do not start until that plan has landed and the stat-and-compile loop inside `ngen-build` has
-been in use long enough to be boring. Builds on `plan_custom_build_backend.md` (the project runner).
+**Status. Landed.** Executed directly from the post-phase-5 state in `plan_custom_build_backend.md`, skipping `plan_remove_ninja_from_bootstrap.md` (the
+runner had hardened on the project graph enough that the stat-and-compile-loop intermediate wasn't needed). `bootstrap.cpp::self_build_ir()` constructs the
+two-edge IR and calls `ngen::run::execute()` in-process; ninja is gone from the project. See `build_system.md` §3 for current state.
 
 This plan collapses the *two* execution engines that exist after the previous two plans (the project runner for the user's graph, and the stat-and-compile
 loop for the build-system itself) into *one*: the project runner, used for both domains. `ngen-build` constructs an in-memory IR describing how to compile

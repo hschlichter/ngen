@@ -157,7 +157,7 @@ inline auto read(const Path& path) -> std::expected<IR, Error> {
         ir.default_targets.push_back(get_u32(buf, default_targets_offset + i * 4));
     }
 
-    (void)refs_count;
+    (void) refs_count;
     return ir;
 }
 

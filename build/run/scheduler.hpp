@@ -55,16 +55,21 @@ inline std::atomic<bool>& sigint_flag() {
 }
 
 inline auto install_sigint_handler() -> struct ::sigaction {
-    struct ::sigaction prev {};
-    struct ::sigaction sa {};
-    sa.sa_handler = [](int) { sigint_flag().store(true, std::memory_order_relaxed); };
+    struct ::sigaction prev{};
+    struct ::sigaction sa{};
+    sa.sa_handler = [](int) {
+        sigint_flag().store(true, std::memory_order_relaxed);
+    };
     sa.sa_flags = 0;
     ::sigemptyset(&sa.sa_mask);
     ::sigaction(SIGINT, &sa, &prev);
     return prev;
 }
 
-inline auto restore_sigint_handler(const struct ::sigaction& prev) -> void { ::sigaction(SIGINT, &prev, nullptr); }
+inline auto
+restore_sigint_handler(const struct ::sigaction& prev) -> void {
+    ::sigaction(SIGINT, &prev, nullptr);
+}
 
 } // namespace detail
 

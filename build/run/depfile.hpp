@@ -16,9 +16,9 @@ namespace ngen::run {
 // list of dependency paths after the `:`. Handles \-line continuations and
 // \space escapes; treats # as a line comment.
 //
-// Example input:
-//   foo.o: foo.c bar.h \
-//          baz.h
+// Example input (a backslash at end of line continues to the next):
+//     foo.o: foo.c bar.h <BACKSLASH>
+//            baz.h
 // Returns: { "foo.c", "bar.h", "baz.h" }.
 //
 // The "target" before `:` is dropped. If the file is missing or empty, returns

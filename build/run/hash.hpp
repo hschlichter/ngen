@@ -26,7 +26,7 @@ struct StatTuple {
 };
 
 inline auto stat_file(const std::string& path) -> std::expected<StatTuple, build::Error> {
-    struct stat st {};
+    struct stat st{};
     if (::stat(path.c_str(), &st) != 0) {
         return std::unexpected(build::Error{"stat failed for " + path + ": " + std::strerror(errno)});
     }

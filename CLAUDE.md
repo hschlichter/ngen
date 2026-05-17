@@ -43,9 +43,16 @@ break if wrapped.
 
 ## Build
 
-The engine uses its own self-hosted build system (`ngen-build`). Bootstrap once with
-`ninja -f build/bootstrap.ninja` (produces `_out/ngen-build`), then drive everything
-through that binary:
+The engine uses its own self-hosted build system (`ngen-build`). Bootstrap once
+on a fresh clone with a single C++ compile:
+
+```sh
+mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstrap.cpp
+```
+
+That produces `_out/ngen-build`. From then on, `ngen-build` is the only entry
+point — it rebuilds `ngen-build-graph` and `ngen-build-run` on demand (via the
+same runner library that drives project builds), then runs them:
 
 - `./_out/ngen-build` — debug build (default config)
 - `./_out/ngen-build --config release` — release build
@@ -60,13 +67,9 @@ through that binary:
 build — no `bear` wrapper needed. The engine binary lands at
 `_out/linux-vulkan/debug/ngen-view` (or the equivalent under the active config).
 
-Ninja is used only to compile the build-system binaries (`ngen-build`,
-`ngen-build-pre`, `ngen-build-graph`, `ngen-build-run`). Project edges are
-executed by `ngen-build-run`, which reads a bespoke binary IR at
-`_out/<plat>/<cfg>/build.ngenir`. Removing ninja from the bootstrap chain entirely
-is tracked in `docs/plan_remove_ninja_from_bootstrap.md` and
-`docs/plan_unified_runner.md`.
+If `bootstrap.cpp` itself changes, re-run the bootstrap command above. No ninja
+involved at any stage of the user-facing build.
 
-See `build_system.md` for the framework internals (extension model, IR backend,
+See `build_system.md` for the framework internals (extension model, IR + emitter,
 runner / scheduler, adding platforms/configurations).
 

@@ -3,8 +3,11 @@
 This document is the working reference for ngen's self-hosted build system. It describes what's actually in the tree and how the pieces fit together.
 
 The build system is a small header-only C++ framework under `build/framework/` that you write your project graph against (in `build/build.cpp`), plus a
-five-stage bootstrap chain that compiles the graph stage and the runner stage, emits a bespoke binary IR per build variant, and executes that IR with
-`ngen-build-run`. Ninja is the seed and the build-system self-compiler; it never executes the project graph.
+runner-based pipeline that compiles the graph stage and the runner stage on demand, emits a bespoke binary IR per build variant, and executes that IR. The
+only ninja in the project is what the user types on their own machine if they prefer — the build system never invokes it.
+
+A single fresh-clone C++ compile produces `ngen-build`. From then on, `ngen-build` itself uses the runner library to keep `ngen-build-graph` and
+`ngen-build-run` current.
 
 ---
 
@@ -12,10 +15,8 @@ five-stage bootstrap chain that compiles the graph stage and the runner stage, e
 
 ```text
 build/
-  bootstrap.ninja              # 12 lines, hand-written seed
-  bootstrap.cpp                # ngen-build orchestrator (stage 1)
-  prebuild.cpp                 # ngen-build-pre (stage 2) — emits ninja manifests for stages 3 and 4
-  build.cpp                    # project graph; compiled into ngen-build-graph (stage 3)
+  bootstrap.cpp                # ngen-build orchestrator + self-build driver; documented `c++` compile produces _out/ngen-build
+  build.cpp                    # project graph; compiled into ngen-build-graph
   ir/                          # binary IR transport + emitter; shared by graph (writer) and runner (reader); header-only
     schema.hpp                 # Edge, Pool, IR; binary wire-format constants
     writer.hpp                 # build::ir::write(IR&, Path)
@@ -120,33 +121,40 @@ build::Alias  → fluent wrapper around build::Target; attached as extension; re
 ## 3. Bootstrap chain
 
 ```text
-build/bootstrap.ninja
-  → _out/ngen-build           (compiled from build/bootstrap.cpp)
-  → _out/ngen-build-pre       (compiled from build/prebuild.cpp)
-  → _out/ngen-build-graph     (compiled from build/build.cpp; framework headers tracked via -MMD depfile)
-  → _out/ngen-build-run       (compiled from build/run/main.cpp; runner headers tracked via -MMD depfile)
-  → _out/<plat>/<cfg>/build.ngenir   (emitted by ngen-build-graph per variant)
-  → final ngen-build-run invocation against the chosen variant's IR
+fresh-clone seed (documented one-line `c++` invocation in CLAUDE.md):
+  $ c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstrap.cpp
+  → produces _out/ngen-build
+
+every subsequent invocation:
+ngen-build
+  → build a small in-memory IR with two edges (graph and runner) — `self_build_ir()`
+  → ngen::run::execute(self_build_ir, opts)   ← runner library, in-process
+      → if stale: c++ ... build/build.cpp     → _out/ngen-build-graph
+      → if stale: c++ ... build/run/main.cpp  → _out/ngen-build-run
+  → ngen-build-graph                          → _out/<plat>/<cfg>/build.ngenir per variant
+  → ngen-build-run --ir <variant>/build.ngenir <target>   ← subprocess, executes the project IR
 ```
 
-| Stage manifest                | Source                                                         | Builds                  |
-| ----------------------------- | -------------------------------------------------------------- | ----------------------- |
-| `build/bootstrap.ninja`       | `build/bootstrap.cpp`                                          | `_out/ngen-build`       |
-| `_out/ngen-build-pre.ninja`   | `build/prebuild.cpp`                                           | `_out/ngen-build-pre`   |
-| `_out/ngen-build-graph.ninja` | `build/build.cpp` (framework headers tracked via depfile)      | `_out/ngen-build-graph` |
-| `_out/ngen-build-run.ninja`   | `build/run/main.cpp` (run + framework headers tracked)         | `_out/ngen-build-run`   |
-| `_out/<plat>/<cfg>/build.ngenir` | emitted by `ngen-build-graph`                               | the project graph (IR)  |
+There is one execution engine — the runner library at `build/run/` — and it does both build-system self-build (in-process) and project build (as a
+subprocess invocation of `_out/ngen-build-run`). Both use the same dirty detection, content hashing, scheduler, and build log format. The only difference
+is the IR they execute and where its build log lives:
 
-Stages 3 and 4 (graph and runner) are independent: `prebuild.cpp` emits both ninja manifests and `bootstrap.cpp` orchestrates ninja over them in sequence.
+- **Self-build IR.** Constructed in memory by `bootstrap.cpp::self_build_ir()` on every `ngen-build` invocation. Two edges. Never written to disk.
+  Build log at `_out/.system/.ngen-buildlog`.
+- **Project IR.** Emitted by `ngen-build-graph` to `_out/<plat>/<cfg>/build.ngenir`, executed by `ngen-build-run`. Build log at
+  `_out/<plat>/<cfg>/.ngen-buildlog`.
 
-`bootstrap.cpp` and `prebuild.cpp` each carry their own copy of `write_if_changed` and minimal arg parsing — deliberately, so they don't depend on the
-framework (the framework can't be linked until stages 3 and 4 have built it).
+The runner-headers under `build/run/` are header-only and compiled into *both* `_out/ngen-build` (as the in-process self-build engine) and
+`_out/ngen-build-run` (as the standalone project executor). Each binary instantiates its own copy; there's no static archive in between.
 
-The `ngen-build-graph` and `ngen-build-run` stages both use `-MMD -MF $out.d`, so any new `build/framework/*.hpp` or `build/run/*.hpp` automatically becomes
-a build dependency — no manual heredoc updates required when adding headers.
+`ngen-build-graph` and the self-build edges both use `-MMD -MF $out.d`, so any new header under `build/framework/`, `build/ir/`, or `build/run/`
+automatically becomes a build dependency picked up by the runner's depfile parser. No heredoc updates required.
 
-`bootstrap.cpp` and `prebuild.cpp` shell out to `ninja` via `std::system` (build-system self-bootstrap only), marked with
-`// NOLINT(bugprone-command-processor)` since this is the deliberate orchestration boundary. The final stage shells out to `_out/ngen-build-run`, not ninja.
+`bootstrap.cpp` shells out to `_out/ngen-build-graph` and `_out/ngen-build-run` via `std::system`, marked with `// NOLINT(bugprone-command-processor)` since
+this is the deliberate orchestration boundary. The self-build pass calls `ngen::run::execute()` directly — no subprocess.
+
+When `bootstrap.cpp` itself changes, the user re-runs the documented seed command. The runner can rebuild `ngen-build-graph` and `ngen-build-run` but not
+itself.
 
 ---
 
@@ -463,7 +471,7 @@ Special flags:
 Verbosity:
 
 - default: ninja-style `[done/total] description` with `\r`-overwrite on a tty.
-- `-v`: `TERM=dumb` forwarded to the prebuild ninja stages; runner stays in non-overwrite line mode for scripts/log capture.
+- `-v`: forces non-overwrite single-line mode (one line per edge, no `\r` tricks) — same effect as `TERM=dumb`, suitable for scripts/log capture.
 - `-vv`: runner echoes each `$ command` before running the edge.
 
 `NO_COLOR=1` (or any non-empty value) suppresses ANSI escapes regardless of tty.
@@ -509,11 +517,12 @@ structs, no string-keyed lookup at construction time.
 
 ## 13. Things to know before changing this code
 
-- **Header-only framework + runner.** Editing any `build/framework/*.hpp` rebuilds `_out/ngen-build-graph` (the single TU that includes them); editing any
-  `build/run/*.hpp` rebuilds `_out/ngen-build-run`. Editing engine sources under `src/` does not rebuild build-system stages — the bootstrap chain is
-  independent.
-- **Depfile-tracked headers.** `prebuild.cpp` writes both `_out/ngen-build-graph.ninja` and `_out/ngen-build-run.ninja` with `-MMD -MF $out.d`. Adding a new
-  `build/framework/*.hpp` or `build/run/*.hpp` needs no manual heredoc update — the depfile picks it up.
+- **Header-only framework + runner.** Editing any `build/framework/*.hpp` or `build/ir/*.hpp` rebuilds `_out/ngen-build-graph` and (because the orchestrator
+  links the runner in-process) also rebuilds `_out/ngen-build` on the next bootstrap-seed re-run; editing any `build/run/*.hpp` rebuilds `_out/ngen-build-run`
+  via the self-build pass. Editing engine sources under `src/` does not rebuild build-system stages — the self-build pass and project build are independent.
+- **Self-build via in-memory IR.** `bootstrap.cpp::self_build_ir()` constructs a two-edge IR every invocation and passes it to `ngen::run::execute()`. The
+  edges use `-MMD -MF $out.d` so adding a header under `build/framework/`, `build/ir/`, or `build/run/` automatically becomes a build dependency picked up by
+  the runner's depfile parser on the next invocation. No heredoc, no manifest, no manual list to update.
 - **Per-variant build log.** The runner stores its persistent state at `_out/<plat>/<cfg>/.ngen-buildlog`, keyed by edge name. Per-variant means edge names
   like `format` or `clean` don't collide across variants — each variant has its own keyspace. Atomic rewrite at end of every successful build via `.tmp` +
   `rename`. Interrupted builds keep the previous good log.
@@ -540,11 +549,12 @@ structs, no string-keyed lookup at construction time.
 - **`-Wl,--start-group` / `--end-group`** wraps every program's archives. Removing the group wrapping would require curating transitive link order first.
 - **`capture_tokens` uses `popen`.** `shell_quote` is tuned for a small allowed charset. Not safe for arbitrary user input — fine for fixed args like
   `pkg-config --cflags sdl3`.
-- **`std::system` calls** in `bootstrap.cpp` and `prebuild.cpp` are deliberate (they shell out to `ninja` for the self-bootstrap chain and to
-  `_out/ngen-build-run` for the final stage) and marked with `// NOLINT(bugprone-command-processor)`.
-- **Ninja is build-system-only.** The user-facing `ngen-build` flow does not invoke ninja on the project graph. The only ninja invocations are inside the
-  self-bootstrap chain (compiling the four stage binaries). Plans to remove this dependency entirely are tracked in `docs/plan_remove_ninja_from_bootstrap.md`
-  and `docs/plan_unified_runner.md`.
+- **`std::system` calls** in `bootstrap.cpp` are deliberate (they shell out to `_out/ngen-build-graph` and `_out/ngen-build-run` after the in-process
+  self-build pass) and marked with `// NOLINT(bugprone-command-processor)`.
+- **No ninja anywhere.** The build system has no ninja dependency at all. The bootstrap seed is a single documented `c++` command in `CLAUDE.md`; everything
+  else flows through `ngen-build` using the runner library and its `ngen-build-run` subprocess.
+- **System build log location.** Self-build state lives at `_out/.system/.ngen-buildlog`, keyed by `ngen-build-graph` and `ngen-build-run`. Same format as
+  project-build logs (`_out/<plat>/<cfg>/.ngen-buildlog`). Deleting it forces a clean rebuild of the two binaries on next invocation.
 
 ---
 
