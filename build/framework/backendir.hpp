@@ -2,7 +2,7 @@
 
 #include "alias.hpp"
 #include "command.hpp"
-#include "cxx/backendninja.hpp"
+#include "cxx/commands.hpp"
 #include "cxx/configuration.hpp"
 #include "cxx/objectfile.hpp"
 #include "cxx/platform.hpp"
@@ -326,7 +326,7 @@ private:
         auto object = object_path(variant_, parent->owner().name(), obj.source());
         ensure_dirs_.insert(object.parent_path().string());
 
-        cxx::ninja::CompileInputs in;
+        cxx::cmd::CompileInputs in;
         in.source = obj.source();
         in.object = object;
         in.std = std_value;
@@ -349,7 +349,7 @@ private:
         append_all_str(in.compile_flags, parent->compile_flags_data);
         append_all_str(in.compile_flags, obj.compile_flags_data);
 
-        auto command = cxx::ninja::compile_command(tc, in);
+        auto command = cxx::cmd::compile_command(tc, in);
 
         build::ir::Edge edge;
         edge.name = obj.owner().name();
@@ -386,18 +386,18 @@ private:
         const auto* platform_ext = cxx::find_platform(*variant_.platform);
         const auto& tc = platform_ext->toolchain();
 
-        auto output_name = shared ? cxx::ninja::shared_lib_name(target.owner().name()) : cxx::ninja::static_lib_name(target.owner().name());
+        auto output_name = shared ? cxx::cmd::shared_lib_name(target.owner().name()) : cxx::cmd::static_lib_name(target.owner().name());
         auto output = variant_.out_dir / "lib" / output_name;
         ensure_dirs_.insert(output.parent_path().string());
 
         Command command;
         if (shared) {
-            cxx::ninja::LinkInputs link_inputs;
+            cxx::cmd::LinkInputs link_inputs;
             link_inputs.objects = *objects;
             link_inputs.output = output;
-            command = cxx::ninja::link_command(tc, link_inputs, true);
+            command = cxx::cmd::link_command(tc, link_inputs, true);
         } else {
-            command = cxx::ninja::archive_command(tc, *objects, output);
+            command = cxx::cmd::archive_command(tc, *objects, output);
         }
 
         build::ir::Edge edge;
@@ -421,7 +421,7 @@ private:
         const auto* config_ext = cxx::find_configuration(*variant_.config);
         const auto& tc = platform_ext->toolchain();
 
-        auto output = variant_.out_dir / cxx::ninja::exe_name(target.owner().name(), variant_.platform->exe_suffix());
+        auto output = variant_.out_dir / cxx::cmd::exe_name(target.owner().name(), variant_.platform->exe_suffix());
         ensure_dirs_.insert(output.parent_path().string());
 
         std::vector<Path> linked_outputs;
@@ -436,7 +436,7 @@ private:
             }
         }
 
-        cxx::ninja::LinkInputs in;
+        cxx::cmd::LinkInputs in;
         in.objects = *objects;
         in.archives = linked_outputs;
         in.output = output;
@@ -453,7 +453,7 @@ private:
         }
         append_all_str(in.link_flags, target.link_flags_data);
 
-        auto command = cxx::ninja::link_command(tc, in, false);
+        auto command = cxx::cmd::link_command(tc, in, false);
 
         build::ir::Edge edge;
         edge.name = target.owner().name();

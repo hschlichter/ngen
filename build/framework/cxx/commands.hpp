@@ -11,7 +11,11 @@
 #include <string_view>
 #include <vector>
 
-namespace build::cxx::ninja {
+// Language-agnostic builders that turn cxx toolchain + per-edge inputs into a
+// fully-formed `Command` ready to be baked into IR. Backends call these to get
+// the argv list; the rest of the file is plain data marshalling.
+
+namespace build::cxx::cmd {
 
 struct CompileInputs {
     Path source;
@@ -110,4 +114,4 @@ inline auto exe_name(std::string_view stem, std::string_view platform_suffix) ->
     return std::string(stem) + std::string(platform_suffix);
 }
 
-} // namespace build::cxx::ninja
+} // namespace build::cxx::cmd

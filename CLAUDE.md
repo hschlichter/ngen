@@ -54,11 +54,19 @@ through that binary:
 - `./_out/ngen-build format` — clang-format the tree
 - `./_out/ngen-build tidy` — clang-tidy on `build/*.cpp`
 - `./_out/ngen-build --list` — list top-level targets (program/library/tool/alias)
+- `./_out/ngen-build --dump-graph` — print the IR for every variant as JSON
 
 `compile_commands.json` is regenerated at `_out/compile_commands.json` on every
 build — no `bear` wrapper needed. The engine binary lands at
 `_out/linux-vulkan/debug/ngen-view` (or the equivalent under the active config).
 
-See `build_system.md` for the framework internals (extension model, Ninja backend,
-adding platforms/configurations).
+Ninja is used only to compile the build-system binaries (`ngen-build`,
+`ngen-build-pre`, `ngen-build-graph`, `ngen-build-run`). Project edges are
+executed by `ngen-build-run`, which reads a bespoke binary IR at
+`_out/<plat>/<cfg>/build.ngenir`. Removing ninja from the bootstrap chain entirely
+is tracked in `docs/plan_remove_ninja_from_bootstrap.md` and
+`docs/plan_unified_runner.md`.
+
+See `build_system.md` for the framework internals (extension model, IR backend,
+runner / scheduler, adding platforms/configurations).
 

@@ -2,8 +2,9 @@
 
 This document is the working reference for ngen's self-hosted build system. It describes what's actually in the tree and how the pieces fit together.
 
-The build system is a small header-only C++ framework under `build/framework/` that you write your project graph against (in `build/build.cpp`), plus a four-stage
-Ninja-based bootstrap chain that compiles and runs that project graph to produce the actual project's `_out/build.ninja`.
+The build system is a small header-only C++ framework under `build/framework/` that you write your project graph against (in `build/build.cpp`), plus a
+five-stage bootstrap chain that compiles the graph stage and the runner stage, emits a bespoke binary IR per build variant, and executes that IR with
+`ngen-build-run`. Ninja is the seed and the build-system self-compiler; it never executes the project graph.
 
 ---
 
@@ -13,16 +14,26 @@ Ninja-based bootstrap chain that compiles and runs that project graph to produce
 build/
   bootstrap.ninja              # 12 lines, hand-written seed
   bootstrap.cpp                # ngen-build orchestrator (stage 1)
-  prebuild.cpp                 # ngen-build-pre (stage 2)
+  prebuild.cpp                 # ngen-build-pre (stage 2) — emits ninja manifests for stages 3 and 4
   build.cpp                    # project graph; compiled into ngen-build-graph (stage 3)
+  run/                         # ngen-build-run sources; header-only with one .cpp entry point
+    main.cpp                   # CLI entry; loads IR via reader and calls ngen::run::execute()
+    execute.hpp                # ngen::run::execute(IR&, RunOptions&) — dirty detection + scheduler driver
+    buildlog.hpp               # _out/<plat>/<cfg>/.ngen-buildlog read/write with atomic rename
+    hash.hpp                   # xxh3-64 file hashing + (size,mtime,ctime) fast-path
+    depfile.hpp                # parse Make-format .d files (handles \-continuation and \space escapes)
+    process.hpp                # POSIX spawn/wait/signal + synchronous run convenience wrapper
+    progress.hpp               # ninja-style [done/total] progress; tty \r-overwrite; NO_COLOR
+    scheduler.hpp              # -j N ready-queue scheduler; console pool depth 1; SIGINT cancel token
   framework/                   # header-only library, no .cpp files, no umbrella
     alias.hpp                  # Alias — fluent wrapper, attached as extension on build::Target
     backend.hpp                # BuildVariant + forward decls of Platform/Configuration
-    backendninja.hpp           # detail::Emitter, NinjaBackend (writes _out/build.ninja); join_command, ninja_escape_path
+    backendir.hpp              # detail::ir::VariantEmitter, IrBackend (writes _out/<plat>/<cfg>/build.ngenir + compile_commands.json)
     command.hpp                # Command (argv vector)
     configuration.hpp          # build::Configuration — fluent class with ExtensionMap
     extensionmap.hpp           # ExtensionMap (type-erased; owning add + non-owning attach; nullable get)
     glob.hpp                   # GlobSpec, glob, concat, capture_tokens, repo_root, write_if_changed, shell_quote, split_ws, Error
+    inspect.hpp                # list_roots helper used by --list
     path.hpp                   # Path
     platform.hpp               # build::Platform — fluent class with ExtensionMap
     project.hpp                # Project — registers entry targets / platforms / configs
@@ -30,17 +41,25 @@ build/
     tool.hpp                   # Tool — fluent wrapper, attached as extension on build::Target
 
     cxx/
-      backendninja.hpp         # CompileInputs/LinkInputs + compile_/archive_/link_command
+      commands.hpp             # cxx::cmd::CompileInputs/LinkInputs + compile_/archive_/link_command
       configuration.hpp        # build::cxx::Configuration — fluent wrapper, attached as extension on build::Configuration
       objectfile.hpp           # build::cxx::ObjectFile — per-translation-unit node, attached as extension on build::Target
       platform.hpp             # build::cxx::Platform — fluent wrapper, attached as extension on build::Platform (composes Toolchain)
       target.hpp               # build::cxx::Target — fluent wrapper, attached as extension on build::Target; OptLevel + Kind enums
       toolchain.hpp            # build::cxx::Toolchain — tools only (compiler / archiver / linker / default_std)
+
+    ir/                        # binary IR shared by graph (writer) and runner (reader); header-only
+      schema.hpp               # Edge, Pool, IR; binary wire-format constants
+      writer.hpp               # build::ir::write(IR&, Path)
+      reader.hpp               # build::ir::read(Path) -> expected<IR, Error>
+      json.hpp                 # build::ir::dump_json(IR&, ostream&) for --dump-graph
+      xxhash.h                 # vendored single-header xxhash (BSD-2)
 ```
 
-**Header-only.** Every public type and free function is defined in one of these headers. Free functions are marked `inline`; class methods are defined inside
-their class bodies (implicitly inline). Implementation-only helpers live in `namespace build::detail` (currently used in `backendninja.hpp` for the `Emitter`
-class and the graph-traversal helpers `append_unique`, `resolve_alias`, `collect_includes`, `object_path`, and `glob_match` in `glob.hpp`).
+**Header-only framework + runner.** The framework and `build/run/` are both header-only with the runner having a single `.cpp` entry point (`main.cpp`).
+Free functions are marked `inline`; class methods are defined inside their class bodies (implicitly inline). Implementation-only helpers live in
+`namespace build::detail::ir` (graph-traversal helpers `append_unique`, `resolve_alias`, `collect_includes`, `object_path`, etc.) and
+`build::detail` (`glob_match` in `glob.hpp`).
 
 There is no umbrella `build.hpp`. `build/build.cpp` includes the specific headers it needs.
 
@@ -75,8 +94,8 @@ build::cxx::Target         → wraps build::Target; one node per library/program
 build::cxx::ObjectFile     → wraps build::Target; one node per translation unit; per-TU defines / compile_flags / std / warning suppressions
 ```
 
-A library or program is `cxx::Target`; each `.cpp` it owns is a `cxx::ObjectFile` child whose base is dep-edged to the parent's base. Compile edges
-(`build .../foo.cpp.o: cxx ...`) are emitted from the ObjectFile node, archive/link edges from the parent. The framework graph is therefore one node per
+A library or program is `cxx::Target`; each `.cpp` it owns is a `cxx::ObjectFile` child whose base is dep-edged to the parent's base. Compile edges (one
+`Edge` per `.cpp` → `.o` in the IR) are emitted from the ObjectFile node, archive/link edges from the parent. The framework graph is therefore one node per
 TU plus one node per library/program — sources are first-class, not an opaque list inside the parent.
 
 Adding another language is purely additive: a new `build::csharp::Platform`/`Configuration`/`Target` plus a backend dispatch branch, no edits to anything in
@@ -101,8 +120,9 @@ build/bootstrap.ninja
   → _out/ngen-build           (compiled from build/bootstrap.cpp)
   → _out/ngen-build-pre       (compiled from build/prebuild.cpp)
   → _out/ngen-build-graph     (compiled from build/build.cpp; framework headers tracked via -MMD depfile)
-  → _out/build.ninja          (emitted by ngen-build-graph)
-  → final ninja invocation
+  → _out/ngen-build-run       (compiled from build/run/main.cpp; runner headers tracked via -MMD depfile)
+  → _out/<plat>/<cfg>/build.ngenir   (emitted by ngen-build-graph per variant)
+  → final ngen-build-run invocation against the chosen variant's IR
 ```
 
 | Stage manifest                | Source                                                         | Builds                  |
@@ -110,16 +130,19 @@ build/bootstrap.ninja
 | `build/bootstrap.ninja`       | `build/bootstrap.cpp`                                          | `_out/ngen-build`       |
 | `_out/ngen-build-pre.ninja`   | `build/prebuild.cpp`                                           | `_out/ngen-build-pre`   |
 | `_out/ngen-build-graph.ninja` | `build/build.cpp` (framework headers tracked via depfile)      | `_out/ngen-build-graph` |
-| `_out/build.ninja`            | (emitted by `ngen-build-graph`)                                | the project graph       |
+| `_out/ngen-build-run.ninja`   | `build/run/main.cpp` (run + framework headers tracked)         | `_out/ngen-build-run`   |
+| `_out/<plat>/<cfg>/build.ngenir` | emitted by `ngen-build-graph`                               | the project graph (IR)  |
+
+Stages 3 and 4 (graph and runner) are independent: `prebuild.cpp` emits both ninja manifests and `bootstrap.cpp` orchestrates ninja over them in sequence.
 
 `bootstrap.cpp` and `prebuild.cpp` each carry their own copy of `write_if_changed` and minimal arg parsing — deliberately, so they don't depend on the
-framework (the framework can't be linked until stage 3 has built it).
+framework (the framework can't be linked until stages 3 and 4 have built it).
 
-The `ngen-build-graph` stage uses `-MMD -MF $out.d`, so any new `build/framework/*.hpp` automatically becomes a build dependency — no manual heredoc updates
-required when adding framework headers.
+The `ngen-build-graph` and `ngen-build-run` stages both use `-MMD -MF $out.d`, so any new `build/framework/*.hpp` or `build/run/*.hpp` automatically becomes
+a build dependency — no manual heredoc updates required when adding headers.
 
-Both `bootstrap.cpp` and `prebuild.cpp` shell out to `ninja` via `std::system`, marked with `// NOLINT(bugprone-command-processor)` since this is the
-deliberate orchestration boundary.
+`bootstrap.cpp` and `prebuild.cpp` shell out to `ninja` via `std::system` (build-system self-bootstrap only), marked with
+`// NOLINT(bugprone-command-processor)` since this is the deliberate orchestration boundary. The final stage shells out to `_out/ngen-build-run`, not ninja.
 
 ---
 
@@ -282,32 +305,27 @@ The backend dispatches `Tool` and `Alias` via `target->extension<Tool>()` / `tar
 
 ---
 
-## 8. Ninja backend behavior
+## 8. IR backend and runner
 
-`NinjaBackend::emit(project)` writes `_out/build.ninja`, all per-variant `compile_commands.json`, the merged `_out/compile_commands.json`, and creates required
-output directories.
+### 8.1 Graph stage (`IrBackend`)
 
-`detail::Emitter::emit_target` resolves aliases (walking `target->extension<Alias>()` chains), then dispatches by extension type:
+`IrBackend::emit(project)` writes `_out/<platform>/<config>/build.ngenir` for every variant, all per-variant `compile_commands.json`, the merged
+`_out/compile_commands.json`, and creates required output directories.
+
+`detail::ir::VariantEmitter::emit_target` resolves aliases (walking `target->extension<Alias>()` chains), then dispatches by extension type:
 
 ```cpp
 if      (auto* tool = target->extension<Tool>())              { emit_tool(*tool, ...); }
-else if (auto* obj  = target->extension<cxx::ObjectFile>())   { emit_object_file(*obj, variant); }
-else if (auto* cxx_t = target->extension<cxx::Target>())      { emit_cxx(*cxx_t, variant, order_only); }
+else if (auto* obj  = target->extension<cxx::ObjectFile>())   { emit_object_file(*obj); }
+else if (auto* cxx_t = target->extension<cxx::Target>())      { emit_cxx(*cxx_t, order_only); }
 ```
 
 ObjectFile is checked before `cxx::Target` so a TU node never falls through to library/program emit. The dep-walk preceding dispatch filters out
 `cxx::ObjectFile` outputs from the `order_only` accumulator — those object paths flow into the parent's archive/link edge as direct inputs via
 `gather_object_outputs`, so adding them to `order_only` would just double-list them.
 
-`emit_object_file(ObjectFile&, BuildVariant&)` emits one `build .../foo.cpp.o: cxx src/.../foo.cpp` edge. It reads:
-
-- `cxx::find_platform(*variant.platform)` — required; emit error if absent or `compiler()` is empty.
-- `cxx::find_configuration(*variant.config)` — optional; if absent, no per-config flags/defines.
-- `obj.parent()` — required; resolved live through the parent's `ExtensionMap`. If parent is disabled for the variant, returns `Path{}` (no edge).
-
-`gather_object_outputs(cxx::Target&, BuildVariant&)` is what `emit_cxx_library` and `emit_cxx_program` call to assemble the parent's input list — it
-looks up each child ObjectFile in the emitter's `outputs_` cache (keyed by `name|platform|config`). Children are always emitted before their parent
-because `Project::build_all()` is post-order and `emit_target` recurses into deps before emitting self.
+Commands are *fully baked* at emit time using `cxx::cmd::compile_command / archive_command / link_command` from `cxx/commands.hpp`. No `$cflags`-style
+variables, no templating, no rule expansion. Each `Edge` in the IR carries the exact `/bin/sh -c <command>` string the runner will execute.
 
 Compile-flag composition order (compiler last-wins picks innermost):
 
@@ -322,6 +340,52 @@ plus transitive `public_includes_data` from linked targets — ObjectFile inheri
 it. Link flags and system libs are parent-level concerns; ObjectFile has no link-side fields.
 
 `-Wl,--start-group` / `-Wl,--end-group` wraps archive inputs at link time so over-linking still works without the user having to curate transitive link order.
+
+### 8.2 IR file (`build/framework/ir/`)
+
+Per-variant binary file at `_out/<platform>/<config>/build.ngenir`. Contains:
+
+- Header: `NGIR` magic, format version, generated-at timestamp, variant string, project root.
+- Pools: index 0 is `default` (depth 0, capped by `-j N` at runtime); index 1 is `console` (depth 1, runs serialized with inherited stdio).
+- Edges: flat array, fixed-size records keyed by `name`. Each edge carries baked `command`, `inputs[]`, `outputs[]`, `implicit_deps[]`, `order_only_deps[]`,
+  `pool`, `depfile` path, `description`, and `flags` (currently only `kEdgeFlagPhony`).
+- StringRef side-array for the list fields, plus a deduplicated string table at the end.
+- Default targets: u32 indices into the edges array.
+
+`build::ir::dump_json` re-emits the same shape as JSON for `--dump-graph` — strictly for human inspection, not a parse target.
+
+### 8.3 Runner (`build/run/`, `ngen-build-run` binary)
+
+The runner is invoked as `ngen-build-run --ir <path> [-j N] [-k N] [-v|-vv] [target ...]`. Lifecycle of one invocation:
+
+1. **Load IR.** `build::ir::read` validates magic and version, returns a value-typed `IR` struct.
+2. **Load build log.** `_out/<plat>/<cfg>/.ngen-buildlog` if present; a missing or version-mismatched log is treated as empty (forces a clean build).
+3. **Resolve targets and walk reachability.** Targets are matched against edge names first, then output paths. From the requested edges, walk `inputs`,
+   `implicit_deps`, and `order_only_deps` and look up each path in the output index to find its producer edge. Inactive edges are ignored.
+4. **Dirty pass (`compute_dirty`).** For each reachable edge in IR (topological) order: the edge is dirty if no log entry exists, or `command_hash` differs,
+   or any tracked input/output/discovered-header differs from the stored hash (with mtime fast-path), or any output is missing. Phony edges
+   (`kEdgeFlagPhony`) skip the output-existence check. Dirty propagates along dep edges so that a clean-looking edge whose dep is dirty is included in the
+   plan.
+5. **Build plan.** The dirty subset is filtered out of `ordered` (still topological), and `pending` + `dependents` are computed per plan position.
+6. **Schedule.** `Scheduler` runs `-j N` worker threads. Each pops a ready edge, takes the console-pool mutex if needed, calls `Process::run` (which forks +
+   `dup2`s a pipe + `execv`s `/bin/sh -c <command>`). On success, the worker propagates readiness; on failure, it poisons dependents and increments the
+   failure counter. SIGINT sets a cancel token; workers stop scheduling and the in-flight children get drained.
+7. **Update log.** On each successful edge the main thread (under `log_mtx`) re-stats inputs and outputs (the pre-run hashes are stale once deps have run),
+   parses the depfile if present, and upserts the entry. The log is rewritten atomically (`.tmp` + `rename`) at end of build.
+8. **Display.** `Progress` prints `[done/total] description` lines, with `\r`-overwrite single-line mode on a tty (and `\e[K` clear) or one-line-per-edge in
+   non-tty / `-v` mode. `-vv` echoes the full `$ command`. Failures go to stderr with the captured output and a `$ command` line. Colors honor `NO_COLOR`.
+
+### 8.4 Dirty detection details
+
+The build log entry per edge records: `command_hash`, `last_run_ns`, and `inputs[] / outputs[] / discovered_headers[]` as `TrackedFile{path, stat, content_hash}`
+where `stat` is `(size, mtime_ns, ctime_ns)`. On a subsequent build:
+
+- `stat(path)` — if it fails, the file is missing (dirty).
+- If `(size, mtime_ns, ctime_ns)` matches the log entry: reuse the stored `content_hash`. **No file read.**
+- Else: read the file, xxh3-64 it, store the new tuple. The mtime fast-path means `touch` (which preserves content) does not trigger a rebuild.
+
+Compile edges hand `-MMD -MF $out.d` to the compiler; after the edge runs successfully, `parse_depfile` reads the `.d` and the listed headers join the
+edge's `discovered_headers` list, hashed identically.
 
 ---
 
@@ -379,17 +443,29 @@ USD linkage uses an absolute rpath via `current_path() / "external/openusd_build
 
 ## 11. CLI
 
-`./_out/ngen-build [--platform <name>] [--config <name>] [--backend ninja] [-v|-vv] [target]`
+`./_out/ngen-build [--platform <name>] [--config <name>] [--list] [--dump-graph] [-v|-vv] [target]`
 
-Special targets routed by `bootstrap.cpp` *without* a `:platform:config` suffix: `clean`, `format`, `tidy`. Others become positional targets.
+Targets are matched by edge name first, then output path. Default target is `ngen-view`. `bootstrap.cpp` selects the variant via `--platform`/`--config`
+(defaults: `linux-vulkan` / `debug`) and forwards the bare target name to the runner — no `:platform:config` suffix is needed any more.
 
-Graph targets: `ngen-view` (default), `clean`, `format`, `tidy`, `shaders`. Internal libraries (`obs`, `rhi`, …) are not top-level invokable — they're reached
-via traversal from registered entry points.
+Graph-level targets: `ngen-view` (default), `clean`, `format`, `tidy`, `shaders`. Internal libraries (`obs`, `rhi`, …) are not top-level invokable — they're
+reached via traversal from registered entry points.
+
+Special flags:
+
+- `--list`: print top-level targets and exit (handled by `ngen-build-graph`).
+- `--dump-graph`: dump the IR as JSON (one object per variant) to stdout and exit.
 
 Verbosity:
-- default: clean ninja output
-- `-v`: `TERM=dumb` (forces non-tty output for scripts/log capture)
-- `-vv`: `ninja -v` (full command echo)
+
+- default: ninja-style `[done/total] description` with `\r`-overwrite on a tty.
+- `-v`: `TERM=dumb` forwarded to the prebuild ninja stages; runner stays in non-overwrite line mode for scripts/log capture.
+- `-vv`: runner echoes each `$ command` before running the edge.
+
+`NO_COLOR=1` (or any non-empty value) suppresses ANSI escapes regardless of tty.
+
+`ngen-build-run --ir <path> [-j N] [-k N] [-v|-vv] [target ...]` is the direct runner CLI; the orchestrator drives this with the appropriate `--ir` path
+derived from the chosen variant. `-j` defaults to `nproc`; `-k` defaults to 1 (fail fast).
 
 ---
 
@@ -429,10 +505,17 @@ structs, no string-keyed lookup at construction time.
 
 ## 13. Things to know before changing this code
 
-- **Header-only framework.** Editing any `build/framework/*.hpp` rebuilds `_out/ngen-build-graph` (the single TU that includes them). Editing engine sources
-  under `src/` does not rebuild build-system stages — the bootstrap chain is independent.
-- **Depfile-tracked headers.** `prebuild.cpp` writes `_out/ngen-build-graph.ninja` with `-MMD -MF $out.d`. Adding a new `build/framework/*.hpp` needs no manual
-  heredoc update — the depfile picks it up.
+- **Header-only framework + runner.** Editing any `build/framework/*.hpp` rebuilds `_out/ngen-build-graph` (the single TU that includes them); editing any
+  `build/run/*.hpp` rebuilds `_out/ngen-build-run`. Editing engine sources under `src/` does not rebuild build-system stages — the bootstrap chain is
+  independent.
+- **Depfile-tracked headers.** `prebuild.cpp` writes both `_out/ngen-build-graph.ninja` and `_out/ngen-build-run.ninja` with `-MMD -MF $out.d`. Adding a new
+  `build/framework/*.hpp` or `build/run/*.hpp` needs no manual heredoc update — the depfile picks it up.
+- **Per-variant build log.** The runner stores its persistent state at `_out/<plat>/<cfg>/.ngen-buildlog`, keyed by edge name. Per-variant means edge names
+  like `format` or `clean` don't collide across variants — each variant has its own keyspace. Atomic rewrite at end of every successful build via `.tmp` +
+  `rename`. Interrupted builds keep the previous good log.
+- **Stamp-output non-determinism.** `ar rcs` is *not* deterministic (mtimes get embedded). A modify-then-revert cycle on a source therefore takes one extra
+  build to converge to a no-op: the round trip flushes new mtimes into the archive, the runner re-records the archive's hash, and the next run sees inputs
+  unchanged. Working as designed; switch to `ar rcsD` if you want byte-identical archives.
 - **Wrapper move/copy invariant.** Every cxx wrapper (and `Tool`, `Alias`) re-attaches itself to the base's `ExtensionMap` in both move and copy constructors.
   If a future field is added, both constructors must be updated. Silent footgun otherwise — the back-pointer would point at a stale or destroyed object.
   `cxx::ObjectFile` is the exception — it lives behind `shared_ptr` from the moment `sources(...)` constructs it, never gets copied or moved by user code,
@@ -444,13 +527,20 @@ structs, no string-keyed lookup at construction time.
 - **`ExtensionMap` ownership modes.** `add<T>` heap-allocates and owns; `attach<T>(ref)` is non-owning. Don't mix on the same key — `add<T>` returns existing,
   `attach` replaces. The cxx wrappers all use `attach` (they own their data themselves).
 - **No exceptions.** `ExtensionMap::get` returns nullable pointers; `glob_match` doesn't use `std::regex`. The convention is `std::expected<T, Error>` at the
-  framework boundary (`Error` lives in `glob.hpp`).
+  framework boundary (`Error` lives in `glob.hpp`). The IR reader/writer and runner follow the same convention.
+- **Synthetic outputs.** Global tools (`format`, `tidy`) have no real file outputs, so the IR backend gives them the target name as a virtual output to keep
+  every edge addressable. The runner's dirty rule naturally treats the missing virtual output as dirty, so global tools always run when invoked — matching
+  user expectation.
 - **`compile_commands.json`** is written per variant under `_out/<platform>/<config>/compile_commands.json` *and* merged at `_out/compile_commands.json`. The
   merge is naive concatenation; entries are not de-duplicated across variants.
 - **`-Wl,--start-group` / `--end-group`** wraps every program's archives. Removing the group wrapping would require curating transitive link order first.
 - **`capture_tokens` uses `popen`.** `shell_quote` is tuned for a small allowed charset. Not safe for arbitrary user input — fine for fixed args like
   `pkg-config --cflags sdl3`.
-- **`std::system` calls** in `bootstrap.cpp` and `prebuild.cpp` are deliberate (they shell out to `ninja`) and marked with `// NOLINT(bugprone-command-processor)`.
+- **`std::system` calls** in `bootstrap.cpp` and `prebuild.cpp` are deliberate (they shell out to `ninja` for the self-bootstrap chain and to
+  `_out/ngen-build-run` for the final stage) and marked with `// NOLINT(bugprone-command-processor)`.
+- **Ninja is build-system-only.** The user-facing `ngen-build` flow does not invoke ninja on the project graph. The only ninja invocations are inside the
+  self-bootstrap chain (compiling the four stage binaries). Plans to remove this dependency entirely are tracked in `docs/plan_remove_ninja_from_bootstrap.md`
+  and `docs/plan_unified_runner.md`.
 
 ---
 
@@ -458,14 +548,17 @@ structs, no string-keyed lookup at construction time.
 
 The framework is designed so that adding a new language module is purely additive:
 
-1. Create `build/framework/<lang>/{toolchain,platform,configuration,target,backendninja}.hpp`.
+1. Create `build/framework/<lang>/{toolchain,platform,configuration,target,commands}.hpp`.
 2. Each follows the same pattern as the cxx files: a wrapper that owns a `shared_ptr` to the corresponding `build::*` base, attaches itself as an extension,
    and exposes a fluent surface.
 3. Add a free factory `<lang>::<lang>(name)` for the language target equivalent (`cxx::program`, `cxx::static_library`, …).
-4. Add a backend dispatch branch in `build/framework/backendninja.hpp`'s `emit_target`:
+4. Add a backend dispatch branch in `build/framework/backendir.hpp`'s `emit_target`:
 
    ```cpp
-   else if (auto* x = target->extension<lang::Target>()) { lang::ninja::emit(*x, ...); }
+   else if (auto* x = target->extension<lang::Target>()) { /* push edges into ir_ */ }
    ```
+
+   The branch builds a `Command` (argv list) via `<lang>::cmd::*` builders, bakes it into the edge's `command` string via `bake_command`, and pushes an
+   `ir::Edge` into the variant emitter. No language-specific knowledge bleeds into the runner — it just executes `/bin/sh -c <baked-command>`.
 
 No edits to `build::Target`, `build::Project`, `build::Platform`, or `build::Configuration` are required.

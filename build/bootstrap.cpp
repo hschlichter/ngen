@@ -6,6 +6,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -57,7 +58,6 @@ struct Args {
     std::string target = "ngen-view";
     std::string platform;
     std::string config;
-    std::string backend = "ninja";
     int verbosity = 0;
     bool list = false;
     bool dump_graph = false;
@@ -85,12 +85,6 @@ auto parse(int argc, char** argv) -> std::expected<Args, Error> {
                 return std::unexpected(parsed.error());
             }
             args.config = *parsed;
-        } else if (arg == "--backend") {
-            auto parsed = value();
-            if (!parsed) {
-                return std::unexpected(parsed.error());
-            }
-            args.backend = *parsed;
         } else if (arg == "-v" || arg == "--verbose") {
             args.verbosity = std::max(args.verbosity, 1);
         } else if (arg == "-vv") {
@@ -106,9 +100,6 @@ auto parse(int argc, char** argv) -> std::expected<Args, Error> {
     return args;
 }
 
-// Forward the user's original argv to the graph stage, dropping verbosity flags
-// (the graph stage doesn't need them) and translating --backend run into
-// --backend ir (the graph stage doesn't know about the runner-level "run" name).
 auto graph_forward_args(int argc, char** argv) -> std::string {
     std::string out;
     for (int i = 1; i < argc; ++i) {
@@ -116,28 +107,10 @@ auto graph_forward_args(int argc, char** argv) -> std::string {
         if (arg == "-v" || arg == "--verbose" || arg == "-vv") {
             continue;
         }
-        if (arg == "--backend" && i + 1 < argc) {
-            std::string value = argv[++i];
-            out += " --backend ";
-            out += shell_quote(value == "run" ? std::string("ir") : value);
-            continue;
-        }
         out += " ";
         out += shell_quote(argv[i]);
     }
     return out;
-}
-
-auto ninja_target(const Args& args) -> std::string {
-    if (args.target == "format" || args.target == "tidy") {
-        return args.target;
-    }
-    if (args.platform.empty() && args.config.empty()) {
-        return args.target;
-    }
-    auto platform = args.platform.empty() ? "linux-vulkan" : args.platform;
-    auto config = args.config.empty() ? "debug" : args.config;
-    return args.target + ":" + platform + ":" + config;
 }
 
 auto chosen_variant(const Args& args) -> std::pair<std::string, std::string> {
@@ -152,10 +125,6 @@ auto main(int argc, char** argv) -> int {
     auto args = parse(argc, argv);
     if (!args) {
         std::cerr << args.error().message << "\n";
-        return 1;
-    }
-    if (args->backend != "ninja" && args->backend != "run") {
-        std::cerr << "unknown backend: " << args->backend << " (expected ninja or run)\n";
         return 1;
     }
 
@@ -197,24 +166,15 @@ default _out/ngen-build-pre
         return 0;
     }
 
-    if (args->backend == "run") {
-        auto [platform, config] = chosen_variant(*args);
-        auto ir_path = "_out/" + platform + "/" + config + "/build.ngenir";
-        std::string cmd = "./_out/ngen-build-run --ir " + shell_quote(ir_path);
-        if (args->verbosity == 1) {
-            cmd = "TERM=dumb " + cmd + " -v";
-        }
-        if (args->verbosity >= 2) {
-            cmd += " -vv";
-        }
-        cmd += " " + shell_quote(args->target);
-        return std::system(cmd.c_str()) == 0 ? 0 : 1; // NOLINT(bugprone-command-processor)
+    auto [platform, config] = chosen_variant(*args);
+    auto ir_path = "_out/" + platform + "/" + config + "/build.ngenir";
+    std::string cmd = "./_out/ngen-build-run --ir " + shell_quote(ir_path);
+    if (args->verbosity == 1) {
+        cmd = "TERM=dumb " + cmd + " -v";
     }
-
-    auto build_cmd = std::string(args->verbosity == 1 ? "TERM=dumb ninja -f _out/build.ninja" : "ninja -f _out/build.ninja");
     if (args->verbosity >= 2) {
-        build_cmd += " -v";
+        cmd += " -vv";
     }
-    build_cmd += " " + shell_quote(ninja_target(*args));
-    return std::system(build_cmd.c_str()) == 0 ? 0 : 1; // NOLINT(bugprone-command-processor)
+    cmd += " " + shell_quote(args->target);
+    return std::system(cmd.c_str()) == 0 ? 0 : 1; // NOLINT(bugprone-command-processor)
 }
