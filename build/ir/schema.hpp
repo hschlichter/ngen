@@ -1,6 +1,6 @@
 // ngen build IR — bespoke binary format that carries the build graph from the graph stage to the runner.
 //
-// The graph stage (`build/build.cpp` → `ir::Emitter`, defined in `emit.hpp`) walks a `Project` and produces one
+// The graph stage (`build.cpp` → `ir::Emitter`, defined in `emit.hpp`) walks a `Project` and produces one
 // `IR` value per `(platform, config)` variant, then writes it via `writer.hpp` to
 // `_out/<plat>/<cfg>/build.ngenir`. The runner (`build/run/main.cpp`) reads it back via `reader.hpp` and hands
 // the value to `ngen::run::execute()`. This file owns only the in-memory types (`Edge`, `Pool`, `IR`) and the

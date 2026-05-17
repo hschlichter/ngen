@@ -1,7 +1,7 @@
 // build::ir::Emitter — walk a Project and produce one IR per build variant.
 //
 // This is the central translation step in the build system: configuration (`build::Project` + the cxx language
-// module) becomes transport (`ir::IR`). Invoked once from `build/build.cpp::main`:
+// module) becomes transport (`ir::IR`). Invoked once from `build.cpp::main`:
 //
 //     ir::Emitter{}.emit(project);
 //

@@ -4,18 +4,18 @@
 //
 //     mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstrap.cpp
 //
-// (Documented in `CLAUDE.md` and `build_system.md`.) The resulting binary then drives every subsequent build.
+// (Documented in `CLAUDE.md` and `build/build_system.md`.) The resulting binary then drives every subsequent build.
 // Three things happen in order on each invocation:
 //
 //   1. **Self-build.** `self_build_ir()` constructs an in-memory `build::ir::IR` with two edges — one to
-//      compile `build/build.cpp` into `_out/ngen-build-graph`, one to compile `build/run/main.cpp` into
+//      compile `build.cpp` into `_out/ngen-build-graph`, one to compile `build/run/main.cpp` into
 //      `_out/ngen-build-run`. `ngen::run::execute()` runs the IR in-process against the build log at
 //      `_out/.system/.ngen-buildlog`, so the two binaries are recompiled only when their sources or
 //      depfile-tracked headers actually change. This is the seam where the build system is "self-hosted": the
 //      runner that builds the project also builds the binaries the build system itself uses.
 //
 //   2. **Graph stage.** `./_out/ngen-build-graph` is invoked as a subprocess. It walks the `Project` defined
-//      in `build/build.cpp`, runs `ir::Emitter`, and writes one `_out/<platform>/<config>/build.ngenir` per
+//      in `build.cpp`, runs `ir::Emitter`, and writes one `_out/<platform>/<config>/build.ngenir` per
 //      variant plus the per-variant and merged `compile_commands.json`. Short-circuits with `--list` /
 //      `--dump-graph` if the user asked for those.
 //
@@ -140,8 +140,8 @@ auto self_build_ir() -> build::ir::IR {
     {
         build::ir::Edge edge;
         edge.name = "ngen-build-graph";
-        edge.command = "c++ " + cxxflags + " -MMD -MF _out/ngen-build-graph.d -o _out/ngen-build-graph build/build.cpp";
-        edge.inputs = {"build/build.cpp"};
+        edge.command = "c++ " + cxxflags + " -MMD -MF _out/ngen-build-graph.d -o _out/ngen-build-graph build.cpp";
+        edge.inputs = {"build.cpp"};
         edge.outputs = {"_out/ngen-build-graph"};
         edge.depfile = "_out/ngen-build-graph.d";
         edge.description = "GRAPH _out/ngen-build-graph";

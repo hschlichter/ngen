@@ -1,11 +1,11 @@
-#include "framework/cxx/configuration.hpp"
-#include "framework/cxx/platform.hpp"
-#include "framework/cxx/target.hpp"
-#include "framework/glob.hpp"
-#include "framework/inspect.hpp"
-#include "framework/project.hpp"
-#include "framework/tool.hpp"
-#include "ir/emit.hpp"
+#include "build/framework/cxx/configuration.hpp"
+#include "build/framework/cxx/platform.hpp"
+#include "build/framework/cxx/target.hpp"
+#include "build/framework/glob.hpp"
+#include "build/framework/inspect.hpp"
+#include "build/framework/project.hpp"
+#include "build/framework/tool.hpp"
+#include "build/ir/emit.hpp"
 
 #include <filesystem>
 #include <iostream>

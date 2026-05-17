@@ -1,6 +1,6 @@
 // `list_roots` — render the project's top-level targets for `--list`.
 //
-// Single helper, called by `build/build.cpp` when the user passes `--list`. Walks `Project::roots()`, classifies
+// Single helper, called by `build.cpp` when the user passes `--list`. Walks `Project::roots()`, classifies
 // each by which extension it carries (`cxx::Target` kind, `Tool`, `Alias`, or bare phony), and prints a
 // column-aligned `name  [kind]  (default)?` line.
 //

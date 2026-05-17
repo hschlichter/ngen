@@ -70,6 +70,6 @@ build — no `bear` wrapper needed. The engine binary lands at
 If `bootstrap.cpp` itself changes, re-run the bootstrap command above. No ninja
 involved at any stage of the user-facing build.
 
-See `build_system.md` for the framework internals (extension model, IR + emitter,
+See `build/build_system.md` for the framework internals (extension model, IR + emitter,
 runner / scheduler, adding platforms/configurations).
 

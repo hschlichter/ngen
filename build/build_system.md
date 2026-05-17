@@ -1,7 +1,7 @@
 # Build System
 
-ngen's build system is a small header-only C++ framework you write your project graph against (in `build/build.cpp`), plus a runner that executes that graph
-in parallel. Three top-level directories under `build/`, each with a distinct responsibility:
+ngen's build system is a small header-only C++ framework you write your project graph against (in `build.cpp` at the project root), plus a runner that
+executes that graph in parallel. Three top-level directories under `build/`, each with a distinct responsibility:
 
 - **`framework/`** — the configuration API. `build::Target`, `build::Project`, `build::Platform`, `build::Configuration`, the `build::cxx` language module,
   plus the auxiliary `Tool` and `Alias` wrappers.
@@ -25,7 +25,7 @@ mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstr
 ```
 
 From then on, `ngen-build` is the only entry point. It rebuilds `ngen-build-graph` and `ngen-build-run` on demand using the runner library, then drives them
-as subprocesses. No ninja involved anywhere.
+as subprocesses.
 
 If `bootstrap.cpp` itself changes, re-run the seed command above. The runner can rebuild every other binary but not itself.
 
@@ -34,16 +34,21 @@ If `bootstrap.cpp` itself changes, re-run the seed command above. The runner can
 ## Directory map
 
 ```text
+build.cpp           # The project graph at the project root. Defines platforms, configs, targets. The one file most users edit.
 build/
   bootstrap.cpp     # ngen-build orchestrator. Self-builds graph + runner via the runner library, then runs them.
-  build.cpp         # The project graph. Defines platforms, configs, targets. The one file most users edit.
+  build_system.md   # This document.
   framework/        # Configuration API. Target / Project / Platform / Configuration / cxx language module / Tool / Alias.
   ir/               # IR schema, writer, reader, JSON dump, Emitter, vendored xxhash.
   run/              # Runner: execute, scheduler, process, hash, buildlog, depfile, progress.
 ```
 
+`build.cpp` lives at the project root because it's *project-specific* configuration, not part of the build system. Everything under `build/` is the build
+system itself — header-only framework, IR, runner, and the orchestrator. To bring the build system to a different project, copy `build/` and write a new
+`build.cpp`.
+
 Dependency direction: `ir/` depends on `framework/`, never the reverse. `run/` depends on `ir/` and `framework/`, never the reverse. `bootstrap.cpp` depends
-on `ir/` (to construct the self-build IR) and on `run/` (to execute it).
+on `ir/` (to construct the self-build IR) and on `run/` (to execute it). `build.cpp` depends on `framework/` and `ir/emit.hpp`.
 
 For per-file documentation — what each header is for, what it exports, how it fits — open the file. Every `.hpp` in `build/` carries a prose header at the top.
 
@@ -117,7 +122,7 @@ every subsequent invocation:
 ngen-build
   → build a small in-memory IR (`self_build_ir()`) with two edges (graph, runner)
   → ngen::run::execute(self_build_ir, opts)   ← runner library, in-process
-      → if stale: c++ ... build/build.cpp     → _out/ngen-build-graph
+      → if stale: c++ ... build.cpp           → _out/ngen-build-graph
       → if stale: c++ ... build/run/main.cpp  → _out/ngen-build-run
   → ngen-build-graph                          → _out/<plat>/<cfg>/build.ngenir per variant
   → ngen-build-run --ir <variant>/build.ngenir <target>   ← subprocess, executes the project IR
@@ -138,7 +143,7 @@ dependency on the next invocation, picked up by the runner's depfile parser. No 
 
 ## The ngen project graph
 
-What `build/build.cpp` actually defines.
+What `build.cpp` (at the project root) actually defines.
 
 One platform: `linux-vulkan` with `clang++` / `ar`, default `c++23`, defines `NGEN_PLATFORM_LINUX, NGEN_GFX_VULKAN, GLM_FORCE_RADIANS,
 GLM_FORCE_DEPTH_ZERO_TO_ONE`, compile flags `-fPIC -Wall` plus `pkg-config --cflags sdl3` tokens, system libs `vulkan, m`.
@@ -265,7 +270,6 @@ No edits to `build::Target`, `build::Project`, `build::Platform`, or `build::Con
 System-level invariants worth knowing before changing the code. Implementation details belong with the relevant `.hpp`.
 
 - **No exceptions.** The framework uses `std::expected<T, build::Error>` at every boundary. `<stdexcept>` is not included anywhere in `build/`.
-- **No ninja anywhere.** The user-facing build never invokes ninja. The bootstrap seed is one documented `c++` command.
 - **Wrapper move/copy invariant.** Every cxx wrapper (and `Tool`, `Alias`) re-attaches itself to the base's `ExtensionMap` in both move and copy
   constructors. If a future field is added to one of these wrappers, both constructors must be updated. `cxx::ObjectFile` is the deliberate exception — it
   lives behind `shared_ptr` from construction, never gets copied or moved by user code, and is `=delete`d for both.
