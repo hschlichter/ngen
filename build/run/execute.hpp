@@ -1,3 +1,34 @@
+// ngen::run::execute — top-level entry to run an IR.
+//
+// One function carries the entire lifecycle of a build invocation:
+//
+//   1. **Load the build log** from `<ir_path-parent>/.ngen-buildlog`. Missing or version-mismatched log =
+//      clean build. (For the self-build path, `ir_path` is the synthetic `_out/.system/build.ngenir`; the log
+//      lives at `_out/.system/.ngen-buildlog`. No real `build.ngenir` file exists on that path.)
+//   2. **Resolve targets and reachability.** Targets in `RunOptions::targets` are matched against edge names
+//      first, then output paths. Empty list falls back to `IR::default_targets`. From the roots, follow
+//      `inputs` / `implicit_deps` / `order_only_deps` paths through the output index to collect the reachable
+//      edge set.
+//   3. **Local dirty check per edge** via `compute_dirty`: no log entry, command hash differs, any tracked
+//      input / output content hash differs, or any output is missing → dirty. Phony edges
+//      (`kEdgeFlagPhony`) skip the output-existence check (their outputs are virtual stamps).
+//   4. **Propagate dirty along the DAG.** A clean-looking edge whose dep is in the dirty set becomes dirty
+//      too — running the dep mutates this edge's input, which the pre-run hash hasn't seen yet.
+//   5. **Build a scheduler Plan** from the dirty subset: topological order, per-edge pending count,
+//      dependents map.
+//   6. **Run the Scheduler** (`scheduler.hpp`). Each worker pops a ready edge, takes the console-pool mutex
+//      if needed, executes via `Process::run`, and reports the outcome.
+//   7. **Update the log on each success.** Re-stat inputs (pre-run hashes are stale once deps have run) and
+//      outputs, parse the depfile if present, upsert the entry. The log is atomically rewritten at end of
+//      build via `BuildLog::save`.
+//
+// The scheduler's edge-execution callback and the dirty-state plumbing both live in this file as lambdas;
+// they're tightly coupled to the rest of `execute()` and not reused elsewhere. Pure helpers (`compute_dirty`,
+// `refresh_list`, `build_output_index`, `build_name_index`, `collect_reachable`) live in `detail::`.
+//
+// All errors propagate as `std::expected<RunResult, build::Error>`. `RunResult` distinguishes executed,
+// skipped, and failed counts; `interrupted` flags SIGINT-driven exits.
+
 #pragma once
 
 #include "../framework/glob.hpp"

@@ -1,3 +1,19 @@
+// ngen::run::Process — POSIX subprocess primitives for the runner.
+//
+// Three operations: `spawn` (fork + `pipe(2)` for stdout capture + `execv` of `/bin/sh -c <command>`), `wait`
+// (drain the pipe + `waitpid` to reap), and `signal` (forward a signal to the pid). Plus a `run` convenience
+// wrapper that spawns and waits in one call — used by `execute.hpp`'s edge-execution callback.
+//
+// `Handle` carries the live pid and the read end of the stdout/stderr pipe. `inherit_stdio = true` short-circuits
+// pipe creation and lets the child write directly to the parent's terminal — used for console-pool edges
+// (`clean`, `format`, `tidy`) where live, interleaved output is wanted.
+//
+// All errors return `std::expected<int, build::Error>`. The exit code is the normal-termination value, or
+// `128 + signal_number` for signalled exits.
+//
+// Linux-only. A Windows port replaces fork+exec with `CreateProcess` and the pipe with an `OVERLAPPED` read
+// without touching anything else in the runner — every subprocess call in the codebase goes through this header.
+
 #pragma once
 
 #include "../framework/glob.hpp"

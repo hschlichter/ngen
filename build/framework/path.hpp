@@ -1,3 +1,13 @@
+// build::Path — thin wrapper around std::filesystem::path.
+//
+// Every path in the build system is a `Path`. The wrapper exists so `string()` always renders forward-slash
+// (`generic_string()`) — important for consistent edge output paths, depfile comparisons, and platform-agnostic
+// rendering — and so the surface is reduced to just what the build actually uses: implicit construction from
+// string/char*, `operator/`, `filename()`, `parent_path()`, `empty()`, `operator<`. Nothing else leaks out, which
+// keeps call sites short.
+//
+// Used everywhere. Depends only on `<filesystem>`.
+
 #pragma once
 
 #include <filesystem>

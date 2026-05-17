@@ -1,3 +1,30 @@
+// ngen::run::Scheduler — dependency-aware `-j N` worker pool for IR edges.
+//
+// Given a `Plan` (topologically ordered dirty edges + per-edge pending count + dependents map), spawn N worker
+// threads, hand them ready edges, and harvest results until everything has been processed. The Scheduler is
+// deliberately a plain class with two callbacks — `ExecuteFn` to run an edge, `ProgressFn` to report
+// completion — rather than an integrated runner, so the concurrency machinery stays separate from the
+// edge-execution and log-writeback machinery in `execute.hpp`.
+//
+// Concurrency model:
+//   - Each `Plan.order` slot has an `EdgeState{ pending, alive }`. `pending` decrements as deps complete;
+//     when it hits zero, the edge is enqueued onto the ready queue. `alive` flips to false when any transitive
+//     dep fails or the build is cancelled — its dependents still flow through the queue but with
+//     `outcome.skipped = true`, so they poison their own dependents in turn without running anything.
+//   - Workers wait on a condition variable for ready edges or terminal state. State changes broadcast via
+//     `cv.notify_all()`.
+//   - **Console pool** (depth 1): a single `std::mutex` is held while any console-pool edge runs, so other
+//     console-pool edges block but default-pool edges keep flowing in parallel.
+//   - **SIGINT** installs a process-wide flag handler; workers poll it between edges and bail. Running
+//     children get drained naturally by `Process::wait` when they exit on their own.
+//
+// `keep_going` is the cap on tolerated failures (default 1 = stop after the first); once exceeded, the cancel
+// token is set, no new work is scheduled, and in-flight workers run to completion before the scheduler
+// returns.
+//
+// Result counts: executed (success), failures (non-zero exit / launch error), skipped (cancelled or
+// dead-branch).
+
 #pragma once
 
 #include "../framework/glob.hpp"

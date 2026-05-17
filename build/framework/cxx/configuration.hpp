@@ -1,3 +1,14 @@
+// build::cxx::Configuration — the cxx-language extension on build::Configuration.
+//
+// Wraps a `build::Configuration` (held behind `std::shared_ptr`) and attaches itself as the cxx extension.
+// Carries the per-config cxx values: `compile_flags`, `link_flags`, `defines`. Delegates `out_dir` to the base.
+//
+// Constructed via `cxx::configuration("debug")`. Registered with `Project::config()`. The IR emitter looks the
+// wrapper up at emit time via `cxx::find_configuration(variant.config)` and layers its flags/defines on top of
+// the platform values in the per-edge command.
+//
+// Same wrapper move/copy invariant as `cxx::Platform`: both constructors re-attach the back-pointer.
+
 #pragma once
 
 #include "../configuration.hpp"

@@ -1,3 +1,18 @@
+// File hashing primitives for the runner's dirty detection.
+//
+// Three exports:
+//
+//   - `StatTuple { size, mtime_ns, ctime_ns }` — the cheap fingerprint stored in the build log alongside the
+//     content hash. If a file's stat tuple matches what was recorded last time, the runner reuses the stored
+//     content hash without re-reading the file. `stat_matches` is the comparison.
+//   - `hash_file(path)` — xxh3-64 over the file contents. Used when the stat fast-path misses or there's no
+//     prior entry. Buffered 64 KiB at a time via `std::fread`.
+//   - `hash_string(view)` — same hash function over an in-memory string, used for edge command hashes.
+//
+// xxh3 is fast (GB/s on modern hardware), non-cryptographic, and good enough for change detection of project
+// files. Cryptographic collision resistance is explicitly not a goal. The implementation is vendored as the
+// single-header `ir/xxhash.h` and pulled in via `XXH_INLINE_ALL`.
+
 #pragma once
 
 #define XXH_INLINE_ALL

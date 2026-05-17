@@ -1,3 +1,16 @@
+// Parse a Make-format depfile (the output of `-MMD -MF $out.d`).
+//
+// Returns the list of dependency paths after the first `:`. Handles `\`-line continuations (the common shape —
+// clang produces these for long header lists), `\space` escapes (paths with spaces), and `#` comments. The
+// "target" portion before `:` is discarded; only the deps matter to us.
+//
+// Called by `execute.hpp` after each compile edge runs successfully: the parsed paths become
+// `LogEntry::discovered_headers` and get hashed on every subsequent dirty check. Missing or empty files return
+// an empty list — that's the steady state for edges that don't produce a depfile.
+//
+// We don't reuse a make implementation here. The format is simple enough to parse directly, and we'd
+// otherwise inherit too much (variable expansion, conditional includes) from a real make.
+
 #pragma once
 
 #include "../framework/glob.hpp"
@@ -12,17 +25,6 @@
 
 namespace ngen::run {
 
-// Parse a Make-format depfile (the output of `-MMD -MF $out.d`). Returns the
-// list of dependency paths after the `:`. Handles \-line continuations and
-// \space escapes; treats # as a line comment.
-//
-// Example input (a backslash at end of line continues to the next):
-//     foo.o: foo.c bar.h <BACKSLASH>
-//            baz.h
-// Returns: { "foo.c", "bar.h", "baz.h" }.
-//
-// The "target" before `:` is dropped. If the file is missing or empty, returns
-// an empty list — that is the steady state for edges that don't produce a depfile.
 inline auto parse_depfile(const build::Path& path) -> std::expected<std::vector<std::string>, build::Error> {
     std::ifstream in(path.string(), std::ios::binary);
     if (!in) {

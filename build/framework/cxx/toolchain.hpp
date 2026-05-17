@@ -1,3 +1,12 @@
+// build::cxx::Toolchain — the four cxx tools used at emit time.
+//
+// Just `compiler` / `archiver` / `linker` / `default_std` (plus `default_std = "c++23"` baked in). Composed
+// *inside* `build::cxx::Platform` rather than registered as its own extension on `build::Platform`, because
+// every platform has exactly one toolchain and the indirection would not pull its weight. Read by the IR
+// emitter via `cxx_platform.toolchain()` when assembling per-edge `CompileInputs` / `LinkInputs`.
+//
+// Fluent setters return `Toolchain&` so the free factory `cxx::toolchain()` chains naturally.
+
 #pragma once
 
 #include <string>

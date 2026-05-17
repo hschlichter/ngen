@@ -1,3 +1,12 @@
+// `list_roots` — render the project's top-level targets for `--list`.
+//
+// Single helper, called by `build/build.cpp` when the user passes `--list`. Walks `Project::roots()`, classifies
+// each by which extension it carries (`cxx::Target` kind, `Tool`, `Alias`, or bare phony), and prints a
+// column-aligned `name  [kind]  (default)?` line.
+//
+// Lives in its own file because nothing else in the framework needs `--list`, and pulling `cxx/target.hpp` into
+// `project.hpp` (just to describe the kind) would add a hot include for every consumer of `Project`.
+
 #pragma once
 
 #include "alias.hpp"

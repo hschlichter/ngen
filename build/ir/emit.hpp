@@ -1,3 +1,47 @@
+// build::ir::Emitter — walk a Project and produce one IR per build variant.
+//
+// This is the central translation step in the build system: configuration (`build::Project` + the cxx language
+// module) becomes transport (`ir::IR`). Invoked once from `build/build.cpp::main`:
+//
+//     ir::Emitter{}.emit(project);
+//
+// which writes a `build.ngenir` plus a `compile_commands.json` under each `_out/<plat>/<cfg>/`, plus a merged
+// top-level `_out/compile_commands.json`. `Emitter{}.dump(project, ostream)` is the read-only counterpart that
+// prints JSON to stdout for `--dump-graph`.
+//
+// Two scopes live inside this file:
+//
+//   - `detail::VariantEmitter` does the work for one `(platform, config)`. It owns an in-progress `IR`, a
+//     name→edge-index map, a name→primary-output map, a cycle-detection set, and the `compile_commands.json`
+//     accumulator. `emit_target` is the recursive worker: resolves aliases via `resolve_alias`, recurses into
+//     deps, then dispatches by extension type — `Tool` → `cxx::ObjectFile` → `cxx::Target`, in that order, so
+//     a TU node never falls through to library/program emit. Per-shape helpers `emit_object_file`,
+//     `emit_cxx_library`, `emit_cxx_program`, `emit_tool`, `emit_global_tool` push `ir::Edge`s into the IR.
+//   - `class Emitter` is the public face: drives one `VariantEmitter` per `(platform, config)` cross product
+//     and stitches their `compile_commands.json` lists together.
+//
+// Command baking: `cxx::cmd::*` builders produce a `Command` (argv list) per edge. `bake_command` shell-quotes
+// and joins the tokens; the resulting string lands on `Edge::command`. The runner later passes that string to
+// `/bin/sh -c` — no further substitution, no rule expansion, no `$cflags` style variables. All compositions
+// happen here.
+//
+// Compile-flag composition order (compiler last-wins picks innermost):
+//   1. `cxx::Platform::compile_flags()`
+//   2. `cxx::Configuration::compile_flags()`
+//   3. `cxx::Target::compile_flags_data` (parent library/program)
+//   4. `cxx::ObjectFile::compile_flags_data` (per-TU)
+//
+// Defines and warning suppressions follow the same order. `std` resolves as: object's `std_data` if set, else
+// parent's `std_data`, else toolchain `default_std()`. Includes come from the parent's includes plus transitive
+// `public_includes` from linked targets.
+//
+// `-Wl,--start-group` / `-Wl,--end-group` wraps program archives at link time so over-linking works without
+// curating transitive link order.
+//
+// Helpers in `detail::` (`resolve_alias`, `collect_includes`, `collect_public_includes`, `object_path`,
+// `substitute` for `$in` / `$out` / `$out_dir`, `json_escape`, `compile_command_entry`) are pure functions
+// called from `VariantEmitter`. None of them are part of the public surface — keep them in `detail::`.
+
 #pragma once
 
 #include "../framework/alias.hpp"

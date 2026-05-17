@@ -1,124 +1,112 @@
 # Build System
 
-This document is the working reference for ngen's self-hosted build system. It describes what's actually in the tree and how the pieces fit together.
+ngen's build system is a small header-only C++ framework you write your project graph against (in `build/build.cpp`), plus a runner that executes that graph
+in parallel. Three top-level directories under `build/`, each with a distinct responsibility:
 
-The build system is a small header-only C++ framework under `build/framework/` that you write your project graph against (in `build/build.cpp`), plus a
-runner-based pipeline that compiles the graph stage and the runner stage on demand, emits a bespoke binary IR per build variant, and executes that IR. The
-only ninja in the project is what the user types on their own machine if they prefer — the build system never invokes it.
+- **`framework/`** — the configuration API. `build::Target`, `build::Project`, `build::Platform`, `build::Configuration`, the `build::cxx` language module,
+  plus the auxiliary `Tool` and `Alias` wrappers.
+- **`ir/`** — the binary IR that carries a frozen build graph from the configuration layer to the executor, plus `ir::Emitter` which walks a `Project` to
+  produce one.
+- **`run/`** — the executor library (`ngen::run::execute()`) and its standalone CLI (`ngen-build-run`). Dirty detection, scheduler, depfile parsing, build
+  log.
 
-A single fresh-clone C++ compile produces `ngen-build`. From then on, `ngen-build` itself uses the runner library to keep `ngen-build-graph` and
-`ngen-build-run` current.
+Every file under `build/` carries a prose header explaining what it solves, what it exports, and how it fits in. **This document is the high-level
+architecture and usage; the file headers are the details.** When you want to know how a specific type works or what a class's invariants are, open the
+corresponding `.hpp`.
 
 ---
 
-## 1. Files on disk
+## Fresh-clone bootstrap
+
+One C++ compile produces `_out/ngen-build`:
+
+```sh
+mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstrap.cpp
+```
+
+From then on, `ngen-build` is the only entry point. It rebuilds `ngen-build-graph` and `ngen-build-run` on demand using the runner library, then drives them
+as subprocesses. No ninja involved anywhere.
+
+If `bootstrap.cpp` itself changes, re-run the seed command above. The runner can rebuild every other binary but not itself.
+
+---
+
+## Directory map
 
 ```text
 build/
-  bootstrap.cpp                # ngen-build orchestrator + self-build driver; documented `c++` compile produces _out/ngen-build
-  build.cpp                    # project graph; compiled into ngen-build-graph
-  ir/                          # binary IR transport + emitter; shared by graph (writer) and runner (reader); header-only
-    schema.hpp                 # Edge, Pool, IR; binary wire-format constants
-    writer.hpp                 # build::ir::write(IR&, Path)
-    reader.hpp                 # build::ir::read(Path) -> expected<IR, Error>
-    json.hpp                   # build::ir::dump_json(IR&, ostream&) for --dump-graph
-    emit.hpp                   # build::ir::Emitter; walks Project and produces an IR per variant
-    xxhash.h                   # vendored single-header xxhash (BSD-2)
-  run/                         # ngen-build-run sources; header-only with one .cpp entry point
-    main.cpp                   # CLI entry; loads IR via reader and calls ngen::run::execute()
-    execute.hpp                # ngen::run::execute(IR&, RunOptions&) — dirty detection + scheduler driver
-    buildlog.hpp               # _out/<plat>/<cfg>/.ngen-buildlog read/write with atomic rename
-    hash.hpp                   # xxh3-64 file hashing + (size,mtime,ctime) fast-path
-    depfile.hpp                # parse Make-format .d files (handles \-continuation and \space escapes)
-    process.hpp                # POSIX spawn/wait/signal + synchronous run convenience wrapper
-    progress.hpp               # ninja-style [done/total] progress; tty \r-overwrite; NO_COLOR
-    scheduler.hpp              # -j N ready-queue scheduler; console pool depth 1; SIGINT cancel token
-  framework/                   # configuration-API library; header-only, no .cpp files, no umbrella
-    alias.hpp                  # Alias — fluent wrapper, attached as extension on build::Target
-    command.hpp                # Command (argv vector)
-    configuration.hpp          # build::Configuration — fluent class with ExtensionMap
-    extensionmap.hpp           # ExtensionMap (type-erased; owning add + non-owning attach; nullable get)
-    glob.hpp                   # GlobSpec, glob, concat, capture_tokens, repo_root, write_if_changed, shell_quote, split_ws, Error
-    inspect.hpp                # list_roots helper used by --list
-    path.hpp                   # Path
-    platform.hpp               # build::Platform — fluent class with ExtensionMap
-    project.hpp                # Project — registers entry targets / platforms / configs
-    target.hpp                 # build::Target — identity + deps + gating + ExtensionMap
-    tool.hpp                   # Tool — fluent wrapper, attached as extension on build::Target
-    variant.hpp                # BuildVariant — (platform, config, out_dir) identity tuple
-
-    cxx/
-      commands.hpp             # cxx::cmd::CompileInputs/LinkInputs + compile_/archive_/link_command
-      configuration.hpp        # build::cxx::Configuration — fluent wrapper, attached as extension on build::Configuration
-      objectfile.hpp           # build::cxx::ObjectFile — per-translation-unit node, attached as extension on build::Target
-      platform.hpp             # build::cxx::Platform — fluent wrapper, attached as extension on build::Platform (composes Toolchain)
-      target.hpp               # build::cxx::Target — fluent wrapper, attached as extension on build::Target; OptLevel + Kind enums
-      toolchain.hpp            # build::cxx::Toolchain — tools only (compiler / archiver / linker / default_std)
+  bootstrap.cpp     # ngen-build orchestrator. Self-builds graph + runner via the runner library, then runs them.
+  build.cpp         # The project graph. Defines platforms, configs, targets. The one file most users edit.
+  framework/        # Configuration API. Target / Project / Platform / Configuration / cxx language module / Tool / Alias.
+  ir/               # IR schema, writer, reader, JSON dump, Emitter, vendored xxhash.
+  run/              # Runner: execute, scheduler, process, hash, buildlog, depfile, progress.
 ```
 
-The three top-level directories under `build/` carry distinct responsibilities: `framework/` is the configuration API (Target/Project/Platform/Configuration
-+ the cxx language module); `ir/` is the transport format and its emitter (schema + writer + reader + JSON dump + `Emitter` that walks a `Project` to
-produce an `IR`); `run/` is the executor that reads an IR and runs it. `build/build.cpp` includes `framework/` to describe the project and `ir/emit.hpp` to
-serialize it. Direction of dependency: `ir/` depends on `framework/`, never the reverse.
+Dependency direction: `ir/` depends on `framework/`, never the reverse. `run/` depends on `ir/` and `framework/`, never the reverse. `bootstrap.cpp` depends
+on `ir/` (to construct the self-build IR) and on `run/` (to execute it).
 
-**Header-only framework + runner.** The framework and `build/run/` are both header-only with the runner having a single `.cpp` entry point (`main.cpp`).
-Free functions are marked `inline`; class methods are defined inside their class bodies (implicitly inline). Implementation-only helpers live in
-`namespace build::ir::detail` (graph-traversal helpers `append_unique`, `resolve_alias`, `collect_includes`, `object_path`, etc.) and
-`build::detail` (`glob_match` in `glob.hpp`).
-
-There is no umbrella `build.hpp`. `build/build.cpp` includes the specific headers it needs.
+For per-file documentation — what each header is for, what it exports, how it fits — open the file. Every `.hpp` in `build/` carries a prose header at the top.
 
 ---
 
-## 2. Mental model
+## Mental model
 
 Three layers, each built from a small set of types.
 
-### 2.1 Core (language-agnostic)
+### Core (language-agnostic — `build/framework/`)
 
 ```text
 build::Target         → graph node (name, deps, platform/config gating, ExtensionMap)
 build::Project        → entry targets + registered platforms + registered configs
 build::Platform       → environment identity (name, os, graphics_api, exe_suffix) + ExtensionMap
 build::Configuration  → variant identity (name, out_dir) + ExtensionMap
+build::ExtensionMap   → type-erased attachment point that everything language-specific hangs from
 ```
 
-The core types carry zero language vocabulary. They model "what to build", "where", and "how identities relate". All language-specific knowledge (compilers,
-flags, defines) lives in extensions attached through `ExtensionMap`.
+The core types carry zero language vocabulary. They model "what to build", "where", and "how identities relate". Anything language-specific lives in
+extensions attached through `ExtensionMap`. See `build/framework/extensionmap.hpp`.
 
-### 2.2 The C++ language module (`build::cxx`)
+### C++ language module (`build::cxx` — `build/framework/cxx/`)
 
-A parallel namespace mirroring the core, with each type acting as a fluent wrapper that owns its corresponding core type via `shared_ptr` and registers itself
-as the cxx extension on that core type's `ExtensionMap`:
+A parallel namespace mirroring the core, with each type as a fluent wrapper that owns its corresponding core type via `shared_ptr` and registers itself as
+the cxx extension:
 
 ```text
-build::cxx::Toolchain      → compiler / archiver / linker / default_std (tools only — composed inside cxx::Platform, not its own extension)
-build::cxx::Platform       → wraps build::Platform; per-platform compile_flags / link_flags / defines / system_libs + a Toolchain
+build::cxx::Toolchain      → compiler / archiver / linker / default_std (composed inside cxx::Platform)
+build::cxx::Platform       → wraps build::Platform; per-platform compile_flags / link_flags / defines / system_libs
 build::cxx::Configuration  → wraps build::Configuration; per-config compile_flags / link_flags / defines
-build::cxx::Target         → wraps build::Target; one node per library/program; sources / includes / defines / std / link / etc.
-build::cxx::ObjectFile     → wraps build::Target; one node per translation unit; per-TU defines / compile_flags / std / warning suppressions
+build::cxx::Target         → wraps build::Target; one node per library/program
+build::cxx::ObjectFile     → wraps build::Target; one node per translation unit
 ```
 
-A library or program is `cxx::Target`; each `.cpp` it owns is a `cxx::ObjectFile` child whose base is dep-edged to the parent's base. Compile edges (one
-`Edge` per `.cpp` → `.o` in the IR) are emitted from the ObjectFile node, archive/link edges from the parent. The framework graph is therefore one node per
-TU plus one node per library/program — sources are first-class, not an opaque list inside the parent.
+A library or program is `cxx::Target`; each `.cpp` it owns is a `cxx::ObjectFile` child whose base is dep-edged to the parent's base. Compile edges are
+emitted from the ObjectFile node, archive/link edges from the parent. The framework graph is one node per TU plus one node per library/program — sources
+are first-class, not an opaque list inside the parent.
 
-Adding another language is purely additive: a new `build::csharp::Platform`/`Configuration`/`Target` plus a backend dispatch branch, no edits to anything in
-`build::`.
+### Generic auxiliary (`Tool`, `Alias`)
 
-### 2.3 Generic auxiliary targets
+Both follow the cxx wrapper pattern: own a `shared_ptr<Target>`, attach themselves to the base's `ExtensionMap`, expose a fluent builder.
 
-```text
-build::Tool   → fluent wrapper around build::Target; attached as extension; runs an opaque shell command (glslc, rm, clang-format, …)
-build::Alias  → fluent wrapper around build::Target; attached as extension; resolves to another target based on (platform, config) selectors
-```
+- **`Tool`** runs an opaque shell command (`glslc`, `rm`, `clang-format`, `clang-tidy`, …). Per-variant by default; `global()` makes it variant-independent.
+  See `build/framework/tool.hpp`.
+- **`Alias`** resolves to another target based on `(platform, config)` selectors. Used for graph-level indirection like `rhi-backend → rhivulkan` on
+  `linux-vulkan`. See `build/framework/alias.hpp`.
 
-`Tool` and `Alias` are language-agnostic. They use the same wrapper-attached-as-extension pattern as the cxx types. The backend dispatches by checking
-`target->extension<Tool>()` / `target->extension<Alias>()`.
+### IR transport (`build/ir/`)
+
+The graph stage walks the `Project` and produces one `ir::IR` per `(platform, config)` variant. Commands are **fully baked** into shell strings at emit
+time — no `$cflags` templating, no rule expansion, no variables. The runner just executes them. The IR is a flat binary format with a fixed header, fixed-size
+record arrays, and a string table at the end. See `build/ir/schema.hpp` for the in-memory types and the byte layout, and `build/ir/emit.hpp` for the walk.
+
+### Runner (`build/run/`)
+
+A single entry point `ngen::run::execute(IR&, RunOptions&)` does the whole lifecycle: load the build log, compute the dirty set with content hashing and a
+stat fast-path, propagate dirty along the DAG, hand a Plan to the parallel scheduler, update the log on each success, save atomically at the end. See
+`build/run/execute.hpp`.
 
 ---
 
-## 3. Bootstrap chain
+## Bootstrap and execution flow
 
 ```text
 fresh-clone seed (documented one-line `c++` invocation in CLAUDE.md):
@@ -127,7 +115,7 @@ fresh-clone seed (documented one-line `c++` invocation in CLAUDE.md):
 
 every subsequent invocation:
 ngen-build
-  → build a small in-memory IR with two edges (graph and runner) — `self_build_ir()`
+  → build a small in-memory IR (`self_build_ir()`) with two edges (graph, runner)
   → ngen::run::execute(self_build_ir, opts)   ← runner library, in-process
       → if stale: c++ ... build/build.cpp     → _out/ngen-build-graph
       → if stale: c++ ... build/run/main.cpp  → _out/ngen-build-run
@@ -135,287 +123,22 @@ ngen-build
   → ngen-build-run --ir <variant>/build.ngenir <target>   ← subprocess, executes the project IR
 ```
 
-There is one execution engine — the runner library at `build/run/` — and it does both build-system self-build (in-process) and project build (as a
-subprocess invocation of `_out/ngen-build-run`). Both use the same dirty detection, content hashing, scheduler, and build log format. The only difference
-is the IR they execute and where its build log lives:
+There is one execution engine — the runner library at `build/run/` — and it does both build-system self-build (in-process inside `ngen-build`) and project
+build (as a subprocess invocation of `_out/ngen-build-run`). Both use the same dirty detection, content hashing, scheduler, and build log format. They differ
+only in which IR they execute and where its build log lives:
 
-- **Self-build IR.** Constructed in memory by `bootstrap.cpp::self_build_ir()` on every `ngen-build` invocation. Two edges. Never written to disk.
-  Build log at `_out/.system/.ngen-buildlog`.
-- **Project IR.** Emitted by `ngen-build-graph` to `_out/<plat>/<cfg>/build.ngenir`, executed by `ngen-build-run`. Build log at
-  `_out/<plat>/<cfg>/.ngen-buildlog`.
+- **Self-build IR.** Constructed in memory on every `ngen-build` invocation by `bootstrap.cpp::self_build_ir()`. Two edges. Never written to disk. Build log
+  at `_out/.system/.ngen-buildlog`.
+- **Project IR.** Emitted by `ngen-build-graph` to `_out/<plat>/<cfg>/build.ngenir`. Build log at `_out/<plat>/<cfg>/.ngen-buildlog`.
 
-The runner-headers under `build/run/` are header-only and compiled into *both* `_out/ngen-build` (as the in-process self-build engine) and
-`_out/ngen-build-run` (as the standalone project executor). Each binary instantiates its own copy; there's no static archive in between.
-
-`ngen-build-graph` and the self-build edges both use `-MMD -MF $out.d`, so any new header under `build/framework/`, `build/ir/`, or `build/run/`
-automatically becomes a build dependency picked up by the runner's depfile parser. No heredoc updates required.
-
-`bootstrap.cpp` shells out to `_out/ngen-build-graph` and `_out/ngen-build-run` via `std::system`, marked with `// NOLINT(bugprone-command-processor)` since
-this is the deliberate orchestration boundary. The self-build pass calls `ngen::run::execute()` directly — no subprocess.
-
-When `bootstrap.cpp` itself changes, the user re-runs the documented seed command. The runner can rebuild `ngen-build-graph` and `ngen-build-run` but not
-itself.
+Header tracking uses `-MMD -MF $out.d` for both paths: any new header under `build/framework/`, `build/ir/`, or `build/run/` automatically becomes a build
+dependency on the next invocation, picked up by the runner's depfile parser. No heredoc updates, no manifest changes.
 
 ---
 
-## 4. ExtensionMap (`build/framework/extensionmap.hpp`)
+## The ngen project graph
 
-Type-erased map keyed by `std::type_index(typeid(Ext))`. Two attachment modes:
-
-- `add<Ext>(args...)` — owning. `ExtensionMap` heap-allocates the extension and deletes it on map destruction. Idempotent: re-calling `add<T>` returns the
-  existing instance instead of replacing.
-- `attach<Ext>(ext)` — non-owning. The map stores a back-pointer with a no-op deleter. Replaces any existing entry of the same type.
-
-`get<Ext>() -> Ext*` returns `nullptr` when the extension is absent — no exceptions. Exceptions are forbidden in this codebase; `<stdexcept>` is not included
-anywhere in the framework. The const overload returns `const Ext*`. Use `has<Ext>() -> bool` or just check the pointer.
-
-`build::Target::extension<Ext>() const -> Ext*` is a thin wrapper around `extensions().get<Ext>()` (with a `const_cast` to keep the historical API shape).
-
----
-
-## 5. Core API surface
-
-### `build::Target`
-
-Methods: `name`, `depend_on`, `only_on` / `except_on` / `only_in` / `except_in`, `enabled_for`, `extensions()`, plus the legacy `register_extension<T>` /
-`extension<T>()` / `has_extension<T>()` for code that prefers that pattern.
-
-### `build::Platform`
-
-Fluent setters: `os(...)`, `graphics_api(...)`, `exe_suffix(...)`. Plus `name()` accessor and `extensions()`. No language-specific fields.
-
-### `build::Configuration`
-
-Fluent setter: `out_dir(...)`. Plus `name()` accessor and `extensions()`. No language-specific fields.
-
-### `build::Project`
-
-Registration: `target(Target&)`, `default_target(Target&)`, `platform(Platform&)`, `config(Configuration&)`. All idempotent — passing the same reference twice
-is a no-op.
-
-Lookup: `find_platform(name)`, `find_config(name)`, `find(name)` (entry targets only).
-
-Build-set computation: `build(name)`, `build_all()`, `default_build()` — all return a post-order vector of `Target*`.
-
-`platforms() / configs() / roots()` return `const std::vector<X*>&` — borrowed pointers, insertion order. The Project does not own the targets/platforms/configs;
-it just records pointers to user-owned objects (typically locals in `main()`).
-
----
-
-## 6. C++ extension surface (`build::cxx`)
-
-Every `cxx::*` wrapper follows the same shape: it owns its base via `std::shared_ptr<build::*>`, exposes the base's setters via delegation, plus its own
-language-specific setters. Move and copy constructors re-attach `*this` to the base's `ExtensionMap` so the back-pointer always reflects the current wrapper.
-`shared_ptr` lets the chained-construction idiom work — `auto x = cxx::factory("name").a().b()` copy-constructs `x` from the materialized prvalue and the new
-copy re-attaches.
-
-### `cxx::Toolchain`
-
-Tools only: `compiler(...)`, `archiver(...)`, `linker(...)`, `default_std(...)`. Composed inside `cxx::Platform`, not a separate extension.
-
-Free factory: `cxx::toolchain()` returns a fresh `Toolchain` by value.
-
-### `cxx::Platform`
-
-Fluent: `os/graphics_api/exe_suffix` (delegated to base), `compile_flag` / `link_flag` / `define` / `system_lib` (singular, takes one string), and the plural
-variants `compile_flags` / `link_flags` / `defines` / `system_libs` (each takes a `std::vector<std::string>` and appends all). Plus `toolchain()` returning the
-composed `Toolchain&` and `toolchain(Toolchain)` setting the entire toolchain in one call.
-
-Free factory: `cxx::platform(name)` returns a `cxx::Platform` by value.
-
-Lookup helper: `cxx::find_platform(const build::Platform&) -> const Platform*` (nullable).
-
-### `cxx::Configuration`
-
-Fluent: `out_dir(...)` (delegated), `compile_flag` / `link_flag` / `define` (singular), and `compile_flags` / `link_flags` / `defines` (plural, take vectors).
-
-Free factory: `cxx::configuration(name)`.
-
-Lookup helper: `cxx::find_configuration(const build::Configuration&) -> const Configuration*` (nullable).
-
-### `cxx::Target`
-
-Methods:
-
-- **Sources / std**: `sources({...})`, `std("c++20")`. Each path passed to `sources(...)` materializes a `cxx::ObjectFile` child stored in
-  `objects_data` and dep-edged to the parent's base; sources are not an opaque list. `std(...)` sets the library/program-wide default that ObjectFiles
-  inherit unless they set their own `std(...)`.
-- **Per-TU access**: `for_source(path, fn)` looks up the `ObjectFile` whose source matches `path` and runs `fn(ObjectFile&)`. A miss is a configuration
-  error and aborts with a clear message naming the missing source and the parent target.
-- **Includes**: `include(path | vec | init_list)`, `public_include(...)` (propagates to dependents), `warning_off("name")`.
-- **Defines**: `define("FOO=1")`, `defines(vec)` (bulk).
-- **Compile flags**: `compile_flag(string)`, `compile_flags(vec)`. Plus typed sugar `optimize(O3)`, `debug(true)`, `pic(true)` — all desugar at method-call time
-  into entries in `compile_flags_data`.
-- **Link**: `link(other_cxx_target)`, `link("system_lib")`, `link_flag(string)`, `link_flags(vec)`, `system_libs(vec)`, `lib_search(path)`, `rpath(path)`.
-- **Gating**: `only_on / except_on / only_in / except_in` (delegated to base).
-- **Manual graph edge**: `depend_on(build::Target&)`.
-
-Factory functions: `cxx::static_library(name)`, `cxx::shared_library(name)`, `cxx::program(name)` — each constructs a `cxx::Target` with the appropriate
-`Kind`. The `OptLevel` and `Kind` enums live at the top of `cxx/target.hpp`.
-
-### `cxx::ObjectFile`
-
-One node per translation unit. Constructed implicitly by `cxx::Target::sources(...)` — there is no public factory and there is no fluent surface on the
-parent for "add this single source"; everything goes through `sources(...)`.
-
-Identity: the underlying `build::Target` is named `<parent-target-name>/<source-path>` (e.g. `renderer/src/renderer/renderthread.cpp`). This naming
-guarantees uniqueness even when the same source is compiled into two libraries (each gets its own ObjectFile with its own object output).
-
-Lifetime: held by `std::shared_ptr` in `cxx::Target::objects_data`. The parent owns the children; the framework's `Project` only sees the underlying
-`build::Target*` via dep edges. ObjectFile is non-copyable and non-movable — only the `shared_ptr` moves.
-
-Inheritance: ObjectFile holds a `shared_ptr<build::Target>` back to its parent's base and resolves the live `cxx::Target` extension through the base's
-`ExtensionMap` whenever needed. This keeps the back-pointer correct across the parent's copy/move into its final home.
-
-Gating: an ObjectFile is enabled exactly when its parent is. The check is performed in `emit_object_file` against the parent — ObjectFile's own base has
-no `only_on/except_on` sets.
-
-Per-TU fluent surface (mirrors a subset of `cxx::Target`):
-
-- `define(string)`, `defines(vec)`
-- `warning_off(string_view)`
-- `compile_flag(string)`, `compile_flags(vec)`
-- `std(string_view)` — overrides parent + toolchain default for this TU only
-
-Use via `for_source` on the parent:
-
-```cpp
-auto sceneusd =
-    cxx::static_library("sceneusd")
-        .sources(glob({.include = "src/scene/usd*.cpp"}))
-        .for_source("src/scene/usdscene.cpp", [](cxx::ObjectFile& obj) {
-            obj.warning_off("deprecated-declarations").std("c++20");
-        });
-```
-
-Library- and per-TU surfaces coexist. A library-wide `cxx::Target::define("FOO=1")` and a per-TU `obj.define("BAR=1")` both end up on the targeted TU's
-command line; siblings only get `FOO=1`. For `std`, the ObjectFile value wins if set, otherwise the parent's, otherwise the toolchain default.
-
-There is no `optimize/debug/pic` per-TU sugar by design — those live at platform/config level. Use `compile_flag("-O3")` directly if you need it on a
-single TU.
-
----
-
-## 7. Tool and Alias
-
-`Tool` and `Alias` mirror the cxx wrappers' pattern: each owns a `shared_ptr<Target>`, attaches itself to the base's `ExtensionMap`, and offers a fluent
-factory + chain.
-
-### `Tool`
-
-Free factory: `tool(name)` returns a `Tool` by value. Chained: `command({...})`, `inputs(...)`, `outputs(...)`, `for_each(paths, fn)`, `global(bool)`. The
-`for_each` form lets a tool emit one ninja edge per input, with the output path computed by the supplied callable. `global(true)` produces a single global
-phony edge instead of per-variant edges (used for `clean` / `format` / `tidy`).
-
-### `Alias`
-
-Free factory: `alias(name)`. Chained: `select("platform", "linux-vulkan", target)`, `to(target)`, `fallback(target)`, `resolve(context)`. Used for graph-level
-indirection that depends on `(platform, config)` — e.g. `rhi-backend` resolves to `rhivulkan` on `linux-vulkan`.
-
-The backend dispatches `Tool` and `Alias` via `target->extension<Tool>()` / `target->extension<Alias>()` — same mechanism as `cxx::Target`. There is no
-`dynamic_cast` in the dispatch path.
-
----
-
-## 8. IR backend and runner
-
-### 8.1 Graph stage (`ir::Emitter`)
-
-`build::ir::Emitter::emit(project)` writes `_out/<platform>/<config>/build.ngenir` for every variant, all per-variant `compile_commands.json`, the merged
-`_out/compile_commands.json`, and creates required output directories.
-
-`ir::detail::VariantEmitter::emit_target` resolves aliases (walking `target->extension<Alias>()` chains), then dispatches by extension type:
-
-```cpp
-if      (auto* tool = target->extension<Tool>())              { emit_tool(*tool, ...); }
-else if (auto* obj  = target->extension<cxx::ObjectFile>())   { emit_object_file(*obj); }
-else if (auto* cxx_t = target->extension<cxx::Target>())      { emit_cxx(*cxx_t, order_only); }
-```
-
-ObjectFile is checked before `cxx::Target` so a TU node never falls through to library/program emit. The dep-walk preceding dispatch filters out
-`cxx::ObjectFile` outputs from the `order_only` accumulator — those object paths flow into the parent's archive/link edge as direct inputs via
-`gather_object_outputs`, so adding them to `order_only` would just double-list them.
-
-Commands are *fully baked* at emit time using `cxx::cmd::compile_command / archive_command / link_command` from `cxx/commands.hpp`. No `$cflags`-style
-variables, no templating, no rule expansion. Each `Edge` in the IR carries the exact `/bin/sh -c <command>` string the runner will execute.
-
-Compile-flag composition order (compiler last-wins picks innermost):
-
-1. `cxx::Platform::compile_flags()`
-2. `cxx::Configuration::compile_flags()`
-3. `cxx::Target::compile_flags_data` (raw + desugared `optimize` / `debug` / `pic`) — the parent library/program
-4. `cxx::ObjectFile::compile_flags_data` — the per-TU layer
-
-Defines follow the same four-step precedence (platform → config → parent → ObjectFile). Warning suppressions are appended in the same order. `std`
-resolves as: ObjectFile's `std_data` if set, else parent's `std_data`, else toolchain `default_std()`. Includes come from `cxx::Target::includes_data`
-plus transitive `public_includes_data` from linked targets — ObjectFile inherits the include set from its parent verbatim and does not currently extend
-it. Link flags and system libs are parent-level concerns; ObjectFile has no link-side fields.
-
-`-Wl,--start-group` / `-Wl,--end-group` wraps archive inputs at link time so over-linking still works without the user having to curate transitive link order.
-
-### 8.2 IR file (`build/ir/`)
-
-Per-variant binary file at `_out/<platform>/<config>/build.ngenir`. Contains:
-
-- Header: `NGIR` magic, format version, generated-at timestamp, variant string, project root.
-- Pools: index 0 is `default` (depth 0, capped by `-j N` at runtime); index 1 is `console` (depth 1, runs serialized with inherited stdio).
-- Edges: flat array, fixed-size records keyed by `name`. Each edge carries baked `command`, `inputs[]`, `outputs[]`, `implicit_deps[]`, `order_only_deps[]`,
-  `pool`, `depfile` path, `description`, and `flags` (currently only `kEdgeFlagPhony`).
-- StringRef side-array for the list fields, plus a deduplicated string table at the end.
-- Default targets: u32 indices into the edges array.
-
-`build::ir::dump_json` re-emits the same shape as JSON for `--dump-graph` — strictly for human inspection, not a parse target.
-
-### 8.3 Runner (`build/run/`, `ngen-build-run` binary)
-
-The runner is invoked as `ngen-build-run --ir <path> [-j N] [-k N] [-v|-vv] [target ...]`. Lifecycle of one invocation:
-
-1. **Load IR.** `build::ir::read` validates magic and version, returns a value-typed `IR` struct.
-2. **Load build log.** `_out/<plat>/<cfg>/.ngen-buildlog` if present; a missing or version-mismatched log is treated as empty (forces a clean build).
-3. **Resolve targets and walk reachability.** Targets are matched against edge names first, then output paths. From the requested edges, walk `inputs`,
-   `implicit_deps`, and `order_only_deps` and look up each path in the output index to find its producer edge. Inactive edges are ignored.
-4. **Dirty pass (`compute_dirty`).** For each reachable edge in IR (topological) order: the edge is dirty if no log entry exists, or `command_hash` differs,
-   or any tracked input/output/discovered-header differs from the stored hash (with mtime fast-path), or any output is missing. Phony edges
-   (`kEdgeFlagPhony`) skip the output-existence check. Dirty propagates along dep edges so that a clean-looking edge whose dep is dirty is included in the
-   plan.
-5. **Build plan.** The dirty subset is filtered out of `ordered` (still topological), and `pending` + `dependents` are computed per plan position.
-6. **Schedule.** `Scheduler` runs `-j N` worker threads. Each pops a ready edge, takes the console-pool mutex if needed, calls `Process::run` (which forks +
-   `dup2`s a pipe + `execv`s `/bin/sh -c <command>`). On success, the worker propagates readiness; on failure, it poisons dependents and increments the
-   failure counter. SIGINT sets a cancel token; workers stop scheduling and the in-flight children get drained.
-7. **Update log.** On each successful edge the main thread (under `log_mtx`) re-stats inputs and outputs (the pre-run hashes are stale once deps have run),
-   parses the depfile if present, and upserts the entry. The log is rewritten atomically (`.tmp` + `rename`) at end of build.
-8. **Display.** `Progress` prints `[done/total] description` lines, with `\r`-overwrite single-line mode on a tty (and `\e[K` clear) or one-line-per-edge in
-   non-tty / `-v` mode. `-vv` echoes the full `$ command`. Failures go to stderr with the captured output and a `$ command` line. Colors honor `NO_COLOR`.
-
-### 8.4 Dirty detection details
-
-The build log entry per edge records: `command_hash`, `last_run_ns`, and `inputs[] / outputs[] / discovered_headers[]` as `TrackedFile{path, stat, content_hash}`
-where `stat` is `(size, mtime_ns, ctime_ns)`. On a subsequent build:
-
-- `stat(path)` — if it fails, the file is missing (dirty).
-- If `(size, mtime_ns, ctime_ns)` matches the log entry: reuse the stored `content_hash`. **No file read.**
-- Else: read the file, xxh3-64 it, store the new tuple. The mtime fast-path means `touch` (which preserves content) does not trigger a rebuild.
-
-Compile edges hand `-MMD -MF $out.d` to the compiler; after the edge runs successfully, `parse_depfile` reads the `.d` and the listed headers join the
-edge's `discovered_headers` list, hashed identically.
-
----
-
-## 9. Glob matching
-
-`build::detail::glob_match` is a hand-rolled recursive matcher; `std::regex` is not used (it can throw, and exceptions are forbidden). Supported syntax:
-
-- `*` — any sequence of non-`/` characters within a single path segment
-- `**` — any sequence including `/`
-- `**/` — zero or more path segments followed by `/`
-- `?` — any single non-`/` character
-- All other characters match literally
-
-`\` is normalized to `/` before matching.
-
----
-
-## 10. The ngen graph (in `build/build.cpp`)
+What `build/build.cpp` actually defines.
 
 One platform: `linux-vulkan` with `clang++` / `ar`, default `c++23`, defines `NGEN_PLATFORM_LINUX, NGEN_GFX_VULKAN, GLM_FORCE_RADIANS,
 GLM_FORCE_DEPTH_ZERO_TO_ONE`, compile flags `-fPIC -Wall` plus `pkg-config --cflags sdl3` tokens, system libs `vulkan, m`.
@@ -447,41 +170,42 @@ Targets:
 | `tidy`        | `Tool` (global)  | `clang-tidy ... -std=c++23 -Ibuild/framework`                                               |
 | `ngen-view`   | `program`        | `main.cpp`, `camera.cpp`, `debugdraw.cpp`, `jobsystem.cpp`; default target                  |
 
-`ngen-view` over-links via `link(...)` to every internal library. The `--start-group` wrap absorbs order-sensitivity at link time.
-
-USD linkage uses an absolute rpath via `current_path() / "external/openusd_build/lib"`.
+`ngen-view` over-links via `link(...)` to every internal library. The `-Wl,--start-group` wrap absorbs order-sensitivity at link time. USD linkage uses an
+absolute rpath via `current_path() / "external/openusd_build/lib"`.
 
 ---
 
-## 11. CLI
+## CLI
 
-`./_out/ngen-build [--platform <name>] [--config <name>] [--list] [--dump-graph] [-v|-vv] [target]`
+```text
+./_out/ngen-build [--platform <name>] [--config <name>] [--list] [--dump-graph] [-v|-vv] [target]
+```
 
 Targets are matched by edge name first, then output path. Default target is `ngen-view`. `bootstrap.cpp` selects the variant via `--platform`/`--config`
-(defaults: `linux-vulkan` / `debug`) and forwards the bare target name to the runner — no `:platform:config` suffix is needed any more.
+(defaults: `linux-vulkan` / `debug`) and forwards the bare target name to the runner.
 
 Graph-level targets: `ngen-view` (default), `clean`, `format`, `tidy`, `shaders`. Internal libraries (`obs`, `rhi`, …) are not top-level invokable — they're
 reached via traversal from registered entry points.
 
 Special flags:
 
-- `--list`: print top-level targets and exit (handled by `ngen-build-graph`).
-- `--dump-graph`: dump the IR as JSON (one object per variant) to stdout and exit.
+- `--list` — print top-level targets and exit (handled by `ngen-build-graph`).
+- `--dump-graph` — dump the IR as JSON (one object per variant) to stdout and exit.
 
 Verbosity:
 
-- default: ninja-style `[done/total] description` with `\r`-overwrite on a tty.
-- `-v`: forces non-overwrite single-line mode (one line per edge, no `\r` tricks) — same effect as `TERM=dumb`, suitable for scripts/log capture.
-- `-vv`: runner echoes each `$ command` before running the edge.
+- default — `[done/total] description` with `\r`-overwrite on a tty.
+- `-v` — one line per edge, no `\r` tricks. Same effect as `TERM=dumb`; suitable for scripts and log capture.
+- `-vv` — also echo each `$ command` before running.
 
 `NO_COLOR=1` (or any non-empty value) suppresses ANSI escapes regardless of tty.
 
-`ngen-build-run --ir <path> [-j N] [-k N] [-v|-vv] [target ...]` is the direct runner CLI; the orchestrator drives this with the appropriate `--ir` path
-derived from the chosen variant. `-j` defaults to `nproc`; `-k` defaults to 1 (fail fast).
+The runner is also directly invokable: `./_out/ngen-build-run --ir <path> [-j N] [-k N] [-v|-vv] [target ...]`. `-j` defaults to `nproc`; `-k` defaults to 1
+(fail fast). See `build/run/main.cpp`.
 
 ---
 
-## 12. Adding a platform or configuration
+## Adding a platform or configuration
 
 Use the cxx factories and register with the project:
 
@@ -510,62 +234,19 @@ p.platform(linux_vulkan);
 p.config(debug);
 ```
 
-To add a new platform, construct another `cxx::platform("name")` chain and register it. Same for configurations. No designated initializers, no settings
-structs, no string-keyed lookup at construction time.
+To add a new platform, construct another `cxx::platform("name")` chain and register it. Same for configurations. For the full fluent surface (per-target
+overrides, link inputs, includes, etc.), see `build/framework/cxx/target.hpp` and `build/framework/cxx/platform.hpp`.
 
 ---
 
-## 13. Things to know before changing this code
-
-- **Header-only framework + runner.** Editing any `build/framework/*.hpp` or `build/ir/*.hpp` rebuilds `_out/ngen-build-graph` and (because the orchestrator
-  links the runner in-process) also rebuilds `_out/ngen-build` on the next bootstrap-seed re-run; editing any `build/run/*.hpp` rebuilds `_out/ngen-build-run`
-  via the self-build pass. Editing engine sources under `src/` does not rebuild build-system stages — the self-build pass and project build are independent.
-- **Self-build via in-memory IR.** `bootstrap.cpp::self_build_ir()` constructs a two-edge IR every invocation and passes it to `ngen::run::execute()`. The
-  edges use `-MMD -MF $out.d` so adding a header under `build/framework/`, `build/ir/`, or `build/run/` automatically becomes a build dependency picked up by
-  the runner's depfile parser on the next invocation. No heredoc, no manifest, no manual list to update.
-- **Per-variant build log.** The runner stores its persistent state at `_out/<plat>/<cfg>/.ngen-buildlog`, keyed by edge name. Per-variant means edge names
-  like `format` or `clean` don't collide across variants — each variant has its own keyspace. Atomic rewrite at end of every successful build via `.tmp` +
-  `rename`. Interrupted builds keep the previous good log.
-- **Stamp-output non-determinism.** `ar rcs` is *not* deterministic (mtimes get embedded). A modify-then-revert cycle on a source therefore takes one extra
-  build to converge to a no-op: the round trip flushes new mtimes into the archive, the runner re-records the archive's hash, and the next run sees inputs
-  unchanged. Working as designed; switch to `ar rcsD` if you want byte-identical archives.
-- **Wrapper move/copy invariant.** Every cxx wrapper (and `Tool`, `Alias`) re-attaches itself to the base's `ExtensionMap` in both move and copy constructors.
-  If a future field is added, both constructors must be updated. Silent footgun otherwise — the back-pointer would point at a stale or destroyed object.
-  `cxx::ObjectFile` is the exception — it lives behind `shared_ptr` from the moment `sources(...)` constructs it, never gets copied or moved by user code,
-  and is `=delete`d for both. Don't try to value-store an ObjectFile.
-- **Per-TU graph nodes.** Each `.cpp` is its own `build::Target` (with a `cxx::ObjectFile` extension) registered as a dep of its parent library/program.
-  This is the *only* place in the framework where dep edges and the user-visible "what to address" surface diverge: ObjectFile names like
-  `renderer/src/renderer/foo.cpp` are unique build edges in the graph but are not surfaced via `Project::roots()`. If anything walks
-  `Project::build_all()` looking only for "real" libraries, filter on `extension<cxx::ObjectFile>()` first.
-- **`ExtensionMap` ownership modes.** `add<T>` heap-allocates and owns; `attach<T>(ref)` is non-owning. Don't mix on the same key — `add<T>` returns existing,
-  `attach` replaces. The cxx wrappers all use `attach` (they own their data themselves).
-- **No exceptions.** `ExtensionMap::get` returns nullable pointers; `glob_match` doesn't use `std::regex`. The convention is `std::expected<T, Error>` at the
-  framework boundary (`Error` lives in `glob.hpp`). The IR reader/writer and runner follow the same convention.
-- **Synthetic outputs.** Global tools (`format`, `tidy`) have no real file outputs, so the IR backend gives them the target name as a virtual output to keep
-  every edge addressable. The runner's dirty rule naturally treats the missing virtual output as dirty, so global tools always run when invoked — matching
-  user expectation.
-- **`compile_commands.json`** is written per variant under `_out/<platform>/<config>/compile_commands.json` *and* merged at `_out/compile_commands.json`. The
-  merge is naive concatenation; entries are not de-duplicated across variants.
-- **`-Wl,--start-group` / `--end-group`** wraps every program's archives. Removing the group wrapping would require curating transitive link order first.
-- **`capture_tokens` uses `popen`.** `shell_quote` is tuned for a small allowed charset. Not safe for arbitrary user input — fine for fixed args like
-  `pkg-config --cflags sdl3`.
-- **`std::system` calls** in `bootstrap.cpp` are deliberate (they shell out to `_out/ngen-build-graph` and `_out/ngen-build-run` after the in-process
-  self-build pass) and marked with `// NOLINT(bugprone-command-processor)`.
-- **No ninja anywhere.** The build system has no ninja dependency at all. The bootstrap seed is a single documented `c++` command in `CLAUDE.md`; everything
-  else flows through `ngen-build` using the runner library and its `ngen-build-run` subprocess.
-- **System build log location.** Self-build state lives at `_out/.system/.ngen-buildlog`, keyed by `ngen-build-graph` and `ngen-build-run`. Same format as
-  project-build logs (`_out/<plat>/<cfg>/.ngen-buildlog`). Deleting it forces a clean rebuild of the two binaries on next invocation.
-
----
-
-## 14. Adding another language
+## Adding another language
 
 The framework is designed so that adding a new language module is purely additive:
 
 1. Create `build/framework/<lang>/{toolchain,platform,configuration,target,commands}.hpp`.
-2. Each follows the same pattern as the cxx files: a wrapper that owns a `shared_ptr` to the corresponding `build::*` base, attaches itself as an extension,
-   and exposes a fluent surface.
-3. Add a free factory `<lang>::<lang>(name)` for the language target equivalent (`cxx::program`, `cxx::static_library`, …).
+2. Each follows the cxx pattern: a wrapper that owns a `shared_ptr` to the corresponding `build::*` base, attaches itself as an extension, exposes a fluent
+   surface. (See the existing cxx files as the reference shape.)
+3. Add a free factory `<lang>::<lang>(name)` for the language target equivalent (the analogue of `cxx::program` / `cxx::static_library`).
 4. Add a backend dispatch branch in `build/ir/emit.hpp`'s `emit_target`:
 
    ```cpp
@@ -576,3 +257,43 @@ The framework is designed so that adding a new language module is purely additiv
    `ir::Edge` into the variant emitter. No language-specific knowledge bleeds into the runner — it just executes `/bin/sh -c <baked-command>`.
 
 No edits to `build::Target`, `build::Project`, `build::Platform`, or `build::Configuration` are required.
+
+---
+
+## Things to know
+
+System-level invariants worth knowing before changing the code. Implementation details belong with the relevant `.hpp`.
+
+- **No exceptions.** The framework uses `std::expected<T, build::Error>` at every boundary. `<stdexcept>` is not included anywhere in `build/`.
+- **No ninja anywhere.** The user-facing build never invokes ninja. The bootstrap seed is one documented `c++` command.
+- **Wrapper move/copy invariant.** Every cxx wrapper (and `Tool`, `Alias`) re-attaches itself to the base's `ExtensionMap` in both move and copy
+  constructors. If a future field is added to one of these wrappers, both constructors must be updated. `cxx::ObjectFile` is the deliberate exception — it
+  lives behind `shared_ptr` from construction, never gets copied or moved by user code, and is `=delete`d for both.
+- **Per-TU graph nodes.** Each `.cpp` is its own `build::Target` (with a `cxx::ObjectFile` extension). ObjectFile names like
+  `renderer/src/renderer/foo.cpp` are unique build edges in the graph but are not surfaced via `Project::roots()`. Code that walks `Project::build_all()`
+  looking only for "real" libraries should filter on `extension<cxx::ObjectFile>()` first.
+- **Archive non-determinism.** `ar rcs` embeds mtimes. A modify-then-revert cycle takes one extra build to converge to a no-op — the round trip flushes new
+  mtimes into the archive, the runner re-records the archive's hash, and the next run sees inputs unchanged. Switch to `ar rcsD` if byte-identical archives
+  matter.
+- **Synthetic outputs.** Global tools (`format`, `tidy`) have no real file outputs; the IR emitter gives them the target name as a virtual output so they're
+  addressable. The runner's dirty rule naturally treats the missing virtual output as dirty, so global tools always run when invoked — matching user
+  expectation.
+- **`compile_commands.json`** is written per variant under `_out/<platform>/<config>/compile_commands.json` *and* merged at `_out/compile_commands.json`.
+  Naive concatenation; entries are not de-duplicated across variants.
+- **`-Wl,--start-group` / `--end-group`** wraps every program's archives at link time so over-linking works without curating transitive link order.
+- **System build log location.** Self-build state lives at `_out/.system/.ngen-buildlog`. Same format as project-build logs. Deleting it forces a clean
+  rebuild of `ngen-build-graph` and `ngen-build-run` on the next invocation.
+
+---
+
+## Where to read next
+
+Every `.hpp` and `.cpp` in `build/` carries a prose header. Open the ones whose role you need to understand. Suggested entry points for a top-down read:
+
+- `build/bootstrap.cpp` — the orchestrator. Start here.
+- `build/framework/target.hpp` and `build/framework/extensionmap.hpp` — the seam between the language-agnostic core and language-specific extensions.
+- `build/framework/cxx/target.hpp` — the user-facing cxx surface for libraries and programs.
+- `build/ir/schema.hpp` — the IR types and binary wire format.
+- `build/ir/emit.hpp` — how a `Project` becomes an `IR`. The central translation step.
+- `build/run/execute.hpp` — how the runner consumes an IR. Dirty detection, scheduling, log writeback.
+- `build/run/scheduler.hpp` — the parallel execution model.

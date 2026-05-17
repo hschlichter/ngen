@@ -1,19 +1,20 @@
+// ngen build IR — bespoke binary format that carries the build graph from the graph stage to the runner.
+//
+// The graph stage (`build/build.cpp` → `ir::Emitter`, defined in `emit.hpp`) walks a `Project` and produces one
+// `IR` value per `(platform, config)` variant, then writes it via `writer.hpp` to
+// `_out/<plat>/<cfg>/build.ngenir`. The runner (`build/run/main.cpp`) reads it back via `reader.hpp` and hands
+// the value to `ngen::run::execute()`. This file owns only the in-memory types (`Edge`, `Pool`, `IR`) and the
+// wire-format constants — no behavior. `writer.hpp` and `reader.hpp` must agree byte-for-byte with the offsets
+// documented next to the constants below.
+//
+// All integers little-endian. No struct alignment is assumed; readers and writers do byte-level loads/stores.
+
 #pragma once
 
 #include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
-
-// ngen build IR — bespoke binary format consumed by ngen-build-run.
-//
-// One file per (platform, config) variant at _out/<plat>/<cfg>/build.ngenir.
-// The graph stage (build/build.cpp) constructs an in-memory IR value and
-// hands it to writer.hpp; the runner (phase 2) will mmap it via reader.hpp.
-//
-// All integers little-endian. No struct alignment is assumed — readers and
-// writers do byte-level loads/stores. Field offsets within fixed-size records
-// are documented in this header; writer.hpp / reader.hpp must agree on them.
 
 namespace build::ir {
 

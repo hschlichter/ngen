@@ -1,3 +1,18 @@
+// Globbing, build-time string utilities, and the framework `Error` type.
+//
+// Three loosely related responsibilities share this file because every other framework header pulls it in
+// transitively — the cheapest place to land utility code without inflating include graphs.
+//
+//   - `glob(GlobSpec)` walks the filesystem and returns matching paths, sorted. The matcher is a hand-rolled
+//     recursive routine (see `detail::glob_match_view`) supporting `*`, `**`, `**/`, `?`. We deliberately do not
+//     use `std::regex` — it throws, and the framework forbids exceptions.
+//   - `shell_quote`, `split_ws`, `capture_tokens`, `repo_root`, `concat`, `concat_tokens`, `write_if_changed` —
+//     small helpers used by the emitter, by tool substitution, and by command builders. `capture_tokens` is
+//     `popen`-based and intended for fixed args like `pkg-config --cflags sdl3`; it is not safe for arbitrary
+//     user input.
+//   - `build::Error` — the framework's error type, threaded through every `std::expected<T, Error>` return.
+//     Living here means callers that need `Error` don't pay an extra include.
+
 #pragma once
 
 #include "path.hpp"

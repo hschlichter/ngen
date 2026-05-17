@@ -1,3 +1,27 @@
+// Persistent dirty-detection state for the runner.
+//
+// One binary file per build variant at `_out/<plat>/<cfg>/.ngen-buildlog`, plus `_out/.system/.ngen-buildlog`
+// for the build-system self-build. The format is a small bespoke layout — magic `NGBL`, format version, then
+// a flat list of length-prefixed entries:
+//
+//     edge_name (length-prefixed string)
+//     command_hash (u64)
+//     last_run_ns (u64)
+//     inputs[]              : TrackedFile records (path + StatTuple + content_hash)
+//     outputs[]             : TrackedFile records
+//     discovered_headers[]  : TrackedFile records (from the last successful depfile parse)
+//
+// `BuildLog::load` reads from disk if present; missing or version-mismatched files are tolerated (the log
+// just starts empty so the next build is a clean one). `BuildLog::save` writes to a `.tmp` file and renames —
+// atomic, so an interrupted build keeps the previous good log on disk.
+//
+// `refresh(TrackedFile&, prev, present)` is the read-modify-write helper paired with the stat fast-path: if
+// the on-disk `(size, mtime, ctime)` matches the prior entry, reuse the cached `content_hash`; otherwise
+// re-hash. Used both for pre-run dirty checks (`execute.hpp::compute_dirty`) and post-run log updates.
+//
+// `find(name)` and `upsert(name, entry)` are the operations the dirty-detection code uses. Entries are keyed
+// by edge name; edge names are unique within a single variant's IR.
+
 #pragma once
 
 #include "../framework/glob.hpp"

@@ -1,3 +1,18 @@
+// build::Alias — a Target whose meaning depends on the build variant.
+//
+// Wraps a `build::Target` (stored behind `std::shared_ptr`) and attaches itself as the Alias extension on that
+// target's `ExtensionMap`. The list of `select(key, value, target)` rules and an optional `fallback` together
+// describe how to resolve to a concrete target given a `(platform, config)` context. `resolve(context)` walks
+// the rules in registration order and returns the first match, falling back if none match.
+//
+// Used for graph-level indirection: `rhi-backend` is an Alias that resolves to `rhivulkan` on `linux-vulkan` and
+// would resolve to some other backend on a future platform. Resolution happens inside the IR emitter via
+// `detail::resolve_alias`, which walks through any chain of Aliases until a non-Alias target is reached.
+//
+// Wrapper invariant: every move and copy constructor re-attaches `*this` on the base Target's `ExtensionMap`.
+// This keeps the extension back-pointer pointed at the live wrapper even when user code materialises the Alias
+// from a temporary via the fluent factory `alias(name).select(...)`.
+
 #pragma once
 
 #include "target.hpp"

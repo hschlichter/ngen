@@ -1,3 +1,36 @@
+// ngen-build — the user-facing orchestrator binary.
+//
+// `bootstrap.cpp` is the only `.cpp` file a fresh-clone contributor compiles by hand:
+//
+//     mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstrap.cpp
+//
+// (Documented in `CLAUDE.md` and `build_system.md`.) The resulting binary then drives every subsequent build.
+// Three things happen in order on each invocation:
+//
+//   1. **Self-build.** `self_build_ir()` constructs an in-memory `build::ir::IR` with two edges — one to
+//      compile `build/build.cpp` into `_out/ngen-build-graph`, one to compile `build/run/main.cpp` into
+//      `_out/ngen-build-run`. `ngen::run::execute()` runs the IR in-process against the build log at
+//      `_out/.system/.ngen-buildlog`, so the two binaries are recompiled only when their sources or
+//      depfile-tracked headers actually change. This is the seam where the build system is "self-hosted": the
+//      runner that builds the project also builds the binaries the build system itself uses.
+//
+//   2. **Graph stage.** `./_out/ngen-build-graph` is invoked as a subprocess. It walks the `Project` defined
+//      in `build/build.cpp`, runs `ir::Emitter`, and writes one `_out/<platform>/<config>/build.ngenir` per
+//      variant plus the per-variant and merged `compile_commands.json`. Short-circuits with `--list` /
+//      `--dump-graph` if the user asked for those.
+//
+//   3. **Project run.** `./_out/ngen-build-run --ir _out/<platform>/<config>/build.ngenir <target>` is invoked
+//      as a subprocess. It loads the IR, computes the dirty set against
+//      `_out/<plat>/<cfg>/.ngen-buildlog`, and runs the dirty edges in parallel.
+//
+// Platform / config selection: `--platform <name>` / `--config <name>`, defaulting to `linux-vulkan` /
+// `debug`. Target: first positional argument, defaulting to `ngen-view`. Verbosity (`-v`, `-vv`) is forwarded
+// to the runner; `--list` and `--dump-graph` are forwarded to the graph stage.
+//
+// `std::system` is used to spawn the two subprocesses (graph and runner). It's marked with
+// `// NOLINT(bugprone-command-processor)` since this is the deliberate orchestration boundary; the in-process
+// self-build path uses the runner library directly without `std::system`.
+
 #include "ir/schema.hpp"
 #include "run/execute.hpp"
 

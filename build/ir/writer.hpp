@@ -1,3 +1,16 @@
+// build::ir::write — serialize an IR to a binary file.
+//
+// Two-pass serializer: first interns every string into a deduplicated table and builds the `StringRef`
+// side-array referenced by edge list fields; then assembles the byte buffer (header → pools → edges → refs →
+// default targets → string table) and hands it to `write_if_changed`. The result mmap-reads cleanly through
+// `reader.hpp`.
+//
+// Layout is fixed in `schema.hpp` — the writer and reader share `kHeaderSize`, `kPoolRecordSize`,
+// `kEdgeRecordSize` so neither side has to compute offsets at run time.
+//
+// Errors propagate as `std::expected<void, build::Error>` (no exceptions). Called from `ir::Emitter::emit` once
+// per variant; not used by the runner.
+
 #pragma once
 
 #include "../framework/glob.hpp"

@@ -1,3 +1,17 @@
+// build::ir::read — load an IR back from disk.
+//
+// Inverse of `writer.hpp`. Reads the whole file, validates the `NGIR` magic and `kFormatVersion`, then walks
+// the fixed-size record arrays and string table per the offsets in `schema.hpp` to materialise an `IR` value.
+// Returns `std::expected<IR, Error>` — bad magic, version mismatch, and truncated tables are reported rather
+// than asserted.
+//
+// Used by `build/run/main.cpp` to load the per-variant `build.ngenir` before handing it to
+// `ngen::run::execute()`. The self-build path in `build/bootstrap.cpp` does not go through this file — it
+// constructs its IR in memory directly, no file ever exists.
+//
+// Currently reads into a `std::string` buffer; mmap-based zero-copy is a future option that needs nothing else
+// to change since all field access already goes through byte-level reads.
+
 #pragma once
 
 #include "../framework/glob.hpp"

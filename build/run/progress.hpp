@@ -1,3 +1,22 @@
+// ngen::run::Progress — tty-aware progress display for the scheduler.
+//
+// Three modes, selected by `Verbosity`:
+//
+//   - **`Default`**: on a tty, single-line `[done/total] desc` with `\r` overwrite and `\e[K` clear; off a
+//     tty, one line per edge.
+//   - **`NonTty`**: forces one line per edge regardless of where stdout points. Used for `-v` and for log
+//     capture.
+//   - **`FullCommand`**: same line layout as `NonTty` plus a `$ <command>` line after each edge — `-vv`.
+//
+// `on_edge(done, idx, edge, outcome)` is the scheduler's per-completion callback. The scheduler already
+// serialises calls under its own mutex, so this class also takes an internal mutex purely for the case where
+// captured output and the next progress line interleave. Failures go to stderr with the captured output plus
+// a `$ command` block; successes go to stdout with `\r`-overwrite in the common case. `on_finish` writes the
+// trailing summary line only when there were failures or an interrupt — silent on clean success.
+//
+// Color is enabled when stdout is a tty *and* `NO_COLOR` is unset (or empty). Anywhere else, ANSI codes are
+// suppressed.
+
 #pragma once
 
 #include "../ir/schema.hpp"

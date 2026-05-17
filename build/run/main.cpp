@@ -1,3 +1,17 @@
+// ngen-build-run CLI entry point.
+//
+// Thin wrapper: parses argv, loads an IR from `--ir <path>` via `build::ir::read`, fills in defaults
+// (`-j` falls back to `std::thread::hardware_concurrency()` when zero or absent), and calls
+// `ngen::run::execute()`. All real work lives in `execute.hpp`.
+//
+// Exit codes: 0 on success; 1 on argument error, missing IR, version mismatch, or any failed edge; 130 on
+// SIGINT (interrupted build). The `bootstrap.cpp` orchestrator forwards these so the user-facing `ngen-build`
+// echoes the runner's status.
+//
+// This binary is reachable from `bootstrap.cpp` for the *project* build (one subprocess invocation per
+// `./_out/ngen-build` run). The *build-system self-build* path does not go through this binary — it calls
+// `ngen::run::execute()` directly from within `ngen-build` itself, in-process.
+
 #include "../ir/reader.hpp"
 #include "execute.hpp"
 

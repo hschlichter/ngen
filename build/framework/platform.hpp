@@ -1,3 +1,13 @@
+// build::Platform — language-agnostic platform identity.
+//
+// Mirrors the framework / cxx split seen on `Target`: this base carries only what isn't language-specific —
+// `name`, `os`, `graphics_api`, `exe_suffix` — plus an `ExtensionMap`. The cxx-side payload (compile flags,
+// link flags, defines, system libs, toolchain) lives in `build::cxx::Platform`, attached as an extension here.
+//
+// Constructed by user code via the fluent `cxx::platform("linux-vulkan")` (which wraps a `build::Platform`
+// behind a `shared_ptr` and attaches itself). Registered with `Project::platform()`. Read at emit time via
+// `BuildVariant::platform`.
+
 #pragma once
 
 #include "extensionmap.hpp"

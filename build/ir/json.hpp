@@ -1,3 +1,11 @@
+// build::ir::dump_json — render an IR as human-readable JSON for `--dump-graph`.
+//
+// One JSON object per IR, including format version, variant string, project root, pools, every edge with all
+// its fields, and the default target indices. Output is deterministic so diffs between runs are meaningful.
+//
+// Strictly a debugging affordance — not a parse target, no round-trip support, no equivalent reader. The graph
+// stage emits this when the user runs `ngen-build --dump-graph`; nothing else consumes it.
+
 #pragma once
 
 #include "schema.hpp"
