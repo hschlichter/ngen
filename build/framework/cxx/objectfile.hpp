@@ -6,9 +6,9 @@
 // attaches itself as the `cxx::ObjectFile` extension on its own base. The parent's base dep-edges into this
 // object's base, so the IR emitter walks ObjectFiles via the normal post-order traversal.
 //
-// Naming: `<parent-name>/<source-path>`, e.g. `renderer/src/renderer/foo.cpp`. Composite by design — uniqueness
-// is guaranteed even when the same source is compiled into two libraries (each gets its own ObjectFile with
-// its own output path).
+// Naming: `<parent-name>/<source-path>`, e.g. `mylib/src/mylib/foo.cpp`. Composite by design — uniqueness is
+// guaranteed even when the same source is compiled into two libraries (each gets its own ObjectFile with its
+// own output path).
 //
 // `parent() -> cxx::Target*` looks the live wrapper up through the parent base's `ExtensionMap`. The
 // indirection keeps `parent()` correct even after `cxx::Target` has been copied/moved into its final home.

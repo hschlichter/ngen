@@ -5,8 +5,8 @@
 // describe how to resolve to a concrete target given a `(platform, config)` context. `resolve(context)` walks
 // the rules in registration order and returns the first match, falling back if none match.
 //
-// Used for graph-level indirection: `rhi-backend` is an Alias that resolves to `rhivulkan` on `linux-vulkan` and
-// would resolve to some other backend on a future platform. Resolution happens inside the IR emitter via
+// Used for graph-level indirection — for example, a `gpu-backend` Alias that resolves to one backend library on
+// one platform and a different one on another. Resolution happens inside the IR emitter via
 // `detail::resolve_alias`, which walks through any chain of Aliases until a non-Alias target is reached.
 //
 // Wrapper invariant: every move and copy constructor re-attaches `*this` on the base Target's `ExtensionMap`.

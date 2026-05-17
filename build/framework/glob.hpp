@@ -8,7 +8,7 @@
 //     use `std::regex` — it throws, and the framework forbids exceptions.
 //   - `shell_quote`, `split_ws`, `capture_tokens`, `repo_root`, `concat`, `concat_tokens`, `write_if_changed` —
 //     small helpers used by the emitter, by tool substitution, and by command builders. `capture_tokens` is
-//     `popen`-based and intended for fixed args like `pkg-config --cflags sdl3`; it is not safe for arbitrary
+//     `popen`-based and intended for fixed args like `pkg-config --cflags <lib>`; it is not safe for arbitrary
 //     user input.
 //   - `build::Error` — the framework's error type, threaded through every `std::expected<T, Error>` return.
 //     Living here means callers that need `Error` don't pay an extra include.

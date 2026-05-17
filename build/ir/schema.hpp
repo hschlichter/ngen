@@ -47,7 +47,7 @@ struct Edge {
 };
 
 struct IR {
-    std::string variant;      // "linux-vulkan/debug"
+    std::string variant;      // "<platform>/<config>", e.g. "my-platform/debug"
     std::string project_root; // absolute path at emit time
 
     std::vector<Pool> pools;

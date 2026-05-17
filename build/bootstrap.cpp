@@ -23,9 +23,13 @@
 //      as a subprocess. It loads the IR, computes the dirty set against
 //      `_out/<plat>/<cfg>/.ngen-buildlog`, and runs the dirty edges in parallel.
 //
-// Platform / config selection: `--platform <name>` / `--config <name>`, defaulting to `linux-vulkan` /
-// `debug`. Target: first positional argument, defaulting to `ngen-view`. Verbosity (`-v`, `-vv`) is forwarded
-// to the runner; `--list` and `--dump-graph` are forwarded to the graph stage.
+// Platform / config selection: `--platform <name>` / `--config <name>`, both required. There are no defaults
+// here — the build-system code under `build/` carries zero project knowledge, so it cannot pick a sensible
+// platform or config on the user's behalf. When either flag is missing, the orchestrator invokes the graph
+// stage's `--list` (which prints registered platforms, configs, and top-level targets via
+// `build::print_summary`) and then reports the missing flag. Target: first positional argument; empty means
+// "use the IR's default_targets". Verbosity (`-v`, `-vv`) is forwarded to the runner; `--list` and
+// `--dump-graph` are forwarded to the graph stage.
 //
 // `std::system` is used to spawn the two subprocesses (graph and runner). It's marked with
 // `// NOLINT(bugprone-command-processor)` since this is the deliberate orchestration boundary; the in-process
@@ -46,12 +50,13 @@
 namespace {
 
 struct Args {
-    std::string target = "ngen-view";
+    std::string target; // empty = let the runner use the IR's default_targets
     std::string platform;
     std::string config;
     int verbosity = 0;
     bool list = false;
     bool dump_graph = false;
+    bool help = false;
 };
 
 auto parse(int argc, char** argv) -> std::expected<Args, build::Error> {
@@ -64,7 +69,7 @@ auto parse(int argc, char** argv) -> std::expected<Args, build::Error> {
             }
             return std::string(argv[++i]);
         };
-        if (arg == "--platform") {
+        if (arg == "--platform" || arg == "-p") {
             auto parsed = value();
             if (!parsed) {
                 return std::unexpected(parsed.error());
@@ -84,6 +89,8 @@ auto parse(int argc, char** argv) -> std::expected<Args, build::Error> {
             args.list = true;
         } else if (arg == "--dump-graph") {
             args.dump_graph = true;
+        } else if (arg == "--help" || arg == "-h") {
+            args.help = true;
         } else {
             args.target = arg;
         }
@@ -120,11 +127,29 @@ auto graph_forward_args(int argc, char** argv) -> std::string {
     return out;
 }
 
-auto chosen_variant(const Args& args) -> std::pair<std::string, std::string> {
-    auto platform = args.platform.empty() ? std::string("linux-vulkan") : args.platform;
-    auto config = args.config.empty() ? std::string("debug") : args.config;
-    return {platform, config};
+// The flag list ngen-build itself accepts; the project section (platforms / configs / targets) below comes
+// from the graph stage via `--list`. Always goes to stdout — the missing-args fallback in `main()` follows
+// this with its own stderr error line.
+auto print_help() -> void {
+    std::cout << "Usage: ngen-build [options] [target]\n"
+              << "\n"
+              << "Options:\n"
+              << "  -p, --platform <name>   Build for this platform.    (required for builds)\n"
+              << "  -c, --config <name>     Build with this config.     (required for builds)\n"
+              << "  -v, --verbose           One line per edge; same effect as TERM=dumb.\n"
+              << "  -vv                     Echo each shell command before running.\n"
+              << "      --list              Show available platforms, configs, and targets; exit.\n"
+              << "      --dump-graph        Print the project IR as JSON to stdout; exit.\n"
+              << "  -h, --help              Show this message.\n"
+              << "\n"
+              << "Target is positional and optional; empty means \"use the project's default_target\".\n"
+              << "\n"
+              << std::flush;
+    // Shell out to the graph stage for the project-specific listing. `std::system` writes directly to fd 1
+    // and does not see the iostream buffer, so flushing before the call is required to preserve order.
+    std::system("./_out/ngen-build-graph --list"); // NOLINT(bugprone-command-processor)
 }
+
 
 // In-memory IR describing how to compile the two binaries that drive the rest
 // of the build (`ngen-build-graph` and `ngen-build-run`). The runner library
@@ -201,6 +226,11 @@ auto main(int argc, char** argv) -> int {
         return 1;
     }
 
+    if (args->help) {
+        print_help();
+        return 0;
+    }
+
     auto graph_cmd = "./_out/ngen-build-graph" + graph_forward_args(argc, argv);
     if (std::system(graph_cmd.c_str()) != 0) { // NOLINT(bugprone-command-processor)
         return 1;
@@ -210,8 +240,16 @@ auto main(int argc, char** argv) -> int {
         return 0;
     }
 
-    auto [platform, config] = chosen_variant(*args);
-    auto ir_path = "_out/" + platform + "/" + config + "/build.ngenir";
+    if (args->platform.empty() || args->config.empty()) {
+        // Friendly fallback: the build system has no project knowledge to fall back on, so show the same panel
+        // `--help` would print and then report what was missing on stderr.
+        print_help();
+        std::cerr << "\n"
+                  << "Error: --platform and --config are required.\n";
+        return 1;
+    }
+
+    auto ir_path = "_out/" + args->platform + "/" + args->config + "/build.ngenir";
     std::string cmd = "./_out/ngen-build-run --ir " + shell_quote(ir_path);
     if (args->verbosity == 1) {
         cmd = "TERM=dumb " + cmd + " -v";
@@ -219,6 +257,9 @@ auto main(int argc, char** argv) -> int {
     if (args->verbosity >= 2) {
         cmd += " -vv";
     }
-    cmd += " " + shell_quote(args->target);
+    // Empty target means "let the runner use the IR's default_targets". Don't pass an empty positional arg.
+    if (!args->target.empty()) {
+        cmd += " " + shell_quote(args->target);
+    }
     return std::system(cmd.c_str()) == 0 ? 0 : 1; // NOLINT(bugprone-command-processor)
 }

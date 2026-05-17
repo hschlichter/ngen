@@ -94,8 +94,9 @@ Both follow the cxx wrapper pattern: own a `shared_ptr<Target>`, attach themselv
 
 - **`Tool`** runs an opaque shell command (`glslc`, `rm`, `clang-format`, `clang-tidy`, …). Per-variant by default; `global()` makes it variant-independent.
   See `build/framework/tool.hpp`.
-- **`Alias`** resolves to another target based on `(platform, config)` selectors. Used for graph-level indirection like `rhi-backend → rhivulkan` on
-  `linux-vulkan`. See `build/framework/alias.hpp`.
+- **`Alias`** resolves to another target based on `(platform, config)` selectors — used for graph-level
+  indirection like a `gpu-backend` alias that resolves to different backend libraries per platform. See
+  `build/framework/alias.hpp`.
 
 ### IR transport (`build/ir/`)
 
@@ -141,60 +142,25 @@ dependency on the next invocation, picked up by the runner's depfile parser. No 
 
 ---
 
-## The ngen project graph
-
-What `build.cpp` (at the project root) actually defines.
-
-One platform: `linux-vulkan` with `clang++` / `ar`, default `c++23`, defines `NGEN_PLATFORM_LINUX, NGEN_GFX_VULKAN, GLM_FORCE_RADIANS,
-GLM_FORCE_DEPTH_ZERO_TO_ONE`, compile flags `-fPIC -Wall` plus `pkg-config --cflags sdl3` tokens, system libs `vulkan, m`.
-
-Three configs:
-
-| Config         | Compile flags               | Link flags                            | Defines              |
-| -------------- | --------------------------- | ------------------------------------- | -------------------- |
-| `debug`        | `-O0 -g`                    | —                                     | `DEBUG=1`            |
-| `release`      | `-O2 -g`                    | —                                     | `NDEBUG`             |
-| `gamerelease`  | `-O3 -fvisibility=hidden`   | `-flto -Wl,-s -Wl,--gc-sections`      | `NDEBUG, SHIPPING=1` |
-
-Targets:
-
-| Name          | Type             | Notes                                                                                       |
-| ------------- | ---------------- | ------------------------------------------------------------------------------------------- |
-| `obs`         | `static_library` | `src/obs/**/*.cpp`; public `src/obs`, `external/concurrentqueue`                            |
-| `rhi`         | `static_library` | `src/rhi/*.cpp`; private `external/imgui`                                                   |
-| `rhivulkan`   | `static_library` | `src/rhi/vulkan/**/*.cpp`; `only_on({"linux-vulkan"})`; links `rhi`                         |
-| `rhi-backend` | `Alias`          | `select("platform", "linux-vulkan", rhivulkan)`                                             |
-| `renderer`    | `static_library` | links `obs`, `rhi`, `rhi-backend`                                                           |
-| `scene`       | `static_library` | excludes `src/scene/usd*.cpp`                                                               |
-| `sceneusd`    | `static_library` | `c++20`, `-Wno-deprecated-declarations`, broad include set                                  |
-| `imgui`       | `static_library` | explicit 7-source list (core + sdl3 + vulkan backends)                                      |
-| `ui`          | `static_library` | links `renderer`, `scene`, `sceneusd`, `imgui`                                              |
-| `shaders`     | `Tool`           | `glslc $in -o $out`; `for_each` over `*.vert` + `*.frag` → `<out_dir>/shaders/<name>.spv`   |
-| `clean`       | `Tool`           | `rm -rf $out_dir`                                                                           |
-| `format`      | `Tool` (global)  | `clang-format -i` over src + build trees                                                    |
-| `tidy`        | `Tool` (global)  | `clang-tidy ... -std=c++23 -Ibuild/framework`                                               |
-| `ngen-view`   | `program`        | `main.cpp`, `camera.cpp`, `debugdraw.cpp`, `jobsystem.cpp`; default target                  |
-
-`ngen-view` over-links via `link(...)` to every internal library. The `-Wl,--start-group` wrap absorbs order-sensitivity at link time. USD linkage uses an
-absolute rpath via `current_path() / "external/openusd_build/lib"`.
-
----
-
 ## CLI
 
 ```text
-./_out/ngen-build [--platform <name>] [--config <name>] [--list] [--dump-graph] [-v|-vv] [target]
+./_out/ngen-build (--platform|-p) <name> (--config|-c) <name> [--list] [--dump-graph] [-v|-vv] [target]
+./_out/ngen-build (--help|-h)        — usage + available platforms / configs / targets
 ```
 
-Targets are matched by edge name first, then output path. Default target is `ngen-view`. `bootstrap.cpp` selects the variant via `--platform`/`--config`
-(defaults: `linux-vulkan` / `debug`) and forwards the bare target name to the runner.
+`--platform` / `-p` and `--config` / `-c` are required — the build system carries no project-specific defaults.
+A bare invocation (or any invocation missing either flag) prints the same panel `--help` shows, then exits with
+an error pointing at the missing flag. The project-only listing (no flag reference) is available via `--list`.
 
-Graph-level targets: `ngen-view` (default), `clean`, `format`, `tidy`, `shaders`. Internal libraries (`obs`, `rhi`, …) are not top-level invokable — they're
-reached via traversal from registered entry points.
+Targets are matched by edge name first, then output path. When no positional target is given, the runner falls
+back to the project's `default_target()`. Internal targets that aren't registered as roots are not top-level
+invokable but are reached via traversal from registered entry points.
 
 Special flags:
 
-- `--list` — print top-level targets and exit (handled by `ngen-build-graph`).
+- `--help` / `-h` — print bootstrap-side usage + flag list, then the `--list` panel from the graph stage, then exit.
+- `--list` — print platforms, configs, and top-level targets, then exit (handled by `ngen-build-graph`).
 - `--dump-graph` — dump the IR as JSON (one object per variant) to stdout and exit.
 
 Verbosity:
@@ -220,13 +186,12 @@ auto clang = cxx::toolchain()
     .archiver("ar")
     .default_std("c++23");
 
-auto linux_vulkan = cxx::platform("linux-vulkan")
+auto my_platform = cxx::platform("my-platform")
     .os("linux")
-    .graphics_api("vulkan")
     .toolchain(clang)
     .compile_flag("-fPIC")
-    .define("NGEN_PLATFORM_LINUX")
-    .system_lib("vulkan");
+    .define("MY_PLATFORM")
+    .system_lib("m");
 
 auto debug = cxx::configuration("debug")
     .out_dir("_out")
@@ -235,7 +200,7 @@ auto debug = cxx::configuration("debug")
     .define("DEBUG=1");
 
 Project p;
-p.platform(linux_vulkan);
+p.platform(my_platform);
 p.config(debug);
 ```
 

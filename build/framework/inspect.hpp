@@ -1,8 +1,12 @@
-// `list_roots` — render the project's top-level targets for `--list`.
+// `print_summary` — render the project's platforms, configs, and top-level targets for `--list`.
 //
-// Single helper, called by `build.cpp` when the user passes `--list`. Walks `Project::roots()`, classifies
-// each by which extension it carries (`cxx::Target` kind, `Tool`, `Alias`, or bare phony), and prints a
-// column-aligned `name  [kind]  (default)?` line.
+// Called by `build.cpp` when the user passes `--list`, and also by `bootstrap.cpp` when the user invokes
+// `ngen-build` without enough information to start a build. The output is the project's discovery surface:
+// what platforms and configs are registered, and which targets you can actually ask for. Platform / config
+// strings come straight from the Project's registration order.
+//
+// `list_roots` is the targets-only sub-helper, kept separate so a caller that only wants the target table
+// (currently nobody) doesn't pay for platform/config printing.
 //
 // Lives in its own file because nothing else in the framework needs `--list`, and pulling `cxx/target.hpp` into
 // `project.hpp` (just to describe the kind) would add a hot include for every consumer of `Project`.
@@ -63,6 +67,21 @@ inline auto list_roots(const Project& project, std::ostream& out) -> void {
 
         out << '\n';
     }
+}
+
+inline auto print_summary(const Project& project, std::ostream& out) -> void {
+    out << "Platforms:\n";
+    for (const auto* p : project.platforms()) {
+        out << "  " << p->name() << "\n";
+    }
+
+    out << "\nConfigurations:\n";
+    for (const auto* c : project.configs()) {
+        out << "  " << c->name() << "\n";
+    }
+
+    out << "\nTargets:\n";
+    list_roots(project, out);
 }
 
 } // namespace build

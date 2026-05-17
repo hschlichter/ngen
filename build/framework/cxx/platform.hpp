@@ -5,7 +5,7 @@
 // the language-agnostic base: a composed `Toolchain`, plus per-platform `compile_flags` / `link_flags` /
 // `defines` / `system_libs`. Setters for `os` / `graphics_api` / `exe_suffix` delegate to the base.
 //
-// Constructed by user code via the fluent factory `cxx::platform("linux-vulkan")`. Registered with
+// Constructed by user code via the fluent factory `cxx::platform("my-platform")`. Registered with
 // `Project::platform()` (implicitly via the conversion to `build::Platform&`). The IR emitter looks the wrapper
 // up at emit time via `cxx::find_platform(variant.platform)` and reads its data into per-edge `CompileInputs` /
 // `LinkInputs`.

@@ -4,7 +4,7 @@
 // `name`, `os`, `graphics_api`, `exe_suffix` — plus an `ExtensionMap`. The cxx-side payload (compile flags,
 // link flags, defines, system libs, toolchain) lives in `build::cxx::Platform`, attached as an extension here.
 //
-// Constructed by user code via the fluent `cxx::platform("linux-vulkan")` (which wraps a `build::Platform`
+// Constructed by user code via the fluent `cxx::platform("my-platform")` (which wraps a `build::Platform`
 // behind a `shared_ptr` and attaches itself). Registered with `Project::platform()`. Read at emit time via
 // `BuildVariant::platform`.
 

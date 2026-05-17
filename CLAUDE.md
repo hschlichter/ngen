@@ -52,15 +52,20 @@ mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstr
 
 That produces `_out/ngen-build`. From then on, `ngen-build` is the only entry
 point — it rebuilds `ngen-build-graph` and `ngen-build-run` on demand (via the
-same runner library that drives project builds), then runs them:
+same runner library that drives project builds), then runs them. Every build
+requires an explicit platform and config (the build system itself has no
+project-specific defaults):
 
-- `./_out/ngen-build` — debug build (default config)
-- `./_out/ngen-build --config release` — release build
-- `./_out/ngen-build --config gamerelease` — shipping build
-- `./_out/ngen-build clean` — remove build outputs
-- `./_out/ngen-build format` — clang-format the tree
-- `./_out/ngen-build tidy` — clang-tidy on `build/*.cpp`
-- `./_out/ngen-build --list` — list top-level targets (program/library/tool/alias)
+`--platform`/`-p` and `--config`/`-c` are required:
+
+- `./_out/ngen-build -h` (or `--help`) — print usage, flags, and the available platforms / configs / targets
+- `./_out/ngen-build -p linux-vulkan -c debug` — debug build of the default target (`ngen-view`)
+- `./_out/ngen-build -p linux-vulkan -c release` — release build
+- `./_out/ngen-build -p linux-vulkan -c gamerelease` — shipping build
+- `./_out/ngen-build -p linux-vulkan -c debug clean` — remove build outputs for that variant
+- `./_out/ngen-build -p linux-vulkan -c debug format` — clang-format the tree
+- `./_out/ngen-build -p linux-vulkan -c debug tidy` — clang-tidy on `build/*.cpp`
+- `./_out/ngen-build --list` — same listing as a bare invocation, without the error
 - `./_out/ngen-build --dump-graph` — print the IR for every variant as JSON
 
 `compile_commands.json` is regenerated at `_out/compile_commands.json` on every

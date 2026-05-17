@@ -292,8 +292,7 @@ auto main(int argc, char** argv) -> int {
     p.default_target(view);
 
     if (list_only) {
-        std::cout << "Top-level targets:\n";
-        list_roots(p, std::cout);
+        print_summary(p, std::cout);
         return 0;
     }
 
