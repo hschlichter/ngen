@@ -5,20 +5,20 @@
 //
 //     ir::Emitter{}.emit(project);
 //
-// which writes a `build.ngenir` plus a `compile_commands.json` under each `_out/<plat>/<cfg>/`, plus a merged
-// top-level `_out/compile_commands.json`. `Emitter{}.dump(project, ostream)` is the read-only counterpart that
-// prints JSON to stdout for `--dump-graph`.
+// which writes one `build.ngenir` under each `_out/<plat>/<cfg>/`. `Emitter{}.dump(project, ostream)` is the
+// read-only counterpart that prints JSON to stdout for `--dump-graph`. IDE-integration artifacts like
+// `compile_commands.json` are derived separately from the on-disk IR by `ir::compile_command_entries` — this
+// file knows nothing about them.
 //
 // Two scopes live inside this file:
 //
 //   - `detail::VariantEmitter` does the work for one `(platform, config)`. It owns an in-progress `IR`, a
-//     name→edge-index map, a name→primary-output map, a cycle-detection set, and the `compile_commands.json`
-//     accumulator. `emit_target` is the recursive worker: resolves aliases via `resolve_alias`, recurses into
-//     deps, then dispatches by extension type — `Tool` → `cxx::ObjectFile` → `cxx::Target`, in that order, so
-//     a TU node never falls through to library/program emit. Per-shape helpers `emit_object_file`,
-//     `emit_cxx_library`, `emit_cxx_program`, `emit_tool`, `emit_global_tool` push `ir::Edge`s into the IR.
-//   - `class Emitter` is the public face: drives one `VariantEmitter` per `(platform, config)` cross product
-//     and stitches their `compile_commands.json` lists together.
+//     name→edge-index map, a name→primary-output map, and a cycle-detection set. `emit_target` is the
+//     recursive worker: resolves aliases via `resolve_alias`, recurses into deps, then dispatches by
+//     extension type — `Tool` → `cxx::ObjectFile` → `cxx::Target`, in that order, so a TU node never falls
+//     through to library/program emit. Per-shape helpers `emit_object_file`, `emit_cxx_library`,
+//     `emit_cxx_program`, `emit_tool`, `emit_global_tool` push `ir::Edge`s into the IR.
+//   - `class Emitter` is the public face: drives one `VariantEmitter` per `(platform, config)` cross product.
 //
 // Command baking: `cxx::cmd::*` builders produce a `Command` (argv list) per edge. `bake_command` shell-quotes
 // and joins the tokens; the resulting string lands on `Edge::command`. The runner later passes that string to
@@ -39,8 +39,8 @@
 // curating transitive link order.
 //
 // Helpers in `detail::` (`resolve_alias`, `collect_includes`, `collect_public_includes`, `object_path`,
-// `substitute` for `$in` / `$out` / `$out_dir`, `json_escape`, `compile_command_entry`) are pure functions
-// called from `VariantEmitter`. None of them are part of the public surface — keep them in `detail::`.
+// `substitute` for `$in` / `$out` / `$out_dir`) are pure functions called from `VariantEmitter`. None of them
+// are part of the public surface — keep them in `detail::`.
 
 #pragma once
 
@@ -68,7 +68,6 @@
 #include <map>
 #include <ostream>
 #include <set>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -196,42 +195,6 @@ inline auto object_path(const BuildVariant& variant, std::string_view target_nam
     return variant.out_dir / "obj" / std::string(target_name) / (path + ".o");
 }
 
-inline auto json_escape(const std::string& in) -> std::string {
-    std::string out;
-    for (char ch : in) {
-        if (ch == '\\' || ch == '"') {
-            out += '\\';
-        }
-        if (ch == '\n') {
-            out += "\\n";
-        } else {
-            out += ch;
-        }
-    }
-    return out;
-}
-
-inline auto compile_command_entry(const Path& source, const Command& command) -> std::string {
-    std::ostringstream json;
-    json << "{\"directory\":\"" << json_escape(repo_root()) << "\",\"file\":\"" << json_escape(source.string()) << "\",\"command\":\""
-         << json_escape(bake_command(command)) << "\"}";
-    return json.str();
-}
-
-inline auto compile_commands_json(const std::vector<std::string>& commands) -> std::string {
-    std::ostringstream json;
-    json << "[\n";
-    for (std::size_t i = 0; i < commands.size(); ++i) {
-        json << "  " << commands[i];
-        if (i + 1 < commands.size()) {
-            json << ",";
-        }
-        json << "\n";
-    }
-    json << "]\n";
-    return json.str();
-}
-
 class VariantEmitter {
 public:
     VariantEmitter(const Project& project, BuildVariant variant) : project_(project), variant_(std::move(variant)) {}
@@ -263,8 +226,6 @@ public:
 
         return std::move(ir_);
     }
-
-    auto compile_commands() const -> const std::vector<std::string>& { return compile_commands_; }
 
     auto materialize_dirs() const -> std::expected<void, Error> {
         std::error_code ec;
@@ -404,8 +365,6 @@ private:
         edge.description = "CXX " + object.string();
         edge.pool = kPoolDefault;
         add_edge(std::move(edge));
-
-        compile_commands_.push_back(compile_command_entry(obj.source(), command));
         return object;
     }
 
@@ -607,7 +566,6 @@ private:
     std::unordered_map<std::string, Path> primary_output_;
     std::set<std::string> visiting_;
     std::set<std::string> ensure_dirs_;
-    std::vector<std::string> compile_commands_;
 };
 
 } // namespace detail
@@ -615,8 +573,6 @@ private:
 class Emitter {
 public:
     auto emit(const Project& project, const Path& root_out_dir = Path("_out")) const -> std::expected<void, Error> {
-        std::vector<std::string> merged_compile_commands;
-
         for (auto* platform : project.platforms()) {
             for (auto* config : project.configs()) {
                 BuildVariant variant{platform, config, root_out_dir / platform->name() / config->name()};
@@ -635,20 +591,7 @@ public:
                 if (!written) {
                     return std::unexpected(written.error());
                 }
-
-                auto cc_json = detail::compile_commands_json(emitter.compile_commands());
-                auto cc_written = write_if_changed(variant.out_dir / "compile_commands.json", cc_json);
-                if (!cc_written) {
-                    return std::unexpected(cc_written.error());
-                }
-                merged_compile_commands.insert(merged_compile_commands.end(), emitter.compile_commands().begin(), emitter.compile_commands().end());
             }
-        }
-
-        auto merged_json = detail::compile_commands_json(merged_compile_commands);
-        auto merged_written = write_if_changed(root_out_dir / "compile_commands.json", merged_json);
-        if (!merged_written) {
-            return std::unexpected(merged_written.error());
         }
         return {};
     }

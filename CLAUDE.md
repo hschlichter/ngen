@@ -68,9 +68,10 @@ project-specific defaults):
 - `./_out/ngen-build -p linux-vulkan -c debug tidy` — clang-tidy on `build/*.cpp`
 - `./_out/ngen-build -l` (or `--list`) — same project listing as `--help`, without the flag table
 - `./_out/ngen-build --dump-graph` — print the IR for every variant as JSON
+- `./_out/ngen-build --compile-commands -p linux-vulkan -c debug` — write `_out/linux-vulkan/debug/compile_commands.json` for the chosen variant plus the merged `_out/compile_commands.json` (union across all variants on disk)
 
-`compile_commands.json` is regenerated at `_out/compile_commands.json` on every
-build — no `bear` wrapper needed. The engine binary lands at
+`compile_commands.json` is opt-in via `--compile-commands` — re-run that flag whenever the project graph
+changes and you want your IDE to see fresh entries. The engine binary lands at
 `_out/linux-vulkan/debug/ngen-view` (or the equivalent under the active config).
 
 If `bootstrap.cpp` itself changes, re-run the bootstrap command above. No ninja

@@ -39,7 +39,7 @@ build/
   bootstrap.cpp     # ngen-build orchestrator. Self-builds graph + runner via the runner library, then runs them.
   build_system.md   # This document.
   framework/        # Configuration API. Target / Project / Platform / Configuration / cxx language module / Tool / Alias.
-  ir/               # IR schema, writer, reader, JSON dump, Emitter, vendored xxhash.
+  ir/               # IR schema, writer, reader, JSON dump, Emitter, compile-commands extractor, graph-stage main, vendored xxhash.
   run/              # Runner: execute, scheduler, process, hash, buildlog, depfile, progress.
 ```
 
@@ -145,7 +145,7 @@ dependency on the next invocation, picked up by the runner's depfile parser. No 
 ## CLI
 
 ```text
-./_out/ngen-build (--platform|-p) <name> (--config|-c) <name> [--clean|--rebuild] [(--list|-l)] [--dump-graph] [-v|-vv] [target]
+./_out/ngen-build (--platform|-p) <name> (--config|-c) <name> [--clean|--rebuild] [--compile-commands] [(--list|-l)] [--dump-graph] [-v|-vv] [target]
 ./_out/ngen-build (--help|-h)        — usage + available platforms / configs / targets
 ```
 
@@ -166,6 +166,11 @@ Special flags:
   Bootstrap-level — no graph stage, no runner, just `std::filesystem::remove_all` on the variant dir.
 - `--rebuild` — same wipe as `--clean`, then fall through to the normal pipeline. Graph re-emits the IR;
   the runner sees no build log and rebuilds every reachable edge. Requires `-p` and `-c`.
+- `--compile-commands` — derive `compile_commands.json` from the on-disk IR for the chosen variant and write
+  it to `_out/<plat>/<cfg>/compile_commands.json`, plus an updated merged top-level `_out/compile_commands.json`
+  (union of every variant's IR currently on disk). Opt-in; the runner and emitter are unaware of this file.
+  Implemented by `build::ir::compile_command_entries` over an `IR` value loaded via `ir::read`. Requires `-p`
+  and `-c`. Exits without running the build.
 
 Verbosity:
 
@@ -251,8 +256,11 @@ System-level invariants worth knowing before changing the code. Implementation d
 - **Synthetic outputs.** Global tools (`format`, `tidy`) have no real file outputs; the IR emitter gives them the target name as a virtual output so they're
   addressable. The runner's dirty rule naturally treats the missing virtual output as dirty, so global tools always run when invoked — matching user
   expectation.
-- **`compile_commands.json`** is written per variant under `_out/<platform>/<config>/compile_commands.json` *and* merged at `_out/compile_commands.json`.
-  Naive concatenation; entries are not de-duplicated across variants.
+- **`compile_commands.json`** is opt-in via the orchestrator's `--compile-commands` flag. The emitter and runner
+  carry zero knowledge of it; the file is derived from the on-disk IR by `build::ir::compile_command_entries`
+  (in `build/ir/compile_commands.hpp`). Per-variant file lives under `_out/<platform>/<config>/`; the merged
+  top-level file at `_out/compile_commands.json` is the union of every variant's IR currently on disk. Naive
+  concatenation; entries are not de-duplicated across variants.
 - **`-Wl,--start-group` / `--end-group`** wraps every program's archives at link time so over-linking works without curating transitive link order.
 - **System build log location.** Self-build state lives at `_out/.system/.ngen-buildlog`. Same format as project-build logs. Deleting it forces a clean
   rebuild of `ngen-build-graph` and `ngen-build-run` on the next invocation.

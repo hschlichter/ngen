@@ -59,6 +59,7 @@ struct Args {
     bool help = false;
     bool clean = false;
     bool rebuild = false;
+    bool compile_commands = false;
 };
 
 auto parse(int argc, char** argv) -> std::expected<Args, build::Error> {
@@ -97,6 +98,8 @@ auto parse(int argc, char** argv) -> std::expected<Args, build::Error> {
             args.clean = true;
         } else if (arg == "--rebuild") {
             args.rebuild = true;
+        } else if (arg == "--compile-commands") {
+            args.compile_commands = true;
         } else {
             args.target = arg;
         }
@@ -144,6 +147,8 @@ auto print_help() -> void {
               << "  -c, --config <name>     Build with this config.     (required for builds)\n"
               << "      --clean             Remove the variant's build outputs (requires -p / -c); exit.\n"
               << "      --rebuild           --clean, then build from scratch (requires -p / -c).\n"
+              << "      --compile-commands  Write compile_commands.json for the variant + merged top-level union\n"
+              << "                          (requires -p / -c).\n"
               << "  -v, --verbose           One line per edge; same effect as TERM=dumb.\n"
               << "  -vv                     Echo each shell command before running.\n"
               << "  -l, --list              Show available platforms, configs, and targets; exit.\n"
@@ -272,7 +277,7 @@ auto main(int argc, char** argv) -> int {
         return 1;
     }
 
-    if (args->list || args->dump_graph) {
+    if (args->list || args->dump_graph || args->compile_commands) {
         return 0;
     }
 
