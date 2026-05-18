@@ -286,10 +286,10 @@ System-level invariants worth knowing before changing the code. Implementation d
 
 Every `.hpp` and `.cpp` in `build/` carries a prose header. Open the ones whose role you need to understand. Suggested entry points for a top-down read:
 
-- `build/bootstrap.cpp` — the orchestrator. Start here.
-- `build/framework/target.hpp` and `build/framework/extensionmap.hpp` — the seam between the language-agnostic core and language-specific extensions.
-- `build/framework/cxx/target.hpp` — the user-facing cxx surface for libraries and programs.
-- `build/ir/schema.hpp` — the IR types and binary wire format.
-- `build/ir/emit.hpp` — how a `Project` becomes an `IR`. The central translation step.
-- `build/run/execute.hpp` — how the runner consumes an IR. Dirty detection, scheduling, log writeback.
-- `build/run/scheduler.hpp` — the parallel execution model.
+- [`build/bootstrap.cpp`](bootstrap.cpp) — the orchestrator. Start here.
+- [`build/framework/target.hpp`](framework/target.hpp) and [`build/framework/extensionmap.hpp`](framework/extensionmap.hpp) — the seam between the language-agnostic core and language-specific extensions.
+- [`build/framework/cxx/target.hpp`](framework/cxx/target.hpp) — the user-facing cxx surface for libraries and programs.
+- [`build/ir/schema.hpp`](ir/schema.hpp) — the IR types and binary wire format.
+- [`build/ir/emit.hpp`](ir/emit.hpp) — how a `Project` becomes an `IR`. The central translation step.
+- [`build/run/execute.hpp`](run/execute.hpp) — how the runner consumes an IR. Dirty detection, scheduling, log writeback.
+- [`build/run/scheduler.hpp`](run/scheduler.hpp) — the parallel execution model.
