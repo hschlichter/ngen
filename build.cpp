@@ -18,7 +18,7 @@ auto main(int argc, char** argv) -> int {
     bool dump_graph = false;
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
-        if (arg == "--list") {
+        if (arg == "--list" || arg == "-l") {
             list_only = true;
         } else if (arg == "--dump-graph") {
             dump_graph = true;

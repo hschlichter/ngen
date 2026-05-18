@@ -145,7 +145,7 @@ dependency on the next invocation, picked up by the runner's depfile parser. No 
 ## CLI
 
 ```text
-./_out/ngen-build (--platform|-p) <name> (--config|-c) <name> [--list] [--dump-graph] [-v|-vv] [target]
+./_out/ngen-build (--platform|-p) <name> (--config|-c) <name> [(--list|-l)] [--dump-graph] [-v|-vv] [target]
 ./_out/ngen-build (--help|-h)        — usage + available platforms / configs / targets
 ```
 
@@ -160,7 +160,7 @@ invokable but are reached via traversal from registered entry points.
 Special flags:
 
 - `--help` / `-h` — print bootstrap-side usage + flag list, then the `--list` panel from the graph stage, then exit.
-- `--list` — print platforms, configs, and top-level targets, then exit (handled by `ngen-build-graph`).
+- `--list` / `-l` — print platforms, configs, and top-level targets, then exit (handled by `ngen-build-graph`).
 - `--dump-graph` — dump the IR as JSON (one object per variant) to stdout and exit.
 
 Verbosity:

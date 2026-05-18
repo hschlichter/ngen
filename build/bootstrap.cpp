@@ -85,7 +85,7 @@ auto parse(int argc, char** argv) -> std::expected<Args, build::Error> {
             args.verbosity = std::max(args.verbosity, 1);
         } else if (arg == "-vv") {
             args.verbosity = std::max(args.verbosity, 2);
-        } else if (arg == "--list") {
+        } else if (arg == "--list" || arg == "-l") {
             args.list = true;
         } else if (arg == "--dump-graph") {
             args.dump_graph = true;
@@ -138,7 +138,7 @@ auto print_help() -> void {
               << "  -c, --config <name>     Build with this config.     (required for builds)\n"
               << "  -v, --verbose           One line per edge; same effect as TERM=dumb.\n"
               << "  -vv                     Echo each shell command before running.\n"
-              << "      --list              Show available platforms, configs, and targets; exit.\n"
+              << "  -l, --list              Show available platforms, configs, and targets; exit.\n"
               << "      --dump-graph        Print the project IR as JSON to stdout; exit.\n"
               << "  -h, --help              Show this message.\n"
               << "\n"
