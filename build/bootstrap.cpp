@@ -57,6 +57,8 @@ struct Args {
     bool list = false;
     bool dump_graph = false;
     bool help = false;
+    bool clean = false;
+    bool rebuild = false;
 };
 
 auto parse(int argc, char** argv) -> std::expected<Args, build::Error> {
@@ -91,6 +93,10 @@ auto parse(int argc, char** argv) -> std::expected<Args, build::Error> {
             args.dump_graph = true;
         } else if (arg == "--help" || arg == "-h") {
             args.help = true;
+        } else if (arg == "--clean") {
+            args.clean = true;
+        } else if (arg == "--rebuild") {
+            args.rebuild = true;
         } else {
             args.target = arg;
         }
@@ -136,6 +142,8 @@ auto print_help() -> void {
               << "Options:\n"
               << "  -p, --platform <name>   Build for this platform.    (required for builds)\n"
               << "  -c, --config <name>     Build with this config.     (required for builds)\n"
+              << "      --clean             Remove the variant's build outputs (requires -p / -c); exit.\n"
+              << "      --rebuild           --clean, then build from scratch (requires -p / -c).\n"
               << "  -v, --verbose           One line per edge; same effect as TERM=dumb.\n"
               << "  -vv                     Echo each shell command before running.\n"
               << "  -l, --list              Show available platforms, configs, and targets; exit.\n"
@@ -229,6 +237,34 @@ auto main(int argc, char** argv) -> int {
     if (args->help) {
         print_help();
         return 0;
+    }
+
+    // --clean / --rebuild both wipe the variant directory and require explicit -p / -c. Handle them before the
+    // graph stage runs: --clean exits, --rebuild falls through to the regular pipeline which will re-emit the
+    // IR and rebuild everything from scratch.
+    if (args->clean || args->rebuild) {
+        if (args->platform.empty() || args->config.empty()) {
+            print_help();
+            std::cerr << "\n"
+                      << "Error: " << (args->clean ? "--clean" : "--rebuild")
+                      << " requires --platform and --config.\n";
+            return 1;
+        }
+        auto safe = [](const std::string& s) { return !s.empty() && s.find('/') == std::string::npos && s.find('\\') == std::string::npos && s.find("..") == std::string::npos; };
+        if (!safe(args->platform) || !safe(args->config)) {
+            std::cerr << "Error: invalid characters in --platform / --config (no `/`, `\\`, or `..`).\n";
+            return 1;
+        }
+        auto variant_dir = std::filesystem::path("_out") / args->platform / args->config;
+        std::error_code ec;
+        std::filesystem::remove_all(variant_dir, ec);
+        if (ec) {
+            std::cerr << "Error: failed to remove " << variant_dir.string() << ": " << ec.message() << "\n";
+            return 1;
+        }
+        if (args->clean) {
+            return 0;
+        }
     }
 
     auto graph_cmd = "./_out/ngen-build-graph" + graph_forward_args(argc, argv);

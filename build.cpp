@@ -11,8 +11,6 @@
 using namespace build;
 
 auto main(int argc, char** argv) -> int {
-    auto clean = tool("clean").command({"rm", "-rf", "$out_dir"});
-
     auto format =
         tool("format")
             .global()
@@ -272,7 +270,6 @@ auto main(int argc, char** argv) -> int {
             .link_flag("-lusd_kind");
 
     p.target(view);
-    p.target(clean);
     p.target(format);
     p.target(tidy);
     p.default_target(view);

@@ -145,7 +145,7 @@ dependency on the next invocation, picked up by the runner's depfile parser. No 
 ## CLI
 
 ```text
-./_out/ngen-build (--platform|-p) <name> (--config|-c) <name> [(--list|-l)] [--dump-graph] [-v|-vv] [target]
+./_out/ngen-build (--platform|-p) <name> (--config|-c) <name> [--clean|--rebuild] [(--list|-l)] [--dump-graph] [-v|-vv] [target]
 ./_out/ngen-build (--help|-h)        — usage + available platforms / configs / targets
 ```
 
@@ -162,6 +162,10 @@ Special flags:
 - `--help` / `-h` — print bootstrap-side usage + flag list, then the `--list` panel from the graph stage, then exit.
 - `--list` / `-l` — print platforms, configs, and top-level targets, then exit (handled by `ngen-build-graph`).
 - `--dump-graph` — dump the IR as JSON (one object per variant) to stdout and exit.
+- `--clean` — remove `_out/<plat>/<cfg>/` for the chosen variant, then exit. Requires `-p` and `-c`.
+  Bootstrap-level — no graph stage, no runner, just `std::filesystem::remove_all` on the variant dir.
+- `--rebuild` — same wipe as `--clean`, then fall through to the normal pipeline. Graph re-emits the IR;
+  the runner sees no build log and rebuilds every reachable edge. Requires `-p` and `-c`.
 
 Verbosity:
 

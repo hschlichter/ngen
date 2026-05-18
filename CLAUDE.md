@@ -62,7 +62,8 @@ project-specific defaults):
 - `./_out/ngen-build -p linux-vulkan -c debug` — debug build of the default target (`ngen-view`)
 - `./_out/ngen-build -p linux-vulkan -c release` — release build
 - `./_out/ngen-build -p linux-vulkan -c gamerelease` — shipping build
-- `./_out/ngen-build -p linux-vulkan -c debug clean` — remove build outputs for that variant
+- `./_out/ngen-build --clean -p linux-vulkan -c debug` — remove build outputs for that variant; exit
+- `./_out/ngen-build --rebuild -p linux-vulkan -c debug` — clean, then rebuild from scratch
 - `./_out/ngen-build -p linux-vulkan -c debug format` — clang-format the tree
 - `./_out/ngen-build -p linux-vulkan -c debug tidy` — clang-tidy on `build/*.cpp`
 - `./_out/ngen-build -l` (or `--list`) — same project listing as `--help`, without the flag table
