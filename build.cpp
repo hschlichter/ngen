@@ -2,29 +2,15 @@
 #include "build/framework/cxx/platform.hpp"
 #include "build/framework/cxx/target.hpp"
 #include "build/framework/glob.hpp"
-#include "build/framework/inspect.hpp"
 #include "build/framework/project.hpp"
 #include "build/framework/tool.hpp"
-#include "build/ir/emit.hpp"
+#include "build/ir/main.hpp"
 
 #include <filesystem>
-#include <iostream>
-#include <string_view>
 
 using namespace build;
 
 auto main(int argc, char** argv) -> int {
-    bool list_only = false;
-    bool dump_graph = false;
-    for (int i = 1; i < argc; ++i) {
-        std::string_view arg = argv[i];
-        if (arg == "--list" || arg == "-l") {
-            list_only = true;
-        } else if (arg == "--dump-graph") {
-            dump_graph = true;
-        }
-    }
-
     auto clean = tool("clean").command({"rm", "-rf", "$out_dir"});
 
     auto format =
@@ -51,9 +37,9 @@ auto main(int argc, char** argv) -> int {
     auto sdl3_libs = capture_tokens({"pkg-config", "--libs", "sdl3"});
 
     auto clang = cxx::toolchain()
-                     .compiler("clang++")
-                     .archiver("ar")
-                     .default_std("c++23");
+        .compiler("clang++")
+        .archiver("ar")
+        .default_std("c++23");
 
     auto linux_vulkan =
         cxx::platform("linux-vulkan")
@@ -111,9 +97,9 @@ auto main(int argc, char** argv) -> int {
             });
 
     auto rhi = cxx::static_library("rhi")
-                   .sources(glob({.include = "src/rhi/*.cpp"}))
-                   .public_include({"src/rhi"})
-                   .include({"external/imgui"});
+        .sources(glob({.include = "src/rhi/*.cpp"}))
+        .public_include({"src/rhi"})
+        .include({"external/imgui"});
 
     auto rhivulkan =
         cxx::static_library("rhivulkan")
@@ -291,24 +277,5 @@ auto main(int argc, char** argv) -> int {
     p.target(tidy);
     p.default_target(view);
 
-    if (list_only) {
-        print_summary(p, std::cout);
-        return 0;
-    }
-
-    if (dump_graph) {
-        auto dumped = ir::Emitter{}.dump(p, std::cout);
-        if (!dumped) {
-            std::cerr << dumped.error().message << "\n";
-            return 1;
-        }
-        return 0;
-    }
-
-    auto emitted = ir::Emitter{}.emit(p);
-    if (!emitted) {
-        std::cerr << emitted.error().message << "\n";
-        return 1;
-    }
-    return 0;
+    return ir::main(argc, argv, p);
 }
