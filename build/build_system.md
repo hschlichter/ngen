@@ -153,9 +153,24 @@ dependency on the next invocation, picked up by the runner's depfile parser. No 
 A bare invocation (or any invocation missing either flag) prints the same panel `--help` shows, then exits with
 an error pointing at the missing flag. The project-only listing (no flag reference) is available via `--list`.
 
-Targets are matched by edge name first, then output path. When no positional target is given, the runner falls
-back to the project's `default_target()`. Internal targets that aren't registered as roots are not top-level
-invokable but are reached via traversal from registered entry points.
+Targets are positional and may repeat. Each query goes through `build::ir::resolve_target` (in
+`build/ir/resolve.hpp`) before reaching the runner. The resolution rule:
+
+1. **Exact match** on any edge name → that edge.
+2. Else **fuzzy substring** on ObjectFile source stems (case-insensitive) → every matching `.cpp` is built.
+3. Else **fuzzy substring** on non-ObjectFile edge names (libraries, programs, tools, aliases) → every match
+   is built.
+4. Else the original query is forwarded; the runner produces an "unknown target" error.
+
+So `ngen-build -p X -c Y render` builds every source whose stem contains `render`; `ngen-build -p X -c Y
+renderer` (exact) builds the library; `ngen-build -p X -c Y rhivu` falls through to tier 3 and resolves to the
+`rhivulkan` library. Stem matches always expand to every hit — there's no cap. Substring is case-insensitive.
+Resolution is silent; the runner's normal `[done/total] description` output makes which edges actually ran
+self-evident.
+
+When no positional target is given, the runner falls back to the project's `default_target()`. Internal
+targets that aren't registered as roots are not top-level invokable but are reached via traversal from
+registered entry points.
 
 Special flags:
 

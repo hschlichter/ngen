@@ -9,7 +9,8 @@
 
 #pragma once
 
-#include "json.hpp" // pulls in `detail::json_escape`, shared with the --dump-graph path.
+#include "edge_kind.hpp" // `is_compile_edge`
+#include "json.hpp"      // pulls in `detail::json_escape`, shared with the --dump-graph path.
 #include "schema.hpp"
 
 #include <string>
@@ -19,20 +20,6 @@
 namespace build::ir {
 
 namespace detail {
-
-inline auto is_compile_edge(const Edge& edge) -> bool {
-    if (edge.inputs.size() != 1) {
-        return false;
-    }
-    std::string_view input = edge.inputs.front();
-    constexpr std::string_view exts[] = {".cpp", ".cc", ".cxx", ".c"};
-    for (auto ext : exts) {
-        if (input.size() >= ext.size() && input.substr(input.size() - ext.size()) == ext) {
-            return true;
-        }
-    }
-    return false;
-}
 
 inline auto format_compile_entry(const std::string& directory, const Edge& edge) -> std::string {
     std::string out = "{\"directory\":\"";
@@ -51,7 +38,7 @@ inline auto compile_command_entries(const IR& ir) -> std::vector<std::string> {
     std::vector<std::string> out;
     out.reserve(ir.edges.size());
     for (const auto& edge : ir.edges) {
-        if (detail::is_compile_edge(edge)) {
+        if (is_compile_edge(edge)) {
             out.push_back(detail::format_compile_entry(ir.project_root, edge));
         }
     }

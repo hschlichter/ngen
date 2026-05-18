@@ -69,6 +69,7 @@ project-specific defaults):
 - `./_out/ngen-build -l` (or `--list`) — same project listing as `--help`, without the flag table
 - `./_out/ngen-build --dump-graph` — print the IR for every variant as JSON
 - `./_out/ngen-build --compile-commands -p linux-vulkan -c debug` — write `_out/linux-vulkan/debug/compile_commands.json` for the chosen variant plus the merged `_out/compile_commands.json` (union across all variants on disk)
+- `./_out/ngen-build -p linux-vulkan -c debug render` — fuzzy match: builds every ObjectFile whose source stem contains "render". Exact names still take precedence; non-OF edges (libs, programs, tools, aliases) fall through to a second-tier substring match.
 
 `compile_commands.json` is opt-in via `--compile-commands` — re-run that flag whenever the project graph
 changes and you want your IDE to see fresh entries. The engine binary lands at

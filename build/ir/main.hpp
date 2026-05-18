@@ -12,8 +12,8 @@
 
 #include "../framework/glob.hpp"
 #include "../framework/inspect.hpp"
-#include "../framework/project.hpp"
 #include "../framework/path.hpp"
+#include "../framework/project.hpp"
 #include "compile_commands.hpp"
 #include "emit.hpp"
 #include "reader.hpp"
@@ -43,8 +43,7 @@ inline auto wrap_compile_commands_array(const std::vector<std::string>& entries)
     return out;
 }
 
-inline auto write_compile_commands(const Project& project, const Path& root_out_dir, std::string_view chosen_platform,
-                                   std::string_view chosen_config) -> std::expected<void, Error> {
+inline auto write_compile_commands(const Project& project, const Path& root_out_dir, std::string_view chosen_platform, std::string_view chosen_config) -> std::expected<void, Error> {
     if (chosen_platform.empty() || chosen_config.empty()) {
         return std::unexpected(Error{"--compile-commands requires --platform / -p and --config / -c"});
     }

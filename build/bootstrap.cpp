@@ -19,22 +19,27 @@
 //      variant plus the per-variant and merged `compile_commands.json`. Short-circuits with `--list` /
 //      `--dump-graph` if the user asked for those.
 //
-//   3. **Project run.** `./_out/ngen-build-run --ir _out/<platform>/<config>/build.ngenir <target>` is invoked
-//      as a subprocess. It loads the IR, computes the dirty set against
-//      `_out/<plat>/<cfg>/.ngen-buildlog`, and runs the dirty edges in parallel.
+//   3. **Project run.** Positional target arguments are first run through `ir::resolve_target` — exact names
+//      pass through, otherwise the resolver fuzzy-matches against ObjectFile source stems and then non-OF edge
+//      names, expanding one query into the full set of matching edges. The resolved list is then handed to
+//      `./_out/ngen-build-run --ir _out/<platform>/<config>/build.ngenir <target>...` as a subprocess. The
+//      runner loads the IR, computes the dirty set against `_out/<plat>/<cfg>/.ngen-buildlog`, and runs the
+//      dirty edges in parallel.
 //
 // Platform / config selection: `--platform <name>` / `--config <name>`, both required. There are no defaults
 // here — the build-system code under `build/` carries zero project knowledge, so it cannot pick a sensible
 // platform or config on the user's behalf. When either flag is missing, the orchestrator invokes the graph
 // stage's `--list` (which prints registered platforms, configs, and top-level targets via
-// `build::print_summary`) and then reports the missing flag. Target: first positional argument; empty means
-// "use the IR's default_targets". Verbosity (`-v`, `-vv`) is forwarded to the runner; `--list` and
-// `--dump-graph` are forwarded to the graph stage.
+// `build::print_summary`) and then reports the missing flag. Targets are positional and may be repeated;
+// empty means "use the IR's default_targets". Verbosity (`-v`, `-vv`) is forwarded to the runner; `--list`
+// and `--dump-graph` are forwarded to the graph stage.
 //
 // `std::system` is used to spawn the two subprocesses (graph and runner). It's marked with
 // `// NOLINT(bugprone-command-processor)` since this is the deliberate orchestration boundary; the in-process
 // self-build path uses the runner library directly without `std::system`.
 
+#include "ir/reader.hpp"
+#include "ir/resolve.hpp"
 #include "ir/schema.hpp"
 #include "run/execute.hpp"
 
@@ -50,7 +55,7 @@
 namespace {
 
 struct Args {
-    std::string target; // empty = let the runner use the IR's default_targets
+    std::vector<std::string> targets; // empty = let the runner use the IR's default_targets
     std::string platform;
     std::string config;
     int verbosity = 0;
@@ -101,7 +106,7 @@ auto parse(int argc, char** argv) -> std::expected<Args, build::Error> {
         } else if (arg == "--compile-commands") {
             args.compile_commands = true;
         } else {
-            args.target = arg;
+            args.targets.emplace_back(arg);
         }
     }
     return args;
@@ -155,14 +160,16 @@ auto print_help() -> void {
               << "      --dump-graph        Print the project IR as JSON to stdout; exit.\n"
               << "  -h, --help              Show this message.\n"
               << "\n"
-              << "Target is positional and optional; empty means \"use the project's default_target\".\n"
+              << "Targets are positional and may repeat; empty means \"use the project's default_target\".\n"
+              << "A target is matched first by exact edge name, then by case-insensitive substring against\n"
+              << "ObjectFile source stems (every hit is built), then by substring against library / program /\n"
+              << "tool / alias names. Unmatched queries are passed through and produce an unknown-target error.\n"
               << "\n"
               << std::flush;
     // Shell out to the graph stage for the project-specific listing. `std::system` writes directly to fd 1
     // and does not see the iostream buffer, so flushing before the call is required to preserve order.
     std::system("./_out/ngen-build-graph --list"); // NOLINT(bugprone-command-processor)
 }
-
 
 // In-memory IR describing how to compile the two binaries that drive the rest
 // of the build (`ngen-build-graph` and `ngen-build-run`). The runner library
@@ -255,7 +262,9 @@ auto main(int argc, char** argv) -> int {
                       << " requires --platform and --config.\n";
             return 1;
         }
-        auto safe = [](const std::string& s) { return !s.empty() && s.find('/') == std::string::npos && s.find('\\') == std::string::npos && s.find("..") == std::string::npos; };
+        auto safe = [](const std::string& s) {
+            return !s.empty() && s.find('/') == std::string::npos && s.find('\\') == std::string::npos && s.find("..") == std::string::npos;
+        };
         if (!safe(args->platform) || !safe(args->config)) {
             std::cerr << "Error: invalid characters in --platform / --config (no `/`, `\\`, or `..`).\n";
             return 1;
@@ -291,6 +300,27 @@ auto main(int argc, char** argv) -> int {
     }
 
     auto ir_path = "_out/" + args->platform + "/" + args->config + "/build.ngenir";
+
+    // Resolve each positional target against the chosen variant's IR. Exact names pass through unchanged;
+    // unmatched strings also pass through (runner will produce its own error). Fuzzy matches fan out into
+    // one or more concrete edge names — `ir::resolve_target` is the single source of truth for the rule.
+    std::vector<std::string> resolved_targets;
+    if (!args->targets.empty()) {
+        auto ir = build::ir::read(build::Path(ir_path));
+        if (!ir) {
+            std::cerr << ir.error().message << "\n";
+            return 1;
+        }
+        for (const auto& query : args->targets) {
+            auto matches = build::ir::resolve_target(*ir, query);
+            if (matches.empty()) {
+                resolved_targets.push_back(query);
+                continue;
+            }
+            resolved_targets.insert(resolved_targets.end(), matches.begin(), matches.end());
+        }
+    }
+
     std::string cmd = "./_out/ngen-build-run --ir " + shell_quote(ir_path);
     if (args->verbosity == 1) {
         cmd = "TERM=dumb " + cmd + " -v";
@@ -298,9 +328,8 @@ auto main(int argc, char** argv) -> int {
     if (args->verbosity >= 2) {
         cmd += " -vv";
     }
-    // Empty target means "let the runner use the IR's default_targets". Don't pass an empty positional arg.
-    if (!args->target.empty()) {
-        cmd += " " + shell_quote(args->target);
+    for (const auto& t : resolved_targets) {
+        cmd += " " + shell_quote(t);
     }
     return std::system(cmd.c_str()) == 0 ? 0 : 1; // NOLINT(bugprone-command-processor)
 }

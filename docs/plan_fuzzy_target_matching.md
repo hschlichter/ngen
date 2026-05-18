@@ -1,5 +1,15 @@
 # Plan — fuzzy target matching for `ngen-build`
 
+**Status. Landed (with a different shape).** The original plan resolved each query to a single best target with
+disambiguation. The implemented version expands ObjectFile-stem matches to *every* hit and only falls back to
+non-OF names when no source stem matches — closer to what the user actually wanted (`render` builds every
+`render*.cpp`, not just one). Resolution lives in `build/ir/resolve.hpp` as a pure function over the IR; no
+separate manifest file. See `build/build_system.md` for the current behaviour.
+
+---
+
+Original plan, kept for historical context:
+
 Goal: let `./_out/ngen-build <query>` resolve to any addressable thing in the project graph by typing a substring of its name. Concretely:
 
 ```text
