@@ -206,7 +206,7 @@ auto main(int argc, char* argv[]) -> int {
     // openScene, or async batch swap), NOT on the per-frame transform fast path.
     auto cachedMeshLib = std::make_shared<const MeshLibrary>(meshLib);
     auto cachedMatLib = std::make_shared<const MaterialLibrary>(matLib);
-    auto refreshCachedLibs = [&] {
+    auto refreshCachedLibs = [&] -> void {
         cachedMeshLib = std::make_shared<const MeshLibrary>(meshLib);
         cachedMatLib = std::make_shared<const MaterialLibrary>(matLib);
     };
@@ -214,7 +214,7 @@ auto main(int argc, char* argv[]) -> int {
     // Union the world bounds of all mesh instances and frame the camera on them.
     // Used at startup and after openScene so the initial view works for any up-axis
     // and asset scale.
-    auto frameSceneView = [&] {
+    auto frameSceneView = [&] -> void {
         AABB sceneBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
         for (const auto& inst : renderWorld.meshInstances) {
             if (inst.worldBounds.valid()) {
@@ -236,9 +236,10 @@ auto main(int argc, char* argv[]) -> int {
         auto dt = (float) (nowTicks - lastTicks) / 1.0e9f;
         lastTicks = nowTicks;
 
-        int winW = 0, winH = 0;
+        int winW = 0;
+        int winH = 0;
         SDL_GetWindowSizeInPixels(window, &winW, &winH);
-        RhiExtent2D winExtent = {(uint32_t) winW, (uint32_t) winH};
+        RhiExtent2D winExtent = {.width=(uint32_t) winW, .height=(uint32_t) winH};
         auto proj = glm::perspective(glm::radians(45.0f), (float) winW / (float) winH, 0.1f, 3000.0f);
         proj[1][1] *= -1.0f;
 
@@ -411,7 +412,7 @@ auto main(int argc, char* argv[]) -> int {
                     inverseHint = &scaleGizmo.dragStartLocalTransform();
                     scaleGizmo.release();
                 }
-                if (finalLocal && inverseHint) {
+                if (finalLocal && (inverseHint != nullptr)) {
                     sceneUpdater.addEdit(
                         {.type = SceneEditCommand::Type::SetTransform, .prim = selectedPrim, .transform = *finalLocal, .inverseTransform = *inverseHint});
                 }
@@ -479,7 +480,8 @@ auto main(int argc, char* argv[]) -> int {
         editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib, cam, std::move(fgDebugSnap));
         auto imguiSnapshot = renderer.editorui()->endFrame();
 
-        float mouseX = 0, mouseY = 0;
+        float mouseX = 0;
+        float mouseY = 0;
         SDL_GetMouseState(&mouseX, &mouseY);
 
         const auto* selXf = ((bool) selectedPrim && usdScene.isOpen()) ? usdScene.getTransform(selectedPrim) : nullptr;
@@ -488,7 +490,7 @@ auto main(int argc, char* argv[]) -> int {
         // fall back to bounds center when the pivot is decoupled from the
         // visible mesh. anchorPivot walks up reset-stack ancestors.
         glm::vec3 gizmoAnchor(0.0f);
-        if (selXf) {
+        if (selXf != nullptr) {
             gizmoAnchor = sceneQuery.anchorPivot(usdScene, selectedPrim);
             auto bb = sceneQuery.anchorBounds(usdScene, selectedPrim);
             if (bb.valid() && !bb.contains(gizmoAnchor)) {
