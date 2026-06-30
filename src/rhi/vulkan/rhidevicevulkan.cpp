@@ -206,7 +206,11 @@ auto RhiDeviceVulkan::init(SDL_Window* window) -> std::expected<void, int> {
         // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
         "VK_LAYER_KHRONOS_validation",
     };
+#ifdef NGEN_ENABLE_VALIDATION
     uint32_t validationLayersCount = 1;
+#else
+    uint32_t validationLayersCount = 0;
+#endif
 
     VkInstanceCreateInfo instanceCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
