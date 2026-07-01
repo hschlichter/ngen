@@ -6,9 +6,20 @@
 
 #include <vector>
 
+// A contiguous range of the mesh's index buffer that shares one material.
+// Meshes with USD materialBind GeomSubsets produce one SubMesh per subset;
+// meshes with a single (or no) binding produce a single SubMesh covering the
+// whole index buffer. Always at least one entry when the mesh has geometry.
+struct SubMesh {
+    uint32_t indexOffset = 0;
+    uint32_t indexCount = 0;
+    MaterialHandle material;
+};
+
 struct MeshDesc {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
+    std::vector<SubMesh> submeshes;
 };
 
 class MeshLibrary {

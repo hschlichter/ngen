@@ -41,13 +41,28 @@ void USDRenderExtractor::extract(const USDScene& scene, const MeshLibrary& meshL
             continue;
         }
 
-        out.primToInstance[prim.handle.index] = (uint32_t) out.meshInstances.size();
-        out.meshInstances.push_back({
-            .mesh = binding->mesh,
-            .material = binding->material,
-            .worldTransform = xf->world,
-            .worldBounds = meshLib.bounds(binding->mesh).transformed(xf->world),
-        });
+        const auto* meshData = meshLib.get(binding->mesh);
+        if (!meshData || meshData->submeshes.empty()) {
+            continue;
+        }
+
+        auto worldBounds = meshLib.bounds(binding->mesh).transformed(xf->world);
+        auto first = (uint32_t) out.meshInstances.size();
+        // Expand the mesh into one draw instance per material submesh. All share
+        // the mesh buffers, transform and (conservative full-mesh) bounds.
+        for (size_t s = 0; s < meshData->submeshes.size(); s++) {
+            const auto& sub = meshData->submeshes[s];
+            out.meshInstances.push_back({
+                .mesh = binding->mesh,
+                .material = sub.material,
+                .worldTransform = xf->world,
+                .worldBounds = worldBounds,
+                .indexOffset = sub.indexOffset,
+                .indexCount = sub.indexCount,
+                .primFirst = (s == 0),
+            });
+        }
+        out.primToInstance[prim.handle.index] = {.first = first, .count = (uint32_t) meshData->submeshes.size()};
     }
 }
 
@@ -62,9 +77,13 @@ void USDRenderExtractor::patchTransforms(const USDScene& scene, const MeshLibrar
         if (!xf || !binding || !binding->mesh) {
             continue;
         }
-        auto& inst = out.meshInstances[it->second];
-        inst.worldTransform = xf->world;
-        inst.worldBounds = meshLib.bounds(binding->mesh).transformed(xf->world);
+        auto worldBounds = meshLib.bounds(binding->mesh).transformed(xf->world);
+        const auto& range = it->second;
+        for (uint32_t i = 0; i < range.count; i++) {
+            auto& inst = out.meshInstances[range.first + i];
+            inst.worldTransform = xf->world;
+            inst.worldBounds = worldBounds;
+        }
     }
 
     // Refresh light world transforms for dirty prims. Small N, linear scan.

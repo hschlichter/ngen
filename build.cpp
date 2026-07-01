@@ -60,14 +60,15 @@ auto main(int argc, char** argv) -> int {
             .out_dir("_out")
             .compile_flag("-O0")
             .compile_flag("-g")
-            .define("DEBUG=1")
-            .define("NGEN_ENABLE_VALIDATION");
+            .define("DEBUG=1");
+            //.define("NGEN_ENABLE_VALIDATION");
 
     auto release =
         cxx::configuration("release")
             .out_dir("_out")
             .compile_flag("-O2")
             .compile_flag("-g")
+            .compile_flag("-fno-omit-frame-pointer")
             .define("NDEBUG");
 
     auto gamerelease =

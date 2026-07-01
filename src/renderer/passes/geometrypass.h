@@ -21,6 +21,11 @@ struct GpuInstance {
     MeshHandle mesh;
     MaterialHandle material;
     glm::mat4 transform;
+    // Submesh index range within the mesh; primFirst marks the first submesh
+    // instance of a prim (the shadow pass draws the whole mesh once, there).
+    uint32_t indexOffset = 0;
+    uint32_t indexCount = 0;
+    bool primFirst = true;
 };
 
 struct GeometryPassData {

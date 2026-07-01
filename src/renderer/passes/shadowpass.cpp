@@ -85,6 +85,12 @@ auto ShadowPass::addPass(
             cmd->setScissor(extent);
 
             for (const auto& inst : instances) {
+                // Instances are expanded per material submesh, but shadows are
+                // material-agnostic — draw the whole mesh once, on the prim's
+                // first submesh instance, and skip the rest.
+                if (!inst.primFirst) {
+                    continue;
+                }
                 auto meshIt = meshCache.find(inst.mesh.index);
                 if (meshIt == meshCache.end()) {
                     continue;

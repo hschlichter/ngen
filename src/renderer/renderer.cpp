@@ -162,7 +162,8 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
     bool geometryChanged = (gpuInstances.size() != world.meshInstances.size());
     if (!geometryChanged) {
         for (size_t m = 0; m < world.meshInstances.size(); m++) {
-            if (gpuInstances[m].mesh != world.meshInstances[m].mesh || gpuInstances[m].material != world.meshInstances[m].material) {
+            const auto& inst = world.meshInstances[m];
+            if (gpuInstances[m].mesh != inst.mesh || gpuInstances[m].material != inst.material || gpuInstances[m].indexOffset != inst.indexOffset || gpuInstances[m].indexCount != inst.indexCount) {
                 geometryChanged = true;
                 break;
             }
@@ -172,7 +173,14 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
     gpuInstances.resize(world.meshInstances.size());
     for (size_t m = 0; m < world.meshInstances.size(); m++) {
         const auto& inst = world.meshInstances[m];
-        gpuInstances[m] = {.mesh = inst.mesh, .material = inst.material, .transform = inst.worldTransform};
+        gpuInstances[m] = {
+            .mesh = inst.mesh,
+            .material = inst.material,
+            .transform = inst.worldTransform,
+            .indexOffset = inst.indexOffset,
+            .indexCount = inst.indexCount,
+            .primFirst = inst.primFirst,
+        };
     }
 
     if (!geometryChanged) {

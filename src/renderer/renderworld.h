@@ -11,6 +11,13 @@ struct RenderMeshInstance {
     MaterialHandle material;
     glm::mat4 worldTransform = glm::mat4(1.0f);
     AABB worldBounds;
+    // A prim's mesh expands to one instance per material submesh, all sharing
+    // the same mesh buffers and transform. [indexOffset, indexOffset+indexCount)
+    // is this submesh's range in the mesh index buffer; primFirst marks the
+    // first instance of the prim so the shadow pass can draw the whole mesh once.
+    uint32_t indexOffset = 0;
+    uint32_t indexCount = 0;
+    bool primFirst = true;
 };
 
 enum class LightType : uint8_t {
@@ -31,11 +38,18 @@ struct RenderLight {
     PrimHandle primHandle; // identifies the source prim for incremental updates
 };
 
+// Contiguous run of meshInstances produced by one prim (one per submesh).
+struct InstanceRange {
+    uint32_t first = 0;
+    uint32_t count = 0;
+};
+
 struct RenderWorld {
     std::vector<RenderMeshInstance> meshInstances;
     std::vector<RenderLight> lights;
-    // Reverse lookup for incremental transform patching: prim.index -> meshInstances index.
-    std::unordered_map<uint32_t, uint32_t> primToInstance;
+    // Reverse lookup for incremental transform patching: prim.index -> the run
+    // of meshInstances that prim expanded into.
+    std::unordered_map<uint32_t, InstanceRange> primToInstance;
 
     void clear() {
         meshInstances.clear();

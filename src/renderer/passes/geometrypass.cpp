@@ -128,7 +128,7 @@ auto GeometryPass::addPass(
                 cmd->bindVertexBuffer(cached.vertexBuffer);
                 cmd->bindIndexBuffer(cached.indexBuffer);
                 cmd->bindDescriptorSet(pip, descriptorSets[(imageIndex * instanceCount) + m]);
-                cmd->drawIndexed(cached.indexCount, 1, 0, 0, 0);
+                cmd->drawIndexed(inst.indexCount, 1, inst.indexOffset, 0, 0);
             }
 
             cmd->endRendering();

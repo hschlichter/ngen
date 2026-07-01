@@ -5,12 +5,14 @@
 
 #include <pxr/base/gf/matrix4d.h>
 #include <pxr/base/tf/notice.h>
+#include <pxr/base/tf/stringUtils.h>
 #include <pxr/usd/ar/asset.h>
 #include <pxr/usd/ar/resolvedPath.h>
 #include <pxr/usd/ar/resolver.h>
 #include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/sdf/fileFormat.h>
 #include <pxr/usd/sdf/layer.h>
+#include <pxr/usd/sdf/layerUtils.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/editContext.h>
 #include <pxr/usd/usd/notice.h>
@@ -26,6 +28,8 @@
 #include <pxr/usd/usdGeom/metrics.h>
 #include <pxr/usd/usdGeom/primvarsAPI.h>
 #include <pxr/usd/usdGeom/sphere.h>
+#include <pxr/usd/usdGeom/subset.h>
+#include <pxr/usd/usdGeom/tokens.h>
 #include <pxr/usd/usdGeom/xformCommonAPI.h>
 #include <pxr/usd/usdGeom/xformable.h>
 #include <pxr/usd/usdLux/boundableLightBase.h>
@@ -43,6 +47,7 @@
 #include <pxr/usd/usdShade/shader.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <map>
@@ -113,6 +118,12 @@ struct USDScene::Impl {
     // Asset binding cache (parallel to prims)
     std::vector<AssetBindingCacheRecord> assetBindings;
     bool assetBindingsBuilt = false;
+
+    // Deduplicates materials across meshes and GeomSubsets: a bound material
+    // prim (e.g. Sponza's /root/mtl/*) is shared by hundreds of subsets, so we
+    // extract + upload it once and reuse the handle. Keyed by material prim
+    // path; mirrors the lifetime of matLib and is cleared on close().
+    std::unordered_map<std::string, MaterialHandle> materialPrimCache;
 
     // Light cache (sparse: only prims with PrimFlagLight). Keyed by prim index.
     std::unordered_map<uint32_t, LightDesc> lights;
@@ -224,6 +235,7 @@ struct USDScene::Impl {
         transforms.clear();
         assetBindings.clear();
         assetBindingsBuilt = false;
+        materialPrimCache.clear();
         lights.clear();
         layerInfos.clear();
         dirtySet.clear();
@@ -629,43 +641,83 @@ struct USDScene::Impl {
                 continue;
             }
 
-            assetBindings[i].mesh = extractMesh(prim, meshLib);
-            assetBindings[i].material = extractMaterial(prim, matLib);
+            assetBindings[i].mesh = extractMesh(prim, meshLib, matLib);
+            // The per-prim material is derived from the mesh's first submesh so
+            // consumers that want "the" material of a prim (e.g. the Properties
+            // panel) still get a sensible value; per-subset materials live on
+            // the mesh's submeshes and drive the actual draws.
+            const auto* meshData = meshLib.get(assetBindings[i].mesh);
+            assetBindings[i].material = (meshData != nullptr && !meshData->submeshes.empty()) ? meshData->submeshes.front().material : MaterialHandle{};
             assetBindings[i].revision++;
         }
 
         assetBindingsBuilt = true;
     }
 
-    static MeshHandle extractMesh(const UsdPrim& prim, MeshLibrary& meshLib) {
+    // Read a primvar with its index table applied (ComputeFlattened) and report
+    // its interpolation. NewSponza authors st/normals as indexed, faceVarying
+    // primvars — reading the raw value array and indexing it directly yields
+    // scrambled UVs / normals, so flattening is required.
+    template <typename T>
+    static bool readPrimvarFlattened(const UsdGeomPrimvarsAPI& api, const TfToken& name, VtArray<T>& values, TfToken& interp) {
+        auto pv = api.GetPrimvar(name);
+        if (!pv || !pv.HasValue()) {
+            return false;
+        }
+        interp = pv.GetInterpolation();
+        return pv.ComputeFlattened(&values, UsdTimeCode::Default()) && !values.empty();
+    }
+
+    // Index into a flattened primvar for a given triangle corner, per the
+    // primvar's interpolation. cornerIdx is the face-vertex (face-corner) index.
+    static int primvarIndex(const TfToken& interp, int pointIdx, int cornerIdx, int faceIdx) {
+        if (interp == UsdGeomTokens->constant) {
+            return 0;
+        }
+        if (interp == UsdGeomTokens->uniform) {
+            return faceIdx;
+        }
+        if (interp == UsdGeomTokens->faceVarying) {
+            return cornerIdx;
+        }
+        return pointIdx; // vertex / varying
+    }
+
+    // sRGB-encode a linear color channel for storage in an R8G8B8A8_SRGB texel,
+    // so the sampler's sRGB→linear decode reproduces the authored linear color.
+    static uint8_t encodeSrgb(float c) {
+        c = std::clamp(c, 0.0f, 1.0f);
+        float s = (c <= 0.0031308f) ? (c * 12.92f) : (1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f);
+        return (uint8_t) std::lround(s * 255.0f);
+    }
+
+    // Adds a MeshDesc to the library with a single submesh spanning the whole
+    // index buffer, bound to `material`. Used for procedural shapes and for USD
+    // meshes that don't partition into materialBind GeomSubsets.
+    static MeshHandle addSingleSubmeshMesh(MeshDesc desc, MaterialHandle material, MeshLibrary& meshLib) {
+        if (!desc.vertices.empty()) {
+            desc.submeshes.push_back({.indexOffset = 0, .indexCount = (uint32_t) desc.indices.size(), .material = material});
+        }
+        return meshLib.add(std::move(desc));
+    }
+
+    MeshHandle extractMesh(const UsdPrim& prim, MeshLibrary& meshLib, MaterialLibrary& matLib) {
         // Procedural shape schemas (Cube / Sphere / Cylinder / Cone) tessellate into a
         // MeshDesc on first extract. Each prim gets its own cached MeshDesc — we don't
         // share across prims even with identical parameters, because edits to `size` /
         // `radius` etc. would otherwise stomp one another. Cheap enough for now.
-        // Display color (primvars:displayColor) feeds vertex colors so editing the
-        // prim's color in the Properties panel re-tessellates with the new tint.
-        auto readDisplayColor = [](const UsdPrim& p) -> ShapeColor {
-            UsdGeomGprim gprim(p);
-            if (!gprim) {
-                return {};
-            }
-            VtArray<GfVec3f> colors;
-            gprim.GetDisplayColorAttr().Get(&colors, UsdTimeCode::Default());
-            if (colors.empty()) {
-                return {};
-            }
-            return {colors[0][0], colors[0][1], colors[0][2]};
-        };
-
+        // Base color comes from the material (extractMaterial folds displayColor into
+        // baseColorFactor), so vertices are left white and untinted — see extractMesh's
+        // polymesh path and the fallback texel in extractMaterial.
         if (auto cube = UsdGeomCube(prim); cube) {
             double size = 2.0;
             cube.GetSizeAttr().Get(&size, UsdTimeCode::Default());
-            return meshLib.add(tessellateCube(size, readDisplayColor(prim)));
+            return addSingleSubmeshMesh(tessellateCube(size), extractMaterial(prim, matLib), meshLib);
         }
         if (auto sphere = UsdGeomSphere(prim); sphere) {
             double radius = 1.0;
             sphere.GetRadiusAttr().Get(&radius, UsdTimeCode::Default());
-            return meshLib.add(tessellateSphere(radius, readDisplayColor(prim)));
+            return addSingleSubmeshMesh(tessellateSphere(radius), extractMaterial(prim, matLib), meshLib);
         }
         if (auto cyl = UsdGeomCylinder(prim); cyl) {
             double radius = 1.0, height = 2.0;
@@ -673,7 +725,7 @@ struct USDScene::Impl {
             cyl.GetHeightAttr().Get(&height, UsdTimeCode::Default());
             TfToken axis = UsdGeomTokens->z;
             cyl.GetAxisAttr().Get(&axis, UsdTimeCode::Default());
-            return meshLib.add(tessellateCylinder(radius, height, axis.GetText(), readDisplayColor(prim)));
+            return addSingleSubmeshMesh(tessellateCylinder(radius, height, axis.GetText()), extractMaterial(prim, matLib), meshLib);
         }
         if (auto cone = UsdGeomCone(prim); cone) {
             double radius = 1.0, height = 2.0;
@@ -681,7 +733,7 @@ struct USDScene::Impl {
             cone.GetHeightAttr().Get(&height, UsdTimeCode::Default());
             TfToken axis = UsdGeomTokens->z;
             cone.GetAxisAttr().Get(&axis, UsdTimeCode::Default());
-            return meshLib.add(tessellateCone(radius, height, axis.GetText(), readDisplayColor(prim)));
+            return addSingleSubmeshMesh(tessellateCone(radius, height, axis.GetText()), extractMaterial(prim, matLib), meshLib);
         }
 
         UsdGeomMesh geomMesh(prim);
@@ -700,32 +752,41 @@ struct USDScene::Impl {
         geomMesh.GetFaceVertexCountsAttr().Get(&faceVertexCounts, UsdTimeCode::Default());
         geomMesh.GetFaceVertexIndicesAttr().Get(&faceVertexIndices, UsdTimeCode::Default());
 
-        // Get normals if available
-        VtArray<GfVec3f> normals;
-        geomMesh.GetNormalsAttr().Get(&normals, UsdTimeCode::Default());
+        UsdGeomPrimvarsAPI primvarsAPI(prim);
 
-        // Get display colors if available
-        VtArray<GfVec3f> displayColors;
-        UsdGeomGprim gprim(prim);
-        if (gprim) {
-            gprim.GetDisplayColorAttr().Get(&displayColors, UsdTimeCode::Default());
+        // Normals: prefer primvars:normals (how NewSponza and most DCC exports
+        // author them), fall back to the schema `normals` attribute, else flat
+        // per-face normals are computed below. All indexed/flattened correctly.
+        VtArray<GfVec3f> normals;
+        TfToken normalsInterp;
+        bool hasNormals = readPrimvarFlattened(primvarsAPI, TfToken("normals"), normals, normalsInterp);
+        if (!hasNormals && geomMesh.GetNormalsAttr().Get(&normals, UsdTimeCode::Default()) && !normals.empty()) {
+            normalsInterp = geomMesh.GetNormalsInterpolation();
+            hasNormals = true;
         }
 
-        // Get UVs if available — try common primvar names
+        // UVs: try the common primvar names, flattening the index table.
         VtArray<GfVec2f> uvs;
-        UsdGeomPrimvarsAPI primvarsAPI(prim);
+        TfToken uvInterp;
+        bool hasUV = false;
         for (const auto* name : {"st", "st0", "st1", "UVMap"}) {
-            auto pv = primvarsAPI.GetPrimvar(TfToken(name));
-            if (pv && pv.Get(&uvs, UsdTimeCode::Default()) && !uvs.empty()) {
+            if (readPrimvarFlattened(primvarsAPI, TfToken(name), uvs, uvInterp)) {
+                hasUV = true;
                 break;
             }
         }
 
-        // Triangulate and build vertex/index arrays
+        // Triangulate. Vertices are emitted per-corner in face order; we record
+        // where each face's vertices land so the index buffer can afterwards be
+        // assembled grouped by material (GeomSubset). Since one vertex is pushed
+        // per index, the index value for a face's j-th corner is faceStart[f] + j.
         MeshDesc meshDesc;
+        std::vector<uint32_t> faceStart(faceVertexCounts.size(), 0);
+        std::vector<uint32_t> faceCount(faceVertexCounts.size(), 0);
         uint32_t fvIdx = 0;
         for (size_t f = 0; f < faceVertexCounts.size(); f++) {
             int count = faceVertexCounts[f];
+            faceStart[f] = (uint32_t) meshDesc.vertices.size();
             // Fan triangulation
             for (int t = 0; t < count - 2; t++) {
                 int indices[3] = {
@@ -741,7 +802,7 @@ struct USDScene::Impl {
 
                 // Compute flat face normal as fallback when normals aren't authored
                 std::array<float, 3> faceNormal = {0.0f, 1.0f, 0.0f};
-                if (normals.empty()) {
+                if (!hasNormals) {
                     auto& p0 = points[indices[0]];
                     auto& p1 = points[indices[1]];
                     auto& p2 = points[indices[2]];
@@ -761,8 +822,8 @@ struct USDScene::Impl {
                     auto& p = points[indices[v]];
                     vert.position = {p[0], p[1], p[2]};
 
-                    if (!normals.empty()) {
-                        int ni = (normals.size() == points.size()) ? indices[v] : fvIndices[v];
+                    if (hasNormals) {
+                        int ni = primvarIndex(normalsInterp, indices[v], fvIndices[v], (int) f);
                         if (ni < (int) normals.size()) {
                             auto& n = normals[ni];
                             vert.normal = {n[0], n[1], n[2]};
@@ -771,55 +832,151 @@ struct USDScene::Impl {
                         vert.normal = faceNormal;
                     }
 
-                    if (!uvs.empty()) {
-                        int ui = (uvs.size() == points.size()) ? indices[v] : fvIndices[v];
+                    if (hasUV) {
+                        int ui = primvarIndex(uvInterp, indices[v], fvIndices[v], (int) f);
                         if (ui < (int) uvs.size()) {
                             auto& uv = uvs[ui];
                             vert.texCoord = {uv[0], 1.0f - uv[1]};
                         }
                     }
 
-                    if (!displayColors.empty()) {
-                        int ci = (displayColors.size() == points.size()) ? indices[v] : (displayColors.size() == 1 ? 0 : fvIndices[v]);
-                        if (ci < (int) displayColors.size()) {
-                            auto& c = displayColors[ci];
-                            vert.color = {c[0], c[1], c[2]};
-                        } else {
-                            auto& c = displayColors[0];
-                            vert.color = {c[0], c[1], c[2]};
-                        }
-                    } else {
-                        vert.color = {1.0f, 1.0f, 1.0f};
-                    }
+                    // Base color comes from the material (texture or the
+                    // baseColorFactor fallback texel), so vertices stay white
+                    // and don't tint the sampled albedo.
+                    vert.color = {1.0f, 1.0f, 1.0f};
 
-                    meshDesc.indices.push_back((uint32_t) meshDesc.vertices.size());
                     meshDesc.vertices.push_back(vert);
                 }
             }
+            faceCount[f] = (uint32_t) meshDesc.vertices.size() - faceStart[f];
             fvIdx += count;
         }
 
         if (meshDesc.vertices.empty()) {
             return {};
         }
+
+        // Assemble the index buffer so each material occupies a contiguous range
+        // that draws with a single call. USD binds materials per-face via
+        // GeomSubsets (Sponza partitions every mesh this way); a mesh with no
+        // subsets is one submesh over all faces in original order.
+        auto appendFace = [&](uint32_t f) {
+            for (uint32_t j = 0; j < faceCount[f]; j++) {
+                meshDesc.indices.push_back(faceStart[f] + j);
+            }
+        };
+
+        UsdShadeMaterialBindingAPI binder(prim);
+        auto subsets = binder.GetMaterialBindSubsets();
+        if (!subsets.empty()) {
+            std::vector<bool> assigned(faceCount.size(), false);
+            for (const auto& subset : subsets) {
+                VtArray<int> subsetFaces;
+                subset.GetIndicesAttr().Get(&subsetFaces, UsdTimeCode::Default());
+                SubMesh sm;
+                sm.indexOffset = (uint32_t) meshDesc.indices.size();
+                for (int f : subsetFaces) {
+                    if (f < 0 || f >= (int) faceCount.size()) {
+                        continue;
+                    }
+                    assigned[f] = true;
+                    appendFace((uint32_t) f);
+                }
+                sm.indexCount = (uint32_t) meshDesc.indices.size() - sm.indexOffset;
+                if (sm.indexCount > 0) {
+                    sm.material = extractMaterial(subset.GetPrim(), matLib);
+                    meshDesc.submeshes.push_back(sm);
+                }
+            }
+            // Any faces outside the partition fall back to the mesh-level binding.
+            SubMesh rest;
+            rest.indexOffset = (uint32_t) meshDesc.indices.size();
+            for (uint32_t f = 0; f < faceCount.size(); f++) {
+                if (!assigned[f]) {
+                    appendFace(f);
+                }
+            }
+            rest.indexCount = (uint32_t) meshDesc.indices.size() - rest.indexOffset;
+            if (rest.indexCount > 0) {
+                rest.material = extractMaterial(prim, matLib);
+                meshDesc.submeshes.push_back(rest);
+            }
+        } else {
+            for (uint32_t f = 0; f < faceCount.size(); f++) {
+                appendFace(f);
+            }
+            meshDesc.submeshes.push_back({
+                .indexOffset = 0,
+                .indexCount = (uint32_t) meshDesc.indices.size(),
+                .material = extractMaterial(prim, matLib),
+            });
+        }
+
         return meshLib.add(std::move(meshDesc));
     }
 
-    static bool loadTextureFromAssetPath(const std::string& path, MaterialDesc& matDesc) {
+    // Resolve a UsdUVTexture `file` input to an absolute, openable path.
+    //
+    // Windows-authored assets (e.g. Intel's NewSponza) reference textures with
+    // backslash separators — @textures\foo.png@. On POSIX, USD's resolver treats
+    // '\' as an ordinary filename character rather than a separator, so
+    // GetResolvedPath() comes back empty and the texture silently fails to load,
+    // leaving the surface untextured. Normalize the separators and re-anchor the
+    // relative path against the layer that authored the opinion (mirroring
+    // UsdImaging's UsdUVTexture handling), so any texture input resolves
+    // regardless of how it was authored.
+    static std::string resolveTexturePath(const UsdShadeInput& fileInput) {
+        SdfAssetPath assetPath;
+        if (!fileInput.Get(&assetPath, UsdTimeCode::Default())) {
+            return {};
+        }
+
+        // Fast path: the resolver already located the asset.
+        if (!assetPath.GetResolvedPath().empty()) {
+            return assetPath.GetResolvedPath();
+        }
+
+        const std::string raw = assetPath.GetAssetPath();
+        if (raw.empty()) {
+            return {};
+        }
+
         auto& resolver = ArGetResolver();
 
-        // Try opening with the path as-is (it may already be resolved)
-        auto asset = resolver.OpenAsset(ArResolvedPath(path));
+        // The path as authored may already be resolvable (POSIX-style relative,
+        // absolute, or a URI understood by a custom resolver).
+        if (auto resolved = resolver.Resolve(raw); !resolved.empty()) {
+            return resolved;
+        }
+
+        // Otherwise normalize Windows separators and re-anchor against each layer
+        // that contributes an opinion, strongest first.
+        const std::string normalized = TfStringReplace(raw, "\\", "/");
+        if (normalized != raw) {
+            for (const auto& spec : fileInput.GetAttr().GetPropertyStack(UsdTimeCode::Default())) {
+                const std::string anchored = SdfComputeAssetPathRelativeToLayer(spec->GetLayer(), normalized);
+                if (auto resolved = resolver.Resolve(anchored); !resolved.empty()) {
+                    return resolved;
+                }
+            }
+            // Last resort: resolve the normalized path directly (search paths / CWD).
+            if (auto resolved = resolver.Resolve(normalized); !resolved.empty()) {
+                return resolved;
+            }
+        }
+
+        return {};
+    }
+
+    static bool loadTextureFromResolvedPath(const std::string& resolvedPath, MaterialDesc& matDesc) {
+        if (resolvedPath.empty()) {
+            return false;
+        }
+
+        auto& resolver = ArGetResolver();
+        auto asset = resolver.OpenAsset(ArResolvedPath(resolvedPath));
         if (!asset) {
-            // Try resolving first
-            auto resolved = resolver.Resolve(path);
-            if (resolved.empty()) {
-                return false;
-            }
-            asset = resolver.OpenAsset(resolved);
-            if (!asset) {
-                return false;
-            }
+            return false;
         }
 
         auto buffer = asset->GetBuffer();
@@ -841,49 +998,83 @@ struct USDScene::Impl {
         return true;
     }
 
+    // Follow a shading connection to the Shader that ultimately drives it,
+    // passing through UsdShade NodeGraph wrappers. Material libraries like
+    // NewSponza don't connect diffuseColor straight to the UsdUVTexture; they
+    // route it through a per-texture NodeGraph whose `outputs:rgb` forwards the
+    // inner shader's output. `source`/`sourceName` are the connection's source
+    // connectable and output name (e.g. the NodeGraph and "rgb"). Returns an
+    // invalid shader if the chain doesn't terminate at a Shader.
+    static UsdShadeShader resolveConnectedShader(UsdShadeConnectableAPI source, TfToken sourceName) {
+        for (int guard = 0; guard < 16 && source.GetPrim(); guard++) {
+            if (source.GetPrim().IsA<UsdShadeShader>()) {
+                return UsdShadeShader(source.GetPrim());
+            }
+            // NodeGraph pass-through: follow the like-named output inward.
+            auto output = source.GetOutput(sourceName);
+            if (!output) {
+                break;
+            }
+            UsdShadeConnectableAPI next;
+            TfToken nextName;
+            UsdShadeAttributeType nextType;
+            if (!output.GetConnectedSource(&next, &nextName, &nextType)) {
+                break;
+            }
+            source = next;
+            sourceName = nextName;
+        }
+        return UsdShadeShader();
+    }
+
     static void extractShaderTexture(const UsdShadeShader& shader, const TfToken& inputName, MaterialDesc& matDesc) {
         auto input = shader.GetInput(inputName);
         if (!input) {
             return;
         }
 
-        // Check if connected to a texture reader
+        // Check if connected to a texture reader (possibly via a NodeGraph).
         UsdShadeConnectableAPI texSource;
         TfToken texSourceName;
         UsdShadeAttributeType texSourceType;
         if (input.GetConnectedSource(&texSource, &texSourceName, &texSourceType)) {
-            UsdShadeShader texShader(texSource.GetPrim());
+            UsdShadeShader texShader = resolveConnectedShader(texSource, texSourceName);
             if (texShader) {
                 auto fileInput = texShader.GetInput(TfToken("file"));
                 if (fileInput) {
-                    SdfAssetPath assetPath;
-                    if (fileInput.Get(&assetPath, UsdTimeCode::Default())) {
-                        auto path = assetPath.GetResolvedPath();
-                        if (path.empty()) {
-                            path = assetPath.GetAssetPath();
-                        }
-                        if (!path.empty()) {
-                            loadTextureFromAssetPath(path, matDesc);
-                            return;
-                        }
+                    if (loadTextureFromResolvedPath(resolveTexturePath(fileInput), matDesc)) {
+                        return;
                     }
                 }
             }
         }
 
-        // No texture — try to read a constant color value
+        // No texture (or the texture failed to resolve/load) — fall back to a
+        // constant color value if the input authors one.
         GfVec3f color;
         if (input.Get(&color, UsdTimeCode::Default())) {
             matDesc.baseColorFactor = glm::vec4(color[0], color[1], color[2], 1.0f);
         }
     }
 
-    static MaterialHandle extractMaterial(const UsdPrim& prim, MaterialLibrary& matLib) {
-        MaterialDesc matDesc;
-
+    MaterialHandle extractMaterial(const UsdPrim& prim, MaterialLibrary& matLib) {
         // Try UsdPreviewSurface material binding first
         UsdShadeMaterialBindingAPI bindingAPI(prim);
         auto material = bindingAPI.ComputeBoundMaterial();
+
+        // Deduplicate by the bound material prim's path: a single material
+        // backs many prims / GeomSubsets, and its textures can be tens of MB
+        // each — extract and upload it once, then reuse the handle.
+        std::string cacheKey;
+        if (material) {
+            cacheKey = material.GetPrim().GetPath().GetString();
+            auto it = materialPrimCache.find(cacheKey);
+            if (it != materialPrimCache.end()) {
+                return it->second;
+            }
+        }
+
+        MaterialDesc matDesc;
         if (material) {
             auto surfaceOutput = material.GetSurfaceOutput();
             if (surfaceOutput) {
@@ -911,17 +1102,26 @@ struct USDScene::Impl {
             }
         }
 
-        // If no texture was loaded, generate a 1x1 white pixel.
-        // Color comes from vertex data (displayColor) or is simply white.
-        // The renderer's diagnostic fallback only fires if texPixels is empty,
-        // which means the MaterialDesc itself was never populated (null material).
+        // No texture: encode the constant baseColorFactor into a 1x1 texel so it
+        // flows through the same sampling path as a real albedo map (vertices are
+        // white, so the sampled color is the surface color). Defaults to white
+        // when nothing was authored. sRGB-encoded to match the SRGB texel format.
         if (matDesc.texPixels.empty()) {
             matDesc.texWidth = 1;
             matDesc.texHeight = 1;
-            matDesc.texPixels = {255, 255, 255, 255};
+            matDesc.texPixels = {
+                encodeSrgb(matDesc.baseColorFactor.r),
+                encodeSrgb(matDesc.baseColorFactor.g),
+                encodeSrgb(matDesc.baseColorFactor.b),
+                255,
+            };
         }
 
-        return matLib.add(std::move(matDesc));
+        MaterialHandle handle = matLib.add(std::move(matDesc));
+        if (!cacheKey.empty()) {
+            materialPrimCache[cacheKey] = handle;
+        }
+        return handle;
     }
 
     // ── Edit layer routing ─────────────────────────────────────────────────

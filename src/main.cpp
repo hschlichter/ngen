@@ -239,7 +239,7 @@ auto main(int argc, char* argv[]) -> int {
         int winW = 0;
         int winH = 0;
         SDL_GetWindowSizeInPixels(window, &winW, &winH);
-        RhiExtent2D winExtent = {.width=(uint32_t) winW, .height=(uint32_t) winH};
+        RhiExtent2D winExtent = {.width = (uint32_t) winW, .height = (uint32_t) winH};
         auto proj = glm::perspective(glm::radians(45.0f), (float) winW / (float) winH, 0.1f, 3000.0f);
         proj[1][1] *= -1.0f;
 
