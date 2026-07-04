@@ -72,6 +72,7 @@ Current truth for the build framework is [`../build/build_system.md`](../build/b
 - [plan_async_asset_system.md](plan_async_asset_system.md) — cooked-asset cache and async loading
 - [plan_observability.md](plan_observability.md) — observation bus design (landed — usage reference is [`../obs.md`](../obs.md))
 - [plan_render_observations.md](plan_render_observations.md) — render-category observations
+- [plan_rhi_validation.md](plan_rhi_validation.md) — `ngen-test-rhi` RHI validation program: surfaceless device, readback, analytic pixel checks (draft)
 - [observability_api_design_engine_agnostic.md](observability_api_design_engine_agnostic.md) — earlier abstract obs design (historical — the concrete design deliberately diverged)
 
 ## Generic references (engine-agnostic)
