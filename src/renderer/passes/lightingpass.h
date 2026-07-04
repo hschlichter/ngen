@@ -3,6 +3,7 @@
 #include "framegraph.h"
 #include "rhitypes.h"
 
+#include <array>
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <vector>
@@ -11,22 +12,34 @@ class RhiDevice;
 struct RenderLight;
 struct GeometryPassData;
 
-struct LightingUBO {
-    glm::vec4 lightDirection; // xyz = direction toward light, w = unused
-    glm::vec4 lightColor;     // xyz = radiance (color * intensity * 2^exposure), w = ambient
-    glm::vec4 depthParams;    // x = near, y = far, zw = unused
-    glm::vec4 shadowTint;     // xyz = light contribution when shadowed (from UsdLuxShadowAPI::shadow:color), w = unused
-    glm::mat4 invViewProj;    // inverse(proj * view), for world-pos reconstruction from gbuffer
-    glm::mat4 lightViewProj;  // shadow camera view-projection
+// Maximum lights uploaded per frame. Shared with lighting.frag (MAX_LIGHTS there
+// must match). Excess scene lights are dropped; keep in sync if you raise it.
+inline constexpr int kMaxLights = 16;
+
+// One light, packed for std140. Matches `GpuLight` in lighting.frag.
+struct GpuLight {
+    glm::vec4 posOrDir; // xyz = world position (point) or direction-toward-light (directional); w = type (0 = dir, 1 = point)
+    glm::vec4 radiance; // rgb = color * intensity * 2^exposure; a = range (0 = no cutoff)
 };
 
-// Pre-resolved per-frame lighting inputs. The renderer picks one active light and flattens
-// it into this small struct so LightingPass doesn't have to re-run the selection logic or
-// deal with RenderLight's worldTransform.
+struct LightingUBO {
+    glm::vec4 sunDirection;  // xyz = direction toward the shadow-casting sun (for shadow bias); w = light count
+    glm::vec4 ambientParams; // x = ambient level, y = shadow light index (-1 = none), zw = unused
+    glm::vec4 depthParams;   // x = near, y = far, zw = unused
+    glm::vec4 shadowTint;    // xyz = light contribution when shadowed (from UsdLuxShadowAPI::shadow:color), w = unused
+    glm::mat4 invViewProj;   // inverse(proj * view), for world-pos reconstruction from gbuffer
+    glm::mat4 lightViewProj; // shadow camera view-projection
+    std::array<GpuLight, kMaxLights> lights;
+};
+
+// Pre-resolved per-frame lighting inputs. The renderer flattens RenderWorld's lights into
+// this so LightingPass doesn't re-run selection or deal with RenderLight's worldTransform.
 struct LightingInputs {
-    glm::vec3 direction = glm::vec3(0.0f, 1.0f, 0.0f); // unit vector pointing toward the light
-    glm::vec3 radiance = glm::vec3(1.0f);              // color × intensity × 2^exposure, pre-scaled
-    glm::vec3 shadowColor = glm::vec3(0.0f);           // attenuation tint from UsdLuxShadowAPI::shadow:color
+    std::vector<GpuLight> lights;                         // resolved scene lights (clamped to kMaxLights)
+    glm::vec3 sunDirection = glm::vec3(0.0f, 1.0f, 0.0f); // shadow-caster direction, for the shadow slope bias
+    glm::vec3 shadowColor = glm::vec3(0.0f);              // attenuation tint from UsdLuxShadowAPI::shadow:color
+    int shadowLightIndex = -1;                            // index into `lights` that casts the shadow map, or -1
+    float ambient = 0.15f;                                // flat ambient level
 };
 
 enum class GBufferView : int {
