@@ -10,6 +10,15 @@ class RhiSwapchain;
 class RhiCommandBuffer;
 struct SDL_Window;
 
+struct RhiDeviceDesc {
+    // nullptr = surfaceless: no surface is created, queue selection drops the
+    // present requirement, and createSwapchain is unavailable (returns nullptr).
+    SDL_Window* window = nullptr;
+    // Enables the backend's validation layer plus a debug messenger; messages
+    // are counted (validationErrorCount / validationWarningCount) and printed.
+    bool enableValidation = false;
+};
+
 class RhiDevice {
 public:
     RhiDevice() = default;
@@ -19,9 +28,15 @@ public:
     RhiDevice& operator=(RhiDevice&&) = default;
     virtual ~RhiDevice() = default;
 
-    virtual auto init(SDL_Window* window) -> std::expected<void, int> = 0;
+    virtual auto init(const RhiDeviceDesc& desc) -> std::expected<void, int> = 0;
     virtual auto destroy() -> void = 0;
     virtual auto waitIdle() -> void = 0;
+
+    // Validation-message counters. Only move when the device was initialized
+    // with enableValidation; backends without a validation concept keep the
+    // defaults.
+    [[nodiscard]] virtual auto validationErrorCount() const -> uint64_t { return 0; }
+    [[nodiscard]] virtual auto validationWarningCount() const -> uint64_t { return 0; }
 
     virtual auto createSwapchain(SDL_Window* window) -> RhiSwapchain* = 0;
     virtual auto createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* = 0;

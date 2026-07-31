@@ -63,6 +63,7 @@ auto main(int argc, char* argv[]) -> int {
     std::string obsOutputPath;
     std::vector<std::string> obsOnly;
     std::vector<std::string> obsExclude;
+    bool enableValidation = false;
     std::vector<const char*> positional;
     positional.push_back(argv[0]);
     for (int i = 1; i < argc; ++i) {
@@ -73,6 +74,8 @@ auto main(int argc, char* argv[]) -> int {
             obsOnly = splitCategoryList(arg.substr(std::string_view("--obs-only=").size()));
         } else if (arg.starts_with("--obs-exclude=")) {
             obsExclude = splitCategoryList(arg.substr(std::string_view("--obs-exclude=").size()));
+        } else if (arg == "--validation") {
+            enableValidation = true;
         } else {
             positional.push_back(argv[i]);
         }
@@ -162,7 +165,7 @@ auto main(int argc, char* argv[]) -> int {
 
     // RHI device
     RhiDeviceVulkan rhiDevice;
-    if (!rhiDevice.init(window)) {
+    if (!rhiDevice.init({.window = window, .enableValidation = enableValidation})) {
         return 1;
     }
 

@@ -1,6 +1,6 @@
 # RHI validation program (`ngen-test-rhi`)
 
-**Status. Draft.**
+**Status. Landed.**
 
 ## Current state
 
@@ -126,11 +126,11 @@ Ships: `ngen-test-rhi` builds, runs green surfaceless, reports over the obs bus.
      Suite-specific state is deliberately not in `TestContext`: `ngen-test-rhi` holds its `RhiDevice*` at file scope in the suite, set by its `main`
      before calling `runTests`. If a later suite needs richer sharing, revisit then.
 
-   - `src/tests/rhi/main.cpp` — the only file naming `RhiDeviceVulkan`: creates one device with `{.window = nullptr, .enableValidation = true}` for
+   - `src/rhi/tests/main.cpp` — the only file naming `RhiDeviceVulkan`: creates one device with `{.window = nullptr, .enableValidation = true}` for
      the whole run (each test creates fresh resources), then calls `runTests` with an `afterEach` hook that fails the test if
      `validationErrorCount()`/`validationWarningCount()` moved during it.
 
-4. **CPU-side tests** — `src/tests/rhi/buffertests.cpp`, `src/tests/rhi/texturetests.cpp`:
+4. **CPU-side tests** — `src/rhi/tests/buffertests.cpp`, `src/rhi/tests/texturetests.cpp`:
 
    - `buffer-map-roundtrip` — create a host-visible buffer, `mapBuffer`, write a byte pattern, read it back, byte-identical.
    - `buffer-copy` — write a pattern into a `TransferSrc` staging buffer, `copyBuffer` into a `TransferDst` host-visible buffer, map and compare.
@@ -150,7 +150,7 @@ Ships: `ngen-test-rhi` builds, runs green surfaceless, reports over the obs bus.
 
    auto testrhi =
        cxx::program("ngen-test-rhi")
-           .sources(glob({.include = "src/tests/rhi/**/*.cpp"}))
+           .sources(glob({.include = "src/rhi/tests/**/*.cpp"}))
            .include({"src", "src/obs", "src/rhi", "src/rhi/vulkan", "external/stb"})
            .link(testharness)
            .link(obs)
@@ -167,18 +167,20 @@ Ships: `ngen-test-rhi` builds, runs green surfaceless, reports over the obs bus.
 
 Ships: pixel-level verification of the draw path.
 
-6. **Test shaders** — `shaders/testflat.vert` / `shaders/testflat.frag` (position passthrough, solid color from a push constant) and
-   `shaders/testtextured.vert` / `shaders/testtextured.frag` (UV passthrough, combined image sampler). The existing glslc tool glob
-   (`build.cpp:209-217`) picks them up automatically; tests load the `.spv` via `createShaderModule` with the same out-dir-relative paths
-   `ngen-view` uses.
+6. **Test shaders** — `src/rhi/tests/testflat.vert` / `testflat.frag` (position passthrough, solid color from a push constant) and
+   `src/rhi/tests/testtextured.vert` / `testtextured.frag` (UV passthrough, combined image sampler). They live with their suite, not in `shaders/`;
+   a dedicated `testshaders` glslc tool target in `build.cpp` globs `src/**/tests/**/*.vert|frag` and writes the `.spv` into the same
+   `_out/<plat>/<cfg>/shaders/` folder as the engine shaders. Deviation from the draft: tests resolve `.spv` paths relative to the executable
+   (`argv[0]`'s directory + `/shaders/`), not the working directory — `ngen-view`'s CWD-relative `"shaders/*.spv"` loads resolve to stale artifacts
+   in the repo root when run from there (pre-existing quirk, noted for a separate fix).
 
-7. **Render helpers** — RHI-specific, so they live in the suite, not the generic harness: `src/tests/rhi/rhitesthelpers.h` /
+7. **Render helpers** — RHI-specific, so they live in the suite, not the generic harness: `src/rhi/tests/rhitesthelpers.h` /
    `rhitesthelpers.cpp`. Create an `R8G8B8A8_UNORM` render-target texture with
    `ColorAttachment | TransferSrc` usage; a `readbackTexture(device, texture, extent) -> std::vector<uint8_t>` helper wrapping
    barrier → `copyTextureToBuffer` → submit → fence-wait → map; `expectPixel(pixels, extent, x, y, rgba)` with exact byte comparison. On a failed
    pixel expectation with `--dump-dir` set, write the readback as a PNG via `stb_image_write.h` (already vendored at `external/stb`).
 
-8. **Draw tests** — `src/tests/rhi/drawtests.cpp`:
+8. **Draw tests** — `src/rhi/tests/drawtests.cpp`:
 
    - `clear-color` — `beginRendering` with a clear value, no draw, `endRendering`; every pixel equals the clear color.
    - `triangle-coverage` — draw one large solid triangle; the center pixel has the triangle color, a corner outside the coverage has the clear color.
