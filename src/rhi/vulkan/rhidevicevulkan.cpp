@@ -177,39 +177,7 @@ auto RhiDeviceVulkan::transitionImageLayout(VkImage image, VkImageLayout oldLayo
     vkFreeCommandBuffers(device, cmdPool, 1, &cmd);
 }
 
-// Debug messenger callback installed when RhiDeviceDesc::enableValidation is set.
-// Counts errors/warnings on the device (read via validationErrorCount /
-// validationWarningCount) and echoes every message to stderr.
-static VKAPI_ATTR auto VKAPI_CALL debugMessengerCallback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-    VkDebugUtilsMessageTypeFlagsEXT type,
-    const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
-    void* userData) -> VkBool32 {
-    (void) type;
-    auto* counters = static_cast<RhiDeviceVulkan::ValidationCounters*>(userData);
-    if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0u) {
-        counters->errors.fetch_add(1);
-    } else if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0u) {
-        counters->warnings.fetch_add(1);
-    }
-    std::println(stderr, "[vulkan] {}", callbackData->pMessage != nullptr ? callbackData->pMessage : "");
-    return VK_FALSE;
-}
-
-static auto validationLayerAvailable() -> bool {
-    uint32_t layerCount = 0;
-    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-    std::vector<VkLayerProperties> layers(layerCount);
-    vkEnumerateInstanceLayerProperties(&layerCount, layers.data());
-    for (const auto& layer : layers) {
-        if (strcmp(layer.layerName, "VK_LAYER_KHRONOS_validation") == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
-auto RhiDeviceVulkan::init(const RhiDeviceDesc& desc) -> std::expected<void, int> {
+auto RhiDeviceVulkan::init(SDL_Window* window) -> std::expected<void, int> {
     uint32_t apiVersion = VK_API_VERSION_1_0;
     auto result = vkEnumerateInstanceVersion(&apiVersion);
     if (result != VK_SUCCESS) {
@@ -228,31 +196,21 @@ auto RhiDeviceVulkan::init(const RhiDeviceDesc& desc) -> std::expected<void, int
         .apiVersion = apiVersion,
     };
 
-    // Surfaceless devices (desc.window == nullptr) need no surface extensions;
-    // windowed devices take whatever SDL requires for the running video driver.
-    std::vector<const char*> instanceExtensions;
-    if (desc.window != nullptr) {
-        uint32_t extensionsCount = 0;
-        const auto* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&extensionsCount);
-        for (uint32_t i = 0; i < extensionsCount; i++) {
-            std::println("{}", sdlExtensions[i]);
-            instanceExtensions.push_back(sdlExtensions[i]);
-        }
+    uint32_t extensionsCount = 0;
+    const auto* const* extensions = SDL_Vulkan_GetInstanceExtensions(&extensionsCount);
+    for (uint32_t i = 0; i < extensionsCount; i++) {
+        std::println("{}", extensions[i]);
     }
 
     const char* validationLayers[] = {
         // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
         "VK_LAYER_KHRONOS_validation",
     };
+#ifdef NGEN_ENABLE_VALIDATION
+    uint32_t validationLayersCount = 1;
+#else
     uint32_t validationLayersCount = 0;
-    if (desc.enableValidation) {
-        if (!validationLayerAvailable()) {
-            std::println(stderr, "Validation requested but VK_LAYER_KHRONOS_validation is not installed");
-            return std::unexpected(1);
-        }
-        validationLayersCount = 1;
-        instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    }
+#endif
 
     VkInstanceCreateInfo instanceCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -265,8 +223,8 @@ auto RhiDeviceVulkan::init(const RhiDeviceDesc& desc) -> std::expected<void, int
         .pApplicationInfo = &appInfo,
         .enabledLayerCount = validationLayersCount,
         .ppEnabledLayerNames = validationLayers,
-        .enabledExtensionCount = (uint32_t) instanceExtensions.size(),
-        .ppEnabledExtensionNames = instanceExtensions.data(),
+        .enabledExtensionCount = extensionsCount,
+        .ppEnabledExtensionNames = extensions,
     };
 
     result = vkCreateInstance(&instanceCreateInfo, nullptr, &instance);
@@ -275,27 +233,9 @@ auto RhiDeviceVulkan::init(const RhiDeviceDesc& desc) -> std::expected<void, int
         return std::unexpected(1);
     }
 
-    if (desc.enableValidation) {
-        VkDebugUtilsMessengerCreateInfoEXT messengerInfo = {
-            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-            .pfnUserCallback = debugMessengerCallback,
-            .pUserData = &validationCounters,
-        };
-        auto createMessenger = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
-        if (createMessenger == nullptr || createMessenger(instance, &messengerInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
-            std::println(stderr, "Failed to create Vulkan debug messenger");
-            return std::unexpected(1);
-        }
-    }
-
-    if (desc.window != nullptr) {
-        if (!SDL_Vulkan_CreateSurface(desc.window, instance, nullptr, &surface)) {
-            std::println(stderr, "SDL_Vulkan_CreateSurface failed: {}", SDL_GetError());
-            return std::unexpected(1);
-        }
+    if (!SDL_Vulkan_CreateSurface(window, instance, nullptr, &surface)) {
+        std::println(stderr, "SDL_Vulkan_CreateSurface failed: {}", SDL_GetError());
+        return std::unexpected(1);
     }
 
     uint32_t deviceCount = 0;
@@ -317,15 +257,10 @@ auto RhiDeviceVulkan::init(const RhiDeviceDesc& desc) -> std::expected<void, int
 
         for (uint32_t j = 0; j < queueCount; j++) {
             uint32_t presentSupport = 0;
-            if (surface != VK_NULL_HANDLE) {
-                result = vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevices[i], j, surface, &presentSupport);
-                if (result != VK_SUCCESS) {
-                    std::println(stderr, "vkGetPhysicalDeviceSurfaceSupportKHR failed: {}({})", string_VkResult(result), (int) result);
-                    return std::unexpected(1);
-                }
-            } else {
-                // Surfaceless: a graphics-capable queue is all we need.
-                presentSupport = 1;
+            result = vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevices[i], j, surface, &presentSupport);
+            if (result != VK_SUCCESS) {
+                std::println(stderr, "vkGetPhysicalDeviceSurfaceSupportKHR failed: {}({})", string_VkResult(result), (int) result);
+                return std::unexpected(1);
             }
 
             if (((props[j].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0u) && (presentSupport != 0u)) {
@@ -348,15 +283,14 @@ auto RhiDeviceVulkan::init(const RhiDeviceDesc& desc) -> std::expected<void, int
         .pQueuePriorities = &queuePriority,
     };
 
-    // VK_KHR_swapchain is only valid (and only needed) when a surface exists.
-    std::vector<const char*> deviceExtensions;
-    if (surface != VK_NULL_HANDLE) {
-        deviceExtensions.push_back("VK_KHR_swapchain");
-    }
+    const char* deviceExtensions[] = {
+        // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+        "VK_KHR_swapchain",
 #ifdef __APPLE__
-    deviceExtensions.push_back("VK_KHR_portability_subset");
+        "VK_KHR_portability_subset",
 #endif
-    auto deviceExtensionCount = (uint32_t) deviceExtensions.size();
+    };
+    auto deviceExtensionCount = (uint32_t) (sizeof(deviceExtensions) / sizeof(deviceExtensions[0]));
 
     VkPhysicalDeviceSynchronization2Features sync2Features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
@@ -380,7 +314,7 @@ auto RhiDeviceVulkan::init(const RhiDeviceDesc& desc) -> std::expected<void, int
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queueCreateInfo,
         .enabledExtensionCount = deviceExtensionCount,
-        .ppEnabledExtensionNames = deviceExtensions.data(),
+        .ppEnabledExtensionNames = deviceExtensions,
         .pEnabledFeatures = &enabledFeatures,
     };
 
@@ -409,15 +343,7 @@ auto RhiDeviceVulkan::init(const RhiDeviceDesc& desc) -> std::expected<void, int
 auto RhiDeviceVulkan::destroy() -> void {
     vkDestroyCommandPool(device, cmdPool, nullptr);
     vkDestroyDevice(device, nullptr);
-    if (surface != VK_NULL_HANDLE) {
-        vkDestroySurfaceKHR(instance, surface, nullptr);
-    }
-    if (debugMessenger != VK_NULL_HANDLE) {
-        auto destroyMessenger = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
-        if (destroyMessenger != nullptr) {
-            destroyMessenger(instance, debugMessenger, nullptr);
-        }
-    }
+    vkDestroySurfaceKHR(instance, surface, nullptr);
     vkDestroyInstance(instance, nullptr);
 }
 
@@ -426,10 +352,6 @@ auto RhiDeviceVulkan::waitIdle() -> void {
 }
 
 auto RhiDeviceVulkan::createSwapchain(SDL_Window* window) -> RhiSwapchain* {
-    if (surface == VK_NULL_HANDLE) {
-        std::println(stderr, "createSwapchain called on a surfaceless device");
-        return nullptr;
-    }
     auto* sc = new RhiSwapchainVulkan();
     if (!sc->init(physicalDevice, device, surface, queueFamilyIndex, window)) {
         delete sc;
@@ -573,29 +495,22 @@ auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {
         destroyBuffer(staging);
     }
 
-    // Transfer-only textures may not have an image view (VUID-VkImageViewCreateInfo-image-04441);
-    // only create one when a view-compatible usage is present. tex->view stays
-    // VK_NULL_HANDLE otherwise, which destroyTexture handles.
-    bool needsView = (desc.usage & RhiTextureUsage::Sampled) || (desc.usage & RhiTextureUsage::ColorAttachment) ||
-                     (desc.usage & RhiTextureUsage::DepthAttachment) || (desc.usage & RhiTextureUsage::Storage);
-    if (needsView) {
-        VkImageAspectFlags aspect = (desc.usage & RhiTextureUsage::DepthAttachment) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
-        VkImageViewCreateInfo viewInfo = {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .image = tex->image,
-            .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = toVkFormat(desc.format),
-            .subresourceRange =
-                {
-                    .aspectMask = aspect,
-                    .baseMipLevel = 0,
-                    .levelCount = 1,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1,
-                },
-        };
-        vkCreateImageView(device, &viewInfo, nullptr, &tex->view);
-    }
+    VkImageAspectFlags aspect = (desc.usage & RhiTextureUsage::DepthAttachment) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    VkImageViewCreateInfo viewInfo = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = tex->image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = toVkFormat(desc.format),
+        .subresourceRange =
+            {
+                .aspectMask = aspect,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+    };
+    vkCreateImageView(device, &viewInfo, nullptr, &tex->view);
 
     return tex;
 }

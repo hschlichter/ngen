@@ -7,23 +7,11 @@
 
 #include <vulkan/vulkan.h>
 
-#include <atomic>
-
 class RhiDeviceVulkan : public RhiDevice {
 public:
-    // Passed as user data to the debug messenger callback, which runs outside
-    // the class and may fire from any thread the driver calls back on.
-    struct ValidationCounters {
-        std::atomic<uint64_t> errors = 0;
-        std::atomic<uint64_t> warnings = 0;
-    };
-
-    auto init(const RhiDeviceDesc& desc) -> std::expected<void, int> override;
+    auto init(SDL_Window* window) -> std::expected<void, int> override;
     auto destroy() -> void override;
     auto waitIdle() -> void override;
-
-    [[nodiscard]] auto validationErrorCount() const -> uint64_t override { return validationCounters.errors.load(); }
-    [[nodiscard]] auto validationWarningCount() const -> uint64_t override { return validationCounters.warnings.load(); }
 
     auto createSwapchain(SDL_Window* window) -> RhiSwapchain* override;
     auto createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* override;
@@ -75,8 +63,6 @@ private:
     VkQueue graphicsQueue = VK_NULL_HANDLE;
     uint32_t queueFamilyIndex = UINT32_MAX;
     VkCommandPool cmdPool = VK_NULL_HANDLE;
-    VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;
-    ValidationCounters validationCounters;
 
     auto findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t;
     auto transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) -> void;

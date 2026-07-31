@@ -191,20 +191,6 @@ auto RhiCommandBufferVulkan::blitTexture(RhiTexture* src, RhiTexture* dst, RhiEx
     vkCmdBlitImage(cmd, srcTex->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstTex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, VK_FILTER_LINEAR);
 }
 
-auto RhiCommandBufferVulkan::copyTextureToBuffer(RhiTexture* src, RhiBuffer* dst, RhiExtent2D extent) -> void {
-    auto* srcTex = static_cast<RhiTextureVulkan*>(src);
-    auto* dstBuf = static_cast<RhiBufferVulkan*>(dst);
-    VkBufferImageCopy region = {
-        .bufferOffset = 0,
-        .bufferRowLength = 0,
-        .bufferImageHeight = 0,
-        .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
-        .imageOffset = {0, 0, 0},
-        .imageExtent = {extent.width, extent.height, 1},
-    };
-    vkCmdCopyImageToBuffer(cmd, srcTex->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstBuf->buffer, 1, &region);
-}
-
 auto RhiCommandBufferVulkan::setViewport(int32_t x, int32_t y, RhiExtent2D extent) -> void {
     VkViewport viewport = {(float) x, (float) y, (float) extent.width, (float) extent.height, 0, 1};
     vkCmdSetViewport(cmd, 0, 1, &viewport);

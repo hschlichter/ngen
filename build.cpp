@@ -271,49 +271,7 @@ auto main(int argc, char** argv) -> int {
             .link_flag("-lusd_pegtl")
             .link_flag("-lusd_kind");
 
-    auto testharness =
-        cxx::static_library("testharness")
-            .sources(glob({.include = "src/tests/harness/**/*.cpp"}))
-            .public_include({"src/tests/harness"})
-            .include({
-                "src",
-                "src/obs",
-            })
-            .link(obs);
-
-    // Test suites live next to the library they test (src/<lib>/tests/); their
-    // shaders sit in the same folder, not in shaders/. Compiled SPIR-V still
-    // lands in the shared out-dir shaders/ folder so the executable-relative
-    // lookup is the same for engine and test shaders.
-    auto testshaders =
-        tool("testshaders")
-            .command({"glslc", "$in", "-o", "$out"})
-            .for_each(
-                concat({
-                    glob({.include = "src/**/tests/**/*.vert"}),
-                    glob({.include = "src/**/tests/**/*.frag"}),
-                }),
-                [](const BuildVariant& variant, const Path& source) -> Path { return variant.out_dir / "shaders" / (source.filename().string() + ".spv"); });
-
-    auto testrhi =
-        cxx::program("ngen-test-rhi")
-            .sources(glob({.include = "src/rhi/tests/**/*.cpp"}))
-            .include({
-                "src",
-                "src/obs",
-                "src/rhi",
-                "src/rhi/vulkan",
-                "external/stb",
-            })
-            .link(testharness)
-            .link(obs)
-            .link(rhi)
-            .link(rhivulkan)
-            .link_flags(sdl3_libs) // rhivulkan references SDL_Vulkan_* symbols even on the surfaceless path
-            .depend_on(testshaders);
-
     p.target(view);
-    p.target(testrhi);
     p.target(format);
     p.target(tidy);
     p.default_target(view);
