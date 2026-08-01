@@ -400,40 +400,17 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     }
     const RenderLight* picked = shadowLight != nullptr ? shadowLight : fallbackDirectional;
 
-    // Direction toward the shadow-casting sun, used to size the shadow frustum below. If no
-    // directional light exists at all (pathological — USDScene usually authors one) aim it
-    // straight up the scene's up axis.
-    glm::vec3 shadowDirection = snapshot.worldUp;
+    // Resolve into the small value struct LightingPass consumes. If no directional light
+    // exists at all (pathological — USDScene would usually author one) just aim the sun
+    // straight up the scene's up axis with unit radiance.
+    LightingInputs lighting;
     if (picked != nullptr) {
         auto raw = glm::vec3(picked->worldTransform[2]);
-        shadowDirection = glm::dot(raw, raw) > 1e-6f ? glm::normalize(raw) : snapshot.worldUp;
-    }
-
-    // Flatten every scene light into the GPU array. Directional lights carry a
-    // direction-toward-light (USD lights emit along -Z, so +Z points at the light); point
-    // lights (Sphere/Disk/Rect/Cylinder) carry their world position. Radiance folds in
-    // intensity and exposure. The picked directional (if any) drives the one shadow map.
-    LightingInputs lighting;
-    lighting.sunDirection = shadowDirection;
-    lighting.shadowColor = picked != nullptr ? picked->shadowColor : glm::vec3(0.0f);
-    for (const auto& l : lights) {
-        if (lighting.lights.size() >= (size_t) kMaxLights) {
-            break;
-        }
-        glm::vec3 radiance = l.color * (l.intensity * std::exp2(l.exposure));
-        GpuLight gl{};
-        if (l.type == LightType::Directional) {
-            auto raw = glm::vec3(l.worldTransform[2]);
-            glm::vec3 dir = glm::dot(raw, raw) > 1e-6f ? glm::normalize(raw) : snapshot.worldUp;
-            gl.posOrDir = glm::vec4(dir, 0.0f);
-        } else {
-            gl.posOrDir = glm::vec4(glm::vec3(l.worldTransform[3]), 1.0f);
-        }
-        gl.radiance = glm::vec4(radiance, 0.0f);
-        if (&l == picked) {
-            lighting.shadowLightIndex = (int) lighting.lights.size();
-        }
-        lighting.lights.push_back(gl);
+        lighting.direction = glm::dot(raw, raw) > 1e-6f ? glm::normalize(raw) : snapshot.worldUp;
+        lighting.radiance = picked->color * (picked->intensity * std::exp2(picked->exposure));
+        lighting.shadowColor = picked->shadowColor;
+    } else {
+        lighting.direction = snapshot.worldUp;
     }
 
     // Fit a scene-bounding sphere around the instance origins, then size the ortho frustum to
@@ -456,13 +433,13 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     float shadowHalf = sceneRadius * 2.0f;
     float lightDistance = sceneRadius * 4.0f + 1.0f;
 
-    auto lightPos = sceneCenter + shadowDirection * lightDistance;
+    auto lightPos = sceneCenter + lighting.direction * lightDistance;
     // glm::lookAt is degenerate when the light direction is parallel to the up vector — the
     // cross product to compute "right" becomes zero. That's common for a sun shining straight
     // down; fall back to a perpendicular axis in that case.
     auto shadowUp =
-        std::abs(glm::dot(shadowDirection, snapshot.worldUp)) > 0.99f
-            ? glm::normalize(glm::cross(shadowDirection, glm::vec3(1.0f, 0.0f, 0.0f)))
+        std::abs(glm::dot(lighting.direction, snapshot.worldUp)) > 0.99f
+            ? glm::normalize(glm::cross(lighting.direction, glm::vec3(1.0f, 0.0f, 0.0f)))
             : snapshot.worldUp;
     auto lightView = glm::lookAt(lightPos, sceneCenter, shadowUp);
     auto lightProj = glm::ortho(-shadowHalf, shadowHalf, -shadowHalf, shadowHalf, 0.1f, 2.0f * lightDistance);

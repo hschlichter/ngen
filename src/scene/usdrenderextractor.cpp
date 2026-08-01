@@ -10,39 +10,20 @@ void USDRenderExtractor::extract(const USDScene& scene, const MeshLibrary& meshL
         if ((prim.flags & PrimFlagLight) != 0 && prim.visible) {
             const auto* desc = scene.getLightDesc(prim.handle);
             const auto* xf = scene.getTransform(prim.handle);
-            if (desc != nullptr && xf != nullptr) {
-                // Map USD light kinds to the shading types the lighting pass supports.
-                // Distant is the directional sun; the local area kinds are approximated
-                // as point lights (shape ignored for now). Dome/IBL isn't shaded yet.
-                bool emit = true;
-                LightType type = LightType::Directional;
-                switch (desc->kind) {
-                    case LightKind::Distant:
-                        type = LightType::Directional;
-                        break;
-                    case LightKind::Sphere:
-                    case LightKind::Disk:
-                    case LightKind::Rect:
-                    case LightKind::Cylinder:
-                        type = LightType::Point;
-                        break;
-                    case LightKind::Dome:
-                        emit = false;
-                        break;
-                }
-                if (emit) {
-                    out.lights.push_back({
-                        .type = type,
-                        .color = desc->color,
-                        .intensity = desc->intensity,
-                        .exposure = desc->exposure,
-                        .angle = desc->angle,
-                        .shadowEnable = desc->shadowEnable,
-                        .shadowColor = desc->shadowColor,
-                        .worldTransform = xf->world,
-                        .primHandle = prim.handle,
-                    });
-                }
+            // Only Distant lights have a real shading path today; skip everything else
+            // so it doesn't masquerade as a directional source in RenderWorld::lights.
+            if (desc != nullptr && xf != nullptr && desc->kind == LightKind::Distant) {
+                out.lights.push_back({
+                    .type = LightType::Directional,
+                    .color = desc->color,
+                    .intensity = desc->intensity,
+                    .exposure = desc->exposure,
+                    .angle = desc->angle,
+                    .shadowEnable = desc->shadowEnable,
+                    .shadowColor = desc->shadowColor,
+                    .worldTransform = xf->world,
+                    .primHandle = prim.handle,
+                });
             }
         }
 

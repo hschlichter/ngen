@@ -2,21 +2,13 @@
 
 layout(set = 0, binding = 0) uniform sampler2D gbufferAlbedo;
 layout(set = 0, binding = 1) uniform sampler2D gbufferNormal;
-struct GpuLight {
-    vec4 posOrDir; // xyz = position (point) or direction-toward-light (directional); w = type (0 = dir, 1 = point)
-    vec4 radiance; // rgb = radiance; a = range (0 = no cutoff)
-};
-
-const int MAX_LIGHTS = 16;
-
 layout(set = 0, binding = 2) uniform LightUBO {
-    vec4 sunDirection;  // xyz = shadow-caster direction; w = light count
-    vec4 ambientParams; // x = ambient level; y = shadow light index (-1 = none)
+    vec4 lightDirection;
+    vec4 lightColor;
     vec4 depthParams;
     vec4 shadowTint;
     mat4 invViewProj;
     mat4 lightViewProj;
-    GpuLight lights[MAX_LIGHTS];
 } light;
 layout(set = 0, binding = 3) uniform sampler2D gbufferDepth;
 layout(set = 0, binding = 4) uniform sampler2D shadowMap;
@@ -75,7 +67,7 @@ float sampleShadow(vec3 worldPos, vec3 normal) {
     }
     float sampled = texture(shadowMap, shadowUV).r;
     vec3 N = normalize(normal);
-    vec3 L = normalize(light.sunDirection.xyz);
+    vec3 L = normalize(light.lightDirection.xyz);
     float slope = clamp(1.0 - dot(N, L), 0.0, 1.0);
     float bias = max(0.001 * slope, 0.00005);
     return (lightNdc.z - bias) > sampled ? 0.0 : 1.0;
@@ -104,6 +96,8 @@ vec3 sampleBuffer(int mode, vec2 uv) {
     float depth = texture(gbufferDepth, uv).r;
     vec3 worldPos = reconstructWorld(uv, depth);
     float shadow = sampleShadow(worldPos, normal);
+    // shadow factor per channel: full light where lit, shadowTint where shadowed
+    vec3 shadowFactor = mix(light.shadowTint.rgb, vec3(1.0), shadow);
     if (mode == 4) return vec3(shadow);
     if (mode == 6) {
         // Visualize where this fragment lands in shadow-map UV space.
@@ -122,37 +116,11 @@ vec3 sampleBuffer(int mode, vec2 uv) {
         return clamp(worldPos * (1.0 / 50.0) + 0.5, 0.0, 1.0);
     }
 
-    vec3 N = normalize(normal);
-    int lightCount = int(light.sunDirection.w);
-    int shadowIdx = int(light.ambientParams.y);
+    vec3 lightDir = normalize(light.lightDirection.xyz);
+    float diff = max(dot(normalize(normal), lightDir), 0.0);
+    float ambient = light.lightColor.w;
 
-    vec3 result = albedo * light.ambientParams.x; // flat ambient
-    for (int i = 0; i < lightCount; i++) {
-        vec4 posOrDir = light.lights[i].posOrDir;
-        vec3 radiance = light.lights[i].radiance.rgb;
-
-        vec3 L;
-        float atten = 1.0;
-        if (posOrDir.w < 0.5) {
-            // Directional: xyz already points toward the light.
-            L = normalize(posOrDir.xyz);
-        } else {
-            // Point: inverse-square falloff from the light position.
-            vec3 d = posOrDir.xyz - worldPos;
-            float dist2 = max(dot(d, d), 1e-4);
-            L = d * inversesqrt(dist2);
-            atten = 1.0 / dist2;
-        }
-
-        float diff = max(dot(N, L), 0.0);
-        vec3 contrib = albedo * diff * radiance * atten;
-        // Only the shadow-casting sun samples the shadow map; blend to the tint where occluded.
-        if (i == shadowIdx) {
-            contrib *= mix(light.shadowTint.rgb, vec3(1.0), shadow);
-        }
-        result += contrib;
-    }
-    return result;
+    return albedo * (ambient * light.lightColor.rgb + diff * light.lightColor.rgb * shadowFactor);
 }
 
 void main() {

@@ -4,7 +4,6 @@
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 
-#include <algorithm>
 #include <array>
 #include <cstring>
 
@@ -113,18 +112,14 @@ auto LightingPass::addPass(
             FrameGraphContext& ctx, const LightingPassData& data) {
             auto* cmd = ctx.cmd();
 
-            int lightCount = std::min((int) lightInputs.lights.size(), kMaxLights);
             LightingUBO lightUbo = {
-                .sunDirection = glm::vec4(lightInputs.sunDirection, (float) lightCount),
-                .ambientParams = glm::vec4(lightInputs.ambient, (float) lightInputs.shadowLightIndex, 0.0f, 0.0f),
+                .lightDirection = glm::vec4(lightInputs.direction, 1.0f),
+                .lightColor = glm::vec4(lightInputs.radiance, 0.15f),
                 .depthParams = glm::vec4(0.1f, 3000.0f, 0.0f, 0.0f),
                 .shadowTint = glm::vec4(lightInputs.shadowColor, 0.0f),
                 .invViewProj = invViewProj,
                 .lightViewProj = lightViewProj,
             };
-            for (int i = 0; i < lightCount; i++) {
-                lightUbo.lights[i] = lightInputs.lights[i];
-            }
             memcpy(uniformBuffersMapped[imageIndex], &lightUbo, sizeof(lightUbo));
 
             std::array<RhiDescriptorWrite, 5> writes = {{
