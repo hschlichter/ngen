@@ -102,8 +102,9 @@ once on a fresh clone (and again whenever `build/bootstrap.cpp` changes):
 mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstrap.cpp
 ```
 
-From then on `./_out/ngen-build` is the only entry point. `--platform`/`-p` and `--config`/`-c` are always
-required (the build system has no project-specific defaults):
+From then on `./_out/ngen-build` is the only entry point. It rebuilds the root `build.cpp` project graph
+(`_out/ngen-build-graph`) and the runner on demand, then executes the requested target. `--platform`/`-p` and
+`--config`/`-c` are always required (the build system has no project-specific defaults):
 
 - `./_out/ngen-build -p linux-vulkan -c debug` — build the default target (`ngen-view`); configs: `debug`, `release`, `gamerelease`
 - `./_out/ngen-build -p linux-vulkan -c debug format` — clang-format the tree
@@ -111,7 +112,8 @@ required (the build system has no project-specific defaults):
 - `./_out/ngen-build -h` — full flag list (clean, rebuild, tidy, list, graph dumps, fuzzy target matching, …)
 
 The engine binary lands at `_out/linux-vulkan/debug/ngen-view` (or the equivalent under the active config).
-See `build/build_system.md` for the framework internals (extension model, IR + emitter, runner / scheduler,
+Edit the root `build.cpp` for project platforms, configs, targets, and source graph changes. See
+`build/build_system.md` for the framework internals (extension model, IR + emitter, runner / scheduler,
 adding platforms/configurations).
 
 ## Verifying changes
