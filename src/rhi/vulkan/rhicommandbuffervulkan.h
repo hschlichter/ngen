@@ -8,6 +8,9 @@
 class RhiCommandBufferVulkan : public RhiCommandBuffer {
 public:
     VkCommandBuffer cmd = VK_NULL_HANDLE;
+    // Null when VK_EXT_debug_utils is not enabled; labels become no-ops.
+    PFN_vkCmdBeginDebugUtilsLabelEXT beginLabelFn = nullptr;
+    PFN_vkCmdEndDebugUtilsLabelEXT endLabelFn = nullptr;
 
     auto begin() -> void override;
     auto end() -> void override;
@@ -16,6 +19,10 @@ public:
     auto endRendering() -> void override;
     auto pipelineBarrier(std::span<const RhiBarrierDesc> barriers) -> void override;
     auto blitTexture(RhiTexture* src, RhiTexture* dst, RhiExtent2D srcExtent, RhiExtent2D dstExtent) -> void override;
+    auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void override;
+    auto copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void override;
+    auto beginLabel(const char* name) -> void override;
+    auto endLabel() -> void override;
     auto setViewport(int32_t x, int32_t y, RhiExtent2D extent) -> void override;
     auto setScissor(int32_t x, int32_t y, RhiExtent2D extent) -> void override;
     auto bindPipeline(RhiPipeline* pipeline) -> void override;

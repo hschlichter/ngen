@@ -16,6 +16,7 @@
 #include <cstring>
 #include <limits>
 #include <print>
+#include <span>
 
 auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2D windowExtent) -> std::expected<void, int> {
     using enum RhiFormat;
@@ -29,6 +30,8 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
 
     resourcePool.init(device);
     frameGraph.setResourcePool(&resourcePool);
+    uploader.init(device);
+    deletionQueue.init(device);
 
     auto imgCount = swapchain->imageCount();
     auto ext = swapchain->extent();
@@ -66,10 +69,10 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
         .width = 64,
         .height = 64,
         .format = R8G8B8A8_SRGB,
-        .initialData = fallbackPixels.data(),
-        .initialDataSize = 64 * 64 * 4,
     };
-    fallbackTexture = device->createTexture(fallbackDesc);
+    uploader.begin();
+    fallbackTexture = uploader.uploadTexture(fallbackDesc, std::as_bytes(std::span(fallbackPixels)));
+    uploader.end();
 
     // Passes
     RhiExtent2D shadowExtent{2048, 2048};
@@ -98,6 +101,7 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
     imageAvailableSemaphores.resize(imgCount);
     renderFinishedSemaphores.resize(imgCount);
     inflightFences.resize(imgCount);
+    slotFrame.assign(imgCount, 0);
     for (uint32_t i = 0; i < imgCount; i++) {
         imageAvailableSemaphores[i] = device->createSemaphore();
         renderFinishedSemaphores[i] = device->createSemaphore();
@@ -112,7 +116,7 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
         .imageCount = swapchain->imageCount(),
     });
 
-    fgPreviews.init(device, editorUI, textureSampler);
+    fgPreviews.init(device, editorUI, textureSampler, &deletionQueue);
 
     return {};
 }
@@ -137,7 +141,6 @@ auto Renderer::buildFrameGraphDebugSnapshot() const -> FrameGraphDebugSnapshot {
 
 auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void {
     using enum RhiDescriptorType;
-    using enum RhiMemoryUsage;
 
     lights = world.lights;
 
@@ -184,18 +187,19 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         return;
     }
 
-    device->waitIdle();
-
+    // Old geometry may still be referenced by frames in flight; destroy it once
+    // the frame that last used it has completed.
     for (auto& [idx, cached] : meshCache) {
-        device->destroyBuffer(cached.vertexBuffer);
-        device->destroyBuffer(cached.indexBuffer);
+        deletionQueue.deferBuffer(m_frameIndex, cached.vertexBuffer);
+        deletionQueue.deferBuffer(m_frameIndex, cached.indexBuffer);
     }
     meshCache.clear();
     for (auto& [idx, cached] : textureCache) {
-        device->destroyTexture(cached.texture);
+        deletionQueue.deferTexture(m_frameIndex, cached.texture);
     }
     textureCache.clear();
 
+    uploader.begin();
     for (const auto& inst : world.meshInstances) {
         if (inst.mesh && !meshCache.contains(inst.mesh.index)) {
             const auto* meshData = meshLib.get(inst.mesh);
@@ -203,29 +207,8 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
                 CachedMesh cached;
                 cached.indexCount = (uint32_t) meshData->indices.size();
 
-                auto vbSize = (uint64_t) (meshData->vertices.size() * sizeof(Vertex));
-                RhiBufferDesc stagingDesc = {.size = vbSize, .usage = RhiBufferUsage::TransferSrc, .memory = CpuToGpu};
-                auto* vStaging = device->createBuffer(stagingDesc);
-                auto* data = device->mapBuffer(vStaging);
-                memcpy(data, meshData->vertices.data(), vbSize);
-                device->unmapBuffer(vStaging);
-
-                RhiBufferDesc vbDesc = {.size = vbSize, .usage = RhiBufferUsage::TransferDst | RhiBufferUsage::Vertex, .memory = GpuOnly};
-                cached.vertexBuffer = device->createBuffer(vbDesc);
-                device->copyBuffer(vStaging, cached.vertexBuffer, vbSize);
-                device->destroyBuffer(vStaging);
-
-                auto ibSize = (uint64_t) (meshData->indices.size() * sizeof(uint32_t));
-                stagingDesc.size = ibSize;
-                auto* iStaging = device->createBuffer(stagingDesc);
-                data = device->mapBuffer(iStaging);
-                memcpy(data, meshData->indices.data(), ibSize);
-                device->unmapBuffer(iStaging);
-
-                RhiBufferDesc ibDesc = {.size = ibSize, .usage = RhiBufferUsage::TransferDst | RhiBufferUsage::Index, .memory = GpuOnly};
-                cached.indexBuffer = device->createBuffer(ibDesc);
-                device->copyBuffer(iStaging, cached.indexBuffer, ibSize);
-                device->destroyBuffer(iStaging);
+                cached.vertexBuffer = uploader.uploadBuffer(std::as_bytes(std::span(meshData->vertices)), RhiBufferUsage::Vertex);
+                cached.indexBuffer = uploader.uploadBuffer(std::as_bytes(std::span(meshData->indices)), RhiBufferUsage::Index);
 
                 meshCache[inst.mesh.index] = cached;
 
@@ -242,22 +225,24 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
                     .width = (uint32_t) matData->texWidth,
                     .height = (uint32_t) matData->texHeight,
                     .format = RhiFormat::R8G8B8A8_SRGB,
-                    .initialData = matData->texPixels.data(),
-                    .initialDataSize = (uint64_t) (matData->texWidth * matData->texHeight * 4),
                 };
-                textureCache[inst.material.index] = {.texture = device->createTexture(texDesc)};
+                auto pixelCount = (size_t) matData->texWidth * (size_t) matData->texHeight * 4;
+                auto pixels = std::span(matData->texPixels).first(pixelCount);
+                textureCache[inst.material.index] = {.texture = uploader.uploadTexture(texDesc, std::as_bytes(pixels))};
 
                 OBS_EVENT("Render", "TextureUploaded", "Texture").field("width", (int64_t) matData->texWidth).field("height", (int64_t) matData->texHeight);
             }
         }
     }
 
+    uploader.end();
+
     for (auto* ds : geometryDescriptorSets) {
         delete ds;
     }
     geometryDescriptorSets.clear();
     if (geometryDescriptorPool) {
-        device->destroyDescriptorPool(geometryDescriptorPool);
+        deletionQueue.deferDescriptorPool(m_frameIndex, geometryDescriptorPool);
         geometryDescriptorPool = nullptr;
     }
 
@@ -346,6 +331,9 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     OBS_EVENT("Render", "FrameBegin", "frame").field("frame", (int64_t) frame);
 
     device->waitForFence(inflightFences[currentFrame]);
+    // This slot's previous frame is done, and so is everything submitted before it.
+    deletionQueue.flush(slotFrame[currentFrame]);
+    fgPreviews.setFrame(frame);
 
     auto index = swapchain->acquireNextImage(imageAvailableSemaphores[currentFrame]);
     if (!index) {
@@ -367,7 +355,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         .view = snapshot.viewMatrix,
         .proj = snapshot.projMatrix,
     };
-    memcpy(uniformBuffersMapped[*index], &ubo, sizeof(ubo));
+    memcpy(uniformBuffersMapped[currentFrame], &ubo, sizeof(ubo));
 
     // Build frame graph
     auto ext = swapchain->extent();
@@ -376,7 +364,9 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     auto colorHandle = frameGraph.importTexture("backbuffer", swapchain->image(*index), {ext.width, ext.height, swapchain->colorFormat()});
     auto depthHandle = frameGraph.importTexture("depth", swapchain->depthImage(), {ext.width, ext.height, swapchain->depthFormat()});
 
-    auto imageIdx = *index;
+    // Per-frame resources (UBOs, descriptor sets, dynamic vertex buffers) are owned by
+    // the frame slot whose fence guards them, not by the swapchain image.
+    auto imageIdx = currentFrame;
     auto instanceCount = (uint32_t) gpuInstances.size();
 
     RhiExtent2D shadowExtent{2048, 2048};
@@ -485,7 +475,9 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         .field("pass_count", (int64_t) frameGraph.passCount())
         .field("culled_count", (int64_t) frameGraph.culledCount());
 
-    auto* cmd = cmdBuffers[*index];
+    // Command buffer and fence belong to the frame slot; the render-finished semaphore
+    // belongs to the swapchain image, since present consumes it per image.
+    auto* cmd = cmdBuffers[currentFrame];
     cmd->reset();
     cmd->begin();
 
@@ -495,11 +487,12 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
 
     RhiSubmitInfo submitInfo = {
         .waitSemaphore = imageAvailableSemaphores[currentFrame],
-        .signalSemaphore = renderFinishedSemaphores[currentFrame],
+        .signalSemaphore = renderFinishedSemaphores[*index],
         .fence = inflightFences[currentFrame],
     };
     device->submitCommandBuffer(cmd, submitInfo);
-    auto presented = device->present(swapchain, renderFinishedSemaphores[currentFrame], *index);
+    slotFrame[currentFrame] = frame;
+    auto presented = device->present(swapchain, renderFinishedSemaphores[*index], *index);
     if (!presented) {
         OBS_EVENT("Render", "SwapchainRecreate", "swapchain").field("reason", "present_failed");
         if (!swapchain->recreate({.width = (uint32_t) snapshot.windowWidth, .height = (uint32_t) snapshot.windowHeight})) {
@@ -517,6 +510,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
 
 auto Renderer::destroy() -> void {
     device->waitIdle();
+    deletionQueue.flushAll();
+    uploader.destroy();
 
     fgPreviews.shutdown();
 

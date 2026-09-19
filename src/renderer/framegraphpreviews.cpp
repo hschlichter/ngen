@@ -1,5 +1,6 @@
 #include "framegraphpreviews.h"
 
+#include "deletionqueue.h"
 #include "imguibackend.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
@@ -7,7 +8,8 @@
 #include <algorithm>
 #include <array>
 
-auto FrameGraphPreviews::init(RhiDevice* d, ImGuiBackend* ui, RhiSampler* s) -> void {
+auto FrameGraphPreviews::init(RhiDevice* d, ImGuiBackend* ui, RhiSampler* s, DeletionQueue* dq) -> void {
+    deletionQueue = dq;
     device = d;
     editorUI = ui;
     sampler = s;
@@ -20,6 +22,8 @@ auto FrameGraphPreviews::shutdown() -> void {
     entries.clear();
 }
 
+// Immediate destruction; only valid when no frame can still reference the entry
+// (shutdown after waitIdle).
 auto FrameGraphPreviews::destroyEntry(Entry& e) -> void {
     if (e.imguiId != 0 && editorUI != nullptr) {
         editorUI->unregisterTexture(e.imguiId);
@@ -27,6 +31,23 @@ auto FrameGraphPreviews::destroyEntry(Entry& e) -> void {
     }
     if (e.texture != nullptr && device != nullptr) {
         device->destroyTexture(e.texture);
+        e.texture = nullptr;
+    }
+}
+
+// Deferred variant for replacing a live preview mid-frame: the previous frame's
+// command buffer may still sample it.
+auto FrameGraphPreviews::releaseEntry(Entry& e) -> void {
+    if (deletionQueue == nullptr) {
+        destroyEntry(e);
+        return;
+    }
+    if (e.imguiId != 0 && editorUI != nullptr) {
+        deletionQueue->defer(currentFrame, [ui = editorUI, id = e.imguiId] { ui->unregisterTexture(id); });
+        e.imguiId = 0;
+    }
+    if (e.texture != nullptr) {
+        deletionQueue->deferTexture(currentFrame, e.texture);
         e.texture = nullptr;
     }
 }
@@ -74,12 +95,7 @@ auto FrameGraphPreviews::entryFor(const FgCapturedResource& view) -> Entry* {
     bool needRecreate = inserted || e.texture == nullptr || e.width != ext.width || e.height != ext.height || e.format != view.desc.format;
 
     if (needRecreate) {
-        // If we're replacing a live descriptor set / texture, the previous frame's command
-        // buffer may still reference it on the GPU. Drain before freeing.
-        if (e.texture != nullptr || e.imguiId != 0) {
-            device->waitIdle();
-        }
-        destroyEntry(e);
+        releaseEntry(e);
         RhiTextureDesc desc = {
             .width = ext.width,
             .height = ext.height,

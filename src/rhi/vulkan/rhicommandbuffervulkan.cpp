@@ -243,3 +243,44 @@ auto RhiCommandBufferVulkan::drawIndexed(uint32_t indexCount, uint32_t instanceC
     -> void {
     vkCmdDrawIndexed(cmd, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
+
+auto RhiCommandBufferVulkan::copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void {
+    auto* srcBuf = static_cast<RhiBufferVulkan*>(src);
+    auto* dstBuf = static_cast<RhiBufferVulkan*>(dst);
+    VkBufferCopy vkRegion = {
+        .srcOffset = region.srcOffset,
+        .dstOffset = region.dstOffset,
+        .size = region.size,
+    };
+    vkCmdCopyBuffer(cmd, srcBuf->buffer, dstBuf->buffer, 1, &vkRegion);
+}
+
+auto RhiCommandBufferVulkan::copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void {
+    auto* srcBuf = static_cast<RhiBufferVulkan*>(src);
+    auto* dstTex = static_cast<RhiTextureVulkan*>(dst);
+    VkBufferImageCopy vkRegion = {
+        .bufferOffset = region.bufferOffset,
+        .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
+        .imageExtent = {region.width, region.height, 1},
+    };
+    vkCmdCopyBufferToImage(cmd, srcBuf->buffer, dstTex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &vkRegion);
+}
+
+auto RhiCommandBufferVulkan::beginLabel(const char* name) -> void {
+    if (beginLabelFn == nullptr) {
+        return;
+    }
+    VkDebugUtilsLabelEXT label = {
+        .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+        .pLabelName = name,
+        .color = {1.0f, 1.0f, 1.0f, 1.0f},
+    };
+    beginLabelFn(cmd, &label);
+}
+
+auto RhiCommandBufferVulkan::endLabel() -> void {
+    if (endLabelFn == nullptr) {
+        return;
+    }
+    endLabelFn(cmd);
+}

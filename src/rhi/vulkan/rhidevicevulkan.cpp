@@ -198,69 +198,6 @@ auto RhiDeviceVulkan::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags 
     return UINT32_MAX;
 }
 
-auto RhiDeviceVulkan::transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) -> void {
-    VkCommandBufferAllocateInfo allocInfo = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .commandPool = cmdPool,
-        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = 1,
-    };
-    VkCommandBuffer cmd = nullptr;
-    vkAllocateCommandBuffers(device, &allocInfo, &cmd);
-
-    VkCommandBufferBeginInfo beginInfo = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    };
-    vkBeginCommandBuffer(cmd, &beginInfo);
-
-    VkImageMemoryBarrier barrier = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .oldLayout = oldLayout,
-        .newLayout = newLayout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = image,
-        .subresourceRange =
-            {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1,
-            },
-    };
-
-    VkPipelineStageFlags srcStage = 0;
-    VkPipelineStageFlags dstStage = 0;
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        srcStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        dstStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    } else {
-        srcStage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-        dstStage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-    }
-
-    vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-    vkEndCommandBuffer(cmd);
-
-    VkSubmitInfo submitInfo = {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &cmd,
-    };
-    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(graphicsQueue);
-    vkFreeCommandBuffers(device, cmdPool, 1, &cmd);
-}
-
 auto RhiDeviceVulkan::init(const RhiWindow& window) -> std::expected<void, RhiError> {
     uint32_t apiVersion = VK_API_VERSION_1_0;
     auto result = vkEnumerateInstanceVersion(&apiVersion);
@@ -280,7 +217,27 @@ auto RhiDeviceVulkan::init(const RhiWindow& window) -> std::expected<void, RhiEr
         .apiVersion = apiVersion,
     };
 
-    const auto& extensions = window.instanceExtensions;
+    auto extensions = window.instanceExtensions;
+
+    // VK_EXT_debug_utils gives command buffer labels for RenderDoc and validation
+    // messages. Optional: skip silently when the loader does not offer it.
+    bool debugUtilsAvailable = false;
+    {
+        uint32_t availableCount = 0;
+        vkEnumerateInstanceExtensionProperties(nullptr, &availableCount, nullptr);
+        std::vector<VkExtensionProperties> available(availableCount);
+        vkEnumerateInstanceExtensionProperties(nullptr, &availableCount, available.data());
+        for (const auto& ext : available) {
+            if (strcmp(ext.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0) {
+                debugUtilsAvailable = true;
+                break;
+            }
+        }
+    }
+    if (debugUtilsAvailable) {
+        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    }
+
     auto extensionsCount = (uint32_t) extensions.size();
     for (const auto* extension : extensions) {
         std::println("{}", extension);
@@ -315,6 +272,11 @@ auto RhiDeviceVulkan::init(const RhiWindow& window) -> std::expected<void, RhiEr
     if (result != VK_SUCCESS) {
         std::println(stderr, "vkCreateInstance failed: {}({})", string_VkResult(result), (int) result);
         return std::unexpected(RhiError::Failed);
+    }
+
+    if (debugUtilsAvailable) {
+        cmdBeginLabelFn = (PFN_vkCmdBeginDebugUtilsLabelEXT) vkGetInstanceProcAddr(instance, "vkCmdBeginDebugUtilsLabelEXT");
+        cmdEndLabelFn = (PFN_vkCmdEndDebugUtilsLabelEXT) vkGetInstanceProcAddr(instance, "vkCmdEndDebugUtilsLabelEXT");
     }
 
     if (!window.createSurface || !window.createSurface(instance, (void**) &surface)) {
@@ -391,6 +353,17 @@ auto RhiDeviceVulkan::init(const RhiWindow& window) -> std::expected<void, RhiEr
     vkGetPhysicalDeviceFeatures(physicalDevice, &supportedFeatures);
     VkPhysicalDeviceFeatures enabledFeatures = {};
     enabledFeatures.wideLines = supportedFeatures.wideLines;
+    enabledFeatures.samplerAnisotropy = supportedFeatures.samplerAnisotropy;
+
+    VkPhysicalDeviceProperties properties = {};
+    vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+    deviceLimits = {
+        .minUniformBufferOffsetAlignment = properties.limits.minUniformBufferOffsetAlignment,
+        .maxPushConstantSize = properties.limits.maxPushConstantsSize,
+        .maxLineWidth = supportedFeatures.wideLines == VK_TRUE ? properties.limits.lineWidthRange[1] : 1.0f,
+        .wideLines = supportedFeatures.wideLines == VK_TRUE,
+        .samplerAnisotropy = supportedFeatures.samplerAnisotropy == VK_TRUE,
+    };
 
     VkDeviceCreateInfo deviceCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -527,57 +500,6 @@ auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {
     };
     vkAllocateMemory(device, &allocInfo, nullptr, &tex->memory);
     vkBindImageMemory(device, tex->image, tex->memory, 0);
-
-    if ((desc.initialData != nullptr) && desc.initialDataSize > 0) {
-        RhiBufferDesc stagingDesc = {
-            .size = desc.initialDataSize,
-            .usage = RhiBufferUsage::TransferSrc,
-            .memory = RhiMemoryUsage::CpuToGpu,
-        };
-        auto* staging = createBuffer(stagingDesc);
-        auto* stagingVk = static_cast<RhiBufferVulkan*>(staging);
-
-        void* data = nullptr;
-        vkMapMemory(device, stagingVk->memory, 0, desc.initialDataSize, 0, &data);
-        memcpy(data, desc.initialData, desc.initialDataSize);
-        vkUnmapMemory(device, stagingVk->memory);
-
-        transitionImageLayout(tex->image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-
-        {
-            VkCommandBufferAllocateInfo ca = {
-                .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-                .commandPool = cmdPool,
-                .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                .commandBufferCount = 1,
-            };
-            VkCommandBuffer cmd = nullptr;
-            vkAllocateCommandBuffers(device, &ca, &cmd);
-            VkCommandBufferBeginInfo bi = {
-                .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-                .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-            };
-            vkBeginCommandBuffer(cmd, &bi);
-            VkBufferImageCopy region = {
-                .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
-                .imageExtent = {desc.width, desc.height, 1},
-            };
-            vkCmdCopyBufferToImage(cmd, stagingVk->buffer, tex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-            vkEndCommandBuffer(cmd);
-            VkSubmitInfo si = {
-                .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                .commandBufferCount = 1,
-                .pCommandBuffers = &cmd,
-            };
-            vkQueueSubmit(graphicsQueue, 1, &si, VK_NULL_HANDLE);
-            vkQueueWaitIdle(graphicsQueue);
-            vkFreeCommandBuffers(device, cmdPool, 1, &cmd);
-        }
-
-        transitionImageLayout(tex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-        destroyBuffer(staging);
-    }
 
     VkImageAspectFlags aspect = desc.usage.has(RhiTextureUsage::DepthAttachment) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
     VkImageViewCreateInfo viewInfo = {
@@ -948,6 +870,8 @@ auto RhiDeviceVulkan::createCommandBuffer() -> RhiCommandBuffer* {
         delete cb;
         return nullptr;
     }
+    cb->beginLabelFn = cmdBeginLabelFn;
+    cb->endLabelFn = cmdEndLabelFn;
     return cb;
 }
 
@@ -1043,38 +967,6 @@ auto RhiDeviceVulkan::mapBuffer(RhiBuffer* buffer) -> void* {
 auto RhiDeviceVulkan::unmapBuffer(RhiBuffer* buffer) -> void {
     auto* buf = static_cast<RhiBufferVulkan*>(buffer);
     vkUnmapMemory(device, buf->memory);
-}
-
-auto RhiDeviceVulkan::copyBuffer(RhiBuffer* src, RhiBuffer* dst, uint64_t size) -> void {
-    auto* srcBuf = static_cast<RhiBufferVulkan*>(src);
-    auto* dstBuf = static_cast<RhiBufferVulkan*>(dst);
-
-    VkCommandBufferAllocateInfo allocInfo = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .commandPool = cmdPool,
-        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = 1,
-    };
-    VkCommandBuffer cmd = nullptr;
-    vkAllocateCommandBuffers(device, &allocInfo, &cmd);
-
-    VkCommandBufferBeginInfo beginInfo = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    };
-    vkBeginCommandBuffer(cmd, &beginInfo);
-    VkBufferCopy region = {.size = size};
-    vkCmdCopyBuffer(cmd, srcBuf->buffer, dstBuf->buffer, 1, &region);
-    vkEndCommandBuffer(cmd);
-
-    VkSubmitInfo submitInfo = {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &cmd,
-    };
-    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(graphicsQueue);
-    vkFreeCommandBuffers(device, cmdPool, 1, &cmd);
 }
 
 auto RhiDeviceVulkan::destroyBuffer(RhiBuffer* buffer) -> void {

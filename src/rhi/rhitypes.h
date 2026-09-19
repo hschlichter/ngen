@@ -188,8 +188,29 @@ struct RhiTextureDesc {
     uint32_t height;
     RhiFormat format;
     RhiTextureUsageFlags usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst;
-    const void* initialData = nullptr;
-    uint64_t initialDataSize = 0;
+};
+
+struct RhiBufferCopy {
+    uint64_t srcOffset = 0;
+    uint64_t dstOffset = 0;
+    uint64_t size = 0;
+};
+
+// Whole mip level 0 of a 2D texture; tightly packed rows starting at bufferOffset.
+struct RhiBufferTextureCopy {
+    uint64_t bufferOffset = 0;
+    uint32_t width = 0;
+    uint32_t height = 0;
+};
+
+// Static device capabilities the renderer needs to size and validate its own
+// resources. Filled once at init; read through RhiDevice::limits().
+struct RhiDeviceLimits {
+    uint64_t minUniformBufferOffsetAlignment = 0;
+    uint32_t maxPushConstantSize = 0;
+    float maxLineWidth = 1.0f;
+    bool wideLines = false;
+    bool samplerAnisotropy = false;
 };
 
 // Compiled shader bytecode in the backend's native format (SPIR-V for Vulkan,

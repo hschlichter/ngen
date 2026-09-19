@@ -20,6 +20,12 @@ public:
     virtual auto endRendering() -> void = 0;
     virtual auto pipelineBarrier(std::span<const RhiBarrierDesc> barriers) -> void = 0;
     virtual auto blitTexture(RhiTexture* src, RhiTexture* dst, RhiExtent2D srcExtent, RhiExtent2D dstExtent) -> void = 0;
+    virtual auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void = 0;
+    // dst must be in RhiImageLayout::TransferDst.
+    virtual auto copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void = 0;
+    // Debug-only markers for tools like RenderDoc; no-ops when the backend has no debug extension.
+    virtual auto beginLabel(const char* name) -> void = 0;
+    virtual auto endLabel() -> void = 0;
     virtual auto setViewport(int32_t x, int32_t y, RhiExtent2D extent) -> void = 0;
     virtual auto setScissor(int32_t x, int32_t y, RhiExtent2D extent) -> void = 0;
     auto setViewport(RhiExtent2D extent) -> void { setViewport(0, 0, extent); }

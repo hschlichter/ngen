@@ -11,11 +11,15 @@
 class RhiDevice;
 class ImGuiBackend;
 class RhiCommandBuffer;
+class DeletionQueue;
 
 class FrameGraphPreviews {
 public:
-    auto init(RhiDevice* device, ImGuiBackend* editorUI, RhiSampler* sampler) -> void;
+    auto init(RhiDevice* device, ImGuiBackend* editorUI, RhiSampler* sampler, DeletionQueue* deletionQueue) -> void;
     auto shutdown() -> void;
+
+    // Frame number currently being recorded; tags deferred destruction of replaced previews.
+    auto setFrame(uint64_t frame) -> void { currentFrame = frame; }
 
     // Hook body: transitions source to TransferSrc, blits into preview, restores source, leaves preview in ShaderReadOnly.
     auto capture(RhiCommandBuffer* cmd, const FgCapturedResource& view) -> void;
@@ -34,6 +38,7 @@ private:
     };
 
     auto destroyEntry(Entry& e) -> void;
+    auto releaseEntry(Entry& e) -> void;
     auto entryFor(const FgCapturedResource& view) -> Entry*;
     static auto previewExtent(uint32_t srcW, uint32_t srcH) -> RhiExtent2D;
     static auto isBlittableColorFormat(RhiFormat f) -> bool;
@@ -41,5 +46,7 @@ private:
     RhiDevice* device = nullptr;
     ImGuiBackend* editorUI = nullptr;
     RhiSampler* sampler = nullptr;
+    DeletionQueue* deletionQueue = nullptr;
+    uint64_t currentFrame = 0;
     std::unordered_map<std::string, Entry> entries;
 };

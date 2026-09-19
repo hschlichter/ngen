@@ -307,8 +307,11 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
 
         // Execute pass. Single emission site covers all passes automatically;
         // new passes added later get narrated without per-file edits.
-        OBS_EVENT("Render", "PassExecuted", passes[passIdx].name != nullptr ? passes[passIdx].name : "(unnamed)");
+        const auto* passName = passes[passIdx].name != nullptr ? passes[passIdx].name : "(unnamed)";
+        OBS_EVENT("Render", "PassExecuted", passName);
+        cmd->beginLabel(passName);
         passes[passIdx].execute(ctx);
+        cmd->endLabel();
 
         // Release transient resources whose lifetime ends at this pass (after capturing)
         if (resourcePool != nullptr) {

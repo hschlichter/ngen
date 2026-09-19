@@ -45,7 +45,8 @@ public:
 
     virtual auto mapBuffer(RhiBuffer* buffer) -> void* = 0;
     virtual auto unmapBuffer(RhiBuffer* buffer) -> void = 0;
-    virtual auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, uint64_t size) -> void = 0;
+
+    [[nodiscard]] virtual auto limits() const -> const RhiDeviceLimits& = 0;
 
     virtual auto destroyBuffer(RhiBuffer* buffer) -> void = 0;
     virtual auto destroyTexture(RhiTexture* texture) -> void = 0;

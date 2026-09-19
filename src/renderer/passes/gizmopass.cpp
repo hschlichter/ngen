@@ -3,6 +3,7 @@
 #include "rhidevice.h"
 #include "shaderloader.h"
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 
@@ -21,6 +22,9 @@ auto GizmoPass::init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent,
         {.location = 1, .binding = 0, .format = R32G32B32A32_SFLOAT, .offset = sizeof(float) * 3},
     }};
 
+    // Wide lines are an optional feature; fall back to 1px rather than trip validation.
+    auto lineWidth = device->limits().wideLines ? std::min(4.0f, device->limits().maxLineWidth) : 1.0f;
+
     RhiGraphicsPipelineDesc pipelineDesc = {
         .vertexShader = vertShader,
         .fragmentShader = fragShader,
@@ -31,7 +35,7 @@ auto GizmoPass::init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent,
         .vertexStride = sizeof(GizmoVertex),
         .vertexAttributes = vertexAttrs,
         .topology = RhiPrimitiveTopology::LineList,
-        .raster = {.cullMode = RhiCullMode::None, .lineWidth = 4.0f},
+        .raster = {.cullMode = RhiCullMode::None, .lineWidth = lineWidth},
         .depth = {.testEnable = false, .writeEnable = false},
     };
     pipeline = device->createGraphicsPipeline(pipelineDesc);

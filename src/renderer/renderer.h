@@ -2,12 +2,14 @@
 
 #include "axis3dgizmo.h"
 #include "debugrenderer.h"
+#include "deletionqueue.h"
 #include "editoruipass.h"
 #include "framegraph.h"
 #include "framegraphdebug.h"
 #include "framegraphpreviews.h"
 #include "geometrypass.h"
 #include "gizmopass.h"
+#include "gpuuploader.h"
 #include "lightingpass.h"
 #include "renderertypes.h"
 #include "renderworld.h"
@@ -85,7 +87,12 @@ private:
     std::vector<RhiSemaphore*> imageAvailableSemaphores;
     std::vector<RhiSemaphore*> renderFinishedSemaphores;
     std::vector<RhiFence*> inflightFences;
+    // Monotonic frame number last submitted through each slot; 0 = never.
+    std::vector<uint64_t> slotFrame;
     uint32_t currentFrame = 0;
+
+    GpuUploader uploader;
+    DeletionQueue deletionQueue;
 
     // Monotonic frame counter — pre-incremented at the top of render(), so frame 0
     // never appears in observation streams (readers don't have to distinguish

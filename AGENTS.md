@@ -87,7 +87,7 @@ items in an "Open questions" section instead of picking silently.
 
 ## Folder structure
 - All source code lives under `src/`.
-- `src/rhi/` — backend-agnostic RHI interfaces.
+- `src/rhi/` — backend-agnostic RHI interfaces. Principles and integrator contract in `src/rhi/README.md`; read it before touching the interface.
 - `src/rhi/vulkan/` — Vulkan backend implementation. Additional backends go in sibling folders (e.g. `src/rhi/d3d12/`).
 - `src/renderer/` — renderer front-end (render graph, resource management).
 - `src/scene/` — scene loading, ECS, materials.

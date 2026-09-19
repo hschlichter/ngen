@@ -35,7 +35,8 @@ public:
 
     auto mapBuffer(RhiBuffer* buffer) -> void* override;
     auto unmapBuffer(RhiBuffer* buffer) -> void override;
-    auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, uint64_t size) -> void override;
+
+    [[nodiscard]] auto limits() const -> const RhiDeviceLimits& override { return deviceLimits; }
 
     auto destroyBuffer(RhiBuffer* buffer) -> void override;
     auto destroyTexture(RhiTexture* texture) -> void override;
@@ -63,9 +64,11 @@ private:
     VkQueue graphicsQueue = VK_NULL_HANDLE;
     uint32_t queueFamilyIndex = UINT32_MAX;
     VkCommandPool cmdPool = VK_NULL_HANDLE;
+    RhiDeviceLimits deviceLimits;
+    PFN_vkCmdBeginDebugUtilsLabelEXT cmdBeginLabelFn = nullptr;
+    PFN_vkCmdEndDebugUtilsLabelEXT cmdEndLabelFn = nullptr;
 
     auto findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t;
-    auto transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) -> void;
 
     static auto toVkBufferUsage(RhiBufferUsageFlags usage) -> VkBufferUsageFlags;
     static auto toVkImageUsage(RhiTextureUsageFlags usage) -> VkImageUsageFlags;
