@@ -27,6 +27,9 @@ auto RhiDeviceVulkan::toVkBufferUsage(RhiBufferUsageFlags usage) -> VkBufferUsag
     if (usage.has(Uniform)) {
         flags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
     }
+    if (usage.has(Storage)) {
+        flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    }
     return flags;
 }
 
@@ -84,7 +87,24 @@ auto RhiDeviceVulkan::toVkShaderStage(RhiShaderStageFlags stage) -> VkShaderStag
     if (stage.has(RhiShaderStage::Fragment)) {
         flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
     }
+    if (stage.has(RhiShaderStage::Compute)) {
+        flags |= VK_SHADER_STAGE_COMPUTE_BIT;
+    }
     return flags;
+}
+
+static auto toVkDescriptorType(RhiDescriptorType type) -> VkDescriptorType {
+    switch (type) {
+        case RhiDescriptorType::UniformBuffer:
+            return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        case RhiDescriptorType::CombinedImageSampler:
+            return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        case RhiDescriptorType::StorageBuffer:
+            return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        case RhiDescriptorType::StorageImage:
+            return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    }
+    return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 }
 
 static auto toVkCullMode(RhiCullMode mode) -> VkCullModeFlags {
@@ -737,15 +757,72 @@ auto RhiDeviceVulkan::createShaderModule(const RhiShaderDesc& desc) -> RhiShader
     return sm;
 }
 
+auto RhiDeviceVulkan::createPipelineLayout(std::span<RhiDescriptorSetLayout* const> setLayouts, const RhiPushConstantRange& pushConstant) -> VkPipelineLayout {
+    std::vector<VkDescriptorSetLayout> vkSetLayouts;
+    vkSetLayouts.reserve(setLayouts.size());
+    for (auto* layout : setLayouts) {
+        vkSetLayouts.push_back(static_cast<RhiDescriptorSetLayoutVulkan*>(layout)->layout);
+    }
+
+    VkPushConstantRange pushConstRange = {
+        .stageFlags = toVkShaderStage(pushConstant.stage),
+        .offset = pushConstant.offset,
+        .size = pushConstant.size,
+    };
+
+    VkPipelineLayoutCreateInfo layoutInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = (uint32_t) vkSetLayouts.size(),
+        .pSetLayouts = vkSetLayouts.data(),
+        .pushConstantRangeCount = pushConstant.size > 0 ? 1u : 0u,
+        .pPushConstantRanges = pushConstant.size > 0 ? &pushConstRange : nullptr,
+    };
+
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    auto result = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &layout);
+    if (result != VK_SUCCESS) {
+        std::println(stderr, "vkCreatePipelineLayout failed: {}({})", string_VkResult(result), (int) result);
+        return VK_NULL_HANDLE;
+    }
+    return layout;
+}
+
+auto RhiDeviceVulkan::createComputePipeline(const RhiComputePipelineDesc& desc) -> RhiPipeline* {
+    auto* shader = static_cast<RhiShaderModuleVulkan*>(desc.shader);
+
+    auto* pip = new RhiPipelineVulkan();
+    pip->bindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
+    pip->layout = createPipelineLayout(desc.descriptorSetLayouts, desc.pushConstant);
+    if (pip->layout == VK_NULL_HANDLE) {
+        delete pip;
+        return nullptr;
+    }
+
+    VkComputePipelineCreateInfo pipelineInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .stage =
+            {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                .module = shader->module,
+                .pName = shader->entryPoint.c_str(),
+            },
+        .layout = pip->layout,
+    };
+
+    auto result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pip->pipeline);
+    if (result != VK_SUCCESS) {
+        std::println(stderr, "vkCreateComputePipelines failed: {}({})", string_VkResult(result), (int) result);
+        vkDestroyPipelineLayout(device, pip->layout, nullptr);
+        delete pip;
+        return nullptr;
+    }
+    return pip;
+}
+
 auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) -> RhiPipeline* {
     auto* vertMod = static_cast<RhiShaderModuleVulkan*>(desc.vertexShader);
     auto* fragMod = static_cast<RhiShaderModuleVulkan*>(desc.fragmentShader);
-
-    std::vector<VkDescriptorSetLayout> vkSetLayouts;
-    vkSetLayouts.reserve(desc.descriptorSetLayouts.size());
-    for (auto* layout : desc.descriptorSetLayouts) {
-        vkSetLayouts.push_back(static_cast<RhiDescriptorSetLayoutVulkan*>(layout)->layout);
-    }
 
     VkPipelineShaderStageCreateInfo stages[2] = {
         {
@@ -851,25 +928,10 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
         .pAttachments = colorBlendAttachments.data(),
     };
 
-    VkPushConstantRange pushConstRange = {
-        .stageFlags = toVkShaderStage(desc.pushConstant.stage),
-        .offset = desc.pushConstant.offset,
-        .size = desc.pushConstant.size,
-    };
-
-    VkPipelineLayoutCreateInfo layoutInfo = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = (uint32_t) vkSetLayouts.size(),
-        .pSetLayouts = vkSetLayouts.data(),
-        .pushConstantRangeCount = desc.pushConstant.size > 0 ? 1u : 0u,
-        .pPushConstantRanges = desc.pushConstant.size > 0 ? &pushConstRange : nullptr,
-    };
-
     auto* pip = new RhiPipelineVulkan();
-
-    auto result = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &pip->layout);
-    if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreatePipelineLayout failed: {}({})", string_VkResult(result), (int) result);
+    pip->bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    pip->layout = createPipelineLayout(desc.descriptorSetLayouts, desc.pushConstant);
+    if (pip->layout == VK_NULL_HANDLE) {
         delete pip;
         return nullptr;
     }
@@ -903,7 +965,7 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
         .layout = pip->layout,
     };
 
-    result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pip->pipeline);
+    auto result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pip->pipeline);
     if (result != VK_SUCCESS) {
         std::println(stderr, "vkCreateGraphicsPipelines failed: {}({})", string_VkResult(result), (int) result);
         vkDestroyPipelineLayout(device, pip->layout, nullptr);
@@ -918,10 +980,7 @@ auto RhiDeviceVulkan::createDescriptorSetLayout(std::span<const RhiDescriptorBin
     auto count = (uint32_t) bindings.size();
     std::vector<VkDescriptorSetLayoutBinding> vkBindings(count);
     for (uint32_t i = 0; i < count; i++) {
-        auto type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        if (bindings[i].type == RhiDescriptorType::CombinedImageSampler) {
-            type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        }
+        auto type = toVkDescriptorType(bindings[i].type);
 
         vkBindings[i] = {
             .binding = bindings[i].binding,
@@ -951,10 +1010,7 @@ auto RhiDeviceVulkan::createDescriptorPool(uint32_t maxSets, std::span<const Rhi
     auto bindingCount = (uint32_t) bindings.size();
     std::vector<VkDescriptorPoolSize> poolSizes(bindingCount);
     for (uint32_t i = 0; i < bindingCount; i++) {
-        auto type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        if (bindings[i].type == RhiDescriptorType::CombinedImageSampler) {
-            type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        }
+        auto type = toVkDescriptorType(bindings[i].type);
         poolSizes[i] = {.type = type, .descriptorCount = maxSets};
     }
 
@@ -1011,21 +1067,37 @@ auto RhiDeviceVulkan::updateDescriptorSet(RhiDescriptorSet* set, std::span<const
             .descriptorCount = 1,
         };
 
-        if (writes[i].type == RhiDescriptorType::UniformBuffer) {
-            auto* buf = static_cast<RhiBufferVulkan*>(writes[i].buffer);
-            bufInfos[i] = {.buffer = buf->buffer, .offset = writes[i].bufferOffset, .range = writes[i].bufferRange};
-            vkWrites[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            vkWrites[i].pBufferInfo = &bufInfos[i];
-        } else {
-            auto* tex = static_cast<RhiTextureVulkan*>(writes[i].texture);
-            auto* sam = static_cast<RhiSamplerVulkan*>(writes[i].sampler);
-            imgInfos[i] = {
-                .sampler = sam->sampler,
-                .imageView = tex->view,
-                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            };
-            vkWrites[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            vkWrites[i].pImageInfo = &imgInfos[i];
+        vkWrites[i].descriptorType = toVkDescriptorType(writes[i].type);
+        switch (writes[i].type) {
+            case RhiDescriptorType::UniformBuffer:
+            case RhiDescriptorType::StorageBuffer: {
+                auto* buf = static_cast<RhiBufferVulkan*>(writes[i].buffer);
+                auto range = writes[i].bufferRange > 0 ? writes[i].bufferRange : VK_WHOLE_SIZE;
+                bufInfos[i] = {.buffer = buf->buffer, .offset = writes[i].bufferOffset, .range = range};
+                vkWrites[i].pBufferInfo = &bufInfos[i];
+                break;
+            }
+            case RhiDescriptorType::CombinedImageSampler: {
+                auto* tex = static_cast<RhiTextureVulkan*>(writes[i].texture);
+                auto* sam = static_cast<RhiSamplerVulkan*>(writes[i].sampler);
+                imgInfos[i] = {
+                    .sampler = sam->sampler,
+                    .imageView = tex->view,
+                    .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                };
+                vkWrites[i].pImageInfo = &imgInfos[i];
+                break;
+            }
+            case RhiDescriptorType::StorageImage: {
+                auto* tex = static_cast<RhiTextureVulkan*>(writes[i].texture);
+                imgInfos[i] = {
+                    .sampler = VK_NULL_HANDLE,
+                    .imageView = tex->view,
+                    .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+                };
+                vkWrites[i].pImageInfo = &imgInfos[i];
+                break;
+            }
         }
     }
 

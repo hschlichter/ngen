@@ -20,6 +20,7 @@ public:
     auto createSampler(const RhiSamplerDesc& desc) -> RhiSampler* override;
     auto createShaderModule(const RhiShaderDesc& desc) -> RhiShaderModule* override;
     auto createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) -> RhiPipeline* override;
+    auto createComputePipeline(const RhiComputePipelineDesc& desc) -> RhiPipeline* override;
     auto createDescriptorSetLayout(std::span<const RhiDescriptorBinding> bindings) -> RhiDescriptorSetLayout* override;
     auto createDescriptorPool(uint32_t maxSets, std::span<const RhiDescriptorBinding> bindings) -> RhiDescriptorPool* override;
     auto allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) -> std::vector<RhiDescriptorSet*> override;
@@ -76,6 +77,7 @@ private:
     uint64_t validationWarnings = 0;
 
     auto findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t;
+    auto createPipelineLayout(std::span<RhiDescriptorSetLayout* const> setLayouts, const RhiPushConstantRange& pushConstant) -> VkPipelineLayout;
 
     static auto toVkBufferUsage(RhiBufferUsageFlags usage) -> VkBufferUsageFlags;
     static auto toVkImageUsage(RhiTextureUsageFlags usage) -> VkImageUsageFlags;

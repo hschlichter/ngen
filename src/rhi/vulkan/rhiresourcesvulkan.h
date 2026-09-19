@@ -31,6 +31,7 @@ struct RhiShaderModuleVulkan : public RhiShaderModule {
 struct RhiPipelineVulkan : public RhiPipeline {
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE;
+    VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 };
 
 struct RhiDescriptorSetLayoutVulkan : public RhiDescriptorSetLayout {

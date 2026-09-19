@@ -20,7 +20,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <print>
 #include <span>
 #include <vector>
 
@@ -74,8 +73,8 @@ struct Vertex {
     float v;
 };
 
-static constexpr RhiExtent2D targetExtent = {512, 512};
-static constexpr RhiExtent2D blitExtent = {256, 256};
+static constexpr RhiExtent2D targetExtent = {.width = 512, .height = 512};
+static constexpr RhiExtent2D blitExtent = {.width = 256, .height = 256};
 static constexpr RhiFormat targetFormat = RhiFormat::R8G8B8A8_UNORM;
 static constexpr std::array<float, 4> targetClear = {0.1f, 0.3f, 0.1f, 1.0f};
 // Triangle colour at the target centre, see triangle.cpp for the derivation.
@@ -152,10 +151,10 @@ protected:
         std::vector<uint16_t> indices;
         for (auto cx : quadCenterX) {
             auto base = (uint16_t) vertices.size();
-            vertices.push_back({cx - quadHalf, -quadHalf, 0.0f, 0.0f});
-            vertices.push_back({cx + quadHalf, -quadHalf, 1.0f, 0.0f});
-            vertices.push_back({cx + quadHalf, quadHalf, 1.0f, 1.0f});
-            vertices.push_back({cx - quadHalf, quadHalf, 0.0f, 1.0f});
+            vertices.push_back({.x = cx - quadHalf, .y = -quadHalf, .u = 0.0f, .v = 0.0f});
+            vertices.push_back({.x = cx + quadHalf, .y = -quadHalf, .u = 1.0f, .v = 0.0f});
+            vertices.push_back({.x = cx + quadHalf, .y = quadHalf, .u = 1.0f, .v = 1.0f});
+            vertices.push_back({.x = cx - quadHalf, .y = quadHalf, .u = 0.0f, .v = 1.0f});
             for (auto i : {0, 1, 2, 2, 3, 0}) {
                 indices.push_back((uint16_t) (base + i));
             }
@@ -234,8 +233,8 @@ protected:
         ok = expectPixel(frame, frame.px(quadCenterX[0]), frame.py(0.0f), triangleCenter, "rendered-target-centre") && ok;
         ok = expectPixel(frame, frame.px(quadCenterX[1]), frame.py(0.0f), triangleCenter, "blitted-copy-centre") && ok;
         // Quad corner samples the target corner: the offscreen clear, not the swapchain clear.
-        ok = expectPixel(frame, frame.px(quadCenterX[0] - quadHalf * 0.9f), frame.py(-quadHalf * 0.9f), targetClearRgb, "rendered-target-clear") && ok;
-        ok = expectPixel(frame, frame.px(quadCenterX[1] - quadHalf * 0.9f), frame.py(-quadHalf * 0.9f), targetClearRgb, "blitted-copy-clear") && ok;
+        ok = expectPixel(frame, frame.px(quadCenterX[0] - (quadHalf * 0.9f)), frame.py(-quadHalf * 0.9f), targetClearRgb, "rendered-target-clear") && ok;
+        ok = expectPixel(frame, frame.px(quadCenterX[1] - (quadHalf * 0.9f)), frame.py(-quadHalf * 0.9f), targetClearRgb, "blitted-copy-clear") && ok;
         return ok;
     }
 

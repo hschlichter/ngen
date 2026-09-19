@@ -18,7 +18,9 @@ public:
     virtual auto reset() -> void = 0;
     virtual auto beginRendering(const RhiRenderingInfo& info) -> void = 0;
     virtual auto endRendering() -> void = 0;
-    virtual auto pipelineBarrier(std::span<const RhiBarrierDesc> barriers) -> void = 0;
+    virtual auto pipelineBarrier(std::span<const RhiBarrierDesc> imageBarriers, std::span<const RhiBufferBarrierDesc> bufferBarriers) -> void = 0;
+    auto pipelineBarrier(std::span<const RhiBarrierDesc> imageBarriers) -> void { pipelineBarrier(imageBarriers, {}); }
+    auto bufferBarrier(std::span<const RhiBufferBarrierDesc> bufferBarriers) -> void { pipelineBarrier({}, bufferBarriers); }
     virtual auto blitTexture(RhiTexture* src, RhiTexture* dst, RhiExtent2D srcExtent, RhiExtent2D dstExtent) -> void = 0;
     virtual auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void = 0;
     // dst must be in RhiImageLayout::TransferDst.
@@ -41,4 +43,6 @@ public:
     virtual auto pushConstants(RhiPipeline* pipeline, RhiShaderStageFlags stage, uint32_t offset, uint32_t size, const void* data) -> void = 0;
     virtual auto draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) -> void = 0;
     virtual auto drawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) -> void = 0;
+    // Compute; a compute pipeline must be bound. Not allowed inside beginRendering/endRendering.
+    virtual auto dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) -> void = 0;
 };

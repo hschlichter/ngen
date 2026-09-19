@@ -18,6 +18,8 @@ inline auto compileGlsl(RhiShaderStage stage, std::string_view source, const cha
     auto kind = shaderc_glsl_vertex_shader;
     if (stage == RhiShaderStage::Fragment) {
         kind = shaderc_glsl_fragment_shader;
+    } else if (stage == RhiShaderStage::Compute) {
+        kind = shaderc_glsl_compute_shader;
     }
 
     auto* compiler = shaderc_compiler_initialize();

@@ -292,6 +292,7 @@ auto main(int argc, char** argv) -> int {
     auto exampleBlend = rhiExample("blend");
     auto exampleLines = rhiExample("lines");
     auto exampleMipCube = rhiExample("mipcube");
+    auto exampleCompute = rhiExample("compute");
 
     p.target(view);
     p.target(exampleTriangle);
@@ -304,6 +305,7 @@ auto main(int argc, char** argv) -> int {
     p.target(exampleBlend);
     p.target(exampleLines);
     p.target(exampleMipCube);
+    p.target(exampleCompute);
     p.target(format);
     p.target(tidy);
     p.default_target(view);

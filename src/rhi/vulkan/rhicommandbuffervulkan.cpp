@@ -14,6 +14,8 @@ auto RhiCommandBufferVulkan::toVkImageLayout(RhiImageLayout layout) -> VkImageLa
             return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         case RhiImageLayout::ShaderReadOnly:
             return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        case RhiImageLayout::General:
+            return VK_IMAGE_LAYOUT_GENERAL;
         case RhiImageLayout::TransferSrc:
             return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         case RhiImageLayout::TransferDst:
@@ -34,6 +36,8 @@ auto RhiCommandBufferVulkan::layoutToAccessMask(RhiImageLayout layout) -> VkAcce
             return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         case RhiImageLayout::ShaderReadOnly:
             return VK_ACCESS_2_SHADER_READ_BIT;
+        case RhiImageLayout::General:
+            return VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
         case RhiImageLayout::TransferSrc:
             return VK_ACCESS_2_TRANSFER_READ_BIT;
         case RhiImageLayout::TransferDst:
@@ -53,7 +57,9 @@ auto RhiCommandBufferVulkan::layoutToStageMask(RhiImageLayout layout) -> VkPipel
         case RhiImageLayout::DepthStencilAttachment:
             return VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
         case RhiImageLayout::ShaderReadOnly:
-            return VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            return VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        case RhiImageLayout::General:
+            return VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         case RhiImageLayout::TransferSrc:
             return VK_PIPELINE_STAGE_2_TRANSFER_BIT;
         case RhiImageLayout::TransferDst:
@@ -129,7 +135,66 @@ auto RhiCommandBufferVulkan::endRendering() -> void {
     vkCmdEndRendering(cmd);
 }
 
-auto RhiCommandBufferVulkan::pipelineBarrier(std::span<const RhiBarrierDesc> barriers) -> void {
+auto RhiCommandBufferVulkan::bufferStateToAccessMask(RhiBufferState state) -> VkAccessFlags2 {
+    switch (state) {
+        case RhiBufferState::Undefined:
+            return VK_ACCESS_2_NONE;
+        case RhiBufferState::VertexRead:
+            return VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
+        case RhiBufferState::IndexRead:
+            return VK_ACCESS_2_INDEX_READ_BIT;
+        case RhiBufferState::UniformRead:
+            return VK_ACCESS_2_UNIFORM_READ_BIT;
+        case RhiBufferState::StorageRead:
+            return VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+        case RhiBufferState::StorageWrite:
+            return VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        case RhiBufferState::TransferSrc:
+            return VK_ACCESS_2_TRANSFER_READ_BIT;
+        case RhiBufferState::TransferDst:
+            return VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    }
+    return VK_ACCESS_2_NONE;
+}
+
+auto RhiCommandBufferVulkan::bufferStateToStageMask(RhiBufferState state) -> VkPipelineStageFlags2 {
+    switch (state) {
+        case RhiBufferState::Undefined:
+            return VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        case RhiBufferState::VertexRead:
+        case RhiBufferState::IndexRead:
+            return VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT;
+        case RhiBufferState::UniformRead:
+        case RhiBufferState::StorageRead:
+        case RhiBufferState::StorageWrite:
+            return VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        case RhiBufferState::TransferSrc:
+        case RhiBufferState::TransferDst:
+            return VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    }
+    return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+}
+
+auto RhiCommandBufferVulkan::pipelineBarrier(std::span<const RhiBarrierDesc> barriers, std::span<const RhiBufferBarrierDesc> bufferBarrierDescs) -> void {
+    std::vector<VkBufferMemoryBarrier2> bufferBarriers;
+    bufferBarriers.reserve(bufferBarrierDescs.size());
+    for (const auto& b : bufferBarrierDescs) {
+        auto* buf = static_cast<RhiBufferVulkan*>(b.buffer);
+        VkBufferMemoryBarrier2 barrier = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+            .srcStageMask = bufferStateToStageMask(b.oldState),
+            .srcAccessMask = bufferStateToAccessMask(b.oldState),
+            .dstStageMask = bufferStateToStageMask(b.newState),
+            .dstAccessMask = bufferStateToAccessMask(b.newState),
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = buf->buffer,
+            .offset = 0,
+            .size = VK_WHOLE_SIZE,
+        };
+        bufferBarriers.push_back(barrier);
+    }
+
     std::vector<VkImageMemoryBarrier2> imageBarriers;
     imageBarriers.reserve(barriers.size());
 
@@ -161,6 +226,8 @@ auto RhiCommandBufferVulkan::pipelineBarrier(std::span<const RhiBarrierDesc> bar
 
     VkDependencyInfo depInfo = {
         .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .bufferMemoryBarrierCount = (uint32_t) bufferBarriers.size(),
+        .pBufferMemoryBarriers = bufferBarriers.data(),
         .imageMemoryBarrierCount = (uint32_t) imageBarriers.size(),
         .pImageMemoryBarriers = imageBarriers.data(),
     };
@@ -192,7 +259,7 @@ auto RhiCommandBufferVulkan::setScissor(int32_t x, int32_t y, RhiExtent2D extent
 
 auto RhiCommandBufferVulkan::bindPipeline(RhiPipeline* pipeline) -> void {
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p->pipeline);
+    vkCmdBindPipeline(cmd, p->bindPoint, p->pipeline);
 }
 
 auto RhiCommandBufferVulkan::bindVertexBuffer(uint32_t slot, RhiBuffer* buffer, uint64_t offset) -> void {
@@ -210,7 +277,7 @@ auto RhiCommandBufferVulkan::bindIndexBuffer(RhiBuffer* buffer, RhiIndexType ind
 auto RhiCommandBufferVulkan::bindDescriptorSet(RhiPipeline* pipeline, uint32_t setIndex, RhiDescriptorSet* set) -> void {
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
     auto* s = static_cast<RhiDescriptorSetVulkan*>(set);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p->layout, setIndex, 1, &s->set, 0, nullptr);
+    vkCmdBindDescriptorSets(cmd, p->bindPoint, p->layout, setIndex, 1, &s->set, 0, nullptr);
 }
 
 auto RhiCommandBufferVulkan::pushConstants(RhiPipeline* pipeline, RhiShaderStageFlags stage, uint32_t offset, uint32_t size, const void* data) -> void {
@@ -221,6 +288,9 @@ auto RhiCommandBufferVulkan::pushConstants(RhiPipeline* pipeline, RhiShaderStage
     }
     if (stage.has(RhiShaderStage::Fragment)) {
         vkStage |= VK_SHADER_STAGE_FRAGMENT_BIT;
+    }
+    if (stage.has(RhiShaderStage::Compute)) {
+        vkStage |= VK_SHADER_STAGE_COMPUTE_BIT;
     }
     vkCmdPushConstants(cmd, p->layout, vkStage, offset, size, data);
 }
@@ -284,4 +354,8 @@ auto RhiCommandBufferVulkan::endLabel() -> void {
         return;
     }
     endLabelFn(cmd);
+}
+
+auto RhiCommandBufferVulkan::dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) -> void {
+    vkCmdDispatch(cmd, groupsX, groupsY, groupsZ);
 }

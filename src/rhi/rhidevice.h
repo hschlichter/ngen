@@ -37,6 +37,8 @@ public:
     virtual auto createSampler(const RhiSamplerDesc& desc) -> RhiSampler* = 0;
     virtual auto createShaderModule(const RhiShaderDesc& desc) -> RhiShaderModule* = 0;
     virtual auto createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) -> RhiPipeline* = 0;
+    // Same RhiPipeline type; bindPipeline picks the graphics or compute bind point from it.
+    virtual auto createComputePipeline(const RhiComputePipelineDesc& desc) -> RhiPipeline* = 0;
     virtual auto createDescriptorSetLayout(std::span<const RhiDescriptorBinding> bindings) -> RhiDescriptorSetLayout* = 0;
     virtual auto createDescriptorPool(uint32_t maxSets, std::span<const RhiDescriptorBinding> bindings) -> RhiDescriptorPool* = 0;
     virtual auto allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) -> std::vector<RhiDescriptorSet*> = 0;

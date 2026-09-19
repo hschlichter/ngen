@@ -59,6 +59,7 @@ enum class RhiBufferUsage : uint32_t {
     Vertex = 1 << 2,
     Index = 1 << 3,
     Uniform = 1 << 4,
+    Storage = 1 << 5,
 };
 template <>
 struct RhiFlagEnum<RhiBufferUsage> : std::true_type {};
@@ -72,6 +73,7 @@ enum class RhiMemoryUsage {
 enum class RhiShaderStage : uint32_t {
     Vertex = 1 << 0,
     Fragment = 1 << 1,
+    Compute = 1 << 2,
 };
 template <>
 struct RhiFlagEnum<RhiShaderStage> : std::true_type {};
@@ -139,6 +141,8 @@ enum class RhiIndexType {
 enum class RhiDescriptorType {
     UniformBuffer,
     CombinedImageSampler,
+    StorageBuffer, // read/write buffer; RhiBufferUsage::Storage
+    StorageImage,  // read/write texture in RhiImageLayout::General; RhiTextureUsage::Storage, no sampler
 };
 
 enum class RhiTextureUsage : uint32_t {
@@ -196,14 +200,30 @@ enum class RhiBlendOp {
     Max,
 };
 
+// Resource state of a texture. Barriers move a texture from one to the next;
+// the backend derives layout, pipeline stages and access from it.
 enum class RhiImageLayout {
     Undefined,
     ColorAttachment,
     DepthStencilAttachment,
-    ShaderReadOnly,
+    ShaderReadOnly, // sampled in any shader stage
+    General,        // storage image, read and write from shaders
     TransferSrc,
     TransferDst,
     PresentSrc,
+};
+
+// Resource state of a buffer, same idea as RhiImageLayout. Buffers have no
+// layout, only the stages and accesses that a barrier must order.
+enum class RhiBufferState {
+    Undefined, // never used yet, or contents may be discarded
+    VertexRead,
+    IndexRead,
+    UniformRead,
+    StorageRead,
+    StorageWrite,
+    TransferSrc,
+    TransferDst,
 };
 
 struct RhiExtent2D {
@@ -406,6 +426,12 @@ struct RhiBarrierDesc {
     RhiImageLayout newLayout = RhiImageLayout::Undefined;
 };
 
+struct RhiBufferBarrierDesc {
+    RhiBuffer* buffer = nullptr;
+    RhiBufferState oldState = RhiBufferState::Undefined;
+    RhiBufferState newState = RhiBufferState::Undefined;
+};
+
 struct RhiRasterState {
     RhiCullMode cullMode = RhiCullMode::Back;
     RhiFrontFace frontFace = RhiFrontFace::CounterClockwise;
@@ -442,6 +468,12 @@ struct RhiGraphicsPipelineDesc {
     RhiRasterState raster;
     RhiDepthState depth;
     RhiBlendState blend; // applied to every color attachment
+};
+
+struct RhiComputePipelineDesc {
+    RhiShaderModule* shader = nullptr;
+    std::span<RhiDescriptorSetLayout* const> descriptorSetLayouts; // index in span = set index
+    RhiPushConstantRange pushConstant;
 };
 
 struct RhiDescriptorWrite {

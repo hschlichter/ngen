@@ -132,8 +132,9 @@ Examples, each adding one concept to the previous:
 | `ngen-example-blend` | blend factors, cull mode, front face |
 | `ngen-example-lines` | `LineList`, `lineWidth`, `wideLines` fallback |
 | `ngen-example-mipcube` | mip levels, array layers, cube faces, one copy per subresource |
+| `ngen-example-compute` | compute pipelines, storage image and buffer, `dispatch`, buffer barriers |
 
-Run them all: `for t in triangle quad texture uniforms depth rendertarget pushconstants blend lines mipcube; do
+Run them all: `for t in triangle quad texture uniforms depth rendertarget pushconstants blend lines mipcube compute; do
 SDL_VIDEODRIVER=offscreen ./_out/linux-vulkan/debug/ngen-example-$t --frames=10 --check --validation || echo "$t FAILED"; done`
 
 Rules for examples: include only headers under `src/rhi/` and `examples/common/` (plus `stb_image_write.h` for PNG);
@@ -160,14 +161,15 @@ signature.
 Kept honest rather than papered over. See the review that produced this file for the reasoning.
 
 - Single queue, single command pool. `createCommandBuffer` is not thread safe.
-- Barriers are layout-only image barriers; no buffer barriers, no explicit stage or access masks.
+- Barriers are resource-state transitions (`RhiImageLayout` for textures, `RhiBufferState` for buffers); the backend
+  derives stages and access. No explicit masks, no split barriers, no queue ownership transfer.
 - One blend state for all color attachments.
 - One push constant range per pipeline.
 - `blitTexture` addresses mip 0, layer 0 only. Copies take a mip and layer; blits do not yet.
 - No compressed formats (BC/ASTC). Add when an asset path produces them.
 - Resource objects are virtual-dtor classes returned by raw pointer; `swapchain->image(i)` pointers are invalidated by
   `recreate`. Opaque generational handles would fix this; deferred until a second backend makes the cost worth it.
-- No compute: no compute pipeline, no `dispatch`, no storage buffer descriptor type. First gap likely to matter.
+- Compute shares the graphics queue. No async compute, no indirect dispatch.
 - Descriptor model is Vulkan-shaped (pool, layout, set, write). D3D12 and Metal can implement it, but it is not their
   native shape; revisit when a second backend exists.
 - `allocateDescriptorSets` returns a `std::vector` and there is no free path; sets die with their pool.

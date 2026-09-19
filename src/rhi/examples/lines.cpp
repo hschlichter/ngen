@@ -95,12 +95,12 @@ protected:
 
         // Two horizontal lines across the window, plus a diagonal for the eye.
         std::vector<Vertex> vertices = {
-            {.x=-0.95f, .y=wideY, .r=wideColor[0], .g=wideColor[1], .b=wideColor[2]},
-            {.x=0.95f, .y=wideY, .r=wideColor[0], .g=wideColor[1], .b=wideColor[2]},
-            {.x=-0.95f, .y=thinY, .r=thinColor[0], .g=thinColor[1], .b=thinColor[2]},
-            {.x=0.95f, .y=thinY, .r=thinColor[0], .g=thinColor[1], .b=thinColor[2]},
-            {.x=-0.95f, .y=0.9f, .r=thinColor[0], .g=thinColor[1], .b=thinColor[2]},
-            {.x=0.95f, .y=-0.9f, .r=wideColor[0], .g=wideColor[1], .b=wideColor[2]},
+            {.x = -0.95f, .y = wideY, .r = wideColor[0], .g = wideColor[1], .b = wideColor[2]},
+            {.x = 0.95f, .y = wideY, .r = wideColor[0], .g = wideColor[1], .b = wideColor[2]},
+            {.x = -0.95f, .y = thinY, .r = thinColor[0], .g = thinColor[1], .b = thinColor[2]},
+            {.x = 0.95f, .y = thinY, .r = thinColor[0], .g = thinColor[1], .b = thinColor[2]},
+            {.x = -0.95f, .y = 0.9f, .r = thinColor[0], .g = thinColor[1], .b = thinColor[2]},
+            {.x = 0.95f, .y = -0.9f, .r = wideColor[0], .g = wideColor[1], .b = wideColor[2]},
         };
         UploadBatch upload(device());
         vertexBuffer = upload.buffer(std::as_bytes(std::span(vertices)), RhiBufferUsage::Vertex);
