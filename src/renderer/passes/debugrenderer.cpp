@@ -3,6 +3,7 @@
 #include "renderertypes.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
+#include "shaderloader.h"
 
 #include <algorithm>
 #include <array>
@@ -13,8 +14,8 @@ auto DebugRenderer::init(
     using enum RhiDescriptorType;
     using enum RhiFormat;
 
-    vertShader = device->createShaderModule("shaders/debug.vert.spv");
-    fragShader = device->createShaderModule("shaders/debug.frag.spv");
+    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/debug.vert.spv");
+    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/debug.frag.spv");
 
     std::array<RhiDescriptorBinding, 1> bindings = {{
         {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},

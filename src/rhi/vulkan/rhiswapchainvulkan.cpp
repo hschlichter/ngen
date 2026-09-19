@@ -34,7 +34,7 @@ auto RhiSwapchainVulkan::vkFormatToRhiFormat(VkFormat format) -> RhiFormat {
 }
 
 auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, RhiExtent2D extent)
-    -> std::expected<void, int> {
+    -> std::expected<void, RhiError> {
     vkPhysicalDevice = physicalDevice;
     vkDevice = device;
     vkSurface = surface;
@@ -45,21 +45,21 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities);
     if (result != VK_SUCCESS) {
         std::println(stderr, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed: {}({})", string_VkResult(result), (int) result);
-        return std::unexpected(1);
+        return std::unexpected(RhiError::Failed);
     }
 
     uint32_t formatCount = 0;
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, nullptr);
     if (result != VK_SUCCESS) {
         std::println(stderr, "vkGetPhysicalDeviceSurfaceFormatsKHR failed: {}({})", string_VkResult(result), (int) result);
-        return std::unexpected(1);
+        return std::unexpected(RhiError::Failed);
     }
 
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, formats.data());
     if (result != VK_SUCCESS) {
         std::println(stderr, "vkGetPhysicalDeviceSurfaceFormatsKHR failed: {}({})", string_VkResult(result), (int) result);
-        return std::unexpected(1);
+        return std::unexpected(RhiError::Failed);
     }
 
     auto format = formats[0];
@@ -96,14 +96,14 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     result = vkCreateSwapchainKHR(device, &swapchainInfo, nullptr, &swapchain);
     if (result != VK_SUCCESS) {
         std::println(stderr, "vkCreateSwapchainKHR failed: {}({})", string_VkResult(result), (int) result);
-        return std::unexpected(1);
+        return std::unexpected(RhiError::Failed);
     }
 
     std::vector<VkImage> images(imgCount);
     result = vkGetSwapchainImagesKHR(device, swapchain, &imgCount, images.data());
     if (result != VK_SUCCESS) {
         std::println(stderr, "vkGetSwapchainImagesKHR failed: {}({})", string_VkResult(result), (int) result);
-        return std::unexpected(1);
+        return std::unexpected(RhiError::Failed);
     }
 
     colorImages.resize(imgCount);
@@ -129,7 +129,7 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
         result = vkCreateImageView(device, &viewInfo, nullptr, &colorImages[i].view);
         if (result != VK_SUCCESS) {
             std::println(stderr, "vkCreateImageView failed: {}({})", string_VkResult(result), (int) result);
-            return std::unexpected(1);
+            return std::unexpected(RhiError::Failed);
         }
     }
 
@@ -153,7 +153,7 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     result = vkCreateImage(device, &depthImageInfo, nullptr, &vkDepthImage);
     if (result != VK_SUCCESS) {
         std::println(stderr, "vkCreateImage failed: {}({})", string_VkResult(result), (int) result);
-        return std::unexpected(1);
+        return std::unexpected(RhiError::Failed);
     }
 
     VkMemoryRequirements depthMemReqs;
@@ -161,7 +161,7 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
 
     auto depthMemType = findMemoryType(physicalDevice, depthMemReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (depthMemType == UINT32_MAX) {
-        return std::unexpected(1);
+        return std::unexpected(RhiError::Failed);
     }
 
     VkMemoryAllocateInfo depthAllocInfo = {
@@ -172,7 +172,7 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     result = vkAllocateMemory(device, &depthAllocInfo, nullptr, &depthMemory);
     if (result != VK_SUCCESS) {
         std::println(stderr, "vkAllocateMemory failed: {}({})", string_VkResult(result), (int) result);
-        return std::unexpected(1);
+        return std::unexpected(RhiError::Failed);
     }
     vkBindImageMemory(device, vkDepthImage, depthMemory, 0);
 
@@ -193,7 +193,7 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     result = vkCreateImageView(device, &depthViewInfo, nullptr, &rhiDepthImage.view);
     if (result != VK_SUCCESS) {
         std::println(stderr, "vkCreateImageView failed: {}({})", string_VkResult(result), (int) result);
-        return std::unexpected(1);
+        return std::unexpected(RhiError::Failed);
     }
     rhiDepthImage.image = vkDepthImage;
     rhiDepthImage.memory = VK_NULL_HANDLE;
@@ -201,23 +201,23 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     return {};
 }
 
-auto RhiSwapchainVulkan::recreate(RhiExtent2D extent) -> bool {
+auto RhiSwapchainVulkan::recreate(RhiExtent2D extent) -> std::expected<void, RhiError> {
     vkDeviceWaitIdle(vkDevice);
     destroy();
-    auto result = init(vkPhysicalDevice, vkDevice, vkSurface, vkQueueFamilyIndex, extent);
-    return result.has_value();
+    return init(vkPhysicalDevice, vkDevice, vkSurface, vkQueueFamilyIndex, extent);
 }
 
-auto RhiSwapchainVulkan::acquireNextImage(RhiSemaphore* signalSemaphore) -> std::expected<uint32_t, int> {
+auto RhiSwapchainVulkan::acquireNextImage(RhiSemaphore* signalSemaphore) -> std::expected<uint32_t, RhiError> {
     auto* sem = static_cast<RhiSemaphoreVulkan*>(signalSemaphore);
     uint32_t index = 0;
     auto result = vkAcquireNextImageKHR(vkDevice, swapchain, UINT64_MAX, sem->semaphore, VK_NULL_HANDLE, &index);
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-        return std::unexpected(2); // needs recreate, semaphore not signaled
+        // Semaphore is not signaled in this case; caller must recreate before reuse.
+        return std::unexpected(RhiError::OutOfDate);
     }
     if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
         std::println(stderr, "vkAcquireNextImageKHR failed: {}({})", string_VkResult(result), (int) result);
-        return std::unexpected(1);
+        return std::unexpected(toRhiError(result));
     }
     return index;
 }

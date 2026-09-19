@@ -32,6 +32,15 @@ enum class RhiShaderStage : uint32_t {
     Fragment = 1 << 1,
 };
 
+// Backend-agnostic failure classes. Backends log the native error code before
+// returning one of these; callers only branch on the class.
+enum class RhiError {
+    Failed,     // generic backend failure, details on stderr
+    OutOfDate,  // swapchain no longer matches the surface; recreate it
+    Suboptimal, // presentation still works but the swapchain should be recreated
+    DeviceLost,
+};
+
 enum class RhiPrimitiveTopology {
     TriangleList,
     LineList,
@@ -98,6 +107,15 @@ struct RhiTextureDesc {
     RhiTextureUsage usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst;
     const void* initialData = nullptr;
     uint64_t initialDataSize = 0;
+};
+
+// Compiled shader bytecode in the backend's native format (SPIR-V for Vulkan,
+// DXIL for D3D12, metallib for Metal). Loading and cross-compiling happen
+// outside the RHI; `code` only needs to stay alive for the duration of the call.
+struct RhiShaderDesc {
+    RhiShaderStage stage;
+    std::span<const std::byte> code;
+    const char* entryPoint = "main";
 };
 
 struct RhiSamplerDesc {

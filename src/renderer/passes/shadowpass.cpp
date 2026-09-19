@@ -3,6 +3,7 @@
 #include "mesh.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
+#include "shaderloader.h"
 
 #include <array>
 
@@ -16,8 +17,8 @@ struct ShadowPush {
 auto ShadowPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFormat) -> bool {
     using enum RhiFormat;
 
-    vertShader = device->createShaderModule("shaders/shadow.vert.spv");
-    fragShader = device->createShaderModule("shaders/shadow.frag.spv");
+    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/shadow.vert.spv");
+    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/shadow.frag.spv");
 
     std::array<RhiVertexAttribute, 1> vertexAttrs = {{
         {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},

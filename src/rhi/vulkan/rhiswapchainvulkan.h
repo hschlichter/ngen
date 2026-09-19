@@ -11,11 +11,11 @@ class RhiSwapchainVulkan : public RhiSwapchain {
     friend class RhiDeviceVulkan;
 
 public:
-    auto init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, RhiExtent2D extent) -> std::expected<void, int>;
+    auto init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, RhiExtent2D extent) -> std::expected<void, RhiError>;
     auto destroy() -> void override;
-    auto recreate(RhiExtent2D extent) -> bool override;
+    auto recreate(RhiExtent2D extent) -> std::expected<void, RhiError> override;
 
-    auto acquireNextImage(RhiSemaphore* signalSemaphore) -> std::expected<uint32_t, int> override;
+    auto acquireNextImage(RhiSemaphore* signalSemaphore) -> std::expected<uint32_t, RhiError> override;
     auto imageCount() -> uint32_t override { return imgCount; }
     auto extent() -> RhiExtent2D override { return ext; }
     auto image(uint32_t index) -> RhiTexture* override { return &colorImages[index]; }

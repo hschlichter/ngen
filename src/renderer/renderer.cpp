@@ -15,6 +15,7 @@
 #include <array>
 #include <cstring>
 #include <limits>
+#include <print>
 
 auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2D windowExtent) -> std::expected<void, int> {
     using enum RhiFormat;
@@ -348,9 +349,11 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
 
     auto index = swapchain->acquireNextImage(imageAvailableSemaphores[currentFrame]);
     if (!index) {
-        if (index.error() == 2) {
+        if (index.error() == RhiError::OutOfDate) {
             OBS_EVENT("Render", "SwapchainRecreate", "swapchain").field("reason", "acquire_failed");
-            swapchain->recreate({.width = (uint32_t) snapshot.windowWidth, .height = (uint32_t) snapshot.windowHeight});
+            if (!swapchain->recreate({.width = (uint32_t) snapshot.windowWidth, .height = (uint32_t) snapshot.windowHeight})) {
+                std::println(stderr, "Swapchain recreate failed after acquire");
+            }
             resourcePool.flush();
             currentFrame = 0;
         }
@@ -496,9 +499,12 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         .fence = inflightFences[currentFrame],
     };
     device->submitCommandBuffer(cmd, submitInfo);
-    if (!device->present(swapchain, renderFinishedSemaphores[currentFrame], *index)) {
+    auto presented = device->present(swapchain, renderFinishedSemaphores[currentFrame], *index);
+    if (!presented) {
         OBS_EVENT("Render", "SwapchainRecreate", "swapchain").field("reason", "present_failed");
-        swapchain->recreate({.width = (uint32_t) snapshot.windowWidth, .height = (uint32_t) snapshot.windowHeight});
+        if (!swapchain->recreate({.width = (uint32_t) snapshot.windowWidth, .height = (uint32_t) snapshot.windowHeight})) {
+            std::println(stderr, "Swapchain recreate failed after present");
+        }
         resourcePool.flush();
         currentFrame = 0;
         OBS_EVENT("Render", "FrameEnd", "frame").field("frame", (int64_t) frame);

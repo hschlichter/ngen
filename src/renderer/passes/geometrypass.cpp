@@ -2,6 +2,7 @@
 #include "mesh.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
+#include "shaderloader.h"
 
 #include <array>
 
@@ -9,8 +10,8 @@ auto GeometryPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFo
     using enum RhiDescriptorType;
     using enum RhiFormat;
 
-    vertShader = device->createShaderModule("shaders/gbuffer.vert.spv");
-    fragShader = device->createShaderModule("shaders/gbuffer.frag.spv");
+    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/gbuffer.vert.spv");
+    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/gbuffer.frag.spv");
 
     std::array<RhiDescriptorBinding, 2> bindings = {{
         {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},

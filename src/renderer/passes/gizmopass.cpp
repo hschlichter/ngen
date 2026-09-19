@@ -1,6 +1,7 @@
 #include "gizmopass.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
+#include "shaderloader.h"
 
 #include <array>
 #include <cstring>
@@ -8,8 +9,8 @@
 auto GizmoPass::init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent, RhiFormat colorFormat) -> bool {
     using enum RhiFormat;
 
-    vertShader = device->createShaderModule("shaders/gizmo.vert.spv");
-    fragShader = device->createShaderModule("shaders/gizmo.frag.spv");
+    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/gizmo.vert.spv");
+    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/gizmo.frag.spv");
 
     // Empty descriptor set layout: pipeline has no descriptors, viewProj is a push constant.
     std::array<RhiDescriptorBinding, 0> bindings = {};

@@ -14,8 +14,8 @@ public:
     virtual ~RhiSwapchain() = default;
 
     virtual auto destroy() -> void = 0;
-    virtual auto recreate(RhiExtent2D extent) -> bool = 0;
-    virtual auto acquireNextImage(RhiSemaphore* signalSemaphore) -> std::expected<uint32_t, int> = 0;
+    virtual auto recreate(RhiExtent2D extent) -> std::expected<void, RhiError> = 0;
+    virtual auto acquireNextImage(RhiSemaphore* signalSemaphore) -> std::expected<uint32_t, RhiError> = 0;
     virtual auto imageCount() -> uint32_t = 0;
     virtual auto extent() -> RhiExtent2D = 0;
     virtual auto image(uint32_t index) -> RhiTexture* = 0;

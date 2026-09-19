@@ -2,6 +2,7 @@
 
 #include "rhitypes.h"
 
+#include <string>
 #include <vulkan/vulkan.h>
 
 struct RhiBufferVulkan : public RhiBuffer {
@@ -21,6 +22,7 @@ struct RhiSamplerVulkan : public RhiSampler {
 
 struct RhiShaderModuleVulkan : public RhiShaderModule {
     VkShaderModule module = VK_NULL_HANDLE;
+    std::string entryPoint;
 };
 
 struct RhiPipelineVulkan : public RhiPipeline {
@@ -47,3 +49,16 @@ struct RhiSemaphoreVulkan : public RhiSemaphore {
 struct RhiFenceVulkan : public RhiFence {
     VkFence fence = VK_NULL_HANDLE;
 };
+
+inline auto toRhiError(VkResult result) -> RhiError {
+    switch (result) {
+        case VK_ERROR_OUT_OF_DATE_KHR:
+            return RhiError::OutOfDate;
+        case VK_SUBOPTIMAL_KHR:
+            return RhiError::Suboptimal;
+        case VK_ERROR_DEVICE_LOST:
+            return RhiError::DeviceLost;
+        default:
+            return RhiError::Failed;
+    }
+}

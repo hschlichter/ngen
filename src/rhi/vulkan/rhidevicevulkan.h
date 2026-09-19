@@ -9,7 +9,7 @@
 
 class RhiDeviceVulkan : public RhiDevice {
 public:
-    auto init(const RhiWindow& window) -> std::expected<void, int> override;
+    auto init(const RhiWindow& window) -> std::expected<void, RhiError> override;
     auto destroy() -> void override;
     auto waitIdle() -> void override;
 
@@ -17,7 +17,7 @@ public:
     auto createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* override;
     auto createTexture(const RhiTextureDesc& desc) -> RhiTexture* override;
     auto createSampler(const RhiSamplerDesc& desc) -> RhiSampler* override;
-    auto createShaderModule(const char* filepath) -> RhiShaderModule* override;
+    auto createShaderModule(const RhiShaderDesc& desc) -> RhiShaderModule* override;
     auto createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) -> RhiPipeline* override;
     auto createDescriptorSetLayout(std::span<const RhiDescriptorBinding> bindings) -> RhiDescriptorSetLayout* override;
     auto createDescriptorPool(uint32_t maxSets, std::span<const RhiDescriptorBinding> bindings) -> RhiDescriptorPool* override;
@@ -31,7 +31,7 @@ public:
     auto waitForFence(RhiFence* fence) -> void override;
     auto resetFence(RhiFence* fence) -> void override;
     auto submitCommandBuffer(RhiCommandBuffer* cmd, const RhiSubmitInfo& info) -> void override;
-    auto present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) -> bool override;
+    auto present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) -> std::expected<void, RhiError> override;
 
     auto mapBuffer(RhiBuffer* buffer) -> void* override;
     auto unmapBuffer(RhiBuffer* buffer) -> void override;

@@ -3,6 +3,7 @@
 #include "renderworld.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
+#include "shaderloader.h"
 
 #include <array>
 #include <cstring>
@@ -13,8 +14,8 @@ auto LightingPass::init(RhiDevice* dev, uint32_t imageCount, RhiExtent2D extent,
     device = dev;
     sceneColorFormat = colorFormat;
 
-    vertShader = device->createShaderModule("shaders/lighting.vert.spv");
-    fragShader = device->createShaderModule("shaders/lighting.frag.spv");
+    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/lighting.vert.spv");
+    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/lighting.frag.spv");
 
     std::array<RhiDescriptorBinding, 5> bindings = {{
         {.binding = 0, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},

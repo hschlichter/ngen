@@ -19,7 +19,7 @@ public:
     RhiDevice& operator=(RhiDevice&&) = default;
     virtual ~RhiDevice() = default;
 
-    virtual auto init(const RhiWindow& window) -> std::expected<void, int> = 0;
+    virtual auto init(const RhiWindow& window) -> std::expected<void, RhiError> = 0;
     virtual auto destroy() -> void = 0;
     virtual auto waitIdle() -> void = 0;
 
@@ -27,7 +27,7 @@ public:
     virtual auto createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* = 0;
     virtual auto createTexture(const RhiTextureDesc& desc) -> RhiTexture* = 0;
     virtual auto createSampler(const RhiSamplerDesc& desc) -> RhiSampler* = 0;
-    virtual auto createShaderModule(const char* filepath) -> RhiShaderModule* = 0;
+    virtual auto createShaderModule(const RhiShaderDesc& desc) -> RhiShaderModule* = 0;
     virtual auto createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) -> RhiPipeline* = 0;
     virtual auto createDescriptorSetLayout(std::span<const RhiDescriptorBinding> bindings) -> RhiDescriptorSetLayout* = 0;
     virtual auto createDescriptorPool(uint32_t maxSets, std::span<const RhiDescriptorBinding> bindings) -> RhiDescriptorPool* = 0;
@@ -41,7 +41,7 @@ public:
     virtual auto waitForFence(RhiFence* fence) -> void = 0;
     virtual auto resetFence(RhiFence* fence) -> void = 0;
     virtual auto submitCommandBuffer(RhiCommandBuffer* cmd, const RhiSubmitInfo& info) -> void = 0;
-    virtual auto present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) -> bool = 0;
+    virtual auto present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) -> std::expected<void, RhiError> = 0;
 
     virtual auto mapBuffer(RhiBuffer* buffer) -> void* = 0;
     virtual auto unmapBuffer(RhiBuffer* buffer) -> void = 0;
