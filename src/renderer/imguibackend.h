@@ -6,8 +6,6 @@
 
 class RhiDevice;
 class RhiCommandBuffer;
-union SDL_Event;
-struct SDL_Window;
 struct ImDrawData;
 struct ImDrawList;
 struct ImTextureData;
@@ -38,24 +36,25 @@ struct ImGuiFrameSnapshot {
     void fillDrawData(ImDrawData& out) const;
 };
 
-struct RhiEditorUIInitInfo {
-    SDL_Window* window;
+struct ImGuiBackendInitInfo {
     RhiDevice* device;
     RhiFormat colorFormat;
     uint32_t imageCount;
 };
 
-class RhiEditorUI {
+// Renders ImGui draw data through the RHI. The application owns the concrete
+// backend (e.g. ImGuiBackendVulkan) and the window/event plumbing; the renderer
+// only sees this interface.
+class ImGuiBackend {
 public:
-    RhiEditorUI() = default;
-    RhiEditorUI(const RhiEditorUI&) = delete;
-    RhiEditorUI& operator=(const RhiEditorUI&) = delete;
-    RhiEditorUI(RhiEditorUI&&) = default;
-    RhiEditorUI& operator=(RhiEditorUI&&) = default;
-    virtual ~RhiEditorUI() = default;
+    ImGuiBackend() = default;
+    ImGuiBackend(const ImGuiBackend&) = delete;
+    ImGuiBackend& operator=(const ImGuiBackend&) = delete;
+    ImGuiBackend(ImGuiBackend&&) = default;
+    ImGuiBackend& operator=(ImGuiBackend&&) = default;
+    virtual ~ImGuiBackend() = default;
 
-    virtual auto init(const RhiEditorUIInitInfo& info) -> void = 0;
-    virtual auto processEvent(SDL_Event* event) -> bool = 0;
+    virtual auto init(const ImGuiBackendInitInfo& info) -> void = 0;
     virtual auto beginFrame() -> void = 0;
     virtual auto endFrame() -> ImGuiFrameSnapshot = 0;
     virtual auto renderDrawData(RhiCommandBuffer* cmd, ImGuiFrameSnapshot& snapshot) -> void = 0;

@@ -23,11 +23,10 @@
 class RhiDevice;
 class RhiSwapchain;
 class RhiCommandBuffer;
-class RhiEditorUI;
+class ImGuiBackend;
 class MeshLibrary;
 class MaterialLibrary;
 struct RenderSnapshot;
-struct SDL_Window;
 
 struct CachedTexture {
     RhiTexture* texture = nullptr;
@@ -42,12 +41,11 @@ public:
     Renderer& operator=(Renderer&&) = default;
     ~Renderer() = default;
 
-    auto init(RhiDevice* rhiDevice, SDL_Window* window, RhiExtent2D windowExtent) -> std::expected<void, int>;
+    auto init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2D windowExtent) -> std::expected<void, int>;
     auto uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void;
     auto render(RenderSnapshot& snapshot) -> void;
     auto destroy() -> void;
 
-    auto editorui() -> RhiEditorUI* { return editorUI.get(); }
     auto frameGraphRef() const -> const FrameGraph& { return frameGraph; }
     auto setFrameGraphDebugEnabled(bool enabled) -> void;
     auto buildFrameGraphDebugSnapshot() const -> FrameGraphDebugSnapshot;
@@ -100,5 +98,5 @@ private:
     FrameGraphPreviews fgPreviews;
     bool fgDebugEnabled = false;
 
-    std::unique_ptr<RhiEditorUI> editorUI;
+    ImGuiBackend* editorUI = nullptr; // owned by the application
 };

@@ -9,12 +9,12 @@
 #include <unordered_map>
 
 class RhiDevice;
-class RhiEditorUI;
+class ImGuiBackend;
 class RhiCommandBuffer;
 
 class FrameGraphPreviews {
 public:
-    auto init(RhiDevice* device, RhiEditorUI* editorUI, RhiSampler* sampler) -> void;
+    auto init(RhiDevice* device, ImGuiBackend* editorUI, RhiSampler* sampler) -> void;
     auto shutdown() -> void;
 
     // Hook body: transitions source to TransferSrc, blits into preview, restores source, leaves preview in ShaderReadOnly.
@@ -39,7 +39,7 @@ private:
     static auto isBlittableColorFormat(RhiFormat f) -> bool;
 
     RhiDevice* device = nullptr;
-    RhiEditorUI* editorUI = nullptr;
+    ImGuiBackend* editorUI = nullptr;
     RhiSampler* sampler = nullptr;
     std::unordered_map<std::string, Entry> entries;
 };

@@ -1,6 +1,7 @@
 #include "renderer.h"
 #include "aapass.h"
 #include "blitpass.h"
+#include "imguibackend.h"
 #include "material.h"
 #include "mesh.h"
 #include "observationmacros.h"
@@ -8,8 +9,6 @@
 #include "rendersnapshot.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "rhieditorui.h"
-#include "rhieditoruivulkan.h"
 #include "rhiswapchain.h"
 #include "shadowpass.h"
 
@@ -17,7 +16,7 @@
 #include <cstring>
 #include <limits>
 
-auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window, RhiExtent2D windowExtent) -> std::expected<void, int> {
+auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2D windowExtent) -> std::expected<void, int> {
     using enum RhiFormat;
 
     device = rhiDevice;
@@ -105,15 +104,14 @@ auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window, RhiExtent2D window
     }
 
     // Editor UI
-    editorUI = std::make_unique<RhiEditorUIVulkan>();
+    editorUI = imguiBackend;
     editorUI->init({
-        .window = window,
         .device = device,
         .colorFormat = swapchain->colorFormat(),
         .imageCount = swapchain->imageCount(),
     });
 
-    fgPreviews.init(device, editorUI.get(), textureSampler);
+    fgPreviews.init(device, editorUI, textureSampler);
 
     return {};
 }
@@ -474,7 +472,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     auto gizmoRequests = gizmoUpdate(snapshot, ext);
     gizmoPass.addPass(frameGraph, sceneColor, ext, gizmoRequests, imageIdx);
 
-    editorUIPass.addPass(frameGraph, sceneColor, ext, editorUI.get(), snapshot.imguiSnapshot);
+    editorUIPass.addPass(frameGraph, sceneColor, ext, editorUI, snapshot.imguiSnapshot);
 
     addBlitPass(frameGraph, "BlitToBackbuffer", sceneColor, colorHandle, ext, ext);
     addPresentPass(frameGraph, colorHandle);
@@ -517,7 +515,7 @@ auto Renderer::destroy() -> void {
     fgPreviews.shutdown();
 
     editorUI->shutdown();
-    editorUI.reset();
+    editorUI = nullptr;
 
     for (auto* ds : geometryDescriptorSets) {
         delete ds;

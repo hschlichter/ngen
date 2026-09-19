@@ -1,8 +1,8 @@
 #include "editoruipass.h"
+#include "imguibackend.h"
 #include "rhicommandbuffer.h"
-#include "rhieditorui.h"
 
-auto EditorUIPass::addPass(FrameGraph& fg, FgTextureHandle colorHandle, RhiExtent2D extent, RhiEditorUI* editorUI, ImGuiFrameSnapshot& imguiSnapshot) -> void {
+auto EditorUIPass::addPass(FrameGraph& fg, FgTextureHandle colorHandle, RhiExtent2D extent, ImGuiBackend* editorUI, ImGuiFrameSnapshot& imguiSnapshot) -> void {
     struct EditorUIPassData {
         FgTextureHandle color;
     };

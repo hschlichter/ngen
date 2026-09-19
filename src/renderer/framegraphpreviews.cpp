@@ -1,13 +1,13 @@
 #include "framegraphpreviews.h"
 
+#include "imguibackend.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "rhieditorui.h"
 
 #include <algorithm>
 #include <array>
 
-auto FrameGraphPreviews::init(RhiDevice* d, RhiEditorUI* ui, RhiSampler* s) -> void {
+auto FrameGraphPreviews::init(RhiDevice* d, ImGuiBackend* ui, RhiSampler* s) -> void {
     device = d;
     editorUI = ui;
     sampler = s;

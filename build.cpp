@@ -98,8 +98,7 @@ auto main(int argc, char** argv) -> int {
 
     auto rhi = cxx::static_library("rhi")
         .sources(glob({.include = "src/rhi/*.cpp"}))
-        .public_include({"src/rhi"})
-        .include({"external/imgui"});
+        .public_include({"src/rhi"});
 
     auto rhivulkan =
         cxx::static_library("rhivulkan")
@@ -107,8 +106,6 @@ auto main(int argc, char** argv) -> int {
             .public_include({"src/rhi/vulkan"})
             .include({
                 "src",
-                "external/imgui",
-                "external/imgui/backends",
             })
             .only_on({"linux-vulkan"})
             .link(rhi);
@@ -128,6 +125,7 @@ auto main(int argc, char** argv) -> int {
                 "src/rhi/vulkan",
                 "src/scene",
                 "src/obs",
+                "external/imgui",
             })
             .link(obs)
             .link(rhi)
@@ -223,6 +221,7 @@ auto main(int argc, char** argv) -> int {
                 "src/camera.cpp",
                 "src/debugdraw.cpp",
                 "src/jobsystem.cpp",
+                "src/imguibackendvulkan.cpp",
             })
             .include({
                 "src",

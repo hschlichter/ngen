@@ -1,4 +1,4 @@
-#include "rhieditoruivulkan.h"
+#include "imguibackendvulkan.h"
 #include "rhicommandbuffervulkan.h"
 #include "rhidevicevulkan.h"
 #include "rhiresourcesvulkan.h"
@@ -11,7 +11,7 @@
 
 #include <print>
 
-auto RhiEditorUIVulkan::init(const RhiEditorUIInitInfo& info) -> void {
+auto ImGuiBackendVulkan::init(const ImGuiBackendInitInfo& info) -> void {
     auto* vkDev = static_cast<RhiDeviceVulkan*>(info.device);
     vkDevice = vkDev->vkDevice();
 
@@ -30,7 +30,7 @@ auto RhiEditorUIVulkan::init(const RhiEditorUIInitInfo& info) -> void {
 
     ImGui::CreateContext();
 
-    ImGui_ImplSDL3_InitForVulkan(info.window);
+    ImGui_ImplSDL3_InitForVulkan(window);
 
     auto colorFormat = RhiDeviceVulkan::toVkFormat(info.colorFormat);
 
@@ -58,26 +58,26 @@ auto RhiEditorUIVulkan::init(const RhiEditorUIInitInfo& info) -> void {
     std::println("Dear ImGui initialized");
 }
 
-auto RhiEditorUIVulkan::processEvent(SDL_Event* event) -> bool {
+auto ImGuiBackendVulkan::processEvent(SDL_Event* event) -> bool {
     ImGui_ImplSDL3_ProcessEvent(event);
     auto& io = ImGui::GetIO();
     return io.WantCaptureMouse || io.WantCaptureKeyboard;
 }
 
-auto RhiEditorUIVulkan::beginFrame() -> void {
+auto ImGuiBackendVulkan::beginFrame() -> void {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 }
 
-auto RhiEditorUIVulkan::endFrame() -> ImGuiFrameSnapshot {
+auto ImGuiBackendVulkan::endFrame() -> ImGuiFrameSnapshot {
     ImGui::Render();
     ImGuiFrameSnapshot snapshot;
     snapshot.cloneFrom(ImGui::GetDrawData());
     return snapshot;
 }
 
-auto RhiEditorUIVulkan::renderDrawData(RhiCommandBuffer* cmd, ImGuiFrameSnapshot& snapshot) -> void {
+auto ImGuiBackendVulkan::renderDrawData(RhiCommandBuffer* cmd, ImGuiFrameSnapshot& snapshot) -> void {
     if (!snapshot.valid) {
         return;
     }
@@ -87,7 +87,7 @@ auto RhiEditorUIVulkan::renderDrawData(RhiCommandBuffer* cmd, ImGuiFrameSnapshot
     ImGui_ImplVulkan_RenderDrawData(&drawData, vkCmd->cmd);
 }
 
-auto RhiEditorUIVulkan::shutdown() -> void {
+auto ImGuiBackendVulkan::shutdown() -> void {
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
@@ -98,14 +98,14 @@ auto RhiEditorUIVulkan::shutdown() -> void {
     }
 }
 
-auto RhiEditorUIVulkan::registerTexture(RhiTexture* texture, RhiSampler* sampler) -> uint64_t {
+auto ImGuiBackendVulkan::registerTexture(RhiTexture* texture, RhiSampler* sampler) -> uint64_t {
     auto* vkTex = static_cast<RhiTextureVulkan*>(texture);
     auto* vkSampler = static_cast<RhiSamplerVulkan*>(sampler);
     auto set = ImGui_ImplVulkan_AddTexture(vkSampler->sampler, vkTex->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     return (uint64_t) set;
 }
 
-auto RhiEditorUIVulkan::unregisterTexture(uint64_t id) -> void {
+auto ImGuiBackendVulkan::unregisterTexture(uint64_t id) -> void {
     if (id == 0) {
         return;
     }

@@ -1,6 +1,7 @@
 #include "camera.h"
 #include "debugdraw.h"
 #include "editorui.h"
+#include "imguibackendvulkan.h"
 #include "jobsystem.h"
 #include "jsonlinesfilesink.h"
 #include "mesh.h"
@@ -11,7 +12,6 @@
 #include "renderthread.h"
 #include "renderworld.h"
 #include "rhidevicevulkan.h"
-#include "rhieditorui.h"
 #include "rotategizmo.h"
 #include "scalegizmo.h"
 #include "scenequery.h"
@@ -198,8 +198,9 @@ auto main(int argc, char* argv[]) -> int {
         SDL_GetWindowSizeInPixels(window, &w, &h);
         initialExtent = {.width = (uint32_t) w, .height = (uint32_t) h};
     }
+    ImGuiBackendVulkan imguiBackend(window);
     Renderer renderer;
-    if (!renderer.init(&rhiDevice, window, initialExtent)) {
+    if (!renderer.init(&rhiDevice, &imguiBackend, initialExtent)) {
         return 1;
     }
     renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
@@ -322,7 +323,7 @@ auto main(int argc, char* argv[]) -> int {
 
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
-            auto uiCaptured = renderer.editorui()->processEvent(&ev);
+            auto uiCaptured = imguiBackend.processEvent(&ev);
 
             if (ev.type == SDL_EVENT_QUIT) {
                 std::println("Quitting");
@@ -507,9 +508,9 @@ auto main(int argc, char* argv[]) -> int {
         renderThread.setFrameGraphDebugEnabled(editorUI.getShowFrameGraphWindow());
         auto fgDebugSnap = renderThread.latestFrameGraphDebug();
 
-        renderer.editorui()->beginFrame();
+        imguiBackend.beginFrame();
         editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib, cam, std::move(fgDebugSnap));
-        auto imguiSnapshot = renderer.editorui()->endFrame();
+        auto imguiSnapshot = imguiBackend.endFrame();
 
         float mouseX = 0;
         float mouseY = 0;
