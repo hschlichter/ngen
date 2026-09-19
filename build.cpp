@@ -96,19 +96,19 @@ auto main(int argc, char** argv) -> int {
                 "external/concurrentqueue",
             });
 
-    auto rhi = cxx::static_library("rhi")
-        .sources(glob({.include = "src/rhi/*.cpp"}))
-        .public_include({"src/rhi"});
-
+    // src/rhi is header-only: the backend-agnostic interface. Consumers add the
+    // include path directly; only backends are libraries.
     auto rhivulkan =
         cxx::static_library("rhivulkan")
             .sources(glob({.include = "src/rhi/vulkan/**/*.cpp"}))
-            .public_include({"src/rhi/vulkan"})
+            .public_include({
+                "src/rhi",
+                "src/rhi/vulkan",
+            })
             .include({
                 "src",
             })
-            .only_on({"linux-vulkan"})
-            .link(rhi);
+            .only_on({"linux-vulkan"});
 
     auto rhi_backend = alias("rhi-backend").select("platform", "linux-vulkan", rhivulkan.owner());
 
@@ -128,7 +128,6 @@ auto main(int argc, char** argv) -> int {
                 "external/imgui",
             })
             .link(obs)
-            .link(rhi)
             .link(rhi_backend);
 
     auto scene =
@@ -240,7 +239,6 @@ auto main(int argc, char** argv) -> int {
                 "external/concurrentqueue",
             })
             .link(obs)
-            .link(rhi)
             .link(rhivulkan)
             .link(renderer)
             .link(scene)
