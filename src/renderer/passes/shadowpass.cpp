@@ -100,7 +100,7 @@ auto ShadowPass::addPass(
                 ShadowPush push{lightViewProj, inst.transform};
                 cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(push), &push);
                 cmd->bindVertexBuffer(cached.vertexBuffer);
-                cmd->bindIndexBuffer(cached.indexBuffer);
+                cmd->bindIndexBuffer(cached.indexBuffer, RhiIndexType::Uint32);
                 cmd->drawIndexed(cached.indexCount, 1, 0, 0, 0);
             }
 

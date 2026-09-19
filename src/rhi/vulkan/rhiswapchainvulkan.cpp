@@ -5,18 +5,6 @@
 #include <algorithm>
 #include <print>
 
-auto RhiSwapchainVulkan::findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t {
-    VkPhysicalDeviceMemoryProperties memProps;
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
-    for (uint32_t i = 0; i < memProps.memoryTypeCount; i++) {
-        if (((typeFilter & (1 << i)) != 0u) && (memProps.memoryTypes[i].propertyFlags & properties) == properties) {
-            return i;
-        }
-    }
-    std::println(stderr, "Failed to find suitable memory type");
-    return UINT32_MAX;
-}
-
 auto RhiSwapchainVulkan::vkFormatToRhiFormat(VkFormat format) -> RhiFormat {
     switch (format) {
         case VK_FORMAT_B8G8R8A8_SRGB:
@@ -133,71 +121,6 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
         }
     }
 
-    // Depth image
-    auto vkDepthFormat = VK_FORMAT_D32_SFLOAT;
-
-    VkImageCreateInfo depthImageInfo = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = vkDepthFormat,
-        .extent = {ext.width, ext.height, 1},
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-    };
-
-    result = vkCreateImage(device, &depthImageInfo, nullptr, &vkDepthImage);
-    if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateImage failed: {}({})", string_VkResult(result), (int) result);
-        return std::unexpected(RhiError::Failed);
-    }
-
-    VkMemoryRequirements depthMemReqs;
-    vkGetImageMemoryRequirements(device, vkDepthImage, &depthMemReqs);
-
-    auto depthMemType = findMemoryType(physicalDevice, depthMemReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    if (depthMemType == UINT32_MAX) {
-        return std::unexpected(RhiError::Failed);
-    }
-
-    VkMemoryAllocateInfo depthAllocInfo = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = depthMemReqs.size,
-        .memoryTypeIndex = depthMemType,
-    };
-    result = vkAllocateMemory(device, &depthAllocInfo, nullptr, &depthMemory);
-    if (result != VK_SUCCESS) {
-        std::println(stderr, "vkAllocateMemory failed: {}({})", string_VkResult(result), (int) result);
-        return std::unexpected(RhiError::Failed);
-    }
-    vkBindImageMemory(device, vkDepthImage, depthMemory, 0);
-
-    VkImageViewCreateInfo depthViewInfo = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = vkDepthImage,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = vkDepthFormat,
-        .subresourceRange =
-            {
-                .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1,
-            },
-    };
-    result = vkCreateImageView(device, &depthViewInfo, nullptr, &rhiDepthImage.view);
-    if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateImageView failed: {}({})", string_VkResult(result), (int) result);
-        return std::unexpected(RhiError::Failed);
-    }
-    rhiDepthImage.image = vkDepthImage;
-    rhiDepthImage.memory = VK_NULL_HANDLE;
-
     return {};
 }
 
@@ -223,10 +146,6 @@ auto RhiSwapchainVulkan::acquireNextImage(RhiSemaphore* signalSemaphore) -> std:
 }
 
 auto RhiSwapchainVulkan::destroy() -> void {
-    vkDestroyImageView(vkDevice, rhiDepthImage.view, nullptr);
-    vkDestroyImage(vkDevice, vkDepthImage, nullptr);
-    vkFreeMemory(vkDevice, depthMemory, nullptr);
-
     for (uint32_t i = 0; i < imgCount; i++) {
         vkDestroyImageView(vkDevice, colorImages[i].view, nullptr);
     }

@@ -93,14 +93,46 @@ enum class RhiPrimitiveTopology {
 
 enum class RhiFormat {
     Undefined,
-    R32G32_SFLOAT,
-    R32G32B32_SFLOAT,
+    R8_UNORM,
+    R8G8_UNORM,
     R8G8B8A8_SRGB,
     R8G8B8A8_UNORM,
     B8G8R8A8_SRGB,
     B8G8R8A8_UNORM,
+    R16G16B16A16_SFLOAT,
+    R32G32_SFLOAT,
+    R32G32B32_SFLOAT,
     R32G32B32A32_SFLOAT,
     D32_SFLOAT,
+    D24_UNORM_S8_UINT,
+};
+
+enum class RhiTextureDimension {
+    Texture2D,
+    Texture2DArray,
+    TextureCube, // arrayLayers must be 6
+};
+
+enum class RhiFilter {
+    Nearest,
+    Linear,
+};
+
+enum class RhiMipmapMode {
+    Nearest,
+    Linear,
+};
+
+enum class RhiAddressMode {
+    Repeat,
+    MirroredRepeat,
+    ClampToEdge,
+    ClampToBorder,
+};
+
+enum class RhiIndexType {
+    Uint16,
+    Uint32,
 };
 
 enum class RhiDescriptorType {
@@ -188,6 +220,10 @@ struct RhiTextureDesc {
     uint32_t height;
     RhiFormat format;
     RhiTextureUsageFlags usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst;
+    uint32_t mipLevels = 1;
+    uint32_t arrayLayers = 1;
+    uint32_t sampleCount = 1;
+    RhiTextureDimension dimension = RhiTextureDimension::Texture2D;
 };
 
 struct RhiBufferCopy {
@@ -223,7 +259,17 @@ struct RhiShaderDesc {
 };
 
 struct RhiSamplerDesc {
-    // matches current usage: linear filter, repeat addressing
+    RhiFilter magFilter = RhiFilter::Linear;
+    RhiFilter minFilter = RhiFilter::Linear;
+    RhiMipmapMode mipmapMode = RhiMipmapMode::Linear;
+    RhiAddressMode addressU = RhiAddressMode::Repeat;
+    RhiAddressMode addressV = RhiAddressMode::Repeat;
+    RhiAddressMode addressW = RhiAddressMode::Repeat;
+    float maxAnisotropy = 0.0f; // 0 = off; clamped to the device limit, ignored when unsupported
+    bool compareEnable = false;
+    RhiCompareOp compareOp = RhiCompareOp::Always;
+    float minLod = 0.0f;
+    float maxLod = 1000.0f; // "no clamp"
 };
 
 struct RhiVertexAttribute {

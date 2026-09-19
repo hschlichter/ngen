@@ -19,9 +19,7 @@ public:
     auto imageCount() -> uint32_t override { return imgCount; }
     auto extent() -> RhiExtent2D override { return ext; }
     auto image(uint32_t index) -> RhiTexture* override { return &colorImages[index]; }
-    auto depthImage() -> RhiTexture* override { return &rhiDepthImage; }
     auto colorFormat() -> RhiFormat override { return rhiColorFormat; }
-    auto depthFormat() -> RhiFormat override { return RhiFormat::D32_SFLOAT; }
 
 private:
     VkPhysicalDevice vkPhysicalDevice = VK_NULL_HANDLE;
@@ -36,10 +34,5 @@ private:
 
     std::vector<RhiTextureVulkan> colorImages;
 
-    VkImage vkDepthImage = VK_NULL_HANDLE;
-    VkDeviceMemory depthMemory = VK_NULL_HANDLE;
-    RhiTextureVulkan rhiDepthImage;
-
-    static auto findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t;
     static auto vkFormatToRhiFormat(VkFormat format) -> RhiFormat;
 };

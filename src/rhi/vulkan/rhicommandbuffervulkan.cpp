@@ -64,13 +64,6 @@ auto RhiCommandBufferVulkan::layoutToStageMask(RhiImageLayout layout) -> VkPipel
     return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 }
 
-auto RhiCommandBufferVulkan::layoutToAspectMask(RhiImageLayout layout) -> VkImageAspectFlags {
-    if (layout == RhiImageLayout::DepthStencilAttachment) {
-        return VK_IMAGE_ASPECT_DEPTH_BIT;
-    }
-    return VK_IMAGE_ASPECT_COLOR_BIT;
-}
-
 auto RhiCommandBufferVulkan::begin() -> void {
     VkCommandBufferBeginInfo beginInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -142,10 +135,6 @@ auto RhiCommandBufferVulkan::pipelineBarrier(std::span<const RhiBarrierDesc> bar
 
     for (const auto& b : barriers) {
         auto* tex = static_cast<RhiTextureVulkan*>(b.texture);
-        VkImageAspectFlags aspect = layoutToAspectMask(b.newLayout);
-        if (b.oldLayout == RhiImageLayout::DepthStencilAttachment) {
-            aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
-        }
 
         VkImageMemoryBarrier2 barrier = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
@@ -160,11 +149,11 @@ auto RhiCommandBufferVulkan::pipelineBarrier(std::span<const RhiBarrierDesc> bar
             .image = tex->image,
             .subresourceRange =
                 {
-                    .aspectMask = aspect,
+                    .aspectMask = tex->aspect,
                     .baseMipLevel = 0,
-                    .levelCount = 1,
+                    .levelCount = tex->mipLevels,
                     .baseArrayLayer = 0,
-                    .layerCount = 1,
+                    .layerCount = tex->arrayLayers,
                 },
         };
         imageBarriers.push_back(barrier);
@@ -206,15 +195,16 @@ auto RhiCommandBufferVulkan::bindPipeline(RhiPipeline* pipeline) -> void {
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p->pipeline);
 }
 
-auto RhiCommandBufferVulkan::bindVertexBuffer(RhiBuffer* buffer) -> void {
+auto RhiCommandBufferVulkan::bindVertexBuffer(uint32_t slot, RhiBuffer* buffer, uint64_t offset) -> void {
     auto* b = static_cast<RhiBufferVulkan*>(buffer);
-    std::array<VkDeviceSize, 1> offsets = {0};
-    vkCmdBindVertexBuffers(cmd, 0, 1, &b->buffer, offsets.data());
+    VkDeviceSize vkOffset = offset;
+    vkCmdBindVertexBuffers(cmd, slot, 1, &b->buffer, &vkOffset);
 }
 
-auto RhiCommandBufferVulkan::bindIndexBuffer(RhiBuffer* buffer) -> void {
+auto RhiCommandBufferVulkan::bindIndexBuffer(RhiBuffer* buffer, RhiIndexType indexType, uint64_t offset) -> void {
     auto* b = static_cast<RhiBufferVulkan*>(buffer);
-    vkCmdBindIndexBuffer(cmd, b->buffer, 0, VK_INDEX_TYPE_UINT32);
+    auto vkType = indexType == RhiIndexType::Uint16 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
+    vkCmdBindIndexBuffer(cmd, b->buffer, offset, vkType);
 }
 
 auto RhiCommandBufferVulkan::bindDescriptorSet(RhiPipeline* pipeline, uint32_t setIndex, RhiDescriptorSet* set) -> void {

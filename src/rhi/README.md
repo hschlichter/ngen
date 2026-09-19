@@ -105,8 +105,8 @@ Kept honest rather than papered over. See the review that produced this file for
 - Barriers are layout-only image barriers; no buffer barriers, no explicit stage or access masks.
 - One blend state for all color attachments.
 - One push constant range per pipeline.
-- Textures are 2D, one mip, one layer. `RhiSamplerDesc` is empty; every sampler is linear/repeat.
-- `bindIndexBuffer` assumes 32-bit indices. `bindVertexBuffer` has no offset or slot.
-- `RhiSwapchain::depthImage()` exists; depth is a renderer concern and will move out.
+- `copyBufferToTexture` and `blitTexture` address mip 0, layer 0 only. Textures can have mips, layers and cube faces,
+  but nothing fills the extra subresources yet.
+- No compressed formats (BC/ASTC). Add when an asset path produces them.
 - Resource objects are virtual-dtor classes returned by raw pointer; `swapchain->image(i)` pointers are invalidated by
-  `recreate`.
+  `recreate`. Opaque generational handles would fix this; deferred until a second backend makes the cost worth it.

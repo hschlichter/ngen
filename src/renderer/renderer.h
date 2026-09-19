@@ -62,6 +62,12 @@ private:
     // Shared resources
     RhiSampler* textureSampler = nullptr;
     RhiTexture* fallbackTexture = nullptr;
+
+    // Main depth buffer. Renderer-owned (the swapchain only provides color images);
+    // recreated with the swapchain. Immediate destroy is safe there because recreate waits idle.
+    static constexpr RhiFormat depthFormat = RhiFormat::D32_SFLOAT;
+    RhiTexture* depthTexture = nullptr;
+    auto recreateDepthTexture(RhiExtent2D extent) -> void;
     std::vector<RhiBuffer*> uniformBuffers;
     std::vector<void*> uniformBuffersMapped;
 

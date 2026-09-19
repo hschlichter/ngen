@@ -14,6 +14,9 @@ struct RhiTextureVulkan : public RhiTexture {
     VkImage image = VK_NULL_HANDLE;
     VkDeviceMemory memory = VK_NULL_HANDLE;
     VkImageView view = VK_NULL_HANDLE;
+    VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+    uint32_t mipLevels = 1;
+    uint32_t arrayLayers = 1;
 };
 
 struct RhiSamplerVulkan : public RhiSampler {

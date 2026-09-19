@@ -126,7 +126,7 @@ auto GeometryPass::addPass(
                 auto model = inst.transform;
                 cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(glm::mat4), &model);
                 cmd->bindVertexBuffer(cached.vertexBuffer);
-                cmd->bindIndexBuffer(cached.indexBuffer);
+                cmd->bindIndexBuffer(cached.indexBuffer, RhiIndexType::Uint32);
                 cmd->bindDescriptorSet(pip, 0, descriptorSets[(imageIndex * instanceCount) + m]);
                 cmd->drawIndexed(inst.indexCount, 1, inst.indexOffset, 0, 0);
             }

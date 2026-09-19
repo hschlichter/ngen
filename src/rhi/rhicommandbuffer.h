@@ -31,8 +31,10 @@ public:
     auto setViewport(RhiExtent2D extent) -> void { setViewport(0, 0, extent); }
     auto setScissor(RhiExtent2D extent) -> void { setScissor(0, 0, extent); }
     virtual auto bindPipeline(RhiPipeline* pipeline) -> void = 0;
-    virtual auto bindVertexBuffer(RhiBuffer* buffer) -> void = 0;
-    virtual auto bindIndexBuffer(RhiBuffer* buffer) -> void = 0;
+    virtual auto bindVertexBuffer(uint32_t slot, RhiBuffer* buffer, uint64_t offset) -> void = 0;
+    virtual auto bindIndexBuffer(RhiBuffer* buffer, RhiIndexType indexType, uint64_t offset) -> void = 0;
+    auto bindVertexBuffer(RhiBuffer* buffer) -> void { bindVertexBuffer(0, buffer, 0); }
+    auto bindIndexBuffer(RhiBuffer* buffer, RhiIndexType indexType) -> void { bindIndexBuffer(buffer, indexType, 0); }
     virtual auto bindDescriptorSet(RhiPipeline* pipeline, uint32_t setIndex, RhiDescriptorSet* set) -> void = 0;
     virtual auto pushConstants(RhiPipeline* pipeline, RhiShaderStageFlags stage, uint32_t offset, uint32_t size, const void* data) -> void = 0;
     virtual auto draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) -> void = 0;

@@ -46,6 +46,14 @@ auto RhiDeviceVulkan::toVkFormat(RhiFormat format) -> VkFormat {
     switch (format) {
         case Undefined:
             return VK_FORMAT_UNDEFINED;
+        case R8_UNORM:
+            return VK_FORMAT_R8_UNORM;
+        case R8G8_UNORM:
+            return VK_FORMAT_R8G8_UNORM;
+        case R16G16B16A16_SFLOAT:
+            return VK_FORMAT_R16G16B16A16_SFLOAT;
+        case D24_UNORM_S8_UINT:
+            return VK_FORMAT_D24_UNORM_S8_UINT;
         case R32G32_SFLOAT:
             return VK_FORMAT_R32G32_SFLOAT;
         case R32G32B32_SFLOAT:
@@ -468,17 +476,62 @@ auto RhiDeviceVulkan::createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* {
     return buf;
 }
 
+static auto formatAspect(RhiFormat format) -> VkImageAspectFlags {
+    switch (format) {
+        case RhiFormat::D32_SFLOAT:
+            return VK_IMAGE_ASPECT_DEPTH_BIT;
+        case RhiFormat::D24_UNORM_S8_UINT:
+            return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+        default:
+            return VK_IMAGE_ASPECT_COLOR_BIT;
+    }
+}
+
+static auto toVkSampleCount(uint32_t samples) -> VkSampleCountFlagBits {
+    switch (samples) {
+        case 2:
+            return VK_SAMPLE_COUNT_2_BIT;
+        case 4:
+            return VK_SAMPLE_COUNT_4_BIT;
+        case 8:
+            return VK_SAMPLE_COUNT_8_BIT;
+        default:
+            return VK_SAMPLE_COUNT_1_BIT;
+    }
+}
+
+static auto toVkViewType(RhiTextureDimension dimension) -> VkImageViewType {
+    switch (dimension) {
+        case RhiTextureDimension::Texture2D:
+            return VK_IMAGE_VIEW_TYPE_2D;
+        case RhiTextureDimension::Texture2DArray:
+            return VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+        case RhiTextureDimension::TextureCube:
+            return VK_IMAGE_VIEW_TYPE_CUBE;
+    }
+    return VK_IMAGE_VIEW_TYPE_2D;
+}
+
 auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {
     auto* tex = new RhiTextureVulkan();
+    tex->aspect = formatAspect(desc.format);
+    tex->mipLevels = desc.mipLevels;
+    tex->arrayLayers = desc.arrayLayers;
+
+    VkImageCreateFlags createFlags = 0;
+    if (desc.dimension == RhiTextureDimension::TextureCube) {
+        createFlags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+    }
 
     VkImageCreateInfo imageInfo = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .flags = createFlags,
         .imageType = VK_IMAGE_TYPE_2D,
         .format = toVkFormat(desc.format),
         .extent = {desc.width, desc.height, 1},
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .mipLevels = desc.mipLevels,
+        .arrayLayers = desc.arrayLayers,
+        .samples = toVkSampleCount(desc.sampleCount),
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         .usage = toVkImageUsage(desc.usage),
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
@@ -501,19 +554,18 @@ auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {
     vkAllocateMemory(device, &allocInfo, nullptr, &tex->memory);
     vkBindImageMemory(device, tex->image, tex->memory, 0);
 
-    VkImageAspectFlags aspect = desc.usage.has(RhiTextureUsage::DepthAttachment) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
     VkImageViewCreateInfo viewInfo = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = tex->image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .viewType = toVkViewType(desc.dimension),
         .format = toVkFormat(desc.format),
         .subresourceRange =
             {
-                .aspectMask = aspect,
+                .aspectMask = tex->aspect,
                 .baseMipLevel = 0,
-                .levelCount = 1,
+                .levelCount = desc.mipLevels,
                 .baseArrayLayer = 0,
-                .layerCount = 1,
+                .layerCount = desc.arrayLayers,
             },
     };
     vkCreateImageView(device, &viewInfo, nullptr, &tex->view);
@@ -521,19 +573,57 @@ auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {
     return tex;
 }
 
+static auto toVkFilter(RhiFilter filter) -> VkFilter {
+    return filter == RhiFilter::Nearest ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+}
+
+static auto toVkMipmapMode(RhiMipmapMode mode) -> VkSamplerMipmapMode {
+    return mode == RhiMipmapMode::Nearest ? VK_SAMPLER_MIPMAP_MODE_NEAREST : VK_SAMPLER_MIPMAP_MODE_LINEAR;
+}
+
+static auto toVkAddressMode(RhiAddressMode mode) -> VkSamplerAddressMode {
+    switch (mode) {
+        case RhiAddressMode::Repeat:
+            return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        case RhiAddressMode::MirroredRepeat:
+            return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+        case RhiAddressMode::ClampToEdge:
+            return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        case RhiAddressMode::ClampToBorder:
+            return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    }
+    return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+}
+
 auto RhiDeviceVulkan::createSampler(const RhiSamplerDesc& desc) -> RhiSampler* {
-    (void) desc;
     auto* sampler = new RhiSamplerVulkan();
+
+    auto anisotropy = desc.maxAnisotropy;
+    if (!deviceLimits.samplerAnisotropy) {
+        anisotropy = 0.0f;
+    }
+
     VkSamplerCreateInfo samplerInfo = {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .magFilter = VK_FILTER_LINEAR,
-        .minFilter = VK_FILTER_LINEAR,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .magFilter = toVkFilter(desc.magFilter),
+        .minFilter = toVkFilter(desc.minFilter),
+        .mipmapMode = toVkMipmapMode(desc.mipmapMode),
+        .addressModeU = toVkAddressMode(desc.addressU),
+        .addressModeV = toVkAddressMode(desc.addressV),
+        .addressModeW = toVkAddressMode(desc.addressW),
+        .anisotropyEnable = anisotropy > 0.0f ? VK_TRUE : VK_FALSE,
+        .maxAnisotropy = anisotropy > 0.0f ? anisotropy : 1.0f,
+        .compareEnable = desc.compareEnable ? VK_TRUE : VK_FALSE,
+        .compareOp = toVkCompareOp(desc.compareOp),
+        .minLod = desc.minLod,
+        .maxLod = desc.maxLod,
     };
-    vkCreateSampler(device, &samplerInfo, nullptr, &sampler->sampler);
+    auto result = vkCreateSampler(device, &samplerInfo, nullptr, &sampler->sampler);
+    if (result != VK_SUCCESS) {
+        std::println(stderr, "vkCreateSampler failed: {}({})", string_VkResult(result), (int) result);
+        delete sampler;
+        return nullptr;
+    }
     return sampler;
 }
 

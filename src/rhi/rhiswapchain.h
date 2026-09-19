@@ -19,7 +19,5 @@ public:
     virtual auto imageCount() -> uint32_t = 0;
     virtual auto extent() -> RhiExtent2D = 0;
     virtual auto image(uint32_t index) -> RhiTexture* = 0;
-    virtual auto depthImage() -> RhiTexture* = 0;
     virtual auto colorFormat() -> RhiFormat = 0;
-    virtual auto depthFormat() -> RhiFormat = 0;
 };

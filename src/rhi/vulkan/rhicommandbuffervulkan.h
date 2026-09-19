@@ -26,8 +26,10 @@ public:
     auto setViewport(int32_t x, int32_t y, RhiExtent2D extent) -> void override;
     auto setScissor(int32_t x, int32_t y, RhiExtent2D extent) -> void override;
     auto bindPipeline(RhiPipeline* pipeline) -> void override;
-    auto bindVertexBuffer(RhiBuffer* buffer) -> void override;
-    auto bindIndexBuffer(RhiBuffer* buffer) -> void override;
+    auto bindVertexBuffer(uint32_t slot, RhiBuffer* buffer, uint64_t offset) -> void override;
+    auto bindIndexBuffer(RhiBuffer* buffer, RhiIndexType indexType, uint64_t offset) -> void override;
+    using RhiCommandBuffer::bindIndexBuffer;
+    using RhiCommandBuffer::bindVertexBuffer;
     auto bindDescriptorSet(RhiPipeline* pipeline, uint32_t setIndex, RhiDescriptorSet* set) -> void override;
     auto pushConstants(RhiPipeline* pipeline, RhiShaderStageFlags stage, uint32_t offset, uint32_t size, const void* data) -> void override;
     auto draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) -> void override;
@@ -37,5 +39,4 @@ private:
     static auto toVkImageLayout(RhiImageLayout layout) -> VkImageLayout;
     static auto layoutToAccessMask(RhiImageLayout layout) -> VkAccessFlags2;
     static auto layoutToStageMask(RhiImageLayout layout) -> VkPipelineStageFlags2;
-    static auto layoutToAspectMask(RhiImageLayout layout) -> VkImageAspectFlags;
 };

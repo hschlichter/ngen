@@ -36,7 +36,9 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
     auto imgCount = swapchain->imageCount();
     auto ext = swapchain->extent();
     auto colorFmt = swapchain->colorFormat();
-    auto depthFmt = swapchain->depthFormat();
+    auto depthFmt = depthFormat;
+
+    recreateDepthTexture(ext);
 
     // Shared uniform buffers (view/proj)
     uniformBuffers.resize(imgCount);
@@ -119,6 +121,19 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
     fgPreviews.init(device, editorUI, textureSampler, &deletionQueue);
 
     return {};
+}
+
+auto Renderer::recreateDepthTexture(RhiExtent2D extent) -> void {
+    if (depthTexture != nullptr) {
+        device->destroyTexture(depthTexture);
+    }
+    RhiTextureDesc desc = {
+        .width = extent.width,
+        .height = extent.height,
+        .format = depthFormat,
+        .usage = RhiTextureUsage::DepthAttachment | RhiTextureUsage::Sampled,
+    };
+    depthTexture = device->createTexture(desc);
 }
 
 auto Renderer::setFrameGraphDebugEnabled(bool enabled) -> void {
@@ -341,6 +356,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
             OBS_EVENT("Render", "SwapchainRecreate", "swapchain").field("reason", "acquire_failed");
             if (!swapchain->recreate({.width = (uint32_t) snapshot.windowWidth, .height = (uint32_t) snapshot.windowHeight})) {
                 std::println(stderr, "Swapchain recreate failed after acquire");
+            } else {
+                recreateDepthTexture(swapchain->extent());
             }
             resourcePool.flush();
             currentFrame = 0;
@@ -362,7 +379,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     frameGraph.reset();
 
     auto colorHandle = frameGraph.importTexture("backbuffer", swapchain->image(*index), {ext.width, ext.height, swapchain->colorFormat()});
-    auto depthHandle = frameGraph.importTexture("depth", swapchain->depthImage(), {ext.width, ext.height, swapchain->depthFormat()});
+    auto depthHandle = frameGraph.importTexture("depth", depthTexture, {ext.width, ext.height, depthFormat, RhiTextureUsage::DepthAttachment | RhiTextureUsage::Sampled});
 
     // Per-frame resources (UBOs, descriptor sets, dynamic vertex buffers) are owned by
     // the frame slot whose fence guards them, not by the swapchain image.
@@ -436,7 +453,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
 
     auto invViewProj = glm::inverse(snapshot.projMatrix * snapshot.viewMatrix);
 
-    const auto& shadowData = shadowPass.addPass(frameGraph, shadowExtent, swapchain->depthFormat(), lightViewProj, gpuInstances, meshCache);
+    const auto& shadowData = shadowPass.addPass(frameGraph, shadowExtent, depthFormat, lightViewProj, gpuInstances, meshCache);
 
     const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, imageIdx, instanceCount, gpuInstances, meshCache, geometryDescriptorSets);
 
@@ -497,6 +514,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         OBS_EVENT("Render", "SwapchainRecreate", "swapchain").field("reason", "present_failed");
         if (!swapchain->recreate({.width = (uint32_t) snapshot.windowWidth, .height = (uint32_t) snapshot.windowHeight})) {
             std::println(stderr, "Swapchain recreate failed after present");
+        } else {
+            recreateDepthTexture(swapchain->extent());
         }
         resourcePool.flush();
         currentFrame = 0;
@@ -548,6 +567,8 @@ auto Renderer::destroy() -> void {
 
     device->destroySampler(textureSampler);
     device->destroyTexture(fallbackTexture);
+    device->destroyTexture(depthTexture);
+    depthTexture = nullptr;
 
     for (uint32_t i = 0; i < swapchain->imageCount(); i++) {
         device->destroySemaphore(imageAvailableSemaphores[i]);
