@@ -268,7 +268,21 @@ auto main(int argc, char** argv) -> int {
             .link_flag("-lusd_pegtl")
             .link_flag("-lusd_kind");
 
+    // RHI examples: standalone programs that reach only into src/rhi/. See docs/plan_rhi_examples.md.
+    auto exampleTriangle =
+        cxx::program("ngen-example-triangle")
+            .sources({"src/rhi/examples/triangle.cpp"})
+            .include({
+                "src/rhi",
+                "src/rhi/vulkan",
+                "src/rhi/examples",
+            })
+            .link(rhi_backend)
+            .link("shaderc_shared")
+            .link_flags(sdl3_libs);
+
     p.target(view);
+    p.target(exampleTriangle);
     p.target(format);
     p.target(tidy);
     p.default_target(view);

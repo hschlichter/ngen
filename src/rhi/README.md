@@ -72,6 +72,8 @@ to `RhiFlags<E>` via `RhiFlagEnum<E>`; `A | B` yields `RhiFlags<E>` and `.has(E)
 
 ## What an integrator provides
 
+`src/rhi/examples/triangle.cpp` is the reference implementation of this list: one file, one triangle, every item below in order.
+
 1. A window and an `RhiWindow` filled from it.
 2. A concrete backend instance, `init(window)`, then `createSwapchain(extent)` with the framebuffer size in pixels.
 3. Frame pacing: N command buffers, N fences, semaphores per frame slot and per swapchain image, and the decision of

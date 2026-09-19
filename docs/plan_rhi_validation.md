@@ -1,6 +1,6 @@
 # RHI validation program (`ngen-test-rhi`)
 
-**Status. Draft.**
+**Status. Superseded by plan_rhi_examples.md.**
 
 ## Current state
 
