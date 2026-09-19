@@ -41,7 +41,9 @@ public:
     virtual auto createComputePipeline(const RhiComputePipelineDesc& desc) -> RhiPipeline* = 0;
     virtual auto createDescriptorSetLayout(std::span<const RhiDescriptorBinding> bindings) -> RhiDescriptorSetLayout* = 0;
     virtual auto createDescriptorPool(uint32_t maxSets, std::span<const RhiDescriptorBinding> bindings) -> RhiDescriptorPool* = 0;
-    virtual auto allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) -> std::vector<RhiDescriptorSet*> = 0;
+    // Fills outSets, one set per element. Free them with freeDescriptorSets before destroying the pool.
+    virtual auto allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, std::span<RhiDescriptorSet*> outSets) -> bool = 0;
+    virtual auto freeDescriptorSets(RhiDescriptorPool* pool, std::span<RhiDescriptorSet* const> sets) -> void = 0;
     virtual auto updateDescriptorSet(RhiDescriptorSet* set, std::span<const RhiDescriptorWrite> writes) -> void = 0;
 
     virtual auto createCommandBuffer() -> RhiCommandBuffer* = 0;

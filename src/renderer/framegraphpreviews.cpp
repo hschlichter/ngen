@@ -114,26 +114,26 @@ auto FrameGraphPreviews::entryFor(const FgCapturedResource& view) -> Entry* {
     return e.texture != nullptr ? &e : nullptr;
 }
 
-static auto accessToLayoutPreview(FgAccessFlags a) -> RhiImageLayout {
+static auto accessToLayoutPreview(FgAccessFlags a) -> RhiTextureState {
     if (a & FgAccessFlags::ColorAttachment) {
-        return RhiImageLayout::ColorAttachment;
+        return RhiTextureState::ColorAttachment;
     }
     if (a & FgAccessFlags::DepthAttachment) {
-        return RhiImageLayout::DepthStencilAttachment;
+        return RhiTextureState::DepthStencilAttachment;
     }
     if (a & FgAccessFlags::ShaderRead) {
-        return RhiImageLayout::ShaderReadOnly;
+        return RhiTextureState::ShaderReadOnly;
     }
     if (a & FgAccessFlags::TransferSrc) {
-        return RhiImageLayout::TransferSrc;
+        return RhiTextureState::TransferSrc;
     }
     if (a & FgAccessFlags::TransferDst) {
-        return RhiImageLayout::TransferDst;
+        return RhiTextureState::TransferDst;
     }
     if (a & FgAccessFlags::Present) {
-        return RhiImageLayout::PresentSrc;
+        return RhiTextureState::PresentSrc;
     }
-    return RhiImageLayout::Undefined;
+    return RhiTextureState::Undefined;
 }
 
 auto FrameGraphPreviews::capture(RhiCommandBuffer* cmd, const FgCapturedResource& view) -> void {
@@ -143,19 +143,19 @@ auto FrameGraphPreviews::capture(RhiCommandBuffer* cmd, const FgCapturedResource
     }
 
     auto srcLayout = accessToLayoutPreview(view.currentAccess);
-    auto dstStartLayout = e->everCaptured ? RhiImageLayout::ShaderReadOnly : RhiImageLayout::Undefined;
+    auto dstStartLayout = e->everCaptured ? RhiTextureState::ShaderReadOnly : RhiTextureState::Undefined;
 
-    std::array<RhiBarrierDesc, 2> preBarriers = {{
-        {.texture = view.physical, .oldLayout = srcLayout, .newLayout = RhiImageLayout::TransferSrc},
-        {.texture = e->texture, .oldLayout = dstStartLayout, .newLayout = RhiImageLayout::TransferDst},
+    std::array<RhiTextureBarrierDesc, 2> preBarriers = {{
+        {.texture = view.physical, .oldState = srcLayout, .newState = RhiTextureState::TransferSrc},
+        {.texture = e->texture, .oldState = dstStartLayout, .newState = RhiTextureState::TransferDst},
     }};
     cmd->pipelineBarrier(preBarriers);
 
     cmd->blitTexture(view.physical, e->texture, {view.desc.width, view.desc.height}, {e->width, e->height});
 
-    std::array<RhiBarrierDesc, 2> postBarriers = {{
-        {.texture = view.physical, .oldLayout = RhiImageLayout::TransferSrc, .newLayout = srcLayout},
-        {.texture = e->texture, .oldLayout = RhiImageLayout::TransferDst, .newLayout = RhiImageLayout::ShaderReadOnly},
+    std::array<RhiTextureBarrierDesc, 2> postBarriers = {{
+        {.texture = view.physical, .oldState = RhiTextureState::TransferSrc, .newState = srcLayout},
+        {.texture = e->texture, .oldState = RhiTextureState::TransferDst, .newState = RhiTextureState::ShaderReadOnly},
     }};
     cmd->pipelineBarrier(postBarriers);
 

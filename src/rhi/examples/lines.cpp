@@ -110,7 +110,7 @@ protected:
 
     auto record(RhiCommandBuffer* cmd, RhiTexture* backbuffer, RhiExtent2D extent) -> void override {
         std::array<RhiRenderingAttachmentInfo, 1> colorAttachments = {{
-            {.texture = backbuffer, .layout = RhiImageLayout::ColorAttachment, .clear = true, .clearColor = clearColor},
+            {.texture = backbuffer, .state = RhiTextureState::ColorAttachment, .clear = true, .clearColor = clearColor},
         }};
         cmd->beginRendering({.extent = extent, .colorAttachments = colorAttachments});
         cmd->setViewport(extent);

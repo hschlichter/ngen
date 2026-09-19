@@ -168,7 +168,8 @@ protected:
 
         sampler = device().createSampler({.magFilter = RhiFilter::Nearest, .minFilter = RhiFilter::Nearest});
         pool = device().createDescriptorPool(2, bindings);
-        descriptorSets = device().allocateDescriptorSets(pool, setLayout, 2);
+        descriptorSets.assign(2, nullptr);
+        device().allocateDescriptorSets(pool, setLayout, descriptorSets);
         std::array<RhiTexture*, 2> sampled = {target, blitTarget};
         for (uint32_t i = 0; i < 2; i++) {
             std::array<RhiDescriptorWrite, 1> writes = {{
@@ -181,12 +182,12 @@ protected:
 
     auto record(RhiCommandBuffer* cmd, RhiTexture* backbuffer, RhiExtent2D extent) -> void override {
         // Pass 1: triangle into the offscreen target.
-        std::array<RhiBarrierDesc, 1> targetToColor = {{
-            {.texture = target, .oldLayout = RhiImageLayout::Undefined, .newLayout = RhiImageLayout::ColorAttachment},
+        std::array<RhiTextureBarrierDesc, 1> targetToColor = {{
+            {.texture = target, .oldState = RhiTextureState::Undefined, .newState = RhiTextureState::ColorAttachment},
         }};
         cmd->pipelineBarrier(targetToColor);
         std::array<RhiRenderingAttachmentInfo, 1> targetAttachment = {{
-            {.texture = target, .layout = RhiImageLayout::ColorAttachment, .clear = true, .clearColor = targetClear},
+            {.texture = target, .state = RhiTextureState::ColorAttachment, .clear = true, .clearColor = targetClear},
         }};
         cmd->beginRendering({.extent = targetExtent, .colorAttachments = targetAttachment});
         cmd->setViewport(targetExtent);
@@ -197,21 +198,21 @@ protected:
 
         // Blit: target becomes a transfer source, blitDst a transfer destination,
         // then both become sampled textures. The blit also downsamples 512 -> 256.
-        std::array<RhiBarrierDesc, 2> toTransfer = {{
-            {.texture = target, .oldLayout = RhiImageLayout::ColorAttachment, .newLayout = RhiImageLayout::TransferSrc},
-            {.texture = blitTarget, .oldLayout = RhiImageLayout::Undefined, .newLayout = RhiImageLayout::TransferDst},
+        std::array<RhiTextureBarrierDesc, 2> toTransfer = {{
+            {.texture = target, .oldState = RhiTextureState::ColorAttachment, .newState = RhiTextureState::TransferSrc},
+            {.texture = blitTarget, .oldState = RhiTextureState::Undefined, .newState = RhiTextureState::TransferDst},
         }};
         cmd->pipelineBarrier(toTransfer);
         cmd->blitTexture(target, blitTarget, targetExtent, blitExtent);
-        std::array<RhiBarrierDesc, 2> toSampled = {{
-            {.texture = target, .oldLayout = RhiImageLayout::TransferSrc, .newLayout = RhiImageLayout::ShaderReadOnly},
-            {.texture = blitTarget, .oldLayout = RhiImageLayout::TransferDst, .newLayout = RhiImageLayout::ShaderReadOnly},
+        std::array<RhiTextureBarrierDesc, 2> toSampled = {{
+            {.texture = target, .oldState = RhiTextureState::TransferSrc, .newState = RhiTextureState::ShaderReadOnly},
+            {.texture = blitTarget, .oldState = RhiTextureState::TransferDst, .newState = RhiTextureState::ShaderReadOnly},
         }};
         cmd->pipelineBarrier(toSampled);
 
         // Pass 2: both textures onto the swapchain.
         std::array<RhiRenderingAttachmentInfo, 1> colorAttachments = {{
-            {.texture = backbuffer, .layout = RhiImageLayout::ColorAttachment, .clear = true, .clearColor = clearColor},
+            {.texture = backbuffer, .state = RhiTextureState::ColorAttachment, .clear = true, .clearColor = clearColor},
         }};
         cmd->beginRendering({.extent = extent, .colorAttachments = colorAttachments});
         cmd->setViewport(extent);
@@ -239,10 +240,8 @@ protected:
     }
 
     auto teardown() -> void override {
+        device().freeDescriptorSets(pool, descriptorSets);
         device().destroyDescriptorPool(pool);
-        for (auto* set : descriptorSets) {
-            delete set;
-        }
         device().destroySampler(sampler);
         device().destroyBuffer(indexBuffer);
         device().destroyBuffer(vertexBuffer);

@@ -17,7 +17,7 @@ public:
     auto reset() -> void override;
     auto beginRendering(const RhiRenderingInfo& info) -> void override;
     auto endRendering() -> void override;
-    auto pipelineBarrier(std::span<const RhiBarrierDesc> imageBarriers, std::span<const RhiBufferBarrierDesc> bufferBarriers) -> void override;
+    auto pipelineBarrier(std::span<const RhiTextureBarrierDesc> imageBarriers, std::span<const RhiBufferBarrierDesc> bufferBarriers) -> void override;
     using RhiCommandBuffer::bufferBarrier;
     using RhiCommandBuffer::pipelineBarrier;
     auto blitTexture(RhiTexture* src, RhiTexture* dst, RhiExtent2D srcExtent, RhiExtent2D dstExtent) -> void override;
@@ -40,9 +40,9 @@ public:
     auto dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) -> void override;
 
 private:
-    static auto toVkImageLayout(RhiImageLayout layout) -> VkImageLayout;
-    static auto layoutToAccessMask(RhiImageLayout layout) -> VkAccessFlags2;
-    static auto layoutToStageMask(RhiImageLayout layout) -> VkPipelineStageFlags2;
+    static auto toVkImageLayout(RhiTextureState layout) -> VkImageLayout;
+    static auto stateToAccessMask(RhiTextureState layout) -> VkAccessFlags2;
+    static auto stateToStageMask(RhiTextureState layout) -> VkPipelineStageFlags2;
     static auto bufferStateToAccessMask(RhiBufferState state) -> VkAccessFlags2;
     static auto bufferStateToStageMask(RhiBufferState state) -> VkPipelineStageFlags2;
 };

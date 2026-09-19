@@ -171,7 +171,8 @@ protected:
 
         // Descriptor sets: one per sampler, all pointing at the same texture.
         pool = device().createDescriptorPool(4, bindings);
-        descriptorSets = device().allocateDescriptorSets(pool, setLayout, 4);
+        descriptorSets.assign(4, nullptr);
+        device().allocateDescriptorSets(pool, setLayout, descriptorSets);
         for (uint32_t i = 0; i < 4; i++) {
             std::array<RhiDescriptorWrite, 1> writes = {{
                 {.binding = 0, .type = RhiDescriptorType::CombinedImageSampler, .texture = texture, .sampler = samplers[i]},
@@ -183,7 +184,7 @@ protected:
 
     auto record(RhiCommandBuffer* cmd, RhiTexture* backbuffer, RhiExtent2D extent) -> void override {
         std::array<RhiRenderingAttachmentInfo, 1> colorAttachments = {{
-            {.texture = backbuffer, .layout = RhiImageLayout::ColorAttachment, .clear = true, .clearColor = clearColor},
+            {.texture = backbuffer, .state = RhiTextureState::ColorAttachment, .clear = true, .clearColor = clearColor},
         }};
         cmd->beginRendering({.extent = extent, .colorAttachments = colorAttachments});
         cmd->setViewport(extent);
@@ -231,10 +232,8 @@ protected:
     }
 
     auto teardown() -> void override {
+        device().freeDescriptorSets(pool, descriptorSets);
         device().destroyDescriptorPool(pool);
-        for (auto* set : descriptorSets) {
-            delete set;
-        }
         for (auto* sampler : samplers) {
             device().destroySampler(sampler);
         }

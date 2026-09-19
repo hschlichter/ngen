@@ -83,7 +83,7 @@ protected:
         std::array<RhiRenderingAttachmentInfo, 1> colorAttachments = {{
             {
                 .texture = backbuffer,
-                .layout = RhiImageLayout::ColorAttachment,
+                .state = RhiTextureState::ColorAttachment,
                 .clear = true,
                 .clearColor = clearColor,
             },

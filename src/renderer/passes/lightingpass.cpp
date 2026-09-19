@@ -42,7 +42,8 @@ auto LightingPass::init(RhiDevice* dev, uint32_t imageCount, RhiExtent2D extent,
     }
 
     descriptorPool = device->createDescriptorPool(imageCount, bindings);
-    descriptorSets = device->allocateDescriptorSets(descriptorPool, descriptorSetLayout, imageCount);
+    descriptorSets.assign(imageCount, nullptr);
+    device->allocateDescriptorSets(descriptorPool, descriptorSetLayout, descriptorSets);
 
     uniformBuffers.resize(imageCount);
     uniformBuffersMapped.resize(imageCount);
@@ -60,9 +61,7 @@ auto LightingPass::init(RhiDevice* dev, uint32_t imageCount, RhiExtent2D extent,
 }
 
 auto LightingPass::destroy(RhiDevice* dev) -> void {
-    for (auto* ds : descriptorSets) {
-        delete ds;
-    }
+    dev->freeDescriptorSets(descriptorPool, descriptorSets);
     dev->destroyDescriptorPool(descriptorPool);
     dev->destroyDescriptorSetLayout(descriptorSetLayout);
 
@@ -157,7 +156,7 @@ auto LightingPass::addPass(
 
             RhiRenderingAttachmentInfo colorAtt = {
                 .texture = ctx.texture(data.sceneColor),
-                .layout = RhiImageLayout::ColorAttachment,
+                .state = RhiTextureState::ColorAttachment,
                 .clear = true,
                 .clearColor = {0.12f, 0.12f, 0.15f, 1.0f},
             };

@@ -26,14 +26,14 @@ inline auto createReadbackBuffer(RhiDevice& device, RhiExtent2D extent) -> RhiBu
 }
 
 // Records: texture fromLayout -> TransferSrc, copy into buffer, TransferSrc -> toLayout.
-inline auto recordReadback(RhiCommandBuffer* cmd, RhiTexture* texture, RhiBuffer* buffer, RhiExtent2D extent, RhiImageLayout fromLayout, RhiImageLayout toLayout) -> void {
-    std::array<RhiBarrierDesc, 1> toTransfer = {{
-        {.texture = texture, .oldLayout = fromLayout, .newLayout = RhiImageLayout::TransferSrc},
+inline auto recordReadback(RhiCommandBuffer* cmd, RhiTexture* texture, RhiBuffer* buffer, RhiExtent2D extent, RhiTextureState fromLayout, RhiTextureState toLayout) -> void {
+    std::array<RhiTextureBarrierDesc, 1> toTransfer = {{
+        {.texture = texture, .oldState = fromLayout, .newState = RhiTextureState::TransferSrc},
     }};
     cmd->pipelineBarrier(toTransfer);
     cmd->copyTextureToBuffer(texture, buffer, {.width = extent.width, .height = extent.height});
-    std::array<RhiBarrierDesc, 1> toFinal = {{
-        {.texture = texture, .oldLayout = RhiImageLayout::TransferSrc, .newLayout = toLayout},
+    std::array<RhiTextureBarrierDesc, 1> toFinal = {{
+        {.texture = texture, .oldState = RhiTextureState::TransferSrc, .newState = toLayout},
     }};
     cmd->pipelineBarrier(toFinal);
 }

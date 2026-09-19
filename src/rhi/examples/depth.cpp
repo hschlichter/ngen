@@ -187,17 +187,17 @@ protected:
 
     auto record(RhiCommandBuffer* cmd, RhiTexture* backbuffer, RhiExtent2D extent) -> void override {
         // Depth contents are not kept between frames: start from Undefined and clear.
-        std::array<RhiBarrierDesc, 1> depthBarrier = {{
-            {.texture = depthTexture, .oldLayout = RhiImageLayout::Undefined, .newLayout = RhiImageLayout::DepthStencilAttachment},
+        std::array<RhiTextureBarrierDesc, 1> depthBarrier = {{
+            {.texture = depthTexture, .oldState = RhiTextureState::Undefined, .newState = RhiTextureState::DepthStencilAttachment},
         }};
         cmd->pipelineBarrier(depthBarrier);
 
         std::array<RhiRenderingAttachmentInfo, 1> colorAttachments = {{
-            {.texture = backbuffer, .layout = RhiImageLayout::ColorAttachment, .clear = true, .clearColor = clearColor},
+            {.texture = backbuffer, .state = RhiTextureState::ColorAttachment, .clear = true, .clearColor = clearColor},
         }};
         RhiRenderingAttachmentInfo depthAttachment = {
             .texture = depthTexture,
-            .layout = RhiImageLayout::DepthStencilAttachment,
+            .state = RhiTextureState::DepthStencilAttachment,
             .clear = true,
             .clearDepth = 1.0f,
         };

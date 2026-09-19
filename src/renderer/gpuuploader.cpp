@@ -64,15 +64,15 @@ auto GpuUploader::uploadTexture(const RhiTextureDesc& desc, std::span<const std:
     texDesc.usage |= RhiTextureUsage::TransferDst;
     auto* dst = device->createTexture(texDesc);
 
-    std::array<RhiBarrierDesc, 1> toTransfer = {{
-        {.texture = dst, .oldLayout = RhiImageLayout::Undefined, .newLayout = RhiImageLayout::TransferDst},
+    std::array<RhiTextureBarrierDesc, 1> toTransfer = {{
+        {.texture = dst, .oldState = RhiTextureState::Undefined, .newState = RhiTextureState::TransferDst},
     }};
     cmd->pipelineBarrier(toTransfer);
 
     cmd->copyBufferToTexture(src, dst, {.width = desc.width, .height = desc.height});
 
-    std::array<RhiBarrierDesc, 1> toShader = {{
-        {.texture = dst, .oldLayout = RhiImageLayout::TransferDst, .newLayout = RhiImageLayout::ShaderReadOnly},
+    std::array<RhiTextureBarrierDesc, 1> toShader = {{
+        {.texture = dst, .oldState = RhiTextureState::TransferDst, .newState = RhiTextureState::ShaderReadOnly},
     }};
     cmd->pipelineBarrier(toShader);
 

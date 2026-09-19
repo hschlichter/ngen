@@ -252,14 +252,15 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
 
     uploader.end();
 
-    for (auto* ds : geometryDescriptorSets) {
-        delete ds;
-    }
-    geometryDescriptorSets.clear();
+    // Sets and pool may still be bound by frames in flight: free and destroy together, later.
     if (geometryDescriptorPool) {
-        deletionQueue.deferDescriptorPool(m_frameIndex, geometryDescriptorPool);
+        deletionQueue.defer(m_frameIndex, [dev = device, pool = geometryDescriptorPool, sets = geometryDescriptorSets] {
+            dev->freeDescriptorSets(pool, sets);
+            dev->destroyDescriptorPool(pool);
+        });
         geometryDescriptorPool = nullptr;
     }
+    geometryDescriptorSets.clear();
 
     auto instanceCount = (uint32_t) gpuInstances.size();
     auto imgCount = swapchain->imageCount();
@@ -273,7 +274,8 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
     }};
     geometryDescriptorPool = device->createDescriptorPool(totalSets, poolBindings);
-    geometryDescriptorSets = device->allocateDescriptorSets(geometryDescriptorPool, geometryPass.descriptorSetLayout(), totalSets);
+    geometryDescriptorSets.assign(totalSets, nullptr);
+    device->allocateDescriptorSets(geometryDescriptorPool, geometryPass.descriptorSetLayout(), geometryDescriptorSets);
 
     for (uint32_t i = 0; i < imgCount; i++) {
         for (uint32_t m = 0; m < instanceCount; m++) {
@@ -537,10 +539,8 @@ auto Renderer::destroy() -> void {
     editorUI->shutdown();
     editorUI = nullptr;
 
-    for (auto* ds : geometryDescriptorSets) {
-        delete ds;
-    }
     if (geometryDescriptorPool) {
+        device->freeDescriptorSets(geometryDescriptorPool, geometryDescriptorSets);
         device->destroyDescriptorPool(geometryDescriptorPool);
     }
 

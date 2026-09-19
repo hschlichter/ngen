@@ -135,7 +135,8 @@ protected:
         uniformMapped = static_cast<uint8_t*>(device().mapBuffer(uniformBuffer));
 
         pool = device().createDescriptorPool(frameCount(), bindings);
-        descriptorSets = device().allocateDescriptorSets(pool, setLayout, frameCount());
+        descriptorSets.assign(frameCount(), nullptr);
+        device().allocateDescriptorSets(pool, setLayout, descriptorSets);
         for (uint32_t slot = 0; slot < frameCount(); slot++) {
             std::array<RhiDescriptorWrite, 1> writes = {{
                 {
@@ -162,7 +163,7 @@ protected:
         memcpy(uniformMapped + (size_t) frameSlot() * regionStride, &params, sizeof(params));
 
         std::array<RhiRenderingAttachmentInfo, 1> colorAttachments = {{
-            {.texture = backbuffer, .layout = RhiImageLayout::ColorAttachment, .clear = true, .clearColor = clearColor},
+            {.texture = backbuffer, .state = RhiTextureState::ColorAttachment, .clear = true, .clearColor = clearColor},
         }};
         cmd->beginRendering({.extent = extent, .colorAttachments = colorAttachments});
         cmd->setViewport(extent);
@@ -184,10 +185,8 @@ protected:
     }
 
     auto teardown() -> void override {
+        device().freeDescriptorSets(pool, descriptorSets);
         device().destroyDescriptorPool(pool);
-        for (auto* set : descriptorSets) {
-            delete set;
-        }
         device().unmapBuffer(uniformBuffer);
         device().destroyBuffer(uniformBuffer);
         device().destroyBuffer(indexBuffer);

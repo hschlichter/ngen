@@ -16,7 +16,7 @@ class RhiCommandBuffer;
 //   auto* tex = uploader.uploadTexture(desc, pixels);
 //   uploader.end(); // submits, waits, frees staging
 //
-// Textures come back in RhiImageLayout::ShaderReadOnly. Call end() before using
+// Textures come back in RhiTextureState::ShaderReadOnly. Call end() before using
 // anything returned by upload*(). Single-threaded; owned by the renderer.
 class GpuUploader {
 public:

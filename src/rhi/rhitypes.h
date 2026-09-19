@@ -142,7 +142,7 @@ enum class RhiDescriptorType {
     UniformBuffer,
     CombinedImageSampler,
     StorageBuffer, // read/write buffer; RhiBufferUsage::Storage
-    StorageImage,  // read/write texture in RhiImageLayout::General; RhiTextureUsage::Storage, no sampler
+    StorageImage,  // read/write texture in RhiTextureState::General; RhiTextureUsage::Storage, no sampler
 };
 
 enum class RhiTextureUsage : uint32_t {
@@ -200,9 +200,10 @@ enum class RhiBlendOp {
     Max,
 };
 
-// Resource state of a texture. Barriers move a texture from one to the next;
-// the backend derives layout, pipeline stages and access from it.
-enum class RhiImageLayout {
+// Resource state of a texture (D3D12 calls it a resource state, Vulkan an image
+// layout). Barriers move a texture from one to the next; the backend derives
+// layout, pipeline stages and access from it.
+enum class RhiTextureState {
     Undefined,
     ColorAttachment,
     DepthStencilAttachment,
@@ -213,7 +214,7 @@ enum class RhiImageLayout {
     PresentSrc,
 };
 
-// Resource state of a buffer, same idea as RhiImageLayout. Buffers have no
+// Resource state of a buffer, same idea as RhiTextureState. Buffers have no
 // layout, only the stages and accesses that a barrier must order.
 enum class RhiBufferState {
     Undefined, // never used yet, or contents may be discarded
@@ -408,7 +409,7 @@ public:
 
 struct RhiRenderingAttachmentInfo {
     RhiTexture* texture = nullptr;
-    RhiImageLayout layout = RhiImageLayout::Undefined;
+    RhiTextureState state = RhiTextureState::Undefined;
     bool clear = false;
     std::array<float, 4> clearColor = {0.0f, 0.0f, 0.0f, 1.0f};
     float clearDepth = 1.0f;
@@ -420,10 +421,10 @@ struct RhiRenderingInfo {
     const RhiRenderingAttachmentInfo* depthAttachment = nullptr;
 };
 
-struct RhiBarrierDesc {
+struct RhiTextureBarrierDesc {
     RhiTexture* texture = nullptr;
-    RhiImageLayout oldLayout = RhiImageLayout::Undefined;
-    RhiImageLayout newLayout = RhiImageLayout::Undefined;
+    RhiTextureState oldState = RhiTextureState::Undefined;
+    RhiTextureState newState = RhiTextureState::Undefined;
 };
 
 struct RhiBufferBarrierDesc {

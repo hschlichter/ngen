@@ -308,8 +308,8 @@ inline auto RhiExample::run(int argc, char** argv, const char* name) -> int {
 
         // Layouts are explicit. The swapchain image starts undefined each frame and
         // must end in PresentSrc. The example records between those two barriers.
-        std::array<RhiBarrierDesc, 1> toColor = {{
-            {.texture = backbuffer, .oldLayout = RhiImageLayout::Undefined, .newLayout = RhiImageLayout::ColorAttachment},
+        std::array<RhiTextureBarrierDesc, 1> toColor = {{
+            {.texture = backbuffer, .oldState = RhiTextureState::Undefined, .newState = RhiTextureState::ColorAttachment},
         }};
         cmd->pipelineBarrier(toColor);
 
@@ -319,10 +319,10 @@ inline auto RhiExample::run(int argc, char** argv, const char* name) -> int {
             lastFrame.extent = extent;
             lastFrame.format = swapchainFormat;
             readbackBuffer = createReadbackBuffer(rhiDevice, extent);
-            recordReadback(cmd, backbuffer, readbackBuffer, extent, RhiImageLayout::ColorAttachment, RhiImageLayout::PresentSrc);
+            recordReadback(cmd, backbuffer, readbackBuffer, extent, RhiTextureState::ColorAttachment, RhiTextureState::PresentSrc);
         } else {
-            std::array<RhiBarrierDesc, 1> toPresent = {{
-                {.texture = backbuffer, .oldLayout = RhiImageLayout::ColorAttachment, .newLayout = RhiImageLayout::PresentSrc},
+            std::array<RhiTextureBarrierDesc, 1> toPresent = {{
+                {.texture = backbuffer, .oldState = RhiTextureState::ColorAttachment, .newState = RhiTextureState::PresentSrc},
             }};
             cmd->pipelineBarrier(toPresent);
         }

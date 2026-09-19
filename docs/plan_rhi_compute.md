@@ -16,7 +16,7 @@ descriptors, layout-only image barriers. Listed as the first gap likely to matte
 - `RhiComputePipelineDesc { shader, descriptorSetLayouts, pushConstant }` and `RhiDevice::createComputePipeline`. Same `RhiPipeline` type as
   graphics; the backend records the bind point and `bindPipeline` / `bindDescriptorSet` / `pushConstants` pick it from the pipeline.
 - `RhiCommandBuffer::dispatch(x, y, z)`.
-- `RhiImageLayout::General` for storage images. `RhiBufferState` and `RhiBufferBarrierDesc`; `pipelineBarrier(images, buffers)` with the
+- `RhiTextureState::General` for storage images. `RhiBufferState` and `RhiBufferBarrierDesc`; `pipelineBarrier(images, buffers)` with the
   old single-span call kept as a forwarding overload and `bufferBarrier(buffers)` added.
 - `ShaderReadOnly` now covers vertex, fragment and compute stages instead of fragment only.
 - `src/rhi/examples/compute.cpp`: storage image written by one dispatch and sampled by a quad; storage buffer written by another dispatch and
@@ -31,7 +31,7 @@ descriptors, layout-only image barriers. Listed as the first gap likely to matte
 - **One pipeline type.** Rejected a separate `RhiComputePipeline`: the validation layer already catches a graphics pipeline bound at a dispatch,
   and every command taking a pipeline would have needed a second overload.
 - **Buffer states, not masks.** `RhiBufferState { Undefined, VertexRead, IndexRead, UniformRead, StorageRead, StorageWrite, TransferSrc,
-  TransferDst }` mirrors `RhiImageLayout` and maps to D3D12 resource states directly. Backend derives Vulkan stage and access masks; shader
+  TransferDst }` mirrors `RhiTextureState` and maps to D3D12 resource states directly. Backend derives Vulkan stage and access masks; shader
   states use vertex, fragment and compute stages together, which is conservative but correct.
 - **Storage image layout is derived from the descriptor type.** `RhiDescriptorWrite` gained no layout field: `StorageImage` writes use
   `General`, `CombinedImageSampler` writes use `ShaderReadOnly`.

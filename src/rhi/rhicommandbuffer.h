@@ -18,14 +18,14 @@ public:
     virtual auto reset() -> void = 0;
     virtual auto beginRendering(const RhiRenderingInfo& info) -> void = 0;
     virtual auto endRendering() -> void = 0;
-    virtual auto pipelineBarrier(std::span<const RhiBarrierDesc> imageBarriers, std::span<const RhiBufferBarrierDesc> bufferBarriers) -> void = 0;
-    auto pipelineBarrier(std::span<const RhiBarrierDesc> imageBarriers) -> void { pipelineBarrier(imageBarriers, {}); }
+    virtual auto pipelineBarrier(std::span<const RhiTextureBarrierDesc> imageBarriers, std::span<const RhiBufferBarrierDesc> bufferBarriers) -> void = 0;
+    auto pipelineBarrier(std::span<const RhiTextureBarrierDesc> imageBarriers) -> void { pipelineBarrier(imageBarriers, {}); }
     auto bufferBarrier(std::span<const RhiBufferBarrierDesc> bufferBarriers) -> void { pipelineBarrier({}, bufferBarriers); }
     virtual auto blitTexture(RhiTexture* src, RhiTexture* dst, RhiExtent2D srcExtent, RhiExtent2D dstExtent) -> void = 0;
     virtual auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void = 0;
-    // dst must be in RhiImageLayout::TransferDst.
+    // dst must be in RhiTextureState::TransferDst.
     virtual auto copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void = 0;
-    // src must be in RhiImageLayout::TransferSrc. Readback path: dst is normally host-visible.
+    // src must be in RhiTextureState::TransferSrc. Readback path: dst is normally host-visible.
     virtual auto copyTextureToBuffer(RhiTexture* src, RhiBuffer* dst, const RhiBufferTextureCopy& region) -> void = 0;
     // Debug-only markers for tools like RenderDoc; no-ops when the backend has no debug extension.
     virtual auto beginLabel(const char* name) -> void = 0;

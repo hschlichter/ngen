@@ -2,7 +2,7 @@
 //
 // Two compute dispatches run every frame before the graphics pass:
 //
-//   fillImage    writes a checkerboard into a storage image (RhiImageLayout::General),
+//   fillImage    writes a checkerboard into a storage image (RhiTextureState::General),
 //                which a quad on the left then samples
 //   fillVertices writes positions and colours into a storage buffer that doubles as
 //                the vertex buffer of the quad on the right (RhiBufferUsage::Storage | Vertex)
@@ -179,10 +179,10 @@ protected:
 
         // The left quad is uploaded normally; the right one is computed each frame.
         std::array<Vertex, 4> leftQuad = {{
-            {.position={quadCenterX[0] - quadHalf, -quadHalf}, .uv={0.0f, 0.0f}, .color={1, 1, 1, 1}},
-            {.position={quadCenterX[0] + quadHalf, -quadHalf}, .uv={1.0f, 0.0f}, .color={1, 1, 1, 1}},
-            {.position={quadCenterX[0] + quadHalf, quadHalf}, .uv={1.0f, 1.0f}, .color={1, 1, 1, 1}},
-            {.position={quadCenterX[0] - quadHalf, quadHalf}, .uv={0.0f, 1.0f}, .color={1, 1, 1, 1}},
+            {.position = {quadCenterX[0] - quadHalf, -quadHalf}, .uv = {0.0f, 0.0f}, .color = {1, 1, 1, 1}},
+            {.position = {quadCenterX[0] + quadHalf, -quadHalf}, .uv = {1.0f, 0.0f}, .color = {1, 1, 1, 1}},
+            {.position = {quadCenterX[0] + quadHalf, quadHalf}, .uv = {1.0f, 1.0f}, .color = {1, 1, 1, 1}},
+            {.position = {quadCenterX[0] - quadHalf, quadHalf}, .uv = {0.0f, 1.0f}, .color = {1, 1, 1, 1}},
         }};
         std::array<uint16_t, 6> indices = {0, 1, 2, 2, 3, 0};
         {
@@ -196,7 +196,7 @@ protected:
         std::array<RhiDescriptorBinding, 3> poolBindings = {{imageBinding[0], bufferBinding[0], sampledBinding[0]}};
         pool = device().createDescriptorPool(3, poolBindings);
         for (uint32_t i = 0; i < 3; i++) {
-            sets[i] = device().allocateDescriptorSets(pool, layouts[i], 1)[0];
+            device().allocateDescriptorSets(pool, layouts[i], {&sets[i], 1});
         }
         std::array<RhiDescriptorWrite, 1> imageWrite = {{{.binding = 0, .type = RhiDescriptorType::StorageImage, .texture = storageImage}}};
         std::array<RhiDescriptorWrite, 1> bufferWrite = {{{.binding = 0, .type = RhiDescriptorType::StorageBuffer, .buffer = computedVertices}}};
@@ -210,9 +210,9 @@ protected:
     auto record(RhiCommandBuffer* cmd, RhiTexture* backbuffer, RhiExtent2D extent) -> void override {
         // Before compute: image to General for imageStore; buffer from last frame's
         // vertex read to this frame's storage write. First frame comes from Undefined.
-        auto imageFrom = frameIndex() == 0 ? RhiImageLayout::Undefined : RhiImageLayout::ShaderReadOnly;
+        auto imageFrom = frameIndex() == 0 ? RhiTextureState::Undefined : RhiTextureState::ShaderReadOnly;
         auto bufferFrom = frameIndex() == 0 ? RhiBufferState::Undefined : RhiBufferState::VertexRead;
-        std::array<RhiBarrierDesc, 1> imageToGeneral = {{{.texture = storageImage, .oldLayout = imageFrom, .newLayout = RhiImageLayout::General}}};
+        std::array<RhiTextureBarrierDesc, 1> imageToGeneral = {{{.texture = storageImage, .oldState = imageFrom, .newState = RhiTextureState::General}}};
         std::array<RhiBufferBarrierDesc, 1> bufferToWrite = {{{.buffer = computedVertices, .oldState = bufferFrom, .newState = RhiBufferState::StorageWrite}}};
         cmd->pipelineBarrier(imageToGeneral, bufferToWrite);
 
@@ -225,12 +225,12 @@ protected:
         cmd->dispatch(1, 1, 1);
 
         // After compute: image to sampled, buffer to vertex input.
-        std::array<RhiBarrierDesc, 1> imageToSampled = {{{.texture = storageImage, .oldLayout = RhiImageLayout::General, .newLayout = RhiImageLayout::ShaderReadOnly}}};
+        std::array<RhiTextureBarrierDesc, 1> imageToSampled = {{{.texture = storageImage, .oldState = RhiTextureState::General, .newState = RhiTextureState::ShaderReadOnly}}};
         std::array<RhiBufferBarrierDesc, 1> bufferToVertex = {{{.buffer = computedVertices, .oldState = RhiBufferState::StorageWrite, .newState = RhiBufferState::VertexRead}}};
         cmd->pipelineBarrier(imageToSampled, bufferToVertex);
 
         std::array<RhiRenderingAttachmentInfo, 1> colorAttachments = {{
-            {.texture = backbuffer, .layout = RhiImageLayout::ColorAttachment, .clear = true, .clearColor = clearColor},
+            {.texture = backbuffer, .state = RhiTextureState::ColorAttachment, .clear = true, .clearColor = clearColor},
         }};
         cmd->beginRendering({.extent = extent, .colorAttachments = colorAttachments});
         cmd->setViewport(extent);
@@ -274,10 +274,8 @@ protected:
     }
 
     auto teardown() -> void override {
+        device().freeDescriptorSets(pool, sets);
         device().destroyDescriptorPool(pool);
-        for (auto* set : sets) {
-            delete set;
-        }
         device().destroySampler(sampler);
         device().destroyBuffer(indexBuffer);
         device().destroyBuffer(uploadedVertices);

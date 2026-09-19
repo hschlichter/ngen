@@ -161,7 +161,7 @@ signature.
 Kept honest rather than papered over. See the review that produced this file for the reasoning.
 
 - Single queue, single command pool. `createCommandBuffer` is not thread safe.
-- Barriers are resource-state transitions (`RhiImageLayout` for textures, `RhiBufferState` for buffers); the backend
+- Barriers are resource-state transitions (`RhiTextureState` for textures, `RhiBufferState` for buffers); the backend
   derives stages and access. No explicit masks, no split barriers, no queue ownership transfer.
 - One blend state for all color attachments.
 - One push constant range per pipeline.
@@ -172,6 +172,3 @@ Kept honest rather than papered over. See the review that produced this file for
 - Compute shares the graphics queue. No async compute, no indirect dispatch.
 - Descriptor model is Vulkan-shaped (pool, layout, set, write). D3D12 and Metal can implement it, but it is not their
   native shape; revisit when a second backend exists.
-- `allocateDescriptorSets` returns a `std::vector` and there is no free path; sets die with their pool.
-- `RhiImageLayout` is a Vulkan name for what D3D12 calls a resource state. Same model, better name would be
-  `RhiResourceState`.

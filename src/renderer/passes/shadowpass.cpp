@@ -71,7 +71,7 @@ auto ShadowPass::addPass(
 
             RhiRenderingAttachmentInfo depthAtt = {
                 .texture = ctx.texture(data.shadowMap),
-                .layout = RhiImageLayout::DepthStencilAttachment,
+                .state = RhiTextureState::DepthStencilAttachment,
                 .clear = true,
                 .clearDepth = 1.0f,
             };

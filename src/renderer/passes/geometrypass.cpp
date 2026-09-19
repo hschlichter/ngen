@@ -88,20 +88,20 @@ auto GeometryPass::addPass(
             std::array<RhiRenderingAttachmentInfo, 2> colorAtts = {{
                 {
                     .texture = ctx.texture(data.albedo),
-                    .layout = RhiImageLayout::ColorAttachment,
+                    .state = RhiTextureState::ColorAttachment,
                     .clear = true,
                     .clearColor = {0.0f, 0.0f, 0.0f, 1.0f},
                 },
                 {
                     .texture = ctx.texture(data.normal),
-                    .layout = RhiImageLayout::ColorAttachment,
+                    .state = RhiTextureState::ColorAttachment,
                     .clear = true,
                     .clearColor = {0.0f, 0.0f, 0.0f, 0.0f},
                 },
             }};
             RhiRenderingAttachmentInfo depthAtt = {
                 .texture = ctx.texture(data.depth),
-                .layout = RhiImageLayout::DepthStencilAttachment,
+                .state = RhiTextureState::DepthStencilAttachment,
                 .clear = true,
                 .clearDepth = 1.0f,
             };

@@ -61,26 +61,26 @@ auto FrameGraphContext::texture(FgTextureHandle handle) -> RhiTexture* {
 
 // --- Helpers ---
 
-static auto accessToLayout(FgAccessFlags access) -> RhiImageLayout {
+static auto accessToLayout(FgAccessFlags access) -> RhiTextureState {
     if (access & FgAccessFlags::ColorAttachment) {
-        return RhiImageLayout::ColorAttachment;
+        return RhiTextureState::ColorAttachment;
     }
     if (access & FgAccessFlags::DepthAttachment) {
-        return RhiImageLayout::DepthStencilAttachment;
+        return RhiTextureState::DepthStencilAttachment;
     }
     if (access & FgAccessFlags::ShaderRead) {
-        return RhiImageLayout::ShaderReadOnly;
+        return RhiTextureState::ShaderReadOnly;
     }
     if (access & FgAccessFlags::TransferSrc) {
-        return RhiImageLayout::TransferSrc;
+        return RhiTextureState::TransferSrc;
     }
     if (access & FgAccessFlags::TransferDst) {
-        return RhiImageLayout::TransferDst;
+        return RhiTextureState::TransferDst;
     }
     if (access & FgAccessFlags::Present) {
-        return RhiImageLayout::PresentSrc;
+        return RhiTextureState::PresentSrc;
     }
-    return RhiImageLayout::Undefined;
+    return RhiTextureState::Undefined;
 }
 
 // --- Compilation: topo sort + culling ---
@@ -277,17 +277,17 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
         }
 
         // Compute barriers for this pass
-        std::vector<RhiBarrierDesc> barriers;
+        std::vector<RhiTextureBarrierDesc> barriers;
         auto checkTransition = [&](uint32_t resIdx, FgAccessFlags newAccess) {
             auto oldAccess = resourceAccess[resIdx];
             if (std::to_underlying(oldAccess) != std::to_underlying(newAccess)) {
-                auto oldLayout = accessToLayout(oldAccess);
-                auto newLayout = accessToLayout(newAccess);
-                if (oldLayout != newLayout) {
+                auto oldState = accessToLayout(oldAccess);
+                auto newState = accessToLayout(newAccess);
+                if (oldState != newState) {
                     barriers.push_back({
                         .texture = resources[resIdx].physical,
-                        .oldLayout = oldLayout,
-                        .newLayout = newLayout,
+                        .oldState = oldState,
+                        .newState = newState,
                     });
                 }
                 resourceAccess[resIdx] = newAccess;

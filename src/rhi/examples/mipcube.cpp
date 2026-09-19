@@ -208,7 +208,8 @@ protected:
         // Nearest everything, and a LOD range wide enough for textureLod to reach mip 2.
         sampler = device().createSampler({.magFilter = RhiFilter::Nearest, .minFilter = RhiFilter::Nearest, .mipmapMode = RhiMipmapMode::Nearest, .maxLod = 8.0f});
         pool = device().createDescriptorPool(1, bindings);
-        descriptorSets = device().allocateDescriptorSets(pool, setLayout, 1);
+        descriptorSets.assign(1, nullptr);
+        device().allocateDescriptorSets(pool, setLayout, descriptorSets);
         std::array<RhiDescriptorWrite, 3> writes = {{
             {.binding = 0, .type = RhiDescriptorType::CombinedImageSampler, .texture = mipTexture, .sampler = sampler},
             {.binding = 1, .type = RhiDescriptorType::CombinedImageSampler, .texture = arrayTexture, .sampler = sampler},
@@ -220,7 +221,7 @@ protected:
 
     auto record(RhiCommandBuffer* cmd, RhiTexture* backbuffer, RhiExtent2D extent) -> void override {
         std::array<RhiRenderingAttachmentInfo, 1> colorAttachments = {{
-            {.texture = backbuffer, .layout = RhiImageLayout::ColorAttachment, .clear = true, .clearColor = clearColor},
+            {.texture = backbuffer, .state = RhiTextureState::ColorAttachment, .clear = true, .clearColor = clearColor},
         }};
         cmd->beginRendering({.extent = extent, .colorAttachments = colorAttachments});
         cmd->setViewport(extent);
@@ -266,10 +267,8 @@ protected:
     }
 
     auto teardown() -> void override {
+        device().freeDescriptorSets(pool, descriptorSets);
         device().destroyDescriptorPool(pool);
-        for (auto* set : descriptorSets) {
-            delete set;
-        }
         device().destroySampler(sampler);
         device().destroyTexture(cubeTexture);
         device().destroyTexture(arrayTexture);

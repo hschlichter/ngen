@@ -1016,6 +1016,7 @@ auto RhiDeviceVulkan::createDescriptorPool(uint32_t maxSets, std::span<const Rhi
 
     VkDescriptorPoolCreateInfo poolInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT, // freeDescriptorSets returns sets individually
         .maxSets = maxSets,
         .poolSizeCount = bindingCount,
         .pPoolSizes = poolSizes.data(),
@@ -1026,10 +1027,10 @@ auto RhiDeviceVulkan::createDescriptorPool(uint32_t maxSets, std::span<const Rhi
     return pool;
 }
 
-auto RhiDeviceVulkan::allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, uint32_t count) -> std::vector<RhiDescriptorSet*> {
-
+auto RhiDeviceVulkan::allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescriptorSetLayout* layout, std::span<RhiDescriptorSet*> outSets) -> bool {
     auto* vkPool = static_cast<RhiDescriptorPoolVulkan*>(pool);
     auto* vkLayout = static_cast<RhiDescriptorSetLayoutVulkan*>(layout);
+    auto count = (uint32_t) outSets.size();
 
     std::vector<VkDescriptorSetLayout> layouts(count, vkLayout->layout);
     std::vector<VkDescriptorSet> vkSets(count);
@@ -1040,15 +1041,36 @@ auto RhiDeviceVulkan::allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescrip
         .descriptorSetCount = count,
         .pSetLayouts = layouts.data(),
     };
-    vkAllocateDescriptorSets(device, &allocInfo, vkSets.data());
+    auto result = vkAllocateDescriptorSets(device, &allocInfo, vkSets.data());
+    if (result != VK_SUCCESS) {
+        std::println(stderr, "vkAllocateDescriptorSets failed: {}({})", string_VkResult(result), (int) result);
+        return false;
+    }
 
-    std::vector<RhiDescriptorSet*> result(count);
     for (uint32_t i = 0; i < count; i++) {
         auto* ds = new RhiDescriptorSetVulkan();
         ds->set = vkSets[i];
-        result[i] = ds;
+        outSets[i] = ds;
     }
-    return result;
+    return true;
+}
+
+auto RhiDeviceVulkan::freeDescriptorSets(RhiDescriptorPool* pool, std::span<RhiDescriptorSet* const> sets) -> void {
+    auto* vkPool = static_cast<RhiDescriptorPoolVulkan*>(pool);
+    std::vector<VkDescriptorSet> vkSets;
+    vkSets.reserve(sets.size());
+    for (auto* set : sets) {
+        if (set == nullptr) {
+            continue;
+        }
+        vkSets.push_back(static_cast<RhiDescriptorSetVulkan*>(set)->set);
+    }
+    if (!vkSets.empty()) {
+        vkFreeDescriptorSets(device, vkPool->pool, (uint32_t) vkSets.size(), vkSets.data());
+    }
+    for (auto* set : sets) {
+        delete set;
+    }
 }
 
 auto RhiDeviceVulkan::updateDescriptorSet(RhiDescriptorSet* set, std::span<const RhiDescriptorWrite> writes) -> void {

@@ -53,7 +53,8 @@ auto DebugRenderer::init(
     }
 
     descriptorPool = device->createDescriptorPool(imageCount, bindings);
-    descriptorSets = device->allocateDescriptorSets(descriptorPool, descriptorSetLayout, imageCount);
+    descriptorSets.assign(imageCount, nullptr);
+    device->allocateDescriptorSets(descriptorPool, descriptorSetLayout, descriptorSets);
     for (uint32_t i = 0; i < imageCount; i++) {
         std::array<RhiDescriptorWrite, 1> writes = {{
             {
@@ -70,9 +71,7 @@ auto DebugRenderer::init(
 }
 
 auto DebugRenderer::destroy(RhiDevice* device) -> void {
-    for (auto* ds : descriptorSets) {
-        delete ds;
-    }
+    device->freeDescriptorSets(descriptorPool, descriptorSets);
     device->destroyDescriptorPool(descriptorPool);
     device->destroyDescriptorSetLayout(descriptorSetLayout);
 
@@ -116,12 +115,12 @@ auto DebugRenderer::addPass(FrameGraph& fg, FgTextureHandle color, FgTextureHand
 
             RhiRenderingAttachmentInfo colorAtt = {
                 .texture = ctx.texture(passData.color),
-                .layout = RhiImageLayout::ColorAttachment,
+                .state = RhiTextureState::ColorAttachment,
                 .clear = false,
             };
             RhiRenderingAttachmentInfo depthAtt = {
                 .texture = ctx.texture(passData.depth),
-                .layout = RhiImageLayout::DepthStencilAttachment,
+                .state = RhiTextureState::DepthStencilAttachment,
                 .clear = false,
             };
             RhiRenderingInfo renderInfo = {

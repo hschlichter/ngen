@@ -73,16 +73,16 @@ public:
         texDesc.usage |= RhiTextureUsage::TransferDst;
         auto* dst = device.createTexture(texDesc);
 
-        std::array<RhiBarrierDesc, 1> toTransfer = {{
-            {.texture = dst, .oldLayout = RhiImageLayout::Undefined, .newLayout = RhiImageLayout::TransferDst},
+        std::array<RhiTextureBarrierDesc, 1> toTransfer = {{
+            {.texture = dst, .oldState = RhiTextureState::Undefined, .newState = RhiTextureState::TransferDst},
         }};
         cmd->pipelineBarrier(toTransfer);
         for (const auto& level : levels) {
             auto* src = stagingFor(level.pixels);
             cmd->copyBufferToTexture(src, dst, {.width = level.width, .height = level.height, .mipLevel = level.mipLevel, .arrayLayer = level.arrayLayer});
         }
-        std::array<RhiBarrierDesc, 1> toShader = {{
-            {.texture = dst, .oldLayout = RhiImageLayout::TransferDst, .newLayout = RhiImageLayout::ShaderReadOnly},
+        std::array<RhiTextureBarrierDesc, 1> toShader = {{
+            {.texture = dst, .oldState = RhiTextureState::TransferDst, .newState = RhiTextureState::ShaderReadOnly},
         }};
         cmd->pipelineBarrier(toShader);
         return dst;

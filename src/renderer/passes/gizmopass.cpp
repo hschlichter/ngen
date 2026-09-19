@@ -124,7 +124,7 @@ auto GizmoPass::addPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D fullE
 
             RhiRenderingAttachmentInfo colorAtt = {
                 .texture = ctx.texture(data.color),
-                .layout = RhiImageLayout::ColorAttachment,
+                .state = RhiTextureState::ColorAttachment,
                 .clear = false,
             };
             RhiRenderingInfo renderInfo = {

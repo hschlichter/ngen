@@ -18,7 +18,7 @@ auto EditorUIPass::addPass(FrameGraph& fg, FgTextureHandle colorHandle, RhiExten
 
             RhiRenderingAttachmentInfo colorAtt = {
                 .texture = ctx.texture(data.color),
-                .layout = RhiImageLayout::ColorAttachment,
+                .state = RhiTextureState::ColorAttachment,
                 .clear = false,
             };
             RhiRenderingInfo renderInfo = {
