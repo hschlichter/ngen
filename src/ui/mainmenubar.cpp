@@ -144,6 +144,7 @@ void drawMainMenuBar(MainMenuBarState& state) {
             ImGui::Separator();
             ImGui::MenuItem("Show Buffer Overlay", nullptr, &state.showBufferOverlay);
             ImGui::MenuItem("Show Shadow Overlay", nullptr, &state.showShadowOverlay);
+            ImGui::MenuItem("Anti-Aliasing (FXAA)", nullptr, &state.antiAliasing);
             ImGui::Separator();
             ImGui::MenuItem("Frame Graph", nullptr, &state.showFrameGraph);
             ImGui::Separator();

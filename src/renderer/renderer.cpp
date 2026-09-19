@@ -1,5 +1,4 @@
 #include "renderer.h"
-#include "aapass.h"
 #include "blitpass.h"
 #include "imguibackend.h"
 #include "material.h"
@@ -87,6 +86,11 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
     if (!lightingPass.init(device, imgCount, ext, colorFmt)) {
         return std::unexpected(1);
     }
+    if (!aaPass.init(device, imgCount, colorFmt)) {
+        return std::unexpected(1);
+    }
+    // Overlays draw on the backbuffer after the AA result has been blitted there,
+    // so they keep the swapchain format and stay outside the AA filter.
     if (!debugRenderer.init(device, imgCount, ext, colorFmt, depthFmt, uniformBuffers)) {
         return std::unexpected(1);
     }
@@ -474,19 +478,24 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         invViewProj,
         lightViewProj);
 
-    // AA sits between the scene render and the overlays, so debug lines, gizmos and UI
-    // are drawn on top of the anti-aliased image instead of being smeared by it.
-    const auto& aaData = addAAPass(frameGraph, lightData.sceneColor, ext, swapchain->colorFormat());
-    auto sceneColor = aaData.sceneColorAA;
+    // AA filters only the lit scene. Its output is blitted to the backbuffer and the
+    // overlays (debug lines, gizmos, UI) draw on the backbuffer afterwards, so they are
+    // never filtered and sceneColorAA holds nothing but the AA result.
+    if (snapshot.antiAliasing != lastAntiAliasing) {
+        lastAntiAliasing = snapshot.antiAliasing;
+        OBS_EVENT("Render", "AntiAliasing", "aa").field("enabled", snapshot.antiAliasing ? "true" : "false");
+    }
+    const auto& aaData = aaPass.addPass(frameGraph, lightData.sceneColor, ext, imageIdx, textureSampler, snapshot.antiAliasing);
 
-    debugRenderer.addPass(frameGraph, sceneColor, depthHandle, ext, snapshot.debugData, imageIdx);
+    addBlitPass(frameGraph, "BlitToBackbuffer", aaData.sceneColorAA, colorHandle, ext, ext);
+
+    debugRenderer.addPass(frameGraph, colorHandle, depthHandle, ext, snapshot.debugData, imageIdx);
 
     auto gizmoRequests = gizmoUpdate(snapshot, ext);
-    gizmoPass.addPass(frameGraph, sceneColor, ext, gizmoRequests, imageIdx);
+    gizmoPass.addPass(frameGraph, colorHandle, ext, gizmoRequests, imageIdx);
 
-    editorUIPass.addPass(frameGraph, sceneColor, ext, editorUI, snapshot.imguiSnapshot);
+    editorUIPass.addPass(frameGraph, colorHandle, ext, editorUI, snapshot.imguiSnapshot);
 
-    addBlitPass(frameGraph, "BlitToBackbuffer", sceneColor, colorHandle, ext, ext);
     addPresentPass(frameGraph, colorHandle);
 
     frameGraph.compile();
@@ -557,6 +566,7 @@ auto Renderer::destroy() -> void {
     shadowPass.destroy(device);
     geometryPass.destroy(device);
     lightingPass.destroy(device);
+    aaPass.destroy(device);
     debugRenderer.destroy(device);
     gizmoPass.destroy(device);
 

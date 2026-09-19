@@ -74,6 +74,7 @@ Current truth for the build framework is [`../build/build_system.md`](../build/b
 - [plan_render_observations.md](plan_render_observations.md) — render-category observations
 - [plan_rhi_examples.md](plan_rhi_examples.md) — minimal RHI example programs under `src/rhi/examples/`, starting with a triangle (in progress)
 - [plan_rhi_compute.md](plan_rhi_compute.md) — compute pipelines, storage descriptors, buffer barriers (in progress)
+- [plan_compute_aa_pass.md](plan_compute_aa_pass.md) — FXAA as the first frame-graph compute node, replacing the placeholder blit AA pass (in progress)
 - [plan_rhi_validation.md](plan_rhi_validation.md) — `ngen-test-rhi` RHI validation program (superseded by plan_rhi_examples.md)
 - [observability_api_design_engine_agnostic.md](observability_api_design_engine_agnostic.md) — earlier abstract obs design (historical — the concrete design deliberately diverged)
 

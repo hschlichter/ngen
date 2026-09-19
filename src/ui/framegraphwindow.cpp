@@ -25,6 +25,9 @@ auto accessColor(FgAccessFlags a) -> ImVec4 {
             return {0.60f, 0.40f, 0.10f, 1.0f};
         case std::to_underlying(FgAccessFlags::Present):
             return {0.50f, 0.20f, 0.55f, 1.0f};
+        case std::to_underlying(FgAccessFlags::StorageRead):
+        case std::to_underlying(FgAccessFlags::StorageWrite):
+            return {0.15f, 0.55f, 0.55f, 1.0f};
         default:
             return {0.40f, 0.40f, 0.40f, 1.0f};
     }

@@ -55,6 +55,7 @@ auto EditorUI::draw(
         .gbufferView = gbufferViewMode,
         .showBufferOverlay = showBufferOverlayFlag,
         .showShadowOverlay = showShadowOverlayFlag,
+        .antiAliasing = antiAliasingFlag,
         .showFrameGraph = showFrameGraphWindow,
         .showAssetBrowser = showAssetBrowserWindow,
         .requestQuit = requestQuit,

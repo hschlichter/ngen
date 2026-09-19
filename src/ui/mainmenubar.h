@@ -25,6 +25,7 @@ struct MainMenuBarState {
     int& gbufferView;
     bool& showBufferOverlay;
     bool& showShadowOverlay;
+    bool& antiAliasing;
     bool& showFrameGraph;
     bool& showAssetBrowser;
     bool& requestQuit;

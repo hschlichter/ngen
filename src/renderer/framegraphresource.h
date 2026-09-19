@@ -13,6 +13,8 @@ enum class FgAccessFlags : uint32_t {
     TransferSrc = 1 << 3,
     TransferDst = 1 << 4,
     Present = 1 << 5,
+    StorageRead = 1 << 6,  // compute or fragment reads through a storage image (General state)
+    StorageWrite = 1 << 7, // compute writes through a storage image (General state)
 };
 
 inline auto operator|(FgAccessFlags a, FgAccessFlags b) -> FgAccessFlags {

@@ -91,6 +91,7 @@ public:
     auto getGBufferViewMode() const -> int { return gbufferViewMode; }
     auto getShowBufferOverlay() const -> bool { return showBufferOverlayFlag; }
     auto getShowShadowOverlay() const -> bool { return showShadowOverlayFlag; }
+    auto getAntiAliasing() const -> bool { return antiAliasingFlag; }
     auto getShowFrameGraphWindow() const -> bool { return showFrameGraphWindow; }
     auto getShowAssetBrowserWindow() const -> bool { return showAssetBrowserWindow; }
     auto activeTool() const -> EditorTool { return activeToolValue; }
@@ -116,6 +117,7 @@ private:
     int gbufferViewMode = 0;
     bool showBufferOverlayFlag = false;
     bool showShadowOverlayFlag = false;
+    bool antiAliasingFlag = true;
     bool showFrameGraphWindow = false;
     bool showAssetBrowserWindow = false;
     bool requestQuit = false;

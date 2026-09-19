@@ -16,6 +16,7 @@
 #include "scalegizmo.h"
 #include "scenequery.h"
 #include "sceneupdater.h"
+#include "shaderloader.h"
 #include "translategizmo.h"
 #include "usdrenderextractor.h"
 #include "usdscene.h"
@@ -182,6 +183,9 @@ auto main(int argc, char* argv[]) -> int {
         return 1;
     }
     SDL_DestroyProperties(windowProps);
+
+    // Compiled shaders live next to the executable; resolve shader paths from there.
+    setShaderSearchPath(SDL_GetBasePath());
 
     // Job system
     JobSystem::init();
@@ -548,6 +552,7 @@ auto main(int argc, char* argv[]) -> int {
             .gbufferViewMode = static_cast<GBufferView>(editorUI.getGBufferViewMode()),
             .showBufferOverlay = editorUI.getShowBufferOverlay(),
             .showShadowOverlay = editorUI.getShowShadowOverlay(),
+            .antiAliasing = editorUI.getAntiAliasing(),
             .translateGizmoVerts = {translateGizmo.vertices().begin(), translateGizmo.vertices().end()},
             .rotateGizmoVerts = {rotateGizmo.vertices().begin(), rotateGizmo.vertices().end()},
             .scaleGizmoVerts = {scaleGizmo.vertices().begin(), scaleGizmo.vertices().end()},

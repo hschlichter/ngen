@@ -80,6 +80,9 @@ static auto accessToLayout(FgAccessFlags access) -> RhiTextureState {
     if (access & FgAccessFlags::Present) {
         return RhiTextureState::PresentSrc;
     }
+    if ((access & FgAccessFlags::StorageRead) || (access & FgAccessFlags::StorageWrite)) {
+        return RhiTextureState::General;
+    }
     return RhiTextureState::Undefined;
 }
 

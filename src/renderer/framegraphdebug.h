@@ -118,6 +118,10 @@ inline auto toString(FgAccessFlags a) -> const char* {
             return "TransferDst";
         case 1u << 5:
             return "Present";
+        case 1u << 6:
+            return "StorageRead";
+        case 1u << 7:
+            return "StorageWrite";
         default:
             return "Combined";
     }

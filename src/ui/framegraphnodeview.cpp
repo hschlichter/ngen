@@ -143,6 +143,9 @@ auto accessColor(FgAccessFlags a) -> ImU32 {
             return IM_COL32(153, 102, 25, 255);
         case std::to_underlying(FgAccessFlags::Present):
             return IM_COL32(127, 51, 140, 255);
+        case std::to_underlying(FgAccessFlags::StorageRead):
+        case std::to_underlying(FgAccessFlags::StorageWrite):
+            return IM_COL32(38, 140, 140, 255);
         default:
             return IM_COL32(102, 102, 102, 255);
     }

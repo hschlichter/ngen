@@ -6,12 +6,20 @@
 #include <fstream>
 #include <ios>
 #include <print>
+#include <string>
 #include <vector>
 
+static std::string shaderSearchPath;
+
+auto setShaderSearchPath(std::string dir) -> void {
+    shaderSearchPath = std::move(dir);
+}
+
 auto loadShaderModule(RhiDevice* device, RhiShaderStage stage, const char* filepath) -> RhiShaderModule* {
-    std::ifstream file(filepath, std::ios::binary | std::ios::ate);
+    auto resolved = shaderSearchPath.empty() ? std::string(filepath) : shaderSearchPath + filepath;
+    std::ifstream file(resolved, std::ios::binary | std::ios::ate);
     if (!file) {
-        std::println(stderr, "Failed to open shader file: {}", filepath);
+        std::println(stderr, "Failed to open shader file: {}", resolved);
         return nullptr;
     }
 

@@ -210,6 +210,7 @@ auto main(int argc, char** argv) -> int {
                 concat({
                     glob({.include = "shaders/*.vert"}),
                     glob({.include = "shaders/*.frag"}),
+                    glob({.include = "shaders/*.comp"}),
                 }),
                 [](const BuildVariant& variant, const Path& source) -> Path { return variant.out_dir / "shaders" / (source.filename().string() + ".spv"); });
 

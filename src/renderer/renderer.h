@@ -1,5 +1,6 @@
 #pragma once
 
+#include "aapass.h"
 #include "axis3dgizmo.h"
 #include "debugrenderer.h"
 #include "deletionqueue.h"
@@ -83,6 +84,7 @@ private:
     ShadowPass shadowPass;
     GeometryPass geometryPass;
     LightingPass lightingPass;
+    AAPass aaPass;
     DebugRenderer debugRenderer;
     GizmoPass gizmoPass;
     Axis3DGizmo axisGizmo;
@@ -110,6 +112,7 @@ private:
     ResourcePool resourcePool;
     FrameGraphPreviews fgPreviews;
     bool fgDebugEnabled = false;
+    bool lastAntiAliasing = true;
 
     ImGuiBackend* editorUI = nullptr; // owned by the application
 };

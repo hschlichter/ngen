@@ -24,6 +24,7 @@ struct RenderSnapshot {
     GBufferView gbufferViewMode = GBufferView::Lit;
     bool showBufferOverlay = false;
     bool showShadowOverlay = false;
+    bool antiAliasing = true;
 
     std::vector<GizmoVertex> translateGizmoVerts;
     std::vector<GizmoVertex> rotateGizmoVerts;

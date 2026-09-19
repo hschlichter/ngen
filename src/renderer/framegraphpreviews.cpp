@@ -59,6 +59,7 @@ auto FrameGraphPreviews::isBlittableColorFormat(RhiFormat f) -> bool {
         case RhiFormat::B8G8R8A8_SRGB:
         case RhiFormat::B8G8R8A8_UNORM:
         case RhiFormat::R32G32B32A32_SFLOAT:
+        case RhiFormat::R16G16B16A16_SFLOAT:
             return true;
         default:
             return false;
@@ -132,6 +133,9 @@ static auto accessToLayoutPreview(FgAccessFlags a) -> RhiTextureState {
     }
     if (a & FgAccessFlags::Present) {
         return RhiTextureState::PresentSrc;
+    }
+    if ((a & FgAccessFlags::StorageRead) || (a & FgAccessFlags::StorageWrite)) {
+        return RhiTextureState::General;
     }
     return RhiTextureState::Undefined;
 }

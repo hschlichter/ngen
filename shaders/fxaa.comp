@@ -1,0 +1,153 @@
+#version 450
+
+// FXAA 3.11 "quality" preset, written out plainly. Reads the lit scene, writes
+// the anti-aliased result into a storage image. One thread per output pixel.
+//
+// Reference: Timothy Lottes, "FXAA 3.11", NVIDIA 2011. Constants are the
+// medium-quality defaults: edge threshold 0.125, minimum 0.0312, 12 search
+// steps, subpixel quality 0.75.
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D sceneColor;
+layout(set = 0, binding = 1, rgba16f) uniform writeonly image2D sceneColorAA;
+
+layout(push_constant) uniform Push {
+    vec2 inverseSize;
+    uint enabled;
+} push;
+
+const float edgeThresholdMin = 0.0312;
+const float edgeThresholdMax = 0.125;
+const int searchSteps = 12;
+const float searchStepSizes[12] = float[](1.0, 1.0, 1.0, 1.0, 1.0, 1.5, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0);
+const float subpixelQuality = 0.75;
+
+float luma(vec3 rgb) {
+    return sqrt(dot(rgb, vec3(0.299, 0.587, 0.114)));
+}
+
+vec3 sampleAt(vec2 uv) {
+    return textureLod(sceneColor, uv, 0.0).rgb;
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(sceneColorAA);
+    if (pixel.x >= size.x || pixel.y >= size.y) {
+        return;
+    }
+    vec2 uv = (vec2(pixel) + 0.5) * push.inverseSize;
+    vec3 centre = sampleAt(uv);
+
+    if (push.enabled == 0u) {
+        imageStore(sceneColorAA, pixel, vec4(centre, 1.0));
+        return;
+    }
+
+    // Luma of the centre and its four direct neighbours.
+    float lumaC = luma(centre);
+    float lumaD = luma(sampleAt(uv + vec2(0.0, push.inverseSize.y)));
+    float lumaU = luma(sampleAt(uv - vec2(0.0, push.inverseSize.y)));
+    float lumaL = luma(sampleAt(uv - vec2(push.inverseSize.x, 0.0)));
+    float lumaR = luma(sampleAt(uv + vec2(push.inverseSize.x, 0.0)));
+
+    float lumaMin = min(lumaC, min(min(lumaD, lumaU), min(lumaL, lumaR)));
+    float lumaMax = max(lumaC, max(max(lumaD, lumaU), max(lumaL, lumaR)));
+    float lumaRange = lumaMax - lumaMin;
+
+    // Flat area: no edge, pass through.
+    if (lumaRange < max(edgeThresholdMin, lumaMax * edgeThresholdMax)) {
+        imageStore(sceneColorAA, pixel, vec4(centre, 1.0));
+        return;
+    }
+
+    // Diagonal neighbours for the edge orientation test.
+    float lumaDL = luma(sampleAt(uv + vec2(-push.inverseSize.x, push.inverseSize.y)));
+    float lumaUR = luma(sampleAt(uv + vec2(push.inverseSize.x, -push.inverseSize.y)));
+    float lumaUL = luma(sampleAt(uv - push.inverseSize));
+    float lumaDR = luma(sampleAt(uv + push.inverseSize));
+
+    float lumaDU = lumaD + lumaU;
+    float lumaLR = lumaL + lumaR;
+    float lumaLeftCorners = lumaDL + lumaUL;
+    float lumaDownCorners = lumaDL + lumaDR;
+    float lumaRightCorners = lumaDR + lumaUR;
+    float lumaUpCorners = lumaUR + lumaUL;
+
+    float edgeHorizontal = abs(-2.0 * lumaL + lumaLeftCorners) + abs(-2.0 * lumaC + lumaDU) * 2.0 + abs(-2.0 * lumaR + lumaRightCorners);
+    float edgeVertical = abs(-2.0 * lumaU + lumaUpCorners) + abs(-2.0 * lumaC + lumaLR) * 2.0 + abs(-2.0 * lumaD + lumaDownCorners);
+    bool isHorizontal = edgeHorizontal >= edgeVertical;
+
+    // Which side of the edge the centre pixel is on, and the step across it.
+    float luma1 = isHorizontal ? lumaU : lumaL;
+    float luma2 = isHorizontal ? lumaD : lumaR;
+    float gradient1 = luma1 - lumaC;
+    float gradient2 = luma2 - lumaC;
+    bool is1Steepest = abs(gradient1) >= abs(gradient2);
+    float gradientScaled = 0.25 * max(abs(gradient1), abs(gradient2));
+
+    float stepLength = isHorizontal ? push.inverseSize.y : push.inverseSize.x;
+    float lumaLocalAverage = 0.0;
+    if (is1Steepest) {
+        stepLength = -stepLength;
+        lumaLocalAverage = 0.5 * (luma1 + lumaC);
+    } else {
+        lumaLocalAverage = 0.5 * (luma2 + lumaC);
+    }
+
+    vec2 currentUv = uv;
+    if (isHorizontal) {
+        currentUv.y += stepLength * 0.5;
+    } else {
+        currentUv.x += stepLength * 0.5;
+    }
+
+    // Walk along the edge in both directions until the luma changes.
+    vec2 offset = isHorizontal ? vec2(push.inverseSize.x, 0.0) : vec2(0.0, push.inverseSize.y);
+    vec2 uv1 = currentUv - offset;
+    vec2 uv2 = currentUv + offset;
+    float lumaEnd1 = luma(sampleAt(uv1)) - lumaLocalAverage;
+    float lumaEnd2 = luma(sampleAt(uv2)) - lumaLocalAverage;
+    bool reached1 = abs(lumaEnd1) >= gradientScaled;
+    bool reached2 = abs(lumaEnd2) >= gradientScaled;
+
+    for (int i = 1; i < searchSteps && !(reached1 && reached2); i++) {
+        if (!reached1) {
+            uv1 -= offset * searchStepSizes[i];
+            lumaEnd1 = luma(sampleAt(uv1)) - lumaLocalAverage;
+            reached1 = abs(lumaEnd1) >= gradientScaled;
+        }
+        if (!reached2) {
+            uv2 += offset * searchStepSizes[i];
+            lumaEnd2 = luma(sampleAt(uv2)) - lumaLocalAverage;
+            reached2 = abs(lumaEnd2) >= gradientScaled;
+        }
+    }
+
+    float distance1 = isHorizontal ? (uv.x - uv1.x) : (uv.y - uv1.y);
+    float distance2 = isHorizontal ? (uv2.x - uv.x) : (uv2.y - uv.y);
+    bool isDirection1 = distance1 < distance2;
+    float distanceFinal = min(distance1, distance2);
+    float edgeLength = distance1 + distance2;
+    float pixelOffset = -distanceFinal / edgeLength + 0.5;
+
+    bool isLumaCentreSmaller = lumaC < lumaLocalAverage;
+    bool correctVariation = ((isDirection1 ? lumaEnd1 : lumaEnd2) < 0.0) != isLumaCentreSmaller;
+    float finalOffset = correctVariation ? pixelOffset : 0.0;
+
+    // Subpixel blend for thin features the edge walk misses.
+    float lumaAverage = (1.0 / 12.0) * (2.0 * (lumaDU + lumaLR) + lumaLeftCorners + lumaRightCorners);
+    float subPixelOffset1 = clamp(abs(lumaAverage - lumaC) / lumaRange, 0.0, 1.0);
+    float subPixelOffset2 = (-2.0 * subPixelOffset1 + 3.0) * subPixelOffset1 * subPixelOffset1;
+    float subPixelOffsetFinal = subPixelOffset2 * subPixelOffset2 * subpixelQuality;
+    finalOffset = max(finalOffset, subPixelOffsetFinal);
+
+    vec2 finalUv = uv;
+    if (isHorizontal) {
+        finalUv.y += finalOffset * stepLength;
+    } else {
+        finalUv.x += finalOffset * stepLength;
+    }
+    imageStore(sceneColorAA, pixel, vec4(sampleAt(finalUv), 1.0));
+}
