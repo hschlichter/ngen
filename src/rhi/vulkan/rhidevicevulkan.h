@@ -9,11 +9,11 @@
 
 class RhiDeviceVulkan : public RhiDevice {
 public:
-    auto init(SDL_Window* window) -> std::expected<void, int> override;
+    auto init(const RhiWindow& window) -> std::expected<void, int> override;
     auto destroy() -> void override;
     auto waitIdle() -> void override;
 
-    auto createSwapchain(SDL_Window* window) -> RhiSwapchain* override;
+    auto createSwapchain(RhiExtent2D extent) -> RhiSwapchain* override;
     auto createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* override;
     auto createTexture(const RhiTextureDesc& desc) -> RhiTexture* override;
     auto createSampler(const RhiSamplerDesc& desc) -> RhiSampler* override;

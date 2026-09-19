@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rhitypes.h"
+#include "rhiwindow.h"
 
 #include <expected>
 #include <span>
@@ -8,7 +9,6 @@
 
 class RhiSwapchain;
 class RhiCommandBuffer;
-struct SDL_Window;
 
 class RhiDevice {
 public:
@@ -19,11 +19,11 @@ public:
     RhiDevice& operator=(RhiDevice&&) = default;
     virtual ~RhiDevice() = default;
 
-    virtual auto init(SDL_Window* window) -> std::expected<void, int> = 0;
+    virtual auto init(const RhiWindow& window) -> std::expected<void, int> = 0;
     virtual auto destroy() -> void = 0;
     virtual auto waitIdle() -> void = 0;
 
-    virtual auto createSwapchain(SDL_Window* window) -> RhiSwapchain* = 0;
+    virtual auto createSwapchain(RhiExtent2D extent) -> RhiSwapchain* = 0;
     virtual auto createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* = 0;
     virtual auto createTexture(const RhiTextureDesc& desc) -> RhiTexture* = 0;
     virtual auto createSampler(const RhiSamplerDesc& desc) -> RhiSampler* = 0;

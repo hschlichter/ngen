@@ -1,7 +1,5 @@
 #include "rhiswapchainvulkan.h"
 
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
 #include <vulkan/vk_enum_string_helper.h>
 
 #include <algorithm>
@@ -35,13 +33,12 @@ auto RhiSwapchainVulkan::vkFormatToRhiFormat(VkFormat format) -> RhiFormat {
     }
 }
 
-auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, SDL_Window* window)
+auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t queueFamilyIndex, RhiExtent2D extent)
     -> std::expected<void, int> {
     vkPhysicalDevice = physicalDevice;
     vkDevice = device;
     vkSurface = surface;
     vkQueueFamilyIndex = queueFamilyIndex;
-    sdlWindow = window;
     VkResult result = VK_SUCCESS;
 
     VkSurfaceCapabilitiesKHR capabilities;
@@ -68,13 +65,7 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     auto format = formats[0];
     rhiColorFormat = vkFormatToRhiFormat(format.format);
 
-    {
-        int w = 0;
-        int h = 0;
-        SDL_GetWindowSizeInPixels(window, &w, &h);
-        ext.width = (uint32_t) w;
-        ext.height = (uint32_t) h;
-    }
+    ext = extent;
     ext.width = std::max(ext.width, capabilities.minImageExtent.width);
     ext.width = std::min(ext.width, capabilities.maxImageExtent.width);
     ext.height = std::max(ext.height, capabilities.minImageExtent.height);
@@ -210,10 +201,10 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     return {};
 }
 
-auto RhiSwapchainVulkan::recreate() -> bool {
+auto RhiSwapchainVulkan::recreate(RhiExtent2D extent) -> bool {
     vkDeviceWaitIdle(vkDevice);
     destroy();
-    auto result = init(vkPhysicalDevice, vkDevice, vkSurface, vkQueueFamilyIndex, sdlWindow);
+    auto result = init(vkPhysicalDevice, vkDevice, vkSurface, vkQueueFamilyIndex, extent);
     return result.has_value();
 }
 

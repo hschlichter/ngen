@@ -13,18 +13,16 @@
 #include "rhiswapchain.h"
 #include "shadowpass.h"
 
-#include <SDL3/SDL.h>
-
 #include <array>
 #include <cstring>
 #include <limits>
 
-auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<void, int> {
+auto Renderer::init(RhiDevice* rhiDevice, SDL_Window* window, RhiExtent2D windowExtent) -> std::expected<void, int> {
     using enum RhiFormat;
 
     device = rhiDevice;
 
-    swapchain = device->createSwapchain(window);
+    swapchain = device->createSwapchain(windowExtent);
     if (swapchain == nullptr) {
         return std::unexpected(1);
     }
@@ -354,7 +352,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     if (!index) {
         if (index.error() == 2) {
             OBS_EVENT("Render", "SwapchainRecreate", "swapchain").field("reason", "acquire_failed");
-            swapchain->recreate();
+            swapchain->recreate({.width = (uint32_t) snapshot.windowWidth, .height = (uint32_t) snapshot.windowHeight});
             resourcePool.flush();
             currentFrame = 0;
         }
@@ -502,7 +500,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     device->submitCommandBuffer(cmd, submitInfo);
     if (!device->present(swapchain, renderFinishedSemaphores[currentFrame], *index)) {
         OBS_EVENT("Render", "SwapchainRecreate", "swapchain").field("reason", "present_failed");
-        swapchain->recreate();
+        swapchain->recreate({.width = (uint32_t) snapshot.windowWidth, .height = (uint32_t) snapshot.windowHeight});
         resourcePool.flush();
         currentFrame = 0;
         OBS_EVENT("Render", "FrameEnd", "frame").field("frame", (int64_t) frame);

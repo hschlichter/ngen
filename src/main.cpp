@@ -21,6 +21,7 @@
 #include "usdscene.h"
 
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -29,6 +30,28 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+// Build the RhiWindow contract from an SDL window. This is the only place where the
+// window layer (SDL) and the graphics backend meet; the RHI itself never sees SDL.
+static auto makeRhiWindowSdl(SDL_Window* window) -> RhiWindow {
+    RhiWindow rhiWindow;
+
+    uint32_t extensionCount = 0;
+    const auto* const* extensions = SDL_Vulkan_GetInstanceExtensions(&extensionCount);
+    rhiWindow.instanceExtensions.assign(extensions, extensions + extensionCount);
+
+    rhiWindow.createSurface = [window](void* nativeInstance, void** nativeSurface) -> bool {
+        auto instance = (VkInstance) nativeInstance;
+        auto* surface = (VkSurfaceKHR*) nativeSurface;
+        if (!SDL_Vulkan_CreateSurface(window, instance, nullptr, surface)) {
+            std::println(stderr, "SDL_Vulkan_CreateSurface failed: {}", SDL_GetError());
+            return false;
+        }
+        return true;
+    };
+
+    return rhiWindow;
+}
 
 // Split a comma-separated category list into individual names. Trims whitespace
 // around each token; empty tokens are dropped.
@@ -160,15 +183,23 @@ auto main(int argc, char* argv[]) -> int {
     // Job system
     JobSystem::init();
 
-    // RHI device
+    // RHI device. The window layer (SDL) hands the backend what it needs through
+    // hooks; the RHI never includes SDL.
     RhiDeviceVulkan rhiDevice;
-    if (!rhiDevice.init(window)) {
+    if (!rhiDevice.init(makeRhiWindowSdl(window))) {
         return 1;
     }
 
     // Renderer
+    RhiExtent2D initialExtent = {};
+    {
+        int w = 0;
+        int h = 0;
+        SDL_GetWindowSizeInPixels(window, &w, &h);
+        initialExtent = {.width = (uint32_t) w, .height = (uint32_t) h};
+    }
     Renderer renderer;
-    if (!renderer.init(&rhiDevice, window)) {
+    if (!renderer.init(&rhiDevice, window, initialExtent)) {
         return 1;
     }
     renderer.uploadRenderWorld(renderWorld, meshLib, matLib);

@@ -42,7 +42,7 @@ public:
     Renderer& operator=(Renderer&&) = default;
     ~Renderer() = default;
 
-    auto init(RhiDevice* rhiDevice, SDL_Window* window) -> std::expected<void, int>;
+    auto init(RhiDevice* rhiDevice, SDL_Window* window, RhiExtent2D windowExtent) -> std::expected<void, int>;
     auto uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void;
     auto render(RenderSnapshot& snapshot) -> void;
     auto destroy() -> void;

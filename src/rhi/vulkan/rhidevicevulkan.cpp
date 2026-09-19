@@ -1,7 +1,5 @@
 #include "rhidevicevulkan.h"
 
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
 #include <vulkan/vk_enum_string_helper.h>
 
 #include <array>
@@ -177,7 +175,7 @@ auto RhiDeviceVulkan::transitionImageLayout(VkImage image, VkImageLayout oldLayo
     vkFreeCommandBuffers(device, cmdPool, 1, &cmd);
 }
 
-auto RhiDeviceVulkan::init(SDL_Window* window) -> std::expected<void, int> {
+auto RhiDeviceVulkan::init(const RhiWindow& window) -> std::expected<void, int> {
     uint32_t apiVersion = VK_API_VERSION_1_0;
     auto result = vkEnumerateInstanceVersion(&apiVersion);
     if (result != VK_SUCCESS) {
@@ -196,10 +194,10 @@ auto RhiDeviceVulkan::init(SDL_Window* window) -> std::expected<void, int> {
         .apiVersion = apiVersion,
     };
 
-    uint32_t extensionsCount = 0;
-    const auto* const* extensions = SDL_Vulkan_GetInstanceExtensions(&extensionsCount);
-    for (uint32_t i = 0; i < extensionsCount; i++) {
-        std::println("{}", extensions[i]);
+    const auto& extensions = window.instanceExtensions;
+    auto extensionsCount = (uint32_t) extensions.size();
+    for (const auto* extension : extensions) {
+        std::println("{}", extension);
     }
 
     const char* validationLayers[] = {
@@ -224,7 +222,7 @@ auto RhiDeviceVulkan::init(SDL_Window* window) -> std::expected<void, int> {
         .enabledLayerCount = validationLayersCount,
         .ppEnabledLayerNames = validationLayers,
         .enabledExtensionCount = extensionsCount,
-        .ppEnabledExtensionNames = extensions,
+        .ppEnabledExtensionNames = extensions.data(),
     };
 
     result = vkCreateInstance(&instanceCreateInfo, nullptr, &instance);
@@ -233,8 +231,8 @@ auto RhiDeviceVulkan::init(SDL_Window* window) -> std::expected<void, int> {
         return std::unexpected(1);
     }
 
-    if (!SDL_Vulkan_CreateSurface(window, instance, nullptr, &surface)) {
-        std::println(stderr, "SDL_Vulkan_CreateSurface failed: {}", SDL_GetError());
+    if (!window.createSurface || !window.createSurface(instance, (void**) &surface)) {
+        std::println(stderr, "RhiWindow::createSurface failed");
         return std::unexpected(1);
     }
 
@@ -351,9 +349,9 @@ auto RhiDeviceVulkan::waitIdle() -> void {
     vkDeviceWaitIdle(device);
 }
 
-auto RhiDeviceVulkan::createSwapchain(SDL_Window* window) -> RhiSwapchain* {
+auto RhiDeviceVulkan::createSwapchain(RhiExtent2D extent) -> RhiSwapchain* {
     auto* sc = new RhiSwapchainVulkan();
-    if (!sc->init(physicalDevice, device, surface, queueFamilyIndex, window)) {
+    if (!sc->init(physicalDevice, device, surface, queueFamilyIndex, extent)) {
         delete sc;
         return nullptr;
     }
