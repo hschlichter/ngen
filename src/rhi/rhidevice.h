@@ -55,6 +55,9 @@ public:
     virtual auto unmapBuffer(RhiBuffer* buffer) -> void = 0;
 
     [[nodiscard]] virtual auto limits() const -> const RhiDeviceLimits& = 0;
+    // Whether textures of this format can be created with every usage bit given.
+    // Some formats are optional per backend (e.g. D24_UNORM_S8_UINT on Vulkan).
+    [[nodiscard]] virtual auto supportsTextureFormat(RhiFormat format, RhiTextureUsageFlags usage) const -> bool = 0;
     // Errors reported by the backend's validation layer since init; always 0 when validation is off.
     [[nodiscard]] virtual auto validationErrorCount() const -> uint64_t = 0;
 

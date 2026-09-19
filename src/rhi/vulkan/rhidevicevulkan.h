@@ -38,6 +38,7 @@ public:
     auto unmapBuffer(RhiBuffer* buffer) -> void override;
 
     [[nodiscard]] auto limits() const -> const RhiDeviceLimits& override { return deviceLimits; }
+    [[nodiscard]] auto supportsTextureFormat(RhiFormat format, RhiTextureUsageFlags usage) const -> bool override;
     [[nodiscard]] auto validationErrorCount() const -> uint64_t override { return validationErrors; }
     auto onValidationMessage(uint32_t severity, const char* message) -> void;
 

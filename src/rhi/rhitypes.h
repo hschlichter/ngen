@@ -104,7 +104,8 @@ enum class RhiFormat {
     R32G32B32_SFLOAT,
     R32G32B32A32_SFLOAT,
     D32_SFLOAT,
-    D24_UNORM_S8_UINT,
+    D24_UNORM_S8_UINT,  // optional on Vulkan; query supportsTextureFormat, or use D32_SFLOAT_S8_UINT
+    D32_SFLOAT_S8_UINT, // Vulkan guarantees at least one of the two depth-stencil formats
 };
 
 enum class RhiTextureDimension {
@@ -232,11 +233,14 @@ struct RhiBufferCopy {
     uint64_t size = 0;
 };
 
-// Whole mip level 0 of a 2D texture; tightly packed rows starting at bufferOffset.
+// One whole mip level of one array layer (cube face = layer); tightly packed rows
+// starting at bufferOffset. width/height are the level's size.
 struct RhiBufferTextureCopy {
     uint64_t bufferOffset = 0;
     uint32_t width = 0;
     uint32_t height = 0;
+    uint32_t mipLevel = 0;
+    uint32_t arrayLayer = 0;
 };
 
 // Static device capabilities the renderer needs to size and validate its own

@@ -250,7 +250,7 @@ auto RhiCommandBufferVulkan::copyBufferToTexture(RhiBuffer* src, RhiTexture* dst
     auto* dstTex = static_cast<RhiTextureVulkan*>(dst);
     VkBufferImageCopy vkRegion = {
         .bufferOffset = region.bufferOffset,
-        .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
+        .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = region.mipLevel, .baseArrayLayer = region.arrayLayer, .layerCount = 1},
         .imageExtent = {region.width, region.height, 1},
     };
     vkCmdCopyBufferToImage(cmd, srcBuf->buffer, dstTex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &vkRegion);
@@ -261,7 +261,7 @@ auto RhiCommandBufferVulkan::copyTextureToBuffer(RhiTexture* src, RhiBuffer* dst
     auto* dstBuf = static_cast<RhiBufferVulkan*>(dst);
     VkBufferImageCopy vkRegion = {
         .bufferOffset = region.bufferOffset,
-        .imageSubresource = {.aspectMask = srcTex->aspect, .layerCount = 1},
+        .imageSubresource = {.aspectMask = srcTex->aspect, .mipLevel = region.mipLevel, .baseArrayLayer = region.arrayLayer, .layerCount = 1},
         .imageExtent = {region.width, region.height, 1},
     };
     vkCmdCopyImageToBuffer(cmd, srcTex->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstBuf->buffer, 1, &vkRegion);

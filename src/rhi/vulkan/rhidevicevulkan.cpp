@@ -54,6 +54,8 @@ auto RhiDeviceVulkan::toVkFormat(RhiFormat format) -> VkFormat {
             return VK_FORMAT_R16G16B16A16_SFLOAT;
         case D24_UNORM_S8_UINT:
             return VK_FORMAT_D24_UNORM_S8_UINT;
+        case D32_SFLOAT_S8_UINT:
+            return VK_FORMAT_D32_SFLOAT_S8_UINT;
         case R32G32_SFLOAT:
             return VK_FORMAT_R32G32_SFLOAT;
         case R32G32B32_SFLOAT:
@@ -537,6 +539,7 @@ static auto formatAspect(RhiFormat format) -> VkImageAspectFlags {
         case RhiFormat::D32_SFLOAT:
             return VK_IMAGE_ASPECT_DEPTH_BIT;
         case RhiFormat::D24_UNORM_S8_UINT:
+        case RhiFormat::D32_SFLOAT_S8_UINT:
             return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
         default:
             return VK_IMAGE_ASPECT_COLOR_BIT;
@@ -566,6 +569,33 @@ static auto toVkViewType(RhiTextureDimension dimension) -> VkImageViewType {
             return VK_IMAGE_VIEW_TYPE_CUBE;
     }
     return VK_IMAGE_VIEW_TYPE_2D;
+}
+
+auto RhiDeviceVulkan::supportsTextureFormat(RhiFormat format, RhiTextureUsageFlags usage) const -> bool {
+    VkFormatProperties props = {};
+    vkGetPhysicalDeviceFormatProperties(physicalDevice, toVkFormat(format), &props);
+    auto features = props.optimalTilingFeatures;
+
+    VkFormatFeatureFlags required = 0;
+    if (usage.has(RhiTextureUsage::Sampled)) {
+        required |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+    }
+    if (usage.has(RhiTextureUsage::ColorAttachment)) {
+        required |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+    }
+    if (usage.has(RhiTextureUsage::DepthAttachment)) {
+        required |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    }
+    if (usage.has(RhiTextureUsage::Storage)) {
+        required |= VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
+    }
+    if (usage.has(RhiTextureUsage::TransferSrc)) {
+        required |= VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
+    }
+    if (usage.has(RhiTextureUsage::TransferDst)) {
+        required |= VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+    }
+    return (features & required) == required;
 }
 
 auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {

@@ -63,6 +63,10 @@ struct RhiExampleFrame {
     std::vector<uint8_t> rgba;
     RhiExtent2D extent = {};
     RhiFormat format = RhiFormat::Undefined;
+
+    // NDC [-1,1] to pixel index; y is down in both.
+    auto px(float ndcX) const -> uint32_t { return (uint32_t) ((ndcX + 1.0f) * 0.5f * (float) extent.width); }
+    auto py(float ndcY) const -> uint32_t { return (uint32_t) ((ndcY + 1.0f) * 0.5f * (float) extent.height); }
 };
 
 class RhiExample {
@@ -82,12 +86,17 @@ protected:
     virtual auto teardown() -> void = 0;
     // Example-specific flag. Return true if consumed.
     virtual auto parseArg(std::string_view arg) -> bool { return false; }
+    // Swapchain was recreated at this size; GPU is idle. Recreate size-dependent resources here.
+    virtual auto resized(RhiExtent2D extent) -> void {}
 
     auto device() -> RhiDevice& { return rhiDevice; }
     auto swapchain() -> RhiSwapchain* { return rhiSwapchain; }
     auto colorFormat() const -> RhiFormat { return swapchainFormat; }
     auto frameCount() const -> uint32_t { return slotCount; }
     auto options() const -> const RhiExampleOptions& { return opts; }
+    // Valid inside record(): which slot's resources this frame owns, and the frame number (0-based).
+    auto frameSlot() const -> uint32_t { return currentSlot; }
+    auto frameIndex() const -> uint64_t { return currentFrame; }
 
     // One pixel assertion; linear colour is encoded to what the swapchain stores.
     auto expectPixel(const RhiExampleFrame& frame, uint32_t x, uint32_t y, std::array<float, 3> linearRgb, const char* label) -> bool {
@@ -120,6 +129,8 @@ private:
     std::vector<RhiSemaphore*> imageAvailable;
     std::vector<RhiSemaphore*> renderFinished;
     bool resizePending = false;
+    uint32_t currentSlot = 0;
+    uint64_t currentFrame = 0;
 };
 
 inline auto RhiExample::parseOptions(int argc, char** argv) -> void {
@@ -171,7 +182,9 @@ inline auto RhiExample::recreateSwapchain() -> void {
     rhiDevice.waitIdle(); // recreate tears down images the in-flight frames may use
     if (!rhiSwapchain->recreate(extent)) {
         std::println(stderr, "swapchain recreate failed");
+        return;
     }
+    resized(rhiSwapchain->extent());
 }
 
 inline auto RhiExample::run(int argc, char** argv, const char* name) -> int {
@@ -285,6 +298,9 @@ inline auto RhiExample::run(int argc, char** argv, const char* name) -> int {
         auto extent = rhiSwapchain->extent();
         bool isLastFrame = opts.frames > 0 && renderedFrames + 1 == opts.frames;
         bool readbackThisFrame = wantReadback && isLastFrame;
+
+        currentSlot = slot;
+        currentFrame = renderedFrames;
 
         cmd->reset();
         cmd->begin();

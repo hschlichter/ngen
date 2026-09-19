@@ -85,6 +85,7 @@ to `RhiFlags<E>` via `RhiFlagEnum<E>`; `A | B` yields `RhiFlags<E>` and `.has(E)
 5. Deferred destruction keyed by frame, or a `waitIdle` before every destroy if stalls are acceptable.
    Readback is the same shape in reverse: `copyTextureToBuffer` into a host-visible buffer, wait on the frame's fence, map.
 6. Compiled shader bytecode and the code to read it.
+   Optional formats (depth-stencil, compressed) checked with `supportsTextureFormat` before use.
 7. `recreate(extent)` on `RhiError::OutOfDate` from `acquireNextImage` or `present`, followed by dropping anything
    that referenced the old swapchain images.
 
@@ -115,7 +116,25 @@ Flags every example supports:
 - `--validation` enable the backend validation layer; any error message fails the run with exit 2.
 
 Exit codes: `0` ok, `1` setup failed (device, swapchain, shader, pipeline), `2` a check or validation failed. The last
-stdout line is a one-line summary: `triangle: ok frames=60 checks=2 validation_errors=0`.
+stdout line is a one-line summary: `triangle: ok frames=60 validation_errors=0`.
+
+Examples, each adding one concept to the previous:
+
+| target | shows |
+|---|---|
+| `ngen-example-triangle` | pipeline, draw, clear, present, resize |
+| `ngen-example-quad` | staging upload, vertex attributes, `drawIndexed` with uint16 and uint32 |
+| `ngen-example-texture` | `copyBufferToTexture`, samplers, descriptor sets |
+| `ngen-example-uniforms` | per-frame-slot uniform buffer, `bufferOffset`, `minUniformBufferOffsetAlignment` |
+| `ngen-example-depth` | example-owned depth texture, `resized()`, three `RhiDepthState`s, `supportsTextureFormat` |
+| `ngen-example-rendertarget` | render to texture, sample it, `blitTexture`, every layout transition |
+| `ngen-example-pushconstants` | one push constant range read by both stages, `maxPushConstantSize` |
+| `ngen-example-blend` | blend factors, cull mode, front face |
+| `ngen-example-lines` | `LineList`, `lineWidth`, `wideLines` fallback |
+| `ngen-example-mipcube` | mip levels, array layers, cube faces, one copy per subresource |
+
+Run them all: `for t in triangle quad texture uniforms depth rendertarget pushconstants blend lines mipcube; do
+SDL_VIDEODRIVER=offscreen ./_out/linux-vulkan/debug/ngen-example-$t --frames=10 --check --validation || echo "$t FAILED"; done`
 
 Rules for examples: include only headers under `src/rhi/` and `examples/common/` (plus `stb_image_write.h` for PNG);
 shaders embedded as GLSL strings and compiled at startup with shaderc; no animation or time dependence so a screenshot
@@ -144,8 +163,7 @@ Kept honest rather than papered over. See the review that produced this file for
 - Barriers are layout-only image barriers; no buffer barriers, no explicit stage or access masks.
 - One blend state for all color attachments.
 - One push constant range per pipeline.
-- `copyBufferToTexture` and `blitTexture` address mip 0, layer 0 only. Textures can have mips, layers and cube faces,
-  but nothing fills the extra subresources yet.
+- `blitTexture` addresses mip 0, layer 0 only. Copies take a mip and layer; blits do not yet.
 - No compressed formats (BC/ASTC). Add when an asset path produces them.
 - Resource objects are virtual-dtor classes returned by raw pointer; `swapchain->image(i)` pointers are invalidated by
   `recreate`. Opaque generational handles would fix this; deferred until a second backend makes the cost worth it.

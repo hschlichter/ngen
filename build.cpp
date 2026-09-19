@@ -7,6 +7,7 @@
 #include "build/ir/main.hpp"
 
 #include <filesystem>
+#include <string>
 
 using namespace build;
 
@@ -267,10 +268,10 @@ auto main(int argc, char** argv) -> int {
             .link_flag("-lusd_pegtl")
             .link_flag("-lusd_kind");
 
-    // RHI examples: standalone programs that reach only into src/rhi/. See docs/plan_rhi_examples.md.
-    auto exampleTriangle =
-        cxx::program("ngen-example-triangle")
-            .sources({"src/rhi/examples/triangle.cpp"})
+    // RHI examples: one program per feature, reaching only into src/rhi/. See docs/plan_rhi_examples.md.
+    auto rhiExample = [&](const std::string& name) {
+        return cxx::program("ngen-example-" + name)
+            .sources({"src/rhi/examples/" + name + ".cpp"})
             .include({
                 "src/rhi",
                 "src/rhi/vulkan",
@@ -280,9 +281,29 @@ auto main(int argc, char** argv) -> int {
             .link(rhi_backend)
             .link("shaderc_shared")
             .link_flags(sdl3_libs);
+    };
+    auto exampleTriangle = rhiExample("triangle");
+    auto exampleQuad = rhiExample("quad");
+    auto exampleTexture = rhiExample("texture");
+    auto exampleUniforms = rhiExample("uniforms");
+    auto exampleDepth = rhiExample("depth");
+    auto exampleRenderTarget = rhiExample("rendertarget");
+    auto examplePushConstants = rhiExample("pushconstants");
+    auto exampleBlend = rhiExample("blend");
+    auto exampleLines = rhiExample("lines");
+    auto exampleMipCube = rhiExample("mipcube");
 
     p.target(view);
     p.target(exampleTriangle);
+    p.target(exampleQuad);
+    p.target(exampleTexture);
+    p.target(exampleUniforms);
+    p.target(exampleDepth);
+    p.target(exampleRenderTarget);
+    p.target(examplePushConstants);
+    p.target(exampleBlend);
+    p.target(exampleLines);
+    p.target(exampleMipCube);
     p.target(format);
     p.target(tidy);
     p.default_target(view);
