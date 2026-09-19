@@ -110,3 +110,9 @@ Kept honest rather than papered over. See the review that produced this file for
 - No compressed formats (BC/ASTC). Add when an asset path produces them.
 - Resource objects are virtual-dtor classes returned by raw pointer; `swapchain->image(i)` pointers are invalidated by
   `recreate`. Opaque generational handles would fix this; deferred until a second backend makes the cost worth it.
+- No compute: no compute pipeline, no `dispatch`, no storage buffer descriptor type. First gap likely to matter.
+- Descriptor model is Vulkan-shaped (pool, layout, set, write). D3D12 and Metal can implement it, but it is not their
+  native shape; revisit when a second backend exists.
+- `allocateDescriptorSets` returns a `std::vector` and there is no free path; sets die with their pool.
+- `RhiImageLayout` is a Vulkan name for what D3D12 calls a resource state. Same model, better name would be
+  `RhiResourceState`.
