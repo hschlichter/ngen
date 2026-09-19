@@ -217,19 +217,19 @@ auto RhiCommandBufferVulkan::bindIndexBuffer(RhiBuffer* buffer) -> void {
     vkCmdBindIndexBuffer(cmd, b->buffer, 0, VK_INDEX_TYPE_UINT32);
 }
 
-auto RhiCommandBufferVulkan::bindDescriptorSet(RhiPipeline* pipeline, RhiDescriptorSet* set) -> void {
+auto RhiCommandBufferVulkan::bindDescriptorSet(RhiPipeline* pipeline, uint32_t setIndex, RhiDescriptorSet* set) -> void {
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
     auto* s = static_cast<RhiDescriptorSetVulkan*>(set);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p->layout, 0, 1, &s->set, 0, nullptr);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p->layout, setIndex, 1, &s->set, 0, nullptr);
 }
 
-auto RhiCommandBufferVulkan::pushConstants(RhiPipeline* pipeline, RhiShaderStage stage, uint32_t offset, uint32_t size, const void* data) -> void {
+auto RhiCommandBufferVulkan::pushConstants(RhiPipeline* pipeline, RhiShaderStageFlags stage, uint32_t offset, uint32_t size, const void* data) -> void {
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
     VkShaderStageFlags vkStage = 0;
-    if ((std::to_underlying(stage) & std::to_underlying(RhiShaderStage::Vertex)) != 0u) {
+    if (stage.has(RhiShaderStage::Vertex)) {
         vkStage |= VK_SHADER_STAGE_VERTEX_BIT;
     }
-    if ((std::to_underlying(stage) & std::to_underlying(RhiShaderStage::Fragment)) != 0u) {
+    if (stage.has(RhiShaderStage::Fragment)) {
         vkStage |= VK_SHADER_STAGE_FRAGMENT_BIT;
     }
     vkCmdPushConstants(cmd, p->layout, vkStage, offset, size, data);

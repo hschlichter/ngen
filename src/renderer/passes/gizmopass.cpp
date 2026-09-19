@@ -24,18 +24,15 @@ auto GizmoPass::init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent,
     RhiGraphicsPipelineDesc pipelineDesc = {
         .vertexShader = vertShader,
         .fragmentShader = fragShader,
-        .descriptorSetLayout = descriptorSetLayout,
+        .descriptorSetLayouts = {&descriptorSetLayout, 1},
+        .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(glm::mat4)},
         .colorFormats = {&colorFormat, 1},
         .depthFormat = Undefined,
         .vertexStride = sizeof(GizmoVertex),
         .vertexAttributes = vertexAttrs,
-        .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(glm::mat4)},
-        .viewportExtent = extent,
         .topology = RhiPrimitiveTopology::LineList,
-        .depthTestEnable = false,
-        .depthWriteEnable = false,
-        .backfaceCulling = false,
-        .lineWidth = 4.0f,
+        .raster = {.cullMode = RhiCullMode::None, .lineWidth = 4.0f},
+        .depth = {.testEnable = false, .writeEnable = false},
     };
     pipeline = device->createGraphicsPipeline(pipelineDesc);
 

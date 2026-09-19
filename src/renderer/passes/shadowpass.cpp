@@ -27,14 +27,13 @@ auto ShadowPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthForm
     RhiGraphicsPipelineDesc pipelineDesc = {
         .vertexShader = vertShader,
         .fragmentShader = fragShader,
-        .descriptorSetLayout = nullptr, // no descriptors; all data via push constants
-        .colorFormats = {},             // depth-only
+        .descriptorSetLayouts = {}, // no descriptors; all data via push constants
+        .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(ShadowPush)},
+        .colorFormats = {}, // depth-only
         .depthFormat = depthFormat,
         .vertexStride = sizeof(Vertex),
         .vertexAttributes = vertexAttrs,
-        .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(ShadowPush)},
-        .viewportExtent = extent,
-        .backfaceCulling = false,
+        .raster = {.cullMode = RhiCullMode::None},
     };
     pipeline = device->createGraphicsPipeline(pipelineDesc);
     return pipeline != nullptr;

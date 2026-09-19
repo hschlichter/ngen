@@ -71,8 +71,8 @@ inline auto toString(RhiFormat f) -> const char* {
     return "?";
 }
 
-inline auto toString(RhiTextureUsage u) -> const char* {
-    switch (std::to_underlying(u)) {
+inline auto toString(RhiTextureUsageFlags u) -> const char* {
+    switch (u.bits) {
         case 0:
             return "None";
         case 1u << 0:

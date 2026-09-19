@@ -29,14 +29,12 @@ auto LightingPass::init(RhiDevice* dev, uint32_t imageCount, RhiExtent2D extent,
     RhiGraphicsPipelineDesc pipelineDesc = {
         .vertexShader = vertShader,
         .fragmentShader = fragShader,
-        .descriptorSetLayout = descriptorSetLayout,
+        .descriptorSetLayouts = {&descriptorSetLayout, 1},
+        .pushConstant = {.stage = RhiShaderStage::Fragment, .offset = 0, .size = 3 * sizeof(int32_t)},
         .colorFormats = {&colorFormat, 1},
         .vertexStride = 0,
-        .pushConstant = {.stage = RhiShaderStage::Fragment, .offset = 0, .size = 3 * sizeof(int32_t)},
-        .viewportExtent = extent,
-        .depthTestEnable = false,
-        .depthWriteEnable = false,
-        .backfaceCulling = false,
+        .raster = {.cullMode = RhiCullMode::None},
+        .depth = {.testEnable = false, .writeEnable = false},
     };
     pipeline = device->createGraphicsPipeline(pipelineDesc);
     if (pipeline == nullptr) {
@@ -171,7 +169,7 @@ auto LightingPass::addPass(
             cmd->bindPipeline(pipeline);
             cmd->setViewport(extent);
             cmd->setScissor(extent);
-            cmd->bindDescriptorSet(pipeline, descriptorSets[imageIndex]);
+            cmd->bindDescriptorSet(pipeline, 0, descriptorSets[imageIndex]);
 
             struct LightingPush {
                 int32_t viewMode;

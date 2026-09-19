@@ -9,22 +9,22 @@
 #include <utility>
 #include <vector>
 
-auto RhiDeviceVulkan::toVkBufferUsage(RhiBufferUsage usage) -> VkBufferUsageFlags {
+auto RhiDeviceVulkan::toVkBufferUsage(RhiBufferUsageFlags usage) -> VkBufferUsageFlags {
     using enum RhiBufferUsage;
     VkBufferUsageFlags flags = 0;
-    if (usage & TransferSrc) {
+    if (usage.has(TransferSrc)) {
         flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     }
-    if (usage & TransferDst) {
+    if (usage.has(TransferDst)) {
         flags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     }
-    if (usage & Vertex) {
+    if (usage.has(Vertex)) {
         flags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
     }
-    if (usage & Index) {
+    if (usage.has(Index)) {
         flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
     }
-    if (usage & Uniform) {
+    if (usage.has(Uniform)) {
         flags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
     }
     return flags;
@@ -66,35 +66,121 @@ auto RhiDeviceVulkan::toVkFormat(RhiFormat format) -> VkFormat {
     return VK_FORMAT_UNDEFINED;
 }
 
-auto RhiDeviceVulkan::toVkShaderStage(RhiShaderStage stage) -> VkShaderStageFlags {
+auto RhiDeviceVulkan::toVkShaderStage(RhiShaderStageFlags stage) -> VkShaderStageFlags {
     VkShaderStageFlags flags = 0;
-    if ((std::to_underlying(stage) & std::to_underlying(RhiShaderStage::Vertex)) != 0u) {
+    if (stage.has(RhiShaderStage::Vertex)) {
         flags |= VK_SHADER_STAGE_VERTEX_BIT;
     }
-    if ((std::to_underlying(stage) & std::to_underlying(RhiShaderStage::Fragment)) != 0u) {
+    if (stage.has(RhiShaderStage::Fragment)) {
         flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
     }
     return flags;
 }
 
-auto RhiDeviceVulkan::toVkImageUsage(RhiTextureUsage usage) -> VkImageUsageFlags {
+static auto toVkCullMode(RhiCullMode mode) -> VkCullModeFlags {
+    switch (mode) {
+        case RhiCullMode::None:
+            return VK_CULL_MODE_NONE;
+        case RhiCullMode::Front:
+            return VK_CULL_MODE_FRONT_BIT;
+        case RhiCullMode::Back:
+            return VK_CULL_MODE_BACK_BIT;
+    }
+    return VK_CULL_MODE_NONE;
+}
+
+static auto toVkFrontFace(RhiFrontFace face) -> VkFrontFace {
+    switch (face) {
+        case RhiFrontFace::CounterClockwise:
+            return VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        case RhiFrontFace::Clockwise:
+            return VK_FRONT_FACE_CLOCKWISE;
+    }
+    return VK_FRONT_FACE_COUNTER_CLOCKWISE;
+}
+
+static auto toVkCompareOp(RhiCompareOp op) -> VkCompareOp {
+    switch (op) {
+        case RhiCompareOp::Never:
+            return VK_COMPARE_OP_NEVER;
+        case RhiCompareOp::Less:
+            return VK_COMPARE_OP_LESS;
+        case RhiCompareOp::Equal:
+            return VK_COMPARE_OP_EQUAL;
+        case RhiCompareOp::LessOrEqual:
+            return VK_COMPARE_OP_LESS_OR_EQUAL;
+        case RhiCompareOp::Greater:
+            return VK_COMPARE_OP_GREATER;
+        case RhiCompareOp::NotEqual:
+            return VK_COMPARE_OP_NOT_EQUAL;
+        case RhiCompareOp::GreaterOrEqual:
+            return VK_COMPARE_OP_GREATER_OR_EQUAL;
+        case RhiCompareOp::Always:
+            return VK_COMPARE_OP_ALWAYS;
+    }
+    return VK_COMPARE_OP_ALWAYS;
+}
+
+static auto toVkBlendFactor(RhiBlendFactor factor) -> VkBlendFactor {
+    switch (factor) {
+        case RhiBlendFactor::Zero:
+            return VK_BLEND_FACTOR_ZERO;
+        case RhiBlendFactor::One:
+            return VK_BLEND_FACTOR_ONE;
+        case RhiBlendFactor::SrcColor:
+            return VK_BLEND_FACTOR_SRC_COLOR;
+        case RhiBlendFactor::OneMinusSrcColor:
+            return VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+        case RhiBlendFactor::DstColor:
+            return VK_BLEND_FACTOR_DST_COLOR;
+        case RhiBlendFactor::OneMinusDstColor:
+            return VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+        case RhiBlendFactor::SrcAlpha:
+            return VK_BLEND_FACTOR_SRC_ALPHA;
+        case RhiBlendFactor::OneMinusSrcAlpha:
+            return VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        case RhiBlendFactor::DstAlpha:
+            return VK_BLEND_FACTOR_DST_ALPHA;
+        case RhiBlendFactor::OneMinusDstAlpha:
+            return VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
+    }
+    return VK_BLEND_FACTOR_ONE;
+}
+
+static auto toVkBlendOp(RhiBlendOp op) -> VkBlendOp {
+    switch (op) {
+        case RhiBlendOp::Add:
+            return VK_BLEND_OP_ADD;
+        case RhiBlendOp::Subtract:
+            return VK_BLEND_OP_SUBTRACT;
+        case RhiBlendOp::ReverseSubtract:
+            return VK_BLEND_OP_REVERSE_SUBTRACT;
+        case RhiBlendOp::Min:
+            return VK_BLEND_OP_MIN;
+        case RhiBlendOp::Max:
+            return VK_BLEND_OP_MAX;
+    }
+    return VK_BLEND_OP_ADD;
+}
+
+auto RhiDeviceVulkan::toVkImageUsage(RhiTextureUsageFlags usage) -> VkImageUsageFlags {
     VkImageUsageFlags flags = 0;
-    if (usage & RhiTextureUsage::Sampled) {
+    if (usage.has(RhiTextureUsage::Sampled)) {
         flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
     }
-    if (usage & RhiTextureUsage::ColorAttachment) {
+    if (usage.has(RhiTextureUsage::ColorAttachment)) {
         flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     }
-    if (usage & RhiTextureUsage::DepthAttachment) {
+    if (usage.has(RhiTextureUsage::DepthAttachment)) {
         flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     }
-    if (usage & RhiTextureUsage::Storage) {
+    if (usage.has(RhiTextureUsage::Storage)) {
         flags |= VK_IMAGE_USAGE_STORAGE_BIT;
     }
-    if (usage & RhiTextureUsage::TransferSrc) {
+    if (usage.has(RhiTextureUsage::TransferSrc)) {
         flags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     }
-    if (usage & RhiTextureUsage::TransferDst) {
+    if (usage.has(RhiTextureUsage::TransferDst)) {
         flags |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     }
     return flags;
@@ -493,7 +579,7 @@ auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {
         destroyBuffer(staging);
     }
 
-    VkImageAspectFlags aspect = (desc.usage & RhiTextureUsage::DepthAttachment) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    VkImageAspectFlags aspect = desc.usage.has(RhiTextureUsage::DepthAttachment) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
     VkImageViewCreateInfo viewInfo = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = tex->image,
@@ -556,7 +642,12 @@ auto RhiDeviceVulkan::createShaderModule(const RhiShaderDesc& desc) -> RhiShader
 auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) -> RhiPipeline* {
     auto* vertMod = static_cast<RhiShaderModuleVulkan*>(desc.vertexShader);
     auto* fragMod = static_cast<RhiShaderModuleVulkan*>(desc.fragmentShader);
-    auto* dsLayout = static_cast<RhiDescriptorSetLayoutVulkan*>(desc.descriptorSetLayout);
+
+    std::vector<VkDescriptorSetLayout> vkSetLayouts;
+    vkSetLayouts.reserve(desc.descriptorSetLayouts.size());
+    for (auto* layout : desc.descriptorSetLayouts) {
+        vkSetLayouts.push_back(static_cast<RhiDescriptorSetLayoutVulkan*>(layout)->layout);
+    }
 
     VkPipelineShaderStageCreateInfo stages[2] = {
         {
@@ -624,9 +715,9 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
     VkPipelineRasterizationStateCreateInfo rasterizationState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .polygonMode = VK_POLYGON_MODE_FILL,
-        .cullMode = desc.backfaceCulling ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE,
-        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-        .lineWidth = desc.lineWidth,
+        .cullMode = toVkCullMode(desc.raster.cullMode),
+        .frontFace = toVkFrontFace(desc.raster.frontFace),
+        .lineWidth = desc.raster.lineWidth,
     };
 
     VkPipelineMultisampleStateCreateInfo multisampleState = {
@@ -636,20 +727,25 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
 
     VkPipelineDepthStencilStateCreateInfo depthStencilState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-        .depthTestEnable = desc.depthTestEnable ? VK_TRUE : VK_FALSE,
-        .depthWriteEnable = desc.depthWriteEnable ? VK_TRUE : VK_FALSE,
-        .depthCompareOp = VK_COMPARE_OP_LESS,
+        .depthTestEnable = desc.depth.testEnable ? VK_TRUE : VK_FALSE,
+        .depthWriteEnable = desc.depth.writeEnable ? VK_TRUE : VK_FALSE,
+        .depthCompareOp = toVkCompareOp(desc.depth.compareOp),
         .depthBoundsTestEnable = VK_FALSE,
         .stencilTestEnable = VK_FALSE,
     };
 
     auto colorAttachmentCount = (uint32_t) desc.colorFormats.size();
-    std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachments(
-        colorAttachmentCount,
-        {
-            .blendEnable = VK_FALSE,
-            .colorWriteMask = 0xF,
-        });
+    VkPipelineColorBlendAttachmentState blendAttachment = {
+        .blendEnable = desc.blend.enable ? VK_TRUE : VK_FALSE,
+        .srcColorBlendFactor = toVkBlendFactor(desc.blend.srcColor),
+        .dstColorBlendFactor = toVkBlendFactor(desc.blend.dstColor),
+        .colorBlendOp = toVkBlendOp(desc.blend.colorOp),
+        .srcAlphaBlendFactor = toVkBlendFactor(desc.blend.srcAlpha),
+        .dstAlphaBlendFactor = toVkBlendFactor(desc.blend.dstAlpha),
+        .alphaBlendOp = toVkBlendOp(desc.blend.alphaOp),
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+    };
+    std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachments(colorAttachmentCount, blendAttachment);
 
     VkPipelineColorBlendStateCreateInfo colorBlendState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
@@ -665,8 +761,8 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
 
     VkPipelineLayoutCreateInfo layoutInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = dsLayout != nullptr ? 1u : 0u,
-        .pSetLayouts = dsLayout != nullptr ? &dsLayout->layout : nullptr,
+        .setLayoutCount = (uint32_t) vkSetLayouts.size(),
+        .pSetLayouts = vkSetLayouts.data(),
         .pushConstantRangeCount = desc.pushConstant.size > 0 ? 1u : 0u,
         .pPushConstantRanges = desc.pushConstant.size > 0 ? &pushConstRange : nullptr,
     };
@@ -819,7 +915,7 @@ auto RhiDeviceVulkan::updateDescriptorSet(RhiDescriptorSet* set, std::span<const
 
         if (writes[i].type == RhiDescriptorType::UniformBuffer) {
             auto* buf = static_cast<RhiBufferVulkan*>(writes[i].buffer);
-            bufInfos[i] = {.buffer = buf->buffer, .offset = 0, .range = writes[i].bufferRange};
+            bufInfos[i] = {.buffer = buf->buffer, .offset = writes[i].bufferOffset, .range = writes[i].bufferRange};
             vkWrites[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
             vkWrites[i].pBufferInfo = &bufInfos[i];
         } else {

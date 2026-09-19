@@ -30,16 +30,13 @@ auto DebugRenderer::init(
     RhiGraphicsPipelineDesc pipelineDesc = {
         .vertexShader = vertShader,
         .fragmentShader = fragShader,
-        .descriptorSetLayout = descriptorSetLayout,
+        .descriptorSetLayouts = {&descriptorSetLayout, 1},
         .colorFormats = {&colorFormat, 1},
         .depthFormat = depthFormat,
         .vertexStride = sizeof(DebugVertex),
         .vertexAttributes = vertexAttrs,
-        .pushConstant = {},
-        .viewportExtent = extent,
         .topology = RhiPrimitiveTopology::LineList,
-        .depthTestEnable = true,
-        .depthWriteEnable = false,
+        .depth = {.testEnable = true, .writeEnable = false},
     };
     pipeline = device->createGraphicsPipeline(pipelineDesc);
 
@@ -137,7 +134,7 @@ auto DebugRenderer::addPass(FrameGraph& fg, FgTextureHandle color, FgTextureHand
             cmd->setViewport(extent);
             cmd->setScissor(extent);
             cmd->bindVertexBuffer(vb);
-            cmd->bindDescriptorSet(pip, ds);
+            cmd->bindDescriptorSet(pip, 0, ds);
             cmd->draw(vertexCount, 1, 0, 0);
             cmd->endRendering();
         });

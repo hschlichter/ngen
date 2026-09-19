@@ -21,8 +21,8 @@ public:
     auto bindPipeline(RhiPipeline* pipeline) -> void override;
     auto bindVertexBuffer(RhiBuffer* buffer) -> void override;
     auto bindIndexBuffer(RhiBuffer* buffer) -> void override;
-    auto bindDescriptorSet(RhiPipeline* pipeline, RhiDescriptorSet* set) -> void override;
-    auto pushConstants(RhiPipeline* pipeline, RhiShaderStage stage, uint32_t offset, uint32_t size, const void* data) -> void override;
+    auto bindDescriptorSet(RhiPipeline* pipeline, uint32_t setIndex, RhiDescriptorSet* set) -> void override;
+    auto pushConstants(RhiPipeline* pipeline, RhiShaderStageFlags stage, uint32_t offset, uint32_t size, const void* data) -> void override;
     auto draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) -> void override;
     auto drawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) -> void override;
 

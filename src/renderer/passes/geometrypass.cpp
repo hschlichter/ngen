@@ -31,14 +31,13 @@ auto GeometryPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFo
     RhiGraphicsPipelineDesc pipelineDesc = {
         .vertexShader = vertShader,
         .fragmentShader = fragShader,
-        .descriptorSetLayout = descSetLayout,
+        .descriptorSetLayouts = {&descSetLayout, 1},
+        .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(glm::mat4)},
         .colorFormats = colorFormats,
         .depthFormat = depthFormat,
         .vertexStride = sizeof(Vertex),
         .vertexAttributes = vertexAttrs,
-        .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(glm::mat4)},
-        .viewportExtent = extent,
-        .backfaceCulling = false,
+        .raster = {.cullMode = RhiCullMode::None},
     };
     pipeline = device->createGraphicsPipeline(pipelineDesc);
     return pipeline != nullptr;
@@ -128,7 +127,7 @@ auto GeometryPass::addPass(
                 cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(glm::mat4), &model);
                 cmd->bindVertexBuffer(cached.vertexBuffer);
                 cmd->bindIndexBuffer(cached.indexBuffer);
-                cmd->bindDescriptorSet(pip, descriptorSets[(imageIndex * instanceCount) + m]);
+                cmd->bindDescriptorSet(pip, 0, descriptorSets[(imageIndex * instanceCount) + m]);
                 cmd->drawIndexed(inst.indexCount, 1, inst.indexOffset, 0, 0);
             }
 

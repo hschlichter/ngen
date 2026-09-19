@@ -67,10 +67,10 @@ private:
     auto findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t;
     auto transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) -> void;
 
-    static auto toVkBufferUsage(RhiBufferUsage usage) -> VkBufferUsageFlags;
-    static auto toVkImageUsage(RhiTextureUsage usage) -> VkImageUsageFlags;
+    static auto toVkBufferUsage(RhiBufferUsageFlags usage) -> VkBufferUsageFlags;
+    static auto toVkImageUsage(RhiTextureUsageFlags usage) -> VkImageUsageFlags;
     static auto toVkMemoryProps(RhiMemoryUsage usage) -> VkMemoryPropertyFlags;
-    static auto toVkShaderStage(RhiShaderStage stage) -> VkShaderStageFlags;
+    static auto toVkShaderStage(RhiShaderStageFlags stage) -> VkShaderStageFlags;
 
 public:
     static auto toVkFormat(RhiFormat format) -> VkFormat;

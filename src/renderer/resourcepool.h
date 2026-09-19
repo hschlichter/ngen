@@ -11,10 +11,10 @@ struct ResourcePoolKey {
     uint32_t width;
     uint32_t height;
     RhiFormat format;
-    RhiTextureUsage usage;
+    RhiTextureUsageFlags usage;
 
     auto operator==(const ResourcePoolKey& other) const -> bool {
-        return width == other.width && height == other.height && format == other.format && std::to_underlying(usage) == std::to_underlying(other.usage);
+        return width == other.width && height == other.height && format == other.format && usage == other.usage;
     }
 };
 

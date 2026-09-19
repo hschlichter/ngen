@@ -4,7 +4,54 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <type_traits>
 #include <utility>
+
+// Type-safe bit set over a flag enum. Opt an enum in by specialising RhiFlagEnum;
+// then `E | E` yields RhiFlags<E>, and RhiFlags<E>::has(E) tests a bit. Plain
+// `enum class` operators were dropped because `a & b` returning bool made
+// `usage & (A | B)` silently mean "any of".
+template <typename E>
+struct RhiFlagEnum : std::false_type {};
+
+template <typename E>
+concept RhiFlagEnumType = RhiFlagEnum<E>::value;
+
+template <RhiFlagEnumType E>
+struct RhiFlags {
+    using Underlying = std::underlying_type_t<E>;
+    Underlying bits = 0;
+
+    constexpr RhiFlags() = default;
+    constexpr RhiFlags(E flag) : bits(std::to_underlying(flag)) {}
+
+    [[nodiscard]] constexpr auto has(E flag) const -> bool { return (bits & std::to_underlying(flag)) != 0; }
+    [[nodiscard]] constexpr auto any() const -> bool { return bits != 0; }
+
+    constexpr auto operator|=(RhiFlags other) -> RhiFlags& {
+        bits |= other.bits;
+        return *this;
+    }
+
+    friend constexpr auto operator|(RhiFlags a, RhiFlags b) -> RhiFlags {
+        RhiFlags result;
+        result.bits = a.bits | b.bits;
+        return result;
+    }
+
+    friend constexpr auto operator&(RhiFlags a, RhiFlags b) -> RhiFlags {
+        RhiFlags result;
+        result.bits = a.bits & b.bits;
+        return result;
+    }
+
+    friend constexpr auto operator==(RhiFlags a, RhiFlags b) -> bool = default;
+};
+
+template <RhiFlagEnumType E>
+constexpr auto operator|(E a, E b) -> RhiFlags<E> {
+    return RhiFlags<E>(a) | RhiFlags<E>(b);
+}
 
 enum class RhiBufferUsage : uint32_t {
     TransferSrc = 1 << 0,
@@ -13,14 +60,9 @@ enum class RhiBufferUsage : uint32_t {
     Index = 1 << 3,
     Uniform = 1 << 4,
 };
-
-inline auto operator|(RhiBufferUsage a, RhiBufferUsage b) -> RhiBufferUsage {
-    return (RhiBufferUsage) (std::to_underlying(a) | std::to_underlying(b));
-}
-
-inline auto operator&(RhiBufferUsage a, RhiBufferUsage b) -> bool {
-    return (std::to_underlying(a) & std::to_underlying(b)) != 0;
-}
+template <>
+struct RhiFlagEnum<RhiBufferUsage> : std::true_type {};
+using RhiBufferUsageFlags = RhiFlags<RhiBufferUsage>;
 
 enum class RhiMemoryUsage {
     GpuOnly,
@@ -31,6 +73,9 @@ enum class RhiShaderStage : uint32_t {
     Vertex = 1 << 0,
     Fragment = 1 << 1,
 };
+template <>
+struct RhiFlagEnum<RhiShaderStage> : std::true_type {};
+using RhiShaderStageFlags = RhiFlags<RhiShaderStage>;
 
 // Backend-agnostic failure classes. Backends log the native error code before
 // returning one of these; callers only branch on the class.
@@ -71,14 +116,52 @@ enum class RhiTextureUsage : uint32_t {
     TransferSrc = 1 << 4,
     TransferDst = 1 << 5,
 };
+template <>
+struct RhiFlagEnum<RhiTextureUsage> : std::true_type {};
+using RhiTextureUsageFlags = RhiFlags<RhiTextureUsage>;
 
-inline auto operator|(RhiTextureUsage a, RhiTextureUsage b) -> RhiTextureUsage {
-    return (RhiTextureUsage) (std::to_underlying(a) | std::to_underlying(b));
-}
+enum class RhiCullMode {
+    None,
+    Front,
+    Back,
+};
 
-inline auto operator&(RhiTextureUsage a, RhiTextureUsage b) -> bool {
-    return (std::to_underlying(a) & std::to_underlying(b)) != 0;
-}
+enum class RhiFrontFace {
+    CounterClockwise,
+    Clockwise,
+};
+
+enum class RhiCompareOp {
+    Never,
+    Less,
+    Equal,
+    LessOrEqual,
+    Greater,
+    NotEqual,
+    GreaterOrEqual,
+    Always,
+};
+
+enum class RhiBlendFactor {
+    Zero,
+    One,
+    SrcColor,
+    OneMinusSrcColor,
+    DstColor,
+    OneMinusDstColor,
+    SrcAlpha,
+    OneMinusSrcAlpha,
+    DstAlpha,
+    OneMinusDstAlpha,
+};
+
+enum class RhiBlendOp {
+    Add,
+    Subtract,
+    ReverseSubtract,
+    Min,
+    Max,
+};
 
 enum class RhiImageLayout {
     Undefined,
@@ -96,7 +179,7 @@ struct RhiExtent2D {
 
 struct RhiBufferDesc {
     uint64_t size;
-    RhiBufferUsage usage;
+    RhiBufferUsageFlags usage;
     RhiMemoryUsage memory;
 };
 
@@ -104,7 +187,7 @@ struct RhiTextureDesc {
     uint32_t width;
     uint32_t height;
     RhiFormat format;
-    RhiTextureUsage usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst;
+    RhiTextureUsageFlags usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst;
     const void* initialData = nullptr;
     uint64_t initialDataSize = 0;
 };
@@ -132,13 +215,13 @@ struct RhiVertexAttribute {
 struct RhiDescriptorBinding {
     uint32_t binding;
     RhiDescriptorType type;
-    RhiShaderStage stage;
+    RhiShaderStageFlags stage;
 };
 
 struct RhiPushConstantRange {
-    RhiShaderStage stage;
-    uint32_t offset;
-    uint32_t size;
+    RhiShaderStageFlags stage;
+    uint32_t offset = 0;
+    uint32_t size = 0;
 };
 
 class RhiBuffer {
@@ -247,39 +330,61 @@ struct RhiRenderingInfo {
 };
 
 struct RhiBarrierDesc {
-    RhiTexture* texture;
-    RhiImageLayout oldLayout;
-    RhiImageLayout newLayout;
+    RhiTexture* texture = nullptr;
+    RhiImageLayout oldLayout = RhiImageLayout::Undefined;
+    RhiImageLayout newLayout = RhiImageLayout::Undefined;
 };
 
-struct RhiGraphicsPipelineDesc {
-    RhiShaderModule* vertexShader;
-    RhiShaderModule* fragmentShader;
-    RhiDescriptorSetLayout* descriptorSetLayout;
-    std::span<const RhiFormat> colorFormats;
-    RhiFormat depthFormat = RhiFormat::Undefined;
-    uint32_t vertexStride;
-    std::span<const RhiVertexAttribute> vertexAttributes;
-    RhiPushConstantRange pushConstant;
-    RhiExtent2D viewportExtent;
-    RhiPrimitiveTopology topology = RhiPrimitiveTopology::TriangleList;
-    bool depthTestEnable = true;
-    bool depthWriteEnable = true;
-    bool backfaceCulling = true;
+struct RhiRasterState {
+    RhiCullMode cullMode = RhiCullMode::Back;
+    RhiFrontFace frontFace = RhiFrontFace::CounterClockwise;
     float lineWidth = 1.0f; // Only honored when topology is LineList; requires wideLines feature for >1.
 };
 
+struct RhiDepthState {
+    bool testEnable = true;
+    bool writeEnable = true;
+    RhiCompareOp compareOp = RhiCompareOp::Less;
+};
+
+// Defaults describe standard alpha blending; `enable` is off so pipelines opt in.
+struct RhiBlendState {
+    bool enable = false;
+    RhiBlendFactor srcColor = RhiBlendFactor::SrcAlpha;
+    RhiBlendFactor dstColor = RhiBlendFactor::OneMinusSrcAlpha;
+    RhiBlendOp colorOp = RhiBlendOp::Add;
+    RhiBlendFactor srcAlpha = RhiBlendFactor::One;
+    RhiBlendFactor dstAlpha = RhiBlendFactor::OneMinusSrcAlpha;
+    RhiBlendOp alphaOp = RhiBlendOp::Add;
+};
+
+struct RhiGraphicsPipelineDesc {
+    RhiShaderModule* vertexShader = nullptr;
+    RhiShaderModule* fragmentShader = nullptr;
+    std::span<RhiDescriptorSetLayout* const> descriptorSetLayouts; // index in span = set index
+    RhiPushConstantRange pushConstant;
+    std::span<const RhiFormat> colorFormats;
+    RhiFormat depthFormat = RhiFormat::Undefined;
+    uint32_t vertexStride = 0;
+    std::span<const RhiVertexAttribute> vertexAttributes;
+    RhiPrimitiveTopology topology = RhiPrimitiveTopology::TriangleList;
+    RhiRasterState raster;
+    RhiDepthState depth;
+    RhiBlendState blend; // applied to every color attachment
+};
+
 struct RhiDescriptorWrite {
-    uint32_t binding;
-    RhiDescriptorType type;
-    RhiBuffer* buffer;
-    uint64_t bufferRange;
-    RhiTexture* texture;
-    RhiSampler* sampler;
+    uint32_t binding = 0;
+    RhiDescriptorType type = RhiDescriptorType::UniformBuffer;
+    RhiBuffer* buffer = nullptr;
+    uint64_t bufferOffset = 0;
+    uint64_t bufferRange = 0;
+    RhiTexture* texture = nullptr;
+    RhiSampler* sampler = nullptr;
 };
 
 struct RhiSubmitInfo {
-    RhiSemaphore* waitSemaphore;
-    RhiSemaphore* signalSemaphore;
-    RhiFence* fence;
+    RhiSemaphore* waitSemaphore = nullptr;
+    RhiSemaphore* signalSemaphore = nullptr;
+    RhiFence* fence = nullptr;
 };
