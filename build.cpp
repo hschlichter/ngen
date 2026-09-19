@@ -61,7 +61,6 @@ auto main(int argc, char** argv) -> int {
             .compile_flag("-O0")
             .compile_flag("-g")
             .define("DEBUG=1");
-            //.define("NGEN_ENABLE_VALIDATION");
 
     auto release =
         cxx::configuration("release")
@@ -276,6 +275,7 @@ auto main(int argc, char** argv) -> int {
                 "src/rhi",
                 "src/rhi/vulkan",
                 "src/rhi/examples",
+                "external/stb", // screenshot PNG writer; the one third-party header examples may use
             })
             .link(rhi_backend)
             .link("shaderc_shared")

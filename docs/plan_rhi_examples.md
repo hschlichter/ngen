@@ -20,13 +20,16 @@ drawing anything. That is superseded by this plan: examples first, minimal, huma
   bytes). Each example is one translation unit. Examples include nothing outside `src/rhi/`.
 - Shaders embedded as GLSL raw string literals in the example, compiled at startup with shaderc. The whole example, shaders included, is one file.
 - Build target `ngen-example-triangle`, not the default target.
-- `--frames=N` flag: render N frames, exit 0. Enables an unattended run under the offscreen SDL driver with validation layers.
+- Flags that make the example a verification tool for humans and agents: `--frames=N`, `--size=WxH`, `--check` (analytic pixel
+  assertions from constants in the file), `--screenshot=PATH` (PNG via stb), `--resize-at=N`, `--validation`. Exit codes 0/1/2 and a
+  one-line summary. Documented in `src/rhi/README.md` "Examples".
+- RHI additions the above needs: `RhiCommandBuffer::copyTextureToBuffer` (readback is a command, same rule as uploads) and
+  `RhiDeviceOptions { enableValidation }` on `RhiDevice::init` with `validationErrorCount()`, so validation is a runtime result instead
+  of a compile-time define plus log grep. `ngen-view` gains `--validation`; `NGEN_ENABLE_VALIDATION` is gone.
 
 **Out**
 
 - Test harness, registry, pass/fail reporting, obs bus. None of it.
-- Readback / screenshots. Trigger for adding: an example whose correctness a human cannot judge by eye.
-- Shared example framework or base class. Trigger: a second example duplicating the frame loop.
 - Backend selection machinery. Examples construct `RhiDeviceVulkan` directly, like `main.cpp`. When a second backend exists, the build selects
   sources per platform; the example body does not change.
 
@@ -39,8 +42,13 @@ drawing anything. That is superseded by this plan: examples first, minimal, huma
   alternative is an example depending on `src/`, or the engine depending on example code.
 - **SDL is the window layer for examples.** Same rule as the engine: SDL never enters `src/rhi/` proper (interface or backend). `examples/` is
   application code that happens to live next to the interface it demonstrates.
-- **Standalone file.** ~250 lines is acceptable; it is the documentation. Duplication across examples is preferred over an abstraction until the
-  third example.
+- **`RhiExample` base, header-only.** Pulled forward from "after the second example" once the flag set grew: window, device, swapchain,
+  pacing, loop, readback, flags and exit code are identical for every example and were 300 lines of the 400. The base is one readable file
+  with the integrator contract as numbered sections; an example overrides `setup`, `record`, `check`, `teardown` and is about 120 lines.
+  Guard against bloat: only what every example needs enters the base. Feature helpers (depth, uploads, descriptors) start next to the
+  example that needs them.
+- **Checks are analytic.** Expected pixels come from constants in the example (clear colour, barycentric interpolation at the window centre),
+  encoded per the swapchain format (sRGB, channel order). No golden images. Tolerance of 3 covers interpolation rounding.
 - **Shaders are compiled at runtime from embedded GLSL.** The point of an example is to read it; shader code belongs in the file next to the
   pipeline that uses it. `libshaderc_shared` ships in the same package as `glslc`, which the build already requires, so the dependency is already
   present wherever ngen builds. Linked into example targets only; the engine keeps offline `.spv`. A D3D12 example would embed HLSL and call
@@ -73,7 +81,8 @@ drawing anything. That is superseded by this plan: examples first, minimal, huma
    Body: `shaderc_compiler_initialize`, options with `shaderc_env_version_vulkan_1_3`, `shaderc_compile_into_spv`, status check,
    copy bytes, release. About 30 lines.
 
-3. **`triangle.cpp`.** Sections in order, each a few lines with a comment naming the README principle it satisfies:
+3. **`common/rhiexample.h` and `triangle.cpp`.** The base carries these sections in order, each with a comment naming the README principle
+   it satisfies; the example supplies shaders, pipeline, draw and checks:
 
    1. Parse `--frames=N` (default 0 = run until quit).
    2. `SDL_Init`, create window with `SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE`.
@@ -111,14 +120,22 @@ drawing anything. That is superseded by this plan: examples first, minimal, huma
 
    `ngen-view` stays the default target. No shader tool, no runtime file dependencies: the binary runs from any working directory.
 
-5. **README pointer.** One line in `src/rhi/README.md` under "What an integrator provides": `src/rhi/examples/triangle.cpp` is the reference
-   implementation of the list.
+5. **Readback and validation.** `copyTextureToBuffer` on `RhiCommandBuffer` (Vulkan: `vkCmdCopyImageToBuffer`, source in `TransferSrc`).
+   `RhiDeviceOptions` on `init`; Vulkan checks `VK_LAYER_KHRONOS_validation` exists, installs a `VK_EXT_debug_utils` messenger that counts
+   errors and warnings and prints them. `examples/common/readback.h` (create buffer, record barriers plus copy, resolve to RGBA8 with
+   BGRA swizzle, sRGB encode helper, `expectPixel`) and `examples/common/pngwrite.h` (stb).
+
+6. **README.** "Examples" section: build, unattended run, flags, exit codes, rules. Pointer under "What an integrator provides".
 
 ## Verification
 
 - `./_out/ngen-build -p linux-vulkan -c debug ngen-example-triangle` builds. `ngen-view` build and headless three_cubes run unchanged.
-- `SDL_VIDEODRIVER=offscreen VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation ./_out/linux-vulkan/debug/ngen-example-triangle --frames=100` exits 0
-  and prints no line containing `Validation Error`.
+- `SDL_VIDEODRIVER=offscreen ./_out/linux-vulkan/debug/ngen-example-triangle --frames=60 --check --validation` exits 0; both checks print
+  `ok`; summary line reports `validation_errors=0`.
+- `--resize-at=20 --frames=40 --check` logs one new `Swapchain extent` at half size and still exits 0 with checks passing at the new centre.
+- `--screenshot=PATH` writes a PNG showing the red/green/blue triangle on dark grey.
+- Negative check: change `centerColor` in the source, run `--check`: exit 2, `triangle-center` line says `FAIL`.
+- Negative validation: comment out the `Undefined -> ColorAttachment` barrier, run `--validation`: exit 2, `validation_errors` nonzero.
 - Henrik runs it windowed: colored triangle on a clear color, resize keeps rendering without a crash, close exits cleanly.
 - `rg -n '#include "' src/rhi/examples/triangle.cpp` shows only headers under `src/rhi/`.
 - Negative check: break the GLSL (remove a semicolon), run: exits nonzero with the shaderc log on stderr naming the line.

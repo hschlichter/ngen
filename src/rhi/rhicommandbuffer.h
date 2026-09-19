@@ -23,6 +23,8 @@ public:
     virtual auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void = 0;
     // dst must be in RhiImageLayout::TransferDst.
     virtual auto copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void = 0;
+    // src must be in RhiImageLayout::TransferSrc. Readback path: dst is normally host-visible.
+    virtual auto copyTextureToBuffer(RhiTexture* src, RhiBuffer* dst, const RhiBufferTextureCopy& region) -> void = 0;
     // Debug-only markers for tools like RenderDoc; no-ops when the backend has no debug extension.
     virtual auto beginLabel(const char* name) -> void = 0;
     virtual auto endLabel() -> void = 0;

@@ -72,7 +72,8 @@ to `RhiFlags<E>` via `RhiFlagEnum<E>`; `A | B` yields `RhiFlags<E>` and `.has(E)
 
 ## What an integrator provides
 
-`src/rhi/examples/triangle.cpp` is the reference implementation of this list: one file, one triangle, every item below in order.
+`src/rhi/examples/common/rhiexample.h` is the reference implementation of this list, numbered sections in run order.
+`src/rhi/examples/triangle.cpp` is the smallest program on top of it: shaders, pipeline, draw, checks.
 
 1. A window and an `RhiWindow` filled from it.
 2. A concrete backend instance, `init(window)`, then `createSwapchain(extent)` with the framebuffer size in pixels.
@@ -82,9 +83,45 @@ to `RhiFlags<E>` via `RhiFlagEnum<E>`; `A | B` yields `RhiFlags<E>` and `.has(E)
 4. An upload path: staging buffers, `copyBuffer` / `copyBufferToTexture` on a command buffer, barriers
    `Undefined -> TransferDst -> ShaderReadOnly` for textures, a submit and a fence wait.
 5. Deferred destruction keyed by frame, or a `waitIdle` before every destroy if stalls are acceptable.
+   Readback is the same shape in reverse: `copyTextureToBuffer` into a host-visible buffer, wait on the frame's fence, map.
 6. Compiled shader bytecode and the code to read it.
 7. `recreate(extent)` on `RhiError::OutOfDate` from `acquireNextImage` or `present`, followed by dropping anything
    that referenced the old swapchain images.
+
+## Examples
+
+`src/rhi/examples/` holds small programs, one `.cpp` each, that use the RHI the way an integrator would. They are the
+verification loop for RHI changes, for humans and for agents. No registry, no reporting: each example is a plain program
+with flags and an exit code.
+
+`common/rhiexample.h` is the shared part: window, device, swapchain, frame pacing, frame loop, readback, flags, exit code.
+An example derives `RhiExample` and overrides `setup`, `record`, `check`, `teardown`. Read `rhiexample.h` top to bottom for
+the integrator contract; read an example for what a specific feature needs. Only what every example needs goes in the base.
+
+Build and run unattended:
+
+```sh
+./_out/ngen-build -p linux-vulkan -c debug ngen-example-triangle
+SDL_VIDEODRIVER=offscreen ./_out/linux-vulkan/debug/ngen-example-triangle --frames=60 --check --validation
+```
+
+Flags every example supports:
+
+- `--frames=N` render N frames then exit. `0` (default) runs until the window closes.
+- `--size=WxH` window size in pixels. Fixed default so output is deterministic across runs.
+- `--check` read the last frame back and assert pixel values derived from constants in the source. Exit 2 on mismatch.
+- `--screenshot=PATH` read the last frame back and write a PNG. Humans look at it; agents read it.
+- `--resize-at=N` resize the window at frame N to exercise swapchain recreation.
+- `--validation` enable the backend validation layer; any error message fails the run with exit 2.
+
+Exit codes: `0` ok, `1` setup failed (device, swapchain, shader, pipeline), `2` a check or validation failed. The last
+stdout line is a one-line summary: `triangle: ok frames=60 checks=2 validation_errors=0`.
+
+Rules for examples: include only headers under `src/rhi/` and `examples/common/` (plus `stb_image_write.h` for PNG);
+shaders embedded as GLSL strings and compiled at startup with shaderc; no animation or time dependence so a screenshot
+is byte-stable; every check derives its expected value from a constant in the same file, never from a stored image;
+helpers a feature needs (depth buffer, uploads, descriptors) start next to the example that needs them and move into
+`common/` only when a second example repeats them.
 
 ## Adding to the interface
 

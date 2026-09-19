@@ -10,6 +10,14 @@
 class RhiSwapchain;
 class RhiCommandBuffer;
 
+// Runtime options for device creation. Validation is a runtime choice so one
+// backend build serves the engine (off by default) and the examples (on when
+// asked); the error count turns validation output into a result a program can
+// check instead of a log a human must read.
+struct RhiDeviceOptions {
+    bool enableValidation = false;
+};
+
 class RhiDevice {
 public:
     RhiDevice() = default;
@@ -19,7 +27,7 @@ public:
     RhiDevice& operator=(RhiDevice&&) = default;
     virtual ~RhiDevice() = default;
 
-    virtual auto init(const RhiWindow& window) -> std::expected<void, RhiError> = 0;
+    virtual auto init(const RhiWindow& window, const RhiDeviceOptions& options = {}) -> std::expected<void, RhiError> = 0;
     virtual auto destroy() -> void = 0;
     virtual auto waitIdle() -> void = 0;
 
@@ -47,6 +55,8 @@ public:
     virtual auto unmapBuffer(RhiBuffer* buffer) -> void = 0;
 
     [[nodiscard]] virtual auto limits() const -> const RhiDeviceLimits& = 0;
+    // Errors reported by the backend's validation layer since init; always 0 when validation is off.
+    [[nodiscard]] virtual auto validationErrorCount() const -> uint64_t = 0;
 
     virtual auto destroyBuffer(RhiBuffer* buffer) -> void = 0;
     virtual auto destroyTexture(RhiTexture* texture) -> void = 0;

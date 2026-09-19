@@ -9,7 +9,8 @@
 
 class RhiDeviceVulkan : public RhiDevice {
 public:
-    auto init(const RhiWindow& window) -> std::expected<void, RhiError> override;
+    auto init(const RhiWindow& window, const RhiDeviceOptions& options) -> std::expected<void, RhiError> override;
+    using RhiDevice::init;
     auto destroy() -> void override;
     auto waitIdle() -> void override;
 
@@ -37,6 +38,8 @@ public:
     auto unmapBuffer(RhiBuffer* buffer) -> void override;
 
     [[nodiscard]] auto limits() const -> const RhiDeviceLimits& override { return deviceLimits; }
+    [[nodiscard]] auto validationErrorCount() const -> uint64_t override { return validationErrors; }
+    auto onValidationMessage(uint32_t severity, const char* message) -> void;
 
     auto destroyBuffer(RhiBuffer* buffer) -> void override;
     auto destroyTexture(RhiTexture* texture) -> void override;
@@ -67,6 +70,9 @@ private:
     RhiDeviceLimits deviceLimits;
     PFN_vkCmdBeginDebugUtilsLabelEXT cmdBeginLabelFn = nullptr;
     PFN_vkCmdEndDebugUtilsLabelEXT cmdEndLabelFn = nullptr;
+    VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;
+    uint64_t validationErrors = 0;
+    uint64_t validationWarnings = 0;
 
     auto findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t;
 

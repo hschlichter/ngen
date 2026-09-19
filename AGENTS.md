@@ -123,3 +123,6 @@ evidence. The `run-headless` skill (`.claude/skills/run-headless/SKILL.md`) has 
 scenes, and machine constraints; `obs.md` documents the observation conventions. Observations added for a
 change stay in the code — there is no "remove when done" step.
 
+RHI changes have a second, faster loop: the examples under `src/rhi/examples/` (`ngen-example-triangle` and successors) run offscreen with
+`--check --validation` and exit nonzero on a pixel mismatch or a validation error. `src/rhi/README.md` "Examples" has the commands and flags.
+

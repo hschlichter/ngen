@@ -206,7 +206,27 @@ auto RhiDeviceVulkan::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags 
     return UINT32_MAX;
 }
 
-auto RhiDeviceVulkan::init(const RhiWindow& window) -> std::expected<void, RhiError> {
+static VKAPI_ATTR auto VKAPI_CALL debugMessengerCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+    VkDebugUtilsMessageTypeFlagsEXT /*types*/,
+    const VkDebugUtilsMessengerCallbackDataEXT* data,
+    void* userData) -> VkBool32 {
+    auto* self = static_cast<RhiDeviceVulkan*>(userData);
+    self->onValidationMessage(severity, data->pMessage != nullptr ? data->pMessage : "");
+    return VK_FALSE;
+}
+
+auto RhiDeviceVulkan::onValidationMessage(uint32_t severity, const char* message) -> void {
+    if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0u) {
+        validationErrors++;
+        std::println(stderr, "[vulkan validation] error: {}", message);
+    } else if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0u) {
+        validationWarnings++;
+        std::println(stderr, "[vulkan validation] warning: {}", message);
+    }
+}
+
+auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& options) -> std::expected<void, RhiError> {
     uint32_t apiVersion = VK_API_VERSION_1_0;
     auto result = vkEnumerateInstanceVersion(&apiVersion);
     if (result != VK_SUCCESS) {
@@ -255,11 +275,25 @@ auto RhiDeviceVulkan::init(const RhiWindow& window) -> std::expected<void, RhiEr
         // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
         "VK_LAYER_KHRONOS_validation",
     };
-#ifdef NGEN_ENABLE_VALIDATION
-    uint32_t validationLayersCount = 1;
-#else
     uint32_t validationLayersCount = 0;
-#endif
+    if (options.enableValidation) {
+        uint32_t layerCount = 0;
+        vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+        std::vector<VkLayerProperties> layers(layerCount);
+        vkEnumerateInstanceLayerProperties(&layerCount, layers.data());
+        bool layerFound = false;
+        for (const auto& layer : layers) {
+            if (strcmp(layer.layerName, validationLayers[0]) == 0) {
+                layerFound = true;
+                break;
+            }
+        }
+        if (!layerFound || !debugUtilsAvailable) {
+            std::println(stderr, "Validation requested but {} or {} is not available", validationLayers[0], VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+            return std::unexpected(RhiError::Failed);
+        }
+        validationLayersCount = 1;
+    }
 
     VkInstanceCreateInfo instanceCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -285,6 +319,21 @@ auto RhiDeviceVulkan::init(const RhiWindow& window) -> std::expected<void, RhiEr
     if (debugUtilsAvailable) {
         cmdBeginLabelFn = (PFN_vkCmdBeginDebugUtilsLabelEXT) vkGetInstanceProcAddr(instance, "vkCmdBeginDebugUtilsLabelEXT");
         cmdEndLabelFn = (PFN_vkCmdEndDebugUtilsLabelEXT) vkGetInstanceProcAddr(instance, "vkCmdEndDebugUtilsLabelEXT");
+    }
+
+    if (options.enableValidation) {
+        VkDebugUtilsMessengerCreateInfoEXT messengerInfo = {
+            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+            .pfnUserCallback = debugMessengerCallback,
+            .pUserData = this,
+        };
+        auto createMessenger = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+        if (createMessenger == nullptr || createMessenger(instance, &messengerInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
+            std::println(stderr, "vkCreateDebugUtilsMessengerEXT failed");
+            return std::unexpected(RhiError::Failed);
+        }
     }
 
     if (!window.createSurface || !window.createSurface(instance, (void**) &surface)) {
@@ -409,6 +458,13 @@ auto RhiDeviceVulkan::destroy() -> void {
     vkDestroyCommandPool(device, cmdPool, nullptr);
     vkDestroyDevice(device, nullptr);
     vkDestroySurfaceKHR(instance, surface, nullptr);
+    if (debugMessenger != VK_NULL_HANDLE) {
+        auto destroyMessenger = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
+        if (destroyMessenger != nullptr) {
+            destroyMessenger(instance, debugMessenger, nullptr);
+        }
+        debugMessenger = VK_NULL_HANDLE;
+    }
     vkDestroyInstance(instance, nullptr);
 }
 

@@ -87,10 +87,13 @@ auto main(int argc, char* argv[]) -> int {
     std::vector<std::string> obsOnly;
     std::vector<std::string> obsExclude;
     std::vector<const char*> positional;
+    bool enableValidation = false;
     positional.push_back(argv[0]);
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
-        if (arg.starts_with("--obs-output=")) {
+        if (arg == "--validation") {
+            enableValidation = true;
+        } else if (arg.starts_with("--obs-output=")) {
             obsOutputPath = std::string(arg.substr(std::string_view("--obs-output=").size()));
         } else if (arg.starts_with("--obs-only=")) {
             obsOnly = splitCategoryList(arg.substr(std::string_view("--obs-only=").size()));
@@ -186,7 +189,7 @@ auto main(int argc, char* argv[]) -> int {
     // RHI device. The window layer (SDL) hands the backend what it needs through
     // hooks; the RHI never includes SDL.
     RhiDeviceVulkan rhiDevice;
-    if (!rhiDevice.init(makeRhiWindowSdl(window))) {
+    if (!rhiDevice.init(makeRhiWindowSdl(window), {.enableValidation = enableValidation})) {
         return 1;
     }
 
