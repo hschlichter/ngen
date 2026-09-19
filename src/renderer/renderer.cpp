@@ -114,6 +114,16 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
         inflightFences[i] = device->createFence(true);
     }
 
+    if (device->limits().timestamps) {
+        timestampPools.resize(imgCount);
+        slotPassNames.resize(imgCount);
+        for (uint32_t i = 0; i < imgCount; i++) {
+            timestampPools[i] = device->createQueryPool(maxTimedPasses * 2);
+        }
+    } else {
+        std::println("GPU timestamps not supported on this device; pass timings disabled");
+    }
+
     // Editor UI
     editorUI = imguiBackend;
     editorUI->init({
@@ -155,7 +165,38 @@ auto Renderer::setFrameGraphDebugEnabled(bool enabled) -> void {
 auto Renderer::buildFrameGraphDebugSnapshot() const -> FrameGraphDebugSnapshot {
     auto snap = frameGraph.buildDebugSnapshot();
     fgPreviews.annotate(snap);
+    snap.gpuFrameMs = lastGpuFrameMs;
+    for (auto& pass : snap.passes) {
+        for (const auto& timing : lastGpuTimes) {
+            if (pass.name == timing.name) {
+                pass.gpuTimeMs = timing.ms;
+                break;
+            }
+        }
+    }
     return snap;
+}
+
+// Called once the slot's fence has signalled: the timestamps written during that
+// slot's last frame are complete. Ticks convert with the device's timestamp period.
+auto Renderer::readGpuTimings(uint32_t slot) -> void {
+    if (timestampPools.empty() || slotPassNames[slot].empty()) {
+        return;
+    }
+    const auto& names = slotPassNames[slot];
+    std::vector<uint64_t> ticks(names.size() * 2);
+    if (!device->readTimestamps(timestampPools[slot], 0, ticks)) {
+        return;
+    }
+    auto periodMs = (double) device->limits().timestampPeriodNs * 1e-6;
+    lastGpuTimes.clear();
+    for (size_t i = 0; i < names.size(); i++) {
+        auto ms = (double) (ticks[i * 2 + 1] - ticks[i * 2]) * periodMs;
+        lastGpuTimes.push_back({.name = names[i], .ms = ms});
+    }
+    lastGpuFrameMs = (double) (ticks[names.size() * 2 - 1] - ticks[0]) * periodMs;
+    lastGpuFrame = slotFrame[slot];
+    OBS_EVENT("Render", "GpuTime", "frame").field("frame", (int64_t) lastGpuFrame).field("gpu_ms", lastGpuFrameMs);
 }
 
 auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void {
@@ -354,6 +395,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     device->waitForFence(inflightFences[currentFrame]);
     // This slot's previous frame is done, and so is everything submitted before it.
     deletionQueue.flush(slotFrame[currentFrame]);
+    readGpuTimings(currentFrame);
     fgPreviews.setFrame(frame);
 
     auto index = swapchain->acquireNextImage(imageAvailableSemaphores[currentFrame]);
@@ -499,6 +541,9 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     addPresentPass(frameGraph, colorHandle);
 
     frameGraph.compile();
+    if (!timestampPools.empty()) {
+        frameGraph.setTimestampPool(timestampPools[currentFrame], maxTimedPasses * 2);
+    }
     OBS_EVENT("Render", "FrameGraphCompiled", "frame")
         .field("pass_count", (int64_t) frameGraph.passCount())
         .field("culled_count", (int64_t) frameGraph.culledCount());
@@ -520,6 +565,9 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     };
     device->submitCommandBuffer(cmd, submitInfo);
     slotFrame[currentFrame] = frame;
+    if (!timestampPools.empty()) {
+        slotPassNames[currentFrame] = frameGraph.executedPassNames();
+    }
     auto presented = device->present(swapchain, renderFinishedSemaphores[*index], *index);
     if (!presented) {
         OBS_EVENT("Render", "SwapchainRecreate", "swapchain").field("reason", "present_failed");
@@ -579,6 +627,11 @@ auto Renderer::destroy() -> void {
     device->destroyTexture(fallbackTexture);
     device->destroyTexture(depthTexture);
     depthTexture = nullptr;
+
+    for (auto* pool : timestampPools) {
+        device->destroyQueryPool(pool);
+    }
+    timestampPools.clear();
 
     for (uint32_t i = 0; i < swapchain->imageCount(); i++) {
         device->destroySemaphore(imageAvailableSemaphores[i]);

@@ -18,6 +18,7 @@ struct FgPassDebug {
     uint32_t executionIndex = UINT32_MAX;
     bool culled = false;
     bool hasSideEffects = false;
+    double gpuTimeMs = -1.0; // from the most recent completed frame with timings; -1 = unknown
     std::vector<FgResourceAccessDebug> reads;
     std::vector<FgResourceAccessDebug> writes;
 };
@@ -42,6 +43,7 @@ struct FgResourceDebug {
 
 struct FrameGraphDebugSnapshot {
     uint64_t frameIndex = 0;
+    double gpuFrameMs = -1.0; // first pass start to last pass end, most recent completed frame; -1 = unknown
     std::vector<FgPassDebug> passes;
     std::vector<uint32_t> executionOrder;
     std::vector<FgResourceDebug> resources;

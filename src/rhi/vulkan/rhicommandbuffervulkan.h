@@ -24,6 +24,8 @@ public:
     auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void override;
     auto copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void override;
     auto copyTextureToBuffer(RhiTexture* src, RhiBuffer* dst, const RhiBufferTextureCopy& region) -> void override;
+    auto resetQueryPool(RhiQueryPool* pool, uint32_t first, uint32_t count) -> void override;
+    auto writeTimestamp(RhiQueryPool* pool, uint32_t index) -> void override;
     auto beginLabel(const char* name) -> void override;
     auto endLabel() -> void override;
     auto setViewport(int32_t x, int32_t y, RhiExtent2D extent) -> void override;

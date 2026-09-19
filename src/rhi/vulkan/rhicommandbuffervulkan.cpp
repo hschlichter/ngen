@@ -337,6 +337,16 @@ auto RhiCommandBufferVulkan::copyTextureToBuffer(RhiTexture* src, RhiBuffer* dst
     vkCmdCopyImageToBuffer(cmd, srcTex->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstBuf->buffer, 1, &vkRegion);
 }
 
+auto RhiCommandBufferVulkan::resetQueryPool(RhiQueryPool* pool, uint32_t first, uint32_t count) -> void {
+    auto* p = static_cast<RhiQueryPoolVulkan*>(pool);
+    vkCmdResetQueryPool(cmd, p->pool, first, count);
+}
+
+auto RhiCommandBufferVulkan::writeTimestamp(RhiQueryPool* pool, uint32_t index) -> void {
+    auto* p = static_cast<RhiQueryPoolVulkan*>(pool);
+    vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, p->pool, index);
+}
+
 auto RhiCommandBufferVulkan::beginLabel(const char* name) -> void {
     if (beginLabelFn == nullptr) {
         return;

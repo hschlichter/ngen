@@ -28,6 +28,9 @@ public:
     auto updateDescriptorSet(RhiDescriptorSet* set, std::span<const RhiDescriptorWrite> writes) -> void override;
 
     auto createCommandBuffer() -> RhiCommandBuffer* override;
+    auto createQueryPool(uint32_t timestampCount) -> RhiQueryPool* override;
+    auto destroyQueryPool(RhiQueryPool* pool) -> void override;
+    auto readTimestamps(RhiQueryPool* pool, uint32_t first, std::span<uint64_t> outTicks) -> bool override;
     auto createSemaphore() -> RhiSemaphore* override;
     auto createFence(bool signaled) -> RhiFence* override;
 
@@ -69,6 +72,7 @@ private:
     VkDevice device = VK_NULL_HANDLE;
     VkQueue graphicsQueue = VK_NULL_HANDLE;
     uint32_t queueFamilyIndex = UINT32_MAX;
+    uint32_t queueTimestampValidBits = 0;
     VkCommandPool cmdPool = VK_NULL_HANDLE;
     RhiDeviceLimits deviceLimits;
     PFN_vkCmdBeginDebugUtilsLabelEXT cmdBeginLabelFn = nullptr;

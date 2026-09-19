@@ -27,6 +27,9 @@ public:
     virtual auto copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void = 0;
     // src must be in RhiTextureState::TransferSrc. Readback path: dst is normally host-visible.
     virtual auto copyTextureToBuffer(RhiTexture* src, RhiBuffer* dst, const RhiBufferTextureCopy& region) -> void = 0;
+    // Timestamps: reset outside beginRendering/endRendering; write anywhere. Tick period in RhiDeviceLimits.
+    virtual auto resetQueryPool(RhiQueryPool* pool, uint32_t first, uint32_t count) -> void = 0;
+    virtual auto writeTimestamp(RhiQueryPool* pool, uint32_t index) -> void = 0;
     // Debug-only markers for tools like RenderDoc; no-ops when the backend has no debug extension.
     virtual auto beginLabel(const char* name) -> void = 0;
     virtual auto endLabel() -> void = 0;

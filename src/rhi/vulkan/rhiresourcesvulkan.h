@@ -50,6 +50,11 @@ struct RhiSemaphoreVulkan : public RhiSemaphore {
     VkSemaphore semaphore = VK_NULL_HANDLE;
 };
 
+struct RhiQueryPoolVulkan : public RhiQueryPool {
+    VkQueryPool pool = VK_NULL_HANDLE;
+    uint32_t count = 0;
+};
+
 struct RhiFenceVulkan : public RhiFence {
     VkFence fence = VK_NULL_HANDLE;
 };

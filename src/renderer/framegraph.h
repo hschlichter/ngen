@@ -50,6 +50,16 @@ public:
 
     auto setDebugCaptureHook(FgDebugCaptureFn fn) -> void { debugCaptureHook = std::move(fn); }
 
+    // GPU timing: when a pool is set, execute() resets it and writes a timestamp before and
+    // after every executed pass (2 * pass index in execution order). The pool must hold at
+    // least 2 * executed pass count entries; the caller reads it after the frame's fence.
+    auto setTimestampPool(RhiQueryPool* pool, uint32_t capacity) -> void {
+        timestampPool = pool;
+        timestampCapacity = capacity;
+    }
+    // Names of the passes that executed, in execution order, valid until reset().
+    auto executedPassNames() const -> const std::vector<const char*>& { return executedNames; }
+
 private:
     std::vector<PassNode> passes;
     std::vector<FgResource> resources;
@@ -87,6 +97,9 @@ private:
 
     ResourcePool* resourcePool = nullptr;
     FgDebugCaptureFn debugCaptureHook;
+    RhiQueryPool* timestampPool = nullptr;
+    uint32_t timestampCapacity = 0;
+    std::vector<const char*> executedNames;
 };
 
 template <typename DataT>

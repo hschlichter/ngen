@@ -47,6 +47,11 @@ public:
     virtual auto updateDescriptorSet(RhiDescriptorSet* set, std::span<const RhiDescriptorWrite> writes) -> void = 0;
 
     virtual auto createCommandBuffer() -> RhiCommandBuffer* = 0;
+    // Timestamp queries. Reset on a command buffer before writing; read after the submit's fence.
+    // readTimestamps returns false when any requested result is not yet available.
+    virtual auto createQueryPool(uint32_t timestampCount) -> RhiQueryPool* = 0;
+    virtual auto destroyQueryPool(RhiQueryPool* pool) -> void = 0;
+    virtual auto readTimestamps(RhiQueryPool* pool, uint32_t first, std::span<uint64_t> outTicks) -> bool = 0;
     virtual auto createSemaphore() -> RhiSemaphore* = 0;
     virtual auto createFence(bool signaled) -> RhiFence* = 0;
 

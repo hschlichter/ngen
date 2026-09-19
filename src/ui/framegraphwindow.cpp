@@ -63,6 +63,11 @@ void drawPassDetail(const FrameGraphDebugSnapshot& snap, uint32_t passIdx, std::
     }
     ImGui::Text("Culled: %s", pass.culled ? "yes" : "no");
     ImGui::Text("Side effects: %s", pass.hasSideEffects ? "yes" : "no");
+    if (pass.gpuTimeMs >= 0.0) {
+        ImGui::Text("GPU time: %.3f ms", pass.gpuTimeMs);
+    } else {
+        ImGui::TextDisabled("GPU time: n/a");
+    }
     ImGui::Spacing();
 
     auto drawAccessTable = [&](const char* label, const std::vector<FgResourceAccessDebug>& list) {
@@ -221,6 +226,10 @@ void drawFrameGraphWindow(
         culledCount,
         s.resources.size(),
         previewCount);
+    if (s.gpuFrameMs >= 0.0) {
+        ImGui::SameLine();
+        ImGui::Text("— GPU %.2f ms", s.gpuFrameMs);
+    }
     ImGui::Separator();
 
     auto drawDetailPanes = [&]() {

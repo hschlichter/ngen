@@ -391,6 +391,7 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
             if (((props[j].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0u) && (presentSupport != 0u)) {
                 physicalDevice = physicalDevices[i];
                 queueFamilyIndex = j;
+                queueTimestampValidBits = props[j].timestampValidBits;
                 break;
             }
         }
@@ -442,6 +443,8 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
         .maxLineWidth = supportedFeatures.wideLines == VK_TRUE ? properties.limits.lineWidthRange[1] : 1.0f,
         .wideLines = supportedFeatures.wideLines == VK_TRUE,
         .samplerAnisotropy = supportedFeatures.samplerAnisotropy == VK_TRUE,
+        .timestamps = queueTimestampValidBits != 0 && properties.limits.timestampPeriod > 0.0f,
+        .timestampPeriodNs = properties.limits.timestampPeriod,
     };
 
     VkDeviceCreateInfo deviceCreateInfo = {
@@ -1124,6 +1127,49 @@ auto RhiDeviceVulkan::updateDescriptorSet(RhiDescriptorSet* set, std::span<const
     }
 
     vkUpdateDescriptorSets(device, writeCount, vkWrites.data(), 0, nullptr);
+}
+
+auto RhiDeviceVulkan::createQueryPool(uint32_t timestampCount) -> RhiQueryPool* {
+    VkQueryPoolCreateInfo info = {
+        .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+        .queryType = VK_QUERY_TYPE_TIMESTAMP,
+        .queryCount = timestampCount,
+    };
+    auto* pool = new RhiQueryPoolVulkan();
+    pool->count = timestampCount;
+    auto result = vkCreateQueryPool(device, &info, nullptr, &pool->pool);
+    if (result != VK_SUCCESS) {
+        std::println(stderr, "vkCreateQueryPool failed: {}({})", string_VkResult(result), (int) result);
+        delete pool;
+        return nullptr;
+    }
+    return pool;
+}
+
+auto RhiDeviceVulkan::destroyQueryPool(RhiQueryPool* pool) -> void {
+    auto* p = static_cast<RhiQueryPoolVulkan*>(pool);
+    vkDestroyQueryPool(device, p->pool, nullptr);
+    delete p;
+}
+
+auto RhiDeviceVulkan::readTimestamps(RhiQueryPool* pool, uint32_t first, std::span<uint64_t> outTicks) -> bool {
+    auto* p = static_cast<RhiQueryPoolVulkan*>(pool);
+    auto count = (uint32_t) outTicks.size();
+    // Pairs of (value, availability); never wait, so an unwritten query cannot block the caller.
+    std::vector<uint64_t> raw((size_t) count * 2);
+    auto result = vkGetQueryPoolResults(
+        device, p->pool, first, count, raw.size() * sizeof(uint64_t), raw.data(), 2 * sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+    if (result != VK_SUCCESS && result != VK_NOT_READY) {
+        std::println(stderr, "vkGetQueryPoolResults failed: {}({})", string_VkResult(result), (int) result);
+        return false;
+    }
+    for (uint32_t i = 0; i < count; i++) {
+        if (raw[(size_t) i * 2 + 1] == 0) {
+            return false;
+        }
+        outTicks[i] = raw[(size_t) i * 2];
+    }
+    return true;
 }
 
 auto RhiDeviceVulkan::createCommandBuffer() -> RhiCommandBuffer* {

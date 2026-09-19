@@ -102,6 +102,20 @@ private:
     GpuUploader uploader;
     DeletionQueue deletionQueue;
 
+    // GPU timings: one query pool per frame slot, read back when the slot's fence has
+    // signalled, so results lag by the number of frames in flight.
+    static constexpr uint32_t maxTimedPasses = 32;
+    std::vector<RhiQueryPool*> timestampPools;
+    std::vector<std::vector<const char*>> slotPassNames;
+    struct PassGpuTime {
+        const char* name;
+        double ms;
+    };
+    std::vector<PassGpuTime> lastGpuTimes;
+    double lastGpuFrameMs = -1.0;
+    uint64_t lastGpuFrame = 0;
+    auto readGpuTimings(uint32_t slot) -> void;
+
     // Monotonic frame counter — pre-incremented at the top of render(), so frame 0
     // never appears in observation streams (readers don't have to distinguish
     // "first frame" from "uninitialized"). Render-thread-only; don't read from

@@ -272,6 +272,8 @@ struct RhiDeviceLimits {
     float maxLineWidth = 1.0f;
     bool wideLines = false;
     bool samplerAnisotropy = false;
+    bool timestamps = false;        // writeTimestamp supported on the device's queue
+    float timestampPeriodNs = 0.0f; // nanoseconds per timestamp tick
 };
 
 // Compiled shader bytecode in the backend's native format (SPIR-V for Vulkan,
@@ -396,6 +398,15 @@ public:
     RhiSemaphore(RhiSemaphore&&) = default;
     RhiSemaphore& operator=(RhiSemaphore&&) = default;
     virtual ~RhiSemaphore() = default;
+};
+class RhiQueryPool {
+public:
+    RhiQueryPool() = default;
+    RhiQueryPool(const RhiQueryPool&) = delete;
+    RhiQueryPool& operator=(const RhiQueryPool&) = delete;
+    RhiQueryPool(RhiQueryPool&&) = default;
+    RhiQueryPool& operator=(RhiQueryPool&&) = default;
+    virtual ~RhiQueryPool() = default;
 };
 class RhiFence {
 public:

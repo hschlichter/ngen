@@ -294,6 +294,7 @@ auto main(int argc, char** argv) -> int {
     auto exampleLines = rhiExample("lines");
     auto exampleMipCube = rhiExample("mipcube");
     auto exampleCompute = rhiExample("compute");
+    auto exampleTimestamps = rhiExample("timestamps");
 
     p.target(view);
     p.target(exampleTriangle);
@@ -307,6 +308,7 @@ auto main(int argc, char** argv) -> int {
     p.target(exampleLines);
     p.target(exampleMipCube);
     p.target(exampleCompute);
+    p.target(exampleTimestamps);
     p.target(format);
     p.target(tidy);
     p.default_target(view);
