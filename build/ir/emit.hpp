@@ -491,7 +491,7 @@ private:
         if (outputs.empty()) {
             auto stamp = variant_.out_dir / ("." + target.name() + ".stamp");
             ensure_dirs_.insert(stamp.parent_path().string());
-            Command command = substitute(target.argv_template, target.tool_inputs, {}, variant_.out_dir);
+            Command command = substitute(target.argv_for_variant(variant_), target.tool_inputs, {}, variant_.out_dir);
 
             Edge edge;
             edge.name = target.name();
@@ -516,7 +516,7 @@ private:
             if (!input.empty()) {
                 inputs_one.push_back(input);
             }
-            Command command = substitute(target.argv_template, inputs_one, {output}, variant_.out_dir);
+            Command command = substitute(target.argv_for_variant(variant_), inputs_one, {output}, variant_.out_dir);
 
             Edge edge;
             edge.name = target.name() + "/" + output.string();
@@ -543,7 +543,7 @@ private:
     }
 
     auto emit_global_tool(Tool& target) -> void {
-        Command command = substitute(target.argv_template, target.tool_inputs, target.tool_outputs, Path{});
+        Command command = substitute(target.argv_for_variant(variant_), target.tool_inputs, target.tool_outputs, Path{});
         Edge edge;
         edge.name = target.name();
         edge.command = bake_command(command);

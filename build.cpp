@@ -203,9 +203,25 @@ auto main(int argc, char** argv) -> int {
             .link(sceneusd)
             .link(imgui);
 
+    // Shader flags follow the configuration the way compiler flags do: debug keeps
+    // source-level debug info and no optimisation, release optimises and keeps debug
+    // info, gamerelease optimises only.
     auto shaders =
         tool("shaders")
-            .command({"glslc", "$in", "-o", "$out"})
+            .command([](const BuildVariant& variant) -> std::vector<std::string> {
+                std::vector<std::string> argv = {"glslc", "$in", "-o", "$out"};
+                const auto& config = variant.config->name();
+                if (config == "debug") {
+                    argv.push_back("-O0");
+                    argv.push_back("-g");
+                } else if (config == "release") {
+                    argv.push_back("-O");
+                    argv.push_back("-g");
+                } else {
+                    argv.push_back("-O");
+                }
+                return argv;
+            })
             .for_each(
                 concat({
                     glob({.include = "shaders/*.vert"}),

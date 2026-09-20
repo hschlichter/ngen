@@ -17,6 +17,11 @@
 //
 // `$in` / `$out` / `$out_dir` in `argv_template` are substituted at emit time.
 //
+// The command may also depend on the variant: `command(ArgvFor)` takes a callback that receives the
+// `BuildVariant` (platform, configuration, out dir) and returns the argv template for it. Use it for tools
+// whose flags follow the configuration, the way compiler flags do (shader optimisation and debug info, for
+// example). A per-variant command on a global tool is resolved once with an arbitrary variant.
+//
 // Same wrapper move/copy invariant as `Alias` — both constructors re-attach the extension back-pointer.
 
 #pragma once
@@ -36,6 +41,7 @@ namespace build {
 class Tool {
 public:
     using OutputFor = std::function<Path(const BuildVariant&, const Path&)>;
+    using ArgvFor = std::function<std::vector<std::string>(const BuildVariant&)>;
 
     explicit Tool(std::string name) : base_(std::make_shared<Target>(std::move(name))) { base_->extensions().attach(*this); }
 
@@ -44,6 +50,7 @@ public:
 
     Tool(const Tool& other)
         : argv_template(other.argv_template)
+        , argv_for(other.argv_for)
         , tool_inputs(other.tool_inputs)
         , tool_outputs(other.tool_outputs)
         , output_for(other.output_for)
@@ -56,6 +63,7 @@ public:
 
     Tool(Tool&& other) noexcept
         : argv_template(std::move(other.argv_template))
+        , argv_for(std::move(other.argv_for))
         , tool_inputs(std::move(other.tool_inputs))
         , tool_outputs(std::move(other.tool_outputs))
         , output_for(std::move(other.output_for))
@@ -77,6 +85,19 @@ public:
     auto command(std::vector<std::string> argv) -> Tool& {
         argv_template = std::move(argv);
         return *this;
+    }
+
+    auto command(ArgvFor fn) -> Tool& {
+        argv_for = std::move(fn);
+        return *this;
+    }
+
+    // Argv template for a variant: the callback when one was given, else the fixed template.
+    auto argv_for_variant(const BuildVariant& variant) const -> std::vector<std::string> {
+        if (argv_for) {
+            return argv_for(variant);
+        }
+        return argv_template;
     }
 
     auto inputs(std::vector<Path> paths) -> Tool& {
@@ -101,6 +122,7 @@ public:
     }
 
     std::vector<std::string> argv_template;
+    ArgvFor argv_for;
     std::vector<Path> tool_inputs;
     std::vector<Path> tool_outputs;
     OutputFor output_for;
