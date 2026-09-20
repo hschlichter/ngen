@@ -100,6 +100,10 @@ protected:
         bool ok = true;
         ok = expectPixel(frame, frame.extent.width / 2, frame.extent.height / 2, centerColor, "triangle-center") && ok;
         ok = expectPixel(frame, 2, 2, {clearColor[0], clearColor[1], clearColor[2]}, "clear-corner") && ok;
+        // RhiCommandStats: the frame graph's per-pass counters rest on these.
+        ok = expectCount("stats-draws", frame.stats.draws, 1) && ok;
+        ok = expectCount("stats-primitives", frame.stats.primitives, 1) && ok;
+        ok = expectCount("stats-pipeline-binds", frame.stats.pipelineBinds, 1) && ok;
         return ok;
     }
 

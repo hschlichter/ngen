@@ -63,6 +63,7 @@ struct RhiExampleFrame {
     std::vector<uint8_t> rgba;
     RhiExtent2D extent = {};
     RhiFormat format = RhiFormat::Undefined;
+    RhiCommandStats stats; // counters after record(), before the base's readback copy
 
     // NDC [-1,1] to pixel index; y is down in both.
     auto px(float ndcX) const -> uint32_t { return (uint32_t) ((ndcX + 1.0f) * 0.5f * (float) extent.width); }
@@ -104,6 +105,13 @@ protected:
     // One pixel assertion; linear colour is encoded to what the swapchain stores.
     auto expectPixel(const RhiExampleFrame& frame, uint32_t x, uint32_t y, std::array<float, 3> linearRgb, const char* label) -> bool {
         return ::expectPixel(frame.rgba, frame.extent, x, y, expectedBytes(frame.format, linearRgb), pixelTolerance, label);
+    }
+
+    // Exact count check, for RhiCommandStats and other integers the example knows in advance.
+    auto expectCount(const char* label, uint64_t actual, uint64_t expected) -> bool {
+        bool ok = actual == expected;
+        std::println("check {}: {} expected {} {}", label, actual, expected, ok ? "ok" : "FAIL");
+        return ok;
     }
 
     // Clear colour applied by the base before record() is called.
@@ -322,6 +330,7 @@ inline auto RhiExample::run(int argc, char** argv, const char* name) -> int {
         if (readbackThisFrame) {
             lastFrame.extent = extent;
             lastFrame.format = swapchainFormat;
+            lastFrame.stats = cmd->stats();
             readbackBuffer = createReadbackBuffer(rhiDevice, extent);
             recordReadback(cmd, backbuffer, readbackBuffer, extent, RhiTextureState::ColorAttachment, RhiTextureState::PresentSrc);
         } else {

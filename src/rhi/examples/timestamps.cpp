@@ -15,10 +15,12 @@
 #include "common/upload.h"
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <print>
 #include <span>
+#include <thread>
 #include <vector>
 
 static constexpr uint32_t imageSize = 512;
@@ -77,6 +79,17 @@ protected:
             return false;
         }
         std::println("timestamp period {} ns per tick", limits.timestampPeriodNs);
+
+        // Calibrated clock: two samples a millisecond apart, both must succeed and both
+        // clocks must advance. Optional extension, so unsupported devices skip the check.
+        if (limits.calibratedTimestamps) {
+            calibrationOk = device().calibrateGpuClock(gpuNs[0], cpuNs[0]);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            calibrationOk = device().calibrateGpuClock(gpuNs[1], cpuNs[1]) && calibrationOk;
+            std::println("calibrated clock: gpu {} -> {} ns, cpu {} -> {} ns", gpuNs[0], gpuNs[1], cpuNs[0], cpuNs[1]);
+        } else {
+            std::println("calibrated timestamps not supported on this device; check skipped");
+        }
 
         auto cs = compileGlsl(RhiShaderStage::Compute, computeSource, "timestamps.comp");
         auto vs = compileGlsl(RhiShaderStage::Vertex, vertexShaderSource, "timestamps.vert");
@@ -217,6 +230,11 @@ protected:
         bool ordered = lastComputeMs > lastDrawMs;
         std::println("check compute-slower-than-draw: {}", ordered ? "ok" : "FAIL");
         ok = ordered && ok;
+        if (device().limits().calibratedTimestamps) {
+            bool calibrated = calibrationOk && gpuNs[1] > gpuNs[0] && cpuNs[1] > cpuNs[0];
+            std::println("check calibrated-clock-advances: {}", calibrated ? "ok" : "FAIL");
+            ok = calibrated && ok;
+        }
         return ok;
     }
 
@@ -247,6 +265,9 @@ private:
     RhiPipeline* computePipeline = nullptr;
     RhiPipeline* graphicsPipeline = nullptr;
     RhiTexture* image = nullptr;
+    bool calibrationOk = false;
+    std::array<uint64_t, 2> gpuNs = {};
+    std::array<uint64_t, 2> cpuNs = {};
     RhiBuffer* vertexBuffer = nullptr;
     RhiBuffer* indexBuffer = nullptr;
     RhiSampler* sampler = nullptr;

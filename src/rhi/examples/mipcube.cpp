@@ -5,6 +5,7 @@
 // shader selected by a push constant:
 //
 //   top row      mip 0, 1, 2 of a 4x4 texture via textureLod   (RhiTextureDimension::Texture2D, mipLevels 3)
+//   middle row   the same texture through a sampler with mipLodBias 1, then one with minLod 2
 //                layer 0, 1 of a 2D array via sampler2DArray  (Texture2DArray, arrayLayers 2)
 //   bottom row   faces +X -X +Y -Y +Z -Z via samplerCube       (TextureCube, arrayLayers 6)
 //
@@ -39,9 +40,11 @@ static constexpr const char* fragmentShaderSource = R"glsl(
 layout(set = 0, binding = 0) uniform sampler2D mipTex;
 layout(set = 0, binding = 1) uniform sampler2DArray arrayTex;
 layout(set = 0, binding = 2) uniform samplerCube cubeTex;
+layout(set = 0, binding = 3) uniform sampler2D mipTexBias;   // same texture, sampler mipLodBias = 1
+layout(set = 0, binding = 4) uniform sampler2D mipTexMinLod; // same texture, sampler minLod = 2
 
 layout(push_constant) uniform Push {
-    int mode;      // 0 = mip level, 1 = array layer, 2 = cube face
+    int mode;      // 0 = mip level, 1 = array layer, 2 = cube face, 3 = lod bias sampler, 4 = min lod sampler
     float select;  // lod or layer
     vec2 pad;
     vec4 direction;
@@ -53,6 +56,10 @@ layout(location = 0) out vec4 outColor;
 void main() {
     if (push.mode == 0) {
         outColor = textureLod(mipTex, fragUv, push.select);
+    } else if (push.mode == 3) {
+        outColor = textureLod(mipTexBias, fragUv, 0.0);   // sampler bias lands on mip 1
+    } else if (push.mode == 4) {
+        outColor = textureLod(mipTexMinLod, fragUv, 0.0); // sampler minLod clamps to mip 2
     } else if (push.mode == 1) {
         outColor = texture(arrayTex, vec3(fragUv, push.select));
     } else {
@@ -99,7 +106,9 @@ static constexpr std::array<std::array<float, 3>, 6> faceDirections = {{
 static constexpr uint32_t blitCorner = 16; // pixels; the top row of quads starts further in
 static constexpr float quadHalf = 0.12f;
 static constexpr float topRowY = -0.4f;
+static constexpr float midRowY = 0.0f; // sampler lod bias, sampler min lod
 static constexpr float bottomRowY = 0.4f;
+static constexpr std::array<float, 2> midRowX = {-0.2f, 0.2f};
 static constexpr std::array<float, 5> topRowX = {-0.8f, -0.4f, 0.0f, 0.4f, 0.8f};
 static constexpr std::array<float, 6> bottomRowX = {-0.75f, -0.45f, -0.15f, 0.15f, 0.45f, 0.75f};
 
@@ -127,10 +136,12 @@ protected:
         vertexShader = device().createShaderModule({.stage = RhiShaderStage::Vertex, .code = vertexSpirv});
         fragmentShader = device().createShaderModule({.stage = RhiShaderStage::Fragment, .code = fragmentSpirv});
 
-        std::array<RhiDescriptorBinding, 3> bindings = {{
+        std::array<RhiDescriptorBinding, 5> bindings = {{
             {.binding = 0, .type = RhiDescriptorType::CombinedImageSampler, .stage = RhiShaderStage::Fragment},
             {.binding = 1, .type = RhiDescriptorType::CombinedImageSampler, .stage = RhiShaderStage::Fragment},
             {.binding = 2, .type = RhiDescriptorType::CombinedImageSampler, .stage = RhiShaderStage::Fragment},
+            {.binding = 3, .type = RhiDescriptorType::CombinedImageSampler, .stage = RhiShaderStage::Fragment},
+            {.binding = 4, .type = RhiDescriptorType::CombinedImageSampler, .stage = RhiShaderStage::Fragment},
         }};
         setLayout = device().createDescriptorSetLayout(bindings);
 
@@ -155,7 +166,7 @@ protected:
             return false;
         }
 
-        // 11 quads: 3 mips + 2 layers on the top row, 6 faces on the bottom row.
+        // 13 quads: 3 mips + 2 layers on the top row, 2 sampler variants in the middle, 6 faces on the bottom row.
         std::vector<Vertex> vertices;
         std::vector<uint16_t> indices;
         auto addQuad = [&](float cx, float cy) {
@@ -170,6 +181,9 @@ protected:
         };
         for (auto x : topRowX) {
             addQuad(x, topRowY);
+        }
+        for (auto x : midRowX) {
+            addQuad(x, midRowY);
         }
         for (auto x : bottomRowX) {
             addQuad(x, bottomRowY);
@@ -208,13 +222,19 @@ protected:
 
         // Nearest everything, and a LOD range wide enough for textureLod to reach mip 2.
         sampler = device().createSampler({.magFilter = RhiFilter::Nearest, .minFilter = RhiFilter::Nearest, .mipmapMode = RhiMipmapMode::Nearest, .maxLod = 8.0f});
+        // Sampler LOD controls: a bias of one level and a floor of two levels, checked
+        // against the same mip texture with textureLod(..., 0).
+        biasSampler = device().createSampler({.magFilter = RhiFilter::Nearest, .minFilter = RhiFilter::Nearest, .mipmapMode = RhiMipmapMode::Nearest, .maxLod = 8.0f, .mipLodBias = 1.0f});
+        minLodSampler = device().createSampler({.magFilter = RhiFilter::Nearest, .minFilter = RhiFilter::Nearest, .mipmapMode = RhiMipmapMode::Nearest, .minLod = 2.0f, .maxLod = 8.0f});
         pool = device().createDescriptorPool(1, bindings);
         descriptorSets.assign(1, nullptr);
         device().allocateDescriptorSets(pool, setLayout, descriptorSets);
-        std::array<RhiDescriptorWrite, 3> writes = {{
+        std::array<RhiDescriptorWrite, 5> writes = {{
             {.binding = 0, .type = RhiDescriptorType::CombinedImageSampler, .texture = mipTexture, .sampler = sampler},
             {.binding = 1, .type = RhiDescriptorType::CombinedImageSampler, .texture = arrayTexture, .sampler = sampler},
             {.binding = 2, .type = RhiDescriptorType::CombinedImageSampler, .texture = cubeTexture, .sampler = sampler},
+            {.binding = 3, .type = RhiDescriptorType::CombinedImageSampler, .texture = mipTexture, .sampler = biasSampler},
+            {.binding = 4, .type = RhiDescriptorType::CombinedImageSampler, .texture = mipTexture, .sampler = minLodSampler},
         }};
         device().updateDescriptorSet(descriptorSets[0], writes);
         return true;
@@ -244,6 +264,8 @@ protected:
         for (int layer = 0; layer < 2; layer++) {
             drawQuad({.mode = 1, .select = (float) layer, .pad = {}, .direction = {}});
         }
+        drawQuad({.mode = 3, .select = 0.0f, .pad = {}, .direction = {}});
+        drawQuad({.mode = 4, .select = 0.0f, .pad = {}, .direction = {}});
         for (const auto& dir : faceDirections) {
             drawQuad({.mode = 2, .select = 0.0f, .pad = {}, .direction = {dir[0], dir[1], dir[2], 0.0f}});
         }
@@ -271,6 +293,8 @@ protected:
         for (size_t i = 0; i < 3; i++) {
             ok = expectPixel(frame, frame.px(topRowX[i]), frame.py(topRowY), mipColors[i], mipNames[i]) && ok;
         }
+        ok = expectPixel(frame, frame.px(midRowX[0]), frame.py(midRowY), mipColors[1], "sampler-lod-bias") && ok;
+        ok = expectPixel(frame, frame.px(midRowX[1]), frame.py(midRowY), mipColors[2], "sampler-min-lod") && ok;
         std::array<const char*, 2> layerNames = {"array-layer-0", "array-layer-1"};
         for (size_t i = 0; i < 2; i++) {
             ok = expectPixel(frame, frame.px(topRowX[3 + i]), frame.py(topRowY), layerColors[i], layerNames[i]) && ok;
@@ -286,6 +310,8 @@ protected:
         device().freeDescriptorSets(pool, descriptorSets);
         device().destroyDescriptorPool(pool);
         device().destroySampler(sampler);
+        device().destroySampler(biasSampler);
+        device().destroySampler(minLodSampler);
         device().destroyTexture(cubeTexture);
         device().destroyTexture(arrayTexture);
         device().destroyTexture(mipTexture);
@@ -308,6 +334,8 @@ private:
     RhiTexture* arrayTexture = nullptr;
     RhiTexture* cubeTexture = nullptr;
     RhiSampler* sampler = nullptr;
+    RhiSampler* biasSampler = nullptr;
+    RhiSampler* minLodSampler = nullptr;
     RhiDescriptorPool* pool = nullptr;
     std::vector<RhiDescriptorSet*> descriptorSets;
 };

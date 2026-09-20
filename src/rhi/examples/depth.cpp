@@ -1,8 +1,8 @@
 // RHI example: depth testing.
 //
 // Adds to quad: an example-owned depth texture attached alongside the colour
-// target, recreated on resize through the resized() hook, and three pipelines
-// that differ only in RhiDepthState. Each column draws a near quad first and a
+// target, recreated on resize through the resized() hook, and four pipelines
+// that differ only in RhiDepthState (the fourth is the Equal test a depth prepass needs). Each column draws a near quad first and a
 // far quad second where they overlap:
 //
 //   left    test on,  write on    near wins (depth rejects the far quad)
@@ -65,9 +65,10 @@ static constexpr std::array<float, 3> nearColor = {0.9f, 0.2f, 0.2f};
 static constexpr std::array<float, 3> farColor = {0.2f, 0.4f, 0.9f};
 static constexpr float nearZ = 0.3f;
 static constexpr float farZ = 0.7f;
-static constexpr float quadHalf = 0.25f;
+static constexpr std::array<float, 3> equalColor = {0.2f, 0.9f, 0.3f};
+static constexpr float quadHalf = 0.16f;
 static constexpr float pairShift = 0.1f; // near quad offset (-,-), far quad (+,+); overlap centred on the column
-static constexpr std::array<float, 3> columnX = {-0.6f, 0.0f, 0.6f};
+static constexpr std::array<float, 4> columnX = {-0.72f, -0.24f, 0.24f, 0.72f};
 
 static auto pushQuad(std::vector<Vertex>& out, float cx, float cy, float z, std::array<float, 3> c) -> void {
     out.push_back({cx - quadHalf, cy - quadHalf, z, c[0], c[1], c[2]});
@@ -134,12 +135,13 @@ protected:
             {.location = 1, .binding = 0, .format = RhiFormat::R32G32B32_SFLOAT, .offset = offsetof(Vertex, r)},
         }};
         auto format = colorFormat();
-        std::array<RhiDepthState, 3> depthStates = {{
+        std::array<RhiDepthState, 4> depthStates = {{
             {.testEnable = true, .writeEnable = true},
             {.testEnable = false, .writeEnable = false},
             {.testEnable = true, .writeEnable = false},
+            {.testEnable = true, .writeEnable = false, .compareOp = RhiCompareOp::Equal}, // depth prepass contract
         }};
-        for (size_t i = 0; i < 3; i++) {
+        for (size_t i = 0; i < 4; i++) {
             RhiGraphicsPipelineDesc pipelineDesc = {
                 .vertexShader = vertexShader,
                 .fragmentShader = fragmentShader,
@@ -156,7 +158,8 @@ protected:
             }
         }
 
-        // Per column: near quad (4 verts) then far quad (4 verts); 12 indices.
+        // Per column: near quad (4 verts) then far quad (4 verts); 12 indices. The Equal
+        // column adds a third quad at the near quad's exact position and depth in equalColor.
         std::vector<Vertex> vertices;
         std::vector<uint16_t> indices;
         for (auto cx : columnX) {
@@ -164,6 +167,13 @@ protected:
             pushQuad(vertices, cx - pairShift, -pairShift, nearZ, nearColor);
             pushQuad(vertices, cx + pairShift, pairShift, farZ, farColor);
             for (auto i : {0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4}) {
+                indices.push_back((uint16_t) (base + i));
+            }
+        }
+        {
+            auto base = (uint16_t) vertices.size();
+            pushQuad(vertices, columnX[3] - pairShift, -pairShift, nearZ, equalColor);
+            for (auto i : {0, 1, 2, 2, 3, 0}) {
                 indices.push_back((uint16_t) (base + i));
             }
         }
@@ -210,6 +220,14 @@ protected:
             cmd->bindPipeline(pipelines[column]);
             cmd->drawIndexed(12, 1, column * 12, 0, 0);
         }
+        // Equal column: the near quad lays down depth with Less+write, then the far quad
+        // (depth 0.7 against cleared 1.0, rejected) and the equalColor quad (same depth as
+        // near, accepted) go through the Equal pipeline. Indices: near at 36, far at 42, equal at 48.
+        cmd->bindPipeline(pipelines[0]);
+        cmd->drawIndexed(6, 1, 3 * 12, 0, 0);
+        cmd->bindPipeline(pipelines[3]);
+        cmd->drawIndexed(6, 1, (3 * 12) + 6, 0, 0);
+        cmd->drawIndexed(6, 1, 4 * 12, 0, 0);
         cmd->endRendering();
     }
 
@@ -218,6 +236,8 @@ protected:
         ok = expectPixel(frame, frame.px(columnX[0]), frame.py(0.0f), nearColor, "test-on-write-on-near-wins") && ok;
         ok = expectPixel(frame, frame.px(columnX[1]), frame.py(0.0f), farColor, "test-off-last-draw-wins") && ok;
         ok = expectPixel(frame, frame.px(columnX[2]), frame.py(0.0f), farColor, "test-on-write-off-far-wins") && ok;
+        ok = expectPixel(frame, frame.px(columnX[3] - pairShift), frame.py(-pairShift), equalColor, "equal-same-depth-passes") && ok;
+        ok = expectPixel(frame, frame.px(columnX[3] + pairShift + (quadHalf * 0.5f)), frame.py(pairShift + (quadHalf * 0.5f)), {clearColor[0], clearColor[1], clearColor[2]}, "equal-other-depth-rejected") && ok;
         // Outside the overlap each quad is visible on its own.
         ok = expectPixel(frame, frame.px(columnX[0] - pairShift - quadHalf * 0.5f), frame.py(-pairShift - quadHalf * 0.5f), nearColor, "near-alone") && ok;
         ok = expectPixel(frame, frame.px(columnX[0] + pairShift + quadHalf * 0.5f), frame.py(pairShift + quadHalf * 0.5f), farColor, "far-alone") && ok;
@@ -264,7 +284,7 @@ private:
     RhiFormat depthFormat = RhiFormat::D32_SFLOAT;
     RhiShaderModule* vertexShader = nullptr;
     RhiShaderModule* fragmentShader = nullptr;
-    std::array<RhiPipeline*, 3> pipelines = {};
+    std::array<RhiPipeline*, 4> pipelines = {};
     RhiBuffer* vertexBuffer = nullptr;
     RhiBuffer* indexBuffer = nullptr;
     RhiTexture* depthTexture = nullptr;
