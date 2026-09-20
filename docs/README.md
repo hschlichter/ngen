@@ -84,6 +84,7 @@ Current truth for the build framework is [`../build/build_system.md`](../build/b
 - [plan_geometry_pass_cost.md](plan_geometry_pass_cost.md) — back-face culling, 16-bit normal target, depth prepass toggle (landed)
 - [plan_mip_debug.md](plan_mip_debug.md) — mip level buffer view and live sampler controls (landed)
 - [plan_texture_inspector.md](plan_texture_inspector.md) — per-level texture previews in the Render Debug window, level dumps, blit mip regions (landed)
+- [plan_position_stream.md](plan_position_stream.md) — position-only vertex buffer for the shadow pass and depth prepass (landed)
 - [plan_rhi_validation.md](plan_rhi_validation.md) — `ngen-test-rhi` RHI validation program (superseded by plan_rhi_examples.md)
 - [observability_api_design_engine_agnostic.md](observability_api_design_engine_agnostic.md) — earlier abstract obs design (historical — the concrete design deliberately diverged)
 

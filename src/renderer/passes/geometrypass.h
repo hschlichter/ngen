@@ -12,7 +12,8 @@
 class RhiDevice;
 
 struct CachedMesh {
-    RhiBuffer* vertexBuffer = nullptr;
+    RhiBuffer* vertexBuffer = nullptr;   // full Vertex stream, geometry pass
+    RhiBuffer* positionBuffer = nullptr; // positions only, shadow and depth prepass (docs/plan_position_stream.md)
     RhiBuffer* indexBuffer = nullptr;
     uint32_t indexCount = 0;
     uint32_t vertexCount = 0;

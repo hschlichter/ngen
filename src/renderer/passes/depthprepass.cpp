@@ -14,7 +14,7 @@ auto DepthPrepass::init(RhiDevice* device, RhiFormat depthFormat, RhiDescriptorS
     fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/shadow.frag.spv");
 
     std::array<RhiVertexAttribute, 1> vertexAttrs = {{
-        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
+        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0}, // position-only stream
     }};
 
     RhiGraphicsPipelineDesc pipelineDesc = {
@@ -24,7 +24,7 @@ auto DepthPrepass::init(RhiDevice* device, RhiFormat depthFormat, RhiDescriptorS
         .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(glm::mat4)},
         .colorFormats = {},
         .depthFormat = depthFormat,
-        .vertexStride = sizeof(Vertex),
+        .vertexStride = sizeof(std::array<float, 3>),
         .vertexAttributes = vertexAttrs,
         .raster = {.cullMode = RhiCullMode::Back},
     };
@@ -101,7 +101,7 @@ auto DepthPrepass::addPass(
                     }
                     auto model = inst.transform;
                     cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(glm::mat4), &model);
-                    cmd->bindVertexBuffer(cached.vertexBuffer);
+                    cmd->bindVertexBuffer(cached.positionBuffer);
                     cmd->bindIndexBuffer(cached.indexBuffer, RhiIndexType::Uint32);
                     cmd->bindDescriptorSet(pip, 0, descriptorSets[(imageIndex * (uint32_t) instances.size()) + m]);
                     ctx.beginDraw({.instance = m, .mesh = inst.mesh.index, .material = inst.material.index, .prim = inst.prim, .indexOffset = inst.indexOffset, .indexCount = inst.indexCount});

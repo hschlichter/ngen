@@ -412,6 +412,7 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
     // the frame that last used it has completed.
     for (auto& [idx, cached] : meshCache) {
         deletionQueue.deferBuffer(m_frameIndex, cached.vertexBuffer);
+        deletionQueue.deferBuffer(m_frameIndex, cached.positionBuffer);
         deletionQueue.deferBuffer(m_frameIndex, cached.indexBuffer);
     }
     meshCache.clear();
@@ -430,10 +431,18 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
                 CachedMesh cached;
                 cached.indexCount = (uint32_t) meshData->indices.size();
                 cached.vertexCount = (uint32_t) meshData->vertices.size();
-                cached.vertexBytes = meshData->vertices.size() * sizeof(Vertex);
+                // Depth-only passes read positions alone; a 12-byte stream cuts their vertex
+                // fetch to a third of the 44-byte Vertex.
+                std::vector<std::array<float, 3>> positions;
+                positions.reserve(meshData->vertices.size());
+                for (const auto& v : meshData->vertices) {
+                    positions.push_back(v.position);
+                }
+                cached.vertexBytes = meshData->vertices.size() * sizeof(Vertex) + positions.size() * sizeof(positions[0]);
                 cached.indexBytes = meshData->indices.size() * sizeof(uint32_t);
 
                 cached.vertexBuffer = uploader.uploadBuffer(std::as_bytes(std::span(meshData->vertices)), RhiBufferUsage::Vertex);
+                cached.positionBuffer = uploader.uploadBuffer(std::as_bytes(std::span(positions)), RhiBufferUsage::Vertex);
                 cached.indexBuffer = uploader.uploadBuffer(std::as_bytes(std::span(meshData->indices)), RhiBufferUsage::Index);
 
                 meshCache[inst.mesh.index] = cached;
@@ -1065,6 +1074,7 @@ auto Renderer::destroy() -> void {
 
     for (auto& [idx, cached] : meshCache) {
         device->destroyBuffer(cached.vertexBuffer);
+        device->destroyBuffer(cached.positionBuffer);
         device->destroyBuffer(cached.indexBuffer);
     }
     for (auto& [idx, cached] : textureCache) {

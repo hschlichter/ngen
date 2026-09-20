@@ -22,7 +22,7 @@ auto ShadowPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthForm
     fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/shadow.frag.spv");
 
     std::array<RhiVertexAttribute, 1> vertexAttrs = {{
-        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
+        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0}, // position-only stream
     }};
 
     RhiGraphicsPipelineDesc pipelineDesc = {
@@ -32,7 +32,7 @@ auto ShadowPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthForm
         .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(ShadowPush)},
         .colorFormats = {}, // depth-only
         .depthFormat = depthFormat,
-        .vertexStride = sizeof(Vertex),
+        .vertexStride = sizeof(std::array<float, 3>),
         .vertexAttributes = vertexAttrs,
         .raster = {.cullMode = RhiCullMode::Back},
     };
@@ -113,7 +113,7 @@ auto ShadowPass::addPass(
 
                     ShadowPush push{lightViewProj, inst.transform};
                     cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(push), &push);
-                    cmd->bindVertexBuffer(cached.vertexBuffer);
+                    cmd->bindVertexBuffer(cached.positionBuffer);
                     cmd->bindIndexBuffer(cached.indexBuffer, RhiIndexType::Uint32);
                     bool heavy = cached.indexCount >= largeDrawIndexCount;
                     if (heavy) {
