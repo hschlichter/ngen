@@ -5,6 +5,7 @@
 #include "mesh.h"
 #include "observationmacros.h"
 #include "presentpass.h"
+#include "profile.h"
 #include "rendersnapshot.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
@@ -108,20 +109,17 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
     renderFinishedSemaphores.resize(imgCount);
     inflightFences.resize(imgCount);
     slotFrame.assign(imgCount, 0);
+    slotSubmitNs.assign(imgCount, 0);
     for (uint32_t i = 0; i < imgCount; i++) {
         imageAvailableSemaphores[i] = device->createSemaphore();
         renderFinishedSemaphores[i] = device->createSemaphore();
         inflightFences[i] = device->createFence(true);
     }
 
-    if (device->limits().timestamps) {
-        timestampPools.resize(imgCount);
-        slotPassNames.resize(imgCount);
-        for (uint32_t i = 0; i < imgCount; i++) {
-            timestampPools[i] = device->createQueryPool(maxTimedPasses * 2);
-        }
-    } else {
+    if (!device->limits().timestamps) {
         std::println("GPU timestamps not supported on this device; pass timings disabled");
+    } else {
+        std::println("GPU clock calibration: {}", device->limits().calibratedTimestamps ? "available" : "unavailable, GPU lane anchored at submit");
     }
 
     // Editor UI
@@ -177,26 +175,61 @@ auto Renderer::buildFrameGraphDebugSnapshot() const -> FrameGraphDebugSnapshot {
     return snap;
 }
 
-// Called once the slot's fence has signalled: the timestamps written during that
-// slot's last frame are complete. Ticks convert with the device's timestamp period.
+// Called once the slot's fence has signalled: the zones recorded on that slot's command
+// buffer are complete. Top-level zones are the frame graph passes; nested ones belong to
+// whatever a pass timed inside itself.
 auto Renderer::readGpuTimings(uint32_t slot) -> void {
-    if (timestampPools.empty() || slotPassNames[slot].empty()) {
+    if (!device->limits().timestamps || slotFrame[slot] == 0) {
         return;
     }
-    const auto& names = slotPassNames[slot];
-    std::vector<uint64_t> ticks(names.size() * 2);
-    if (!device->readTimestamps(timestampPools[slot], 0, ticks)) {
+    if (!device->collectGpuZones(cmdBuffers[slot], gpuZoneScratch) || gpuZoneScratch.empty()) {
         return;
     }
-    auto periodMs = (double) device->limits().timestampPeriodNs * 1e-6;
     lastGpuTimes.clear();
-    for (size_t i = 0; i < names.size(); i++) {
-        auto ms = (double) (ticks[i * 2 + 1] - ticks[i * 2]) * periodMs;
-        lastGpuTimes.push_back({.name = names[i], .ms = ms});
+    uint64_t minStart = UINT64_MAX;
+    uint64_t maxEnd = 0;
+    for (const auto& zone : gpuZoneScratch) {
+        minStart = std::min(minStart, zone.startNs);
+        maxEnd = std::max(maxEnd, zone.endNs);
+        if (zone.depth == 0) {
+            lastGpuTimes.push_back({.name = zone.name, .ms = (double) (zone.endNs - zone.startNs) * 1e-6});
+        }
     }
-    lastGpuFrameMs = (double) (ticks[names.size() * 2 - 1] - ticks[0]) * periodMs;
+    lastGpuFrameMs = (double) (maxEnd - minStart) * 1e-6;
     lastGpuFrame = slotFrame[slot];
-    OBS_EVENT("Render", "GpuTime", "frame").field("frame", (int64_t) lastGpuFrame).field("gpu_ms", lastGpuFrameMs);
+
+    // Hand the same zones to the profiler's GPU lane, on the CPU clock. Calibrated when the
+    // device supports it (true position of GPU work relative to the threads); otherwise
+    // anchored so the first zone starts at the submit, a lower bound.
+    if (device->limits().calibratedTimestamps && (!gpuClockCalibrated || framesSinceCalibration >= 120)) {
+        gpuClockCalibrated = device->calibrateGpuClock(gpuClockAtCalibration, cpuClockAtCalibration);
+        framesSinceCalibration = 0;
+    }
+    framesSinceCalibration++;
+    auto toCpu = [&](uint64_t gpuNs) -> uint64_t {
+        if (gpuClockCalibrated) {
+            return gpuNs - gpuClockAtCalibration + cpuClockAtCalibration;
+        }
+        return gpuNs - minStart + slotSubmitNs[slot];
+    };
+    std::vector<profile::Zone> profileZones;
+    profileZones.reserve(gpuZoneScratch.size());
+    for (const auto& zone : gpuZoneScratch) {
+        profileZones.push_back({.nameId = profile::registerName(zone.name), .depth = zone.depth, .startNs = toCpu(zone.startNs), .endNs = toCpu(zone.endNs)});
+    }
+    profile::submitGpuZones(lastGpuFrame, slotSubmitNs[slot], profileZones);
+
+    // Builder emits on destruction, so scope it; one field per pass keeps headless runs self-describing.
+    // gpu_lag_ms: submit to first GPU zone start on the CPU clock; only meaningful when calibrated.
+    if (obs::bus().categoryEnabled("Render")) {
+        obs::detail::Builder event("Render", "GpuTime", "frame");
+        event.field("frame", (int64_t) lastGpuFrame).field("gpu_ms", lastGpuFrameMs);
+        event.field("calibrated", gpuClockCalibrated);
+        event.field("gpu_lag_ms", ((double) toCpu(minStart) - (double) slotSubmitNs[slot]) * 1e-6);
+        for (const auto& timing : lastGpuTimes) {
+            event.field(timing.name, timing.ms);
+        }
+    }
 }
 
 auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void {
@@ -264,6 +297,8 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         if (inst.mesh && !meshCache.contains(inst.mesh.index)) {
             const auto* meshData = meshLib.get(inst.mesh);
             if (meshData && !meshData->vertices.empty()) {
+                PROFILE_ZONE("UploadMesh");
+                PROFILE_ZONE_VALUE(meshData->vertices.size() * sizeof(Vertex) + meshData->indices.size() * sizeof(uint32_t));
                 CachedMesh cached;
                 cached.indexCount = (uint32_t) meshData->indices.size();
 
@@ -281,6 +316,8 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         if (inst.material && !textureCache.contains(inst.material.index)) {
             const auto* matData = matLib.get(inst.material);
             if (matData && !matData->texPixels.empty()) {
+                PROFILE_ZONE("UploadTexture");
+                PROFILE_ZONE_VALUE((uint64_t) matData->texWidth * (uint64_t) matData->texHeight * 4);
                 RhiTextureDesc texDesc = {
                     .width = (uint32_t) matData->texWidth,
                     .height = (uint32_t) matData->texHeight,
@@ -295,8 +332,12 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         }
     }
 
-    uploader.end();
+    {
+        PROFILE_ZONE("UploadSubmit");
+        uploader.end();
+    }
 
+    PROFILE_ZONE("DescriptorSets");
     // Sets and pool may still be bound by frames in flight: free and destroy together, later.
     if (geometryDescriptorPool) {
         deletionQueue.defer(m_frameIndex, [dev = device, pool = geometryDescriptorPool, sets = geometryDescriptorSets] {
@@ -392,13 +433,20 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     auto frame = ++m_frameIndex;
     OBS_EVENT("Render", "FrameBegin", "frame").field("frame", (int64_t) frame);
 
-    device->waitForFence(inflightFences[currentFrame]);
+    {
+        PROFILE_ZONE("WaitFence");
+        device->waitForFence(inflightFences[currentFrame]);
+    }
     // This slot's previous frame is done, and so is everything submitted before it.
     deletionQueue.flush(slotFrame[currentFrame]);
     readGpuTimings(currentFrame);
     fgPreviews.setFrame(frame);
 
-    auto index = swapchain->acquireNextImage(imageAvailableSemaphores[currentFrame]);
+    std::expected<uint32_t, RhiError> index;
+    {
+        PROFILE_ZONE("Acquire");
+        index = swapchain->acquireNextImage(imageAvailableSemaphores[currentFrame]);
+    }
     if (!index) {
         if (index.error() == RhiError::OutOfDate) {
             OBS_EVENT("Render", "SwapchainRecreate", "swapchain").field("reason", "acquire_failed");
@@ -423,6 +471,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     memcpy(uniformBuffersMapped[currentFrame], &ubo, sizeof(ubo));
 
     // Build frame graph
+    static const uint32_t buildZoneId = profile::registerName("BuildFrameGraph");
+    profile::beginZone(buildZoneId);
     auto ext = swapchain->extent();
     frameGraph.reset();
 
@@ -434,6 +484,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     auto imageIdx = currentFrame;
     auto instanceCount = (uint32_t) gpuInstances.size();
 
+    static const uint32_t shadowSetupZoneId = profile::registerName("ShadowSetup");
+    profile::beginZone(shadowSetupZoneId);
     RhiExtent2D shadowExtent{2048, 2048};
 
     // Pick a shadow-casting directional light: first directional with shadowEnable,
@@ -501,6 +553,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
 
     auto invViewProj = glm::inverse(snapshot.projMatrix * snapshot.viewMatrix);
 
+    profile::endZone(); // ShadowSetup
     const auto& shadowData = shadowPass.addPass(frameGraph, shadowExtent, depthFormat, lightViewProj, gpuInstances, meshCache);
 
     const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, imageIdx, instanceCount, gpuInstances, meshCache, geometryDescriptorSets);
@@ -533,16 +586,21 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
 
     debugRenderer.addPass(frameGraph, colorHandle, depthHandle, ext, snapshot.debugData, imageIdx);
 
+    static const uint32_t gizmoZoneId = profile::registerName("GizmoUpdate");
+    profile::beginZone(gizmoZoneId);
     auto gizmoRequests = gizmoUpdate(snapshot, ext);
+    profile::endZone(); // GizmoUpdate
     gizmoPass.addPass(frameGraph, colorHandle, ext, gizmoRequests, imageIdx);
 
     editorUIPass.addPass(frameGraph, colorHandle, ext, editorUI, snapshot.imguiSnapshot);
 
     addPresentPass(frameGraph, colorHandle);
 
-    frameGraph.compile();
-    if (!timestampPools.empty()) {
-        frameGraph.setTimestampPool(timestampPools[currentFrame], maxTimedPasses * 2);
+    profile::zoneValue(instanceCount);
+    profile::endZone(); // BuildFrameGraph
+    {
+        PROFILE_ZONE("Compile");
+        frameGraph.compile();
     }
     OBS_EVENT("Render", "FrameGraphCompiled", "frame")
         .field("pass_count", (int64_t) frameGraph.passCount())
@@ -551,24 +609,31 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     // Command buffer and fence belong to the frame slot; the render-finished semaphore
     // belongs to the swapchain image, since present consumes it per image.
     auto* cmd = cmdBuffers[currentFrame];
-    cmd->reset();
-    cmd->begin();
-
-    frameGraph.execute(cmd);
-
-    cmd->end();
+    {
+        PROFILE_ZONE("Record");
+        PROFILE_ZONE_VALUE(frameGraph.passCount() - frameGraph.culledCount());
+        cmd->reset();
+        cmd->begin();
+        frameGraph.execute(cmd);
+        cmd->end();
+    }
 
     RhiSubmitInfo submitInfo = {
         .waitSemaphore = imageAvailableSemaphores[currentFrame],
         .signalSemaphore = renderFinishedSemaphores[*index],
         .fence = inflightFences[currentFrame],
     };
-    device->submitCommandBuffer(cmd, submitInfo);
-    slotFrame[currentFrame] = frame;
-    if (!timestampPools.empty()) {
-        slotPassNames[currentFrame] = frameGraph.executedPassNames();
+    {
+        PROFILE_ZONE("Submit");
+        device->submitCommandBuffer(cmd, submitInfo);
     }
-    auto presented = device->present(swapchain, renderFinishedSemaphores[*index], *index);
+    slotFrame[currentFrame] = frame;
+    slotSubmitNs[currentFrame] = profile::now();
+    std::expected<void, RhiError> presented;
+    {
+        PROFILE_ZONE("Present");
+        presented = device->present(swapchain, renderFinishedSemaphores[*index], *index);
+    }
     if (!presented) {
         OBS_EVENT("Render", "SwapchainRecreate", "swapchain").field("reason", "present_failed");
         if (!swapchain->recreate({.width = (uint32_t) snapshot.windowWidth, .height = (uint32_t) snapshot.windowHeight})) {
@@ -627,11 +692,6 @@ auto Renderer::destroy() -> void {
     device->destroyTexture(fallbackTexture);
     device->destroyTexture(depthTexture);
     depthTexture = nullptr;
-
-    for (auto* pool : timestampPools) {
-        device->destroyQueryPool(pool);
-    }
-    timestampPools.clear();
 
     for (uint32_t i = 0; i < swapchain->imageCount(); i++) {
         device->destroySemaphore(imageAvailableSemaphores[i]);

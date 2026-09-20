@@ -52,6 +52,12 @@ public:
     virtual auto createQueryPool(uint32_t timestampCount) -> RhiQueryPool* = 0;
     virtual auto destroyQueryPool(RhiQueryPool* pool) -> void = 0;
     virtual auto readTimestamps(RhiQueryPool* pool, uint32_t first, std::span<uint64_t> outTicks) -> bool = 0;
+    // Simultaneous sample of the GPU timestamp clock (in ns, same unit as RhiGpuZone) and the
+    // CPU monotonic clock (ns, std::chrono::steady_clock base). Lets GPU zones be placed on the CPU
+    // time axis. False when the device cannot calibrate; callers then anchor GPU work at submit time.
+    virtual auto calibrateGpuClock(uint64_t& gpuNs, uint64_t& cpuNs) -> bool = 0;
+    // Zones recorded on cmd since its last begin(); valid after the submit's fence. False if not yet available.
+    virtual auto collectGpuZones(RhiCommandBuffer* cmd, std::vector<RhiGpuZone>& out) -> bool = 0;
     virtual auto createSemaphore() -> RhiSemaphore* = 0;
     virtual auto createFence(bool signaled) -> RhiFence* = 0;
 

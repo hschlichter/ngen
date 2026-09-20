@@ -96,6 +96,12 @@ auto main(int argc, char** argv) -> int {
                 "external/concurrentqueue",
             });
 
+    auto profile =
+        cxx::static_library("profile")
+            .sources(glob({.include = "src/profile/**/*.cpp"}))
+            .public_include({"src/profile"})
+            .include({"src/rhi"});
+
     // src/rhi is header-only: the backend-agnostic interface. Consumers add the
     // include path directly; only backends are libraries.
     auto rhivulkan =
@@ -125,9 +131,11 @@ auto main(int argc, char** argv) -> int {
                 "src/rhi/vulkan",
                 "src/scene",
                 "src/obs",
+                "src/profile",
                 "external/imgui",
             })
             .link(obs)
+            .link(profile)
             .link(rhi_backend);
 
     auto scene =
@@ -141,7 +149,9 @@ auto main(int argc, char** argv) -> int {
                 "src/ui",
                 "src/renderer",
                 "src/obs",
-            });
+                "src/profile",
+            })
+            .link(profile);
 
     auto sceneusd =
         cxx::static_library("sceneusd")
@@ -196,9 +206,11 @@ auto main(int argc, char** argv) -> int {
                 "src/renderer",
                 "src/renderer/passes",
                 "src/scene",
+                "src/profile",
                 "external/imgui",
             })
             .link(renderer)
+            .link(profile)
             .link(scene)
             .link(sceneusd)
             .link(imgui);
@@ -248,6 +260,7 @@ auto main(int argc, char** argv) -> int {
                 "src/renderer/passes",
                 "src/scene",
                 "src/ui",
+                "src/profile",
                 "external/glm",
                 "external/cgltf",
                 "external/stb",
@@ -256,6 +269,7 @@ auto main(int argc, char** argv) -> int {
                 "external/concurrentqueue",
             })
             .link(obs)
+            .link(profile)
             .link(rhivulkan)
             .link(renderer)
             .link(scene)
@@ -311,6 +325,7 @@ auto main(int argc, char** argv) -> int {
     auto exampleMipCube = rhiExample("mipcube");
     auto exampleCompute = rhiExample("compute");
     auto exampleTimestamps = rhiExample("timestamps");
+    auto exampleGpuZones = rhiExample("gpuzones");
 
     p.target(view);
     p.target(exampleTriangle);
@@ -325,6 +340,7 @@ auto main(int argc, char** argv) -> int {
     p.target(exampleMipCube);
     p.target(exampleCompute);
     p.target(exampleTimestamps);
+    p.target(exampleGpuZones);
     p.target(format);
     p.target(tidy);
     p.default_target(view);

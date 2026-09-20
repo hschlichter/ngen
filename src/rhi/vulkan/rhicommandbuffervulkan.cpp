@@ -75,6 +75,36 @@ auto RhiCommandBufferVulkan::begin() -> void {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
     vkBeginCommandBuffer(cmd, &beginInfo);
+
+    zones.clear();
+    zoneStack.clear();
+    if (zonePool != VK_NULL_HANDLE) {
+        vkCmdResetQueryPool(cmd, zonePool, 0, maxGpuZones * 2);
+    }
+}
+
+auto RhiCommandBufferVulkan::beginGpuZone(const char* name) -> void {
+    if (zonePool == VK_NULL_HANDLE || zones.size() >= maxGpuZones) {
+        zoneStack.push_back(UINT32_MAX); // keep the stack balanced for endGpuZone
+        return;
+    }
+    auto index = (uint32_t) zones.size();
+    zones.push_back({.name = name, .depth = (uint16_t) zoneStack.size(), .closed = false});
+    zoneStack.push_back(index);
+    vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, zonePool, index * 2);
+}
+
+auto RhiCommandBufferVulkan::endGpuZone() -> void {
+    if (zoneStack.empty()) {
+        return;
+    }
+    auto index = zoneStack.back();
+    zoneStack.pop_back();
+    if (index == UINT32_MAX) {
+        return;
+    }
+    zones[index].closed = true;
+    vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, zonePool, index * 2 + 1);
 }
 
 auto RhiCommandBufferVulkan::end() -> void {

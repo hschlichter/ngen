@@ -7,6 +7,7 @@
 #include "mesh.h"
 #include "observationbus.h"
 #include "observationmacros.h"
+#include "profile.h"
 #include "renderer.h"
 #include "rendersnapshot.h"
 #include "renderthread.h"
@@ -280,9 +281,37 @@ auto main(int argc, char* argv[]) -> int {
     frameSceneView();
 
     // Main loop
+    profile::registerThread("Main");
     auto lastTicks = SDL_GetTicksNS();
     auto quit = false;
+    uint64_t frameCounter = 0;
     while (!quit && !editorUI.wantsQuit()) {
+        PROFILE_FRAME_MARK();
+        frameCounter++;
+        if (frameCounter % 60 == 0 && obs::bus().categoryEnabled("Render")) {
+            // Profiler summary: main frame time, latest GPU frame, top-level zones of every lane.
+            auto lastFrame = profile::lastFrame();
+            if (lastFrame.has_value()) {
+                obs::detail::Builder event("Render", "FrameStats", "frame");
+                event.field("frame", (int64_t) lastFrame->frameIndex).field("main_ms", (double) (lastFrame->endNs - lastFrame->startNs) * 1e-6);
+                std::vector<profile::FrameStats> history;
+                profile::frameHistory(history);
+                if (!history.empty()) {
+                    event.field("gpu_ms", history.back().gpuMs);
+                }
+                std::vector<profile::LaneInfo> lanes;
+                profile::lanes(lanes);
+                std::vector<profile::Zone> zones;
+                for (const auto& lane : lanes) {
+                    profile::zonesIn(lane.index, lastFrame->startNs, lastFrame->endNs, zones);
+                    for (const auto& zone : zones) {
+                        if (zone.depth == 0) {
+                            event.field(lane.name + "." + profile::nameOf(zone.nameId), (double) (zone.endNs - zone.startNs) * 1e-6);
+                        }
+                    }
+                }
+            }
+        }
         auto nowTicks = SDL_GetTicksNS();
         auto dt = (float) (nowTicks - lastTicks) / 1.0e9f;
         lastTicks = nowTicks;
@@ -323,6 +352,7 @@ auto main(int argc, char* argv[]) -> int {
         }
 
         if (usdScene.isOpen()) {
+            PROFILE_ZONE("SceneUpdate");
             auto r = sceneUpdater.update(usdScene, usdExtractor, renderWorld, meshLib, matLib, sceneQuery);
             if (r == SceneUpdateResult::Full) {
                 refreshCachedLibs();
@@ -340,9 +370,17 @@ auto main(int argc, char* argv[]) -> int {
             });
         }
 
+        static const uint32_t pollZoneId = profile::registerName("PollEvents");
+        profile::beginZone(pollZoneId);
+        uint64_t polledEvents = 0;
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
-            auto uiCaptured = imguiBackend.processEvent(&ev);
+            polledEvents++;
+            bool uiCaptured = false;
+            {
+                PROFILE_ZONE("ImGuiEvent");
+                uiCaptured = imguiBackend.processEvent(&ev);
+            }
 
             if (ev.type == SDL_EVENT_QUIT) {
                 std::println("Quitting");
@@ -519,6 +557,9 @@ auto main(int argc, char* argv[]) -> int {
             }
         }
 
+        profile::zoneValue(polledEvents);
+        profile::endZone(); // PollEvents
+
         const auto* keys = SDL_GetKeyboardState(nullptr);
         cam.update(keys, dt);
 
@@ -527,9 +568,19 @@ auto main(int argc, char* argv[]) -> int {
         renderThread.setFrameGraphDebugEnabled(editorUI.getShowFrameGraphWindow());
         auto fgDebugSnap = renderThread.latestFrameGraphDebug();
 
+        static const uint32_t uiZoneId = profile::registerName("EditorUI");
+        profile::beginZone(uiZoneId);
         imguiBackend.beginFrame();
         editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib, cam, std::move(fgDebugSnap));
-        auto imguiSnapshot = imguiBackend.endFrame();
+        ImGuiFrameSnapshot imguiSnapshot;
+        {
+            PROFILE_ZONE("ImGuiRender");
+            imguiSnapshot = imguiBackend.endFrame();
+        }
+        profile::endZone(); // EditorUI
+
+        static const uint32_t snapshotZoneId = profile::registerName("BuildSnapshot");
+        profile::beginZone(snapshotZoneId);
 
         float mouseX = 0;
         float mouseY = 0;
@@ -572,7 +623,11 @@ auto main(int argc, char* argv[]) -> int {
             .imguiSnapshot = std::move(imguiSnapshot),
         };
 
-        renderThread.submitSnapshot(std::move(snapshot));
+        profile::endZone(); // BuildSnapshot
+        {
+            PROFILE_ZONE("SubmitSnapshot");
+            renderThread.submitSnapshot(std::move(snapshot));
+        }
     }
 
     renderThread.stop();

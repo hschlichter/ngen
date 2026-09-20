@@ -134,8 +134,9 @@ Examples, each adding one concept to the previous:
 | `ngen-example-mipcube` | mip levels, array layers, cube faces, one copy per subresource |
 | `ngen-example-compute` | compute pipelines, storage image and buffer, `dispatch`, buffer barriers |
 | `ngen-example-timestamps` | query pools, `writeTimestamp`, readback after the fence, `timestampPeriodNs` |
+| `ngen-example-gpuzones` | nested `beginGpuZone`/`endGpuZone`, `collectGpuZones` depth, order and containment |
 
-Run them all: `for t in triangle quad texture uniforms depth rendertarget pushconstants blend lines mipcube compute timestamps; do
+Run them all: `for t in triangle quad texture uniforms depth rendertarget pushconstants blend lines mipcube compute timestamps gpuzones; do
 SDL_VIDEODRIVER=offscreen ./_out/linux-vulkan/debug/ngen-example-$t --frames=10 --check --validation || echo "$t FAILED"; done`
 
 Rules for examples: include only headers under `src/rhi/` and `examples/common/` (plus `stb_image_write.h` for PNG);

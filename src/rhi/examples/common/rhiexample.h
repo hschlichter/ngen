@@ -88,6 +88,9 @@ protected:
     virtual auto parseArg(std::string_view arg) -> bool { return false; }
     // Swapchain was recreated at this size; GPU is idle. Recreate size-dependent resources here.
     virtual auto resized(RhiExtent2D extent) -> void {}
+    // The slot's fence has signalled and its command buffer has not been reset yet: read back
+    // anything the slot's previous frame produced (queries, GPU zones) here.
+    virtual auto slotReady(uint32_t slot, RhiCommandBuffer* cmd) -> void {}
 
     auto device() -> RhiDevice& { return rhiDevice; }
     auto swapchain() -> RhiSwapchain* { return rhiSwapchain; }
@@ -280,6 +283,7 @@ inline auto RhiExample::run(int argc, char** argv, const char* name) -> int {
 
         // Wait until this slot's previous frame is done before reusing its command buffer.
         rhiDevice.waitForFence(inFlightFences[slot]);
+        slotReady(slot, commandBuffers[slot]);
 
         auto acquired = rhiSwapchain->acquireNextImage(imageAvailable[slot]);
         if (!acquired) {

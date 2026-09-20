@@ -409,14 +409,31 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
         .pQueuePriorities = &queuePriority,
     };
 
-    const char* deviceExtensions[] = {
-        // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    std::vector<const char*> deviceExtensions = {
         "VK_KHR_swapchain",
 #ifdef __APPLE__
         "VK_KHR_portability_subset",
 #endif
     };
-    auto deviceExtensionCount = (uint32_t) (sizeof(deviceExtensions) / sizeof(deviceExtensions[0]));
+
+    // Optional: calibrated timestamps align GPU zones with the CPU clock for the profiler.
+    bool calibratedTimestampsAvailable = false;
+    {
+        uint32_t availableCount = 0;
+        vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &availableCount, nullptr);
+        std::vector<VkExtensionProperties> available(availableCount);
+        vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &availableCount, available.data());
+        for (const auto& ext : available) {
+            if (strcmp(ext.extensionName, VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME) == 0) {
+                calibratedTimestampsAvailable = true;
+                break;
+            }
+        }
+    }
+    if (calibratedTimestampsAvailable) {
+        deviceExtensions.push_back(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
+    }
+    auto deviceExtensionCount = (uint32_t) deviceExtensions.size();
 
     VkPhysicalDeviceSynchronization2Features sync2Features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
@@ -453,7 +470,7 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queueCreateInfo,
         .enabledExtensionCount = deviceExtensionCount,
-        .ppEnabledExtensionNames = deviceExtensions,
+        .ppEnabledExtensionNames = deviceExtensions.data(),
         .pEnabledFeatures = &enabledFeatures,
     };
 
@@ -464,6 +481,11 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
     }
 
     vkGetDeviceQueue(device, queueFamilyIndex, 0, &graphicsQueue);
+
+    if (calibratedTimestampsAvailable) {
+        getCalibratedTimestampsFn = (PFN_vkGetCalibratedTimestampsEXT) vkGetDeviceProcAddr(device, "vkGetCalibratedTimestampsEXT");
+        deviceLimits.calibratedTimestamps = getCalibratedTimestampsFn != nullptr && deviceLimits.timestamps;
+    }
 
     VkCommandPoolCreateInfo poolInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -1172,6 +1194,60 @@ auto RhiDeviceVulkan::readTimestamps(RhiQueryPool* pool, uint32_t first, std::sp
     return true;
 }
 
+auto RhiDeviceVulkan::calibrateGpuClock(uint64_t& gpuNs, uint64_t& cpuNs) -> bool {
+    if (getCalibratedTimestampsFn == nullptr) {
+        return false;
+    }
+    std::array<VkCalibratedTimestampInfoEXT, 2> infos = {{
+        {.sType = VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, .timeDomain = VK_TIME_DOMAIN_DEVICE_EXT},
+        {.sType = VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, .timeDomain = VK_TIME_DOMAIN_CLOCK_MONOTONIC_EXT},
+    }};
+    std::array<uint64_t, 2> timestamps = {};
+    std::array<uint64_t, 2> deviations = {};
+    auto result = getCalibratedTimestampsFn(device, (uint32_t) infos.size(), infos.data(), timestamps.data(), deviations.data());
+    if (result != VK_SUCCESS) {
+        return false;
+    }
+    gpuNs = (uint64_t) ((double) timestamps[0] * (double) deviceLimits.timestampPeriodNs);
+    cpuNs = timestamps[1]; // CLOCK_MONOTONIC is what std::chrono::steady_clock reads on Linux
+    return true;
+}
+
+auto RhiDeviceVulkan::collectGpuZones(RhiCommandBuffer* cmd, std::vector<RhiGpuZone>& out) -> bool {
+    auto* cb = static_cast<RhiCommandBufferVulkan*>(cmd);
+    out.clear();
+    if (cb->zonePool == VK_NULL_HANDLE || cb->zones.empty()) {
+        return true;
+    }
+    auto count = (uint32_t) cb->zones.size() * 2;
+    std::vector<uint64_t> raw((size_t) count * 2);
+    auto result = vkGetQueryPoolResults(
+        device, cb->zonePool, 0, count, raw.size() * sizeof(uint64_t), raw.data(), 2 * sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+    if (result != VK_SUCCESS && result != VK_NOT_READY) {
+        std::println(stderr, "vkGetQueryPoolResults failed: {}({})", string_VkResult(result), (int) result);
+        return false;
+    }
+    auto periodNs = (double) deviceLimits.timestampPeriodNs;
+    out.reserve(cb->zones.size());
+    for (size_t i = 0; i < cb->zones.size(); i++) {
+        if (!cb->zones[i].closed) {
+            continue;
+        }
+        auto beginAvail = raw[(i * 2) * 2 + 1];
+        auto endAvail = raw[(i * 2 + 1) * 2 + 1];
+        if (beginAvail == 0 || endAvail == 0) {
+            return false;
+        }
+        out.push_back({
+            .name = cb->zones[i].name,
+            .depth = cb->zones[i].depth,
+            .startNs = (uint64_t) ((double) raw[(i * 2) * 2] * periodNs),
+            .endNs = (uint64_t) ((double) raw[(i * 2 + 1) * 2] * periodNs),
+        });
+    }
+    return true;
+}
+
 auto RhiDeviceVulkan::createCommandBuffer() -> RhiCommandBuffer* {
     auto* cb = new RhiCommandBufferVulkan();
     VkCommandBufferAllocateInfo allocInfo = {
@@ -1188,6 +1264,17 @@ auto RhiDeviceVulkan::createCommandBuffer() -> RhiCommandBuffer* {
     }
     cb->beginLabelFn = cmdBeginLabelFn;
     cb->endLabelFn = cmdEndLabelFn;
+
+    if (deviceLimits.timestamps) {
+        VkQueryPoolCreateInfo poolInfo = {
+            .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+            .queryType = VK_QUERY_TYPE_TIMESTAMP,
+            .queryCount = RhiCommandBufferVulkan::maxGpuZones * 2,
+        };
+        if (vkCreateQueryPool(device, &poolInfo, nullptr, &cb->zonePool) != VK_SUCCESS) {
+            cb->zonePool = VK_NULL_HANDLE;
+        }
+    }
     return cb;
 }
 
@@ -1345,6 +1432,9 @@ auto RhiDeviceVulkan::destroyFence(RhiFence* fence) -> void {
 
 auto RhiDeviceVulkan::destroyCommandBuffer(RhiCommandBuffer* cmd) -> void {
     auto* cb = static_cast<RhiCommandBufferVulkan*>(cmd);
+    if (cb->zonePool != VK_NULL_HANDLE) {
+        vkDestroyQueryPool(device, cb->zonePool, nullptr);
+    }
     vkFreeCommandBuffers(device, cmdPool, 1, &cb->cmd);
     delete cb;
 }

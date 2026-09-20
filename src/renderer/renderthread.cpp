@@ -1,6 +1,7 @@
 #include "renderthread.h"
 #include "framegraph.h"
 #include "observationmacros.h"
+#include "profile.h"
 #include "renderer.h"
 
 #include <utility>
@@ -46,9 +47,11 @@ auto RenderThread::latestFrameGraphDebug() -> std::optional<FrameGraphDebugSnaps
 }
 
 auto RenderThread::threadLoop() -> void {
+    profile::registerThread("Render");
     while (true) {
         RenderSnapshot snapshot;
         {
+            PROFILE_ZONE("WaitSnapshot");
             std::unique_lock lock(snapshotMutex);
             snapshotReady.wait(lock, [this] { return hasSnapshot || shutdownRequested; });
             if (shutdownRequested && !hasSnapshot) {
@@ -66,6 +69,8 @@ auto RenderThread::threadLoop() -> void {
                 auto upload = std::move(*pendingUpload);
                 pendingUpload.reset();
                 OBS_EVENT("Render", "SceneUploadReceived", "RenderWorld").field("mesh_count", (int64_t) upload.world.meshInstances.size());
+                PROFILE_ZONE("Upload");
+                PROFILE_ZONE_VALUE(upload.world.meshInstances.size());
                 renderer->uploadRenderWorld(upload.world, *upload.meshLib, *upload.matLib);
             }
         }

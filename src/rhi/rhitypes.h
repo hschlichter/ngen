@@ -272,8 +272,9 @@ struct RhiDeviceLimits {
     float maxLineWidth = 1.0f;
     bool wideLines = false;
     bool samplerAnisotropy = false;
-    bool timestamps = false;        // writeTimestamp supported on the device's queue
-    float timestampPeriodNs = 0.0f; // nanoseconds per timestamp tick
+    bool timestamps = false;           // writeTimestamp supported on the device's queue
+    float timestampPeriodNs = 0.0f;    // nanoseconds per timestamp tick
+    bool calibratedTimestamps = false; // calibrateGpuClock available
 };
 
 // Compiled shader bytecode in the backend's native format (SPIR-V for Vulkan,
@@ -480,6 +481,15 @@ struct RhiGraphicsPipelineDesc {
     RhiRasterState raster;
     RhiDepthState depth;
     RhiBlendState blend; // applied to every color attachment
+};
+
+// A timed interval on the GPU, produced by RhiCommandBuffer::beginGpuZone/endGpuZone
+// and read back with RhiDevice::collectGpuZones. Nanoseconds on the GPU's own clock.
+struct RhiGpuZone {
+    const char* name = "";
+    uint16_t depth = 0;
+    uint64_t startNs = 0;
+    uint64_t endNs = 0;
 };
 
 struct RhiComputePipelineDesc {

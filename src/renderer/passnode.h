@@ -14,6 +14,7 @@ struct FgResourceAccess {
 
 struct PassNode {
     const char* name = nullptr;
+    uint32_t profileNameId = 0; // interned pass name for the CPU record zone
     std::vector<FgResourceAccess> reads;
     std::vector<FgResourceAccess> writes;
     bool hasSideEffects = false;

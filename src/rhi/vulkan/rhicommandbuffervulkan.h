@@ -5,9 +5,24 @@
 
 #include <vulkan/vulkan.h>
 
+#include <vector>
+
 class RhiCommandBufferVulkan : public RhiCommandBuffer {
 public:
+    static constexpr uint32_t maxGpuZones = 128;
+
+    struct GpuZoneRecord {
+        const char* name = "";
+        uint16_t depth = 0;
+        bool closed = false;
+    };
+
     VkCommandBuffer cmd = VK_NULL_HANDLE;
+    // Timestamp queries backing beginGpuZone/endGpuZone: two per zone, reset at begin().
+    // VK_NULL_HANDLE when the device has no timestamp support.
+    VkQueryPool zonePool = VK_NULL_HANDLE;
+    std::vector<GpuZoneRecord> zones;
+    std::vector<uint32_t> zoneStack;
     // Null when VK_EXT_debug_utils is not enabled; labels become no-ops.
     PFN_vkCmdBeginDebugUtilsLabelEXT beginLabelFn = nullptr;
     PFN_vkCmdEndDebugUtilsLabelEXT endLabelFn = nullptr;
@@ -24,6 +39,8 @@ public:
     auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void override;
     auto copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void override;
     auto copyTextureToBuffer(RhiTexture* src, RhiBuffer* dst, const RhiBufferTextureCopy& region) -> void override;
+    auto beginGpuZone(const char* name) -> void override;
+    auto endGpuZone() -> void override;
     auto resetQueryPool(RhiQueryPool* pool, uint32_t first, uint32_t count) -> void override;
     auto writeTimestamp(RhiQueryPool* pool, uint32_t index) -> void override;
     auto beginLabel(const char* name) -> void override;

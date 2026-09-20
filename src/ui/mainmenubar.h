@@ -27,6 +27,7 @@ struct MainMenuBarState {
     bool& showShadowOverlay;
     bool& antiAliasing;
     bool& showFrameGraph;
+    bool& showPerformance;
     bool& showAssetBrowser;
     bool& requestQuit;
     bool& pendingNewScene;

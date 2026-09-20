@@ -97,21 +97,26 @@ private:
     std::vector<RhiFence*> inflightFences;
     // Monotonic frame number last submitted through each slot; 0 = never.
     std::vector<uint64_t> slotFrame;
+    std::vector<uint64_t> slotSubmitNs; // profile::now() at submit, matches GPU zones to CPU frames
     uint32_t currentFrame = 0;
 
     GpuUploader uploader;
     DeletionQueue deletionQueue;
 
-    // GPU timings: one query pool per frame slot, read back when the slot's fence has
-    // signalled, so results lag by the number of frames in flight.
-    static constexpr uint32_t maxTimedPasses = 32;
-    std::vector<RhiQueryPool*> timestampPools;
-    std::vector<std::vector<const char*>> slotPassNames;
+    // GPU timings come from the zones recorded on each slot's command buffer, read back
+    // when the slot's fence has signalled, so results lag by the number of frames in flight.
     struct PassGpuTime {
         const char* name;
         double ms;
     };
     std::vector<PassGpuTime> lastGpuTimes;
+    std::vector<RhiGpuZone> gpuZoneScratch;
+    // GPU clock -> CPU clock: cpuNs = gpuNs - gpuClockAtCalibration + cpuClockAtCalibration.
+    // Refreshed periodically; when the device cannot calibrate, GPU work is anchored at submit time.
+    bool gpuClockCalibrated = false;
+    uint64_t gpuClockAtCalibration = 0;
+    uint64_t cpuClockAtCalibration = 0;
+    uint64_t framesSinceCalibration = 0;
     double lastGpuFrameMs = -1.0;
     uint64_t lastGpuFrame = 0;
     auto readGpuTimings(uint32_t slot) -> void;

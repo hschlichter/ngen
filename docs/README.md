@@ -76,6 +76,7 @@ Current truth for the build framework is [`../build/build_system.md`](../build/b
 - [plan_rhi_compute.md](plan_rhi_compute.md) — compute pipelines, storage descriptors, buffer barriers (landed)
 - [plan_compute_aa_pass.md](plan_compute_aa_pass.md) — FXAA as the first frame-graph compute node, replacing the placeholder blit AA pass (landed)
 - [plan_gpu_timestamps.md](plan_gpu_timestamps.md) — GPU timestamp queries in the RHI, per-pass GPU time in the frame graph debugger (landed)
+- [plan_performance_window.md](plan_performance_window.md) — profiling marker API and Performance window with CPU/GPU timeline; Tracy deferred (landed)
 - [plan_rhi_validation.md](plan_rhi_validation.md) — `ngen-test-rhi` RHI validation program (superseded by plan_rhi_examples.md)
 - [observability_api_design_engine_agnostic.md](observability_api_design_engine_agnostic.md) — earlier abstract obs design (historical — the concrete design deliberately diverged)
 

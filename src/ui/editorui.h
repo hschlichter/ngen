@@ -2,6 +2,7 @@
 
 #include "assetbrowser.h" // AssetBrowserState
 #include "framegraphdebug.h"
+#include "performancewindow.h"
 #include "propertieswindow.h" // PropertiesWindowState
 #include "scenehandles.h"
 #include "scenewindow.h" // SceneWindowState
@@ -119,6 +120,7 @@ private:
     bool showShadowOverlayFlag = false;
     bool antiAliasingFlag = true;
     bool showFrameGraphWindow = false;
+    bool showPerformanceWindow = false;
     bool showAssetBrowserWindow = false;
     bool requestQuit = false;
     bool pendingNewSceneFlag = false;
@@ -129,6 +131,7 @@ private:
     std::string pendingOpenPath;
     std::string pendingSavePath;
     std::optional<FrameGraphDebugSnapshot> fgLastSnapshot;
+    PerformanceWindowState performanceState;
     std::optional<uint32_t> fgSelectedPass;
     std::optional<uint32_t> fgSelectedResource;
 };

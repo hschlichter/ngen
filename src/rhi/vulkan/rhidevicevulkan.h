@@ -31,6 +31,8 @@ public:
     auto createQueryPool(uint32_t timestampCount) -> RhiQueryPool* override;
     auto destroyQueryPool(RhiQueryPool* pool) -> void override;
     auto readTimestamps(RhiQueryPool* pool, uint32_t first, std::span<uint64_t> outTicks) -> bool override;
+    auto collectGpuZones(RhiCommandBuffer* cmd, std::vector<RhiGpuZone>& out) -> bool override;
+    auto calibrateGpuClock(uint64_t& gpuNs, uint64_t& cpuNs) -> bool override;
     auto createSemaphore() -> RhiSemaphore* override;
     auto createFence(bool signaled) -> RhiFence* override;
 
@@ -78,6 +80,7 @@ private:
     PFN_vkCmdBeginDebugUtilsLabelEXT cmdBeginLabelFn = nullptr;
     PFN_vkCmdEndDebugUtilsLabelEXT cmdEndLabelFn = nullptr;
     VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;
+    PFN_vkGetCalibratedTimestampsEXT getCalibratedTimestampsFn = nullptr;
     uint64_t validationErrors = 0;
     uint64_t validationWarnings = 0;
 

@@ -1,5 +1,6 @@
 #include "geometrypass.h"
 #include "mesh.h"
+#include "renderertypes.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "shaderloader.h"
@@ -128,7 +129,15 @@ auto GeometryPass::addPass(
                 cmd->bindVertexBuffer(cached.vertexBuffer);
                 cmd->bindIndexBuffer(cached.indexBuffer, RhiIndexType::Uint32);
                 cmd->bindDescriptorSet(pip, 0, descriptorSets[(imageIndex * instanceCount) + m]);
+                // Heavy draws get their own GPU zone so the pass time can be attributed.
+                bool heavy = inst.indexCount >= largeDrawIndexCount;
+                if (heavy) {
+                    cmd->beginGpuZone("LargeDraw");
+                }
                 cmd->drawIndexed(inst.indexCount, 1, inst.indexOffset, 0, 0);
+                if (heavy) {
+                    cmd->endGpuZone();
+                }
             }
 
             cmd->endRendering();

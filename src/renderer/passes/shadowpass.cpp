@@ -1,4 +1,5 @@
 #include "shadowpass.h"
+#include "renderertypes.h"
 
 #include "mesh.h"
 #include "rhicommandbuffer.h"
@@ -101,7 +102,14 @@ auto ShadowPass::addPass(
                 cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(push), &push);
                 cmd->bindVertexBuffer(cached.vertexBuffer);
                 cmd->bindIndexBuffer(cached.indexBuffer, RhiIndexType::Uint32);
+                bool heavy = cached.indexCount >= largeDrawIndexCount;
+                if (heavy) {
+                    cmd->beginGpuZone("LargeDraw");
+                }
                 cmd->drawIndexed(cached.indexCount, 1, 0, 0, 0);
+                if (heavy) {
+                    cmd->endGpuZone();
+                }
             }
 
             cmd->endRendering();

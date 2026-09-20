@@ -1,4 +1,5 @@
 #include "editorui.h"
+#include "profile.h"
 
 #include "assetbrowserwindow.h"
 #include "debugdraw.h"
@@ -57,6 +58,7 @@ auto EditorUI::draw(
         .showShadowOverlay = showShadowOverlayFlag,
         .antiAliasing = antiAliasingFlag,
         .showFrameGraph = showFrameGraphWindow,
+        .showPerformance = showPerformanceWindow,
         .showAssetBrowser = showAssetBrowserWindow,
         .requestQuit = requestQuit,
         .pendingNewScene = pendingNewSceneFlag,
@@ -70,14 +72,42 @@ auto EditorUI::draw(
         .camera = &camera,
         .selectedPrim = &selectedPrim,
     };
-    drawMainMenuBar(menuState);
-    drawLayersWindow(showLayersWindow, sceneUpdater.isBlocked(), usdScene, sceneUpdater.edits());
-    drawSceneWindow(showSceneWindow, sceneUpdater.isBlocked(), usdScene, renderWorld, selectedPrim, sceneState, sceneUpdater.edits());
-    drawPropertiesWindow(showPropertiesWindow, sceneUpdater.isBlocked(), usdScene, selectedPrim, sceneQuery, matLib, sceneUpdater.edits(), propertiesState);
-    drawToolsWindow(showToolsWindow, activeToolValue);
-    drawUndoWindow(showUndoWindow, sceneUpdater, usdScene);
-    drawFrameGraphWindow(showFrameGraphWindow, fgLastSnapshot, fgSelectedPass, fgSelectedResource);
-    drawAssetBrowserWindow(showAssetBrowserWindow, usdScene, assetBrowser, sceneUpdater.edits());
+    {
+        PROFILE_ZONE("MenuBar");
+        drawMainMenuBar(menuState);
+    }
+    {
+        PROFILE_ZONE("LayersWindow");
+        drawLayersWindow(showLayersWindow, sceneUpdater.isBlocked(), usdScene, sceneUpdater.edits());
+    }
+    {
+        PROFILE_ZONE("SceneWindow");
+        drawSceneWindow(showSceneWindow, sceneUpdater.isBlocked(), usdScene, renderWorld, selectedPrim, sceneState, sceneUpdater.edits());
+    }
+    {
+        PROFILE_ZONE("PropertiesWindow");
+        drawPropertiesWindow(showPropertiesWindow, sceneUpdater.isBlocked(), usdScene, selectedPrim, sceneQuery, matLib, sceneUpdater.edits(), propertiesState);
+    }
+    {
+        PROFILE_ZONE("ToolsWindow");
+        drawToolsWindow(showToolsWindow, activeToolValue);
+    }
+    {
+        PROFILE_ZONE("UndoWindow");
+        drawUndoWindow(showUndoWindow, sceneUpdater, usdScene);
+    }
+    {
+        PROFILE_ZONE("FrameGraphWindow");
+        drawFrameGraphWindow(showFrameGraphWindow, fgLastSnapshot, fgSelectedPass, fgSelectedResource);
+    }
+    {
+        PROFILE_ZONE("PerformanceWindow");
+        drawPerformanceWindow(showPerformanceWindow, performanceState);
+    }
+    {
+        PROFILE_ZONE("AssetBrowserWindow");
+        drawAssetBrowserWindow(showAssetBrowserWindow, usdScene, assetBrowser, sceneUpdater.edits());
+    }
 }
 
 auto EditorUI::openScene(

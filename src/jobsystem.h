@@ -26,7 +26,8 @@ public:
     static auto init(uint32_t numWorkers = 0) -> void;
     static auto shutdown() -> void;
 
-    static auto submit(JobFunc job) -> JobFence;
+    // `name` labels the job in the profiler; must be a string literal or otherwise outlive the job.
+    static auto submit(JobFunc job, const char* name = "Job") -> JobFence;
 
     static auto wait(const JobFence& fence) -> void;
     static auto waitAll(std::span<const JobFence> fences) -> void;
@@ -35,6 +36,7 @@ private:
     struct Job {
         JobFunc func;
         std::shared_ptr<std::atomic<bool>> done;
+        uint32_t profileNameId = 0;
     };
 
     static auto workerLoop(std::stop_token stopToken) -> void;

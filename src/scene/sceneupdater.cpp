@@ -1,4 +1,5 @@
 #include "sceneupdater.h"
+#include "profile.h"
 
 #include "observationmacros.h"
 #include "usdrenderextractor.h"
@@ -36,6 +37,7 @@ auto SceneUpdater::update(
 
     // Phase 1: Swap in results from completed background job
     if (editingBlocked && sceneUpdateFence.ready()) {
+        PROFILE_ZONE("SwapJobResults");
         JobSystem::wait(sceneUpdateFence);
         renderWorld = std::move(pendingRenderWorld);
         meshLib = std::move(pendingMeshLib);
@@ -79,8 +81,12 @@ auto SceneUpdater::update(
         }
         pendingEdits.clear();
 
-        usdExtractor.patchTransforms(usdScene, meshLib, dirty, renderWorld);
-        sceneQuery.updateDirty(usdScene, meshLib, dirty, usdScene.frameIndex());
+        {
+            PROFILE_ZONE("PatchTransforms");
+            PROFILE_ZONE_VALUE(dirty.size());
+            usdExtractor.patchTransforms(usdScene, meshLib, dirty, renderWorld);
+            sceneQuery.updateDirty(usdScene, meshLib, dirty, usdScene.frameIndex());
+        }
         // Promote None -> TransformsOnly; preserve Full from a Phase 1 swap above.
         auto finalResult = result == SceneUpdateResult::Full ? SceneUpdateResult::Full : SceneUpdateResult::TransformsOnly;
         OBS_EVENT("Scene", "SystemExecuted", "SceneUpdater")
@@ -162,7 +168,8 @@ auto SceneUpdater::update(
                 }
                 usdExtractor.extract(usdScene, pendingMeshLib, pendingRenderWorld);
                 pendingSceneQuery.rebuild(usdScene, pendingMeshLib);
-            });
+            },
+            "SceneUpdateJob");
     }
 
     // Phase 3: Drain USD notices when nothing is queued/in-flight. Most notices
@@ -172,20 +179,30 @@ auto SceneUpdater::update(
     //   • assetsDirty   → visibility / material change: full extract (libs unchanged).
     //   • transformDirty only → incremental patch (mirrors the fast path).
     if (!editingBlocked) {
-        usdScene.beginFrame();
-        usdScene.processChanges();
-        usdScene.endFrame();
+        {
+            PROFILE_ZONE("UsdProcessChanges");
+            usdScene.beginFrame();
+            usdScene.processChanges();
+            usdScene.endFrame();
+        }
 
         const auto& dirty = usdScene.dirtySet();
         bool needsAssetRebuild = !dirty.primsResynced.empty();
         bool needsFullExtract = needsAssetRebuild || !dirty.assetsDirty.empty();
 
         if (needsAssetRebuild) {
+            PROFILE_ZONE("UpdateAssetBindings");
             usdScene.updateAssetBindings(meshLib, matLib);
         }
         if (needsFullExtract) {
-            usdExtractor.extract(usdScene, meshLib, renderWorld);
-            sceneQuery.rebuild(usdScene, meshLib);
+            {
+                PROFILE_ZONE("Extract");
+                usdExtractor.extract(usdScene, meshLib, renderWorld);
+            }
+            {
+                PROFILE_ZONE("QueryRebuild");
+                sceneQuery.rebuild(usdScene, meshLib);
+            }
             // Only flag Full when libraries actually changed (resync), so the caller's
             // lib shared_ptr cache isn't spuriously invalidated by visibility flips etc.
             result = needsAssetRebuild ? SceneUpdateResult::Full : SceneUpdateResult::TransformsOnly;
@@ -194,8 +211,12 @@ auto SceneUpdater::update(
             for (auto h : dirty.transformDirty) {
                 appendSubtree(usdScene, h, dirtyExpanded);
             }
-            usdExtractor.patchTransforms(usdScene, meshLib, dirtyExpanded, renderWorld);
-            sceneQuery.updateDirty(usdScene, meshLib, dirtyExpanded, usdScene.frameIndex());
+            {
+                PROFILE_ZONE("PatchTransforms");
+                PROFILE_ZONE_VALUE(dirtyExpanded.size());
+                usdExtractor.patchTransforms(usdScene, meshLib, dirtyExpanded, renderWorld);
+                sceneQuery.updateDirty(usdScene, meshLib, dirtyExpanded, usdScene.frameIndex());
+            }
             if (result != SceneUpdateResult::Full) {
                 result = SceneUpdateResult::TransformsOnly;
             }

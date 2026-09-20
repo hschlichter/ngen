@@ -1,6 +1,7 @@
 #include "framegraph.h"
 #include "framegraphdebug.h"
 #include "observationmacros.h"
+#include "profilegpu.h"
 #include "resourcepool.h"
 #include "rhicommandbuffer.h"
 
@@ -243,18 +244,6 @@ static auto toRhiTextureDesc(const FgTextureDesc& desc) -> RhiTextureDesc {
 auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
     FrameGraphContext ctx(this, cmd);
     std::vector<FgAccessFlags> resourceAccess(resources.size(), FgAccessFlags::None);
-    executedNames.clear();
-
-    uint32_t executedCount = 0;
-    for (auto passIdx : passOrder) {
-        if (!passes[passIdx].culled) {
-            executedCount++;
-        }
-    }
-    bool timing = timestampPool != nullptr && executedCount * 2 <= timestampCapacity;
-    if (timing) {
-        cmd->resetQueryPool(timestampPool, 0, executedCount * 2);
-    }
 
     auto invokeCapture = [&](uint32_t resIdx) {
         if (!debugCaptureHook) {
@@ -324,15 +313,12 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
         // new passes added later get narrated without per-file edits.
         const auto* passName = passes[passIdx].name != nullptr ? passes[passIdx].name : "(unnamed)";
         OBS_EVENT("Render", "PassExecuted", passName);
-        auto executedIndex = (uint32_t) executedNames.size();
-        executedNames.push_back(passName);
         cmd->beginLabel(passName);
-        if (timing) {
-            cmd->writeTimestamp(timestampPool, executedIndex * 2);
-        }
-        passes[passIdx].execute(ctx);
-        if (timing) {
-            cmd->writeTimestamp(timestampPool, executedIndex * 2 + 1);
+        {
+            // Every pass is a GPU zone and a CPU record zone; passes may nest their own inside.
+            PROFILE_GPU_ZONE(cmd, passName);
+            profile::ScopedZone recordZone(passes[passIdx].profileNameId);
+            passes[passIdx].execute(ctx);
         }
         cmd->endLabel();
 

@@ -30,6 +30,11 @@ public:
     // Timestamps: reset outside beginRendering/endRendering; write anywhere. Tick period in RhiDeviceLimits.
     virtual auto resetQueryPool(RhiQueryPool* pool, uint32_t first, uint32_t count) -> void = 0;
     virtual auto writeTimestamp(RhiQueryPool* pool, uint32_t index) -> void = 0;
+    // GPU timing zones, nestable. Backend owns the queries; results via RhiDevice::collectGpuZones
+    // once the submit's fence has passed. `name` must outlive execution (literals do). No-ops when
+    // the device has no timestamp support or the per-command-buffer zone budget is exhausted.
+    virtual auto beginGpuZone(const char* name) -> void = 0;
+    virtual auto endGpuZone() -> void = 0;
     // Debug-only markers for tools like RenderDoc; no-ops when the backend has no debug extension.
     virtual auto beginLabel(const char* name) -> void = 0;
     virtual auto endLabel() -> void = 0;

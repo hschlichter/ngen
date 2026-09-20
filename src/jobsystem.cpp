@@ -1,7 +1,10 @@
 #include "jobsystem.h"
+#include "profile.h"
 
 #include <algorithm>
+#include <array>
 #include <stop_token>
+#include <string>
 
 std::vector<std::jthread> JobSystem::workers;
 std::deque<JobSystem::Job> JobSystem::queue;
@@ -16,7 +19,13 @@ auto JobSystem::init(uint32_t numWorkers) -> void {
     }
 
     for (uint32_t i = 0; i < numWorkers; i++) {
-        workers.emplace_back([](std::stop_token stopToken) { workerLoop(stopToken); });
+        workers.emplace_back([i](std::stop_token stopToken) {
+            static std::array<std::string, 64> names; // lane names must outlive the thread
+            auto& name = names[i % names.size()];
+            name = "Worker " + std::to_string(i);
+            profile::registerThread(name.c_str());
+            workerLoop(stopToken);
+        });
     }
 }
 
@@ -31,12 +40,13 @@ auto JobSystem::shutdown() -> void {
     stopping = false;
 }
 
-auto JobSystem::submit(JobFunc job) -> JobFence {
+auto JobSystem::submit(JobFunc job, const char* name) -> JobFence {
     auto done = std::make_shared<std::atomic<bool>>(false);
+    auto nameId = profile::registerName(name);
 
     {
         std::lock_guard lock(queueMutex);
-        queue.push_back({std::move(job), done});
+        queue.push_back({std::move(job), done, nameId});
     }
     queueCV.notify_one();
 
@@ -49,6 +59,7 @@ auto JobSystem::wait(const JobFence& fence) -> void {
     if (!fence.done) {
         return;
     }
+    PROFILE_ZONE("JobWait");
 
     while (!fence.done->load(std::memory_order_acquire)) {
         if (!tryExecuteOne()) {
@@ -81,7 +92,10 @@ auto JobSystem::workerLoop(std::stop_token stopToken) -> void {
             job = std::move(queue.front());
             queue.pop_front();
         }
-        job.func();
+        {
+            profile::ScopedZone zone(job.profileNameId);
+            job.func();
+        }
         job.done->store(true, std::memory_order_release);
         doneCV.notify_all();
     }
@@ -97,7 +111,10 @@ auto JobSystem::tryExecuteOne() -> bool {
         job = std::move(queue.front());
         queue.pop_front();
     }
-    job.func();
+    {
+        profile::ScopedZone zone(job.profileNameId);
+        job.func();
+    }
     job.done->store(true, std::memory_order_release);
     doneCV.notify_all();
     return true;
