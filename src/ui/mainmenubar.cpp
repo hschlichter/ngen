@@ -162,6 +162,7 @@ void drawMainMenuBar(MainMenuBarState& state) {
             ImGui::RadioButton("Shadow Map", &state.gbufferView, 5);
             ImGui::RadioButton("Shadow UV", &state.gbufferView, 6);
             ImGui::RadioButton("World Pos", &state.gbufferView, 7);
+            ImGui::RadioButton("Mip Level", &state.gbufferView, 8);
             ImGui::RadioButton("Lit", &state.gbufferView, 0);
             ImGui::EndMenu();
         }

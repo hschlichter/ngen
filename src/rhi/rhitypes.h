@@ -312,6 +312,7 @@ struct RhiSamplerDesc {
     RhiCompareOp compareOp = RhiCompareOp::Always;
     float minLod = 0.0f;
     float maxLod = 1000.0f; // "no clamp"
+    float mipLodBias = 0.0f;
 };
 
 struct RhiVertexAttribute {

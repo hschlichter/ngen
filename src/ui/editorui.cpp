@@ -116,6 +116,7 @@ auto EditorUI::draw(
         PROFILE_ZONE("RenderDebugWindow");
         RenderDebugViewFlags viewFlags = {
             .gbufferView = gbufferViewMode,
+            .sampler = samplerSettings,
             .showBufferOverlay = showBufferOverlayFlag,
             .showShadowOverlay = showShadowOverlayFlag,
             .antiAliasing = antiAliasingFlag,

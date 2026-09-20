@@ -11,7 +11,9 @@ layout(location = 1) out vec4 outNormal;
 
 void main() {
     vec4 texColor = texture(texSampler, fragTexCoord);
-    outAlbedo = vec4(texColor.rgb * fragColor, 1.0);
+    // Alpha carries the mip level the sampler picked, for the mip level buffer view.
+    float lod = textureQueryLod(texSampler, fragTexCoord).x;
+    outAlbedo = vec4(texColor.rgb * fragColor, clamp(lod / 16.0, 0.0, 1.0));
 
     vec3 n = fragNormal;
     if (dot(n, n) < 0.0001) {

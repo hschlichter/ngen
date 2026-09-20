@@ -15,6 +15,7 @@
 #include "lightingpass.h"
 #include "renderdebug.h"
 #include "renderertypes.h"
+#include "rendersnapshot.h"
 #include "renderworld.h"
 #include "resourcepool.h"
 #include "rhitypes.h"
@@ -93,6 +94,12 @@ private:
     std::vector<GpuInstance> gpuInstances;
     AABB sceneBounds; // union of instance world bounds, refreshed with gpuInstances
     uint32_t debugCulledInstances = 0; // from the last snapshot, for RenderStats and the debug window
+    RhiSampler* materialSampler = nullptr;
+    SamplerSettings materialSamplerSettings;
+
+    static auto toSamplerDesc(const SamplerSettings& settings) -> RhiSamplerDesc;
+    auto applySamplerSettings(const SamplerSettings& settings) -> void;
+    auto rebuildGeometryDescriptorSets() -> void;
     std::vector<RenderLight> lights;
     RhiDescriptorPool* geometryDescriptorPool = nullptr;
     std::vector<RhiDescriptorSet*> geometryDescriptorSets;

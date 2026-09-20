@@ -395,9 +395,9 @@ auto main(int argc, char* argv[]) -> int {
                 std::println(stderr, "select: prim '{}' not found", c.args);
             }
         } else if (verb == "view") {
-            static const char* names[] = {"lit", "albedo", "normals", "depth", "shadowfactor", "shadowmap", "shadowuv", "worldpos"};
+            static const char* names[] = {"lit", "albedo", "normals", "depth", "shadowfactor", "shadowmap", "shadowuv", "worldpos", "miplevel"};
             bool found = false;
-            for (int i = 0; i < 8; i++) {
+            for (int i = 0; i < 9; i++) {
                 if (c.args == names[i]) {
                     editorUI.setGBufferViewMode(i);
                     found = true;
@@ -430,6 +430,32 @@ auto main(int argc, char* argv[]) -> int {
                 editorUI.setShowCulled(c.args == "show");
             } else {
                 std::println(stderr, "cull: unknown argument '{}'", c.args);
+            }
+        } else if (verb == "sampler") {
+            // sampler aniso=8,bias=0.5,minlod=2,mip=nearest|linear
+            auto& settings = editorUI.samplerSettingsMutable();
+            size_t start = 0;
+            while (start < c.args.size()) {
+                auto comma = c.args.find(',', start);
+                auto item = c.args.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+                auto eq = item.find('=');
+                auto key = item.substr(0, eq);
+                auto value = eq == std::string::npos ? std::string{} : item.substr(eq + 1);
+                if (key == "aniso") {
+                    settings.maxAnisotropy = std::strtof(value.c_str(), nullptr);
+                } else if (key == "bias") {
+                    settings.lodBias = std::strtof(value.c_str(), nullptr);
+                } else if (key == "minlod") {
+                    settings.minLod = std::strtof(value.c_str(), nullptr);
+                } else if (key == "mip") {
+                    settings.nearestMip = value == "nearest";
+                } else {
+                    std::println(stderr, "sampler: unknown key '{}'", key);
+                }
+                if (comma == std::string::npos) {
+                    break;
+                }
+                start = comma + 1;
             }
         } else if (verb == "prepass") {
             if (c.args == "on" || c.args == "off") {
@@ -858,6 +884,7 @@ auto main(int argc, char* argv[]) -> int {
             .showShadowOverlay = editorUI.getShowShadowOverlay(),
             .antiAliasing = editorUI.getAntiAliasing(),
             .depthPrepass = editorUI.getDepthPrepass(),
+            .sampler = editorUI.getSamplerSettings(),
             .visible = std::move(visible),
             .culledInstances = culledInstances,
             .translateGizmoVerts = {translateGizmo.vertices().begin(), translateGizmo.vertices().end()},

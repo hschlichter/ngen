@@ -105,6 +105,8 @@ public:
     auto getShowCulled() const -> bool { return showCulledFlag; }
     auto setShowCulled(bool on) -> void { showCulledFlag = on; }
     auto getDepthPrepass() const -> bool { return depthPrepassFlag; }
+    auto getSamplerSettings() const -> const SamplerSettings& { return samplerSettings; }
+    auto samplerSettingsMutable() -> SamplerSettings& { return samplerSettings; }
     auto setDepthPrepass(bool on) -> void { depthPrepassFlag = on; }
     auto getGBufferViewMode() const -> int { return gbufferViewMode; }
     auto getShowBufferOverlay() const -> bool { return showBufferOverlayFlag; }
@@ -161,6 +163,7 @@ private:
     bool cullFrozenFlag = false;
     bool showCulledFlag = false;
     bool depthPrepassFlag = false;
+    SamplerSettings samplerSettings;
     int gbufferViewMode = 0;
     bool showBufferOverlayFlag = false;
     bool showShadowOverlayFlag = false;

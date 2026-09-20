@@ -9,6 +9,17 @@
 
 #include <vector>
 
+// Material sampler state, editable live from the Render Debug View tab and the
+// `sampler` session verb (docs/plan_mip_debug.md).
+struct SamplerSettings {
+    float maxAnisotropy = 8.0f; // 0 = off
+    float lodBias = 0.0f;
+    float minLod = 0.0f; // forces coarser levels
+    bool nearestMip = false;
+
+    auto operator==(const SamplerSettings&) const -> bool = default;
+};
+
 struct RenderSnapshot {
     glm::mat4 viewMatrix;
     glm::mat4 projMatrix;
@@ -26,6 +37,7 @@ struct RenderSnapshot {
     bool showShadowOverlay = false;
     bool antiAliasing = true;
     bool depthPrepass = false; // off by default: costs more than it saves without heavy overdraw
+    SamplerSettings sampler;
 
     // Frustum culling result, one entry per RenderWorld mesh instance in order; empty
     // means draw everything. Computed on the main thread (docs/plan_frustum_culling.md).

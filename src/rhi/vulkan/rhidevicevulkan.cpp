@@ -750,6 +750,7 @@ auto RhiDeviceVulkan::createSampler(const RhiSamplerDesc& desc) -> RhiSampler* {
         .addressModeW = toVkAddressMode(desc.addressW),
         .anisotropyEnable = anisotropy > 0.0f ? VK_TRUE : VK_FALSE,
         .maxAnisotropy = anisotropy > 0.0f ? anisotropy : 1.0f,
+        .mipLodBias = desc.mipLodBias,
         .compareEnable = desc.compareEnable ? VK_TRUE : VK_FALSE,
         .compareOp = toVkCompareOp(desc.compareOp),
         .minLod = desc.minLod,

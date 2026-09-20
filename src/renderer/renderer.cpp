@@ -57,9 +57,10 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
     }
 
     // Shared sampler and fallback texture
-    // Trilinear with anisotropy: the material textures carry full mip chains and Sponza
-    // floors are seen at grazing angles. Clamped to the device limit by the backend.
-    textureSampler = device->createSampler({.maxAnisotropy = 8.0f});
+    textureSampler = device->createSampler({});
+    // Material sampler: trilinear with anisotropy, the textures carry full mip chains and
+    // Sponza floors are seen at grazing angles. Rebuilt when the settings change.
+    materialSampler = device->createSampler(toSamplerDesc(materialSamplerSettings));
 
     std::vector<uint8_t> fallbackPixels(static_cast<size_t>(64) * 64 * 4);
     for (uint32_t y = 0; y < 64; y++) {
@@ -484,6 +485,33 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         uploader.end();
     }
 
+    rebuildGeometryDescriptorSets();
+}
+
+auto Renderer::toSamplerDesc(const SamplerSettings& settings) -> RhiSamplerDesc {
+    return {
+        .mipmapMode = settings.nearestMip ? RhiMipmapMode::Nearest : RhiMipmapMode::Linear,
+        .maxAnisotropy = settings.maxAnisotropy,
+        .minLod = settings.minLod,
+        .mipLodBias = settings.lodBias,
+    };
+}
+
+auto Renderer::applySamplerSettings(const SamplerSettings& settings) -> void {
+    materialSamplerSettings = settings;
+    // The old sampler may be referenced by descriptor sets a frame in flight still binds.
+    deletionQueue.defer(m_frameIndex, [dev = device, sampler = materialSampler] { dev->destroySampler(sampler); });
+    materialSampler = device->createSampler(toSamplerDesc(settings));
+    rebuildGeometryDescriptorSets();
+    OBS_EVENT("Render", "SamplerSettings", "material")
+        .field("anisotropy", (double) settings.maxAnisotropy)
+        .field("lod_bias", (double) settings.lodBias)
+        .field("min_lod", (double) settings.minLod)
+        .field("nearest_mip", settings.nearestMip);
+}
+
+auto Renderer::rebuildGeometryDescriptorSets() -> void {
+    using enum RhiDescriptorType;
     PROFILE_ZONE("DescriptorSets");
     // Sets and pool may still be bound by frames in flight: free and destroy together, later.
     if (geometryDescriptorPool) {
@@ -530,7 +558,7 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
                     .binding = 1,
                     .type = CombinedImageSampler,
                     .texture = tex,
-                    .sampler = textureSampler,
+                    .sampler = materialSampler,
                 },
             }};
             device->updateDescriptorSet(geometryDescriptorSets[(i * instanceCount) + m], writes);
@@ -709,6 +737,9 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     const auto& shadowData = shadowPass.addPass(frameGraph, shadowExtent, depthFormat, lightViewProj, gpuInstances, meshCache);
 
     debugCulledInstances = snapshot.culledInstances;
+    if (snapshot.sampler != materialSamplerSettings) {
+        applySamplerSettings(snapshot.sampler);
+    }
     if (snapshot.depthPrepass) {
         depthPrepass.addPass(frameGraph, depthHandle, ext, imageIdx, gpuInstances, snapshot.visible, meshCache, geometryDescriptorSets);
     }
@@ -911,6 +942,7 @@ auto Renderer::destroy() -> void {
     }
 
     device->destroySampler(textureSampler);
+    device->destroySampler(materialSampler);
     device->destroyTexture(fallbackTexture);
     device->destroyTexture(depthTexture);
     depthTexture = nullptr;

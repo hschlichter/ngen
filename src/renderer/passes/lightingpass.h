@@ -38,6 +38,7 @@ enum class GBufferView : int {
     ShadowMap,
     ShadowUV,
     WorldPos,
+    MipLevel,
 };
 
 struct LightingPassData {

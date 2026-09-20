@@ -310,7 +310,7 @@ auto drawFrameTab(const RenderDebugSnapshot& s) -> void {
 
 auto drawViewTab(RenderDebugViewFlags& view) -> void {
     ImGui::TextUnformatted("Buffer view");
-    static const char* modes[] = {"Lit", "Albedo", "Normals", "Depth", "Shadow factor", "Shadow map", "Shadow UV", "World position"};
+    static const char* modes[] = {"Lit", "Albedo", "Normals", "Depth", "Shadow factor", "Shadow map", "Shadow UV", "World position", "Mip level"};
     for (int i = 0; i < (int) (sizeof(modes) / sizeof(modes[0])); i++) {
         if (i % 4 != 0) {
             ImGui::SameLine();
@@ -333,6 +333,28 @@ auto drawViewTab(RenderDebugViewFlags& view) -> void {
     ImGui::Checkbox("AABBs", &view.showAABBs);
     ImGui::SameLine();
     ImGui::Checkbox("Light gizmos", &view.showLightGizmos);
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Texture sampling");
+    static const float anisoSteps[] = {0.0f, 2.0f, 4.0f, 8.0f, 16.0f};
+    int anisoIndex = 0;
+    for (int i = 0; i < 5; i++) {
+        if (view.sampler.maxAnisotropy >= anisoSteps[i]) {
+            anisoIndex = i;
+        }
+    }
+    static const char* anisoNames[] = {"off", "2x", "4x", "8x", "16x"};
+    if (ImGui::Combo("Anisotropy", &anisoIndex, anisoNames, 5)) {
+        view.sampler.maxAnisotropy = anisoSteps[anisoIndex];
+    }
+    ImGui::SliderFloat("LOD bias", &view.sampler.lodBias, -2.0f, 4.0f, "%.2f");
+    ImGui::SliderFloat("Min LOD", &view.sampler.minLod, 0.0f, 12.0f, "%.0f");
+    ImGui::Checkbox("Nearest mip", &view.sampler.nearestMip);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Material sampler. Min LOD forces coarser levels; the Mip level view shows what the sampler picks.");
+    }
 }
 
 auto drawDeviceTab(const RenderDebugSnapshot& s) -> void {

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "rendersnapshot.h"
+
 #include "renderdebug.h"
 #include "scenehandles.h"
 
@@ -8,6 +10,7 @@
 // Editor flags the View tab edits in place; the menu edits the same flags.
 struct RenderDebugViewFlags {
     int& gbufferView;
+    SamplerSettings& sampler;
     bool& showBufferOverlay;
     bool& showShadowOverlay;
     bool& antiAliasing;

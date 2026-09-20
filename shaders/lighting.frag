@@ -88,8 +88,18 @@ vec3 sampleBuffer(int mode, vec2 uv) {
         return vec3(texture(shadowMap, uv).r);
     }
     if (isBackground(uv)) return BACKGROUND_COLOR;
-    vec3 albedo = texture(gbufferAlbedo, uv).rgb;
+    vec4 albedoSample = texture(gbufferAlbedo, uv);
+    vec3 albedo = albedoSample.rgb;
     if (mode == 1) return albedo;
+    if (mode == 8) {
+        // Mip level from the gbuffer alpha: 0 red, 1 orange, 2 yellow, 3 green, 4 cyan,
+        // 5 blue, 6 magenta, 7 and up white, blended between levels.
+        const vec3 ramp[8] = vec3[](vec3(1.0, 0.0, 0.0), vec3(1.0, 0.5, 0.0), vec3(1.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 1.0), vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 1.0), vec3(1.0, 1.0, 1.0));
+        float lod = albedoSample.a * 16.0;
+        int i = int(clamp(floor(lod), 0.0, 7.0));
+        int j = min(i + 1, 7);
+        return mix(ramp[i], ramp[j], clamp(lod - float(i), 0.0, 1.0));
+    }
     vec3 normal = texture(gbufferNormal, uv).rgb * 2.0 - 1.0;
     if (mode == 2) return normalize(normal) * 0.5 + 0.5;
 
