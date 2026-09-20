@@ -2,22 +2,6 @@
 
 #include <algorithm>
 
-static bool frustumContainsAABB(const Frustum& frustum, const AABB& aabb) {
-    for (int i = 0; i < 6; i++) {
-        auto& p = frustum.planes[i];
-        // Test the positive vertex (the corner most aligned with the plane normal)
-        glm::vec3 pv = {
-            p.x > 0 ? aabb.max.x : aabb.min.x,
-            p.y > 0 ? aabb.max.y : aabb.min.y,
-            p.z > 0 ? aabb.max.z : aabb.min.z,
-        };
-        if (glm::dot(glm::vec3(p), pv) + p.w < 0) {
-            return false;
-        }
-    }
-    return true;
-}
-
 static bool rayIntersectsAABB(const Ray& ray, const AABB& aabb, float maxDist) {
     float tmin = 0.0f;
     float tmax = maxDist;
@@ -160,7 +144,7 @@ void SpatialIndex::queryFrustum(const Frustum& frustum, std::vector<PrimHandle>&
         stack.pop_back();
 
         const auto& node = m_nodes[idx];
-        if (!frustumContainsAABB(frustum, node.bounds)) {
+        if (!frustum.contains(node.bounds)) {
             continue;
         }
 

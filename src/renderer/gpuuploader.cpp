@@ -3,6 +3,7 @@
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 
@@ -69,7 +70,17 @@ auto GpuUploader::uploadTexture(const RhiTextureDesc& desc, std::span<const std:
     }};
     cmd->pipelineBarrier(toTransfer);
 
-    cmd->copyBufferToTexture(src, dst, {.width = desc.width, .height = desc.height});
+    // One copy per level, walking the packed staging block. Barriers cover the whole
+    // image, so the chain moves to ShaderReadOnly together.
+    uint64_t offset = 0;
+    uint32_t w = desc.width;
+    uint32_t h = desc.height;
+    for (uint32_t level = 0; level < std::max(1u, desc.mipLevels); level++) {
+        cmd->copyBufferToTexture(src, dst, {.bufferOffset = offset, .width = w, .height = h, .mipLevel = level});
+        offset += (uint64_t) w * h * 4;
+        w = std::max(1u, w / 2);
+        h = std::max(1u, h / 2);
+    }
 
     std::array<RhiTextureBarrierDesc, 1> toShader = {{
         {.texture = dst, .oldState = RhiTextureState::TransferDst, .newState = RhiTextureState::ShaderReadOnly},

@@ -22,6 +22,7 @@ struct MainMenuBarState {
     bool& showAABBs;
     bool& showSelectedAABB;
     bool& showLightGizmos;
+    bool& depthPrepass;
     int& gbufferView;
     bool& showBufferOverlay;
     bool& showShadowOverlay;
@@ -30,6 +31,7 @@ struct MainMenuBarState {
     bool& showPerformance;
     bool& showRenderDebug;
     bool& showCamera;
+    bool& showCulling;
     bool& showAssetBrowser;
     bool& requestQuit;
     bool& pendingNewScene;

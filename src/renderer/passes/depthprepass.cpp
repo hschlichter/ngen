@@ -1,5 +1,4 @@
-#include "shadowpass.h"
-#include "renderertypes.h"
+#include "depthprepass.h"
 
 #include "mesh.h"
 #include "rhicommandbuffer.h"
@@ -8,17 +7,10 @@
 
 #include <array>
 
-namespace {
-struct ShadowPush {
-    glm::mat4 lightViewProj;
-    glm::mat4 model;
-};
-} // namespace
-
-auto ShadowPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFormat) -> bool {
+auto DepthPrepass::init(RhiDevice* device, RhiFormat depthFormat, RhiDescriptorSetLayout* geometrySetLayout) -> bool {
     using enum RhiFormat;
 
-    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/shadow.vert.spv");
+    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/depthonly.vert.spv");
     fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/shadow.frag.spv");
 
     std::array<RhiVertexAttribute, 1> vertexAttrs = {{
@@ -28,9 +20,9 @@ auto ShadowPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthForm
     RhiGraphicsPipelineDesc pipelineDesc = {
         .vertexShader = vertShader,
         .fragmentShader = fragShader,
-        .descriptorSetLayouts = {}, // no descriptors; all data via push constants
-        .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(ShadowPush)},
-        .colorFormats = {}, // depth-only
+        .descriptorSetLayouts = {&geometrySetLayout, 1},
+        .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(glm::mat4)},
+        .colorFormats = {},
         .depthFormat = depthFormat,
         .vertexStride = sizeof(Vertex),
         .vertexAttributes = vertexAttrs,
@@ -42,40 +34,36 @@ auto ShadowPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthForm
     return pipelineCullBack != nullptr && pipelineCullNone != nullptr;
 }
 
-auto ShadowPass::destroy(RhiDevice* device) -> void {
+auto DepthPrepass::destroy(RhiDevice* device) -> void {
     device->destroyPipeline(pipelineCullBack);
     device->destroyPipeline(pipelineCullNone);
     device->destroyShaderModule(vertShader);
     device->destroyShaderModule(fragShader);
 }
 
-auto ShadowPass::addPass(
+auto DepthPrepass::addPass(
     FrameGraph& fg,
+    FgTextureHandle depthHandle,
     RhiExtent2D extent,
-    RhiFormat depthFormat,
-    const glm::mat4& lightViewProj,
+    uint32_t imageIndex,
     std::span<const GpuInstance> instances,
-    const std::unordered_map<uint32_t, CachedMesh>& meshCache) -> const ShadowPassData& {
-    FgTextureDesc desc = {
-        .width = extent.width,
-        .height = extent.height,
-        .format = depthFormat,
-        .usage = RhiTextureUsage::DepthAttachment | RhiTextureUsage::Sampled,
-    };
-
+    std::span<const uint8_t> visible,
+    const std::unordered_map<uint32_t, CachedMesh>& meshCache,
+    std::span<RhiDescriptorSet*> descriptorSets) -> const DepthPrepassData& {
     auto* cullBack = pipelineCullBack;
     auto* cullNone = pipelineCullNone;
 
-    return fg.addPass<ShadowPassData>(
-        "ShadowPass",
-        [&](FrameGraphBuilder& builder, ShadowPassData& data) {
-            data.shadowMap = builder.write(builder.createTexture("shadowMap", desc), FgAccessFlags::DepthAttachment);
+    return fg.addPass<DepthPrepassData>(
+        "DepthPrepass",
+        [&](FrameGraphBuilder& builder, DepthPrepassData& data) {
+            data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
+            builder.setSideEffects(true);
         },
-        [cullBack, cullNone, extent, lightViewProj, instances, &meshCache](FrameGraphContext& ctx, const ShadowPassData& data) {
+        [cullBack, cullNone, extent, imageIndex, instances, visible, &meshCache, descriptorSets](FrameGraphContext& ctx, const DepthPrepassData& data) {
             auto* cmd = ctx.cmd();
 
             RhiRenderingAttachmentInfo depthAtt = {
-                .texture = ctx.texture(data.shadowMap),
+                .texture = ctx.texture(data.depth),
                 .state = RhiTextureState::DepthStencilAttachment,
                 .clear = true,
                 .clearDepth = 1.0f,
@@ -88,17 +76,18 @@ auto ShadowPass::addPass(
             cmd->setViewport(extent);
             cmd->setScissor(extent);
 
-            // Single-sided meshes under back-face culling first, then double-sided ones
-            // without it: one pipeline bind per group.
+            bool useVisible = visible.size() == instances.size();
+            // Single-sided instances first under back-face culling, then the double-sided
+            // ones without it: one pipeline bind per group.
             for (bool doubleSided : {false, true}) {
                 auto* pip = doubleSided ? cullNone : cullBack;
                 bool bound = false;
                 for (uint32_t m = 0; m < (uint32_t) instances.size(); m++) {
                     const auto& inst = instances[m];
-                    // Instances are expanded per material submesh, but shadows are
-                    // material-agnostic — draw the whole mesh once, on the prim's
-                    // first submesh instance, and skip the rest.
-                    if (!inst.primFirst || inst.doubleSided != doubleSided) {
+                    if (inst.doubleSided != doubleSided) {
+                        continue;
+                    }
+                    if (useVisible && visible[m] == 0) {
                         continue;
                     }
                     auto meshIt = meshCache.find(inst.mesh.index);
@@ -110,21 +99,14 @@ auto ShadowPass::addPass(
                         cmd->bindPipeline(pip);
                         bound = true;
                     }
-
-                    ShadowPush push{lightViewProj, inst.transform};
-                    cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(push), &push);
+                    auto model = inst.transform;
+                    cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(glm::mat4), &model);
                     cmd->bindVertexBuffer(cached.vertexBuffer);
                     cmd->bindIndexBuffer(cached.indexBuffer, RhiIndexType::Uint32);
-                    bool heavy = cached.indexCount >= largeDrawIndexCount;
-                    if (heavy) {
-                        cmd->beginGpuZone("LargeDraw");
-                    }
-                    ctx.beginDraw({.instance = m, .mesh = inst.mesh.index, .material = inst.material.index, .prim = inst.prim, .indexOffset = 0, .indexCount = cached.indexCount});
-                    cmd->drawIndexed(cached.indexCount, 1, 0, 0, 0);
+                    cmd->bindDescriptorSet(pip, 0, descriptorSets[(imageIndex * (uint32_t) instances.size()) + m]);
+                    ctx.beginDraw({.instance = m, .mesh = inst.mesh.index, .material = inst.material.index, .prim = inst.prim, .indexOffset = inst.indexOffset, .indexCount = inst.indexCount});
+                    cmd->drawIndexed(inst.indexCount, 1, inst.indexOffset, 0, 0);
                     ctx.endDraw();
-                    if (heavy) {
-                        cmd->endGpuZone();
-                    }
                 }
             }
 

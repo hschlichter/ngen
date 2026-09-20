@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 #include <glm/glm.hpp>
@@ -68,11 +69,71 @@ struct AABB {
     }
 };
 
+// View frustum as six planes in world space, extracted from a view-projection matrix
+// (Gribb-Hartmann). A point p is inside when dot(plane.xyz, p) + plane.w >= 0 for every
+// plane. Works for any clip-space convention the matrix encodes, including the flipped
+// y of the Vulkan projection, since the planes come from the clip inequalities directly.
+struct Frustum {
+    std::array<glm::vec4, 6> planes;
+
+    static auto fromViewProj(const glm::mat4& viewProj) -> Frustum {
+        // glm is column-major: row i of the matrix is (m[0][i], m[1][i], m[2][i], m[3][i]).
+        auto row = [&](int i) { return glm::vec4(viewProj[0][i], viewProj[1][i], viewProj[2][i], viewProj[3][i]); };
+        auto r0 = row(0);
+        auto r1 = row(1);
+        auto r2 = row(2);
+        auto r3 = row(3);
+        Frustum f;
+        f.planes[0] = r3 + r0; // left:   x >= -w
+        f.planes[1] = r3 - r0; // right:  x <=  w
+        f.planes[2] = r3 + r1; // bottom: y >= -w
+        f.planes[3] = r3 - r1; // top:    y <=  w
+        f.planes[4] = r2;      // near:   z >= 0 (Vulkan depth range)
+        f.planes[5] = r3 - r2; // far:    z <= w
+        for (auto& p : f.planes) {
+            float len = glm::length(glm::vec3(p));
+            if (len > 0.0f) {
+                p /= len;
+            }
+        }
+        return f;
+    }
+
+    // Conservative AABB test: for each plane, take the box corner furthest along the
+    // plane normal; the box is outside only if that corner is behind the plane. Boxes
+    // that straddle a frustum corner pass, which is fine for a draw-or-skip decision.
+    auto contains(const AABB& box) const -> bool {
+        for (const auto& p : planes) {
+            glm::vec3 positive = {
+                p.x >= 0.0f ? box.max.x : box.min.x,
+                p.y >= 0.0f ? box.max.y : box.min.y,
+                p.z >= 0.0f ? box.max.z : box.min.z,
+            };
+            if (glm::dot(glm::vec3(p), positive) + p.w < 0.0f) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // World-space corners of the frustum the matrix describes, for drawing it. Order:
+    // near plane (-x-y, +x-y, +x+y, -x+y) then far plane in the same order.
+    static auto corners(const glm::mat4& viewProj) -> std::array<glm::vec3, 8> {
+        auto inv = glm::inverse(viewProj);
+        std::array<glm::vec3, 8> out;
+        int i = 0;
+        for (float z : {0.0f, 1.0f}) {
+            for (auto [x, y] : {std::pair{-1.0f, -1.0f}, std::pair{1.0f, -1.0f}, std::pair{1.0f, 1.0f}, std::pair{-1.0f, 1.0f}}) {
+                auto p = inv * glm::vec4(x, y, z, 1.0f);
+                out[i++] = glm::vec3(p) / p.w;
+            }
+        }
+        return out;
+    }
+};
+
 struct Ray {
     glm::vec3 origin;
     glm::vec3 direction;
 };
 
-struct Frustum {
-    glm::vec4 planes[6];
-};

@@ -1,4 +1,6 @@
 #include "renderer.h"
+
+#include "mipchain.h"
 #include "blitpass.h"
 #include "imguibackend.h"
 #include "material.h"
@@ -55,7 +57,9 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
     }
 
     // Shared sampler and fallback texture
-    textureSampler = device->createSampler({});
+    // Trilinear with anisotropy: the material textures carry full mip chains and Sponza
+    // floors are seen at grazing angles. Clamped to the device limit by the backend.
+    textureSampler = device->createSampler({.maxAnisotropy = 8.0f});
 
     std::vector<uint8_t> fallbackPixels(static_cast<size_t>(64) * 64 * 4);
     for (uint32_t y = 0; y < 64; y++) {
@@ -84,6 +88,9 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
         return std::unexpected(1);
     }
     if (!geometryPass.init(device, ext, depthFmt)) {
+        return std::unexpected(1);
+    }
+    if (!depthPrepass.init(device, depthFmt, geometryPass.descriptorSetLayout())) {
         return std::unexpected(1);
     }
     if (!lightingPass.init(device, imgCount, ext, colorFmt)) {
@@ -174,6 +181,7 @@ auto Renderer::buildRenderDebugSnapshot() const -> RenderDebugSnapshot {
     snap.currentSlot = currentFrame;
 
     snap.instanceCount = (uint32_t) gpuInstances.size();
+    snap.culledInstances = debugCulledInstances;
     std::unordered_map<uint32_t, uint32_t> instancesPerMesh;
     for (const auto& inst : gpuInstances) {
         instancesPerMesh[inst.mesh.index]++;
@@ -210,9 +218,9 @@ auto Renderer::buildRenderDebugSnapshot() const -> RenderDebugSnapshot {
             .materialIndex = index,
             .width = cached.width,
             .height = cached.height,
-            .mipLevels = 1,
+            .mipLevels = cached.mipLevels,
             .format = cached.format,
-            .bytes = (uint64_t) cached.width * cached.height * 4,
+            .bytes = cached.bytes,
         });
     }
     snap.lightCount = (uint32_t) lights.size();
@@ -390,6 +398,7 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
             .indexOffset = inst.indexOffset,
             .indexCount = inst.indexCount,
             .primFirst = inst.primFirst,
+            .doubleSided = inst.doubleSided,
         };
     }
 
@@ -442,17 +451,30 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
                     .width = (uint32_t) matData->texWidth,
                     .height = (uint32_t) matData->texHeight,
                     .format = RhiFormat::R8G8B8A8_SRGB,
+                    .mipLevels = mipLevelCount((uint32_t) matData->texWidth, (uint32_t) matData->texHeight),
                 };
                 auto pixelCount = (size_t) matData->texWidth * (size_t) matData->texHeight * 4;
-                auto pixels = std::span(matData->texPixels).first(pixelCount);
+                auto level0 = std::span(matData->texPixels).first(pixelCount);
+                std::vector<std::byte> packed;
+                {
+                    PROFILE_ZONE("BuildMips");
+                    auto chain = buildMipChain(texDesc.width, texDesc.height, level0, true);
+                    packed = packMipChain(level0, chain);
+                }
                 textureCache[inst.material.index] = {
-                    .texture = uploader.uploadTexture(texDesc, std::as_bytes(pixels)),
+                    .texture = uploader.uploadTexture(texDesc, packed),
                     .width = texDesc.width,
                     .height = texDesc.height,
+                    .mipLevels = texDesc.mipLevels,
+                    .bytes = packed.size(),
                     .format = texDesc.format,
                 };
 
-                OBS_EVENT("Render", "TextureUploaded", "Texture").field("width", (int64_t) matData->texWidth).field("height", (int64_t) matData->texHeight);
+                OBS_EVENT("Render", "TextureUploaded", "Texture")
+                    .field("width", (int64_t) matData->texWidth)
+                    .field("height", (int64_t) matData->texHeight)
+                    .field("mips", (int64_t) texDesc.mipLevels)
+                    .field("bytes", (int64_t) packed.size());
             }
         }
     }
@@ -686,7 +708,11 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     profile::endZone(); // ShadowSetup
     const auto& shadowData = shadowPass.addPass(frameGraph, shadowExtent, depthFormat, lightViewProj, gpuInstances, meshCache);
 
-    const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, imageIdx, instanceCount, gpuInstances, meshCache, geometryDescriptorSets);
+    debugCulledInstances = snapshot.culledInstances;
+    if (snapshot.depthPrepass) {
+        depthPrepass.addPass(frameGraph, depthHandle, ext, imageIdx, gpuInstances, snapshot.visible, meshCache, geometryDescriptorSets);
+    }
+    const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, imageIdx, instanceCount, gpuInstances, snapshot.visible, meshCache, geometryDescriptorSets, snapshot.depthPrepass);
 
     const auto& lightData = lightingPass.addPass(
         frameGraph,
@@ -779,6 +805,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
             .field("barriers", (int64_t) stats.barriers)
             .field("primitives", (int64_t) stats.primitives)
             .field("instances", (int64_t) gpuInstances.size())
+            .field("culled", (int64_t) debugCulledInstances)
             .field("meshes", (int64_t) meshCache.size())
             .field("textures", (int64_t) textureCache.size())
             .field("logged_draws", (int64_t) slotDrawLogs[currentFrame].size());
@@ -871,6 +898,7 @@ auto Renderer::destroy() -> void {
     textureCache.clear();
 
     shadowPass.destroy(device);
+    depthPrepass.destroy(device);
     geometryPass.destroy(device);
     lightingPass.destroy(device);
     aaPass.destroy(device);

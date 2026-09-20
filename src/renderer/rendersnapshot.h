@@ -25,6 +25,12 @@ struct RenderSnapshot {
     bool showBufferOverlay = false;
     bool showShadowOverlay = false;
     bool antiAliasing = true;
+    bool depthPrepass = false; // off by default: costs more than it saves without heavy overdraw
+
+    // Frustum culling result, one entry per RenderWorld mesh instance in order; empty
+    // means draw everything. Computed on the main thread (docs/plan_frustum_culling.md).
+    std::vector<uint8_t> visible;
+    uint32_t culledInstances = 0;
 
     std::vector<GizmoVertex> translateGizmoVerts;
     std::vector<GizmoVertex> rotateGizmoVerts;

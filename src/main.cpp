@@ -1,4 +1,5 @@
 #include "camera.h"
+#include "culling.h"
 #include "debugdraw.h"
 #include "editorui.h"
 #include "imguibackendvulkan.h"
@@ -358,6 +359,7 @@ auto main(int argc, char* argv[]) -> int {
     auto lastTicks = SDL_GetTicksNS();
     auto quit = false;
     uint64_t frameCounter = 0;
+    CullState cullState;
     std::vector<SessionCommand> dueCommands;
     // Applies one session command. Verbs mirror the CLI flags; unknown verbs are reported and skipped.
     auto applyCommand = [&](const SessionCommand& c) -> void {
@@ -417,6 +419,23 @@ auto main(int argc, char* argv[]) -> int {
                     break;
                 }
                 start = comma + 1;
+            }
+        } else if (verb == "cull") {
+            // cull on|off|freeze|unfreeze|show|hide
+            if (c.args == "on" || c.args == "off") {
+                editorUI.setCullEnabled(c.args == "on");
+            } else if (c.args == "freeze" || c.args == "unfreeze") {
+                editorUI.setCullFrozen(c.args == "freeze");
+            } else if (c.args == "show" || c.args == "hide") {
+                editorUI.setShowCulled(c.args == "show");
+            } else {
+                std::println(stderr, "cull: unknown argument '{}'", c.args);
+            }
+        } else if (verb == "prepass") {
+            if (c.args == "on" || c.args == "off") {
+                editorUI.setDepthPrepass(c.args == "on");
+            } else {
+                std::println(stderr, "prepass: unknown argument '{}'", c.args);
             }
         } else if (verb == "screenshot") {
             renderer.requestScreenshot(c.args);
@@ -745,7 +764,20 @@ auto main(int argc, char* argv[]) -> int {
         const auto* keys = SDL_GetKeyboardState(nullptr);
         cam.update(keys, dt);
 
-        editorUI.drawDebug(debugDraw, renderWorld, selectedPrim, sceneQuery, sceneUpdater, usdScene, cam.position, cam.worldUp);
+        // Frustum culling on the main thread; the frozen frustum lets the culled set be
+        // inspected from elsewhere. Result travels in the snapshot.
+        cullState.enabled = editorUI.getCullEnabled();
+        cullState.frozen = editorUI.getCullFrozen();
+        auto cullViewProj = cullState.update(proj * cam.viewMatrix());
+        std::vector<uint8_t> visible;
+        uint32_t culledInstances = cullInstances(cullState, cullViewProj, renderWorld.meshInstances, visible);
+        editorUI.setCullStats((uint32_t) renderWorld.meshInstances.size(), culledInstances);
+        std::array<glm::vec3, 8> frozenCorners;
+        if (cullState.frozenActive) {
+            frozenCorners = cullState.frozenCorners();
+        }
+
+        editorUI.drawDebug(debugDraw, renderWorld, selectedPrim, sceneQuery, sceneUpdater, usdScene, cam.position, cam.worldUp, visible, cullState.frozenActive ? &frozenCorners : nullptr);
 
         renderThread.setFrameGraphDebugEnabled(editorUI.getShowFrameGraphWindow());
         auto fgDebugSnap = renderThread.latestFrameGraphDebug();
@@ -825,6 +857,9 @@ auto main(int argc, char* argv[]) -> int {
             .showBufferOverlay = editorUI.getShowBufferOverlay(),
             .showShadowOverlay = editorUI.getShowShadowOverlay(),
             .antiAliasing = editorUI.getAntiAliasing(),
+            .depthPrepass = editorUI.getDepthPrepass(),
+            .visible = std::move(visible),
+            .culledInstances = culledInstances,
             .translateGizmoVerts = {translateGizmo.vertices().begin(), translateGizmo.vertices().end()},
             .rotateGizmoVerts = {rotateGizmo.vertices().begin(), rotateGizmo.vertices().end()},
             .scaleGizmoVerts = {scaleGizmo.vertices().begin(), scaleGizmo.vertices().end()},

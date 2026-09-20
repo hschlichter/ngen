@@ -41,7 +41,7 @@ auto drawSceneTab(const RenderDebugSnapshot& s) -> void {
     }
     char buf[32];
     char buf2[32];
-    ImGui::Text("%u instances (%u drawn by the shadow pass), %zu meshes, %llu triangles, %llu vertices, %s", s.instanceCount, s.primFirstInstances, s.meshes.size(), (unsigned long long) triangles, (unsigned long long) vertices, formatBytes(meshBytes, buf, sizeof(buf)));
+    ImGui::Text("%u instances (%u culled, %u drawn by the shadow pass), %zu meshes, %llu triangles, %llu vertices, %s", s.instanceCount, s.culledInstances, s.primFirstInstances, s.meshes.size(), (unsigned long long) triangles, (unsigned long long) vertices, formatBytes(meshBytes, buf, sizeof(buf)));
     ImGui::Text("%u materials, %u with a texture, %zu textures, %s", s.materialCount, s.materialsWithTexture, s.textures.size(), formatBytes(textureBytes, buf2, sizeof(buf2)));
     if (s.hasSun) {
         ImGui::Text("%u lights; sun direction (%.2f %.2f %.2f) radiance (%.2f %.2f %.2f) shadow colour (%.2f %.2f %.2f); shadow map %ux%u", s.lightCount, s.sunDirection.x, s.sunDirection.y, s.sunDirection.z, s.sunRadiance.x, s.sunRadiance.y, s.sunRadiance.z, s.sunShadowColor.x, s.sunShadowColor.y, s.sunShadowColor.z, s.shadowMapExtent.width, s.shadowMapExtent.height);

@@ -20,6 +20,7 @@ struct MeshDesc {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
     std::vector<SubMesh> submeshes;
+    bool doubleSided = false; // USD doubleSided: draw without back-face culling
 };
 
 class MeshLibrary {

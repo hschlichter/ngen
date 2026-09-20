@@ -18,6 +18,7 @@ struct RenderMeshInstance {
     uint32_t indexOffset = 0;
     uint32_t indexCount = 0;
     bool primFirst = true;
+    bool doubleSided = false;
 };
 
 enum class LightType : uint8_t {

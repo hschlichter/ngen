@@ -79,6 +79,9 @@ Current truth for the build framework is [`../build/build_system.md`](../build/b
 - [plan_performance_window.md](plan_performance_window.md) — profiling marker API and Performance window with CPU/GPU timeline; Tracy deferred (landed)
 - [plan_render_debug_window.md](plan_render_debug_window.md) — Render Debug window: scene tables, per-pass draw counters, view modes, device info (landed)
 - [plan_agent_introspection.md](plan_agent_introspection.md) — screenshots, camera flags and window, scripted sessions, render debug and profile dumps (landed)
+- [plan_frustum_culling.md](plan_frustum_culling.md) — per-instance AABB frustum culling on the main thread, frozen-frustum debug overlay (landed)
+- [plan_texture_mipmaps.md](plan_texture_mipmaps.md) — CPU mip chains at upload, anisotropic sampler (landed)
+- [plan_geometry_pass_cost.md](plan_geometry_pass_cost.md) — back-face culling, 16-bit normal target, depth prepass toggle (landed)
 - [plan_rhi_validation.md](plan_rhi_validation.md) — `ngen-test-rhi` RHI validation program (superseded by plan_rhi_examples.md)
 - [observability_api_design_engine_agnostic.md](observability_api_design_engine_agnostic.md) — earlier abstract obs design (historical — the concrete design deliberately diverged)
 

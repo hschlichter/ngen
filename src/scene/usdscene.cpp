@@ -781,6 +781,16 @@ struct USDScene::Impl {
         // non-planar quad into two visibly different facets (Kitchen_set). Average the
         // face normals at each point, area weighted through the unnormalised cross
         // product. Only an explicit subdivisionScheme "none" keeps flat faces.
+        // USD winding: rightHanded (the default) is counter-clockwise front faces, which
+        // is what the pipelines cull against; leftHanded meshes get two corners swapped
+        // per triangle at load so no per-mesh raster state is needed. doubleSided goes
+        // to the mesh so the renderer can skip culling for it.
+        TfToken orientation;
+        geomMesh.GetOrientationAttr().Get(&orientation, UsdTimeCode::Default());
+        bool leftHanded = orientation == UsdGeomTokens->leftHanded;
+        bool doubleSided = false;
+        geomMesh.GetDoubleSidedAttr().Get(&doubleSided, UsdTimeCode::Default());
+
         std::vector<std::array<float, 3>> smoothNormals;
         if (!hasNormals) {
             TfToken scheme;
@@ -794,6 +804,9 @@ struct USDScene::Impl {
                         int i0 = faceVertexIndices[corner];
                         int i1 = faceVertexIndices[corner + t + 1];
                         int i2 = faceVertexIndices[corner + t + 2];
+                        if (leftHanded) {
+                            std::swap(i1, i2);
+                        }
                         auto& p0 = points[i0];
                         auto& p1 = points[i1];
                         auto& p2 = points[i2];
@@ -820,6 +833,7 @@ struct USDScene::Impl {
         // assembled grouped by material (GeomSubset). Since one vertex is pushed
         // per index, the index value for a face's j-th corner is faceStart[f] + j.
         MeshDesc meshDesc;
+        meshDesc.doubleSided = doubleSided;
         std::vector<uint32_t> faceStart(faceVertexCounts.size(), 0);
         std::vector<uint32_t> faceCount(faceVertexCounts.size(), 0);
         uint32_t fvIdx = 0;
@@ -838,6 +852,10 @@ struct USDScene::Impl {
                     (int) (fvIdx + t + 1),
                     (int) (fvIdx + t + 2),
                 };
+                if (leftHanded) {
+                    std::swap(indices[1], indices[2]);
+                    std::swap(fvIndices[1], fvIndices[2]);
+                }
 
                 // Compute flat face normal as fallback when normals aren't authored
                 // and the mesh is not a subdivision surface.

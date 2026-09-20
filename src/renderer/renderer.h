@@ -4,6 +4,7 @@
 #include "axis3dgizmo.h"
 #include "debugrenderer.h"
 #include "deletionqueue.h"
+#include "depthprepass.h"
 #include "editoruipass.h"
 #include "framegraph.h"
 #include "framegraphdebug.h"
@@ -37,6 +38,8 @@ struct CachedTexture {
     RhiTexture* texture = nullptr;
     uint32_t width = 0;
     uint32_t height = 0;
+    uint32_t mipLevels = 1;
+    uint64_t bytes = 0; // all levels
     RhiFormat format = RhiFormat::Undefined;
 };
 
@@ -89,12 +92,14 @@ private:
     std::unordered_map<uint32_t, CachedTexture> textureCache;
     std::vector<GpuInstance> gpuInstances;
     AABB sceneBounds; // union of instance world bounds, refreshed with gpuInstances
+    uint32_t debugCulledInstances = 0; // from the last snapshot, for RenderStats and the debug window
     std::vector<RenderLight> lights;
     RhiDescriptorPool* geometryDescriptorPool = nullptr;
     std::vector<RhiDescriptorSet*> geometryDescriptorSets;
 
     // Passes
     ShadowPass shadowPass;
+    DepthPrepass depthPrepass;
     GeometryPass geometryPass;
     LightingPass lightingPass;
     AAPass aaPass;

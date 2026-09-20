@@ -57,6 +57,7 @@ auto EditorUI::draw(
         .showAABBs = showAABBsFlag,
         .showSelectedAABB = showSelectedAABBFlag,
         .showLightGizmos = showLightGizmosFlag,
+        .depthPrepass = depthPrepassFlag,
         .gbufferView = gbufferViewMode,
         .showBufferOverlay = showBufferOverlayFlag,
         .showShadowOverlay = showShadowOverlayFlag,
@@ -65,6 +66,7 @@ auto EditorUI::draw(
         .showPerformance = showPerformanceWindow,
         .showRenderDebug = showRenderDebugWindow,
         .showCamera = showCameraWindow,
+        .showCulling = showCullingWindow,
         .showAssetBrowser = showAssetBrowserWindow,
         .requestQuit = requestQuit,
         .pendingNewScene = pendingNewSceneFlag,
@@ -130,6 +132,10 @@ auto EditorUI::draw(
     {
         PROFILE_ZONE("CameraWindow");
         drawCameraWindow(showCameraWindow, camera, cameraState);
+    }
+    {
+        PROFILE_ZONE("CullingWindow");
+        drawCullingWindow(showCullingWindow, {.enabled = cullEnabledFlag, .frozen = cullFrozenFlag, .showCulled = showCulledFlag, .instances = cullStatInstances, .culled = cullStatCulled});
     }
     {
         PROFILE_ZONE("AssetBrowserWindow");
@@ -220,7 +226,9 @@ auto EditorUI::drawDebug(
     const SceneUpdater& sceneUpdater,
     USDScene& usdScene,
     glm::vec3 cameraPos,
-    glm::vec3 worldUp) -> void {
+    glm::vec3 worldUp,
+    std::span<const uint8_t> visible,
+    const std::array<glm::vec3, 8>* frozenFrustum) -> void {
     debugDraw.newFrame();
     if (showGridFlag) {
         debugDraw.grid(cameraPos, worldUp, 1.0f, 50, {0.25f, 0.25f, 0.25f, 1.0f});
@@ -233,6 +241,28 @@ auto EditorUI::drawDebug(
             if (inst.worldBounds.valid()) {
                 debugDraw.box(inst.worldBounds, {0.0f, 1.0f, 0.0f, 1.0f});
             }
+        }
+    }
+    // Culling debug: every instance AABB by its cull result, red for culled, green for
+    // drawn, and the frozen frustum's twelve edges in yellow when the frustum is frozen.
+    if (showCulledFlag && visible.size() == renderWorld.meshInstances.size()) {
+        for (size_t i = 0; i < visible.size(); i++) {
+            const auto& inst = renderWorld.meshInstances[i];
+            if (!inst.worldBounds.valid()) {
+                continue;
+            }
+            glm::vec4 color = visible[i] != 0 ? glm::vec4{0.2f, 1.0f, 0.2f, 1.0f} : glm::vec4{1.0f, 0.2f, 0.2f, 1.0f};
+            debugDraw.box(inst.worldBounds, color);
+        }
+    }
+    if (frozenFrustum != nullptr) {
+        const auto& c = *frozenFrustum;
+        glm::vec4 yellow = {1.0f, 0.9f, 0.2f, 1.0f};
+        for (int i = 0; i < 4; i++) {
+            int next = (i + 1) % 4;
+            debugDraw.line(c[i], c[next], yellow);         // near ring
+            debugDraw.line(c[4 + i], c[4 + next], yellow); // far ring
+            debugDraw.line(c[i], c[4 + i], yellow);        // near to far
         }
     }
     if (showLightGizmosFlag && !renderWorld.lights.empty()) {

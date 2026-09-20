@@ -142,6 +142,8 @@ void drawMainMenuBar(MainMenuBarState& state) {
             ImGui::MenuItem("Show Selected AABB", nullptr, &state.showSelectedAABB);
             ImGui::MenuItem("Show Light Gizmos", nullptr, &state.showLightGizmos);
             ImGui::Separator();
+            ImGui::MenuItem("Depth Prepass", nullptr, &state.depthPrepass);
+            ImGui::Separator();
             ImGui::MenuItem("Show Buffer Overlay", nullptr, &state.showBufferOverlay);
             ImGui::MenuItem("Show Shadow Overlay", nullptr, &state.showShadowOverlay);
             ImGui::MenuItem("Anti-Aliasing (FXAA)", nullptr, &state.antiAliasing);
@@ -150,6 +152,7 @@ void drawMainMenuBar(MainMenuBarState& state) {
             ImGui::MenuItem("Performance", nullptr, &state.showPerformance);
             ImGui::MenuItem("Render Debug", nullptr, &state.showRenderDebug);
             ImGui::MenuItem("Camera", nullptr, &state.showCamera);
+            ImGui::MenuItem("Culling", nullptr, &state.showCulling);
             ImGui::Separator();
             ImGui::Text("Fullscreen Buffer View");
             ImGui::RadioButton("Albedo", &state.gbufferView, 1);

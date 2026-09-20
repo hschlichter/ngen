@@ -30,6 +30,7 @@ struct GpuInstance {
     uint32_t indexOffset = 0;
     uint32_t indexCount = 0;
     bool primFirst = true;
+    bool doubleSided = false; // drawn with the cull-none pipeline
 };
 
 struct GeometryPassData {
@@ -50,13 +51,19 @@ public:
         uint32_t imageIndex,
         uint32_t instanceCount,
         std::span<const GpuInstance> instances,
+        std::span<const uint8_t> visible,
         const std::unordered_map<uint32_t, CachedMesh>& meshCache,
-        std::span<RhiDescriptorSet*> descriptorSets) -> const GeometryPassData&;
+        std::span<RhiDescriptorSet*> descriptorSets,
+        bool depthPrepassed) -> const GeometryPassData&;
+
+    auto normalFormat() const -> RhiFormat { return normalTargetFormat; }
 
     auto descriptorSetLayout() const -> RhiDescriptorSetLayout* { return descSetLayout; }
 
 private:
-    RhiPipeline* pipeline = nullptr;
+    // [doubleSided][depthPrepassed]: cull back or none, Less-with-write or Equal-without.
+    RhiPipeline* pipelines[2][2] = {};
+    RhiFormat normalTargetFormat = RhiFormat::R16G16B16A16_SFLOAT;
     RhiDescriptorSetLayout* descSetLayout = nullptr;
     RhiShaderModule* vertShader = nullptr;
     RhiShaderModule* fragShader = nullptr;

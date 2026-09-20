@@ -52,6 +52,7 @@ struct RenderDebugSnapshot {
     // Scene
     uint32_t instanceCount = 0;
     uint32_t primFirstInstances = 0; // what the shadow pass draws
+    uint32_t culledInstances = 0;    // skipped by the geometry pass this frame
     uint32_t materialCount = 0;
     uint32_t materialsWithTexture = 0;
     std::vector<RenderDebugMesh> meshes;

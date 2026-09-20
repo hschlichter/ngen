@@ -18,6 +18,9 @@ layout(location = 0) out vec3 fragNormal;
 layout(location = 1) out vec3 fragColor;
 layout(location = 2) out vec2 fragTexCoord;
 
+// Invariant so the depth prepass (depthonly.vert, same expression) produces identical depth.
+invariant gl_Position;
+
 void main() {
     gl_Position = ubo.proj * ubo.view * push.model * vec4(inPosition, 1.0);
     // Normalise here: the model matrix carries the scene's unit scale (Kitchen_set is

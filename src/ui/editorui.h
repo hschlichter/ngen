@@ -2,6 +2,7 @@
 
 #include "assetbrowser.h" // AssetBrowserState
 #include "camerawindow.h"
+#include "cullingwindow.h"
 #include "framegraphdebug.h"
 #include "performancewindow.h"
 #include "propertieswindow.h" // PropertiesWindowState
@@ -10,7 +11,9 @@
 #include "scenewindow.h" // SceneWindowState
 
 #include <cstdint>
+#include <array>
 #include <glm/glm.hpp>
+#include <span>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -79,7 +82,9 @@ public:
         const SceneUpdater& sceneUpdater,
         USDScene& usdScene,
         glm::vec3 cameraPos,
-        glm::vec3 worldUp) -> void;
+        glm::vec3 worldUp,
+        std::span<const uint8_t> visible,
+        const std::array<glm::vec3, 8>* frozenFrustum) -> void;
 
     auto hasPendingOpen() const -> bool { return !pendingOpenPath.empty(); }
     auto consumePendingOpenPath() -> std::string { return std::exchange(pendingOpenPath, {}); }
@@ -93,6 +98,14 @@ public:
     // otherwise show all three. Bound to Ctrl+E and the Windows menu.
     auto togglePanels() -> void;
     auto getShowGizmo() const -> bool { return showGizmoFlag; }
+    auto getCullEnabled() const -> bool { return cullEnabledFlag; }
+    auto setCullEnabled(bool on) -> void { cullEnabledFlag = on; }
+    auto getCullFrozen() const -> bool { return cullFrozenFlag; }
+    auto setCullFrozen(bool on) -> void { cullFrozenFlag = on; }
+    auto getShowCulled() const -> bool { return showCulledFlag; }
+    auto setShowCulled(bool on) -> void { showCulledFlag = on; }
+    auto getDepthPrepass() const -> bool { return depthPrepassFlag; }
+    auto setDepthPrepass(bool on) -> void { depthPrepassFlag = on; }
     auto getGBufferViewMode() const -> int { return gbufferViewMode; }
     auto getShowBufferOverlay() const -> bool { return showBufferOverlayFlag; }
     auto getShowShadowOverlay() const -> bool { return showShadowOverlayFlag; }
@@ -100,6 +113,11 @@ public:
     auto getShowFrameGraphWindow() const -> bool { return showFrameGraphWindow; }
     auto getShowRenderDebugWindow() const -> bool { return showRenderDebugWindow; }
     auto getShowCameraWindow() const -> bool { return showCameraWindow; }
+    // This frame's cull result, for the Culling window.
+    auto setCullStats(uint32_t instances, uint32_t culled) -> void {
+        cullStatInstances = instances;
+        cullStatCulled = culled;
+    }
 
     // Session commands (flags, scripts) drive the same flags the menus edit.
     auto setGBufferViewMode(int mode) -> void { gbufferViewMode = mode; }
@@ -139,6 +157,10 @@ private:
     bool showAABBsFlag = false;
     bool showSelectedAABBFlag = true;
     bool showLightGizmosFlag = true;
+    bool cullEnabledFlag = true;
+    bool cullFrozenFlag = false;
+    bool showCulledFlag = false;
+    bool depthPrepassFlag = false;
     int gbufferViewMode = 0;
     bool showBufferOverlayFlag = false;
     bool showShadowOverlayFlag = false;
@@ -147,6 +169,9 @@ private:
     bool showPerformanceWindow = false;
     bool showRenderDebugWindow = false;
     bool showCameraWindow = false;
+    bool showCullingWindow = false;
+    uint32_t cullStatInstances = 0;
+    uint32_t cullStatCulled = 0;
     bool screenshotRequested = false;
     CameraWindowState cameraState;
     bool showAssetBrowserWindow = false;

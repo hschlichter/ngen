@@ -60,6 +60,7 @@ void USDRenderExtractor::extract(const USDScene& scene, const MeshLibrary& meshL
                 .indexOffset = sub.indexOffset,
                 .indexCount = sub.indexCount,
                 .primFirst = (s == 0),
+                .doubleSided = meshData->doubleSided,
             });
         }
         out.primToInstance[prim.handle.index] = {.first = first, .count = (uint32_t) meshData->submeshes.size()};

@@ -29,7 +29,8 @@ public:
         const std::unordered_map<uint32_t, CachedMesh>& meshCache) -> const ShadowPassData&;
 
 private:
-    RhiPipeline* pipeline = nullptr;
+    RhiPipeline* pipelineCullBack = nullptr;
+    RhiPipeline* pipelineCullNone = nullptr;
     RhiShaderModule* vertShader = nullptr;
     RhiShaderModule* fragShader = nullptr;
 };

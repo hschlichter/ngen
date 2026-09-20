@@ -25,6 +25,8 @@ public:
 
     auto begin() -> void;
     auto uploadBuffer(std::span<const std::byte> data, RhiBufferUsageFlags usage) -> RhiBuffer*;
+    // pixels holds every mip level tightly packed in level order when desc.mipLevels > 1
+    // (see packMipChain); 4 bytes per texel, so RGBA8 formats only.
     auto uploadTexture(const RhiTextureDesc& desc, std::span<const std::byte> pixels) -> RhiTexture*;
     auto end() -> void;
 
