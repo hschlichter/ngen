@@ -45,6 +45,7 @@
 #pragma once
 
 #include "../framework/alias.hpp"
+#include "../framework/phony.hpp"
 #include "../framework/command.hpp"
 #include "../framework/cxx/commands.hpp"
 #include "../framework/cxx/configuration.hpp"
@@ -280,6 +281,8 @@ private:
         std::expected<Path, Error> output = Path{};
         if (auto* tool = target->extension<Tool>()) {
             output = emit_tool(*tool, order_only);
+        } else if (auto* ph = target->extension<Phony>()) {
+            output = emit_phony(*ph, order_only);
         } else if (auto* obj = target->extension<cxx::ObjectFile>()) {
             output = emit_object_file(*obj);
         } else if (auto* cxx_t = target->extension<cxx::Target>()) {
@@ -540,6 +543,21 @@ private:
         phony_edge.flags = kEdgeFlagPhony;
         add_edge(std::move(phony_edge));
         return phony;
+    }
+
+    // One edge, no command: the stamp depends on every dependency's primary output, so asking for the
+    // phony by name builds all of them.
+    auto emit_phony(Phony& target, const std::vector<Path>& deps) -> std::expected<Path, Error> {
+        auto stamp = variant_.out_dir / ("." + target.name() + ".stamp");
+        Edge edge;
+        edge.name = target.name();
+        edge.inputs = paths_to_strings(deps);
+        edge.outputs = {stamp.string()};
+        edge.description = "PHONY " + target.name();
+        edge.pool = kPoolDefault;
+        edge.flags = kEdgeFlagPhony;
+        add_edge(std::move(edge));
+        return stamp;
     }
 
     auto emit_global_tool(Tool& target) -> void {

@@ -4,7 +4,7 @@ ngen's build system is a small header-only C++ framework you write your project 
 executes that graph in parallel. Three top-level directories under `build/`, each with a distinct responsibility:
 
 - **`framework/`** — the configuration API. `build::Target`, `build::Project`, `build::Platform`, `build::Configuration`, the `build::cxx` language module,
-  plus the auxiliary `Tool` and `Alias` wrappers.
+  plus the auxiliary `Tool`, `Alias` and `Phony` wrappers.
 - **`ir/`** — the binary IR that carries a frozen build graph from the configuration layer to the executor, plus `ir::Emitter` which walks a `Project` to
   produce one.
 - **`run/`** — the executor library (`ngen::run::execute()`) and its standalone CLI (`ngen-build-run`). Dirty detection, scheduler, depfile parsing, build
@@ -38,7 +38,7 @@ build.cpp           # The project graph at the project root. Defines platforms, 
 build/
   bootstrap.cpp     # ngen-build orchestrator. Self-builds graph + runner via the runner library, then runs them.
   build_system.md   # This document.
-  framework/        # Configuration API. Target / Project / Platform / Configuration / cxx language module / Tool / Alias.
+  framework/        # Configuration API. Target / Project / Platform / Configuration / cxx language module / Tool / Alias / Phony.
   ir/               # IR schema, writer, reader, JSON dump, Emitter, compile-commands extractor, graph-stage main, vendored xxhash.
   run/              # Runner: execute, scheduler, process, hash, buildlog, depfile, progress.
 ```
@@ -88,7 +88,7 @@ A library or program is `cxx::Target`; each `.cpp` it owns is a `cxx::ObjectFile
 emitted from the ObjectFile node, archive/link edges from the parent. The framework graph is one node per TU plus one node per library/program — sources
 are first-class, not an opaque list inside the parent.
 
-### Generic auxiliary (`Tool`, `Alias`)
+### Generic auxiliary (`Tool`, `Alias`, `Phony`)
 
 Both follow the cxx wrapper pattern: own a `shared_ptr<Target>`, attach themselves to the base's `ExtensionMap`, expose a fluent builder.
 
@@ -97,6 +97,9 @@ Both follow the cxx wrapper pattern: own a `shared_ptr<Target>`, attach themselv
 - **`Alias`** resolves to another target based on `(platform, config)` selectors — used for graph-level
   indirection like a `gpu-backend` alias that resolves to different backend libraries per platform. See
   `build/framework/alias.hpp`.
+- **`Phony`** names a set of dependencies and nothing else: `phony("examples").depend_on(a).depend_on(b)` emits one
+  command-less edge (`kEdgeFlagPhony`) with a virtual stamp output, so `ngen-build -p X -c Y examples` builds every
+  dependency. Dependencies use the ordinary `Target::depend_on`. See `build/framework/phony.hpp`.
 
 ### IR transport (`build/ir/`)
 
@@ -259,7 +262,7 @@ No edits to `build::Target`, `build::Project`, `build::Platform`, or `build::Con
 System-level invariants worth knowing before changing the code. Implementation details belong with the relevant `.hpp`.
 
 - **No exceptions.** The framework uses `std::expected<T, build::Error>` at every boundary. `<stdexcept>` is not included anywhere in `build/`.
-- **Wrapper move/copy invariant.** Every cxx wrapper (and `Tool`, `Alias`) re-attaches itself to the base's `ExtensionMap` in both move and copy
+- **Wrapper move/copy invariant.** Every cxx wrapper (and `Tool`, `Alias`, `Phony`) re-attaches itself to the base's `ExtensionMap` in both move and copy
   constructors. If a future field is added to one of these wrappers, both constructors must be updated. `cxx::ObjectFile` is the deliberate exception — it
   lives behind `shared_ptr` from construction, never gets copied or moved by user code, and is `=delete`d for both.
 - **Per-TU graph nodes.** Each `.cpp` is its own `build::Target` (with a `cxx::ObjectFile` extension). ObjectFile names like

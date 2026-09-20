@@ -106,6 +106,15 @@ Build and run unattended:
 SDL_VIDEODRIVER=offscreen ./_out/linux-vulkan/debug/ngen-example-triangle --frames=60 --check --validation
 ```
 
+The whole set, after any RHI change (the default target builds only `ngen-view`, so a sweep without this runs stale binaries):
+
+```sh
+./_out/ngen-build -p linux-vulkan -c debug examples
+for t in triangle quad texture uniforms depth rendertarget pushconstants blend lines mipcube compute timestamps gpuzones; do
+  SDL_VIDEODRIVER=offscreen ./_out/linux-vulkan/debug/ngen-example-$t --frames=10 --check --validation >/dev/null 2>&1; echo "$t=$?"
+done
+```
+
 Flags every example supports:
 
 - `--frames=N` render N frames then exit. `0` (default) runs until the window closes.

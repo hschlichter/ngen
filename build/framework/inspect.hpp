@@ -14,6 +14,7 @@
 #pragma once
 
 #include "alias.hpp"
+#include "phony.hpp"
 #include "cxx/target.hpp"
 #include "project.hpp"
 #include "target.hpp"
@@ -44,7 +45,7 @@ inline auto describe_kind(const Target& t) -> std::string_view {
         return "alias";
     }
 
-    return "phony";
+    return "phony"; // Phony wrapper, or a bare Target with only dependencies
 }
 
 inline auto list_roots(const Project& project, std::ostream& out) -> void {

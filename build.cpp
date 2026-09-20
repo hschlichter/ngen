@@ -2,6 +2,7 @@
 #include "build/framework/cxx/platform.hpp"
 #include "build/framework/cxx/target.hpp"
 #include "build/framework/glob.hpp"
+#include "build/framework/phony.hpp"
 #include "build/framework/project.hpp"
 #include "build/framework/tool.hpp"
 #include "build/ir/main.hpp"
@@ -338,7 +339,24 @@ auto main(int argc, char** argv) -> int {
     auto exampleTimestamps = rhiExample("timestamps");
     auto exampleGpuZones = rhiExample("gpuzones");
 
+    // One name for the whole RHI example set, so the sweep cannot run stale binaries.
+    auto examples = phony("examples")
+                        .depend_on(exampleTriangle)
+                        .depend_on(exampleQuad)
+                        .depend_on(exampleTexture)
+                        .depend_on(exampleUniforms)
+                        .depend_on(exampleDepth)
+                        .depend_on(exampleRenderTarget)
+                        .depend_on(examplePushConstants)
+                        .depend_on(exampleBlend)
+                        .depend_on(exampleLines)
+                        .depend_on(exampleMipCube)
+                        .depend_on(exampleCompute)
+                        .depend_on(exampleTimestamps)
+                        .depend_on(exampleGpuZones);
+
     p.target(view);
+    p.target(examples);
     p.target(exampleTriangle);
     p.target(exampleQuad);
     p.target(exampleTexture);
