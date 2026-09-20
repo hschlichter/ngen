@@ -1,6 +1,6 @@
 # Compute AA pass (first frame-graph compute node)
 
-**Status. In progress.**
+**Status. Landed.**
 
 ## Current state
 

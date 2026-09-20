@@ -261,11 +261,12 @@ void drawFrameGraphWindow(
 
                 ImGui::TableSetColumnIndex(0);
                 if (ImGui::BeginTable(
-                        "##fg_passes", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY)) {
+                        "##fg_passes", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY)) {
                     ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 28.0f);
                     ImGui::TableSetupColumn("Name");
                     ImGui::TableSetupColumn("R", ImGuiTableColumnFlags_WidthFixed, 28.0f);
                     ImGui::TableSetupColumn("W", ImGuiTableColumnFlags_WidthFixed, 28.0f);
+                    ImGui::TableSetupColumn("GPU ms", ImGuiTableColumnFlags_WidthFixed, 64.0f);
                     ImGui::TableHeadersRow();
 
                     for (uint32_t i = 0; i < s.executionOrder.size(); i++) {
@@ -289,6 +290,12 @@ void drawFrameGraphWindow(
                         ImGui::Text("%zu", pass.reads.size());
                         ImGui::TableSetColumnIndex(3);
                         ImGui::Text("%zu", pass.writes.size());
+                        ImGui::TableSetColumnIndex(4);
+                        if (pass.gpuTimeMs >= 0.0) {
+                            ImGui::Text("%.2f", pass.gpuTimeMs);
+                        } else {
+                            ImGui::TextDisabled("-");
+                        }
 
                         if (pass.culled) {
                             ImGui::PopStyleColor();

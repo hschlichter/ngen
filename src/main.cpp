@@ -192,9 +192,19 @@ auto main(int argc, char* argv[]) -> int {
 
     // RHI device. The window layer (SDL) hands the backend what it needs through
     // hooks; the RHI never includes SDL.
+    // Failure after this point must stop the workers and SDL explicitly: SDL3 turns
+    // SIGTERM into a quit event that nobody would poll, and lingering threads keep the
+    // process alive.
+    auto failAfterInit = [&] -> int {
+        JobSystem::shutdown();
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    };
+
     RhiDeviceVulkan rhiDevice;
     if (!rhiDevice.init(makeRhiWindowSdl(window), {.enableValidation = enableValidation})) {
-        return 1;
+        return failAfterInit();
     }
 
     // Renderer
@@ -208,7 +218,9 @@ auto main(int argc, char* argv[]) -> int {
     ImGuiBackendVulkan imguiBackend(window);
     Renderer renderer;
     if (!renderer.init(&rhiDevice, &imguiBackend, initialExtent)) {
-        return 1;
+        std::println(stderr, "Renderer init failed");
+        rhiDevice.waitIdle();
+        return failAfterInit();
     }
     renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
     EditorUI editorUI;

@@ -1,6 +1,6 @@
 # RHI examples (`src/rhi/examples/`)
 
-**Status. In progress.**
+**Status. Landed.**
 
 ## Current state
 

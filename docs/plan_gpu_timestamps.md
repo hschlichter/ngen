@@ -1,6 +1,6 @@
 # GPU timestamps
 
-**Status. In progress.**
+**Status. Landed.**
 
 ## Current state
 

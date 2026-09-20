@@ -1,11 +1,12 @@
 #include "jobsystem.h"
 
 #include <algorithm>
+#include <stop_token>
 
 std::vector<std::jthread> JobSystem::workers;
 std::deque<JobSystem::Job> JobSystem::queue;
 std::mutex JobSystem::queueMutex;
-std::condition_variable JobSystem::queueCV;
+std::condition_variable_any JobSystem::queueCV;
 std::condition_variable JobSystem::doneCV;
 bool JobSystem::stopping = false;
 
@@ -15,7 +16,7 @@ auto JobSystem::init(uint32_t numWorkers) -> void {
     }
 
     for (uint32_t i = 0; i < numWorkers; i++) {
-        workers.emplace_back([] { workerLoop(); });
+        workers.emplace_back([](std::stop_token stopToken) { workerLoop(stopToken); });
     }
 }
 
@@ -63,13 +64,18 @@ auto JobSystem::waitAll(std::span<const JobFence> fences) -> void {
     }
 }
 
-auto JobSystem::workerLoop() -> void {
+// Exits on shutdown() or when the owning jthread requests stop (static destruction
+// after an early return from main), so the process can never hang on join.
+auto JobSystem::workerLoop(std::stop_token stopToken) -> void {
     while (true) {
         Job job;
         {
             std::unique_lock lock(queueMutex);
-            queueCV.wait(lock, [] { return !queue.empty() || stopping; });
-            if (stopping && queue.empty()) {
+            queueCV.wait(lock, stopToken, [] { return !queue.empty() || stopping; });
+            if ((stopping || stopToken.stop_requested()) && queue.empty()) {
+                return;
+            }
+            if (queue.empty()) {
                 return;
             }
             job = std::move(queue.front());

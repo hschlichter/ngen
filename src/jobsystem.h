@@ -37,13 +37,13 @@ private:
         std::shared_ptr<std::atomic<bool>> done;
     };
 
-    static auto workerLoop() -> void;
+    static auto workerLoop(std::stop_token stopToken) -> void;
     static auto tryExecuteOne() -> bool;
 
     static std::vector<std::jthread> workers;
     static std::deque<Job> queue;
     static std::mutex queueMutex;
-    static std::condition_variable queueCV;
+    static std::condition_variable_any queueCV; // _any: waits can be interrupted by a stop token
     static std::condition_variable doneCV;
     static bool stopping;
 };
