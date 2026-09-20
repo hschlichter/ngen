@@ -32,6 +32,7 @@ struct RhiPipelineVulkan : public RhiPipeline {
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE;
     VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    RhiPrimitiveTopology topology = RhiPrimitiveTopology::TriangleList;
 };
 
 struct RhiDescriptorSetLayoutVulkan : public RhiDescriptorSetLayout {

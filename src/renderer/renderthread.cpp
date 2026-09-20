@@ -41,6 +41,11 @@ auto RenderThread::submitRenderUpload(RenderUpload upload) -> void {
     pendingUpload = std::move(upload);
 }
 
+auto RenderThread::latestRenderDebug() -> std::optional<RenderDebugSnapshot> {
+    std::lock_guard lock(renderDebugMutex);
+    return std::exchange(renderDebugSlot, std::nullopt);
+}
+
 auto RenderThread::latestFrameGraphDebug() -> std::optional<FrameGraphDebugSnapshot> {
     std::lock_guard lock(fgDebugMutex);
     return std::exchange(fgDebugSlot, std::nullopt);
@@ -77,6 +82,12 @@ auto RenderThread::threadLoop() -> void {
 
         bool wantDebug = fgDebugWanted.load(std::memory_order_relaxed);
         renderer->setFrameGraphDebugEnabled(wantDebug);
+        bool wantRenderDebug = renderDebugWanted.load(std::memory_order_relaxed);
+        renderer->setRenderDebugEnabled(wantRenderDebug);
+        {
+            std::lock_guard lock(drawTimingMutex);
+            renderer->setDrawTiming(drawTimingRequest);
+        }
 
         renderer->render(snapshot);
 
@@ -85,6 +96,11 @@ auto RenderThread::threadLoop() -> void {
             fgSnap.frameIndex = ++fgDebugFrameCounter;
             std::lock_guard lock(fgDebugMutex);
             fgDebugSlot = std::move(fgSnap);
+        }
+        if (wantRenderDebug) {
+            auto snap = renderer->buildRenderDebugSnapshot();
+            std::lock_guard lock(renderDebugMutex);
+            renderDebugSlot = std::move(snap);
         }
     }
 }

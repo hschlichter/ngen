@@ -3,6 +3,7 @@
 #include <vulkan/vk_enum_string_helper.h>
 
 #include <array>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <print>
@@ -454,6 +455,9 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
 
     VkPhysicalDeviceProperties properties = {};
     vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+    VkPhysicalDeviceDriverProperties driverProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+    VkPhysicalDeviceProperties2 properties2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &driverProperties};
+    vkGetPhysicalDeviceProperties2(physicalDevice, &properties2);
     deviceLimits = {
         .minUniformBufferOffsetAlignment = properties.limits.minUniformBufferOffsetAlignment,
         .maxPushConstantSize = properties.limits.maxPushConstantsSize,
@@ -463,6 +467,8 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
         .timestamps = queueTimestampValidBits != 0 && properties.limits.timestampPeriod > 0.0f,
         .timestampPeriodNs = properties.limits.timestampPeriod,
     };
+    std::snprintf(deviceLimits.deviceName, sizeof(deviceLimits.deviceName), "%s", properties.deviceName);
+    std::snprintf(deviceLimits.driverName, sizeof(deviceLimits.driverName), "%s %s", driverProperties.driverName, driverProperties.driverInfo);
 
     VkDeviceCreateInfo deviceCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -955,6 +961,7 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
 
     auto* pip = new RhiPipelineVulkan();
     pip->bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    pip->topology = desc.topology;
     pip->layout = createPipelineLayout(desc.descriptorSetLayouts, desc.pushConstant);
     if (pip->layout == VK_NULL_HANDLE) {
         delete pip;

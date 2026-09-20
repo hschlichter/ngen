@@ -49,6 +49,11 @@ public:
 
     auto buildDebugSnapshot() const -> FrameGraphDebugSnapshot;
 
+    // Draw log for the render debugger: enabled per frame, records cleared by reset().
+    auto setDrawLogEnabled(bool enabled) -> void { drawLogEnabled = enabled; }
+    auto setDrawTiming(const FgDrawTimingRequest& request) -> void { drawTiming = request; }
+    auto drawLog() const -> const std::vector<FgDrawRecord>& { return draws; }
+
     auto setDebugCaptureHook(FgDebugCaptureFn fn) -> void { debugCaptureHook = std::move(fn); }
 
 private:
@@ -88,6 +93,12 @@ private:
 
     ResourcePool* resourcePool = nullptr;
     FgDebugCaptureFn debugCaptureHook;
+
+    bool drawLogEnabled = false;
+    FgDrawTimingRequest drawTiming;
+    std::vector<FgDrawRecord> draws;
+    const char* executingPass = "";
+    uint32_t executingPassDraws = 0;
 };
 
 template <typename DataT>

@@ -90,11 +90,14 @@ auto main(int argc, char* argv[]) -> int {
     std::vector<std::string> obsExclude;
     std::vector<const char*> positional;
     bool enableValidation = false;
+    bool forceRenderDebug = false; // --render-debug: keep the render debug snapshot and draw log on without the window
     positional.push_back(argv[0]);
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
         if (arg == "--validation") {
             enableValidation = true;
+        } else if (arg == "--render-debug") {
+            forceRenderDebug = true;
         } else if (arg.starts_with("--obs-output=")) {
             obsOutputPath = std::string(arg.substr(std::string_view("--obs-output=").size()));
         } else if (arg.starts_with("--obs-only=")) {
@@ -223,6 +226,7 @@ auto main(int argc, char* argv[]) -> int {
         rhiDevice.waitIdle();
         return failAfterInit();
     }
+    renderer.setValidationEnabled(enableValidation);
     renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
     EditorUI editorUI;
     // Asset browser root = current working directory (the "project" root), so the
@@ -567,11 +571,16 @@ auto main(int argc, char* argv[]) -> int {
 
         renderThread.setFrameGraphDebugEnabled(editorUI.getShowFrameGraphWindow());
         auto fgDebugSnap = renderThread.latestFrameGraphDebug();
+        renderThread.setRenderDebugEnabled(editorUI.getShowRenderDebugWindow() || forceRenderDebug);
+        auto renderDebugSnap = renderThread.latestRenderDebug();
 
         static const uint32_t uiZoneId = profile::registerName("EditorUI");
         profile::beginZone(uiZoneId);
         imguiBackend.beginFrame();
-        editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib, cam, std::move(fgDebugSnap));
+        editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib, cam, std::move(fgDebugSnap), std::move(renderDebugSnap));
+        if (auto timing = editorUI.takeDrawTimingRequest(); timing.has_value()) {
+            renderThread.setDrawTiming(std::move(*timing));
+        }
         ImGuiFrameSnapshot imguiSnapshot;
         {
             PROFILE_ZONE("ImGuiRender");

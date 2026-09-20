@@ -19,6 +19,7 @@ struct FgPassDebug {
     bool culled = false;
     bool hasSideEffects = false;
     double gpuTimeMs = -1.0; // from the most recent completed frame with timings; -1 = unknown
+    RhiCommandStats stats;   // draws, dispatches, barriers, primitives recorded by this pass
     std::vector<FgResourceAccessDebug> reads;
     std::vector<FgResourceAccessDebug> writes;
 };

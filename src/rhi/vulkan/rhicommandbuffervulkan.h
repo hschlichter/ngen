@@ -18,6 +18,8 @@ public:
     };
 
     VkCommandBuffer cmd = VK_NULL_HANDLE;
+    RhiCommandStats commandStats;
+    RhiPrimitiveTopology boundTopology = RhiPrimitiveTopology::TriangleList; // of the bound pipeline, for primitive counting
     // Timestamp queries backing beginGpuZone/endGpuZone: two per zone, reset at begin().
     // VK_NULL_HANDLE when the device has no timestamp support.
     VkQueryPool zonePool = VK_NULL_HANDLE;
@@ -39,6 +41,7 @@ public:
     auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void override;
     auto copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void override;
     auto copyTextureToBuffer(RhiTexture* src, RhiBuffer* dst, const RhiBufferTextureCopy& region) -> void override;
+    [[nodiscard]] auto stats() const -> const RhiCommandStats& override { return commandStats; }
     auto beginGpuZone(const char* name) -> void override;
     auto endGpuZone() -> void override;
     auto resetQueryPool(RhiQueryPool* pool, uint32_t first, uint32_t count) -> void override;

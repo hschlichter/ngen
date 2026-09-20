@@ -266,7 +266,21 @@ struct RhiBufferTextureCopy {
 
 // Static device capabilities the renderer needs to size and validate its own
 // resources. Filled once at init; read through RhiDevice::limits().
+// Per-command-buffer counters, reset at begin(). Cheap enough to always count; the
+// frame graph reads the delta around each pass for the render debugger.
+struct RhiCommandStats {
+    uint32_t draws = 0;
+    uint32_t dispatches = 0;
+    uint32_t barriers = 0;
+    uint32_t pipelineBinds = 0;
+    uint32_t descriptorBinds = 0;
+    uint32_t copies = 0;     // buffer/texture copies and blits
+    uint64_t primitives = 0; // triangles for lists, line segments for line lists, estimated from index/vertex counts
+};
+
 struct RhiDeviceLimits {
+    char deviceName[128] = "";
+    char driverName[64] = "";
     uint64_t minUniformBufferOffsetAlignment = 0;
     uint32_t maxPushConstantSize = 0;
     float maxLineWidth = 1.0f;

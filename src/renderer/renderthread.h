@@ -1,6 +1,7 @@
 #pragma once
 
 #include "framegraphdebug.h"
+#include "renderdebug.h"
 #include "rendersnapshot.h"
 #include "renderworld.h"
 
@@ -32,6 +33,12 @@ public:
 
     auto setFrameGraphDebugEnabled(bool enabled) -> void { fgDebugWanted.store(enabled, std::memory_order_relaxed); }
     auto latestFrameGraphDebug() -> std::optional<FrameGraphDebugSnapshot>;
+    auto setRenderDebugEnabled(bool enabled) -> void { renderDebugWanted.store(enabled, std::memory_order_relaxed); }
+    auto latestRenderDebug() -> std::optional<RenderDebugSnapshot>;
+    auto setDrawTiming(FgDrawTimingRequest request) -> void {
+        std::lock_guard lock(drawTimingMutex);
+        drawTimingRequest = std::move(request);
+    }
 
 private:
     auto threadLoop() -> void;
@@ -55,5 +62,10 @@ private:
     std::atomic<bool> fgDebugWanted{false};
     std::mutex fgDebugMutex;
     std::optional<FrameGraphDebugSnapshot> fgDebugSlot;
+    std::atomic<bool> renderDebugWanted{false};
+    std::mutex renderDebugMutex;
+    std::optional<RenderDebugSnapshot> renderDebugSlot;
+    std::mutex drawTimingMutex;
+    FgDrawTimingRequest drawTimingRequest;
     uint64_t fgDebugFrameCounter = 0;
 };

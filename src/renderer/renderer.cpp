@@ -78,6 +78,7 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
 
     // Passes
     RhiExtent2D shadowExtent{2048, 2048};
+    debugShadowExtent = shadowExtent;
     if (!shadowPass.init(device, shadowExtent, depthFmt)) {
         return std::unexpected(1);
     }
@@ -110,6 +111,7 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
     inflightFences.resize(imgCount);
     slotFrame.assign(imgCount, 0);
     slotSubmitNs.assign(imgCount, 0);
+    slotDrawLogs.resize(imgCount);
     for (uint32_t i = 0; i < imgCount; i++) {
         imageAvailableSemaphores[i] = device->createSemaphore();
         renderFinishedSemaphores[i] = device->createSemaphore();
@@ -160,6 +162,87 @@ auto Renderer::setFrameGraphDebugEnabled(bool enabled) -> void {
     }
 }
 
+auto Renderer::buildRenderDebugSnapshot() const -> RenderDebugSnapshot {
+    RenderDebugSnapshot snap;
+    snap.frameIndex = m_frameIndex;
+    snap.limits = device->limits();
+    snap.validation = validationEnabled;
+    snap.swapchainExtent = swapchain->extent();
+    snap.swapchainFormat = swapchain->colorFormat();
+    snap.swapchainImages = swapchain->imageCount();
+    snap.currentSlot = currentFrame;
+
+    snap.instanceCount = (uint32_t) gpuInstances.size();
+    std::unordered_map<uint32_t, uint32_t> instancesPerMesh;
+    for (const auto& inst : gpuInstances) {
+        instancesPerMesh[inst.mesh.index]++;
+        if (inst.primFirst) {
+            snap.primFirstInstances++;
+        }
+    }
+    snap.meshes.reserve(meshCache.size());
+    for (const auto& [index, cached] : meshCache) {
+        snap.meshes.push_back({
+            .meshIndex = index,
+            .vertexCount = cached.vertexCount,
+            .indexCount = cached.indexCount,
+            .vertexBytes = cached.vertexBytes,
+            .indexBytes = cached.indexBytes,
+            .instances = instancesPerMesh[index],
+        });
+    }
+    std::unordered_map<uint32_t, bool> materials;
+    for (const auto& inst : gpuInstances) {
+        if (inst.material) {
+            materials[inst.material.index] = textureCache.contains(inst.material.index);
+        }
+    }
+    snap.materialCount = (uint32_t) materials.size();
+    for (const auto& [index, textured] : materials) {
+        if (textured) {
+            snap.materialsWithTexture++;
+        }
+    }
+    snap.textures.reserve(textureCache.size());
+    for (const auto& [index, cached] : textureCache) {
+        snap.textures.push_back({
+            .materialIndex = index,
+            .width = cached.width,
+            .height = cached.height,
+            .mipLevels = 1,
+            .format = cached.format,
+            .bytes = (uint64_t) cached.width * cached.height * 4,
+        });
+    }
+    snap.lightCount = (uint32_t) lights.size();
+    snap.hasSun = debugHasSun;
+    snap.sunDirection = debugSun.direction;
+    snap.sunRadiance = debugSun.radiance;
+    snap.sunShadowColor = debugSun.shadowColor;
+    snap.shadowMapExtent = debugShadowExtent;
+
+    auto fg = buildFrameGraphDebugSnapshot();
+    snap.passes.reserve(fg.executionOrder.size());
+    for (auto passIdx : fg.executionOrder) {
+        const auto& pass = fg.passes[passIdx];
+        snap.passes.push_back(pass);
+        snap.frameTotals.draws += pass.stats.draws;
+        snap.frameTotals.dispatches += pass.stats.dispatches;
+        snap.frameTotals.barriers += pass.stats.barriers;
+        snap.frameTotals.pipelineBinds += pass.stats.pipelineBinds;
+        snap.frameTotals.descriptorBinds += pass.stats.descriptorBinds;
+        snap.frameTotals.copies += pass.stats.copies;
+        snap.frameTotals.primitives += pass.stats.primitives;
+    }
+    resourcePool.forEach([&](const ResourcePoolKey& key, bool inUse) {
+        snap.poolTextures.push_back({.width = key.width, .height = key.height, .format = key.format, .inUse = inUse});
+    });
+    snap.poolAllocationsTotal = resourcePool.stats().allocationsTotal;
+    snap.draws = lastDrawLog;
+    snap.drawTiming = drawTimingRequest;
+    return snap;
+}
+
 auto Renderer::buildFrameGraphDebugSnapshot() const -> FrameGraphDebugSnapshot {
     auto snap = frameGraph.buildDebugSnapshot();
     fgPreviews.annotate(snap);
@@ -197,6 +280,25 @@ auto Renderer::readGpuTimings(uint32_t slot) -> void {
     }
     lastGpuFrameMs = (double) (maxEnd - minStart) * 1e-6;
     lastGpuFrame = slotFrame[slot];
+
+    // Per-draw zones are named "Draw" and were recorded in the same order as the timed
+    // entries of the slot's draw log.
+    auto& drawLog = slotDrawLogs[slot];
+    size_t nextTimed = 0;
+    for (const auto& zone : gpuZoneScratch) {
+        if (std::strcmp(zone.name, "Draw") != 0) {
+            continue;
+        }
+        while (nextTimed < drawLog.size() && !drawLog[nextTimed].timed) {
+            nextTimed++;
+        }
+        if (nextTimed >= drawLog.size()) {
+            break;
+        }
+        drawLog[nextTimed].gpuMs = (double) (zone.endNs - zone.startNs) * 1e-6;
+        nextTimed++;
+    }
+    lastDrawLog = drawLog;
 
     // Hand the same zones to the profiler's GPU lane, on the CPU clock. Calibrated when the
     // device supports it (true position of GPU work relative to the threads); otherwise
@@ -263,12 +365,19 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         }
     }
 
+    std::vector<uint32_t> primOfInstance(world.meshInstances.size(), 0);
+    for (const auto& [prim, range] : world.primToInstance) {
+        for (uint32_t i = range.first; i < range.first + range.count && i < primOfInstance.size(); i++) {
+            primOfInstance[i] = prim;
+        }
+    }
     gpuInstances.resize(world.meshInstances.size());
     for (size_t m = 0; m < world.meshInstances.size(); m++) {
         const auto& inst = world.meshInstances[m];
         gpuInstances[m] = {
             .mesh = inst.mesh,
             .material = inst.material,
+            .prim = primOfInstance[m],
             .transform = inst.worldTransform,
             .indexOffset = inst.indexOffset,
             .indexCount = inst.indexCount,
@@ -301,6 +410,9 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
                 PROFILE_ZONE_VALUE(meshData->vertices.size() * sizeof(Vertex) + meshData->indices.size() * sizeof(uint32_t));
                 CachedMesh cached;
                 cached.indexCount = (uint32_t) meshData->indices.size();
+                cached.vertexCount = (uint32_t) meshData->vertices.size();
+                cached.vertexBytes = meshData->vertices.size() * sizeof(Vertex);
+                cached.indexBytes = meshData->indices.size() * sizeof(uint32_t);
 
                 cached.vertexBuffer = uploader.uploadBuffer(std::as_bytes(std::span(meshData->vertices)), RhiBufferUsage::Vertex);
                 cached.indexBuffer = uploader.uploadBuffer(std::as_bytes(std::span(meshData->indices)), RhiBufferUsage::Index);
@@ -325,7 +437,12 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
                 };
                 auto pixelCount = (size_t) matData->texWidth * (size_t) matData->texHeight * 4;
                 auto pixels = std::span(matData->texPixels).first(pixelCount);
-                textureCache[inst.material.index] = {.texture = uploader.uploadTexture(texDesc, std::as_bytes(pixels))};
+                textureCache[inst.material.index] = {
+                    .texture = uploader.uploadTexture(texDesc, std::as_bytes(pixels)),
+                    .width = texDesc.width,
+                    .height = texDesc.height,
+                    .format = texDesc.format,
+                };
 
                 OBS_EVENT("Render", "TextureUploaded", "Texture").field("width", (int64_t) matData->texWidth).field("height", (int64_t) matData->texHeight);
             }
@@ -518,6 +635,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     } else {
         lighting.direction = snapshot.worldUp;
     }
+    debugHasSun = picked != nullptr;
+    debugSun = lighting;
 
     // Fit a scene-bounding sphere around the instance origins, then size the ortho frustum to
     // that sphere with some padding. Instance origins are a coarse approximation of scene
@@ -598,6 +717,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
 
     profile::zoneValue(instanceCount);
     profile::endZone(); // BuildFrameGraph
+    frameGraph.setDrawLogEnabled(renderDebugEnabled);
+    frameGraph.setDrawTiming(renderDebugEnabled ? drawTimingRequest : FgDrawTimingRequest{});
     {
         PROFILE_ZONE("Compile");
         frameGraph.compile();
@@ -616,6 +737,21 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         cmd->begin();
         frameGraph.execute(cmd);
         cmd->end();
+    }
+    slotDrawLogs[currentFrame] = frameGraph.drawLog();
+    if (frame % 60 == 0) {
+        // Headless-checkable summary of what the frame drew and what the scene holds.
+        const auto& stats = cmd->stats();
+        OBS_EVENT("Render", "RenderStats", "frame")
+            .field("frame", (int64_t) frame)
+            .field("draws", (int64_t) stats.draws)
+            .field("dispatches", (int64_t) stats.dispatches)
+            .field("barriers", (int64_t) stats.barriers)
+            .field("primitives", (int64_t) stats.primitives)
+            .field("instances", (int64_t) gpuInstances.size())
+            .field("meshes", (int64_t) meshCache.size())
+            .field("textures", (int64_t) textureCache.size())
+            .field("logged_draws", (int64_t) slotDrawLogs[currentFrame].size());
     }
 
     RhiSubmitInfo submitInfo = {

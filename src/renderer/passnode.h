@@ -1,6 +1,7 @@
 #pragma once
 
 #include "framegraphresource.h"
+#include "rhitypes.h"
 
 #include <functional>
 #include <vector>
@@ -19,5 +20,6 @@ struct PassNode {
     std::vector<FgResourceAccess> writes;
     bool hasSideEffects = false;
     bool culled = false;
+    RhiCommandStats stats; // delta recorded around execute
     std::function<void(FrameGraphContext&)> execute;
 };

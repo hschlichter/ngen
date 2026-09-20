@@ -37,9 +37,13 @@ auto EditorUI::draw(
     const SceneQuerySystem& sceneQuery,
     const MaterialLibrary& matLib,
     Camera& camera,
-    std::optional<FrameGraphDebugSnapshot> freshFrameGraphSnap) -> void {
+    std::optional<FrameGraphDebugSnapshot> freshFrameGraphSnap,
+    std::optional<RenderDebugSnapshot> freshRenderDebugSnap) -> void {
     if (freshFrameGraphSnap.has_value()) {
         fgLastSnapshot = std::move(freshFrameGraphSnap);
+    }
+    if (freshRenderDebugSnap.has_value()) {
+        renderDebugLast = std::move(freshRenderDebugSnap);
     }
     MainMenuBarState menuState{
         .showSceneWindow = showSceneWindow,
@@ -59,6 +63,7 @@ auto EditorUI::draw(
         .antiAliasing = antiAliasingFlag,
         .showFrameGraph = showFrameGraphWindow,
         .showPerformance = showPerformanceWindow,
+        .showRenderDebug = showRenderDebugWindow,
         .showAssetBrowser = showAssetBrowserWindow,
         .requestQuit = requestQuit,
         .pendingNewScene = pendingNewSceneFlag,
@@ -103,6 +108,21 @@ auto EditorUI::draw(
     {
         PROFILE_ZONE("PerformanceWindow");
         drawPerformanceWindow(showPerformanceWindow, performanceState);
+    }
+    {
+        PROFILE_ZONE("RenderDebugWindow");
+        RenderDebugViewFlags viewFlags = {
+            .gbufferView = gbufferViewMode,
+            .showBufferOverlay = showBufferOverlayFlag,
+            .showShadowOverlay = showShadowOverlayFlag,
+            .antiAliasing = antiAliasingFlag,
+            .showGrid = showGridFlag,
+            .showOrigin = showOriginFlag,
+            .showGizmo = showGizmoFlag,
+            .showAABBs = showAABBsFlag,
+            .showLightGizmos = showLightGizmosFlag,
+        };
+        drawRenderDebugWindow(showRenderDebugWindow, renderDebugLast, viewFlags, usdScene, selectedPrim, renderDebugDraws);
     }
     {
         PROFILE_ZONE("AssetBrowserWindow");

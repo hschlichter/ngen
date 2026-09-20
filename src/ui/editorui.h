@@ -4,6 +4,7 @@
 #include "framegraphdebug.h"
 #include "performancewindow.h"
 #include "propertieswindow.h" // PropertiesWindowState
+#include "renderdebugwindow.h"
 #include "scenehandles.h"
 #include "scenewindow.h" // SceneWindowState
 
@@ -42,7 +43,8 @@ public:
         const SceneQuerySystem& sceneQuery,
         const MaterialLibrary& matLib,
         Camera& camera,
-        std::optional<FrameGraphDebugSnapshot> freshFrameGraphSnap) -> void;
+        std::optional<FrameGraphDebugSnapshot> freshFrameGraphSnap,
+        std::optional<RenderDebugSnapshot> freshRenderDebugSnap) -> void;
 
     auto openScene(
         const char* path,
@@ -94,6 +96,7 @@ public:
     auto getShowShadowOverlay() const -> bool { return showShadowOverlayFlag; }
     auto getAntiAliasing() const -> bool { return antiAliasingFlag; }
     auto getShowFrameGraphWindow() const -> bool { return showFrameGraphWindow; }
+    auto getShowRenderDebugWindow() const -> bool { return showRenderDebugWindow; }
     auto getShowAssetBrowserWindow() const -> bool { return showAssetBrowserWindow; }
     auto activeTool() const -> EditorTool { return activeToolValue; }
     auto setActiveTool(EditorTool t) -> void { activeToolValue = t; }
@@ -121,6 +124,7 @@ private:
     bool antiAliasingFlag = true;
     bool showFrameGraphWindow = false;
     bool showPerformanceWindow = false;
+    bool showRenderDebugWindow = false;
     bool showAssetBrowserWindow = false;
     bool requestQuit = false;
     bool pendingNewSceneFlag = false;
@@ -132,6 +136,20 @@ private:
     std::string pendingSavePath;
     std::optional<FrameGraphDebugSnapshot> fgLastSnapshot;
     PerformanceWindowState performanceState;
+    std::optional<RenderDebugSnapshot> renderDebugLast;
+    RenderDebugDrawState renderDebugDraws;
+
+public:
+    // Draw timing request edited in the Render Debug window; main forwards it to the render thread when it changes.
+    auto takeDrawTimingRequest() -> std::optional<FgDrawTimingRequest> {
+        if (!renderDebugDraws.timingChanged) {
+            return std::nullopt;
+        }
+        renderDebugDraws.timingChanged = false;
+        return renderDebugDraws.timing;
+    }
+
+private:
     std::optional<uint32_t> fgSelectedPass;
     std::optional<uint32_t> fgSelectedResource;
 };

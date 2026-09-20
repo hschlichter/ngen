@@ -85,7 +85,8 @@ auto ShadowPass::addPass(
             cmd->setViewport(extent);
             cmd->setScissor(extent);
 
-            for (const auto& inst : instances) {
+            for (uint32_t m = 0; m < (uint32_t) instances.size(); m++) {
+                const auto& inst = instances[m];
                 // Instances are expanded per material submesh, but shadows are
                 // material-agnostic — draw the whole mesh once, on the prim's
                 // first submesh instance, and skip the rest.
@@ -106,7 +107,9 @@ auto ShadowPass::addPass(
                 if (heavy) {
                     cmd->beginGpuZone("LargeDraw");
                 }
+                ctx.beginDraw({.instance = m, .mesh = inst.mesh.index, .material = inst.material.index, .prim = inst.prim, .indexOffset = 0, .indexCount = cached.indexCount});
                 cmd->drawIndexed(cached.indexCount, 1, 0, 0, 0);
+                ctx.endDraw();
                 if (heavy) {
                     cmd->endGpuZone();
                 }

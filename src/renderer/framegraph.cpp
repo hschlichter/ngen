@@ -10,7 +10,32 @@
 #include <queue>
 #include <utility>
 
+auto FrameGraphContext::beginDraw(const FgDrawRecord& record) -> void {
+    if (!graph->drawLogEnabled) {
+        return;
+    }
+    auto entry = record;
+    entry.pass = graph->executingPass;
+    entry.drawIndex = graph->executingPassDraws++;
+    const auto& timing = graph->drawTiming;
+    bool inWindow = timing.enabled && timing.pass == entry.pass && entry.drawIndex >= timing.first && entry.drawIndex < timing.first + timing.count;
+    if (inWindow) {
+        entry.timed = true;
+        commandBuffer->beginGpuZone("Draw");
+        drawZoneOpen = true;
+    }
+    graph->draws.push_back(entry);
+}
+
+auto FrameGraphContext::endDraw() -> void {
+    if (drawZoneOpen) {
+        commandBuffer->endGpuZone();
+        drawZoneOpen = false;
+    }
+}
+
 auto FrameGraph::reset() -> void {
+    draws.clear();
     passes.clear();
     resources.clear();
     passOrder.clear();
@@ -318,7 +343,20 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
             // Every pass is a GPU zone and a CPU record zone; passes may nest their own inside.
             PROFILE_GPU_ZONE(cmd, passName);
             profile::ScopedZone recordZone(passes[passIdx].profileNameId);
+            auto before = cmd->stats();
+            executingPass = passName;
+            executingPassDraws = 0;
             passes[passIdx].execute(ctx);
+            const auto& after = cmd->stats();
+            passes[passIdx].stats = {
+                .draws = after.draws - before.draws,
+                .dispatches = after.dispatches - before.dispatches,
+                .barriers = after.barriers - before.barriers,
+                .pipelineBinds = after.pipelineBinds - before.pipelineBinds,
+                .descriptorBinds = after.descriptorBinds - before.descriptorBinds,
+                .copies = after.copies - before.copies,
+                .primitives = after.primitives - before.primitives,
+            };
         }
         cmd->endLabel();
 
@@ -365,6 +403,7 @@ auto FrameGraph::buildDebugSnapshot() const -> FrameGraphDebugSnapshot {
         dbg.executionIndex = passExecIdx[p];
         dbg.culled = src.culled;
         dbg.hasSideEffects = src.hasSideEffects;
+        dbg.stats = src.stats;
         dbg.reads.reserve(src.reads.size());
         for (const auto& r : src.reads) {
             dbg.reads.push_back({.resourceIndex = r.resourceIndex, .access = r.access});

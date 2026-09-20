@@ -12,6 +12,7 @@
 #include "gizmopass.h"
 #include "gpuuploader.h"
 #include "lightingpass.h"
+#include "renderdebug.h"
 #include "renderertypes.h"
 #include "renderworld.h"
 #include "resourcepool.h"
@@ -33,6 +34,9 @@ struct RenderSnapshot;
 
 struct CachedTexture {
     RhiTexture* texture = nullptr;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    RhiFormat format = RhiFormat::Undefined;
 };
 
 class Renderer {
@@ -52,6 +56,11 @@ public:
     auto frameGraphRef() const -> const FrameGraph& { return frameGraph; }
     auto setFrameGraphDebugEnabled(bool enabled) -> void;
     auto buildFrameGraphDebugSnapshot() const -> FrameGraphDebugSnapshot;
+    auto buildRenderDebugSnapshot() const -> RenderDebugSnapshot;
+    auto setValidationEnabled(bool enabled) -> void { validationEnabled = enabled; }
+    // Render debugger inputs, set by the render thread before render().
+    auto setRenderDebugEnabled(bool enabled) -> void { renderDebugEnabled = enabled; }
+    auto setDrawTiming(const FgDrawTimingRequest& request) -> void { drawTimingRequest = request; }
     auto initGizmos(Camera* camera) -> void;
     auto gizmoUpdate(const RenderSnapshot& snapshot, RhiExtent2D extent) -> std::vector<GizmoDrawRequest>;
     auto gizmoHitTest(float mouseX, float mouseY, RhiExtent2D windowExtent) -> bool;
@@ -132,6 +141,15 @@ private:
     FrameGraphPreviews fgPreviews;
     bool fgDebugEnabled = false;
     bool lastAntiAliasing = true;
+    bool validationEnabled = false;
+    bool renderDebugEnabled = false;
+    FgDrawTimingRequest drawTimingRequest;
+    std::vector<std::vector<FgDrawRecord>> slotDrawLogs; // per frame slot, joined with GPU zones after the fence
+    std::vector<FgDrawRecord> lastDrawLog;
+    // Last frame's lighting pick, kept for the debug snapshot.
+    bool debugHasSun = false;
+    LightingInputs debugSun;
+    RhiExtent2D debugShadowExtent = {};
 
     ImGuiBackend* editorUI = nullptr; // owned by the application
 };

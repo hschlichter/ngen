@@ -76,6 +76,7 @@ auto RhiCommandBufferVulkan::begin() -> void {
     };
     vkBeginCommandBuffer(cmd, &beginInfo);
 
+    commandStats = {};
     zones.clear();
     zoneStack.clear();
     if (zonePool != VK_NULL_HANDLE) {
@@ -206,6 +207,7 @@ auto RhiCommandBufferVulkan::bufferStateToStageMask(RhiBufferState state) -> VkP
 }
 
 auto RhiCommandBufferVulkan::pipelineBarrier(std::span<const RhiTextureBarrierDesc> barriers, std::span<const RhiBufferBarrierDesc> bufferBarrierDescs) -> void {
+    commandStats.barriers += (uint32_t) (barriers.size() + bufferBarrierDescs.size());
     std::vector<VkBufferMemoryBarrier2> bufferBarriers;
     bufferBarriers.reserve(bufferBarrierDescs.size());
     for (const auto& b : bufferBarrierDescs) {
@@ -266,6 +268,7 @@ auto RhiCommandBufferVulkan::pipelineBarrier(std::span<const RhiTextureBarrierDe
 }
 
 auto RhiCommandBufferVulkan::blitTexture(RhiTexture* src, RhiTexture* dst, RhiExtent2D srcExtent, RhiExtent2D dstExtent) -> void {
+    commandStats.copies++;
     auto* srcTex = static_cast<RhiTextureVulkan*>(src);
     auto* dstTex = static_cast<RhiTextureVulkan*>(dst);
     VkImageBlit region = {
@@ -289,6 +292,8 @@ auto RhiCommandBufferVulkan::setScissor(int32_t x, int32_t y, RhiExtent2D extent
 
 auto RhiCommandBufferVulkan::bindPipeline(RhiPipeline* pipeline) -> void {
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
+    commandStats.pipelineBinds++;
+    boundTopology = p->topology;
     vkCmdBindPipeline(cmd, p->bindPoint, p->pipeline);
 }
 
@@ -305,6 +310,7 @@ auto RhiCommandBufferVulkan::bindIndexBuffer(RhiBuffer* buffer, RhiIndexType ind
 }
 
 auto RhiCommandBufferVulkan::bindDescriptorSet(RhiPipeline* pipeline, uint32_t setIndex, RhiDescriptorSet* set) -> void {
+    commandStats.descriptorBinds++;
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
     auto* s = static_cast<RhiDescriptorSetVulkan*>(set);
     vkCmdBindDescriptorSets(cmd, p->bindPoint, p->layout, setIndex, 1, &s->set, 0, nullptr);
@@ -326,15 +332,20 @@ auto RhiCommandBufferVulkan::pushConstants(RhiPipeline* pipeline, RhiShaderStage
 }
 
 auto RhiCommandBufferVulkan::draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) -> void {
+    commandStats.draws++;
+    commandStats.primitives += (uint64_t) (boundTopology == RhiPrimitiveTopology::LineList ? vertexCount / 2 : vertexCount / 3) * instanceCount;
     vkCmdDraw(cmd, vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
 auto RhiCommandBufferVulkan::drawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance)
     -> void {
+    commandStats.draws++;
+    commandStats.primitives += (uint64_t) (boundTopology == RhiPrimitiveTopology::LineList ? indexCount / 2 : indexCount / 3) * instanceCount;
     vkCmdDrawIndexed(cmd, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
 auto RhiCommandBufferVulkan::copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void {
+    commandStats.copies++;
     auto* srcBuf = static_cast<RhiBufferVulkan*>(src);
     auto* dstBuf = static_cast<RhiBufferVulkan*>(dst);
     VkBufferCopy vkRegion = {
@@ -346,6 +357,7 @@ auto RhiCommandBufferVulkan::copyBuffer(RhiBuffer* src, RhiBuffer* dst, const Rh
 }
 
 auto RhiCommandBufferVulkan::copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void {
+    commandStats.copies++;
     auto* srcBuf = static_cast<RhiBufferVulkan*>(src);
     auto* dstTex = static_cast<RhiTextureVulkan*>(dst);
     VkBufferImageCopy vkRegion = {
@@ -357,6 +369,7 @@ auto RhiCommandBufferVulkan::copyBufferToTexture(RhiBuffer* src, RhiTexture* dst
 }
 
 auto RhiCommandBufferVulkan::copyTextureToBuffer(RhiTexture* src, RhiBuffer* dst, const RhiBufferTextureCopy& region) -> void {
+    commandStats.copies++;
     auto* srcTex = static_cast<RhiTextureVulkan*>(src);
     auto* dstBuf = static_cast<RhiBufferVulkan*>(dst);
     VkBufferImageCopy vkRegion = {
@@ -397,5 +410,6 @@ auto RhiCommandBufferVulkan::endLabel() -> void {
 }
 
 auto RhiCommandBufferVulkan::dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) -> void {
+    commandStats.dispatches++;
     vkCmdDispatch(cmd, groupsX, groupsY, groupsZ);
 }

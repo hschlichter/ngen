@@ -45,6 +45,7 @@ auto ResourcePool::acquireTexture(const RhiTextureDesc& desc) -> RhiTexture* {
 
     auto* tex = device->createTexture(desc);
     if (tex != nullptr) {
+        allocations++;
         inUse.push_back({key, tex});
         std::println("ResourcePool: allocated new texture {}x{} fmt={}", desc.width, desc.height, (int) desc.format);
     }

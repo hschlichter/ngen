@@ -134,7 +134,9 @@ auto GeometryPass::addPass(
                 if (heavy) {
                     cmd->beginGpuZone("LargeDraw");
                 }
+                ctx.beginDraw({.instance = m, .mesh = inst.mesh.index, .material = inst.material.index, .prim = inst.prim, .indexOffset = inst.indexOffset, .indexCount = inst.indexCount});
                 cmd->drawIndexed(inst.indexCount, 1, inst.indexOffset, 0, 0);
+                ctx.endDraw();
                 if (heavy) {
                     cmd->endGpuZone();
                 }

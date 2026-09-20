@@ -15,11 +15,15 @@ struct CachedMesh {
     RhiBuffer* vertexBuffer = nullptr;
     RhiBuffer* indexBuffer = nullptr;
     uint32_t indexCount = 0;
+    uint32_t vertexCount = 0;
+    uint64_t vertexBytes = 0;
+    uint64_t indexBytes = 0;
 };
 
 struct GpuInstance {
     MeshHandle mesh;
     MaterialHandle material;
+    uint32_t prim = 0; // PrimHandle::index of the source prim, for the render debugger
     glm::mat4 transform;
     // Submesh index range within the mesh; primFirst marks the first submesh
     // instance of a prim (the shadow pass draws the whole mesh once, there).

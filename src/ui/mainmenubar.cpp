@@ -148,6 +148,7 @@ void drawMainMenuBar(MainMenuBarState& state) {
             ImGui::Separator();
             ImGui::MenuItem("Frame Graph", nullptr, &state.showFrameGraph);
             ImGui::MenuItem("Performance", nullptr, &state.showPerformance);
+            ImGui::MenuItem("Render Debug", nullptr, &state.showRenderDebug);
             ImGui::Separator();
             ImGui::Text("Fullscreen Buffer View");
             ImGui::RadioButton("Albedo", &state.gbufferView, 1);
