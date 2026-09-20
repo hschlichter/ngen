@@ -21,6 +21,7 @@
 
 #include <expected>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -58,6 +59,8 @@ public:
     auto buildFrameGraphDebugSnapshot() const -> FrameGraphDebugSnapshot;
     auto buildRenderDebugSnapshot() const -> RenderDebugSnapshot;
     auto setValidationEnabled(bool enabled) -> void { validationEnabled = enabled; }
+    // Next presented frame is read back and written as PNG. Waits on that frame's fence once.
+    auto requestScreenshot(std::string path) -> void { screenshotPath = std::move(path); }
     // Render debugger inputs, set by the render thread before render().
     auto setRenderDebugEnabled(bool enabled) -> void { renderDebugEnabled = enabled; }
     auto setDrawTiming(const FgDrawTimingRequest& request) -> void { drawTimingRequest = request; }
@@ -143,6 +146,7 @@ private:
     bool lastAntiAliasing = true;
     bool validationEnabled = false;
     bool renderDebugEnabled = false;
+    std::string screenshotPath;
     FgDrawTimingRequest drawTimingRequest;
     std::vector<std::vector<FgDrawRecord>> slotDrawLogs; // per frame slot, joined with GPU zones after the fence
     std::vector<FgDrawRecord> lastDrawLog;

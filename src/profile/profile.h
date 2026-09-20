@@ -103,6 +103,8 @@ auto framesIn(uint64_t startNs, uint64_t endNs, std::vector<FrameInterval>& out)
 auto frameHistory(std::vector<FrameStats>& out) -> void;
 // Statistics for every recorded zone with this name on a CPU lane, or on the GPU lane when laneIndex is UINT32_MAX.
 auto zoneStats(uint32_t laneIndex, uint32_t nameId) -> ZoneStats;
+// Whole history as Chrome trace event JSON (Perfetto, chrome://tracing, any JSON parser).
+auto exportChromeTrace(const char* path) -> bool;
 
 struct ScopedZone {
     explicit ScopedZone(uint32_t nameId) { beginZone(nameId); }

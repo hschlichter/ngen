@@ -350,14 +350,15 @@ auto drawDeviceTab(const RenderDebugSnapshot& s) -> void {
 
 } // namespace
 
-void drawRenderDebugWindow(bool& show, const std::optional<RenderDebugSnapshot>& snap, RenderDebugViewFlags& view, const USDScene& scene, PrimHandle& selectedPrim, RenderDebugDrawState& drawState) {
+auto drawRenderDebugWindow(bool& show, const std::optional<RenderDebugSnapshot>& snap, RenderDebugViewFlags& view, const USDScene& scene, PrimHandle& selectedPrim, RenderDebugDrawState& drawState) -> bool {
+    bool screenshot = false;
     if (!show) {
-        return;
+        return false;
     }
     ImGui::SetNextWindowSize(ImVec2(820, 560), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Render Debug", &show)) {
         ImGui::End();
-        return;
+        return false;
     }
     if (ImGui::BeginTabBar("##rd_tabs")) {
         if (ImGui::BeginTabItem("Scene")) {
@@ -379,6 +380,12 @@ void drawRenderDebugWindow(bool& show, const std::optional<RenderDebugSnapshot>&
         }
         if (ImGui::BeginTabItem("View")) {
             drawViewTab(view);
+            ImGui::Separator();
+            if (ImGui::Button("Screenshot (F12)")) {
+                screenshot = true;
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("writes screenshot_<frame>.png in the working directory");
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Device")) {
@@ -392,4 +399,5 @@ void drawRenderDebugWindow(bool& show, const std::optional<RenderDebugSnapshot>&
         ImGui::EndTabBar();
     }
     ImGui::End();
+    return screenshot;
 }

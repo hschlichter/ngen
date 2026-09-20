@@ -29,6 +29,7 @@ struct MainMenuBarState {
     bool& showFrameGraph;
     bool& showPerformance;
     bool& showRenderDebug;
+    bool& showCamera;
     bool& showAssetBrowser;
     bool& requestQuit;
     bool& pendingNewScene;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "assetbrowser.h" // AssetBrowserState
+#include "camerawindow.h"
 #include "framegraphdebug.h"
 #include "performancewindow.h"
 #include "propertieswindow.h" // PropertiesWindowState
@@ -12,6 +13,7 @@
 #include <glm/glm.hpp>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 class DebugDraw;
@@ -97,6 +99,25 @@ public:
     auto getAntiAliasing() const -> bool { return antiAliasingFlag; }
     auto getShowFrameGraphWindow() const -> bool { return showFrameGraphWindow; }
     auto getShowRenderDebugWindow() const -> bool { return showRenderDebugWindow; }
+    auto getShowCameraWindow() const -> bool { return showCameraWindow; }
+
+    // Session commands (flags, scripts) drive the same flags the menus edit.
+    auto setGBufferViewMode(int mode) -> void { gbufferViewMode = mode; }
+    // grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa; false if the name is unknown.
+    auto setOverlay(std::string_view name, bool on) -> bool;
+    auto setShowRenderDebugWindow(bool show) -> void { showRenderDebugWindow = show; }
+    // Screenshot requested from the UI (button or F12); main hands it to the renderer.
+    auto takeScreenshotRequest() -> bool {
+        auto requested = screenshotRequested;
+        screenshotRequested = false;
+        return requested;
+    }
+    auto requestScreenshot() -> void { screenshotRequested = true; }
+    auto cameraWindow() -> CameraWindowState& { return cameraState; }
+    auto setBookmarkPath(std::string path) -> void {
+        cameraState.bookmarkPath = std::move(path);
+        cameraState.loaded = false;
+    }
     auto getShowAssetBrowserWindow() const -> bool { return showAssetBrowserWindow; }
     auto activeTool() const -> EditorTool { return activeToolValue; }
     auto setActiveTool(EditorTool t) -> void { activeToolValue = t; }
@@ -125,6 +146,9 @@ private:
     bool showFrameGraphWindow = false;
     bool showPerformanceWindow = false;
     bool showRenderDebugWindow = false;
+    bool showCameraWindow = false;
+    bool screenshotRequested = false;
+    CameraWindowState cameraState;
     bool showAssetBrowserWindow = false;
     bool requestQuit = false;
     bool pendingNewSceneFlag = false;

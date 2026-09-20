@@ -64,6 +64,7 @@ auto EditorUI::draw(
         .showFrameGraph = showFrameGraphWindow,
         .showPerformance = showPerformanceWindow,
         .showRenderDebug = showRenderDebugWindow,
+        .showCamera = showCameraWindow,
         .showAssetBrowser = showAssetBrowserWindow,
         .requestQuit = requestQuit,
         .pendingNewScene = pendingNewSceneFlag,
@@ -122,7 +123,13 @@ auto EditorUI::draw(
             .showAABBs = showAABBsFlag,
             .showLightGizmos = showLightGizmosFlag,
         };
-        drawRenderDebugWindow(showRenderDebugWindow, renderDebugLast, viewFlags, usdScene, selectedPrim, renderDebugDraws);
+        if (drawRenderDebugWindow(showRenderDebugWindow, renderDebugLast, viewFlags, usdScene, selectedPrim, renderDebugDraws)) {
+            screenshotRequested = true;
+        }
+    }
+    {
+        PROFILE_ZONE("CameraWindow");
+        drawCameraWindow(showCameraWindow, camera, cameraState);
     }
     {
         PROFILE_ZONE("AssetBrowserWindow");
@@ -267,4 +274,27 @@ auto EditorUI::drawDebug(
         };
         highlightSubtree(selectedPrim);
     }
+}
+
+auto EditorUI::setOverlay(std::string_view name, bool on) -> bool {
+    if (name == "grid") {
+        showGridFlag = on;
+    } else if (name == "origin") {
+        showOriginFlag = on;
+    } else if (name == "gizmo" || name == "gizmos") {
+        showGizmoFlag = on;
+    } else if (name == "aabbs") {
+        showAABBsFlag = on;
+    } else if (name == "lightgizmos") {
+        showLightGizmosFlag = on;
+    } else if (name == "buffer") {
+        showBufferOverlayFlag = on;
+    } else if (name == "shadow") {
+        showShadowOverlayFlag = on;
+    } else if (name == "aa") {
+        antiAliasingFlag = on;
+    } else {
+        return false;
+    }
+    return true;
 }

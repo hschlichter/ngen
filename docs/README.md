@@ -78,6 +78,7 @@ Current truth for the build framework is [`../build/build_system.md`](../build/b
 - [plan_gpu_timestamps.md](plan_gpu_timestamps.md) — GPU timestamp queries in the RHI, per-pass GPU time in the frame graph debugger (landed)
 - [plan_performance_window.md](plan_performance_window.md) — profiling marker API and Performance window with CPU/GPU timeline; Tracy deferred (landed)
 - [plan_render_debug_window.md](plan_render_debug_window.md) — Render Debug window: scene tables, per-pass draw counters, view modes, device info (landed)
+- [plan_agent_introspection.md](plan_agent_introspection.md) — screenshots, camera flags and window, scripted sessions, render debug and profile dumps (landed)
 - [plan_rhi_validation.md](plan_rhi_validation.md) — `ngen-test-rhi` RHI validation program (superseded by plan_rhi_examples.md)
 - [observability_api_design_engine_agnostic.md](observability_api_design_engine_agnostic.md) — earlier abstract obs design (historical — the concrete design deliberately diverged)
 

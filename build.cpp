@@ -102,6 +102,12 @@ auto main(int argc, char** argv) -> int {
             .public_include({"src/profile"})
             .include({"src/rhi"});
 
+    // Session commands: verbs shared by CLI flags, scripts and the camera window.
+    auto session =
+        cxx::static_library("session")
+            .sources(glob({.include = "src/session/**/*.cpp"}))
+            .public_include({"src/session"});
+
     // src/rhi is header-only: the backend-agnostic interface. Consumers add the
     // include path directly; only backends are libraries.
     auto rhivulkan =
@@ -133,6 +139,7 @@ auto main(int argc, char** argv) -> int {
                 "src/obs",
                 "src/profile",
                 "external/imgui",
+                "external/stb",
             })
             .link(obs)
             .link(profile)
@@ -207,10 +214,12 @@ auto main(int argc, char** argv) -> int {
                 "src/renderer/passes",
                 "src/scene",
                 "src/profile",
+                "src/session",
                 "external/imgui",
             })
             .link(renderer)
             .link(profile)
+            .link(session)
             .link(scene)
             .link(sceneusd)
             .link(imgui);
@@ -261,6 +270,7 @@ auto main(int argc, char** argv) -> int {
                 "src/scene",
                 "src/ui",
                 "src/profile",
+                "src/session",
                 "external/glm",
                 "external/cgltf",
                 "external/stb",
@@ -270,6 +280,7 @@ auto main(int argc, char** argv) -> int {
             })
             .link(obs)
             .link(profile)
+            .link(session)
             .link(rhivulkan)
             .link(renderer)
             .link(scene)

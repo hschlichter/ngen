@@ -8,6 +8,7 @@
 #include "observationbus.h"
 #include "observationmacros.h"
 #include "profile.h"
+#include "renderdebugjson.h"
 #include "renderer.h"
 #include "rendersnapshot.h"
 #include "renderthread.h"
@@ -17,6 +18,7 @@
 #include "scalegizmo.h"
 #include "scenequery.h"
 #include "sceneupdater.h"
+#include "sessionscript.h"
 #include "shaderloader.h"
 #include "translategizmo.h"
 #include "usdrenderextractor.h"
@@ -91,6 +93,15 @@ auto main(int argc, char* argv[]) -> int {
     std::vector<const char*> positional;
     bool enableValidation = false;
     bool forceRenderDebug = false; // --render-debug: keep the render debug snapshot and draw log on without the window
+    bool failOnValidation = false;
+    uint64_t maxFrames = 0;
+    std::string dumpRenderDebugPath;
+    std::string dumpProfilePath;
+    SessionScript session;
+    std::string sessionError;
+    auto flagValue = [](std::string_view arg, std::string_view flag) -> std::string {
+        return std::string(arg.substr(flag.size()));
+    };
     positional.push_back(argv[0]);
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
@@ -98,6 +109,34 @@ auto main(int argc, char* argv[]) -> int {
             enableValidation = true;
         } else if (arg == "--render-debug") {
             forceRenderDebug = true;
+        } else if (arg == "--fail-on-validation") {
+            failOnValidation = true;
+            enableValidation = true;
+        } else if (arg.starts_with("--frames=")) {
+            maxFrames = std::stoull(flagValue(arg, "--frames="));
+        } else if (arg.starts_with("--camera=")) {
+            session.add(0, "camera", flagValue(arg, "--camera="));
+        } else if (arg.starts_with("--camera-frame=")) {
+            session.add(0, "camera-frame", flagValue(arg, "--camera-frame="));
+        } else if (arg.starts_with("--select=")) {
+            session.add(0, "select", flagValue(arg, "--select="));
+        } else if (arg.starts_with("--view=")) {
+            session.add(0, "view", flagValue(arg, "--view="));
+        } else if (arg.starts_with("--overlay=")) {
+            session.add(0, "overlay", flagValue(arg, "--overlay="));
+        } else if (arg.starts_with("--screenshot=")) {
+            // Taken on the last frame of --frames, or frame 3 when unbounded; resolved below.
+            session.add(UINT64_MAX, "screenshot", flagValue(arg, "--screenshot="));
+        } else if (arg.starts_with("--dump-render-debug=")) {
+            dumpRenderDebugPath = flagValue(arg, "--dump-render-debug=");
+            forceRenderDebug = true;
+        } else if (arg.starts_with("--dump-profile=")) {
+            dumpProfilePath = flagValue(arg, "--dump-profile=");
+        } else if (arg.starts_with("--script=")) {
+            if (!session.loadFile(flagValue(arg, "--script=").c_str(), sessionError)) {
+                std::println(stderr, "--script: {}", sessionError);
+                return 1;
+            }
         } else if (arg.starts_with("--obs-output=")) {
             obsOutputPath = std::string(arg.substr(std::string_view("--obs-output=").size()));
         } else if (arg.starts_with("--obs-only=")) {
@@ -106,6 +145,22 @@ auto main(int argc, char* argv[]) -> int {
             obsExclude = splitCategoryList(arg.substr(std::string_view("--obs-exclude=").size()));
         } else {
             positional.push_back(argv[i]);
+        }
+    }
+    {
+        // --screenshot without a frame: last frame of --frames, else frame 3 (after the first
+        // frames in flight have settled).
+        std::vector<SessionCommand> deferred;
+        session.takeDue(UINT64_MAX, deferred);
+        std::vector<SessionCommand> keep;
+        for (auto& c : deferred) {
+            if (c.frame == UINT64_MAX) {
+                c.frame = maxFrames > 0 ? maxFrames : 3;
+            }
+            keep.push_back(std::move(c));
+        }
+        for (auto& c : keep) {
+            session.add(c.frame, c.verb, c.args);
         }
     }
     if (!obsOnly.empty() && !obsExclude.empty()) {
@@ -227,12 +282,26 @@ auto main(int argc, char* argv[]) -> int {
         return failAfterInit();
     }
     renderer.setValidationEnabled(enableValidation);
+    {
+        const auto& limits = rhiDevice.limits();
+        OBS_EVENT("Render", "DeviceInfo", "device")
+            .field("name", std::string(limits.deviceName))
+            .field("driver", std::string(limits.driverName))
+            .field("timestamps", limits.timestamps)
+            .field("calibrated_timestamps", limits.calibratedTimestamps)
+            .field("wide_lines", limits.wideLines)
+            .field("validation", enableValidation);
+    }
+
     renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
     EditorUI editorUI;
     // Asset browser root = current working directory (the "project" root), so the
     // browser shows the same tree regardless of which scene is open. Captured once
     // here; doesn't change per-scene.
     editorUI.setAssetBrowserRoot(std::filesystem::current_path().string());
+    if (positional.size() > 1) {
+        editorUI.setBookmarkPath(std::string(positional[1]) + ".cameras.txt");
+    }
 
     // Render thread
     RenderThread renderThread;
@@ -289,9 +358,114 @@ auto main(int argc, char* argv[]) -> int {
     auto lastTicks = SDL_GetTicksNS();
     auto quit = false;
     uint64_t frameCounter = 0;
+    std::vector<SessionCommand> dueCommands;
+    // Applies one session command. Verbs mirror the CLI flags; unknown verbs are reported and skipped.
+    auto applyCommand = [&](const SessionCommand& c) -> void {
+        std::string_view verb = c.verb;
+        if (verb == "camera") {
+            float pose[5] = {};
+            if (parseCameraPose(c.args, pose)) {
+                cam.position = glm::vec3(pose[0], pose[1], pose[2]);
+                cam.yaw = pose[3];
+                cam.pitch = pose[4];
+            } else {
+                std::println(stderr, "camera: expected x,y,z,yaw,pitch, got '{}'", c.args);
+            }
+        } else if (verb == "camera-frame") {
+            if (c.args == "scene") {
+                frameSceneView();
+            } else {
+                auto prim = usdScene.isOpen() ? usdScene.findPrim(c.args.c_str()) : PrimHandle{};
+                if (prim) {
+                    auto bb = sceneQuery.anchorBounds(usdScene, prim);
+                    if (bb.valid()) {
+                        cam.frame(bb, glm::radians(45.0f));
+                    }
+                } else {
+                    std::println(stderr, "camera-frame: prim '{}' not found", c.args);
+                }
+            }
+        } else if (verb == "select") {
+            auto prim = usdScene.isOpen() ? usdScene.findPrim(c.args.c_str()) : PrimHandle{};
+            if (prim) {
+                selectedPrim = prim;
+            } else {
+                std::println(stderr, "select: prim '{}' not found", c.args);
+            }
+        } else if (verb == "view") {
+            static const char* names[] = {"lit", "albedo", "normals", "depth", "shadowfactor", "shadowmap", "shadowuv", "worldpos"};
+            bool found = false;
+            for (int i = 0; i < 8; i++) {
+                if (c.args == names[i]) {
+                    editorUI.setGBufferViewMode(i);
+                    found = true;
+                }
+            }
+            if (!found) {
+                std::println(stderr, "view: unknown mode '{}'", c.args);
+            }
+        } else if (verb == "overlay") {
+            size_t start = 0;
+            while (start < c.args.size()) {
+                auto comma = c.args.find(',', start);
+                auto item = std::string_view(c.args).substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+                auto eq = item.find('=');
+                if (eq == std::string_view::npos || !editorUI.setOverlay(item.substr(0, eq), item.substr(eq + 1) == "on")) {
+                    std::println(stderr, "overlay: expected name=on|off, got '{}'", item);
+                }
+                if (comma == std::string::npos) {
+                    break;
+                }
+                start = comma + 1;
+            }
+        } else if (verb == "screenshot") {
+            renderer.requestScreenshot(c.args);
+        } else if (verb == "dump-render-debug") {
+            dumpRenderDebugPath = c.args;
+            forceRenderDebug = true;
+        } else if (verb == "dump-profile") {
+            if (!profile::exportChromeTrace(c.args.c_str())) {
+                std::println(stderr, "dump-profile: cannot write {}", c.args);
+            } else {
+                std::println("Profile trace written: {}", c.args);
+            }
+        } else if (verb == "quit") {
+            quit = true;
+        } else {
+            std::println(stderr, "unknown session command '{}'", c.verb);
+        }
+    };
+    // Render debug dump waits for a snapshot with the request active; written when one arrives.
+    auto writeRenderDebugDump = [&](const RenderDebugSnapshot& snap) -> void {
+        auto primPath = [&](uint32_t prim) -> std::string {
+            const auto* rec = usdScene.isOpen() ? usdScene.getPrimRecord(PrimHandle{prim}) : nullptr;
+            return rec != nullptr ? rec->path : std::string{};
+        };
+        if (writeRenderDebugJson(dumpRenderDebugPath.c_str(), snap, primPath)) {
+            std::println("Render debug dump written: {}", dumpRenderDebugPath);
+        } else {
+            std::println(stderr, "dump-render-debug: cannot write {}", dumpRenderDebugPath);
+        }
+        dumpRenderDebugPath.clear();
+    };
     while (!quit && !editorUI.wantsQuit()) {
         PROFILE_FRAME_MARK();
         frameCounter++;
+        session.takeDue(frameCounter, dueCommands);
+        for (const auto& c : dueCommands) {
+            applyCommand(c);
+        }
+        if (maxFrames > 0 && frameCounter > maxFrames) {
+            quit = true;
+        }
+        if (frameCounter % 60 == 0 && obs::bus().categoryEnabled("Scene")) {
+            OBS_EVENT("Scene", "CameraPose", "camera")
+                .field("x", (double) cam.position.x)
+                .field("y", (double) cam.position.y)
+                .field("z", (double) cam.position.z)
+                .field("yaw", (double) cam.yaw)
+                .field("pitch", (double) cam.pitch);
+        }
         if (frameCounter % 60 == 0 && obs::bus().categoryEnabled("Render")) {
             // Profiler summary: main frame time, latest GPU frame, top-level zones of every lane.
             auto lastFrame = profile::lastFrame();
@@ -395,6 +569,10 @@ auto main(int argc, char* argv[]) -> int {
                 continue;
             }
 
+            if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_F12 && !ev.key.repeat) {
+                editorUI.requestScreenshot();
+                continue;
+            }
             if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_E && (ev.key.mod & SDL_KMOD_CTRL) != 0) {
                 editorUI.togglePanels();
                 continue;
@@ -573,6 +751,9 @@ auto main(int argc, char* argv[]) -> int {
         auto fgDebugSnap = renderThread.latestFrameGraphDebug();
         renderThread.setRenderDebugEnabled(editorUI.getShowRenderDebugWindow() || forceRenderDebug);
         auto renderDebugSnap = renderThread.latestRenderDebug();
+        if (!dumpRenderDebugPath.empty() && renderDebugSnap.has_value() && !renderDebugSnap->draws.empty()) {
+            writeRenderDebugDump(*renderDebugSnap);
+        }
 
         static const uint32_t uiZoneId = profile::registerName("EditorUI");
         profile::beginZone(uiZoneId);
@@ -580,6 +761,25 @@ auto main(int argc, char* argv[]) -> int {
         editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib, cam, std::move(fgDebugSnap), std::move(renderDebugSnap));
         if (auto timing = editorUI.takeDrawTimingRequest(); timing.has_value()) {
             renderThread.setDrawTiming(std::move(*timing));
+        }
+        if (editorUI.takeScreenshotRequest()) {
+            renderer.requestScreenshot("screenshot_" + std::to_string(frameCounter) + ".png");
+        }
+        {
+            auto& camWindow = editorUI.cameraWindow();
+            if (camWindow.requestFrameScene) {
+                camWindow.requestFrameScene = false;
+                frameSceneView();
+            }
+            if (camWindow.requestFrameSelected) {
+                camWindow.requestFrameSelected = false;
+                if (selectedPrim && usdScene.isOpen()) {
+                    auto bb = sceneQuery.anchorBounds(usdScene, selectedPrim);
+                    if (bb.valid()) {
+                        cam.frame(bb, glm::radians(45.0f));
+                    }
+                }
+            }
         }
         ImGuiFrameSnapshot imguiSnapshot;
         {
@@ -639,6 +839,25 @@ auto main(int argc, char* argv[]) -> int {
         }
     }
 
+    // Dumps requested for exit: the render debug snapshot needs one more frame's data,
+    // which the last delivered snapshot already holds.
+    if (!dumpRenderDebugPath.empty()) {
+        auto snap = renderThread.latestRenderDebug();
+        if (snap.has_value()) {
+            writeRenderDebugDump(*snap);
+        } else {
+            std::println(stderr, "dump-render-debug: no snapshot was produced (run at least a few frames)");
+        }
+    }
+    if (!dumpProfilePath.empty()) {
+        if (profile::exportChromeTrace(dumpProfilePath.c_str())) {
+            std::println("Profile trace written: {}", dumpProfilePath);
+        } else {
+            std::println(stderr, "dump-profile: cannot write {}", dumpProfilePath);
+        }
+    }
+    auto validationErrors = rhiDevice.validationErrorCount();
+
     renderThread.stop();
     JobSystem::shutdown();
     renderer.destroy();
@@ -650,5 +869,9 @@ auto main(int argc, char* argv[]) -> int {
     // installed (common case when --obs-output wasn't passed).
     obs::bus().shutdown();
 
+    if (failOnValidation && validationErrors > 0) {
+        std::println(stderr, "validation errors: {}", validationErrors);
+        return 2;
+    }
     return 0;
 }

@@ -10,6 +10,7 @@
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "rhiswapchain.h"
+#include "screenshot.h"
 #include "shadowpass.h"
 
 #include <array>
@@ -730,12 +731,31 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     // Command buffer and fence belong to the frame slot; the render-finished semaphore
     // belongs to the swapchain image, since present consumes it per image.
     auto* cmd = cmdBuffers[currentFrame];
+    // Screenshot: read the presented image back inside this frame's command buffer. The
+    // present pass left the backbuffer in PresentSrc; return it there afterwards.
+    RhiBuffer* screenshotBuffer = nullptr;
+    auto screenshotPending = std::move(screenshotPath);
+    screenshotPath.clear();
     {
         PROFILE_ZONE("Record");
         PROFILE_ZONE_VALUE(frameGraph.passCount() - frameGraph.culledCount());
         cmd->reset();
         cmd->begin();
         frameGraph.execute(cmd);
+        if (!screenshotPending.empty()) {
+            RhiBufferDesc desc = {
+                .size = (uint64_t) ext.width * ext.height * 4,
+                .usage = RhiBufferUsage::TransferDst,
+                .memory = RhiMemoryUsage::CpuToGpu,
+            };
+            screenshotBuffer = device->createBuffer(desc);
+            auto* backbuffer = swapchain->image(*index);
+            std::array<RhiTextureBarrierDesc, 1> toTransfer = {{{.texture = backbuffer, .oldState = RhiTextureState::PresentSrc, .newState = RhiTextureState::TransferSrc}}};
+            cmd->pipelineBarrier(toTransfer);
+            cmd->copyTextureToBuffer(backbuffer, screenshotBuffer, {.width = ext.width, .height = ext.height});
+            std::array<RhiTextureBarrierDesc, 1> toPresent = {{{.texture = backbuffer, .oldState = RhiTextureState::TransferSrc, .newState = RhiTextureState::PresentSrc}}};
+            cmd->pipelineBarrier(toPresent);
+        }
         cmd->end();
     }
     slotDrawLogs[currentFrame] = frameGraph.drawLog();
@@ -765,6 +785,34 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     }
     slotFrame[currentFrame] = frame;
     slotSubmitNs[currentFrame] = profile::now();
+
+    if (screenshotBuffer != nullptr) {
+        PROFILE_ZONE("Screenshot");
+        device->waitForFence(inflightFences[currentFrame]);
+        auto count = (size_t) ext.width * ext.height * 4;
+        std::vector<uint8_t> rgba(count);
+        auto* mapped = static_cast<const uint8_t*>(device->mapBuffer(screenshotBuffer));
+        memcpy(rgba.data(), mapped, count);
+        device->unmapBuffer(screenshotBuffer);
+        device->destroyBuffer(screenshotBuffer);
+        auto format = swapchain->colorFormat();
+        if (format == RhiFormat::B8G8R8A8_SRGB || format == RhiFormat::B8G8R8A8_UNORM) {
+            for (size_t i = 0; i < count; i += 4) {
+                std::swap(rgba[i], rgba[i + 2]);
+            }
+        }
+        for (size_t i = 3; i < count; i += 4) {
+            rgba[i] = 255; // swapchain alpha is undefined for the viewer
+        }
+        bool ok = writeScreenshotPng(screenshotPending.c_str(), rgba, ext.width, ext.height);
+        std::println("{}: {} ({}x{})", ok ? "Screenshot written" : "Screenshot failed", screenshotPending, ext.width, ext.height);
+        OBS_EVENT("Render", "Screenshot", "frame")
+            .field("frame", (int64_t) frame)
+            .field("path", screenshotPending)
+            .field("width", (int64_t) ext.width)
+            .field("height", (int64_t) ext.height)
+            .field("ok", ok);
+    }
     std::expected<void, RhiError> presented;
     {
         PROFILE_ZONE("Present");

@@ -109,7 +109,11 @@ auto registerThread(const char* name) -> void {
     t_state.pendingName = name;
     if (t_state.lane != nullptr) {
         t_state.lane->name = name;
+        return;
     }
+    // Take the lane now so a named thread shows up in the window and in dumps
+    // even before its first zone (workers idle until the first job).
+    laneForThread();
 }
 
 auto beginZone(uint32_t nameId) -> void {
@@ -364,6 +368,69 @@ auto zoneStats(uint32_t laneIndex, uint32_t nameId) -> ZoneStats {
         }
     }
     return statsFrom(samples);
+}
+
+} // namespace profile
+
+#include <cstdio>
+
+namespace profile {
+
+auto exportChromeTrace(const char* path) -> bool {
+    auto* f = std::fopen(path, "w");
+    if (f == nullptr) {
+        return false;
+    }
+    std::fprintf(f, "{\"displayTimeUnit\": \"ms\", \"traceEvents\": [\n");
+    bool first = true;
+    auto emit = [&](const char* name, uint32_t tid, uint64_t startNs, uint64_t endNs, uint32_t depth, bool hasValue, uint64_t value) {
+        std::fprintf(f, "%s{\"name\": \"%s\", \"ph\": \"X\", \"pid\": 1, \"tid\": %u, \"ts\": %.3f, \"dur\": %.3f, \"args\": {\"depth\": %u, \"value\": %llu}}", first ? "" : ",\n", name, tid, (double) startNs * 1e-3, (double) (endNs - startNs) * 1e-3, depth, (unsigned long long) (hasValue ? value : 0));
+        first = false;
+    };
+    // Thread ids start at 100: viewers treat tid 0 and tid == pid as special (idle
+    // thread, process main thread) and fold lanes together. Viewers sort rows by tid,
+    // so Main and Render come first and the workers follow in numeric order; lane
+    // indices depend on which thread registered first.
+    constexpr uint32_t firstCpuTid = 100;
+    std::vector<LaneInfo> laneList;
+    lanes(laneList);
+    auto laneRank = [](const LaneInfo& lane) -> std::pair<int, int> {
+        if (lane.name == "Main") {
+            return {0, 0};
+        }
+        if (lane.name == "Render") {
+            return {1, 0};
+        }
+        auto digits = lane.name.find_last_not_of("0123456789");
+        int number = 0;
+        if (digits != std::string::npos && digits + 1 < lane.name.size()) {
+            number = std::stoi(lane.name.substr(digits + 1));
+        }
+        return {2, number};
+    };
+    std::stable_sort(laneList.begin(), laneList.end(), [&](const LaneInfo& a, const LaneInfo& b) { return laneRank(a) < laneRank(b); });
+    for (size_t rank = 0; rank < laneList.size(); rank++) {
+        const auto& lane = laneList[rank];
+        auto tid = firstCpuTid + (uint32_t) rank;
+        std::fprintf(f, "%s{\"name\": \"thread_name\", \"ph\": \"M\", \"pid\": 1, \"tid\": %u, \"args\": {\"name\": \"%s\"}}", first ? "" : ",\n", tid, lane.name.c_str());
+        first = false;
+        std::vector<Zone> zones;
+        zonesIn(lane.index, 0, UINT64_MAX, zones);
+        for (const auto& z : zones) {
+            emit(nameOf(z.nameId), tid, z.startNs, z.endNs, z.depth, z.hasValue, z.value);
+        }
+    }
+    constexpr uint32_t gpuTid = 1000;
+    std::fprintf(f, "%s{\"name\": \"thread_name\", \"ph\": \"M\", \"pid\": 1, \"tid\": %u, \"args\": {\"name\": \"GPU\"}}", first ? "" : ",\n", gpuTid);
+    first = false;
+    std::vector<Zone> gpu;
+    gpuZonesIn(0, UINT64_MAX, gpu);
+    for (const auto& z : gpu) {
+        emit(nameOf(z.nameId), gpuTid, z.startNs, z.endNs, z.depth, false, 0);
+    }
+    std::fprintf(f, "\n]}\n");
+    std::fclose(f);
+    return true;
 }
 
 } // namespace profile
