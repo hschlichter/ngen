@@ -20,7 +20,10 @@ layout(location = 2) out vec2 fragTexCoord;
 
 void main() {
     gl_Position = ubo.proj * ubo.view * push.model * vec4(inPosition, 1.0);
-    fragNormal = mat3(push.model) * inNormal;
+    // Normalise here: the model matrix carries the scene's unit scale (Kitchen_set is
+    // authored in cm under a 0.01 root scale), which would leave a near-zero normal for
+    // the fragment shader's zero guard to swallow.
+    fragNormal = normalize(mat3(push.model) * inNormal);
     fragColor = inColor;
     fragTexCoord = inTexCoord;
 }

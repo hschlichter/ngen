@@ -372,6 +372,13 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
             primOfInstance[i] = prim;
         }
     }
+    sceneBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
+    for (const auto& inst : world.meshInstances) {
+        if (inst.worldBounds.valid()) {
+            sceneBounds.min = glm::min(sceneBounds.min, inst.worldBounds.min);
+            sceneBounds.max = glm::max(sceneBounds.max, inst.worldBounds.max);
+        }
+    }
     gpuInstances.resize(world.meshInstances.size());
     for (size_t m = 0; m < world.meshInstances.size(); m++) {
         const auto& inst = world.meshInstances[m];
@@ -639,25 +646,17 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     debugHasSun = picked != nullptr;
     debugSun = lighting;
 
-    // Fit a scene-bounding sphere around the instance origins, then size the ortho frustum to
-    // that sphere with some padding. Instance origins are a coarse approximation of scene
-    // bounds (ignores per-mesh extent) but good enough for a first-pass shadow frustum.
-    glm::vec3 sceneMin{std::numeric_limits<float>::max()};
-    glm::vec3 sceneMax{std::numeric_limits<float>::lowest()};
-    for (const auto& inst : gpuInstances) {
-        glm::vec3 p{inst.transform[3]};
-        sceneMin = glm::min(sceneMin, p);
-        sceneMax = glm::max(sceneMax, p);
-    }
+    // Fit the ortho frustum to the union of the instance world AABBs: look at the
+    // bounds centre along the light direction, then take the bounds corners in light
+    // space for the extents. Every texel of the map lands on the scene; the old
+    // instance-origin sphere with a 2x pad left Kitchen_set in a fifth of the map.
     glm::vec3 sceneCenter{0.0f};
     float sceneRadius = 1.0f;
-    if (!gpuInstances.empty()) {
-        sceneCenter = (sceneMin + sceneMax) * 0.5f;
-        sceneRadius = glm::length(sceneMax - sceneMin) * 0.5f + 1.0f; // +1 as safety padding
+    if (sceneBounds.valid()) {
+        sceneCenter = (sceneBounds.min + sceneBounds.max) * 0.5f;
+        sceneRadius = glm::length(sceneBounds.max - sceneBounds.min) * 0.5f + 0.01f;
     }
-    // Pad generously so per-mesh extents that stick out of instance-origin bounds still fit.
-    float shadowHalf = sceneRadius * 2.0f;
-    float lightDistance = sceneRadius * 4.0f + 1.0f;
+    float lightDistance = sceneRadius * 2.0f + 1.0f;
 
     auto lightPos = sceneCenter + lighting.direction * lightDistance;
     // glm::lookAt is degenerate when the light direction is parallel to the up vector — the
@@ -668,7 +667,18 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
             ? glm::normalize(glm::cross(lighting.direction, glm::vec3(1.0f, 0.0f, 0.0f)))
             : snapshot.worldUp;
     auto lightView = glm::lookAt(lightPos, sceneCenter, shadowUp);
-    auto lightProj = glm::ortho(-shadowHalf, shadowHalf, -shadowHalf, shadowHalf, 0.1f, 2.0f * lightDistance);
+
+    glm::vec3 lightMin{-sceneRadius};
+    glm::vec3 lightMax{sceneRadius};
+    if (sceneBounds.valid()) {
+        auto lightSpace = sceneBounds.transformed(lightView);
+        lightMin = lightSpace.min;
+        lightMax = lightSpace.max;
+    }
+    // Light space looks down -z: the far corner has the smallest z. A little slack on
+    // every side keeps casters on the boundary from clipping against the frustum.
+    float pad = sceneRadius * 0.01f;
+    auto lightProj = glm::ortho(lightMin.x - pad, lightMax.x + pad, lightMin.y - pad, lightMax.y + pad, std::max(0.1f, -lightMax.z - pad), -lightMin.z + pad);
     auto lightViewProj = lightProj * lightView;
 
     auto invViewProj = glm::inverse(snapshot.projMatrix * snapshot.viewMatrix);

@@ -88,6 +88,7 @@ private:
     std::unordered_map<uint32_t, CachedMesh> meshCache;
     std::unordered_map<uint32_t, CachedTexture> textureCache;
     std::vector<GpuInstance> gpuInstances;
+    AABB sceneBounds; // union of instance world bounds, refreshed with gpuInstances
     std::vector<RenderLight> lights;
     RhiDescriptorPool* geometryDescriptorPool = nullptr;
     std::vector<RhiDescriptorSet*> geometryDescriptorSets;

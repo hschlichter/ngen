@@ -776,6 +776,45 @@ struct USDScene::Impl {
             }
         }
 
+        // No authored normals: USD meshes default to catmullClark subdivision, and a
+        // subdivided surface is smooth, so a flat normal per fan triangle turns every
+        // non-planar quad into two visibly different facets (Kitchen_set). Average the
+        // face normals at each point, area weighted through the unnormalised cross
+        // product. Only an explicit subdivisionScheme "none" keeps flat faces.
+        std::vector<std::array<float, 3>> smoothNormals;
+        if (!hasNormals) {
+            TfToken scheme;
+            geomMesh.GetSubdivisionSchemeAttr().Get(&scheme, UsdTimeCode::Default());
+            if (scheme != UsdGeomTokens->none) {
+                smoothNormals.assign(points.size(), {0.0f, 0.0f, 0.0f});
+                size_t corner = 0;
+                for (size_t f = 0; f < faceVertexCounts.size(); f++) {
+                    int count = faceVertexCounts[f];
+                    for (int t = 0; t < count - 2; t++) {
+                        int i0 = faceVertexIndices[corner];
+                        int i1 = faceVertexIndices[corner + t + 1];
+                        int i2 = faceVertexIndices[corner + t + 2];
+                        auto& p0 = points[i0];
+                        auto& p1 = points[i1];
+                        auto& p2 = points[i2];
+                        GfVec3f n = GfCross(p1 - p0, p2 - p0);
+                        for (int i : {i0, i1, i2}) {
+                            smoothNormals[i][0] += n[0];
+                            smoothNormals[i][1] += n[1];
+                            smoothNormals[i][2] += n[2];
+                        }
+                    }
+                    corner += count;
+                }
+                for (auto& n : smoothNormals) {
+                    float len = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+                    if (len > 0.0f) {
+                        n = {n[0] / len, n[1] / len, n[2] / len};
+                    }
+                }
+            }
+        }
+
         // Triangulate. Vertices are emitted per-corner in face order; we record
         // where each face's vertices land so the index buffer can afterwards be
         // assembled grouped by material (GeomSubset). Since one vertex is pushed
@@ -801,8 +840,9 @@ struct USDScene::Impl {
                 };
 
                 // Compute flat face normal as fallback when normals aren't authored
+                // and the mesh is not a subdivision surface.
                 std::array<float, 3> faceNormal = {0.0f, 1.0f, 0.0f};
-                if (!hasNormals) {
+                if (!hasNormals && smoothNormals.empty()) {
                     auto& p0 = points[indices[0]];
                     auto& p1 = points[indices[1]];
                     auto& p2 = points[indices[2]];
@@ -828,6 +868,8 @@ struct USDScene::Impl {
                             auto& n = normals[ni];
                             vert.normal = {n[0], n[1], n[2]};
                         }
+                    } else if (!smoothNormals.empty()) {
+                        vert.normal = smoothNormals[indices[v]];
                     } else {
                         vert.normal = faceNormal;
                     }
