@@ -32,6 +32,7 @@
 
 #include <filesystem>
 #include <print>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -457,6 +458,32 @@ auto main(int argc, char* argv[]) -> int {
                 }
                 start = comma + 1;
             }
+        } else if (verb == "inspect") {
+            // inspect <material> <level> | inspect off: drives the texture inspector capture
+            // without the window, so the blit path runs under validation headless.
+            if (c.args == "off") {
+                renderThread.setTextureInspect({});
+            } else {
+                std::istringstream in(c.args);
+                uint32_t material = 0;
+                uint32_t level = 0;
+                if (in >> material >> level) {
+                    renderThread.setTextureInspect({.enabled = true, .material = material, .level = level});
+                } else {
+                    std::println(stderr, "inspect: expected '<material> <level>' or 'off', got '{}'", c.args);
+                }
+            }
+        } else if (verb == "dump-texture") {
+            // dump-texture <material> <level> <path>
+            std::istringstream in(c.args);
+            uint32_t material = 0;
+            uint32_t level = 0;
+            std::string path;
+            if (in >> material >> level >> path) {
+                renderer.requestTextureDump(material, level, path);
+            } else {
+                std::println(stderr, "dump-texture: expected '<material> <level> <path>', got '{}'", c.args);
+            }
         } else if (verb == "prepass") {
             if (c.args == "on" || c.args == "off") {
                 editorUI.setDepthPrepass(c.args == "on");
@@ -819,6 +846,12 @@ auto main(int argc, char* argv[]) -> int {
         editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib, cam, std::move(fgDebugSnap), std::move(renderDebugSnap));
         if (auto timing = editorUI.takeDrawTimingRequest(); timing.has_value()) {
             renderThread.setDrawTiming(std::move(*timing));
+        }
+        if (auto inspect = editorUI.takeTextureInspectRequest(); inspect.has_value()) {
+            renderThread.setTextureInspect(*inspect);
+        }
+        if (auto dump = editorUI.takeTextureDumpRequest(); dump.has_value()) {
+            renderer.requestTextureDump(dump->material, dump->level, "texture_" + std::to_string(dump->material) + "_L" + std::to_string(dump->level) + ".png");
         }
         if (editorUI.takeScreenshotRequest()) {
             renderer.requestScreenshot("screenshot_" + std::to_string(frameCounter) + ".png");

@@ -21,7 +21,12 @@ public:
     virtual auto pipelineBarrier(std::span<const RhiTextureBarrierDesc> imageBarriers, std::span<const RhiBufferBarrierDesc> bufferBarriers) -> void = 0;
     auto pipelineBarrier(std::span<const RhiTextureBarrierDesc> imageBarriers) -> void { pipelineBarrier(imageBarriers, {}); }
     auto bufferBarrier(std::span<const RhiBufferBarrierDesc> bufferBarriers) -> void { pipelineBarrier({}, bufferBarriers); }
-    virtual auto blitTexture(RhiTexture* src, RhiTexture* dst, RhiExtent2D srcExtent, RhiExtent2D dstExtent) -> void = 0;
+    // src must be in TransferSrc, dst in TransferDst. Scales between the two regions with the filter.
+    virtual auto blitTexture(RhiTexture* src, RhiTexture* dst, const RhiBlitRegion& srcRegion, const RhiBlitRegion& dstRegion, RhiFilter filter) -> void = 0;
+    // Mip 0 to mip 0, linear filter.
+    auto blitTexture(RhiTexture* src, RhiTexture* dst, RhiExtent2D srcExtent, RhiExtent2D dstExtent) -> void {
+        blitTexture(src, dst, {.mipLevel = 0, .extent = srcExtent}, {.mipLevel = 0, .extent = dstExtent}, RhiFilter::Linear);
+    }
     virtual auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void = 0;
     // dst must be in RhiTextureState::TransferDst.
     virtual auto copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void = 0;

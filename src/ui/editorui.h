@@ -193,6 +193,21 @@ private:
 
 public:
     // Draw timing request edited in the Render Debug window; main forwards it to the render thread when it changes.
+    auto takeTextureInspectRequest() -> std::optional<TextureInspectRequest> {
+        if (!renderDebugDraws.inspectChanged) {
+            return std::nullopt;
+        }
+        renderDebugDraws.inspectChanged = false;
+        return renderDebugDraws.inspect;
+    }
+    // "Dump level" in the inspector: returns the material and level once.
+    auto takeTextureDumpRequest() -> std::optional<TextureInspectRequest> {
+        if (!renderDebugDraws.dumpRequested) {
+            return std::nullopt;
+        }
+        renderDebugDraws.dumpRequested = false;
+        return renderDebugDraws.inspect;
+    }
     auto takeDrawTimingRequest() -> std::optional<FgDrawTimingRequest> {
         if (!renderDebugDraws.timingChanged) {
             return std::nullopt;

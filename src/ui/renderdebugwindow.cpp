@@ -26,7 +26,57 @@ auto formatBytes(uint64_t bytes, char* out, size_t size) -> const char* {
     return out;
 }
 
-auto drawSceneTab(const RenderDebugSnapshot& s) -> void {
+auto drawTextureInspector(const RenderDebugSnapshot& s, const USDScene& scene, RenderDebugDrawState& drawState) -> void {
+    auto& req = drawState.inspect;
+    if (!req.enabled) {
+        return;
+    }
+    ImGui::Separator();
+    ImGui::Text("Texture inspector: material %u", req.material);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Close")) {
+        req.enabled = false;
+        drawState.inspectChanged = true;
+        return;
+    }
+    const auto& insp = s.inspect;
+    if (!insp.valid || insp.material != req.material) {
+        ImGui::TextDisabled("(waiting for the render thread)");
+        return;
+    }
+    int level = (int) req.level;
+    ImGui::SetNextItemWidth(200.0f);
+    if (ImGui::SliderInt("Level", &level, 0, (int) insp.mipLevels - 1)) {
+        req.level = (uint32_t) level;
+        drawState.inspectChanged = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Dump level")) {
+        drawState.dumpRequested = true;
+    }
+    char buf[32];
+    ImGui::Text("%ux%u, %s, %u levels", insp.levelWidth, insp.levelHeight, formatBytes(insp.levelBytes, buf, sizeof(buf)), insp.mipLevels);
+    if (insp.previewTextureId != 0) {
+        ImGui::Image((ImTextureID) insp.previewTextureId, ImVec2((float) insp.previewWidth, (float) insp.previewHeight));
+    }
+    // Who binds it: unique prims from the draw log.
+    ImGui::TextUnformatted("Bound by");
+    std::vector<uint32_t> prims;
+    for (const auto& d : s.draws) {
+        if (d.material == req.material && d.prim != 0 && std::find(prims.begin(), prims.end(), d.prim) == prims.end()) {
+            prims.push_back(d.prim);
+        }
+    }
+    if (prims.empty()) {
+        ImGui::TextDisabled("(no draws logged this frame)");
+    }
+    for (auto prim : prims) {
+        const auto* rec = scene.isOpen() ? scene.getPrimRecord(PrimHandle{prim}) : nullptr;
+        ImGui::BulletText("%s", rec != nullptr ? rec->path.c_str() : "(unknown prim)");
+    }
+}
+
+auto drawSceneTab(const RenderDebugSnapshot& s, const USDScene& scene, RenderDebugDrawState& drawState) -> void {
     uint64_t triangles = 0;
     uint64_t vertices = 0;
     uint64_t meshBytes = 0;
@@ -120,7 +170,15 @@ auto drawSceneTab(const RenderDebugSnapshot& s) -> void {
         for (const auto& t : s.textures) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            ImGui::Text("%u", t.materialIndex);
+            ImGui::PushID((int) t.materialIndex);
+            char label[32];
+            std::snprintf(label, sizeof(label), "%u", t.materialIndex);
+            bool selected = drawState.inspect.enabled && drawState.inspect.material == t.materialIndex;
+            if (ImGui::Selectable(label, selected, ImGuiSelectableFlags_SpanAllColumns)) {
+                drawState.inspect = {.enabled = true, .material = t.materialIndex, .level = 0};
+                drawState.inspectChanged = true;
+            }
+            ImGui::PopID();
             ImGui::TableSetColumnIndex(1);
             ImGui::Text("%ux%u", t.width, t.height);
             ImGui::TableSetColumnIndex(2);
@@ -132,6 +190,7 @@ auto drawSceneTab(const RenderDebugSnapshot& s) -> void {
         }
         ImGui::EndTable();
     }
+    drawTextureInspector(s, scene, drawState);
 }
 
 auto drawDrawList(const RenderDebugSnapshot& s, const USDScene& scene, PrimHandle& selectedPrim, RenderDebugDrawState& drawState) -> void {
@@ -385,7 +444,7 @@ auto drawRenderDebugWindow(bool& show, const std::optional<RenderDebugSnapshot>&
     if (ImGui::BeginTabBar("##rd_tabs")) {
         if (ImGui::BeginTabItem("Scene")) {
             if (snap.has_value()) {
-                drawSceneTab(*snap);
+                drawSceneTab(*snap, scene, drawState);
             } else {
                 ImGui::TextDisabled("Waiting for render thread snapshot...");
             }

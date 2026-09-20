@@ -39,6 +39,10 @@ public:
         std::lock_guard lock(drawTimingMutex);
         drawTimingRequest = std::move(request);
     }
+    auto setTextureInspect(TextureInspectRequest request) -> void {
+        std::lock_guard lock(drawTimingMutex);
+        textureInspectRequest = request;
+    }
 
 private:
     auto threadLoop() -> void;
@@ -67,5 +71,6 @@ private:
     std::optional<RenderDebugSnapshot> renderDebugSlot;
     std::mutex drawTimingMutex;
     FgDrawTimingRequest drawTimingRequest;
+    TextureInspectRequest textureInspectRequest;
     uint64_t fgDebugFrameCounter = 0;
 };

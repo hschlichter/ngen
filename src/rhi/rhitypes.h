@@ -256,6 +256,12 @@ struct RhiBufferCopy {
 
 // One whole mip level of one array layer (cube face = layer); tightly packed rows
 // starting at bufferOffset. width/height are the level's size.
+// One side of a blit: a mip level and the extent to cover from its origin.
+struct RhiBlitRegion {
+    uint32_t mipLevel = 0;
+    RhiExtent2D extent;
+};
+
 struct RhiBufferTextureCopy {
     uint64_t bufferOffset = 0;
     uint32_t width = 0;

@@ -96,6 +96,7 @@ static constexpr std::array<std::array<float, 3>, 6> faceDirections = {{
     {0.0f, 0.0f, -1.0f},
 }};
 
+static constexpr uint32_t blitCorner = 16; // pixels; the top row of quads starts further in
 static constexpr float quadHalf = 0.12f;
 static constexpr float topRowY = -0.4f;
 static constexpr float bottomRowY = 0.4f;
@@ -199,7 +200,7 @@ protected:
             UploadBatch upload(device());
             vertexBuffer = upload.buffer(std::as_bytes(std::span(vertices)), RhiBufferUsage::Vertex);
             indexBuffer = upload.buffer(std::as_bytes(std::span(indices)), RhiBufferUsage::Index);
-            mipTexture = upload.textureSubresources({.width = 4, .height = 4, .format = RhiFormat::R8G8B8A8_UNORM, .usage = RhiTextureUsage::Sampled, .mipLevels = 3}, mipLevels);
+            mipTexture = upload.textureSubresources({.width = 4, .height = 4, .format = RhiFormat::R8G8B8A8_UNORM, .usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferSrc, .mipLevels = 3}, mipLevels);
             arrayTexture = upload.textureSubresources({.width = 1, .height = 1, .format = RhiFormat::R8G8B8A8_UNORM, .usage = RhiTextureUsage::Sampled, .arrayLayers = 2, .dimension = RhiTextureDimension::Texture2DArray}, layers);
             cubeTexture = upload.textureSubresources({.width = 1, .height = 1, .format = RhiFormat::R8G8B8A8_UNORM, .usage = RhiTextureUsage::Sampled, .arrayLayers = 6, .dimension = RhiTextureDimension::TextureCube}, faces);
             upload.finish();
@@ -247,10 +248,25 @@ protected:
             drawQuad({.mode = 2, .select = 0.0f, .pad = {}, .direction = {dir[0], dir[1], dir[2], 0.0f}});
         }
         cmd->endRendering();
+
+        // Blit with a mip level: mip 1 (2x2, mipColors[1]) magnified into the backbuffer's
+        // top-left corner, nearest filter, so the corner reads as one flat colour.
+        std::array<RhiTextureBarrierDesc, 2> toBlit = {{
+            {.texture = mipTexture, .oldState = RhiTextureState::ShaderReadOnly, .newState = RhiTextureState::TransferSrc},
+            {.texture = backbuffer, .oldState = RhiTextureState::ColorAttachment, .newState = RhiTextureState::TransferDst},
+        }};
+        cmd->pipelineBarrier(toBlit);
+        cmd->blitTexture(mipTexture, backbuffer, {.mipLevel = 1, .extent = {2, 2}}, {.mipLevel = 0, .extent = {blitCorner, blitCorner}}, RhiFilter::Nearest);
+        std::array<RhiTextureBarrierDesc, 2> fromBlit = {{
+            {.texture = mipTexture, .oldState = RhiTextureState::TransferSrc, .newState = RhiTextureState::ShaderReadOnly},
+            {.texture = backbuffer, .oldState = RhiTextureState::TransferDst, .newState = RhiTextureState::ColorAttachment},
+        }};
+        cmd->pipelineBarrier(fromBlit);
     }
 
     auto check(const RhiExampleFrame& frame) -> bool override {
         bool ok = true;
+        ok = expectPixel(frame, blitCorner / 2, blitCorner / 2, mipColors[1], "blit-mip-1") && ok;
         std::array<const char*, 3> mipNames = {"mip-0", "mip-1", "mip-2"};
         for (size_t i = 0; i < 3; i++) {
             ok = expectPixel(frame, frame.px(topRowX[i]), frame.py(topRowY), mipColors[i], mipNames[i]) && ok;

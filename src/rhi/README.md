@@ -131,7 +131,7 @@ Examples, each adding one concept to the previous:
 | `ngen-example-pushconstants` | one push constant range read by both stages, `maxPushConstantSize` |
 | `ngen-example-blend` | blend factors, cull mode, front face |
 | `ngen-example-lines` | `LineList`, `lineWidth`, `wideLines` fallback |
-| `ngen-example-mipcube` | mip levels, array layers, cube faces, one copy per subresource |
+| `ngen-example-mipcube` | mip levels, array layers, cube faces, one copy per subresource, blit from a mip level |
 | `ngen-example-compute` | compute pipelines, storage image and buffer, `dispatch`, buffer barriers |
 | `ngen-example-timestamps` | query pools, `writeTimestamp`, readback after the fence, `timestampPeriodNs` |
 | `ngen-example-gpuzones` | nested `beginGpuZone`/`endGpuZone`, `collectGpuZones` depth, order and containment |
@@ -167,7 +167,7 @@ Kept honest rather than papered over. See the review that produced this file for
   derives stages and access. No explicit masks, no split barriers, no queue ownership transfer.
 - One blend state for all color attachments.
 - One push constant range per pipeline.
-- `blitTexture` addresses mip 0, layer 0 only. Copies take a mip and layer; blits do not yet.
+- `blitTexture` takes a mip level per side (`RhiBlitRegion`) and a filter; layers are still 0 only.
 - No compressed formats (BC/ASTC). Add when an asset path produces them.
 - Resource objects are virtual-dtor classes returned by raw pointer; `swapchain->image(i)` pointers are invalidated by
   `recreate`. Opaque generational handles would fix this; deferred until a second backend makes the cost worth it.

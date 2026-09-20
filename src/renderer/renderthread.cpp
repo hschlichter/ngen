@@ -87,6 +87,7 @@ auto RenderThread::threadLoop() -> void {
         {
             std::lock_guard lock(drawTimingMutex);
             renderer->setDrawTiming(drawTimingRequest);
+            renderer->setTextureInspect(textureInspectRequest);
         }
 
         renderer->render(snapshot);

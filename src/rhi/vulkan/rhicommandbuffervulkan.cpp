@@ -267,17 +267,18 @@ auto RhiCommandBufferVulkan::pipelineBarrier(std::span<const RhiTextureBarrierDe
     vkCmdPipelineBarrier2(cmd, &depInfo);
 }
 
-auto RhiCommandBufferVulkan::blitTexture(RhiTexture* src, RhiTexture* dst, RhiExtent2D srcExtent, RhiExtent2D dstExtent) -> void {
+auto RhiCommandBufferVulkan::blitTexture(RhiTexture* src, RhiTexture* dst, const RhiBlitRegion& srcRegion, const RhiBlitRegion& dstRegion, RhiFilter filter) -> void {
     commandStats.copies++;
     auto* srcTex = static_cast<RhiTextureVulkan*>(src);
     auto* dstTex = static_cast<RhiTextureVulkan*>(dst);
     VkImageBlit region = {
-        .srcSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
-        .srcOffsets = {{0, 0, 0}, {(int32_t) srcExtent.width, (int32_t) srcExtent.height, 1}},
-        .dstSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
-        .dstOffsets = {{0, 0, 0}, {(int32_t) dstExtent.width, (int32_t) dstExtent.height, 1}},
+        .srcSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = srcRegion.mipLevel, .baseArrayLayer = 0, .layerCount = 1},
+        .srcOffsets = {{0, 0, 0}, {(int32_t) srcRegion.extent.width, (int32_t) srcRegion.extent.height, 1}},
+        .dstSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = dstRegion.mipLevel, .baseArrayLayer = 0, .layerCount = 1},
+        .dstOffsets = {{0, 0, 0}, {(int32_t) dstRegion.extent.width, (int32_t) dstRegion.extent.height, 1}},
     };
-    vkCmdBlitImage(cmd, srcTex->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstTex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, VK_FILTER_LINEAR);
+    auto vkFilter = filter == RhiFilter::Nearest ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+    vkCmdBlitImage(cmd, srcTex->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstTex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, vkFilter);
 }
 
 auto RhiCommandBufferVulkan::setViewport(int32_t x, int32_t y, RhiExtent2D extent) -> void {

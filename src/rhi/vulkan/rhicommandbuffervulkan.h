@@ -37,7 +37,8 @@ public:
     auto pipelineBarrier(std::span<const RhiTextureBarrierDesc> imageBarriers, std::span<const RhiBufferBarrierDesc> bufferBarriers) -> void override;
     using RhiCommandBuffer::bufferBarrier;
     using RhiCommandBuffer::pipelineBarrier;
-    auto blitTexture(RhiTexture* src, RhiTexture* dst, RhiExtent2D srcExtent, RhiExtent2D dstExtent) -> void override;
+    using RhiCommandBuffer::blitTexture;
+    auto blitTexture(RhiTexture* src, RhiTexture* dst, const RhiBlitRegion& srcRegion, const RhiBlitRegion& dstRegion, RhiFilter filter) -> void override;
     auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void override;
     auto copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void override;
     auto copyTextureToBuffer(RhiTexture* src, RhiBuffer* dst, const RhiBufferTextureCopy& region) -> void override;

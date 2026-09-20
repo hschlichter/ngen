@@ -29,6 +29,29 @@ struct RenderDebugTexture {
     uint64_t bytes = 0;
 };
 
+// Texture inspector: which material texture and level the Render Debug window shows.
+struct TextureInspectRequest {
+    bool enabled = false;
+    uint32_t material = 0;
+    uint32_t level = 0;
+
+    auto operator==(const TextureInspectRequest&) const -> bool = default;
+};
+
+// What the renderer captured for the inspector this frame.
+struct RenderDebugTextureInspect {
+    bool valid = false;
+    uint32_t material = 0;
+    uint32_t level = 0;
+    uint32_t mipLevels = 1;
+    uint32_t levelWidth = 0;
+    uint32_t levelHeight = 0;
+    uint64_t levelBytes = 0;
+    uint64_t previewTextureId = 0; // ImGui texture id
+    uint32_t previewWidth = 0;
+    uint32_t previewHeight = 0;
+};
+
 struct RenderDebugPoolTexture {
     uint32_t width = 0;
     uint32_t height = 0;
@@ -57,6 +80,7 @@ struct RenderDebugSnapshot {
     uint32_t materialsWithTexture = 0;
     std::vector<RenderDebugMesh> meshes;
     std::vector<RenderDebugTexture> textures;
+    RenderDebugTextureInspect inspect;
     uint32_t lightCount = 0;
     bool hasSun = false;
     glm::vec3 sunDirection = glm::vec3(0.0f);

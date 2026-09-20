@@ -224,6 +224,7 @@ auto Renderer::buildRenderDebugSnapshot() const -> RenderDebugSnapshot {
             .bytes = cached.bytes,
         });
     }
+    snap.inspect = textureInspectResult;
     snap.lightCount = (uint32_t) lights.size();
     snap.hasSun = debugHasSun;
     snap.sunDirection = debugSun.direction;
@@ -452,6 +453,8 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
                     .width = (uint32_t) matData->texWidth,
                     .height = (uint32_t) matData->texHeight,
                     .format = RhiFormat::R8G8B8A8_SRGB,
+                    // TransferSrc for the texture inspector's blits and level dumps.
+                    .usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst | RhiTextureUsage::TransferSrc,
                     .mipLevels = mipLevelCount((uint32_t) matData->texWidth, (uint32_t) matData->texHeight),
                 };
                 auto pixelCount = (size_t) matData->texWidth * (size_t) matData->texHeight * 4;
@@ -486,6 +489,94 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
     }
 
     rebuildGeometryDescriptorSets();
+}
+
+// Preview extent for the inspector: the level scaled to fit a 256 box, up or down, so a
+// 4x4 level shows as blocks instead of a dot.
+static auto inspectPreviewExtent(uint32_t w, uint32_t h) -> RhiExtent2D {
+    constexpr uint32_t box = 256;
+    auto maxSide = std::max(w, h);
+    if (maxSide == 0) {
+        return {box, box};
+    }
+    return {std::max(1u, (w * box) / maxSide), std::max(1u, (h * box) / maxSide)};
+}
+
+auto Renderer::releaseTexturePreview() -> void {
+    if (texturePreview.imguiId != 0) {
+        deletionQueue.defer(m_frameIndex, [ui = editorUI, id = texturePreview.imguiId] { ui->unregisterTexture(id); });
+    }
+    if (texturePreview.texture != nullptr) {
+        deletionQueue.deferTexture(m_frameIndex, texturePreview.texture);
+    }
+    texturePreview = {};
+}
+
+auto Renderer::recordTextureInspect(RhiCommandBuffer* cmd) -> void {
+    textureInspectResult = {};
+    if (!textureInspectRequest.enabled || editorUI == nullptr) {
+        if (texturePreview.texture != nullptr) {
+            releaseTexturePreview();
+        }
+        return;
+    }
+    auto texIt = textureCache.find(textureInspectRequest.material);
+    if (texIt == textureCache.end()) {
+        return;
+    }
+    const auto& cached = texIt->second;
+    auto level = std::min(textureInspectRequest.level, cached.mipLevels - 1);
+    uint32_t levelW = std::max(1u, cached.width >> level);
+    uint32_t levelH = std::max(1u, cached.height >> level);
+    auto ext = inspectPreviewExtent(levelW, levelH);
+
+    if (texturePreview.texture == nullptr || texturePreview.width != ext.width || texturePreview.height != ext.height) {
+        releaseTexturePreview();
+        RhiTextureDesc desc = {
+            .width = ext.width,
+            .height = ext.height,
+            .format = cached.format,
+            .usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst,
+        };
+        texturePreview.texture = device->createTexture(desc);
+        texturePreview.width = ext.width;
+        texturePreview.height = ext.height;
+        if (texturePreview.texture != nullptr) {
+            texturePreview.imguiId = editorUI->registerTexture(texturePreview.texture, textureSampler);
+        }
+    }
+    if (texturePreview.texture == nullptr) {
+        return;
+    }
+
+    auto dstStart = texturePreview.everCaptured ? RhiTextureState::ShaderReadOnly : RhiTextureState::Undefined;
+    std::array<RhiTextureBarrierDesc, 2> pre = {{
+        {.texture = cached.texture, .oldState = RhiTextureState::ShaderReadOnly, .newState = RhiTextureState::TransferSrc},
+        {.texture = texturePreview.texture, .oldState = dstStart, .newState = RhiTextureState::TransferDst},
+    }};
+    cmd->pipelineBarrier(pre);
+    // Nearest when magnifying so texels stay visible as blocks; linear when shrinking.
+    auto filter = ext.width > levelW ? RhiFilter::Nearest : RhiFilter::Linear;
+    cmd->blitTexture(cached.texture, texturePreview.texture, {.mipLevel = level, .extent = {levelW, levelH}}, {.mipLevel = 0, .extent = ext}, filter);
+    std::array<RhiTextureBarrierDesc, 2> post = {{
+        {.texture = cached.texture, .oldState = RhiTextureState::TransferSrc, .newState = RhiTextureState::ShaderReadOnly},
+        {.texture = texturePreview.texture, .oldState = RhiTextureState::TransferDst, .newState = RhiTextureState::ShaderReadOnly},
+    }};
+    cmd->pipelineBarrier(post);
+    texturePreview.everCaptured = true;
+
+    textureInspectResult = {
+        .valid = true,
+        .material = textureInspectRequest.material,
+        .level = level,
+        .mipLevels = cached.mipLevels,
+        .levelWidth = levelW,
+        .levelHeight = levelH,
+        .levelBytes = (uint64_t) levelW * levelH * 4,
+        .previewTextureId = texturePreview.imguiId,
+        .previewWidth = ext.width,
+        .previewHeight = ext.height,
+    };
 }
 
 auto Renderer::toSamplerDesc(const SamplerSettings& settings) -> RhiSamplerDesc {
@@ -803,12 +894,40 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     RhiBuffer* screenshotBuffer = nullptr;
     auto screenshotPending = std::move(screenshotPath);
     screenshotPath.clear();
+    // Texture dump: one mip level of a material texture read back after this frame.
+    RhiBuffer* textureDumpBuffer = nullptr;
+    uint32_t dumpWidth = 0;
+    uint32_t dumpHeight = 0;
+    auto dumpPending = std::move(textureDump);
+    textureDump.reset();
     {
         PROFILE_ZONE("Record");
         PROFILE_ZONE_VALUE(frameGraph.passCount() - frameGraph.culledCount());
         cmd->reset();
         cmd->begin();
         frameGraph.execute(cmd);
+        recordTextureInspect(cmd);
+        if (dumpPending.has_value()) {
+            auto texIt = textureCache.find(dumpPending->material);
+            if (texIt != textureCache.end() && dumpPending->level < texIt->second.mipLevels) {
+                const auto& cached = texIt->second;
+                dumpWidth = std::max(1u, cached.width >> dumpPending->level);
+                dumpHeight = std::max(1u, cached.height >> dumpPending->level);
+                RhiBufferDesc desc = {
+                    .size = (uint64_t) dumpWidth * dumpHeight * 4,
+                    .usage = RhiBufferUsage::TransferDst,
+                    .memory = RhiMemoryUsage::CpuToGpu,
+                };
+                textureDumpBuffer = device->createBuffer(desc);
+                std::array<RhiTextureBarrierDesc, 1> toTransfer = {{{.texture = cached.texture, .oldState = RhiTextureState::ShaderReadOnly, .newState = RhiTextureState::TransferSrc}}};
+                cmd->pipelineBarrier(toTransfer);
+                cmd->copyTextureToBuffer(cached.texture, textureDumpBuffer, {.width = dumpWidth, .height = dumpHeight, .mipLevel = dumpPending->level});
+                std::array<RhiTextureBarrierDesc, 1> toShader = {{{.texture = cached.texture, .oldState = RhiTextureState::TransferSrc, .newState = RhiTextureState::ShaderReadOnly}}};
+                cmd->pipelineBarrier(toShader);
+            } else {
+                std::println(stderr, "dump-texture: material {} level {} not found", dumpPending->material, dumpPending->level);
+            }
+        }
         if (!screenshotPending.empty()) {
             RhiBufferDesc desc = {
                 .size = (uint64_t) ext.width * ext.height * 4,
@@ -854,6 +973,25 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     slotFrame[currentFrame] = frame;
     slotSubmitNs[currentFrame] = profile::now();
 
+    if (textureDumpBuffer != nullptr) {
+        PROFILE_ZONE("TextureDump");
+        device->waitForFence(inflightFences[currentFrame]);
+        auto count = (size_t) dumpWidth * dumpHeight * 4;
+        std::vector<uint8_t> rgba(count);
+        auto* mapped = static_cast<const uint8_t*>(device->mapBuffer(textureDumpBuffer));
+        memcpy(rgba.data(), mapped, count);
+        device->unmapBuffer(textureDumpBuffer);
+        device->destroyBuffer(textureDumpBuffer);
+        bool ok = writeScreenshotPng(dumpPending->path.c_str(), rgba, dumpWidth, dumpHeight);
+        std::println("{}: {} material {} level {} ({}x{})", ok ? "Texture dump written" : "Texture dump failed", dumpPending->path, dumpPending->material, dumpPending->level, dumpWidth, dumpHeight);
+        OBS_EVENT("Render", "TextureDump", "texture")
+            .field("material", (int64_t) dumpPending->material)
+            .field("level", (int64_t) dumpPending->level)
+            .field("path", dumpPending->path)
+            .field("width", (int64_t) dumpWidth)
+            .field("height", (int64_t) dumpHeight)
+            .field("ok", ok);
+    }
     if (screenshotBuffer != nullptr) {
         PROFILE_ZONE("Screenshot");
         device->waitForFence(inflightFences[currentFrame]);
@@ -909,6 +1047,13 @@ auto Renderer::destroy() -> void {
     uploader.destroy();
 
     fgPreviews.shutdown();
+    if (texturePreview.imguiId != 0) {
+        editorUI->unregisterTexture(texturePreview.imguiId);
+    }
+    if (texturePreview.texture != nullptr) {
+        device->destroyTexture(texturePreview.texture);
+    }
+    texturePreview = {};
 
     editorUI->shutdown();
     editorUI = nullptr;

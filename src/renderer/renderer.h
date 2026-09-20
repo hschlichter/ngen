@@ -68,6 +68,11 @@ public:
     // Render debugger inputs, set by the render thread before render().
     auto setRenderDebugEnabled(bool enabled) -> void { renderDebugEnabled = enabled; }
     auto setDrawTiming(const FgDrawTimingRequest& request) -> void { drawTimingRequest = request; }
+    auto setTextureInspect(const TextureInspectRequest& request) -> void { textureInspectRequest = request; }
+    // Writes one mip level of a material texture as PNG after this frame's fence.
+    auto requestTextureDump(uint32_t material, uint32_t level, std::string path) -> void {
+        textureDump = {.material = material, .level = level, .path = std::move(path)};
+    }
     auto initGizmos(Camera* camera) -> void;
     auto gizmoUpdate(const RenderSnapshot& snapshot, RhiExtent2D extent) -> std::vector<GizmoDrawRequest>;
     auto gizmoHitTest(float mouseX, float mouseY, RhiExtent2D windowExtent) -> bool;
@@ -160,6 +165,28 @@ private:
     bool validationEnabled = false;
     bool renderDebugEnabled = false;
     std::string screenshotPath;
+
+    // Texture inspector (docs/plan_texture_inspector.md): one level of one material
+    // texture blitted into a preview the editor draws; replaced when the request changes.
+    TextureInspectRequest textureInspectRequest;
+    struct TexturePreview {
+        RhiTexture* texture = nullptr;
+        uint64_t imguiId = 0;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        bool everCaptured = false;
+    };
+    TexturePreview texturePreview;
+    RenderDebugTextureInspect textureInspectResult;
+    auto recordTextureInspect(RhiCommandBuffer* cmd) -> void;
+    auto releaseTexturePreview() -> void;
+
+    struct TextureDumpRequest {
+        uint32_t material = 0;
+        uint32_t level = 0;
+        std::string path;
+    };
+    std::optional<TextureDumpRequest> textureDump;
     FgDrawTimingRequest drawTimingRequest;
     std::vector<std::vector<FgDrawRecord>> slotDrawLogs; // per frame slot, joined with GPU zones after the fence
     std::vector<FgDrawRecord> lastDrawLog;
