@@ -132,7 +132,8 @@ A set must not be updated while a submitted command buffer still uses it.
 
 ### Pipelines
 
-`createGraphicsPipeline(RhiGraphicsPipelineDesc)`: vertex and fragment shaders, set layouts, one push constant range,
+`createGraphicsPipeline(RhiGraphicsPipelineDesc)`: vertex and fragment shaders, an optional geometry shader
+(`limits().geometryShaders`), set layouts, one push constant range,
 colour and depth formats (dynamic rendering: no render pass objects), one vertex binding with a stride and attributes,
 topology (`TriangleList`, `LineList`), raster (cull mode, front face, line width), depth and one blend state.
 `createComputePipeline(RhiComputePipelineDesc)`: one shader, set layouts, one push constant range. Both return
@@ -163,7 +164,30 @@ clear values; draws happen inside, dispatches and copies outside. Commands:
 - **Command stats.** `RhiCommandStats` counts, since `begin()`: draws, dispatches, barriers, pipeline binds, descriptor
   binds, vertex/index buffer binds, indirect draw calls, copies and estimated primitives. Indirect calls count once; their
   draws and primitives are GPU-side and not counted.
+- **Pipeline statistics.** `beginPipelineStats(name)`/`endPipelineStats()` on a command buffer count the work between
+  them (input-assembly vertices and primitives, vertex, clipping, fragment and compute invocations);
+  `collectPipelineStats(cmd, out)` returns them after the fence. They don't nest and sit outside rendering. No-ops without
+  `limits().pipelineStatistics`.
 - **Labels.** `beginLabel`/`endLabel` for RenderDoc and validation messages; no-ops without debug support.
+
+### Debugging and introspection
+
+Tools read the RHI's own view of its objects; the RHI never formats for a specific tool.
+
+- **Debug names.** Every desc has `debugName`, and `setDebugName(RhiDebugObject, name)` names any object afterwards
+  (buffers, textures, samplers, shaders, pipelines, layouts, pools, sets, query pools, command buffers, fences,
+  semaphores). Vulkan passes them to `VK_EXT_debug_utils`, so validation messages and RenderDoc show them, and keeps them
+  for the command log and descriptor contents.
+- **Allocations.** `allocations()` lists every live buffer and texture allocation (name, kind, size requested and
+  allocated, memory usage, creation order); `memoryHeaps()` lists heaps with size and, where the device reports it,
+  usage and budget.
+- **Barrier details.** `describeTransition(old, new)` for texture or buffer states returns the stage masks, access masks
+  and layouts the backend records for that transition, as text, from the same functions it records barriers with.
+- **Command log.** `setCommandLog(true)` on a command buffer keeps one `RhiCommandRecord` of text per recorded command
+  (objects by name, push constants as floats and hex) until the next `begin()`. Formatting costs; off by default.
+- **Descriptor contents.** `describeDescriptorSet(set)` returns the last resource written to each binding and array
+  element.
+- **Sub-rectangle copies.** `RhiBufferTextureCopy` has `x`/`y` offsets, so a readback can copy a single texel.
 
 ### Submission and presentation
 
@@ -183,14 +207,17 @@ program can check.
   graphics queue that can present to the window's surface, and creates one queue and one command pool.
 - **Required features.** API 1.3 or newer (so `synchronization2` and `dynamicRendering` are core), plus `shaderSampledImageArrayDynamicIndexing`,
   `multiDrawIndirect`, `drawIndirectFirstInstance` and `drawIndirectCount`; `init` fails with a message when one is
-  missing. `wideLines`, `samplerAnisotropy` and `VK_EXT_calibrated_timestamps` are enabled when present and reported in
-  `limits()`.
+  missing. `wideLines`, `samplerAnisotropy`, `pipelineStatisticsQuery`, `geometryShader`, `VK_EXT_memory_budget` and
+  `VK_EXT_calibrated_timestamps` are enabled when present and reported in `limits()`.
 - **Memory.** One `vkAllocateMemory` per buffer and texture, device-local for `GpuOnly` and textures, host-visible and
   coherent for `CpuToGpu`. There is no suballocator.
 - **Barriers.** `pipelineBarrier` maps each state to a layout (textures), stage mask and access mask and records one
   `vkCmdPipelineBarrier2` for all texture and buffer barriers.
 - **Command buffers.** Each `RhiCommandBufferVulkan` owns a timestamp query pool for up to 128 GPU zones, reset at
-  `begin()`, and counts `RhiCommandStats` as commands are recorded.
+  `begin()`, and a pipeline statistics pool for up to 64 queries, reset on its first use in a recording. It counts
+  `RhiCommandStats` as commands are recorded.
+- **Object registry.** The device keeps every live allocation (for `allocations()`) and the writes of every descriptor
+  set (for `describeDescriptorSet`); the resource structs keep their debug names.
 - **Swapchain.** FIFO present mode, an sRGB surface format when available; `recreate` rebuilds the images, which
   invalidates earlier `image(i)` pointers.
 - **Validation.** Messages go to stderr; errors and warnings are counted, and `validationErrorCount()` reports the errors.

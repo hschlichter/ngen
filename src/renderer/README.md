@@ -25,11 +25,11 @@ changing how scene data reaches the GPU.
 | Orchestration | `renderer.h/.cpp` (`Renderer`), `renderthread.h/.cpp` (`RenderThread`), `rendersnapshot.h`, `renderworld.h`, `renderertypes.h` |
 | Frame graph | `framegraph.h/.cpp`, `framegraphbuilder.h`, `framegraphcontext.h`, `framegraphresource.h`, `passnode.h`, `framegraphdraw.h`, `framegraphdebug.h`, `framegraphpreviews.h/.cpp`, `resourcepool.h/.cpp` |
 | GPU scene and culling | `gpuscene.h/.cpp` (`GpuScene`), `drawlists.h/.cpp` (`DrawLists`), `passes/instanceuploadpass`, `passes/instancecullpass`, `culling.h/.cpp` (`CullState`) |
-| Passes | `passes/`: shadow, depth prepass, geometry, lighting, AA, blit, debug lines, gizmos, editor UI, present |
+| Passes | `passes/`: shadow, depth prepass, geometry, debug views, lighting, AA, blit, debug lines, gizmos, editor UI, present |
 | Resource lifetime and upload | `deletionqueue.h/.cpp`, `gpuuploader.h/.cpp`, `mipchain.h/.cpp`, `shaderloader.h/.cpp` |
 | Shadows | `shadowcascades.h/.cpp` |
 | Editor support | `imguibackend.h/.cpp` (interface), `gizmo.h`, `axis3dgizmo`, `translategizmo`, `rotategizmo`, `scalegizmo` |
-| Debugging | `renderdebug.h`, `renderdebugjson.h/.cpp`, `screenshot.h/.cpp` |
+| Debugging and introspection | `renderdebug.h`, `renderdebugjson.h/.cpp`, `screenshot.h/.cpp`, `capture.h/.cpp` (`CaptureService`), `gpuschema.h/.cpp`, `framedebug.h/.cpp`, `gpucounters.h/.cpp`, `debugview.h` |
 
 Shaders live in `shaders/` at the repository root and are compiled to SPIR-V next to the executable by the build.
 
@@ -172,9 +172,10 @@ The mesh passes bind the pipeline, descriptor set and pool once per bucket and i
 | `ShadowPass` | Depth-only into the cascade atlas: per cascade, the tile's viewport and scissor, the cascade matrix as a push constant, one indirect call per bucket. Position pool only. |
 | `DepthPrepass` | Optional depth-only pass over the camera regions so the geometry pass can use an Equal depth test and shade each pixel once. `depthonly.vert` mirrors `gbuffer.vert`'s position expression with `invariant gl_Position`. |
 | `GeometryPass` | G-buffer: albedo (RGBA8, alpha carries the sampled mip level for the mip view) and normals (RGBA16F), depth. Four pipelines: cull back or none, Less-with-write or Equal-without after the prepass. |
+| `DebugViewPass`, `DebugViewResolve` | Only while a debug view is on (`DebugView`): the camera regions drawn again through `debugview.vert/.geom/.frag` into an RGBA32F value target (`debugview.value`), then coloured by `debugview.comp` into `debugview.color`, which the blit takes instead of the AA result. |
 | `LightingPass` | Fullscreen deferred shading into a float scene-colour target: one directional light (the first shadow-enabled directional light, else the first directional), cascade selection by view depth, hardware-compare PCF, shadow tint, and the debug views (`GBufferView`) and overlays. |
 | `AAPass` | FXAA as a compute pass, scene colour to a float storage image; falls back to a blit when the format cannot be a storage image. |
-| `BlitToBackbuffer` | Blits the AA result to the sRGB backbuffer. |
+| `BlitToBackbuffer` | Blits the AA result (or the debug view colours) to the sRGB backbuffer. |
 | `DebugLinePass` (`DebugRenderer`) | Debug lines from `DebugDrawData` (AABBs, frustum outlines, light gizmos), depth-tested against the scene depth. |
 | `GizmoPass` | Wide-line gizmo geometry: the axis gizmo the renderer owns and the translate, rotate and scale gizmo vertices the main thread computes. |
 | `EditorUIPass` | Renders the cloned ImGui draw data through `ImGuiBackend`. |
@@ -186,7 +187,7 @@ Overlays and the UI draw on the backbuffer after the AA blit, so they are never 
 
 | Set | Used by | Bindings |
 |---|---|---|
-| Geometry, one per frame slot | `GeometryPass`, `DepthPrepass` | 0 view UBO, 1 `sampler2D textures[1024]`, 2 instance buffer, 3 material table |
+| Geometry, one per frame slot | `GeometryPass`, `DepthPrepass`, `DebugViewPass` | 0 view UBO, 1 `sampler2D textures[1024]`, 2 instance buffer, 3 material table |
 | Shadow, one | `ShadowPass` | 0 instance buffer; the cascade matrix is a push constant |
 | Culling, one per frame slot | the three cull passes | params, instances, mesh table, visibility, counters, offsets, commands, counts |
 | Lighting, AA, debug lines, gizmos | their passes | per-slot UBOs and the G-buffer, shadow and scene-colour textures |
@@ -222,28 +223,48 @@ samples the atlas with a hardware compare sampler (3×3 PCF by default).
   written as PNG after the fence.
 - **Screenshots.** The presented image is copied into a buffer inside the frame's command buffer and written as PNG after the fence.
 
-## Debugging and observation
+## Debugging and introspection
 
 - **Render Debug snapshot** (`RenderDebugSnapshot`): device limits, swapchain and pacing, scene tables (meshes, textures, materials, culled instances),
-  per-pass stats with GPU times, pool textures, and the draw log. `renderdebugjson` writes it for `--dump-render-debug`.
-- **GPU timings.** Every pass is a GPU zone; the zones of a slot are read after its fence, reported as `GpuTime` and handed to the profiler's GPU lane
-  on the CPU clock (calibrated when the device supports it).
+  per-pass stats with GPU times, pool textures, the draw log, and every live allocation and memory heap (from `RhiDevice::allocations` and
+  `memoryHeaps`). `renderdebugjson` writes it for `--dump-render-debug` and the memory part for `--dump-memory`.
+- **Debug names.** Every buffer, texture, pipeline, set and shader gets a name at creation (`gpuscene.pool.*`, `gpuscene.instances`,
+  `material.N.basecolor`, `cull.*`, `fg.<resource>` for transient textures, `frameslotN.*`, `swapchain.imageN`). They show in validation messages,
+  the Memory window, command logs and RenderDoc.
+- **`CaptureService`.** Captures any frame-graph resource right after any pass, or a static scene buffer at the end of the frame. The main thread
+  sends `CaptureWatch`es (one-shot on a trigger change, or live every frame; textures optionally a sub-rectangle); the graph runs an
+  `FgCaptureRequest` after the named pass with the resource's physical object and state; the service copies it into a readback buffer, restoring the
+  state around the copy, and parses it after the slot's fence. Results carry the raw bytes, per-channel ranges and an ImGui preview.
+  `gpuschema` describes every struct that crosses to the GPU (field, offset, type) so buffers decode into rows the same way in the UI and in dumps.
+  The culling readback and the frame-graph previews predate it and keep their own paths.
+- **Frame debug capture** (`FrameDebugCapture`, `framedebug`). For one requested frame the command buffer's command log is on. The capture holds, per
+  pass: the barriers the graph issued (`FgBarrierRecord`, always kept) with the backend's derived stages, accesses and layouts
+  (`RhiDevice::describeTransition`), the logged commands, and the contents of every descriptor set a pass bound (`describeDescriptorSet`).
+- **GPU timings and counters.** Every pass is a GPU zone, and every indirect call in the depth prepass, geometry and shadow passes is a nested zone
+  named by its region (`DrawLists::regionName`). The zones of a slot are read after its fence, reported as `GpuTime` and handed to the profiler's GPU
+  lane on the CPU clock. While counters are enabled (`setCountersEnabled`), the frame graph also wraps each pass in a pipeline statistics query, and
+  `GpuCounters` (zones plus statistics per pass) is queued per frame for the Counters window and `dump-counters`.
+- **Culling introspection.** `instancecull.comp` writes, next to the visibility bits, the frustum plane that rejected each instance in each view
+  (`cullPlanes`, 4 bits per view: plane 0–5, `E` visible, `F` not tested). The readback keeps every view's visibility bit (`CullResult::viewBits`).
 - **Observation events** (Render category, conventions in `obs.md`): `RenderStats` every 60 frames (`draws`, `indirect_draws`, `draw_commands`,
   `primitives`, `instances`, `culled`, `shadow_culled`, `instance_buffer_bytes`, `instance_upload_bytes`, `geometry_pool_bytes`, `material_count`, ...),
-  `GpuTime` per frame, `CullReadback` per readback, `InstanceUpload` per upload frame (with the access carried in from the previous frame), and one-off
-  events for table and buffer creation (`GeometryPoolBuilt`, `MaterialTableBuilt`, `InstanceBufferCreated`, `DrawListsCreated`,
-  `GeometryDescriptorsRebuilt`), frame begin and end, pass execution and culling, swapchain recreation, screenshots and texture dumps.
+  `GpuTime` per frame, `PipelineStats` per pass while counters are on, `CullReadback` per readback, `InstanceUpload` per upload frame (with the access
+  carried in from the previous frame), `CaptureResult` per capture, and one-off events for table and buffer creation (`GeometryPoolBuilt`,
+  `MaterialTableBuilt`, `InstanceBufferCreated`, `DrawListsCreated`, `GeometryDescriptorsRebuilt`), frame begin and end, pass execution and culling,
+  swapchain recreation, screenshots and texture dumps.
+- **RenderDoc.** The in-app API lives in `src/renderdoccapture.*`, outside the renderer; the debug names make its captures readable.
 
 ## Device requirements
 
 A Vulkan 1.3 device, and from the RHI beyond the basics: `shaderSampledImageArrayDynamicIndexing`, `multiDrawIndirect`, `drawIndirectFirstInstance`
-and `drawIndirectCount` (all required by the Vulkan backend's `init`), timestamps for GPU timings (optional), and an RGBA16F format usable as a storage
-image for the compute AA (optional, blit fallback).
+and `drawIndirectCount` (all required by the Vulkan backend's `init`), timestamps for GPU timings (optional), an RGBA16F format usable as a storage
+image for the compute AA (optional, blit fallback), pipeline statistics for the counters (optional) and geometry shaders for the debug views
+(optional; the views are off without them).
 
 ## Known gaps
 
 - Only one directional light is shaded; point and spot lights in the `RenderWorld` are not.
-- No per-draw GPU timing. A timing zone cannot open inside a multi-draw call; per-pass GPU times remain.
+- No per-draw GPU timing. A timing zone cannot open inside a multi-draw call; the finest GPU time is per region (one indirect call).
 - The draw log and per-pass draw counts are read back, so they lag, and the log exists only while the render debugger is open.
 - No transient buffers in the frame graph (see "Culling and draw lists").
 - The texture array is fixed at 1024 slots; materials past it use the fallback texture and a warning is printed.

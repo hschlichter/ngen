@@ -5,6 +5,7 @@
 #include "shaderloader.h"
 
 #include <array>
+#include <format>
 #include <print>
 
 namespace {
@@ -38,6 +39,7 @@ auto AAPass::init(RhiDevice* dev, uint32_t frameCount, RhiFormat inputFormat) ->
         {.binding = 1, .type = RhiDescriptorType::StorageImage, .stage = RhiShaderStage::Compute},
     }};
     setLayout = device->createDescriptorSetLayout(bindings);
+    device->setDebugName(setLayout, "aa.setlayout");
 
     RhiComputePipelineDesc pipelineDesc = {
         .shader = shader,
@@ -45,13 +47,21 @@ auto AAPass::init(RhiDevice* dev, uint32_t frameCount, RhiFormat inputFormat) ->
         .pushConstant = {.stage = RhiShaderStage::Compute, .offset = 0, .size = sizeof(FxaaPush)},
     };
     pipeline = device->createComputePipeline(pipelineDesc);
+    device->setDebugName(pipeline, "aa.pipeline");
     if (pipeline == nullptr) {
         return false;
     }
 
     pool = device->createDescriptorPool(frameCount, bindings);
+    device->setDebugName(pool, "aa.sets.pool");
     sets.assign(frameCount, nullptr);
-    return device->allocateDescriptorSets(pool, setLayout, sets);
+    if (!device->allocateDescriptorSets(pool, setLayout, sets)) {
+        return false;
+    }
+    for (size_t i = 0; i < sets.size(); i++) {
+        device->setDebugName(sets[i], std::format("aa.set.slot{}", i).c_str());
+    }
+    return true;
 }
 
 auto AAPass::destroy(RhiDevice* dev) -> void {

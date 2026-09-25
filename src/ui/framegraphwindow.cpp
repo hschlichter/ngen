@@ -61,7 +61,11 @@ void drawPassDetail(const FrameGraphDebugSnapshot& snap, uint32_t passIdx, std::
     } else {
         ImGui::TextDisabled("Not scheduled");
     }
-    ImGui::Text("Culled: %s", pass.culled ? "yes" : "no");
+    if (pass.culled) {
+        ImGui::TextUnformatted("Culled: yes, no pass reads its outputs and it has no side effects");
+    } else {
+        ImGui::TextUnformatted("Culled: no");
+    }
     ImGui::Text("Side effects: %s", pass.hasSideEffects ? "yes" : "no");
     if (pass.gpuTimeMs >= 0.0) {
         ImGui::Text("GPU time: %.3f ms", pass.gpuTimeMs);
@@ -123,7 +127,7 @@ void drawPassDetail(const FrameGraphDebugSnapshot& snap, uint32_t passIdx, std::
     drawAccessTable("Writes", pass.writes);
 }
 
-void drawResourceDetail(const FrameGraphDebugSnapshot& snap, uint32_t resIdx, std::optional<uint32_t>& selPass) {
+void drawResourceDetail(const FrameGraphDebugSnapshot& snap, uint32_t resIdx, std::optional<uint32_t>& selPass, std::optional<FrameGraphCaptureRequest>& captureRequest) {
     if (resIdx >= snap.resources.size()) {
         ImGui::TextUnformatted("(invalid resource)");
         return;
@@ -161,6 +165,23 @@ void drawResourceDetail(const FrameGraphDebugSnapshot& snap, uint32_t resIdx, st
         ImGui::TextDisabled("(no preview — format not blittable or debug just enabled)");
     }
 
+    // Capture: the resource after its producer (its last write in this frame), or after the
+    // last pass for imported resources nobody writes.
+    if (ImGui::Button("Capture")) {
+        std::string pass;
+        if (res.producerPass != UINT32_MAX) {
+            pass = snap.passes[res.producerPass].name;
+        }
+        captureRequest = FrameGraphCaptureRequest{.pass = pass, .resource = res.name};
+    }
+    if (selPass.has_value() && *selPass < snap.passes.size()) {
+        ImGui::SameLine();
+        auto label = std::string("Capture after ") + snap.passes[*selPass].name;
+        if (ImGui::Button(label.c_str())) {
+            captureRequest = FrameGraphCaptureRequest{.pass = snap.passes[*selPass].name, .resource = res.name};
+        }
+    }
+
     ImGui::Spacing();
     ImGui::TextUnformatted("Producer:");
     ImGui::SameLine();
@@ -195,8 +216,11 @@ void drawResourceDetail(const FrameGraphDebugSnapshot& snap, uint32_t resIdx, st
 
 } // namespace
 
-void drawFrameGraphWindow(
-    bool& show, const std::optional<FrameGraphDebugSnapshot>& snap, std::optional<uint32_t>& selPass, std::optional<uint32_t>& selResource) {
+void drawFrameGraphWindow(bool& show,
+                          const std::optional<FrameGraphDebugSnapshot>& snap,
+                          std::optional<uint32_t>& selPass,
+                          std::optional<uint32_t>& selResource,
+                          std::optional<FrameGraphCaptureRequest>& captureRequest) {
     if (!show) {
         return;
     }
@@ -251,7 +275,7 @@ void drawFrameGraphWindow(
 
         ImGui::BeginChild("##fg_resource_detail", ImVec2(0, 0), ImGuiChildFlags_Borders);
         if (selResource.has_value()) {
-            drawResourceDetail(s, *selResource, selPass);
+            drawResourceDetail(s, *selResource, selPass, captureRequest);
         } else {
             ImGui::TextDisabled("Click a resource to see its details and preview here.");
         }

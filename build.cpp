@@ -62,7 +62,8 @@ auto main(int argc, char** argv) -> int {
             .out_dir("_out")
             .compile_flag("-O0")
             .compile_flag("-g")
-            .define("DEBUG=1");
+            .define("DEBUG=1")
+            .define("NGEN_INTROSPECTION=1"); // debugging and introspection tooling (RenderDoc, ...); not in gamerelease
 
     auto release =
         cxx::configuration("release")
@@ -70,7 +71,8 @@ auto main(int argc, char** argv) -> int {
             .compile_flag("-O2")
             .compile_flag("-g")
             .compile_flag("-fno-omit-frame-pointer")
-            .define("NDEBUG");
+            .define("NDEBUG")
+            .define("NGEN_INTROSPECTION=1");
 
     auto gamerelease =
         cxx::configuration("gamerelease")
@@ -249,6 +251,7 @@ auto main(int argc, char** argv) -> int {
                     glob({.include = "shaders/*.vert"}),
                     glob({.include = "shaders/*.frag"}),
                     glob({.include = "shaders/*.comp"}),
+                    glob({.include = "shaders/*.geom"}),
                 }),
                 [](const BuildVariant& variant, const Path& source) -> Path { return variant.out_dir / "shaders" / (source.filename().string() + ".spv"); });
 
@@ -260,6 +263,7 @@ auto main(int argc, char** argv) -> int {
                 "src/debugdraw.cpp",
                 "src/jobsystem.cpp",
                 "src/imguibackendvulkan.cpp",
+                "src/renderdoccapture.cpp",
             })
             .include({
                 "src",
@@ -278,6 +282,7 @@ auto main(int argc, char** argv) -> int {
                 "external/imgui",
                 "external/imgui/backends",
                 "external/concurrentqueue",
+                "external/renderdoc", // renderdoc_app.h only; the library is dlopen'd at runtime
             })
             .link(obs)
             .link(profile)

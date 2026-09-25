@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <format>
 
 auto LightingPass::init(RhiDevice* dev, uint32_t imageCount, RhiExtent2D extent, RhiFormat colorFormat) -> bool {
     using enum RhiDescriptorType;
@@ -27,6 +28,7 @@ auto LightingPass::init(RhiDevice* dev, uint32_t imageCount, RhiExtent2D extent,
         {.binding = 5, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment}, // shadow atlas, compare sampler (PCF)
     }};
     descriptorSetLayout = device->createDescriptorSetLayout(bindings);
+    device->setDebugName(descriptorSetLayout, "lighting.setlayout");
 
     RhiGraphicsPipelineDesc pipelineDesc = {
         .vertexShader = vertShader,
@@ -39,13 +41,18 @@ auto LightingPass::init(RhiDevice* dev, uint32_t imageCount, RhiExtent2D extent,
         .depth = {.testEnable = false, .writeEnable = false},
     };
     pipeline = device->createGraphicsPipeline(pipelineDesc);
+    device->setDebugName(pipeline, "lighting.pipeline");
     if (pipeline == nullptr) {
         return false;
     }
 
     descriptorPool = device->createDescriptorPool(imageCount, bindings);
+    device->setDebugName(descriptorPool, "lighting.sets.pool");
     descriptorSets.assign(imageCount, nullptr);
     device->allocateDescriptorSets(descriptorPool, descriptorSetLayout, descriptorSets);
+    for (size_t i = 0; i < descriptorSets.size(); i++) {
+        device->setDebugName(descriptorSets[i], std::format("lighting.set.slot{}", i).c_str());
+    }
 
     uniformBuffers.resize(imageCount);
     uniformBuffersMapped.resize(imageCount);
@@ -56,6 +63,7 @@ auto LightingPass::init(RhiDevice* dev, uint32_t imageCount, RhiExtent2D extent,
             .memory = RhiMemoryUsage::CpuToGpu,
         };
         uniformBuffers[i] = device->createBuffer(uboDesc);
+        device->setDebugName(uniformBuffers[i], "lighting.ubo");
         uniformBuffersMapped[i] = device->mapBuffer(uniformBuffers[i]);
     }
 

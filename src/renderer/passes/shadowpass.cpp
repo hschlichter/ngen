@@ -3,12 +3,14 @@
 
 #include "deletionqueue.h"
 #include "mesh.h"
+#include "profilegpu.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "shaderloader.h"
 
 #include <algorithm>
 #include <array>
+#include <format>
 
 namespace {
 struct ShadowPush {
@@ -31,6 +33,7 @@ auto ShadowPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthForm
     }};
 
     descSetLayout = device->createDescriptorSetLayout(instanceBindings);
+    device->setDebugName(descSetLayout, "shadow.setlayout");
 
     RhiGraphicsPipelineDesc pipelineDesc = {
         .vertexShader = vertShader,
@@ -44,8 +47,10 @@ auto ShadowPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthForm
         .raster = {.cullMode = RhiCullMode::Back},
     };
     pipelineCullBack = device->createGraphicsPipeline(pipelineDesc);
+    device->setDebugName(pipelineCullBack, "shadow.pipeline.cullback");
     pipelineDesc.raster.cullMode = RhiCullMode::None;
     pipelineCullNone = device->createGraphicsPipeline(pipelineDesc);
+    device->setDebugName(pipelineCullNone, "shadow.pipeline.cullnone");
     return pipelineCullBack != nullptr && pipelineCullNone != nullptr;
 }
 
@@ -57,7 +62,9 @@ auto ShadowPass::bindInstanceBuffer(RhiDevice* device, RhiBuffer* instanceBuffer
         });
     }
     descPool = device->createDescriptorPool(1, instanceBindings);
+    device->setDebugName(descPool, "shadow.sets.pool");
     device->allocateDescriptorSets(descPool, descSetLayout, {&descSet, 1});
+    device->setDebugName(descSet, "shadow.set");
     std::array<RhiDescriptorWrite, 1> writes = {{
         {.binding = 0, .type = RhiDescriptorType::StorageBuffer, .buffer = instanceBuffer, .bufferRange = 0},
     }};
@@ -151,6 +158,7 @@ auto ShadowPass::addPass(
                     cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
                     ShadowPush push{cascade.viewProj};
                     cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(push), &push);
+                    PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
                     cmd->drawIndexedIndirectCount(ctx.buffer(drawHandles.commands), lists.commandOffset(region), ctx.buffer(drawHandles.counts), DrawLists::countOffset(region), lists.regionCapacity());
                     lists.report(ctx, region, instances);
                 }

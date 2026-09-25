@@ -3,6 +3,7 @@
 #include "framegraphdebug.h"
 
 #include <cstdio>
+#include <map>
 #include <string>
 
 namespace {
@@ -61,6 +62,44 @@ auto writeRenderDebugJson(const char* path, const RenderDebugSnapshot& s, const 
     for (size_t i = 0; i < s.draws.size(); i++) {
         const auto& d = s.draws[i];
         std::fprintf(f, "    {\"pass\": \"%s\", \"index\": %u, \"prim\": \"%s\", \"instance\": %u, \"mesh\": %u, \"material\": %u, \"indexOffset\": %u, \"indexCount\": %u}%s\n", escape(d.pass).c_str(), d.drawIndex, escape(primPath(d.prim)).c_str(), d.instance, d.mesh, d.material, d.indexOffset, d.indexCount, i + 1 < s.draws.size() ? "," : "");
+    }
+    std::fprintf(f, "  ]\n}\n");
+    std::fclose(f);
+    return true;
+}
+
+auto writeMemoryJson(const char* path, const RenderDebugSnapshot& s) -> bool {
+    auto* f = std::fopen(path, "w");
+    if (f == nullptr) {
+        return false;
+    }
+    std::fprintf(f, "{\n  \"frame\": %llu,\n  \"heaps\": [\n", (unsigned long long) s.frameIndex);
+    for (size_t i = 0; i < s.heaps.size(); i++) {
+        const auto& h = s.heaps[i];
+        std::fprintf(f, "    {\"heap\": %zu, \"deviceLocal\": %s, \"size\": %llu, \"budget\": %llu, \"usage\": %llu, \"allocated\": %llu}%s\n", i, h.deviceLocal ? "true" : "false", (unsigned long long) h.size, (unsigned long long) h.budget, (unsigned long long) h.usage, (unsigned long long) h.allocated, i + 1 < s.heaps.size() ? "," : "");
+    }
+    // Category: the name up to the first '.' or ':'.
+    std::map<std::string, std::pair<uint64_t, uint32_t>> categories;
+    uint64_t total = 0;
+    for (const auto& a : s.allocations) {
+        auto category = a.name.empty() ? std::string("(unnamed)") : a.name.substr(0, a.name.find_first_of(".:"));
+        categories[category].first += a.bytes;
+        categories[category].second++;
+        total += a.bytes;
+    }
+    std::fprintf(f, "  ],\n  \"totalBytes\": %llu,\n  \"categories\": [\n", (unsigned long long) total);
+    size_t index = 0;
+    for (const auto& [name, value] : categories) {
+        std::fprintf(f, "    {\"category\": \"%s\", \"allocations\": %u, \"bytes\": %llu}%s\n", escape(name).c_str(), value.second, (unsigned long long) value.first, ++index < categories.size() ? "," : "");
+    }
+    std::fprintf(f, "  ],\n  \"allocations\": [\n");
+    for (size_t i = 0; i < s.allocations.size(); i++) {
+        const auto& a = s.allocations[i];
+        std::fprintf(f, "    {\"sequence\": %llu, \"name\": \"%s\", \"kind\": \"%s\", \"memory\": \"%s\", \"bytes\": %llu, \"requested\": %llu, \"heap\": %u, \"usageBits\": %u", (unsigned long long) a.sequence, escape(a.name).c_str(), a.kind == RhiAllocationInfo::Kind::Buffer ? "buffer" : "texture", a.memory == RhiMemoryUsage::GpuOnly ? "GpuOnly" : "CpuToGpu", (unsigned long long) a.bytes, (unsigned long long) a.requested, a.heap, a.usageBits);
+        if (a.kind == RhiAllocationInfo::Kind::Texture) {
+            std::fprintf(f, ", \"width\": %u, \"height\": %u, \"mips\": %u, \"layers\": %u, \"format\": \"%s\"", a.width, a.height, a.mipLevels, a.arrayLayers, toString(a.format));
+        }
+        std::fprintf(f, "}%s\n", i + 1 < s.allocations.size() ? "," : "");
     }
     std::fprintf(f, "  ]\n}\n");
     std::fclose(f);

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -75,6 +76,7 @@ enum class RhiShaderStage : uint32_t {
     Vertex = 1 << 0,
     Fragment = 1 << 1,
     Compute = 1 << 2,
+    Geometry = 1 << 3, // optional: RhiDeviceLimits::geometryShaders
 };
 template <>
 struct RhiFlagEnum<RhiShaderStage> : std::true_type {};
@@ -229,6 +231,52 @@ enum class RhiBufferState {
     IndirectRead, // read as draw arguments or a draw count
 };
 
+inline auto rhiStateName(RhiTextureState state) -> const char* {
+    switch (state) {
+        case RhiTextureState::Undefined:
+            return "Undefined";
+        case RhiTextureState::ColorAttachment:
+            return "ColorAttachment";
+        case RhiTextureState::DepthStencilAttachment:
+            return "DepthStencilAttachment";
+        case RhiTextureState::ShaderReadOnly:
+            return "ShaderReadOnly";
+        case RhiTextureState::General:
+            return "General";
+        case RhiTextureState::TransferSrc:
+            return "TransferSrc";
+        case RhiTextureState::TransferDst:
+            return "TransferDst";
+        case RhiTextureState::PresentSrc:
+            return "PresentSrc";
+    }
+    return "?";
+}
+
+inline auto rhiStateName(RhiBufferState state) -> const char* {
+    switch (state) {
+        case RhiBufferState::Undefined:
+            return "Undefined";
+        case RhiBufferState::VertexRead:
+            return "VertexRead";
+        case RhiBufferState::IndexRead:
+            return "IndexRead";
+        case RhiBufferState::UniformRead:
+            return "UniformRead";
+        case RhiBufferState::StorageRead:
+            return "StorageRead";
+        case RhiBufferState::StorageWrite:
+            return "StorageWrite";
+        case RhiBufferState::TransferSrc:
+            return "TransferSrc";
+        case RhiBufferState::TransferDst:
+            return "TransferDst";
+        case RhiBufferState::IndirectRead:
+            return "IndirectRead";
+    }
+    return "?";
+}
+
 // Arguments of one indirect indexed draw, as the GPU reads them from an Indirect buffer.
 // Layout matches VkDrawIndexedIndirectCommand and D3D12_DRAW_INDEXED_ARGUMENTS.
 struct RhiDrawIndexedIndirectCommand {
@@ -248,6 +296,7 @@ struct RhiBufferDesc {
     uint64_t size;
     RhiBufferUsageFlags usage;
     RhiMemoryUsage memory;
+    const char* debugName = nullptr; // shown by validation, RenderDoc and allocations(); copied
 };
 
 struct RhiTextureDesc {
@@ -259,6 +308,7 @@ struct RhiTextureDesc {
     uint32_t arrayLayers = 1;
     uint32_t sampleCount = 1;
     RhiTextureDimension dimension = RhiTextureDimension::Texture2D;
+    const char* debugName = nullptr; // shown by validation, RenderDoc and allocations(); copied
 };
 
 struct RhiBufferCopy {
@@ -281,6 +331,8 @@ struct RhiBufferTextureCopy {
     uint32_t height = 0;
     uint32_t mipLevel = 0;
     uint32_t arrayLayer = 0;
+    int32_t x = 0; // texel offset of the copied rectangle in the texture
+    int32_t y = 0;
 };
 
 // Static device capabilities the renderer needs to size and validate its own
@@ -310,6 +362,8 @@ struct RhiDeviceLimits {
     bool timestamps = false;               // writeTimestamp supported on the device's queue
     float timestampPeriodNs = 0.0f;        // nanoseconds per timestamp tick
     bool calibratedTimestamps = false;     // calibrateGpuClock available
+    bool pipelineStatistics = false;       // beginPipelineStats/endPipelineStats count work
+    bool geometryShaders = false;          // RhiGraphicsPipelineDesc::geometryShader allowed
     uint32_t maxPerStageSampledImages = 0; // upper bound for sampled-image array bindings, per shader stage
 };
 
@@ -320,6 +374,7 @@ struct RhiShaderDesc {
     RhiShaderStage stage;
     std::span<const std::byte> code;
     const char* entryPoint = "main";
+    const char* debugName = nullptr;
 };
 
 struct RhiSamplerDesc {
@@ -335,6 +390,7 @@ struct RhiSamplerDesc {
     float minLod = 0.0f;
     float maxLod = 1000.0f; // "no clamp"
     float mipLodBias = 0.0f;
+    const char* debugName = nullptr;
 };
 
 struct RhiVertexAttribute {
@@ -512,6 +568,7 @@ struct RhiBlendState {
 struct RhiGraphicsPipelineDesc {
     RhiShaderModule* vertexShader = nullptr;
     RhiShaderModule* fragmentShader = nullptr;
+    RhiShaderModule* geometryShader = nullptr;                     // optional; needs RhiDeviceLimits::geometryShaders
     std::span<RhiDescriptorSetLayout* const> descriptorSetLayouts; // index in span = set index
     RhiPushConstantRange pushConstant;
     std::span<const RhiFormat> colorFormats;
@@ -522,6 +579,7 @@ struct RhiGraphicsPipelineDesc {
     RhiRasterState raster;
     RhiDepthState depth;
     RhiBlendState blend; // applied to every color attachment
+    const char* debugName = nullptr;
 };
 
 // A timed interval on the GPU, produced by RhiCommandBuffer::beginGpuZone/endGpuZone
@@ -533,10 +591,28 @@ struct RhiGpuZone {
     uint64_t endNs = 0;
 };
 
+// Work the GPU did between RhiCommandBuffer::beginPipelineStats/endPipelineStats.
+struct RhiPipelineStats {
+    uint64_t iaVertices = 0;          // vertices read by input assembly
+    uint64_t iaPrimitives = 0;        // primitives assembled
+    uint64_t vertexInvocations = 0;   // vertex shader runs (post-transform cache hits don't run it)
+    uint64_t clippingInvocations = 0; // primitives entering clipping
+    uint64_t clippingPrimitives = 0;  // primitives leaving clipping (after clipping and culling)
+    uint64_t fragmentInvocations = 0; // fragment shader runs, including helper lanes the driver counts
+    uint64_t computeInvocations = 0;  // compute shader invocations
+};
+
+// One begin/end pair of pipeline statistics, read back with RhiDevice::collectPipelineStats.
+struct RhiPipelineStatsZone {
+    const char* name = "";
+    RhiPipelineStats stats;
+};
+
 struct RhiComputePipelineDesc {
     RhiShaderModule* shader = nullptr;
     std::span<RhiDescriptorSetLayout* const> descriptorSetLayouts; // index in span = set index
     RhiPushConstantRange pushConstant;
+    const char* debugName = nullptr;
 };
 
 struct RhiDescriptorWrite {
@@ -548,6 +624,96 @@ struct RhiDescriptorWrite {
     uint64_t bufferRange = 0;
     RhiTexture* texture = nullptr;
     RhiSampler* sampler = nullptr;
+};
+
+class RhiCommandBuffer;
+
+// Any RHI object, for RhiDevice::setDebugName. Implicit from each object pointer.
+struct RhiDebugObject {
+    enum class Type : uint8_t {
+        Buffer,
+        Texture,
+        Sampler,
+        ShaderModule,
+        Pipeline,
+        DescriptorSetLayout,
+        DescriptorPool,
+        DescriptorSet,
+        CommandBuffer,
+        Semaphore,
+        Fence,
+        QueryPool,
+    };
+    Type type;
+    const void* object;
+
+    RhiDebugObject(RhiBuffer* o) : type(Type::Buffer), object(o) {}
+    RhiDebugObject(RhiTexture* o) : type(Type::Texture), object(o) {}
+    RhiDebugObject(RhiSampler* o) : type(Type::Sampler), object(o) {}
+    RhiDebugObject(RhiShaderModule* o) : type(Type::ShaderModule), object(o) {}
+    RhiDebugObject(RhiPipeline* o) : type(Type::Pipeline), object(o) {}
+    RhiDebugObject(RhiDescriptorSetLayout* o) : type(Type::DescriptorSetLayout), object(o) {}
+    RhiDebugObject(RhiDescriptorPool* o) : type(Type::DescriptorPool), object(o) {}
+    RhiDebugObject(RhiDescriptorSet* o) : type(Type::DescriptorSet), object(o) {}
+    RhiDebugObject(RhiCommandBuffer* o) : type(Type::CommandBuffer), object(o) {}
+    RhiDebugObject(RhiSemaphore* o) : type(Type::Semaphore), object(o) {}
+    RhiDebugObject(RhiFence* o) : type(Type::Fence), object(o) {}
+    RhiDebugObject(RhiQueryPool* o) : type(Type::QueryPool), object(o) {}
+};
+
+// One live buffer or texture, from RhiDevice::allocations().
+struct RhiAllocationInfo {
+    enum class Kind : uint8_t {
+        Buffer,
+        Texture,
+    };
+    Kind kind = Kind::Buffer;
+    std::string name;       // debug name; empty when never named
+    uint64_t bytes = 0;     // device memory allocated for it, alignment included
+    uint64_t requested = 0; // bytes the desc asked for (buffers) or texel bytes at mip 0 (textures)
+    RhiMemoryUsage memory = RhiMemoryUsage::GpuOnly;
+    uint32_t usageBits = 0;                  // RhiBufferUsageFlags or RhiTextureUsageFlags bits
+    uint32_t heap = 0;                       // index into memoryHeaps()
+    uint64_t sequence = 0;                   // creation order, starting at 1
+    uint32_t width = 0;                      // textures
+    uint32_t height = 0;                     // textures
+    uint32_t mipLevels = 0;                  // textures
+    uint32_t arrayLayers = 0;                // textures
+    RhiFormat format = RhiFormat::Undefined; // textures
+};
+
+// One device memory heap, from RhiDevice::memoryHeaps(). Budget and usage come from the
+// driver when it reports them (0 otherwise); allocated is what allocations() adds up to.
+struct RhiMemoryHeapInfo {
+    uint64_t size = 0;
+    uint64_t budget = 0;
+    uint64_t usage = 0;
+    uint64_t allocated = 0;
+    bool deviceLocal = false;
+};
+
+// What a state transition becomes in the backend, as text: RhiDevice::describeTransition.
+struct RhiTransitionInfo {
+    std::string srcStages;
+    std::string srcAccess;
+    std::string dstStages;
+    std::string dstAccess;
+    std::string oldLayout; // textures only
+    std::string newLayout;
+};
+
+// One recorded command, while a command buffer's command log is on.
+struct RhiCommandRecord {
+    std::string text;
+    const RhiDescriptorSet* descriptorSet = nullptr; // set by bindDescriptorSet records
+};
+
+// One written descriptor of a set: RhiDevice::describeDescriptorSet.
+struct RhiDescriptorInfo {
+    uint32_t binding = 0;
+    uint32_t arrayElement = 0;
+    RhiDescriptorType type = RhiDescriptorType::UniformBuffer;
+    std::string resource; // debug name of the buffer or texture (and sampler)
 };
 
 struct RhiSubmitInfo {

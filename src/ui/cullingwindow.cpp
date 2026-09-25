@@ -1,5 +1,6 @@
 #include "cullingwindow.h"
 
+#include <algorithm>
 #include <imgui.h>
 
 void drawCullingWindow(bool& show, CullingWindowInputs in) {
@@ -25,6 +26,16 @@ void drawCullingWindow(bool& show, CullingWindowInputs in) {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Every instance AABB: green drawn, red culled.");
     }
+
+    const char* views[] = {"camera", "cascade 0", "cascade 1", "cascade 2", "cascade 3"};
+    ImGui::SetNextItemWidth(140.0f);
+    ImGui::Combo("Overlay view", &in.overlayView, views, 1 + (int) std::min(in.cascades, maxShadowCascades));
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Which view's culling colours the AABB overlay: the camera, or one shadow cascade.\nRead back from the GPU culling, a few frames late.");
+    }
+    ImGui::Checkbox("Cascade frusta", &in.showCascadeFrusta);
 
     ImGui::Separator();
     uint32_t drawn = in.instances - in.culled;

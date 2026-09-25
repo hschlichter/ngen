@@ -7,6 +7,7 @@
 #include "shaderloader.h"
 
 #include <array>
+#include <format>
 
 namespace {
 
@@ -16,7 +17,7 @@ enum class CullMode : uint32_t {
     Scatter = 2,
 };
 
-constexpr std::array<RhiDescriptorBinding, 8> cullBindings = {{
+constexpr std::array<RhiDescriptorBinding, 9> cullBindings = {{
     {.binding = 0, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // params
     {.binding = 1, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // instances
     {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // mesh table
@@ -25,10 +26,12 @@ constexpr std::array<RhiDescriptorBinding, 8> cullBindings = {{
     {.binding = 5, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // group offsets
     {.binding = 6, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // commands
     {.binding = 7, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // totals / counts
+    {.binding = 8, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // cull reason per view
 }};
 
 struct CullPassData {
     FgBufferHandle visibility;
+    FgBufferHandle cullPlanes;
     FgBufferHandle groupCounters;
 };
 
@@ -49,12 +52,14 @@ auto InstanceCullPass::init(RhiDevice* device) -> bool {
         return false;
     }
     setLayout = device->createDescriptorSetLayout(cullBindings);
+    device->setDebugName(setLayout, "cull.setlayout");
     RhiComputePipelineDesc pipelineDesc = {
         .shader = shader,
         .descriptorSetLayouts = {&setLayout, 1},
         .pushConstant = {.stage = RhiShaderStage::Compute, .offset = 0, .size = sizeof(uint32_t)},
     };
     pipeline = device->createComputePipeline(pipelineDesc);
+    device->setDebugName(pipeline, "cull.pipeline");
     return pipeline != nullptr;
 }
 
@@ -82,11 +87,15 @@ auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& li
     }
     auto slotCount = lists.frameSlots();
     pool = device->createDescriptorPool(slotCount, cullBindings);
+    device->setDebugName(pool, "cull.sets.pool");
     sets.assign(slotCount, nullptr);
     device->allocateDescriptorSets(pool, setLayout, sets);
     for (uint32_t i = 0; i < slotCount; i++) {
+        device->setDebugName(sets[i], std::format("cull.set.slot{}", i).c_str());
+    }
+    for (uint32_t i = 0; i < slotCount; i++) {
         auto buffers = lists.slotBuffers(i);
-        std::array<RhiDescriptorWrite, 8> writes = {{
+        std::array<RhiDescriptorWrite, 9> writes = {{
             {.binding = 0, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.params},
             {.binding = 1, .type = RhiDescriptorType::StorageBuffer, .buffer = scene.instanceBuffer()},
             {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .buffer = scene.meshTableBuffer()},
@@ -95,6 +104,7 @@ auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& li
             {.binding = 5, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.groupOffsets},
             {.binding = 6, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.commands},
             {.binding = 7, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.counts},
+            {.binding = 8, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.cullPlanes},
         }};
         device->updateDescriptorSet(sets[i], writes);
     }
@@ -119,6 +129,7 @@ auto InstanceCullPass::addPasses(FrameGraph& fg, const DrawLists::Handles& handl
             builder.read(handles.params, FgAccessFlags::StorageRead);
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             data.visibility = builder.write(handles.visibility, FgAccessFlags::StorageWrite);
+            data.cullPlanes = builder.write(handles.cullPlanes, FgAccessFlags::StorageWrite);
             data.groupCounters = builder.write(handles.groupCounters, FgAccessFlags::StorageWrite);
         },
         [dispatchMode, groupCount](FrameGraphContext& ctx, const CullPassData&) { dispatchMode(ctx, CullMode::Cull, groupCount); });

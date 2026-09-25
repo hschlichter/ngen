@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <format>
 
 auto DebugRenderer::init(
     RhiDevice* device, uint32_t imageCount, RhiExtent2D extent, RhiFormat colorFormat, RhiFormat depthFormat, std::span<RhiBuffer*> uniformBuffers) -> bool {
@@ -21,6 +22,7 @@ auto DebugRenderer::init(
         {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
     }};
     descriptorSetLayout = device->createDescriptorSetLayout(bindings);
+    device->setDebugName(descriptorSetLayout, "debuglines.setlayout");
 
     std::array<RhiVertexAttribute, 2> vertexAttrs = {{
         {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0},
@@ -39,6 +41,7 @@ auto DebugRenderer::init(
         .depth = {.testEnable = true, .writeEnable = false},
     };
     pipeline = device->createGraphicsPipeline(pipelineDesc);
+    device->setDebugName(pipeline, "debuglines.pipeline");
 
     vertexBuffers.resize(imageCount);
     vertexBuffersMapped.resize(imageCount);
@@ -49,12 +52,17 @@ auto DebugRenderer::init(
             .memory = RhiMemoryUsage::CpuToGpu,
         };
         vertexBuffers[i] = device->createBuffer(vbDesc);
+        device->setDebugName(vertexBuffers[i], "debuglines.vertices");
         vertexBuffersMapped[i] = device->mapBuffer(vertexBuffers[i]);
     }
 
     descriptorPool = device->createDescriptorPool(imageCount, bindings);
+    device->setDebugName(descriptorPool, "debuglines.sets.pool");
     descriptorSets.assign(imageCount, nullptr);
     device->allocateDescriptorSets(descriptorPool, descriptorSetLayout, descriptorSets);
+    for (size_t i = 0; i < descriptorSets.size(); i++) {
+        device->setDebugName(descriptorSets[i], std::format("debuglines.set.slot{}", i).c_str());
+    }
     for (uint32_t i = 0; i < imageCount; i++) {
         std::array<RhiDescriptorWrite, 1> writes = {{
             {

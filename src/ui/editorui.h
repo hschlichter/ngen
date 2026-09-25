@@ -2,19 +2,26 @@
 
 #include "assetbrowser.h" // AssetBrowserState
 #include "camerawindow.h"
+#include "capturewindow.h"
+#include "counterswindow.h"
 #include "cullingwindow.h"
+#include "debugviewwindow.h"
+#include "framedebuggerwindow.h"
 #include "framegraphdebug.h"
+#include "gpuscenewindow.h"
+#include "introspectionflags.h"
+#include "memorywindow.h"
 #include "performancewindow.h"
 #include "propertieswindow.h" // PropertiesWindowState
 #include "renderdebugwindow.h"
 #include "scenehandles.h"
 #include "scenewindow.h" // SceneWindowState
 
-#include <cstdint>
 #include <array>
+#include <cstdint>
 #include <glm/glm.hpp>
-#include <span>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -84,7 +91,8 @@ public:
         glm::vec3 cameraPos,
         glm::vec3 worldUp,
         std::span<const uint8_t> visible,
-        const std::array<glm::vec3, 8>* frozenFrustum) -> void;
+        const std::array<glm::vec3, 8>* frozenFrustum,
+        std::span<const ShadowCascade> cascades) -> void;
 
     auto hasPendingOpen() const -> bool { return !pendingOpenPath.empty(); }
     auto consumePendingOpenPath() -> std::string { return std::exchange(pendingOpenPath, {}); }
@@ -104,6 +112,9 @@ public:
     auto setCullFrozen(bool on) -> void { cullFrozenFlag = on; }
     auto getShowCulled() const -> bool { return showCulledFlag; }
     auto setShowCulled(bool on) -> void { showCulledFlag = on; }
+    // Which view colours the culling AABB overlay: 0 camera, 1.. shadow cascades.
+    auto cullOverlayView() const -> int { return cullOverlayViewIndex; }
+    auto setCullOverlayView(int view) -> void { cullOverlayViewIndex = view; }
     auto getDepthPrepass() const -> bool { return depthPrepassFlag; }
     auto getSamplerSettings() const -> const SamplerSettings& { return samplerSettings; }
     auto samplerSettingsMutable() -> SamplerSettings& { return samplerSettings; }
@@ -116,11 +127,26 @@ public:
     }
     auto setDepthPrepass(bool on) -> void { depthPrepassFlag = on; }
     auto getGBufferViewMode() const -> int { return gbufferViewMode; }
+    auto getDebugView() const -> int { return debugViewMode; }
+    auto setDebugView(int view) -> void { debugViewMode = view; }
     auto getShowBufferOverlay() const -> bool { return showBufferOverlayFlag; }
     auto getShowShadowOverlay() const -> bool { return showShadowOverlayFlag; }
     auto getAntiAliasing() const -> bool { return antiAliasingFlag; }
     auto getShowFrameGraphWindow() const -> bool { return showFrameGraphWindow; }
     auto getShowRenderDebugWindow() const -> bool { return showRenderDebugWindow; }
+    auto introspection() -> IntrospectionFlags& { return introspectionFlags; }
+    // Whether any open window reads the render debug snapshot.
+    auto wantsRenderDebug() const -> bool { return showRenderDebugWindow || introspectionFlags.memory; }
+    // Whether any open window reads the frame graph debug snapshot.
+    auto wantsFrameGraphDebug() const -> bool { return showFrameGraphWindow || introspectionFlags.capture; }
+    // Frame Debugger: a frame capture was asked for (cleared by the call), and one arrived.
+    auto takeFrameDebugRequest() -> bool { return std::exchange(frameDebuggerState.requestCapture, false); }
+    auto onFrameDebugCapture(FrameDebugCapture capture) -> void;
+    // Capture watches of the open introspection windows, and their results.
+    auto captureWatches() const -> std::vector<CaptureWatch>;
+    auto onCaptureResult(CaptureResult result) -> void;
+    auto wantsCounters() const -> bool { return introspectionFlags.counters; }
+    auto onCounters(GpuCounters counters) -> void { addCountersFrame(countersState, std::move(counters)); }
     auto getShowCameraWindow() const -> bool { return showCameraWindow; }
     // This frame's cull result, for the Culling window.
     auto setCullStats(uint32_t instances, uint32_t culled) -> void {
@@ -132,6 +158,9 @@ public:
     auto setGBufferViewMode(int mode) -> void { gbufferViewMode = mode; }
     // grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa; false if the name is unknown.
     auto setOverlay(std::string_view name, bool on) -> bool;
+    // Opens or closes an introspection window by name (memory, capture, framedebugger,
+    // gpuscene, counters, shaders). Returns false for an unknown name.
+    auto setIntrospectionWindow(std::string_view name, bool on) -> bool;
     auto setShowRenderDebugWindow(bool show) -> void { showRenderDebugWindow = show; }
     // Screenshot requested from the UI (button or F12); main hands it to the renderer.
     auto takeScreenshotRequest() -> bool {
@@ -169,6 +198,8 @@ private:
     bool cullEnabledFlag = true;
     bool cullFrozenFlag = false;
     bool showCulledFlag = false;
+    int cullOverlayViewIndex = 0;
+    bool showCascadeFrustaFlag = false;
     bool depthPrepassFlag = false;
     SamplerSettings samplerSettings;
     ShadowCascadeSettings shadowSettings;
@@ -176,6 +207,7 @@ private:
     std::array<uint32_t, maxShadowCascades> shadowCulledStats = {};
     std::array<uint32_t, maxShadowCascades> shadowDrawnStats = {};
     int gbufferViewMode = 0;
+    int debugViewMode = 0; // DebugView
     bool showBufferOverlayFlag = false;
     bool showShadowOverlayFlag = false;
     bool antiAliasingFlag = true;
@@ -200,6 +232,13 @@ private:
     std::optional<FrameGraphDebugSnapshot> fgLastSnapshot;
     PerformanceWindowState performanceState;
     std::optional<RenderDebugSnapshot> renderDebugLast;
+    IntrospectionFlags introspectionFlags;
+    MemoryWindowState memoryWindowState;
+    CaptureWindowState captureWindowState;
+    FrameDebuggerState frameDebuggerState;
+    GpuSceneWindowState gpuSceneState;
+    CountersWindowState countersState;
+    DebugViewWindowState debugViewState;
     RenderDebugDrawState renderDebugDraws;
 
 public:

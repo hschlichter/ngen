@@ -16,6 +16,7 @@ auto GizmoPass::init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent,
     // Empty descriptor set layout: pipeline has no descriptors, viewProj is a push constant.
     std::array<RhiDescriptorBinding, 0> bindings = {};
     descriptorSetLayout = device->createDescriptorSetLayout(bindings);
+    device->setDebugName(descriptorSetLayout, "gizmo.setlayout");
 
     std::array<RhiVertexAttribute, 2> vertexAttrs = {{
         {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0},
@@ -39,6 +40,7 @@ auto GizmoPass::init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent,
         .depth = {.testEnable = false, .writeEnable = false},
     };
     pipeline = device->createGraphicsPipeline(pipelineDesc);
+    device->setDebugName(pipeline, "gizmo.pipeline");
 
     vertexBuffers.resize(imageCount);
     vertexBuffersMapped.resize(imageCount);
@@ -49,6 +51,7 @@ auto GizmoPass::init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent,
             .memory = RhiMemoryUsage::CpuToGpu,
         };
         vertexBuffers[i] = device->createBuffer(vbDesc);
+        device->setDebugName(vertexBuffers[i], "gizmo.vertices");
         vertexBuffersMapped[i] = device->mapBuffer(vertexBuffers[i]);
     }
 

@@ -19,6 +19,7 @@ struct CullResult {
     std::array<uint32_t, maxShadowCascades> cascadeCulled = {};
     std::array<uint32_t, maxShadowCascades> cascadeDrawn = {};
     std::vector<uint8_t> cameraVisible; // per instance, 1 = visible
+    std::vector<uint8_t> viewBits;      // per instance, bit v = visible in view v (0 camera, 1.. cascades)
 };
 
 class DeletionQueue;
@@ -76,6 +77,7 @@ public:
     struct Handles {
         FgBufferHandle params;
         FgBufferHandle visibility;
+        FgBufferHandle cullPlanes;
         FgBufferHandle groupCounters;
         FgBufferHandle groupOffsets;
         FgBufferHandle commands;
@@ -93,6 +95,7 @@ public:
     struct SlotBuffers {
         RhiBuffer* params = nullptr;
         RhiBuffer* visibility = nullptr;
+        RhiBuffer* cullPlanes = nullptr;
         RhiBuffer* groupCounters = nullptr;
         RhiBuffer* groupOffsets = nullptr;
         RhiBuffer* commands = nullptr;
@@ -105,6 +108,8 @@ public:
     auto commandOffset(uint32_t region) const -> uint64_t { return (uint64_t) region * capacity * sizeof(RhiDrawIndexedIndirectCommand); }
     static auto countOffset(uint32_t region) -> uint64_t { return (uint64_t) region * sizeof(uint32_t); }
     auto regionCapacity() const -> uint32_t { return capacity; }
+    // A region as text ("camera.single", "cascade0.double", ...); a literal, so it can name GPU zones.
+    static auto regionName(uint32_t region) -> const char*;
 
     // Latest readback (one frame-slot cycle old).
     auto readbackFrame() const -> uint64_t { return latest.frame; }
@@ -118,6 +123,8 @@ public:
     auto commandCount() const -> uint32_t;
     // Per instance, 1 if visible to the camera in the latest readback (for the editor overlay).
     auto cameraVisible() const -> const std::vector<uint8_t>& { return latest.cameraVisible; }
+    // Per instance, visibility bit v for view v (camera, then cascades), latest readback.
+    auto viewBits() const -> const std::vector<uint8_t>& { return latest.viewBits; }
 
     // For a pass that just issued `region` indirectly: folds the region's draws and primitives
     // from the latest readback into the pass stats and logs its read-back commands.
@@ -128,6 +135,7 @@ private:
         RhiBuffer* params = nullptr; // CpuToGpu, mapped
         void* paramsMapped = nullptr;
         RhiBuffer* visibility = nullptr;
+        RhiBuffer* cullPlanes = nullptr;
         RhiBuffer* groupCounters = nullptr;
         RhiBuffer* groupOffsets = nullptr;
         RhiBuffer* commands = nullptr;
@@ -146,6 +154,7 @@ private:
         uint32_t viewCount = 0;
         std::array<uint32_t, counterCount> totals = {};
         std::vector<uint8_t> cameraVisible;
+        std::vector<uint8_t> viewBits;
         bool hasCommands = false;
         std::array<std::vector<RhiDrawIndexedIndirectCommand>, regionCount> commands;
     };

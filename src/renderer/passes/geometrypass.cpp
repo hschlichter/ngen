@@ -1,11 +1,13 @@
 #include "geometrypass.h"
 #include "mesh.h"
+#include "profilegpu.h"
 #include "renderertypes.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "shaderloader.h"
 
 #include <array>
+#include <format>
 #include <print>
 
 auto GeometryPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFormat) -> bool {
@@ -17,6 +19,7 @@ auto GeometryPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFo
 
     auto bindings = descriptorBindings();
     descSetLayout = device->createDescriptorSetLayout(bindings);
+    device->setDebugName(descSetLayout, "geometry.setlayout");
 
     std::array<RhiVertexAttribute, 4> vertexAttrs = {{
         {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
@@ -55,6 +58,7 @@ auto GeometryPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFo
                 pipelineDesc.depth = {.testEnable = true, .writeEnable = true, .compareOp = RhiCompareOp::Less};
             }
             pipelines[doubleSided][prepassed] = device->createGraphicsPipeline(pipelineDesc);
+            device->setDebugName(pipelines[doubleSided][prepassed], std::format("geometry.pipeline.{}.{}", doubleSided != 0 ? "cullnone" : "cullback", prepassed != 0 ? "equal" : "less").c_str());
             if (pipelines[doubleSided][prepassed] == nullptr) {
                 return false;
             }
@@ -173,6 +177,7 @@ auto GeometryPass::addPass(
                 cmd->bindVertexBuffer(scene.vertexBuffer());
                 cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
                 // Each command's firstInstance is its instance index: instances[gl_InstanceIndex].
+                PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
                 cmd->drawIndexedIndirectCount(commands, lists.commandOffset(region), counts, DrawLists::countOffset(region), lists.regionCapacity());
                 lists.report(ctx, region, instances);
             }

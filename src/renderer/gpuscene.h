@@ -111,6 +111,7 @@ public:
     auto indexBuffer() const -> RhiBuffer* { return poolIndices; }
     auto geometryPoolBytes() const -> uint64_t { return poolBytes; }
     auto meshTableBuffer() const -> RhiBuffer* { return meshTable; }
+    auto meshTableBytes() const -> uint64_t { return meshTableSize; }
 
     // Bulk: assigns texture slots (0 = fallback, then each textured material in instance
     // order), builds the material table and uploads it, and records each instance's
@@ -124,6 +125,7 @@ public:
                           uint64_t frame) -> void;
     auto textureSlots() const -> std::span<RhiTexture* const> { return slots; }
     auto materialBuffer() const -> RhiBuffer* { return materialTable; }
+    auto materialTableBytes() const -> uint64_t { return materialTableSize; }
     auto materialCount() const -> uint32_t { return (uint32_t) materialIndexOf.size(); }
 
     // Delta: grows the instance buffer to fit `instances` and marks [dirtyFirst, dirtyEnd)
@@ -154,9 +156,11 @@ private:
     uint64_t poolBytes = 0;
     std::unordered_map<uint32_t, GpuMeshRange> meshes;
     RhiBuffer* meshTable = nullptr; // GpuMeshEntry per mesh index, for culling
+    uint64_t meshTableSize = 0;
 
     // Material table: slot per texture, GpuMaterial per used material, material per instance.
     RhiBuffer* materialTable = nullptr;
+    uint64_t materialTableSize = 0;
     std::vector<RhiTexture*> slots;
     std::unordered_map<uint32_t, uint32_t> materialIndexOf; // MaterialHandle::index -> table entry
     std::vector<uint32_t> instanceMaterial;                 // per instance, table entry

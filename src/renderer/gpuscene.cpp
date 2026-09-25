@@ -107,11 +107,12 @@ auto GpuScene::rebuildGeometry(std::span<const GpuInstance> sceneInstances, cons
 
     uploader.begin();
     if (!vertices.empty()) {
-        poolVertices = uploader.uploadBuffer(std::as_bytes(std::span(vertices)), RhiBufferUsage::Vertex);
-        poolPositions = uploader.uploadBuffer(std::as_bytes(std::span(positions)), RhiBufferUsage::Vertex);
-        poolIndices = uploader.uploadBuffer(std::as_bytes(std::span(indices)), RhiBufferUsage::Index);
+        poolVertices = uploader.uploadBuffer(std::as_bytes(std::span(vertices)), RhiBufferUsage::Vertex, "gpuscene.pool.vertices");
+        poolPositions = uploader.uploadBuffer(std::as_bytes(std::span(positions)), RhiBufferUsage::Vertex, "gpuscene.pool.positions");
+        poolIndices = uploader.uploadBuffer(std::as_bytes(std::span(indices)), RhiBufferUsage::Index, "gpuscene.pool.indices");
     }
-    meshTable = uploader.uploadBuffer(std::as_bytes(std::span(table)), RhiBufferUsage::Storage);
+    meshTable = uploader.uploadBuffer(std::as_bytes(std::span(table)), RhiBufferUsage::Storage, "gpuscene.meshtable");
+    meshTableSize = table.size() * sizeof(GpuMeshEntry);
     uploader.end();
 
     auto vertexBytes = vertices.size() * sizeof(Vertex);
@@ -167,7 +168,8 @@ auto GpuScene::rebuildMaterials(std::span<const GpuInstance> sceneInstances,
     }
 
     uploader.begin();
-    materialTable = uploader.uploadBuffer(std::as_bytes(std::span(table)), RhiBufferUsage::Storage);
+    materialTable = uploader.uploadBuffer(std::as_bytes(std::span(table)), RhiBufferUsage::Storage, "gpuscene.materials");
+    materialTableSize = table.size() * sizeof(GpuMaterial);
     uploader.end();
 
     // Instance records carry the material index; rewrite them all.
@@ -208,14 +210,16 @@ auto GpuScene::ensureInstanceCapacity(uint32_t count, uint32_t liveCount, uint64
     auto bytes = instanceBufferBytes();
     instances = device->createBuffer({
         .size = bytes,
-        .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferDst,
+        .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferDst | RhiBufferUsage::TransferSrc,
         .memory = RhiMemoryUsage::GpuOnly,
+        .debugName = "gpuscene.instances",
     });
     for (size_t i = 0; i < staging.size(); i++) {
         staging[i] = device->createBuffer({
             .size = bytes,
             .usage = RhiBufferUsage::TransferSrc,
             .memory = RhiMemoryUsage::CpuToGpu,
+            .debugName = "gpuscene.instances.staging",
         });
         stagingMapped[i] = device->mapBuffer(staging[i]);
     }

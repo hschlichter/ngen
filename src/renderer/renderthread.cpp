@@ -89,12 +89,49 @@ auto RenderThread::threadLoop() -> void {
         renderer->setFrameGraphDebugEnabled(wantDebug);
         bool wantRenderDebug = renderDebugWanted.load(std::memory_order_relaxed);
         renderer->setRenderDebugEnabled(wantRenderDebug);
+        renderer->setCountersEnabled(countersWanted.load(std::memory_order_relaxed));
         {
             std::lock_guard lock(textureInspectMutex);
             renderer->setTextureInspect(textureInspectRequest);
         }
 
+        {
+            std::lock_guard lock(captureMutex);
+            if (captureWatchesChanged) {
+                captureWatchesChanged = false;
+                renderer->setCaptureWatches(captureWatches);
+            }
+            if (frameDebugWanted) {
+                frameDebugWanted = false;
+                renderer->requestFrameDebugCapture();
+            }
+        }
+
         renderer->render(snapshot);
+
+        {
+            auto results = renderer->takeCaptureResults();
+            auto frameDebug = renderer->takeFrameDebugCapture();
+            if (!results.empty() || frameDebug.has_value()) {
+                std::lock_guard lock(captureMutex);
+                for (auto& result : results) {
+                    captureResults.push_back(std::move(result));
+                }
+                if (frameDebug.has_value()) {
+                    frameDebugSlot = std::move(frameDebug);
+                }
+            }
+        }
+
+        if (auto counters = renderer->takeCounters(); !counters.empty()) {
+            std::lock_guard lock(countersMutex);
+            for (auto& c : counters) {
+                countersResults.push_back(std::move(c));
+            }
+            if (countersResults.size() > 300) {
+                countersResults.erase(countersResults.begin(), countersResults.end() - 300);
+            }
+        }
 
         {
             auto cull = renderer->cullResult();

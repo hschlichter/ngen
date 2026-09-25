@@ -104,6 +104,7 @@ auto FrameGraphPreviews::entryFor(const FgCapturedResource& view) -> Entry* {
             .usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst,
         };
         e.texture = device->createTexture(desc);
+        device->setDebugName(e.texture, "fgpreview.thumbnail");
         e.width = ext.width;
         e.height = ext.height;
         e.format = view.desc.format;

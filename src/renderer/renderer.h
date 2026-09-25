@@ -2,15 +2,19 @@
 
 #include "aapass.h"
 #include "axis3dgizmo.h"
+#include "capture.h"
 #include "debugrenderer.h"
+#include "debugviewpass.h"
 #include "deletionqueue.h"
 #include "depthprepass.h"
 #include "editoruipass.h"
+#include "framedebug.h"
 #include "framegraph.h"
 #include "framegraphdebug.h"
 #include "framegraphpreviews.h"
 #include "geometrypass.h"
 #include "gizmopass.h"
+#include "gpucounters.h"
 #include "gpuscene.h"
 #include "gpuuploader.h"
 #include "instancecullpass.h"
@@ -70,6 +74,16 @@ public:
     auto gizmoHitTest(float mouseX, float mouseY, RhiExtent2D windowExtent) -> bool;
     // Latest GPU culling readback (one frame-slot cycle old), for the editor.
     auto cullResult() const -> CullResult;
+    // Capture watches from the main thread, and the results that came back.
+    auto setCaptureWatches(std::vector<CaptureWatch> watches) -> void { captureService.setWatches(std::move(watches)); }
+    auto takeCaptureResults() -> std::vector<CaptureResult> { return captureService.takeResults(); }
+    // Records the next frame with the command log on and keeps it as a FrameDebugCapture.
+    auto requestFrameDebugCapture() -> void { frameDebugRequested = true; }
+    auto takeFrameDebugCapture() -> std::optional<FrameDebugCapture> { return std::exchange(frameDebugResult, std::nullopt); }
+    // GPU counters: one GpuCounters per completed frame while enabled; enabling also turns on
+    // per-pass pipeline statistics.
+    auto setCountersEnabled(bool enabled) -> void { countersEnabled = enabled; }
+    auto takeCounters() -> std::vector<GpuCounters> { return std::exchange(countersResults, {}); }
 
 private:
     RhiDevice* device = nullptr;
@@ -108,14 +122,22 @@ private:
 
     // Scene GPU tables and the GPU-driven draw path (src/renderer/README.md).
     GpuScene gpuScene;
-    DrawLists drawLists;                  // indirect commands per view and bucket, written by instanceCullPass
-    InstanceCullPass instanceCullPass;    // GPU culling
+    DrawLists drawLists;               // indirect commands per view and bucket, written by instanceCullPass
+    InstanceCullPass instanceCullPass; // GPU culling
+    CaptureService captureService;     // resource captures at pass boundaries
+    bool frameDebugRequested = false;
+    std::optional<FrameDebugCapture> frameDebugResult;
+    bool countersEnabled = false;
+    std::vector<GpuCounters> countersResults;
+    std::vector<RhiPipelineStatsZone> pipelineStatsScratch;
+    auto nameSwapchainImages() -> void;
     uint32_t boundInstanceGeneration = 0; // instance buffer generation the descriptor sets point at
 
     // Passes
     ShadowPass shadowPass;
     DepthPrepass depthPrepass;
     GeometryPass geometryPass;
+    DebugViewPass debugViewPass;
     LightingPass lightingPass;
     AAPass aaPass;
     DebugRenderer debugRenderer;

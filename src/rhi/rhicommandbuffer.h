@@ -42,6 +42,16 @@ public:
     // the device has no timestamp support or the per-command-buffer zone budget is exhausted.
     virtual auto beginGpuZone(const char* name) -> void = 0;
     virtual auto endGpuZone() -> void = 0;
+    // Pipeline statistics over the commands between begin and end; results via
+    // RhiDevice::collectPipelineStats after the fence. Not nestable, and both calls sit outside
+    // beginRendering/endRendering. `name` must outlive execution. No-ops without device support
+    // or when the per-command-buffer budget is exhausted.
+    virtual auto beginPipelineStats(const char* name) -> void = 0;
+    virtual auto endPipelineStats() -> void = 0;
+    // Command log: while on, every recorded command is also kept as a line of text (objects by
+    // debug name). Cleared at begin(). For frame debuggers; formatting costs, so off by default.
+    virtual auto setCommandLog(bool enabled) -> void = 0;
+    [[nodiscard]] virtual auto commandLog() const -> std::span<const RhiCommandRecord> = 0;
     // Debug-only markers for tools like RenderDoc; no-ops when the backend has no debug extension.
     virtual auto beginLabel(const char* name) -> void = 0;
     virtual auto endLabel() -> void = 0;

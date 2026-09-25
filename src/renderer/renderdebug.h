@@ -94,6 +94,10 @@ struct RenderDebugSnapshot {
     std::vector<RenderDebugPoolTexture> poolTextures;
     uint32_t poolAllocationsTotal = 0;
 
+    // GPU memory: every live buffer and texture, and the device heaps (RhiDevice).
+    std::vector<RhiAllocationInfo> allocations;
+    std::vector<RhiMemoryHeapInfo> heaps;
+
     // Draw log of the most recent frame whose readback has arrived: the indirect commands the GPU
     // culling wrote, one entry per draw.
     std::vector<FgDrawRecord> draws;

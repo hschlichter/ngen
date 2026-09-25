@@ -100,12 +100,21 @@ layout(std430, set = 0, binding = 7) buffer Totals {
     uint data[]; // counterCount; the first regionCount are the indirect draw counts
 } totals;
 
+// Why each instance was culled, 4 bits per view: 0..5 the frustum plane that rejected it
+// (left, right, bottom, top, near, far), 0xE visible, 0xF not tested (culling off or no bounds).
+const uint planeVisible = 0xEu;
+const uint planeNotTested = 0xFu;
+layout(std430, set = 0, binding = 8) writeonly buffer CullPlanes {
+    uint codes[];
+} cullPlanes;
+
 shared uint sharedCounters[counterCount];
 shared uint scanData[256];
 
 // Same test as Frustum::contains: the box corner furthest along each plane normal must not
-// be behind the plane. Evaluated in the CPU's order, without contraction.
-bool insideView(Instance inst, uint view) {
+// be behind the plane. Evaluated in the CPU's order, without contraction. Returns the index of
+// the plane that rejects the box, or planeVisible.
+uint rejectingPlane(Instance inst, uint view) {
     for (uint p = 0; p < 6; p++) {
         vec4 plane = params.planes[view * 6 + p];
         vec3 positive = vec3(plane.x >= 0.0 ? inst.boundsMax.x : inst.boundsMin.x,
@@ -116,10 +125,10 @@ bool insideView(Instance inst, uint view) {
         d = d + plane.z * positive.z;
         d = d + plane.w;
         if (d < 0.0) {
-            return false;
+            return p;
         }
     }
-    return true;
+    return planeVisible;
 }
 
 MeshEntry meshOf(Instance inst) {
@@ -156,13 +165,19 @@ void cull() {
     if (m < params.instanceCount) {
         Instance inst = instances.data[m];
         uint bits = 0;
+        uint planes = 0;
         for (uint v = 0; v < params.viewCount; v++) {
-            bool visible = params.cullEnabled == 0 || (inst.flags & flagBoundsValid) == 0 || insideView(inst, v);
-            if (visible) {
+            uint code = planeNotTested;
+            if (params.cullEnabled != 0 && (inst.flags & flagBoundsValid) != 0) {
+                code = rejectingPlane(inst, v);
+            }
+            if (code >= planeVisible) {
                 bits |= 1u << v;
             }
+            planes |= code << (4 * v);
         }
         visibility.bits[m] = bits;
+        cullPlanes.codes[m] = planes;
 
         MeshEntry mesh = meshOf(inst);
         for (uint r = 0; r < regionCount; r++) {

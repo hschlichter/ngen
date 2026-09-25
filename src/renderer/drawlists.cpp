@@ -19,7 +19,7 @@ auto DrawLists::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* q
 
 auto DrawLists::destroy() -> void {
     for (auto& slot : slots) {
-        for (auto* buffer : {slot.params, slot.visibility, slot.groupCounters, slot.groupOffsets, slot.commands, slot.counts, slot.readback}) {
+        for (auto* buffer : {slot.params, slot.visibility, slot.cullPlanes, slot.groupCounters, slot.groupOffsets, slot.commands, slot.counts, slot.readback}) {
             if (buffer != nullptr) {
                 device->destroyBuffer(buffer);
             }
@@ -38,7 +38,7 @@ auto DrawLists::ensureCapacity(uint32_t instanceCount, uint64_t frame) -> bool {
     }
     // Frames in flight may still use the old buffers.
     for (auto& slot : slots) {
-        for (auto* buffer : {slot.params, slot.visibility, slot.groupCounters, slot.groupOffsets, slot.commands, slot.counts, slot.readback}) {
+        for (auto* buffer : {slot.params, slot.visibility, slot.cullPlanes, slot.groupCounters, slot.groupOffsets, slot.commands, slot.counts, slot.readback}) {
             deletionQueue->deferBuffer(frame, buffer);
         }
         slot = {};
@@ -47,21 +47,24 @@ auto DrawLists::ensureCapacity(uint32_t instanceCount, uint64_t frame) -> bool {
     constexpr uint32_t minCapacity = 256;
     capacity = std::max({instanceCount, capacity * 2, minCapacity});
     auto groups = groupCountFor(capacity);
-    auto storage = [&](uint64_t size, RhiBufferUsageFlags extra) {
-        return device->createBuffer({.size = size, .usage = RhiBufferUsage::Storage | extra, .memory = RhiMemoryUsage::GpuOnly});
+    auto storage = [&](uint64_t size, RhiBufferUsageFlags extra, const char* name) {
+        // TransferSrc on all of them: the capture service reads any of them back.
+        return device->createBuffer({.size = size, .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc | extra, .memory = RhiMemoryUsage::GpuOnly, .debugName = name});
     };
     for (auto& slot : slots) {
-        slot.params = device->createBuffer({.size = sizeof(CullParams), .usage = RhiBufferUsage::Storage, .memory = RhiMemoryUsage::CpuToGpu});
+        slot.params = device->createBuffer({.size = sizeof(CullParams), .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "cull.params"});
         slot.paramsMapped = device->mapBuffer(slot.params);
-        slot.visibility = storage((uint64_t) capacity * sizeof(uint32_t), RhiBufferUsage::TransferSrc);
-        slot.groupCounters = storage((uint64_t) groups * counterCount * sizeof(uint32_t), {});
-        slot.groupOffsets = storage((uint64_t) groups * regionCount * sizeof(uint32_t), {});
-        slot.commands = storage((uint64_t) regionCount * capacity * sizeof(RhiDrawIndexedIndirectCommand), RhiBufferUsage::Indirect | RhiBufferUsage::TransferSrc);
-        slot.counts = storage(counterCount * sizeof(uint32_t), RhiBufferUsage::Indirect | RhiBufferUsage::TransferSrc);
+        slot.visibility = storage((uint64_t) capacity * sizeof(uint32_t), RhiBufferUsage::TransferSrc, "cull.visibility");
+        slot.cullPlanes = storage((uint64_t) capacity * sizeof(uint32_t), {}, "cull.planes");
+        slot.groupCounters = storage((uint64_t) groups * counterCount * sizeof(uint32_t), {}, "cull.groupcounters");
+        slot.groupOffsets = storage((uint64_t) groups * regionCount * sizeof(uint32_t), {}, "cull.groupoffsets");
+        slot.commands = storage((uint64_t) regionCount * capacity * sizeof(RhiDrawIndexedIndirectCommand), RhiBufferUsage::Indirect | RhiBufferUsage::TransferSrc, "cull.commands");
+        slot.counts = storage(counterCount * sizeof(uint32_t), RhiBufferUsage::Indirect | RhiBufferUsage::TransferSrc, "cull.counts");
         slot.readback = device->createBuffer({
             .size = readbackCommandsOffset() + ((uint64_t) regionCount * capacity * sizeof(RhiDrawIndexedIndirectCommand)),
-            .usage = RhiBufferUsage::TransferDst,
+            .usage = RhiBufferUsage::TransferDst | RhiBufferUsage::TransferSrc,
             .memory = RhiMemoryUsage::CpuToGpu,
+            .debugName = "cull.readback",
         });
         slot.readbackMapped = device->mapBuffer(slot.readback);
     }
@@ -95,6 +98,7 @@ auto DrawLists::import(FrameGraph& fg, uint32_t frameSlot) -> Handles {
     return {
         .params = fg.importBuffer("cullParams", slot.params, {.size = sizeof(CullParams), .usage = RhiBufferUsage::Storage}),
         .visibility = fg.importBuffer("cullVisibility", slot.visibility, {.size = (uint64_t) capacity * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}),
+        .cullPlanes = fg.importBuffer("cullPlanes", slot.cullPlanes, {.size = (uint64_t) capacity * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}),
         .groupCounters = fg.importBuffer("cullGroupCounters", slot.groupCounters, {.size = (uint64_t) groups * counterCount * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}),
         .groupOffsets = fg.importBuffer("cullGroupOffsets", slot.groupOffsets, {.size = (uint64_t) groups * regionCount * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}),
         .commands = fg.importBuffer("drawCommands", slot.commands, {.size = (uint64_t) regionCount * capacity * sizeof(RhiDrawIndexedIndirectCommand), .usage = RhiBufferUsage::Storage | RhiBufferUsage::Indirect}),
@@ -154,8 +158,10 @@ auto DrawLists::parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void {
 
     const auto* bits = reinterpret_cast<const uint32_t*>(bytes + readbackVisibilityOffset());
     latest.cameraVisible.resize(slot.instanceCount);
+    latest.viewBits.resize(slot.instanceCount);
     for (uint32_t m = 0; m < slot.instanceCount; m++) {
         latest.cameraVisible[m] = (bits[m] & 1u) != 0 ? 1 : 0;
+        latest.viewBits[m] = (uint8_t) bits[m];
     }
 
     latest.hasCommands = slot.capturedCommands;
@@ -185,6 +191,7 @@ auto DrawLists::slotBuffers(uint32_t frameSlot) const -> SlotBuffers {
     return {
         .params = slot.params,
         .visibility = slot.visibility,
+        .cullPlanes = slot.cullPlanes,
         .groupCounters = slot.groupCounters,
         .groupOffsets = slot.groupOffsets,
         .commands = slot.commands,
@@ -219,4 +226,21 @@ auto DrawLists::report(FrameGraphContext& ctx, uint32_t region, std::span<const 
         });
     }
     ctx.addIndirectStats(drawsIn(region), primitivesIn(region));
+}
+
+auto DrawLists::regionName(uint32_t region) -> const char* {
+    static constexpr std::array<const char*, 10> names = {
+        "camera.single",
+        "camera.double",
+        "cascade0.single",
+        "cascade0.double",
+        "cascade1.single",
+        "cascade1.double",
+        "cascade2.single",
+        "cascade2.double",
+        "cascade3.single",
+        "cascade3.double",
+    };
+    static_assert(names.size() == regionCount);
+    return region < names.size() ? names[region] : "region.invalid";
 }

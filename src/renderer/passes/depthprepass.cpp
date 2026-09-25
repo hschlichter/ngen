@@ -1,6 +1,7 @@
 #include "depthprepass.h"
 
 #include "mesh.h"
+#include "profilegpu.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "shaderloader.h"
@@ -29,8 +30,10 @@ auto DepthPrepass::init(RhiDevice* device, RhiFormat depthFormat, RhiDescriptorS
         .raster = {.cullMode = RhiCullMode::Back},
     };
     pipelineCullBack = device->createGraphicsPipeline(pipelineDesc);
+    device->setDebugName(pipelineCullBack, "prepass.pipeline.cullback");
     pipelineDesc.raster.cullMode = RhiCullMode::None;
     pipelineCullNone = device->createGraphicsPipeline(pipelineDesc);
+    device->setDebugName(pipelineCullNone, "prepass.pipeline.cullnone");
     return pipelineCullBack != nullptr && pipelineCullNone != nullptr;
 }
 
@@ -95,6 +98,7 @@ auto DepthPrepass::addPass(
                 cmd->bindDescriptorSet(pip, 0, descriptorSet);
                 cmd->bindVertexBuffer(scene.positionBuffer());
                 cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
+                PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
                 cmd->drawIndexedIndirectCount(commands, lists.commandOffset(region), counts, DrawLists::countOffset(region), lists.regionCapacity());
                 lists.report(ctx, region, instances);
             }

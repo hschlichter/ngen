@@ -1,5 +1,8 @@
 #pragma once
 
+#include <map>
+#include <string>
+
 #include "rhitypes.h"
 
 #include <string>
@@ -8,6 +11,7 @@
 struct RhiBufferVulkan : public RhiBuffer {
     VkBuffer buffer = VK_NULL_HANDLE;
     VkDeviceMemory memory = VK_NULL_HANDLE;
+    std::string debugName;
 };
 
 struct RhiTextureVulkan : public RhiTexture {
@@ -17,10 +21,12 @@ struct RhiTextureVulkan : public RhiTexture {
     VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
     uint32_t mipLevels = 1;
     uint32_t arrayLayers = 1;
+    std::string debugName;
 };
 
 struct RhiSamplerVulkan : public RhiSampler {
     VkSampler sampler = VK_NULL_HANDLE;
+    std::string debugName;
 };
 
 struct RhiShaderModuleVulkan : public RhiShaderModule {
@@ -33,6 +39,7 @@ struct RhiPipelineVulkan : public RhiPipeline {
     VkPipelineLayout layout = VK_NULL_HANDLE;
     VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     RhiPrimitiveTopology topology = RhiPrimitiveTopology::TriangleList;
+    std::string debugName;
 };
 
 struct RhiDescriptorSetLayoutVulkan : public RhiDescriptorSetLayout {
@@ -45,6 +52,9 @@ struct RhiDescriptorPoolVulkan : public RhiDescriptorPool {
 
 struct RhiDescriptorSetVulkan : public RhiDescriptorSet {
     VkDescriptorSet set = VK_NULL_HANDLE;
+    std::string debugName;
+    // Last write per (binding << 32 | arrayElement), for describeDescriptorSet.
+    std::map<uint64_t, RhiDescriptorInfo> writes;
 };
 
 struct RhiSemaphoreVulkan : public RhiSemaphore {

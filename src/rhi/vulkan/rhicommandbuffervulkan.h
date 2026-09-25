@@ -10,6 +10,7 @@
 class RhiCommandBufferVulkan : public RhiCommandBuffer {
 public:
     static constexpr uint32_t maxGpuZones = 128;
+    static constexpr uint32_t maxPipelineStatsZones = 64;
 
     struct GpuZoneRecord {
         const char* name = "";
@@ -25,6 +26,12 @@ public:
     VkQueryPool zonePool = VK_NULL_HANDLE;
     std::vector<GpuZoneRecord> zones;
     std::vector<uint32_t> zoneStack;
+    // Pipeline statistics queries backing beginPipelineStats/endPipelineStats, reset on the first
+    // use in a recording. VK_NULL_HANDLE without pipelineStatisticsQuery.
+    VkQueryPool statsPool = VK_NULL_HANDLE;
+    std::vector<const char*> statsZones;
+    bool statsPoolReset = false;
+    bool statsActive = false;
     // Null when VK_EXT_debug_utils is not enabled; labels become no-ops.
     PFN_vkCmdBeginDebugUtilsLabelEXT beginLabelFn = nullptr;
     PFN_vkCmdEndDebugUtilsLabelEXT endLabelFn = nullptr;
@@ -35,9 +42,9 @@ public:
     auto beginRendering(const RhiRenderingInfo& info) -> void override;
     auto endRendering() -> void override;
     auto pipelineBarrier(std::span<const RhiTextureBarrierDesc> imageBarriers, std::span<const RhiBufferBarrierDesc> bufferBarriers) -> void override;
+    using RhiCommandBuffer::blitTexture;
     using RhiCommandBuffer::bufferBarrier;
     using RhiCommandBuffer::pipelineBarrier;
-    using RhiCommandBuffer::blitTexture;
     auto blitTexture(RhiTexture* src, RhiTexture* dst, const RhiBlitRegion& srcRegion, const RhiBlitRegion& dstRegion, RhiFilter filter) -> void override;
     auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void override;
     auto copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void override;
@@ -45,6 +52,8 @@ public:
     [[nodiscard]] auto stats() const -> const RhiCommandStats& override { return commandStats; }
     auto beginGpuZone(const char* name) -> void override;
     auto endGpuZone() -> void override;
+    auto beginPipelineStats(const char* name) -> void override;
+    auto endPipelineStats() -> void override;
     auto resetQueryPool(RhiQueryPool* pool, uint32_t first, uint32_t count) -> void override;
     auto writeTimestamp(RhiQueryPool* pool, uint32_t index) -> void override;
     auto beginLabel(const char* name) -> void override;
@@ -64,10 +73,18 @@ public:
     auto drawIndexedIndirectCount(RhiBuffer* commands, uint64_t offset, RhiBuffer* count, uint64_t countOffset, uint32_t maxDrawCount) -> void override;
     auto dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) -> void override;
 
-private:
+    auto setCommandLog(bool enabled) -> void override { logging = enabled; }
+    [[nodiscard]] auto commandLog() const -> std::span<const RhiCommandRecord> override { return log; }
+
+    // State-to-Vulkan mapping used for every barrier; the device's describeTransition uses them too.
     static auto toVkImageLayout(RhiTextureState layout) -> VkImageLayout;
     static auto stateToAccessMask(RhiTextureState layout) -> VkAccessFlags2;
     static auto stateToStageMask(RhiTextureState layout) -> VkPipelineStageFlags2;
     static auto bufferStateToAccessMask(RhiBufferState state) -> VkAccessFlags2;
     static auto bufferStateToStageMask(RhiBufferState state) -> VkPipelineStageFlags2;
+
+private:
+    bool logging = false;
+    std::vector<RhiCommandRecord> log;
+    auto record(std::string text, const RhiDescriptorSet* set = nullptr) -> void;
 };

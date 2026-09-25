@@ -1,7 +1,10 @@
 #pragma once
 
+#include "capture.h"
 #include "drawlists.h"
+#include "framedebug.h"
 #include "framegraphdebug.h"
+#include "gpucounters.h"
 #include "renderdebug.h"
 #include "rendersnapshot.h"
 #include "renderworld.h"
@@ -38,6 +41,29 @@ public:
     auto latestRenderDebug() -> std::optional<RenderDebugSnapshot>;
     // Latest GPU culling readback, when one arrived since the last call.
     auto latestCullResult() -> std::optional<CullResult>;
+    // Capture watches (latest-only) and every capture result since the last call.
+    // requestFrameDebug records the frame that applies these watches as a FrameDebugCapture,
+    // so the captures and the frame debug data describe the same frame.
+    auto setCaptureWatches(std::vector<CaptureWatch> watches, bool requestFrameDebug = false) -> void {
+        std::lock_guard lock(captureMutex);
+        captureWatches = std::move(watches);
+        captureWatchesChanged = true;
+        frameDebugWanted = frameDebugWanted || requestFrameDebug;
+    }
+    auto latestFrameDebug() -> std::optional<FrameDebugCapture> {
+        std::lock_guard lock(captureMutex);
+        return std::exchange(frameDebugSlot, std::nullopt);
+    }
+    auto takeCaptureResults() -> std::vector<CaptureResult> {
+        std::lock_guard lock(captureMutex);
+        return std::exchange(captureResults, {});
+    }
+    // GPU counters, one per completed frame while enabled (see Renderer::setCountersEnabled).
+    auto setCountersEnabled(bool enabled) -> void { countersWanted.store(enabled, std::memory_order_relaxed); }
+    auto takeCounters() -> std::vector<GpuCounters> {
+        std::lock_guard lock(countersMutex);
+        return std::exchange(countersResults, {});
+    }
     auto setTextureInspect(TextureInspectRequest request) -> void {
         std::lock_guard lock(textureInspectMutex);
         textureInspectRequest = request;
@@ -68,6 +94,15 @@ private:
     std::atomic<bool> renderDebugWanted{false};
     std::mutex renderDebugMutex;
     std::optional<RenderDebugSnapshot> renderDebugSlot;
+    std::mutex captureMutex;
+    std::vector<CaptureWatch> captureWatches;
+    bool captureWatchesChanged = false;
+    std::vector<CaptureResult> captureResults;
+    bool frameDebugWanted = false;
+    std::optional<FrameDebugCapture> frameDebugSlot;
+    std::atomic<bool> countersWanted{false};
+    std::mutex countersMutex;
+    std::vector<GpuCounters> countersResults;
     std::mutex cullResultMutex;
     std::optional<CullResult> cullResultSlot;
     uint64_t lastCullResultFrame = 0;

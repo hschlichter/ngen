@@ -58,6 +58,8 @@ public:
     virtual auto calibrateGpuClock(uint64_t& gpuNs, uint64_t& cpuNs) -> bool = 0;
     // Zones recorded on cmd since its last begin(); valid after the submit's fence. False if not yet available.
     virtual auto collectGpuZones(RhiCommandBuffer* cmd, std::vector<RhiGpuZone>& out) -> bool = 0;
+    // Pipeline statistics recorded on cmd since its last begin(); valid after the submit's fence.
+    virtual auto collectPipelineStats(RhiCommandBuffer* cmd, std::vector<RhiPipelineStatsZone>& out) -> bool = 0;
     virtual auto createSemaphore() -> RhiSemaphore* = 0;
     virtual auto createFence(bool signaled) -> RhiFence* = 0;
 
@@ -75,6 +77,19 @@ public:
     [[nodiscard]] virtual auto supportsTextureFormat(RhiFormat format, RhiTextureUsageFlags usage) const -> bool = 0;
     // Errors reported by the backend's validation layer since init; always 0 when validation is off.
     [[nodiscard]] virtual auto validationErrorCount() const -> uint64_t = 0;
+
+    // Debug names: objects created from a desc take desc.debugName; this names or renames any
+    // object. Names show in validation messages, external tools and allocations(). Copied.
+    virtual auto setDebugName(RhiDebugObject object, const char* name) -> void = 0;
+    // Every live buffer and texture, in creation order.
+    virtual auto allocations(std::vector<RhiAllocationInfo>& out) const -> void = 0;
+    // Device memory heaps with driver budget when available.
+    virtual auto memoryHeaps(std::vector<RhiMemoryHeapInfo>& out) const -> void = 0;
+    // What a barrier between two states becomes in the backend (stages, accesses, layouts).
+    [[nodiscard]] virtual auto describeTransition(RhiTextureState oldState, RhiTextureState newState) const -> RhiTransitionInfo = 0;
+    [[nodiscard]] virtual auto describeTransition(RhiBufferState oldState, RhiBufferState newState) const -> RhiTransitionInfo = 0;
+    // The descriptors last written to a set, by binding and array element.
+    [[nodiscard]] virtual auto describeDescriptorSet(const RhiDescriptorSet* set) const -> std::vector<RhiDescriptorInfo> = 0;
 
     virtual auto destroyBuffer(RhiBuffer* buffer) -> void = 0;
     virtual auto destroyTexture(RhiTexture* texture) -> void = 0;

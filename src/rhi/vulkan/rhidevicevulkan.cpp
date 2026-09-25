@@ -2,6 +2,7 @@
 
 #include <vulkan/vk_enum_string_helper.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
@@ -94,8 +95,18 @@ auto RhiDeviceVulkan::toVkShaderStage(RhiShaderStageFlags stage) -> VkShaderStag
     if (stage.has(RhiShaderStage::Compute)) {
         flags |= VK_SHADER_STAGE_COMPUTE_BIT;
     }
+    if (stage.has(RhiShaderStage::Geometry)) {
+        flags |= VK_SHADER_STAGE_GEOMETRY_BIT;
+    }
     return flags;
 }
+
+// The counters behind RhiPipelineStats, in bit order (the order results are written in).
+static constexpr VkQueryPipelineStatisticFlags pipelineStatisticsFlags =
+    VK_QUERY_PIPELINE_STATISTIC_INPUT_ASSEMBLY_VERTICES_BIT | VK_QUERY_PIPELINE_STATISTIC_INPUT_ASSEMBLY_PRIMITIVES_BIT |
+    VK_QUERY_PIPELINE_STATISTIC_VERTEX_SHADER_INVOCATIONS_BIT | VK_QUERY_PIPELINE_STATISTIC_CLIPPING_INVOCATIONS_BIT |
+    VK_QUERY_PIPELINE_STATISTIC_CLIPPING_PRIMITIVES_BIT | VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT |
+    VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT;
 
 static auto toVkDescriptorType(RhiDescriptorType type) -> VkDescriptorType {
     switch (type) {
@@ -345,6 +356,7 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
     if (debugUtilsAvailable) {
         cmdBeginLabelFn = (PFN_vkCmdBeginDebugUtilsLabelEXT) vkGetInstanceProcAddr(instance, "vkCmdBeginDebugUtilsLabelEXT");
         cmdEndLabelFn = (PFN_vkCmdEndDebugUtilsLabelEXT) vkGetInstanceProcAddr(instance, "vkCmdEndDebugUtilsLabelEXT");
+        setObjectNameFn = (PFN_vkSetDebugUtilsObjectNameEXT) vkGetInstanceProcAddr(instance, "vkSetDebugUtilsObjectNameEXT");
     }
 
     if (options.enableValidation) {
@@ -430,13 +442,20 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
         for (const auto& ext : available) {
             if (strcmp(ext.extensionName, VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME) == 0) {
                 calibratedTimestampsAvailable = true;
-                break;
+            }
+            // Optional: driver heap budget and usage for memoryHeaps().
+            if (strcmp(ext.extensionName, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) == 0) {
+                memoryBudgetAvailable = true;
             }
         }
     }
     if (calibratedTimestampsAvailable) {
         deviceExtensions.push_back(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
     }
+    if (memoryBudgetAvailable) {
+        deviceExtensions.push_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+    }
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memoryProperties);
     auto deviceExtensionCount = (uint32_t) deviceExtensions.size();
 
     VkPhysicalDeviceSynchronization2Features sync2Features = {
@@ -455,6 +474,8 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
     VkPhysicalDeviceFeatures enabledFeatures = {};
     enabledFeatures.wideLines = supportedFeatures.wideLines;
     enabledFeatures.samplerAnisotropy = supportedFeatures.samplerAnisotropy;
+    enabledFeatures.pipelineStatisticsQuery = supportedFeatures.pipelineStatisticsQuery;
+    enabledFeatures.geometryShader = supportedFeatures.geometryShader;
     // Array bindings indexed with one value per draw (bindless materials). Core 1.0 and on
     // every desktop driver; required.
     if (supportedFeatures.shaderSampledImageArrayDynamicIndexing != VK_TRUE) {
@@ -504,6 +525,8 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
         .samplerAnisotropy = supportedFeatures.samplerAnisotropy == VK_TRUE,
         .timestamps = queueTimestampValidBits != 0 && properties.limits.timestampPeriod > 0.0f,
         .timestampPeriodNs = properties.limits.timestampPeriod,
+        .pipelineStatistics = supportedFeatures.pipelineStatisticsQuery == VK_TRUE,
+        .geometryShaders = supportedFeatures.geometryShader == VK_TRUE,
         .maxPerStageSampledImages = properties.limits.maxPerStageDescriptorSampledImages,
     };
     std::snprintf(deviceLimits.deviceName, sizeof(deviceLimits.deviceName), "%s", properties.deviceName);
@@ -621,7 +644,42 @@ auto RhiDeviceVulkan::createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* {
         return nullptr;
     }
 
+    registerAllocation(buf,
+                       {
+                           .kind = RhiAllocationInfo::Kind::Buffer,
+                           .name = desc.debugName != nullptr ? desc.debugName : "",
+                           .bytes = memReqs.size,
+                           .requested = desc.size,
+                           .memory = desc.memory,
+                           .usageBits = desc.usage.bits,
+                           .heap = memoryProperties.memoryTypes[memTypeIndex].heapIndex,
+                       });
+    if (desc.debugName != nullptr) {
+        setDebugName(buf, desc.debugName);
+    }
     return buf;
+}
+
+// Bytes per texel, for the allocation registry's requested size.
+static auto formatBytes(RhiFormat format) -> uint64_t {
+    switch (format) {
+        case RhiFormat::R8_UNORM:
+            return 1;
+        case RhiFormat::R8G8_UNORM:
+            return 2;
+        case RhiFormat::R16G16B16A16_SFLOAT:
+        case RhiFormat::R32G32_SFLOAT:
+        case RhiFormat::D32_SFLOAT_S8_UINT:
+            return 8;
+        case RhiFormat::R32G32B32_SFLOAT:
+            return 12;
+        case RhiFormat::R32G32B32A32_SFLOAT:
+            return 16;
+        case RhiFormat::Undefined:
+            return 0;
+        default:
+            return 4;
+    }
 }
 
 static auto formatAspect(RhiFormat format) -> VkImageAspectFlags {
@@ -722,10 +780,11 @@ auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {
 
     VkMemoryRequirements memReqs;
     vkGetImageMemoryRequirements(device, tex->image, &memReqs);
+    auto memTypeIndex = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     VkMemoryAllocateInfo allocInfo = {
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .allocationSize = memReqs.size,
-        .memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+        .memoryTypeIndex = memTypeIndex,
     };
     vkAllocateMemory(device, &allocInfo, nullptr, &tex->memory);
     vkBindImageMemory(device, tex->image, tex->memory, 0);
@@ -746,6 +805,24 @@ auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {
     };
     vkCreateImageView(device, &viewInfo, nullptr, &tex->view);
 
+    registerAllocation(tex,
+                       {
+                           .kind = RhiAllocationInfo::Kind::Texture,
+                           .name = desc.debugName != nullptr ? desc.debugName : "",
+                           .bytes = memReqs.size,
+                           .requested = (uint64_t) desc.width * desc.height * formatBytes(desc.format) * desc.arrayLayers,
+                           .memory = RhiMemoryUsage::GpuOnly,
+                           .usageBits = desc.usage.bits,
+                           .heap = memoryProperties.memoryTypes[memTypeIndex].heapIndex,
+                           .width = desc.width,
+                           .height = desc.height,
+                           .mipLevels = desc.mipLevels,
+                           .arrayLayers = desc.arrayLayers,
+                           .format = desc.format,
+                       });
+    if (desc.debugName != nullptr) {
+        setDebugName(tex, desc.debugName);
+    }
     return tex;
 }
 
@@ -801,6 +878,9 @@ auto RhiDeviceVulkan::createSampler(const RhiSamplerDesc& desc) -> RhiSampler* {
         delete sampler;
         return nullptr;
     }
+    if (desc.debugName != nullptr) {
+        setDebugName(sampler, desc.debugName);
+    }
     return sampler;
 }
 
@@ -824,7 +904,9 @@ auto RhiDeviceVulkan::createShaderModule(const RhiShaderDesc& desc) -> RhiShader
         delete sm;
         return nullptr;
     }
-
+    if (desc.debugName != nullptr) {
+        setDebugName(sm, desc.debugName);
+    }
     return sm;
 }
 
@@ -888,6 +970,9 @@ auto RhiDeviceVulkan::createComputePipeline(const RhiComputePipelineDesc& desc) 
         delete pip;
         return nullptr;
     }
+    if (desc.debugName != nullptr) {
+        setDebugName(pip, desc.debugName);
+    }
     return pip;
 }
 
@@ -895,7 +980,7 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
     auto* vertMod = static_cast<RhiShaderModuleVulkan*>(desc.vertexShader);
     auto* fragMod = static_cast<RhiShaderModuleVulkan*>(desc.fragmentShader);
 
-    VkPipelineShaderStageCreateInfo stages[2] = {
+    VkPipelineShaderStageCreateInfo stages[3] = {
         {
             // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -908,7 +993,19 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
             .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
             .module = fragMod->module,
             .pName = fragMod->entryPoint.c_str(),
-        }};
+        },
+        {}};
+    uint32_t stageCount = 2;
+    if (desc.geometryShader != nullptr) {
+        auto* geomMod = static_cast<RhiShaderModuleVulkan*>(desc.geometryShader);
+        stages[2] = {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_GEOMETRY_BIT,
+            .module = geomMod->module,
+            .pName = geomMod->entryPoint.c_str(),
+        };
+        stageCount = 3;
+    }
 
     VkVertexInputBindingDescription bindingDesc = {
         .binding = 0,
@@ -1024,7 +1121,7 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
     VkGraphicsPipelineCreateInfo pipelineInfo = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .pNext = &renderingInfo,
-        .stageCount = 2,
+        .stageCount = stageCount,
         .pStages = stages,
         .pVertexInputState = &vertexInputState,
         .pInputAssemblyState = &inputAssemblyState,
@@ -1044,7 +1141,9 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
         delete pip;
         return nullptr;
     }
-
+    if (desc.debugName != nullptr) {
+        setDebugName(pip, desc.debugName);
+    }
     return pip;
 }
 
@@ -1197,6 +1296,21 @@ auto RhiDeviceVulkan::updateDescriptorSet(RhiDescriptorSet* set, std::span<const
     }
 
     vkUpdateDescriptorSets(device, writeCount, vkWrites.data(), 0, nullptr);
+
+    // Remember what each binding points at, by name, for describeDescriptorSet.
+    for (const auto& w : writes) {
+        std::string resource;
+        if (w.buffer != nullptr) {
+            resource = static_cast<RhiBufferVulkan*>(w.buffer)->debugName;
+        } else if (w.texture != nullptr) {
+            resource = static_cast<RhiTextureVulkan*>(w.texture)->debugName;
+            if (w.sampler != nullptr) {
+                resource += " / " + static_cast<RhiSamplerVulkan*>(w.sampler)->debugName;
+            }
+        }
+        auto key = ((uint64_t) w.binding << 32) | w.arrayElement;
+        vkSet->writes[key] = {.binding = w.binding, .arrayElement = w.arrayElement, .type = w.type, .resource = std::move(resource)};
+    }
 }
 
 auto RhiDeviceVulkan::createQueryPool(uint32_t timestampCount) -> RhiQueryPool* {
@@ -1296,6 +1410,44 @@ auto RhiDeviceVulkan::collectGpuZones(RhiCommandBuffer* cmd, std::vector<RhiGpuZ
     return true;
 }
 
+auto RhiDeviceVulkan::collectPipelineStats(RhiCommandBuffer* cmd, std::vector<RhiPipelineStatsZone>& out) -> bool {
+    auto* cb = static_cast<RhiCommandBufferVulkan*>(cmd);
+    out.clear();
+    if (cb->statsPool == VK_NULL_HANDLE || cb->statsZones.empty()) {
+        return true;
+    }
+    // Results come in the order of the flag bits (pipelineStatisticsFlags), then availability.
+    constexpr uint32_t valuesPerQuery = 8;
+    auto count = (uint32_t) cb->statsZones.size();
+    std::vector<uint64_t> raw((size_t) count * valuesPerQuery);
+    auto result = vkGetQueryPoolResults(
+        device, cb->statsPool, 0, count, raw.size() * sizeof(uint64_t), raw.data(), valuesPerQuery * sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+    if (result != VK_SUCCESS && result != VK_NOT_READY) {
+        std::println(stderr, "vkGetQueryPoolResults failed: {}({})", string_VkResult(result), (int) result);
+        return false;
+    }
+    out.reserve(count);
+    for (uint32_t i = 0; i < count; i++) {
+        const auto* v = raw.data() + (size_t) i * valuesPerQuery;
+        if (v[7] == 0) {
+            return false;
+        }
+        out.push_back({
+            .name = cb->statsZones[i],
+            .stats = {
+                .iaVertices = v[0],
+                .iaPrimitives = v[1],
+                .vertexInvocations = v[2],
+                .clippingInvocations = v[3],
+                .clippingPrimitives = v[4],
+                .fragmentInvocations = v[5],
+                .computeInvocations = v[6],
+            },
+        });
+    }
+    return true;
+}
+
 auto RhiDeviceVulkan::createCommandBuffer() -> RhiCommandBuffer* {
     auto* cb = new RhiCommandBufferVulkan();
     VkCommandBufferAllocateInfo allocInfo = {
@@ -1321,6 +1473,17 @@ auto RhiDeviceVulkan::createCommandBuffer() -> RhiCommandBuffer* {
         };
         if (vkCreateQueryPool(device, &poolInfo, nullptr, &cb->zonePool) != VK_SUCCESS) {
             cb->zonePool = VK_NULL_HANDLE;
+        }
+    }
+    if (deviceLimits.pipelineStatistics) {
+        VkQueryPoolCreateInfo poolInfo = {
+            .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+            .queryType = VK_QUERY_TYPE_PIPELINE_STATISTICS,
+            .queryCount = RhiCommandBufferVulkan::maxPipelineStatsZones,
+            .pipelineStatistics = pipelineStatisticsFlags,
+        };
+        if (vkCreateQueryPool(device, &poolInfo, nullptr, &cb->statsPool) != VK_SUCCESS) {
+            cb->statsPool = VK_NULL_HANDLE;
         }
     }
     return cb;
@@ -1421,6 +1584,7 @@ auto RhiDeviceVulkan::unmapBuffer(RhiBuffer* buffer) -> void {
 }
 
 auto RhiDeviceVulkan::destroyBuffer(RhiBuffer* buffer) -> void {
+    unregisterAllocation(buffer);
     auto* b = static_cast<RhiBufferVulkan*>(buffer);
     vkDestroyBuffer(device, b->buffer, nullptr);
     vkFreeMemory(device, b->memory, nullptr);
@@ -1428,6 +1592,7 @@ auto RhiDeviceVulkan::destroyBuffer(RhiBuffer* buffer) -> void {
 }
 
 auto RhiDeviceVulkan::destroyTexture(RhiTexture* texture) -> void {
+    unregisterAllocation(texture);
     auto* t = static_cast<RhiTextureVulkan*>(texture);
     vkDestroyImageView(device, t->view, nullptr);
     vkDestroyImage(device, t->image, nullptr);
@@ -1480,9 +1645,176 @@ auto RhiDeviceVulkan::destroyFence(RhiFence* fence) -> void {
 
 auto RhiDeviceVulkan::destroyCommandBuffer(RhiCommandBuffer* cmd) -> void {
     auto* cb = static_cast<RhiCommandBufferVulkan*>(cmd);
+    if (cb->statsPool != VK_NULL_HANDLE) {
+        vkDestroyQueryPool(device, cb->statsPool, nullptr);
+    }
     if (cb->zonePool != VK_NULL_HANDLE) {
         vkDestroyQueryPool(device, cb->zonePool, nullptr);
     }
     vkFreeCommandBuffers(device, cmdPool, 1, &cb->cmd);
     delete cb;
+}
+
+auto RhiDeviceVulkan::nameVkObject(VkObjectType type, uint64_t handle, const char* name) -> void {
+    if (setObjectNameFn == nullptr || handle == 0 || name == nullptr) {
+        return;
+    }
+    VkDebugUtilsObjectNameInfoEXT info = {
+        .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+        .objectType = type,
+        .objectHandle = handle,
+        .pObjectName = name,
+    };
+    setObjectNameFn(device, &info);
+}
+
+auto RhiDeviceVulkan::setDebugName(RhiDebugObject object, const char* name) -> void {
+    if (object.object == nullptr || name == nullptr) {
+        return;
+    }
+    using enum RhiDebugObject::Type;
+    auto* raw = const_cast<void*>(object.object);
+    switch (object.type) {
+        case Buffer: {
+            auto* b = static_cast<RhiBufferVulkan*>(static_cast<RhiBuffer*>(raw));
+            b->debugName = name;
+            nameVkObject(VK_OBJECT_TYPE_BUFFER, (uint64_t) b->buffer, name);
+            nameVkObject(VK_OBJECT_TYPE_DEVICE_MEMORY, (uint64_t) b->memory, name);
+            break;
+        }
+        case Texture: {
+            auto* t = static_cast<RhiTextureVulkan*>(static_cast<RhiTexture*>(raw));
+            t->debugName = name;
+            nameVkObject(VK_OBJECT_TYPE_IMAGE, (uint64_t) t->image, name);
+            nameVkObject(VK_OBJECT_TYPE_IMAGE_VIEW, (uint64_t) t->view, name);
+            nameVkObject(VK_OBJECT_TYPE_DEVICE_MEMORY, (uint64_t) t->memory, name);
+            break;
+        }
+        case Sampler: {
+            auto* sampler = static_cast<RhiSamplerVulkan*>(static_cast<RhiSampler*>(raw));
+            sampler->debugName = name;
+            nameVkObject(VK_OBJECT_TYPE_SAMPLER, (uint64_t) sampler->sampler, name);
+            break;
+        }
+        case ShaderModule:
+            nameVkObject(VK_OBJECT_TYPE_SHADER_MODULE, (uint64_t) static_cast<RhiShaderModuleVulkan*>(static_cast<RhiShaderModule*>(raw))->module, name);
+            break;
+        case Pipeline: {
+            auto* p = static_cast<RhiPipelineVulkan*>(static_cast<RhiPipeline*>(raw));
+            p->debugName = name;
+            nameVkObject(VK_OBJECT_TYPE_PIPELINE, (uint64_t) p->pipeline, name);
+            nameVkObject(VK_OBJECT_TYPE_PIPELINE_LAYOUT, (uint64_t) p->layout, name);
+            break;
+        }
+        case DescriptorSetLayout:
+            nameVkObject(VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, (uint64_t) static_cast<RhiDescriptorSetLayoutVulkan*>(static_cast<RhiDescriptorSetLayout*>(raw))->layout, name);
+            break;
+        case DescriptorPool:
+            nameVkObject(VK_OBJECT_TYPE_DESCRIPTOR_POOL, (uint64_t) static_cast<RhiDescriptorPoolVulkan*>(static_cast<RhiDescriptorPool*>(raw))->pool, name);
+            break;
+        case DescriptorSet: {
+            auto* set = static_cast<RhiDescriptorSetVulkan*>(static_cast<RhiDescriptorSet*>(raw));
+            set->debugName = name;
+            nameVkObject(VK_OBJECT_TYPE_DESCRIPTOR_SET, (uint64_t) set->set, name);
+            break;
+        }
+        case CommandBuffer:
+            nameVkObject(VK_OBJECT_TYPE_COMMAND_BUFFER, (uint64_t) static_cast<RhiCommandBufferVulkan*>(static_cast<RhiCommandBuffer*>(raw))->cmd, name);
+            break;
+        case Semaphore:
+            nameVkObject(VK_OBJECT_TYPE_SEMAPHORE, (uint64_t) static_cast<RhiSemaphoreVulkan*>(static_cast<RhiSemaphore*>(raw))->semaphore, name);
+            break;
+        case Fence:
+            nameVkObject(VK_OBJECT_TYPE_FENCE, (uint64_t) static_cast<RhiFenceVulkan*>(static_cast<RhiFence*>(raw))->fence, name);
+            break;
+        case QueryPool:
+            nameVkObject(VK_OBJECT_TYPE_QUERY_POOL, (uint64_t) static_cast<RhiQueryPoolVulkan*>(static_cast<RhiQueryPool*>(raw))->pool, name);
+            break;
+    }
+    if (object.type == Buffer || object.type == Texture) {
+        std::lock_guard lock(registryMutex);
+        auto it = registry.find(object.object);
+        if (it != registry.end()) {
+            it->second.name = name;
+        }
+    }
+}
+
+auto RhiDeviceVulkan::registerAllocation(const void* object, RhiAllocationInfo info) -> void {
+    std::lock_guard lock(registryMutex);
+    info.sequence = nextAllocationSequence++;
+    registry[object] = std::move(info);
+}
+
+auto RhiDeviceVulkan::unregisterAllocation(const void* object) -> void {
+    std::lock_guard lock(registryMutex);
+    registry.erase(object);
+}
+
+auto RhiDeviceVulkan::allocations(std::vector<RhiAllocationInfo>& out) const -> void {
+    out.clear();
+    {
+        std::lock_guard lock(registryMutex);
+        out.reserve(registry.size());
+        for (const auto& [object, info] : registry) {
+            out.push_back(info);
+        }
+    }
+    std::ranges::sort(out, [](const RhiAllocationInfo& a, const RhiAllocationInfo& b) { return a.sequence < b.sequence; });
+}
+
+auto RhiDeviceVulkan::memoryHeaps(std::vector<RhiMemoryHeapInfo>& out) const -> void {
+    out.assign(memoryProperties.memoryHeapCount, {});
+    for (uint32_t i = 0; i < memoryProperties.memoryHeapCount; i++) {
+        out[i].size = memoryProperties.memoryHeaps[i].size;
+        out[i].deviceLocal = (memoryProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0;
+    }
+    if (memoryBudgetAvailable) {
+        VkPhysicalDeviceMemoryBudgetPropertiesEXT budget = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT};
+        VkPhysicalDeviceMemoryProperties2 props = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2, .pNext = &budget};
+        vkGetPhysicalDeviceMemoryProperties2(physicalDevice, &props);
+        for (uint32_t i = 0; i < memoryProperties.memoryHeapCount; i++) {
+            out[i].budget = budget.heapBudget[i];
+            out[i].usage = budget.heapUsage[i];
+        }
+    }
+    std::lock_guard lock(registryMutex);
+    for (const auto& [object, info] : registry) {
+        if (info.heap < out.size()) {
+            out[info.heap].allocated += info.bytes;
+        }
+    }
+}
+
+auto RhiDeviceVulkan::describeTransition(RhiTextureState oldState, RhiTextureState newState) const -> RhiTransitionInfo {
+    return {
+        .srcStages = string_VkPipelineStageFlags2(RhiCommandBufferVulkan::stateToStageMask(oldState)),
+        .srcAccess = string_VkAccessFlags2(RhiCommandBufferVulkan::stateToAccessMask(oldState)),
+        .dstStages = string_VkPipelineStageFlags2(RhiCommandBufferVulkan::stateToStageMask(newState)),
+        .dstAccess = string_VkAccessFlags2(RhiCommandBufferVulkan::stateToAccessMask(newState)),
+        .oldLayout = string_VkImageLayout(RhiCommandBufferVulkan::toVkImageLayout(oldState)),
+        .newLayout = string_VkImageLayout(RhiCommandBufferVulkan::toVkImageLayout(newState)),
+    };
+}
+
+auto RhiDeviceVulkan::describeTransition(RhiBufferState oldState, RhiBufferState newState) const -> RhiTransitionInfo {
+    return {
+        .srcStages = string_VkPipelineStageFlags2(RhiCommandBufferVulkan::bufferStateToStageMask(oldState)),
+        .srcAccess = string_VkAccessFlags2(RhiCommandBufferVulkan::bufferStateToAccessMask(oldState)),
+        .dstStages = string_VkPipelineStageFlags2(RhiCommandBufferVulkan::bufferStateToStageMask(newState)),
+        .dstAccess = string_VkAccessFlags2(RhiCommandBufferVulkan::bufferStateToAccessMask(newState)),
+    };
+}
+
+auto RhiDeviceVulkan::describeDescriptorSet(const RhiDescriptorSet* set) const -> std::vector<RhiDescriptorInfo> {
+    std::vector<RhiDescriptorInfo> out;
+    if (set == nullptr) {
+        return out;
+    }
+    const auto* vkSet = static_cast<const RhiDescriptorSetVulkan*>(set);
+    out.reserve(vkSet->writes.size());
+    for (const auto& [key, info] : vkSet->writes) {
+        out.push_back(info);
+    }
+    return out;
 }

@@ -5,6 +5,8 @@
 #include "rhiresourcesvulkan.h"
 #include "rhiswapchainvulkan.h"
 
+#include <mutex>
+#include <unordered_map>
 #include <vulkan/vulkan.h>
 
 class RhiDeviceVulkan : public RhiDevice {
@@ -32,6 +34,7 @@ public:
     auto destroyQueryPool(RhiQueryPool* pool) -> void override;
     auto readTimestamps(RhiQueryPool* pool, uint32_t first, std::span<uint64_t> outTicks) -> bool override;
     auto collectGpuZones(RhiCommandBuffer* cmd, std::vector<RhiGpuZone>& out) -> bool override;
+    auto collectPipelineStats(RhiCommandBuffer* cmd, std::vector<RhiPipelineStatsZone>& out) -> bool override;
     auto calibrateGpuClock(uint64_t& gpuNs, uint64_t& cpuNs) -> bool override;
     auto createSemaphore() -> RhiSemaphore* override;
     auto createFence(bool signaled) -> RhiFence* override;
@@ -48,6 +51,13 @@ public:
     [[nodiscard]] auto supportsTextureFormat(RhiFormat format, RhiTextureUsageFlags usage) const -> bool override;
     [[nodiscard]] auto validationErrorCount() const -> uint64_t override { return validationErrors; }
     auto onValidationMessage(uint32_t severity, const char* message) -> void;
+
+    auto setDebugName(RhiDebugObject object, const char* name) -> void override;
+    auto allocations(std::vector<RhiAllocationInfo>& out) const -> void override;
+    auto memoryHeaps(std::vector<RhiMemoryHeapInfo>& out) const -> void override;
+    [[nodiscard]] auto describeTransition(RhiTextureState oldState, RhiTextureState newState) const -> RhiTransitionInfo override;
+    [[nodiscard]] auto describeTransition(RhiBufferState oldState, RhiBufferState newState) const -> RhiTransitionInfo override;
+    [[nodiscard]] auto describeDescriptorSet(const RhiDescriptorSet* set) const -> std::vector<RhiDescriptorInfo> override;
 
     auto destroyBuffer(RhiBuffer* buffer) -> void override;
     auto destroyTexture(RhiTexture* texture) -> void override;
@@ -83,6 +93,18 @@ private:
     PFN_vkGetCalibratedTimestampsEXT getCalibratedTimestampsFn = nullptr;
     uint64_t validationErrors = 0;
     uint64_t validationWarnings = 0;
+
+    // Debug names (VK_EXT_debug_utils; null when unavailable) and the allocation registry
+    // behind allocations(), keyed by the RHI object.
+    PFN_vkSetDebugUtilsObjectNameEXT setObjectNameFn = nullptr;
+    bool memoryBudgetAvailable = false;
+    VkPhysicalDeviceMemoryProperties memoryProperties = {};
+    mutable std::mutex registryMutex;
+    std::unordered_map<const void*, RhiAllocationInfo> registry;
+    uint64_t nextAllocationSequence = 1;
+    auto nameVkObject(VkObjectType type, uint64_t handle, const char* name) -> void;
+    auto registerAllocation(const void* object, RhiAllocationInfo info) -> void;
+    auto unregisterAllocation(const void* object) -> void;
 
     auto findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t;
     auto createPipelineLayout(std::span<RhiDescriptorSetLayout* const> setLayouts, const RhiPushConstantRange& pushConstant) -> VkPipelineLayout;

@@ -13,6 +13,19 @@ struct FgResourceAccessDebug {
     FgAccessFlags access = FgAccessFlags::None;
 };
 
+struct FgBarrierDebug {
+    uint32_t resourceIndex = UINT32_MAX;
+    bool buffer = false;
+    FgAccessFlags oldAccess = FgAccessFlags::None;
+    FgAccessFlags newAccess = FgAccessFlags::None;
+    std::string oldState; // RHI state names
+    std::string newState;
+    RhiTextureState oldTextureState = RhiTextureState::Undefined;
+    RhiTextureState newTextureState = RhiTextureState::Undefined;
+    RhiBufferState oldBufferState = RhiBufferState::Undefined;
+    RhiBufferState newBufferState = RhiBufferState::Undefined;
+};
+
 struct FgPassDebug {
     std::string name;
     uint32_t executionIndex = UINT32_MAX;
@@ -22,6 +35,8 @@ struct FgPassDebug {
     RhiCommandStats stats;   // draws, dispatches, barriers, primitives recorded by this pass
     std::vector<FgResourceAccessDebug> reads;
     std::vector<FgResourceAccessDebug> writes;
+    std::vector<FgBarrierDebug> barriers;
+    std::vector<RhiCommandRecord> commands; // only when the command log was on for that frame
 };
 
 struct FgResourceDebug {

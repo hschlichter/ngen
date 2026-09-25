@@ -77,6 +77,14 @@ Current truth for the build framework is [`../build/build_system.md`](../build/b
 - [plan_job_system.md](plan_job_system.md) — minimal thread-pool job system (landed)
 - [plan_async_asset_system.md](plan_async_asset_system.md) — cooked-asset cache and async loading
 - [plan_observability.md](plan_observability.md) — observation bus design (landed — usage reference is [`../obs.md`](../obs.md))
+- [plan_introspection.md](plan_introspection.md) — umbrella: debugging and introspection for learning — names and memory, frame capture, frame debugger, GPU scene inspector, counters, views, RenderDoc; shader introspection deferred (landed)
+  - [plan_debug_names_and_memory.md](plan_debug_names_and_memory.md) — RHI debug names on every object, allocation registry, Memory window (landed)
+  - [plan_renderdoc.md](plan_renderdoc.md) — RenderDoc in-app API: capture from menu or verb, open in qrenderdoc (landed)
+  - [plan_frame_capture.md](plan_frame_capture.md) — capture service: any graph resource after any pass, typed buffer schemas, Capture window (landed)
+  - [plan_frame_debugger.md](plan_frame_debugger.md) — barriers with Vulkan details, command log, descriptor contents, `dump-frame` (landed)
+  - [plan_gpu_scene_inspector.md](plan_gpu_scene_inspector.md) — GPU scene tables joined to prims, cull reasons per view, compaction view (landed)
+  - [plan_gpu_counters.md](plan_gpu_counters.md) — pipeline statistics per pass, GPU zones per indirect call, Counters window (landed)
+  - [plan_debug_views.md](plan_debug_views.md) — wireframe, triangle size, overdraw, ID and UV views with cursor readout (landed)
 - [plan_render_observations.md](plan_render_observations.md) — render-category observations
 - [plan_rhi_examples.md](plan_rhi_examples.md) — minimal RHI example programs under `src/rhi/examples/`, starting with a triangle (landed)
 - [plan_rhi_compute.md](plan_rhi_compute.md) — compute pipelines, storage descriptors, buffer barriers (landed)

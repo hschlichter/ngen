@@ -39,6 +39,10 @@ auto ResourcePool::acquireTexture(const RhiTextureDesc& desc) -> RhiTexture* {
             auto* tex = it->texture;
             inUse.push_back(*it);
             available.erase(it);
+            // A pooled texture takes the name of the resource that holds it this frame.
+            if (desc.debugName != nullptr) {
+                device->setDebugName(tex, desc.debugName);
+            }
             return tex;
         }
     }

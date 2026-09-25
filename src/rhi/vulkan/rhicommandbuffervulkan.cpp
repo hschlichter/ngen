@@ -1,8 +1,44 @@
 #include "rhicommandbuffervulkan.h"
 
 #include <array>
+#include <cstring>
+#include <format>
 #include <utility>
 #include <vector>
+
+namespace {
+
+auto nameOf(const RhiTexture* texture) -> std::string {
+    const auto* t = static_cast<const RhiTextureVulkan*>(texture);
+    if (t == nullptr) {
+        return "(null)";
+    }
+    return t->debugName.empty() ? std::format("texture@{:p}", (const void*) t) : t->debugName;
+}
+
+auto nameOf(const RhiBuffer* buffer) -> std::string {
+    const auto* b = static_cast<const RhiBufferVulkan*>(buffer);
+    if (b == nullptr) {
+        return "(null)";
+    }
+    return b->debugName.empty() ? std::format("buffer@{:p}", (const void*) b) : b->debugName;
+}
+
+auto nameOf(const RhiPipeline* pipeline) -> std::string {
+    const auto* p = static_cast<const RhiPipelineVulkan*>(pipeline);
+    return p->debugName.empty() ? std::format("pipeline@{:p}", (const void*) p) : p->debugName;
+}
+
+auto nameOf(const RhiDescriptorSet* set) -> std::string {
+    const auto* s = static_cast<const RhiDescriptorSetVulkan*>(set);
+    return s->debugName.empty() ? std::format("set@{:p}", (const void*) s) : s->debugName;
+}
+
+} // namespace
+
+auto RhiCommandBufferVulkan::record(std::string text, const RhiDescriptorSet* set) -> void {
+    log.push_back({.text = std::move(text), .descriptorSet = set});
+}
 
 auto RhiCommandBufferVulkan::toVkImageLayout(RhiTextureState layout) -> VkImageLayout {
     switch (layout) {
@@ -71,6 +107,7 @@ auto RhiCommandBufferVulkan::stateToStageMask(RhiTextureState layout) -> VkPipel
 }
 
 auto RhiCommandBufferVulkan::begin() -> void {
+    log.clear();
     VkCommandBufferBeginInfo beginInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
@@ -79,6 +116,9 @@ auto RhiCommandBufferVulkan::begin() -> void {
     commandStats = {};
     zones.clear();
     zoneStack.clear();
+    statsZones.clear();
+    statsPoolReset = false;
+    statsActive = false;
     if (zonePool != VK_NULL_HANDLE) {
         vkCmdResetQueryPool(cmd, zonePool, 0, maxGpuZones * 2);
     }
@@ -108,6 +148,27 @@ auto RhiCommandBufferVulkan::endGpuZone() -> void {
     vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, zonePool, index * 2 + 1);
 }
 
+auto RhiCommandBufferVulkan::beginPipelineStats(const char* name) -> void {
+    if (statsPool == VK_NULL_HANDLE || statsActive || statsZones.size() >= maxPipelineStatsZones) {
+        return;
+    }
+    if (!statsPoolReset) {
+        vkCmdResetQueryPool(cmd, statsPool, 0, maxPipelineStatsZones);
+        statsPoolReset = true;
+    }
+    vkCmdBeginQuery(cmd, statsPool, (uint32_t) statsZones.size(), 0);
+    statsZones.push_back(name);
+    statsActive = true;
+}
+
+auto RhiCommandBufferVulkan::endPipelineStats() -> void {
+    if (!statsActive) {
+        return;
+    }
+    vkCmdEndQuery(cmd, statsPool, (uint32_t) statsZones.size() - 1);
+    statsActive = false;
+}
+
 auto RhiCommandBufferVulkan::end() -> void {
     vkEndCommandBuffer(cmd);
 }
@@ -117,6 +178,16 @@ auto RhiCommandBufferVulkan::reset() -> void {
 }
 
 auto RhiCommandBufferVulkan::beginRendering(const RhiRenderingInfo& info) -> void {
+    if (logging) {
+        std::string text = std::format("beginRendering {}x{}", info.extent.width, info.extent.height);
+        for (const auto& att : info.colorAttachments) {
+            text += std::format(" color:{}({}, {})", nameOf(att.texture), rhiStateName(att.state), att.clear ? "clear" : "load");
+        }
+        if (info.depthAttachment != nullptr) {
+            text += std::format(" depth:{}({}, {})", nameOf(info.depthAttachment->texture), rhiStateName(info.depthAttachment->state), info.depthAttachment->clear ? "clear" : "load");
+        }
+        record(std::move(text));
+    }
     std::vector<VkRenderingAttachmentInfo> vkColorAttachments;
     vkColorAttachments.reserve(info.colorAttachments.size());
 
@@ -163,6 +234,9 @@ auto RhiCommandBufferVulkan::beginRendering(const RhiRenderingInfo& info) -> voi
 }
 
 auto RhiCommandBufferVulkan::endRendering() -> void {
+    if (logging) {
+        record("endRendering");
+    }
     vkCmdEndRendering(cmd);
 }
 
@@ -211,6 +285,14 @@ auto RhiCommandBufferVulkan::bufferStateToStageMask(RhiBufferState state) -> VkP
 }
 
 auto RhiCommandBufferVulkan::pipelineBarrier(std::span<const RhiTextureBarrierDesc> barriers, std::span<const RhiBufferBarrierDesc> bufferBarrierDescs) -> void {
+    if (logging) {
+        for (const auto& b : barriers) {
+            record(std::format("barrier texture {}: {} -> {}", nameOf(b.texture), rhiStateName(b.oldState), rhiStateName(b.newState)));
+        }
+        for (const auto& b : bufferBarrierDescs) {
+            record(std::format("barrier buffer {}: {} -> {}", nameOf(b.buffer), rhiStateName(b.oldState), rhiStateName(b.newState)));
+        }
+    }
     commandStats.barriers += (uint32_t) (barriers.size() + bufferBarrierDescs.size());
     std::vector<VkBufferMemoryBarrier2> bufferBarriers;
     bufferBarriers.reserve(bufferBarrierDescs.size());
@@ -272,6 +354,9 @@ auto RhiCommandBufferVulkan::pipelineBarrier(std::span<const RhiTextureBarrierDe
 }
 
 auto RhiCommandBufferVulkan::blitTexture(RhiTexture* src, RhiTexture* dst, const RhiBlitRegion& srcRegion, const RhiBlitRegion& dstRegion, RhiFilter filter) -> void {
+    if (logging) {
+        record(std::format("blitTexture {} mip {} {}x{} -> {} mip {} {}x{}", nameOf(src), srcRegion.mipLevel, srcRegion.extent.width, srcRegion.extent.height, nameOf(dst), dstRegion.mipLevel, dstRegion.extent.width, dstRegion.extent.height));
+    }
     commandStats.copies++;
     auto* srcTex = static_cast<RhiTextureVulkan*>(src);
     auto* dstTex = static_cast<RhiTextureVulkan*>(dst);
@@ -286,16 +371,25 @@ auto RhiCommandBufferVulkan::blitTexture(RhiTexture* src, RhiTexture* dst, const
 }
 
 auto RhiCommandBufferVulkan::setViewport(int32_t x, int32_t y, RhiExtent2D extent) -> void {
+    if (logging) {
+        record(std::format("setViewport ({}, {}) {}x{}", x, y, extent.width, extent.height));
+    }
     VkViewport viewport = {(float) x, (float) y, (float) extent.width, (float) extent.height, 0, 1};
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 }
 
 auto RhiCommandBufferVulkan::setScissor(int32_t x, int32_t y, RhiExtent2D extent) -> void {
+    if (logging) {
+        record(std::format("setScissor ({}, {}) {}x{}", x, y, extent.width, extent.height));
+    }
     VkRect2D scissor = {{x, y}, {extent.width, extent.height}};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 }
 
 auto RhiCommandBufferVulkan::bindPipeline(RhiPipeline* pipeline) -> void {
+    if (logging) {
+        record(std::format("bindPipeline {}", nameOf(pipeline)));
+    }
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
     commandStats.pipelineBinds++;
     boundTopology = p->topology;
@@ -303,6 +397,9 @@ auto RhiCommandBufferVulkan::bindPipeline(RhiPipeline* pipeline) -> void {
 }
 
 auto RhiCommandBufferVulkan::bindVertexBuffer(uint32_t slot, RhiBuffer* buffer, uint64_t offset) -> void {
+    if (logging) {
+        record(std::format("bindVertexBuffer slot {} {} +{}", slot, nameOf(buffer), offset));
+    }
     auto* b = static_cast<RhiBufferVulkan*>(buffer);
     commandStats.bufferBinds++;
     VkDeviceSize vkOffset = offset;
@@ -310,6 +407,9 @@ auto RhiCommandBufferVulkan::bindVertexBuffer(uint32_t slot, RhiBuffer* buffer, 
 }
 
 auto RhiCommandBufferVulkan::bindIndexBuffer(RhiBuffer* buffer, RhiIndexType indexType, uint64_t offset) -> void {
+    if (logging) {
+        record(std::format("bindIndexBuffer {} +{} {}", nameOf(buffer), offset, indexType == RhiIndexType::Uint16 ? "u16" : "u32"));
+    }
     auto* b = static_cast<RhiBufferVulkan*>(buffer);
     commandStats.bufferBinds++;
     auto vkType = indexType == RhiIndexType::Uint16 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
@@ -317,6 +417,9 @@ auto RhiCommandBufferVulkan::bindIndexBuffer(RhiBuffer* buffer, RhiIndexType ind
 }
 
 auto RhiCommandBufferVulkan::bindDescriptorSet(RhiPipeline* pipeline, uint32_t setIndex, RhiDescriptorSet* set) -> void {
+    if (logging) {
+        record(std::format("bindDescriptorSet set {} {} (pipeline {})", setIndex, nameOf(set), nameOf(pipeline)), set);
+    }
     commandStats.descriptorBinds++;
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
     auto* s = static_cast<RhiDescriptorSetVulkan*>(set);
@@ -324,6 +427,15 @@ auto RhiCommandBufferVulkan::bindDescriptorSet(RhiPipeline* pipeline, uint32_t s
 }
 
 auto RhiCommandBufferVulkan::pushConstants(RhiPipeline* pipeline, RhiShaderStageFlags stage, uint32_t offset, uint32_t size, const void* data) -> void {
+    if (logging) {
+        std::string text = std::format("pushConstants {} bytes at {} (pipeline {}):", size, offset, nameOf(pipeline));
+        for (uint32_t i = 0; i + 4 <= size; i += 4) {
+            float value = 0.0f;
+            std::memcpy(&value, static_cast<const std::byte*>(data) + i, 4);
+            text += std::format(" {:.4g}", value);
+        }
+        record(std::move(text));
+    }
     auto* p = static_cast<RhiPipelineVulkan*>(pipeline);
     VkShaderStageFlags vkStage = 0;
     if (stage.has(RhiShaderStage::Vertex)) {
@@ -335,10 +447,16 @@ auto RhiCommandBufferVulkan::pushConstants(RhiPipeline* pipeline, RhiShaderStage
     if (stage.has(RhiShaderStage::Compute)) {
         vkStage |= VK_SHADER_STAGE_COMPUTE_BIT;
     }
+    if (stage.has(RhiShaderStage::Geometry)) {
+        vkStage |= VK_SHADER_STAGE_GEOMETRY_BIT;
+    }
     vkCmdPushConstants(cmd, p->layout, vkStage, offset, size, data);
 }
 
 auto RhiCommandBufferVulkan::draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) -> void {
+    if (logging) {
+        record(std::format("draw vertices {} instances {} firstVertex {} firstInstance {}", vertexCount, instanceCount, firstVertex, firstInstance));
+    }
     commandStats.draws++;
     commandStats.primitives += (uint64_t) (boundTopology == RhiPrimitiveTopology::LineList ? vertexCount / 2 : vertexCount / 3) * instanceCount;
     vkCmdDraw(cmd, vertexCount, instanceCount, firstVertex, firstInstance);
@@ -346,18 +464,27 @@ auto RhiCommandBufferVulkan::draw(uint32_t vertexCount, uint32_t instanceCount, 
 
 auto RhiCommandBufferVulkan::drawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance)
     -> void {
+    if (logging) {
+        record(std::format("drawIndexed indices {} instances {} firstIndex {} vertexOffset {} firstInstance {}", indexCount, instanceCount, firstIndex, vertexOffset, firstInstance));
+    }
     commandStats.draws++;
     commandStats.primitives += (uint64_t) (boundTopology == RhiPrimitiveTopology::LineList ? indexCount / 2 : indexCount / 3) * instanceCount;
     vkCmdDrawIndexed(cmd, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
 auto RhiCommandBufferVulkan::drawIndexedIndirect(RhiBuffer* commands, uint64_t offset, uint32_t drawCount) -> void {
+    if (logging) {
+        record(std::format("drawIndexedIndirect {} +{} draws {}", nameOf(commands), offset, drawCount));
+    }
     commandStats.indirectDraws++;
     auto* b = static_cast<RhiBufferVulkan*>(commands);
     vkCmdDrawIndexedIndirect(cmd, b->buffer, offset, drawCount, sizeof(RhiDrawIndexedIndirectCommand));
 }
 
 auto RhiCommandBufferVulkan::drawIndexedIndirectCount(RhiBuffer* commands, uint64_t offset, RhiBuffer* count, uint64_t countOffset, uint32_t maxDrawCount) -> void {
+    if (logging) {
+        record(std::format("drawIndexedIndirectCount {} +{} count {} +{} max {}", nameOf(commands), offset, nameOf(count), countOffset, maxDrawCount));
+    }
     commandStats.indirectDraws++;
     auto* b = static_cast<RhiBufferVulkan*>(commands);
     auto* c = static_cast<RhiBufferVulkan*>(count);
@@ -365,6 +492,9 @@ auto RhiCommandBufferVulkan::drawIndexedIndirectCount(RhiBuffer* commands, uint6
 }
 
 auto RhiCommandBufferVulkan::copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void {
+    if (logging) {
+        record(std::format("copyBuffer {} +{} -> {} +{} ({} bytes)", nameOf(src), region.srcOffset, nameOf(dst), region.dstOffset, region.size));
+    }
     commandStats.copies++;
     auto* srcBuf = static_cast<RhiBufferVulkan*>(src);
     auto* dstBuf = static_cast<RhiBufferVulkan*>(dst);
@@ -377,24 +507,32 @@ auto RhiCommandBufferVulkan::copyBuffer(RhiBuffer* src, RhiBuffer* dst, const Rh
 }
 
 auto RhiCommandBufferVulkan::copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void {
+    if (logging) {
+        record(std::format("copyBufferToTexture {} +{} -> {} mip {} layer {} {}x{}", nameOf(src), region.bufferOffset, nameOf(dst), region.mipLevel, region.arrayLayer, region.width, region.height));
+    }
     commandStats.copies++;
     auto* srcBuf = static_cast<RhiBufferVulkan*>(src);
     auto* dstTex = static_cast<RhiTextureVulkan*>(dst);
     VkBufferImageCopy vkRegion = {
         .bufferOffset = region.bufferOffset,
         .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = region.mipLevel, .baseArrayLayer = region.arrayLayer, .layerCount = 1},
+        .imageOffset = {region.x, region.y, 0},
         .imageExtent = {region.width, region.height, 1},
     };
     vkCmdCopyBufferToImage(cmd, srcBuf->buffer, dstTex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &vkRegion);
 }
 
 auto RhiCommandBufferVulkan::copyTextureToBuffer(RhiTexture* src, RhiBuffer* dst, const RhiBufferTextureCopy& region) -> void {
+    if (logging) {
+        record(std::format("copyTextureToBuffer {} mip {} ({}, {}) {}x{} -> {} +{}", nameOf(src), region.mipLevel, region.x, region.y, region.width, region.height, nameOf(dst), region.bufferOffset));
+    }
     commandStats.copies++;
     auto* srcTex = static_cast<RhiTextureVulkan*>(src);
     auto* dstBuf = static_cast<RhiBufferVulkan*>(dst);
     VkBufferImageCopy vkRegion = {
         .bufferOffset = region.bufferOffset,
         .imageSubresource = {.aspectMask = srcTex->aspect, .mipLevel = region.mipLevel, .baseArrayLayer = region.arrayLayer, .layerCount = 1},
+        .imageOffset = {region.x, region.y, 0},
         .imageExtent = {region.width, region.height, 1},
     };
     vkCmdCopyImageToBuffer(cmd, srcTex->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstBuf->buffer, 1, &vkRegion);
@@ -430,6 +568,9 @@ auto RhiCommandBufferVulkan::endLabel() -> void {
 }
 
 auto RhiCommandBufferVulkan::dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) -> void {
+    if (logging) {
+        record(std::format("dispatch {} x {} x {}", groupsX, groupsY, groupsZ));
+    }
     commandStats.dispatches++;
     vkCmdDispatch(cmd, groupsX, groupsY, groupsZ);
 }

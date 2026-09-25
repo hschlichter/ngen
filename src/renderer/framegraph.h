@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -26,6 +27,29 @@ struct FgCapturedResource {
 };
 
 using FgDebugCaptureFn = std::function<void(RhiCommandBuffer*, const FgCapturedResource&)>;
+
+// A resource as it is at a capture point: right after a pass, or after the last pass. The
+// state is what the graph tracks at that moment; a capture must leave the resource in it.
+struct FgCaptureSource {
+    const char* pass = "";     // the pass that just ran; "" after the last pass
+    const char* resource = ""; // resource name
+    FgResourceKind kind = FgResourceKind::Texture;
+    RhiTexture* texture = nullptr;
+    RhiBuffer* buffer = nullptr;
+    FgTextureDesc textureDesc;
+    FgBufferDesc bufferDesc;
+    RhiTextureState textureState = RhiTextureState::Undefined;
+    RhiBufferState bufferState = RhiBufferState::Undefined;
+};
+
+// Runs `record` right after pass `pass` executes (before transients are released), or after
+// the last pass when `pass` is empty, if resource `resource` is alive then. `record` gets the
+// frame's command buffer and records whatever copies it needs.
+struct FgCaptureRequest {
+    std::string pass;
+    std::string resource;
+    std::function<void(RhiCommandBuffer*, const FgCaptureSource&)> record;
+};
 
 class FrameGraph {
     friend class FrameGraphBuilder;
@@ -60,9 +84,17 @@ public:
 
     // Draw log for the render debugger: enabled per frame, records cleared by reset().
     auto setDrawLogEnabled(bool enabled) -> void { drawLogEnabled = enabled; }
+    // Keep each pass's slice of the command buffer's command log (the log itself must be on).
+    auto setCommandLogEnabled(bool enabled) -> void { commandLogEnabled = enabled; }
+    // While on, each pass's execute is one pipeline statistics query named after the pass.
+    auto setPipelineStatsEnabled(bool enabled) -> void { pipelineStatsEnabled = enabled; }
     auto drawLog() const -> const std::vector<FgDrawRecord>& { return draws; }
 
     auto setDebugCaptureHook(FgDebugCaptureFn fn) -> void { debugCaptureHook = std::move(fn); }
+    // Capture points for this frame; cleared by reset().
+    auto setCaptureRequests(std::vector<FgCaptureRequest> requests) -> void { captureRequests = std::move(requests); }
+    static auto textureStateFor(FgAccessFlags access) -> RhiTextureState;
+    static auto bufferStateFor(FgAccessFlags access) -> RhiBufferState;
 
 private:
     std::vector<PassNode> passes;
@@ -101,8 +133,12 @@ private:
 
     ResourcePool* resourcePool = nullptr;
     FgDebugCaptureFn debugCaptureHook;
+    std::vector<FgCaptureRequest> captureRequests;
+    auto runCaptures(RhiCommandBuffer* cmd, const char* passName, const std::vector<FgAccessFlags>& access) -> void;
 
     bool drawLogEnabled = false;
+    bool commandLogEnabled = false;
+    bool pipelineStatsEnabled = false;
     std::vector<FgDrawRecord> draws;
     const char* executingPass = "";
     uint32_t executingPassDraws = 0;

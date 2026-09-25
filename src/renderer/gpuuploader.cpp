@@ -11,6 +11,8 @@ auto GpuUploader::init(RhiDevice* dev) -> void {
     device = dev;
     cmd = device->createCommandBuffer();
     fence = device->createFence(false);
+    device->setDebugName(cmd, "uploader.cmd");
+    device->setDebugName(fence, "uploader.fence");
 }
 
 auto GpuUploader::destroy() -> void {
@@ -35,6 +37,7 @@ auto GpuUploader::createStaging(std::span<const std::byte> data) -> RhiBuffer* {
         .size = data.size(),
         .usage = RhiBufferUsage::TransferSrc,
         .memory = RhiMemoryUsage::CpuToGpu,
+        .debugName = "uploader.staging",
     };
     auto* buffer = device->createBuffer(desc);
     auto* mapped = device->mapBuffer(buffer);
@@ -44,13 +47,15 @@ auto GpuUploader::createStaging(std::span<const std::byte> data) -> RhiBuffer* {
     return buffer;
 }
 
-auto GpuUploader::uploadBuffer(std::span<const std::byte> data, RhiBufferUsageFlags usage) -> RhiBuffer* {
+auto GpuUploader::uploadBuffer(std::span<const std::byte> data, RhiBufferUsageFlags usage, const char* name) -> RhiBuffer* {
     auto* src = createStaging(data);
 
     RhiBufferDesc desc = {
         .size = data.size(),
-        .usage = usage | RhiBufferUsage::TransferDst,
+        // TransferSrc so the capture service can read any uploaded buffer back.
+        .usage = usage | RhiBufferUsage::TransferDst | RhiBufferUsage::TransferSrc,
         .memory = RhiMemoryUsage::GpuOnly,
+        .debugName = name,
     };
     auto* dst = device->createBuffer(desc);
 

@@ -12,6 +12,8 @@ struct CullingWindowInputs {
     bool& enabled;
     bool& frozen;
     bool& showCulled;
+    int& overlayView; // view the AABB overlay shows: 0 camera, 1.. cascades
+    bool& showCascadeFrusta;
     uint32_t instances = 0;
     uint32_t culled = 0;
     uint32_t cascades = 0; // shadow cascades this frame

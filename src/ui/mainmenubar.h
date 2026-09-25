@@ -1,5 +1,7 @@
 #pragma once
 
+#include "introspectionflags.h"
+
 #include "scenehandles.h"
 
 #include <string>
@@ -24,6 +26,7 @@ struct MainMenuBarState {
     bool& showLightGizmos;
     bool& depthPrepass;
     int& gbufferView;
+    int& debugView; // DebugView
     bool& showBufferOverlay;
     bool& showShadowOverlay;
     bool& antiAliasing;
@@ -32,6 +35,7 @@ struct MainMenuBarState {
     bool& showRenderDebug;
     bool& showCamera;
     bool& showCulling;
+    IntrospectionFlags& introspection;
     bool& showAssetBrowser;
     bool& requestQuit;
     bool& pendingNewScene;

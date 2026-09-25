@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <format>
 #include <limits>
 #include <print>
 #include <span>
@@ -55,11 +56,12 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
             .memory = RhiMemoryUsage::CpuToGpu,
         };
         uniformBuffers[i] = device->createBuffer(uboDesc);
+        device->setDebugName(uniformBuffers[i], "renderer.view.ubo");
         uniformBuffersMapped[i] = device->mapBuffer(uniformBuffers[i]);
     }
 
     // Shared sampler and fallback texture
-    textureSampler = device->createSampler({});
+    textureSampler = device->createSampler({.debugName = "sampler.fullscreen"});
     // Shadow compare sampler: linear so the hardware compare is bilinear PCF, clamped so a
     // tile never reads its neighbour, LessOrEqual on the biased reference depth.
     shadowSampler = device->createSampler({
@@ -68,10 +70,12 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
         .addressW = RhiAddressMode::ClampToEdge,
         .compareEnable = true,
         .compareOp = RhiCompareOp::LessOrEqual,
+        .debugName = "sampler.shadow",
     });
     // Material sampler: trilinear with anisotropy, the textures carry full mip chains and
     // Sponza floors are seen at grazing angles. Rebuilt when the settings change.
     materialSampler = device->createSampler(toSamplerDesc(materialSamplerSettings));
+    device->setDebugName(materialSampler, "sampler.material");
 
     std::vector<uint8_t> fallbackPixels(static_cast<size_t>(64) * 64 * 4);
     for (uint32_t y = 0; y < 64; y++) {
@@ -88,6 +92,7 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
         .width = 64,
         .height = 64,
         .format = R8G8B8A8_SRGB,
+        .debugName = "texture.fallback",
     };
     uploader.begin();
     fallbackTexture = uploader.uploadTexture(fallbackDesc, std::as_bytes(std::span(fallbackPixels)));
@@ -114,6 +119,9 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
     if (!aaPass.init(device, imgCount, colorFmt)) {
         return std::unexpected(1);
     }
+    if (!debugViewPass.init(device, imgCount, depthFmt, geometryPass.descriptorSetLayout())) {
+        return std::unexpected(1);
+    }
     // Overlays draw on the backbuffer after the AA result has been blitted there,
     // so they keep the swapchain format and stay outside the AA filter.
     if (!debugRenderer.init(device, imgCount, ext, colorFmt, depthFmt, uniformBuffers)) {
@@ -133,6 +141,7 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
     cmdBuffers.resize(imgCount);
     for (uint32_t i = 0; i < imgCount; i++) {
         cmdBuffers[i] = device->createCommandBuffer();
+        device->setDebugName(cmdBuffers[i], std::format("frameslot{}.cmd", i).c_str());
     }
 
     imageAvailableSemaphores.resize(imgCount);
@@ -145,6 +154,9 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
         imageAvailableSemaphores[i] = device->createSemaphore();
         renderFinishedSemaphores[i] = device->createSemaphore();
         inflightFences[i] = device->createFence(true);
+        device->setDebugName(imageAvailableSemaphores[i], std::format("frameslot{}.imageavailable", i).c_str());
+        device->setDebugName(renderFinishedSemaphores[i], std::format("swapchainimage{}.renderfinished", i).c_str());
+        device->setDebugName(inflightFences[i], std::format("frameslot{}.inflight", i).c_str());
     }
 
     if (!device->limits().timestamps) {
@@ -162,11 +174,19 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
     });
 
     fgPreviews.init(device, editorUI, textureSampler, &deletionQueue);
+    captureService.init(device, editorUI, &deletionQueue, &uploader, imgCount);
 
     return {};
 }
 
+auto Renderer::nameSwapchainImages() -> void {
+    for (uint32_t i = 0; i < swapchain->imageCount(); i++) {
+        device->setDebugName(swapchain->image(i), std::format("swapchain.image{}", i).c_str());
+    }
+}
+
 auto Renderer::recreateDepthTexture(RhiExtent2D extent) -> void {
+    nameSwapchainImages();
     if (depthTexture != nullptr) {
         device->destroyTexture(depthTexture);
     }
@@ -174,7 +194,9 @@ auto Renderer::recreateDepthTexture(RhiExtent2D extent) -> void {
         .width = extent.width,
         .height = extent.height,
         .format = depthFormat,
-        .usage = RhiTextureUsage::DepthAttachment | RhiTextureUsage::Sampled,
+        // TransferSrc: the capture service and frame debugger read it back.
+        .usage = RhiTextureUsage::DepthAttachment | RhiTextureUsage::Sampled | RhiTextureUsage::TransferSrc,
+        .debugName = "renderer.depth",
     };
     depthTexture = device->createTexture(desc);
 }
@@ -200,6 +222,8 @@ auto Renderer::buildRenderDebugSnapshot() const -> RenderDebugSnapshot {
     snap.swapchainFormat = swapchain->colorFormat();
     snap.swapchainImages = swapchain->imageCount();
     snap.currentSlot = currentFrame;
+    device->allocations(snap.allocations);
+    device->memoryHeaps(snap.heaps);
 
     snap.instanceCount = (uint32_t) gpuInstances.size();
     snap.culledInstances = debugCulledInstances;
@@ -346,6 +370,39 @@ auto Renderer::readGpuTimings(uint32_t slot) -> void {
             event.field(timing.name, timing.ms);
         }
     }
+
+    if (countersEnabled) {
+        GpuCounters counters = {
+            .frame = lastGpuFrame,
+            .gpuFrameMs = lastGpuFrameMs,
+            .width = swapchain->extent().width,
+            .height = swapchain->extent().height,
+        };
+        counters.zones.reserve(gpuZoneScratch.size());
+        for (const auto& zone : gpuZoneScratch) {
+            counters.zones.push_back({.name = zone.name, .depth = zone.depth, .startMs = (double) (zone.startNs - minStart) * 1e-6, .ms = (double) (zone.endNs - zone.startNs) * 1e-6});
+        }
+        if (device->collectPipelineStats(cmdBuffers[slot], pipelineStatsScratch)) {
+            for (const auto& zone : pipelineStatsScratch) {
+                counters.passes.push_back({.name = zone.name, .stats = zone.stats});
+                const auto& st = zone.stats;
+                OBS_EVENT("Render", "PipelineStats", zone.name)
+                    .field("frame", (int64_t) lastGpuFrame)
+                    .field("ia_vertices", (int64_t) st.iaVertices)
+                    .field("ia_primitives", (int64_t) st.iaPrimitives)
+                    .field("vs_invocations", (int64_t) st.vertexInvocations)
+                    .field("clip_invocations", (int64_t) st.clippingInvocations)
+                    .field("clip_primitives", (int64_t) st.clippingPrimitives)
+                    .field("fs_invocations", (int64_t) st.fragmentInvocations)
+                    .field("cs_invocations", (int64_t) st.computeInvocations);
+            }
+        }
+        // Bounded: a consumer that stops taking keeps only recent frames.
+        if (countersResults.size() >= 300) {
+            countersResults.erase(countersResults.begin());
+        }
+        countersResults.push_back(std::move(counters));
+    }
 }
 
 auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void {
@@ -455,6 +512,8 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
                     .usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst | RhiTextureUsage::TransferSrc,
                     .mipLevels = mipLevelCount((uint32_t) matData->texWidth, (uint32_t) matData->texHeight),
                 };
+                auto textureName = std::format("material.{}.basecolor", inst.material.index);
+                texDesc.debugName = textureName.c_str();
                 auto pixelCount = (size_t) matData->texWidth * (size_t) matData->texHeight * 4;
                 auto level0 = std::span(matData->texPixels).first(pixelCount);
                 std::vector<std::byte> packed;
@@ -536,6 +595,7 @@ auto Renderer::recordTextureInspect(RhiCommandBuffer* cmd) -> void {
             .height = ext.height,
             .format = cached.format,
             .usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst,
+            .debugName = "inspector.preview",
         };
         texturePreview.texture = device->createTexture(desc);
         texturePreview.width = ext.width;
@@ -592,6 +652,7 @@ auto Renderer::applySamplerSettings(const SamplerSettings& settings) -> void {
     // The old sampler may be referenced by descriptor sets a frame in flight still binds.
     deletionQueue.defer(m_frameIndex, [dev = device, sampler = materialSampler] { dev->destroySampler(sampler); });
     materialSampler = device->createSampler(toSamplerDesc(settings));
+    device->setDebugName(materialSampler, "sampler.material");
     rebuildGeometryDescriptorSets("sampler");
     OBS_EVENT("Render", "SamplerSettings", "material")
         .field("anisotropy", (double) settings.maxAnisotropy)
@@ -626,8 +687,12 @@ auto Renderer::rebuildGeometryDescriptorSets(const char* reason) -> void {
     auto imgCount = swapchain->imageCount();
     auto bindings = GeometryPass::descriptorBindings();
     geometryDescriptorPool = device->createDescriptorPool(imgCount, bindings);
+    device->setDebugName(geometryDescriptorPool, "geometry.sets.pool");
     geometryDescriptorSets.assign(imgCount, nullptr);
     device->allocateDescriptorSets(geometryDescriptorPool, geometryPass.descriptorSetLayout(), geometryDescriptorSets);
+    for (uint32_t i = 0; i < imgCount; i++) {
+        device->setDebugName(geometryDescriptorSets[i], std::format("geometry.set.slot{}", i).c_str());
+    }
 
     auto slots = gpuScene.textureSlots();
     std::vector<RhiDescriptorWrite> writes;
@@ -671,6 +736,7 @@ auto Renderer::cullResult() const -> CullResult {
         .cameraCulled = drawLists.cameraCulled(),
         .cascadeCount = drawLists.cascadeCount(),
         .cameraVisible = drawLists.cameraVisible(),
+        .viewBits = drawLists.viewBits(),
     };
     for (uint32_t c = 0; c < result.cascadeCount; c++) {
         result.cascadeCulled[c] = drawLists.cascadeCulled(c);
@@ -729,6 +795,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     deletionQueue.flush(slotFrame[currentFrame]);
     readGpuTimings(currentFrame);
     drawLists.parseReadback(currentFrame, slotFrame[currentFrame]);
+    captureService.afterFence(currentFrame);
     fgPreviews.setFrame(frame);
 
     std::expected<uint32_t, RhiError> index;
@@ -880,7 +947,14 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     }
     const auto& aaData = aaPass.addPass(frameGraph, lightData.sceneColor, ext, imageIdx, textureSampler, snapshot.antiAliasing);
 
-    addBlitPass(frameGraph, "BlitToBackbuffer", aaData.sceneColorAA, colorHandle, ext, ext);
+    // A debug view replaces the lit image; it is drawn after everything the geometry pass
+    // wrote and never anti-aliased (AA would blend IDs).
+    auto finalImage = aaData.sceneColorAA;
+    if (snapshot.debugView != DebugView::None && debugViewPass.available()) {
+        const auto& debugViewData = debugViewPass.addPass(frameGraph, snapshot.debugView, geomData.depth, ext, imageIdx, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet);
+        finalImage = debugViewData.color;
+    }
+    addBlitPass(frameGraph, "BlitToBackbuffer", finalImage, colorHandle, ext, ext);
 
     debugRenderer.addPass(frameGraph, colorHandle, depthHandle, ext, snapshot.debugData, imageIdx);
 
@@ -897,6 +971,9 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     profile::zoneValue(instanceCount);
     profile::endZone(); // BuildFrameGraph
     frameGraph.setDrawLogEnabled(renderDebugEnabled);
+    captureService.setStaticBuffer("gpuscene.meshtable", gpuScene.meshTableBuffer(), gpuScene.meshTableBytes());
+    captureService.setStaticBuffer("gpuscene.materials", gpuScene.materialBuffer(), gpuScene.materialTableBytes());
+    frameGraph.setCaptureRequests(captureService.requestsForFrame(currentFrame, frame));
     {
         PROFILE_ZONE("Compile");
         frameGraph.compile();
@@ -922,10 +999,20 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     {
         PROFILE_ZONE("Record");
         PROFILE_ZONE_VALUE(frameGraph.passCount() - frameGraph.culledCount());
+        bool frameDebug = std::exchange(frameDebugRequested, false);
+        cmd->setCommandLog(frameDebug);
+        frameGraph.setCommandLogEnabled(frameDebug);
+        frameGraph.setPipelineStatsEnabled(countersEnabled && device->limits().pipelineStatistics);
         cmd->reset();
         cmd->begin();
         frameGraph.execute(cmd);
+        if (frameDebug) {
+            frameDebugResult = buildFrameDebugCapture(buildFrameGraphDebugSnapshot(), *device, frame);
+            cmd->setCommandLog(false);
+            frameGraph.setCommandLogEnabled(false);
+        }
         gpuScene.afterExecute(frameGraph, frame);
+        captureService.recordStatic(cmd, currentFrame, frame);
         recordTextureInspect(cmd);
         if (dumpPending.has_value()) {
             auto texIt = textureCache.find(dumpPending->material);
@@ -937,6 +1024,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
                     .size = (uint64_t) dumpWidth * dumpHeight * 4,
                     .usage = RhiBufferUsage::TransferDst,
                     .memory = RhiMemoryUsage::CpuToGpu,
+                    .debugName = "readback.texturedump",
                 };
                 textureDumpBuffer = device->createBuffer(desc);
                 std::array<RhiTextureBarrierDesc, 1> toTransfer = {{{.texture = cached.texture, .oldState = RhiTextureState::ShaderReadOnly, .newState = RhiTextureState::TransferSrc}}};
@@ -953,6 +1041,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
                 .size = (uint64_t) ext.width * ext.height * 4,
                 .usage = RhiBufferUsage::TransferDst,
                 .memory = RhiMemoryUsage::CpuToGpu,
+                .debugName = "readback.screenshot",
             };
             screenshotBuffer = device->createBuffer(desc);
             auto* backbuffer = swapchain->image(*index);
@@ -1075,6 +1164,7 @@ auto Renderer::destroy() -> void {
     uploader.destroy();
 
     fgPreviews.shutdown();
+    captureService.destroy();
     if (texturePreview.imguiId != 0) {
         editorUI->unregisterTexture(texturePreview.imguiId);
     }
@@ -1105,6 +1195,7 @@ auto Renderer::destroy() -> void {
     geometryPass.destroy(device);
     lightingPass.destroy(device);
     aaPass.destroy(device);
+    debugViewPass.destroy(device);
     debugRenderer.destroy(device);
     gizmoPass.destroy(device);
 

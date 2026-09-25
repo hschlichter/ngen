@@ -35,6 +35,7 @@ auto loadShaderModule(RhiDevice* device, RhiShaderStage stage, const char* filep
     RhiShaderDesc desc = {
         .stage = stage,
         .code = code,
+        .debugName = filepath,
     };
     auto* module = device->createShaderModule(desc);
     if (module == nullptr) {

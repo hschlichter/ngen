@@ -1,6 +1,7 @@
 #pragma once
 
 #include "debugdraw.h"
+#include "debugview.h"
 #include "gizmo.h"
 #include "imguibackend.h"
 #include "lightingpass.h"
@@ -35,6 +36,7 @@ struct RenderSnapshot {
 
     bool showGizmo = true;
     GBufferView gbufferViewMode = GBufferView::Lit;
+    DebugView debugView = DebugView::None; // replaces the lit image when on (DebugViewPass)
     bool showBufferOverlay = false;
     bool showShadowOverlay = false;
     bool antiAliasing = true;

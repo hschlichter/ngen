@@ -1,6 +1,7 @@
 #include "mainmenubar.h"
 
 #include "camera.h"
+#include "debugview.h"
 #include "scenequery.h"
 #include "sceneupdater.h"
 #include "undostack.h"
@@ -153,6 +154,24 @@ void drawMainMenuBar(MainMenuBarState& state) {
             ImGui::MenuItem("Render Debug", nullptr, &state.showRenderDebug);
             ImGui::MenuItem("Camera", nullptr, &state.showCamera);
             ImGui::MenuItem("Culling", nullptr, &state.showCulling);
+            if (ImGui::BeginMenu("Introspection")) {
+                ImGui::MenuItem("Capture", nullptr, &state.introspection.capture);
+                ImGui::MenuItem("Frame Debugger", nullptr, &state.introspection.frameDebugger);
+                ImGui::MenuItem("GPU Scene", nullptr, &state.introspection.gpuScene);
+                ImGui::MenuItem("Counters", nullptr, &state.introspection.counters);
+                ImGui::MenuItem("Memory", nullptr, &state.introspection.memory);
+                ImGui::EndMenu();
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Capture Frame (RenderDoc)", nullptr, false, state.introspection.renderDocAvailable)) {
+                state.introspection.renderDocCaptureRequested = true;
+            }
+            if (ImGui::MenuItem("Open Last Capture", nullptr, false, state.introspection.renderDocAvailable)) {
+                state.introspection.renderDocOpenRequested = true;
+            }
+            if (!state.introspection.renderDocAvailable) {
+                ImGui::TextDisabled("RenderDoc not loaded (start with --renderdoc)");
+            }
             ImGui::Separator();
             ImGui::Text("Fullscreen Buffer View");
             ImGui::RadioButton("Albedo", &state.gbufferView, 1);
@@ -165,6 +184,11 @@ void drawMainMenuBar(MainMenuBarState& state) {
             ImGui::RadioButton("Mip Level", &state.gbufferView, 8);
             ImGui::RadioButton("Cascades", &state.gbufferView, 9);
             ImGui::RadioButton("Lit", &state.gbufferView, 0);
+            ImGui::Separator();
+            ImGui::Text("Debug View");
+            for (int i = 0; i < (int) debugViewCount; i++) {
+                ImGui::RadioButton(debugViewLabels[i], &state.debugView, i);
+            }
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
