@@ -59,7 +59,6 @@ public:
     auto requestScreenshot(std::string path) -> void { screenshotPath = std::move(path); }
     // Render debugger inputs, set by the render thread before render().
     auto setRenderDebugEnabled(bool enabled) -> void { renderDebugEnabled = enabled; }
-    auto setDrawTiming(const FgDrawTimingRequest& request) -> void { drawTimingRequest = request; }
     auto setTextureInspect(const TextureInspectRequest& request) -> void { textureInspectRequest = request; }
     // Writes one mip level of a material texture as PNG after this frame's fence.
     auto requestTextureDump(uint32_t material, uint32_t level, std::string path) -> void {
@@ -106,6 +105,7 @@ private:
 
     // Scene GPU tables: geometry pool and instance buffer (docs/plan_gpu_driven.md).
     GpuScene gpuScene;
+    DrawLists drawLists;                  // indirect commands per view and bucket (docs/plan_indirect_draws.md)
     uint32_t boundInstanceGeneration = 0; // instance buffer generation the descriptor sets point at
 
     // Passes
@@ -186,7 +186,6 @@ private:
         std::string path;
     };
     std::optional<TextureDumpRequest> textureDump;
-    FgDrawTimingRequest drawTimingRequest;
     std::vector<std::vector<FgDrawRecord>> slotDrawLogs; // per frame slot, joined with GPU zones after the fence
     std::vector<FgDrawRecord> lastDrawLog;
     // Last frame's lighting pick, kept for the debug snapshot.

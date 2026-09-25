@@ -1,5 +1,6 @@
 #pragma once
 
+#include "drawlists.h"
 #include "framegraph.h"
 #include "geometrypass.h" // GpuInstance, GpuScene
 #include "rhitypes.h"
@@ -28,16 +29,17 @@ public:
     auto bindInstanceBuffer(RhiDevice* device, RhiBuffer* instanceBuffer, DeletionQueue& deletionQueue, uint64_t frame) -> void;
 
     // One atlas texture of atlasExtent; each cascade draws into its tile with its own
-    // viewport, scissor and light matrix. visible[c] masks instances per cascade (empty
-    // or mismatched size draws everything).
+    // viewport, scissor and light matrix. Cascade c draws DrawLists::cascadeRegion(c, *)
+    // indirectly.
     auto addPass(
         FrameGraph& fg,
         RhiExtent2D atlasExtent,
         RhiFormat depthFormat,
         std::span<const ShadowCascade> cascades,
-        const std::array<std::vector<uint8_t>, maxShadowCascades>& visible,
         std::span<const GpuInstance> instances,
         FgBufferHandle instanceBuffer,
+        const DrawLists& lists,
+        DrawLists::Handles drawHandles,
         const GpuScene& scene) -> const ShadowPassData&;
 
 private:

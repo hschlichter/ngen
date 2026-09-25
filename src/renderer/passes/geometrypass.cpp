@@ -88,10 +88,10 @@ auto GeometryPass::addPass(
     FrameGraph& fg,
     FgTextureHandle depthHandle,
     RhiExtent2D extent,
-    uint32_t instanceCount,
     std::span<const GpuInstance> instances,
     FgBufferHandle instanceBuffer,
-    std::span<const uint8_t> visible,
+    const DrawLists& lists,
+    DrawLists::Handles drawHandles,
     const GpuScene& scene,
     RhiDescriptorSet* descriptorSet,
     bool depthPrepassed) -> const GeometryPassData& {
@@ -118,9 +118,11 @@ auto GeometryPass::addPass(
             data.normal = builder.write(builder.createTexture("gbuffer.normal", normalDesc), FgAccessFlags::ColorAttachment);
             data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
+            builder.read(drawHandles.commands, FgAccessFlags::IndirectRead);
+            builder.read(drawHandles.counts, FgAccessFlags::IndirectRead);
             builder.setSideEffects(true);
         },
-        [cullBack, cullNone, depthPrepassed, instanceCount, extent, instances, visible, &scene, descriptorSet](FrameGraphContext& ctx, const GeometryPassData& data) {
+        [cullBack, cullNone, depthPrepassed, extent, instances, &lists, drawHandles, &scene, descriptorSet](FrameGraphContext& ctx, const GeometryPassData& data) {
             auto* cmd = ctx.cmd();
 
             std::array<RhiRenderingAttachmentInfo, 2> colorAtts = {{
@@ -153,49 +155,25 @@ auto GeometryPass::addPass(
             cmd->setViewport(extent);
             cmd->setScissor(extent);
 
-            // The visibility list is aligned with the instances; a size mismatch means the
-            // snapshot predates the current world, so draw everything rather than misindex.
-            bool useVisible = visible.size() == instanceCount;
-            // Single-sided instances under back-face culling first, then double-sided ones
-            // without it: one pipeline bind per group.
+            // One indirect call per pipeline bucket: single-sided instances under back-face
+            // culling first, then double-sided ones without it (docs/plan_indirect_draws.md).
+            auto* commands = ctx.buffer(drawHandles.commands);
+            auto* counts = ctx.buffer(drawHandles.counts);
             for (bool doubleSided : {false, true}) {
-                auto* pip = doubleSided ? cullNone : cullBack;
-                bool bound = false;
-                for (uint32_t m = 0; m < instanceCount; m++) {
-                    auto& inst = instances[m];
-                    if (inst.doubleSided != doubleSided) {
-                        continue;
-                    }
-                    if (useVisible && visible[m] == 0) {
-                        continue;
-                    }
-                    const auto* range = scene.meshRange(inst.mesh.index);
-                    if (range == nullptr) {
-                        continue;
-                    }
-                    if (!bound) {
-                        cmd->bindPipeline(pip);
-                        // One set for every draw: materials are indexed through the instance record.
-                        cmd->bindDescriptorSet(pip, 0, descriptorSet);
-                        // One pool for every mesh: bound once per pipeline, draws address it by offset.
-                        cmd->bindVertexBuffer(scene.vertexBuffer());
-                        cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
-                        bound = true;
-                    }
-
-                    // Heavy draws get their own GPU zone so the pass time can be attributed.
-                    bool heavy = inst.indexCount >= largeDrawIndexCount;
-                    if (heavy) {
-                        cmd->beginGpuZone("LargeDraw");
-                    }
-                    ctx.beginDraw({.instance = m, .mesh = inst.mesh.index, .material = inst.material.index, .prim = inst.prim, .indexOffset = inst.indexOffset, .indexCount = inst.indexCount});
-                    // firstInstance carries the instance index: the shader reads instances[gl_InstanceIndex].
-                    cmd->drawIndexed(inst.indexCount, 1, range->firstIndex + inst.indexOffset, range->vertexOffset, m);
-                    ctx.endDraw();
-                    if (heavy) {
-                        cmd->endGpuZone();
-                    }
+                auto region = DrawLists::cameraRegion(doubleSided);
+                if (lists.commandsIn(region).empty()) {
+                    continue;
                 }
+                auto* pip = doubleSided ? cullNone : cullBack;
+                cmd->bindPipeline(pip);
+                // One set for every draw: materials are indexed through the instance record.
+                cmd->bindDescriptorSet(pip, 0, descriptorSet);
+                // One pool for every mesh: commands address it by firstIndex and vertexOffset.
+                cmd->bindVertexBuffer(scene.vertexBuffer());
+                cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
+                // Each command's firstInstance is its instance index: instances[gl_InstanceIndex].
+                cmd->drawIndexedIndirectCount(commands, lists.commandOffset(region), counts, DrawLists::countOffset(region), lists.regionCapacity());
+                lists.report(ctx, region, instances);
             }
 
             cmd->endRendering();

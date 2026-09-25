@@ -97,5 +97,4 @@ struct RenderDebugSnapshot {
     // Draw log of the most recent frame whose GPU zones have been read, with per-draw
     // GPU time for the draws inside the timing window.
     std::vector<FgDrawRecord> draws;
-    FgDrawTimingRequest drawTiming;
 };

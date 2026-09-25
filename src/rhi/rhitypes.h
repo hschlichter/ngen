@@ -60,6 +60,7 @@ enum class RhiBufferUsage : uint32_t {
     Index = 1 << 3,
     Uniform = 1 << 4,
     Storage = 1 << 5,
+    Indirect = 1 << 6, // draw arguments and counts for drawIndexedIndirect*
 };
 template <>
 struct RhiFlagEnum<RhiBufferUsage> : std::true_type {};
@@ -225,7 +226,19 @@ enum class RhiBufferState {
     StorageWrite,
     TransferSrc,
     TransferDst,
+    IndirectRead, // read as draw arguments or a draw count
 };
+
+// Arguments of one indirect indexed draw, as the GPU reads them from an Indirect buffer.
+// Layout matches VkDrawIndexedIndirectCommand and D3D12_DRAW_INDEXED_ARGUMENTS.
+struct RhiDrawIndexedIndirectCommand {
+    uint32_t indexCount = 0;
+    uint32_t instanceCount = 0;
+    uint32_t firstIndex = 0;
+    int32_t vertexOffset = 0;
+    uint32_t firstInstance = 0;
+};
+static_assert(sizeof(RhiDrawIndexedIndirectCommand) == 20);
 
 struct RhiExtent2D {
     uint32_t width, height;
@@ -280,9 +293,10 @@ struct RhiCommandStats {
     uint32_t barriers = 0;
     uint32_t pipelineBinds = 0;
     uint32_t descriptorBinds = 0;
-    uint32_t bufferBinds = 0; // vertex and index buffer binds
-    uint32_t copies = 0;      // buffer/texture copies and blits
-    uint64_t primitives = 0;  // triangles for lists, line segments for line lists, estimated from index/vertex counts
+    uint32_t bufferBinds = 0;   // vertex and index buffer binds
+    uint32_t indirectDraws = 0; // drawIndexedIndirect* calls; their draws and primitives are GPU-side and not counted here
+    uint32_t copies = 0;        // buffer/texture copies and blits
+    uint64_t primitives = 0;    // triangles for lists, line segments for line lists, estimated from index/vertex counts
 };
 
 struct RhiDeviceLimits {

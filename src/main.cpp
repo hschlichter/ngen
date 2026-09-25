@@ -905,9 +905,6 @@ auto main(int argc, char* argv[]) -> int {
         profile::beginZone(uiZoneId);
         imguiBackend.beginFrame();
         editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib, cam, std::move(fgDebugSnap), std::move(renderDebugSnap));
-        if (auto timing = editorUI.takeDrawTimingRequest(); timing.has_value()) {
-            renderThread.setDrawTiming(std::move(*timing));
-        }
         if (auto inspect = editorUI.takeTextureInspectRequest(); inspect.has_value()) {
             renderThread.setTextureInspect(*inspect);
         }

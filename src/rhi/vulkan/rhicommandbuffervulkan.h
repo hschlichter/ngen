@@ -60,6 +60,8 @@ public:
     auto pushConstants(RhiPipeline* pipeline, RhiShaderStageFlags stage, uint32_t offset, uint32_t size, const void* data) -> void override;
     auto draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) -> void override;
     auto drawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) -> void override;
+    auto drawIndexedIndirect(RhiBuffer* commands, uint64_t offset, uint32_t drawCount) -> void override;
+    auto drawIndexedIndirectCount(RhiBuffer* commands, uint64_t offset, RhiBuffer* count, uint64_t countOffset, uint32_t maxDrawCount) -> void override;
     auto dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) -> void override;
 
 private:

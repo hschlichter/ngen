@@ -1,5 +1,6 @@
 #pragma once
 
+#include "drawlists.h"
 #include "framegraph.h"
 #include "geometrypass.h" // GpuInstance, GpuScene
 #include "rhitypes.h"
@@ -32,7 +33,8 @@ public:
         RhiExtent2D extent,
         std::span<const GpuInstance> instances,
         FgBufferHandle instanceBuffer,
-        std::span<const uint8_t> visible,
+        const DrawLists& lists,
+        DrawLists::Handles drawHandles,
         const GpuScene& scene,
         RhiDescriptorSet* descriptorSet) -> const DepthPrepassData&;
 

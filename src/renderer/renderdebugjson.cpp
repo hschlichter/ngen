@@ -49,7 +49,7 @@ auto writeRenderDebugJson(const char* path, const RenderDebugSnapshot& s, const 
     std::fprintf(f, "  ],\n  \"passes\": [\n");
     for (size_t i = 0; i < s.passes.size(); i++) {
         const auto& p = s.passes[i];
-        std::fprintf(f, "    {\"name\": \"%s\", \"culled\": %s, \"gpuMs\": %.4f, \"draws\": %u, \"dispatches\": %u, \"barriers\": %u, \"pipelineBinds\": %u, \"descriptorBinds\": %u, \"bufferBinds\": %u, \"copies\": %u, \"primitives\": %llu}%s\n", escape(p.name).c_str(), p.culled ? "true" : "false", p.gpuTimeMs, p.stats.draws, p.stats.dispatches, p.stats.barriers, p.stats.pipelineBinds, p.stats.descriptorBinds, p.stats.bufferBinds, p.stats.copies, (unsigned long long) p.stats.primitives, i + 1 < s.passes.size() ? "," : "");
+        std::fprintf(f, "    {\"name\": \"%s\", \"culled\": %s, \"gpuMs\": %.4f, \"draws\": %u, \"dispatches\": %u, \"barriers\": %u, \"pipelineBinds\": %u, \"descriptorBinds\": %u, \"bufferBinds\": %u, \"indirectDraws\": %u, \"copies\": %u, \"primitives\": %llu}%s\n", escape(p.name).c_str(), p.culled ? "true" : "false", p.gpuTimeMs, p.stats.draws, p.stats.dispatches, p.stats.barriers, p.stats.pipelineBinds, p.stats.descriptorBinds, p.stats.bufferBinds, p.stats.indirectDraws, p.stats.copies, (unsigned long long) p.stats.primitives, i + 1 < s.passes.size() ? "," : "");
     }
     std::fprintf(f, "  ],\n  \"frameTotals\": {\"draws\": %u, \"dispatches\": %u, \"barriers\": %u, \"primitives\": %llu},\n", s.frameTotals.draws, s.frameTotals.dispatches, s.frameTotals.barriers, (unsigned long long) s.frameTotals.primitives);
     std::fprintf(f, "  \"pool\": {\"allocationsTotal\": %u, \"textures\": [\n", s.poolAllocationsTotal);
@@ -60,7 +60,7 @@ auto writeRenderDebugJson(const char* path, const RenderDebugSnapshot& s, const 
     std::fprintf(f, "  ]},\n  \"draws\": [\n");
     for (size_t i = 0; i < s.draws.size(); i++) {
         const auto& d = s.draws[i];
-        std::fprintf(f, "    {\"pass\": \"%s\", \"index\": %u, \"prim\": \"%s\", \"instance\": %u, \"mesh\": %u, \"material\": %u, \"indexOffset\": %u, \"indexCount\": %u, \"gpuMs\": %.4f}%s\n", escape(d.pass).c_str(), d.drawIndex, escape(primPath(d.prim)).c_str(), d.instance, d.mesh, d.material, d.indexOffset, d.indexCount, d.gpuMs, i + 1 < s.draws.size() ? "," : "");
+        std::fprintf(f, "    {\"pass\": \"%s\", \"index\": %u, \"prim\": \"%s\", \"instance\": %u, \"mesh\": %u, \"material\": %u, \"indexOffset\": %u, \"indexCount\": %u}%s\n", escape(d.pass).c_str(), d.drawIndex, escape(primPath(d.prim)).c_str(), d.instance, d.mesh, d.material, d.indexOffset, d.indexCount, i + 1 < s.draws.size() ? "," : "");
     }
     std::fprintf(f, "  ]\n}\n");
     std::fclose(f);

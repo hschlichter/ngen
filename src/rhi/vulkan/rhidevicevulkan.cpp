@@ -25,6 +25,9 @@ auto RhiDeviceVulkan::toVkBufferUsage(RhiBufferUsageFlags usage) -> VkBufferUsag
     if (usage.has(Index)) {
         flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
     }
+    if (usage.has(Indirect)) {
+        flags |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+    }
     if (usage.has(Uniform)) {
         flags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
     }
@@ -459,9 +462,35 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
         return std::unexpected(RhiError::Failed);
     }
     enabledFeatures.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
+    // Indirect draws (docs/plan_indirect_draws.md): many commands per call, each carrying its
+    // instance index in firstInstance. Required; there is no CPU-driven fallback.
+    if (supportedFeatures.multiDrawIndirect != VK_TRUE || supportedFeatures.drawIndirectFirstInstance != VK_TRUE) {
+        std::println(stderr, "Vulkan device lacks multiDrawIndirect or drawIndirectFirstInstance");
+        return std::unexpected(RhiError::Failed);
+    }
+    enabledFeatures.multiDrawIndirect = VK_TRUE;
+    enabledFeatures.drawIndirectFirstInstance = VK_TRUE;
+
+    // Vulkan 1.2 is the baseline: drawIndirectCount comes from its feature struct.
+    VkPhysicalDeviceVulkan12Features supported12 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    VkPhysicalDeviceFeatures2 supported2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &supported12};
+    vkGetPhysicalDeviceFeatures2(physicalDevice, &supported2);
+    if (supported12.drawIndirectCount != VK_TRUE) {
+        std::println(stderr, "Vulkan device lacks drawIndirectCount");
+        return std::unexpected(RhiError::Failed);
+    }
+    VkPhysicalDeviceVulkan12Features vulkan12Features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+        .pNext = &dynamicRenderingFeatures,
+        .drawIndirectCount = VK_TRUE,
+    };
 
     VkPhysicalDeviceProperties properties = {};
     vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+    if (properties.apiVersion < VK_API_VERSION_1_2) {
+        std::println(stderr, "Vulkan device reports API {}.{}; 1.2 is required", VK_API_VERSION_MAJOR(properties.apiVersion), VK_API_VERSION_MINOR(properties.apiVersion));
+        return std::unexpected(RhiError::Failed);
+    }
     VkPhysicalDeviceDriverProperties driverProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
     VkPhysicalDeviceProperties2 properties2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &driverProperties};
     vkGetPhysicalDeviceProperties2(physicalDevice, &properties2);
@@ -480,7 +509,7 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
 
     VkDeviceCreateInfo deviceCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext = &dynamicRenderingFeatures,
+        .pNext = &vulkan12Features,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queueCreateInfo,
         .enabledExtensionCount = deviceExtensionCount,

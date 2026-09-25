@@ -25,10 +25,8 @@ struct RenderDebugViewFlags {
 class USDScene;
 struct PrimHandle;
 
-// Persistent UI state for the draw list: which pass is expanded, the timing window.
+// Persistent UI state for the draw list and the texture inspector.
 struct RenderDebugDrawState {
-    FgDrawTimingRequest timing; // edited here, sent to the render thread by the caller
-    bool timingChanged = false;
     TextureInspectRequest inspect; // texture inspector selection, same route
     bool inspectChanged = false;
     bool dumpRequested = false; // "Dump level" pressed: caller writes texture_<material>_L<level>.png

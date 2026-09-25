@@ -81,9 +81,10 @@ auto ShadowPass::addPass(
     RhiExtent2D atlasExtent,
     RhiFormat depthFormat,
     std::span<const ShadowCascade> cascades,
-    const std::array<std::vector<uint8_t>, maxShadowCascades>& visible,
     std::span<const GpuInstance> instances,
     FgBufferHandle instanceBuffer,
+    const DrawLists& lists,
+    DrawLists::Handles drawHandles,
     const GpuScene& scene) -> const ShadowPassData& {
     FgTextureDesc desc = {
         .width = atlasExtent.width,
@@ -101,15 +102,16 @@ auto ShadowPass::addPass(
     for (uint32_t c = 0; c < cascadeCount; c++) {
         cascadeCopy[c] = cascades[c];
     }
-    const auto* visibleMasks = &visible;
 
     return fg.addPass<ShadowPassData>(
         "ShadowPass",
         [&](FrameGraphBuilder& builder, ShadowPassData& data) {
             data.shadowMap = builder.write(builder.createTexture("shadowMap", desc), FgAccessFlags::DepthAttachment);
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
+            builder.read(drawHandles.commands, FgAccessFlags::IndirectRead);
+            builder.read(drawHandles.counts, FgAccessFlags::IndirectRead);
         },
-        [cullBack, cullNone, instanceSet, atlasExtent, cascadeCopy, cascadeCount, visibleMasks, instances, &scene](FrameGraphContext& ctx, const ShadowPassData& data) {
+        [cullBack, cullNone, instanceSet, atlasExtent, cascadeCopy, cascadeCount, instances, &lists, drawHandles, &scene](FrameGraphContext& ctx, const ShadowPassData& data) {
             auto* cmd = ctx.cmd();
 
             RhiRenderingAttachmentInfo depthAtt = {
@@ -132,53 +134,24 @@ auto ShadowPass::addPass(
                 RhiExtent2D tile = {(uint32_t) (cascade.atlasRect.z * (float) atlasExtent.width), (uint32_t) (cascade.atlasRect.w * (float) atlasExtent.height)};
                 cmd->setViewport(tileX, tileY, tile);
                 cmd->setScissor(tileX, tileY, tile);
-                const auto& mask = (*visibleMasks)[c];
-                bool useMask = mask.size() == instances.size();
 
-                // Single-sided meshes under back-face culling first, then double-sided ones
-                // without it: one pipeline bind per group per cascade.
+                // One indirect call per bucket per cascade: single-sided meshes under back-face
+                // culling first, then double-sided ones without it. Commands draw whole meshes
+                // on each prim's first submesh instance (docs/plan_indirect_draws.md).
                 for (bool doubleSided : {false, true}) {
-                    auto* pip = doubleSided ? cullNone : cullBack;
-                    bool bound = false;
-                    for (uint32_t m = 0; m < (uint32_t) instances.size(); m++) {
-                        const auto& inst = instances[m];
-                        // Instances are expanded per material submesh, but shadows are
-                        // material-agnostic: draw the whole mesh once, on the prim's first
-                        // submesh instance, and skip the rest.
-                        if (!inst.primFirst || inst.doubleSided != doubleSided) {
-                            continue;
-                        }
-                        if (useMask && mask[m] == 0) {
-                            continue;
-                        }
-                        const auto* range = scene.meshRange(inst.mesh.index);
-                        if (range == nullptr) {
-                            continue;
-                        }
-                        if (!bound) {
-                            cmd->bindPipeline(pip);
-                            cmd->bindDescriptorSet(pip, 0, instanceSet);
-                            cmd->bindVertexBuffer(scene.positionBuffer());
-                            cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
-                            bound = true;
-                        }
-
-                        ShadowPush push{cascade.viewProj};
-                        cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(push), &push);
-                        // Heavy-draw zones for the first cascade only: the per-command-buffer zone
-                        // budget is 128, and four cascades of them would push the later passes out.
-                        bool heavy = c == 0 && range->indexCount >= largeDrawIndexCount;
-                        if (heavy) {
-                            cmd->beginGpuZone("LargeDraw");
-                        }
-                        ctx.beginDraw({.instance = m, .mesh = inst.mesh.index, .material = inst.material.index, .prim = inst.prim, .indexOffset = 0, .indexCount = range->indexCount});
-                        // firstInstance carries the instance index: the shader reads instances[gl_InstanceIndex].
-                        cmd->drawIndexed(range->indexCount, 1, range->firstIndex, range->vertexOffset, m);
-                        ctx.endDraw();
-                        if (heavy) {
-                            cmd->endGpuZone();
-                        }
+                    auto region = DrawLists::cascadeRegion(c, doubleSided);
+                    if (lists.commandsIn(region).empty()) {
+                        continue;
                     }
+                    auto* pip = doubleSided ? cullNone : cullBack;
+                    cmd->bindPipeline(pip);
+                    cmd->bindDescriptorSet(pip, 0, instanceSet);
+                    cmd->bindVertexBuffer(scene.positionBuffer());
+                    cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
+                    ShadowPush push{cascade.viewProj};
+                    cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(push), &push);
+                    cmd->drawIndexedIndirectCount(ctx.buffer(drawHandles.commands), lists.commandOffset(region), ctx.buffer(drawHandles.counts), DrawLists::countOffset(region), lists.regionCapacity());
+                    lists.report(ctx, region, instances);
                 }
             }
 

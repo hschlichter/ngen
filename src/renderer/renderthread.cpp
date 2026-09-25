@@ -85,8 +85,7 @@ auto RenderThread::threadLoop() -> void {
         bool wantRenderDebug = renderDebugWanted.load(std::memory_order_relaxed);
         renderer->setRenderDebugEnabled(wantRenderDebug);
         {
-            std::lock_guard lock(drawTimingMutex);
-            renderer->setDrawTiming(drawTimingRequest);
+            std::lock_guard lock(textureInspectMutex);
             renderer->setTextureInspect(textureInspectRequest);
         }
 

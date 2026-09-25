@@ -58,6 +58,12 @@ public:
     virtual auto pushConstants(RhiPipeline* pipeline, RhiShaderStageFlags stage, uint32_t offset, uint32_t size, const void* data) -> void = 0;
     virtual auto draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) -> void = 0;
     virtual auto drawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) -> void = 0;
+    // drawCount RhiDrawIndexedIndirectCommands, tightly packed from `offset` in `commands`
+    // (RhiBufferState::IndirectRead). Each command may carry its own firstInstance.
+    virtual auto drawIndexedIndirect(RhiBuffer* commands, uint64_t offset, uint32_t drawCount) -> void = 0;
+    // As drawIndexedIndirect, with the draw count read on the GPU: a uint32 at countOffset in
+    // `count`, clamped to maxDrawCount.
+    virtual auto drawIndexedIndirectCount(RhiBuffer* commands, uint64_t offset, RhiBuffer* count, uint64_t countOffset, uint32_t maxDrawCount) -> void = 0;
     // Compute; a compute pipeline must be bound. Not allowed inside beginRendering/endRendering.
     virtual auto dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) -> void = 0;
 };

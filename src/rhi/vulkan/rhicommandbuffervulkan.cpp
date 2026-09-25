@@ -184,6 +184,8 @@ auto RhiCommandBufferVulkan::bufferStateToAccessMask(RhiBufferState state) -> Vk
             return VK_ACCESS_2_TRANSFER_READ_BIT;
         case RhiBufferState::TransferDst:
             return VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        case RhiBufferState::IndirectRead:
+            return VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
     }
     return VK_ACCESS_2_NONE;
 }
@@ -202,6 +204,8 @@ auto RhiCommandBufferVulkan::bufferStateToStageMask(RhiBufferState state) -> VkP
         case RhiBufferState::TransferSrc:
         case RhiBufferState::TransferDst:
             return VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        case RhiBufferState::IndirectRead:
+            return VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
     }
     return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 }
@@ -345,6 +349,19 @@ auto RhiCommandBufferVulkan::drawIndexed(uint32_t indexCount, uint32_t instanceC
     commandStats.draws++;
     commandStats.primitives += (uint64_t) (boundTopology == RhiPrimitiveTopology::LineList ? indexCount / 2 : indexCount / 3) * instanceCount;
     vkCmdDrawIndexed(cmd, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+}
+
+auto RhiCommandBufferVulkan::drawIndexedIndirect(RhiBuffer* commands, uint64_t offset, uint32_t drawCount) -> void {
+    commandStats.indirectDraws++;
+    auto* b = static_cast<RhiBufferVulkan*>(commands);
+    vkCmdDrawIndexedIndirect(cmd, b->buffer, offset, drawCount, sizeof(RhiDrawIndexedIndirectCommand));
+}
+
+auto RhiCommandBufferVulkan::drawIndexedIndirectCount(RhiBuffer* commands, uint64_t offset, RhiBuffer* count, uint64_t countOffset, uint32_t maxDrawCount) -> void {
+    commandStats.indirectDraws++;
+    auto* b = static_cast<RhiBufferVulkan*>(commands);
+    auto* c = static_cast<RhiBufferVulkan*>(count);
+    vkCmdDrawIndexedIndirectCount(cmd, b->buffer, offset, c->buffer, countOffset, maxDrawCount, sizeof(RhiDrawIndexedIndirectCommand));
 }
 
 auto RhiCommandBufferVulkan::copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void {

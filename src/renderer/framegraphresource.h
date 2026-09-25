@@ -15,6 +15,7 @@ enum class FgAccessFlags : uint32_t {
     Present = 1 << 5,
     StorageRead = 1 << 6,  // compute or fragment reads through a storage image (General state)
     StorageWrite = 1 << 7, // compute writes through a storage image (General state)
+    IndirectRead = 1 << 8, // buffer read as indirect draw arguments or counts
 };
 
 inline auto operator|(FgAccessFlags a, FgAccessFlags b) -> FgAccessFlags {

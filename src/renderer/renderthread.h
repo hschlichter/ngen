@@ -35,12 +35,8 @@ public:
     auto latestFrameGraphDebug() -> std::optional<FrameGraphDebugSnapshot>;
     auto setRenderDebugEnabled(bool enabled) -> void { renderDebugWanted.store(enabled, std::memory_order_relaxed); }
     auto latestRenderDebug() -> std::optional<RenderDebugSnapshot>;
-    auto setDrawTiming(FgDrawTimingRequest request) -> void {
-        std::lock_guard lock(drawTimingMutex);
-        drawTimingRequest = std::move(request);
-    }
     auto setTextureInspect(TextureInspectRequest request) -> void {
-        std::lock_guard lock(drawTimingMutex);
+        std::lock_guard lock(textureInspectMutex);
         textureInspectRequest = request;
     }
 
@@ -69,8 +65,7 @@ private:
     std::atomic<bool> renderDebugWanted{false};
     std::mutex renderDebugMutex;
     std::optional<RenderDebugSnapshot> renderDebugSlot;
-    std::mutex drawTimingMutex;
-    FgDrawTimingRequest drawTimingRequest;
+    std::mutex textureInspectMutex;
     TextureInspectRequest textureInspectRequest;
     uint64_t fgDebugFrameCounter = 0;
 };

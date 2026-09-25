@@ -219,13 +219,6 @@ public:
         renderDebugDraws.dumpRequested = false;
         return renderDebugDraws.inspect;
     }
-    auto takeDrawTimingRequest() -> std::optional<FgDrawTimingRequest> {
-        if (!renderDebugDraws.timingChanged) {
-            return std::nullopt;
-        }
-        renderDebugDraws.timingChanged = false;
-        return renderDebugDraws.timing;
-    }
 
 private:
     std::optional<uint32_t> fgSelectedPass;

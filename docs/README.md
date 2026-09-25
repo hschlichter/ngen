@@ -37,6 +37,7 @@ Current truth for the build framework is [`../build/build_system.md`](../build/b
 - [plan_frame_graph_buffers.md](plan_frame_graph_buffers.md) — stage 1: buffer resources in the frame graph, persistent GPU instance buffer with delta upload (landed)
 - [plan_geometry_pool.md](plan_geometry_pool.md) — stage 2: one vertex, position and index pool for all meshes; `GpuScene` owns scene GPU tables (landed)
 - [plan_bindless_materials.md](plan_bindless_materials.md) — stage 3: texture array, GPU material table, one geometry descriptor set per frame slot (landed)
+- [plan_indirect_draws.md](plan_indirect_draws.md) — stage 4: indirect draws from CPU-built command lists, one call per bucket per view (landed)
 - [basic_lighting_pass_plan.md](basic_lighting_pass_plan.md) — (superseded by v2)
 - [basic_lighting_pass_plan_v2.md](basic_lighting_pass_plan_v2.md) — deferred G-buffer + lighting pass (landed)
 - [plan_threaded_rendering.md](plan_threaded_rendering.md) — dedicated render thread with snapshots (landed)

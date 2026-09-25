@@ -14,14 +14,14 @@ public:
     auto buffer(FgBufferHandle handle) -> RhiBuffer*;
     auto cmd() -> RhiCommandBuffer* { return commandBuffer; }
 
-    // Bracket one draw for the render debugger. No-ops unless the draw log is enabled;
-    // draws inside the timing window also get a GPU zone. Pass and draw index are
-    // filled in by the context.
-    auto beginDraw(const FgDrawRecord& record) -> void;
-    auto endDraw() -> void;
+    // Logs one draw for the render debugger; no-op unless the draw log is enabled. Pass and
+    // draw index are filled in by the context.
+    auto logDraw(const FgDrawRecord& record) -> void;
+    // Draws and primitives an indirect call issued, which the RHI cannot see; folded into
+    // the executing pass's stats (docs/plan_indirect_draws.md).
+    auto addIndirectStats(uint32_t draws, uint64_t primitives) -> void;
 
 private:
     FrameGraph* graph;
     RhiCommandBuffer* commandBuffer;
-    bool drawZoneOpen = false;
 };

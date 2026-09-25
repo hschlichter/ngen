@@ -197,36 +197,6 @@ auto drawDrawList(const RenderDebugSnapshot& s, const USDScene& scene, PrimHandl
     ImGui::Separator();
     ImGui::Text("Draws (%zu logged)", s.draws.size());
 
-    // Timing window controls. The render thread wraps the chosen draws in GPU zones.
-    auto& timing = drawState.timing;
-    if (ImGui::Checkbox("Time draws", &timing.enabled)) {
-        drawState.timingChanged = true;
-    }
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(160.0f);
-    if (ImGui::BeginCombo("##timing_pass", timing.pass.empty() ? "(pass)" : timing.pass.c_str())) {
-        for (const auto& p : s.passes) {
-            if (p.stats.draws == 0) {
-                continue;
-            }
-            if (ImGui::Selectable(p.name.c_str(), p.name == timing.pass)) {
-                timing.pass = p.name;
-                timing.first = 0;
-                drawState.timingChanged = true;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(120.0f);
-    int first = (int) timing.first;
-    if (ImGui::InputInt("first", &first, (int) timing.count, (int) timing.count)) {
-        timing.first = (uint32_t) std::max(0, first);
-        drawState.timingChanged = true;
-    }
-    ImGui::SameLine();
-    ImGui::Text("%u per page", timing.count);
-
     // One collapsible table per pass with draws.
     const char* currentPass = nullptr;
     bool open = false;
@@ -246,7 +216,7 @@ auto drawDrawList(const RenderDebugSnapshot& s, const USDScene& scene, PrimHandl
             std::snprintf(label, sizeof(label), "%s: %u draws###%s", d.pass, passDraws, d.pass);
             open = ImGui::TreeNodeEx(label, ImGuiTreeNodeFlags_SpanAvailWidth);
             if (open) {
-                open = ImGui::BeginTable("##draws", 7, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp, ImVec2(0, 240.0f));
+                open = ImGui::BeginTable("##draws", 6, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp, ImVec2(0, 240.0f));
                 if (open) {
                     ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 40.0f);
                     ImGui::TableSetupColumn("Prim");
@@ -254,7 +224,6 @@ auto drawDrawList(const RenderDebugSnapshot& s, const USDScene& scene, PrimHandl
                     ImGui::TableSetupColumn("Material", ImGuiTableColumnFlags_WidthFixed, 60.0f);
                     ImGui::TableSetupColumn("Triangles", ImGuiTableColumnFlags_WidthFixed, 80.0f);
                     ImGui::TableSetupColumn("Index range", ImGuiTableColumnFlags_WidthFixed, 130.0f);
-                    ImGui::TableSetupColumn("GPU ms", ImGuiTableColumnFlags_WidthFixed, 64.0f);
                     ImGui::TableSetupScrollFreeze(0, 1);
                     ImGui::TableHeadersRow();
                 } else {
@@ -283,14 +252,6 @@ auto drawDrawList(const RenderDebugSnapshot& s, const USDScene& scene, PrimHandl
         ImGui::Text("%u", d.indexCount / 3);
         ImGui::TableSetColumnIndex(5);
         ImGui::Text("%u .. %u", d.indexOffset, d.indexOffset + d.indexCount);
-        ImGui::TableSetColumnIndex(6);
-        if (d.gpuMs >= 0.0) {
-            ImGui::Text("%.3f", d.gpuMs);
-        } else if (d.timed) {
-            ImGui::TextDisabled("...");
-        } else {
-            ImGui::TextDisabled("-");
-        }
         ImGui::PopID();
     }
     if (open) {

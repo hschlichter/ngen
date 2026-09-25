@@ -122,6 +122,7 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
 
     // Scene GPU tables; the instance buffer exists from here on, grown by uploadRenderWorld.
     gpuScene.init(device, imgCount, &deletionQueue);
+    drawLists.init(device, imgCount, &deletionQueue);
     shadowPass.bindInstanceBuffer(device, gpuScene.instanceBuffer(), deletionQueue, m_frameIndex);
     boundInstanceGeneration = gpuScene.instanceGeneration();
 
@@ -267,7 +268,6 @@ auto Renderer::buildRenderDebugSnapshot() const -> RenderDebugSnapshot {
     });
     snap.poolAllocationsTotal = resourcePool.stats().allocationsTotal;
     snap.draws = lastDrawLog;
-    snap.drawTiming = drawTimingRequest;
     return snap;
 }
 
@@ -309,24 +309,7 @@ auto Renderer::readGpuTimings(uint32_t slot) -> void {
     lastGpuFrameMs = (double) (maxEnd - minStart) * 1e-6;
     lastGpuFrame = slotFrame[slot];
 
-    // Per-draw zones are named "Draw" and were recorded in the same order as the timed
-    // entries of the slot's draw log.
-    auto& drawLog = slotDrawLogs[slot];
-    size_t nextTimed = 0;
-    for (const auto& zone : gpuZoneScratch) {
-        if (std::strcmp(zone.name, "Draw") != 0) {
-            continue;
-        }
-        while (nextTimed < drawLog.size() && !drawLog[nextTimed].timed) {
-            nextTimed++;
-        }
-        if (nextTimed >= drawLog.size()) {
-            break;
-        }
-        drawLog[nextTimed].gpuMs = (double) (zone.endNs - zone.startNs) * 1e-6;
-        nextTimed++;
-    }
-    lastDrawLog = drawLog;
+    lastDrawLog = slotDrawLogs[slot];
 
     // Hand the same zones to the profiler's GPU lane, on the CPU clock. Calibrated when the
     // device supports it (true position of GPU work relative to the threads); otherwise
@@ -827,7 +810,10 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     auto invViewProj = glm::inverse(snapshot.projMatrix * snapshot.viewMatrix);
 
     profile::endZone(); // ShadowSetup
-    const auto& shadowData = shadowPass.addPass(frameGraph, atlasExtent, depthFormat, cascades, snapshot.shadowVisible, gpuInstances, instanceHandle, gpuScene);
+    // Indirect commands for every view from this frame's visibility; the passes below read them.
+    drawLists.build(gpuInstances, snapshot.visible, snapshot.shadowVisible, (uint32_t) cascades.size(), gpuScene, currentFrame, frame);
+    auto drawHandles = drawLists.import(frameGraph, currentFrame);
+    const auto& shadowData = shadowPass.addPass(frameGraph, atlasExtent, depthFormat, cascades, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene);
 
     debugCulledInstances = snapshot.culledInstances;
     if (snapshot.sampler != materialSamplerSettings) {
@@ -835,9 +821,9 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     }
     auto* geometrySet = imageIdx < geometryDescriptorSets.size() ? geometryDescriptorSets[imageIdx] : nullptr;
     if (snapshot.depthPrepass) {
-        depthPrepass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, snapshot.visible, gpuScene, geometrySet);
+        depthPrepass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet);
     }
-    const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, instanceCount, gpuInstances, instanceHandle, snapshot.visible, gpuScene, geometrySet, snapshot.depthPrepass);
+    const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, snapshot.depthPrepass);
 
     const auto& lightData = lightingPass.addPass(
         frameGraph,
@@ -883,7 +869,6 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     profile::zoneValue(instanceCount);
     profile::endZone(); // BuildFrameGraph
     frameGraph.setDrawLogEnabled(renderDebugEnabled);
-    frameGraph.setDrawTiming(renderDebugEnabled ? drawTimingRequest : FgDrawTimingRequest{});
     {
         PROFILE_ZONE("Compile");
         frameGraph.compile();
@@ -971,7 +956,9 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
             .field("instance_buffer_bytes", (int64_t) gpuScene.instanceBufferBytes())
             .field("instance_upload_bytes", (int64_t) gpuScene.lastInstanceUploadBytes())
             .field("geometry_pool_bytes", (int64_t) gpuScene.geometryPoolBytes())
-            .field("material_count", (int64_t) gpuScene.materialCount());
+            .field("material_count", (int64_t) gpuScene.materialCount())
+            .field("indirect_draws", (int64_t) stats.indirectDraws)
+            .field("draw_commands", (int64_t) drawLists.commandCount());
     }
 
     RhiSubmitInfo submitInfo = {
@@ -1082,6 +1069,7 @@ auto Renderer::destroy() -> void {
     textureCache.clear();
 
     gpuScene.destroy();
+    drawLists.destroy();
 
     shadowPass.destroy(device);
     depthPrepass.destroy(device);

@@ -123,6 +123,8 @@ inline auto toString(RhiBufferUsageFlags u) -> const char* {
             return "Uniform";
         case 1u << 5:
             return "Storage";
+        case 1u << 6:
+            return "Indirect";
         default:
             return "Combined";
     }
@@ -148,6 +150,8 @@ inline auto toString(FgAccessFlags a) -> const char* {
             return "StorageRead";
         case 1u << 7:
             return "StorageWrite";
+        case 1u << 8:
+            return "IndirectRead";
         default:
             return "Combined";
     }

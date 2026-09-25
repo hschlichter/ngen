@@ -1,6 +1,6 @@
 # GPU-driven rendering (umbrella)
 
-**Status. In progress.** Stages 1 to 3 landed.
+**Status. In progress.** Stages 1 to 4 landed.
 
 Umbrella plan: it orders the stages and holds the decisions that cut across them. Each stage gets its own `docs/plan_*.md` with its own steps and
 verification. This doc links to them and records their status.
@@ -68,7 +68,7 @@ Each stage ships on its own: rendered output byte-identical to the stage before,
 | 1 | [plan_frame_graph_buffers.md](plan_frame_graph_buffers.md) | Buffers in the graph; imported buffers keep state across frames; one persistent instance buffer with delta upload; shaders read `instances[gl_InstanceIndex]` | none | none |
 | 2 | [plan_geometry_pool.md](plan_geometry_pool.md) | One vertex, one position and one index buffer for all meshes; mesh table with `firstIndex`, `vertexOffset`, `indexCount`, bounds | none | none |
 | 3 | [plan_bindless_materials.md](plan_bindless_materials.md) | Material buffer (factors, texture indices), one global texture array; per-instance descriptor sets gone | descriptor indexing | 1 |
-| 4 | `plan_indirect_draws.md` (to write) | CPU-culled draw lists written as indirect commands; one `drawIndexedIndirectCount` per pipeline bucket per view | indirect draw, `IndirectRead` state, features | 1, 2, 3 |
+| 4 | [plan_indirect_draws.md](plan_indirect_draws.md) | CPU-culled draw lists written as indirect commands; one `drawIndexedIndirectCount` per pipeline bucket per view | indirect draw, `IndirectRead` state, features | 1, 2, 3 |
 | 5 | `plan_gpu_culling.md` (to write) | Compute pass per view writes compacted indirect commands and counts; CPU culling deleted; transient graph buffers | none beyond 4 | 4 |
 
 - **Stage 1.** Resource model, cross-frame state, and the instance buffer.
@@ -86,7 +86,9 @@ Each stage ships on its own: rendered output byte-identical to the stage before,
   - RHI: `drawIndexedIndirect`, `drawIndexedIndirectCount`, `RhiBufferState::IndirectRead`, `RhiBufferUsage::Indirect`, and the `multiDrawIndirect`,
     `drawIndirectCount` and `drawIndirectFirstInstance` features. The last one is needed because every command carries the instance index in
     `firstInstance`; RADV reports all three.
-  - The render thread turns the CPU masks into `VkDrawIndexedIndirectCommand`s per bucket and uploads them. The pass issues one indirect call per bucket.
+  - The render thread turns the CPU masks into `RhiDrawIndexedIndirectCommand`s per view and bucket (`DrawLists`), written into host-visible
+    per-slot buffers. The pass issues one `drawIndexedIndirectCount` per bucket.
+  - Per-draw timing ("Time draws", `LargeDraw` zones) was removed. The draw log and per-pass draw counts come from the CPU command list until stage 5.
   - The RHI example `ngen-example-indirect` comes first.
 - **Stage 5.**
   - `InstanceCull` compute pass per view: the camera, plus each cascade.

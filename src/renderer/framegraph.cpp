@@ -10,28 +10,19 @@
 #include <queue>
 #include <utility>
 
-auto FrameGraphContext::beginDraw(const FgDrawRecord& record) -> void {
+auto FrameGraphContext::logDraw(const FgDrawRecord& record) -> void {
     if (!graph->drawLogEnabled) {
         return;
     }
     auto entry = record;
     entry.pass = graph->executingPass;
     entry.drawIndex = graph->executingPassDraws++;
-    const auto& timing = graph->drawTiming;
-    bool inWindow = timing.enabled && timing.pass == entry.pass && entry.drawIndex >= timing.first && entry.drawIndex < timing.first + timing.count;
-    if (inWindow) {
-        entry.timed = true;
-        commandBuffer->beginGpuZone("Draw");
-        drawZoneOpen = true;
-    }
     graph->draws.push_back(entry);
 }
 
-auto FrameGraphContext::endDraw() -> void {
-    if (drawZoneOpen) {
-        commandBuffer->endGpuZone();
-        drawZoneOpen = false;
-    }
+auto FrameGraphContext::addIndirectStats(uint32_t draws, uint64_t primitives) -> void {
+    graph->executingIndirectDraws += draws;
+    graph->executingIndirectPrimitives += primitives;
 }
 
 auto FrameGraph::reset() -> void {
@@ -154,6 +145,9 @@ static auto accessToBufferState(FgAccessFlags access) -> RhiBufferState {
     }
     if (access & FgAccessFlags::TransferDst) {
         return RhiBufferState::TransferDst;
+    }
+    if (access & FgAccessFlags::IndirectRead) {
+        return RhiBufferState::IndirectRead;
     }
     return RhiBufferState::Undefined;
 }
@@ -416,17 +410,20 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
             profile::ScopedZone recordZone(passes[passIdx].profileNameId);
             executingPass = passName;
             executingPassDraws = 0;
+            executingIndirectDraws = 0;
+            executingIndirectPrimitives = 0;
             passes[passIdx].execute(ctx);
             const auto& after = cmd->stats();
             passes[passIdx].stats = {
-                .draws = after.draws - before.draws,
+                .draws = after.draws - before.draws + executingIndirectDraws,
                 .dispatches = after.dispatches - before.dispatches,
                 .barriers = after.barriers - before.barriers,
                 .pipelineBinds = after.pipelineBinds - before.pipelineBinds,
                 .descriptorBinds = after.descriptorBinds - before.descriptorBinds,
                 .bufferBinds = after.bufferBinds - before.bufferBinds,
+                .indirectDraws = after.indirectDraws - before.indirectDraws,
                 .copies = after.copies - before.copies,
-                .primitives = after.primitives - before.primitives,
+                .primitives = after.primitives - before.primitives + executingIndirectPrimitives,
             };
         }
         cmd->endLabel();
