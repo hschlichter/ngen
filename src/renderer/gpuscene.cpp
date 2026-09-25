@@ -14,6 +14,7 @@
 #include <array>
 #include <chrono>
 #include <cstring>
+#include <print>
 
 auto GpuScene::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* queue) -> void {
     device = rhiDevice;
@@ -31,6 +32,10 @@ auto GpuScene::destroy() -> void {
     poolPositions = nullptr;
     poolIndices = nullptr;
     meshes.clear();
+
+    device->destroyBuffer(materialTable);
+    materialTable = nullptr;
+    slots.clear();
 
     device->destroyBuffer(instances);
     instances = nullptr;
@@ -104,6 +109,57 @@ auto GpuScene::rebuildGeometry(std::span<const GpuInstance> sceneInstances, cons
         .field("position_bytes", (int64_t) positionBytes)
         .field("index_bytes", (int64_t) indexBytes)
         .field("ms", ms);
+}
+
+auto GpuScene::rebuildMaterials(std::span<const GpuInstance> sceneInstances,
+                                const std::unordered_map<uint32_t, CachedTexture>& textures,
+                                RhiTexture* fallback,
+                                GpuUploader& uploader,
+                                uint64_t frame) -> void {
+    deletionQueue->deferBuffer(frame, materialTable);
+    materialTable = nullptr;
+    slots.assign(1, fallback);
+    materialIndexOf.clear();
+    instanceMaterial.assign(sceneInstances.size(), 0);
+
+    // Entry 0 is "no material": samples the fallback, like an instance without a texture.
+    std::vector<GpuMaterial> table(1);
+    uint32_t overflow = 0;
+    for (size_t m = 0; m < sceneInstances.size(); m++) {
+        const auto& inst = sceneInstances[m];
+        if (!inst.material) {
+            continue;
+        }
+        auto [it, inserted] = materialIndexOf.try_emplace(inst.material.index, (uint32_t) table.size());
+        if (inserted) {
+            GpuMaterial material;
+            auto tex = textures.find(inst.material.index);
+            if (tex != textures.end()) {
+                if (slots.size() < maxTextures) {
+                    material.baseColorTexture = (uint32_t) slots.size();
+                    slots.push_back(tex->second.texture);
+                } else {
+                    overflow++;
+                }
+            }
+            table.push_back(material);
+        }
+        instanceMaterial[m] = it->second;
+    }
+    if (overflow > 0) {
+        std::println(stderr, "GpuScene: {} material textures past the {}-slot limit use the fallback", overflow, maxTextures);
+    }
+
+    uploader.begin();
+    materialTable = uploader.uploadBuffer(std::as_bytes(std::span(table)), RhiBufferUsage::Storage);
+    uploader.end();
+
+    // Instance records carry the material index; rewrite them all.
+    markDirty(0, (uint32_t) sceneInstances.size());
+    OBS_EVENT("Render", "MaterialTableBuilt", "materials")
+        .field("materials", (int64_t) materialIndexOf.size())
+        .field("texture_slots", (int64_t) slots.size())
+        .field("max_textures", (int64_t) maxTextures);
 }
 
 auto GpuScene::meshRange(uint32_t meshIndex) const -> const GpuMeshRange* {
@@ -181,14 +237,17 @@ auto GpuScene::addUploadPasses(FrameGraph& fg, std::span<const GpuInstance> scen
     uploadBytes = 0;
     dirtyEnd = std::min(dirtyEnd, (uint32_t) sceneInstances.size());
     if (dirtyEnd > dirtyFirst) {
-        auto* dst = static_cast<std::byte*>(stagingMapped[frameSlot]);
+        auto* dst = static_cast<GpuInstanceRecord*>(stagingMapped[frameSlot]);
         for (uint32_t m = dirtyFirst; m < dirtyEnd; m++) {
-            std::memcpy(dst + ((uint64_t) m * sizeof(glm::mat4)), &sceneInstances[m].transform, sizeof(glm::mat4));
+            dst[m] = {
+                .model = sceneInstances[m].transform,
+                .material = m < instanceMaterial.size() ? instanceMaterial[m] : 0,
+            };
         }
         RhiBufferCopy region = {
-            .srcOffset = (uint64_t) dirtyFirst * sizeof(glm::mat4),
-            .dstOffset = (uint64_t) dirtyFirst * sizeof(glm::mat4),
-            .size = (uint64_t) (dirtyEnd - dirtyFirst) * sizeof(glm::mat4),
+            .srcOffset = (uint64_t) dirtyFirst * sizeof(GpuInstanceRecord),
+            .dstOffset = (uint64_t) dirtyFirst * sizeof(GpuInstanceRecord),
+            .size = (uint64_t) (dirtyEnd - dirtyFirst) * sizeof(GpuInstanceRecord),
         };
         auto stagingHandle = fg.importBuffer("instanceStaging", staging[frameSlot], {.size = desc.size, .usage = RhiBufferUsage::TransferSrc});
         handle = addInstanceUploadPass(fg, stagingHandle, instanceImport, region);
@@ -211,7 +270,7 @@ auto GpuScene::afterExecute(const FrameGraph& fg, uint64_t frame) -> void {
     OBS_EVENT("Render", "InstanceUpload", "instances")
         .field("frame", (int64_t) frame)
         .field("first", (int64_t) uploadFirst)
-        .field("count", (int64_t) (uploadBytes / sizeof(glm::mat4)))
+        .field("count", (int64_t) (uploadBytes / sizeof(GpuInstanceRecord)))
         .field("bytes", (int64_t) uploadBytes)
         .field("carried_access", toString(carriedAccess))
         .field("upload_barriers", upload != nullptr ? (int64_t) upload->barriers : -1)

@@ -6,12 +6,19 @@ layout(push_constant) uniform Push {
 
 // Persistent instance buffer (docs/plan_frame_graph_buffers.md); drawn with
 // firstInstance = instance index, so gl_InstanceIndex selects the entry.
+struct Instance {
+    mat4 model;
+    uint material;
+    uint pad0;
+    uint pad1;
+    uint pad2;
+};
 layout(std430, set = 0, binding = 0) readonly buffer Instances {
-    mat4 model[];
+    Instance data[];
 } instances;
 
 layout(location = 0) in vec3 inPosition;
 
 void main() {
-    gl_Position = push.lightViewProj * instances.model[gl_InstanceIndex] * vec4(inPosition, 1.0);
+    gl_Position = push.lightViewProj * instances.data[gl_InstanceIndex].model * vec4(inPosition, 1.0);
 }

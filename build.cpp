@@ -338,6 +338,7 @@ auto main(int argc, char** argv) -> int {
     auto exampleCompute = rhiExample("compute");
     auto exampleTimestamps = rhiExample("timestamps");
     auto exampleGpuZones = rhiExample("gpuzones");
+    auto exampleBindless = rhiExample("bindless");
 
     // One name for the whole RHI example set, so the sweep cannot run stale binaries.
     auto examples = phony("examples")
@@ -353,7 +354,8 @@ auto main(int argc, char** argv) -> int {
                         .depend_on(exampleMipCube)
                         .depend_on(exampleCompute)
                         .depend_on(exampleTimestamps)
-                        .depend_on(exampleGpuZones);
+                        .depend_on(exampleGpuZones)
+                        .depend_on(exampleBindless);
 
     p.target(view);
     p.target(examples);
@@ -370,6 +372,7 @@ auto main(int argc, char** argv) -> int {
     p.target(exampleCompute);
     p.target(exampleTimestamps);
     p.target(exampleGpuZones);
+    p.target(exampleBindless);
     p.target(format);
     p.target(tidy);
     p.default_target(view);

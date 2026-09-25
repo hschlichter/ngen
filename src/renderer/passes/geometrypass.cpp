@@ -15,11 +15,7 @@ auto GeometryPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFo
     vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/gbuffer.vert.spv");
     fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/gbuffer.frag.spv");
 
-    std::array<RhiDescriptorBinding, 3> bindings = {{
-        {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
-        {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
-        {.binding = 2, .type = StorageBuffer, .stage = RhiShaderStage::Vertex},
-    }};
+    auto bindings = descriptorBindings();
     descSetLayout = device->createDescriptorSetLayout(bindings);
 
     std::array<RhiVertexAttribute, 4> vertexAttrs = {{
@@ -67,6 +63,16 @@ auto GeometryPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFo
     return true;
 }
 
+auto GeometryPass::descriptorBindings() -> std::array<RhiDescriptorBinding, 4> {
+    using enum RhiDescriptorType;
+    return {{
+        {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
+        {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment, .count = GpuScene::maxTextures},
+        {.binding = 2, .type = StorageBuffer, .stage = RhiShaderStage::Vertex},
+        {.binding = 3, .type = StorageBuffer, .stage = RhiShaderStage::Vertex},
+    }};
+}
+
 auto GeometryPass::destroy(RhiDevice* device) -> void {
     device->destroyDescriptorSetLayout(descSetLayout);
     for (auto& row : pipelines) {
@@ -82,13 +88,12 @@ auto GeometryPass::addPass(
     FrameGraph& fg,
     FgTextureHandle depthHandle,
     RhiExtent2D extent,
-    uint32_t imageIndex,
     uint32_t instanceCount,
     std::span<const GpuInstance> instances,
     FgBufferHandle instanceBuffer,
     std::span<const uint8_t> visible,
     const GpuScene& scene,
-    std::span<RhiDescriptorSet*> descriptorSets,
+    RhiDescriptorSet* descriptorSet,
     bool depthPrepassed) -> const GeometryPassData& {
     FgTextureDesc albedoDesc = {
         .width = extent.width,
@@ -115,7 +120,7 @@ auto GeometryPass::addPass(
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             builder.setSideEffects(true);
         },
-        [cullBack, cullNone, depthPrepassed, imageIndex, instanceCount, extent, instances, visible, &scene, descriptorSets](FrameGraphContext& ctx, const GeometryPassData& data) {
+        [cullBack, cullNone, depthPrepassed, instanceCount, extent, instances, visible, &scene, descriptorSet](FrameGraphContext& ctx, const GeometryPassData& data) {
             auto* cmd = ctx.cmd();
 
             std::array<RhiRenderingAttachmentInfo, 2> colorAtts = {{
@@ -170,13 +175,14 @@ auto GeometryPass::addPass(
                     }
                     if (!bound) {
                         cmd->bindPipeline(pip);
+                        // One set for every draw: materials are indexed through the instance record.
+                        cmd->bindDescriptorSet(pip, 0, descriptorSet);
                         // One pool for every mesh: bound once per pipeline, draws address it by offset.
                         cmd->bindVertexBuffer(scene.vertexBuffer());
                         cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
                         bound = true;
                     }
 
-                    cmd->bindDescriptorSet(pip, 0, descriptorSets[(imageIndex * instanceCount) + m]);
                     // Heavy draws get their own GPU zone so the pass time can be attributed.
                     bool heavy = inst.indexCount >= largeDrawIndexCount;
                     if (heavy) {

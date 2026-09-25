@@ -1,6 +1,6 @@
 # GPU-driven rendering (umbrella)
 
-**Status. In progress.** Stage 1 landed; stage 2 implemented, pending one editor check.
+**Status. In progress.** Stages 1 to 3 landed.
 
 Umbrella plan: it orders the stages and holds the decisions that cut across them. Each stage gets its own `docs/plan_*.md` with its own steps and
 verification. This doc links to them and records their status.
@@ -67,7 +67,7 @@ Each stage ships on its own: rendered output byte-identical to the stage before,
 |---|------|----------|------------|------------|
 | 1 | [plan_frame_graph_buffers.md](plan_frame_graph_buffers.md) | Buffers in the graph; imported buffers keep state across frames; one persistent instance buffer with delta upload; shaders read `instances[gl_InstanceIndex]` | none | none |
 | 2 | [plan_geometry_pool.md](plan_geometry_pool.md) | One vertex, one position and one index buffer for all meshes; mesh table with `firstIndex`, `vertexOffset`, `indexCount`, bounds | none | none |
-| 3 | `plan_bindless_materials.md` (to write) | Material buffer (factors, texture indices), one global texture array; per-instance descriptor sets gone | descriptor indexing | 1 |
+| 3 | [plan_bindless_materials.md](plan_bindless_materials.md) | Material buffer (factors, texture indices), one global texture array; per-instance descriptor sets gone | descriptor indexing | 1 |
 | 4 | `plan_indirect_draws.md` (to write) | CPU-culled draw lists written as indirect commands; one `drawIndexedIndirectCount` per pipeline bucket per view | indirect draw, `IndirectRead` state, features | 1, 2, 3 |
 | 5 | `plan_gpu_culling.md` (to write) | Compute pass per view writes compacted indirect commands and counts; CPU culling deleted; transient graph buffers | none beyond 4 | 4 |
 
@@ -76,15 +76,16 @@ Each stage ships on its own: rendered output byte-identical to the stage before,
   removal. Draws bind the pool once per pass. The per-draw `bindVertexBuffer`/`bindIndexBuffer` calls go away, and `drawIndexed` uses the mesh's
   `firstIndex` and `vertexOffset`.
 - **Stage 3.** The biggest RHI step.
-  - Enable Vulkan 1.2 descriptor indexing: `runtimeDescriptorArray`, `descriptorBindingPartiallyBound`, `descriptorBindingSampledImageUpdateAfterBind`,
-    `shaderSampledImageArrayNonUniformIndexing`.
-  - Add a variable-count binding to `RhiDescriptorBinding`.
+  - As landed: a fixed-size texture array with dynamically uniform indexing (`shaderSampledImageArrayDynamicIndexing`), not full descriptor
+    indexing. See decision 1 in the stage plan.
+  - `RhiDescriptorBinding::count` and `RhiDescriptorWrite::arrayElement`.
   - Add a `GpuMaterial` buffer indexed from the instance.
-  - `gbuffer.frag` samples `textures[nonuniformEXT(material.baseColorTexture)]`.
+  - `gbuffer.frag` samples `textures[fragTexture]`, with the slot looked up in the vertex shader.
   - Verified through a new RHI example (`ngen-example-bindless`) before the renderer switches.
 - **Stage 4.**
-  - RHI: `drawIndexedIndirect`, `drawIndexedIndirectCount`, `RhiBufferState::IndirectRead`, `RhiBufferUsage::Indirect`, and the `multiDrawIndirect`
-    and `drawIndirectCount` features.
+  - RHI: `drawIndexedIndirect`, `drawIndexedIndirectCount`, `RhiBufferState::IndirectRead`, `RhiBufferUsage::Indirect`, and the `multiDrawIndirect`,
+    `drawIndirectCount` and `drawIndirectFirstInstance` features. The last one is needed because every command carries the instance index in
+    `firstInstance`; RADV reports all three.
   - The render thread turns the CPU masks into `VkDrawIndexedIndirectCommand`s per bucket and uploads them. The pass issues one indirect call per bucket.
   - The RHI example `ngen-example-indirect` comes first.
 - **Stage 5.**

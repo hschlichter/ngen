@@ -36,15 +36,6 @@ class MeshLibrary;
 class MaterialLibrary;
 struct RenderSnapshot;
 
-struct CachedTexture {
-    RhiTexture* texture = nullptr;
-    uint32_t width = 0;
-    uint32_t height = 0;
-    uint32_t mipLevels = 1;
-    uint64_t bytes = 0; // all levels
-    RhiFormat format = RhiFormat::Undefined;
-};
-
 class Renderer {
 public:
     Renderer() = default;
@@ -107,7 +98,8 @@ private:
 
     static auto toSamplerDesc(const SamplerSettings& settings) -> RhiSamplerDesc;
     auto applySamplerSettings(const SamplerSettings& settings) -> void;
-    auto rebuildGeometryDescriptorSets() -> void;
+    // reason: geometry, sampler or instance_buffer (GeometryDescriptorsRebuilt observation).
+    auto rebuildGeometryDescriptorSets(const char* reason) -> void;
     std::vector<RenderLight> lights;
     RhiDescriptorPool* geometryDescriptorPool = nullptr;
     std::vector<RhiDescriptorSet*> geometryDescriptorSets;

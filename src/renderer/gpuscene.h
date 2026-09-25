@@ -29,6 +29,33 @@ struct GpuInstance {
     bool doubleSided = false; // drawn with the cull-none pipeline
 };
 
+// One entry of the GPU instance buffer, read by the vertex shaders at gl_InstanceIndex
+// (std430, stride 80). material indexes the material table.
+struct GpuInstanceRecord {
+    glm::mat4 model;
+    uint32_t material = 0;
+    uint32_t pad[3] = {};
+};
+static_assert(sizeof(GpuInstanceRecord) == 80);
+
+// One entry of the GPU material table (std430, stride 16). baseColorTexture is a slot in
+// the geometry descriptor set's texture array; slot 0 is the fallback texture.
+struct GpuMaterial {
+    uint32_t baseColorTexture = 0;
+    uint32_t pad[3] = {};
+};
+static_assert(sizeof(GpuMaterial) == 16);
+
+// A material's base colour texture as uploaded; keyed by MaterialHandle::index.
+struct CachedTexture {
+    RhiTexture* texture = nullptr;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t mipLevels = 1;
+    uint64_t bytes = 0; // all levels
+    RhiFormat format = RhiFormat::Undefined;
+};
+
 // Where one mesh lives in the geometry pool. Indices are mesh-local; vertexOffset rebases them.
 struct GpuMeshRange {
     uint32_t firstIndex = 0;
@@ -39,9 +66,9 @@ struct GpuMeshRange {
     uint64_t indexBytes = 0;
 };
 
-// The scene's GPU tables (docs/plan_gpu_driven.md): the geometry pool and the instance
-// buffer, later the material table. Two upload paths, split by the data:
-//   bulk  - large and rare, blocking through GpuUploader (rebuildGeometry)
+// The scene's GPU tables (docs/plan_gpu_driven.md): the geometry pool, the material table
+// and the instance buffer. Two upload paths, split by the data:
+//   bulk  - large and rare, blocking through GpuUploader (rebuildGeometry, rebuildMaterials)
 //   delta - small and per frame, through per-slot staging and a graph copy pass
 //           (updateInstances, then addUploadPasses)
 class GpuScene {
@@ -60,6 +87,20 @@ public:
     auto indexBuffer() const -> RhiBuffer* { return poolIndices; }
     auto geometryPoolBytes() const -> uint64_t { return poolBytes; }
 
+    // Bulk: assigns texture slots (0 = fallback, then each textured material in instance
+    // order), builds the material table and uploads it, and records each instance's
+    // material index. Marks every instance dirty so the records pick up the new indices.
+    // Materials past maxTextures - 1 textures use the fallback slot.
+    static constexpr uint32_t maxTextures = 1024;
+    auto rebuildMaterials(std::span<const GpuInstance> sceneInstances,
+                          const std::unordered_map<uint32_t, CachedTexture>& textures,
+                          RhiTexture* fallback,
+                          GpuUploader& uploader,
+                          uint64_t frame) -> void;
+    auto textureSlots() const -> std::span<RhiTexture* const> { return slots; }
+    auto materialBuffer() const -> RhiBuffer* { return materialTable; }
+    auto materialCount() const -> uint32_t { return (uint32_t) materialIndexOf.size(); }
+
     // Delta: grows the instance buffer to fit `instances` and marks [dirtyFirst, dirtyEnd)
     // for upload. A grown buffer is a new buffer: instanceGeneration() changes, and every
     // instance is marked dirty.
@@ -71,7 +112,7 @@ public:
     auto afterExecute(const FrameGraph& fg, uint64_t frame) -> void;
     auto instanceBuffer() const -> RhiBuffer* { return instances; }
     auto instanceGeneration() const -> uint32_t { return generation; }
-    auto instanceBufferBytes() const -> uint64_t { return (uint64_t) instanceCapacity * sizeof(glm::mat4); }
+    auto instanceBufferBytes() const -> uint64_t { return (uint64_t) instanceCapacity * sizeof(GpuInstanceRecord); }
     auto lastInstanceUploadBytes() const -> uint64_t { return uploadBytes; }
 
 private:
@@ -88,7 +129,13 @@ private:
     uint64_t poolBytes = 0;
     std::unordered_map<uint32_t, GpuMeshRange> meshes;
 
-    // Instance buffer (docs/plan_frame_graph_buffers.md): one mat4 per GpuInstance, read at
+    // Material table: slot per texture, GpuMaterial per used material, material per instance.
+    RhiBuffer* materialTable = nullptr;
+    std::vector<RhiTexture*> slots;
+    std::unordered_map<uint32_t, uint32_t> materialIndexOf; // MaterialHandle::index -> table entry
+    std::vector<uint32_t> instanceMaterial;                 // per instance, table entry
+
+    // Instance buffer (docs/plan_frame_graph_buffers.md): one GpuInstanceRecord per GpuInstance, read at
     // gl_InstanceIndex. The access it was left in carries into the next frame's graph so the
     // upload syncs with the previous frame's reads.
     RhiBuffer* instances = nullptr;

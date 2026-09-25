@@ -1,6 +1,6 @@
 # Global geometry pool
 
-**Status. In progress.** Implemented and verified headless; the prim-creation check is pending a look in the editor.
+**Status. Landed.**
 
 Stage 2 of [plan_gpu_driven.md](plan_gpu_driven.md).
 
@@ -125,7 +125,7 @@ Baseline: the stage 1 screenshots (byte-identical to the pre-stage-1 ones) and t
   reports the same number. The build takes 938 ms on Sponza, CPU concatenation plus the blocking upload, and it runs once on load.
 - The instance path moved into `GpuScene` unchanged. **Verified**: the `translate` script from stage 1 gives the same `InstanceUpload` events
   (`carried_access` `StorageRead` on the move), and the after-move screenshot is byte-identical to the stage 1 one.
-- Prim creation in the editor (`docs/plan_prim_creation.md`) triggers one `GeometryPoolBuilt`, and the new prim renders. **Pending**: UI only.
+- Prim creation in the editor (`docs/plan_prim_creation.md`) triggers one `GeometryPoolBuilt`, and the new prim renders. **Verified** in the editor.
 - GPU time on Sponza within noise. **Verified**: `ShadowPass` 3.65 to 3.65 ms, `GeometryPass` 1.21 to 1.27 ms.
 
 ## Deferred / follow-ups

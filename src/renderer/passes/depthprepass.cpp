@@ -45,12 +45,11 @@ auto DepthPrepass::addPass(
     FrameGraph& fg,
     FgTextureHandle depthHandle,
     RhiExtent2D extent,
-    uint32_t imageIndex,
     std::span<const GpuInstance> instances,
     FgBufferHandle instanceBuffer,
     std::span<const uint8_t> visible,
     const GpuScene& scene,
-    std::span<RhiDescriptorSet*> descriptorSets) -> const DepthPrepassData& {
+    RhiDescriptorSet* descriptorSet) -> const DepthPrepassData& {
     auto* cullBack = pipelineCullBack;
     auto* cullNone = pipelineCullNone;
 
@@ -61,7 +60,7 @@ auto DepthPrepass::addPass(
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             builder.setSideEffects(true);
         },
-        [cullBack, cullNone, extent, imageIndex, instances, visible, &scene, descriptorSets](FrameGraphContext& ctx, const DepthPrepassData& data) {
+        [cullBack, cullNone, extent, instances, visible, &scene, descriptorSet](FrameGraphContext& ctx, const DepthPrepassData& data) {
             auto* cmd = ctx.cmd();
 
             RhiRenderingAttachmentInfo depthAtt = {
@@ -98,11 +97,11 @@ auto DepthPrepass::addPass(
                     }
                     if (!bound) {
                         cmd->bindPipeline(pip);
+                        cmd->bindDescriptorSet(pip, 0, descriptorSet);
                         cmd->bindVertexBuffer(scene.positionBuffer());
                         cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
                         bound = true;
                     }
-                    cmd->bindDescriptorSet(pip, 0, descriptorSets[(imageIndex * (uint32_t) instances.size()) + m]);
                     ctx.beginDraw({.instance = m, .mesh = inst.mesh.index, .material = inst.material.index, .prim = inst.prim, .indexOffset = inst.indexOffset, .indexCount = inst.indexCount});
                     cmd->drawIndexed(inst.indexCount, 1, range->firstIndex + inst.indexOffset, range->vertexOffset, m);
                     ctx.endDraw();

@@ -452,6 +452,13 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
     VkPhysicalDeviceFeatures enabledFeatures = {};
     enabledFeatures.wideLines = supportedFeatures.wideLines;
     enabledFeatures.samplerAnisotropy = supportedFeatures.samplerAnisotropy;
+    // Array bindings indexed per draw (bindless materials, docs/plan_bindless_materials.md).
+    // Core 1.0 and on every desktop driver; required.
+    if (supportedFeatures.shaderSampledImageArrayDynamicIndexing != VK_TRUE) {
+        std::println(stderr, "Vulkan device lacks shaderSampledImageArrayDynamicIndexing");
+        return std::unexpected(RhiError::Failed);
+    }
+    enabledFeatures.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
 
     VkPhysicalDeviceProperties properties = {};
     vkGetPhysicalDeviceProperties(physicalDevice, &properties);
@@ -466,6 +473,7 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
         .samplerAnisotropy = supportedFeatures.samplerAnisotropy == VK_TRUE,
         .timestamps = queueTimestampValidBits != 0 && properties.limits.timestampPeriod > 0.0f,
         .timestampPeriodNs = properties.limits.timestampPeriod,
+        .maxPerStageSampledImages = properties.limits.maxPerStageDescriptorSampledImages,
     };
     std::snprintf(deviceLimits.deviceName, sizeof(deviceLimits.deviceName), "%s", properties.deviceName);
     std::snprintf(deviceLimits.driverName, sizeof(deviceLimits.driverName), "%s %s", driverProperties.driverName, driverProperties.driverInfo);
@@ -1018,7 +1026,7 @@ auto RhiDeviceVulkan::createDescriptorSetLayout(std::span<const RhiDescriptorBin
         vkBindings[i] = {
             .binding = bindings[i].binding,
             .descriptorType = type,
-            .descriptorCount = 1,
+            .descriptorCount = bindings[i].count,
             .stageFlags = toVkShaderStage(bindings[i].stage),
         };
     }
@@ -1044,7 +1052,7 @@ auto RhiDeviceVulkan::createDescriptorPool(uint32_t maxSets, std::span<const Rhi
     std::vector<VkDescriptorPoolSize> poolSizes(bindingCount);
     for (uint32_t i = 0; i < bindingCount; i++) {
         auto type = toVkDescriptorType(bindings[i].type);
-        poolSizes[i] = {.type = type, .descriptorCount = maxSets};
+        poolSizes[i] = {.type = type, .descriptorCount = maxSets * bindings[i].count};
     }
 
     VkDescriptorPoolCreateInfo poolInfo = {
@@ -1119,6 +1127,7 @@ auto RhiDeviceVulkan::updateDescriptorSet(RhiDescriptorSet* set, std::span<const
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .dstSet = vkSet->set,
             .dstBinding = writes[i].binding,
+            .dstArrayElement = writes[i].arrayElement,
             .descriptorCount = 1,
         };
 

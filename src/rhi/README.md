@@ -110,7 +110,7 @@ The whole set, after any RHI change (the default target builds only `ngen-view`,
 
 ```sh
 ./_out/ngen-build -p linux-vulkan -c debug examples
-for t in triangle quad texture uniforms depth rendertarget pushconstants blend lines mipcube compute timestamps gpuzones; do
+for t in triangle quad texture uniforms depth rendertarget pushconstants blend lines mipcube compute timestamps gpuzones bindless; do
   SDL_VIDEODRIVER=offscreen ./_out/linux-vulkan/debug/ngen-example-$t --frames=10 --check --validation >/dev/null 2>&1; echo "$t=$?"
 done
 ```
@@ -144,8 +144,9 @@ Examples, each adding one concept to the previous:
 | `ngen-example-compute` | compute pipelines, storage image and buffer, `dispatch`, buffer barriers |
 | `ngen-example-timestamps` | query pools, `writeTimestamp`, readback after the fence, `timestampPeriodNs`, `calibrateGpuClock` |
 | `ngen-example-gpuzones` | nested `beginGpuZone`/`endGpuZone`, `collectGpuZones` depth, order and containment |
+| `ngen-example-bindless` | array binding (`RhiDescriptorBinding::count`, `RhiDescriptorWrite::arrayElement`) indexed per draw through `firstInstance`, one descriptor bind for eight textures, `maxPerStageSampledImages` |
 
-Run them all: `for t in triangle quad texture uniforms depth rendertarget pushconstants blend lines mipcube compute timestamps gpuzones; do
+Run them all: `for t in triangle quad texture uniforms depth rendertarget pushconstants blend lines mipcube compute timestamps gpuzones bindless; do
 SDL_VIDEODRIVER=offscreen ./_out/linux-vulkan/debug/ngen-example-$t --frames=10 --check --validation || echo "$t FAILED"; done`
 
 Rules for examples: include only headers under `src/rhi/` and `examples/common/` (plus `stb_image_write.h` for PNG);
@@ -183,3 +184,6 @@ Kept honest rather than papered over. See the review that produced this file for
 - Compute shares the graphics queue. No async compute, no indirect dispatch.
 - Descriptor model is Vulkan-shaped (pool, layout, set, write). D3D12 and Metal can implement it, but it is not their
   native shape; revisit when a second backend exists.
+- Array bindings are fixed-size and must be fully written before binding; indexing must be dynamically uniform (one
+  value per draw). No runtime-sized arrays, partially bound sets, update-after-bind or non-uniform indexing
+  (`docs/plan_bindless_materials.md`, decision 1).

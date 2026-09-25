@@ -438,7 +438,7 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
 
     if (!geometryChanged) {
         if (instanceBufferReplaced) {
-            rebuildGeometryDescriptorSets();
+            rebuildGeometryDescriptorSets("instance_buffer");
         }
         return;
     }
@@ -498,7 +498,8 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         uploader.end();
     }
 
-    rebuildGeometryDescriptorSets();
+    gpuScene.rebuildMaterials(gpuInstances, textureCache, fallbackTexture, uploader, m_frameIndex);
+    rebuildGeometryDescriptorSets("geometry");
 }
 
 // Preview extent for the inspector: the level scaled to fit a 256 box, up or down, so a
@@ -603,7 +604,7 @@ auto Renderer::applySamplerSettings(const SamplerSettings& settings) -> void {
     // The old sampler may be referenced by descriptor sets a frame in flight still binds.
     deletionQueue.defer(m_frameIndex, [dev = device, sampler = materialSampler] { dev->destroySampler(sampler); });
     materialSampler = device->createSampler(toSamplerDesc(settings));
-    rebuildGeometryDescriptorSets();
+    rebuildGeometryDescriptorSets("sampler");
     OBS_EVENT("Render", "SamplerSettings", "material")
         .field("anisotropy", (double) settings.maxAnisotropy)
         .field("lod_bias", (double) settings.lodBias)
@@ -611,7 +612,7 @@ auto Renderer::applySamplerSettings(const SamplerSettings& settings) -> void {
         .field("nearest_mip", settings.nearestMip);
 }
 
-auto Renderer::rebuildGeometryDescriptorSets() -> void {
+auto Renderer::rebuildGeometryDescriptorSets(const char* reason) -> void {
     using enum RhiDescriptorType;
     PROFILE_ZONE("DescriptorSets");
     // Sets and pool may still be bound by frames in flight: free and destroy together, later.
@@ -624,53 +625,52 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
     }
     geometryDescriptorSets.clear();
 
-    auto instanceCount = (uint32_t) gpuInstances.size();
-    auto imgCount = swapchain->imageCount();
-    if (instanceCount == 0) {
+    // Tables come from uploadRenderWorld; nothing to point at before the first one.
+    if (gpuInstances.empty() || gpuScene.materialBuffer() == nullptr) {
         return;
     }
 
-    auto totalSets = imgCount * instanceCount;
-    std::array<RhiDescriptorBinding, 3> poolBindings = {{
-        {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
-        {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
-        {.binding = 2, .type = StorageBuffer, .stage = RhiShaderStage::Vertex},
-    }};
-    geometryDescriptorPool = device->createDescriptorPool(totalSets, poolBindings);
-    geometryDescriptorSets.assign(totalSets, nullptr);
+    // One set per frame slot (docs/plan_bindless_materials.md): the slot's UBO plus the scene
+    // tables. Every texture-array element is written: the slot's texture or the fallback.
+    auto imgCount = swapchain->imageCount();
+    auto bindings = GeometryPass::descriptorBindings();
+    geometryDescriptorPool = device->createDescriptorPool(imgCount, bindings);
+    geometryDescriptorSets.assign(imgCount, nullptr);
     device->allocateDescriptorSets(geometryDescriptorPool, geometryPass.descriptorSetLayout(), geometryDescriptorSets);
 
+    auto slots = gpuScene.textureSlots();
+    std::vector<RhiDescriptorWrite> writes;
+    writes.reserve(GpuScene::maxTextures + 3);
     for (uint32_t i = 0; i < imgCount; i++) {
-        for (uint32_t m = 0; m < instanceCount; m++) {
-            auto& inst = gpuInstances[m];
-            auto* tex = fallbackTexture;
-            auto texIt = textureCache.find(inst.material.index);
-            if (texIt != textureCache.end()) {
-                tex = texIt->second.texture;
-            }
-
-            std::array<RhiDescriptorWrite, 3> writes = {{
-                {
-                    .binding = 0,
-                    .type = UniformBuffer,
-                    .buffer = uniformBuffers[i],
-                    .bufferRange = sizeof(UniformBufferObject),
-                },
-                {
-                    .binding = 1,
-                    .type = CombinedImageSampler,
-                    .texture = tex,
-                    .sampler = materialSampler,
-                },
-                {
-                    .binding = 2,
-                    .type = StorageBuffer,
-                    .buffer = gpuScene.instanceBuffer(),
-                },
-            }};
-            device->updateDescriptorSet(geometryDescriptorSets[(i * instanceCount) + m], writes);
+        writes.clear();
+        writes.push_back({
+            .binding = 0,
+            .type = UniformBuffer,
+            .buffer = uniformBuffers[i],
+            .bufferRange = sizeof(UniformBufferObject),
+        });
+        for (uint32_t t = 0; t < GpuScene::maxTextures; t++) {
+            writes.push_back({
+                .binding = 1,
+                .arrayElement = t,
+                .type = CombinedImageSampler,
+                .texture = t < slots.size() ? slots[t] : fallbackTexture,
+                .sampler = materialSampler,
+            });
         }
+        writes.push_back({
+            .binding = 2,
+            .type = StorageBuffer,
+            .buffer = gpuScene.instanceBuffer(),
+        });
+        writes.push_back({
+            .binding = 3,
+            .type = StorageBuffer,
+            .buffer = gpuScene.materialBuffer(),
+        });
+        device->updateDescriptorSet(geometryDescriptorSets[i], writes);
     }
+    OBS_EVENT("Render", "GeometryDescriptorsRebuilt", "descriptors").field("sets", (int64_t) imgCount).field("reason", reason);
 }
 
 auto Renderer::initGizmos(Camera* camera) -> void {
@@ -833,10 +833,11 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     if (snapshot.sampler != materialSamplerSettings) {
         applySamplerSettings(snapshot.sampler);
     }
+    auto* geometrySet = imageIdx < geometryDescriptorSets.size() ? geometryDescriptorSets[imageIdx] : nullptr;
     if (snapshot.depthPrepass) {
-        depthPrepass.addPass(frameGraph, depthHandle, ext, imageIdx, gpuInstances, instanceHandle, snapshot.visible, gpuScene, geometryDescriptorSets);
+        depthPrepass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, snapshot.visible, gpuScene, geometrySet);
     }
-    const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, imageIdx, instanceCount, gpuInstances, instanceHandle, snapshot.visible, gpuScene, geometryDescriptorSets, snapshot.depthPrepass);
+    const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, instanceCount, gpuInstances, instanceHandle, snapshot.visible, gpuScene, geometrySet, snapshot.depthPrepass);
 
     const auto& lightData = lightingPass.addPass(
         frameGraph,
@@ -969,7 +970,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
             .field("logged_draws", (int64_t) slotDrawLogs[currentFrame].size())
             .field("instance_buffer_bytes", (int64_t) gpuScene.instanceBufferBytes())
             .field("instance_upload_bytes", (int64_t) gpuScene.lastInstanceUploadBytes())
-            .field("geometry_pool_bytes", (int64_t) gpuScene.geometryPoolBytes());
+            .field("geometry_pool_bytes", (int64_t) gpuScene.geometryPoolBytes())
+            .field("material_count", (int64_t) gpuScene.materialCount());
     }
 
     RhiSubmitInfo submitInfo = {

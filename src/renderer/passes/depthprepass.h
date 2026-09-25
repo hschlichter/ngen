@@ -30,12 +30,11 @@ public:
         FrameGraph& fg,
         FgTextureHandle depthHandle,
         RhiExtent2D extent,
-        uint32_t imageIndex,
         std::span<const GpuInstance> instances,
         FgBufferHandle instanceBuffer,
         std::span<const uint8_t> visible,
         const GpuScene& scene,
-        std::span<RhiDescriptorSet*> descriptorSets) -> const DepthPrepassData&;
+        RhiDescriptorSet* descriptorSet) -> const DepthPrepassData&;
 
 private:
     RhiPipeline* pipelineCullBack = nullptr;

@@ -293,9 +293,10 @@ struct RhiDeviceLimits {
     float maxLineWidth = 1.0f;
     bool wideLines = false;
     bool samplerAnisotropy = false;
-    bool timestamps = false;           // writeTimestamp supported on the device's queue
-    float timestampPeriodNs = 0.0f;    // nanoseconds per timestamp tick
-    bool calibratedTimestamps = false; // calibrateGpuClock available
+    bool timestamps = false;               // writeTimestamp supported on the device's queue
+    float timestampPeriodNs = 0.0f;        // nanoseconds per timestamp tick
+    bool calibratedTimestamps = false;     // calibrateGpuClock available
+    uint32_t maxPerStageSampledImages = 0; // upper bound for sampled-image array bindings, per shader stage
 };
 
 // Compiled shader bytecode in the backend's native format (SPIR-V for Vulkan,
@@ -333,6 +334,10 @@ struct RhiDescriptorBinding {
     uint32_t binding;
     RhiDescriptorType type;
     RhiShaderStageFlags stage;
+    // Array size: a GLSL array binding (`sampler2D textures[N]`) has count N. Shaders may
+    // index it with a dynamically uniform expression (one value per draw); every element
+    // must be written before the set is bound.
+    uint32_t count = 1;
 };
 
 struct RhiPushConstantRange {
@@ -522,6 +527,7 @@ struct RhiComputePipelineDesc {
 
 struct RhiDescriptorWrite {
     uint32_t binding = 0;
+    uint32_t arrayElement = 0; // element of an array binding (RhiDescriptorBinding::count > 1)
     RhiDescriptorType type = RhiDescriptorType::UniformBuffer;
     RhiBuffer* buffer = nullptr;
     uint64_t bufferOffset = 0;
