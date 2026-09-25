@@ -140,7 +140,8 @@ auto ShadowPass::addPass(
                 // on each prim's first submesh instance (docs/plan_indirect_draws.md).
                 for (bool doubleSided : {false, true}) {
                     auto region = DrawLists::cascadeRegion(c, doubleSided);
-                    if (lists.commandsIn(region).empty()) {
+                    // The GPU-written count decides how many commands draw; an empty region costs one call.
+                    if (scene.indexBuffer() == nullptr) {
                         continue;
                     }
                     auto* pip = doubleSided ? cullNone : cullBack;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "drawlists.h"
 #include "framegraphdebug.h"
 #include "renderdebug.h"
 #include "rendersnapshot.h"
@@ -35,6 +36,8 @@ public:
     auto latestFrameGraphDebug() -> std::optional<FrameGraphDebugSnapshot>;
     auto setRenderDebugEnabled(bool enabled) -> void { renderDebugWanted.store(enabled, std::memory_order_relaxed); }
     auto latestRenderDebug() -> std::optional<RenderDebugSnapshot>;
+    // Latest GPU culling readback, when one arrived since the last call.
+    auto latestCullResult() -> std::optional<CullResult>;
     auto setTextureInspect(TextureInspectRequest request) -> void {
         std::lock_guard lock(textureInspectMutex);
         textureInspectRequest = request;
@@ -65,6 +68,9 @@ private:
     std::atomic<bool> renderDebugWanted{false};
     std::mutex renderDebugMutex;
     std::optional<RenderDebugSnapshot> renderDebugSlot;
+    std::mutex cullResultMutex;
+    std::optional<CullResult> cullResultSlot;
+    uint64_t lastCullResultFrame = 0;
     std::mutex textureInspectMutex;
     TextureInspectRequest textureInspectRequest;
     uint64_t fgDebugFrameCounter = 0;

@@ -105,6 +105,9 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
     if (!depthPrepass.init(device, depthFmt, geometryPass.descriptorSetLayout())) {
         return std::unexpected(1);
     }
+    if (!instanceCullPass.init(device)) {
+        return std::unexpected(1);
+    }
     if (!lightingPass.init(device, imgCount, ext, colorFmt)) {
         return std::unexpected(1);
     }
@@ -409,10 +412,12 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
             .indexCount = inst.indexCount,
             .primFirst = inst.primFirst,
             .doubleSided = inst.doubleSided,
+            .worldBounds = inst.worldBounds,
         };
     }
     // A grown instance buffer is a new buffer: every descriptor set naming it is rewritten.
     gpuScene.updateInstances(gpuInstances, changedFirst, changedEnd, m_frameIndex);
+    bool listsReplaced = drawLists.ensureCapacity(instanceCount, m_frameIndex);
     bool instanceBufferReplaced = gpuScene.instanceGeneration() != boundInstanceGeneration;
     if (instanceBufferReplaced) {
         shadowPass.bindInstanceBuffer(device, gpuScene.instanceBuffer(), deletionQueue, m_frameIndex);
@@ -420,7 +425,7 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
     }
 
     if (!geometryChanged) {
-        if (instanceBufferReplaced) {
+        if (instanceBufferReplaced || listsReplaced) {
             rebuildGeometryDescriptorSets("instance_buffer");
         }
         return;
@@ -608,6 +613,9 @@ auto Renderer::rebuildGeometryDescriptorSets(const char* reason) -> void {
     }
     geometryDescriptorSets.clear();
 
+    // The culling passes name the same instance buffer and mesh table, plus the draw-list buffers.
+    instanceCullPass.rebuildDescriptors(device, drawLists, gpuScene, deletionQueue, m_frameIndex);
+
     // Tables come from uploadRenderWorld; nothing to point at before the first one.
     if (gpuInstances.empty() || gpuScene.materialBuffer() == nullptr) {
         return;
@@ -654,6 +662,21 @@ auto Renderer::rebuildGeometryDescriptorSets(const char* reason) -> void {
         device->updateDescriptorSet(geometryDescriptorSets[i], writes);
     }
     OBS_EVENT("Render", "GeometryDescriptorsRebuilt", "descriptors").field("sets", (int64_t) imgCount).field("reason", reason);
+}
+
+auto Renderer::cullResult() const -> CullResult {
+    CullResult result = {
+        .frame = drawLists.readbackFrame(),
+        .instances = drawLists.instanceCount(),
+        .cameraCulled = drawLists.cameraCulled(),
+        .cascadeCount = drawLists.cascadeCount(),
+        .cameraVisible = drawLists.cameraVisible(),
+    };
+    for (uint32_t c = 0; c < result.cascadeCount; c++) {
+        result.cascadeCulled[c] = drawLists.cascadeCulled(c);
+        result.cascadeDrawn[c] = drawLists.cascadeDrawn(c);
+    }
+    return result;
 }
 
 auto Renderer::initGizmos(Camera* camera) -> void {
@@ -705,6 +728,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     // This slot's previous frame is done, and so is everything submitted before it.
     deletionQueue.flush(slotFrame[currentFrame]);
     readGpuTimings(currentFrame);
+    drawLists.parseReadback(currentFrame, slotFrame[currentFrame]);
     fgPreviews.setFrame(frame);
 
     std::expected<uint32_t, RhiError> index;
@@ -802,20 +826,22 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     }
     debugShadowExtent = atlasExtent;
     debugCascadeCount = (uint32_t) cascades.size();
+    // Culling statistics come back from the GPU one frame-slot cycle late.
     debugShadowCulled = 0;
-    for (auto culled : snapshot.shadowCulled) {
-        debugShadowCulled += culled;
+    for (uint32_t c = 0; c < drawLists.cascadeCount(); c++) {
+        debugShadowCulled += drawLists.cascadeCulled(c);
     }
 
     auto invViewProj = glm::inverse(snapshot.projMatrix * snapshot.viewMatrix);
 
     profile::endZone(); // ShadowSetup
-    // Indirect commands for every view from this frame's visibility; the passes below read them.
-    drawLists.build(gpuInstances, snapshot.visible, snapshot.shadowVisible, (uint32_t) cascades.size(), gpuScene, currentFrame, frame);
+    // GPU culling writes the indirect commands for every view; the passes below read them.
+    auto cullGroups = drawLists.writeParams(currentFrame, instanceCount, snapshot.cullViewProj, cascades, snapshot.cullEnabled);
     auto drawHandles = drawLists.import(frameGraph, currentFrame);
+    instanceCullPass.addPasses(frameGraph, drawHandles, instanceHandle, cullGroups, currentFrame);
     const auto& shadowData = shadowPass.addPass(frameGraph, atlasExtent, depthFormat, cascades, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene);
 
-    debugCulledInstances = snapshot.culledInstances;
+    debugCulledInstances = drawLists.cameraCulled();
     if (snapshot.sampler != materialSamplerSettings) {
         applySamplerSettings(snapshot.sampler);
     }
@@ -824,6 +850,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         depthPrepass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet);
     }
     const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, snapshot.depthPrepass);
+
+    drawLists.addReadbackPass(frameGraph, drawHandles, currentFrame, renderDebugEnabled);
 
     const auto& lightData = lightingPass.addPass(
         frameGraph,
@@ -1071,6 +1099,7 @@ auto Renderer::destroy() -> void {
     gpuScene.destroy();
     drawLists.destroy();
 
+    instanceCullPass.destroy(device);
     shadowPass.destroy(device);
     depthPrepass.destroy(device);
     geometryPass.destroy(device);

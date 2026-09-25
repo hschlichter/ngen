@@ -33,11 +33,12 @@ Current truth for the build framework is [`../build/build_system.md`](../build/b
 - [frame_graph_phase2_summary.md](frame_graph_phase2_summary.md) — retrospective: resource pools, transient textures
 - [frame_graph_phase3_summary.md](frame_graph_phase3_summary.md) — retrospective: lifetime tracking, memory aliasing
 - [frame_graph_next.md](frame_graph_next.md) — future frame-graph phases with "when needed" trigger conditions
-- [plan_gpu_driven.md](plan_gpu_driven.md) — umbrella: GPU-driven rendering in five stages (graph buffers, geometry pool, bindless, indirect, GPU culling) (in progress)
+- [plan_gpu_driven.md](plan_gpu_driven.md) — umbrella: GPU-driven rendering in five stages (graph buffers, geometry pool, bindless, indirect, GPU culling) (landed)
 - [plan_frame_graph_buffers.md](plan_frame_graph_buffers.md) — stage 1: buffer resources in the frame graph, persistent GPU instance buffer with delta upload (landed)
 - [plan_geometry_pool.md](plan_geometry_pool.md) — stage 2: one vertex, position and index pool for all meshes; `GpuScene` owns scene GPU tables (landed)
 - [plan_bindless_materials.md](plan_bindless_materials.md) — stage 3: texture array, GPU material table, one geometry descriptor set per frame slot (landed)
 - [plan_indirect_draws.md](plan_indirect_draws.md) — stage 4: indirect draws from CPU-built command lists, one call per bucket per view (landed)
+- [plan_gpu_culling.md](plan_gpu_culling.md) — stage 5: compute culling with ordered compaction, visibility readback, CPU culling deleted (landed)
 - [basic_lighting_pass_plan.md](basic_lighting_pass_plan.md) — (superseded by v2)
 - [basic_lighting_pass_plan_v2.md](basic_lighting_pass_plan_v2.md) — deferred G-buffer + lighting pass (landed)
 - [plan_threaded_rendering.md](plan_threaded_rendering.md) — dedicated render thread with snapshots (landed)
@@ -84,7 +85,7 @@ Current truth for the build framework is [`../build/build_system.md`](../build/b
 - [plan_performance_window.md](plan_performance_window.md) — profiling marker API and Performance window with CPU/GPU timeline; Tracy deferred (landed)
 - [plan_render_debug_window.md](plan_render_debug_window.md) — Render Debug window: scene tables, per-pass draw counters, view modes, device info (landed)
 - [plan_agent_introspection.md](plan_agent_introspection.md) — screenshots, camera flags and window, scripted sessions, render debug and profile dumps (landed)
-- [plan_frustum_culling.md](plan_frustum_culling.md) — per-instance AABB frustum culling on the main thread, frozen-frustum debug overlay (landed)
+- [plan_frustum_culling.md](plan_frustum_culling.md) — per-instance AABB frustum culling on the main thread, frozen-frustum debug overlay (landed; the CPU culling was replaced by plan_gpu_culling.md)
 - [plan_texture_mipmaps.md](plan_texture_mipmaps.md) — CPU mip chains at upload, anisotropic sampler (landed)
 - [plan_geometry_pass_cost.md](plan_geometry_pass_cost.md) — back-face culling, 16-bit normal target, depth prepass toggle (landed)
 - [plan_mip_debug.md](plan_mip_debug.md) — mip level buffer view and live sampler controls (landed)

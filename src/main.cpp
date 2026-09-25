@@ -364,6 +364,7 @@ auto main(int argc, char* argv[]) -> int {
     auto quit = false;
     uint64_t frameCounter = 0;
     CullState cullState;
+    CullResult latestCull; // GPU culling readback, a few frames old
     std::vector<SessionCommand> dueCommands;
     // Applies one session command. Verbs mirror the CLI flags; unknown verbs are reported and skipped.
     auto applyCommand = [&](const SessionCommand& c) -> void {
@@ -863,18 +864,20 @@ auto main(int argc, char* argv[]) -> int {
         const auto* keys = SDL_GetKeyboardState(nullptr);
         cam.update(keys, dt);
 
-        // Frustum culling on the main thread; the frozen frustum lets the culled set be
-        // inspected from elsewhere. Result travels in the snapshot.
+        // Culling runs on the GPU (docs/plan_gpu_culling.md): the snapshot carries the frustum
+        // to cull against (live, or frozen so the culled set can be inspected from elsewhere),
+        // and the results come back a few frames later for the Culling window and overlay.
         cullState.enabled = editorUI.getCullEnabled();
         cullState.frozen = editorUI.getCullFrozen();
         auto cullViewProj = cullState.update(proj * cam.viewMatrix());
-        std::vector<uint8_t> visible;
-        uint32_t culledInstances = cullInstances(cullState, cullViewProj, renderWorld.meshInstances, visible);
-        editorUI.setCullStats((uint32_t) renderWorld.meshInstances.size(), culledInstances);
+        if (auto cull = renderThread.latestCullResult(); cull.has_value()) {
+            latestCull = std::move(*cull);
+        }
+        editorUI.setCullStats(latestCull.instances, latestCull.cameraCulled);
+        editorUI.setShadowCullStats(latestCull.cascadeCount, latestCull.cascadeCulled, latestCull.cascadeDrawn);
 
-        // Shadow cascades: fitted to the live camera and the scene bounds, culled per cascade.
+        // Shadow cascades: fitted to the live camera and the scene bounds.
         std::array<ShadowCascade, maxShadowCascades> cascades;
-        ShadowCullResult shadowCull;
         uint32_t cascadeCount = 0;
         {
             PROFILE_ZONE("FitCascades");
@@ -882,16 +885,12 @@ auto main(int argc, char* argv[]) -> int {
             auto lightDir = pickShadowLightDirection(renderWorld.lights, cam.worldUp);
             cascadeCount = fitShadowCascades(editorUI.getShadowSettings(), cam.viewMatrix(), proj, 0.1f, 3000.0f, lightDir, cam.worldUp, sceneBounds, cascades);
         }
-        if (cullState.enabled) {
-            cullShadowCascades(std::span<const ShadowCascade>(cascades.data(), cascadeCount), renderWorld.meshInstances, shadowCull);
-        }
-        editorUI.setShadowCullStats(cascadeCount, shadowCull.culled, shadowCull.drawn);
         std::array<glm::vec3, 8> frozenCorners;
         if (cullState.frozenActive) {
             frozenCorners = cullState.frozenCorners();
         }
 
-        editorUI.drawDebug(debugDraw, renderWorld, selectedPrim, sceneQuery, sceneUpdater, usdScene, cam.position, cam.worldUp, visible, cullState.frozenActive ? &frozenCorners : nullptr);
+        editorUI.drawDebug(debugDraw, renderWorld, selectedPrim, sceneQuery, sceneUpdater, usdScene, cam.position, cam.worldUp, latestCull.cameraVisible, cullState.frozenActive ? &frozenCorners : nullptr);
 
         renderThread.setFrameGraphDebugEnabled(editorUI.getShowFrameGraphWindow());
         auto fgDebugSnap = renderThread.latestFrameGraphDebug();
@@ -976,13 +975,11 @@ auto main(int argc, char* argv[]) -> int {
             .antiAliasing = editorUI.getAntiAliasing(),
             .depthPrepass = editorUI.getDepthPrepass(),
             .sampler = editorUI.getSamplerSettings(),
-            .visible = std::move(visible),
-            .culledInstances = culledInstances,
+            .cullEnabled = cullState.enabled,
+            .cullViewProj = cullViewProj,
             .shadowSettings = editorUI.getShadowSettings(),
             .cascadeCount = cascadeCount,
             .cascades = cascades,
-            .shadowVisible = std::move(shadowCull.visible),
-            .shadowCulled = shadowCull.culled,
             .translateGizmoVerts = {translateGizmo.vertices().begin(), translateGizmo.vertices().end()},
             .rotateGizmoVerts = {rotateGizmo.vertices().begin(), rotateGizmo.vertices().end()},
             .scaleGizmoVerts = {scaleGizmo.vertices().begin(), scaleGizmo.vertices().end()},

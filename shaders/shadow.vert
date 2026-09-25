@@ -8,10 +8,14 @@ layout(push_constant) uniform Push {
 // firstInstance = instance index, so gl_InstanceIndex selects the entry.
 struct Instance {
     mat4 model;
-    uint material;
-    uint pad0;
-    uint pad1;
-    uint pad2;
+    uint material; // material table entry
+    uint mesh;
+    uint indexOffset;
+    uint indexCount;
+    vec3 boundsMin;
+    uint flags;
+    vec3 boundsMax;
+    uint pad;
 };
 layout(std430, set = 0, binding = 0) readonly buffer Instances {
     Instance data[];

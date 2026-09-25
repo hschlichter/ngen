@@ -1,6 +1,6 @@
 # GPU-driven rendering (umbrella)
 
-**Status. In progress.** Stages 1 to 4 landed.
+**Status. Landed.** All five stages landed; the debugging and introspection pass is the follow-up (Deferred).
 
 Umbrella plan: it orders the stages and holds the decisions that cut across them. Each stage gets its own `docs/plan_*.md` with its own steps and
 verification. This doc links to them and records their status.
@@ -69,7 +69,7 @@ Each stage ships on its own: rendered output byte-identical to the stage before,
 | 2 | [plan_geometry_pool.md](plan_geometry_pool.md) | One vertex, one position and one index buffer for all meshes; mesh table with `firstIndex`, `vertexOffset`, `indexCount`, bounds | none | none |
 | 3 | [plan_bindless_materials.md](plan_bindless_materials.md) | Material buffer (factors, texture indices), one global texture array; per-instance descriptor sets gone | descriptor indexing | 1 |
 | 4 | [plan_indirect_draws.md](plan_indirect_draws.md) | CPU-culled draw lists written as indirect commands; one `drawIndexedIndirectCount` per pipeline bucket per view | indirect draw, `IndirectRead` state, features | 1, 2, 3 |
-| 5 | `plan_gpu_culling.md` (to write) | Compute pass per view writes compacted indirect commands and counts; CPU culling deleted; transient graph buffers | none beyond 4 | 4 |
+| 5 | [plan_gpu_culling.md](plan_gpu_culling.md) | Compute passes write compacted indirect commands and counts (reduce-then-scan); CPU culling deleted | none beyond 4 | 4 |
 
 - **Stage 1.** Resource model, cross-frame state, and the instance buffer.
 - **Stage 2.** A suballocator over three large buffers. Meshes are added and removed at runtime, so it needs a free list, or compaction on
@@ -92,7 +92,8 @@ Each stage ships on its own: rendered output byte-identical to the stage before,
   - The RHI example `ngen-example-indirect` comes first.
 - **Stage 5.**
   - `InstanceCull` compute pass per view: the camera, plus each cascade.
-  - Inputs: instance bounds and the mesh table. Outputs: transient command and count buffers per bucket.
+  - Inputs: instance bounds and the mesh table. Outputs: command and count buffers per view and bucket, device-local and per frame slot.
+  - Ordered compaction (reduce-then-scan), so draw order and output stay deterministic.
   - The frozen-frustum and AABB overlays, and the `culled`/`shadow_culled` stats, read the counts back one frame late.
   - The CPU culling code and the snapshot's visibility masks are deleted.
 
@@ -146,6 +147,8 @@ Each stage plan has its own binary criteria. The umbrella is done when all of th
 
 - **Debugging and introspection pass** (`plan_gpu_driven_debugging.md`). Trigger: stage 5 lands. See the decision above.
 
+- **Transient graph buffers with cross-frame sync.** Planned for stage 5, then deferred (see decision 3 in that plan). Trigger: a per-frame buffer whose
+  size varies, or memory pressure from per-slot copies.
 - **Meshlet or cluster culling.** Trigger: asset packing lands with a cook step that can generate meshlets (`notes.md`). Extends stage 5's culling
   pass with a second level.
 - **Two-phase occlusion culling (HZB).** Trigger: after stage 5, the geometry pass is still dominated by hidden instances on a scene with real

@@ -32,6 +32,8 @@ auto GpuScene::destroy() -> void {
     poolPositions = nullptr;
     poolIndices = nullptr;
     meshes.clear();
+    device->destroyBuffer(meshTable);
+    meshTable = nullptr;
 
     device->destroyBuffer(materialTable);
     materialTable = nullptr;
@@ -53,6 +55,8 @@ auto GpuScene::rebuildGeometry(std::span<const GpuInstance> sceneInstances, cons
     deletionQueue->deferBuffer(frame, poolVertices);
     deletionQueue->deferBuffer(frame, poolPositions);
     deletionQueue->deferBuffer(frame, poolIndices);
+    deletionQueue->deferBuffer(frame, meshTable);
+    meshTable = nullptr;
     poolVertices = nullptr;
     poolPositions = nullptr;
     poolIndices = nullptr;
@@ -90,13 +94,25 @@ auto GpuScene::rebuildGeometry(std::span<const GpuInstance> sceneInstances, cons
         OBS_EVENT("Render", "MeshUploaded", "Mesh").field("vertex_count", (int64_t) range.vertexCount).field("index_count", (int64_t) range.indexCount);
     }
 
+    // Mesh table for the culling passes: dense by mesh index; entry 0 and meshes outside the
+    // pool stay empty. Always at least one entry so the binding is never null.
+    uint32_t tableSize = 1;
+    for (const auto& [index, range] : meshes) {
+        tableSize = std::max(tableSize, index + 1);
+    }
+    std::vector<GpuMeshEntry> table(tableSize);
+    for (const auto& [index, range] : meshes) {
+        table[index] = {.firstIndex = range.firstIndex, .vertexOffset = range.vertexOffset, .indexCount = range.indexCount};
+    }
+
+    uploader.begin();
     if (!vertices.empty()) {
-        uploader.begin();
         poolVertices = uploader.uploadBuffer(std::as_bytes(std::span(vertices)), RhiBufferUsage::Vertex);
         poolPositions = uploader.uploadBuffer(std::as_bytes(std::span(positions)), RhiBufferUsage::Vertex);
         poolIndices = uploader.uploadBuffer(std::as_bytes(std::span(indices)), RhiBufferUsage::Index);
-        uploader.end();
     }
+    meshTable = uploader.uploadBuffer(std::as_bytes(std::span(table)), RhiBufferUsage::Storage);
+    uploader.end();
 
     auto vertexBytes = vertices.size() * sizeof(Vertex);
     auto positionBytes = positions.size() * sizeof(positions[0]);
@@ -239,9 +255,26 @@ auto GpuScene::addUploadPasses(FrameGraph& fg, std::span<const GpuInstance> scen
     if (dirtyEnd > dirtyFirst) {
         auto* dst = static_cast<GpuInstanceRecord*>(stagingMapped[frameSlot]);
         for (uint32_t m = dirtyFirst; m < dirtyEnd; m++) {
+            const auto& inst = sceneInstances[m];
+            uint32_t flags = 0;
+            if (inst.primFirst) {
+                flags |= gpuInstancePrimFirst;
+            }
+            if (inst.doubleSided) {
+                flags |= gpuInstanceDoubleSided;
+            }
+            if (inst.worldBounds.valid()) {
+                flags |= gpuInstanceBoundsValid;
+            }
             dst[m] = {
-                .model = sceneInstances[m].transform,
+                .model = inst.transform,
                 .material = m < instanceMaterial.size() ? instanceMaterial[m] : 0,
+                .mesh = inst.mesh.index,
+                .indexOffset = inst.indexOffset,
+                .indexCount = inst.indexCount,
+                .boundsMin = inst.worldBounds.min,
+                .flags = flags,
+                .boundsMax = inst.worldBounds.max,
             };
         }
         RhiBufferCopy region = {

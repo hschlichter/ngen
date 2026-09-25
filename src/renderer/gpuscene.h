@@ -3,6 +3,7 @@
 #include "framegraphresource.h"
 #include "rhitypes.h"
 #include "scenehandles.h"
+#include "scenetypes.h"
 
 #include <cstdint>
 #include <glm/glm.hpp>
@@ -27,16 +28,39 @@ struct GpuInstance {
     uint32_t indexCount = 0;
     bool primFirst = true;
     bool doubleSided = false; // drawn with the cull-none pipeline
+    AABB worldBounds;         // culling input; invalid bounds are always visible
 };
 
-// One entry of the GPU instance buffer, read by the vertex shaders at gl_InstanceIndex
-// (std430, stride 80). material indexes the material table.
+// Flags in GpuInstanceRecord::flags.
+inline constexpr uint32_t gpuInstancePrimFirst = 1u << 0;   // drawn by the shadow pass (whole mesh)
+inline constexpr uint32_t gpuInstanceDoubleSided = 1u << 1; // cull-none pipeline bucket
+inline constexpr uint32_t gpuInstanceBoundsValid = 1u << 2; // otherwise never culled
+
+// One entry of the GPU instance buffer (std430, stride 112), read by the vertex shaders at
+// gl_InstanceIndex and by the culling passes (docs/plan_gpu_culling.md). material indexes
+// the material table, mesh the mesh table; indexOffset/indexCount are the submesh range.
 struct GpuInstanceRecord {
     glm::mat4 model;
     uint32_t material = 0;
-    uint32_t pad[3] = {};
+    uint32_t mesh = 0;
+    uint32_t indexOffset = 0;
+    uint32_t indexCount = 0;
+    glm::vec3 boundsMin = glm::vec3(0.0f);
+    uint32_t flags = 0;
+    glm::vec3 boundsMax = glm::vec3(0.0f);
+    uint32_t pad = 0;
 };
-static_assert(sizeof(GpuInstanceRecord) == 80);
+static_assert(sizeof(GpuInstanceRecord) == 112);
+
+// One entry of the GPU mesh table (std430, stride 16), indexed by MeshHandle::index. A mesh
+// outside the pool has indexCount 0 and is never drawn.
+struct GpuMeshEntry {
+    uint32_t firstIndex = 0;
+    int32_t vertexOffset = 0;
+    uint32_t indexCount = 0;
+    uint32_t pad = 0;
+};
+static_assert(sizeof(GpuMeshEntry) == 16);
 
 // One entry of the GPU material table (std430, stride 16). baseColorTexture is a slot in
 // the geometry descriptor set's texture array; slot 0 is the fallback texture.
@@ -86,6 +110,7 @@ public:
     auto positionBuffer() const -> RhiBuffer* { return poolPositions; }
     auto indexBuffer() const -> RhiBuffer* { return poolIndices; }
     auto geometryPoolBytes() const -> uint64_t { return poolBytes; }
+    auto meshTableBuffer() const -> RhiBuffer* { return meshTable; }
 
     // Bulk: assigns texture slots (0 = fallback, then each textured material in instance
     // order), builds the material table and uploads it, and records each instance's
@@ -128,6 +153,7 @@ private:
     RhiBuffer* poolIndices = nullptr;
     uint64_t poolBytes = 0;
     std::unordered_map<uint32_t, GpuMeshRange> meshes;
+    RhiBuffer* meshTable = nullptr; // GpuMeshEntry per mesh index, for culling
 
     // Material table: slot per texture, GpuMaterial per used material, material per instance.
     RhiBuffer* materialTable = nullptr;

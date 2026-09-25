@@ -46,6 +46,11 @@ auto RenderThread::latestRenderDebug() -> std::optional<RenderDebugSnapshot> {
     return std::exchange(renderDebugSlot, std::nullopt);
 }
 
+auto RenderThread::latestCullResult() -> std::optional<CullResult> {
+    std::lock_guard lock(cullResultMutex);
+    return std::exchange(cullResultSlot, std::nullopt);
+}
+
 auto RenderThread::latestFrameGraphDebug() -> std::optional<FrameGraphDebugSnapshot> {
     std::lock_guard lock(fgDebugMutex);
     return std::exchange(fgDebugSlot, std::nullopt);
@@ -90,6 +95,15 @@ auto RenderThread::threadLoop() -> void {
         }
 
         renderer->render(snapshot);
+
+        {
+            auto cull = renderer->cullResult();
+            if (cull.frame != 0 && cull.frame != lastCullResultFrame) {
+                lastCullResultFrame = cull.frame;
+                std::lock_guard lock(cullResultMutex);
+                cullResultSlot = std::move(cull);
+            }
+        }
 
         if (wantDebug) {
             auto fgSnap = renderer->buildFrameGraphDebugSnapshot();

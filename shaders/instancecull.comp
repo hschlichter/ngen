@@ -1,0 +1,262 @@
+#version 450
+
+// GPU instance culling with ordered compaction (docs/plan_gpu_culling.md), in three
+// dispatches selected by push.mode:
+//
+//   0 cull     one thread per instance: frustum test against every view, visibility bits,
+//              per-workgroup counters (draws and primitives per region, culling stats)
+//   1 scan     one workgroup: per-region exclusive prefix over the workgroup counters gives
+//              each workgroup's start offset; totals become the draw counts and stats
+//   2 scatter  one thread per instance: in-workgroup prefix per region, command written at
+//              the workgroup's offset plus the local prefix
+//
+// Commands keep instance order within a region, so output is deterministic.
+//
+// Regions: view * 2 + bucket; view 0 is the camera, views 1.. the shadow cascades; bucket 1
+// is double-sided. Camera regions hold every instance whose mesh is in the pool (submesh
+// range); cascade regions only primFirst instances (whole mesh).
+
+layout(local_size_x = 256) in;
+
+const uint maxViews = 5;
+const uint regionCount = maxViews * 2;
+// Counter layout per workgroup and in the totals.
+const uint counterDraws = 0;                              // regionCount: draws per region
+const uint counterPrimitives = regionCount;               // regionCount: primitives per region
+const uint counterCameraCulled = regionCount * 2;         // 1: camera-culled instances (all)
+const uint counterCascadeCulled = counterCameraCulled + 1; // 4: culled primFirst instances per cascade
+const uint counterCascadeDrawn = counterCascadeCulled + 4; // 4: visible primFirst instances per cascade
+const uint counterCount = counterCascadeDrawn + 4;
+
+const uint flagPrimFirst = 1u << 0;
+const uint flagDoubleSided = 1u << 1;
+const uint flagBoundsValid = 1u << 2;
+
+layout(push_constant) uniform Push {
+    uint mode;
+} push;
+
+layout(std430, set = 0, binding = 0) readonly buffer Params {
+    uint instanceCount;
+    uint viewCount;
+    uint cullEnabled;
+    uint regionCapacity;
+    uint groupCount;
+    uint pad0;
+    uint pad1;
+    uint pad2;
+    vec4 planes[maxViews * 6]; // normalized, from Frustum::fromViewProj on the CPU
+} params;
+
+struct Instance {
+    mat4 model;
+    uint material;
+    uint mesh;
+    uint indexOffset;
+    uint indexCount;
+    vec3 boundsMin;
+    uint flags;
+    vec3 boundsMax;
+    uint pad;
+};
+layout(std430, set = 0, binding = 1) readonly buffer Instances {
+    Instance data[];
+} instances;
+
+struct MeshEntry {
+    uint firstIndex;
+    int vertexOffset;
+    uint indexCount;
+    uint pad;
+};
+layout(std430, set = 0, binding = 2) readonly buffer Meshes {
+    MeshEntry data[];
+} meshes;
+
+layout(std430, set = 0, binding = 3) buffer Visibility {
+    uint bits[]; // bit v: visible in view v
+} visibility;
+
+layout(std430, set = 0, binding = 4) buffer GroupCounters {
+    uint data[]; // groupCount * counterCount
+} groupCounters;
+
+layout(std430, set = 0, binding = 5) buffer GroupOffsets {
+    uint data[]; // groupCount * regionCount
+} groupOffsets;
+
+struct DrawCommand {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+};
+layout(std430, set = 0, binding = 6) writeonly buffer Commands {
+    DrawCommand data[]; // regionCount * regionCapacity
+} commands;
+
+layout(std430, set = 0, binding = 7) buffer Totals {
+    uint data[]; // counterCount; the first regionCount are the indirect draw counts
+} totals;
+
+shared uint sharedCounters[counterCount];
+shared uint scanData[256];
+
+// Same test as Frustum::contains: the box corner furthest along each plane normal must not
+// be behind the plane. Evaluated in the CPU's order, without contraction.
+bool insideView(Instance inst, uint view) {
+    for (uint p = 0; p < 6; p++) {
+        vec4 plane = params.planes[view * 6 + p];
+        vec3 positive = vec3(plane.x >= 0.0 ? inst.boundsMax.x : inst.boundsMin.x,
+                             plane.y >= 0.0 ? inst.boundsMax.y : inst.boundsMin.y,
+                             plane.z >= 0.0 ? inst.boundsMax.z : inst.boundsMin.z);
+        precise float d = plane.x * positive.x;
+        d = d + plane.y * positive.y;
+        d = d + plane.z * positive.z;
+        d = d + plane.w;
+        if (d < 0.0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+MeshEntry meshOf(Instance inst) {
+    if (inst.mesh >= uint(meshes.data.length())) {
+        return MeshEntry(0u, 0, 0u, 0u);
+    }
+    return meshes.data[inst.mesh];
+}
+
+// Whether instance belongs to region r and is visible in its view.
+bool drawnIn(Instance inst, MeshEntry mesh, uint bits, uint region) {
+    uint view = region / 2;
+    uint bucket = region % 2;
+    if (view >= params.viewCount || mesh.indexCount == 0) {
+        return false;
+    }
+    if (bucket != ((inst.flags & flagDoubleSided) != 0 ? 1u : 0u)) {
+        return false;
+    }
+    if (view > 0 && (inst.flags & flagPrimFirst) == 0) {
+        return false;
+    }
+    return (bits & (1u << view)) != 0;
+}
+
+void cull() {
+    uint lid = gl_LocalInvocationID.x;
+    uint m = gl_GlobalInvocationID.x;
+    if (lid < counterCount) {
+        sharedCounters[lid] = 0;
+    }
+    barrier();
+
+    if (m < params.instanceCount) {
+        Instance inst = instances.data[m];
+        uint bits = 0;
+        for (uint v = 0; v < params.viewCount; v++) {
+            bool visible = params.cullEnabled == 0 || (inst.flags & flagBoundsValid) == 0 || insideView(inst, v);
+            if (visible) {
+                bits |= 1u << v;
+            }
+        }
+        visibility.bits[m] = bits;
+
+        MeshEntry mesh = meshOf(inst);
+        for (uint r = 0; r < regionCount; r++) {
+            if (drawnIn(inst, mesh, bits, r)) {
+                uint indexCount = r < 2 ? inst.indexCount : mesh.indexCount;
+                atomicAdd(sharedCounters[counterDraws + r], 1u);
+                atomicAdd(sharedCounters[counterPrimitives + r], indexCount / 3);
+            }
+        }
+        // Statistics with the CPU culling's semantics: camera over every instance, cascades
+        // over primFirst instances.
+        if ((bits & 1u) == 0) {
+            atomicAdd(sharedCounters[counterCameraCulled], 1u);
+        }
+        if ((inst.flags & flagPrimFirst) != 0) {
+            for (uint c = 0; c + 1 < params.viewCount; c++) {
+                if ((bits & (1u << (c + 1))) != 0) {
+                    atomicAdd(sharedCounters[counterCascadeDrawn + c], 1u);
+                } else {
+                    atomicAdd(sharedCounters[counterCascadeCulled + c], 1u);
+                }
+            }
+        }
+    }
+    barrier();
+
+    if (lid < counterCount) {
+        groupCounters.data[gl_WorkGroupID.x * counterCount + lid] = sharedCounters[lid];
+    }
+}
+
+void scan() {
+    // One thread per counter walks the workgroups in order; draw counters also record each
+    // workgroup's start offset. Integer sums, so the result does not depend on scheduling.
+    uint t = gl_LocalInvocationID.x;
+    if (t >= counterCount) {
+        return;
+    }
+    uint running = 0;
+    for (uint g = 0; g < params.groupCount; g++) {
+        uint value = groupCounters.data[g * counterCount + t];
+        if (t < regionCount) {
+            groupOffsets.data[g * regionCount + t] = running;
+        }
+        running += value;
+    }
+    totals.data[t] = running;
+}
+
+void scatter() {
+    uint lid = gl_LocalInvocationID.x;
+    uint m = gl_GlobalInvocationID.x;
+    bool live = m < params.instanceCount;
+    Instance inst;
+    MeshEntry mesh = MeshEntry(0u, 0, 0u, 0u);
+    uint bits = 0;
+    if (live) {
+        inst = instances.data[m];
+        mesh = meshOf(inst);
+        bits = visibility.bits[m];
+    }
+
+    for (uint r = 0; r < regionCount; r++) {
+        uint member = (live && drawnIn(inst, mesh, bits, r)) ? 1u : 0u;
+        // Inclusive Hillis-Steele scan across the workgroup.
+        scanData[lid] = member;
+        barrier();
+        for (uint offset = 1; offset < 256; offset <<= 1) {
+            uint add = lid >= offset ? scanData[lid - offset] : 0u;
+            barrier();
+            scanData[lid] += add;
+            barrier();
+        }
+        if (member != 0) {
+            uint slot = groupOffsets.data[gl_WorkGroupID.x * regionCount + r] + scanData[lid] - 1;
+            bool camera = r < 2;
+            DrawCommand command;
+            command.indexCount = camera ? inst.indexCount : mesh.indexCount;
+            command.instanceCount = 1;
+            command.firstIndex = camera ? mesh.firstIndex + inst.indexOffset : mesh.firstIndex;
+            command.vertexOffset = mesh.vertexOffset;
+            command.firstInstance = m;
+            commands.data[r * params.regionCapacity + slot] = command;
+        }
+        barrier();
+    }
+}
+
+void main() {
+    if (push.mode == 0) {
+        cull();
+    } else if (push.mode == 1) {
+        scan();
+    } else {
+        scatter();
+    }
+}

@@ -10,9 +10,13 @@ layout(set = 0, binding = 0) uniform UBO {
 struct Instance {
     mat4 model;
     uint material; // material table entry
-    uint pad0;
-    uint pad1;
-    uint pad2;
+    uint mesh;
+    uint indexOffset;
+    uint indexCount;
+    vec3 boundsMin;
+    uint flags;
+    vec3 boundsMax;
+    uint pad;
 };
 layout(std430, set = 0, binding = 2) readonly buffer Instances {
     Instance data[];

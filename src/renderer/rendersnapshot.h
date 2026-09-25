@@ -41,18 +41,16 @@ struct RenderSnapshot {
     bool depthPrepass = false; // off by default: costs more than it saves without heavy overdraw
     SamplerSettings sampler;
 
-    // Frustum culling result, one entry per RenderWorld mesh instance in order; empty
-    // means draw everything. Computed on the main thread (docs/plan_frustum_culling.md).
-    std::vector<uint8_t> visible;
-    uint32_t culledInstances = 0;
+    // GPU culling inputs (docs/plan_gpu_culling.md): the camera frustum to cull against (live,
+    // or frozen from the editor) and whether culling is on.
+    bool cullEnabled = true;
+    glm::mat4 cullViewProj = glm::mat4(1.0f);
 
-    // Shadow cascades fitted and culled on the main thread (docs/plan_shadow_cascades.md).
+    // Shadow cascades fitted on the main thread (docs/plan_shadow_cascades.md), culled on the GPU.
     // cascadeCount 0 means the renderer fits a single cascade itself.
     ShadowCascadeSettings shadowSettings;
     uint32_t cascadeCount = 0;
     std::array<ShadowCascade, maxShadowCascades> cascades;
-    std::array<std::vector<uint8_t>, maxShadowCascades> shadowVisible;
-    std::array<uint32_t, maxShadowCascades> shadowCulled = {};
 
     std::vector<GizmoVertex> translateGizmoVerts;
     std::vector<GizmoVertex> rotateGizmoVerts;

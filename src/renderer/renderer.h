@@ -13,6 +13,7 @@
 #include "gizmopass.h"
 #include "gpuscene.h"
 #include "gpuuploader.h"
+#include "instancecullpass.h"
 #include "lightingpass.h"
 #include "renderdebug.h"
 #include "renderertypes.h"
@@ -67,6 +68,8 @@ public:
     auto initGizmos(Camera* camera) -> void;
     auto gizmoUpdate(const RenderSnapshot& snapshot, RhiExtent2D extent) -> std::vector<GizmoDrawRequest>;
     auto gizmoHitTest(float mouseX, float mouseY, RhiExtent2D windowExtent) -> bool;
+    // Latest GPU culling readback (one frame-slot cycle old), for the editor.
+    auto cullResult() const -> CullResult;
 
 private:
     RhiDevice* device = nullptr;
@@ -105,7 +108,8 @@ private:
 
     // Scene GPU tables: geometry pool and instance buffer (docs/plan_gpu_driven.md).
     GpuScene gpuScene;
-    DrawLists drawLists;                  // indirect commands per view and bucket (docs/plan_indirect_draws.md)
+    DrawLists drawLists;                  // indirect commands per view and bucket, written by instanceCullPass
+    InstanceCullPass instanceCullPass;    // GPU culling (docs/plan_gpu_culling.md)
     uint32_t boundInstanceGeneration = 0; // instance buffer generation the descriptor sets point at
 
     // Passes

@@ -86,7 +86,8 @@ auto DepthPrepass::addPass(
             auto* counts = ctx.buffer(drawHandles.counts);
             for (bool doubleSided : {false, true}) {
                 auto region = DrawLists::cameraRegion(doubleSided);
-                if (lists.commandsIn(region).empty()) {
+                // The GPU-written count decides how many commands draw; an empty region costs one call.
+                if (scene.indexBuffer() == nullptr) {
                     continue;
                 }
                 auto* pip = doubleSided ? cullNone : cullBack;
