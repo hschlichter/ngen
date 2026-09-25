@@ -181,7 +181,7 @@ program can check.
 - **Device.** `RhiDeviceVulkan::init` creates the instance (with `VK_EXT_debug_utils` when available, and the
   Khronos validation layer when `RhiDeviceOptions::enableValidation` is set), picks the first physical device with a
   graphics queue that can present to the window's surface, and creates one queue and one command pool.
-- **Required features.** API 1.2 or newer, `synchronization2`, `dynamicRendering`, `shaderSampledImageArrayDynamicIndexing`,
+- **Required features.** API 1.3 or newer (so `synchronization2` and `dynamicRendering` are core), plus `shaderSampledImageArrayDynamicIndexing`,
   `multiDrawIndirect`, `drawIndirectFirstInstance` and `drawIndirectCount`; `init` fails with a message when one is
   missing. `wideLines`, `samplerAnisotropy` and `VK_EXT_calibrated_timestamps` are enabled when present and reported in
   `limits()`.
@@ -299,9 +299,6 @@ signature.
 Kept honest rather than papered over.
 
 - Single queue, single command pool. `createCommandBuffer` is not thread safe.
-- `init` checks for API 1.2, but `synchronization2` and `dynamicRendering` are enabled as core features without their
-  extensions, which a 1.2 device only accepts with `VK_KHR_synchronization2` and `VK_KHR_dynamic_rendering`. In practice
-  the backend needs a Vulkan 1.3 device.
 - One device memory allocation per resource, no suballocator; fine at current resource counts, a limit for streaming.
 - Barriers are resource-state transitions (`RhiTextureState` for textures, `RhiBufferState` for buffers); the backend
   derives stages and access. No explicit masks, no split barriers, no queue ownership transfer.

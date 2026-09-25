@@ -236,7 +236,7 @@ samples the atlas with a hardware compare sampler (3×3 PCF by default).
 
 ## Device requirements
 
-What the renderer needs from the RHI beyond the basics: `shaderSampledImageArrayDynamicIndexing`, `multiDrawIndirect`, `drawIndirectFirstInstance`
+A Vulkan 1.3 device, and from the RHI beyond the basics: `shaderSampledImageArrayDynamicIndexing`, `multiDrawIndirect`, `drawIndirectFirstInstance`
 and `drawIndirectCount` (all required by the Vulkan backend's `init`), timestamps for GPU timings (optional), and an RGBA16F format usable as a storage
 image for the compute AA (optional, blit fallback).
 

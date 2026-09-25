@@ -471,7 +471,7 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
     enabledFeatures.multiDrawIndirect = VK_TRUE;
     enabledFeatures.drawIndirectFirstInstance = VK_TRUE;
 
-    // Vulkan 1.2 is the baseline: drawIndirectCount comes from its feature struct.
+    // Vulkan 1.3 is the baseline (checked below); drawIndirectCount comes from the 1.2 feature struct.
     VkPhysicalDeviceVulkan12Features supported12 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     VkPhysicalDeviceFeatures2 supported2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &supported12};
     vkGetPhysicalDeviceFeatures2(physicalDevice, &supported2);
@@ -487,8 +487,10 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
 
     VkPhysicalDeviceProperties properties = {};
     vkGetPhysicalDeviceProperties(physicalDevice, &properties);
-    if (properties.apiVersion < VK_API_VERSION_1_2) {
-        std::println(stderr, "Vulkan device reports API {}.{}; 1.2 is required", VK_API_VERSION_MAJOR(properties.apiVersion), VK_API_VERSION_MINOR(properties.apiVersion));
+    // 1.3 makes synchronization2 and dynamicRendering core, which the feature chain enables
+    // without their extensions.
+    if (properties.apiVersion < VK_API_VERSION_1_3) {
+        std::println(stderr, "Vulkan device reports API {}.{}; 1.3 is required", VK_API_VERSION_MAJOR(properties.apiVersion), VK_API_VERSION_MINOR(properties.apiVersion));
         return std::unexpected(RhiError::Failed);
     }
     VkPhysicalDeviceDriverProperties driverProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
