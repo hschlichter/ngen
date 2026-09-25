@@ -97,7 +97,7 @@ private:
     std::unordered_map<uint32_t, CachedMesh> meshCache;
     std::unordered_map<uint32_t, CachedTexture> textureCache;
     std::vector<GpuInstance> gpuInstances;
-    AABB sceneBounds; // union of instance world bounds, refreshed with gpuInstances
+    AABB sceneBounds;                  // union of instance world bounds, refreshed with gpuInstances
     uint32_t debugCulledInstances = 0; // from the last snapshot, for RenderStats and the debug window
     RhiSampler* materialSampler = nullptr;
     RhiSampler* shadowSampler = nullptr; // compare sampler for the cascade atlas
@@ -111,6 +111,23 @@ private:
     std::vector<RenderLight> lights;
     RhiDescriptorPool* geometryDescriptorPool = nullptr;
     std::vector<RhiDescriptorSet*> geometryDescriptorSets;
+
+    // Persistent instance buffer (docs/plan_frame_graph_buffers.md): one mat4 per GpuInstance,
+    // read by the shadow, prepass and geometry vertex shaders at gl_InstanceIndex. Updated by
+    // copying the dirty span from the slot's staging buffer in the InstanceUpload pass. The
+    // access it was left in carries into the next frame's graph so the upload syncs with the
+    // previous frame's reads.
+    RhiBuffer* instanceBuffer = nullptr;
+    FgAccessFlags instanceBufferAccess = FgAccessFlags::None;
+    std::vector<RhiBuffer*> instanceStaging; // per frame slot, CpuToGpu, mapped
+    std::vector<void*> instanceStagingMapped;
+    uint32_t instanceCapacity = 0;
+    // Dirty instance span [dirtyFirst, dirtyEnd); empty when equal. Accumulates until a frame uploads it.
+    uint32_t dirtyFirst = 0;
+    uint32_t dirtyEnd = 0;
+    uint64_t debugInstanceUploadBytes = 0; // this frame's upload, for RenderStats
+    auto ensureInstanceCapacity(uint32_t count) -> void;
+    auto markInstancesDirty(uint32_t first, uint32_t end) -> void;
 
     // Passes
     ShadowPass shadowPass;

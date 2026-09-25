@@ -42,11 +42,26 @@ struct FgTextureDesc {
     RhiTextureUsageFlags usage = RhiTextureUsage::Sampled;
 };
 
+struct FgBufferDesc {
+    uint64_t size = 0;
+    RhiBufferUsageFlags usage = {};
+};
+
+enum class FgResourceKind : uint8_t {
+    Texture,
+    Buffer,
+};
+
 struct FgResource {
     const char* name = "";
-    FgTextureDesc desc;
+    FgResourceKind kind = FgResourceKind::Texture;
+    FgTextureDesc desc;      // textures
+    FgBufferDesc bufferDesc; // buffers
+    // Imported buffers: the access carried in from the previous frame, updated to the final
+    // access after execute (FrameGraph::finalAccess). None for everything else.
     FgAccessFlags currentAccess = FgAccessFlags::None;
     RhiTexture* physical = nullptr;
+    RhiBuffer* physicalBuffer = nullptr;
     bool external = false;
     uint32_t firstUseOrder = UINT32_MAX;
     uint32_t lastUseOrder = 0;

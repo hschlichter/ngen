@@ -51,7 +51,8 @@ SDL_VIDEODRIVER=offscreen ./_out/linux-vulkan/debug/ngen-view <scene> --frames=3
   (grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa), `--camera=x,y,z,yaw,pitch`, `--camera-frame=scene|/prim`, `--select=/prim`.
 - `--dump-render-debug=PATH`: meshes, textures, passes with draw counters, draw log with prim paths, as JSON.
   `--dump-profile=PATH`: profiler history as Chrome trace JSON (`jq '.traceEvents'`, or open in Perfetto).
-- `--script=FILE`: `<frame> <verb> [args]` per line, same verbs as the flags plus `quit` and `cull on|off|freeze|unfreeze|show|hide`
+- `--script=FILE`: `<frame> <verb> [args]` per line, same verbs as the flags plus `quit`, `translate /prim dx,dy,dz` (preview transform
+  edit, no layer write) and `cull on|off|freeze|unfreeze|show|hide`
   (frustum culling toggle, frozen frustum, red/green AABB overlay), `prepass on|off` (depth prepass) and
   `sampler aniso=8,bias=0,minlod=0,mip=linear|nearest` (material sampler), `shadow cascades=3,tile=1024,lambda=0.5,pcf=on|off`
   (cascaded shadows), `inspect <material> <level>|off` (texture inspector

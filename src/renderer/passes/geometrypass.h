@@ -52,6 +52,7 @@ public:
         uint32_t imageIndex,
         uint32_t instanceCount,
         std::span<const GpuInstance> instances,
+        FgBufferHandle instanceBuffer,
         std::span<const uint8_t> visible,
         const std::unordered_map<uint32_t, CachedMesh>& meshCache,
         std::span<RhiDescriptorSet*> descriptorSets,

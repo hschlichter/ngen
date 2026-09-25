@@ -1,20 +1,23 @@
 #version 450
 
-// Depth prepass. Same UBO, push layout and position expression as gbuffer.vert, and both
+// Depth prepass. Same UBO, instance buffer and position expression as gbuffer.vert, and both
 // declare gl_Position invariant, so the geometry pass's Equal depth test matches exactly.
 layout(set = 0, binding = 0) uniform UBO {
     mat4 view;
     mat4 proj;
 } ubo;
 
-layout(push_constant) uniform Push {
-    mat4 model;
-} push;
+// Persistent instance buffer (docs/plan_frame_graph_buffers.md); drawn with
+// firstInstance = instance index, so gl_InstanceIndex selects the entry.
+layout(std430, set = 0, binding = 2) readonly buffer Instances {
+    mat4 model[];
+} instances;
 
 layout(location = 0) in vec3 inPosition;
 
 invariant gl_Position;
 
 void main() {
-    gl_Position = ubo.proj * ubo.view * push.model * vec4(inPosition, 1.0);
+    mat4 model = instances.model[gl_InstanceIndex];
+    gl_Position = ubo.proj * ubo.view * model * vec4(inPosition, 1.0);
 }

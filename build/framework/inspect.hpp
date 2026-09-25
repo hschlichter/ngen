@@ -14,8 +14,8 @@
 #pragma once
 
 #include "alias.hpp"
-#include "phony.hpp"
 #include "cxx/target.hpp"
+#include "phony.hpp"
 #include "project.hpp"
 #include "target.hpp"
 #include "tool.hpp"

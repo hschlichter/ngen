@@ -45,7 +45,6 @@
 #pragma once
 
 #include "../framework/alias.hpp"
-#include "../framework/phony.hpp"
 #include "../framework/command.hpp"
 #include "../framework/cxx/commands.hpp"
 #include "../framework/cxx/configuration.hpp"
@@ -55,6 +54,7 @@
 #include "../framework/cxx/toolchain.hpp"
 #include "../framework/glob.hpp"
 #include "../framework/path.hpp"
+#include "../framework/phony.hpp"
 #include "../framework/project.hpp"
 #include "../framework/target.hpp"
 #include "../framework/tool.hpp"

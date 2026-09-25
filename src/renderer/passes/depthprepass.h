@@ -21,8 +21,8 @@ struct DepthPrepassData {
 // expression with gl_Position invariant, so the Equal test holds; no fragment work.
 class DepthPrepass {
 public:
-    // Uses the geometry pass's descriptor set layout: the UBO at binding 0 is the one
-    // the position depends on; the texture binding is unused.
+    // Uses the geometry pass's descriptor set layout: the UBO at binding 0 and the instance
+    // buffer at binding 2 are what the position depends on; the texture binding is unused.
     auto init(RhiDevice* device, RhiFormat depthFormat, RhiDescriptorSetLayout* geometrySetLayout) -> bool;
     auto destroy(RhiDevice* device) -> void;
 
@@ -32,6 +32,7 @@ public:
         RhiExtent2D extent,
         uint32_t imageIndex,
         std::span<const GpuInstance> instances,
+        FgBufferHandle instanceBuffer,
         std::span<const uint8_t> visible,
         const std::unordered_map<uint32_t, CachedMesh>& meshCache,
         std::span<RhiDescriptorSet*> descriptorSets) -> const DepthPrepassData&;

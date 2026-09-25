@@ -132,8 +132,12 @@ void drawResourceDetail(const FrameGraphDebugSnapshot& snap, uint32_t resIdx, st
     ImGui::TextUnformatted(res.label.c_str());
     ImGui::Separator();
 
-    ImGui::Text("Size: %u x %u", res.width, res.height);
-    ImGui::Text("Format: %s", res.formatName);
+    if (res.buffer) {
+        ImGui::Text("Buffer: %llu bytes", (unsigned long long) res.sizeBytes);
+    } else {
+        ImGui::Text("Size: %u x %u", res.width, res.height);
+        ImGui::Text("Format: %s", res.formatName);
+    }
     ImGui::Text("Usage: %s", res.usageName);
     ImGui::Text("External: %s", res.external ? "yes" : "no");
     if (res.external) {
@@ -151,6 +155,8 @@ void drawResourceDetail(const FrameGraphDebugSnapshot& snap, uint32_t resIdx, st
         float displayW = std::min(320.0f, ImGui::GetContentRegionAvail().x);
         float displayH = displayW / aspect;
         ImGui::Image((ImTextureID) res.previewTextureId, ImVec2(displayW, displayH));
+    } else if (res.buffer) {
+        ImGui::TextDisabled("(no preview for buffers)");
     } else {
         ImGui::TextDisabled("(no preview — format not blittable or debug just enabled)");
     }

@@ -21,7 +21,7 @@ auto DepthPrepass::init(RhiDevice* device, RhiFormat depthFormat, RhiDescriptorS
         .vertexShader = vertShader,
         .fragmentShader = fragShader,
         .descriptorSetLayouts = {&geometrySetLayout, 1},
-        .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(glm::mat4)},
+        .pushConstant = {}, // model matrix comes from the instance buffer at gl_InstanceIndex
         .colorFormats = {},
         .depthFormat = depthFormat,
         .vertexStride = sizeof(std::array<float, 3>),
@@ -47,6 +47,7 @@ auto DepthPrepass::addPass(
     RhiExtent2D extent,
     uint32_t imageIndex,
     std::span<const GpuInstance> instances,
+    FgBufferHandle instanceBuffer,
     std::span<const uint8_t> visible,
     const std::unordered_map<uint32_t, CachedMesh>& meshCache,
     std::span<RhiDescriptorSet*> descriptorSets) -> const DepthPrepassData& {
@@ -57,6 +58,7 @@ auto DepthPrepass::addPass(
         "DepthPrepass",
         [&](FrameGraphBuilder& builder, DepthPrepassData& data) {
             data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
+            builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             builder.setSideEffects(true);
         },
         [cullBack, cullNone, extent, imageIndex, instances, visible, &meshCache, descriptorSets](FrameGraphContext& ctx, const DepthPrepassData& data) {
@@ -99,13 +101,11 @@ auto DepthPrepass::addPass(
                         cmd->bindPipeline(pip);
                         bound = true;
                     }
-                    auto model = inst.transform;
-                    cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(glm::mat4), &model);
                     cmd->bindVertexBuffer(cached.positionBuffer);
                     cmd->bindIndexBuffer(cached.indexBuffer, RhiIndexType::Uint32);
                     cmd->bindDescriptorSet(pip, 0, descriptorSets[(imageIndex * (uint32_t) instances.size()) + m]);
                     ctx.beginDraw({.instance = m, .mesh = inst.mesh.index, .material = inst.material.index, .prim = inst.prim, .indexOffset = inst.indexOffset, .indexCount = inst.indexCount});
-                    cmd->drawIndexed(inst.indexCount, 1, inst.indexOffset, 0, 0);
+                    cmd->drawIndexed(inst.indexCount, 1, inst.indexOffset, 0, m);
                     ctx.endDraw();
                 }
             }

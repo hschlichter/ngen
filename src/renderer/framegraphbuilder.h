@@ -11,6 +11,8 @@ public:
     auto createTexture(const char* name, const FgTextureDesc& desc) -> FgTextureHandle;
     auto read(FgTextureHandle handle, FgAccessFlags access) -> FgTextureHandle;
     auto write(FgTextureHandle handle, FgAccessFlags access) -> FgTextureHandle;
+    auto read(FgBufferHandle handle, FgAccessFlags access) -> FgBufferHandle;
+    auto write(FgBufferHandle handle, FgAccessFlags access) -> FgBufferHandle;
     auto setSideEffects(bool value) -> void;
 
 private:

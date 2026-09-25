@@ -230,7 +230,11 @@ void drawResourceNode(ImDrawList* dl, const FgResourceDebug& res, ImVec2 pos, Im
         const char* nameText = res.name.empty() ? "(unnamed)" : res.name.c_str();
         dl->AddText(font, nameFontSize, {pos.x + 8.0f * zoom, textY}, IM_COL32_WHITE, nameText);
         char dimLine[64];
-        std::snprintf(dimLine, sizeof(dimLine), "%ux%u %s", res.width, res.height, res.formatName);
+        if (res.buffer) {
+            std::snprintf(dimLine, sizeof(dimLine), "buffer %llu B", (unsigned long long) res.sizeBytes);
+        } else {
+            std::snprintf(dimLine, sizeof(dimLine), "%ux%u %s", res.width, res.height, res.formatName);
+        }
         dl->AddText(font, dimFontSize, {pos.x + 8.0f * zoom, textY + 15.0f * zoom}, IM_COL32(180, 170, 160, 255), dimLine);
     }
 }

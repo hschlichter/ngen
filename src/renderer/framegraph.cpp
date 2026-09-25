@@ -54,6 +54,20 @@ auto FrameGraph::importTexture(const char* name, RhiTexture* texture, const FgTe
     return {index};
 }
 
+auto FrameGraph::importBuffer(const char* name, RhiBuffer* buffer, const FgBufferDesc& desc, FgAccessFlags initialAccess) -> FgBufferHandle {
+    FgResource res;
+    res.name = name;
+    res.kind = FgResourceKind::Buffer;
+    res.bufferDesc = desc;
+    res.currentAccess = initialAccess;
+    res.physicalBuffer = buffer;
+    res.external = true;
+
+    auto index = (uint32_t) resources.size();
+    resources.push_back(res);
+    return {index};
+}
+
 auto FrameGraphBuilder::createTexture(const char* name, const FgTextureDesc& desc) -> FgTextureHandle {
     FgResource res;
     res.name = name;
@@ -77,12 +91,28 @@ auto FrameGraphBuilder::write(FgTextureHandle handle, FgAccessFlags access) -> F
     return handle;
 }
 
+auto FrameGraphBuilder::read(FgBufferHandle handle, FgAccessFlags access) -> FgBufferHandle {
+    auto& pass = graph->passes[passIndex];
+    pass.reads.push_back({.resourceIndex = handle.index, .access = access});
+    return handle;
+}
+
+auto FrameGraphBuilder::write(FgBufferHandle handle, FgAccessFlags access) -> FgBufferHandle {
+    auto& pass = graph->passes[passIndex];
+    pass.writes.push_back({.resourceIndex = handle.index, .access = access});
+    return handle;
+}
+
 auto FrameGraphBuilder::setSideEffects(bool value) -> void {
     graph->passes[passIndex].hasSideEffects = value;
 }
 
 auto FrameGraphContext::texture(FgTextureHandle handle) -> RhiTexture* {
     return graph->resources[handle.index].physical;
+}
+
+auto FrameGraphContext::buffer(FgBufferHandle handle) -> RhiBuffer* {
+    return graph->resources[handle.index].physicalBuffer;
 }
 
 // --- Helpers ---
@@ -110,6 +140,22 @@ static auto accessToLayout(FgAccessFlags access) -> RhiTextureState {
         return RhiTextureState::General;
     }
     return RhiTextureState::Undefined;
+}
+
+static auto accessToBufferState(FgAccessFlags access) -> RhiBufferState {
+    if (access & FgAccessFlags::StorageWrite) {
+        return RhiBufferState::StorageWrite;
+    }
+    if (access & FgAccessFlags::StorageRead) {
+        return RhiBufferState::StorageRead;
+    }
+    if (access & FgAccessFlags::TransferSrc) {
+        return RhiBufferState::TransferSrc;
+    }
+    if (access & FgAccessFlags::TransferDst) {
+        return RhiBufferState::TransferDst;
+    }
+    return RhiBufferState::Undefined;
 }
 
 // --- Compilation: topo sort + culling ---
@@ -268,14 +314,19 @@ static auto toRhiTextureDesc(const FgTextureDesc& desc) -> RhiTextureDesc {
 
 auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
     FrameGraphContext ctx(this, cmd);
+    // Imported buffers start from the access carried over from the previous frame; everything
+    // else starts undefined each frame.
     std::vector<FgAccessFlags> resourceAccess(resources.size(), FgAccessFlags::None);
+    for (uint32_t resIdx = 0; resIdx < (uint32_t) resources.size(); resIdx++) {
+        resourceAccess[resIdx] = resources[resIdx].currentAccess;
+    }
 
     auto invokeCapture = [&](uint32_t resIdx) {
         if (!debugCaptureHook) {
             return;
         }
         const auto& res = resources[resIdx];
-        if (res.physical == nullptr) {
+        if (res.kind != FgResourceKind::Texture || res.physical == nullptr) {
             return;
         }
         FgCapturedResource view = {
@@ -299,7 +350,7 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
         if (resourcePool != nullptr) {
             for (uint32_t resIdx = 0; resIdx < (uint32_t) resources.size(); resIdx++) {
                 auto& res = resources[resIdx];
-                if (!res.external && res.physical == nullptr && res.firstUseOrder == orderIdx) {
+                if (res.kind == FgResourceKind::Texture && !res.external && res.physical == nullptr && res.firstUseOrder == orderIdx) {
                     res.physical = resourcePool->acquireTexture(toRhiTextureDesc(res.desc));
                 }
             }
@@ -307,8 +358,25 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
 
         // Compute barriers for this pass
         std::vector<RhiTextureBarrierDesc> barriers;
+        std::vector<RhiBufferBarrierDesc> bufferBarriers;
         auto checkTransition = [&](uint32_t resIdx, FgAccessFlags newAccess) {
             auto oldAccess = resourceAccess[resIdx];
+            if (resources[resIdx].kind == FgResourceKind::Buffer) {
+                // Buffers have no layout: read-after-read needs no barrier, anything
+                // involving a write (or a different kind of read after one) does.
+                auto oldState = accessToBufferState(oldAccess);
+                auto newState = accessToBufferState(newAccess);
+                bool readAfterRead = oldState == newState && oldState != RhiBufferState::StorageWrite && oldState != RhiBufferState::TransferDst;
+                if (!readAfterRead) {
+                    bufferBarriers.push_back({
+                        .buffer = resources[resIdx].physicalBuffer,
+                        .oldState = oldState,
+                        .newState = newState,
+                    });
+                }
+                resourceAccess[resIdx] = newAccess;
+                return;
+            }
             if (std::to_underlying(oldAccess) != std::to_underlying(newAccess)) {
                 auto oldState = accessToLayout(oldAccess);
                 auto newState = accessToLayout(newAccess);
@@ -330,8 +398,11 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
             checkTransition(w.resourceIndex, w.access);
         }
 
-        if (!barriers.empty()) {
-            cmd->pipelineBarrier(barriers);
+        // Stats window opens before the graph's barriers, so a pass's barrier count includes
+        // the transitions the graph issued for it, not only the ones it records itself.
+        auto before = cmd->stats();
+        if (!barriers.empty() || !bufferBarriers.empty()) {
+            cmd->pipelineBarrier(barriers, bufferBarriers);
         }
 
         // Execute pass. Single emission site covers all passes automatically;
@@ -343,7 +414,6 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
             // Every pass is a GPU zone and a CPU record zone; passes may nest their own inside.
             PROFILE_GPU_ZONE(cmd, passName);
             profile::ScopedZone recordZone(passes[passIdx].profileNameId);
-            auto before = cmd->stats();
             executingPass = passName;
             executingPassDraws = 0;
             passes[passIdx].execute(ctx);
@@ -364,12 +434,20 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
         if (resourcePool != nullptr) {
             for (uint32_t resIdx = 0; resIdx < (uint32_t) resources.size(); resIdx++) {
                 auto& res = resources[resIdx];
-                if (!res.external && res.physical != nullptr && res.lastUseOrder == orderIdx) {
+                if (res.kind == FgResourceKind::Texture && !res.external && res.physical != nullptr && res.lastUseOrder == orderIdx) {
                     invokeCapture(resIdx);
                     resourcePool->releaseTexture(toRhiTextureDesc(res.desc), res.physical);
                     res.physical = nullptr;
                 }
             }
+        }
+    }
+
+    // Carry imported buffers' final access into the next frame (finalAccess).
+    for (uint32_t resIdx = 0; resIdx < (uint32_t) resources.size(); resIdx++) {
+        auto& res = resources[resIdx];
+        if (res.kind == FgResourceKind::Buffer && res.external) {
+            res.currentAccess = resourceAccess[resIdx];
         }
     }
 
@@ -381,6 +459,15 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
             }
         }
     }
+}
+
+auto FrameGraph::passStats(std::string_view name) const -> const RhiCommandStats* {
+    for (const auto& pass : passes) {
+        if (!pass.culled && pass.name != nullptr && name == pass.name) {
+            return &pass.stats;
+        }
+    }
+    return nullptr;
 }
 
 // --- Debug snapshot ---
@@ -422,11 +509,18 @@ auto FrameGraph::buildDebugSnapshot() const -> FrameGraphDebugSnapshot {
         const auto& src = resources[r];
         FgResourceDebug dbg;
         dbg.index = r;
-        dbg.width = src.desc.width;
-        dbg.height = src.desc.height;
-        dbg.formatName = toString(src.desc.format);
-        dbg.usageName = toString(src.desc.usage);
         dbg.external = src.external;
+        if (src.kind == FgResourceKind::Buffer) {
+            dbg.buffer = true;
+            dbg.sizeBytes = src.bufferDesc.size;
+            dbg.formatName = "buffer";
+            dbg.usageName = toString(src.bufferDesc.usage);
+        } else {
+            dbg.width = src.desc.width;
+            dbg.height = src.desc.height;
+            dbg.formatName = toString(src.desc.format);
+            dbg.usageName = toString(src.desc.usage);
+        }
         dbg.firstUseOrder = src.firstUseOrder;
         dbg.lastUseOrder = src.lastUseOrder;
 
@@ -449,7 +543,9 @@ auto FrameGraph::buildDebugSnapshot() const -> FrameGraphDebugSnapshot {
 
         const char* nm = (src.name != nullptr && src.name[0] != '\0') ? src.name : "(unnamed)";
         dbg.name = nm;
-        if (src.external) {
+        if (src.kind == FgResourceKind::Buffer) {
+            dbg.label = std::format("{} ({}buffer, {} bytes)", nm, src.external ? "imported, " : "", dbg.sizeBytes);
+        } else if (src.external) {
             dbg.label = std::format("{} (imported, {}x{} {})", nm, dbg.width, dbg.height, dbg.formatName);
         } else {
             dbg.label = std::format("{} ({}x{} {})", nm, dbg.width, dbg.height, dbg.formatName);

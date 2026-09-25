@@ -11,6 +11,7 @@ public:
     FrameGraphContext(FrameGraph* graph, RhiCommandBuffer* cmd) : graph(graph), commandBuffer(cmd) {}
 
     auto texture(FgTextureHandle handle) -> RhiTexture*;
+    auto buffer(FgBufferHandle handle) -> RhiBuffer*;
     auto cmd() -> RhiCommandBuffer* { return commandBuffer; }
 
     // Bracket one draw for the render debugger. No-ops unless the draw log is enabled;

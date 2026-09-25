@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <string_view>
 #include <vector>
 
 class RhiCommandBuffer;
@@ -34,6 +35,12 @@ public:
     auto setResourcePool(ResourcePool* pool) -> void { resourcePool = pool; }
     auto reset() -> void;
     auto importTexture(const char* name, RhiTexture* texture, const FgTextureDesc& desc) -> FgTextureHandle;
+    // A buffer that outlives the frame. initialAccess is the access it was left in by the
+    // previous frame (finalAccess of that frame), so the first barrier this frame syncs
+    // against the earlier reads or writes; None for a new buffer or unknown contents.
+    auto importBuffer(const char* name, RhiBuffer* buffer, const FgBufferDesc& desc, FgAccessFlags initialAccess = FgAccessFlags::None) -> FgBufferHandle;
+    // Access the imported buffer is left in after execute(); initialAccess if no pass used it.
+    auto finalAccess(FgBufferHandle handle) const -> FgAccessFlags { return resources[handle.index].currentAccess; }
 
     template <typename DataT>
     auto addPass(const char* name, std::function<void(FrameGraphBuilder&, DataT&)> setup, std::function<void(FrameGraphContext&, const DataT&)> exec)
@@ -48,6 +55,8 @@ public:
     }
 
     auto buildDebugSnapshot() const -> FrameGraphDebugSnapshot;
+    // Command stats of the named pass from the last execute; nullptr if absent or culled.
+    auto passStats(std::string_view name) const -> const RhiCommandStats*;
 
     // Draw log for the render debugger: enabled per frame, records cleared by reset().
     auto setDrawLogEnabled(bool enabled) -> void { drawLogEnabled = enabled; }

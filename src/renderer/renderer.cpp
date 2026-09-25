@@ -1,10 +1,11 @@
 #include "renderer.h"
 
-#include "mipchain.h"
 #include "blitpass.h"
 #include "imguibackend.h"
+#include "instanceuploadpass.h"
 #include "material.h"
 #include "mesh.h"
+#include "mipchain.h"
 #include "observationmacros.h"
 #include "presentpass.h"
 #include "profile.h"
@@ -15,6 +16,7 @@
 #include "screenshot.h"
 #include "shadowpass.h"
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <limits>
@@ -117,6 +119,11 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
     if (!gizmoPass.init(device, imgCount, ext, colorFmt)) {
         return std::unexpected(1);
     }
+
+    // Instance buffer and per-slot staging; grown by uploadRenderWorld.
+    instanceStaging.assign(imgCount, nullptr);
+    instanceStagingMapped.assign(imgCount, nullptr);
+    ensureInstanceCapacity(0);
 
     // Frame sync
     cmdBuffers.resize(imgCount);
@@ -398,9 +405,17 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
             sceneBounds.max = glm::max(sceneBounds.max, inst.worldBounds.max);
         }
     }
+    bool sizeChanged = gpuInstances.size() != world.meshInstances.size();
+    auto instanceCount = (uint32_t) world.meshInstances.size();
+    uint32_t changedFirst = sizeChanged ? 0 : instanceCount;
+    uint32_t changedEnd = sizeChanged ? instanceCount : 0;
     gpuInstances.resize(world.meshInstances.size());
     for (size_t m = 0; m < world.meshInstances.size(); m++) {
         const auto& inst = world.meshInstances[m];
+        if (!sizeChanged && gpuInstances[m].transform != inst.worldTransform) {
+            changedFirst = std::min(changedFirst, (uint32_t) m);
+            changedEnd = std::max(changedEnd, (uint32_t) m + 1);
+        }
         gpuInstances[m] = {
             .mesh = inst.mesh,
             .material = inst.material,
@@ -412,6 +427,9 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
             .doubleSided = inst.doubleSided,
         };
     }
+    // Before the descriptor rebuild below: a grown buffer is a new buffer the sets must point at.
+    ensureInstanceCapacity(instanceCount);
+    markInstancesDirty(changedFirst, changedEnd);
 
     if (!geometryChanged) {
         return;
@@ -619,6 +637,53 @@ auto Renderer::applySamplerSettings(const SamplerSettings& settings) -> void {
         .field("nearest_mip", settings.nearestMip);
 }
 
+auto Renderer::ensureInstanceCapacity(uint32_t count) -> void {
+    if (instanceBuffer != nullptr && count <= instanceCapacity) {
+        return;
+    }
+    // Frames in flight may still read the old buffers; they go through the deletion queue.
+    deletionQueue.deferBuffer(m_frameIndex, instanceBuffer);
+    for (auto*& staging : instanceStaging) {
+        deletionQueue.deferBuffer(m_frameIndex, staging);
+        staging = nullptr;
+    }
+
+    constexpr uint32_t minCapacity = 256;
+    instanceCapacity = std::max({count, instanceCapacity * 2, minCapacity});
+    auto bytes = (uint64_t) instanceCapacity * sizeof(glm::mat4);
+    instanceBuffer = device->createBuffer({
+        .size = bytes,
+        .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferDst,
+        .memory = RhiMemoryUsage::GpuOnly,
+    });
+    for (size_t i = 0; i < instanceStaging.size(); i++) {
+        instanceStaging[i] = device->createBuffer({
+            .size = bytes,
+            .usage = RhiBufferUsage::TransferSrc,
+            .memory = RhiMemoryUsage::CpuToGpu,
+        });
+        instanceStagingMapped[i] = device->mapBuffer(instanceStaging[i]);
+    }
+    // New contents: no earlier access to sync with, and every instance needs uploading.
+    instanceBufferAccess = FgAccessFlags::None;
+    shadowPass.bindInstanceBuffer(device, instanceBuffer, deletionQueue, m_frameIndex);
+    markInstancesDirty(0, (uint32_t) gpuInstances.size());
+    OBS_EVENT("Render", "InstanceBufferCreated", "instances").field("capacity", (int64_t) instanceCapacity).field("bytes", (int64_t) bytes);
+}
+
+auto Renderer::markInstancesDirty(uint32_t first, uint32_t end) -> void {
+    if (end <= first) {
+        return;
+    }
+    if (dirtyEnd <= dirtyFirst) {
+        dirtyFirst = first;
+        dirtyEnd = end;
+        return;
+    }
+    dirtyFirst = std::min(dirtyFirst, first);
+    dirtyEnd = std::max(dirtyEnd, end);
+}
+
 auto Renderer::rebuildGeometryDescriptorSets() -> void {
     using enum RhiDescriptorType;
     PROFILE_ZONE("DescriptorSets");
@@ -639,9 +704,10 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
     }
 
     auto totalSets = imgCount * instanceCount;
-    std::array<RhiDescriptorBinding, 2> poolBindings = {{
+    std::array<RhiDescriptorBinding, 3> poolBindings = {{
         {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
         {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
+        {.binding = 2, .type = StorageBuffer, .stage = RhiShaderStage::Vertex},
     }};
     geometryDescriptorPool = device->createDescriptorPool(totalSets, poolBindings);
     geometryDescriptorSets.assign(totalSets, nullptr);
@@ -656,7 +722,7 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
                 tex = texIt->second.texture;
             }
 
-            std::array<RhiDescriptorWrite, 2> writes = {{
+            std::array<RhiDescriptorWrite, 3> writes = {{
                 {
                     .binding = 0,
                     .type = UniformBuffer,
@@ -668,6 +734,11 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
                     .type = CombinedImageSampler,
                     .texture = tex,
                     .sampler = materialSampler,
+                },
+                {
+                    .binding = 2,
+                    .type = StorageBuffer,
+                    .buffer = instanceBuffer,
                 },
             }};
             device->updateDescriptorSet(geometryDescriptorSets[(i * instanceCount) + m], writes);
@@ -763,6 +834,35 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     auto colorHandle = frameGraph.importTexture("backbuffer", swapchain->image(*index), {ext.width, ext.height, swapchain->colorFormat()});
     auto depthHandle = frameGraph.importTexture("depth", depthTexture, {ext.width, ext.height, depthFormat, RhiTextureUsage::DepthAttachment | RhiTextureUsage::Sampled});
 
+    // Instance buffer: imported with the access the previous frame left it in, so this
+    // frame's upload waits for last frame's reads. Only the dirty span is copied.
+    FgBufferDesc instanceDesc = {
+        .size = (uint64_t) instanceCapacity * sizeof(glm::mat4),
+        .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferDst,
+    };
+    auto instanceImport = frameGraph.importBuffer("instances", instanceBuffer, instanceDesc, instanceBufferAccess);
+    auto instanceHandle = instanceImport;
+    debugInstanceUploadBytes = 0;
+    auto carriedInstanceAccess = instanceBufferAccess;
+    uint32_t uploadFirst = dirtyFirst;
+    dirtyEnd = std::min(dirtyEnd, (uint32_t) gpuInstances.size());
+    if (dirtyEnd > dirtyFirst) {
+        auto* staging = static_cast<std::byte*>(instanceStagingMapped[currentFrame]);
+        for (uint32_t m = dirtyFirst; m < dirtyEnd; m++) {
+            std::memcpy(staging + ((uint64_t) m * sizeof(glm::mat4)), &gpuInstances[m].transform, sizeof(glm::mat4));
+        }
+        RhiBufferCopy region = {
+            .srcOffset = (uint64_t) dirtyFirst * sizeof(glm::mat4),
+            .dstOffset = (uint64_t) dirtyFirst * sizeof(glm::mat4),
+            .size = (uint64_t) (dirtyEnd - dirtyFirst) * sizeof(glm::mat4),
+        };
+        auto stagingHandle = frameGraph.importBuffer("instanceStaging", instanceStaging[currentFrame], {.size = instanceDesc.size, .usage = RhiBufferUsage::TransferSrc});
+        instanceHandle = addInstanceUploadPass(frameGraph, stagingHandle, instanceImport, region);
+        debugInstanceUploadBytes = region.size;
+    }
+    dirtyFirst = 0;
+    dirtyEnd = 0;
+
     // Per-frame resources (UBOs, descriptor sets, dynamic vertex buffers) are owned by
     // the frame slot whose fence guards them, not by the swapchain image.
     auto imageIdx = currentFrame;
@@ -827,16 +927,16 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     auto invViewProj = glm::inverse(snapshot.projMatrix * snapshot.viewMatrix);
 
     profile::endZone(); // ShadowSetup
-    const auto& shadowData = shadowPass.addPass(frameGraph, atlasExtent, depthFormat, cascades, snapshot.shadowVisible, gpuInstances, meshCache);
+    const auto& shadowData = shadowPass.addPass(frameGraph, atlasExtent, depthFormat, cascades, snapshot.shadowVisible, gpuInstances, instanceHandle, meshCache);
 
     debugCulledInstances = snapshot.culledInstances;
     if (snapshot.sampler != materialSamplerSettings) {
         applySamplerSettings(snapshot.sampler);
     }
     if (snapshot.depthPrepass) {
-        depthPrepass.addPass(frameGraph, depthHandle, ext, imageIdx, gpuInstances, snapshot.visible, meshCache, geometryDescriptorSets);
+        depthPrepass.addPass(frameGraph, depthHandle, ext, imageIdx, gpuInstances, instanceHandle, snapshot.visible, meshCache, geometryDescriptorSets);
     }
-    const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, imageIdx, instanceCount, gpuInstances, snapshot.visible, meshCache, geometryDescriptorSets, snapshot.depthPrepass);
+    const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, imageIdx, instanceCount, gpuInstances, instanceHandle, snapshot.visible, meshCache, geometryDescriptorSets, snapshot.depthPrepass);
 
     const auto& lightData = lightingPass.addPass(
         frameGraph,
@@ -911,6 +1011,21 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         cmd->reset();
         cmd->begin();
         frameGraph.execute(cmd);
+        instanceBufferAccess = frameGraph.finalAccess(instanceImport);
+        if (debugInstanceUploadBytes > 0) {
+            // carried_access is what the previous frame left the buffer in: StorageRead on any
+            // upload after the first, so the upload's barrier waits for those reads.
+            const auto* upload = frameGraph.passStats("InstanceUpload");
+            const auto* shadow = frameGraph.passStats("ShadowPass");
+            OBS_EVENT("Render", "InstanceUpload", "instances")
+                .field("frame", (int64_t) frame)
+                .field("first", (int64_t) uploadFirst)
+                .field("count", (int64_t) (debugInstanceUploadBytes / sizeof(glm::mat4)))
+                .field("bytes", (int64_t) debugInstanceUploadBytes)
+                .field("carried_access", toString(carriedInstanceAccess))
+                .field("upload_barriers", upload != nullptr ? (int64_t) upload->barriers : -1)
+                .field("shadow_barriers", shadow != nullptr ? (int64_t) shadow->barriers : -1);
+        }
         recordTextureInspect(cmd);
         if (dumpPending.has_value()) {
             auto texIt = textureCache.find(dumpPending->material);
@@ -965,7 +1080,9 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
             .field("shadow_culled", (int64_t) debugShadowCulled)
             .field("meshes", (int64_t) meshCache.size())
             .field("textures", (int64_t) textureCache.size())
-            .field("logged_draws", (int64_t) slotDrawLogs[currentFrame].size());
+            .field("logged_draws", (int64_t) slotDrawLogs[currentFrame].size())
+            .field("instance_buffer_bytes", (int64_t) instanceCapacity * (int64_t) sizeof(glm::mat4))
+            .field("instance_upload_bytes", (int64_t) debugInstanceUploadBytes);
     }
 
     RhiSubmitInfo submitInfo = {
@@ -1080,6 +1197,11 @@ auto Renderer::destroy() -> void {
     }
     meshCache.clear();
     textureCache.clear();
+
+    device->destroyBuffer(instanceBuffer);
+    for (auto* staging : instanceStaging) {
+        device->destroyBuffer(staging);
+    }
 
     shadowPass.destroy(device);
     depthPrepass.destroy(device);

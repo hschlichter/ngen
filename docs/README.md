@@ -33,6 +33,8 @@ Current truth for the build framework is [`../build/build_system.md`](../build/b
 - [frame_graph_phase2_summary.md](frame_graph_phase2_summary.md) — retrospective: resource pools, transient textures
 - [frame_graph_phase3_summary.md](frame_graph_phase3_summary.md) — retrospective: lifetime tracking, memory aliasing
 - [frame_graph_next.md](frame_graph_next.md) — future frame-graph phases with "when needed" trigger conditions
+- [plan_gpu_driven.md](plan_gpu_driven.md) — umbrella: GPU-driven rendering in five stages (graph buffers, geometry pool, bindless, indirect, GPU culling) (draft)
+- [plan_frame_graph_buffers.md](plan_frame_graph_buffers.md) — stage 1: buffer resources in the frame graph, persistent GPU instance buffer with delta upload (in progress)
 - [basic_lighting_pass_plan.md](basic_lighting_pass_plan.md) — (superseded by v2)
 - [basic_lighting_pass_plan_v2.md](basic_lighting_pass_plan_v2.md) — deferred G-buffer + lighting pass (landed)
 - [plan_threaded_rendering.md](plan_threaded_rendering.md) — dedicated render thread with snapshots (landed)

@@ -1,6 +1,5 @@
 #include "camera.h"
 #include "culling.h"
-#include "shadowcascades.h"
 #include "debugdraw.h"
 #include "editorui.h"
 #include "imguibackendvulkan.h"
@@ -22,6 +21,7 @@
 #include "sceneupdater.h"
 #include "sessionscript.h"
 #include "shaderloader.h"
+#include "shadowcascades.h"
 #include "translategizmo.h"
 #include "usdrenderextractor.h"
 #include "usdscene.h"
@@ -31,9 +31,10 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <algorithm>
+#include <cstdio>
 #include <filesystem>
 #include <print>
-#include <algorithm>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -396,6 +397,23 @@ auto main(int argc, char* argv[]) -> int {
                 selectedPrim = prim;
             } else {
                 std::println(stderr, "select: prim '{}' not found", c.args);
+            }
+        } else if (verb == "translate") {
+            // "<prim> dx,dy,dz": a preview SetTransform, the same edit a gizmo drag submits.
+            auto space = c.args.find(' ');
+            auto path = c.args.substr(0, space);
+            glm::vec3 offset(0.0f);
+            bool parsed = space != std::string::npos && std::sscanf(c.args.c_str() + space + 1, "%f,%f,%f", &offset.x, &offset.y, &offset.z) == 3;
+            auto prim = usdScene.isOpen() ? usdScene.findPrim(path.c_str()) : PrimHandle{};
+            const auto* xf = prim ? usdScene.getTransform(prim) : nullptr;
+            if (!parsed) {
+                std::println(stderr, "translate: expected '/prim dx,dy,dz', got '{}'", c.args);
+            } else if (xf == nullptr) {
+                std::println(stderr, "translate: prim '{}' not found or has no transform", path);
+            } else {
+                auto local = xf->local;
+                local.position += offset;
+                sceneUpdater.addEdit({.type = SceneEditCommand::Type::SetTransform, .prim = prim, .transform = local, .purpose = SceneEditRequestContext::Purpose::Preview});
             }
         } else if (verb == "view") {
             static const char* names[] = {"lit", "albedo", "normals", "depth", "shadowfactor", "shadowmap", "shadowuv", "worldpos", "miplevel", "cascades"};

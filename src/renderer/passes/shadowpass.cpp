@@ -1,6 +1,7 @@
 #include "shadowpass.h"
 #include "renderertypes.h"
 
+#include "deletionqueue.h"
 #include "mesh.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
@@ -12,8 +13,11 @@
 namespace {
 struct ShadowPush {
     glm::mat4 lightViewProj;
-    glm::mat4 model;
 };
+
+constexpr std::array<RhiDescriptorBinding, 1> instanceBindings = {{
+    {.binding = 0, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Vertex},
+}};
 } // namespace
 
 auto ShadowPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFormat) -> bool {
@@ -26,10 +30,12 @@ auto ShadowPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthForm
         {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0}, // position-only stream
     }};
 
+    descSetLayout = device->createDescriptorSetLayout(instanceBindings);
+
     RhiGraphicsPipelineDesc pipelineDesc = {
         .vertexShader = vertShader,
         .fragmentShader = fragShader,
-        .descriptorSetLayouts = {}, // no descriptors; all data via push constants
+        .descriptorSetLayouts = {&descSetLayout, 1}, // instance buffer; the cascade matrix is a push constant
         .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(ShadowPush)},
         .colorFormats = {}, // depth-only
         .depthFormat = depthFormat,
@@ -43,7 +49,27 @@ auto ShadowPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthForm
     return pipelineCullBack != nullptr && pipelineCullNone != nullptr;
 }
 
+auto ShadowPass::bindInstanceBuffer(RhiDevice* device, RhiBuffer* instanceBuffer, DeletionQueue& deletionQueue, uint64_t frame) -> void {
+    if (descPool != nullptr) {
+        deletionQueue.defer(frame, [device, pool = descPool, set = descSet] {
+            device->freeDescriptorSets(pool, {&set, 1});
+            device->destroyDescriptorPool(pool);
+        });
+    }
+    descPool = device->createDescriptorPool(1, instanceBindings);
+    device->allocateDescriptorSets(descPool, descSetLayout, {&descSet, 1});
+    std::array<RhiDescriptorWrite, 1> writes = {{
+        {.binding = 0, .type = RhiDescriptorType::StorageBuffer, .buffer = instanceBuffer, .bufferRange = 0},
+    }};
+    device->updateDescriptorSet(descSet, writes);
+}
+
 auto ShadowPass::destroy(RhiDevice* device) -> void {
+    if (descPool != nullptr) {
+        device->freeDescriptorSets(descPool, {&descSet, 1});
+        device->destroyDescriptorPool(descPool);
+    }
+    device->destroyDescriptorSetLayout(descSetLayout);
     device->destroyPipeline(pipelineCullBack);
     device->destroyPipeline(pipelineCullNone);
     device->destroyShaderModule(vertShader);
@@ -57,6 +83,7 @@ auto ShadowPass::addPass(
     std::span<const ShadowCascade> cascades,
     const std::array<std::vector<uint8_t>, maxShadowCascades>& visible,
     std::span<const GpuInstance> instances,
+    FgBufferHandle instanceBuffer,
     const std::unordered_map<uint32_t, CachedMesh>& meshCache) -> const ShadowPassData& {
     FgTextureDesc desc = {
         .width = atlasExtent.width,
@@ -67,6 +94,7 @@ auto ShadowPass::addPass(
 
     auto* cullBack = pipelineCullBack;
     auto* cullNone = pipelineCullNone;
+    auto* instanceSet = descSet;
     // Copies: the execute lambda runs later in the frame, after the snapshot may be gone.
     std::array<ShadowCascade, maxShadowCascades> cascadeCopy;
     uint32_t cascadeCount = (uint32_t) std::min(cascades.size(), (size_t) maxShadowCascades);
@@ -79,8 +107,9 @@ auto ShadowPass::addPass(
         "ShadowPass",
         [&](FrameGraphBuilder& builder, ShadowPassData& data) {
             data.shadowMap = builder.write(builder.createTexture("shadowMap", desc), FgAccessFlags::DepthAttachment);
+            builder.read(instanceBuffer, FgAccessFlags::StorageRead);
         },
-        [cullBack, cullNone, atlasExtent, cascadeCopy, cascadeCount, visibleMasks, instances, &meshCache](FrameGraphContext& ctx, const ShadowPassData& data) {
+        [cullBack, cullNone, instanceSet, atlasExtent, cascadeCopy, cascadeCount, visibleMasks, instances, &meshCache](FrameGraphContext& ctx, const ShadowPassData& data) {
             auto* cmd = ctx.cmd();
 
             RhiRenderingAttachmentInfo depthAtt = {
@@ -129,10 +158,11 @@ auto ShadowPass::addPass(
                         const auto& cached = meshIt->second;
                         if (!bound) {
                             cmd->bindPipeline(pip);
+                            cmd->bindDescriptorSet(pip, 0, instanceSet);
                             bound = true;
                         }
 
-                        ShadowPush push{cascade.viewProj, inst.transform};
+                        ShadowPush push{cascade.viewProj};
                         cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(push), &push);
                         cmd->bindVertexBuffer(cached.positionBuffer);
                         cmd->bindIndexBuffer(cached.indexBuffer, RhiIndexType::Uint32);
@@ -143,7 +173,8 @@ auto ShadowPass::addPass(
                             cmd->beginGpuZone("LargeDraw");
                         }
                         ctx.beginDraw({.instance = m, .mesh = inst.mesh.index, .material = inst.material.index, .prim = inst.prim, .indexOffset = 0, .indexCount = cached.indexCount});
-                        cmd->drawIndexed(cached.indexCount, 1, 0, 0, 0);
+                        // firstInstance carries the instance index: the shader reads instances[gl_InstanceIndex].
+                        cmd->drawIndexed(cached.indexCount, 1, 0, 0, m);
                         ctx.endDraw();
                         if (heavy) {
                             cmd->endGpuZone();

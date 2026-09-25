@@ -31,6 +31,8 @@ struct FgResourceDebug {
     const char* formatName = "";
     const char* usageName = "";
     bool external = false;
+    bool buffer = false;    // buffer resource: sizeBytes instead of width/height/format, no preview
+    uint64_t sizeBytes = 0; // buffers only
     uint32_t firstUseOrder = UINT32_MAX;
     uint32_t lastUseOrder = UINT32_MAX;
     uint32_t producerPass = UINT32_MAX;
@@ -100,6 +102,27 @@ inline auto toString(RhiTextureUsageFlags u) -> const char* {
             return "TransferSrc";
         case 1u << 5:
             return "TransferDst";
+        default:
+            return "Combined";
+    }
+}
+
+inline auto toString(RhiBufferUsageFlags u) -> const char* {
+    switch (u.bits) {
+        case 0:
+            return "None";
+        case 1u << 0:
+            return "TransferSrc";
+        case 1u << 1:
+            return "TransferDst";
+        case 1u << 2:
+            return "Vertex";
+        case 1u << 3:
+            return "Index";
+        case 1u << 4:
+            return "Uniform";
+        case 1u << 5:
+            return "Storage";
         default:
             return "Combined";
     }

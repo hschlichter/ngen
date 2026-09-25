@@ -15,9 +15,10 @@ auto GeometryPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFo
     vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/gbuffer.vert.spv");
     fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/gbuffer.frag.spv");
 
-    std::array<RhiDescriptorBinding, 2> bindings = {{
+    std::array<RhiDescriptorBinding, 3> bindings = {{
         {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
         {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
+        {.binding = 2, .type = StorageBuffer, .stage = RhiShaderStage::Vertex},
     }};
     descSetLayout = device->createDescriptorSetLayout(bindings);
 
@@ -41,7 +42,7 @@ auto GeometryPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFo
         .vertexShader = vertShader,
         .fragmentShader = fragShader,
         .descriptorSetLayouts = {&descSetLayout, 1},
-        .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(glm::mat4)},
+        .pushConstant = {}, // model matrix comes from the instance buffer at gl_InstanceIndex
         .colorFormats = colorFormats,
         .depthFormat = depthFormat,
         .vertexStride = sizeof(Vertex),
@@ -84,6 +85,7 @@ auto GeometryPass::addPass(
     uint32_t imageIndex,
     uint32_t instanceCount,
     std::span<const GpuInstance> instances,
+    FgBufferHandle instanceBuffer,
     std::span<const uint8_t> visible,
     const std::unordered_map<uint32_t, CachedMesh>& meshCache,
     std::span<RhiDescriptorSet*> descriptorSets,
@@ -110,6 +112,7 @@ auto GeometryPass::addPass(
             data.albedo = builder.write(builder.createTexture("gbuffer.albedo", albedoDesc), FgAccessFlags::ColorAttachment);
             data.normal = builder.write(builder.createTexture("gbuffer.normal", normalDesc), FgAccessFlags::ColorAttachment);
             data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
+            builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             builder.setSideEffects(true);
         },
         [cullBack, cullNone, depthPrepassed, imageIndex, instanceCount, extent, instances, visible, &meshCache, descriptorSets](FrameGraphContext& ctx, const GeometryPassData& data) {
@@ -171,8 +174,6 @@ auto GeometryPass::addPass(
                         bound = true;
                     }
 
-                    auto model = inst.transform;
-                    cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(glm::mat4), &model);
                     cmd->bindVertexBuffer(cached.vertexBuffer);
                     cmd->bindIndexBuffer(cached.indexBuffer, RhiIndexType::Uint32);
                     cmd->bindDescriptorSet(pip, 0, descriptorSets[(imageIndex * instanceCount) + m]);
@@ -182,7 +183,8 @@ auto GeometryPass::addPass(
                         cmd->beginGpuZone("LargeDraw");
                     }
                     ctx.beginDraw({.instance = m, .mesh = inst.mesh.index, .material = inst.material.index, .prim = inst.prim, .indexOffset = inst.indexOffset, .indexCount = inst.indexCount});
-                    cmd->drawIndexed(inst.indexCount, 1, inst.indexOffset, 0, 0);
+                    // firstInstance carries the instance index: the shader reads instances[gl_InstanceIndex].
+                    cmd->drawIndexed(inst.indexCount, 1, inst.indexOffset, 0, m);
                     ctx.endDraw();
                     if (heavy) {
                         cmd->endGpuZone();
