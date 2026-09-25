@@ -5,6 +5,8 @@
 #include "imguibackend.h"
 #include "lightingpass.h"
 
+#include "shadowcascades.h"
+
 #include <glm/glm.hpp>
 
 #include <vector>
@@ -43,6 +45,14 @@ struct RenderSnapshot {
     // means draw everything. Computed on the main thread (docs/plan_frustum_culling.md).
     std::vector<uint8_t> visible;
     uint32_t culledInstances = 0;
+
+    // Shadow cascades fitted and culled on the main thread (docs/plan_shadow_cascades.md).
+    // cascadeCount 0 means the renderer fits a single cascade itself.
+    ShadowCascadeSettings shadowSettings;
+    uint32_t cascadeCount = 0;
+    std::array<ShadowCascade, maxShadowCascades> cascades;
+    std::array<std::vector<uint8_t>, maxShadowCascades> shadowVisible;
+    std::array<uint32_t, maxShadowCascades> shadowCulled = {};
 
     std::vector<GizmoVertex> translateGizmoVerts;
     std::vector<GizmoVertex> rotateGizmoVerts;

@@ -117,6 +117,7 @@ auto EditorUI::draw(
         RenderDebugViewFlags viewFlags = {
             .gbufferView = gbufferViewMode,
             .sampler = samplerSettings,
+            .shadow = shadowSettings,
             .showBufferOverlay = showBufferOverlayFlag,
             .showShadowOverlay = showShadowOverlayFlag,
             .antiAliasing = antiAliasingFlag,
@@ -136,7 +137,7 @@ auto EditorUI::draw(
     }
     {
         PROFILE_ZONE("CullingWindow");
-        drawCullingWindow(showCullingWindow, {.enabled = cullEnabledFlag, .frozen = cullFrozenFlag, .showCulled = showCulledFlag, .instances = cullStatInstances, .culled = cullStatCulled});
+        drawCullingWindow(showCullingWindow, {.enabled = cullEnabledFlag, .frozen = cullFrozenFlag, .showCulled = showCulledFlag, .instances = cullStatInstances, .culled = cullStatCulled, .cascades = shadowCascadeCount, .shadowCulled = shadowCulledStats, .shadowDrawn = shadowDrawnStats});
     }
     {
         PROFILE_ZONE("AssetBrowserWindow");

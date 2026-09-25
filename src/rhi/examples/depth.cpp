@@ -52,6 +52,41 @@ void main() {
 }
 )glsl";
 
+// Compare-sampler pass: a quad in the free top band samples the depth texture through a
+// sampler2DShadow with a fixed reference depth. Lit (1.0) where the stored depth is
+// beyond the reference, dark where a quad wrote a nearer depth.
+static constexpr const char* compareVertexSource = R"glsl(
+#version 450
+
+layout(location = 0) out vec2 fragUv;
+
+const vec2 quadMin = vec2(-0.9, -0.95);
+const vec2 quadMax = vec2(0.9, -0.55);
+
+void main() {
+    // Two triangles from gl_VertexIndex, uv covers the whole depth texture.
+    vec2 corners[6] = vec2[](vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(1, 1), vec2(0, 1), vec2(0, 0));
+    vec2 uv = corners[gl_VertexIndex];
+    gl_Position = vec4(mix(quadMin, quadMax, uv), 0.0, 1.0);
+    fragUv = uv;
+}
+)glsl";
+
+static constexpr const char* compareFragmentSource = R"glsl(
+#version 450
+
+layout(set = 0, binding = 0) uniform sampler2DShadow depthCompare;
+layout(location = 0) in vec2 fragUv;
+layout(location = 0) out vec4 outColor;
+
+const float referenceDepth = 0.5;
+
+void main() {
+    float lit = texture(depthCompare, vec3(fragUv, referenceDepth));
+    outColor = vec4(vec3(lit), 1.0);
+}
+)glsl";
+
 struct Vertex {
     float x;
     float y;
@@ -67,6 +102,7 @@ static constexpr float nearZ = 0.3f;
 static constexpr float farZ = 0.7f;
 static constexpr std::array<float, 3> equalColor = {0.2f, 0.9f, 0.3f};
 static constexpr float quadHalf = 0.16f;
+static constexpr float compareBandY = -0.75f; // centre of the compare quad's band
 static constexpr float pairShift = 0.1f; // near quad offset (-,-), far quad (+,+); overlap centred on the column
 static constexpr std::array<float, 4> columnX = {-0.72f, -0.24f, 0.24f, 0.72f};
 
@@ -185,7 +221,53 @@ protected:
         }
 
         createDepthTexture(swapchain()->extent());
+
+        // Compare sampler pass: sampler with compareEnable, the depth texture as a shadow
+        // sampler, fullscreen-style quad from gl_VertexIndex.
+        auto cmpVertSpirv = compileGlsl(RhiShaderStage::Vertex, compareVertexSource, "depthcompare.vert");
+        auto cmpFragSpirv = compileGlsl(RhiShaderStage::Fragment, compareFragmentSource, "depthcompare.frag");
+        if (cmpVertSpirv.empty() || cmpFragSpirv.empty()) {
+            return false;
+        }
+        compareVertexShader = device().createShaderModule({.stage = RhiShaderStage::Vertex, .code = cmpVertSpirv});
+        compareFragmentShader = device().createShaderModule({.stage = RhiShaderStage::Fragment, .code = cmpFragSpirv});
+        std::array<RhiDescriptorBinding, 1> compareBindings = {{
+            {.binding = 0, .type = RhiDescriptorType::CombinedImageSampler, .stage = RhiShaderStage::Fragment},
+        }};
+        compareSetLayout = device().createDescriptorSetLayout(compareBindings);
+        RhiGraphicsPipelineDesc comparePipelineDesc = {
+            .vertexShader = compareVertexShader,
+            .fragmentShader = compareFragmentShader,
+            .descriptorSetLayouts = {&compareSetLayout, 1},
+            .colorFormats = {&format, 1},
+            .vertexStride = 0,
+            .raster = {.cullMode = RhiCullMode::None},
+            .depth = {.testEnable = false, .writeEnable = false},
+        };
+        comparePipeline = device().createGraphicsPipeline(comparePipelineDesc);
+        if (comparePipeline == nullptr) {
+            return false;
+        }
+        compareSampler = device().createSampler({
+            .magFilter = RhiFilter::Nearest,
+            .minFilter = RhiFilter::Nearest,
+            .addressU = RhiAddressMode::ClampToEdge,
+            .addressV = RhiAddressMode::ClampToEdge,
+            .compareEnable = true,
+            .compareOp = RhiCompareOp::LessOrEqual, // reference <= stored depth: lit
+        });
+        comparePool = device().createDescriptorPool(1, compareBindings);
+        compareSets.assign(1, nullptr);
+        device().allocateDescriptorSets(comparePool, compareSetLayout, compareSets);
+        writeCompareDescriptor();
         return true;
+    }
+
+    auto writeCompareDescriptor() -> void {
+        std::array<RhiDescriptorWrite, 1> writes = {{
+            {.binding = 0, .type = RhiDescriptorType::CombinedImageSampler, .texture = depthTexture, .sampler = compareSampler},
+        }};
+        device().updateDescriptorSet(compareSets[0], writes);
     }
 
     // The depth texture must match the swapchain size; the base calls this after
@@ -193,6 +275,7 @@ protected:
     auto resized(RhiExtent2D extent) -> void override {
         device().destroyTexture(depthTexture);
         createDepthTexture(extent);
+        writeCompareDescriptor();
     }
 
     auto record(RhiCommandBuffer* cmd, RhiTexture* backbuffer, RhiExtent2D extent) -> void override {
@@ -229,6 +312,23 @@ protected:
         cmd->drawIndexed(6, 1, (3 * 12) + 6, 0, 0);
         cmd->drawIndexed(6, 1, 4 * 12, 0, 0);
         cmd->endRendering();
+
+        // Second pass: the depth texture becomes a shadow sampler input and the compare quad
+        // draws into the top band of the same backbuffer without clearing it.
+        std::array<RhiTextureBarrierDesc, 1> toRead = {{
+            {.texture = depthTexture, .oldState = RhiTextureState::DepthStencilAttachment, .newState = RhiTextureState::ShaderReadOnly},
+        }};
+        cmd->pipelineBarrier(toRead);
+        std::array<RhiRenderingAttachmentInfo, 1> keepColor = {{
+            {.texture = backbuffer, .state = RhiTextureState::ColorAttachment, .clear = false},
+        }};
+        cmd->beginRendering({.extent = extent, .colorAttachments = keepColor});
+        cmd->setViewport(extent);
+        cmd->setScissor(extent);
+        cmd->bindPipeline(comparePipeline);
+        cmd->bindDescriptorSet(comparePipeline, 0, compareSets[0]);
+        cmd->draw(6, 1, 0, 0);
+        cmd->endRendering();
     }
 
     auto check(const RhiExampleFrame& frame) -> bool override {
@@ -238,6 +338,12 @@ protected:
         ok = expectPixel(frame, frame.px(columnX[2]), frame.py(0.0f), farColor, "test-on-write-off-far-wins") && ok;
         ok = expectPixel(frame, frame.px(columnX[3] - pairShift), frame.py(-pairShift), equalColor, "equal-same-depth-passes") && ok;
         ok = expectPixel(frame, frame.px(columnX[3] + pairShift + (quadHalf * 0.5f)), frame.py(pairShift + (quadHalf * 0.5f)), {clearColor[0], clearColor[1], clearColor[2]}, "equal-other-depth-rejected") && ok;
+        // Compare quad: the band maps the whole depth texture; over column 0's near quad the
+        // stored depth 0.3 fails reference 0.5 <= depth (dark), over empty space depth 1.0 passes (lit).
+        auto bandY = frame.py(compareBandY);
+        auto bandX = [&](float sceneNdcX) { return frame.px(-0.9f + ((sceneNdcX + 1.0f) * 0.5f) * 1.8f); };
+        ok = expectPixel(frame, bandX(columnX[0] - pairShift), bandY, {0.0f, 0.0f, 0.0f}, "compare-sampler-near-fails") && ok;
+        ok = expectPixel(frame, bandX(-0.98f), bandY, {1.0f, 1.0f, 1.0f}, "compare-sampler-empty-passes") && ok;
         // Outside the overlap each quad is visible on its own.
         ok = expectPixel(frame, frame.px(columnX[0] - pairShift - quadHalf * 0.5f), frame.py(-pairShift - quadHalf * 0.5f), nearColor, "near-alone") && ok;
         ok = expectPixel(frame, frame.px(columnX[0] + pairShift + quadHalf * 0.5f), frame.py(pairShift + quadHalf * 0.5f), farColor, "far-alone") && ok;
@@ -245,6 +351,13 @@ protected:
     }
 
     auto teardown() -> void override {
+        device().freeDescriptorSets(comparePool, compareSets);
+        device().destroyDescriptorPool(comparePool);
+        device().destroyDescriptorSetLayout(compareSetLayout);
+        device().destroySampler(compareSampler);
+        device().destroyPipeline(comparePipeline);
+        device().destroyShaderModule(compareFragmentShader);
+        device().destroyShaderModule(compareVertexShader);
         device().destroyTexture(depthTexture);
         device().destroyBuffer(indexBuffer);
         device().destroyBuffer(vertexBuffer);
@@ -274,7 +387,7 @@ private:
             .width = extent.width,
             .height = extent.height,
             .format = depthFormat,
-            .usage = RhiTextureUsage::DepthAttachment,
+            .usage = RhiTextureUsage::DepthAttachment | RhiTextureUsage::Sampled, // sampled by the compare pass
         };
         depthTexture = device().createTexture(desc);
     }
@@ -288,6 +401,13 @@ private:
     RhiBuffer* vertexBuffer = nullptr;
     RhiBuffer* indexBuffer = nullptr;
     RhiTexture* depthTexture = nullptr;
+    RhiShaderModule* compareVertexShader = nullptr;
+    RhiShaderModule* compareFragmentShader = nullptr;
+    RhiDescriptorSetLayout* compareSetLayout = nullptr;
+    RhiPipeline* comparePipeline = nullptr;
+    RhiSampler* compareSampler = nullptr;
+    RhiDescriptorPool* comparePool = nullptr;
+    std::vector<RhiDescriptorSet*> compareSets;
 };
 
 auto main(int argc, char** argv) -> int {

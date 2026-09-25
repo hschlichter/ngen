@@ -163,6 +163,7 @@ void drawMainMenuBar(MainMenuBarState& state) {
             ImGui::RadioButton("Shadow UV", &state.gbufferView, 6);
             ImGui::RadioButton("World Pos", &state.gbufferView, 7);
             ImGui::RadioButton("Mip Level", &state.gbufferView, 8);
+            ImGui::RadioButton("Cascades", &state.gbufferView, 9);
             ImGui::RadioButton("Lit", &state.gbufferView, 0);
             ImGui::EndMenu();
         }

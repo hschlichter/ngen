@@ -2,6 +2,7 @@
 
 #include "renderworld.h"
 #include "scenetypes.h"
+#include "shadowcascades.h"
 
 #include <array>
 #include <cstdint>
@@ -25,6 +26,17 @@ struct CullState {
     // Corners of the frozen frustum for the debug overlay; only meaningful while frozenActive.
     auto frozenCorners() const -> std::array<glm::vec3, 8>;
 };
+
+// Per-cascade shadow culling: one mask per cascade over all instances (the shadow pass draws
+// the primFirst ones), culled and drawn counted over primFirst instances only.
+struct ShadowCullResult {
+    uint32_t count = 0;
+    std::array<std::vector<uint8_t>, maxShadowCascades> visible;
+    std::array<uint32_t, maxShadowCascades> culled = {};
+    std::array<uint32_t, maxShadowCascades> drawn = {};
+};
+
+auto cullShadowCascades(std::span<const ShadowCascade> cascades, std::span<const RenderMeshInstance> instances, ShadowCullResult& out) -> void;
 
 // Fills visible (1 = draw, 0 = culled) for every instance and returns the culled count.
 // Instances without valid bounds are always drawn. Leaves visible empty when culling is

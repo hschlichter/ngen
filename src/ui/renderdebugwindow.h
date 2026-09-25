@@ -11,6 +11,7 @@
 struct RenderDebugViewFlags {
     int& gbufferView;
     SamplerSettings& sampler;
+    ShadowCascadeSettings& shadow;
     bool& showBufferOverlay;
     bool& showShadowOverlay;
     bool& antiAliasing;

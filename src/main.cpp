@@ -1,5 +1,6 @@
 #include "camera.h"
 #include "culling.h"
+#include "shadowcascades.h"
 #include "debugdraw.h"
 #include "editorui.h"
 #include "imguibackendvulkan.h"
@@ -32,6 +33,7 @@
 
 #include <filesystem>
 #include <print>
+#include <algorithm>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -396,9 +398,9 @@ auto main(int argc, char* argv[]) -> int {
                 std::println(stderr, "select: prim '{}' not found", c.args);
             }
         } else if (verb == "view") {
-            static const char* names[] = {"lit", "albedo", "normals", "depth", "shadowfactor", "shadowmap", "shadowuv", "worldpos", "miplevel"};
+            static const char* names[] = {"lit", "albedo", "normals", "depth", "shadowfactor", "shadowmap", "shadowuv", "worldpos", "miplevel", "cascades"};
             bool found = false;
-            for (int i = 0; i < 9; i++) {
+            for (int i = 0; i < 10; i++) {
                 if (c.args == names[i]) {
                     editorUI.setGBufferViewMode(i);
                     found = true;
@@ -483,6 +485,32 @@ auto main(int argc, char* argv[]) -> int {
                 renderer.requestTextureDump(material, level, path);
             } else {
                 std::println(stderr, "dump-texture: expected '<material> <level> <path>', got '{}'", c.args);
+            }
+        } else if (verb == "shadow") {
+            // shadow cascades=4,tile=1024,lambda=0.5,pcf=on|off
+            auto& settings = editorUI.shadowSettingsMutable();
+            size_t start = 0;
+            while (start < c.args.size()) {
+                auto comma = c.args.find(',', start);
+                auto item = c.args.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+                auto eq = item.find('=');
+                auto key = item.substr(0, eq);
+                auto value = eq == std::string::npos ? std::string{} : item.substr(eq + 1);
+                if (key == "cascades") {
+                    settings.count = (uint32_t) std::clamp(std::atoi(value.c_str()), 1, (int) maxShadowCascades);
+                } else if (key == "tile") {
+                    settings.tileSize = (uint32_t) std::max(64, std::atoi(value.c_str()));
+                } else if (key == "lambda") {
+                    settings.splitLambda = std::clamp(std::strtof(value.c_str(), nullptr), 0.0f, 1.0f);
+                } else if (key == "pcf") {
+                    settings.pcf = value == "on";
+                } else {
+                    std::println(stderr, "shadow: unknown key '{}'", key);
+                }
+                if (comma == std::string::npos) {
+                    break;
+                }
+                start = comma + 1;
             }
         } else if (verb == "prepass") {
             if (c.args == "on" || c.args == "off") {
@@ -825,6 +853,21 @@ auto main(int argc, char* argv[]) -> int {
         std::vector<uint8_t> visible;
         uint32_t culledInstances = cullInstances(cullState, cullViewProj, renderWorld.meshInstances, visible);
         editorUI.setCullStats((uint32_t) renderWorld.meshInstances.size(), culledInstances);
+
+        // Shadow cascades: fitted to the live camera and the scene bounds, culled per cascade.
+        std::array<ShadowCascade, maxShadowCascades> cascades;
+        ShadowCullResult shadowCull;
+        uint32_t cascadeCount = 0;
+        {
+            PROFILE_ZONE("FitCascades");
+            auto sceneBounds = sceneBoundsOf(renderWorld.meshInstances);
+            auto lightDir = pickShadowLightDirection(renderWorld.lights, cam.worldUp);
+            cascadeCount = fitShadowCascades(editorUI.getShadowSettings(), cam.viewMatrix(), proj, 0.1f, 3000.0f, lightDir, cam.worldUp, sceneBounds, cascades);
+        }
+        if (cullState.enabled) {
+            cullShadowCascades(std::span<const ShadowCascade>(cascades.data(), cascadeCount), renderWorld.meshInstances, shadowCull);
+        }
+        editorUI.setShadowCullStats(cascadeCount, shadowCull.culled, shadowCull.drawn);
         std::array<glm::vec3, 8> frozenCorners;
         if (cullState.frozenActive) {
             frozenCorners = cullState.frozenCorners();
@@ -920,6 +963,11 @@ auto main(int argc, char* argv[]) -> int {
             .sampler = editorUI.getSamplerSettings(),
             .visible = std::move(visible),
             .culledInstances = culledInstances,
+            .shadowSettings = editorUI.getShadowSettings(),
+            .cascadeCount = cascadeCount,
+            .cascades = cascades,
+            .shadowVisible = std::move(shadowCull.visible),
+            .shadowCulled = shadowCull.culled,
             .translateGizmoVerts = {translateGizmo.vertices().begin(), translateGizmo.vertices().end()},
             .rotateGizmoVerts = {rotateGizmo.vertices().begin(), rotateGizmo.vertices().end()},
             .scaleGizmoVerts = {scaleGizmo.vertices().begin(), scaleGizmo.vertices().end()},

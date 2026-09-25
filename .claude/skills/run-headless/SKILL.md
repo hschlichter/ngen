@@ -46,17 +46,19 @@ SDL_VIDEODRIVER=offscreen ./_out/linux-vulkan/debug/ngen-view <scene> --frames=3
 ```
 
 - `--screenshot=PATH` writes the presented frame as PNG on the last frame of `--frames`; Read the PNG to see it.
-- `--view=lit|albedo|normals|depth|shadowfactor|shadowmap|shadowuv|worldpos|miplevel` (miplevel: red level 0 to white level 7+), `--overlay=grid=on,aabbs=off,...`
+- `--view=lit|albedo|normals|depth|shadowfactor|shadowmap|shadowuv|worldpos|miplevel|cascades` (miplevel: red level 0 to white
+  level 7+; cascades: red, green, blue, yellow near to far; shadowmap shows the cascade atlas), `--overlay=grid=on,aabbs=off,...`
   (grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa), `--camera=x,y,z,yaw,pitch`, `--camera-frame=scene|/prim`, `--select=/prim`.
 - `--dump-render-debug=PATH`: meshes, textures, passes with draw counters, draw log with prim paths, as JSON.
   `--dump-profile=PATH`: profiler history as Chrome trace JSON (`jq '.traceEvents'`, or open in Perfetto).
 - `--script=FILE`: `<frame> <verb> [args]` per line, same verbs as the flags plus `quit` and `cull on|off|freeze|unfreeze|show|hide`
   (frustum culling toggle, frozen frustum, red/green AABB overlay), `prepass on|off` (depth prepass) and
-  `sampler aniso=8,bias=0,minlod=0,mip=linear|nearest` (material sampler), `inspect <material> <level>|off` (texture inspector
+  `sampler aniso=8,bias=0,minlod=0,mip=linear|nearest` (material sampler), `shadow cascades=3,tile=1024,lambda=0.5,pcf=on|off`
+  (cascaded shadows), `inspect <material> <level>|off` (texture inspector
   capture) and `dump-texture <material> <level> <path>` (one mip level as PNG); several screenshots in one run.
 - `--fail-on-validation`: exit code 2 if the validation layer reported anything. `--render-debug`: draw log on without the window.
 - Observations `DeviceInfo` (startup), `CameraPose` (every 60 frames), `Screenshot` (per shot) complement `FrameStats`, `RenderStats`
-  (`instances`, `culled`, `draws`, `primitives`), `GpuTime`.
+  (`instances`, `culled`, `cascades`, `shadow_culled`, `draws`, `primitives`), `GpuTime`.
 
 ## Inspect
 

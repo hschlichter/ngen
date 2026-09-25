@@ -135,7 +135,7 @@ Examples, each adding one concept to the previous:
 | `ngen-example-quad` | staging upload, vertex attributes, `drawIndexed` with uint16 and uint32 |
 | `ngen-example-texture` | `copyBufferToTexture`, samplers, descriptor sets |
 | `ngen-example-uniforms` | per-frame-slot uniform buffer, `bufferOffset`, `minUniformBufferOffsetAlignment` |
-| `ngen-example-depth` | example-owned depth texture, `resized()`, four `RhiDepthState`s including `Equal` after a depth write, `supportsTextureFormat` |
+| `ngen-example-depth` | example-owned depth texture, `resized()`, four `RhiDepthState`s including `Equal`, `supportsTextureFormat`, compare sampler |
 | `ngen-example-rendertarget` | render to texture, sample it, `blitTexture`, every layout transition |
 | `ngen-example-pushconstants` | one push constant range read by both stages, `maxPushConstantSize` |
 | `ngen-example-blend` | blend factors, cull mode, front face |
@@ -177,8 +177,6 @@ Kept honest rather than papered over. See the review that produced this file for
 - One blend state for all color attachments.
 - One push constant range per pipeline.
 - `blitTexture` takes a mip level per side (`RhiBlitRegion`) and a filter; layers are still 0 only.
-- `RhiSamplerDesc::compareEnable` is plumbed but unused: the engine compares shadow depth in the shader. No example until a
-  shadow sampler wants it.
 - No compressed formats (BC/ASTC). Add when an asset path produces them.
 - Resource objects are virtual-dtor classes returned by raw pointer; `swapchain->image(i)` pointers are invalidated by
   `recreate`. Opaque generational handles would fix this; deferred until a second backend makes the cost worth it.

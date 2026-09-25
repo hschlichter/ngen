@@ -5,6 +5,7 @@
 #include "rhidevice.h"
 #include "shaderloader.h"
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 
@@ -17,12 +18,13 @@ auto LightingPass::init(RhiDevice* dev, uint32_t imageCount, RhiExtent2D extent,
     vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/lighting.vert.spv");
     fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/lighting.frag.spv");
 
-    std::array<RhiDescriptorBinding, 5> bindings = {{
+    std::array<RhiDescriptorBinding, 6> bindings = {{
         {.binding = 0, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
         {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
         {.binding = 2, .type = UniformBuffer, .stage = RhiShaderStage::Fragment},
         {.binding = 3, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
-        {.binding = 4, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
+        {.binding = 4, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment}, // shadow atlas, plain sampler (views, manual compare)
+        {.binding = 5, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment}, // shadow atlas, compare sampler (PCF)
     }};
     descriptorSetLayout = device->createDescriptorSetLayout(bindings);
 
@@ -88,7 +90,16 @@ auto LightingPass::addPass(
     bool showOverlay,
     bool showShadowOverlay,
     const glm::mat4& invViewProj,
-    const glm::mat4& lightViewProj) -> const LightingPassData& {
+    RhiSampler* shadowSampler,
+    std::span<const ShadowCascade> cascades,
+    bool pcf,
+    RhiExtent2D atlasExtent) -> const LightingPassData& {
+    // Copied for the execute lambda; the snapshot the span points into may be gone by then.
+    std::array<ShadowCascade, maxShadowCascades> cascadeCopy;
+    uint32_t cascadeCount = (uint32_t) std::min(cascades.size(), (size_t) maxShadowCascades);
+    for (uint32_t c = 0; c < cascadeCount; c++) {
+        cascadeCopy[c] = cascades[c];
+    }
     FgTextureDesc sceneColorDesc = {
         .width = extent.width,
         .height = extent.height,
@@ -106,7 +117,7 @@ auto LightingPass::addPass(
             data.sceneColor = builder.write(builder.createTexture("sceneColor", sceneColorDesc), FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);
         },
-        [this, imageIndex, extent, sampler, lightInputs, viewMode, showOverlay, showShadowOverlay, invViewProj, lightViewProj](
+        [this, imageIndex, extent, sampler, lightInputs, viewMode, showOverlay, showShadowOverlay, invViewProj, shadowSampler, cascadeCopy, cascadeCount, pcf, atlasExtent](
             FrameGraphContext& ctx, const LightingPassData& data) {
             auto* cmd = ctx.cmd();
 
@@ -116,11 +127,19 @@ auto LightingPass::addPass(
                 .depthParams = glm::vec4(0.1f, 3000.0f, 0.0f, 0.0f),
                 .shadowTint = glm::vec4(lightInputs.shadowColor, 0.0f),
                 .invViewProj = invViewProj,
-                .lightViewProj = lightViewProj,
+                .cascadeParams = glm::vec4((float) cascadeCount, pcf ? 1.0f : 0.0f, (float) atlasExtent.width, 0.0f),
             };
+            for (uint32_t c = 0; c < maxShadowCascades; c++) {
+                const auto& cascade = cascadeCopy[c < cascadeCount ? c : 0];
+                lightUbo.cascadeViewProj[c] = cascade.viewProj;
+                lightUbo.cascadeRects[c] = cascade.atlasRect;
+                lightUbo.cascadeSplits[c] = c < cascadeCount ? cascade.splitFar : 1e30f;
+                lightUbo.cascadeTexelDepth[c] = cascade.texelDepthNdc;
+                lightUbo.cascadeTexelWorld[c] = cascade.texelWorldSize;
+            }
             memcpy(uniformBuffersMapped[imageIndex], &lightUbo, sizeof(lightUbo));
 
-            std::array<RhiDescriptorWrite, 5> writes = {{
+            std::array<RhiDescriptorWrite, 6> writes = {{
                 {
                     .binding = 0,
                     .type = RhiDescriptorType::CombinedImageSampler,
@@ -150,6 +169,12 @@ auto LightingPass::addPass(
                     .type = RhiDescriptorType::CombinedImageSampler,
                     .texture = ctx.texture(data.shadowMap),
                     .sampler = sampler,
+                },
+                {
+                    .binding = 5,
+                    .type = RhiDescriptorType::CombinedImageSampler,
+                    .texture = ctx.texture(data.shadowMap),
+                    .sampler = shadowSampler,
                 },
             }};
             device->updateDescriptorSet(descriptorSets[imageIndex], writes);

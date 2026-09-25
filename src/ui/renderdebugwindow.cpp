@@ -369,7 +369,7 @@ auto drawFrameTab(const RenderDebugSnapshot& s) -> void {
 
 auto drawViewTab(RenderDebugViewFlags& view) -> void {
     ImGui::TextUnformatted("Buffer view");
-    static const char* modes[] = {"Lit", "Albedo", "Normals", "Depth", "Shadow factor", "Shadow map", "Shadow UV", "World position", "Mip level"};
+    static const char* modes[] = {"Lit", "Albedo", "Normals", "Depth", "Shadow factor", "Shadow map", "Shadow UV", "World position", "Mip level", "Cascades"};
     for (int i = 0; i < (int) (sizeof(modes) / sizeof(modes[0])); i++) {
         if (i % 4 != 0) {
             ImGui::SameLine();
@@ -392,6 +392,29 @@ auto drawViewTab(RenderDebugViewFlags& view) -> void {
     ImGui::Checkbox("AABBs", &view.showAABBs);
     ImGui::SameLine();
     ImGui::Checkbox("Light gizmos", &view.showLightGizmos);
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Shadows");
+    int cascades = (int) view.shadow.count;
+    ImGui::SetNextItemWidth(160.0f);
+    if (ImGui::SliderInt("Cascades", &cascades, 1, (int) maxShadowCascades)) {
+        view.shadow.count = (uint32_t) cascades;
+    }
+    static const uint32_t tileSizes[] = {512, 1024, 2048};
+    static const char* tileNames[] = {"512", "1024", "2048"};
+    int tileIndex = 1;
+    for (int i = 0; i < 3; i++) {
+        if (view.shadow.tileSize == tileSizes[i]) {
+            tileIndex = i;
+        }
+    }
+    ImGui::SetNextItemWidth(160.0f);
+    if (ImGui::Combo("Tile size", &tileIndex, tileNames, 3)) {
+        view.shadow.tileSize = tileSizes[tileIndex];
+    }
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::SliderFloat("Split lambda", &view.shadow.splitLambda, 0.0f, 1.0f, "%.2f");
+    ImGui::Checkbox("PCF (hardware compare, 3x3)", &view.shadow.pcf);
 
     ImGui::Separator();
     ImGui::TextUnformatted("Texture sampling");

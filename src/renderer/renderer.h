@@ -100,6 +100,9 @@ private:
     AABB sceneBounds; // union of instance world bounds, refreshed with gpuInstances
     uint32_t debugCulledInstances = 0; // from the last snapshot, for RenderStats and the debug window
     RhiSampler* materialSampler = nullptr;
+    RhiSampler* shadowSampler = nullptr; // compare sampler for the cascade atlas
+    uint32_t debugCascadeCount = 0;
+    uint32_t debugShadowCulled = 0;
     SamplerSettings materialSamplerSettings;
 
     static auto toSamplerDesc(const SamplerSettings& settings) -> RhiSamplerDesc;

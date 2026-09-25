@@ -36,5 +36,11 @@ void drawCullingWindow(bool& show, CullingWindowInputs in) {
         ImGui::TextDisabled("Culling off: everything is drawn.");
     }
 
+    ImGui::Separator();
+    ImGui::Text("Shadow cascades: %u", in.cascades);
+    for (uint32_t c = 0; c < in.cascades && c < maxShadowCascades; c++) {
+        ImGui::Text("  cascade %u: %u drawn, %u culled", c, in.shadowDrawn[c], in.shadowCulled[c]);
+    }
+
     ImGui::End();
 }

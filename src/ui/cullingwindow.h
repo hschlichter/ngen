@@ -1,5 +1,8 @@
 #pragma once
 
+#include "shadowcascades.h"
+
+#include <array>
 #include <cstdint>
 
 // Culling window: the frustum culling toggle, the frozen frustum for inspecting what a
@@ -11,6 +14,9 @@ struct CullingWindowInputs {
     bool& showCulled;
     uint32_t instances = 0;
     uint32_t culled = 0;
+    uint32_t cascades = 0; // shadow cascades this frame
+    std::array<uint32_t, maxShadowCascades> shadowCulled = {};
+    std::array<uint32_t, maxShadowCascades> shadowDrawn = {};
 };
 
 void drawCullingWindow(bool& show, CullingWindowInputs in);

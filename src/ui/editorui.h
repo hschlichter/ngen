@@ -107,6 +107,13 @@ public:
     auto getDepthPrepass() const -> bool { return depthPrepassFlag; }
     auto getSamplerSettings() const -> const SamplerSettings& { return samplerSettings; }
     auto samplerSettingsMutable() -> SamplerSettings& { return samplerSettings; }
+    auto getShadowSettings() const -> const ShadowCascadeSettings& { return shadowSettings; }
+    auto shadowSettingsMutable() -> ShadowCascadeSettings& { return shadowSettings; }
+    auto setShadowCullStats(uint32_t cascades, const std::array<uint32_t, maxShadowCascades>& culled, const std::array<uint32_t, maxShadowCascades>& drawn) -> void {
+        shadowCascadeCount = cascades;
+        shadowCulledStats = culled;
+        shadowDrawnStats = drawn;
+    }
     auto setDepthPrepass(bool on) -> void { depthPrepassFlag = on; }
     auto getGBufferViewMode() const -> int { return gbufferViewMode; }
     auto getShowBufferOverlay() const -> bool { return showBufferOverlayFlag; }
@@ -164,6 +171,10 @@ private:
     bool showCulledFlag = false;
     bool depthPrepassFlag = false;
     SamplerSettings samplerSettings;
+    ShadowCascadeSettings shadowSettings;
+    uint32_t shadowCascadeCount = 0;
+    std::array<uint32_t, maxShadowCascades> shadowCulledStats = {};
+    std::array<uint32_t, maxShadowCascades> shadowDrawnStats = {};
     int gbufferViewMode = 0;
     bool showBufferOverlayFlag = false;
     bool showShadowOverlayFlag = false;

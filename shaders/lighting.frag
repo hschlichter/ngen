@@ -8,10 +8,16 @@ layout(set = 0, binding = 2) uniform LightUBO {
     vec4 depthParams;
     vec4 shadowTint;
     mat4 invViewProj;
-    mat4 lightViewProj;
+    mat4 cascadeViewProj[4];
+    vec4 cascadeRects[4];
+    vec4 cascadeSplits;
+    vec4 cascadeTexelDepth;
+    vec4 cascadeTexelWorld;
+    vec4 cascadeParams; // x = count, y = pcf, z = atlas size
 } light;
 layout(set = 0, binding = 3) uniform sampler2D gbufferDepth;
-layout(set = 0, binding = 4) uniform sampler2D shadowMap;
+layout(set = 0, binding = 4) uniform sampler2D shadowMap;          // atlas, plain reads
+layout(set = 0, binding = 5) uniform sampler2DShadow shadowMapCmp; // atlas, hardware compare
 
 layout(push_constant) uniform Push {
     int viewMode;
@@ -50,27 +56,65 @@ vec3 reconstructWorld(vec2 uv, float depth) {
     return world.xyz / world.w;
 }
 
+// Cascade for a view-space depth: the first whose split end is past it.
+int cascadeFor(float viewDepth) {
+    int count = int(light.cascadeParams.x);
+    for (int c = 0; c < count - 1; c++) {
+        if (viewDepth <= light.cascadeSplits[c]) {
+            return c;
+        }
+    }
+    return max(count - 1, 0);
+}
+
 // Returns 1.0 when lit, 0.0 when shadowed. Caller blends between the light's radiance
 // and the UsdLuxShadowAPI shadowColor tint based on the result.
 //
-// Slope-scale depth bias: the bias scales with the angle between the receiver normal
-// and the light direction, so surfaces facing the light get a tiny floor bias (just
-// enough to cover fp precision) while grazing surfaces get a larger bias to avoid
-// acne on near-tangent polygons. A fixed NDC-Z bias would scale with the ortho far
-// plane and swamp small casters — e.g. a 10cm cup in a ~30m frustum at bias 0.005.
-float sampleShadow(vec3 worldPos, vec3 normal) {
-    vec4 lightClip = light.lightViewProj * vec4(worldPos, 1.0);
-    vec3 lightNdc = lightClip.xyz / lightClip.w;
-    vec2 shadowUV = lightNdc.xy * 0.5 + 0.5;
-    if (any(lessThan(shadowUV, vec2(0.0))) || any(greaterThan(shadowUV, vec2(1.0))) || lightNdc.z < 0.0 || lightNdc.z > 1.0) {
-        return 1.0; // outside shadow frustum — treat as lit
-    }
-    float sampled = texture(shadowMap, shadowUV).r;
+// Bias in texels: the receiver is pushed along its normal by a fraction of a shadow
+// texel (normal offset), and the compared depth is moved toward the light by one to
+// three texels of depth, more at grazing angles. Both scale with the cascade's texel
+// size, so the near cascade gets a tiny bias and the far one enough to cover its
+// coarser texels. Hardware compare with linear filtering gives bilinear PCF at one
+// fetch; the 3x3 loop widens it. pcf off reads the depth and compares once.
+float sampleShadow(vec3 worldPos, vec3 normal, float viewDepth) {
+    int c = cascadeFor(viewDepth);
     vec3 N = normalize(normal);
     vec3 L = normalize(light.lightDirection.xyz);
-    float slope = clamp(1.0 - dot(N, L), 0.0, 1.0);
-    float bias = max(0.001 * slope, 0.00005);
-    return (lightNdc.z - bias) > sampled ? 0.0 : 1.0;
+    float nDotL = dot(N, L);
+    if (nDotL <= 0.0) {
+        return 0.0; // facing away from the light: shadowed, and the map compare would only show acne
+    }
+    float slope = clamp(1.0 - nDotL, 0.0, 1.0);
+    float texelWorld = light.cascadeTexelWorld[c];
+    vec3 offsetPos = worldPos + N * texelWorld * slope * 1.5;
+
+    vec4 lightClip = light.cascadeViewProj[c] * vec4(offsetPos, 1.0);
+    vec3 lightNdc = lightClip.xyz / lightClip.w;
+    vec2 tileUV = lightNdc.xy * 0.5 + 0.5;
+    if (any(lessThan(tileUV, vec2(0.0))) || any(greaterThan(tileUV, vec2(1.0))) || lightNdc.z < 0.0 || lightNdc.z > 1.0) {
+        return 1.0; // outside the cascade: lit
+    }
+    vec4 rect = light.cascadeRects[c];
+    float atlasTexel = 1.0 / light.cascadeParams.z;
+    // Stay half a texel inside the tile so filtering never reads the neighbour cascade.
+    vec2 uvMin = rect.xy + vec2(atlasTexel * 0.5);
+    vec2 uvMax = rect.xy + rect.zw - vec2(atlasTexel * 0.5);
+    vec2 uv = clamp(rect.xy + tileUV * rect.zw, uvMin, uvMax);
+
+    float bias = light.cascadeTexelDepth[c] * (1.0 + 2.0 * slope);
+    float ref = lightNdc.z - bias;
+    if (light.cascadeParams.y < 0.5) {
+        float sampled = texture(shadowMap, uv).r;
+        return ref > sampled ? 0.0 : 1.0;
+    }
+    float lit = 0.0;
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 tap = clamp(uv + vec2(x, y) * atlasTexel, uvMin, uvMax);
+            lit += texture(shadowMapCmp, vec3(tap, ref));
+        }
+    }
+    return lit / 9.0;
 }
 
 vec3 sampleBuffer(int mode, vec2 uv) {
@@ -105,18 +149,25 @@ vec3 sampleBuffer(int mode, vec2 uv) {
 
     float depth = texture(gbufferDepth, uv).r;
     vec3 worldPos = reconstructWorld(uv, depth);
-    float shadow = sampleShadow(worldPos, normal);
+    float viewDepth = linearizeDepth(depth);
+    float shadow = sampleShadow(worldPos, normal, viewDepth);
     // shadow factor per channel: full light where lit, shadowTint where shadowed
     vec3 shadowFactor = mix(light.shadowTint.rgb, vec3(1.0), shadow);
     if (mode == 4) return vec3(shadow);
     if (mode == 6) {
-        // Visualize where this fragment lands in shadow-map UV space.
+        // Visualize where this fragment lands in its cascade's UV space.
         // Red = shadowUV.x, Green = shadowUV.y, Blue = 1 if inside frustum else 0.
-        vec4 lightClip = light.lightViewProj * vec4(worldPos, 1.0);
+        vec4 lightClip = light.cascadeViewProj[cascadeFor(viewDepth)] * vec4(worldPos, 1.0);
         vec3 lightNdc = lightClip.xyz / lightClip.w;
         vec2 sUV = lightNdc.xy * 0.5 + 0.5;
         float inside = (all(greaterThanEqual(sUV, vec2(0.0))) && all(lessThanEqual(sUV, vec2(1.0)))) ? 1.0 : 0.0;
         return vec3(sUV, inside);
+    }
+    if (mode == 9) {
+        // Cascade index: red, green, blue, yellow from near to far, dimmed by the lighting.
+        const vec3 cascadeColors[4] = vec3[](vec3(1.0, 0.25, 0.25), vec3(0.25, 1.0, 0.25), vec3(0.25, 0.4, 1.0), vec3(1.0, 1.0, 0.25));
+        float diffuse = max(dot(normalize(normal), normalize(light.lightDirection.xyz)), 0.0);
+        return cascadeColors[cascadeFor(viewDepth)] * (0.35 + 0.65 * diffuse * shadow);
     }
     if (mode == 7) {
         // Reconstructed world position mapped from world range [-sceneRadius, +sceneRadius]

@@ -58,6 +58,15 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
 
     // Shared sampler and fallback texture
     textureSampler = device->createSampler({});
+    // Shadow compare sampler: linear so the hardware compare is bilinear PCF, clamped so a
+    // tile never reads its neighbour, LessOrEqual on the biased reference depth.
+    shadowSampler = device->createSampler({
+        .addressU = RhiAddressMode::ClampToEdge,
+        .addressV = RhiAddressMode::ClampToEdge,
+        .addressW = RhiAddressMode::ClampToEdge,
+        .compareEnable = true,
+        .compareOp = RhiCompareOp::LessOrEqual,
+    });
     // Material sampler: trilinear with anisotropy, the textures carry full mip chains and
     // Sponza floors are seen at grazing angles. Rebuilt when the settings change.
     materialSampler = device->createSampler(toSamplerDesc(materialSamplerSettings));
@@ -761,8 +770,6 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
 
     static const uint32_t shadowSetupZoneId = profile::registerName("ShadowSetup");
     profile::beginZone(shadowSetupZoneId);
-    RhiExtent2D shadowExtent{2048, 2048};
-
     // Pick a shadow-casting directional light: first directional with shadowEnable,
     // else first directional. USDScene authors a session-layer UsdLuxDistantLight when
     // the scene has none, so this search almost always succeeds.
@@ -796,45 +803,31 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     debugHasSun = picked != nullptr;
     debugSun = lighting;
 
-    // Fit the ortho frustum to the union of the instance world AABBs: look at the
-    // bounds centre along the light direction, then take the bounds corners in light
-    // space for the extents. Every texel of the map lands on the scene; the old
-    // instance-origin sphere with a 2x pad left Kitchen_set in a fifth of the map.
-    glm::vec3 sceneCenter{0.0f};
-    float sceneRadius = 1.0f;
-    if (sceneBounds.valid()) {
-        sceneCenter = (sceneBounds.min + sceneBounds.max) * 0.5f;
-        sceneRadius = glm::length(sceneBounds.max - sceneBounds.min) * 0.5f + 0.01f;
+    // Cascades come fitted and culled from the main thread. A snapshot without them (no
+    // cull ran yet) gets a single cascade fitted here from the scene bounds.
+    std::array<ShadowCascade, maxShadowCascades> fallbackCascades;
+    std::span<const ShadowCascade> cascades(snapshot.cascades.data(), snapshot.cascadeCount);
+    if (snapshot.cascadeCount == 0) {
+        ShadowCascadeSettings single = snapshot.shadowSettings;
+        single.count = 1;
+        auto count = fitShadowCascades(single, snapshot.viewMatrix, snapshot.projMatrix, 0.1f, 3000.0f, lighting.direction, snapshot.worldUp, sceneBounds, fallbackCascades);
+        cascades = std::span<const ShadowCascade>(fallbackCascades.data(), count);
     }
-    float lightDistance = sceneRadius * 2.0f + 1.0f;
-
-    auto lightPos = sceneCenter + lighting.direction * lightDistance;
-    // glm::lookAt is degenerate when the light direction is parallel to the up vector — the
-    // cross product to compute "right" becomes zero. That's common for a sun shining straight
-    // down; fall back to a perpendicular axis in that case.
-    auto shadowUp =
-        std::abs(glm::dot(lighting.direction, snapshot.worldUp)) > 0.99f
-            ? glm::normalize(glm::cross(lighting.direction, glm::vec3(1.0f, 0.0f, 0.0f)))
-            : snapshot.worldUp;
-    auto lightView = glm::lookAt(lightPos, sceneCenter, shadowUp);
-
-    glm::vec3 lightMin{-sceneRadius};
-    glm::vec3 lightMax{sceneRadius};
-    if (sceneBounds.valid()) {
-        auto lightSpace = sceneBounds.transformed(lightView);
-        lightMin = lightSpace.min;
-        lightMax = lightSpace.max;
+    auto atlasExtent = shadowAtlasExtent(snapshot.shadowSettings);
+    if (cascades.size() <= 1) {
+        atlasExtent = {std::max(64u, snapshot.shadowSettings.tileSize), std::max(64u, snapshot.shadowSettings.tileSize)};
     }
-    // Light space looks down -z: the far corner has the smallest z. A little slack on
-    // every side keeps casters on the boundary from clipping against the frustum.
-    float pad = sceneRadius * 0.01f;
-    auto lightProj = glm::ortho(lightMin.x - pad, lightMax.x + pad, lightMin.y - pad, lightMax.y + pad, std::max(0.1f, -lightMax.z - pad), -lightMin.z + pad);
-    auto lightViewProj = lightProj * lightView;
+    debugShadowExtent = atlasExtent;
+    debugCascadeCount = (uint32_t) cascades.size();
+    debugShadowCulled = 0;
+    for (auto culled : snapshot.shadowCulled) {
+        debugShadowCulled += culled;
+    }
 
     auto invViewProj = glm::inverse(snapshot.projMatrix * snapshot.viewMatrix);
 
     profile::endZone(); // ShadowSetup
-    const auto& shadowData = shadowPass.addPass(frameGraph, shadowExtent, depthFormat, lightViewProj, gpuInstances, meshCache);
+    const auto& shadowData = shadowPass.addPass(frameGraph, atlasExtent, depthFormat, cascades, snapshot.shadowVisible, gpuInstances, meshCache);
 
     debugCulledInstances = snapshot.culledInstances;
     if (snapshot.sampler != materialSamplerSettings) {
@@ -858,7 +851,10 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         snapshot.showBufferOverlay,
         snapshot.showShadowOverlay,
         invViewProj,
-        lightViewProj);
+        shadowSampler,
+        cascades,
+        snapshot.shadowSettings.pcf,
+        atlasExtent);
 
     // AA filters only the lit scene. Its output is blitted to the backbuffer and the
     // overlays (debug lines, gizmos, UI) draw on the backbuffer afterwards, so they are
@@ -965,6 +961,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
             .field("primitives", (int64_t) stats.primitives)
             .field("instances", (int64_t) gpuInstances.size())
             .field("culled", (int64_t) debugCulledInstances)
+            .field("cascades", (int64_t) debugCascadeCount)
+            .field("shadow_culled", (int64_t) debugShadowCulled)
             .field("meshes", (int64_t) meshCache.size())
             .field("textures", (int64_t) textureCache.size())
             .field("logged_draws", (int64_t) slotDrawLogs[currentFrame].size());
@@ -1097,6 +1095,7 @@ auto Renderer::destroy() -> void {
     }
 
     device->destroySampler(textureSampler);
+    device->destroySampler(shadowSampler);
     device->destroySampler(materialSampler);
     device->destroyTexture(fallbackTexture);
     device->destroyTexture(depthTexture);

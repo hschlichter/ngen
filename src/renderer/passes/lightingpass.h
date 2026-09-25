@@ -2,9 +2,11 @@
 
 #include "framegraph.h"
 #include "rhitypes.h"
+#include "shadowcascades.h"
 
 #include <cstdint>
 #include <glm/glm.hpp>
+#include <span>
 #include <vector>
 
 class RhiDevice;
@@ -17,7 +19,12 @@ struct LightingUBO {
     glm::vec4 depthParams;    // x = near, y = far, zw = unused
     glm::vec4 shadowTint;     // xyz = light contribution when shadowed (from UsdLuxShadowAPI::shadow:color), w = unused
     glm::mat4 invViewProj;    // inverse(proj * view), for world-pos reconstruction from gbuffer
-    glm::mat4 lightViewProj;  // shadow camera view-projection
+    glm::mat4 cascadeViewProj[maxShadowCascades]; // light view-projection per cascade
+    glm::vec4 cascadeRects[maxShadowCascades];    // atlas tile: xy offset, zw scale
+    glm::vec4 cascadeSplits;                      // view-depth end of each cascade
+    glm::vec4 cascadeTexelDepth;                  // ndc depth per texel, per cascade; bias unit
+    glm::vec4 cascadeTexelWorld;                  // world size of one texel, per cascade; normal offset
+    glm::vec4 cascadeParams;                      // x = count, y = pcf (0/1), z = atlas size in texels
 };
 
 // Pre-resolved per-frame lighting inputs. The renderer picks one active light and flattens
@@ -39,6 +46,7 @@ enum class GBufferView : int {
     ShadowUV,
     WorldPos,
     MipLevel,
+    Cascades,
 };
 
 struct LightingPassData {
@@ -67,7 +75,10 @@ public:
         bool showOverlay,
         bool showShadowOverlay,
         const glm::mat4& invViewProj,
-        const glm::mat4& lightViewProj) -> const LightingPassData&;
+        RhiSampler* shadowSampler,
+        std::span<const ShadowCascade> cascades,
+        bool pcf,
+        RhiExtent2D atlasExtent) -> const LightingPassData&;
 
 private:
     RhiDevice* device = nullptr;
