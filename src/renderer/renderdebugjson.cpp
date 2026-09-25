@@ -49,7 +49,7 @@ auto writeRenderDebugJson(const char* path, const RenderDebugSnapshot& s, const 
     std::fprintf(f, "  ],\n  \"passes\": [\n");
     for (size_t i = 0; i < s.passes.size(); i++) {
         const auto& p = s.passes[i];
-        std::fprintf(f, "    {\"name\": \"%s\", \"culled\": %s, \"gpuMs\": %.4f, \"draws\": %u, \"dispatches\": %u, \"barriers\": %u, \"pipelineBinds\": %u, \"descriptorBinds\": %u, \"copies\": %u, \"primitives\": %llu}%s\n", escape(p.name).c_str(), p.culled ? "true" : "false", p.gpuTimeMs, p.stats.draws, p.stats.dispatches, p.stats.barriers, p.stats.pipelineBinds, p.stats.descriptorBinds, p.stats.copies, (unsigned long long) p.stats.primitives, i + 1 < s.passes.size() ? "," : "");
+        std::fprintf(f, "    {\"name\": \"%s\", \"culled\": %s, \"gpuMs\": %.4f, \"draws\": %u, \"dispatches\": %u, \"barriers\": %u, \"pipelineBinds\": %u, \"descriptorBinds\": %u, \"bufferBinds\": %u, \"copies\": %u, \"primitives\": %llu}%s\n", escape(p.name).c_str(), p.culled ? "true" : "false", p.gpuTimeMs, p.stats.draws, p.stats.dispatches, p.stats.barriers, p.stats.pipelineBinds, p.stats.descriptorBinds, p.stats.bufferBinds, p.stats.copies, (unsigned long long) p.stats.primitives, i + 1 < s.passes.size() ? "," : "");
     }
     std::fprintf(f, "  ],\n  \"frameTotals\": {\"draws\": %u, \"dispatches\": %u, \"barriers\": %u, \"primitives\": %llu},\n", s.frameTotals.draws, s.frameTotals.dispatches, s.frameTotals.barriers, (unsigned long long) s.frameTotals.primitives);
     std::fprintf(f, "  \"pool\": {\"allocationsTotal\": %u, \"textures\": [\n", s.poolAllocationsTotal);

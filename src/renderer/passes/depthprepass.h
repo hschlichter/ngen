@@ -1,7 +1,7 @@
 #pragma once
 
 #include "framegraph.h"
-#include "geometrypass.h" // GpuInstance, CachedMesh
+#include "geometrypass.h" // GpuInstance, GpuScene
 #include "rhitypes.h"
 
 #include <cstdint>
@@ -34,7 +34,7 @@ public:
         std::span<const GpuInstance> instances,
         FgBufferHandle instanceBuffer,
         std::span<const uint8_t> visible,
-        const std::unordered_map<uint32_t, CachedMesh>& meshCache,
+        const GpuScene& scene,
         std::span<RhiDescriptorSet*> descriptorSets) -> const DepthPrepassData&;
 
 private:

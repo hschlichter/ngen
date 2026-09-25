@@ -87,7 +87,7 @@ auto GeometryPass::addPass(
     std::span<const GpuInstance> instances,
     FgBufferHandle instanceBuffer,
     std::span<const uint8_t> visible,
-    const std::unordered_map<uint32_t, CachedMesh>& meshCache,
+    const GpuScene& scene,
     std::span<RhiDescriptorSet*> descriptorSets,
     bool depthPrepassed) -> const GeometryPassData& {
     FgTextureDesc albedoDesc = {
@@ -115,7 +115,7 @@ auto GeometryPass::addPass(
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             builder.setSideEffects(true);
         },
-        [cullBack, cullNone, depthPrepassed, imageIndex, instanceCount, extent, instances, visible, &meshCache, descriptorSets](FrameGraphContext& ctx, const GeometryPassData& data) {
+        [cullBack, cullNone, depthPrepassed, imageIndex, instanceCount, extent, instances, visible, &scene, descriptorSets](FrameGraphContext& ctx, const GeometryPassData& data) {
             auto* cmd = ctx.cmd();
 
             std::array<RhiRenderingAttachmentInfo, 2> colorAtts = {{
@@ -164,18 +164,18 @@ auto GeometryPass::addPass(
                     if (useVisible && visible[m] == 0) {
                         continue;
                     }
-                    auto meshIt = meshCache.find(inst.mesh.index);
-                    if (meshIt == meshCache.end()) {
+                    const auto* range = scene.meshRange(inst.mesh.index);
+                    if (range == nullptr) {
                         continue;
                     }
-                    auto& cached = meshIt->second;
                     if (!bound) {
                         cmd->bindPipeline(pip);
+                        // One pool for every mesh: bound once per pipeline, draws address it by offset.
+                        cmd->bindVertexBuffer(scene.vertexBuffer());
+                        cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
                         bound = true;
                     }
 
-                    cmd->bindVertexBuffer(cached.vertexBuffer);
-                    cmd->bindIndexBuffer(cached.indexBuffer, RhiIndexType::Uint32);
                     cmd->bindDescriptorSet(pip, 0, descriptorSets[(imageIndex * instanceCount) + m]);
                     // Heavy draws get their own GPU zone so the pass time can be attributed.
                     bool heavy = inst.indexCount >= largeDrawIndexCount;
@@ -184,7 +184,7 @@ auto GeometryPass::addPass(
                     }
                     ctx.beginDraw({.instance = m, .mesh = inst.mesh.index, .material = inst.material.index, .prim = inst.prim, .indexOffset = inst.indexOffset, .indexCount = inst.indexCount});
                     // firstInstance carries the instance index: the shader reads instances[gl_InstanceIndex].
-                    cmd->drawIndexed(inst.indexCount, 1, inst.indexOffset, 0, m);
+                    cmd->drawIndexed(inst.indexCount, 1, range->firstIndex + inst.indexOffset, range->vertexOffset, m);
                     ctx.endDraw();
                     if (heavy) {
                         cmd->endGpuZone();

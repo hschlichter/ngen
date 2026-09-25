@@ -49,7 +49,7 @@ auto DepthPrepass::addPass(
     std::span<const GpuInstance> instances,
     FgBufferHandle instanceBuffer,
     std::span<const uint8_t> visible,
-    const std::unordered_map<uint32_t, CachedMesh>& meshCache,
+    const GpuScene& scene,
     std::span<RhiDescriptorSet*> descriptorSets) -> const DepthPrepassData& {
     auto* cullBack = pipelineCullBack;
     auto* cullNone = pipelineCullNone;
@@ -61,7 +61,7 @@ auto DepthPrepass::addPass(
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             builder.setSideEffects(true);
         },
-        [cullBack, cullNone, extent, imageIndex, instances, visible, &meshCache, descriptorSets](FrameGraphContext& ctx, const DepthPrepassData& data) {
+        [cullBack, cullNone, extent, imageIndex, instances, visible, &scene, descriptorSets](FrameGraphContext& ctx, const DepthPrepassData& data) {
             auto* cmd = ctx.cmd();
 
             RhiRenderingAttachmentInfo depthAtt = {
@@ -92,20 +92,19 @@ auto DepthPrepass::addPass(
                     if (useVisible && visible[m] == 0) {
                         continue;
                     }
-                    auto meshIt = meshCache.find(inst.mesh.index);
-                    if (meshIt == meshCache.end()) {
+                    const auto* range = scene.meshRange(inst.mesh.index);
+                    if (range == nullptr) {
                         continue;
                     }
-                    const auto& cached = meshIt->second;
                     if (!bound) {
                         cmd->bindPipeline(pip);
+                        cmd->bindVertexBuffer(scene.positionBuffer());
+                        cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
                         bound = true;
                     }
-                    cmd->bindVertexBuffer(cached.positionBuffer);
-                    cmd->bindIndexBuffer(cached.indexBuffer, RhiIndexType::Uint32);
                     cmd->bindDescriptorSet(pip, 0, descriptorSets[(imageIndex * (uint32_t) instances.size()) + m]);
                     ctx.beginDraw({.instance = m, .mesh = inst.mesh.index, .material = inst.material.index, .prim = inst.prim, .indexOffset = inst.indexOffset, .indexCount = inst.indexCount});
-                    cmd->drawIndexed(inst.indexCount, 1, inst.indexOffset, 0, m);
+                    cmd->drawIndexed(inst.indexCount, 1, range->firstIndex + inst.indexOffset, range->vertexOffset, m);
                     ctx.endDraw();
                 }
             }

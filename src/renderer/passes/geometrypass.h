@@ -1,6 +1,7 @@
 #pragma once
 
 #include "framegraph.h"
+#include "gpuscene.h"
 #include "rhitypes.h"
 #include "scenehandles.h"
 
@@ -10,29 +11,6 @@
 #include <unordered_map>
 
 class RhiDevice;
-
-struct CachedMesh {
-    RhiBuffer* vertexBuffer = nullptr;   // full Vertex stream, geometry pass
-    RhiBuffer* positionBuffer = nullptr; // positions only, shadow and depth prepass (docs/plan_position_stream.md)
-    RhiBuffer* indexBuffer = nullptr;
-    uint32_t indexCount = 0;
-    uint32_t vertexCount = 0;
-    uint64_t vertexBytes = 0;
-    uint64_t indexBytes = 0;
-};
-
-struct GpuInstance {
-    MeshHandle mesh;
-    MaterialHandle material;
-    uint32_t prim = 0; // PrimHandle::index of the source prim, for the render debugger
-    glm::mat4 transform;
-    // Submesh index range within the mesh; primFirst marks the first submesh
-    // instance of a prim (the shadow pass draws the whole mesh once, there).
-    uint32_t indexOffset = 0;
-    uint32_t indexCount = 0;
-    bool primFirst = true;
-    bool doubleSided = false; // drawn with the cull-none pipeline
-};
 
 struct GeometryPassData {
     FgTextureHandle albedo;
@@ -54,7 +32,7 @@ public:
         std::span<const GpuInstance> instances,
         FgBufferHandle instanceBuffer,
         std::span<const uint8_t> visible,
-        const std::unordered_map<uint32_t, CachedMesh>& meshCache,
+        const GpuScene& scene,
         std::span<RhiDescriptorSet*> descriptorSets,
         bool depthPrepassed) -> const GeometryPassData&;
 

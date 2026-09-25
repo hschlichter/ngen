@@ -424,6 +424,7 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
                 .barriers = after.barriers - before.barriers,
                 .pipelineBinds = after.pipelineBinds - before.pipelineBinds,
                 .descriptorBinds = after.descriptorBinds - before.descriptorBinds,
+                .bufferBinds = after.bufferBinds - before.bufferBinds,
                 .copies = after.copies - before.copies,
                 .primitives = after.primitives - before.primitives,
             };

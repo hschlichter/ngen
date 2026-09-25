@@ -1,7 +1,7 @@
 #pragma once
 
 #include "framegraph.h"
-#include "geometrypass.h" // GpuInstance, CachedMesh
+#include "geometrypass.h" // GpuInstance, GpuScene
 #include "rhitypes.h"
 #include "shadowcascades.h"
 
@@ -38,7 +38,7 @@ public:
         const std::array<std::vector<uint8_t>, maxShadowCascades>& visible,
         std::span<const GpuInstance> instances,
         FgBufferHandle instanceBuffer,
-        const std::unordered_map<uint32_t, CachedMesh>& meshCache) -> const ShadowPassData&;
+        const GpuScene& scene) -> const ShadowPassData&;
 
 private:
     RhiDescriptorSetLayout* descSetLayout = nullptr; // binding 0: instance buffer

@@ -84,7 +84,7 @@ auto ShadowPass::addPass(
     const std::array<std::vector<uint8_t>, maxShadowCascades>& visible,
     std::span<const GpuInstance> instances,
     FgBufferHandle instanceBuffer,
-    const std::unordered_map<uint32_t, CachedMesh>& meshCache) -> const ShadowPassData& {
+    const GpuScene& scene) -> const ShadowPassData& {
     FgTextureDesc desc = {
         .width = atlasExtent.width,
         .height = atlasExtent.height,
@@ -109,7 +109,7 @@ auto ShadowPass::addPass(
             data.shadowMap = builder.write(builder.createTexture("shadowMap", desc), FgAccessFlags::DepthAttachment);
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
         },
-        [cullBack, cullNone, instanceSet, atlasExtent, cascadeCopy, cascadeCount, visibleMasks, instances, &meshCache](FrameGraphContext& ctx, const ShadowPassData& data) {
+        [cullBack, cullNone, instanceSet, atlasExtent, cascadeCopy, cascadeCount, visibleMasks, instances, &scene](FrameGraphContext& ctx, const ShadowPassData& data) {
             auto* cmd = ctx.cmd();
 
             RhiRenderingAttachmentInfo depthAtt = {
@@ -151,30 +151,29 @@ auto ShadowPass::addPass(
                         if (useMask && mask[m] == 0) {
                             continue;
                         }
-                        auto meshIt = meshCache.find(inst.mesh.index);
-                        if (meshIt == meshCache.end()) {
+                        const auto* range = scene.meshRange(inst.mesh.index);
+                        if (range == nullptr) {
                             continue;
                         }
-                        const auto& cached = meshIt->second;
                         if (!bound) {
                             cmd->bindPipeline(pip);
                             cmd->bindDescriptorSet(pip, 0, instanceSet);
+                            cmd->bindVertexBuffer(scene.positionBuffer());
+                            cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
                             bound = true;
                         }
 
                         ShadowPush push{cascade.viewProj};
                         cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(push), &push);
-                        cmd->bindVertexBuffer(cached.positionBuffer);
-                        cmd->bindIndexBuffer(cached.indexBuffer, RhiIndexType::Uint32);
                         // Heavy-draw zones for the first cascade only: the per-command-buffer zone
                         // budget is 128, and four cascades of them would push the later passes out.
-                        bool heavy = c == 0 && cached.indexCount >= largeDrawIndexCount;
+                        bool heavy = c == 0 && range->indexCount >= largeDrawIndexCount;
                         if (heavy) {
                             cmd->beginGpuZone("LargeDraw");
                         }
-                        ctx.beginDraw({.instance = m, .mesh = inst.mesh.index, .material = inst.material.index, .prim = inst.prim, .indexOffset = 0, .indexCount = cached.indexCount});
+                        ctx.beginDraw({.instance = m, .mesh = inst.mesh.index, .material = inst.material.index, .prim = inst.prim, .indexOffset = 0, .indexCount = range->indexCount});
                         // firstInstance carries the instance index: the shader reads instances[gl_InstanceIndex].
-                        cmd->drawIndexed(cached.indexCount, 1, 0, 0, m);
+                        cmd->drawIndexed(range->indexCount, 1, range->firstIndex, range->vertexOffset, m);
                         ctx.endDraw();
                         if (heavy) {
                             cmd->endGpuZone();

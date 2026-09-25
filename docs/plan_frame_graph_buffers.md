@@ -1,6 +1,6 @@
 # Buffer resources in the frame graph
 
-**Status. In progress.** Implemented and verified headless; the Frame Graph node view check is pending a look in the editor.
+**Status. Landed.**
 
 Stage 1 of [plan_gpu_driven.md](plan_gpu_driven.md).
 
@@ -163,7 +163,7 @@ framed on the whole scene (`--camera-frame=scene`), 200 frames each.
   - `ShadowPass` has 2 barriers on that frame against 1 on clean frames (the added one is `TransferDst` to `StorageRead`).
   - The screenshot after the move shows the green cube moved toward the camera.
 - Frame Graph node view: `InstanceUpload` has edges to `ShadowPass`, `DepthPrepass` (when on) and `GeometryPass`, and the resource list shows
-  `instances` and `instanceStaging` as imported buffers. **Pending**: UI only, needs a look in the editor.
+  `instances` and `instanceStaging` as imported buffers. **Verified** in the editor while moving a prim with the gizmo.
 - GPU time on Sponza within noise. **Verified**: `ShadowPass` 3.73 to 3.65 ms and `GeometryPass` 1.27 to 1.21 ms at the courtyard camera.
 
 ## Deferred / follow-ups

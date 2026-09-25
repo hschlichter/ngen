@@ -1,6 +1,6 @@
 # GPU-driven rendering (umbrella)
 
-**Status. Draft.**
+**Status. In progress.** Stage 1 landed; stage 2 implemented, pending one editor check.
 
 Umbrella plan: it orders the stages and holds the decisions that cut across them. Each stage gets its own `docs/plan_*.md` with its own steps and
 verification. This doc links to them and records their status.
@@ -66,7 +66,7 @@ Each stage ships on its own: rendered output byte-identical to the stage before,
 | # | Plan | Delivers | RHI change | Depends on |
 |---|------|----------|------------|------------|
 | 1 | [plan_frame_graph_buffers.md](plan_frame_graph_buffers.md) | Buffers in the graph; imported buffers keep state across frames; one persistent instance buffer with delta upload; shaders read `instances[gl_InstanceIndex]` | none | none |
-| 2 | `plan_geometry_pool.md` (to write) | One vertex, one position and one index buffer for all meshes; mesh table with `firstIndex`, `vertexOffset`, `indexCount`, bounds | none | none |
+| 2 | [plan_geometry_pool.md](plan_geometry_pool.md) | One vertex, one position and one index buffer for all meshes; mesh table with `firstIndex`, `vertexOffset`, `indexCount`, bounds | none | none |
 | 3 | `plan_bindless_materials.md` (to write) | Material buffer (factors, texture indices), one global texture array; per-instance descriptor sets gone | descriptor indexing | 1 |
 | 4 | `plan_indirect_draws.md` (to write) | CPU-culled draw lists written as indirect commands; one `drawIndexedIndirectCount` per pipeline bucket per view | indirect draw, `IndirectRead` state, features | 1, 2, 3 |
 | 5 | `plan_gpu_culling.md` (to write) | Compute pass per view writes compacted indirect commands and counts; CPU culling deleted; transient graph buffers | none beyond 4 | 4 |
@@ -118,14 +118,12 @@ Each stage ships on its own: rendered output byte-identical to the stage before,
   rebuilds per-draw and per-view debugging on GPU-produced data: command and count readback, and GPU-side counters. It also adds the new introspection
   that GPU-driven rendering needs, such as the culling results per view and the command buffer contents, in the Render Debug window and in
   `--dump-render-debug`, for agents too (`docs/plan_agent_introspection.md`).
+- **One owner for the scene's GPU tables, two upload paths** (decided in stage 2). `GpuScene` (`src/renderer/gpuscene.h`) owns the geometry pool, the
+  instance buffer and, later, the material table and the GPU mesh table. Bulk data (geometry) goes through the blocking `GpuUploader`. Per-frame deltas
+  (transforms, and material edits in stage 3) go through per-slot staging and a graph copy pass.
 - **The RHI stays Vulkan-shaped for now.** Bindless and indirect are added in the RHI's current descriptor model (`src/rhi/README.md` known gaps).
   The descriptor-model revisit stays gated on a second backend, as the README already says. D3D12 and Metal both have native equivalents, so nothing
   here blocks one.
-
-## Open questions
-
-- **Delta uploads beyond transforms.** Stage 1 uploads dirty transform ranges. Material edits (stage 3) and mesh add or remove (stage 2) need the
-  same mechanism. Should one shared "GPU scene upload" path serve all three, or one path per table? Decide when stage 2 is planned.
 
 ## Verification (end state)
 

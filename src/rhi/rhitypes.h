@@ -280,8 +280,9 @@ struct RhiCommandStats {
     uint32_t barriers = 0;
     uint32_t pipelineBinds = 0;
     uint32_t descriptorBinds = 0;
-    uint32_t copies = 0;     // buffer/texture copies and blits
-    uint64_t primitives = 0; // triangles for lists, line segments for line lists, estimated from index/vertex counts
+    uint32_t bufferBinds = 0; // vertex and index buffer binds
+    uint32_t copies = 0;      // buffer/texture copies and blits
+    uint64_t primitives = 0;  // triangles for lists, line segments for line lists, estimated from index/vertex counts
 };
 
 struct RhiDeviceLimits {

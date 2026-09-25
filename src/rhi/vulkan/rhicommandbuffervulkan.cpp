@@ -300,12 +300,14 @@ auto RhiCommandBufferVulkan::bindPipeline(RhiPipeline* pipeline) -> void {
 
 auto RhiCommandBufferVulkan::bindVertexBuffer(uint32_t slot, RhiBuffer* buffer, uint64_t offset) -> void {
     auto* b = static_cast<RhiBufferVulkan*>(buffer);
+    commandStats.bufferBinds++;
     VkDeviceSize vkOffset = offset;
     vkCmdBindVertexBuffers(cmd, slot, 1, &b->buffer, &vkOffset);
 }
 
 auto RhiCommandBufferVulkan::bindIndexBuffer(RhiBuffer* buffer, RhiIndexType indexType, uint64_t offset) -> void {
     auto* b = static_cast<RhiBufferVulkan*>(buffer);
+    commandStats.bufferBinds++;
     auto vkType = indexType == RhiIndexType::Uint16 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
     vkCmdBindIndexBuffer(cmd, b->buffer, offset, vkType);
 }
