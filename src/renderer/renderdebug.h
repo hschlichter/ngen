@@ -94,7 +94,7 @@ struct RenderDebugSnapshot {
     std::vector<RenderDebugPoolTexture> poolTextures;
     uint32_t poolAllocationsTotal = 0;
 
-    // Draw log of the most recent frame whose GPU zones have been read, with per-draw
-    // GPU time for the draws inside the timing window.
+    // Draw log of the most recent frame whose readback has arrived: the indirect commands the GPU
+    // culling wrote, one entry per draw.
     std::vector<FgDrawRecord> draws;
 };

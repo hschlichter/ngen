@@ -5,8 +5,23 @@
 (`vulkan/`, later `d3d12/`, `metal/`) and is the only code that includes that API's headers. The build links exactly
 one backend per platform.
 
-This file states the principles the interface is built on and what an integrator (an engine, an app, a test harness)
-is expected to provide. Read it before adding to the interface or writing code on top of it.
+This file states the principles the interface is built on, how the interface is organised, how the Vulkan backend
+implements it, and what an integrator (an engine, an app, a test harness) is expected to provide. Read it before adding
+to the interface or writing code on top of it.
+
+## Layout
+
+| File | Contents |
+|---|---|
+| `rhitypes.h` | Enums, flag types, descs, the opaque resource classes, barrier and submit structs, `RhiCommandStats`, `RhiDeviceLimits` |
+| `rhidevice.h` | `RhiDevice`: creates and destroys everything, descriptor updates, submission, presentation, mapping, queries, limits |
+| `rhicommandbuffer.h` | `RhiCommandBuffer`: recording (rendering, barriers, copies, draws, indirect draws, dispatch, timestamps, GPU zones, labels) |
+| `rhiswapchain.h` | `RhiSwapchain`: acquire, image access, recreate |
+| `rhiwindow.h` | `RhiWindow`: the contract with whoever owns the window |
+| `vulkan/` | The Vulkan backend: `RhiDeviceVulkan`, `RhiCommandBufferVulkan`, `RhiSwapchainVulkan`, resource structs in `rhiresourcesvulkan.h` |
+| `examples/` | One program per feature plus `common/` (window glue, upload, readback, shader compile, PNG, the `RhiExample` base) |
+
+The interface is header-only. Only the backend folder has `.cpp` files and includes the graphics API's headers.
 
 ## Principles
 
@@ -69,6 +84,116 @@ sees a `VkResult`.
 Every `*Desc` struct is designable with designated initializers and has defaults for optional fields. Flag enums opt in
 to `RhiFlags<E>` via `RhiFlagEnum<E>`; `A | B` yields `RhiFlags<E>` and `.has(E)` tests a bit. The old bool-returning
 `operator&` was removed because `usage & (A | B)` silently meant "any of".
+
+## The interface
+
+### Object model
+
+`RhiDevice` is the factory and owner of everything: `createX` returns a pointer to an opaque class (`RhiBuffer`,
+`RhiTexture`, `RhiSampler`, `RhiShaderModule`, `RhiPipeline`, `RhiDescriptorSetLayout`, `RhiDescriptorPool`,
+`RhiDescriptorSet`, `RhiQueryPool`, `RhiSemaphore`, `RhiFence`, `RhiCommandBuffer`, `RhiSwapchain`), and a matching
+`destroyX` frees it immediately. The classes carry no methods; the backend downcasts them to its own structs. Creation
+takes a `*Desc` with defaults; failures return `nullptr` (resources) or `std::expected` (`init`, `recreate`, acquire,
+present) after logging the native error.
+
+### Resources
+
+- **Buffers.** `RhiBufferDesc { size, usage, memory }`. Usage flags: `TransferSrc`, `TransferDst`, `Vertex`, `Index`,
+  `Uniform`, `Storage`, `Indirect`. Memory is `GpuOnly` (device-local, filled by copies) or `CpuToGpu` (host-visible and
+  coherent; `mapBuffer` returns a pointer that stays valid until `unmapBuffer` or destroy). Readback buffers use
+  `CpuToGpu` as well.
+- **Textures.** `RhiTextureDesc { width, height, format, usage, mipLevels, arrayLayers, sampleCount, dimension }`;
+  dimensions `Texture2D`, `Texture2DArray`, `TextureCube`. Usage flags: `Sampled`, `ColorAttachment`, `DepthAttachment`,
+  `Storage`, `TransferSrc`, `TransferDst`. Optional formats are checked with `supportsTextureFormat(format, usage)`.
+  Textures are always device-local and filled with `copyBufferToTexture`.
+- **Samplers.** Filters, mip mode, address modes, anisotropy (ignored when `limits().samplerAnisotropy` is false),
+  LOD bias and range, and an optional compare op for shadow sampling.
+- **Shaders.** `RhiShaderDesc { stage, code, entryPoint }` with bytecode in the backend's format.
+
+### States and barriers
+
+Synchronisation is expressed as state transitions, not stage and access masks. `RhiTextureState` (`Undefined`,
+`ColorAttachment`, `DepthStencilAttachment`, `ShaderReadOnly`, `General`, `TransferSrc`, `TransferDst`, `PresentSrc`) and
+`RhiBufferState` (`Undefined`, `VertexRead`, `IndexRead`, `UniformRead`, `StorageRead`, `StorageWrite`, `TransferSrc`,
+`TransferDst`, `IndirectRead`) name what a resource is used for; `pipelineBarrier(textureBarriers, bufferBarriers)`
+moves resources from an old to a new state and the backend derives layouts, stages and accesses. The caller tracks the
+current state; the RHI does not. Shader states cover every shader stage (vertex, fragment, compute), which is
+conservative but correct.
+
+### Descriptors
+
+Vulkan-shaped: a `RhiDescriptorSetLayout` from `RhiDescriptorBinding { binding, type, stage, count }`, a
+`RhiDescriptorPool` sized for `maxSets` sets of those bindings, sets allocated from the pool, and `updateDescriptorSet`
+with `RhiDescriptorWrite { binding, arrayElement, type, buffer/offset/range or texture/sampler }`. Types:
+`UniformBuffer`, `StorageBuffer`, `CombinedImageSampler` (texture in `ShaderReadOnly`), `StorageImage` (texture in
+`General`). `count > 1` makes an array binding: every element must be written before the set is bound, and shaders may
+index it with a value that is uniform per draw. Sets are bound per pipeline with `bindDescriptorSet(pipeline, index, set)`.
+A set must not be updated while a submitted command buffer still uses it.
+
+### Pipelines
+
+`createGraphicsPipeline(RhiGraphicsPipelineDesc)`: vertex and fragment shaders, set layouts, one push constant range,
+colour and depth formats (dynamic rendering: no render pass objects), one vertex binding with a stride and attributes,
+topology (`TriangleList`, `LineList`), raster (cull mode, front face, line width), depth and one blend state.
+`createComputePipeline(RhiComputePipelineDesc)`: one shader, set layouts, one push constant range. Both return
+`RhiPipeline`; `bindPipeline` picks the bind point, and `bindDescriptorSet`/`pushConstants` use the pipeline's layout.
+
+### Recording
+
+A command buffer is recorded between `begin()` and `end()` and reset for reuse. Rendering is dynamic:
+`beginRendering(RhiRenderingInfo)` names the colour and depth attachments with their state, load (clear or keep) and
+clear values; draws happen inside, dispatches and copies outside. Commands:
+
+- viewport and scissor (with offset, for atlas tiles), pipeline, vertex and index buffer, descriptor set, push constants
+- `draw`, `drawIndexed`, `drawIndexedIndirect(commands, offset, drawCount)` and
+  `drawIndexedIndirectCount(commands, offset, count, countOffset, maxDrawCount)` reading packed
+  `RhiDrawIndexedIndirectCommand`s (layout of `VkDrawIndexedIndirectCommand` and `D3D12_DRAW_INDEXED_ARGUMENTS`), each
+  with its own `firstInstance`
+- `dispatch`
+- `copyBuffer`, `copyBufferToTexture`, `copyTextureToBuffer`, `blitTexture` (per-side mip level and filter)
+- `pipelineBarrier`
+
+### Timing, statistics and labels
+
+- **Timestamps.** `createQueryPool`, `resetQueryPool`/`writeTimestamp` on a command buffer, `readTimestamps` after the
+  fence; `limits().timestampPeriodNs` converts ticks.
+- **GPU zones.** `beginGpuZone(name)`/`endGpuZone()` nest on a command buffer; `collectGpuZones(cmd, out)` returns them
+  with depth and start/end in nanoseconds once the fence has passed. `calibrateGpuClock` samples the GPU and CPU clocks
+  together so zones can be placed on the CPU timeline.
+- **Command stats.** `RhiCommandStats` counts, since `begin()`: draws, dispatches, barriers, pipeline binds, descriptor
+  binds, vertex/index buffer binds, indirect draw calls, copies and estimated primitives. Indirect calls count once; their
+  draws and primitives are GPU-side and not counted.
+- **Labels.** `beginLabel`/`endLabel` for RenderDoc and validation messages; no-ops without debug support.
+
+### Submission and presentation
+
+`submitCommandBuffer(cmd, { waitSemaphore, signalSemaphore, fence })` submits one command buffer on the single queue.
+`acquireNextImage(semaphore)` returns the swapchain image index, `present(swapchain, waitSemaphore, index)` presents it;
+both report `OutOfDate`/`Suboptimal` for the caller to `recreate(extent)`. `waitForFence`/`resetFence` pace the CPU.
+`limits()` reports device name, driver, alignment and push constant limits, line width, anisotropy, timestamp support,
+calibration and the per-stage sampled-image limit. `validationErrorCount()` turns validation output into a number a
+program can check.
+
+## Vulkan backend
+
+`vulkan/` implements the interface on Vulkan and is the only code that includes Vulkan headers.
+
+- **Device.** `RhiDeviceVulkan::init` creates the instance (with `VK_EXT_debug_utils` when available, and the
+  Khronos validation layer when `RhiDeviceOptions::enableValidation` is set), picks the first physical device with a
+  graphics queue that can present to the window's surface, and creates one queue and one command pool.
+- **Required features.** API 1.2 or newer, `synchronization2`, `dynamicRendering`, `shaderSampledImageArrayDynamicIndexing`,
+  `multiDrawIndirect`, `drawIndirectFirstInstance` and `drawIndirectCount`; `init` fails with a message when one is
+  missing. `wideLines`, `samplerAnisotropy` and `VK_EXT_calibrated_timestamps` are enabled when present and reported in
+  `limits()`.
+- **Memory.** One `vkAllocateMemory` per buffer and texture, device-local for `GpuOnly` and textures, host-visible and
+  coherent for `CpuToGpu`. There is no suballocator.
+- **Barriers.** `pipelineBarrier` maps each state to a layout (textures), stage mask and access mask and records one
+  `vkCmdPipelineBarrier2` for all texture and buffer barriers.
+- **Command buffers.** Each `RhiCommandBufferVulkan` owns a timestamp query pool for up to 128 GPU zones, reset at
+  `begin()`, and counts `RhiCommandStats` as commands are recorded.
+- **Swapchain.** FIFO present mode, an sRGB surface format when available; `recreate` rebuilds the images, which
+  invalidates earlier `image(i)` pointers.
+- **Validation.** Messages go to stderr; errors and warnings are counted, and `validationErrorCount()` reports the errors.
 
 ## What an integrator provides
 
@@ -171,9 +296,13 @@ signature.
 
 ## Known gaps
 
-Kept honest rather than papered over. See the review that produced this file for the reasoning.
+Kept honest rather than papered over.
 
 - Single queue, single command pool. `createCommandBuffer` is not thread safe.
+- `init` checks for API 1.2, but `synchronization2` and `dynamicRendering` are enabled as core features without their
+  extensions, which a 1.2 device only accepts with `VK_KHR_synchronization2` and `VK_KHR_dynamic_rendering`. In practice
+  the backend needs a Vulkan 1.3 device.
+- One device memory allocation per resource, no suballocator; fine at current resource counts, a limit for streaming.
 - Barriers are resource-state transitions (`RhiTextureState` for textures, `RhiBufferState` for buffers); the backend
   derives stages and access. No explicit masks, no split barriers, no queue ownership transfer.
 - One blend state for all color attachments.
