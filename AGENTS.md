@@ -80,6 +80,16 @@ items in an "Open questions" section instead of picking silently.
 - Mechanical formatting is `./_out/ngen-build -p <platform> -c <config> format`'s job (clang-format) — don't
   hand-format against it.
 
+## Comments and documentation
+
+- Code comments (C++, shaders, `build.cpp`) never reference `docs/` — no plan names, no "see plan_x.md", no "stage N".
+  Say the fact in the comment, or point to the library's README.
+- Documentation that outlives a plan lives in a `README.md` inside the library it describes (`src/rhi/README.md`,
+  `src/renderer/README.md`). When a change alters a library's design or rules, update that README in the same change.
+- The root `README.md` links the library READMEs. `docs/` is plans and design history: plans may reference code, code
+  and library READMEs do not reference plans.
+- README assets (screenshots) live in `screenshots/`, not `docs/`.
+
 ## File naming
 - No snake_case in filenames. Use lowercase concatenated names (e.g. `sceneloader.cpp`, `devicevulkan.h`).
 - Platform-specific files put the platform as the last part of the name (e.g. `devicevulkan`, `swapchainvulkan`).
@@ -89,7 +99,7 @@ items in an "Open questions" section instead of picking silently.
 - All source code lives under `src/`.
 - `src/rhi/` — backend-agnostic RHI interfaces. Principles and integrator contract in `src/rhi/README.md`; read it before touching the interface.
 - `src/rhi/vulkan/` — Vulkan backend implementation. Additional backends go in sibling folders (e.g. `src/rhi/d3d12/`).
-- `src/renderer/` — renderer front-end (render graph, resource management).
+- `src/renderer/` — renderer front-end (frame graph, GPU scene tables, GPU culling, passes). Design and rules in `src/renderer/README.md`.
 - `src/scene/` — scene loading, ECS, materials.
 - Cross-cutting files (`main.cpp`, `types.h`, `camera.*`) live directly in `src/`.
 

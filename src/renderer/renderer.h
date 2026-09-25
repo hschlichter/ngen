@@ -106,10 +106,10 @@ private:
     RhiDescriptorPool* geometryDescriptorPool = nullptr;
     std::vector<RhiDescriptorSet*> geometryDescriptorSets;
 
-    // Scene GPU tables: geometry pool and instance buffer (docs/plan_gpu_driven.md).
+    // Scene GPU tables and the GPU-driven draw path (src/renderer/README.md).
     GpuScene gpuScene;
     DrawLists drawLists;                  // indirect commands per view and bucket, written by instanceCullPass
-    InstanceCullPass instanceCullPass;    // GPU culling (docs/plan_gpu_culling.md)
+    InstanceCullPass instanceCullPass;    // GPU culling
     uint32_t boundInstanceGeneration = 0; // instance buffer generation the descriptor sets point at
 
     // Passes
@@ -169,7 +169,7 @@ private:
     bool renderDebugEnabled = false;
     std::string screenshotPath;
 
-    // Texture inspector (docs/plan_texture_inspector.md): one level of one material
+    // Texture inspector: one level of one material
     // texture blitted into a preview the editor draws; replaced when the request changes.
     TextureInspectRequest textureInspectRequest;
     struct TexturePreview {

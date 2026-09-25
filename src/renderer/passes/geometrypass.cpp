@@ -156,7 +156,7 @@ auto GeometryPass::addPass(
             cmd->setScissor(extent);
 
             // One indirect call per pipeline bucket: single-sided instances under back-face
-            // culling first, then double-sided ones without it (docs/plan_indirect_draws.md).
+            // culling first, then double-sided ones without it.
             auto* commands = ctx.buffer(drawHandles.commands);
             auto* counts = ctx.buffer(drawHandles.counts);
             for (bool doubleSided : {false, true}) {

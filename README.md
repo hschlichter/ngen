@@ -2,7 +2,7 @@
 
 A modern 3D engine written in C++23 with a Vulkan rendering backend and OpenUSD scene system.
 
-![Editor UI with scene hierarchy and properties](docs/engine_editor_v2.png)
+![Editor UI with scene hierarchy and properties](screenshots/engine_editor_v2.png)
 
 ## Features
 
@@ -71,6 +71,16 @@ App (main.cpp)
          └─ Vulkan (rhi/vulkan/)  — Vulkan 1.3 backend
 ```
 
+### Library documentation
+
+Each library documents its design and rules in a README next to the code:
+
+- [`src/rhi/README.md`](src/rhi/README.md) — RHI principles, the integrator contract, the example programs, known gaps.
+- [`src/renderer/README.md`](src/renderer/README.md) — how a frame is built: GPU scene tables, GPU culling and indirect draws, descriptor sets, frame graph
+  rules, shadows, observation.
+
+`docs/` holds plans and design history; code and library READMEs do not depend on it.
+
 ### Threading Model
 
 ```
@@ -85,7 +95,7 @@ are processed at the start of each render frame.
 
 ### Edit Pipeline
 
-Interactive operations follow a **Preview → Authoring** lifecycle (see `docs/architecture_preview_vs_authoring.md`). Each frame the user is dragging a gizmo or
+Interactive operations follow a **Preview → Authoring** lifecycle. Each frame the user is dragging a gizmo or
 scrubbing a slider, the engine emits one or more `Preview` `SceneEditCommand`s — the `SceneUpdater` fast path applies them directly to the runtime transform
 cache, patches only the affected `RenderWorld` instances and BVH leaves, and skips USD entirely. On operation end (mouse-up, slider release) one `Authoring`
 edit commits the final value to the active USD layer; that commit is the undo step. Heavyweight edits (`SetVisibility`, layer mutes, sublayer ops, resyncs) take
@@ -100,7 +110,7 @@ The shadow ortho is auto-fitted to a bounding sphere around the instance origins
 (`Shadow Map`, `Shadow Factor`, `Shadow UV`, `World Pos`) are available under **Debug → Fullscreen Buffer View** and as a top-strip overlay via **Debug → Show
 Shadow Overlay**.
 
-![Deferred lighting with shadow-mapped scene and shadow-map debug overlay](docs/engine_lighting_shadows.png)
+![Deferred lighting with shadow-mapped scene and shadow-map debug overlay](screenshots/engine_lighting_shadows.png)
 
 ### Directional Light
 
@@ -110,7 +120,7 @@ round-trip through the Properties panel but stay in-session and don't touch the 
 so the shadow frustum and shading direction update live as you drag. **Debug → Show Light Gizmos** draws a sun disc and arrow anchored along the toward-light
 direction, sized to the scene bounds, so the visualized position always agrees with the direction the shader actually uses.
 
-![Directional light gizmo anchored to the scene, with shadows following the light](docs/engine_lighting_sun.png)
+![Directional light gizmo anchored to the scene, with shadows following the light](screenshots/engine_lighting_sun.png)
 
 ### Frame Graph Debugger
 
@@ -120,12 +130,12 @@ target each frame. Two views of the same graph:
 **List view** — passes in execution order with their reads and writes; clicking any row pins the full resource details (size, format, lifetime, producer,
 consumers) in the bottom pane.
 
-![Frame graph list view](docs/engine_framegraph_list.png)
+![Frame graph list view](screenshots/engine_framegraph_list.png)
 
 **Graph view** — passes arranged across a single row at the top, with resources stacked directly beneath their producer. Edges are access-colored and highlight
 when either endpoint is selected. Pan with middle-drag (or left-drag on empty canvas); scroll to zoom.
 
-![Frame graph node view](docs/engine_framegraph_nodes.png)
+![Frame graph node view](screenshots/engine_framegraph_nodes.png)
 
 ## Dependencies
 
@@ -225,4 +235,4 @@ Regenerate with `python3 models/city/generate_city.py`.
 
 ## Screenshots
 
-![Gizmos, grid, and origin marker](docs/engine_city.png)
+![Gizmos, grid, and origin marker](screenshots/engine_city.png)

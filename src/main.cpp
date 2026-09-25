@@ -864,7 +864,7 @@ auto main(int argc, char* argv[]) -> int {
         const auto* keys = SDL_GetKeyboardState(nullptr);
         cam.update(keys, dt);
 
-        // Culling runs on the GPU (docs/plan_gpu_culling.md): the snapshot carries the frustum
+        // Culling runs on the GPU: the snapshot carries the frustum
         // to cull against (live, or frozen so the culled set can be inspected from elsewhere),
         // and the results come back a few frames later for the Culling window and overlay.
         cullState.enabled = editorUI.getCullEnabled();

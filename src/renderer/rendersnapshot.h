@@ -12,7 +12,7 @@
 #include <vector>
 
 // Material sampler state, editable live from the Render Debug View tab and the
-// `sampler` session verb (docs/plan_mip_debug.md).
+// `sampler` session verb.
 struct SamplerSettings {
     float maxAnisotropy = 8.0f; // 0 = off
     float lodBias = 0.0f;
@@ -41,12 +41,12 @@ struct RenderSnapshot {
     bool depthPrepass = false; // off by default: costs more than it saves without heavy overdraw
     SamplerSettings sampler;
 
-    // GPU culling inputs (docs/plan_gpu_culling.md): the camera frustum to cull against (live,
+    // GPU culling inputs: the camera frustum to cull against (live,
     // or frozen from the editor) and whether culling is on.
     bool cullEnabled = true;
     glm::mat4 cullViewProj = glm::mat4(1.0f);
 
-    // Shadow cascades fitted on the main thread (docs/plan_shadow_cascades.md), culled on the GPU.
+    // Shadow cascades fitted on the main thread, culled on the GPU.
     // cascadeCount 0 means the renderer fits a single cascade itself.
     ShadowCascadeSettings shadowSettings;
     uint32_t cascadeCount = 0;

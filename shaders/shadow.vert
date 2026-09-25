@@ -4,7 +4,7 @@ layout(push_constant) uniform Push {
     mat4 lightViewProj;
 } push;
 
-// Persistent instance buffer (docs/plan_frame_graph_buffers.md); drawn with
+// Persistent instance buffer (GpuInstanceRecord); drawn with
 // firstInstance = instance index, so gl_InstanceIndex selects the entry.
 struct Instance {
     mat4 model;

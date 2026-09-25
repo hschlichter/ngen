@@ -37,7 +37,7 @@ inline constexpr uint32_t gpuInstanceDoubleSided = 1u << 1; // cull-none pipelin
 inline constexpr uint32_t gpuInstanceBoundsValid = 1u << 2; // otherwise never culled
 
 // One entry of the GPU instance buffer (std430, stride 112), read by the vertex shaders at
-// gl_InstanceIndex and by the culling passes (docs/plan_gpu_culling.md). material indexes
+// gl_InstanceIndex and by the culling passes. material indexes
 // the material table, mesh the mesh table; indexOffset/indexCount are the submesh range.
 struct GpuInstanceRecord {
     glm::mat4 model;
@@ -90,7 +90,7 @@ struct GpuMeshRange {
     uint64_t indexBytes = 0;
 };
 
-// The scene's GPU tables (docs/plan_gpu_driven.md): the geometry pool, the material table
+// The scene's GPU tables (src/renderer/README.md): the geometry pool, the material table
 // and the instance buffer. Two upload paths, split by the data:
 //   bulk  - large and rare, blocking through GpuUploader (rebuildGeometry, rebuildMaterials)
 //   delta - small and per frame, through per-slot staging and a graph copy pass
@@ -101,7 +101,7 @@ public:
     auto destroy() -> void;
 
     // Bulk: rebuilds the geometry pool from every mesh the instances reference, in
-    // instance order (docs/plan_geometry_pool.md). The old pool is freed through the
+    // instance order. The old pool is freed through the
     // deletion queue at `frame`.
     auto rebuildGeometry(std::span<const GpuInstance> instances, const MeshLibrary& meshLib, GpuUploader& uploader, uint64_t frame) -> void;
     auto meshRange(uint32_t meshIndex) const -> const GpuMeshRange*;
@@ -161,7 +161,7 @@ private:
     std::unordered_map<uint32_t, uint32_t> materialIndexOf; // MaterialHandle::index -> table entry
     std::vector<uint32_t> instanceMaterial;                 // per instance, table entry
 
-    // Instance buffer (docs/plan_frame_graph_buffers.md): one GpuInstanceRecord per GpuInstance, read at
+    // Instance buffer: one GpuInstanceRecord per GpuInstance, read at
     // gl_InstanceIndex. The access it was left in carries into the next frame's graph so the
     // upload syncs with the previous frame's reads.
     RhiBuffer* instances = nullptr;

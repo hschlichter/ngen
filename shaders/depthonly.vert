@@ -7,7 +7,7 @@ layout(set = 0, binding = 0) uniform UBO {
     mat4 proj;
 } ubo;
 
-// Persistent instance buffer (docs/plan_frame_graph_buffers.md); drawn with
+// Persistent instance buffer (GpuInstanceRecord); drawn with
 // firstInstance = instance index, so gl_InstanceIndex selects the entry.
 struct Instance {
     mat4 model;

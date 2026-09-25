@@ -455,14 +455,14 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
     VkPhysicalDeviceFeatures enabledFeatures = {};
     enabledFeatures.wideLines = supportedFeatures.wideLines;
     enabledFeatures.samplerAnisotropy = supportedFeatures.samplerAnisotropy;
-    // Array bindings indexed per draw (bindless materials, docs/plan_bindless_materials.md).
-    // Core 1.0 and on every desktop driver; required.
+    // Array bindings indexed with one value per draw (bindless materials). Core 1.0 and on
+    // every desktop driver; required.
     if (supportedFeatures.shaderSampledImageArrayDynamicIndexing != VK_TRUE) {
         std::println(stderr, "Vulkan device lacks shaderSampledImageArrayDynamicIndexing");
         return std::unexpected(RhiError::Failed);
     }
     enabledFeatures.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
-    // Indirect draws (docs/plan_indirect_draws.md): many commands per call, each carrying its
+    // Indirect draws: many commands per call, each carrying its
     // instance index in firstInstance. Required; there is no CPU-driven fallback.
     if (supportedFeatures.multiDrawIndirect != VK_TRUE || supportedFeatures.drawIndirectFirstInstance != VK_TRUE) {
         std::println(stderr, "Vulkan device lacks multiDrawIndirect or drawIndirectFirstInstance");

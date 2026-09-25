@@ -188,5 +188,6 @@ Kept honest rather than papered over. See the review that produced this file for
 - Descriptor model is Vulkan-shaped (pool, layout, set, write). D3D12 and Metal can implement it, but it is not their
   native shape; revisit when a second backend exists.
 - Array bindings are fixed-size and must be fully written before binding; indexing must be dynamically uniform (one
-  value per draw). No runtime-sized arrays, partially bound sets, update-after-bind or non-uniform indexing
-  (`docs/plan_bindless_materials.md`, decision 1).
+  value per draw). No runtime-sized arrays, partially bound sets, update-after-bind or non-uniform indexing: every draw
+  reads one material, so dynamically uniform indexing (a core 1.0 feature) covers bindless materials and multi-draw
+  indirect alike. Add descriptor indexing when textures stream or a scene outgrows a fixed array.

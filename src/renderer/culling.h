@@ -11,7 +11,7 @@
 #include <vector>
 
 // Culling toggles and the frozen frustum. The culling itself runs on the GPU
-// (docs/plan_gpu_culling.md); the snapshot carries the matrix update() returns.
+// (InstanceCullPass); the snapshot carries the matrix update() returns.
 struct CullState {
     bool enabled = true;
     bool frozen = false;       // set from the editor; the frustum stops following the camera

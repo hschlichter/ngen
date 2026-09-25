@@ -621,7 +621,7 @@ auto Renderer::rebuildGeometryDescriptorSets(const char* reason) -> void {
         return;
     }
 
-    // One set per frame slot (docs/plan_bindless_materials.md): the slot's UBO plus the scene
+    // One set per frame slot: the slot's UBO plus the scene
     // tables. Every texture-array element is written: the slot's texture or the fallback.
     auto imgCount = swapchain->imageCount();
     auto bindings = GeometryPass::descriptorBindings();

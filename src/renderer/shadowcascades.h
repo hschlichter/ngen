@@ -9,11 +9,11 @@
 #include <glm/glm.hpp>
 #include <span>
 
-// Cascaded shadow maps (docs/plan_shadow_cascades.md): the camera frustum is split along
+// Cascaded shadow maps: the camera frustum is split along
 // view depth, each slice gets its own ortho light frustum fitted to the slice's bounding
 // sphere and snapped to texel increments, and all cascades share one atlas texture as
-// tiles. Fitted on the main thread next to the camera cull; the render thread receives
-// the matrices and visibility masks in the snapshot.
+// tiles. Fitted on the main thread; the render thread receives the matrices in the
+// snapshot, and the GPU culling tests instances against each cascade.
 constexpr uint32_t maxShadowCascades = 4;
 
 struct ShadowCascadeSettings {

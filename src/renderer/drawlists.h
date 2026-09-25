@@ -26,8 +26,8 @@ class FrameGraph;
 class FrameGraphContext;
 class RhiDevice;
 
-// Indirect draw commands per view and pipeline bucket (docs/plan_indirect_draws.md), written
-// on the GPU by the culling passes (docs/plan_gpu_culling.md). One region per (view, bucket):
+// Indirect draw commands per view and pipeline bucket, written on the GPU by the culling
+// passes (src/renderer/README.md, "GPU-driven frame"). One region per (view, bucket):
 // the camera, then each shadow cascade, each split into single-sided and double-sided.
 //
 // Owns the frame slot's buffers the culling passes read and write, and the readback that

@@ -76,7 +76,7 @@ auto DrawLists::writeParams(uint32_t frameSlot, uint32_t instanceCount, const gl
     params.cullEnabled = cullEnabled ? 1 : 0;
     params.regionCapacity = capacity;
     params.groupCount = groupCountFor(instanceCount);
-    // Planes exactly as the CPU culling built them (Frustum::fromViewProj).
+    // Normalized planes from Frustum::fromViewProj, tested per instance in instancecull.comp.
     for (uint32_t v = 0; v < params.viewCount; v++) {
         auto frustum = Frustum::fromViewProj(v == 0 ? cameraViewProj : cascades[v - 1].viewProj);
         for (uint32_t p = 0; p < 6; p++) {

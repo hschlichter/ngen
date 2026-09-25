@@ -6,8 +6,8 @@
 #include <cstdint>
 
 // Culling window: the frustum culling toggle, the frozen frustum for inspecting what a
-// camera pose culls, the red/green AABB overlay, and this frame's counts
-// (docs/plan_frustum_culling.md). The flags are the EditorUI's; session verbs write the same.
+// camera pose culls, the red/green AABB overlay, and the latest counts read back from
+// the GPU culling. The flags are the EditorUI's; session verbs write the same.
 struct CullingWindowInputs {
     bool& enabled;
     bool& frozen;

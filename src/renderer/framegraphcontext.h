@@ -18,7 +18,7 @@ public:
     // draw index are filled in by the context.
     auto logDraw(const FgDrawRecord& record) -> void;
     // Draws and primitives an indirect call issued, which the RHI cannot see; folded into
-    // the executing pass's stats (docs/plan_indirect_draws.md).
+    // the executing pass's stats.
     auto addIndirectStats(uint32_t draws, uint64_t primitives) -> void;
 
 private:

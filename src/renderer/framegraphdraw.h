@@ -3,7 +3,7 @@
 #include <cstdint>
 
 // One logged draw, filled by passes through FrameGraphContext::logDraw while the render
-// debugger is open. Indirect passes log the commands they wrote (docs/plan_indirect_draws.md).
+// debugger is open. Indirect passes log the commands the GPU wrote, as read back.
 struct FgDrawRecord {
     const char* pass = "";
     uint32_t drawIndex = 0; // within the pass

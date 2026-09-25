@@ -137,7 +137,7 @@ auto ShadowPass::addPass(
 
                 // One indirect call per bucket per cascade: single-sided meshes under back-face
                 // culling first, then double-sided ones without it. Commands draw whole meshes
-                // on each prim's first submesh instance (docs/plan_indirect_draws.md).
+                // on each prim's first submesh instance.
                 for (bool doubleSided : {false, true}) {
                     auto region = DrawLists::cascadeRegion(c, doubleSided);
                     // The GPU-written count decides how many commands draw; an empty region costs one call.

@@ -17,8 +17,8 @@ struct DepthPrepassData {
 };
 
 // Depth-only pass over the visible instances before the geometry pass, so the geometry
-// pass can run with an Equal depth test and shade each pixel once
-// (docs/plan_geometry_pass_cost.md). depthonly.vert mirrors gbuffer.vert's position
+// pass can run with an Equal depth test and shade each pixel once.
+// depthonly.vert mirrors gbuffer.vert's position
 // expression with gl_Position invariant, so the Equal test holds; no fragment work.
 class DepthPrepass {
 public:

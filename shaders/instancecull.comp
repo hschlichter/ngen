@@ -1,7 +1,7 @@
 #version 450
 
-// GPU instance culling with ordered compaction (docs/plan_gpu_culling.md), in three
-// dispatches selected by push.mode:
+// GPU instance culling with ordered compaction (src/renderer/README.md, "GPU-driven frame"),
+// in three dispatches selected by push.mode:
 //
 //   0 cull     one thread per instance: frustum test against every view, visibility bits,
 //              per-workgroup counters (draws and primitives per region, culling stats)
@@ -172,8 +172,8 @@ void cull() {
                 atomicAdd(sharedCounters[counterPrimitives + r], indexCount / 3);
             }
         }
-        // Statistics with the CPU culling's semantics: camera over every instance, cascades
-        // over primFirst instances.
+        // Statistics: camera culling over every instance, cascade culling over primFirst
+        // instances (the ones the shadow pass draws).
         if ((bits & 1u) == 0) {
             atomicAdd(sharedCounters[counterCameraCulled], 1u);
         }

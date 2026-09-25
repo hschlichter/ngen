@@ -311,7 +311,7 @@ auto main(int argc, char** argv) -> int {
             .link_flag("-lusd_pegtl")
             .link_flag("-lusd_kind");
 
-    // RHI examples: one program per feature, reaching only into src/rhi/. See docs/plan_rhi_examples.md.
+    // RHI examples: one program per feature, reaching only into src/rhi/. See src/rhi/README.md, "Examples".
     auto rhiExample = [&](const std::string& name) {
         return cxx::program("ngen-example-" + name)
             .sources({"src/rhi/examples/" + name + ".cpp"})

@@ -11,7 +11,7 @@ class DeletionQueue;
 class GpuScene;
 class RhiDevice;
 
-// GPU instance culling (docs/plan_gpu_culling.md): three compute passes running
+// GPU instance culling (src/renderer/README.md, "GPU-driven frame"): three compute passes running
 // shaders/instancecull.comp in its cull, scan and scatter modes. Writes the draw commands
 // and counts the shadow, prepass and geometry passes read indirectly.
 class InstanceCullPass {

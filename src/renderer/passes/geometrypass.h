@@ -24,7 +24,7 @@ class GeometryPass {
 public:
     auto init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFormat) -> bool;
 
-    // Set 0, one set per frame slot (docs/plan_bindless_materials.md): 0 view UBO, 1 material
+    // Set 0, one set per frame slot: 0 view UBO, 1 material
     // texture array (GpuScene::maxTextures), 2 instance buffer, 3 material table.
     static auto descriptorBindings() -> std::array<RhiDescriptorBinding, 4>;
     auto destroy(RhiDevice* device) -> void;

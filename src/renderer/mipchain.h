@@ -6,7 +6,7 @@
 #include <vector>
 
 // A full mip chain for an RGBA8 texture, level 0 first, down to 1x1.
-// Built on the CPU with a 2x2 box filter (docs/plan_texture_mipmaps.md).
+// Built on the CPU with a 2x2 box filter.
 struct MipLevel {
     uint32_t width = 0;
     uint32_t height = 0;

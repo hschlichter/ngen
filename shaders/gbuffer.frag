@@ -1,6 +1,6 @@
 #version 450
 
-// Material textures (docs/plan_bindless_materials.md); size matches GpuScene::maxTextures.
+// Material textures, indexed by the slot gbuffer.vert looks up; size matches GpuScene::maxTextures.
 layout(set = 0, binding = 1) uniform sampler2D textures[1024];
 
 layout(location = 0) in vec3 fragNormal;
