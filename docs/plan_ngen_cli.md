@@ -1,6 +1,6 @@
 # ngen-cli
 
-**Status. Draft.**
+**Status. Landed.**
 
 ## Current state
 
@@ -135,3 +135,28 @@ Every tool has its own entry point and its own flags:
 - **Machine-readable listing from `ngen-build`** (Decision 4). Trigger: the `-l` text layout changes, or a second consumer needs it.
 - **A variant-independent cli**, installed to one fixed path so `set` doesn't compile a cli per variant. Trigger: the build framework gains host-tool
   outputs, or the per-variant compile becomes a nuisance.
+
+## Results
+
+- First use from a state with no `_out/set` and no root link:
+  - `_out/linux-vulkan/debug/ngen-cli` printed the help with "no variant set"
+  - `build` failed with the "run `ngen-cli set` … or pass -p/-c" message
+  - `set linux release` built `_out/linux-vulkan/release/ngen-cli`, wrote `linux-vulkan/release` to `_out/set`, and created
+    `ngen-cli -> _out/linux-vulkan/release/ngen-cli`
+- `set windows debug` and `set linux nope` failed with the valid names (`linux-vulkan`; `debug, release, gamerelease`) and left the file and the link
+  unchanged.
+- Defaults and overrides: with release set, `./ngen-cli build ngen-cli` relinked the release cli, and the direct `ngen-build -p linux-vulkan -c release
+  ngen-cli` then had nothing to do. `./ngen-cli build -c debug ngen-cli` built the debug cli and left `_out/set` at release.
+  `./ngen-cli build -p linux-vulkan -c gamerelease ngen-cli` worked with `_out/set` removed, and a plain `build` without it failed with the message.
+  (The runner compares content hashes, so `touch` does not dirty a target; the checks deleted the cli binary instead.)
+- `./ngen-cli build -c debug examples` passed through (31 edges, exit 0); `./ngen-cli build format` ran clang-format.
+- `./ngen-cli view assets/three_cubes.usda --frames=30 --screenshot=…` wrote a PNG byte-identical to the direct release binary's.
+- `execv`: the process started as `ngen-cli view …` became `_out/linux-vulkan/release/ngen-view` with the same PID, so exit codes and signals are the
+  tool's own. A failing scene exits 1 both ways.
+- From `src/`: `../ngen-cli set` printed the variant, and `../ngen-cli view ../assets/three_cubes.usda …` found the scene relative to `src/`.
+- `set linux debug` moved the link to the debug cli; running `set linux-vulkan debug` again through that link (rebuilding the running binary)
+  succeeded.
+- Not checked: the exit code 2 from `--fail-on-validation` (no run hit a validation error). The same-PID check covers it.
+- Docs changed from step 5 after review: the cli is for humans. `AGENTS.md` tells agents to call `ngen-build` and the variant binaries directly and
+  to run `ngen-cli` only when explicitly asked to test it; the `run-headless` skill does not mention it. The root `README.md` has an "ngen-cli"
+  section (setup, commands, examples, caveats).

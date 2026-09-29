@@ -1019,6 +1019,7 @@ auto main(int argc, char* argv[]) -> int {
             frameDebugPending = true;
             frameDumpArmed = true;
         }
+
         if (editorUI.takeFrameDebugRequest()) {
             frameDebugPending = true;
         }

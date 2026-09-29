@@ -316,6 +316,9 @@ auto main(int argc, char** argv) -> int {
             .link_flag("-lusd_pegtl")
             .link_flag("-lusd_kind");
 
+    // ngen-cli: one front door to the tools of the set variant (src/cli/cli.cpp). Standard library only.
+    auto cli = cxx::program("ngen-cli").sources({"src/cli/cli.cpp"});
+
     // RHI examples: one program per feature, reaching only into src/rhi/. See src/rhi/README.md, "Examples".
     auto rhiExample = [&](const std::string& name) {
         return cxx::program("ngen-example-" + name)
@@ -381,6 +384,7 @@ auto main(int argc, char** argv) -> int {
     p.target(exampleGpuZones);
     p.target(exampleBindless);
     p.target(exampleIndirect);
+    p.target(cli);
     p.target(format);
     p.target(tidy);
     p.default_target(view);

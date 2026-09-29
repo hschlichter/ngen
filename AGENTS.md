@@ -112,14 +112,16 @@ once on a fresh clone (and again whenever `build/bootstrap.cpp` changes):
 mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstrap.cpp
 ```
 
-From then on `./_out/ngen-build` is the only entry point. It rebuilds the root `build.cpp` project graph
-(`_out/ngen-build-graph`) and the runner on demand, then executes the requested target. `--platform`/`-p` and
-`--config`/`-c` are always required (the build system has no project-specific defaults):
+From then on `./_out/ngen-build` is the entry point. It rebuilds the root `build.cpp` project graph (`_out/ngen-build-graph`) and the runner on demand,
+then executes the requested target. `--platform`/`-p` and `--config`/`-c` are always required (the build system has no project-specific defaults):
 
 - `./_out/ngen-build -p linux-vulkan -c debug` — build the default target (`ngen-view`); configs: `debug`, `release`, `gamerelease`
 - `./_out/ngen-build -p linux-vulkan -c debug format` — clang-format the tree
 - `./_out/ngen-build --compile-commands -p linux-vulkan -c debug` — refresh `compile_commands.json` (opt-in; re-run when the project graph changes)
 - `./_out/ngen-build -h` — full flag list (clean, rebuild, tidy, list, graph dumps, fuzzy target matching, …)
+
+`ngen-cli` (the root-level front door, `src/cli/cli.cpp`) is for humans; the README's "ngen-cli" section documents it. Agents do not use
+it: call `./_out/ngen-build` and `_out/<platform>/<config>/<tool>` directly, and run `ngen-cli` only when explicitly asked to test the cli itself.
 
 The engine binary lands at `_out/linux-vulkan/debug/ngen-view` (or the equivalent under the active config).
 Edit the root `build.cpp` for project platforms, configs, targets, and source graph changes. See

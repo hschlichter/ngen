@@ -173,29 +173,73 @@ python3 external/openusd/build_scripts/build_usd.py \
 
 ## Building
 
-The engine is built by its own self-hosted build system (`ngen-build`). Requires `clang++` with C++23 support, the Vulkan SDK, and `ninja`. OpenUSD must be built first (see above).
+The engine is built by its own self-hosted build system (`ngen-build`). Requires `clang++` with C++23 support, the Vulkan SDK and `glslc`. OpenUSD
+must be built first (see above).
 
-Bootstrap once, then build:
-
-```bash
-ninja -f build/bootstrap.ninja    # produces _out/ngen-build
-./_out/ngen-build                 # builds the engine (debug config)
-```
-
-The resulting binary is at `_out/linux-vulkan/debug/ngen-view`. Shaders are compiled from GLSL to SPIR-V automatically via `glslc`.
-
-Other configs and helpers:
+Bootstrap `ngen-build` once (and again whenever `build/bootstrap.cpp` changes), then build:
 
 ```bash
-./_out/ngen-build --config release       # release build
-./_out/ngen-build --config gamerelease   # shipping build
-./_out/ngen-build clean                  # remove build outputs
-./_out/ngen-build format                 # clang-format the tree
-./_out/ngen-build tidy                   # clang-tidy build/*.cpp
-./_out/ngen-build --list                 # list top-level targets
+mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstrap.cpp
+./_out/ngen-build -p linux-vulkan -c debug      # default target: ngen-view
 ```
 
-See [build_system.md](./build_system.md) for the build system internals (framework layout, extension model, Ninja backend, adding platforms/configurations).
+`ngen-build` takes the platform (`-p`) and config (`-c`) on every call; configs are `debug`, `release` and `gamerelease`. Binaries land in
+`_out/<platform>/<config>/`, so the viewer is `_out/linux-vulkan/debug/ngen-view`. Shaders are compiled from GLSL to SPIR-V by `glslc`.
+`./_out/ngen-build -h` lists every flag (`--clean`, `--rebuild`, `--list`, `--compile-commands`, …); `format` and `tidy` are targets. For day-to-day
+use, `ngen-cli` (next section) remembers the platform and config for you.
+
+See [build/build_system.md](build/build_system.md) for the build system internals (framework layout, extension model, IR and runner, adding platforms
+and configurations).
+
+## ngen-cli
+
+`ngen-cli` is the front door to the engine's tools. You pick a platform and config once with `set`; after that, `build` and the tool commands use
+it, so you stop spelling out `-p`/`-c` and `_out/<platform>/<config>/` on every command.
+
+### First-time setup
+
+With `ngen-build` bootstrapped (see Building), build the cli for one variant and set it:
+
+```bash
+./_out/ngen-build -p linux-vulkan -c debug ngen-cli
+./_out/linux-vulkan/debug/ngen-cli set linux-vulkan debug
+```
+
+`set` creates `./ngen-cli` in the repository root, a symlink to the set variant's cli. From then on use `./ngen-cli` (or put the repository root
+on your `PATH`). It works from any directory: `../ngen-cli` from `src/` behaves the same.
+
+### Commands
+
+| Command | What it does |
+|---|---|
+| `ngen-cli set <platform> <config>` | Make a variant the set one. Names are checked against `ngen-build --list`; a unique prefix is enough (`set linux release`). Builds that variant's cli first, then moves the `./ngen-cli` link to it. |
+| `ngen-cli set` | Print the set variant. |
+| `ngen-cli build [args]` | Run `ngen-build` for the set variant. `-p`/`-c` are filled in only when you don't pass them, so `build -c release` builds the set platform in release, and `build -p … -c …` works like plain `ngen-build`. Every other argument passes through: targets, `-v`, `--clean`, `format`, `tidy`, … |
+| `ngen-cli view [args]` | Run the set variant's `ngen-view` with your arguments, in your working directory. |
+| `ngen-cli help` | The commands, the set variant, and which tools are built for it. |
+
+Forwarded tools replace the cli process, so their output, signals and exit code are exactly those of running the tool directly.
+
+### Examples
+
+```bash
+./ngen-cli build                             # build ngen-view for the set variant
+./ngen-cli view assets/three_cubes.usda      # run it
+./ngen-cli build examples                    # the RHI example programs
+./ngen-cli build -c release ngen-view        # one-off release build; the set variant stays as it is
+./ngen-cli set linux release                 # switch the set variant to release
+./ngen-cli build format                      # clang-format the tree
+```
+
+### Things to know
+
+- **The set variant is stored in `_out/set`**, one line such as `linux-vulkan/debug`. Tools of that variant are `_out/<that line>/<tool>`, which
+  scripts can use too: `_out/$(cat _out/set)/ngen-view`.
+- **`view` does not build.** On a variant you haven't built yet, it says `ngen-view is not built` and names the command: `ngen-cli build`.
+- **The cli rebuilds only when asked.** The default target is `ngen-view`, so after changing `src/cli/cli.cpp` run `./ngen-cli build ngen-cli`.
+- **Cleaning the set variant removes its cli too.** `./ngen-cli build --clean` is `ngen-build --clean`, and the cli lives in the variant's output
+  directory, so `./ngen-cli` dangles afterwards. Recover with `./_out/ngen-build -p <platform> -c <config> ngen-cli`, or run the first-time setup
+  again. To forget the set variant, delete `_out/set` and `./ngen-cli`.
 
 ## Usage
 

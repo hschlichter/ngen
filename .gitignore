@@ -52,6 +52,8 @@ Mkfile.old
 dkms.conf
 
 _out/
+/ngen-cli
+/.ngen-cli.link
 .cache/
 compile_commands.json
 *.spv
