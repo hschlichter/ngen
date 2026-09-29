@@ -12,23 +12,26 @@ compiles".
 ## Build
 
 ```sh
-./_out/ngen-build -p linux-vulkan -c debug
+./ngen-cli build            # the set variant; ./ngen-cli set prints which
 ```
 
-If `_out/ngen-build` is missing (fresh clone), bootstrap first:
+If `./ngen-cli` is missing (fresh clone), bootstrap `ngen-build`, then build the cli and set a variant (`AGENTS.md`, "Build"):
 
 ```sh
-mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstrap.cpp
+mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/bootstrap.cpp
+./_out/ngen-build -p linux-vulkan -c debug ngen-cli && ./_out/linux-vulkan/debug/ngen-cli set linux-vulkan debug
 ```
 
-The binary lands at `_out/linux-vulkan/debug/ngen-view`.
+Don't change the set variant unless asked; it is shared with the human's session. For another variant, `./ngen-cli build -p … -c …` and run
+`_out/<platform>/<config>/ngen-view` directly.
 
 ## Run headless
 
 ```sh
-SDL_VIDEODRIVER=offscreen timeout --signal=TERM 5 ./_out/linux-vulkan/debug/ngen-view --obs-output=/tmp/obs.jsonl <scene>
+SDL_VIDEODRIVER=offscreen timeout --signal=TERM 5 ./ngen-cli view --obs-output=/tmp/obs.jsonl <scene>
 ```
 
+- `ngen-cli view` replaces itself with the set variant's `ngen-view`, so `timeout`, signals and exit codes behave exactly as with the binary.
 - The `timeout` kill is the expected exit — judge the run by the JSONL contents, not the exit code.
 - Write `--obs-output` to `/tmp` or the session scratchpad, not into the repo.
 - Size the timeout to the scene: 3–5 s for small scenes, 45+ s for Sponza (4K PNG decode takes ~30–40 s
@@ -39,7 +42,7 @@ SDL_VIDEODRIVER=offscreen timeout --signal=TERM 5 ./_out/linux-vulkan/debug/ngen
 `ngen-view` takes session flags so a run can be looked at, not only grepped:
 
 ```sh
-SDL_VIDEODRIVER=offscreen ./_out/linux-vulkan/debug/ngen-view <scene> --frames=30 \
+SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   --camera=2,1.5,2,-135,-20 --view=normals --overlay=grid=off \
   --screenshot=/tmp/shot.png --dump-render-debug=/tmp/rd.json --dump-profile=/tmp/trace.json \
   --fail-on-validation --obs-output=/tmp/obs.jsonl

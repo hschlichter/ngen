@@ -101,31 +101,50 @@ items in an "Open questions" section instead of picking silently.
 - `src/rhi/vulkan/` — Vulkan backend implementation. Additional backends go in sibling folders (e.g. `src/rhi/d3d12/`).
 - `src/renderer/` — renderer front-end (frame graph, GPU scene tables, GPU culling, passes). Design and rules in `src/renderer/README.md`.
 - `src/scene/` — scene loading, ECS, materials.
-- Cross-cutting files (`main.cpp`, `types.h`, `camera.*`) live directly in `src/`.
+- `src/apps/` — every program's `main`, one file per program named after it without `ngen-` or dashes (`view.cpp` for `ngen-view`, `cli.cpp`
+  for `ngen-cli`). Entry points stay thin: argument parsing, wiring and the loop; reusable logic goes into a library. `src/apps/tool/` holds the
+  shell shared by the windowed tools. Exceptions: `ngen-build` and its helpers keep their mains in `src/build/`, and the RHI examples stay in
+  `src/rhi/examples/`.
+- `src/build/` — the build system (framework, IR, runner, bootstrap). Standard library only and self-contained, so it can be lifted into another
+  project; design and rules in `src/build/README.md`. The project's own description is the root `build.cpp`.
+- Cross-cutting files (`types.h`, `camera.*`) live directly in `src/`.
 
 ## Build
 
 The engine uses its own self-hosted build system (`ngen-build`) — no ninja or make at any stage. Bootstrap
-once on a fresh clone (and again whenever `build/bootstrap.cpp` changes):
+once on a fresh clone (and again whenever `src/build/bootstrap.cpp` changes):
 
 ```sh
-mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstrap.cpp
+mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/bootstrap.cpp
 ```
 
-From then on `./_out/ngen-build` is the entry point. It rebuilds the root `build.cpp` project graph (`_out/ngen-build-graph`) and the runner on demand,
-then executes the requested target. `--platform`/`-p` and `--config`/`-c` are always required (the build system has no project-specific defaults):
+Then build the cli and set a variant (once per clone; skip if `./ngen-cli` already exists):
 
-- `./_out/ngen-build -p linux-vulkan -c debug` — build the default target (`ngen-view`); configs: `debug`, `release`, `gamerelease`
-- `./_out/ngen-build -p linux-vulkan -c debug format` — clang-format the tree
-- `./_out/ngen-build --compile-commands -p linux-vulkan -c debug` — refresh `compile_commands.json` (opt-in; re-run when the project graph changes)
-- `./_out/ngen-build -h` — full flag list (clean, rebuild, tidy, list, graph dumps, fuzzy target matching, …)
+```sh
+./_out/ngen-build -p linux-vulkan -c debug ngen-cli && ./_out/linux-vulkan/debug/ngen-cli set linux-vulkan debug
+```
 
-`ngen-cli` (the root-level front door, `src/cli/cli.cpp`) is for humans; the README's "ngen-cli" section documents it. Agents do not use
-it: call `./_out/ngen-build` and `_out/<platform>/<config>/<tool>` directly, and run `ngen-cli` only when explicitly asked to test the cli itself.
+**`./ngen-cli` is the entry point, for humans and agents alike**, so the tool flow is exercised on every build and run. The README's "ngen-cli"
+section documents it:
 
-The engine binary lands at `_out/linux-vulkan/debug/ngen-view` (or the equivalent under the active config).
+- `./ngen-cli build [args]` — build the set variant; explicit `-p`/`-c` win, every other argument passes through (`examples`, `format`, `tidy`, …)
+- `./ngen-cli view [args]` — run the set variant's `ngen-view`
+- `./ngen-cli set` — print the set variant. **Agents don't change it** (`ngen-cli set <platform> <config>`) unless asked: `_out/set` is shared with
+  the human's session. For another variant, pass `-p`/`-c` to `build` and run that variant's binary directly.
+- After changing `src/apps/cli.cpp`: `./ngen-cli build ngen-cli`
+
+The tools underneath are there when the work needs them: debugging the cli or the build system, or a variant other than the set one:
+
+- `./_out/ngen-build` — the build system itself. `--platform`/`-p` and `--config`/`-c` are always required (it has no project-specific defaults).
+  It rebuilds the root `build.cpp` project graph (`_out/ngen-build-graph`) and the runner on demand, then runs the requested targets.
+  - `./_out/ngen-build -p linux-vulkan -c debug format` — clang-format the tree
+  - `./_out/ngen-build --compile-commands -p linux-vulkan -c debug` — refresh `compile_commands.json` (opt-in; re-run when the project graph changes)
+  - `./_out/ngen-build -h` — full flag list (clean, rebuild, tidy, list, graph dumps, fuzzy target matching, …)
+- `_out/<platform>/<config>/<tool>` — a variant's binaries, for example `_out/linux-vulkan/debug/ngen-view`.
+
+The engine binary lands at `_out/<platform>/<config>/ngen-view`; `./ngen-cli view` runs the set one.
 Edit the root `build.cpp` for project platforms, configs, targets, and source graph changes. See
-`build/build_system.md` for the framework internals (extension model, IR + emitter, runner / scheduler,
+`src/build/README.md` for the framework internals (extension model, IR + emitter, runner / scheduler,
 adding platforms/configurations).
 
 ## Verifying changes

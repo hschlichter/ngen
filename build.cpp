@@ -1,11 +1,11 @@
-#include "build/framework/cxx/configuration.hpp"
-#include "build/framework/cxx/platform.hpp"
-#include "build/framework/cxx/target.hpp"
-#include "build/framework/glob.hpp"
-#include "build/framework/phony.hpp"
-#include "build/framework/project.hpp"
-#include "build/framework/tool.hpp"
-#include "build/ir/main.hpp"
+#include "src/build/framework/cxx/configuration.hpp"
+#include "src/build/framework/cxx/platform.hpp"
+#include "src/build/framework/cxx/target.hpp"
+#include "src/build/framework/glob.hpp"
+#include "src/build/framework/phony.hpp"
+#include "src/build/framework/project.hpp"
+#include "src/build/framework/tool.hpp"
+#include "src/build/ir/main.hpp"
 
 #include <filesystem>
 #include <string>
@@ -18,9 +18,8 @@ auto main(int argc, char** argv) -> int {
             .global()
             .inputs(concat({
                 glob({.include = "src/**/*.cpp"}),
-                glob({.include = "src/**/*.h"}),
-                glob({.include = "build/**/*.cpp"}),
-                glob({.include = "build/**/*.hpp"}),
+                glob({.include = "src/**/*.h", .exclude = "src/build/ir/xxhash.h"}), // vendored
+                glob({.include = "src/**/*.hpp"}),
             }))
             .command({"clang-format", "-i", "$in"});
 
@@ -29,9 +28,8 @@ auto main(int argc, char** argv) -> int {
             .global()
             .inputs(concat({
                 glob({.include = "src/**/*.cpp"}),
-                glob({.include = "build/**/*.cpp"}),
             }))
-            .command({"clang-tidy", "$in", "--", "-std=c++23", "-Ibuild/framework"});
+            .command({"clang-tidy", "$in", "--", "-std=c++23", "-Isrc/build/framework"});
 
     auto sdl3_cflags = capture_tokens({"pkg-config", "--cflags", "sdl3"});
     auto sdl3_libs = capture_tokens({"pkg-config", "--libs", "sdl3"});
@@ -258,7 +256,7 @@ auto main(int argc, char** argv) -> int {
     auto view =
         cxx::program("ngen-view")
             .sources({
-                "src/main.cpp",
+                "src/apps/view.cpp",
                 "src/camera.cpp",
                 "src/debugdraw.cpp",
                 "src/jobsystem.cpp",
@@ -316,8 +314,8 @@ auto main(int argc, char** argv) -> int {
             .link_flag("-lusd_pegtl")
             .link_flag("-lusd_kind");
 
-    // ngen-cli: one front door to the tools of the set variant (src/cli/cli.cpp). Standard library only.
-    auto cli = cxx::program("ngen-cli").sources({"src/cli/cli.cpp"});
+    // ngen-cli: one front door to the tools of the set variant (src/apps/cli.cpp). Standard library only.
+    auto cli = cxx::program("ngen-cli").sources({"src/apps/cli.cpp"});
 
     // RHI examples: one program per feature, reaching only into src/rhi/. See src/rhi/README.md, "Examples".
     auto rhiExample = [&](const std::string& name) {

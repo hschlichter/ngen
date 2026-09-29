@@ -204,7 +204,7 @@ auto requireBuildTool(const fs::path& root) -> bool {
         return true;
     }
     std::println(stderr, "ngen-cli: {} is missing; bootstrap it first:", buildTool(root).string());
-    std::println(stderr, "  mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstrap.cpp");
+    std::println(stderr, "  mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/bootstrap.cpp");
     return false;
 }
 

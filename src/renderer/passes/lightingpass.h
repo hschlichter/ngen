@@ -14,11 +14,11 @@ struct RenderLight;
 struct GeometryPassData;
 
 struct LightingUBO {
-    glm::vec4 lightDirection; // xyz = direction toward light, w = unused
-    glm::vec4 lightColor;     // xyz = radiance (color * intensity * 2^exposure), w = ambient
-    glm::vec4 depthParams;    // x = near, y = far, zw = unused
-    glm::vec4 shadowTint;     // xyz = light contribution when shadowed (from UsdLuxShadowAPI::shadow:color), w = unused
-    glm::mat4 invViewProj;    // inverse(proj * view), for world-pos reconstruction from gbuffer
+    glm::vec4 lightDirection;                     // xyz = direction toward light, w = unused
+    glm::vec4 lightColor;                         // xyz = radiance (color * intensity * 2^exposure), w = ambient
+    glm::vec4 depthParams;                        // x = near, y = far, zw = unused
+    glm::vec4 shadowTint;                         // xyz = light contribution when shadowed (from UsdLuxShadowAPI::shadow:color), w = unused
+    glm::mat4 invViewProj;                        // inverse(proj * view), for world-pos reconstruction from gbuffer
     glm::mat4 cascadeViewProj[maxShadowCascades]; // light view-projection per cascade
     glm::vec4 cascadeRects[maxShadowCascades];    // atlas tile: xy offset, zw scale
     glm::vec4 cascadeSplits;                      // view-depth end of each cascade

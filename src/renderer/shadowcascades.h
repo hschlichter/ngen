@@ -26,10 +26,10 @@ struct ShadowCascadeSettings {
 };
 
 struct ShadowCascade {
-    glm::mat4 viewProj = glm::mat4(1.0f); // light view-projection for this tile
-    float splitFar = 0.0f;                // view-space depth where the cascade ends
-    float texelWorldSize = 0.0f;          // world units per shadow texel
-    float texelDepthNdc = 0.0f;           // ndc depth change over one texel's world size; bias unit
+    glm::mat4 viewProj = glm::mat4(1.0f);                    // light view-projection for this tile
+    float splitFar = 0.0f;                                   // view-space depth where the cascade ends
+    float texelWorldSize = 0.0f;                             // world units per shadow texel
+    float texelDepthNdc = 0.0f;                              // ndc depth change over one texel's world size; bias unit
     glm::vec4 atlasRect = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f); // xy offset, zw scale in atlas UV
 };
 

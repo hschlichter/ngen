@@ -103,7 +103,7 @@ static constexpr float farZ = 0.7f;
 static constexpr std::array<float, 3> equalColor = {0.2f, 0.9f, 0.3f};
 static constexpr float quadHalf = 0.16f;
 static constexpr float compareBandY = -0.75f; // centre of the compare quad's band
-static constexpr float pairShift = 0.1f; // near quad offset (-,-), far quad (+,+); overlap centred on the column
+static constexpr float pairShift = 0.1f;      // near quad offset (-,-), far quad (+,+); overlap centred on the column
 static constexpr std::array<float, 4> columnX = {-0.72f, -0.24f, 0.24f, 0.72f};
 
 static auto pushQuad(std::vector<Vertex>& out, float cx, float cy, float z, std::array<float, 3> c) -> void {
@@ -341,7 +341,9 @@ protected:
         // Compare quad: the band maps the whole depth texture; over column 0's near quad the
         // stored depth 0.3 fails reference 0.5 <= depth (dark), over empty space depth 1.0 passes (lit).
         auto bandY = frame.py(compareBandY);
-        auto bandX = [&](float sceneNdcX) { return frame.px(-0.9f + ((sceneNdcX + 1.0f) * 0.5f) * 1.8f); };
+        auto bandX = [&](float sceneNdcX) {
+            return frame.px(-0.9f + ((sceneNdcX + 1.0f) * 0.5f) * 1.8f);
+        };
         ok = expectPixel(frame, bandX(columnX[0] - pairShift), bandY, {0.0f, 0.0f, 0.0f}, "compare-sampler-near-fails") && ok;
         ok = expectPixel(frame, bandX(-0.98f), bandY, {1.0f, 1.0f, 1.0f}, "compare-sampler-empty-passes") && ok;
         // Outside the overlap each quad is visible on its own.

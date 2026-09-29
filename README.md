@@ -42,7 +42,7 @@ A modern 3D engine written in C++23 with a Vulkan rendering backend and OpenUSD 
 ## Architecture
 
 ```
-App (main.cpp)
+App (src/apps/view.cpp)
  ├─ JobSystem (jobsystem/)   — Static thread pool, fence-based sync
  ├─ Scene (scene/)           — USD loading, mesh/texture/material extraction
  │   ├─ USDScene             — Stage, layers, prim cache, transforms, change notifications
@@ -176,10 +176,10 @@ python3 external/openusd/build_scripts/build_usd.py \
 The engine is built by its own self-hosted build system (`ngen-build`). Requires `clang++` with C++23 support, the Vulkan SDK and `glslc`. OpenUSD
 must be built first (see above).
 
-Bootstrap `ngen-build` once (and again whenever `build/bootstrap.cpp` changes), then build:
+Bootstrap `ngen-build` once (and again whenever `src/build/bootstrap.cpp` changes), then build:
 
 ```bash
-mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstrap.cpp
+mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/bootstrap.cpp
 ./_out/ngen-build -p linux-vulkan -c debug      # default target: ngen-view
 ```
 
@@ -188,7 +188,7 @@ mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstr
 `./_out/ngen-build -h` lists every flag (`--clean`, `--rebuild`, `--list`, `--compile-commands`, …); `format` and `tidy` are targets. For day-to-day
 use, `ngen-cli` (next section) remembers the platform and config for you.
 
-See [build/build_system.md](build/build_system.md) for the build system internals (framework layout, extension model, IR and runner, adding platforms
+See [src/build/README.md](src/build/README.md) for the build system internals (framework layout, extension model, IR and runner, adding platforms
 and configurations).
 
 ## ngen-cli
@@ -236,7 +236,7 @@ Forwarded tools replace the cli process, so their output, signals and exit code 
 - **The set variant is stored in `_out/set`**, one line such as `linux-vulkan/debug`. Tools of that variant are `_out/<that line>/<tool>`, which
   scripts can use too: `_out/$(cat _out/set)/ngen-view`.
 - **`view` does not build.** On a variant you haven't built yet, it says `ngen-view is not built` and names the command: `ngen-cli build`.
-- **The cli rebuilds only when asked.** The default target is `ngen-view`, so after changing `src/cli/cli.cpp` run `./ngen-cli build ngen-cli`.
+- **The cli rebuilds only when asked.** The default target is `ngen-view`, so after changing `src/apps/cli.cpp` run `./ngen-cli build ngen-cli`.
 - **Cleaning the set variant removes its cli too.** `./ngen-cli build --clean` is `ngen-build --clean`, and the cli lives in the variant's output
   directory, so `./ngen-cli` dangles afterwards. Recover with `./_out/ngen-build -p <platform> -c <config> ngen-cli`, or run the first-time setup
   again. To forget the set variant, delete `_out/set` and `./ngen-cli`.

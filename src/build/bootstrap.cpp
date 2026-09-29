@@ -2,13 +2,13 @@
 //
 // `bootstrap.cpp` is the only `.cpp` file a fresh-clone contributor compiles by hand:
 //
-//     mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build build/bootstrap.cpp
+//     mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/bootstrap.cpp
 //
-// (Documented in `CLAUDE.md` and `build/build_system.md`.) The resulting binary then drives every subsequent build.
+// (Documented in `AGENTS.md` and `src/build/README.md`.) The resulting binary then drives every subsequent build.
 // Three things happen in order on each invocation:
 //
 //   1. **Self-build.** `self_build_ir()` constructs an in-memory `build::ir::IR` with two edges — one to
-//      compile `build.cpp` into `_out/ngen-build-graph`, one to compile `build/run/main.cpp` into
+//      compile `build.cpp` into `_out/ngen-build-graph`, one to compile `src/build/run/main.cpp` into
 //      `_out/ngen-build-run`. `ngen::run::execute()` runs the IR in-process against the build log at
 //      `_out/.system/.ngen-buildlog`, so the two binaries are recompiled only when their sources or
 //      depfile-tracked headers actually change. This is the seam where the build system is "self-hosted": the
@@ -27,7 +27,7 @@
 //      dirty edges in parallel.
 //
 // Platform / config selection: `--platform <name>` / `--config <name>`, both required. There are no defaults
-// here — the build-system code under `build/` carries zero project knowledge, so it cannot pick a sensible
+// here — the build-system code under `src/build/` carries zero project knowledge, so it cannot pick a sensible
 // platform or config on the user's behalf. When either flag is missing, the orchestrator invokes the graph
 // stage's `--list` (which prints registered platforms, configs, and top-level targets via
 // `build::print_summary`) and then reports the missing flag. Targets are positional and may be repeated;
@@ -196,8 +196,8 @@ auto self_build_ir() -> build::ir::IR {
     {
         build::ir::Edge edge;
         edge.name = "ngen-build-run";
-        edge.command = "c++ " + cxxflags + " -MMD -MF _out/ngen-build-run.d -o _out/ngen-build-run build/run/main.cpp";
-        edge.inputs = {"build/run/main.cpp"};
+        edge.command = "c++ " + cxxflags + " -MMD -MF _out/ngen-build-run.d -o _out/ngen-build-run src/build/run/main.cpp";
+        edge.inputs = {"src/build/run/main.cpp"};
         edge.outputs = {"_out/ngen-build-run"};
         edge.depfile = "_out/ngen-build-run.d";
         edge.description = "RUNNER _out/ngen-build-run";

@@ -78,7 +78,9 @@ struct Frustum {
 
     static auto fromViewProj(const glm::mat4& viewProj) -> Frustum {
         // glm is column-major: row i of the matrix is (m[0][i], m[1][i], m[2][i], m[3][i]).
-        auto row = [&](int i) { return glm::vec4(viewProj[0][i], viewProj[1][i], viewProj[2][i], viewProj[3][i]); };
+        auto row = [&](int i) {
+            return glm::vec4(viewProj[0][i], viewProj[1][i], viewProj[2][i], viewProj[3][i]);
+        };
         auto r0 = row(0);
         auto r1 = row(1);
         auto r2 = row(2);
@@ -136,4 +138,3 @@ struct Ray {
     glm::vec3 origin;
     glm::vec3 direction;
 };
-
