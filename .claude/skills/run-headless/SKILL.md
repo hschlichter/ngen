@@ -58,8 +58,25 @@ SDL_VIDEODRIVER=offscreen ./_out/linux-vulkan/debug/ngen-view <scene> --frames=3
   (cascaded shadows), `inspect <material> <level>|off` (texture inspector
   capture) and `dump-texture <material> <level> <path>` (one mip level as PNG); several screenshots in one run.
 - `--fail-on-validation`: exit code 2 if the validation layer reported anything. `--render-debug`: draw log on without the window.
+- Introspection verbs (debug and release builds; each writes when its data arrives, a few frames after the verb):
+  - `capture <pass|-> <resource> <path> [x y w h]`: any frame-graph resource right after `<pass>` (`-` = end of frame, also `gpuscene.meshtable`,
+    `gpuscene.materials`). Buffers as JSON rows decoded with their schema; textures as PNG plus `<path>.json` (format, size, channel ranges, and the
+    texel values when the region is 64 texels or fewer).
+  - `dump-frame DIR`: `DIR/frame.json` (every pass with barriers and their Vulkan stages/layouts, command log, descriptor contents) plus a capture of
+    every resource each pass writes.
+  - `dump-gpuscene DIR`: the GPU scene tables and culling buffers, and `DIR/instances_joined.json` (per instance: prim, mesh, material, bounds,
+    visibility and cull plane per view).
+  - `dump-counters PATH`: one frame's GPU zones (passes and per-region indirect calls) and pipeline statistics per pass.
+  - `dump-memory PATH` (also `--dump-memory=PATH`): every allocation and heap.
+  - `debugview off|wireframe|trianglesize|overdraw|instance|mesh|material|primitive|uv`: replaces the lit image; read raw values with
+    `capture DebugViewPass debugview.value <path> X Y W H`.
+  - `cull view N`: colour the AABB overlay by view N's visibility (0 camera, 1+ cascades); `overlay cascadefrusta=on` draws the cascade frusta.
+  - `window memory|capture|framedebugger|gpuscene|counters on|off`: open an introspection window, to exercise its drawing headless.
+  - `renderdoc-capture` with `--renderdoc`: a RenderDoc capture of the next frame under `captures/`.
 - Observations `DeviceInfo` (startup), `CameraPose` (every 60 frames), `Screenshot` (per shot) complement `FrameStats`, `RenderStats`
   (`instances`, `culled`, `cascades`, `shadow_culled`, `draws`, `primitives`), `GpuTime`.
+- Culling runs on the GPU (`src/renderer/README.md`). `culled`, `shadow_culled`, per-pass `draws`/`primitives`, the draw log and `CullReadback`
+  are read back and lag a few frames: judge them at steady state (frame 120 or later), not right after a camera or scene change.
 
 ## Inspect
 
