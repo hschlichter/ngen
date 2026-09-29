@@ -74,6 +74,7 @@ Current truth for the build framework is [`../build/build_system.md`](../build/b
 
 ## Infrastructure
 
+- [plan_ngen_cli.md](plan_ngen_cli.md) — `ngen-cli` front door: `set` variant in `_out/set`, forwards to ngen-build and ngen-view (draft)
 - [plan_job_system.md](plan_job_system.md) — minimal thread-pool job system (landed)
 - [plan_async_asset_system.md](plan_async_asset_system.md) — cooked-asset cache and async loading
 - [plan_observability.md](plan_observability.md) — observation bus design (landed — usage reference is [`../obs.md`](../obs.md))
