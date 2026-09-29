@@ -1,5 +1,8 @@
 # Async Asset System — Design Plan
 
+**Status. Superseded by [plan_tool_architecture.md](plan_tool_architecture.md).** Packing moves onto the build system (`ngen-build --serve`);
+this plan's cooked-format principles (memory-mapped, no parsing on load, no packer code in the runtime) carry over.
+
 Iterable. Push back on anything.
 
 ## 1. Why now

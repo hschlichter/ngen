@@ -4,6 +4,7 @@
 #include "renderworld.h"
 
 #include <cstdint>
+#include <cstdio>
 #include <functional>
 #include <glm/glm.hpp>
 #include <map>
@@ -41,6 +42,7 @@ auto gpuSceneCaptures() -> const std::vector<std::pair<std::string, std::string>
 // and primPath names a prim. Missing captures leave their fields at 0.
 auto buildGpuSceneRows(const std::map<std::string, CaptureResult>& byResource, std::span<const uint32_t> primOfInstance, const std::function<std::string(uint32_t)>& primPath) -> std::vector<GpuSceneInstanceRow>;
 auto writeGpuSceneJoinedJson(const std::string& path, const std::vector<GpuSceneInstanceRow>& rows, uint32_t viewCount) -> bool;
+auto writeGpuSceneJoinedJson(FILE* f, const std::vector<GpuSceneInstanceRow>& rows, uint32_t viewCount) -> void;
 
 struct GpuSceneWindowState {
     bool live = false;

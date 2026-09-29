@@ -3,13 +3,13 @@
 Plans, design docs, and retrospectives for ngen. Plans follow the format described in `../CLAUDE.md` ("Plan documents"); new plans get a line here when
 created, and the annotations below get updated when a plan lands or is superseded.
 
-Annotations: **(landed)** — implemented, code is in `src/` or `build/`; **(in progress)** — current work; **(superseded by X)** — kept as a record, read X
+Annotations: **(landed)** — implemented, code is in `src/`; **(in progress)** — current work; **(superseded by X)** — kept as a record, read X
 instead; **(historical)** — describes a direction the project moved away from. Docs without an annotation have not been re-checked against the code — update
 them here as you touch them.
 
 ## Build system
 
-Current truth for the build framework is [`../build/build_system.md`](../build/build_system.md); the plans below are how it got there.
+Current truth for the build framework is [`../src/build/README.md`](../src/build/README.md); the plans below are how it got there.
 
 - [plan_build_system.md](plan_build_system.md) — original build-system plan (superseded by v2)
 - [plan_build_system_v2.md](plan_build_system_v2.md) — corrective revision (superseded by v3)
@@ -74,9 +74,17 @@ Current truth for the build framework is [`../build/build_system.md`](../build/b
 
 ## Infrastructure
 
+- [plan_tool_architecture.md](plan_tool_architecture.md) — umbrella in four steps: RPC, packs + `ngen-build --serve`, editor split with deltas, `ngen-introspect` with all introspection windows; USD-free view on layer packs, sub-packs, variants, components (draft)
+  - [plan_rpc.md](plan_rpc.md) — step 1: RPC core (nlohmann/json, frames, JSON-RPC, TCP, discovery), engine method registry, ngen-view endpoint with every session verb and dump, `ngen-rpc` (landed)
+  - [plan_pack_rules.md](plan_pack_rules.md) — step 2a: `pack_rule` in build.cpp, one packer program per type, path asset ids, pack container, dependency record and reverse index; proven on shaders and a core pack (draft)
+  - [plan_async_shaders.md](plan_async_shaders.md) — step 2: renderer pipeline registry, pending pipelines, core/optional shader packs, requests and hot reload through the build server (draft)
+  - [plan_build_into_src.md](plan_build_into_src.md) — move `build/` to `src/build/`, framework stays std-only and self-contained (landed)
+  - [plan_apps_folder.md](plan_apps_folder.md) — every program's main in `src/apps/<name>.cpp`, shared windowed-tool shell in `src/apps/tool/` (landed)
+  - [plan_build_server.md](plan_build_server.md) — step 2: build server as the default path (`ngen-build` and `ngen-cli` start it), `--no-server`, RPC builds, pack requests, file watching and repack, graph and helper reload, variant lock (draft)
+  - [plan_editor_split.md](plan_editor_split.md) — step 3: deltas and incremental GPU scene in the view (phase A), then `ngen-editor` as its own process with USD, view gizmos as local opinions, editor-owned selection (phase B) (draft)
 - [plan_ngen_cli.md](plan_ngen_cli.md) — `ngen-cli` front door: `set` variant in `_out/set`, forwards to ngen-build and ngen-view (landed)
 - [plan_job_system.md](plan_job_system.md) — minimal thread-pool job system (landed)
-- [plan_async_asset_system.md](plan_async_asset_system.md) — cooked-asset cache and async loading
+- [plan_async_asset_system.md](plan_async_asset_system.md) — cooked-asset cache and async loading (superseded by plan_tool_architecture.md)
 - [plan_observability.md](plan_observability.md) — observation bus design (landed — usage reference is [`../obs.md`](../obs.md))
 - [plan_introspection.md](plan_introspection.md) — umbrella: debugging and introspection for learning — names and memory, frame capture, frame debugger, GPU scene inspector, counters, views, RenderDoc; shader introspection deferred (landed)
   - [plan_debug_names_and_memory.md](plan_debug_names_and_memory.md) — RHI debug names on every object, allocation registry, Memory window (landed)

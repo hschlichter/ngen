@@ -8,6 +8,7 @@
 #include "renderdebug.h"
 #include "rendersnapshot.h"
 #include "renderworld.h"
+#include "screenshot.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -58,6 +59,11 @@ public:
         std::lock_guard lock(captureMutex);
         return std::exchange(captureResults, {});
     }
+    // Screenshots written since the last call.
+    auto takeScreenshotResults() -> std::vector<ScreenshotResult> {
+        std::lock_guard lock(captureMutex);
+        return std::exchange(screenshotResults, {});
+    }
     // GPU counters, one per completed frame while enabled (see Renderer::setCountersEnabled).
     auto setCountersEnabled(bool enabled) -> void { countersWanted.store(enabled, std::memory_order_relaxed); }
     auto takeCounters() -> std::vector<GpuCounters> {
@@ -98,6 +104,7 @@ private:
     std::vector<CaptureWatch> captureWatches;
     bool captureWatchesChanged = false;
     std::vector<CaptureResult> captureResults;
+    std::vector<ScreenshotResult> screenshotResults;
     bool frameDebugWanted = false;
     std::optional<FrameDebugCapture> frameDebugSlot;
     std::atomic<bool> countersWanted{false};

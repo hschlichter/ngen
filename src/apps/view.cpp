@@ -17,6 +17,8 @@
 #include "renderworld.h"
 #include "rhidevicevulkan.h"
 #include "rotategizmo.h"
+#include "rpcendpoint.h"
+#include "rpcregistry.h"
 #include "scalegizmo.h"
 #include "scenequery.h"
 #include "sceneupdater.h"
@@ -26,6 +28,8 @@
 #include "translategizmo.h"
 #include "usdrenderextractor.h"
 #include "usdscene.h"
+#include "viewcommands.h"
+#include "viewdumps.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
@@ -106,27 +110,8 @@ auto main(int argc, char* argv[]) -> int {
     uint64_t maxFrames = 0;
     std::string dumpRenderDebugPath;
     std::string dumpMemoryPath;
-    // `capture` verb: one-shot capture watches whose results are written to a path.
-    struct CaptureDump {
-        CaptureWatch watch;
-        std::string path;
-        bool gpuScene = false; // part of a `dump-gpuscene`, joined when all have arrived
-    };
-    std::vector<CaptureDump> captureDumps;
-    uint32_t nextCaptureDumpId = 100000;
-    // `dump-frame DIR`: once a frame-graph snapshot is in, capture every written resource after
-    // every pass and the frame debug data on one frame, and write them to DIR.
-    std::string frameDumpDir;
-    bool frameDumpArmed = false; // watches sent, waiting for the frame debug capture
-    bool frameDebugPending = false;
-    std::optional<FrameGraphDebugSnapshot> latestGraph;
-    // `dump-gpuscene DIR`: the GPU scene tables and culling buffers of one frame, plus the joined
-    // instance table written once every capture has arrived.
-    std::string gpuSceneDumpDir;
-    std::map<std::string, CaptureResult> gpuSceneDumpResults;
-    // `dump-counters PATH`: the next GPU counters frame with pipeline statistics, as JSON.
-    std::string countersDumpPath;
     std::string dumpProfilePath;
+    bool rpcEnabled = true; // --no-rpc: no endpoint, no discovery file
     SessionScript session;
     std::string sessionError;
     auto flagValue = [](std::string_view arg, std::string_view flag) -> std::string {
@@ -139,6 +124,8 @@ auto main(int argc, char* argv[]) -> int {
             loadRenderDoc = true;
         } else if (arg == "--validation") {
             enableValidation = true;
+        } else if (arg == "--no-rpc") {
+            rpcEnabled = false;
         } else if (arg == "--render-debug") {
             forceRenderDebug = true;
         } else if (arg == "--fail-on-validation") {
@@ -399,280 +386,54 @@ auto main(int argc, char* argv[]) -> int {
     CullState cullState;
     CullResult latestCull; // GPU culling readback, a few frames old
     std::vector<SessionCommand> dueCommands;
-    // Applies one session command. Verbs mirror the CLI flags; unknown verbs are reported and skipped.
-    auto applyCommand = [&](const SessionCommand& c) -> void {
-        std::string_view verb = c.verb;
-        if (verb == "camera") {
-            float pose[5] = {};
-            if (parseCameraPose(c.args, pose)) {
-                cam.position = glm::vec3(pose[0], pose[1], pose[2]);
-                cam.yaw = pose[3];
-                cam.pitch = pose[4];
-            } else {
-                std::println(stderr, "camera: expected x,y,z,yaw,pitch, got '{}'", c.args);
-            }
-        } else if (verb == "camera-frame") {
-            if (c.args == "scene") {
-                frameSceneView();
-            } else {
-                auto prim = usdScene.isOpen() ? usdScene.findPrim(c.args.c_str()) : PrimHandle{};
-                if (prim) {
-                    auto bb = sceneQuery.anchorBounds(usdScene, prim);
-                    if (bb.valid()) {
-                        cam.frame(bb, glm::radians(45.0f));
-                    }
-                } else {
-                    std::println(stderr, "camera-frame: prim '{}' not found", c.args);
-                }
-            }
-        } else if (verb == "select") {
-            auto prim = usdScene.isOpen() ? usdScene.findPrim(c.args.c_str()) : PrimHandle{};
-            if (prim) {
-                selectedPrim = prim;
-            } else {
-                std::println(stderr, "select: prim '{}' not found", c.args);
-            }
-        } else if (verb == "translate") {
-            // "<prim> dx,dy,dz": a preview SetTransform, the same edit a gizmo drag submits.
-            auto space = c.args.find(' ');
-            auto path = c.args.substr(0, space);
-            glm::vec3 offset(0.0f);
-            bool parsed = space != std::string::npos && std::sscanf(c.args.c_str() + space + 1, "%f,%f,%f", &offset.x, &offset.y, &offset.z) == 3;
-            auto prim = usdScene.isOpen() ? usdScene.findPrim(path.c_str()) : PrimHandle{};
-            const auto* xf = prim ? usdScene.getTransform(prim) : nullptr;
-            if (!parsed) {
-                std::println(stderr, "translate: expected '/prim dx,dy,dz', got '{}'", c.args);
-            } else if (xf == nullptr) {
-                std::println(stderr, "translate: prim '{}' not found or has no transform", path);
-            } else {
-                auto local = xf->local;
-                local.position += offset;
-                sceneUpdater.addEdit({.type = SceneEditCommand::Type::SetTransform, .prim = prim, .transform = local, .purpose = SceneEditRequestContext::Purpose::Preview});
-            }
-        } else if (verb == "view") {
-            static const char* names[] = {"lit", "albedo", "normals", "depth", "shadowfactor", "shadowmap", "shadowuv", "worldpos", "miplevel", "cascades"};
-            bool found = false;
-            for (int i = 0; i < 10; i++) {
-                if (c.args == names[i]) {
-                    editorUI.setGBufferViewMode(i);
-                    found = true;
-                }
-            }
-            if (!found) {
-                std::println(stderr, "view: unknown mode '{}'", c.args);
-            }
-        } else if (verb == "window") {
-            // "<name> on|off": an introspection window, as Windows > Introspection opens it.
-            auto space = c.args.find(' ');
-            auto name = c.args.substr(0, space);
-            bool on = space == std::string::npos || c.args.substr(space + 1) != "off";
-            if (!editorUI.setIntrospectionWindow(name, on)) {
-                std::println(stderr, "window: unknown window '{}'", name);
-            }
-        } else if (verb == "debugview") {
-            auto it = std::ranges::find(debugViewNames, std::string_view(c.args));
-            if (it == debugViewNames.end()) {
-                std::println(stderr, "debugview: unknown view '{}'", c.args);
-            } else {
-                editorUI.setDebugView((int) (it - debugViewNames.begin()));
-            }
-        } else if (verb == "overlay") {
-            size_t start = 0;
-            while (start < c.args.size()) {
-                auto comma = c.args.find(',', start);
-                auto item = std::string_view(c.args).substr(start, comma == std::string::npos ? std::string::npos : comma - start);
-                auto eq = item.find('=');
-                if (eq == std::string_view::npos || !editorUI.setOverlay(item.substr(0, eq), item.substr(eq + 1) == "on")) {
-                    std::println(stderr, "overlay: expected name=on|off, got '{}'", item);
-                }
-                if (comma == std::string::npos) {
-                    break;
-                }
-                start = comma + 1;
-            }
-        } else if (verb == "cull") {
-            // cull on|off|freeze|unfreeze|show|hide
-            if (c.args == "on" || c.args == "off") {
-                editorUI.setCullEnabled(c.args == "on");
-            } else if (c.args == "freeze" || c.args == "unfreeze") {
-                editorUI.setCullFrozen(c.args == "freeze");
-            } else if (c.args == "show" || c.args == "hide") {
-                editorUI.setShowCulled(c.args == "show");
-            } else if (c.args.starts_with("view ")) {
-                editorUI.setCullOverlayView(std::stoi(c.args.substr(5)));
-            } else {
-                std::println(stderr, "cull: unknown argument '{}'", c.args);
-            }
-        } else if (verb == "sampler") {
-            // sampler aniso=8,bias=0.5,minlod=2,mip=nearest|linear
-            auto& settings = editorUI.samplerSettingsMutable();
-            size_t start = 0;
-            while (start < c.args.size()) {
-                auto comma = c.args.find(',', start);
-                auto item = c.args.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
-                auto eq = item.find('=');
-                auto key = item.substr(0, eq);
-                auto value = eq == std::string::npos ? std::string{} : item.substr(eq + 1);
-                if (key == "aniso") {
-                    settings.maxAnisotropy = std::strtof(value.c_str(), nullptr);
-                } else if (key == "bias") {
-                    settings.lodBias = std::strtof(value.c_str(), nullptr);
-                } else if (key == "minlod") {
-                    settings.minLod = std::strtof(value.c_str(), nullptr);
-                } else if (key == "mip") {
-                    settings.nearestMip = value == "nearest";
-                } else {
-                    std::println(stderr, "sampler: unknown key '{}'", key);
-                }
-                if (comma == std::string::npos) {
-                    break;
-                }
-                start = comma + 1;
-            }
-        } else if (verb == "inspect") {
-            // inspect <material> <level> | inspect off: drives the texture inspector capture
-            // without the window, so the blit path runs under validation headless.
-            if (c.args == "off") {
-                renderThread.setTextureInspect({});
-            } else {
-                std::istringstream in(c.args);
-                uint32_t material = 0;
-                uint32_t level = 0;
-                if (in >> material >> level) {
-                    renderThread.setTextureInspect({.enabled = true, .material = material, .level = level});
-                } else {
-                    std::println(stderr, "inspect: expected '<material> <level>' or 'off', got '{}'", c.args);
-                }
-            }
-        } else if (verb == "dump-texture") {
-            // dump-texture <material> <level> <path>
-            std::istringstream in(c.args);
-            uint32_t material = 0;
-            uint32_t level = 0;
-            std::string path;
-            if (in >> material >> level >> path) {
-                renderer.requestTextureDump(material, level, path);
-            } else {
-                std::println(stderr, "dump-texture: expected '<material> <level> <path>', got '{}'", c.args);
-            }
-        } else if (verb == "shadow") {
-            // shadow cascades=4,tile=1024,lambda=0.5,pcf=on|off
-            auto& settings = editorUI.shadowSettingsMutable();
-            size_t start = 0;
-            while (start < c.args.size()) {
-                auto comma = c.args.find(',', start);
-                auto item = c.args.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
-                auto eq = item.find('=');
-                auto key = item.substr(0, eq);
-                auto value = eq == std::string::npos ? std::string{} : item.substr(eq + 1);
-                if (key == "cascades") {
-                    settings.count = (uint32_t) std::clamp(std::atoi(value.c_str()), 1, (int) maxShadowCascades);
-                } else if (key == "tile") {
-                    settings.tileSize = (uint32_t) std::max(64, std::atoi(value.c_str()));
-                } else if (key == "lambda") {
-                    settings.splitLambda = std::clamp(std::strtof(value.c_str(), nullptr), 0.0f, 1.0f);
-                } else if (key == "pcf") {
-                    settings.pcf = value == "on";
-                } else {
-                    std::println(stderr, "shadow: unknown key '{}'", key);
-                }
-                if (comma == std::string::npos) {
-                    break;
-                }
-                start = comma + 1;
-            }
-        } else if (verb == "prepass") {
-            if (c.args == "on" || c.args == "off") {
-                editorUI.setDepthPrepass(c.args == "on");
-            } else {
-                std::println(stderr, "prepass: unknown argument '{}'", c.args);
-            }
-        } else if (verb == "screenshot") {
-            renderer.requestScreenshot(c.args);
-        } else if (verb == "dump-render-debug") {
-            dumpRenderDebugPath = c.args;
-            forceRenderDebug = true;
-        } else if (verb == "renderdoc-capture") {
-            if (!renderDoc.triggerCapture()) {
-                std::println(stderr, "renderdoc-capture: RenderDoc is not loaded (start with --renderdoc)");
-            }
-        } else if (verb == "capture") {
-            // "<pass> <resource> <path> [x y w h]": pass "-" captures after the last pass (static
-            // buffers too); the optional region copies part of a texture.
-            std::istringstream args(c.args);
-            std::string pass;
-            std::string resource;
-            std::string path;
-            args >> pass >> resource >> path;
-            // Optional texture region: "X Y W H".
-            uint32_t regionX = 0;
-            uint32_t regionY = 0;
-            uint32_t regionWidth = 0;
-            uint32_t regionHeight = 0;
-            args >> regionX >> regionY >> regionWidth >> regionHeight;
-            if (path.empty()) {
-                std::println(stderr, "capture: expected '<pass|-> <resource> <path> [x y w h]', got '{}'", c.args);
-            } else {
-                CaptureWatch watch = {
-                    .id = nextCaptureDumpId++,
-                    .pass = pass == "-" ? "" : pass,
-                    .resource = resource,
-                    .trigger = 1,
-                    .regionX = regionX,
-                    .regionY = regionY,
-                    .regionWidth = regionWidth,
-                    .regionHeight = regionHeight,
-                };
-                captureDumps.push_back({.watch = watch, .path = path});
-            }
-        } else if (verb == "dump-frame") {
-            frameDumpDir = c.args;
-            frameDumpArmed = false;
-            std::filesystem::create_directories(frameDumpDir);
-        } else if (verb == "dump-gpuscene") {
-            gpuSceneDumpDir = c.args;
-            gpuSceneDumpResults.clear();
-            std::filesystem::create_directories(gpuSceneDumpDir);
-            for (const auto& [pass, resource] : gpuSceneCaptures()) {
-                auto path = std::format("{}/{}.json", gpuSceneDumpDir, resource);
-                captureDumps.push_back({.watch = {.id = nextCaptureDumpId++, .pass = pass, .resource = resource, .trigger = 1}, .path = path, .gpuScene = true});
-            }
-        } else if (verb == "dump-counters") {
-            countersDumpPath = c.args;
-        } else if (verb == "dump-memory") {
-            dumpMemoryPath = c.args;
-        } else if (verb == "dump-profile") {
-            if (!profile::exportChromeTrace(c.args.c_str())) {
-                std::println(stderr, "dump-profile: cannot write {}", c.args);
-            } else {
-                std::println("Profile trace written: {}", c.args);
-            }
-        } else if (verb == "quit") {
-            quit = true;
-        } else {
-            std::println(stderr, "unknown session command '{}'", c.verb);
-        }
+
+    // Dumps and captures that finish frames later, for script verbs and RPC calls alike.
+    ViewDumps dumps(renderWorld, usdScene, latestCull, rhiDevice.limits().pipelineStatistics);
+    if (!dumpRenderDebugPath.empty()) {
+        dumps.requestRenderDebug({.path = dumpRenderDebugPath});
+    }
+    if (!dumpMemoryPath.empty()) {
+        dumps.requestMemory({.path = dumpMemoryPath});
+    }
+
+    // Every command is an RPC method; script lines and live calls run the same code.
+    RpcRegistry registry;
+    registerRpcBuiltins(registry, "view");
+    ViewContext viewContext = {
+        .cam = cam,
+        .usdScene = usdScene,
+        .sceneQuery = sceneQuery,
+        .sceneUpdater = sceneUpdater,
+        .selectedPrim = selectedPrim,
+        .editorUI = editorUI,
+        .renderer = renderer,
+        .renderThread = renderThread,
+        .renderDoc = renderDoc,
+        .dumps = dumps,
+        .frameSceneView = frameSceneView,
+        .quit = quit,
+        .frameCounter = frameCounter,
+        .sceneLabel = positional.size() >= 2 ? std::string(positional[1]) : std::string("(new scene)"),
     };
-    // Render debug dump waits for a snapshot with the request active; written when one arrives.
-    auto writeRenderDebugDump = [&](const RenderDebugSnapshot& snap) -> void {
-        auto primPath = [&](uint32_t prim) -> std::string {
-            const auto* rec = usdScene.isOpen() ? usdScene.getPrimRecord(PrimHandle{prim}) : nullptr;
-            return rec != nullptr ? rec->path : std::string{};
-        };
-        if (writeRenderDebugJson(dumpRenderDebugPath.c_str(), snap, primPath)) {
-            std::println("Render debug dump written: {}", dumpRenderDebugPath);
-        } else {
-            std::println(stderr, "dump-render-debug: cannot write {}", dumpRenderDebugPath);
-        }
-        dumpRenderDebugPath.clear();
-    };
+    registerViewMethods(registry, viewContext);
+    // The endpoint is tooling: debug and release only (NGEN_INTROSPECTION), off with --no-rpc.
+    RpcEndpoint endpoint;
+#ifdef NGEN_INTROSPECTION
+    if (rpcEnabled) {
+        endpoint.start(&registry, "view", viewContext.sceneLabel);
+    }
+#else
+    (void) rpcEnabled;
+#endif
+
     while (!quit && !editorUI.wantsQuit()) {
         PROFILE_FRAME_MARK();
         frameCounter++;
         session.takeDue(frameCounter, dueCommands);
         for (const auto& c : dueCommands) {
-            applyCommand(c);
+            runViewScriptCommand(registry, c);
         }
+        endpoint.drain();
         if (maxFrames > 0 && frameCounter > maxFrames) {
             quit = true;
         }
@@ -997,119 +758,40 @@ auto main(int argc, char* argv[]) -> int {
         }
         editorUI.drawDebug(debugDraw, renderWorld, selectedPrim, sceneQuery, sceneUpdater, usdScene, cam.position, cam.worldUp, overlayVisible, cullState.frozenActive ? &frozenCorners : nullptr, std::span<const ShadowCascade>(cascades.data(), cascadeCount));
 
-        renderThread.setFrameGraphDebugEnabled(editorUI.wantsFrameGraphDebug() || !frameDumpDir.empty());
+        renderThread.setFrameGraphDebugEnabled(editorUI.wantsFrameGraphDebug() || dumps.wantsFrameGraphDebug());
         auto fgDebugSnap = renderThread.latestFrameGraphDebug();
-        if (fgDebugSnap.has_value()) {
-            latestGraph = fgDebugSnap;
-        }
-        if (!frameDumpDir.empty() && !frameDumpArmed && latestGraph.has_value()) {
-            // Every resource each executed pass writes, captured right after that pass.
-            for (uint32_t order = 0; order < latestGraph->executionOrder.size(); order++) {
-                const auto& pass = latestGraph->passes[latestGraph->executionOrder[order]];
-                if (pass.culled) {
-                    continue;
-                }
-                for (const auto& w : pass.writes) {
-                    const auto& res = latestGraph->resources[w.resourceIndex];
-                    auto base = std::format("{}/{:02}_{}_{}", frameDumpDir, order, pass.name, res.name);
-                    auto path = base + (res.buffer ? ".json" : ".png");
-                    captureDumps.push_back({.watch = {.id = nextCaptureDumpId++, .pass = pass.name, .resource = res.name, .trigger = 1}, .path = path});
-                }
-            }
-            frameDebugPending = true;
-            frameDumpArmed = true;
-        }
-
+        dumps.onFrameGraph(fgDebugSnap);
+        bool frameDebugPending = dumps.takeFrameDebugRequest();
         if (editorUI.takeFrameDebugRequest()) {
             frameDebugPending = true;
         }
-        renderThread.setRenderDebugEnabled(editorUI.wantsRenderDebug() || forceRenderDebug || !dumpMemoryPath.empty());
+        renderThread.setRenderDebugEnabled(editorUI.wantsRenderDebug() || forceRenderDebug || dumps.wantsRenderDebug());
         auto renderDebugSnap = renderThread.latestRenderDebug();
-        if (!dumpRenderDebugPath.empty() && renderDebugSnap.has_value() && !renderDebugSnap->draws.empty()) {
-            writeRenderDebugDump(*renderDebugSnap);
-        }
+        dumps.onRenderDebug(renderDebugSnap);
         {
-            // Capture watches: the editor's windows plus pending `capture` dumps, sent when they change.
+            // Capture watches: the editor's windows plus pending dumps, sent when they change.
             static std::vector<CaptureWatch> sentWatches;
             auto watches = editorUI.captureWatches();
-            for (const auto& dump : captureDumps) {
-                watches.push_back(dump.watch);
-            }
+            dumps.appendWatches(watches);
             if (watches != sentWatches || frameDebugPending) {
                 sentWatches = watches;
-                renderThread.setCaptureWatches(watches, std::exchange(frameDebugPending, false));
+                renderThread.setCaptureWatches(watches, frameDebugPending);
             }
             if (auto frameDebug = renderThread.latestFrameDebug(); frameDebug.has_value()) {
-                if (!frameDumpDir.empty() && frameDumpArmed) {
-                    auto path = frameDumpDir + "/frame.json";
-                    if (writeFrameDebugJson(path.c_str(), *frameDebug)) {
-                        std::println("Frame debug written: {} (frame {}, {} passes)", path, frameDebug->frame, frameDebug->passes.size());
-                    } else {
-                        std::println(stderr, "dump-frame: cannot write {}", path);
-                    }
-                    frameDumpDir.clear();
-                    frameDumpArmed = false;
-                }
+                dumps.onFrameDebug(*frameDebug);
                 editorUI.onFrameDebugCapture(std::move(*frameDebug));
             }
             for (auto& result : renderThread.takeCaptureResults()) {
-                auto dump = std::ranges::find_if(captureDumps, [&](const CaptureDump& d) { return d.watch.id == result.id; });
-                if (dump == captureDumps.end()) {
+                if (!dumps.onCaptureResult(result)) {
                     editorUI.onCaptureResult(std::move(result));
-                    continue;
-                }
-                if (!result.error.empty()) {
-                    std::println(stderr, "capture {} {}: {}", result.pass, result.resource, result.error);
-                } else if (writeCaptureFiles(dump->path, result, dump->watch.display, 65536)) {
-                    std::println("Capture written: {} ({} {}, frame {})", dump->path, result.pass.empty() ? "-" : result.pass, result.resource, result.frame);
-                } else {
-                    std::println(stderr, "capture: cannot write {}", dump->path);
-                }
-                auto gpuScene = dump->gpuScene;
-                captureDumps.erase(dump);
-                if (gpuScene) {
-                    gpuSceneDumpResults[result.resource] = std::move(result);
-                    auto stillPending = std::ranges::any_of(captureDumps, [](const CaptureDump& d) { return d.gpuScene; });
-                    if (!stillPending) {
-                        auto primOfInstance = primOfEachInstance(renderWorld);
-                        auto primPath = [&](uint32_t prim) -> std::string {
-                            const auto* rec = usdScene.isOpen() ? usdScene.getPrimRecord(PrimHandle{prim}) : nullptr;
-                            return rec != nullptr ? rec->path : std::string("(unknown prim)");
-                        };
-                        auto rows = buildGpuSceneRows(gpuSceneDumpResults, primOfInstance, primPath);
-                        auto path = gpuSceneDumpDir + "/instances_joined.json";
-                        if (writeGpuSceneJoinedJson(path, rows, 1 + latestCull.cascadeCount)) {
-                            std::println("GPU scene written: {} ({} instances)", path, rows.size());
-                        } else {
-                            std::println(stderr, "dump-gpuscene: cannot write {}", path);
-                        }
-                        gpuSceneDumpResults.clear();
-                        gpuSceneDumpDir.clear();
-                    }
                 }
             }
+            dumps.onScreenshots(renderThread.takeScreenshotResults());
         }
-        renderThread.setCountersEnabled(editorUI.wantsCounters() || !countersDumpPath.empty());
+        renderThread.setCountersEnabled(editorUI.wantsCounters() || dumps.wantsCounters());
         for (auto& counters : renderThread.takeCounters()) {
-            // Frames recorded before statistics were on have none; wait for one that has them.
-            bool complete = !counters.passes.empty() || !rhiDevice.limits().pipelineStatistics;
-            if (!countersDumpPath.empty() && complete) {
-                if (writeGpuCountersJson(countersDumpPath.c_str(), counters)) {
-                    std::println("GPU counters written: {} (frame {}, {} zones, {} passes)", countersDumpPath, counters.frame, counters.zones.size(), counters.passes.size());
-                } else {
-                    std::println(stderr, "dump-counters: cannot write {}", countersDumpPath);
-                }
-                countersDumpPath.clear();
-            }
+            dumps.onCounters(counters);
             editorUI.onCounters(std::move(counters));
-        }
-        if (!dumpMemoryPath.empty() && renderDebugSnap.has_value() && !renderDebugSnap->allocations.empty()) {
-            if (writeMemoryJson(dumpMemoryPath.c_str(), *renderDebugSnap)) {
-                std::println("Memory dump written: {}", dumpMemoryPath);
-            } else {
-                std::println(stderr, "dump-memory: cannot write {}", dumpMemoryPath);
-            }
-            dumpMemoryPath.clear();
         }
 
         static const uint32_t uiZoneId = profile::registerName("EditorUI");
@@ -1225,16 +907,8 @@ auto main(int argc, char* argv[]) -> int {
         }
     }
 
-    // Dumps requested for exit: the render debug snapshot needs one more frame's data,
-    // which the last delivered snapshot already holds.
-    if (!dumpRenderDebugPath.empty()) {
-        auto snap = renderThread.latestRenderDebug();
-        if (snap.has_value()) {
-            writeRenderDebugDump(*snap);
-        } else {
-            std::println(stderr, "dump-render-debug: no snapshot was produced (run at least a few frames)");
-        }
-    }
+    endpoint.stop();
+    dumps.finish(renderThread.latestRenderDebug());
     if (!dumpProfilePath.empty()) {
         if (profile::exportChromeTrace(dumpProfilePath.c_str())) {
             std::println("Profile trace written: {}", dumpProfilePath);

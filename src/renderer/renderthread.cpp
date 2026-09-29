@@ -112,8 +112,12 @@ auto RenderThread::threadLoop() -> void {
         {
             auto results = renderer->takeCaptureResults();
             auto frameDebug = renderer->takeFrameDebugCapture();
-            if (!results.empty() || frameDebug.has_value()) {
+            auto screenshots = renderer->takeScreenshotResults();
+            if (!results.empty() || frameDebug.has_value() || !screenshots.empty()) {
                 std::lock_guard lock(captureMutex);
+                for (auto& shot : screenshots) {
+                    screenshotResults.push_back(std::move(shot));
+                }
                 for (auto& result : results) {
                     captureResults.push_back(std::move(result));
                 }

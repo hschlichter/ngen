@@ -101,6 +101,9 @@ items in an "Open questions" section instead of picking silently.
 - `src/rhi/vulkan/` — Vulkan backend implementation. Additional backends go in sibling folders (e.g. `src/rhi/d3d12/`).
 - `src/renderer/` — renderer front-end (frame graph, GPU scene tables, GPU culling, passes). Design and rules in `src/renderer/README.md`.
 - `src/scene/` — scene loading, ECS, materials.
+- `src/rpc/` — how processes and agents talk: the RPC core (`core/`, no engine code, shared with the build server) and the engine layer (method
+  registry, endpoint). Protocol and how to add a method in `src/rpc/README.md`.
+- `src/view/` — ngen-view's commands as RPC methods and script verbs (`viewcommands.*`), and its dumps (`viewdumps.*`).
 - `src/apps/` — every program's `main`, one file per program named after it without `ngen-` or dashes (`view.cpp` for `ngen-view`, `cli.cpp`
   for `ngen-cli`). Entry points stay thin: argument parsing, wiring and the loop; reusable logic goes into a library. `src/apps/tool/` holds the
   shell shared by the windowed tools. Exceptions: `ngen-build` and its helpers keep their mains in `src/build/`, and the RHI examples stay in
@@ -131,6 +134,7 @@ section documents it:
 - `./ngen-cli view [args]` — run the set variant's `ngen-view`
 - `./ngen-cli set` — print the set variant. **Agents don't change it** (`ngen-cli set <platform> <config>`) unless asked: `_out/set` is shared with
   the human's session. For another variant, pass `-p`/`-c` to `build` and run that variant's binary directly.
+- `./ngen-cli rpc list|describe|call …` — talk to a running ngen-view (live investigation; see the `run-headless` skill)
 - After changing `src/apps/cli.cpp`: `./ngen-cli build ngen-cli`
 
 The tools underneath are there when the work needs them: debugging the cli or the build system, or a variant other than the set one:

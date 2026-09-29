@@ -3,6 +3,7 @@
 #include "rhitypes.h"
 
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -29,3 +30,4 @@ struct GpuCounters {
 };
 
 auto writeGpuCountersJson(const char* path, const GpuCounters& counters) -> bool;
+auto writeGpuCountersJson(FILE* f, const GpuCounters& counters) -> void;

@@ -138,7 +138,9 @@ These are proposed details; each stage plan refines them.
 
 - **Shader introspection (stage 7).** SPIR-V reflection, pipeline state tables and hot reload. Deferred until the asset pack system exists: shaders
   are build outputs today (`glslc` in the build's `shaders` tool), and hot reload and reflection belong with how packed assets are cooked, loaded and
-  reloaded. Trigger: the asset pack system lands (`notes.md`).
+  reloaded. Trigger: the asset pack system lands (`notes.md`). Hot reload is now part of `plan_async_shaders.md` in
+  [plan_tool_architecture.md](plan_tool_architecture.md), step 2: a renderer pipeline registry rebuilds pipelines when a shader's packed version
+  changes. Reflection and pipeline state tables remain here, with the shader packer's manifest as their data source.
 
 - **Tracy integration.** The profiler macros already allow it. Trigger: the built-in Performance window stops being enough, for example lock
   contention or memory tracking on the CPU.

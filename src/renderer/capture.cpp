@@ -224,7 +224,7 @@ auto CaptureService::recordTexture(RhiCommandBuffer* cmd, const FgCaptureSource&
         std::array<RhiTextureBarrierDesc, 1> toSrc = {{{.texture = source.texture, .oldState = source.textureState, .newState = RhiTextureState::TransferSrc}}};
         cmd->pipelineBarrier(toSrc);
     }
-    cmd->copyTextureToBuffer(source.texture, p.readback, {.x = (int32_t) p.regionX, .y = (int32_t) p.regionY, .width = p.width, .height = p.height});
+    cmd->copyTextureToBuffer(source.texture, p.readback, {.width = p.width, .height = p.height, .x = (int32_t) p.regionX, .y = (int32_t) p.regionY});
     if (transition) {
         std::array<RhiTextureBarrierDesc, 1> back = {{{.texture = source.texture, .oldState = RhiTextureState::TransferSrc, .newState = source.textureState}}};
         cmd->pipelineBarrier(back);
@@ -448,18 +448,8 @@ auto jsonEscape(const std::string& text) -> std::string {
 
 } // namespace
 
-auto writeCaptureFiles(const std::string& path, const CaptureResult& r, const CaptureDisplay& display, size_t maxRows) -> bool {
+auto writeCaptureJson(FILE* f, const CaptureResult& r, size_t maxRows) -> void {
     if (r.texture) {
-        uint32_t w = 0;
-        uint32_t h = 0;
-        auto rgba = convertCaptureForDisplay(r, display, 0, w, h);
-        if (!rgba.empty() && !writeScreenshotPng(path.c_str(), rgba, w, h)) {
-            return false;
-        }
-        auto* f = std::fopen((path + ".json").c_str(), "w");
-        if (f == nullptr) {
-            return false;
-        }
         std::fprintf(f, "{\"frame\": %llu, \"pass\": \"%s\", \"resource\": \"%s\", \"kind\": \"texture\", \"format\": \"%s\", \"width\": %u, \"height\": %u, \"bytes\": %llu, \"error\": \"%s\",\n", (unsigned long long) r.frame, jsonEscape(r.pass).c_str(), jsonEscape(r.resource).c_str(), toString(r.format), r.width, r.height, (unsigned long long) r.byteSize, jsonEscape(r.error).c_str());
         std::fprintf(f, " \"regionX\": %u, \"regionY\": %u,\n", r.regionX, r.regionY);
         // Small captures (a cursor readout) list every texel's decoded value.
@@ -473,12 +463,7 @@ auto writeCaptureFiles(const std::string& path, const CaptureResult& r, const Ca
             std::fprintf(f, "],\n");
         }
         std::fprintf(f, " \"channelMin\": [%g, %g, %g, %g], \"channelMax\": [%g, %g, %g, %g]}\n", r.channelMin.x, r.channelMin.y, r.channelMin.z, r.channelMin.w, r.channelMax.x, r.channelMax.y, r.channelMax.z, r.channelMax.w);
-        std::fclose(f);
-        return true;
-    }
-    auto* f = std::fopen(path.c_str(), "w");
-    if (f == nullptr) {
-        return false;
+        return;
     }
     const auto& schema = schemaForResource(r.resource);
     std::fprintf(f, "{\"frame\": %llu, \"pass\": \"%s\", \"resource\": \"%s\", \"kind\": \"buffer\", \"bytes\": %llu, \"error\": \"%s\",\n", (unsigned long long) r.frame, jsonEscape(r.pass).c_str(), jsonEscape(r.resource).c_str(), (unsigned long long) r.byteSize, jsonEscape(r.error).c_str());
@@ -501,6 +486,24 @@ auto writeCaptureFiles(const std::string& path, const CaptureResult& r, const Ca
         std::fprintf(f, "}%s\n", row + 1 < rows ? "," : "");
     }
     std::fprintf(f, " ]}\n");
+}
+
+auto writeCaptureFiles(const std::string& path, const CaptureResult& r, const CaptureDisplay& display, size_t maxRows) -> bool {
+    if (r.texture) {
+        uint32_t w = 0;
+        uint32_t h = 0;
+        auto rgba = convertCaptureForDisplay(r, display, 0, w, h);
+        if (!rgba.empty() && !writeScreenshotPng(path.c_str(), rgba, w, h)) {
+            return false;
+        }
+    }
+    // Textures: the PNG above plus `<path>.json`. Buffers: the rows as `<path>`.
+    auto jsonPath = r.texture ? path + ".json" : path;
+    auto* f = std::fopen(jsonPath.c_str(), "w");
+    if (f == nullptr) {
+        return false;
+    }
+    writeCaptureJson(f, r, maxRows);
     std::fclose(f);
     return true;
 }

@@ -4,6 +4,7 @@
 #include "rhitypes.h"
 
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -54,3 +55,4 @@ struct FrameDebugCapture {
 // Built from a frame-graph debug snapshot of a frame recorded with the command log on.
 auto buildFrameDebugCapture(const FrameGraphDebugSnapshot& snap, const RhiDevice& device, uint64_t frame) -> FrameDebugCapture;
 auto writeFrameDebugJson(const char* path, const FrameDebugCapture& capture) -> bool;
+auto writeFrameDebugJson(FILE* f, const FrameDebugCapture& capture) -> void;

@@ -103,6 +103,25 @@ auto main(int argc, char** argv) -> int {
             .public_include({"src/profile"})
             .include({"src/rhi"});
 
+    // RPC core: frames, JSON-RPC, TCP on loopback, discovery. The standard library plus header-only
+    // nlohmann/json, so the build server can use it too (src/rpc/README.md).
+    auto rpccore =
+        cxx::static_library("rpccore")
+            .sources(glob({.include = "src/rpc/core/*.cpp"}))
+            .public_include({
+                "src/rpc/core",
+                "external/json/single_include",
+            });
+
+    // RPC engine layer: method registry with parameter schemas, responders, the endpoint that
+    // dispatches calls onto the main thread.
+    auto rpc =
+        cxx::static_library("rpc")
+            .sources(glob({.include = "src/rpc/*.cpp"}))
+            .public_include({"src/rpc"})
+            .link(rpccore)
+            .link(obs);
+
     // Session commands: verbs shared by CLI flags, scripts and the camera window.
     auto session =
         cxx::static_library("session")
@@ -262,9 +281,12 @@ auto main(int argc, char** argv) -> int {
                 "src/jobsystem.cpp",
                 "src/imguibackendvulkan.cpp",
                 "src/renderdoccapture.cpp",
+                "src/view/viewcommands.cpp",
+                "src/view/viewdumps.cpp",
             })
             .include({
                 "src",
+                "src/view",
                 "src/obs",
                 "src/rhi",
                 "src/rhi/vulkan",
@@ -291,6 +313,8 @@ auto main(int argc, char** argv) -> int {
             .link(sceneusd)
             .link(ui)
             .link(imgui)
+            .link(rpc)
+            .link(rpccore)
             .link_flags(sdl3_libs)
             .depend_on(shaders)
             .lib_search("external/openusd_build/lib")
@@ -313,6 +337,9 @@ auto main(int argc, char** argv) -> int {
             .link_flag("-lusd_ts")
             .link_flag("-lusd_pegtl")
             .link_flag("-lusd_kind");
+
+    // ngen-rpc: command-line RPC client (list, describe, call) for agents and humans.
+    auto rpcTool = cxx::program("ngen-rpc").sources({"src/apps/rpc.cpp"}).link(rpccore);
 
     // ngen-cli: one front door to the tools of the set variant (src/apps/cli.cpp). Standard library only.
     auto cli = cxx::program("ngen-cli").sources({"src/apps/cli.cpp"});
@@ -383,6 +410,7 @@ auto main(int argc, char** argv) -> int {
     p.target(exampleBindless);
     p.target(exampleIndirect);
     p.target(cli);
+    p.target(rpcTool);
     p.target(format);
     p.target(tidy);
     p.default_target(view);

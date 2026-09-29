@@ -81,6 +81,26 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
 - Culling runs on the GPU (`src/renderer/README.md`). `culled`, `shadow_culled`, per-pass `draws`/`primitives`, the draw log and `CullReadback`
   are read back and lag a few frames: judge them at steady state (frame 120 or later), not right after a camera or scene change.
 
+## Live investigation over RPC
+
+A running ngen-view answers RPC calls (`src/rpc/README.md`). Every script verb is also a method, and the dumps return their JSON directly:
+
+```sh
+SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> &          # keeps running; no --frames
+./ngen-cli rpc list                                            # wait until it's listed
+./ngen-cli rpc describe view                                   # every method with its parameters
+./ngen-cli rpc call view view.status                           # frame, scene, selection, camera
+./ngen-cli rpc call view view.camera.set '{"x":5.3,"y":11.3,"z":1.2,"yaw":-169.8,"pitch":-0.2}'
+./ngen-cli rpc call view view.screenshot '{"path":"/tmp/shot.png"}'   # answers when the file is written
+./ngen-cli rpc call view introspect.gpuscene                   # also .render .memory .counters .frame
+./ngen-cli rpc call view capture.request '{"pass":"GeometryPass","resource":"gbuffer.normal"}'
+./ngen-cli rpc call view view.quit
+```
+
+- Offline `--script` runs stay the default for reproducible verification; live calls are for investigating interactively.
+- With several views running, `view` is ambiguous: use `view:<pid>` from `ngen-cli rpc list`.
+- Exit codes: 0 ok, 1 the call returned an error (printed as JSON), 2 no endpoint.
+
 ## Inspect
 
 Read the stream with `jq`. Typical checks:

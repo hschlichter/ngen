@@ -2,11 +2,7 @@
 
 #include <cstdio>
 
-auto writeGpuCountersJson(const char* path, const GpuCounters& counters) -> bool {
-    auto* f = std::fopen(path, "w");
-    if (f == nullptr) {
-        return false;
-    }
+auto writeGpuCountersJson(FILE* f, const GpuCounters& counters) -> void {
     std::fprintf(f, "{\n  \"frame\": %llu,\n  \"gpuFrameMs\": %.4f,\n  \"width\": %u,\n  \"height\": %u,\n", (unsigned long long) counters.frame, counters.gpuFrameMs, counters.width, counters.height);
     std::fprintf(f, "  \"zones\": [\n");
     for (size_t i = 0; i < counters.zones.size(); i++) {
@@ -31,6 +27,14 @@ auto writeGpuCountersJson(const char* path, const GpuCounters& counters) -> bool
                      i + 1 < counters.passes.size() ? "," : "");
     }
     std::fprintf(f, "  ]\n}\n");
+}
+
+auto writeGpuCountersJson(const char* path, const GpuCounters& counters) -> bool {
+    auto* f = std::fopen(path, "w");
+    if (f == nullptr) {
+        return false;
+    }
+    writeGpuCountersJson(f, counters);
     std::fclose(f);
     return true;
 }

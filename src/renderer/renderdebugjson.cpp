@@ -26,11 +26,7 @@ auto escape(const std::string& s) -> std::string {
 
 } // namespace
 
-auto writeRenderDebugJson(const char* path, const RenderDebugSnapshot& s, const std::function<std::string(uint32_t)>& primPath) -> bool {
-    auto* f = std::fopen(path, "w");
-    if (f == nullptr) {
-        return false;
-    }
+auto writeRenderDebugJson(FILE* f, const RenderDebugSnapshot& s, const std::function<std::string(uint32_t)>& primPath) -> void {
     const auto& l = s.limits;
     std::fprintf(f, "{\n  \"frame\": %llu,\n", (unsigned long long) s.frameIndex);
     std::fprintf(f, "  \"device\": {\"name\": \"%s\", \"driver\": \"%s\", \"validation\": %s, \"timestamps\": %s, \"calibratedTimestamps\": %s, \"maxPushConstantSize\": %u, \"minUniformBufferOffsetAlignment\": %llu},\n", escape(l.deviceName).c_str(), escape(l.driverName).c_str(), s.validation ? "true" : "false", l.timestamps ? "true" : "false", l.calibratedTimestamps ? "true" : "false", l.maxPushConstantSize, (unsigned long long) l.minUniformBufferOffsetAlignment);
@@ -64,15 +60,19 @@ auto writeRenderDebugJson(const char* path, const RenderDebugSnapshot& s, const 
         std::fprintf(f, "    {\"pass\": \"%s\", \"index\": %u, \"prim\": \"%s\", \"instance\": %u, \"mesh\": %u, \"material\": %u, \"indexOffset\": %u, \"indexCount\": %u}%s\n", escape(d.pass).c_str(), d.drawIndex, escape(primPath(d.prim)).c_str(), d.instance, d.mesh, d.material, d.indexOffset, d.indexCount, i + 1 < s.draws.size() ? "," : "");
     }
     std::fprintf(f, "  ]\n}\n");
-    std::fclose(f);
-    return true;
 }
 
-auto writeMemoryJson(const char* path, const RenderDebugSnapshot& s) -> bool {
+auto writeRenderDebugJson(const char* path, const RenderDebugSnapshot& s, const std::function<std::string(uint32_t)>& primPath) -> bool {
     auto* f = std::fopen(path, "w");
     if (f == nullptr) {
         return false;
     }
+    writeRenderDebugJson(f, s, primPath);
+    std::fclose(f);
+    return true;
+}
+
+auto writeMemoryJson(FILE* f, const RenderDebugSnapshot& s) -> void {
     std::fprintf(f, "{\n  \"frame\": %llu,\n  \"heaps\": [\n", (unsigned long long) s.frameIndex);
     for (size_t i = 0; i < s.heaps.size(); i++) {
         const auto& h = s.heaps[i];
@@ -102,6 +102,14 @@ auto writeMemoryJson(const char* path, const RenderDebugSnapshot& s) -> bool {
         std::fprintf(f, "}%s\n", i + 1 < s.allocations.size() ? "," : "");
     }
     std::fprintf(f, "  ]\n}\n");
+}
+
+auto writeMemoryJson(const char* path, const RenderDebugSnapshot& s) -> bool {
+    auto* f = std::fopen(path, "w");
+    if (f == nullptr) {
+        return false;
+    }
+    writeMemoryJson(f, s);
     std::fclose(f);
     return true;
 }

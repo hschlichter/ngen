@@ -81,11 +81,7 @@ auto descriptorTypeName(RhiDescriptorType type) -> const char* {
 
 } // namespace
 
-auto writeFrameDebugJson(const char* path, const FrameDebugCapture& c) -> bool {
-    auto* f = std::fopen(path, "w");
-    if (f == nullptr) {
-        return false;
-    }
+auto writeFrameDebugJson(FILE* f, const FrameDebugCapture& c) -> void {
     std::fprintf(f, "{\n  \"frame\": %llu,\n  \"passes\": [\n", (unsigned long long) c.frame);
     for (size_t p = 0; p < c.passes.size(); p++) {
         const auto& pass = c.passes[p];
@@ -125,6 +121,14 @@ auto writeFrameDebugJson(const char* path, const FrameDebugCapture& c) -> bool {
         std::fprintf(f, "    ]}%s\n", s + 1 < c.sets.size() ? "," : "");
     }
     std::fprintf(f, "  ]\n}\n");
+}
+
+auto writeFrameDebugJson(const char* path, const FrameDebugCapture& c) -> bool {
+    auto* f = std::fopen(path, "w");
+    if (f == nullptr) {
+        return false;
+    }
+    writeFrameDebugJson(f, c);
     std::fclose(f);
     return true;
 }

@@ -160,3 +160,6 @@ Every tool has its own entry point and its own flags:
 - Docs changed from step 5 after review: the cli is for humans. `AGENTS.md` tells agents to call `ngen-build` and the variant binaries directly and
   to run `ngen-cli` only when explicitly asked to test it; the `run-headless` skill does not mention it. The root `README.md` has an "ngen-cli"
   section (setup, commands, examples, caveats).
+- Later decision (2026-09-29, with the build server plans): agents use `ngen-cli` too, so they exercise the same flow as a human. They don't change
+  the set variant unless asked, and they use `ngen-build` and the variant binaries directly when the work needs them. `AGENTS.md` and the
+  `run-headless` skill say so.

@@ -139,11 +139,7 @@ auto buildGpuSceneRows(const std::map<std::string, CaptureResult>& byResource, s
     return rows;
 }
 
-auto writeGpuSceneJoinedJson(const std::string& path, const std::vector<GpuSceneInstanceRow>& rows, uint32_t viewCount) -> bool {
-    auto* f = std::fopen(path.c_str(), "w");
-    if (f == nullptr) {
-        return false;
-    }
+auto writeGpuSceneJoinedJson(FILE* f, const std::vector<GpuSceneInstanceRow>& rows, uint32_t viewCount) -> void {
     std::fprintf(f, "{\"views\": %u, \"instances\": [\n", viewCount);
     for (size_t i = 0; i < rows.size(); i++) {
         const auto& r = rows[i];
@@ -154,6 +150,14 @@ auto writeGpuSceneJoinedJson(const std::string& path, const std::vector<GpuScene
         std::fprintf(f, "]}%s\n", i + 1 < rows.size() ? "," : "");
     }
     std::fprintf(f, "]}\n");
+}
+
+auto writeGpuSceneJoinedJson(const std::string& path, const std::vector<GpuSceneInstanceRow>& rows, uint32_t viewCount) -> bool {
+    auto* f = std::fopen(path.c_str(), "w");
+    if (f == nullptr) {
+        return false;
+    }
+    writeGpuSceneJoinedJson(f, rows, viewCount);
     std::fclose(f);
     return true;
 }

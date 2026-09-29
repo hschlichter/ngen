@@ -1129,6 +1129,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         }
         bool ok = writeScreenshotPng(screenshotPending.c_str(), rgba, ext.width, ext.height);
         std::println("{}: {} ({}x{})", ok ? "Screenshot written" : "Screenshot failed", screenshotPending, ext.width, ext.height);
+        screenshotResults.push_back({.path = screenshotPending, .ok = ok, .frame = frame, .width = ext.width, .height = ext.height});
         OBS_EVENT("Render", "Screenshot", "frame")
             .field("frame", (int64_t) frame)
             .field("path", screenshotPending)

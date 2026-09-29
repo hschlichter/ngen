@@ -25,6 +25,7 @@
 #include "renderworld.h"
 #include "resourcepool.h"
 #include "rhitypes.h"
+#include "screenshot.h"
 #include "shadowpass.h"
 
 #include <expected>
@@ -62,6 +63,8 @@ public:
     auto setValidationEnabled(bool enabled) -> void { validationEnabled = enabled; }
     // Next presented frame is read back and written as PNG. Waits on that frame's fence once.
     auto requestScreenshot(std::string path) -> void { screenshotPath = std::move(path); }
+    // Screenshots written since the last call, in order (after their fence).
+    auto takeScreenshotResults() -> std::vector<ScreenshotResult> { return std::exchange(screenshotResults, {}); }
     // Render debugger inputs, set by the render thread before render().
     auto setRenderDebugEnabled(bool enabled) -> void { renderDebugEnabled = enabled; }
     auto setTextureInspect(const TextureInspectRequest& request) -> void { textureInspectRequest = request; }
@@ -190,6 +193,7 @@ private:
     bool validationEnabled = false;
     bool renderDebugEnabled = false;
     std::string screenshotPath;
+    std::vector<ScreenshotResult> screenshotResults;
 
     // Texture inspector: one level of one material
     // texture blitted into a preview the editor draws; replaced when the request changes.
