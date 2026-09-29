@@ -2,8 +2,8 @@
 
 **Status. Draft.**
 
-Part of step 2 of [plan_tool_architecture.md](plan_tool_architecture.md). It depends on [plan_pack_rules.md](plan_pack_rules.md) (the shader packer,
-the pack container, the core pack and `PackSet`). Phase B also needs RPC (step 1) and the build server's `pack.request`, `pack.ready` and file
+Part of step 2 of [plan_tool_architecture.md](plan_tool_architecture.md). It depends on [plan_pack_rules.md](plan_pack_rules.md) (the shader packer
+and the core pack). Phase B also needs RPC (step 1) and the build server's `pack.request`, `pack.ready` and file
 watching ([plan_build_server.md](plan_build_server.md)).
 
 ## Current state
@@ -15,8 +15,8 @@ watching ([plan_build_server.md](plan_build_server.md)).
   - it keeps the pointers for the program's lifetime
 
   Nothing can replace a module or pipeline while running, and a pass can't exist before its shaders do.
-- **After [plan_pack_rules.md](plan_pack_rules.md)**, shaders are packed assets with path ids (`shaders/gbuffer.vert`), loaded from a memory-mapped core
-  pack at start-up. The ids have versions (content hashes), but nothing consumes a new version.
+- **After [plan_pack_rules.md](plan_pack_rules.md)**, shaders are packed assets with path ids (`shaders/gbuffer.vert`), read at start-up from
+  `<out_dir>/packs/<asset id>`, where the core pack target writes them. Nothing notices when a packed shader changes.
 - **Retiring GPU objects already works.** `DeletionQueue` destroys an object once the fence of the frame that last used it has passed.
 - **One pipeline isn't ours.** ImGui's pipeline belongs to the ImGui backend (`src/imguibackendvulkan.cpp`), with shaders compiled into it.
 
@@ -36,7 +36,7 @@ watching ([plan_build_server.md](plan_build_server.md)).
   - When a shader id gets a new version, the registry rebuilds every pipeline that uses it at the next update point.
   - It swaps the handle to the new pipeline and retires the old one through `DeletionQueue`.
   - If the rebuild fails, the old pipeline stays and the failure is reported.
-- **The core/optional split.** The core pack keeps the shaders of the always-present passes. `debugview.*` moves to a separate `optional` pack, and
+- **The core/optional split.** The core pack keeps the shaders of the always-present passes. `debugview.*` moves to a second pack target, `optional`, and
   becomes the first feature whose pipelines are created on first use.
 - **Phase B:**
   - optional shaders are requested from the build server (`pack.request`) when first needed
@@ -76,7 +76,7 @@ watching ([plan_build_server.md](plan_build_server.md)).
    pack, so offline and headless runs keep working. The registry creates their pipelines on first use. Phase B adds requests to the server, with
    the static optional pack as the fallback when no server is connected.
 6. **Versions come to the render thread through one queue.** `pack.ready` arrives on the main thread (RPC). The main thread hands shader versions to
-   the render thread through a `RenderThread::submitShaderVersions` queue, which the registry drains at its update point. Pack memory-mapping is done
+   the render thread through a `RenderThread::submitShaderVersions` queue, which the registry drains at its update point. Reading packed files is done
    on the main thread; only module and pipeline creation is on the render thread.
 
 ## Steps
@@ -91,15 +91,15 @@ watching ([plan_build_server.md](plan_build_server.md)).
 2. **Migrate the passes**, one at a time: `GeometryPass`, `DepthPrepass`, `ShadowPass`, `LightingPass`, `AAPass`, `InstanceCullPass`,
    `DebugRenderer`, `GizmoPass`, `DebugViewPass`.
    - `init()` registers requests instead of creating pipelines, and `addPass`/`execute` call `registry.get(handle)`.
-   - `loadShaderModule` goes away; the registry reads modules from `PackSet`.
-3. **The optional pack**: a second static pack target (`pack("optional")`) holding `debugview.*`, which ngen-view depends on. `PackSet` maps both
-   packs. A `debugview` request stays pending until first use: the renderer asks for the debug view pipelines when a debug view is turned on.
+   - `loadShaderModule` goes away; the registry reads packed shaders from the packs directory.
+3. **The optional pack**: a second static pack target (`pack("optional")`) holding `debugview.*`, which ngen-view depends on. It writes into
+   the same packs directory as the core pack. A `debugview` request stays pending until first use: the renderer asks for the debug view pipelines when a debug view is turned on.
 4. **The `pipelines` record, and the four events.**
 
 ### Phase B: requests and hot reload (after the build server)
 
-5. **`PackSet` requests:** when a shader id isn't in a mapped pack and a build server is connected, `pack.request` is sent. On `pack.ready` the new
-   pack is mapped, and the version goes to the render thread (Decision 6).
+5. **Requests:** when a shader id hasn't been packed and a build server is connected, `pack.request` is sent. On `pack.ready` the packed
+   file is read, and the version goes to the render thread (Decision 6).
 6. **Hot reload:** a `pack.ready` for an id that already has a version is handled the same way, since a newer version wins. That includes an id in
    the core pack.
 7. **Failures:**
@@ -133,7 +133,7 @@ watching ([plan_build_server.md](plan_build_server.md)).
 ## Gaps
 
 - **Interface changes.** An edit that changes bindings, push constants or vertex inputs is rebuilt against the pass's existing layouts. Pipeline
-  creation may fail (reported, old kept), or succeed and produce validation errors at draw time. Reflection in the shader packer's manifest, checked by
+  creation may fail (reported, old kept), or succeed and produce validation errors at draw time. Reflection data written by the shader packer, checked by
   the registry before swapping, closes this. It's deferred from [plan_introspection.md](plan_introspection.md).
 - **Stalls.** Pipeline creation runs on the render thread. A large shader can still cost a frame noticeably, even within the budget.
 - **ImGui's pipeline** doesn't hot reload.

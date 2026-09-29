@@ -17,7 +17,7 @@ share one application shell.
   - `ngen-rpc` ([plan_rpc.md](plan_rpc.md))
   - `ngen-editor` ([plan_editor_split.md](plan_editor_split.md))
   - `ngen-introspect` (step 4)
-  - the packers `ngen-packer-shader`, `ngen-packer-usd`, `ngen-packer-texture` and `ngen-packer-assemble` ([plan_pack_rules.md](plan_pack_rules.md))
+  - the packers `ngen-packer-shader`, `ngen-packer-usd` and `ngen-packer-texture` ([plan_pack_rules.md](plan_pack_rules.md))
 
 ## Scope
 
@@ -32,7 +32,7 @@ share one application shell.
   | `ngen-rpc` | `src/apps/rpc.cpp` |
   | `ngen-editor` | `src/apps/editor.cpp` |
   | `ngen-introspect` | `src/apps/introspect.cpp` |
-  | `ngen-packer-shader`, `-usd`, `-texture`, `-assemble` | `src/apps/packershader.cpp`, `packerusd.cpp`, `packertexture.cpp`, `packerassemble.cpp` |
+  | `ngen-packer-shader`, `-usd`, `-texture` | `src/apps/packershader.cpp`, `packerusd.cpp`, `packertexture.cpp` |
 
 - **`src/apps/tool/`**, the shared application shell for windowed tools: the SDL window, the RHI device and swapchain, the ImGui backend, the RPC
   endpoint and the frame loop. `ngen-editor` and `ngen-introspect` are built on it. It has no renderer: neither tool draws a 3D scene.

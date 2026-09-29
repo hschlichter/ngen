@@ -80,7 +80,7 @@ The packer resolves USD into four things the view understands:
 delta can name an entity. The prim path also travels as a debug name the view only prints. The view reports picks and transform edits by entity id,
 and the editor maps them back to prims.
 
-**Assets** (meshes, textures, materials, shaders) are packed chunks. Their id is the project-relative source path, plus a `#` fragment for things
+**Assets** (meshes, textures, materials, shaders) are packed files, one per asset. Their id is the project-relative source path, plus a `#` fragment for things
 packed out of one file, as USD does it. The content hash of the packed bytes is the id's version. "Is this loaded already, and in which version?" is a
 lookup in the view's manifest.
 
@@ -144,7 +144,7 @@ Locked unless marked open.
 2. **Encoding: JSON-RPC 2.0 in length-prefixed frames, with optional binary attachments** for deltas and bulk data.
 3. **Topology: direct connections plus discovery files (`_out/run/`), no broker.**
 4. **Packs travel by reference locally.** They live in the build server's cache (`_out/<platform>/<config>/packs/`). Messages carry pack ids and paths, and the view
-   memory-maps the packs.
+   reads the packed files.
 5. **All packing happens in the build server, through build edges only.** There is no in-memory fast path. The editor and the view never pack.
    Interactive edits don't need packing on the per-frame path, because the view applies them locally first (Two edit paths).
 6. **What the view knows:** layer packs, sub-packs, variant sets and components. The packer resolves the rest of USD composition.
@@ -193,13 +193,13 @@ Plan: [plan_rpc.md](plan_rpc.md).
 ### Step 2: packs and the build server
 
 - **Delivers:**
-  - **The pack format:** a memory-mappable container of content-hashed chunks. It holds asset packs (mesh, texture, material), layer packs with variant
+  - **The pack formats** the USD packer writes: asset packs (mesh, texture, material), layer packs with variant
     alternatives, sub-packs, and a scene manifest (layer stack, variant sets and default selections, sub-pack list, scene settings). Components to
     start: transform with parent, mesh, material, light, camera, visibility.
   - **Pack rules and packers** ([plan_pack_rules.md](plan_pack_rules.md)):
     - `pack_rule` per asset type in `build.cpp`, and one packer program per type (shader, USD, texture, …)
     - stable path asset ids (USD's choice), with the content hash as the version
-    - dependency records from the packers, and a reverse index
+    - depfiles of the files each packer read, and a reverse index
     - static pack targets, including the core pack ngen-view always loads
   - **Shaders become packed assets, loaded asynchronously and hot reloaded** (its own plan, `plan_async_shaders.md`).
     - The core pack holds the shaders every frame needs, and every other shader is requested at runtime.
@@ -220,7 +220,7 @@ Plan: [plan_rpc.md](plan_rpc.md).
   - **The runtime scene library** (no pxr): layer stack and variant composition, sub-pack instancing, components and the transform hierarchy. It
     replaces `RenderWorld` as the renderer's input.
   - **ngen-view:**
-    - asks the server for its scene's packs, or opens a pack directly for offline runs
+    - asks the server for its scene's packs, or reads packed files directly for offline runs
     - exposes `scene.layers.set` (mute, unmute, order) and `scene.variants.set`, both applied without a repack
   - the engine libraries stop linking pxr
 - **Verification:**
@@ -239,7 +239,7 @@ Plan: [plan_rpc.md](plan_rpc.md).
   - no physics or LOD components yet
   - nested variant sets are packed with their default selection only (see Open questions)
   - a shader edit that changes bindings or push constants can't be applied without reflection: the rebuild fails, the old version stays, and the
-    reason is reported. Reflection in the shader packer's manifest (deferred from [plan_introspection.md](plan_introspection.md)) closes this.
+    reason is reported. Reflection data from the shader packer (deferred from [plan_introspection.md](plan_introspection.md)) closes this.
 
 ### Step 3: editor split and deltas
 
@@ -339,5 +339,5 @@ It depends only on step 1, so it can run alongside steps 2–3.
 - **Session recording (`.ngentrace`).** Trigger: inspecting a run after it ended.
 - **Physics and LOD packers and components.** Trigger: the physics or LOD work starts.
 - **Meshlets as a pack step.** Trigger: step 2 lands (`notes.md` ties meshlets to asset packing).
-- **Shader reflection and pipeline state tables**, deferred from [plan_introspection.md](plan_introspection.md). The data goes in the shader
-  packer's manifest, and the pipeline registry uses it to handle interface changes on hot reload. Trigger: `plan_async_shaders.md` lands.
+- **Shader reflection and pipeline state tables**, deferred from [plan_introspection.md](plan_introspection.md). The shader packer writes the
+  data, and the pipeline registry uses it to handle interface changes on hot reload. Trigger: `plan_async_shaders.md` lands.

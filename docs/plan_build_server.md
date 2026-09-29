@@ -21,9 +21,10 @@ watching with repack.
   a stat fast path, depfiles, the parallel scheduler and the build log. `ngen-build-run` is a thin CLI over it.
 - **Nothing guards the build log.** Two concurrent `ngen-build` calls for the same variant would both write `.ngen-buildlog`.
 - **The framework is std-only and self-contained**, and stays so after the move ([plan_build_into_src.md](plan_build_into_src.md), Decision 1).
-- **`ngen-cli build` forwards to `ngen-build`** with `execv`, and fills in `-p`/`-c` from `_out/set` (`src/cli/cli.cpp`).
-- **After [plan_pack_rules.md](plan_pack_rules.md)**, the IR carries pack rules, and the runner can add pack job edges during a run. Packs exist only as
-  static targets, though; nothing takes a request at runtime.
+- **`ngen-cli build` forwards to `ngen-build`** with `execv`, and fills in `-p`/`-c` from `_out/set` (`src/apps/cli.cpp`).
+- **After [plan_pack_rules.md](plan_pack_rules.md)**, the IR carries pack rules and the packs root. Each asset a static pack target lists is a pack
+  job edge in the build log, writing `<out_dir>/packs/<asset id>`, and the runner rewrites the reverse index `packs/.ngen-packdeps` after every build.
+  Nothing takes a request at runtime.
 
 ## Scope
 
@@ -40,7 +41,7 @@ watching with repack.
 - **`ngen-cli` is the everyday entry point.** For a command that needs the server (`build`, and `view` once views request packs), it checks
   discovery, starts `ngen-build --serve` detached if no server is running, and then talks to it over RPC. `ngen-cli build` sends `build.run` itself,
   instead of exec'ing `ngen-build`.
-- **The server holds, per variant in use:** the loaded IR, the build log in memory, and the pack log with its reverse index. It registers in
+- **The server holds, per variant in use:** the loaded IR, the build log in memory, pack jobs included, and the pack reverse index. It registers in
   discovery (`_out/run/ngen-build-<pid>.json`: project root, port, pid, helper version).
 - **Builds over RPC.**
   - `build.variants` and `build.targets`.
@@ -105,8 +106,8 @@ Proposed; pushback welcome.
 6. **The runner runs in-process, one run per variant at a time.** Queued `build.run`s and pack jobs for the same variant are merged into the next run.
    Requests for different variants run in parallel, each with its own IR, log and lock. There's one job pool for the whole server, sized to the
    machine, so two variants don't oversubscribe it.
-7. **Dynamic pack results are one pack file per asset**, at `_out/<platform>/<config>/packs/assets/<id with / kept>.pack`. Static pack targets keep
-   assembling bundles such as `core.pack`. A client maps each asset's pack on `pack.ready`, so a repack of one texture rewrites one file.
+7. **Pack results are one file per asset**, at `_out/<platform>/<config>/packs/<asset id>`, the same path whether a static target or a request packed
+   it. A client reads the asset's file on `pack.ready`, so a repack of one texture rewrites one file.
 8. **Progress and results are calls back on the same connection**, not subscriptions: `build.output`, `build.done`, `pack.ready`, `pack.failed`.
    Step 1's calls in both directions suffice.
 9. **The watcher debounces.** Changes are collected for 50 ms before repacking, so an editor's save burst or a checkout produces one repack per asset.
@@ -116,7 +117,7 @@ Proposed; pushback welcome.
 1. **`src/rpc/` core** (shared with step 1 of the umbrella): TCP on loopback, length-prefixed frames, JSON-RPC 2.0, discovery files in `_out/run/`, a
    dispatcher, and calls in both directions.
 2. **`src/build/serve/`:**
-   - the server loop, with per-variant state (IR, build log, pack log and reverse index, all loaded on first use)
+   - the server loop, with per-variant state (IR, build log and pack reverse index, all loaded on first use)
    - the job pool, with one runner call per variant at a time
    - the methods: `build.*`, `pack.*`, `server.*`
    - the idle timeout
@@ -133,7 +134,8 @@ Proposed; pushback welcome.
 5. **Runner:**
    - the variant lock around `execute`
    - an output sink in `RunOptions`, so the server forwards progress lines instead of printing them
-   - the dynamic pack edges from [plan_pack_rules.md](plan_pack_rules.md), used by `pack.request` for an asset that no static target covers
+   - pack job edges created at request time, for an asset that no static target covers ([plan_pack_rules.md](plan_pack_rules.md) emits them for
+     static targets only)
 6. **Watcher** (`src/build/serve/watcher.hpp`, an interface with an `inotify` implementation):
    - it watches the sources and recorded dependencies of assets with an interest, plus `build.cpp`
    - debounce, then reverse-index lookup, then a repack, then `pack.ready` to the interested clients
@@ -154,7 +156,7 @@ Proposed; pushback welcome.
     0. The server process is still running afterwards.
   - A second call reuses it: same pid in `server.status`.
 - **Same result both ways.** A build through the server and a `--no-server` build after `--clean` produce byte-identical linked binaries and
-  `core.pack`, and build-log entries with the same hashes.
+  packed files, and build-log entries with the same hashes.
 - **Output is identical:**
   - the printed lines of a server build match a `--no-server` build of the same targets, in `-v` mode, compared line by line
   - with a compile error, the exit code and the compiler message are the same both ways
@@ -166,7 +168,7 @@ Proposed; pushback welcome.
 - **`ngen-cli`:** `./ngen-cli build` on an empty state starts the server and builds. `./ngen-cli build --shutdown` stops it (its discovery file is
   gone), and the next `./ngen-cli build` starts a new one.
 - **Pack requests:**
-  - `pack.request` for `shaders/debugview.frag` on a clean cache gives `pack.ready` with a version and an existing pack file
+  - `pack.request` for `shaders/debugview.frag` on a clean cache gives `pack.ready` with a version and an existing packed file, `packs/shaders/debugview.frag`
   - a second request answers at once from the cache, with no job run
   - an id with no matching rule gives `pack.failed` naming the id
 - **Watching:**

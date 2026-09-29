@@ -3,8 +3,8 @@
 **Status. Draft.**
 
 Step 3 of [plan_tool_architecture.md](plan_tool_architecture.md). It needs step 2:
-- packs and the USD packer ([plan_pack_rules.md](plan_pack_rules.md))
-- the scene pack format and runtime scene library: layer packs, sub-packs, variants, components. Its plan isn't written yet.
+- pack rules and packers ([plan_pack_rules.md](plan_pack_rules.md))
+- the USD packer, the scene pack format and the runtime scene library: layer packs, sub-packs, variants, components. Its plan isn't written yet.
 - the build server ([plan_build_server.md](plan_build_server.md))
 
 It also needs RPC from step 1 ([plan_rpc.md](plan_rpc.md)).
@@ -119,9 +119,8 @@ Proposed; pushback welcome.
    - instance buffer edits for added and removed entities, through the existing dirty-span upload path
 4. **The build server delta:** on `pack.ready` for a layer pack, the server sends each interested view the delta against the version that view
    reported, built from the old and new layer packs.
-5. **The in-view editor through the server:** `SceneUpdater`'s authored edits send the changed layer's content with a repack request (Decision 1)
-   instead of
-   re-extracting in-process. The view's scene changes only through deltas.
+5. **The in-view editor through the server:** `SceneUpdater`'s authored edits reach packed data by the route still to be designed (Decision 1, Open
+   questions) instead of re-extracting in-process. The view's scene changes only through deltas.
 
 ### Phase B: the split
 
