@@ -21,6 +21,9 @@
 //   7. **Update the log on each success.** Re-stat inputs (pre-run hashes are stale once deps have run) and
 //      outputs, parse the depfile if present, upsert the entry. The log is atomically rewritten at end of
 //      build via `BuildLog::save`.
+//   8. **Write the pack reverse index** when the IR has pack jobs (`kEdgeFlagPack`): `<packs_root>/.ngen-packdeps`
+//      maps each file a pack job read, from its depfile, to the asset id that read it, one `<file>\t<asset id>`
+//      line each. Rewritten from the log after every build.
 //
 // The scheduler's edge-execution callback and the dirty-state plumbing both live in this file as lambdas;
 // they're tightly coupled to the rest of `execute()` and not reused elsewhere. Pure helpers (`compute_dirty`,
@@ -46,9 +49,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <expected>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -251,6 +257,52 @@ inline auto compute_dirty(const build::ir::Edge& edge, const LogEntry* prev) -> 
     }
 
     return out;
+}
+
+// The pack reverse index: for every pack job with a log entry, one `<file>\t<asset id>` line per file its depfile
+// listed, sorted. Pack job edges are named `pack:<asset id>`. Written through a temporary file and a rename.
+inline auto write_pack_index(const build::ir::IR& ir, const BuildLog& log) -> std::expected<void, build::Error> {
+    std::set<std::pair<std::string, std::string>> lines;
+    bool any_pack = false;
+    for (const auto& edge : ir.edges) {
+        if ((edge.flags & build::ir::kEdgeFlagPack) == 0) {
+            continue;
+        }
+        any_pack = true;
+        const LogEntry* entry = log.find(edge.name);
+        if (entry == nullptr) {
+            continue;
+        }
+        auto asset = edge.name.substr(std::string_view("pack:").size());
+        for (const auto& dep : entry->discovered_headers) {
+            lines.emplace(dep.path, asset);
+        }
+    }
+    if (!any_pack) {
+        return {};
+    }
+    auto path = std::filesystem::path(ir.packs_root) / ".ngen-packdeps";
+    auto tmp = path;
+    tmp += ".tmp";
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    {
+        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            return std::unexpected(build::Error{"cannot write " + tmp.string()});
+        }
+        for (const auto& [file, asset] : lines) {
+            out << file << '\t' << asset << '\n';
+        }
+        if (!out) {
+            return std::unexpected(build::Error{"cannot write " + tmp.string()});
+        }
+    }
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) {
+        return std::unexpected(build::Error{"cannot rename " + tmp.string() + ": " + ec.message()});
+    }
+    return {};
 }
 
 inline auto buildlog_path(const build::Path& ir_path) -> build::Path {
@@ -493,6 +545,9 @@ inline auto execute(const build::ir::IR& ir, const RunOptions& opts) -> std::exp
 
     if (auto r = log.save(log_path); !r) {
         std::cerr << "warning: failed to save build log: " << r.error().message << "\n";
+    }
+    if (auto r = write_pack_index(ir, log); !r) {
+        std::cerr << "warning: failed to write the pack index: " << r.error().message << "\n";
     }
 
     return result;

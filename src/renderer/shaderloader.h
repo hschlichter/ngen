@@ -6,12 +6,11 @@
 
 class RhiDevice;
 
-// Read a compiled shader from disk and create an RHI shader module from it.
-// Returns nullptr and logs on failure. File format is whatever the active backend
-// consumes (SPIR-V for Vulkan); the build's `shaders` tool produces it.
-auto loadShaderModule(RhiDevice* device, RhiShaderStage stage, const char* filepath) -> RhiShaderModule*;
+// Create an RHI shader module from a packed shader. `id` is the shader's asset id, its project-relative source
+// path (e.g. "shaders/gbuffer.vert"); the bytecode is the packed file <packs root>/<id>, in whatever format the
+// active backend consumes (SPIR-V for Vulkan). Returns nullptr and logs on failure.
+auto loadShaderModule(RhiDevice* device, RhiShaderStage stage, const char* id) -> RhiShaderModule*;
 
-// Directory prepended to relative shader paths. The build writes compiled shaders next to the
-// executable (<out dir>/shaders/), so the application passes the executable's directory here;
-// without it, loads resolve against the working directory and pick up whatever happens to be there.
-auto setShaderSearchPath(std::string dir) -> void;
+// The directory packed assets are read from: <out_dir>/packs, next to the executable. The application passes it
+// at start-up; the default is "packs" in the working directory.
+auto setShaderPackRoot(std::string path) -> void;

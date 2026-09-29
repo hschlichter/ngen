@@ -1,6 +1,6 @@
 # Pack rules, packers and the pack database
 
-**Status. Draft.**
+**Status. Landed.**
 
 Part of step 2 of [plan_tool_architecture.md](plan_tool_architecture.md). This plan builds the machinery that turns a source asset into packed data:
 - rules per asset type, declared in `build.cpp`
@@ -164,3 +164,43 @@ Locked with Henrik.
 - **A shared content-addressed store across variants.** Trigger: disk use or pack times from duplicate variant packs matter.
 - **Async shader loading and hot reload (the pipeline registry), and moving optional shaders out of the core pack**: `plan_async_shaders.md`.
   Trigger: the build server takes requests.
+- **Requests from packers.** A packer that discovers another asset to pack (a USD scene referencing a texture) sends a new request to the build
+  server, not a round inside one build. Trigger: the first packer that references other assets, with the build server in place.
+- **Bundling packed assets into one file for shipping.** Trigger: shipping a game build, or file counts or open costs that matter.
+
+## Results
+
+Landed simplified: after the first implementation, Henrik dropped the pack container, the assemble step and the requests (see "Deviations"). What
+landed:
+
+- **Byte-identical SPIR-V.** All 17 packed shaders, `<out_dir>/packs/shaders/*`, match the `.spv` files the old `shaders` tool wrote, in `debug`,
+  `release` and `gamerelease` (51 of 51).
+- **Screenshots.** The six headless screenshots are byte-identical to the baseline with shaders loaded from the packs directory: 18 loads, since
+  `shadow.frag` is shared by the shadow pass and the depth prepass. All three configurations and the examples build.
+- **What reruns**, each checked by the edges the next build of `core` ran:
+  - nothing changed: nothing
+  - one shader edited: that shader's job only
+  - two shaders made to include a new file, then the file edited: exactly those two jobs, both times. The reverse index lists those two for the
+    file.
+  - a rule parameter added in `build.cpp`: all 17 jobs
+  - the shader packer's code changed: its compile and link, then all 17 jobs
+  - everything restored: nothing
+- **Ids:** packed files are named by asset id and are the same paths in every variant.
+
+Deviations from the plan:
+
+- **No pack container and no assemble step.** A packed asset is its packer's output file at `<out_dir>/packs/<asset id>`, and the renderer reads it
+  directly. The container added a format, a program and an extra edge per pack without a consumer that needed them. Bundling for shipping is
+  deferred.
+- **No requests and no manifest.** A packer writes its output and a Make-format depfile, and its exit code says whether it worked. The first version
+  let the runner read requests from manifests and pack them in extra rounds within one build. Henrik rejected rounds as the wrong model: a packer that
+  discovers an asset sends a new request to the build server. That waits for the first packer that needs it (Deferred).
+- **No chunk types or versions.** With one file per asset, the file is the asset. Decision 6 (string chunk types) has no carrier until assets are
+  bundled.
+- **A pack target is a phony edge over its jobs**, so the view's target depends on `core` like any other target.
+- **No separate pack log.** Pack jobs are ordinary edges in the variant's build log (`.ngen-buildlog`), named `pack:<id>`. The reverse index is its
+  own file, `packs/.ngen-packdeps`, rewritten from the log after every build.
+- **The IR carries the resolved rules and the packs root.** The IR format is version 2, which means the bootstrap must be rebuilt, as `AGENTS.md`
+  says.
+- **The fallback texture stays generated in code** (`renderer.cpp`); it has no source file to pack. The core pack holds the shaders.
+- **Shader module debug names are the asset ids** (`shaders/gbuffer.vert`), without `.spv`.

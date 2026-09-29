@@ -9,17 +9,17 @@
 #include <string>
 #include <vector>
 
-static std::string shaderSearchPath;
+static std::string shaderPackRoot = "packs";
 
-auto setShaderSearchPath(std::string dir) -> void {
-    shaderSearchPath = std::move(dir);
+auto setShaderPackRoot(std::string dir) -> void {
+    shaderPackRoot = std::move(dir);
 }
 
-auto loadShaderModule(RhiDevice* device, RhiShaderStage stage, const char* filepath) -> RhiShaderModule* {
-    auto resolved = shaderSearchPath.empty() ? std::string(filepath) : shaderSearchPath + filepath;
+auto loadShaderModule(RhiDevice* device, RhiShaderStage stage, const char* id) -> RhiShaderModule* {
+    auto resolved = shaderPackRoot + "/" + id;
     std::ifstream file(resolved, std::ios::binary | std::ios::ate);
     if (!file) {
-        std::println(stderr, "Failed to open shader file: {}", resolved);
+        std::println(stderr, "Failed to open packed shader {}: {}", id, resolved);
         return nullptr;
     }
 
@@ -28,21 +28,21 @@ auto loadShaderModule(RhiDevice* device, RhiShaderStage stage, const char* filep
 
     std::vector<std::byte> code(size);
     if (!file.read((char*) code.data(), (std::streamsize) size)) {
-        std::println(stderr, "Failed to read shader file: {}", filepath);
+        std::println(stderr, "Failed to read packed shader: {}", resolved);
         return nullptr;
     }
 
     RhiShaderDesc desc = {
         .stage = stage,
         .code = code,
-        .debugName = filepath,
+        .debugName = id,
     };
     auto* module = device->createShaderModule(desc);
     if (module == nullptr) {
-        std::println(stderr, "Failed to create shader module: {}", filepath);
+        std::println(stderr, "Failed to create shader module: {}", id);
         return nullptr;
     }
 
-    std::println("Loaded shader: {}", filepath);
+    std::println("Loaded shader: {}", id);
     return module;
 }

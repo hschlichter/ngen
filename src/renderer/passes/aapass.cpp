@@ -29,7 +29,7 @@ auto AAPass::init(RhiDevice* dev, uint32_t frameCount, RhiFormat inputFormat) ->
     }
     format = floatFormat;
 
-    shader = loadShaderModule(device, RhiShaderStage::Compute, "shaders/fxaa.comp.spv");
+    shader = loadShaderModule(device, RhiShaderStage::Compute, "shaders/fxaa.comp");
     if (shader == nullptr) {
         return false;
     }

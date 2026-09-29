@@ -27,7 +27,9 @@ mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/boo
 From then on, `ngen-build` is the only entry point. It rebuilds `ngen-build-graph` and `ngen-build-run` on demand using the runner library, then drives them
 as subprocesses.
 
-If `bootstrap.cpp` itself changes, re-run the seed command above. The runner can rebuild every other binary but not itself.
+If `bootstrap.cpp` or anything it includes changes, re-run the seed command above; notably the IR format (`ir/schema.hpp`). The bootstrap reads IR
+files itself, so an older `ngen-build` rejects a newer format with "unsupported IR format version". The runner can rebuild every other binary but
+not itself.
 
 ---
 
@@ -100,6 +102,26 @@ Both follow the cxx wrapper pattern: own a `shared_ptr<Target>`, attach themselv
 - **`Phony`** names a set of dependencies and nothing else: `phony("examples").depend_on(a).depend_on(b)` emits one
   command-less edge (`kEdgeFlagPhony`) with a virtual stamp output, so `ngen-build -p X -c Y examples` builds every
   dependency. Dependencies use the ordinary `Target::depend_on`. See `src/build/framework/phony.hpp`.
+
+### Packing (`PackRule`, `Pack`)
+
+`framework/packrule.hpp`. A **pack rule** says how one type of asset is packed:
+- glob patterns over asset ids (project-relative paths)
+- the packer program target
+- parameters, fixed or per configuration (`per_config`)
+- a version
+
+Rules are registered with `Project::pack_rule`. A **`Pack`** target lists assets. The emitter turns each asset into a pack job edge (flag
+`kEdgeFlagPack`, named `pack:<asset id>`) that runs its first matching rule's packer and writes `<out_dir>/packs/<asset id>`. The pack itself
+becomes a phony edge over its jobs.
+
+- **The IR carries the resolved rules** (`IR::pack_rules`) and the packs root (`IR::packs_root`).
+- **Caching:** a job's command holds the rule's name, version and parameters. Its inputs are the source and the packer binary, and its depfile
+  lists every file the packer read.
+- **Reverse index:** after every build the runner rewrites `<packs_root>/.ngen-packdeps` from the log, one `<file>\t<asset id>` line per file
+  a pack job read (`run/execute.hpp`).
+
+The packer contract is in `src/pack/README.md`.
 
 ### IR transport (`src/build/ir/`)
 

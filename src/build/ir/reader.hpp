@@ -171,6 +171,21 @@ inline auto read(const Path& path) -> std::expected<IR, Error> {
         ir.default_targets.push_back(get_u32(buf, default_targets_offset + i * 4));
     }
 
+    auto pack_rules_offset = get_u32(buf, 72);
+    auto pack_rules_count = get_u32(buf, 76);
+    ir.packs_root = get_string_at(buf, string_table_offset, 80);
+    ir.pack_rules.reserve(pack_rules_count);
+    for (std::uint32_t i = 0; i < pack_rules_count; ++i) {
+        auto base = pack_rules_offset + i * kPackRuleRecordSize;
+        PackRule r;
+        r.name = get_string_at(buf, string_table_offset, base + 0);
+        r.patterns = read_string_list(get_u32(buf, base + 8), get_u32(buf, base + 12));
+        r.packer = get_string_at(buf, string_table_offset, base + 16);
+        r.params = read_string_list(get_u32(buf, base + 24), get_u32(buf, base + 28));
+        r.version = get_u32(buf, base + 32);
+        ir.pack_rules.push_back(std::move(r));
+    }
+
     (void) refs_count;
     return ir;
 }

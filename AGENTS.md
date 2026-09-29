@@ -104,6 +104,8 @@ items in an "Open questions" section instead of picking silently.
 - `src/rpc/` — how processes and agents talk: the RPC core (`core/`, no engine code, shared with the build server) and the engine layer (method
   registry, endpoint). Protocol and how to add a method in `src/rpc/README.md`.
 - `src/view/` — ngen-view's commands as RPC methods and script verbs (`viewcommands.*`), and its dumps (`viewdumps.*`).
+- `src/pack/` — what every packer shares. Asset ids, the packer contract and caching in
+  `src/pack/README.md`. Packers are programs in `src/apps/packer<type>.cpp`; their rules are in the root `build.cpp`.
 - `src/apps/` — every program's `main`, one file per program named after it without `ngen-` or dashes (`view.cpp` for `ngen-view`, `cli.cpp`
   for `ngen-cli`). Entry points stay thin: argument parsing, wiring and the loop; reusable logic goes into a library. `src/apps/tool/` holds the
   shell shared by the windowed tools. Exceptions: `ngen-build` and its helpers keep their mains in `src/build/`, and the RHI examples stay in
@@ -115,7 +117,7 @@ items in an "Open questions" section instead of picking silently.
 ## Build
 
 The engine uses its own self-hosted build system (`ngen-build`) — no ninja or make at any stage. Bootstrap
-once on a fresh clone (and again whenever `src/build/bootstrap.cpp` changes):
+once on a fresh clone (and again whenever `src/build/bootstrap.cpp` or the IR format in `src/build/ir/schema.hpp` changes):
 
 ```sh
 mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/bootstrap.cpp

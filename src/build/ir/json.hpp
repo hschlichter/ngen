@@ -84,6 +84,18 @@ inline auto dump_json(const IR& ir, std::ostream& out) -> void {
     out << "  \"format_version\": " << kFormatVersion << ",\n";
     out << "  \"variant\": \"" << json_escape(ir.variant) << "\",\n";
     out << "  \"project_root\": \"" << json_escape(ir.project_root) << "\",\n";
+    out << "  \"packs_root\": \"" << json_escape(ir.packs_root) << "\",\n";
+    out << "  \"pack_rules\": [";
+    for (std::size_t i = 0; i < ir.pack_rules.size(); ++i) {
+        const auto& r = ir.pack_rules[i];
+        out << (i == 0 ? "\n" : "");
+        out << "    {\"name\": \"" << json_escape(r.name) << "\", \"packer\": \"" << json_escape(r.packer) << "\", \"version\": " << r.version << ", \"patterns\": ";
+        write_string_array(out, r.patterns, "    ");
+        out << ", \"params\": ";
+        write_string_array(out, r.params, "    ");
+        out << "}" << (i + 1 < ir.pack_rules.size() ? "," : "") << "\n";
+    }
+    out << "  ],\n";
 
     out << "  \"pools\": [";
     for (std::size_t i = 0; i < ir.pools.size(); ++i) {

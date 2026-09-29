@@ -11,8 +11,8 @@
 auto DepthPrepass::init(RhiDevice* device, RhiFormat depthFormat, RhiDescriptorSetLayout* geometrySetLayout) -> bool {
     using enum RhiFormat;
 
-    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/depthonly.vert.spv");
-    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/shadow.frag.spv");
+    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/depthonly.vert");
+    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/shadow.frag");
 
     std::array<RhiVertexAttribute, 1> vertexAttrs = {{
         {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0}, // position-only stream

@@ -14,8 +14,8 @@ auto GeometryPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFo
     using enum RhiDescriptorType;
     using enum RhiFormat;
 
-    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/gbuffer.vert.spv");
-    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/gbuffer.frag.spv");
+    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/gbuffer.vert");
+    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/gbuffer.frag");
 
     auto bindings = descriptorBindings();
     descSetLayout = device->createDescriptorSetLayout(bindings);

@@ -31,7 +31,8 @@ changing how scene data reaches the GPU.
 | Editor support | `imguibackend.h/.cpp` (interface), `gizmo.h`, `axis3dgizmo`, `translategizmo`, `rotategizmo`, `scalegizmo` |
 | Debugging and introspection | `renderdebug.h`, `renderdebugjson.h/.cpp`, `screenshot.h/.cpp`, `capture.h/.cpp` (`CaptureService`), `gpuschema.h/.cpp`, `framedebug.h/.cpp`, `gpucounters.h/.cpp`, `debugview.h` |
 
-Shaders live in `shaders/` at the repository root and are compiled to SPIR-V next to the executable by the build.
+Shaders live in `shaders/` at the repository root. They are packed assets: the build packs each one to `<out_dir>/packs/<asset id>`, and
+`loadShaderModule(device, stage, "shaders/gbuffer.vert")` reads it from there by asset id (`shaderloader.*`, `src/pack/README.md`).
 
 ## How the pieces fit
 

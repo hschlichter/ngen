@@ -76,7 +76,7 @@ Current truth for the build framework is [`../src/build/README.md`](../src/build
 
 - [plan_tool_architecture.md](plan_tool_architecture.md) — umbrella in four steps: RPC, packs + `ngen-build --serve`, editor split with deltas, `ngen-introspect` with all introspection windows; USD-free view on layer packs, sub-packs, variants, components (draft)
   - [plan_rpc.md](plan_rpc.md) — step 1: RPC core (nlohmann/json, frames, JSON-RPC, TCP, discovery), engine method registry, ngen-view endpoint with every session verb and dump, `ngen-rpc` (landed)
-  - [plan_pack_rules.md](plan_pack_rules.md) — step 2a: `pack_rule` in build.cpp, one packer program per type, path asset ids, pack container, dependency record and reverse index; proven on shaders and a core pack (draft)
+  - [plan_pack_rules.md](plan_pack_rules.md) — step 2a: `pack_rule` in build.cpp, one packer program per type, path asset ids, one packed file per asset, depfile caching and reverse index; proven on shaders and a core pack (landed; container and requests dropped)
   - [plan_async_shaders.md](plan_async_shaders.md) — step 2: renderer pipeline registry, pending pipelines, core/optional shader packs, requests and hot reload through the build server (draft)
   - [plan_build_into_src.md](plan_build_into_src.md) — move `build/` to `src/build/`, framework stays std-only and self-contained (landed)
   - [plan_apps_folder.md](plan_apps_folder.md) — every program's main in `src/apps/<name>.cpp`, shared windowed-tool shell in `src/apps/tool/` (landed)

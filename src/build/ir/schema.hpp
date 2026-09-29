@@ -19,7 +19,7 @@
 namespace build::ir {
 
 inline constexpr std::array<char, 4> kMagic = {'N', 'G', 'I', 'R'};
-inline constexpr std::uint32_t kFormatVersion = 1;
+inline constexpr std::uint32_t kFormatVersion = 2; // 2: pack rules
 
 // Pool indices baked into every IR. Higher pool indices are user-defined.
 inline constexpr std::uint32_t kPoolDefault = 0; // depth 0 — capped by -j N at runtime.
@@ -27,6 +27,7 @@ inline constexpr std::uint32_t kPoolConsole = 1; // depth 1 — serialized, chil
 
 // Edge flag bits.
 inline constexpr std::uint32_t kEdgeFlagPhony = 1u << 0; // No command; pure ordering/alias node.
+inline constexpr std::uint32_t kEdgeFlagPack = 1u << 1;  // A pack job: one packer run on one asset.
 
 struct Pool {
     std::string name;
@@ -46,6 +47,16 @@ struct Edge {
     std::uint32_t flags = 0;
 };
 
+// A pack rule resolved for one variant: which asset ids it packs, the packer that packs them, and the
+// parameters it passes. Carried in the IR so tools can resolve an asset to its rule without re-running build.cpp.
+struct PackRule {
+    std::string name;
+    std::vector<std::string> patterns; // glob patterns over asset ids (project-relative paths)
+    std::string packer;                // path of the packer program for this variant
+    std::vector<std::string> params;   // "key=value", resolved for this variant
+    std::uint32_t version = 0;
+};
+
 struct IR {
     std::string variant;      // "<platform>/<config>", e.g. "my-platform/debug"
     std::string project_root; // absolute path at emit time
@@ -53,6 +64,8 @@ struct IR {
     std::vector<Pool> pools;
     std::vector<Edge> edges;
     std::vector<std::uint32_t> default_targets; // indices into edges
+    std::vector<PackRule> pack_rules;
+    std::string packs_root; // "<out_dir>/packs": where packed assets go, at their asset id's path
 };
 
 inline auto make_default_pools() -> std::vector<Pool> {
@@ -71,6 +84,7 @@ inline auto make_default_pools() -> std::vector<Pool> {
 //   [edges_offset .. )                Edge[]           (kEdgeRecordSize each)
 //   [refs_offset .. )                 StringRef[]      (kStringRefSize each)
 //   [default_targets_offset .. )      u32[]            (edge indices)
+//   [pack_rules_offset .. )           PackRule[]       (kPackRuleRecordSize each)
 //   [string_table_offset .. )         raw UTF-8 bytes (no NUL terminators)
 //
 // A StringRef is { u32 offset_into_string_table, u32 length_in_bytes }.
@@ -80,7 +94,7 @@ inline auto make_default_pools() -> std::vector<Pool> {
 
 inline constexpr std::uint32_t kStringRefSize = 8; // u32 offset + u32 length
 
-inline constexpr std::uint32_t kHeaderSize = 72;
+inline constexpr std::uint32_t kHeaderSize = 88;
 //   offset  size  field
 //   0       4     magic ("NGIR")
 //   4       4     u32 format_version
@@ -97,12 +111,26 @@ inline constexpr std::uint32_t kHeaderSize = 72;
 //   52      4     u32 default_targets_count
 //   56      8     StringRef variant
 //   64      8     StringRef project_root
+//   72      4     u32 pack_rules_offset
+//   76      4     u32 pack_rules_count
+//   80      8     StringRef packs_root
 
 inline constexpr std::uint32_t kPoolRecordSize = 16;
 //   offset  size  field
 //   0       8     StringRef name
 //   8       4     u32 depth
 //   12      4     u32 _reserved
+
+inline constexpr std::uint32_t kPackRuleRecordSize = 40;
+//   offset  size  field
+//   0       8     StringRef name
+//   8       4     u32 patterns_refs_offset
+//   12      4     u32 patterns_count
+//   16      8     StringRef packer
+//   24      4     u32 params_refs_offset
+//   28      4     u32 params_count
+//   32      4     u32 version
+//   36      4     u32 _reserved
 
 inline constexpr std::uint32_t kEdgeRecordSize = 80;
 //   offset  size  field

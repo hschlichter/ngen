@@ -42,10 +42,10 @@ auto DebugViewPass::init(RhiDevice* dev, uint32_t frameCount, RhiFormat depthFor
         return true;
     }
 
-    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/debugview.vert.spv");
-    geomShader = loadShaderModule(device, RhiShaderStage::Geometry, "shaders/debugview.geom.spv");
-    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/debugview.frag.spv");
-    resolveShader = loadShaderModule(device, RhiShaderStage::Compute, "shaders/debugview.comp.spv");
+    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/debugview.vert");
+    geomShader = loadShaderModule(device, RhiShaderStage::Geometry, "shaders/debugview.geom");
+    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/debugview.frag");
+    resolveShader = loadShaderModule(device, RhiShaderStage::Compute, "shaders/debugview.comp");
     if (vertShader == nullptr || geomShader == nullptr || fragShader == nullptr || resolveShader == nullptr) {
         return false;
     }

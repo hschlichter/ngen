@@ -2,6 +2,7 @@
 #include "src/build/framework/cxx/platform.hpp"
 #include "src/build/framework/cxx/target.hpp"
 #include "src/build/framework/glob.hpp"
+#include "src/build/framework/packrule.hpp"
 #include "src/build/framework/phony.hpp"
 #include "src/build/framework/project.hpp"
 #include "src/build/framework/tool.hpp"
@@ -244,33 +245,30 @@ auto main(int argc, char** argv) -> int {
             .link(sceneusd)
             .link(imgui);
 
-    // Shader flags follow the configuration the way compiler flags do: debug keeps
-    // source-level debug info and no optimisation, release optimises and keeps debug
-    // info, gamerelease optimises only.
-    auto shaders =
-        tool("shaders")
-            .command([](const BuildVariant& variant) -> std::vector<std::string> {
-                std::vector<std::string> argv = {"glslc", "$in", "-o", "$out"};
-                const auto& config = variant.config->name();
-                if (config == "debug") {
-                    argv.push_back("-O0");
-                    argv.push_back("-g");
-                } else if (config == "release") {
-                    argv.push_back("-O");
-                    argv.push_back("-g");
-                } else {
-                    argv.push_back("-O");
-                }
-                return argv;
-            })
-            .for_each(
-                concat({
-                    glob({.include = "shaders/*.vert"}),
-                    glob({.include = "shaders/*.frag"}),
-                    glob({.include = "shaders/*.comp"}),
-                    glob({.include = "shaders/*.geom"}),
-                }),
-                [](const BuildVariant& variant, const Path& source) -> Path { return variant.out_dir / "shaders" / (source.filename().string() + ".spv"); });
+    // Packing (src/pack/README.md): one packer program per asset type, rules saying which assets each packs,
+    // and pack targets listing assets to pack. A packed asset is written to <out_dir>/packs/<asset id>.
+    auto packLib = cxx::static_library("pack").sources(glob({.include = "src/pack/*.cpp"})).public_include({"src/pack"});
+    auto packerShader = cxx::program("ngen-packer-shader").sources({"src/apps/packershader.cpp"}).link(packLib);
+
+    // Shader parameters follow the configuration the way compiler flags do: debug keeps source-level
+    // debug info and no optimisation, release optimises and keeps debug info, gamerelease optimises only.
+    auto shaderRule =
+        pack_rule("shader")
+            .match({"shaders/*.vert", "shaders/*.frag", "shaders/*.comp", "shaders/*.geom"})
+            .packer(packerShader)
+            .param("optimize", per_config({{"debug", "0"}, {"release", "1"}, {"gamerelease", "1"}}))
+            .param("debug_info", per_config({{"debug", "1"}, {"release", "1"}, {"gamerelease", "0"}}))
+            .version(1);
+
+    // The core pack: the assets ngen-view loads at start-up.
+    auto corePack =
+        build::pack("core")
+            .assets(concat({
+                glob({.include = "shaders/*.vert"}),
+                glob({.include = "shaders/*.frag"}),
+                glob({.include = "shaders/*.comp"}),
+                glob({.include = "shaders/*.geom"}),
+            }));
 
     auto view =
         cxx::program("ngen-view")
@@ -316,7 +314,7 @@ auto main(int argc, char** argv) -> int {
             .link(rpc)
             .link(rpccore)
             .link_flags(sdl3_libs)
-            .depend_on(shaders)
+            .depend_on(corePack)
             .lib_search("external/openusd_build/lib")
             .rpath((std::filesystem::current_path() / "external/openusd_build/lib").string())
             .link_flag("-lusd_usd")
@@ -411,6 +409,9 @@ auto main(int argc, char** argv) -> int {
     p.target(exampleIndirect);
     p.target(cli);
     p.target(rpcTool);
+    p.pack_rule(shaderRule);
+    p.target(packerShader);
+    p.target(corePack);
     p.target(format);
     p.target(tidy);
     p.default_target(view);

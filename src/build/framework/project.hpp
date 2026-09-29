@@ -15,6 +15,7 @@
 #pragma once
 
 #include "configuration.hpp"
+#include "packrule.hpp"
 #include "platform.hpp"
 #include "target.hpp"
 
@@ -49,6 +50,15 @@ public:
             configs_.push_back(&c);
         }
     }
+
+    // Pack rules, in matching order: an asset is packed by the first rule whose patterns match it.
+    auto pack_rule(PackRule& rule) -> void {
+        if (std::find(pack_rules_.begin(), pack_rules_.end(), &rule) == pack_rules_.end()) {
+            pack_rules_.push_back(&rule);
+        }
+    }
+
+    auto pack_rules() const -> const std::vector<PackRule*>& { return pack_rules_; }
 
     auto find_platform(std::string_view name) const -> Platform* {
         for (auto* p : platforms_) {
@@ -132,6 +142,7 @@ private:
     Target* default_ = nullptr;
     std::vector<Platform*> platforms_;
     std::vector<Configuration*> configs_;
+    std::vector<PackRule*> pack_rules_;
 };
 
 } // namespace build

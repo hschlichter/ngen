@@ -16,8 +16,8 @@ auto LightingPass::init(RhiDevice* dev, uint32_t imageCount, RhiExtent2D extent,
     device = dev;
     sceneColorFormat = colorFormat;
 
-    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/lighting.vert.spv");
-    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/lighting.frag.spv");
+    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/lighting.vert");
+    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/lighting.frag");
 
     std::array<RhiDescriptorBinding, 6> bindings = {{
         {.binding = 0, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},

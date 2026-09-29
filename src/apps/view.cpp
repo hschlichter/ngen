@@ -264,8 +264,8 @@ auto main(int argc, char* argv[]) -> int {
     }
     SDL_DestroyProperties(windowProps);
 
-    // Compiled shaders live next to the executable; resolve shader paths from there.
-    setShaderSearchPath(SDL_GetBasePath());
+    // Shaders are packed assets next to the executable: <out_dir>/packs/<asset id>.
+    setShaderPackRoot(std::string(SDL_GetBasePath()) + "packs");
 
     // Job system
     JobSystem::init();

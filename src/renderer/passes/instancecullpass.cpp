@@ -47,7 +47,7 @@ struct ScatterPassData {
 } // namespace
 
 auto InstanceCullPass::init(RhiDevice* device) -> bool {
-    shader = loadShaderModule(device, RhiShaderStage::Compute, "shaders/instancecull.comp.spv");
+    shader = loadShaderModule(device, RhiShaderStage::Compute, "shaders/instancecull.comp");
     if (shader == nullptr) {
         return false;
     }

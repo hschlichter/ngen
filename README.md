@@ -80,6 +80,7 @@ Each library documents its design and rules in a README next to the code:
   rules, shadows, observation.
 - [`src/rpc/README.md`](src/rpc/README.md) — how ngen processes and agents talk: JSON-RPC over loopback TCP, discovery, threading, adding a method, `ngen-rpc`.
 - [`src/build/README.md`](src/build/README.md) — the self-hosted build system: framework, IR, runner, bootstrap.
+- [`src/pack/README.md`](src/pack/README.md) — packed assets: asset ids, packers and their rules, caching.
 
 `docs/` holds plans and design history; code and library READMEs do not depend on it.
 
@@ -178,7 +179,7 @@ python3 external/openusd/build_scripts/build_usd.py \
 The engine is built by its own self-hosted build system (`ngen-build`). Requires `clang++` with C++23 support, the Vulkan SDK and `glslc`. OpenUSD
 must be built first (see above).
 
-Bootstrap `ngen-build` once (and again whenever `src/build/bootstrap.cpp` changes), then build:
+Bootstrap `ngen-build` once (and again whenever `src/build/bootstrap.cpp` or the IR format in `src/build/ir/schema.hpp` changes), then build:
 
 ```bash
 mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/bootstrap.cpp
@@ -186,7 +187,8 @@ mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/boo
 ```
 
 `ngen-build` takes the platform (`-p`) and config (`-c`) on every call; configs are `debug`, `release` and `gamerelease`. Binaries land in
-`_out/<platform>/<config>/`, so the viewer is `_out/linux-vulkan/debug/ngen-view`. Shaders are compiled from GLSL to SPIR-V by `glslc`.
+`_out/<platform>/<config>/`, so the viewer is `_out/linux-vulkan/debug/ngen-view`. Shaders are packed assets: `ngen-packer-shader` compiles
+them from GLSL to SPIR-V with `glslc`, into `_out/<platform>/<config>/packs/shaders/` (`src/pack/README.md`).
 `./_out/ngen-build -h` lists every flag (`--clean`, `--rebuild`, `--list`, `--compile-commands`, …); `format` and `tidy` are targets. For day-to-day
 use, `ngen-cli` (next section) remembers the platform and config for you.
 

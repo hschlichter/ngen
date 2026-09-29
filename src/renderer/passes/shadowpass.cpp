@@ -25,8 +25,8 @@ constexpr std::array<RhiDescriptorBinding, 1> instanceBindings = {{
 auto ShadowPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFormat) -> bool {
     using enum RhiFormat;
 
-    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/shadow.vert.spv");
-    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/shadow.frag.spv");
+    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/shadow.vert");
+    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/shadow.frag");
 
     std::array<RhiVertexAttribute, 1> vertexAttrs = {{
         {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0}, // position-only stream
