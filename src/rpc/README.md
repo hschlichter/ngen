@@ -7,7 +7,7 @@ discovery files.
 
 | Part | Files | Depends on |
 |---|---|---|
-| Core | `core/rpcframe.*` (frames), `core/rpcprotocol.*` (JSON-RPC messages, error codes), `core/rpcsocket.*` (loopback TCP), `core/rpcserver.*` (listening endpoint with an I/O thread), `core/rpcclient.*` (blocking client), `core/rpcdiscovery.*` (discovery files) | the standard library and header-only nlohmann/json (`external/json`) |
+| Core | `core/rpcframe.*` (frames), `core/rpcprotocol.*` (JSON-RPC messages, error codes), `core/rpcsocket.*` (loopback TCP), `core/rpcserver.*` (an endpoint with an I/O thread that listens, connects out, or both), `core/rpcclient.*` (blocking client), `core/rpcdiscovery.*` (discovery files) | the standard library and header-only nlohmann/json (`external/json`) |
 | Engine layer | `rpcregistry.*` (methods, parameter schemas, `rpc.*` builtins), `rpcresponder.*` (replies that can complete later), `rpcendpoint.*` (server + discovery + main-thread dispatch) | the core, `src/obs` |
 | Tool | `src/apps/rpc.cpp` (`ngen-rpc`) | the core |
 
@@ -35,6 +35,11 @@ back to the working directory. Ports are chosen by the OS.
 
 - **The I/O thread** (`RpcServer`) accepts connections, reads frames, and writes queued replies. Any thread may queue a message. A caller never
   blocks on a slow client: a client whose unread replies pass 256 MB is dropped.
+- **Connecting out.** `connect(port)` opens a connection that the same I/O thread serves like an accepted one, so requests, notifications and
+  responses work the same both ways. `startWithoutListening()` runs the thread with no listening socket, for a process that only connects out, such
+  as ngen-view's `AssetClient`. `RpcClient` stays the blocking client for command-line tools.
+- **Pacing a sender.** `queuedBytes(connection)` says how much is queued and not yet written, and a drain handler (`setDrainHandler`) runs on the I/O
+  thread after a write leaves a connection's queue at or below a threshold. The asset server streams packed data this way within a fixed window.
 - **Dispatch** (`RpcEndpoint`). Requests are queued by the I/O thread and run by `drain()` on the thread that owns the data. ngen-view calls it on
   the main thread, where session commands run. Each drain runs calls for at most 2 ms (and at least one call), so a flood can't starve the frame.
 - **Responders.** A handler gets an `RpcResponder`. It either answers at once, or keeps a copy and completes it later: a screenshot after its

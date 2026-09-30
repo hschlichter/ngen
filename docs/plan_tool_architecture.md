@@ -1,4 +1,4 @@
-# Tool architecture: RPC, packs, build server, editor, introspection tool
+# Tool architecture: RPC, asset server, editor, introspection tool
 
 **Status. Draft.**
 
@@ -13,9 +13,9 @@ architecture in few steps; each step lists what it knowingly leaves missing. It 
   server, and ngen-view receives the packed result as a delta against what it has loaded.
 - **Interactive transforms start in the view.** ngen-view applies a gizmo drag at once and sends the transform to the editor, which authors it into
   the edit layer so it can be saved.
-- **The build server packs.** It is `ngen-build --serve`, and the packer runs only there: USD scenes, meshes, textures, materials, and later physics and
-  LOD. ngen-view and every other tool request packs asynchronously and are told when a result is ready.
-- **One RPC system** connects the engine, the editor, the build server, the introspection tool and agents. Agents use it to query state and data and to
+- **The asset server packs.** It is `ngen-asset-server`, separate from the build system, and the packer runs only there: USD scenes, meshes, textures, materials, and later physics and
+  LOD. ngen-view and every other tool request assets asynchronously and receive the packed data streamed over the connection.
+- **One RPC system** connects the engine, the editor, the asset server, the introspection tool and agents. Agents use it to query state and data and to
   drive the engine and the editor.
 - **The introspection tool** (`ngen-introspect`) is where data is captured and examined in depth.
   - It has its own window and shows data queried from a running ngen-view.
@@ -95,8 +95,8 @@ lookup in the view's manifest.
       │ to repack       │ transform edits  │ queries, trace      │ queries, control
       ▼                 │                  ▼                     ▼
    ┌─────────────────────┐        ┌───────────────────────────────────────────┐
-   │ ngen-build --serve  │        │ ngen-view (no USD)                        │
-   │ build graph,        │──────► │ layer stack, sub-packs, variants,         │
+   │ ngen-asset-server   │        │ ngen-view (no USD)                        │
+   │ pack.cpp rules,     │──────► │ layer stack, sub-packs, variants,         │
    │ packers, pack cache │ deltas │ components; manifest of what is loaded;   │
    │ (content hashed)    │        │ gizmos applied locally                    │
    └─────────────────────┘        └───────────────────────────────────────────┘
@@ -108,7 +108,7 @@ lookup in the view's manifest.
 - **Authored in the editor** (property window, layer operations, adding prims, swapping a texture):
   - The editor authors the change into its in-memory stage; nothing is written to disk until a save.
   - Every ngen-view showing that scene receives the result as a delta and applies it on arrival.
-  - **How an unsaved edit becomes packed data is not decided yet.** Packers are standalone programs that read their sources, and the build server
+  - **How an unsaved edit becomes packed data is not decided yet.** Packers are standalone programs that read their sources, and the asset server
     is reached only through RPC; the design comes once the architecture is in ([plan_editor_split.md](plan_editor_split.md), Open questions).
 - **Interactive in the view** (gizmo drags, and later other viewport tools):
   - The view applies the transform at once, as a local opinion at the top of its stack, and draws from it.
@@ -117,7 +117,7 @@ lookup in the view's manifest.
   - When the packed result of that edit arrives as a delta, the view drops its local opinion. The picture doesn't change, because the packed value
     is the same. How the edit becomes packed data follows the authored path above, which is still open; the local opinion stays until then.
   - Drag frames can be coalesced: the view sends the latest value, and the editor authors on release or at a fixed rate.
-  - No packing is on the per-frame path, and the build server has no special fast path.
+  - No packing is on the per-frame path, and the asset server has no special fast path.
 
 ### Deltas
 
@@ -143,12 +143,14 @@ Locked unless marked open.
 1. **Transport: TCP on loopback**, behind a small transport interface.
 2. **Encoding: JSON-RPC 2.0 in length-prefixed frames, with optional binary attachments** for deltas and bulk data.
 3. **Topology: direct connections plus discovery files (`_out/run/`), no broker.**
-4. **Packs travel by reference locally.** They live in the build server's cache (`_out/<platform>/<config>/packs/`). Messages carry pack ids and paths, and the view
-   reads the packed files.
-5. **All packing happens in the build server, through build edges only.** There is no in-memory fast path. The editor and the view never pack.
+4. **Packed data is streamed.** The asset server's cache (`_out/<platform>/<config>/assets/`) is its own; it sends a packed asset's bytes over the
+   connection, and the view never reads the server's files. A view on another machine then needs only a transport that reaches it.
+5. **All packing happens in the asset server, through its packer jobs only.** There is no in-memory fast path. The editor and the view never pack.
    Interactive edits don't need packing on the per-frame path, because the view applies them locally first (Two edit paths).
 6. **What the view knows:** layer packs, sub-packs, variant sets and components. The packer resolves the rest of USD composition.
-7. **The build server is a mode of `ngen-build`: `ngen-build --serve`.** It uses the same graph code, and there is one tool to bootstrap.
+7. **The asset server is its own program, `ngen-asset-server`,** using nothing from the build system; pack rules live in the root `pack.cpp`. It
+   replaced a build-server mode of `ngen-build` ([plan_build_server.md](plan_build_server.md), superseded) to keep builds and packing apart. A unified
+   build and asset server remains the likely end state.
 8. **Windows split by what they are about.**
    - **In ngen-view: windows about its own live frame, or ones that need the viewport.** Frame Graph, Performance, Counters, Culling, Camera, Render
      Debug, and the Debug View legend with the cursor readout.
@@ -159,7 +161,8 @@ Locked unless marked open.
 9. **Library boundaries, enforced by `build.cpp`'s link graph.**
    - **Engine libraries** link no pxr: `rhi`, `renderer`, and a new runtime scene library that composes layer packs and variants and resolves the
      hierarchy.
-   - **The USD packer** (`src/pack/usd/`, grown out of `USDRenderExtractor` and the loading half of `USDScene`) links into `ngen-build` only.
+   - **The USD packer** (`src/asset/pack/usd/`, grown out of `USDRenderExtractor` and the loading half of `USDScene`) links into the USD packer
+     program, `ngen-packer-usd`, only.
    - **USD editing** (`SceneUpdater`, undo, the editor windows) links into the editor only.
 10. **Threading in ngen-view.** One I/O thread per endpoint. Deltas and pack loads are applied on the main thread at a fixed point in the frame, then
     reach the render thread through the existing snapshot and upload hand-off.
@@ -174,7 +177,7 @@ Plan: [plan_rpc.md](plan_rpc.md).
 - **Delivers:**
   - `src/rpc/`, in two layers:
     - a core with no dependencies beyond the standard library and header-only nlohmann/json (transport, framing, JSON-RPC, discovery files, calls
-      in both directions), which the build server in `src/build/` also uses
+      in both directions), which the asset server also uses
     - an engine layer on top (method registry with parameter schemas, `rpc.describe`, dispatch onto the main and render threads)
   - `ngen-rpc`, the command-line client: `list`, `describe`, `call`
   - ngen-view as an endpoint:
@@ -186,41 +189,34 @@ Plan: [plan_rpc.md](plan_rpc.md).
   - `view.camera.set` plus `view.screenshot` equals the flag-driven PNG
   - `rpc.describe` lists every method with its schema
 - **Gaps:**
-  - request/response only, with no subscriptions or streams; step 2's `pack.ready` is a plain call back over the symmetric connection
+  - request/response only, with no subscriptions or streams; step 2's `asset.ready` is a plain call back over the symmetric connection
   - bulk data is base64 in JSON
   - loopback only, no authentication
 
-### Step 2: packs and the build server
+### Step 2: assets and the asset server
 
 - **Delivers:**
   - **The pack formats** the USD packer writes: asset packs (mesh, texture, material), layer packs with variant
     alternatives, sub-packs, and a scene manifest (layer stack, variant sets and default selections, sub-pack list, scene settings). Components to
     start: transform with parent, mesh, material, light, camera, visibility.
   - **Pack rules and packers** ([plan_pack_rules.md](plan_pack_rules.md)):
-    - `pack_rule` per asset type in `build.cpp`, and one packer program per type (shader, USD, texture, …)
+    - pack rules per asset type in the root `pack.cpp`, by file extension, and one packer program per type (shader, USD, texture, …)
     - stable path asset ids (USD's choice), with the content hash as the version
     - depfiles of the files each packer read, and a reverse index
-    - static pack targets, including the core pack ngen-view always loads
-  - **Shaders become packed assets, loaded asynchronously and hot reloaded** (its own plan, `plan_async_shaders.md`).
-    - The core pack holds the shaders every frame needs, and every other shader is requested at runtime.
+  - **Shaders become packed assets, loaded asynchronously** (its own plan, `plan_async_shaders.md`).
+    - ngen-view requests the shaders every frame needs at start-up and waits for them; other shaders are requested on first use.
     - A **renderer-level pipeline registry** creates pipelines: passes ask for a pipeline by description plus shader ids, not in `init()`. A
       pipeline whose shader hasn't arrived is pending, and its pass skips it or uses a fallback.
-    - When a shader id gets a new version, whether from a request or from the server's watcher after a source edit, the registry rebuilds every
-      pipeline using it. The old pipelines retire through the `DeletionQueue`.
-    - The core pack only supplies first versions; a newer version from the server wins.
     - The RHI stays unchanged. RHI-level in-place pipeline rebuilds were the alternative; they would make the backend keep engine-level state.
-  - **The build server** ([plan_build_server.md](plan_build_server.md)), the default path for every build:
-    - `ngen-build` and `ngen-cli` start `ngen-build --serve` when none is running and send builds as requests; `--no-server` builds in-process
-    - keeps the graph and build log resident and registers in discovery
-    - takes `build.run` (targets and variant, with progress), `build.targets` and `build.variants`
-    - `pack.request` for a scene or asset, answered at once. Then `pack.ready` (or `pack.failed`) arrives per asset as each finishes, so a scene
-    loads fast and its sub-assets arrive as they're done
-    - watches the sources of packed assets; the reverse index finds what a changed file affects, the server repacks it, and it sends `pack.ready`
-      with the new version to the connected views
+  - **The asset server** ([plan_asset_server.md](plan_asset_server.md)), `ngen-asset-server`, one per variant:
+    - started by hand; registers in discovery, and keeps its own cache of packed assets
+    - `asset.request` for a scene or assets, answered at once. Then each asset's data is streamed, followed by `asset.ready` (or `asset.failed`), as
+      each finishes, so a scene loads fast and its sub-assets arrive as they're done
+    - packs only on request: no watcher repacks, and no repack after a `pack.cpp` change until the next request
   - **The runtime scene library** (no pxr): layer stack and variant composition, sub-pack instancing, components and the transform hierarchy. It
     replaces `RenderWorld` as the renderer's input.
   - **ngen-view:**
-    - asks the server for its scene's packs, or reads packed files directly for offline runs
+    - asks the server for its scene's packs, and doesn't start without a server
     - exposes `scene.layers.set` (mute, unmute, order) and `scene.variants.set`, both applied without a repack
   - the engine libraries stop linking pxr
 - **Verification:**
@@ -229,8 +225,6 @@ Plan: [plan_rpc.md](plan_rpc.md).
   - muting a layer through `scene.layers.set` renders the same image as the same stage packed with that layer muted
   - `scene.variants.set` on a test scene with a variant set renders the same image as the stage packed with that selection
   - the engine libraries link no `libusd_*` (link graph and `nm`)
-  - hot reload: editing `shaders/lighting.frag` while Sponza runs changes the image within a second, with no restart and validation clean. A syntax
-    error keeps the old shader and reports glslc's message as a `pack.failed` event
 - **Gaps:**
   - the in-view editor windows still use USD in-process, so the ngen-view binary still links pxr until step 3
   - an edit in the in-view editor repacks the whole layer and reloads the scene: no deltas yet
@@ -264,7 +258,7 @@ Plan: [plan_editor_split.md](plan_editor_split.md).
     (byte-identical before and after)
   - `scene.save` writes the transform to the layer file
   - undo in the editor moves the object back in the view through a delta
-  - swapping a texture in a layer shows the new texture after `pack.ready`, with the old one until then
+  - swapping a texture in a layer shows the new texture after `asset.ready`, with the old one until then
   - a forced version mismatch resyncs to an image byte-identical to a fresh load
   - `nm`/`ldd` on ngen-view shows no `libusd_*`
 - **Gaps:**
@@ -300,20 +294,22 @@ It depends only on step 1, so it can run alongside steps 2–3.
 
 ## Cross-cutting
 
-- **Naming: pack and packer throughout.** The pack cache, the `pack.*` methods and `src/pack/`.
+- **Naming: assets are the system, packing is the process.** Requesting, caching, streaming and holding are asset: `src/asset/`,
+  `ngen-asset-server`, `AssetClient`, the `asset.*` methods and the `assets/` cache. Turning a source into its engine-ready form is pack: packers,
+  pack rules in `pack.cpp`, `src/asset/pack/`, and the packed outputs, such as layer packs and sub-packs.
 - **ngen-cli:** the tool table gains `rpc` (step 1), `editor` (step 3) and `introspect` (step 4).
 - **Agents:** `AGENTS.md` and the `run-headless` skill learn `ngen-rpc` in step 1, and the editor methods in step 3. Offline runs stay the default for
-  reproducible verification. From step 2 on, an offline run needs the packs first, from a running server or a one-shot `ngen-build` pack target.
+  reproducible verification. From step 2 on, a view run needs a running asset server, started by hand.
 - **Documentation:**
   - `src/rpc/README.md`: the protocol, naming and threading
-  - `src/pack/README.md`: the formats, the composition rule (layers and variants), stable ids, deltas and the two edit paths
+  - `src/asset/README.md`: the formats, the composition rule (layers and variants), stable ids, deltas and the two edit paths
   - `src/renderer/README.md` changes in steps 2–3
 - **Observability of the plumbing:** RPC connections and errors, pack requests and times, deltas applied or rejected, resyncs, and local opinions
   pending are events. Queue depths and latencies are records.
 
 ## Known gaps (end state of this umbrella)
 
-- No authentication or encryption. Loopback only, so no remote engine, devkit or pack bytes over the wire.
+- No authentication or encryption. Loopback only, so no remote engine or devkit, although pack data already travels over the connection.
 - No broker.
 - No multi-editor semantics; conflicting interactive edits from several views are last-writer-wins.
 - No session recording or replay.
@@ -340,4 +336,6 @@ It depends only on step 1, so it can run alongside steps 2–3.
 - **Physics and LOD packers and components.** Trigger: the physics or LOD work starts.
 - **Meshlets as a pack step.** Trigger: step 2 lands (`notes.md` ties meshlets to asset packing).
 - **Shader reflection and pipeline state tables**, deferred from [plan_introspection.md](plan_introspection.md). The shader packer writes the
-  data, and the pipeline registry uses it to handle interface changes on hot reload. Trigger: `plan_async_shaders.md` lands.
+  data, and the pipeline registry uses it to handle interface changes on hot reload. Trigger: hot reload lands.
+- **Source edits reaching running views** (hot reload of shaders and other assets). Nothing packs without a request. Trigger: the architecture is up
+  and running.

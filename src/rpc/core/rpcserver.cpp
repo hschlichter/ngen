@@ -34,6 +34,47 @@ auto RpcServer::setConnectionHandler(ConnectionHandler handler) -> void {
     connectionHandler = std::move(handler);
 }
 
+auto RpcServer::setDrainHandler(DrainHandler handler, size_t threshold) -> void {
+    drainHandler = std::move(handler);
+    drainThreshold = threshold;
+}
+
+auto RpcServer::startWithoutListening() -> void {
+    wakeFd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    running = true;
+    ioThread = std::thread([this] { ioLoop(); });
+}
+
+auto RpcServer::connect(uint16_t port) -> std::expected<ConnectionId, std::string> {
+    auto fd = rpc::connectLoopback(port);
+    if (!fd) {
+        return std::unexpected(fd.error());
+    }
+    rpc::setNonBlocking(*fd);
+    ConnectionId id = 0;
+    {
+        std::lock_guard lock(mutex);
+        id = nextConnectionId++;
+        auto connection = std::make_unique<Connection>();
+        connection->fd = *fd;
+        connections[id] = std::move(connection);
+    }
+    if (connectionHandler) {
+        connectionHandler(id, true);
+    }
+    wake();
+    return id;
+}
+
+auto RpcServer::queuedBytes(ConnectionId id) -> size_t {
+    std::lock_guard lock(mutex);
+    auto it = connections.find(id);
+    if (it == connections.end()) {
+        return 0;
+    }
+    return it->second->outgoing.size() - it->second->outgoingOffset;
+}
+
 auto RpcServer::start(uint16_t port) -> std::expected<uint16_t, std::string> {
     uint16_t bound = 0;
     auto fd = rpc::listenLoopback(port, bound);
@@ -229,21 +270,29 @@ auto RpcServer::ioLoop() -> void {
             auto id = ids[i];
             auto revents = fds[i + 2].revents;
             if ((revents & POLLOUT) != 0) {
-                std::lock_guard lock(mutex);
-                auto it = connections.find(id);
-                if (it != connections.end()) {
-                    auto& connection = *it->second;
-                    auto pending = connection.outgoing.size() - connection.outgoingOffset;
-                    auto written = ::send(connection.fd, connection.outgoing.data() + connection.outgoingOffset, pending, MSG_NOSIGNAL);
-                    if (written > 0) {
-                        connection.outgoingOffset += (size_t) written;
-                        if (connection.outgoingOffset == connection.outgoing.size()) {
-                            connection.outgoing.clear();
-                            connection.outgoingOffset = 0;
+                bool drained = false;
+                {
+                    std::lock_guard lock(mutex);
+                    auto it = connections.find(id);
+                    if (it != connections.end()) {
+                        auto& connection = *it->second;
+                        auto pending = connection.outgoing.size() - connection.outgoingOffset;
+                        auto written = ::send(connection.fd, connection.outgoing.data() + connection.outgoingOffset, pending, MSG_NOSIGNAL);
+                        if (written > 0) {
+                            connection.outgoingOffset += (size_t) written;
+                            if (connection.outgoingOffset == connection.outgoing.size()) {
+                                connection.outgoing.clear();
+                                connection.outgoingOffset = 0;
+                            }
+                            drained = connection.outgoing.size() - connection.outgoingOffset <= drainThreshold;
+                        } else if (written < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+                            connection.closing = true;
                         }
-                    } else if (written < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-                        connection.closing = true;
                     }
+                }
+                // Outside the lock: the handler sends more.
+                if (drained && drainHandler) {
+                    drainHandler(id);
                 }
             }
             if ((revents & (POLLIN | POLLHUP | POLLERR)) == 0) {

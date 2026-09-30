@@ -117,7 +117,7 @@ Proposed; pushback welcome.
    - allocations in the geometry pool per mesh, with a free list
    - patches to the material table and texture slots, with the descriptor set rewritten only for changed slots
    - instance buffer edits for added and removed entities, through the existing dirty-span upload path
-4. **The build server delta:** on `pack.ready` for a layer pack, the server sends each interested view the delta against the version that view
+4. **The build server delta:** on `asset.ready` for a layer pack, the server sends each interested view the delta against the version that view
    reported, built from the old and new layer packs.
 5. **The in-view editor through the server:** `SceneUpdater`'s authored edits reach packed data by the route still to be designed (Decision 1, Open
    questions) instead of re-extracting in-process. The view's scene changes only through deltas.
@@ -149,7 +149,7 @@ Proposed; pushback welcome.
   no `GeometryPoolBuilt` or texture upload.
 - **Adding a prim that references an existing mesh** loads no new asset. The delta lists the new entity, and the geometry pool doesn't grow.
 - **Removing a prim** frees its pool allocation if nothing else uses the mesh. The Memory window's pool usage drops by the mesh's size.
-- **Swapping a texture** in a layer shows the new texture after `pack.ready`, and the old one until then. Only that texture's slot is rewritten.
+- **Swapping a texture** in a layer shows the new texture after `asset.ready`, and the old one until then. Only that texture's slot is rewritten.
 - **Resync:** a delta forced to the wrong base triggers resync, and the result renders byte-identical to a fresh load of the same state.
 - **Parity:** after a scripted sequence of edits, the image is byte-identical to a fresh load of the saved scene.
 

@@ -103,26 +103,6 @@ Both follow the cxx wrapper pattern: own a `shared_ptr<Target>`, attach themselv
   command-less edge (`kEdgeFlagPhony`) with a virtual stamp output, so `ngen-build -p X -c Y examples` builds every
   dependency. Dependencies use the ordinary `Target::depend_on`. See `src/build/framework/phony.hpp`.
 
-### Packing (`PackRule`, `Pack`)
-
-`framework/packrule.hpp`. A **pack rule** says how one type of asset is packed:
-- glob patterns over asset ids (project-relative paths)
-- the packer program target
-- parameters, fixed or per configuration (`per_config`)
-- a version
-
-Rules are registered with `Project::pack_rule`. A **`Pack`** target lists assets. The emitter turns each asset into a pack job edge (flag
-`kEdgeFlagPack`, named `pack:<asset id>`) that runs its first matching rule's packer and writes `<out_dir>/packs/<asset id>`. The pack itself
-becomes a phony edge over its jobs.
-
-- **The IR carries the resolved rules** (`IR::pack_rules`) and the packs root (`IR::packs_root`).
-- **Caching:** a job's command holds the rule's name, version and parameters. Its inputs are the source and the packer binary, and its depfile
-  lists every file the packer read.
-- **Reverse index:** after every build the runner rewrites `<packs_root>/.ngen-packdeps` from the log, one `<file>\t<asset id>` line per file
-  a pack job read (`run/execute.hpp`).
-
-The packer contract is in `src/pack/README.md`.
-
 ### IR transport (`src/build/ir/`)
 
 The graph stage walks the `Project` and produces one `ir::IR` per `(platform, config)` variant. Commands are **fully baked** into shell strings at emit

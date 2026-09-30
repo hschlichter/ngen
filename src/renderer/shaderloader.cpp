@@ -1,40 +1,64 @@
 #include "shaderloader.h"
 
+#include "assetclient.h"
 #include "rhidevice.h"
 
-#include <cstddef>
-#include <fstream>
-#include <ios>
+#include <algorithm>
+#include <array>
 #include <print>
 #include <string>
-#include <vector>
 
-static std::string shaderPackRoot = "packs";
+static const AssetClient* shaderSource = nullptr;
 
-auto setShaderPackRoot(std::string dir) -> void {
-    shaderPackRoot = std::move(dir);
+static const std::array<std::string, 17> startupShaders = {
+    "shaders/debug.frag",
+    "shaders/debug.vert",
+    "shaders/debugview.comp",
+    "shaders/debugview.frag",
+    "shaders/debugview.geom",
+    "shaders/debugview.vert",
+    "shaders/depthonly.vert",
+    "shaders/fxaa.comp",
+    "shaders/gbuffer.frag",
+    "shaders/gbuffer.vert",
+    "shaders/gizmo.frag",
+    "shaders/gizmo.vert",
+    "shaders/instancecull.comp",
+    "shaders/lighting.frag",
+    "shaders/lighting.vert",
+    "shaders/shadow.frag",
+    "shaders/shadow.vert",
+};
+
+auto startupShaderIds() -> std::span<const std::string> {
+    return startupShaders;
+}
+
+auto setShaderSource(const AssetClient* source) -> void {
+    shaderSource = source;
 }
 
 auto loadShaderModule(RhiDevice* device, RhiShaderStage stage, const char* id) -> RhiShaderModule* {
-    auto resolved = shaderPackRoot + "/" + id;
-    std::ifstream file(resolved, std::ios::binary | std::ios::ate);
-    if (!file) {
-        std::println(stderr, "Failed to open packed shader {}: {}", id, resolved);
+    if (std::find(startupShaders.begin(), startupShaders.end(), id) == startupShaders.end()) {
+        std::println(stderr, "Shader {} is not in startupShaderIds(); add it there so it is requested at start-up", id);
         return nullptr;
     }
-
-    auto size = (size_t) file.tellg();
-    file.seekg(0, std::ios::beg);
-
-    std::vector<std::byte> code(size);
-    if (!file.read((char*) code.data(), (std::streamsize) size)) {
-        std::println(stderr, "Failed to read packed shader: {}", resolved);
+    if (shaderSource == nullptr) {
+        std::println(stderr, "No shader source set; cannot load {}", id);
+        return nullptr;
+    }
+    const auto* asset = shaderSource->find(id);
+    if (asset == nullptr) {
+        std::println(stderr, "Shader {} was not packed:", id);
+        for (const auto& line : shaderSource->errors(id)) {
+            std::println(stderr, "  {}", line);
+        }
         return nullptr;
     }
 
     RhiShaderDesc desc = {
         .stage = stage,
-        .code = code,
+        .code = asset->bytes,
         .debugName = id,
     };
     auto* module = device->createShaderModule(desc);

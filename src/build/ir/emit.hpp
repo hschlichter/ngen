@@ -53,7 +53,6 @@
 #include "../framework/cxx/target.hpp"
 #include "../framework/cxx/toolchain.hpp"
 #include "../framework/glob.hpp"
-#include "../framework/packrule.hpp"
 #include "../framework/path.hpp"
 #include "../framework/phony.hpp"
 #include "../framework/project.hpp"
@@ -220,10 +219,6 @@ public:
             }
         }
 
-        if (auto rules = emit_pack_rules(); !rules) {
-            return std::unexpected(rules.error());
-        }
-
         if (auto* def = project_.default_target()) {
             if (auto it = name_to_edge_.find(def->name()); it != name_to_edge_.end()) {
                 ir_.default_targets.push_back(it->second);
@@ -288,8 +283,6 @@ private:
             output = emit_tool(*tool, order_only);
         } else if (auto* ph = target->extension<Phony>()) {
             output = emit_phony(*ph, order_only);
-        } else if (auto* pk = target->extension<Pack>()) {
-            output = emit_pack(*pk);
         } else if (auto* obj = target->extension<cxx::ObjectFile>()) {
             output = emit_object_file(*obj);
         } else if (auto* cxx_t = target->extension<cxx::Target>()) {
@@ -567,104 +560,6 @@ private:
         return stamp;
     }
 
-    // The project's pack rules resolved for this variant (packer paths, per-config params). Done once; emit_pack
-    // reads the resolved rules.
-    auto emit_pack_rules() -> std::expected<void, Error> {
-        if (packs_resolved_) {
-            return {};
-        }
-        packs_resolved_ = true;
-        ir_.packs_root = (variant_.out_dir / "packs").string();
-        for (auto* rule : project_.pack_rules()) {
-            if (!rule->packer_target()) {
-                return std::unexpected(Error{"pack rule " + rule->name() + " has no packer"});
-            }
-            auto packer = emit_target(rule->packer_target());
-            if (!packer) {
-                return std::unexpected(packer.error());
-            }
-            PackRule resolved;
-            resolved.name = rule->name();
-            resolved.patterns = rule->patterns();
-            resolved.packer = packer->string();
-            for (const auto& [key, value] : rule->params()) {
-                resolved.params.push_back(key + "=" + value.resolve(variant_.config->name()));
-            }
-            resolved.version = rule->version_number();
-            ir_.pack_rules.push_back(std::move(resolved));
-        }
-        return {};
-    }
-
-    // The first rule whose patterns match the asset id, in registration order.
-    auto find_pack_rule(const std::string& asset_id) const -> const PackRule* {
-        for (const auto& rule : ir_.pack_rules) {
-            for (const auto& pattern : rule.patterns) {
-                if (build::detail::glob_match_view(pattern, asset_id)) {
-                    return &rule;
-                }
-            }
-        }
-        return nullptr;
-    }
-
-    // One pack job per asset, and a phony edge named after the pack that depends on all of them.
-    //
-    // A job runs the rule's packer on one asset:
-    //     <packer> --rule <name> --rule-version <n> --asset <id> --source <id> --out <packs>/<id> --depfile <packs>/<id>.d
-    //              [--param key=value]...
-    // Its output is the packed asset at <packs>/<id>. Inputs are the source and the packer binary, and the depfile
-    // lists every other file the packer read. The rule's name, version and parameters are in the command, so
-    // changing any of them reruns the job.
-    auto emit_pack(Pack& target) -> std::expected<Path, Error> {
-        if (auto rules = emit_pack_rules(); !rules) {
-            return std::unexpected(rules.error());
-        }
-        std::vector<std::string> outputs;
-        for (const auto& asset : target.asset_paths) {
-            auto id = asset.string(); // generic form: forward slashes
-            const auto* rule = find_pack_rule(id);
-            if (!rule) {
-                return std::unexpected(Error{"pack " + target.name() + ": asset " + id + " matches no pack rule"});
-            }
-            auto output = ir_.packs_root + "/" + id;
-            outputs.push_back(output);
-            if (name_to_edge_.contains("pack:" + id)) {
-                continue;
-            }
-            std::vector<std::string> argv = {rule->packer, "--rule", rule->name, "--rule-version", std::to_string(rule->version), "--asset", id, "--source", id, "--out", output, "--depfile", output + ".d"};
-            for (const auto& param : rule->params) {
-                argv.push_back("--param");
-                argv.push_back(param);
-            }
-            std::string command;
-            for (const auto& token : argv) {
-                command += (command.empty() ? "" : " ") + shell_quote(token);
-            }
-            ensure_dirs_.insert(Path(output).parent_path().string());
-            Edge edge;
-            edge.name = "pack:" + id;
-            edge.command = std::move(command);
-            edge.inputs = {id, rule->packer};
-            edge.outputs = {output};
-            edge.depfile = output + ".d";
-            edge.description = "PACK " + id;
-            edge.pool = kPoolDefault;
-            edge.flags = kEdgeFlagPack;
-            add_edge(std::move(edge));
-        }
-        auto stamp = variant_.out_dir / ("." + target.name() + ".stamp");
-        Edge edge;
-        edge.name = target.name();
-        edge.inputs = std::move(outputs);
-        edge.outputs = {stamp.string()};
-        edge.description = "PHONY " + target.name();
-        edge.pool = kPoolDefault;
-        edge.flags = kEdgeFlagPhony;
-        add_edge(std::move(edge));
-        return stamp;
-    }
-
     auto emit_global_tool(Tool& target) -> void {
         Command command = substitute(target.argv_for_variant(variant_), target.tool_inputs, target.tool_outputs, Path{});
         Edge edge;
@@ -689,7 +584,6 @@ private:
     std::unordered_map<std::string, Path> primary_output_;
     std::set<std::string> visiting_;
     std::set<std::string> ensure_dirs_;
-    bool packs_resolved_ = false;
 };
 
 } // namespace detail

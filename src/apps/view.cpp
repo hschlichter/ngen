@@ -1,3 +1,4 @@
+#include "assetclient.h"
 #include "camera.h"
 #include "culling.h"
 #include "debugdraw.h"
@@ -219,6 +220,21 @@ auto main(int argc, char* argv[]) -> int {
         OBS_EVENT("Engine", "BusStarted", "ObservationBus").field("output", obsOutputPath);
     }
 
+    // Shaders come streamed from this variant's asset server; the view doesn't start without one. The variant is
+    // the directory the binary lives in, _out/<platform>/<config>/. The request goes out now and is waited for
+    // just before the renderer needs the shaders, so packing overlaps loading the scene.
+    AssetClient assetClient;
+    {
+        std::error_code ec;
+        auto bin = std::filesystem::canonical("/proc/self/exe", ec).parent_path();
+        auto variant = bin.parent_path().filename().string() + "/" + bin.filename().string();
+        if (auto connected = assetClient.connect(variant); !connected) {
+            std::println(stderr, "ngen-view: {}", connected.error());
+            return 1;
+        }
+    }
+    assetClient.request(startupShaderIds());
+
     USDScene usdScene;
     USDRenderExtractor usdExtractor;
     SceneQuerySystem sceneQuery;
@@ -264,8 +280,8 @@ auto main(int argc, char* argv[]) -> int {
     }
     SDL_DestroyProperties(windowProps);
 
-    // Shaders are packed assets next to the executable: <out_dir>/packs/<asset id>.
-    setShaderPackRoot(std::string(SDL_GetBasePath()) + "packs");
+    assetClient.wait(startupShaderIds());
+    setShaderSource(&assetClient);
 
     // Job system
     JobSystem::init();

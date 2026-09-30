@@ -81,7 +81,6 @@ inline auto serialize(const IR& ir) -> std::string {
 
     auto variant_ref = strings.intern(ir.variant);
     auto project_root_ref = strings.intern(ir.project_root);
-    auto packs_root_ref = strings.intern(ir.packs_root);
 
     struct PoolWire {
         std::uint32_t name_off;
@@ -139,25 +138,6 @@ inline auto serialize(const IR& ir) -> std::string {
         edge_wires.push_back(w);
     }
 
-    struct PackRuleWire {
-        std::uint32_t name_off, name_len;
-        std::uint32_t patterns_off, patterns_count;
-        std::uint32_t packer_off, packer_len;
-        std::uint32_t params_off, params_count;
-        std::uint32_t version;
-    };
-    std::vector<PackRuleWire> rule_wires;
-    rule_wires.reserve(ir.pack_rules.size());
-    for (const auto& r : ir.pack_rules) {
-        PackRuleWire w{};
-        std::tie(w.name_off, w.name_len) = strings.intern(r.name);
-        std::tie(w.patterns_off, w.patterns_count) = append_list(r.patterns);
-        std::tie(w.packer_off, w.packer_len) = strings.intern(r.packer);
-        std::tie(w.params_off, w.params_count) = append_list(r.params);
-        w.version = r.version;
-        rule_wires.push_back(w);
-    }
-
     auto pools_offset = kHeaderSize;
     auto pools_size = static_cast<std::uint32_t>(pool_wires.size()) * kPoolRecordSize;
     auto edges_offset = pools_offset + pools_size;
@@ -166,9 +146,7 @@ inline auto serialize(const IR& ir) -> std::string {
     auto refs_size = static_cast<std::uint32_t>(refs.size()) * kStringRefSize;
     auto default_targets_offset = refs_offset + refs_size;
     auto default_targets_size = static_cast<std::uint32_t>(ir.default_targets.size()) * 4;
-    auto pack_rules_offset = default_targets_offset + default_targets_size;
-    auto pack_rules_size = static_cast<std::uint32_t>(rule_wires.size()) * kPackRuleRecordSize;
-    auto string_table_offset = pack_rules_offset + pack_rules_size;
+    auto string_table_offset = default_targets_offset + default_targets_size;
     auto string_table_size = static_cast<std::uint32_t>(strings.bytes().size());
 
     std::string buf;
@@ -193,10 +171,6 @@ inline auto serialize(const IR& ir) -> std::string {
     put_u32(buf, variant_ref.second);
     put_u32(buf, project_root_ref.first);
     put_u32(buf, project_root_ref.second);
-    put_u32(buf, pack_rules_offset);
-    put_u32(buf, static_cast<std::uint32_t>(rule_wires.size()));
-    put_u32(buf, packs_root_ref.first);
-    put_u32(buf, packs_root_ref.second);
     assert(buf.size() == kHeaderSize);
 
     for (const auto& p : pool_wires) {
@@ -236,19 +210,6 @@ inline auto serialize(const IR& ir) -> std::string {
 
     for (auto idx : ir.default_targets) {
         put_u32(buf, idx);
-    }
-
-    for (const auto& r : rule_wires) {
-        put_u32(buf, r.name_off);
-        put_u32(buf, r.name_len);
-        put_u32(buf, r.patterns_off);
-        put_u32(buf, r.patterns_count);
-        put_u32(buf, r.packer_off);
-        put_u32(buf, r.packer_len);
-        put_u32(buf, r.params_off);
-        put_u32(buf, r.params_count);
-        put_u32(buf, r.version);
-        put_u32(buf, 0);
     }
 
     buf.append(strings.bytes());
