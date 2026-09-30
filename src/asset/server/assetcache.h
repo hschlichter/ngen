@@ -35,6 +35,9 @@ public:
 
     auto load(const std::filesystem::path& file) -> void;
 
+    // How many assets have a record.
+    auto size() -> size_t;
+
     // The packed file's hash (the asset's version) when the asset is up to date for this job; nullopt otherwise.
     auto upToDate(const std::string& id, uint64_t jobKey) -> std::optional<uint64_t>;
 

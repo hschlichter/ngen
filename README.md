@@ -80,7 +80,7 @@ Each library documents its design and rules in a README next to the code:
   rules, shadows, observation.
 - [`src/rpc/README.md`](src/rpc/README.md) — how ngen processes and agents talk: JSON-RPC over loopback TCP, discovery, threading, adding a method, `ngen-rpc`.
 - [`src/build/README.md`](src/build/README.md) — the self-hosted build system: framework, IR, runner, bootstrap.
-- [`src/pack/README.md`](src/pack/README.md) — packed assets: asset ids, packers and their rules, caching.
+- [`src/asset/README.md`](src/asset/README.md) — the asset system: asset ids, `ngen-asset-server`, its cache and stream, `AssetClient`, and packing (`pack.cpp` rules, packers).
 
 `docs/` holds plans and design history; code and library READMEs do not depend on it.
 
@@ -187,8 +187,9 @@ mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/boo
 ```
 
 `ngen-build` takes the platform (`-p`) and config (`-c`) on every call; configs are `debug`, `release` and `gamerelease`. Binaries land in
-`_out/<platform>/<config>/`, so the viewer is `_out/linux-vulkan/debug/ngen-view`. Shaders are packed assets: `ngen-packer-shader` compiles
-them from GLSL to SPIR-V with `glslc`, into `_out/<platform>/<config>/packs/shaders/` (`src/pack/README.md`).
+`_out/<platform>/<config>/`, so the viewer is `_out/linux-vulkan/debug/ngen-view`. Shaders are packed assets: the view requests them from
+`ngen-asset-server`, which runs `ngen-packer-shader` (GLSL to SPIR-V with `glslc`) and streams the result. Start the server before the view, and
+leave it running: `./ngen-cli asset-server &`, or `./_out/linux-vulkan/debug/ngen-asset-server &` (`src/asset/README.md`). Without it the view exits at start-up.
 `./_out/ngen-build -h` lists every flag (`--clean`, `--rebuild`, `--list`, `--compile-commands`, …); `format` and `tidy` are targets. For day-to-day
 use, `ngen-cli` (next section) remembers the platform and config for you.
 
@@ -221,6 +222,7 @@ on your `PATH`). It works from any directory: `../ngen-cli` from `src/` behaves 
 | `ngen-cli build [args]` | Run `ngen-build` for the set variant. `-p`/`-c` are filled in only when you don't pass them, so `build -c release` builds the set platform in release, and `build -p … -c …` works like plain `ngen-build`. Every other argument passes through: targets, `-v`, `--clean`, `format`, `tidy`, … |
 | `ngen-cli view [args]` | Run the set variant's `ngen-view` with your arguments, in your working directory. |
 | `ngen-cli rpc [args]` | Run the set variant's `ngen-rpc`: `list` running tools, `describe` one, `call` its methods (`src/rpc/README.md`). |
+| `ngen-cli asset-server` | Run the set variant's `ngen-asset-server` in the foreground, until Ctrl-C. `view` needs it running (`src/asset/README.md`). |
 | `ngen-cli help` | The commands, the set variant, and which tools are built for it. |
 
 Forwarded tools replace the cli process, so their output, signals and exit code are exactly those of running the tool directly.
@@ -229,6 +231,7 @@ Forwarded tools replace the cli process, so their output, signals and exit code 
 
 ```bash
 ./ngen-cli build                             # build ngen-view for the set variant
+./ngen-cli asset-server &                    # start its asset server, and leave it running
 ./ngen-cli view assets/three_cubes.usda      # run it
 ./ngen-cli build examples                    # the RHI example programs
 ./ngen-cli build -c release ngen-view        # one-off release build; the set variant stays as it is

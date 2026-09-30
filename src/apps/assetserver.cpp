@@ -5,6 +5,7 @@
 // compiled in.
 
 #include "assetserver.h"
+#include "assettrace.h"
 #include "rpcdiscovery.h"
 
 #include <csignal>
@@ -52,12 +53,12 @@ auto main(int argc, char** argv) -> int {
         std::println(stderr, "ngen-asset-server: {}", started.error());
         return 1;
     }
-    std::println("ngen-asset-server: {} on 127.0.0.1:{}", server.variant(), server.port());
-    std::fflush(stdout);
+    trace("ngen-asset-server {} on 127.0.0.1:{}, pid {}", server.variant(), server.port(), getpid());
 
     int received = 0;
     sigwait(&signals, &received);
+    trace("{}: stopping", received == SIGINT ? "SIGINT" : "SIGTERM");
     server.stop();
-    std::println("ngen-asset-server: stopped");
+    trace("stopped");
     return 0;
 }

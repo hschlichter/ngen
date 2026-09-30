@@ -1,12 +1,14 @@
 #pragma once
 
 #include "assetcache.h"
+#include "assettrace.h"
 #include "packjobs.h"
 #include "packrule.h"
 #include "rpcprotocol.h"
 #include "rpcserver.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <deque>
 #include <expected>
@@ -69,6 +71,17 @@ private:
         size_t offset = 0;
     };
 
+    // What the trace reports when a request is done.
+    struct RequestTrace {
+        RpcServer::ConnectionId connection = 0;
+        size_t remaining = 0;
+        size_t sent = 0;
+        size_t held = 0;
+        size_t failed = 0;
+        uint64_t bytes = 0;
+        std::chrono::steady_clock::time_point start;
+    };
+
     struct Stream {
         std::deque<Outgoing> queue;
         size_t peakQueued = 0;
@@ -82,6 +95,13 @@ private:
     auto pack(const std::string& id) -> Outcome;
     auto deliver(const std::string& id, const Outcome& outcome) -> void;
     auto pump(RpcServer::ConnectionId connection) -> void;
+    // One of a request's assets was answered: sent with its bytes, held (the client had it), or failed.
+    enum class Answer {
+        Sent,
+        Held,
+        Failed,
+    };
+    auto answered(int64_t request, Answer answer, uint64_t bytes) -> void;
 
     Options options;
     std::vector<PackRule> rules;
@@ -97,6 +117,9 @@ private:
 
     std::mutex inFlightMutex;
     std::unordered_map<std::string, std::vector<Subscriber>> inFlight;
+
+    std::mutex requestMutex;
+    std::unordered_map<int64_t, RequestTrace> requests;
 
     std::mutex streamMutex;
     std::unordered_set<RpcServer::ConnectionId> connections;

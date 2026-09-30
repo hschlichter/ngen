@@ -54,7 +54,8 @@ stop the server at start-up.
 by hand and runs until Ctrl-C or SIGTERM:
 
 ```sh
-./_out/linux-vulkan/debug/ngen-asset-server &
+./ngen-cli asset-server &                          # the set variant's
+./_out/linux-vulkan/debug/ngen-asset-server &      # any variant's
 ```
 
 It takes its variant from where it lives, runs packers with the project root as their working directory, and registers in discovery as kind
@@ -72,6 +73,10 @@ It takes its variant from where it lives, runs packers with the project root as 
   8 MiB of pack data is queued on a connection; the next chunk goes out as the queue drains, so a slow client is never dropped for a full queue.
 - **Nothing packs without a request.** The server doesn't watch files and packs nothing at start-up. An edit is picked up by the next request for
   the asset.
+- **The trace.** The server prints one timestamped line per event on stdout (`server/assettrace.h`): its rules and cache at start-up, clients
+  connecting and leaving, each request with its asset count, per asset whether it was up to date, packed (time, size, inputs, version) or failed
+  (with the packer's output), and per request a summary when it is done (time, assets sent and bytes, held, failed). Redirect it to a file to keep
+  it: `./ngen-cli asset-server > /tmp/asset-server.log &`.
 - **`server.status`**: pid, variant, clients with their queued and peak queued bytes, tasks running and queued, and `packerRuns`, the number of
   packer processes run so far.
 

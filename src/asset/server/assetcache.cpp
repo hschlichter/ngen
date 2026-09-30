@@ -125,6 +125,11 @@ auto AssetCache::load(const fs::path& path) -> void {
     }
 }
 
+auto AssetCache::size() -> size_t {
+    std::lock_guard lock(mutex);
+    return records.size();
+}
+
 auto AssetCache::upToDate(const std::string& id, uint64_t jobKey) -> std::optional<uint64_t> {
     Record record;
     {

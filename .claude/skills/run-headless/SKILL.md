@@ -27,9 +27,16 @@ Don't change the set variant unless asked; it is shared with the human's session
 
 ## Run headless
 
+ngen-view needs its variant's asset server; without one it exits at start-up with the command to run. Start it once in the background and leave
+it running across runs (it packs only what a view requests, and caches the result):
+
 ```sh
+./ngen-cli asset-server > /tmp/asset-server.log 2>&1 &        # the set variant's server; leave it running
 SDL_VIDEODRIVER=offscreen timeout --signal=TERM 5 ./ngen-cli view --obs-output=/tmp/obs.jsonl <scene>
 ```
+
+Rebuild and restart the asset server after changing `pack.cpp` or anything under `src/asset/server/`. `./ngen-cli rpc call asset server.status`
+shows what it is doing; with servers for several variants running, name one by pid (`asset:<pid>`, from `./ngen-cli rpc list`).
 
 - `ngen-cli view` replaces itself with the set variant's `ngen-view`, so `timeout`, signals and exit codes behave exactly as with the binary.
 - The `timeout` kill is the expected exit — judge the run by the JSONL contents, not the exit code.

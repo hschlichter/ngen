@@ -104,8 +104,10 @@ items in an "Open questions" section instead of picking silently.
 - `src/rpc/` — how processes and agents talk: the RPC core (`core/`, no engine code, shared with the build server) and the engine layer (method
   registry, endpoint). Protocol and how to add a method in `src/rpc/README.md`.
 - `src/view/` — ngen-view's commands as RPC methods and script verbs (`viewcommands.*`), and its dumps (`viewdumps.*`).
-- `src/pack/` — what every packer shares. Asset ids, the packer contract and caching in
-  `src/pack/README.md`. Packers are programs in `src/apps/packer<type>.cpp`; their rules are in the root `build.cpp`.
+- `src/asset/` — the asset system: `ngen-asset-server` (`server/`), `AssetClient`, and packing (`pack/`: the rule type and what every packer
+  shares). Assets are the system, packing is the process that makes an asset engine-ready. Asset ids, the server, its cache, the stream, `pack.cpp`
+  rules and the packer contract in `src/asset/README.md`. Packers are programs in `src/apps/packer<type>.cpp`; their rules are in the root
+  `pack.cpp`. The asset system uses nothing from `src/build/`.
 - `src/apps/` — every program's `main`, one file per program named after it without `ngen-` or dashes (`view.cpp` for `ngen-view`, `cli.cpp`
   for `ngen-cli`). Entry points stay thin: argument parsing, wiring and the loop; reusable logic goes into a library. `src/apps/tool/` holds the
   shell shared by the windowed tools. Exceptions: `ngen-build` and its helpers keep their mains in `src/build/`, and the RHI examples stay in
@@ -134,6 +136,7 @@ section documents it:
 
 - `./ngen-cli build [args]` — build the set variant; explicit `-p`/`-c` win, every other argument passes through (`examples`, `format`, `tidy`, …)
 - `./ngen-cli view [args]` — run the set variant's `ngen-view`
+- `./ngen-cli asset-server` — run the set variant's `ngen-asset-server` in the foreground; start it in the background before `view`
 - `./ngen-cli set` — print the set variant. **Agents don't change it** (`ngen-cli set <platform> <config>`) unless asked: `_out/set` is shared with
   the human's session. For another variant, pass `-p`/`-c` to `build` and run that variant's binary directly.
 - `./ngen-cli rpc list|describe|call …` — talk to a running ngen-view (live investigation; see the `run-headless` skill)
@@ -156,7 +159,8 @@ adding platforms/configurations).
 ## Verifying changes
 
 Verification runs headless through the observation bus — build, run with `--obs-output`, read the JSONL
-evidence. The `run-headless` skill (`.claude/skills/run-headless/SKILL.md`) has the full procedure, test
+evidence. ngen-view needs its variant's asset server running (`./ngen-cli asset-server &` for the set variant,
+`./_out/<platform>/<config>/ngen-asset-server &` for another); without one it exits at start-up. The `run-headless` skill (`.claude/skills/run-headless/SKILL.md`) has the full procedure, test
 scenes, and machine constraints; `obs.md` documents the observation conventions. Observations added for a
 change stay in the code — there is no "remove when done" step.
 
