@@ -1,0 +1,110 @@
+# Builds ngen on Linux with Vulkan, in all three configurations.
+#
+# Runs in an Arch Linux container: the engine needs a current toolchain (clang with C++23, std::print and std::expected
+# in libstdc++) and SDL3, which the Ubuntu runner images don't have.
+#
+# OpenUSD is a submodule but is built outside the build system, into external/openusd_build. The first job builds it once
+# and caches it, keyed by the submodule's commit and this file; the build jobs restore it.
+
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Everything the build and the OpenUSD build need, from the Arch repositories.
+  PACKAGES: >-
+    base-devel clang gcc git python cmake ninja pkgconf
+    sdl3 vulkan-headers vulkan-icd-loader shaderc
+
+jobs:
+  openusd:
+    name: OpenUSD
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - name: Install packages
+        run: pacman -Syu --noconfirm --needed $PACKAGES
+
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Cache key
+        id: key
+        run: |
+          git config --global --add safe.directory '*'
+          commit=$(git ls-tree HEAD external/openusd | awk '{print $3}')
+          echo "key=openusd-${commit}-${{ hashFiles('.github/workflows/build.yml') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore OpenUSD
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: external/openusd_build
+          key: ${{ steps.key.outputs.key }}
+
+      - name: Check out OpenUSD
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: git submodule update --init --depth 1 external/openusd
+
+      # The same flags as docs/usd_scene_system_status.md: no Python, imaging, tools or optional plugins.
+      - name: Build OpenUSD
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          python3 external/openusd/build_scripts/build_usd.py \
+            --no-python --no-imaging --no-tests --no-examples \
+            --no-tutorials --no-tools --no-docs --no-materialx \
+            --no-alembic --no-draco --no-openimageio --no-opencolorio \
+            --no-openvdb --no-ptex --no-embree --no-prman \
+            --onetbb --build-variant release \
+            -j"$(nproc)" external/openusd_build
+          # Sources and intermediate files aren't needed to link against it; keep the cache small.
+          rm -rf external/openusd_build/src external/openusd_build/build
+
+  build:
+    name: ${{ matrix.config }}
+    needs: openusd
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [debug, release, gamerelease]
+    steps:
+      - name: Install packages
+        run: pacman -Syu --noconfirm --needed $PACKAGES
+
+      - name: Check out
+        uses: actions/checkout@v4
+
+      # Every submodule except OpenUSD, which comes from the cache.
+      - name: Check out submodules
+        run: |
+          git config --global --add safe.directory '*'
+          for module in glm stb cgltf imgui concurrentqueue json; do
+            git submodule update --init --depth 1 "external/$module"
+          done
+
+      - name: Restore OpenUSD
+        uses: actions/cache/restore@v4
+        with:
+          path: external/openusd_build
+          key: ${{ needs.openusd.outputs.key }}
+          fail-on-cache-miss: true
+
+      - name: Bootstrap ngen-build
+        run: mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/bootstrap.cpp
+
+      # The default target (ngen-view, with the asset server and packers it depends on), the tools that aren't its
+      # dependencies, and the RHI examples.
+      - name: Build
+        run: ./_out/ngen-build -v -p linux-vulkan -c ${{ matrix.config }} ngen-view ngen-cli ngen-rpc examples
