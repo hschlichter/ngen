@@ -22,10 +22,12 @@ struct AssetClient::State {
     std::unordered_map<std::string, PackedAsset> partial; // arriving: asset.data seen, asset.ready not yet
     std::unordered_map<std::string, std::unique_ptr<PackedAsset>> ready;
     std::unordered_map<std::string, std::vector<std::string>> failed;
+    AssetClientStats stats;
 
     auto fail(const std::string& id, std::vector<std::string> messages) -> void {
         partial.erase(id);
         failed[id] = std::move(messages);
+        stats.failed++;
     }
 
     auto onMessage(const rpc::Json& message, std::vector<std::byte> attachment) -> void {
@@ -46,15 +48,28 @@ struct AssetClient::State {
             if (offset + attachment.size() <= total) {
                 std::memcpy(asset.bytes.data() + offset, attachment.data(), attachment.size());
             }
+            stats.bytes += attachment.size();
         } else if (method == "asset.ready") {
+            if (params.value("sent", false) && params.value("size", size_t(0)) == 0 && !partial.contains(id)) {
+                // An empty asset: no asset.data precedes it.
+                partial[id] = PackedAsset{.id = id, .version = params.value("version", std::string()), .bytes = {}};
+            }
             auto it = partial.find(id);
-            if (it != partial.end()) {
-                ready[id] = std::make_unique<PackedAsset>(std::move(it->second));
-                partial.erase(it);
-                failed.erase(id);
-            } else if (!ready.contains(id)) {
+            if (it == partial.end() && !ready.contains(id)) {
                 // Ready without data: only for a version the client said it holds, which this client never does.
                 fail(id, {std::format("{}: the asset server sent no data", id)});
+            } else {
+                stats.received++;
+                if (params.value("packed", false)) {
+                    stats.packed++;
+                } else {
+                    stats.cached++;
+                }
+                if (it != partial.end()) {
+                    ready[id] = std::make_unique<PackedAsset>(std::move(it->second));
+                    partial.erase(it);
+                    failed.erase(id);
+                }
             }
         } else if (method == "asset.failed") {
             std::vector<std::string> messages;
@@ -124,6 +139,7 @@ auto AssetClient::request(std::span<const std::string> ids) -> void {
         for (const auto& id : ids) {
             state->failed.erase(id);
         }
+        state->stats.requested += ids.size();
     }
     state->rpc.call(state->connection, "asset.request", {{"ids", list}}, [this, copy](const rpc::Json& response, std::vector<std::byte>) {
         if (!response.contains("error")) {
@@ -176,6 +192,11 @@ auto AssetClient::take(const std::string& id) -> std::optional<PackedAsset> {
     auto asset = std::move(*it->second);
     state->ready.erase(it);
     return asset;
+}
+
+auto AssetClient::stats() const -> AssetClientStats {
+    std::lock_guard lock(state->mutex);
+    return state->stats;
 }
 
 auto AssetClient::errors(const std::string& id) const -> std::vector<std::string> {

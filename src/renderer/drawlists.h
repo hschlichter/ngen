@@ -15,11 +15,14 @@ struct CullResult {
     uint64_t frame = 0; // 0: nothing read back yet
     uint32_t instances = 0;
     uint32_t cameraCulled = 0;
+    uint64_t cameraTriangles = 0; // drawn by the camera after culling, both buckets
+    uint64_t sceneTriangles = 0;  // every instance's submesh, culled or not
     uint32_t cascadeCount = 0;
     std::array<uint32_t, maxShadowCascades> cascadeCulled = {};
     std::array<uint32_t, maxShadowCascades> cascadeDrawn = {};
-    std::vector<uint8_t> cameraVisible; // per instance, 1 = visible
-    std::vector<uint8_t> viewBits;      // per instance, bit v = visible in view v (0 camera, 1.. cascades)
+    std::array<uint64_t, maxShadowCascades> cascadeTriangles = {}; // drawn per cascade, both buckets
+    std::vector<uint8_t> cameraVisible;                            // per instance, 1 = visible
+    std::vector<uint8_t> viewBits;                                 // per instance, bit v = visible in view v (0 camera, 1.. cascades)
 };
 
 class DeletionQueue;

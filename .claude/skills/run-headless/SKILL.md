@@ -56,7 +56,8 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   --fail-on-validation --obs-output=/tmp/obs.jsonl
 ```
 
-- `--screenshot=PATH` writes the presented frame as PNG on the last frame of `--frames`; Read the PNG to see it.
+- `--screenshot=PATH` writes the presented frame as PNG on the last frame of `--frames`; Read the PNG to see it. Screenshots leave the UI out
+  (the menu bar, windows and the status bar, whose numbers change every run), so they compare byte for byte; `--show-ui` keeps it in.
 - `--view=lit|albedo|normals|depth|shadowfactor|shadowmap|shadowuv|worldpos|miplevel|cascades` (miplevel: red level 0 to white
   level 7+; cascades: red, green, blue, yellow near to far; shadowmap shows the cascade atlas), `--overlay=grid=on,aabbs=off,...`
   (grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa), `--camera=x,y,z,yaw,pitch`, `--camera-frame=scene|/prim`, `--select=/prim`.
@@ -82,7 +83,8 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   - `debugview off|wireframe|trianglesize|overdraw|instance|mesh|material|primitive|uv`: replaces the lit image; read raw values with
     `capture DebugViewPass debugview.value <path> X Y W H`.
   - `cull view N`: colour the AABB overlay by view N's visibility (0 camera, 1+ cascades); `overlay cascadefrusta=on` draws the cascade frusta.
-  - `window memory|capture|framedebugger|gpuscene|counters on|off`: open an introspection window, to exercise its drawing headless.
+  - `window memory|capture|framedebugger|gpuscene|counters|shaders|culling on|off`: open an introspection window (or the Culling window), to
+    exercise its drawing headless; with `--show-ui` the screenshot shows it.
   - `renderdoc-capture` with `--renderdoc`: a RenderDoc capture of the next frame under `captures/`.
 - Observations `DeviceInfo` (startup), `CameraPose` (every 60 frames), `Screenshot` (per shot) complement `FrameStats`, `RenderStats`
   (`instances`, `culled`, `cascades`, `shadow_culled`, `draws`, `primitives`), `GpuTime`.

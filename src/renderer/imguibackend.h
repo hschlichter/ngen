@@ -32,7 +32,9 @@ struct ImGuiFrameSnapshot {
     ImGuiFrameSnapshot& operator=(ImGuiFrameSnapshot&& other) noexcept;
     ~ImGuiFrameSnapshot();
 
-    void cloneFrom(const ImDrawData* drawData);
+    // Copies the frame's draw lists. With linearizeColors the vertex colours are converted from sRGB to linear: imgui's
+    // colours are sRGB values, and an sRGB render target would otherwise encode them a second time and wash them out.
+    void cloneFrom(const ImDrawData* drawData, bool linearizeColors);
     void fillDrawData(ImDrawData& out) const;
 };
 

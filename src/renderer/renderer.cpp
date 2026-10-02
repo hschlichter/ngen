@@ -739,6 +739,7 @@ auto Renderer::cullResult() const -> CullResult {
         .frame = drawLists.readbackFrame(),
         .instances = drawLists.instanceCount(),
         .cameraCulled = drawLists.cameraCulled(),
+        .cameraTriangles = drawLists.primitivesIn(0) + drawLists.primitivesIn(1),
         .cascadeCount = drawLists.cascadeCount(),
         .cameraVisible = drawLists.cameraVisible(),
         .viewBits = drawLists.viewBits(),
@@ -746,6 +747,12 @@ auto Renderer::cullResult() const -> CullResult {
     for (uint32_t c = 0; c < result.cascadeCount; c++) {
         result.cascadeCulled[c] = drawLists.cascadeCulled(c);
         result.cascadeDrawn[c] = drawLists.cascadeDrawn(c);
+        // Regions per view, single-sided then double-sided; the camera is view 0.
+        auto region = (1 + c) * DrawLists::bucketCount;
+        result.cascadeTriangles[c] = drawLists.primitivesIn(region) + drawLists.primitivesIn(region + 1);
+    }
+    for (const auto& instance : gpuInstances) {
+        result.sceneTriangles += instance.indexCount / 3;
     }
     return result;
 }
@@ -790,6 +797,8 @@ auto Renderer::gizmoHitTest(float mouseX, float mouseY, RhiExtent2D windowExtent
 
 auto Renderer::render(RenderSnapshot& snapshot) -> void {
     auto frame = ++m_frameIndex;
+    // Taken now, so the frame that builds without UI is the frame that is read back.
+    auto screenshotPending = std::exchange(screenshotPath, {});
     OBS_EVENT("Render", "FrameBegin", "frame").field("frame", (int64_t) frame);
 
     {
@@ -818,6 +827,10 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
             }
             resourcePool.flush();
             currentFrame = 0;
+        }
+        // No frame this time: the screenshot waits for the next one.
+        if (screenshotPath.empty()) {
+            screenshotPath = std::move(screenshotPending);
         }
         OBS_EVENT("Render", "FrameEnd", "frame").field("frame", (int64_t) frame);
         return;
@@ -969,7 +982,9 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     profile::endZone(); // GizmoUpdate
     gizmoPass.addPass(frameGraph, colorHandle, ext, gizmoRequests, imageIdx);
 
-    editorUIPass.addPass(frameGraph, colorHandle, ext, editorUI, snapshot.imguiSnapshot);
+    if (screenshotPending.empty() || screenshotsShowUi) {
+        editorUIPass.addPass(frameGraph, colorHandle, ext, editorUI, snapshot.imguiSnapshot);
+    }
 
     addPresentPass(frameGraph, colorHandle);
 
@@ -993,8 +1008,6 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     // Screenshot: read the presented image back inside this frame's command buffer. The
     // present pass left the backbuffer in PresentSrc; return it there afterwards.
     RhiBuffer* screenshotBuffer = nullptr;
-    auto screenshotPending = std::move(screenshotPath);
-    screenshotPath.clear();
     // Texture dump: one mip level of a material texture read back after this frame.
     RhiBuffer* textureDumpBuffer = nullptr;
     uint32_t dumpWidth = 0;

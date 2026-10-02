@@ -27,6 +27,7 @@
 #include "sessionscript.h"
 #include "shaderloader.h"
 #include "shadowcascades.h"
+#include "statusbar.h"
 #include "translategizmo.h"
 #include "usdassetresolver.h"
 #include "usdrenderextractor.h"
@@ -43,11 +44,13 @@
 #include <cstdio>
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <map>
 #include <print>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <unistd.h>
 #include <vector>
 
 // Build the RhiWindow contract from an SDL window. This is the only place where the
@@ -97,6 +100,75 @@ static auto splitCategoryList(std::string_view s) -> std::vector<std::string> {
     return out;
 }
 
+namespace {
+
+// Gathers the status bar's numbers each frame: timings from the profiler's frame history, memory from the process and
+// the device (sampled four times a second), asset counts from the asset client.
+class StatusBarGatherer {
+public:
+    auto gather(const RhiDevice& device, const AssetClient& assets, const CullResult& cull) -> StatusBarData {
+        data.trianglesDrawn = cull.cameraTriangles;
+        data.trianglesScene = cull.sceneTriangles;
+        profile::frameHistory(frames);
+        // Average over the last second of frames, newest first.
+        double cpuSum = 0.0;
+        double gpuSum = 0.0;
+        size_t count = 0;
+        size_t gpuCount = 0;
+        for (auto it = frames.rbegin(); it != frames.rend() && cpuSum < 1000.0; ++it) {
+            cpuSum += it->cpuMs;
+            count++;
+            if (it->gpuMs > 0.0) {
+                gpuSum += it->gpuMs;
+                gpuCount++;
+            }
+        }
+        if (count > 0 && cpuSum > 0.0) {
+            data.frameMs = cpuSum / (double) count;
+            data.fps = 1000.0 / data.frameMs;
+        }
+        data.gpuMs = gpuCount > 0 ? gpuSum / (double) gpuCount : 0.0;
+
+        auto now = profile::now();
+        if (now - lastMemorySampleNs >= 250'000'000ull || lastMemorySampleNs == 0) {
+            lastMemorySampleNs = now;
+            data.cpuMemoryBytes = residentBytes();
+            device.memoryHeaps(heaps);
+            data.gpuMemoryBytes = 0;
+            for (const auto& heap : heaps) {
+                data.gpuMemoryBytes += heap.allocated;
+            }
+        }
+
+        auto stats = assets.stats();
+        data.assetsConnected = true;
+        data.assetsRequested = stats.requested;
+        data.assetsPacked = stats.packed;
+        data.assetsCached = stats.cached;
+        data.assetsFailed = stats.failed;
+        data.assetsInFlight = stats.inFlight();
+        data.assetBytes = stats.bytes;
+        return data;
+    }
+
+private:
+    // The process's resident set, from /proc/self/statm (pages).
+    static auto residentBytes() -> uint64_t {
+        std::ifstream statm("/proc/self/statm");
+        uint64_t size = 0;
+        uint64_t resident = 0;
+        statm >> size >> resident;
+        return resident * (uint64_t) sysconf(_SC_PAGESIZE);
+    }
+
+    std::vector<profile::FrameStats> frames;
+    std::vector<RhiMemoryHeapInfo> heaps;
+    uint64_t lastMemorySampleNs = 0;
+    StatusBarData data;
+};
+
+} // namespace
+
 auto main(int argc, char* argv[]) -> int {
     // Parse --obs-* flags out of argv before anything else. The rest of argv
     // (scene path, etc.) is collected into `positional` and consumed as before.
@@ -110,6 +182,7 @@ auto main(int argc, char* argv[]) -> int {
     bool forceRenderDebug = false;
     bool loadRenderDoc = false; // --renderdoc: load librenderdoc.so before the device so frames can be captured // --render-debug: keep the render debug snapshot and draw log on without the window
     bool failOnValidation = false;
+    bool screenshotsShowUi = false;
     uint64_t maxFrames = 0;
     std::string dumpRenderDebugPath;
     std::string dumpMemoryPath;
@@ -131,6 +204,8 @@ auto main(int argc, char* argv[]) -> int {
             rpcEnabled = false;
         } else if (arg == "--render-debug") {
             forceRenderDebug = true;
+        } else if (arg == "--show-ui") {
+            screenshotsShowUi = true;
         } else if (arg == "--fail-on-validation") {
             failOnValidation = true;
             enableValidation = true;
@@ -332,12 +407,14 @@ auto main(int argc, char* argv[]) -> int {
     }
     ImGuiBackendVulkan imguiBackend(window);
     Renderer renderer;
+    StatusBarGatherer statusBar;
     if (!renderer.init(&rhiDevice, &imguiBackend, initialExtent)) {
         std::println(stderr, "Renderer init failed");
         rhiDevice.waitIdle();
         return failAfterInit();
     }
     renderer.setValidationEnabled(enableValidation);
+    renderer.setScreenshotsShowUi(screenshotsShowUi);
     {
         const auto& limits = rhiDevice.limits();
         OBS_EVENT("Render", "DeviceInfo", "device")
@@ -766,6 +843,7 @@ auto main(int argc, char* argv[]) -> int {
         }
         editorUI.setCullStats(latestCull.instances, latestCull.cameraCulled);
         editorUI.setShadowCullStats(latestCull.cascadeCount, latestCull.cascadeCulled, latestCull.cascadeDrawn);
+        editorUI.setCullTriangles(latestCull.cameraTriangles, latestCull.sceneTriangles, latestCull.cascadeTriangles);
 
         // Shadow cascades: fitted to the live camera and the scene bounds.
         std::array<ShadowCascade, maxShadowCascades> cascades;
@@ -828,6 +906,7 @@ auto main(int argc, char* argv[]) -> int {
         static const uint32_t uiZoneId = profile::registerName("EditorUI");
         profile::beginZone(uiZoneId);
         imguiBackend.beginFrame();
+        editorUI.setStatusBar(statusBar.gather(rhiDevice, assetClient, latestCull));
         editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib, cam, std::move(fgDebugSnap), std::move(renderDebugSnap));
         if (auto inspect = editorUI.takeTextureInspectRequest(); inspect.has_value()) {
             renderThread.setTextureInspect(*inspect);

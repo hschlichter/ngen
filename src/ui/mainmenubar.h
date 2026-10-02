@@ -32,6 +32,7 @@ struct MainMenuBarState {
     bool& antiAliasing;
     bool& showFrameGraph;
     bool& showPerformance;
+    bool& showStatusBar;
     bool& showRenderDebug;
     bool& showCamera;
     bool& showCulling;

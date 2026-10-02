@@ -84,6 +84,7 @@ Current truth for the build framework is [`../src/build/README.md`](../src/build
   - [plan_asset_copy.md](plan_asset_copy.md) — step 2: USD layers and textures streamed from the asset server by a copy packer, through a USD asset resolver; no data transformed yet (landed)
   - [plan_texture_packer.md](plan_texture_packer.md) — step 2: `ngen-packer-texture` decodes and mip-maps textures once, at pack time; RGBA8 sRGB with the full chain, the view uploads what arrives (landed)
   - [plan_texture_batch.md](plan_texture_batch.md) — step 2: a scene's textures requested in one batch, so the asset server packs them in parallel (landed)
+  - [plan_status_bar.md](plan_status_bar.md) — ngen-view status bar (fps, frame and GPU time, CPU and GPU memory, asset counts); screenshots without UI unless `--show-ui` (landed)
   - [plan_build_server.md](plan_build_server.md) — step 2: build server as the default path (only the build path starts it), `--no-server`, RPC builds, request-driven packing by extension with no pack targets, packed data streamed to clients, the view needs a server, graph and helper reload, variant lock (superseded by plan_asset_server.md)
   - [plan_editor_split.md](plan_editor_split.md) — step 3: deltas and incremental GPU scene in the view (phase A), then `ngen-editor` as its own process with USD, view gizmos as local opinions, editor-owned selection (phase B) (draft)
 - [plan_ngen_cli.md](plan_ngen_cli.md) — `ngen-cli` front door: `set` variant in `_out/set`, forwards to ngen-build and ngen-view (landed)

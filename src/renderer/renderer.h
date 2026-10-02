@@ -61,8 +61,10 @@ public:
     auto buildFrameGraphDebugSnapshot() const -> FrameGraphDebugSnapshot;
     auto buildRenderDebugSnapshot() const -> RenderDebugSnapshot;
     auto setValidationEnabled(bool enabled) -> void { validationEnabled = enabled; }
-    // Next presented frame is read back and written as PNG. Waits on that frame's fence once.
+    // Next presented frame is read back and written as PNG. Waits on that frame's fence once. The UI is left out of
+    // that frame (it skips the editor UI pass) unless setScreenshotsShowUi(true).
     auto requestScreenshot(std::string path) -> void { screenshotPath = std::move(path); }
+    auto setScreenshotsShowUi(bool show) -> void { screenshotsShowUi = show; }
     // Screenshots written since the last call, in order (after their fence).
     auto takeScreenshotResults() -> std::vector<ScreenshotResult> { return std::exchange(screenshotResults, {}); }
     // Render debugger inputs, set by the render thread before render().
@@ -193,6 +195,7 @@ private:
     bool validationEnabled = false;
     bool renderDebugEnabled = false;
     std::string screenshotPath;
+    bool screenshotsShowUi = false;
     std::vector<ScreenshotResult> screenshotResults;
 
     // Texture inspector: one level of one material

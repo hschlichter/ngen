@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <memory>
 #include <optional>
@@ -13,6 +14,17 @@ struct PackedAsset {
     std::string id;
     std::string version;
     std::vector<std::byte> bytes;
+};
+
+// What a client has asked for and received since it connected. An id requested twice counts twice.
+struct AssetClientStats {
+    uint64_t requested = 0;
+    uint64_t received = 0; // arrived with its bytes, or as already held
+    uint64_t packed = 0;   // of the received: the server ran a packer for it
+    uint64_t cached = 0;   // of the received: the server's cache was up to date
+    uint64_t failed = 0;
+    uint64_t bytes = 0; // bytes received in asset.data
+    auto inFlight() const -> uint64_t { return requested - received - failed; }
 };
 
 // The engine side of the asset server's stream: sends pack requests and collects the streamed assets. No file
@@ -39,6 +51,8 @@ public:
 
     // Moves an arrived asset out of the client; nullopt if it hasn't arrived. A later request for the id streams it again.
     auto take(const std::string& id) -> std::optional<PackedAsset>;
+
+    auto stats() const -> AssetClientStats;
 
     // The packer's errors for an asset that failed; empty otherwise.
     auto errors(const std::string& id) const -> std::vector<std::string>;

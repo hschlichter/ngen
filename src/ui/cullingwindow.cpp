@@ -40,17 +40,60 @@ void drawCullingWindow(bool& show, CullingWindowInputs in) {
     ImGui::Separator();
     uint32_t drawn = in.instances - in.culled;
     float percent = in.instances > 0 ? 100.0f * (float) in.culled / (float) in.instances : 0.0f;
-    ImGui::Text("Instances: %u", in.instances);
-    ImGui::Text("Drawn: %u", drawn);
-    ImGui::Text("Culled: %u (%.0f%%)", in.culled, percent);
+    auto culledTriangles = in.trianglesScene > in.trianglesDrawn ? in.trianglesScene - in.trianglesDrawn : 0;
+    float trianglePercent = in.trianglesScene > 0 ? 100.0f * (float) culledTriangles / (float) in.trianglesScene : 0.0f;
+    if (ImGui::BeginTable("cullcounts", 3, ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("");
+        ImGui::TableSetupColumn("instances");
+        ImGui::TableSetupColumn("triangles");
+        ImGui::TableHeadersRow();
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted("Scene");
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", in.instances);
+        ImGui::TableNextColumn();
+        ImGui::Text("%llu", (unsigned long long) in.trianglesScene);
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted("Drawn");
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", drawn);
+        ImGui::TableNextColumn();
+        ImGui::Text("%llu", (unsigned long long) in.trianglesDrawn);
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted("Culled");
+        ImGui::TableNextColumn();
+        ImGui::Text("%u (%.0f%%)", in.culled, percent);
+        ImGui::TableNextColumn();
+        ImGui::Text("%llu (%.0f%%)", (unsigned long long) culledTriangles, trianglePercent);
+        ImGui::EndTable();
+    }
     if (!in.enabled) {
         ImGui::TextDisabled("Culling off: everything is drawn.");
     }
 
     ImGui::Separator();
     ImGui::Text("Shadow cascades: %u", in.cascades);
-    for (uint32_t c = 0; c < in.cascades && c < maxShadowCascades; c++) {
-        ImGui::Text("  cascade %u: %u drawn, %u culled", c, in.shadowDrawn[c], in.shadowCulled[c]);
+    if (in.cascades > 0 && ImGui::BeginTable("cascadecounts", 4, ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("cascade");
+        ImGui::TableSetupColumn("drawn");
+        ImGui::TableSetupColumn("culled");
+        ImGui::TableSetupColumn("triangles");
+        ImGui::TableHeadersRow();
+        for (uint32_t c = 0; c < in.cascades && c < maxShadowCascades; c++) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::Text("%u", c);
+            ImGui::TableNextColumn();
+            ImGui::Text("%u", in.shadowDrawn[c]);
+            ImGui::TableNextColumn();
+            ImGui::Text("%u", in.shadowCulled[c]);
+            ImGui::TableNextColumn();
+            ImGui::Text("%llu", (unsigned long long) in.shadowTriangles[c]);
+        }
+        ImGui::EndTable();
     }
 
     ImGui::End();

@@ -26,4 +26,5 @@ private:
     SDL_Window* window = nullptr;
     VkDevice vkDevice = VK_NULL_HANDLE;
     VkDescriptorPool imguiPool = VK_NULL_HANDLE;
+    bool srgbTarget = false; // imgui's sRGB colours are linearised for an sRGB target
 };

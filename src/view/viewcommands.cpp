@@ -444,7 +444,7 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
             .name = "view.window",
             .summary = "Open or close an introspection window.",
             .params = {
-                requiredField("name", RpcType::String, "memory, capture, framedebugger, gpuscene, counters, shaders"),
+                requiredField("name", RpcType::String, "memory, capture, framedebugger, gpuscene, counters, shaders, culling"),
                 optionalField("open", RpcType::Bool, "default true"),
             },
             .result = "{}",

@@ -151,6 +151,7 @@ void drawMainMenuBar(MainMenuBarState& state) {
             ImGui::Separator();
             ImGui::MenuItem("Frame Graph", nullptr, &state.showFrameGraph);
             ImGui::MenuItem("Performance", nullptr, &state.showPerformance);
+            ImGui::MenuItem("Status Bar", nullptr, &state.showStatusBar);
             ImGui::MenuItem("Render Debug", nullptr, &state.showRenderDebug);
             ImGui::MenuItem("Camera", nullptr, &state.showCamera);
             ImGui::MenuItem("Culling", nullptr, &state.showCulling);

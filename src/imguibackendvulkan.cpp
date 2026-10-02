@@ -29,10 +29,12 @@ auto ImGuiBackendVulkan::init(const ImGuiBackendInitInfo& info) -> void {
     vkCreateDescriptorPool(vkDevice, &poolInfo, nullptr, &imguiPool);
 
     ImGui::CreateContext();
+    ImGui::StyleColorsDark();
 
     ImGui_ImplSDL3_InitForVulkan(window);
 
     auto colorFormat = RhiDeviceVulkan::toVkFormat(info.colorFormat);
+    srgbTarget = info.colorFormat == RhiFormat::B8G8R8A8_SRGB || info.colorFormat == RhiFormat::R8G8B8A8_SRGB;
 
     VkPipelineRenderingCreateInfo renderingInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
@@ -73,7 +75,7 @@ auto ImGuiBackendVulkan::beginFrame() -> void {
 auto ImGuiBackendVulkan::endFrame() -> ImGuiFrameSnapshot {
     ImGui::Render();
     ImGuiFrameSnapshot snapshot;
-    snapshot.cloneFrom(ImGui::GetDrawData());
+    snapshot.cloneFrom(ImGui::GetDrawData(), srgbTarget);
     return snapshot;
 }
 

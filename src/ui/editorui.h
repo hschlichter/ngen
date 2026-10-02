@@ -16,6 +16,7 @@
 #include "renderdebugwindow.h"
 #include "scenehandles.h"
 #include "scenewindow.h" // SceneWindowState
+#include "statusbar.h"
 
 #include <array>
 #include <cstdint>
@@ -153,6 +154,11 @@ public:
         cullStatInstances = instances;
         cullStatCulled = culled;
     }
+    auto setCullTriangles(uint64_t drawn, uint64_t scene, const std::array<uint64_t, maxShadowCascades>& cascades) -> void {
+        cullTrianglesDrawn = drawn;
+        cullTrianglesScene = scene;
+        cullTrianglesCascades = cascades;
+    }
 
     // Session commands (flags, scripts) drive the same flags the menus edit.
     auto setGBufferViewMode(int mode) -> void { gbufferViewMode = mode; }
@@ -169,6 +175,8 @@ public:
         return requested;
     }
     auto requestScreenshot() -> void { screenshotRequested = true; }
+    // What the status bar shows next frame; the application sets it each frame.
+    auto setStatusBar(const StatusBarData& data) -> void { statusBarData = data; }
     auto cameraWindow() -> CameraWindowState& { return cameraState; }
     auto setBookmarkPath(std::string path) -> void {
         cameraState.bookmarkPath = std::move(path);
@@ -213,11 +221,16 @@ private:
     bool antiAliasingFlag = true;
     bool showFrameGraphWindow = false;
     bool showPerformanceWindow = false;
+    bool showStatusBar = true;
+    StatusBarData statusBarData;
     bool showRenderDebugWindow = false;
     bool showCameraWindow = false;
     bool showCullingWindow = false;
     uint32_t cullStatInstances = 0;
     uint32_t cullStatCulled = 0;
+    uint64_t cullTrianglesDrawn = 0;
+    uint64_t cullTrianglesScene = 0;
+    std::array<uint64_t, maxShadowCascades> cullTrianglesCascades = {};
     bool screenshotRequested = false;
     CameraWindowState cameraState;
     bool showAssetBrowserWindow = false;

@@ -66,7 +66,8 @@ is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own c
 
 - **`asset.request`** `{ids: [...], have: {id: version}}` answers at once with `{request}`. Then each asset is answered on its own as it finishes:
   - `asset.data` `{request, id, version, offset, total}` notifications, each with up to 1 MiB of the packed file as the frame's attachment, in order
-  - then `asset.ready` `{request, id, version, size, sent}`. An asset whose held version (`have`) is current gets `asset.ready` with `sent: false`
+  - then `asset.ready` `{request, id, version, size, sent, packed}`; `packed` is true when a packer ran for it, false when the cache was up to
+    date. An asset whose held version (`have`) is current gets `asset.ready` with `sent: false`
     and no data.
   - or `asset.failed` `{request, id, errors}`: no rule for the extension, no such file, an id outside the project, or the packer's output when it
     failed
@@ -118,7 +119,9 @@ nonzero, with a message on stdout or stderr, when it fails. `pack/packer.h` pars
 
 `AssetClient` (`assetclient.h`, the `assetclient` library) is the engine side. `connect(variant)` finds the asset server of that variant and project
 through discovery, and fails when none is running. `request(ids)` sends one `asset.request`; `wait(ids)` blocks until each has arrived or failed;
-`find(id)` returns the bytes and version, `take(id)` moves them out of the client (a later request streams them again), and `errors(id)` gives
+`find(id)` returns the bytes and version, `take(id)` moves them out of the client (a later request streams them again), `stats()` counts what
+the client requested, received (packed or cached), failed and has in flight, and the bytes received (ngen-view's status bar shows them), and
+`errors(id)` gives
 the reasons it failed. A new request for an id clears an earlier failure.
 
 ngen-view connects at start-up and exits with an error naming the server command when there is none. It requests every shader on

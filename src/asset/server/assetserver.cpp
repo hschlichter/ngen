@@ -330,6 +330,7 @@ auto AssetServer::pack(const std::string& id) -> Outcome {
         return outcome;
     }
     outcome.ok = true;
+    outcome.packed = true;
     outcome.version = *version;
     auto size = fs::file_size(output, ec);
     trace("  {}  packed in {} ms, {}, {} inputs ({})", id, millisSince(started), bytesText(ec ? 0 : size), inputs.size(), hashText(*version));
@@ -355,7 +356,7 @@ auto AssetServer::deliver(const std::string& id, const Outcome& outcome) -> void
             std::error_code ec;
             auto size = fs::file_size(outcome.path, ec);
             rpc.send(subscriber.connection,
-                     rpc::makeNotification("asset.ready", {{"request", subscriber.request}, {"id", id}, {"version", version}, {"size", ec ? 0 : size}, {"sent", false}}));
+                     rpc::makeNotification("asset.ready", {{"request", subscriber.request}, {"id", id}, {"version", version}, {"size", ec ? 0 : size}, {"sent", false}, {"packed", outcome.packed}}));
             answered(subscriber.request, Answer::Held, 0);
             continue;
         }
@@ -381,6 +382,7 @@ auto AssetServer::deliver(const std::string& id, const Outcome& outcome) -> void
                 .request = subscriber.request,
                 .id = id,
                 .version = version,
+                .packed = outcome.packed,
                 .bytes = bytes,
                 .offset = 0,
             });
@@ -419,7 +421,7 @@ auto AssetServer::pump(RpcServer::ConnectionId connection) -> void {
         if (outgoing.offset == bytes.size()) {
             rpc.send(connection,
                      rpc::makeNotification("asset.ready",
-                                           {{"request", outgoing.request}, {"id", outgoing.id}, {"version", outgoing.version}, {"size", bytes.size()}, {"sent", true}}));
+                                           {{"request", outgoing.request}, {"id", outgoing.id}, {"version", outgoing.version}, {"size", bytes.size()}, {"sent", true}, {"packed", outgoing.packed}}));
             answered(outgoing.request, Answer::Sent, bytes.size());
             stream.queue.pop_front();
             continue;

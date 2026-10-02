@@ -51,6 +51,7 @@ public:
 private:
     struct Outcome {
         bool ok = false;
+        bool packed = false; // a packer ran for it; false when the cache was up to date
         uint64_t version = 0;
         std::string path;
         std::vector<std::string> errors;
@@ -66,6 +67,7 @@ private:
         int64_t request = 0;
         std::string id;
         std::string version;
+        bool packed = false;
         std::shared_ptr<const std::vector<std::byte>> bytes;
         size_t offset = 0;
     };

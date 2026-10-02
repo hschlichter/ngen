@@ -11,7 +11,8 @@ changing how scene data reaches the GPU.
   indirect draw per pipeline bucket per view. There is no CPU-driven fallback to keep in sync.
 - **The frame graph owns ordering and barriers.** A pass declares what it reads and writes; the graph orders passes, culls unused ones, allocates transient
   textures and inserts every texture and buffer barrier. Passes do not record barriers for graph resources.
-- **Deterministic output.** The same scene and camera produce the same pixels, run to run. Screenshots are compared byte for byte, so anything that
+- **Deterministic output.** The same scene and camera produce the same pixels, run to run. Screenshots leave the UI out: the frame that takes one
+  skips the editor UI pass, unless `setScreenshotsShowUi(true)` (ngen-view's `--show-ui`). Screenshots are compared byte for byte, so anything that
   reorders draws (for example atomic appends) is a behaviour change, not an implementation detail.
 - **The render thread owns the GPU.** The main thread never records or submits. It hands over values (snapshots, uploads) and receives values back
   (debug snapshots, culling results).

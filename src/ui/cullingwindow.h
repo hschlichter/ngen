@@ -19,6 +19,9 @@ struct CullingWindowInputs {
     uint32_t cascades = 0; // shadow cascades this frame
     std::array<uint32_t, maxShadowCascades> shadowCulled = {};
     std::array<uint32_t, maxShadowCascades> shadowDrawn = {};
+    uint64_t trianglesDrawn = 0; // camera, after culling
+    uint64_t trianglesScene = 0; // every instance
+    std::array<uint64_t, maxShadowCascades> shadowTriangles = {};
 };
 
 void drawCullingWindow(bool& show, CullingWindowInputs in);

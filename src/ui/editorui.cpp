@@ -65,6 +65,7 @@ auto EditorUI::draw(
         .antiAliasing = antiAliasingFlag,
         .showFrameGraph = showFrameGraphWindow,
         .showPerformance = showPerformanceWindow,
+        .showStatusBar = showStatusBar,
         .showRenderDebug = showRenderDebugWindow,
         .showCamera = showCameraWindow,
         .showCulling = showCullingWindow,
@@ -85,6 +86,10 @@ auto EditorUI::draw(
     {
         PROFILE_ZONE("MenuBar");
         drawMainMenuBar(menuState);
+    }
+    if (showStatusBar) {
+        PROFILE_ZONE("StatusBar");
+        drawStatusBar(statusBarData);
     }
     {
         PROFILE_ZONE("LayersWindow");
@@ -201,7 +206,7 @@ auto EditorUI::draw(
     }
     {
         PROFILE_ZONE("CullingWindow");
-        drawCullingWindow(showCullingWindow, {.enabled = cullEnabledFlag, .frozen = cullFrozenFlag, .showCulled = showCulledFlag, .overlayView = cullOverlayViewIndex, .showCascadeFrusta = showCascadeFrustaFlag, .instances = cullStatInstances, .culled = cullStatCulled, .cascades = shadowCascadeCount, .shadowCulled = shadowCulledStats, .shadowDrawn = shadowDrawnStats});
+        drawCullingWindow(showCullingWindow, {.enabled = cullEnabledFlag, .frozen = cullFrozenFlag, .showCulled = showCulledFlag, .overlayView = cullOverlayViewIndex, .showCascadeFrusta = showCascadeFrustaFlag, .instances = cullStatInstances, .culled = cullStatCulled, .cascades = shadowCascadeCount, .shadowCulled = shadowCulledStats, .shadowDrawn = shadowDrawnStats, .trianglesDrawn = cullTrianglesDrawn, .trianglesScene = cullTrianglesScene, .shadowTriangles = cullTrianglesCascades});
     }
     {
         PROFILE_ZONE("AssetBrowserWindow");
@@ -425,6 +430,8 @@ auto EditorUI::setIntrospectionWindow(std::string_view name, bool on) -> bool {
         introspectionFlags.counters = on;
     } else if (name == "shaders") {
         introspectionFlags.shaders = on;
+    } else if (name == "culling") {
+        showCullingWindow = on;
     } else {
         return false;
     }
