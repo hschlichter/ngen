@@ -11,7 +11,7 @@ its engine-ready form, under the rules in the root `pack.cpp`.
 | `assetclient.*` | `AssetClient`, the engine side of the stream |
 | `assethash.h` | the content hash behind asset versions |
 | `server/` | `ngen-asset-server`: requests, the cache (`assetcache.*`), the stream, and running packers (`packjobs.*`) |
-| `pack/` | packing: `packrule.h` (the rule type `pack.cpp` fills in) and `packer.h` (what every packer program shares) |
+| `pack/` | packing: `packrule.h` (the rule type `pack.cpp` fills in), `packer.h` (what every packer program shares), the packed texture format (`packedtexture.*`) and the mip filter (`mipchain.*`), which the renderer uses too |
 
 The asset system is separate from the build system. `ngen-build` builds the asset server and the packers as ordinary programs, and knows nothing
 else about assets.
@@ -111,7 +111,8 @@ nonzero, with a message on stdout or stderr, when it fails. `pack/packer.h` pars
 | Program | Packs | Output |
 |---|---|---|
 | `ngen-packer-shader` | GLSL with `glslc`: `optimize` (0 = `-O0`, 1 = `-O`) and `debug_info` (1 = `-g`); glslc's depfile gives the `#include`s | SPIR-V |
-| `ngen-packer-copy` | `.usda .usdc .usd .png .jpg .jpeg .hdr`: the source's bytes, unchanged, for assets the engine still reads in their source format. A clone (`FICLONE`) where the filesystem has one (btrfs, XFS), so the cache shares the source's blocks; a byte copy elsewhere | the source |
+| `ngen-packer-texture` | `.png .jpg .jpeg`: decoded with stb_image, the full mip chain built with `pack/mipchain.h` (2×2 box filter, colour averaged in linear space), written as a packed texture (`pack/packedtexture.h`): a 24-byte `NGTX` header (version, format, width, height, mip levels) and every level, level 0 first, tightly packed | RGBA8 sRGB, all mips |
+| `ngen-packer-copy` | `.usda .usdc .usd .hdr`: the source's bytes, unchanged, for assets the engine still reads in their source format. A clone (`FICLONE`) where the filesystem has one (btrfs, XFS), so the cache shares the source's blocks; a byte copy elsewhere | the source |
 
 ## The client
 

@@ -53,10 +53,11 @@
 #include <map>
 #include <mutex>
 #include <set>
+#include <span>
 #include <unordered_map>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
+#include "packedtexture.h"
+#include "profile.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -625,6 +626,7 @@ struct USDScene::Impl {
     // ── Asset binding cache ────────────────────────────────────────────────
 
     void updateAssetBindings(MeshLibrary& meshLib, MaterialLibrary& matLib) {
+        PROFILE_ZONE("UpdateAssetBindings");
         assetBindings.resize(prims.size());
 
         for (size_t i = 1; i < prims.size(); i++) {
@@ -1028,10 +1030,13 @@ struct USDScene::Impl {
         return {};
     }
 
+    // Reads a texture as the asset server packed it (src/asset/pack/packedtexture.h): RGBA8 sRGB with its full mip chain,
+    // ready to upload. Nothing is decoded here.
     static bool loadTextureFromResolvedPath(const std::string& resolvedPath, MaterialDesc& matDesc) {
         if (resolvedPath.empty()) {
             return false;
         }
+        PROFILE_ZONE("LoadTexture");
 
         auto& resolver = ArGetResolver();
         auto asset = resolver.OpenAsset(ArResolvedPath(resolvedPath));
@@ -1044,17 +1049,18 @@ struct USDScene::Impl {
             return false;
         }
 
-        auto size = asset->GetSize();
-        int w = 0, h = 0, channels = 0;
-        auto* pixels = stbi_load_from_memory((const stbi_uc*) buffer.get(), (int) size, &w, &h, &channels, 4);
-        if (!pixels) {
+        auto bytes = std::span(reinterpret_cast<const std::byte*>(buffer.get()), asset->GetSize());
+        auto texture = readPackedTexture(bytes);
+        if (!texture) {
+            fprintf(stderr, "USDScene: %s is not a packed texture\n", resolvedPath.c_str());
             return false;
         }
 
-        matDesc.texWidth = w;
-        matDesc.texHeight = h;
-        matDesc.texPixels.assign(pixels, pixels + w * h * 4);
-        stbi_image_free(pixels);
+        matDesc.texWidth = (int) texture->width;
+        matDesc.texHeight = (int) texture->height;
+        matDesc.texMipLevels = texture->mipLevels;
+        const auto* levels = reinterpret_cast<const uint8_t*>(texture->levels.data());
+        matDesc.texPixels.assign(levels, levels + texture->levels.size());
         return true;
     }
 

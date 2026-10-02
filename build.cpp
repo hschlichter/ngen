@@ -151,6 +151,17 @@ auto main(int argc, char** argv) -> int {
 
     auto rhi_backend = alias("rhi-backend").select("platform", "linux-vulkan", rhivulkan.owner());
 
+    // What packers share (the packer contract, the packed texture format, the mip filter). The renderer uses the mip
+    // filter and the packed texture format too.
+    auto packer =
+        cxx::static_library("packer")
+            .sources({
+                "src/asset/pack/packer.cpp",
+                "src/asset/pack/mipchain.cpp",
+                "src/asset/pack/packedtexture.cpp",
+            })
+            .public_include({"src/asset/pack"});
+
     auto renderer =
         cxx::static_library("renderer")
             .sources(glob({.include = "src/renderer/**/*.cpp"}))
@@ -171,6 +182,7 @@ auto main(int argc, char** argv) -> int {
             .link(obs)
             .link(profile)
             .link(assetClient)
+            .link(packer)
             .link(rhi_backend);
 
     auto scene =
@@ -215,7 +227,9 @@ auto main(int argc, char** argv) -> int {
             // The asset resolver uses AssetClient, which needs C++23. It includes only usd/ar, usd/sdf and base headers, which
             // compile as C++23; the rest of OpenUSD's headers don't (usd/usd/schemaRegistry.h).
             .for_source("src/scene/usdassetresolver.cpp", [](cxx::ObjectFile& file) { file.std("c++23"); })
-            .link(assetClient);
+            .link(assetClient)
+            .link(packer)
+            .link(profile);
 
     // The resolver's plugin metadata: USD only uses a resolver whose type a registered plugin declares.
     auto usdPlugins =
@@ -265,9 +279,9 @@ auto main(int argc, char** argv) -> int {
 
     // Assets (src/asset/README.md): one packer program per asset type, and ngen-asset-server, which packs on
     // request with the rules in the root pack.cpp and streams the results. Nothing here lists assets.
-    auto packer = cxx::static_library("packer").sources({"src/asset/pack/packer.cpp"}).public_include({"src/asset/pack"});
     auto packerShader = cxx::program("ngen-packer-shader").sources({"src/apps/packershader.cpp"}).link(packer);
     auto packerCopy = cxx::program("ngen-packer-copy").sources({"src/apps/packercopy.cpp"}).link(packer);
+    auto packerTexture = cxx::program("ngen-packer-texture").sources({"src/apps/packertexture.cpp"}).include({"external/stb"}).link(packer);
     auto assetServer =
         cxx::program("ngen-asset-server")
             .sources({
@@ -282,7 +296,8 @@ auto main(int argc, char** argv) -> int {
             })
             .link(rpccore)
             .depend_on(packerShader)
-            .depend_on(packerCopy);
+            .depend_on(packerCopy)
+            .depend_on(packerTexture);
 
     auto view =
         cxx::program("ngen-view")
@@ -328,6 +343,7 @@ auto main(int argc, char** argv) -> int {
             .link(rpc)
             .link(rpccore)
             .link(assetClient)
+            .link(packer)
             .link_flags(sdl3_libs)
             .depend_on(assetServer)
             .depend_on(usdPlugins)
@@ -427,6 +443,7 @@ auto main(int argc, char** argv) -> int {
     p.target(rpcTool);
     p.target(packerShader);
     p.target(packerCopy);
+    p.target(packerTexture);
     p.target(assetServer);
     p.target(usdPlugins);
     p.target(format);

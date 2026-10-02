@@ -26,7 +26,7 @@ changing how scene data reaches the GPU.
 | Frame graph | `framegraph.h/.cpp`, `framegraphbuilder.h`, `framegraphcontext.h`, `framegraphresource.h`, `passnode.h`, `framegraphdraw.h`, `framegraphdebug.h`, `framegraphpreviews.h/.cpp`, `resourcepool.h/.cpp` |
 | GPU scene and culling | `gpuscene.h/.cpp` (`GpuScene`), `drawlists.h/.cpp` (`DrawLists`), `passes/instanceuploadpass`, `passes/instancecullpass`, `culling.h/.cpp` (`CullState`) |
 | Passes | `passes/`: shadow, depth prepass, geometry, debug views, lighting, AA, blit, debug lines, gizmos, editor UI, present |
-| Resource lifetime and upload | `deletionqueue.h/.cpp`, `gpuuploader.h/.cpp`, `mipchain.h/.cpp`, `shaderloader.h/.cpp` |
+| Resource lifetime and upload | `deletionqueue.h/.cpp`, `gpuuploader.h/.cpp`, `shaderloader.h/.cpp` |
 | Shadows | `shadowcascades.h/.cpp` |
 | Editor support | `imguibackend.h/.cpp` (interface), `gizmo.h`, `axis3dgizmo`, `translategizmo`, `rotategizmo`, `scalegizmo` |
 | Debugging and introspection | `renderdebug.h`, `renderdebugjson.h/.cpp`, `screenshot.h/.cpp`, `capture.h/.cpp` (`CaptureService`), `gpuschema.h/.cpp`, `framedebug.h/.cpp`, `gpucounters.h/.cpp`, `debugview.h` |
@@ -205,7 +205,9 @@ is its own invocation group.
 - **`GpuUploader`.** One command buffer, a staging buffer per upload, one submit and a blocking fence wait in `end()`. Used for bulk uploads (geometry
   pool, tables, textures), never per frame.
 - **`ResourcePool`.** Transient textures for the frame graph, reused across frames by size, format and usage; flushed on swapchain recreation.
-- **Textures.** Material textures are RGBA8 sRGB with full mip chains built on the CPU (`mipchain.h`, 2×2 box filter). The material sampler is
+- **Textures.** Material textures are RGBA8 sRGB with full mip chains. Textures from files arrive packed by the asset server with every level
+  (`src/asset/README.md`), and are uploaded as they are; only the generated 1×1 textures get their chain here, from the same filter
+  (`src/asset/pack/mipchain.h`, a 2×2 box filter averaging colour in linear space). The material sampler is
   trilinear with anisotropy and editable live (`SamplerSettings`, `sampler` session verb); changing it rebuilds the geometry descriptor sets.
 
 ## Shadows

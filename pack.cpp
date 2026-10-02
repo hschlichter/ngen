@@ -18,11 +18,19 @@ auto packRules(const std::string& config) -> std::vector<PackRule> {
         },
         .version = 1,
     });
+    // Images become engine-ready textures: RGBA8 sRGB with the full mip chain, decoded and mip-mapped once, here.
+    rules.push_back(PackRule{
+        .name = "texture",
+        .extensions = {".png", ".jpg", ".jpeg"},
+        .packer = "ngen-packer-texture",
+        .params = {},
+        .version = 1,
+    });
     // Assets the engine still reads in their source format, until a packer for their engine-ready format exists: the packed
     // asset is the source's bytes.
     rules.push_back(PackRule{
         .name = "copy",
-        .extensions = {".usda", ".usdc", ".usd", ".png", ".jpg", ".jpeg", ".hdr"},
+        .extensions = {".usda", ".usdc", ".usd", ".hdr"},
         .packer = "ngen-packer-copy",
         .params = {},
         .version = 1,

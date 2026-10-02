@@ -10,7 +10,10 @@ struct MaterialDesc {
     glm::vec4 baseColorFactor = glm::vec4(1.0f);
     int texWidth = 0;
     int texHeight = 0;
+    // RGBA8 sRGB. A packed texture's levels, level 0 first, when texMipLevels > 0 (the renderer uploads them as they are);
+    // otherwise only level 0, and the renderer builds the mip chain (the generated 1x1 textures).
     std::vector<uint8_t> texPixels;
+    uint32_t texMipLevels = 0;
 };
 
 class MaterialLibrary {

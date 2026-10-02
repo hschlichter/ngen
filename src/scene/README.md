@@ -17,7 +17,8 @@ lives in the `usd*.cpp` files (the `sceneusd` library); the headers keep pxr out
 ## Where the scene's bytes come from
 
 Every file the scene reads goes through USD's asset resolver: the root layer, sublayers, references, payloads, and textures
-(`loadTextureFromResolvedPath` opens them with `ArGetResolver().OpenAsset` and decodes from memory). ngen-view replaces USD's default resolver with
+(`loadTextureFromResolvedPath` opens them with `ArGetResolver().OpenAsset`). Textures arrive packed (`src/asset/pack/packedtexture.h`): RGBA8 sRGB
+with every mip level, copied into `MaterialDesc` as they are; the scene decodes nothing. ngen-view replaces USD's default resolver with
 `NgenAssetResolver` (`usdassetresolver.*`), which reads through the view's `AssetClient` (`src/asset/README.md`), so the scene's data comes
 streamed from the asset server and the view never opens an asset file.
 

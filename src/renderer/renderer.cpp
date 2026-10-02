@@ -514,11 +514,16 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
                 };
                 auto textureName = std::format("material.{}.basecolor", inst.material.index);
                 texDesc.debugName = textureName.c_str();
-                auto pixelCount = (size_t) matData->texWidth * (size_t) matData->texHeight * 4;
-                auto level0 = std::span(matData->texPixels).first(pixelCount);
                 std::vector<std::byte> packed;
-                {
+                if (matData->texMipLevels > 0) {
+                    // Packed by the asset server with its full chain: upload it as it is.
+                    texDesc.mipLevels = matData->texMipLevels;
+                    const auto* levels = reinterpret_cast<const std::byte*>(matData->texPixels.data());
+                    packed.assign(levels, levels + matData->texPixels.size());
+                } else {
                     PROFILE_ZONE("BuildMips");
+                    auto pixelCount = (size_t) matData->texWidth * (size_t) matData->texHeight * 4;
+                    auto level0 = std::span(matData->texPixels).first(pixelCount);
                     auto chain = buildMipChain(texDesc.width, texDesc.height, level0, true);
                     packed = packMipChain(level0, chain);
                 }
