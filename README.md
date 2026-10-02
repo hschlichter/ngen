@@ -80,6 +80,7 @@ Each library documents its design and rules in a README next to the code:
   rules, shadows, observation.
 - [`src/rpc/README.md`](src/rpc/README.md) — how ngen processes and agents talk: JSON-RPC over loopback TCP, discovery, threading, adding a method, `ngen-rpc`.
 - [`src/build/README.md`](src/build/README.md) — the self-hosted build system: framework, IR, runner, bootstrap.
+- [`src/scene/README.md`](src/scene/README.md) — the scene as a USD stage, and how its layers and textures are read through the asset server.
 - [`src/asset/README.md`](src/asset/README.md) — the asset system: asset ids, `ngen-asset-server`, its cache and stream, `AssetClient`, and packing (`pack.cpp` rules, packers).
 
 `docs/` holds plans and design history; code and library READMEs do not depend on it.

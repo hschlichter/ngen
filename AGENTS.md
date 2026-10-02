@@ -100,7 +100,8 @@ items in an "Open questions" section instead of picking silently.
 - `src/rhi/` — backend-agnostic RHI interfaces. Principles and integrator contract in `src/rhi/README.md`; read it before touching the interface.
 - `src/rhi/vulkan/` — Vulkan backend implementation. Additional backends go in sibling folders (e.g. `src/rhi/d3d12/`).
 - `src/renderer/` — renderer front-end (frame graph, GPU scene tables, GPU culling, passes). Design and rules in `src/renderer/README.md`.
-- `src/scene/` — scene loading, ECS, materials.
+- `src/scene/` — scene loading, ECS, materials; the USD asset resolver that reads scenes through the asset server. Design and rules (asset ids,
+  the C++20/C++23 split) in `src/scene/README.md`.
 - `src/rpc/` — how processes and agents talk: the RPC core (`core/`, no engine code, shared with the build server) and the engine layer (method
   registry, endpoint). Protocol and how to add a method in `src/rpc/README.md`.
 - `src/view/` — ngen-view's commands as RPC methods and script verbs (`viewcommands.*`), and its dumps (`viewdumps.*`).
@@ -160,7 +161,8 @@ adding platforms/configurations).
 
 Verification runs headless through the observation bus — build, run with `--obs-output`, read the JSONL
 evidence. ngen-view needs its variant's asset server running (`./ngen-cli asset-server &` for the set variant,
-`./_out/<platform>/<config>/ngen-asset-server &` for another); without one it exits at start-up. The `run-headless` skill (`.claude/skills/run-headless/SKILL.md`) has the full procedure, test
+`./_out/<platform>/<config>/ngen-asset-server &` for another); without one it exits at start-up. Scenes and textures are assets too, so a scene
+must be inside the project. The `run-headless` skill (`.claude/skills/run-headless/SKILL.md`) has the full procedure, test
 scenes, and machine constraints; `obs.md` documents the observation conventions. Observations added for a
 change stay in the code — there is no "remove when done" step.
 

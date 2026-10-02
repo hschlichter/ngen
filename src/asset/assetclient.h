@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -35,6 +36,9 @@ public:
 
     // The asset once it has arrived; nullptr before that, or when it failed.
     auto find(const std::string& id) const -> const PackedAsset*;
+
+    // Moves an arrived asset out of the client; nullopt if it hasn't arrived. A later request for the id streams it again.
+    auto take(const std::string& id) -> std::optional<PackedAsset>;
 
     // The packer's errors for an asset that failed; empty otherwise.
     auto errors(const std::string& id) const -> std::vector<std::string>;

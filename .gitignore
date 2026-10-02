@@ -58,3 +58,6 @@ _out/
 compile_commands.json
 *.spv
 imgui.ini
+
+# Large downloaded test assets (NewSponza, 6.3 GB)
+assets/main_sponza/

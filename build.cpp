@@ -211,7 +211,18 @@ auto main(int argc, char** argv) -> int {
                 "external/imgui/backends",
                 "external/concurrentqueue",
             })
-            .warning_off("deprecated-declarations");
+            .warning_off("deprecated-declarations")
+            // The asset resolver uses AssetClient, which needs C++23. It includes only usd/ar, usd/sdf and base headers, which
+            // compile as C++23; the rest of OpenUSD's headers don't (usd/usd/schemaRegistry.h).
+            .for_source("src/scene/usdassetresolver.cpp", [](cxx::ObjectFile& file) { file.std("c++23"); })
+            .link(assetClient);
+
+    // The resolver's plugin metadata: USD only uses a resolver whose type a registered plugin declares.
+    auto usdPlugins =
+        tool("usdplugins")
+            .for_each({"src/scene/usdplugins/plugInfo.json"},
+                      [](const BuildVariant& variant, const Path& source) -> Path { return variant.out_dir / "usdplugins" / source.filename(); })
+            .command({"cp", "$in", "$out"});
 
     auto imgui =
         cxx::static_library("imgui")
@@ -256,6 +267,7 @@ auto main(int argc, char** argv) -> int {
     // request with the rules in the root pack.cpp and streams the results. Nothing here lists assets.
     auto packer = cxx::static_library("packer").sources({"src/asset/pack/packer.cpp"}).public_include({"src/asset/pack"});
     auto packerShader = cxx::program("ngen-packer-shader").sources({"src/apps/packershader.cpp"}).link(packer);
+    auto packerCopy = cxx::program("ngen-packer-copy").sources({"src/apps/packercopy.cpp"}).link(packer);
     auto assetServer =
         cxx::program("ngen-asset-server")
             .sources({
@@ -269,7 +281,8 @@ auto main(int argc, char** argv) -> int {
                 "src/asset/server",
             })
             .link(rpccore)
-            .depend_on(packerShader);
+            .depend_on(packerShader)
+            .depend_on(packerCopy);
 
     auto view =
         cxx::program("ngen-view")
@@ -317,6 +330,7 @@ auto main(int argc, char** argv) -> int {
             .link(assetClient)
             .link_flags(sdl3_libs)
             .depend_on(assetServer)
+            .depend_on(usdPlugins)
             .lib_search("external/openusd_build/lib")
             .rpath((std::filesystem::current_path() / "external/openusd_build/lib").string())
             .link_flag("-lusd_usd")
@@ -412,7 +426,9 @@ auto main(int argc, char** argv) -> int {
     p.target(cli);
     p.target(rpcTool);
     p.target(packerShader);
+    p.target(packerCopy);
     p.target(assetServer);
+    p.target(usdPlugins);
     p.target(format);
     p.target(tidy);
     p.default_target(view);

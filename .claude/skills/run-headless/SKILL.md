@@ -124,9 +124,8 @@ rebuild, rerun. Observations added for a change stay in the code — there is no
 ## Test scenes
 
 - Minimal: `assets/three_cubes.usda` — cheap smoke test for extraction, lighting, frame graph.
-- Materials/textures stress test: Intel NewSponza at
-  `~/Downloads/main_sponza/NewSponza_Main_USD_Zup_003.usda`. Correct result: ≈25 `TextureUploaded` events
-  at 4096×4096 plus a few 1×1 (materials without a diffuse map), 28 unique materials. All-1×1 means
+- Materials/textures stress test: Intel NewSponza at `assets/main_sponza/NewSponza_Main_USD_Zup_003.usda` (git-ignored; scenes must be
+  inside the project, since they are assets). Correct result: ≈25 `TextureUploaded` events at 4096×4096 plus a few 1×1 (materials without a diffuse map), 28 unique materials. All-1×1 means
   texturing is broken. It exercises GeomSubset per-face materials, NodeGraph-wrapped textures, backslash
   asset paths, and indexed faceVarying primvars.
 

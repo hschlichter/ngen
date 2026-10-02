@@ -107,15 +107,21 @@ nonzero, with a message on stdout or stderr, when it fails. `pack/packer.h` pars
 | Program | Packs | Output |
 |---|---|---|
 | `ngen-packer-shader` | GLSL with `glslc`: `optimize` (0 = `-O0`, 1 = `-O`) and `debug_info` (1 = `-g`); glslc's depfile gives the `#include`s | SPIR-V |
+| `ngen-packer-copy` | `.usda .usdc .usd .png .jpg .jpeg .hdr`: the source's bytes, unchanged, for assets the engine still reads in their source format. A clone (`FICLONE`) where the filesystem has one (btrfs, XFS), so the cache shares the source's blocks; a byte copy elsewhere | the source |
 
 ## The client
 
 `AssetClient` (`assetclient.h`, the `assetclient` library) is the engine side. `connect(variant)` finds the asset server of that variant and project
 through discovery, and fails when none is running. `request(ids)` sends one `asset.request`; `wait(ids)` blocks until each has arrived or failed;
-`find(id)` returns the bytes and version, `errors(id)` the reasons it failed.
+`find(id)` returns the bytes and version, `take(id)` moves them out of the client (a later request streams them again), and `errors(id)` gives
+the reasons it failed. A new request for an id clears an earlier failure.
 
 ngen-view connects at start-up and exits with an error naming the server command when there is none. It requests every shader on
 `startupShaderIds()` in one request, loads the scene meanwhile, and waits for them just before the renderer needs them (`src/renderer/shaderloader.*`).
+The scene's USD layers and textures come through the same client, by USD's asset resolver (`src/scene/README.md`).
+
+`assetid.h` turns a path into its asset id (relative to the project root, normalised; empty outside the project). The view uses it for its scene
+argument, and the USD resolver for every asset path.
 
 ## Adding a packer
 

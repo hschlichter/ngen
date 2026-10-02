@@ -18,5 +18,14 @@ auto packRules(const std::string& config) -> std::vector<PackRule> {
         },
         .version = 1,
     });
+    // Assets the engine still reads in their source format, until a packer for their engine-ready format exists: the packed
+    // asset is the source's bytes.
+    rules.push_back(PackRule{
+        .name = "copy",
+        .extensions = {".usda", ".usdc", ".usd", ".png", ".jpg", ".jpeg", ".hdr"},
+        .packer = "ngen-packer-copy",
+        .params = {},
+        .version = 1,
+    });
     return rules;
 }

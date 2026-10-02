@@ -1,4 +1,5 @@
 #include "assetclient.h"
+#include "assetid.h"
 #include "camera.h"
 #include "culling.h"
 #include "debugdraw.h"
@@ -18,6 +19,7 @@
 #include "renderworld.h"
 #include "rhidevicevulkan.h"
 #include "rotategizmo.h"
+#include "rpcdiscovery.h"
 #include "rpcendpoint.h"
 #include "rpcregistry.h"
 #include "scalegizmo.h"
@@ -27,6 +29,7 @@
 #include "shaderloader.h"
 #include "shadowcascades.h"
 #include "translategizmo.h"
+#include "usdassetresolver.h"
 #include "usdrenderextractor.h"
 #include "usdscene.h"
 #include "viewcommands.h"
@@ -220,20 +223,33 @@ auto main(int argc, char* argv[]) -> int {
         OBS_EVENT("Engine", "BusStarted", "ObservationBus").field("output", obsOutputPath);
     }
 
-    // Shaders come streamed from this variant's asset server; the view doesn't start without one. The variant is
-    // the directory the binary lives in, _out/<platform>/<config>/. The request goes out now and is waited for
-    // just before the renderer needs the shaders, so packing overlaps loading the scene.
+    // Every asset comes streamed from this variant's asset server; the view doesn't start without one. The variant is
+    // the directory the binary lives in, _out/<platform>/<config>/. The shader request goes out now and is waited for
+    // just before the renderer needs the shaders, so packing overlaps loading the scene. USD reads the scene's layers
+    // and textures through the same client, by asset id.
     AssetClient assetClient;
+    std::error_code binError;
+    auto binDirectory = std::filesystem::canonical("/proc/self/exe", binError).parent_path();
+    auto projectRoot = rpcProjectRoot();
     {
-        std::error_code ec;
-        auto bin = std::filesystem::canonical("/proc/self/exe", ec).parent_path();
-        auto variant = bin.parent_path().filename().string() + "/" + bin.filename().string();
+        auto variant = binDirectory.parent_path().filename().string() + "/" + binDirectory.filename().string();
         if (auto connected = assetClient.connect(variant); !connected) {
             std::println(stderr, "ngen-view: {}", connected.error());
             return 1;
         }
     }
     assetClient.request(startupShaderIds());
+    if (!registerAssetResolver(&assetClient, binDirectory, projectRoot)) {
+        return 1;
+    }
+    std::string sceneId;
+    if (positional.size() >= 2) {
+        sceneId = assetIdForPath(positional[1], std::filesystem::current_path(), projectRoot);
+        if (sceneId.empty()) {
+            std::println(stderr, "ngen-view: {} is outside the project ({}); scenes are assets, and assets live in the project", positional[1], projectRoot.string());
+            return 1;
+        }
+    }
 
     USDScene usdScene;
     USDRenderExtractor usdExtractor;
@@ -245,8 +261,8 @@ auto main(int argc, char* argv[]) -> int {
     SceneUpdater sceneUpdater;
 
     if (positional.size() >= 2) {
-        if (!usdScene.open(positional[1])) {
-            std::println(stderr, "Failed to open USD scene: {}", positional[1]);
+        if (!usdScene.open(sceneId.c_str())) {
+            std::println(stderr, "Failed to open USD scene: {}", sceneId);
             return 1;
         }
     } else {

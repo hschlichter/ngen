@@ -1,0 +1,17 @@
+{
+    "Plugins": [
+        {
+            "Info": {
+                "Types": {
+                    "NgenAssetResolver": {
+                        "bases": ["ArResolver"]
+                    }
+                }
+            },
+            "Name": "ngenAssetResolver",
+            "Type": "resource",
+            "Root": ".",
+            "ResourcePath": "."
+        }
+    ]
+}

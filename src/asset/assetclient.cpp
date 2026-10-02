@@ -119,6 +119,13 @@ auto AssetClient::request(std::span<const std::string> ids) -> void {
         list.push_back(id);
     }
     std::vector<std::string> copy(ids.begin(), ids.end());
+    {
+        // A new request supersedes an earlier failure for the same id.
+        std::lock_guard lock(state->mutex);
+        for (const auto& id : ids) {
+            state->failed.erase(id);
+        }
+    }
     state->rpc.call(state->connection, "asset.request", {{"ids", list}}, [this, copy](const rpc::Json& response, std::vector<std::byte>) {
         if (!response.contains("error")) {
             return;
@@ -159,6 +166,17 @@ auto AssetClient::find(const std::string& id) const -> const PackedAsset* {
     std::lock_guard lock(state->mutex);
     auto it = state->ready.find(id);
     return it == state->ready.end() ? nullptr : it->second.get();
+}
+
+auto AssetClient::take(const std::string& id) -> std::optional<PackedAsset> {
+    std::lock_guard lock(state->mutex);
+    auto it = state->ready.find(id);
+    if (it == state->ready.end()) {
+        return std::nullopt;
+    }
+    auto asset = std::move(*it->second);
+    state->ready.erase(it);
+    return asset;
 }
 
 auto AssetClient::errors(const std::string& id) const -> std::vector<std::string> {
