@@ -58,6 +58,7 @@
 
 #include "packedtexture.h"
 #include "profile.h"
+#include "usdassetresolver.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -627,6 +628,7 @@ struct USDScene::Impl {
 
     void updateAssetBindings(MeshLibrary& meshLib, MaterialLibrary& matLib) {
         PROFILE_ZONE("UpdateAssetBindings");
+        prefetchTextures();
         assetBindings.resize(prims.size());
 
         for (size_t i = 1; i < prims.size(); i++) {
@@ -1093,6 +1095,91 @@ struct USDScene::Impl {
         return UsdShadeShader();
     }
 
+    // The resolved path of the texture file an input is connected to (possibly via a NodeGraph); empty when it isn't
+    // connected to a texture reader with a file.
+    static std::string connectedTextureFile(const UsdShadeInput& input) {
+        UsdShadeConnectableAPI texSource;
+        TfToken texSourceName;
+        UsdShadeAttributeType texSourceType;
+        if (!input.GetConnectedSource(&texSource, &texSourceName, &texSourceType)) {
+            return {};
+        }
+        UsdShadeShader texShader = resolveConnectedShader(texSource, texSourceName);
+        if (!texShader) {
+            return {};
+        }
+        auto fileInput = texShader.GetInput(TfToken("file"));
+        if (!fileInput) {
+            return {};
+        }
+        return resolveTexturePath(fileInput);
+    }
+
+    // The resolved path of a material's base colour texture: its surface shader's diffuseColor input, connected to a
+    // texture. Empty when there is none. The same walk extractMaterial does.
+    static std::string baseColorTextureFile(const UsdShadeMaterial& material) {
+        auto surfaceOutput = material.GetSurfaceOutput();
+        if (!surfaceOutput) {
+            return {};
+        }
+        UsdShadeConnectableAPI source;
+        TfToken sourceName;
+        UsdShadeAttributeType sourceType;
+        if (!surfaceOutput.GetConnectedSource(&source, &sourceName, &sourceType)) {
+            return {};
+        }
+        UsdShadeShader shader(source.GetPrim());
+        if (!shader) {
+            return {};
+        }
+        auto input = shader.GetInput(TfToken("diffuseColor"));
+        if (!input) {
+            return {};
+        }
+        return connectedTextureFile(input);
+    }
+
+    // Requests every base colour texture the renderable prims' materials use in one batch, so the asset server packs and
+    // streams them together; the extraction then opens them one by one as they arrive.
+    void prefetchTextures() {
+        PROFILE_ZONE("PrefetchTextures");
+        std::vector<std::string> files;
+        std::set<std::string> seenMaterials;
+        auto add = [&](const UsdPrim& prim) {
+            auto material = UsdShadeMaterialBindingAPI(prim).ComputeBoundMaterial();
+            if (!material) {
+                return;
+            }
+            // A material already extracted won't open its texture again; requesting it would leave the bytes unclaimed.
+            auto key = material.GetPrim().GetPath().GetString();
+            if (materialPrimCache.contains(key) || !seenMaterials.insert(key).second) {
+                return;
+            }
+            auto file = baseColorTextureFile(material);
+            if (!file.empty()) {
+                files.push_back(file);
+            }
+        };
+        for (size_t i = 1; i < prims.size(); i++) {
+            const auto& rec = prims[i];
+            if (!(rec.flags & PrimFlagRenderable)) {
+                continue;
+            }
+            if (assetBindingsBuilt && i < assetBindings.size() && assetBindings[i].mesh) {
+                continue;
+            }
+            auto prim = stage->GetPrimAtPath(SdfPath(rec.path));
+            if (!prim) {
+                continue;
+            }
+            for (const auto& subset : UsdShadeMaterialBindingAPI(prim).GetMaterialBindSubsets()) {
+                add(subset.GetPrim());
+            }
+            add(prim);
+        }
+        prefetchAssets(files);
+    }
+
     static void extractShaderTexture(const UsdShadeShader& shader, const TfToken& inputName, MaterialDesc& matDesc) {
         auto input = shader.GetInput(inputName);
         if (!input) {
@@ -1100,18 +1187,9 @@ struct USDScene::Impl {
         }
 
         // Check if connected to a texture reader (possibly via a NodeGraph).
-        UsdShadeConnectableAPI texSource;
-        TfToken texSourceName;
-        UsdShadeAttributeType texSourceType;
-        if (input.GetConnectedSource(&texSource, &texSourceName, &texSourceType)) {
-            UsdShadeShader texShader = resolveConnectedShader(texSource, texSourceName);
-            if (texShader) {
-                auto fileInput = texShader.GetInput(TfToken("file"));
-                if (fileInput) {
-                    if (loadTextureFromResolvedPath(resolveTexturePath(fileInput), matDesc)) {
-                        return;
-                    }
-                }
+        if (auto file = connectedTextureFile(input); !file.empty()) {
+            if (loadTextureFromResolvedPath(file, matDesc)) {
+                return;
             }
         }
 

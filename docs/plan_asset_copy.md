@@ -152,8 +152,8 @@ Proposed; pushback welcome.
 
 ## Deferred / follow-ups
 
-- **Requesting textures in batches** (all of a scene's texture ids at once, decoded as they arrive). Trigger: the serial fetch shows up in
-  Sponza's load time.
+- **Requesting textures in batches** (all of a scene's texture ids at once, decoded as they arrive). Done in
+  [plan_texture_batch.md](plan_texture_batch.md).
 - **A texture packer** that writes an engine-ready format (mip chains, block compression) instead of PNG. Trigger: this plan lands; it is the first
   real packer after shaders.
 - **The USD packer** and the scene pack format. Trigger: the plan for the scene pack format.

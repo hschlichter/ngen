@@ -30,6 +30,7 @@
 #include <print>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -56,6 +57,7 @@ using Bytes = std::shared_ptr<const std::vector<std::byte>>;
 std::mutex fetchMutex;
 std::unordered_map<std::string, std::shared_future<Bytes>> fetching; // ids being fetched, shared by concurrent opens
 std::unordered_map<std::string, uint64_t> versions;                  // the last version fetched per id
+std::unordered_set<std::string> prefetched;                          // ids requested ahead by prefetchAssets, not yet opened
 
 auto parseVersion(const std::string& text) -> uint64_t {
     try {
@@ -65,11 +67,13 @@ auto parseVersion(const std::string& text) -> uint64_t {
     }
 }
 
-// Fetches an asset from the asset server. Concurrent opens of the same id share one request.
+// Fetches an asset from the asset server. Concurrent opens of the same id share one request, and an id prefetchAssets
+// already requested isn't requested again.
 auto fetch(const std::string& id) -> Bytes {
     std::promise<Bytes> promise;
     std::shared_future<Bytes> future;
     bool owner = false;
+    bool requested = false;
     {
         std::lock_guard lock(fetchMutex);
         auto it = fetching.find(id);
@@ -79,13 +83,16 @@ auto fetch(const std::string& id) -> Bytes {
             future = promise.get_future().share();
             fetching.emplace(id, future);
             owner = true;
+            requested = prefetched.erase(id) > 0;
         }
     }
     if (!owner) {
         return future.get();
     }
     std::vector<std::string> ids = {id};
-    assetClient->request(ids);
+    if (!requested) {
+        assetClient->request(ids);
+    }
     assetClient->wait(ids);
     Bytes bytes;
     if (auto asset = assetClient->take(id)) {
@@ -198,4 +205,21 @@ auto registerAssetResolver(AssetClient* client, const std::filesystem::path& bin
     }
     ArSetPreferredResolver("NgenAssetResolver");
     return true;
+}
+
+auto prefetchAssets(std::span<const std::string> ids) -> void {
+    std::vector<std::string> wanted;
+    {
+        std::lock_guard lock(fetchMutex);
+        for (const auto& id : ids) {
+            if (id.empty() || isRuntimePath(id) || fetching.contains(id) || prefetched.contains(id)) {
+                continue;
+            }
+            prefetched.insert(id);
+            wanted.push_back(id);
+        }
+    }
+    if (!wanted.empty()) {
+        assetClient->request(wanted);
+    }
 }

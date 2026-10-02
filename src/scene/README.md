@@ -28,6 +28,10 @@ streamed from the asset server and the view never opens an asset file.
 - **Resolving asks the server nothing.** A missing asset fails when it is opened, with the server's reason in the log (`asset.failed`).
 - **Reads** fetch the asset (one request, shared by concurrent opens of the same id), take its bytes out of the client, and hand them to USD as an
   in-memory asset that owns them.
+- **Textures are requested in one batch.** Before extracting materials, `updateAssetBindings` collects the base colour texture of every material
+  bound to a renderable prim or its material-bind subsets, and `prefetchAssets` requests them together, so the asset server packs and streams them
+  at the same time. Each open then waits for its texture instead of requesting it. Materials already extracted are skipped, since nothing would
+  open their textures again.
 - **Writes go to disk.** A layer save writes the file at its id, relative to the view's working directory, which is the asset server's (the view
   finds the server through `.ngen-discovery/` there); the editor still lives in the view. The next request for that asset repacks it.
 - **USD's own files are not assets.** Files under a registered USD plugin's resources (the schema definitions, `generatedSchema.usda`) keep their
