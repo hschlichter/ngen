@@ -18,7 +18,8 @@ else about assets.
 
 ## Asset ids
 
-An asset's id is its project-relative source path with forward slashes, as USD names assets: `shaders/gbuffer.vert`, `assets/textures/brick.png`.
+An asset's id is its source path relative to the asset server's working directory, with forward slashes, as USD names assets: `shaders/gbuffer.vert`,
+`assets/textures/brick.png`.
 The id never changes when the asset's content does. The asset's **version** is the content hash of its packed file (FNV-1a 64, `assethash.h`), sent as
 16 hex digits.
 
@@ -58,8 +59,10 @@ by hand and runs until Ctrl-C or SIGTERM:
 ./_out/linux-vulkan/debug/ngen-asset-server &      # any variant's
 ```
 
-It takes its variant from where it lives, runs packers with the project root as their working directory, and registers in discovery as kind
-`asset` with its variant as the label. It uses nothing from `src/build/`: its own cache, its own job runner, and the RPC core.
+**Its working directory is the root.** Asset ids are relative to it, packers run in it, the cache is `.ngen-assets/` in it, and it registers in
+`.ngen-discovery/` in it, as kind `asset` with its variant as the label; a view running in the same directory finds it. Nothing depends on where
+the binaries are, except that the packers sit next to the server. It takes its variant (and so the rules' configuration) from the folder its binary
+is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own cache, its own job runner, and the RPC core.
 
 - **`asset.request`** `{ids: [...], have: {id: version}}` answers at once with `{request}`. Then each asset is answered on its own as it finishes:
   - `asset.data` `{request, id, version, offset, total}` notifications, each with up to 1 MiB of the packed file as the frame's attachment, in order
@@ -82,7 +85,8 @@ It takes its variant from where it lives, runs packers with the project root as 
 
 ## The cache
 
-`<out_dir>/assets/` is the server's: packed files at `assets/<asset id>`, and `assets/.ngen-assetcache`, which records per asset what it was packed
+`.ngen-assets/<platform>/<config>/` in the server's working directory is its cache: packed files at `<asset id>`, and `.ngen-assetcache`, which records
+per asset what it was packed
 from (`server/assetcache.*`):
 - the job key: the rule's name, version, parameters and packer name
 - the packer binary
@@ -98,7 +102,7 @@ includes, the packer binary or its rule changed, and otherwise streams the cache
 A packer is a standalone program (`src/apps/packer<type>.cpp`) run with the same arguments by every job, with no shell:
 
 ```
-<packer> --rule <name> --rule-version <n> --asset <id> --source <id> --out <out_dir>/assets/<id> --depfile <out_dir>/assets/<id>.d [--param key=value]...
+<packer> --rule <name> --rule-version <n> --asset <id> --source <id> --out <cache>/<id> --depfile <cache>/<id>.d [--param key=value]...
 ```
 
 It reads `--source`, writes the packed asset to `--out`, and writes a Make-format depfile listing every file it read to `--depfile`. It exits
@@ -120,8 +124,8 @@ ngen-view connects at start-up and exits with an error naming the server command
 `startupShaderIds()` in one request, loads the scene meanwhile, and waits for them just before the renderer needs them (`src/renderer/shaderloader.*`).
 The scene's USD layers and textures come through the same client, by USD's asset resolver (`src/scene/README.md`).
 
-`assetid.h` turns a path into its asset id (relative to the project root, normalised; empty outside the project). The view uses it for its scene
-argument, and the USD resolver for every asset path.
+`assetid.h` turns a relative path into an asset id (normalised; empty for an absolute path or one that climbs above the server's directory). The
+view uses it for its scene argument, which is an id, and the USD resolver for every asset path.
 
 ## Adding a packer
 

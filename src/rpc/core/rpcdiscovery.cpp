@@ -19,24 +19,12 @@ auto processAlive(int pid) -> bool {
 
 } // namespace
 
-auto rpcProjectRoot() -> fs::path {
-    std::error_code ec;
-    auto exe = fs::canonical("/proc/self/exe", ec);
-    if (!ec) {
-        auto root = exe.parent_path().parent_path().parent_path().parent_path();
-        if (fs::exists(root / "build.cpp", ec)) {
-            return root;
-        }
-    }
-    return fs::current_path();
-}
-
-auto rpcRunDirectory(const fs::path& projectRoot) -> fs::path {
-    return projectRoot / "_out" / "run";
+auto rpcDiscoveryDirectory() -> fs::path {
+    return fs::current_path() / ".ngen-discovery";
 }
 
 auto writeRpcEndpoint(const RpcEndpointInfo& info) -> std::expected<fs::path, std::string> {
-    auto directory = rpcRunDirectory(info.projectRoot);
+    auto directory = rpcDiscoveryDirectory();
     std::error_code ec;
     fs::create_directories(directory, ec);
     auto file = directory / std::format("{}-{}.json", info.kind, info.pid);
@@ -44,7 +32,6 @@ auto writeRpcEndpoint(const RpcEndpointInfo& info) -> std::expected<fs::path, st
         {"kind", info.kind},
         {"pid", info.pid},
         {"port", info.port},
-        {"projectRoot", info.projectRoot},
         {"label", info.label},
         {"protocol", info.protocol},
         {"startedUnixMs", info.startedUnixMs},
@@ -71,8 +58,9 @@ auto removeRpcEndpoint(const fs::path& file) -> void {
     fs::remove(file, ec);
 }
 
-auto listRpcEndpoints(const fs::path& runDirectory) -> std::vector<RpcEndpointInfo> {
+auto listRpcEndpoints() -> std::vector<RpcEndpointInfo> {
     std::vector<RpcEndpointInfo> endpoints;
+    auto runDirectory = rpcDiscoveryDirectory();
     std::error_code ec;
     if (!fs::is_directory(runDirectory, ec)) {
         return endpoints;
@@ -92,7 +80,6 @@ auto listRpcEndpoints(const fs::path& runDirectory) -> std::vector<RpcEndpointIn
             .kind = j.value("kind", ""),
             .pid = j.value("pid", 0),
             .port = j.value("port", (uint16_t) 0),
-            .projectRoot = j.value("projectRoot", ""),
             .label = j.value("label", ""),
             .protocol = j.value("protocol", 0),
             .startedUnixMs = j.value("startedUnixMs", (int64_t) 0),

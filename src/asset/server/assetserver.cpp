@@ -29,7 +29,7 @@ auto jobKey(const PackRule& rule) -> uint64_t {
     return hash;
 }
 
-// An asset id is a relative path inside the project, with no ".." segment.
+// An asset id is a relative path below the server's directory, with no ".." segment.
 auto validId(const std::string& id) -> bool {
     if (id.empty()) {
         return false;
@@ -90,7 +90,9 @@ auto AssetServer::start(const Options& startOptions) -> std::expected<void, std:
             }
         }
     }
-    cacheDirectory = fs::path("_out") / options.platform / options.config / "assets";
+    // The cache is in the server's working directory, which is also the root asset ids are relative to; one folder per variant,
+    // since packed assets differ by configuration.
+    cacheDirectory = fs::path(".ngen-assets") / options.platform / options.config;
     cache.load(cacheDirectory / ".ngen-assetcache");
     for (const auto& rule : rules) {
         std::string extensions;
@@ -127,7 +129,6 @@ auto AssetServer::start(const Options& startOptions) -> std::expected<void, std:
     info.kind = "asset";
     info.pid = getpid();
     info.port = boundPort;
-    info.projectRoot = options.projectRoot.string();
     info.label = variant();
     info.protocol = rpc::protocolVersion;
     info.startedUnixMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -225,7 +226,7 @@ auto AssetServer::status() -> rpc::Json {
     return {
         {"pid", getpid()},
         {"variant", variant()},
-        {"projectRoot", options.projectRoot.string()},
+        {"directory", fs::current_path().string()},
         {"clients", clients},
         {"tasksRunning", jobs->running()},
         {"tasksQueued", jobs->queued()},
@@ -254,8 +255,8 @@ auto AssetServer::subscribe(const std::string& id, Subscriber subscriber) -> voi
 auto AssetServer::pack(const std::string& id) -> Outcome {
     Outcome outcome;
     if (!validId(id)) {
-        outcome.errors.push_back(std::format("{} is not a project-relative asset id", id));
-        trace("  {}  refused: not a project-relative asset id", id);
+        outcome.errors.push_back(std::format("{} is not an asset id: a relative path below the server's directory", id));
+        trace("  {}  refused: not a relative path below the server's directory", id);
         return outcome;
     }
     auto extension = fs::path(id).extension().string();

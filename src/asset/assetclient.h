@@ -24,8 +24,8 @@ public:
     auto operator=(const AssetClient&) -> AssetClient& = delete;
     ~AssetClient();
 
-    // Finds the asset server of this variant ("linux-vulkan/debug") and project through discovery and connects;
-    // an error when none is running.
+    // Finds the asset server of this variant ("linux-vulkan/debug") running in the working directory, through its
+    // discovery file in .ngen-discovery/, and connects; an error when none is running.
     auto connect(const std::string& variant) -> std::expected<void, std::string>;
 
     // Sends one asset.request for all of `ids`; returns at once.

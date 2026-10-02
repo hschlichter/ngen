@@ -19,7 +19,6 @@
 #include "renderworld.h"
 #include "rhidevicevulkan.h"
 #include "rotategizmo.h"
-#include "rpcdiscovery.h"
 #include "rpcendpoint.h"
 #include "rpcregistry.h"
 #include "scalegizmo.h"
@@ -223,14 +222,14 @@ auto main(int argc, char* argv[]) -> int {
         OBS_EVENT("Engine", "BusStarted", "ObservationBus").field("output", obsOutputPath);
     }
 
-    // Every asset comes streamed from this variant's asset server; the view doesn't start without one. The variant is
+    // Every asset comes streamed from this variant's asset server, running in the same working directory (asset ids are
+    // relative to it); the view doesn't start without one. The variant is
     // the directory the binary lives in, _out/<platform>/<config>/. The shader request goes out now and is waited for
     // just before the renderer needs the shaders, so packing overlaps loading the scene. USD reads the scene's layers
     // and textures through the same client, by asset id.
     AssetClient assetClient;
     std::error_code binError;
     auto binDirectory = std::filesystem::canonical("/proc/self/exe", binError).parent_path();
-    auto projectRoot = rpcProjectRoot();
     {
         auto variant = binDirectory.parent_path().filename().string() + "/" + binDirectory.filename().string();
         if (auto connected = assetClient.connect(variant); !connected) {
@@ -239,14 +238,14 @@ auto main(int argc, char* argv[]) -> int {
         }
     }
     assetClient.request(startupShaderIds());
-    if (!registerAssetResolver(&assetClient, binDirectory, projectRoot)) {
+    if (!registerAssetResolver(&assetClient, binDirectory)) {
         return 1;
     }
     std::string sceneId;
     if (positional.size() >= 2) {
-        sceneId = assetIdForPath(positional[1], std::filesystem::current_path(), projectRoot);
+        sceneId = assetIdForPath(positional[1]);
         if (sceneId.empty()) {
-            std::println(stderr, "ngen-view: {} is outside the project ({}); scenes are assets, and assets live in the project", positional[1], projectRoot.string());
+            std::println(stderr, "ngen-view: {} is not an asset id; give the scene's path relative to the asset server's directory", positional[1]);
             return 1;
         }
     }

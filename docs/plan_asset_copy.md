@@ -191,3 +191,8 @@ Deviations from the plan:
 - **`assetIdForPath` is in the asset system** (`src/asset/assetid.h`), shared by the view's scene argument and the resolver.
 - **A new request clears an earlier failure** in `AssetClient`, so a retried id doesn't return the stale error at once.
 - **Concurrent opens of one id share a request** in the resolver, so the client never sees two streams for the same id.
+
+Changed after landing (2026-10-02): there is no project root. The asset server's working directory is the root asset ids are relative to; its
+cache is `.ngen-assets/<platform>/<config>/` there, and every tool's discovery file is in `.ngen-discovery/` in its working directory, so a view
+finds the asset server it runs next to. The view's scene argument is an asset id as given. Binaries can be copied anywhere: a copy of the debug
+binaries in an unrelated folder, run against a folder holding only `shaders/` and a scene, rendered the baseline image.

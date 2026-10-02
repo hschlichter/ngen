@@ -26,10 +26,10 @@ use `json_fwd.hpp`, with one exception: `rpcclient.h`, whose users are command-l
 
 ## Discovery
 
-Every endpoint writes `<project root>/_out/run/<kind>-<pid>.json` once it is listening: kind, pid, port, project root, a label (the view's scene
-path), protocol and start time. It removes the file on exit. Readers (`listRpcEndpoints`, `ngen-rpc list`) delete files whose process is gone, so a
-crashed process leaves nothing behind after the next listing. The project root is found from the executable (`_out/<platform>/<config>/`), falling
-back to the working directory. Ports are chosen by the OS.
+Every endpoint writes `.ngen-discovery/<kind>-<pid>.json` in its working directory once it is listening: kind, pid, port, a label (the view's
+scene path, the asset server's variant), protocol and start time. It removes the file on exit. Readers (`listRpcEndpoints`, `ngen-rpc list`) look in
+their own working directory, so tools find each other when they run in the same directory, wherever their binaries are. Readers delete files whose
+process is gone, so a crashed process leaves nothing behind after the next listing. Ports are chosen by the OS.
 
 ## Threading
 

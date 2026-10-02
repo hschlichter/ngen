@@ -161,8 +161,8 @@ adding platforms/configurations).
 
 Verification runs headless through the observation bus — build, run with `--obs-output`, read the JSONL
 evidence. ngen-view needs its variant's asset server running (`./ngen-cli asset-server &` for the set variant,
-`./_out/<platform>/<config>/ngen-asset-server &` for another); without one it exits at start-up. Scenes and textures are assets too, so a scene
-must be inside the project. The `run-headless` skill (`.claude/skills/run-headless/SKILL.md`) has the full procedure, test
+`./_out/<platform>/<config>/ngen-asset-server &` for another), started in the same directory as the view; without one it exits at start-up.
+Scenes and textures are assets too: a scene argument is an asset id, a path relative to that directory. The `run-headless` skill (`.claude/skills/run-headless/SKILL.md`) has the full procedure, test
 scenes, and machine constraints; `obs.md` documents the observation conventions. Observations added for a
 change stay in the code — there is no "remove when done" step.
 

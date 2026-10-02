@@ -26,8 +26,7 @@
 class AssetServer {
 public:
     struct Options {
-        std::filesystem::path projectRoot;
-        std::filesystem::path binDirectory; // _out/<platform>/<config>: the server and the packers
+        std::filesystem::path binDirectory; // the server's own directory, where the packers are too
         std::string platform;
         std::string config;
     };

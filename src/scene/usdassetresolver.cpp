@@ -37,7 +37,6 @@ PXR_NAMESPACE_USING_DIRECTIVE
 namespace {
 
 AssetClient* assetClient = nullptr;
-std::filesystem::path projectRoot;
 // The resource folders of USD's registered plugins: USD's own files (schema definitions) are part of the runtime, not assets,
 // and are read from disk.
 std::vector<std::string> runtimeRoots;
@@ -107,8 +106,9 @@ auto fetch(const std::string& id) -> Bytes {
 
 } // namespace
 
-// Identifiers and resolved paths are asset ids: project-relative paths. A relative path is anchored to the directory of the
-// asset that refers to it; an absolute path inside the project becomes its id; a path outside the project doesn't resolve.
+// Identifiers and resolved paths are asset ids: paths relative to the asset server's directory. A relative path is anchored to
+// the directory of the asset that refers to it; an absolute path, or one that climbs above the server's directory, doesn't
+// resolve.
 // Resolving asks the server nothing, so a missing asset fails when it is opened. The exception is USD's own runtime files under
 // a registered plugin's resources, which keep their absolute paths and are read from disk.
 class NgenAssetResolver : public ArResolver {
@@ -142,9 +142,10 @@ protected:
         return ArInMemoryAsset::FromBuffer(buffer, bytes->size());
     }
 
-    // Saves go to the file: the editor still lives in the view. The next request for the asset repacks it.
+    // Saves go to the file at the id, relative to the working directory: the editor still lives in the view, which runs in the
+    // asset server's directory to find it. The next request for the asset repacks it.
     auto _OpenAssetForWrite(const ArResolvedPath& resolvedPath, WriteMode writeMode) const -> std::shared_ptr<ArWritableAsset> override {
-        auto path = projectRoot / resolvedPath.GetPathString();
+        auto path = std::filesystem::current_path() / resolvedPath.GetPathString();
         return ArFilesystemWritableAsset::Create(ArResolvedPath(path.string()), writeMode);
     }
 
@@ -175,16 +176,15 @@ private:
         if (!anchor.empty() && isRuntimePath(anchor.GetPathString())) {
             return (std::filesystem::path(anchor.GetPathString()).parent_path() / path).lexically_normal().string();
         }
-        auto base = anchor.empty() ? projectRoot : (projectRoot / anchor.GetPathString()).parent_path();
-        return assetIdForPath(path, base, projectRoot);
+        auto base = anchor.empty() ? std::filesystem::path() : std::filesystem::path(anchor.GetPathString()).parent_path();
+        return assetIdForPath(path, base);
     }
 };
 
 AR_DEFINE_RESOLVER(NgenAssetResolver, ArResolver);
 
-auto registerAssetResolver(AssetClient* client, const std::filesystem::path& binDirectory, const std::filesystem::path& root) -> bool {
+auto registerAssetResolver(AssetClient* client, const std::filesystem::path& binDirectory) -> bool {
     assetClient = client;
-    projectRoot = root;
     auto plugins = PlugRegistry::GetInstance().RegisterPlugins((binDirectory / "usdplugins").string());
     if (plugins.empty()) {
         std::println(stderr, "NgenAssetResolver: no plugin in {}", (binDirectory / "usdplugins").string());

@@ -190,7 +190,8 @@ mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/boo
 `ngen-build` takes the platform (`-p`) and config (`-c`) on every call; configs are `debug`, `release` and `gamerelease`. Binaries land in
 `_out/<platform>/<config>/`, so the viewer is `_out/linux-vulkan/debug/ngen-view`. Shaders are packed assets: the view requests them from
 `ngen-asset-server`, which runs `ngen-packer-shader` (GLSL to SPIR-V with `glslc`) and streams the result. Start the server before the view, and
-leave it running: `./ngen-cli asset-server &`, or `./_out/linux-vulkan/debug/ngen-asset-server &` (`src/asset/README.md`). Without it the view exits at start-up.
+leave it running, in the same directory as the view: `./ngen-cli asset-server &`, or `./_out/linux-vulkan/debug/ngen-asset-server &`
+(`src/asset/README.md`). Its working directory is the root asset ids are relative to. Without it the view exits at start-up.
 `./_out/ngen-build -h` lists every flag (`--clean`, `--rebuild`, `--list`, `--compile-commands`, …); `format` and `tidy` are targets. For day-to-day
 use, `ngen-cli` (next section) remembers the platform and config for you.
 

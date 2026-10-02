@@ -20,6 +20,7 @@
 #include <array>
 #include <cstdio>
 #include <expected>
+#include <filesystem>
 #include <format>
 #include <print>
 #include <sstream>
@@ -605,7 +606,7 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
             .name = "view.screenshot",
             .summary = "Write the presented image as PNG; answers when the file is written.",
             .params = {
-                optionalField("path", RpcType::String, "PNG path; default _out/run/screenshot-<pid>-<frame>.png"),
+                optionalField("path", RpcType::String, "PNG path; default screenshot-<pid>-<frame>.png in the working directory"),
                 optionalField("inline", RpcType::Bool, "also return the PNG as base64"),
             },
             .result = "{path, frame, width, height, png?}",
@@ -613,7 +614,7 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
         [&view](const Json& p, RpcResponder responder) {
             auto path = p.value("path", std::string{});
             if (path.empty()) {
-                path = (rpcRunDirectory(rpcProjectRoot()) / std::format("screenshot-{}-{}.png", (int) getpid(), view.frameCounter)).string();
+                path = (std::filesystem::current_path() / std::format("screenshot-{}-{}.png", (int) getpid(), view.frameCounter)).string();
             }
             view.renderer.requestScreenshot(path);
             view.dumps.trackScreenshot(path, responder, p.value("inline", false));

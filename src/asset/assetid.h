@@ -3,14 +3,16 @@
 #include <filesystem>
 #include <string>
 
-// Asset ids are project-relative paths with forward slashes ("assets/main_sponza/textures/brick.png"). The id for a path: a relative
-// path is taken against `base` (the working directory, or the directory of the asset that refers to it), then made relative to the
-// project root and normalised. Empty when the path is outside the project.
-inline auto assetIdForPath(const std::filesystem::path& path, const std::filesystem::path& base, const std::filesystem::path& projectRoot) -> std::string {
-    auto absolute = (path.is_absolute() ? path : base / path).lexically_normal();
-    auto relative = absolute.lexically_relative(projectRoot.lexically_normal());
-    if (relative.empty() || *relative.begin() == "..") {
+// Asset ids are relative paths with forward slashes ("assets/main_sponza/textures/brick.png"), relative to the asset server's working
+// directory. The id for a path relative to `base` (an id's folder, or empty): joined and normalised. Empty for an absolute path, or one
+// that climbs above the server's directory.
+inline auto assetIdForPath(const std::filesystem::path& path, const std::filesystem::path& base = {}) -> std::string {
+    if (path.is_absolute() || base.is_absolute()) {
         return {};
     }
-    return relative.generic_string();
+    auto id = (base / path).lexically_normal();
+    if (id.empty() || id == "." || *id.begin() == "..") {
+        return {};
+    }
+    return id.generic_string();
 }

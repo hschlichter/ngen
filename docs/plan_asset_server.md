@@ -293,3 +293,8 @@ Renamed after landing (assets are the system, packing is the process): `src/pack
 `src/asset/pack/`; `PackClient` became `AssetClient` (`assetclient.*`, library `assetclient`), `hash.h` became `assethash.h`, and the `pack`
 library became `packer`. The methods are `asset.request`, `asset.data`, `asset.ready` and `asset.failed`, and the cache is
 `_out/<platform>/<config>/assets/`.
+
+Changed after landing (2026-10-02): there is no project root. The asset server's working directory is the root asset ids are relative to; its
+cache is `.ngen-assets/<platform>/<config>/` there, and every tool's discovery file is in `.ngen-discovery/` in its working directory, so a view
+finds the asset server it runs next to. The view's scene argument is an asset id as given. Binaries can be copied anywhere: a copy of the debug
+binaries in an unrelated folder, run against a folder holding only `shaders/` and a scene, rendered the baseline image.

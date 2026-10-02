@@ -21,13 +21,14 @@ Every file the scene reads goes through USD's asset resolver: the root layer, su
 `NgenAssetResolver` (`usdassetresolver.*`), which reads through the view's `AssetClient` (`src/asset/README.md`), so the scene's data comes
 streamed from the asset server and the view never opens an asset file.
 
-- **Identifiers are asset ids**, project-relative paths with forward slashes. A relative asset path is anchored to the directory of the layer that
-  authors it; an absolute path inside the project becomes its id; a path outside the project doesn't resolve. `\` in an asset path is read as a
-  separator (Windows-authored assets such as NewSponza write `@textures\brick.png@`).
+- **Identifiers are asset ids**: paths relative to the asset server's working directory, with forward slashes. A relative asset path is anchored to
+  the directory of the layer that authors it; an absolute path, or one that climbs above the server's directory, doesn't resolve. `\` in an asset
+  path is read as a separator (Windows-authored assets such as NewSponza write `@textures\brick.png@`).
 - **Resolving asks the server nothing.** A missing asset fails when it is opened, with the server's reason in the log (`asset.failed`).
 - **Reads** fetch the asset (one request, shared by concurrent opens of the same id), take its bytes out of the client, and hand them to USD as an
   in-memory asset that owns them.
-- **Writes go to disk.** A layer save writes `<project root>/<id>`; the editor still lives in the view. The next request for that asset repacks it.
+- **Writes go to disk.** A layer save writes the file at its id, relative to the view's working directory, which is the asset server's (the view
+  finds the server through `.ngen-discovery/` there); the editor still lives in the view. The next request for that asset repacks it.
 - **USD's own files are not assets.** Files under a registered USD plugin's resources (the schema definitions, `generatedSchema.usda`) keep their
   absolute paths and are read from disk.
 - **Registration:** USD only uses a resolver whose type a registered plugin declares. `usdplugins/plugInfo.json` is a `resource` plugin (metadata,

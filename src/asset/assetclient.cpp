@@ -77,17 +77,16 @@ AssetClient::~AssetClient() {
 }
 
 auto AssetClient::connect(const std::string& variant) -> std::expected<void, std::string> {
-    auto root = rpcProjectRoot();
     const RpcEndpointInfo* server = nullptr;
-    auto endpoints = listRpcEndpoints(rpcRunDirectory(root));
+    auto endpoints = listRpcEndpoints();
     for (const auto& endpoint : endpoints) {
-        if (endpoint.kind == "asset" && endpoint.label == variant && std::filesystem::path(endpoint.projectRoot) == root) {
+        if (endpoint.kind == "asset" && endpoint.label == variant) {
             server = &endpoint;
             break;
         }
     }
     if (server == nullptr) {
-        return std::unexpected(std::format("no asset server for {} is running; start one with ./_out/{}/ngen-asset-server", variant, variant));
+        return std::unexpected(std::format("no asset server for {} is running in {}; start that variant's ngen-asset-server here", variant, std::filesystem::current_path().string()));
     }
     state->rpc.setRequestHandler([this](RpcServer::ConnectionId, const rpc::Json& message, std::vector<std::byte> attachment) {
         state->onMessage(message, std::move(attachment));

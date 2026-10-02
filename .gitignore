@@ -61,3 +61,7 @@ imgui.ini
 
 # Large downloaded test assets (NewSponza, 6.3 GB)
 assets/main_sponza/
+
+# The asset server's cache and the tools' discovery files, in the directory they run in
+.ngen-assets/
+.ngen-discovery/

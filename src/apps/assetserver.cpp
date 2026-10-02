@@ -1,12 +1,12 @@
 // ngen-asset-server: packs assets on request and streams them to the tools that asked (src/asset/README.md).
 //
-// Started by hand from its variant's directory, _out/<platform>/<config>/ngen-asset-server; runs until SIGINT or
-// SIGTERM. The variant comes from where the binary lives, and the pack rules from the project's pack.cpp,
-// compiled in.
+// Started by hand; runs until SIGINT or SIGTERM. Its working directory is the root: asset ids are paths relative to it,
+// packers run in it, the cache is .ngen-assets/ in it, and clients in the same directory find it through
+// .ngen-discovery/. The variant comes from the binary's directory, _out/<platform>/<config>/, and the pack rules from
+// the project's pack.cpp, compiled in.
 
 #include "assetserver.h"
 #include "assettrace.h"
-#include "rpcdiscovery.h"
 
 #include <csignal>
 #include <cstdio>
@@ -32,28 +32,21 @@ auto main(int argc, char** argv) -> int {
     std::error_code ec;
     auto exe = fs::canonical("/proc/self/exe", ec);
     auto bin = exe.parent_path();
-    if (ec || bin.parent_path().parent_path().filename() != "_out") {
-        std::println(stderr, "ngen-asset-server: run it from its variant directory, _out/<platform>/<config>/");
+    if (ec) {
+        std::println(stderr, "ngen-asset-server: cannot find its own executable: {}", ec.message());
         return 1;
     }
     AssetServer::Options options;
-    options.projectRoot = rpcProjectRoot();
     options.binDirectory = bin;
     options.config = bin.filename().string();
     options.platform = bin.parent_path().filename().string();
-    // Asset ids are project-relative paths, and packers run with the project root as their working directory.
-    fs::current_path(options.projectRoot, ec);
-    if (ec) {
-        std::println(stderr, "ngen-asset-server: cannot enter {}: {}", options.projectRoot.string(), ec.message());
-        return 1;
-    }
 
     AssetServer server;
     if (auto started = server.start(options); !started) {
         std::println(stderr, "ngen-asset-server: {}", started.error());
         return 1;
     }
-    trace("ngen-asset-server {} on 127.0.0.1:{}, pid {}", server.variant(), server.port(), getpid());
+    trace("ngen-asset-server {} in {} on 127.0.0.1:{}, pid {}", server.variant(), fs::current_path().string(), server.port(), getpid());
 
     int received = 0;
     sigwait(&signals, &received);

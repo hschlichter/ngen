@@ -27,8 +27,9 @@ Don't change the set variant unless asked; it is shared with the human's session
 
 ## Run headless
 
-ngen-view needs its variant's asset server; without one it exits at start-up with the command to run. Start it once in the background and leave
-it running across runs (it packs only what a view requests, and caches the result):
+ngen-view needs its variant's asset server running in the same working directory (they find each other through `.ngen-discovery/` there, and
+asset ids are relative to it); without one it exits at start-up. Start it once in the background from the repository root and leave it running
+across runs (it packs only what a view requests, and caches the result in `.ngen-assets/`):
 
 ```sh
 ./ngen-cli asset-server > /tmp/asset-server.log 2>&1 &        # the set variant's server; leave it running
@@ -125,8 +126,8 @@ rebuild, rerun. Observations added for a change stay in the code — there is no
 
 - Minimal: `assets/three_cubes.usda` — cheap smoke test for extraction, lighting, frame graph.
 - Materials/textures stress test: Intel NewSponza at `assets/main_sponza/NewSponza_Main_USD_Zup_003.usda` (git-ignored; scenes must be
-  inside the project, since they are assets). Correct result: ≈25 `TextureUploaded` events at 4096×4096 plus a few 1×1 (materials without a diffuse map), 28 unique materials. All-1×1 means
-  texturing is broken. It exercises GeomSubset per-face materials, NodeGraph-wrapped textures, backslash
+  under the asset server's directory, since they are assets). Correct result: ≈25 `TextureUploaded` events at 4096×4096 plus a few 1×1
+  (materials without a diffuse map), 28 unique materials. All-1×1 means texturing is broken. It exercises GeomSubset per-face materials, NodeGraph-wrapped textures, backslash
   asset paths, and indexed faceVarying primvars.
 
 ## Machine constraints

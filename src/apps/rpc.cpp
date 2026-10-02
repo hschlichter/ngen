@@ -5,7 +5,7 @@
 //   ngen-rpc call <target> <method> [params]      call a method; params is a JSON object
 //
 // A target is a kind ("view"), a kind and pid ("view:12345"), or a pid. Endpoints are found
-// through the discovery files in <project root>/_out/run/ (src/rpc/README.md).
+// through the discovery files in .ngen-discovery/ in the working directory (src/rpc/README.md).
 //
 // Output is JSON on stdout. Exit codes: 0 success, 1 the call returned an error, 2 no such
 // endpoint or it can't be reached, 3 bad usage.
@@ -111,7 +111,7 @@ auto main(int argc, char** argv) -> int {
     if (args.empty()) {
         return usage();
     }
-    auto endpoints = listRpcEndpoints(rpcRunDirectory(rpcProjectRoot()));
+    auto endpoints = listRpcEndpoints();
     const auto& command = args[0];
     if (command == "list") {
         return commandList(endpoints);

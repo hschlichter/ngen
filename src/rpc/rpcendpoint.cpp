@@ -55,7 +55,6 @@ auto RpcEndpoint::start(const RpcRegistry* methods, std::string endpointKind, st
         .kind = kind,
         .pid = (int) getpid(),
         .port = boundPort,
-        .projectRoot = rpcProjectRoot().string(),
         .label = std::move(label),
         .protocol = rpc::protocolVersion,
         .startedUnixMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),

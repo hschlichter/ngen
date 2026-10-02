@@ -221,3 +221,7 @@ Deviations from the plan:
   screenshot call answers when its file exists.
 - **The dump writers are split** into a `FILE*` body and a path wrapper (`writeRenderDebugJson`, `writeMemoryJson`, `writeFrameDebugJson`,
   `writeGpuCountersJson`, `writeGpuSceneJoinedJson`). `writeCaptureJson` is the JSON part of `writeCaptureFiles`.
+
+Changed after landing (2026-10-02): discovery files moved from `<project root>/_out/run/` to `.ngen-discovery/` in each tool's working
+directory, and the project root (`rpcProjectRoot`) is gone; tools find each other when they run in the same directory
+([plan_asset_server.md](plan_asset_server.md)).

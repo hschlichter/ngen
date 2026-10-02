@@ -16,7 +16,7 @@
 // recorded file still hashes the same. A file whose size and modification time are unchanged is taken as
 // unchanged without re-hashing it.
 //
-// Stored as text in <out_dir>/assets/.ngen-assetcache, rewritten through a temporary file and a rename. Thread-safe.
+// Stored as text in .ngen-assets/<platform>/<config>/.ngen-assetcache, rewritten through a temporary file and a rename. Thread-safe.
 class AssetCache {
 public:
     struct File {
