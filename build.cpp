@@ -178,6 +178,7 @@ auto main(int argc, char** argv) -> int {
                 "src/profile",
                 "external/imgui",
                 "external/stb",
+                "external/glm",
             })
             .link(obs)
             .link(profile)
@@ -197,6 +198,7 @@ auto main(int argc, char** argv) -> int {
                 "src/renderer",
                 "src/obs",
                 "src/profile",
+                "external/glm",
             })
             .link(profile);
 
@@ -269,6 +271,7 @@ auto main(int argc, char** argv) -> int {
                 "src/profile",
                 "src/session",
                 "external/imgui",
+                "external/glm",
             })
             .link(renderer)
             .link(profile)

@@ -4,7 +4,7 @@
 # in libstdc++) and SDL3, which the Ubuntu runner images don't have.
 #
 # OpenUSD is a submodule but is built outside the build system, into external/openusd_build. The first job builds it once
-# and caches it, keyed by the submodule's commit and this file; the build jobs restore it.
+# and caches it, keyed by the submodule's commit and OPENUSD_BUILD; the build jobs restore it.
 
 name: build
 
@@ -19,10 +19,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # Bump when the OpenUSD build step changes (its flags, or the packages it builds with), so the cache is rebuilt.
+  OPENUSD_BUILD: v1
   # Everything the build and the OpenUSD build need, from the Arch repositories.
   PACKAGES: >-
     base-devel clang gcc git python cmake ninja pkgconf
-    sdl3 vulkan-headers vulkan-icd-loader shaderc
+    sdl3 vulkan-headers vulkan-icd-loader vulkan-utility-libraries shaderc
 
 jobs:
   openusd:
@@ -43,7 +45,7 @@ jobs:
         run: |
           git config --global --add safe.directory '*'
           commit=$(git ls-tree HEAD external/openusd | awk '{print $3}')
-          echo "key=openusd-${commit}-${{ hashFiles('.github/workflows/build.yml') }}" >> "$GITHUB_OUTPUT"
+          echo "key=openusd-${OPENUSD_BUILD}-${commit}" >> "$GITHUB_OUTPUT"
 
       - name: Restore OpenUSD
         id: cache
