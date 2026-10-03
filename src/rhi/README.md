@@ -279,6 +279,12 @@ Flags every example supports:
 Exit codes: `0` ok, `1` setup failed (device, swapchain, shader, pipeline), `2` a check or validation failed. The last
 stdout line is a one-line summary: `triangle: ok frames=60 validation_errors=0`.
 
+**In CI** (`.github/workflows/build.yml`, the `examples` job) every example runs with `--frames=10 --check --validation
+--screenshot` on Mesa's software Vulkan driver (lavapipe), since the runners have no GPU. The screenshots and their hashes are
+uploaded as the `rhi-example-screenshots` artifact, and the hashes must match `src/rhi/examples/screenshots.sha256`. Those are
+lavapipe's hashes on the workflow's pinned Arch snapshot, not a hardware GPU's: when an example's output changes on purpose, or
+the snapshot is bumped, copy the new hashes from the job summary into that file.
+
 Examples, each adding one concept to the previous:
 
 | target | shows |

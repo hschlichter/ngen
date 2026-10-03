@@ -1,10 +1,15 @@
-# Builds ngen on Linux with Vulkan, in all three configurations.
+# Checks formatting, builds ngen on Linux with Vulkan in all three configurations, and runs the RHI examples as tests.
 #
 # Runs in an Arch Linux container: the engine needs a current toolchain (clang with C++23, std::print and std::expected
-# in libstdc++) and SDL3, which the Ubuntu runner images don't have.
+# in libstdc++) and SDL3, which the Ubuntu runner images don't have. Packages come from a dated snapshot of the Arch Linux
+# Archive (ARCH_SNAPSHOT), so the compilers, clang-format and Mesa are the same on every run: the examples' screenshot
+# hashes depend on Mesa's exact output. Bump the date deliberately.
 #
-# OpenUSD is a submodule but is built outside the build system, into external/openusd_build. The first job builds it once
-# and caches it, keyed by the submodule's commit and OPENUSD_BUILD; the build jobs restore it.
+# Jobs: format first; then OpenUSD and the examples in parallel (the examples don't use OpenUSD); then the build of every
+# configuration, which needs OpenUSD.
+#
+# OpenUSD is a submodule but is built outside the build system, into external/openusd_build. Its job builds it once and
+# caches it, keyed by the submodule's commit and OPENUSD_BUILD; the build jobs restore it.
 
 name: build
 
@@ -19,23 +24,63 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # The Arch Linux Archive day the packages come from (YYYY/MM/DD).
+  ARCH_SNAPSHOT: 2026/10/02
   # Bump when the OpenUSD build step changes (its flags, or the packages it builds with), so the cache is rebuilt.
   OPENUSD_BUILD: v1
-  # Everything the build and the OpenUSD build need, from the Arch repositories.
+  # Everything the build and the OpenUSD build need.
   PACKAGES: >-
     base-devel clang gcc git python cmake ninja pkgconf
     sdl3 vulkan-headers vulkan-icd-loader vulkan-utility-libraries shaderc
+  # Every submodule but OpenUSD, which the OpenUSD job builds and caches.
+  SUBMODULES: glm stb cgltf imgui concurrentqueue json
 
 jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install packages
+        run: |
+          echo "Server = https://archive.archlinux.org/repos/${ARCH_SNAPSHOT}/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
+          pacman -Syyuu --noconfirm --needed $PACKAGES
+
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Check out submodules
+        run: |
+          git config --global --add safe.directory '*'
+          for module in $SUBMODULES; do
+            git submodule update --init --depth 1 "external/$module"
+          done
+
+      - name: Bootstrap ngen-build
+        run: mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/bootstrap.cpp
+
+      # The project's own format target (clang-format over src/), then fail if it changed anything.
+      - name: Check formatting
+        run: |
+          clang-format --version
+          ./_out/ngen-build -p linux-vulkan -c debug format
+          if ! git diff --exit-code; then
+            echo "::error::Formatting differs from clang-format; run ./_out/ngen-build -p linux-vulkan -c debug format"
+            exit 1
+          fi
+
   openusd:
     name: OpenUSD
+    needs: format
     runs-on: ubuntu-latest
     container: archlinux:latest
     outputs:
       key: ${{ steps.key.outputs.key }}
     steps:
       - name: Install packages
-        run: pacman -Syu --noconfirm --needed $PACKAGES
+        run: |
+          echo "Server = https://archive.archlinux.org/repos/${ARCH_SNAPSHOT}/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
+          pacman -Syyuu --noconfirm --needed $PACKAGES
 
       - name: Check out
         uses: actions/checkout@v4
@@ -72,6 +117,84 @@ jobs:
           # Sources and intermediate files aren't needed to link against it; keep the cache small.
           rm -rf external/openusd_build/src external/openusd_build/build
 
+  examples:
+    name: RHI examples
+    needs: format
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      # The runners have no GPU: the examples run on Mesa's software Vulkan driver, lavapipe (vulkan-swrast), with the
+      # validation layers for --validation.
+      - name: Install packages
+        run: |
+          echo "Server = https://archive.archlinux.org/repos/${ARCH_SNAPSHOT}/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
+          pacman -Syyuu --noconfirm --needed $PACKAGES vulkan-swrast vulkan-validation-layers
+
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Check out submodules
+        run: |
+          git config --global --add safe.directory '*'
+          for module in $SUBMODULES; do
+            git submodule update --init --depth 1 "external/$module"
+          done
+
+      - name: Bootstrap ngen-build
+        run: mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/bootstrap.cpp
+
+      - name: Build the examples
+        run: ./_out/ngen-build -v -p linux-vulkan -c debug examples
+
+      # Every example renders 10 frames headless, checks its pixels (--check), fails on any validation message
+      # (--validation), and writes its last frame as a PNG. All run even when one fails.
+      - name: Run the examples
+        run: |
+          mkdir -p screenshots
+          failed=0
+          for program in _out/linux-vulkan/debug/ngen-example-*; do
+            name=${program##*/ngen-example-}
+            if SDL_VIDEODRIVER=offscreen timeout 300 "$program" --frames=10 --check --validation --screenshot="screenshots/$name.png" > "screenshots/$name.log" 2>&1; then
+              echo "$name: ok"
+            else
+              status=$?
+              echo "::error::$name failed with exit code $status"
+              tail -20 "screenshots/$name.log"
+              failed=1
+            fi
+          done
+          (cd screenshots && sha256sum *.png > screenshots.sha256)
+          exit $failed
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rhi-example-screenshots
+          path: screenshots/
+          if-no-files-found: warn
+
+      # The screenshots must match src/rhi/examples/screenshots.sha256, the hashes of lavapipe's output on ARCH_SNAPSHOT.
+      # When they legitimately change (an example changed, or the snapshot was bumped), copy the new hashes from this
+      # step's summary into that file.
+      - name: Check screenshot hashes
+        run: |
+          expected=src/rhi/examples/screenshots.sha256
+          {
+            echo "### RHI example screenshot hashes"
+            echo '```'
+            cat screenshots/screenshots.sha256
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ ! -f "$expected" ]; then
+            echo "::error::$expected doesn't exist yet; add the hashes from this step's summary"
+            exit 1
+          fi
+          if ! diff -u "$expected" screenshots/screenshots.sha256; then
+            echo "::error::Screenshot hashes differ from $expected; inspect the rhi-example-screenshots artifact"
+            exit 1
+          fi
+
   build:
     name: ${{ matrix.config }}
     needs: openusd
@@ -83,16 +206,17 @@ jobs:
         config: [debug, release, gamerelease]
     steps:
       - name: Install packages
-        run: pacman -Syu --noconfirm --needed $PACKAGES
+        run: |
+          echo "Server = https://archive.archlinux.org/repos/${ARCH_SNAPSHOT}/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
+          pacman -Syyuu --noconfirm --needed $PACKAGES
 
       - name: Check out
         uses: actions/checkout@v4
 
-      # Every submodule except OpenUSD, which comes from the cache.
       - name: Check out submodules
         run: |
           git config --global --add safe.directory '*'
-          for module in glm stb cgltf imgui concurrentqueue json; do
+          for module in $SUBMODULES; do
             git submodule update --init --depth 1 "external/$module"
           done
 
