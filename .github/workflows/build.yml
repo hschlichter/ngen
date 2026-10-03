@@ -147,23 +147,25 @@ jobs:
         run: ./_out/ngen-build -v -p linux-vulkan -c debug examples
 
       # Every example renders 10 frames headless, checks its pixels (--check), fails on any validation message
-      # (--validation), and writes its last frame as a PNG. All run even when one fails.
+      # (--validation), and writes its last frame as a PNG. All run even when one fails. The output goes under _out/, not
+      # into the repository's screenshots/ folder, which holds the README's images.
       - name: Run the examples
         run: |
-          mkdir -p screenshots
+          out=_out/rhi-example-screenshots
+          mkdir -p "$out"
           failed=0
           for program in _out/linux-vulkan/debug/ngen-example-*; do
             name=${program##*/ngen-example-}
-            if SDL_VIDEODRIVER=offscreen timeout 300 "$program" --frames=10 --check --validation --screenshot="screenshots/$name.png" > "screenshots/$name.log" 2>&1; then
+            if SDL_VIDEODRIVER=offscreen timeout 300 "$program" --frames=10 --check --validation --screenshot="$out/$name.png" > "$out/$name.log" 2>&1; then
               echo "$name: ok"
             else
               status=$?
               echo "::error::$name failed with exit code $status"
-              tail -20 "screenshots/$name.log"
+              tail -20 "$out/$name.log"
               failed=1
             fi
           done
-          (cd screenshots && sha256sum *.png > screenshots.sha256)
+          (cd "$out" && sha256sum *.png > screenshots.sha256)
           exit $failed
 
       - name: Upload screenshots
@@ -171,7 +173,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rhi-example-screenshots
-          path: screenshots/
+          path: _out/rhi-example-screenshots/
           if-no-files-found: warn
 
       # The screenshots must match src/rhi/examples/screenshots.sha256, the hashes of lavapipe's output on ARCH_SNAPSHOT.
@@ -183,14 +185,14 @@ jobs:
           {
             echo "### RHI example screenshot hashes"
             echo '```'
-            cat screenshots/screenshots.sha256
+            cat _out/rhi-example-screenshots/screenshots.sha256
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           if [ ! -f "$expected" ]; then
             echo "::error::$expected doesn't exist yet; add the hashes from this step's summary"
             exit 1
           fi
-          if ! diff -u "$expected" screenshots/screenshots.sha256; then
+          if ! diff -u "$expected" _out/rhi-example-screenshots/screenshots.sha256; then
             echo "::error::Screenshot hashes differ from $expected; inspect the rhi-example-screenshots artifact"
             exit 1
           fi
