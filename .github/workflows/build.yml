@@ -5,6 +5,9 @@
 # Archive (ARCH_SNAPSHOT), so the compilers, clang-format and Mesa are the same on every run: the examples' screenshot
 # hashes depend on Mesa's exact output. Bump the date deliberately.
 #
+# The host is pinned (ubuntu-24.04) rather than ubuntu-latest, so it only changes when this file does; every job runs in the
+# container anyway, so the host provides little more than Docker.
+#
 # Jobs: format first; then OpenUSD and the examples in parallel (the examples don't use OpenUSD); then the build of every
 # configuration, which needs OpenUSD.
 #
@@ -38,7 +41,7 @@ env:
 jobs:
   format:
     name: Format
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: archlinux:latest
     steps:
       - name: Install packages
@@ -47,7 +50,7 @@ jobs:
           pacman -Syyuu --noconfirm --needed $PACKAGES
 
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Check out submodules
         run: |
@@ -72,7 +75,7 @@ jobs:
   openusd:
     name: OpenUSD
     needs: format
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: archlinux:latest
     outputs:
       key: ${{ steps.key.outputs.key }}
@@ -83,7 +86,7 @@ jobs:
           pacman -Syyuu --noconfirm --needed $PACKAGES
 
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Cache key
         id: key
@@ -94,7 +97,7 @@ jobs:
 
       - name: Restore OpenUSD
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: external/openusd_build
           key: ${{ steps.key.outputs.key }}
@@ -120,7 +123,7 @@ jobs:
   examples:
     name: RHI examples
     needs: format
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: archlinux:latest
     steps:
       # The runners have no GPU: the examples run on Mesa's software Vulkan driver, lavapipe (vulkan-swrast), with the
@@ -131,7 +134,7 @@ jobs:
           pacman -Syyuu --noconfirm --needed $PACKAGES vulkan-swrast vulkan-validation-layers
 
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Check out submodules
         run: |
@@ -170,7 +173,7 @@ jobs:
 
       - name: Upload screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rhi-example-screenshots
           path: _out/rhi-example-screenshots/
@@ -200,7 +203,7 @@ jobs:
   build:
     name: ${{ matrix.config }}
     needs: openusd
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: archlinux:latest
     strategy:
       fail-fast: false
@@ -213,7 +216,7 @@ jobs:
           pacman -Syyuu --noconfirm --needed $PACKAGES
 
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Check out submodules
         run: |
@@ -223,7 +226,7 @@ jobs:
           done
 
       - name: Restore OpenUSD
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: external/openusd_build
           key: ${{ needs.openusd.outputs.key }}
