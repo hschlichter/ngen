@@ -7,6 +7,9 @@ Annotations: **(landed)** — implemented, code is in `src/`; **(in progress)** 
 instead; **(historical)** — describes a direction the project moved away from. Docs without an annotation have not been re-checked against the code — update
 them here as you touch them.
 
+**Start here for what's next:** [roadmap.md](roadmap.md) — a one-page list of planned, open and parked work, consolidated from the plans below,
+the library READMEs and `notes.md`.
+
 ## Build system
 
 Current truth for the build framework is [`../src/build/README.md`](../src/build/README.md); the plans below are how it got there.
@@ -87,6 +90,7 @@ Current truth for the build framework is [`../src/build/README.md`](../src/build
   - [plan_status_bar.md](plan_status_bar.md) — ngen-view status bar (fps, frame and GPU time, CPU and GPU memory, asset counts); screenshots without UI unless `--show-ui` (landed)
   - [plan_build_server.md](plan_build_server.md) — step 2: build server as the default path (only the build path starts it), `--no-server`, RPC builds, request-driven packing by extension with no pack targets, packed data streamed to clients, the view needs a server, graph and helper reload, variant lock (superseded by plan_asset_server.md)
   - [plan_editor_split.md](plan_editor_split.md) — step 3: deltas and incremental GPU scene in the view (phase A), then `ngen-editor` as its own process with USD, view gizmos as local opinions, editor-owned selection (phase B) (draft)
+  - [plan_introspect_tool.md](plan_introspect_tool.md) — step 4, reshaped: `ngen-introspect` queries every process's data and gathers every trace; a trace library replaces the observation bus; agents verify through the tool; the view keeps its windows (draft)
 - [plan_ngen_cli.md](plan_ngen_cli.md) — `ngen-cli` front door: `set` variant in `_out/set`, forwards to ngen-build and ngen-view (landed)
 - [plan_job_system.md](plan_job_system.md) — minimal thread-pool job system (landed)
 - [plan_async_asset_system.md](plan_async_asset_system.md) — cooked-asset cache and async loading (superseded by plan_tool_architecture.md)

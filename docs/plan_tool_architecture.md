@@ -5,6 +5,20 @@
 Umbrella plan: the target architecture in four steps. Each step becomes its own `docs/plan_<topic>.md` when it is picked up. The goal is to reach the
 architecture in few steps; each step lists what it knowingly leaves missing. It supersedes [plan_async_asset_system.md](plan_async_asset_system.md).
 
+## Objective
+
+The architecture serves one objective: an engine for developer and AI collaboration.
+- **AI builds games on top of the engine's components, without changing the engine.** Engine and game are separate: games are made from
+  components, data and gameplay code against stable engine APIs, driven through the same tools a human uses (RPC, editor, `ngen-cli`).
+- **Humans and AI edit together in the editor, interactively.** The AI does the broad and bulk work; the human tweaks, steers and decides. Every
+  AI edit is an ordinary, undoable editor edit that the human can see, adjust or reject.
+- **Everything is async.** A scene opens instantly and its data pops in as it arrives: geometry, textures, shaders, sub-scenes and LODs.
+
+What this means for the steps below: RPC is the AI's way in, so every capability a human has in the editor or view is a method too (steps 1 and
+3); edits from an agent go through the editor's undo like a human's (step 3); the asset server and the runtime scene load in the background
+and never block a frame (step 2). [roadmap.md](roadmap.md) lists the engine features the objective adds beyond this plan: a gameplay framework,
+physics, animation, networking.
+
 ## Where we want to get to
 
 - **The engine knows nothing about USD's API.** ngen-view consumes only packed, engine-ready data. It knows four USD-derived concepts: layer packs,
@@ -17,10 +31,9 @@ architecture in few steps; each step lists what it knowingly leaves missing. It 
   LOD. ngen-view and every other tool request assets asynchronously and receive the packed data streamed over the connection.
 - **One RPC system** connects the engine, the editor, the asset server, the introspection tool and agents. Agents use it to query state and data and to
   drive the engine and the editor.
-- **The introspection tool** (`ngen-introspect`) is where data is captured and examined in depth.
-  - It has its own window and shows data queried from a running ngen-view.
-  - ngen-view connects to it when it's open, to send trace data and to answer its requests.
-  - Windows about the view's own live frame stay in ngen-view (Decision 8).
+- **The introspection tool** (`ngen-introspect`) queries the data of every process and gathers every trace, for humans and agents.
+  - It connects to the processes it finds through discovery, has a window and a command line, and is how agents verify changes.
+  - One trace system replaces the observation bus. ngen-view keeps all its windows (Decision 8).
 
 ## Current state
 
@@ -151,13 +164,11 @@ Locked unless marked open.
 7. **The asset server is its own program, `ngen-asset-server`,** using nothing from the build system; pack rules live in the root `pack.cpp`. It
    replaced a build-server mode of `ngen-build` ([plan_build_server.md](plan_build_server.md), superseded) to keep builds and packing apart. A unified
    build and asset server remains the likely end state.
-8. **Windows split by what they are about.**
-   - **In ngen-view: windows about its own live frame, or ones that need the viewport.** Frame Graph, Performance, Counters, Culling, Camera, Render
-     Debug, and the Debug View legend with the cursor readout.
-   - **In `ngen-introspect`: windows for capturing and examining data in depth, or seeing across processes.** Frame Debugger, Capture, GPU Scene,
-     Memory, Events, pack and delta traffic, and a generic Records window.
-   - Both sides read the same named records (step 4). The tool can show any record through the Records window without duplicating the view's
-     windows.
+8. **ngen-view keeps its windows; the introspection tool is for data across processes and for traces.**
+   - Every window ngen-view has today stays in it, GPU-native ones included (Frame Debugger, Capture, GPU Scene): data is looked at where it is used.
+   - `ngen-introspect` shows any process's named records generically and merges every process's trace events. It doesn't show GPU-native data.
+   - This replaces an earlier split that moved the examine-in-depth windows into the tool
+     ([plan_introspect_tool.md](plan_introspect_tool.md) has the reasoning).
 9. **Library boundaries, enforced by `build.cpp`'s link graph.**
    - **Engine libraries** link no pxr: `rhi`, `renderer`, and a new runtime scene library that composes layer packs and variants and resolves the
      hierarchy.
@@ -269,28 +280,17 @@ Plan: [plan_editor_split.md](plan_editor_split.md).
 
 ### Step 4: introspection
 
-It depends only on step 1, so it can run alongside steps 2–3.
+It depends only on step 1, so it can run alongside steps 2–3. Planned in [plan_introspect_tool.md](plan_introspect_tool.md).
 
 - **Delivers:**
-  - **One records and events model:**
-    - named records with one field schema, and one `RenderThread` channel
-    - `dump <name>` replaces the `dump-*` verbs
-    - the obs bus trimmed to discrete events, with an in-process ring sink
-  - **Streams:** subscriptions for events, record watches and profiler zones; binary attachments; backpressure without frame stalls; several clients
-  - **`ngen-introspect`** with the examine-in-depth windows (Decision 8): Frame Debugger, Capture, GPU Scene, Memory, Events, pack and delta
-    traffic, Records. Views auto-connect to an open tool.
-  - **Those windows move out of ngen-view.** The live-frame windows stay: Frame Graph, Performance, Counters, Culling, Camera, Render Debug, Debug
-    View legend and readout. They move onto the records model.
-- **Verification:**
-  - every moved window shows the same values in the tool as it did in-view for the same frame, checked window by window against a pre-step-4 build
-  - the event stream over RPC equals `--obs-output`
-  - a capture over RPC is byte-identical to the dump
-  - a stalled client doesn't move the frame time
-  - the moved windows' code is no longer linked into ngen-view (the link graph)
-- **Gaps:**
-  - no session recording
-  - existing dump field names change where the schema renames them
-  - without the tool running, the examine-in-depth windows aren't available; agents still have `dump` and RPC
+  - **Records:** `introspect.list` and `introspect.get` on every endpoint (ngen-view, the asset server).
+  - **One trace system** (`src/trace/`) replacing the observation bus: an always-on ring per process, streamed over RPC, on one clock.
+  - **`ngen-introspect`**, windowed and command line, connecting to the processes through discovery. Agents verify through it instead of
+    `--obs-output`.
+  - ngen-view keeps all its windows (Decision 8).
+- **Verification:** in [plan_introspect_tool.md](plan_introspect_tool.md); the headline is that a trace recorded through the tool has the same
+  events as `--obs-output` had, plus the asset server's, and a stalled tool doesn't move the frame time.
+- **Gaps:** no session recording in the windowed tool; profiler zones aren't on the trace stream.
 
 ## Cross-cutting
 
