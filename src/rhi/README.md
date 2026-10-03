@@ -285,6 +285,42 @@ uploaded as the `rhi-example-screenshots` artifact, and the hashes must match `s
 lavapipe's hashes on the workflow's pinned Arch snapshot, not a hardware GPU's: when an example's output changes on purpose, or
 the snapshot is bumped, copy the new hashes from the job summary into that file.
 
+**Running on lavapipe locally** reproduces CI: a driver bug or a failing check shows the same pixels as in the CI log, and the
+screenshot hashes can be regenerated without a CI round trip. Lavapipe is Arch's `vulkan-swrast` package. The Vulkan loader uses
+one driver when `VK_DRIVER_FILES` names its ICD file, so it runs next to the hardware driver without changing the system default.
+
+Installed system-wide:
+
+```sh
+sudo pacman -S vulkan-swrast
+VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json SDL_VIDEODRIVER=offscreen \
+  ./_out/linux-vulkan/debug/ngen-example-pushconstants --frames=10 --check --validation
+```
+
+Or, without installing anything, the exact package CI uses, from the Arch Linux Archive snapshot in `ARCH_SNAPSHOT`, extracted into a
+scratch folder with an ICD file that points at it:
+
+```sh
+dir=/tmp/lavapipe && mkdir -p $dir && cd $dir
+# Saved under a plain name: tar reads the epoch's ':' in the package's own name as host:path.
+curl -fL -o vulkan-swrast.pkg.tar.zst "https://archive.archlinux.org/repos/2026/10/02/extra/os/x86_64/vulkan-swrast-1:26.1.6-1-x86_64.pkg.tar.zst"
+tar --zstd -xf vulkan-swrast.pkg.tar.zst
+sed "s|\"library_path\": \"[^\"]*\"|\"library_path\": \"$dir/usr/lib/libvulkan_lvp.so\"|" \
+  usr/share/vulkan/icd.d/lvp_icd.json > lvp_local.json
+cd - && VK_DRIVER_FILES=/tmp/lavapipe/lvp_local.json SDL_VIDEODRIVER=offscreen \
+  ./_out/linux-vulkan/debug/ngen-example-pushconstants --frames=10 --check --validation
+```
+
+Take the package version from the snapshot's `extra` listing, or `pacman -Si vulkan-swrast` on an Arch system synced to it. To
+regenerate the hashes the way CI computes them, run every example with `--screenshot=<dir>/<name>.png` and `(cd <dir> && sha256sum
+*.png) > src/rhi/examples/screenshots.sha256`. Lavapipe compiles shaders with the system's LLVM, and the examples' GLSL goes
+through the system's shaderc, so hashes made on a machine whose versions differ from the snapshot's can still differ from CI's;
+CI's job summary has the authoritative ones.
+
+Lavapipe has bugs of its own. Mesa 26.1 gives the fragment stage stale data for a push constant at a non-zero offset once it
+changes between draws, which is why `pushconstants` puts its colour first. When an example fails only on lavapipe, check whether
+the Vulkan usage is valid (validation is clean, a hardware GPU passes) before changing the RHI.
+
 Examples, each adding one concept to the previous:
 
 | target | shows |

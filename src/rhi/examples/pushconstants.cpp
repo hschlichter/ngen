@@ -20,8 +20,8 @@ static constexpr const char* vertexShaderSource = R"glsl(
 #version 450
 
 layout(push_constant) uniform Push {
-    vec2 offset;
     vec4 color;
+    vec2 offset;
 } push;
 
 layout(location = 0) in vec2 inPosition;
@@ -35,8 +35,8 @@ static constexpr const char* fragmentShaderSource = R"glsl(
 #version 450
 
 layout(push_constant) uniform Push {
-    vec2 offset;
     vec4 color;
+    vec2 offset;
 } push;
 
 layout(location = 0) out vec4 outColor;
@@ -46,11 +46,13 @@ void main() {
 }
 )glsl";
 
-// Matches the GLSL block: vec2 at 0, vec4 aligned to 16.
+// Matches the GLSL block: vec4 at 0, vec2 at 16, padded to 32. The colour comes first because lavapipe (Mesa 26.1) gives the
+// fragment stage stale data for a push constant at a non-zero offset once it changes between draws; the vertex stage is
+// unaffected.
 struct Push {
+    float color[4];
     float offset[2];
     float pad[2];
-    float color[4];
 };
 
 static constexpr float quadHalf = 0.2f;
@@ -115,9 +117,9 @@ protected:
         cmd->bindIndexBuffer(indexBuffer, RhiIndexType::Uint16);
         for (size_t i = 0; i < 3; i++) {
             Push push = {
+                .color = {colors[i][0], colors[i][1], colors[i][2], 1.0f},
                 .offset = {offsets[i][0], offsets[i][1]},
                 .pad = {},
-                .color = {colors[i][0], colors[i][1], colors[i][2], 1.0f},
             };
             cmd->pushConstants(pipeline, RhiShaderStage::Vertex | RhiShaderStage::Fragment, 0, sizeof(push), &push);
             cmd->drawIndexed(6, 1, 0, 0, 0);
