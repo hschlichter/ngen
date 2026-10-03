@@ -81,8 +81,10 @@ is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own c
   connecting and leaving, each request with its asset count, per asset whether it was up to date, packed (time, size, inputs, version) or failed
   (with the packer's output), and per request a summary when it is done (time, assets sent and bytes, held, failed). Redirect it to a file to keep
   it: `./ngen-cli asset-server > /tmp/asset-server.log &`.
-- **`server.status`**: pid, variant, clients with their queued and peak queued bytes, tasks running and queued, and `packerRuns`, the number of
-  packer processes run so far.
+- **Records** (`introspect.list`, `introspect.get`; [`src/introspect/README.md`](../introspect/README.md)): `status` (pid, variant, clients,
+  tasks running and queued, and `packerRuns`, the number of packer processes run so far), `rules`, `cache` (every packed asset with its inputs),
+  `requests` (in flight and recently finished) and `clients` (bytes queued and peak queued, assets waiting to stream). For example
+  `./ngen-cli introspect get asset status`.
 
 ## The cache
 

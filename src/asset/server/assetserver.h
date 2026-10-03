@@ -5,6 +5,7 @@
 #include "packjobs.h"
 #include "packrule.h"
 #include "rpcprotocol.h"
+#include "rpcrecords.h"
 #include "rpcserver.h"
 
 #include <atomic>
@@ -75,6 +76,7 @@ private:
     // What the trace reports when a request is done.
     struct RequestTrace {
         RpcServer::ConnectionId connection = 0;
+        size_t assets = 0;
         size_t remaining = 0;
         size_t sent = 0;
         size_t held = 0;
@@ -90,7 +92,12 @@ private:
 
     auto onMessage(RpcServer::ConnectionId connection, const rpc::Json& message) -> void;
     auto onAssetRequest(RpcServer::ConnectionId connection, const rpc::Json& id, const rpc::Json& params) -> void;
+    auto addRecords() -> void;
     auto status() -> rpc::Json;
+    auto clientsRecord() -> rpc::Json;
+    auto requestsRecord() -> rpc::Json;
+    auto cacheRecord() -> rpc::Json;
+    auto rulesRecord() const -> rpc::Json;
 
     auto subscribe(const std::string& id, Subscriber subscriber) -> void;
     auto pack(const std::string& id) -> Outcome;
@@ -119,8 +126,19 @@ private:
     std::mutex inFlightMutex;
     std::unordered_map<std::string, std::vector<Subscriber>> inFlight;
 
+    // The data introspect.list and introspect.get serve.
+    RpcRecords records;
+
     std::mutex requestMutex;
     std::unordered_map<int64_t, RequestTrace> requests;
+    // The most recent finished requests, oldest first, for the requests record.
+    struct FinishedRequest {
+        int64_t request = 0;
+        RequestTrace trace;
+        double ms = 0.0;
+    };
+    std::deque<FinishedRequest> finishedRequests;
+    static constexpr size_t finishedRequestsKept = 64;
 
     std::mutex streamMutex;
     std::unordered_set<RpcServer::ConnectionId> connections;

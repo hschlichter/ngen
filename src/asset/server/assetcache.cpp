@@ -2,6 +2,7 @@
 
 #include "assethash.h"
 
+#include <algorithm>
 #include <chrono>
 #include <format>
 #include <fstream>
@@ -128,6 +129,16 @@ auto AssetCache::load(const fs::path& path) -> void {
 auto AssetCache::size() -> size_t {
     std::lock_guard lock(mutex);
     return records.size();
+}
+
+auto AssetCache::entries() -> std::vector<std::pair<std::string, Record>> {
+    std::vector<std::pair<std::string, Record>> result;
+    {
+        std::lock_guard lock(mutex);
+        result.assign(records.begin(), records.end());
+    }
+    std::ranges::sort(result, [](const auto& a, const auto& b) { return a.first < b.first; });
+    return result;
 }
 
 auto AssetCache::upToDate(const std::string& id, uint64_t jobKey) -> std::optional<uint64_t> {

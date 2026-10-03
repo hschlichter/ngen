@@ -38,6 +38,9 @@ public:
     // How many assets have a record.
     auto size() -> size_t;
 
+    // Every record, sorted by asset id.
+    auto entries() -> std::vector<std::pair<std::string, Record>>;
+
     // The packed file's hash (the asset's version) when the asset is up to date for this job; nullopt otherwise.
     auto upToDate(const std::string& id, uint64_t jobKey) -> std::optional<uint64_t>;
 

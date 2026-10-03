@@ -146,3 +146,19 @@ auto registerRpcBuiltins(RpcRegistry& registry, std::string kind) -> void {
         responder.respond({{"protocol", rpc::protocolVersion}, {"kind", kind}});
     });
 }
+
+auto registerRpcRecords(RpcRegistry& registry, const RpcRecords& records) -> void {
+    registry.add({.name = "introspect.list", .summary = "The records this endpoint gives: its data, by name.", .result = "{records: [{name, description}]}"}, [&records](const rpc::Json& params, RpcResponder responder) {
+        serveRecordsCall(records, "introspect.list", params, std::move(responder));
+    });
+    registry.add(
+        {
+            .name = "introspect.get",
+            .summary = "One record as JSON.",
+            .params = {{.name = "name", .type = RpcType::String, .required = true, .description = "record name, from introspect.list"}},
+            .result = "the record",
+        },
+        [&records](const rpc::Json& params, RpcResponder responder) {
+            serveRecordsCall(records, "introspect.get", params, std::move(responder));
+        });
+}

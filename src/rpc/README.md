@@ -7,9 +7,9 @@ discovery files.
 
 | Part | Files | Depends on |
 |---|---|---|
-| Core | `core/rpcframe.*` (frames), `core/rpcprotocol.*` (JSON-RPC messages, error codes), `core/rpcsocket.*` (loopback TCP), `core/rpcserver.*` (an endpoint with an I/O thread that listens, connects out, or both), `core/rpcclient.*` (blocking client), `core/rpcdiscovery.*` (discovery files) | the standard library and header-only nlohmann/json (`external/json`) |
-| Engine layer | `rpcregistry.*` (methods, parameter schemas, `rpc.*` builtins), `rpcresponder.*` (replies that can complete later), `rpcendpoint.*` (server + discovery + main-thread dispatch) | the core, `src/obs` |
-| Tool | `src/apps/rpc.cpp` (`ngen-rpc`) | the core |
+| Core | `core/rpcframe.*` (frames), `core/rpcprotocol.*` (JSON-RPC messages, error codes), `core/rpcsocket.*` (loopback TCP), `core/rpcserver.*` (an endpoint with an I/O thread that listens, connects out, or both), `core/rpcclient.*` (blocking client), `core/rpcdiscovery.*` (discovery files), `core/rpcresponder.*` (replies that can complete later), `core/rpcrecords.*` (named records: `introspect.list`, `introspect.get`) | the standard library and header-only nlohmann/json (`external/json`) |
+| Engine layer | `rpcregistry.*` (methods, parameter schemas, `rpc.*` builtins, records as methods), `rpcendpoint.*` (server + discovery + main-thread dispatch) | the core, `src/obs` |
+| Tool | `ngen-introspect` (`src/introspect/`) | the core |
 
 The core stays free of engine code, so the build server (`src/build/`) can use it as well. Only `.cpp` files include `nlohmann/json.hpp`; headers
 use `json_fwd.hpp`, with one exception: `rpcclient.h`, whose users are command-line tools that handle JSON anyway.
@@ -27,7 +27,7 @@ use `json_fwd.hpp`, with one exception: `rpcclient.h`, whose users are command-l
 ## Discovery
 
 Every endpoint writes `.ngen-discovery/<kind>-<pid>.json` in its working directory once it is listening: kind, pid, port, a label (the view's
-scene path, the asset server's variant), protocol and start time. It removes the file on exit. Readers (`listRpcEndpoints`, `ngen-rpc list`) look in
+scene path, the asset server's variant), protocol and start time. It removes the file on exit. Readers (`listRpcEndpoints`, `ngen-introspect list`) look in
 their own working directory, so tools find each other when they run in the same directory, wherever their binaries are. Readers delete files whose
 process is gone, so a crashed process leaves nothing behind after the next listing. Ports are chosen by the OS.
 
@@ -62,18 +62,23 @@ process is gone, so a crashed process leaves nothing behind after the next listi
 ngen-view's methods live in `src/view/`: `viewcommands.*` (the methods and the script verb table) and `viewdumps.*` (dumps and captures that
 complete frames later, into a file, a reply or both).
 
-## ngen-rpc
+## Records
+
+Data a process gives for reading is a record, not a method: a name, a description and a producer in an `RpcRecords` table, served by
+`introspect.list` and `introspect.get`. Clients show any record without knowing its type. The records and how to add one are in
+[`src/introspect/README.md`](../introspect/README.md).
+
+## Calling from the command line
+
+`ngen-introspect` is the command-line client (`list`, `get`, `describe`, `call`); see [`src/introspect/README.md`](../introspect/README.md).
 
 ```sh
-./ngen-cli rpc list                                   # live endpoints
-./ngen-cli rpc describe view                          # methods and schemas
-./ngen-cli rpc call view view.status
-./ngen-cli rpc call view introspect.gpuscene          # the joined GPU scene rows
-./ngen-cli rpc call view:12345 view.camera.set '{"x": 5.3, "y": 11.3, "z": 1.2, "yaw": -169.8, "pitch": -0.2}'
+./ngen-cli introspect list                                   # live endpoints and their records
+./ngen-cli introspect describe view                          # methods and schemas
+./ngen-cli introspect get view status
+./ngen-cli introspect call view introspect.gpuscene          # the joined GPU scene rows
+./ngen-cli introspect call view:12345 view.camera.set '{"x": 5.3, "y": 11.3, "z": 1.2, "yaw": -169.8, "pitch": -0.2}'
 ```
-
-A target is a kind (`view`), `kind:pid`, or a pid; a kind with several live endpoints fails and lists them. Output is JSON. Exit codes: 0 success,
-1 the call returned an error (printed as JSON), 2 no endpoint or it can't be reached, 3 usage.
 
 ## Observations
 

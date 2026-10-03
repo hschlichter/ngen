@@ -78,7 +78,8 @@ Each library documents its design and rules in a README next to the code:
 - [`src/rhi/README.md`](src/rhi/README.md) — RHI principles, the integrator contract, the example programs, known gaps.
 - [`src/renderer/README.md`](src/renderer/README.md) — how a frame is built: GPU scene tables, GPU culling and indirect draws, descriptor sets, frame graph
   rules, shadows, observation.
-- [`src/rpc/README.md`](src/rpc/README.md) — how ngen processes and agents talk: JSON-RPC over loopback TCP, discovery, threading, adding a method, `ngen-rpc`.
+- [`src/rpc/README.md`](src/rpc/README.md) — how ngen processes and agents talk: JSON-RPC over loopback TCP, discovery, threading, adding a method, records.
+- [`src/introspect/README.md`](src/introspect/README.md) — `ngen-introspect`: every running process's records in a window or on the command line, and calling their methods.
 - [`src/build/README.md`](src/build/README.md) — the self-hosted build system: framework, IR, runner, bootstrap.
 - [`src/scene/README.md`](src/scene/README.md) — the scene as a USD stage, and how its layers and textures are read through the asset server.
 - [`src/asset/README.md`](src/asset/README.md) — the asset system: asset ids, `ngen-asset-server`, its cache and stream, `AssetClient`, and packing (`pack.cpp` rules, packers).
@@ -223,7 +224,7 @@ on your `PATH`). It works from any directory: `../ngen-cli` from `src/` behaves 
 | `ngen-cli set` | Print the set variant. |
 | `ngen-cli build [args]` | Run `ngen-build` for the set variant. `-p`/`-c` are filled in only when you don't pass them, so `build -c release` builds the set platform in release, and `build -p … -c …` works like plain `ngen-build`. Every other argument passes through: targets, `-v`, `--clean`, `format`, `tidy`, … |
 | `ngen-cli view [args]` | Run the set variant's `ngen-view` with your arguments, in your working directory. |
-| `ngen-cli rpc [args]` | Run the set variant's `ngen-rpc`: `list` running tools, `describe` one, `call` its methods (`src/rpc/README.md`). |
+| `ngen-cli introspect [args]` | Run the set variant's `ngen-introspect`: with no arguments its window; `list` running tools and their records, `get` a record, `describe` a tool, `call` its methods (`src/introspect/README.md`). |
 | `ngen-cli asset-server` | Run the set variant's `ngen-asset-server` in the foreground, until Ctrl-C. `view` needs it running (`src/asset/README.md`). |
 | `ngen-cli help` | The commands, the set variant, and which tools are built for it. |
 

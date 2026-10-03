@@ -104,6 +104,8 @@ items in an "Open questions" section instead of picking silently.
   the C++20/C++23 split) in `src/scene/README.md`.
 - `src/rpc/` — how processes and agents talk: the RPC core (`core/`, no engine code, shared with the build server) and the engine layer (method
   registry, endpoint). Protocol and how to add a method in `src/rpc/README.md`.
+- `src/introspect/` — `ngen-introspect`, the tool that shows every running process's records and calls their methods: a window (SDL renderer
+  and Dear ImGui) and a command line. Records and the tool in `src/introspect/README.md`.
 - `src/view/` — ngen-view's commands as RPC methods and script verbs (`viewcommands.*`), and its dumps (`viewdumps.*`).
 - `src/asset/` — the asset system: `ngen-asset-server` (`server/`), `AssetClient`, and packing (`pack/`: the rule type and what every packer
   shares). Assets are the system, packing is the process that makes an asset engine-ready. Asset ids, the server, its cache, the stream, `pack.cpp`
@@ -140,7 +142,8 @@ section documents it:
 - `./ngen-cli asset-server` — run the set variant's `ngen-asset-server` in the foreground; start it in the background before `view`
 - `./ngen-cli set` — print the set variant. **Agents don't change it** (`ngen-cli set <platform> <config>`) unless asked: `_out/set` is shared with
   the human's session. For another variant, pass `-p`/`-c` to `build` and run that variant's binary directly.
-- `./ngen-cli rpc list|describe|call …` — talk to a running ngen-view (live investigation; see the `run-headless` skill)
+- `./ngen-cli introspect list|get|describe|call …` — read the records of, and call, a running ngen-view or asset server (live investigation;
+  see the `run-headless` skill and `src/introspect/README.md`)
 - After changing `src/apps/cli.cpp`: `./ngen-cli build ngen-cli`
 
 The tools underneath are there when the work needs them: debugging the cli or the build system, or a variant other than the set one:

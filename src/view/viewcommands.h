@@ -1,5 +1,6 @@
 #pragma once
 
+#include "rpcrecords.h"
 #include "rpcregistry.h"
 #include "sessionscript.h"
 
@@ -7,6 +8,7 @@
 #include <functional>
 #include <string>
 
+class AssetClient;
 class EditorUI;
 class Renderer;
 class RenderThread;
@@ -16,7 +18,9 @@ class SceneUpdater;
 class USDScene;
 class ViewDumps;
 struct Camera;
+struct CullResult;
 struct PrimHandle;
+struct RenderWorld;
 
 // What ngen-view's commands act on. Owned by the view's main; the commands hold references.
 struct ViewContext {
@@ -30,6 +34,9 @@ struct ViewContext {
     RenderThread& renderThread;
     RenderDocCapture& renderDoc;
     ViewDumps& dumps;
+    const RenderWorld& renderWorld;
+    const CullResult& latestCull;
+    const AssetClient& assets;
     std::function<void()> frameSceneView;
     bool& quit;
     const uint64_t& frameCounter;
@@ -39,6 +46,10 @@ struct ViewContext {
 // Registers every view command as an RPC method (view.*, introspect.*, capture.*,
 // renderdoc.*). The same methods serve live calls and --script lines.
 auto registerViewMethods(RpcRegistry& registry, ViewContext& view) -> void;
+
+// Registers ngen-view's records (status, scene, assets, culling, profile, render, memory, counters), served by
+// introspect.list and introspect.get.
+auto registerViewRecords(RpcRecords& records, ViewContext& view) -> void;
 
 // Runs one `<frame> <verb> [args]` script command: the verb's parser turns the text into the
 // method's parameters, and failures print as `<verb>: <message>`, as the verbs always have.

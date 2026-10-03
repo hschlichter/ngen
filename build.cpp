@@ -250,6 +250,7 @@ auto main(int argc, char** argv) -> int {
                 "external/imgui/imgui_demo.cpp",
                 "external/imgui/backends/imgui_impl_vulkan.cpp",
                 "external/imgui/backends/imgui_impl_sdl3.cpp",
+                "external/imgui/backends/imgui_impl_sdlrenderer3.cpp",
             })
             .public_include({
                 "external/imgui",
@@ -371,8 +372,22 @@ auto main(int argc, char** argv) -> int {
             .link_flag("-lusd_pegtl")
             .link_flag("-lusd_kind");
 
-    // ngen-rpc: command-line RPC client (list, describe, call) for agents and humans.
-    auto rpcTool = cxx::program("ngen-rpc").sources({"src/apps/rpc.cpp"}).link(rpccore);
+    // ngen-introspect (src/introspect/README.md): sees into and calls the running processes, as a window drawn with
+    // SDL's renderer and Dear ImGui, or from the command line. An RPC client only; nothing of the engine.
+    auto introspectLib =
+        cxx::static_library("introspect")
+            .sources(glob({.include = "src/introspect/*.cpp"}))
+            .public_include({"src/introspect"})
+            .link(rpccore)
+            .link(imgui);
+    auto introspectTool =
+        cxx::program("ngen-introspect")
+            .sources({"src/apps/introspect.cpp"})
+            .include({"external/stb"})
+            .link(introspectLib)
+            .link(rpccore)
+            .link(imgui)
+            .link_flags(sdl3_libs);
 
     // ngen-cli: one front door to the tools of the set variant (src/apps/cli.cpp). Standard library only.
     auto cli = cxx::program("ngen-cli").sources({"src/apps/cli.cpp"});
@@ -443,7 +458,7 @@ auto main(int argc, char** argv) -> int {
     p.target(exampleBindless);
     p.target(exampleIndirect);
     p.target(cli);
-    p.target(rpcTool);
+    p.target(introspectTool);
     p.target(packerShader);
     p.target(packerCopy);
     p.target(packerTexture);

@@ -518,12 +518,18 @@ auto main(int argc, char* argv[]) -> int {
         .renderThread = renderThread,
         .renderDoc = renderDoc,
         .dumps = dumps,
+        .renderWorld = renderWorld,
+        .latestCull = latestCull,
+        .assets = assetClient,
         .frameSceneView = frameSceneView,
         .quit = quit,
         .frameCounter = frameCounter,
         .sceneLabel = positional.size() >= 2 ? std::string(positional[1]) : std::string("(new scene)"),
     };
     registerViewMethods(registry, viewContext);
+    RpcRecords records;
+    registerViewRecords(records, viewContext);
+    registerRpcRecords(registry, records);
     // The endpoint is tooling: debug and release only (NGEN_INTROSPECTION), off with --no-rpc.
     RpcEndpoint endpoint;
 #ifdef NGEN_INTROSPECTION

@@ -1,6 +1,6 @@
 # Introspection tool
 
-**Status. Draft.**
+**Status. In progress: Phase A landed, Phase B next.**
 
 Step 4 of [plan_tool_architecture.md](plan_tool_architecture.md), reshaped. `ngen-introspect` is the one tool for seeing what goes on in the engine
 as a whole, for humans and for agents. It has two purposes:
@@ -121,6 +121,15 @@ Locked with Henrik:
    `ngen-rpc`'s code moves here and `src/apps/rpc.cpp` is removed.
 3. **The windowed tool**: SDL window, imgui with the SDL renderer backend, Processes and Records windows.
 4. **`build.cpp`**: an `ngen-introspect` program replacing `ngen-rpc`; `ngen-cli introspect` replacing `ngen-cli rpc`; the CI build line.
+
+**Phase A as built.** Beyond the steps above:
+- `RpcResponder` moved into the RPC core, next to the new `RpcRecords` (`src/rpc/core/rpcrecords.*`), so the asset server serves records
+  from its own dispatch (`serveRecordsCall`) and the view through its registry (`registerRpcRecords`).
+- The `status` records replace the `view.status` and `server.status` methods, so the same data has one way in.
+- The CPU-side `introspect.render`, `.memory`, `.counters` and `.profile` methods stay until step 7 removes the verbs that use them.
+- The view's `profile` record is the frame history (CPU and GPU ms per frame); the Chrome trace stays a file (`introspect.profile`).
+- The window takes `--select=<target>/<record>`, `--frames` and `--screenshot`, so it can be looked at headless.
+- Gap: the asset server has no `rpc.describe`.
 
 ### Phase B: traces
 

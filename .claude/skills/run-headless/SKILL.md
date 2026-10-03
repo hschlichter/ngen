@@ -36,8 +36,9 @@ across runs (it packs only what a view requests, and caches the result in `.ngen
 SDL_VIDEODRIVER=offscreen timeout --signal=TERM 5 ./ngen-cli view --obs-output=/tmp/obs.jsonl <scene>
 ```
 
-Rebuild and restart the asset server after changing `pack.cpp` or anything under `src/asset/server/`. `./ngen-cli rpc call asset server.status`
-shows what it is doing; with servers for several variants running, name one by pid (`asset:<pid>`, from `./ngen-cli rpc list`).
+Rebuild and restart the asset server after changing `pack.cpp` or anything under `src/asset/server/`. `./ngen-cli introspect get asset status`
+shows what it is doing (also `rules`, `cache`, `requests`, `clients`); with servers for several variants running, name one by pid (`asset:<pid>`,
+from `./ngen-cli introspect list`).
 
 - `ngen-cli view` replaces itself with the set variant's `ngen-view`, so `timeout`, signals and exit codes behave exactly as with the binary.
 - The `timeout` kill is the expected exit — judge the run by the JSONL contents, not the exit code.
@@ -97,18 +98,19 @@ A running ngen-view answers RPC calls (`src/rpc/README.md`). Every script verb i
 
 ```sh
 SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> &          # keeps running; no --frames
-./ngen-cli rpc list                                            # wait until it's listed
-./ngen-cli rpc describe view                                   # every method with its parameters
-./ngen-cli rpc call view view.status                           # frame, scene, selection, camera
-./ngen-cli rpc call view view.camera.set '{"x":5.3,"y":11.3,"z":1.2,"yaw":-169.8,"pitch":-0.2}'
-./ngen-cli rpc call view view.screenshot '{"path":"/tmp/shot.png"}'   # answers when the file is written
-./ngen-cli rpc call view introspect.gpuscene                   # also .render .memory .counters .frame
-./ngen-cli rpc call view capture.request '{"pass":"GeometryPass","resource":"gbuffer.normal"}'
-./ngen-cli rpc call view view.quit
+./ngen-cli introspect list                                     # wait until it's listed; every process and its records
+./ngen-cli introspect get view status                          # frame, scene, selection, camera
+./ngen-cli introspect get view culling                         # also scene, assets, profile, render, memory, counters
+./ngen-cli introspect describe view                            # every method with its parameters
+./ngen-cli introspect call view view.camera.set '{"x":5.3,"y":11.3,"z":1.2,"yaw":-169.8,"pitch":-0.2}'
+./ngen-cli introspect call view view.screenshot '{"path":"/tmp/shot.png"}'   # answers when the file is written
+./ngen-cli introspect call view introspect.gpuscene            # GPU-native data stays a method; also introspect.frame
+./ngen-cli introspect call view capture.request '{"pass":"GeometryPass","resource":"gbuffer.normal"}'
+./ngen-cli introspect call view view.quit
 ```
 
 - Offline `--script` runs stay the default for reproducible verification; live calls are for investigating interactively.
-- With several views running, `view` is ambiguous: use `view:<pid>` from `ngen-cli rpc list`.
+- With several views running, `view` is ambiguous: use `view:<pid>` from `ngen-cli introspect list`.
 - Exit codes: 0 ok, 1 the call returned an error (printed as JSON), 2 no endpoint.
 
 ## Inspect

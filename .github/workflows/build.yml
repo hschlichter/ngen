@@ -238,4 +238,4 @@ jobs:
       # The default target (ngen-view, with the asset server and packers it depends on), the tools that aren't its
       # dependencies, and the RHI examples.
       - name: Build
-        run: ./_out/ngen-build -v -p linux-vulkan -c ${{ matrix.config }} ngen-view ngen-cli ngen-rpc examples
+        run: ./_out/ngen-build -v -p linux-vulkan -c ${{ matrix.config }} ngen-view ngen-cli ngen-introspect examples

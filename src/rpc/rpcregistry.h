@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rpcprotocol.h"
+#include "rpcrecords.h"
 #include "rpcresponder.h"
 
 #include <functional>
@@ -60,3 +61,6 @@ private:
 
 // rpc.describe, rpc.ping and rpc.version. `kind` is the endpoint kind ("view", …).
 auto registerRpcBuiltins(RpcRegistry& registry, std::string kind) -> void;
+
+// introspect.list and introspect.get, answered from `records`, which must outlive the registry.
+auto registerRpcRecords(RpcRegistry& registry, const RpcRecords& records) -> void;

@@ -105,6 +105,7 @@ auto AssetServer::start(const Options& startOptions) -> std::expected<void, std:
     auto workers = std::max(1u, std::thread::hardware_concurrency());
     jobs = std::make_unique<PackJobs>(workers);
 
+    addRecords();
     rpc.setRequestHandler([this](RpcServer::ConnectionId connection, const rpc::Json& message, std::vector<std::byte>) {
         onMessage(connection, message);
     });
@@ -157,10 +158,17 @@ auto AssetServer::onMessage(RpcServer::ConnectionId connection, const rpc::Json&
     const auto& id = message["id"];
     auto method = message["method"].get<std::string>();
     auto params = message.contains("params") ? message["params"] : rpc::Json::object();
+    RpcResponder responder([this, connection, id](const RpcReply& reply) {
+        if (reply.ok) {
+            rpc.send(connection, rpc::makeResult(id, *reply.result));
+        } else {
+            rpc.send(connection, rpc::makeError(id, reply.code, reply.message));
+        }
+    });
     if (method == "asset.request") {
         onAssetRequest(connection, id, params);
-    } else if (method == "server.status") {
-        rpc.send(connection, rpc::makeResult(id, status()));
+    } else if (serveRecordsCall(records, method, params, responder)) {
+        return;
     } else {
         trace("client {}: unknown method {}", connection, method);
         rpc.send(connection, rpc::makeError(id, rpc::methodNotFound, std::format("no method {}", method)));
@@ -192,7 +200,7 @@ auto AssetServer::onAssetRequest(RpcServer::ConnectionId connection, const rpc::
     }
     if (!ids.empty()) {
         std::lock_guard lock(requestMutex);
-        requests[request] = RequestTrace{.connection = connection, .remaining = ids.size(), .start = std::chrono::steady_clock::now()};
+        requests[request] = RequestTrace{.connection = connection, .assets = ids.size(), .remaining = ids.size(), .start = std::chrono::steady_clock::now()};
     }
     rpc.send(connection, rpc::makeResult(id, {{"request", request}}));
     for (const auto& asset : ids) {
@@ -206,22 +214,29 @@ auto AssetServer::onAssetRequest(RpcServer::ConnectionId connection, const rpc::
     }
 }
 
+auto AssetServer::addRecords() -> void {
+    records.add("status", "pid, variant, directory, clients connected, pack tasks running and queued, packer runs", [this](RpcResponder responder) {
+        responder.respond(status());
+    });
+    records.add("rules", "the pack rules from pack.cpp: extensions, packer, parameters, version", [this](RpcResponder responder) {
+        responder.respond(rulesRecord());
+    });
+    records.add("cache", "every packed asset: version, packer, inputs and the packed file", [this](RpcResponder responder) {
+        responder.respond(cacheRecord());
+    });
+    records.add("requests", "asset requests in flight, and the most recent finished ones", [this](RpcResponder responder) {
+        responder.respond(requestsRecord());
+    });
+    records.add("clients", "connected clients, the bytes queued to each and the assets waiting to stream", [this](RpcResponder responder) {
+        responder.respond(clientsRecord());
+    });
+}
+
 auto AssetServer::status() -> rpc::Json {
-    rpc::Json clients = rpc::Json::array();
+    size_t clients = 0;
     {
         std::lock_guard lock(streamMutex);
-        for (auto connection : connections) {
-            size_t peak = 0;
-            auto it = streams.find(connection);
-            if (it != streams.end()) {
-                peak = it->second.peakQueued;
-            }
-            clients.push_back({
-                {"connection", connection},
-                {"queuedBytes", rpc.queuedBytes(connection)},
-                {"peakQueuedBytes", peak},
-            });
-        }
+        clients = connections.size();
     }
     return {
         {"pid", getpid()},
@@ -232,6 +247,100 @@ auto AssetServer::status() -> rpc::Json {
         {"tasksQueued", jobs->queued()},
         {"packerRuns", packerRuns.load()},
     };
+}
+
+auto AssetServer::clientsRecord() -> rpc::Json {
+    auto clients = rpc::Json::array();
+    std::lock_guard lock(streamMutex);
+    for (auto connection : connections) {
+        size_t peak = 0;
+        size_t waiting = 0;
+        auto it = streams.find(connection);
+        if (it != streams.end()) {
+            peak = it->second.peakQueued;
+            waiting = it->second.queue.size();
+        }
+        clients.push_back({
+            {"connection", connection},
+            {"queuedBytes", rpc.queuedBytes(connection)},
+            {"peakQueuedBytes", peak},
+            {"assetsWaiting", waiting},
+        });
+    }
+    return clients;
+}
+
+auto AssetServer::requestsRecord() -> rpc::Json {
+    auto now = std::chrono::steady_clock::now();
+    auto inFlightRequests = rpc::Json::array();
+    std::lock_guard lock(requestMutex);
+    for (const auto& [request, entry] : requests) {
+        inFlightRequests.push_back({
+            {"request", request},
+            {"connection", entry.connection},
+            {"assets", entry.assets},
+            {"remaining", entry.remaining},
+            {"sent", entry.sent},
+            {"held", entry.held},
+            {"failed", entry.failed},
+            {"bytes", entry.bytes},
+            {"ms", std::chrono::duration<double, std::milli>(now - entry.start).count()},
+        });
+    }
+    std::sort(inFlightRequests.begin(), inFlightRequests.end(), [](const rpc::Json& a, const rpc::Json& b) { return a["request"].get<int64_t>() < b["request"].get<int64_t>(); });
+    auto finished = rpc::Json::array();
+    for (const auto& entry : finishedRequests) {
+        finished.push_back({
+            {"request", entry.request},
+            {"connection", entry.trace.connection},
+            {"assets", entry.trace.assets},
+            {"sent", entry.trace.sent},
+            {"held", entry.trace.held},
+            {"failed", entry.trace.failed},
+            {"bytes", entry.trace.bytes},
+            {"ms", entry.ms},
+        });
+    }
+    return {{"inFlight", inFlightRequests}, {"finished", finished}};
+}
+
+auto AssetServer::cacheRecord() -> rpc::Json {
+    auto fileJson = [](const AssetCache::File& file) -> rpc::Json {
+        return {{"path", file.path}, {"size", file.size}, {"hash", hashText(file.hash)}};
+    };
+    auto assets = rpc::Json::array();
+    for (const auto& [id, record] : cache.entries()) {
+        auto inputs = rpc::Json::array();
+        for (const auto& input : record.inputs) {
+            inputs.push_back(fileJson(input));
+        }
+        assets.push_back({
+            {"id", id},
+            {"version", hashText(record.output.hash)},
+            {"packer", fileJson(record.packer)},
+            {"inputs", inputs},
+            {"output", fileJson(record.output)},
+        });
+    }
+    return {{"directory", cacheDirectory.string()}, {"assets", assets}};
+}
+
+auto AssetServer::rulesRecord() const -> rpc::Json {
+    auto result = rpc::Json::array();
+    for (const auto& rule : rules) {
+        auto params = rpc::Json::object();
+        for (const auto& [key, value] : rule.params) {
+            params[key] = value;
+        }
+        result.push_back({
+            {"name", rule.name},
+            {"extensions", rule.extensions},
+            {"packer", rule.packer},
+            {"params", params},
+            {"version", rule.version},
+        });
+    }
+    return result;
 }
 
 auto AssetServer::subscribe(const std::string& id, Subscriber subscriber) -> void {
@@ -454,5 +563,13 @@ auto AssetServer::answered(int64_t request, Answer answer, uint64_t bytes) -> vo
         return;
     }
     trace("client {} request {}: done in {} ms; {} sent ({}), {} already held, {} failed", entry.connection, request, millisSince(entry.start), entry.sent, bytesText(entry.bytes), entry.held, entry.failed);
+    finishedRequests.push_back({
+        .request = request,
+        .trace = entry,
+        .ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - entry.start).count(),
+    });
+    if (finishedRequests.size() > finishedRequestsKept) {
+        finishedRequests.pop_front();
+    }
     requests.erase(it);
 }

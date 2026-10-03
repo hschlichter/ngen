@@ -1,12 +1,15 @@
 #include "viewcommands.h"
 
+#include "assetclient.h"
 #include "camera.h"
 #include "debugview.h"
+#include "drawlists.h"
 #include "editorui.h"
 #include "profile.h"
 #include "renderdoccapture.h"
 #include "renderer.h"
 #include "renderthread.h"
+#include "renderworld.h"
 #include "rpcdiscovery.h"
 #include "scenequery.h"
 #include "sceneupdater.h"
@@ -392,20 +395,6 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
             view.sceneUpdater.addEdit({.type = SceneEditCommand::Type::SetTransform, .prim = prim, .transform = local, .purpose = SceneEditRequestContext::Purpose::Preview});
             responder.respond(Json::object());
         });
-    registry.add({.name = "view.status", .summary = "Frame counter, scene and selection.", .result = "{frame, scene, selected, camera}"}, [&view](const Json&, RpcResponder responder) {
-        std::string selected;
-        if (view.selectedPrim && view.usdScene.isOpen()) {
-            if (const auto* rec = view.usdScene.getPrimRecord(view.selectedPrim)) {
-                selected = rec->path;
-            }
-        }
-        responder.respond({
-            {"frame", view.frameCounter},
-            {"scene", view.sceneLabel},
-            {"selected", selected},
-            {"camera", {{"position", vec3Json(view.cam.position)}, {"yaw", view.cam.yaw}, {"pitch", view.cam.pitch}}},
-        });
-    });
     registry.add({.name = "view.quit", .summary = "Stop the view after this frame.", .result = "{}"}, [&view](const Json&, RpcResponder responder) {
         view.quit = true;
         responder.respond(Json::object());
@@ -721,6 +710,124 @@ auto registerIntrospection(RpcRegistry& registry, ViewContext& view) -> void {
     });
 }
 
+auto layerRoleName(SceneLayerRole role) -> const char* {
+    switch (role) {
+        case SceneLayerRole::Root:
+            return "root";
+        case SceneLayerRole::Sublayer:
+            return "sublayer";
+        case SceneLayerRole::Referenced:
+            return "referenced";
+        case SceneLayerRole::Session:
+            return "session";
+        case SceneLayerRole::Unknown:
+            return "unknown";
+    }
+    return "unknown";
+}
+
+auto statusRecord(const ViewContext& view) -> Json {
+    std::string selected;
+    if (view.selectedPrim && view.usdScene.isOpen()) {
+        if (const auto* rec = view.usdScene.getPrimRecord(view.selectedPrim)) {
+            selected = rec->path;
+        }
+    }
+    return {
+        {"frame", view.frameCounter},
+        {"scene", view.sceneLabel},
+        {"selected", selected},
+        {"camera", {{"position", vec3Json(view.cam.position)}, {"yaw", view.cam.yaw}, {"pitch", view.cam.pitch}}},
+    };
+}
+
+auto sceneRecord(const ViewContext& view) -> Json {
+    auto layers = Json::array();
+    size_t prims = 0;
+    Json up = nullptr;
+    if (view.usdScene.isOpen()) {
+        for (const auto& layer : view.usdScene.layers()) {
+            layers.push_back({
+                {"identifier", layer.identifier},
+                {"name", layer.displayName},
+                {"role", layerRoleName(layer.role)},
+                {"dirty", layer.dirty},
+                {"readOnly", layer.readOnly},
+                {"muted", layer.muted},
+            });
+        }
+        prims = view.usdScene.allPrims().size();
+        up = vec3Json(view.usdScene.worldUp());
+    }
+    return {
+        {"scene", view.sceneLabel},
+        {"open", view.usdScene.isOpen()},
+        {"up", up},
+        {"prims", prims},
+        {"meshInstances", view.renderWorld.meshInstances.size()},
+        {"lights", view.renderWorld.lights.size()},
+        {"layers", layers},
+    };
+}
+
+auto assetsRecord(const ViewContext& view) -> Json {
+    auto stats = view.assets.stats();
+    return {
+        {"requested", stats.requested},
+        {"received", stats.received},
+        {"packed", stats.packed},
+        {"cached", stats.cached},
+        {"failed", stats.failed},
+        {"inFlight", stats.inFlight()},
+        {"bytes", stats.bytes},
+    };
+}
+
+auto cullingRecord(const ViewContext& view) -> Json {
+    const auto& cull = view.latestCull;
+    auto cascades = Json::array();
+    for (uint32_t i = 0; i < cull.cascadeCount; i++) {
+        cascades.push_back({
+            {"cascade", i},
+            {"drawn", cull.cascadeDrawn[i]},
+            {"culled", cull.cascadeCulled[i]},
+            {"triangles", cull.cascadeTriangles[i]},
+        });
+    }
+    return {
+        {"frame", cull.frame},
+        {"instances", cull.instances},
+        {"camera", {{"drawn", cull.instances - cull.cameraCulled}, {"culled", cull.cameraCulled}, {"triangles", cull.cameraTriangles}}},
+        {"sceneTriangles", cull.sceneTriangles},
+        {"cascades", cascades},
+    };
+}
+
+auto profileRecord() -> Json {
+    std::vector<profile::FrameStats> history;
+    profile::frameHistory(history);
+    auto frames = Json::array();
+    double cpuSum = 0.0;
+    double gpuSum = 0.0;
+    size_t gpuCount = 0;
+    for (const auto& frame : history) {
+        frames.push_back({{"frame", frame.frameIndex}, {"cpuMs", frame.cpuMs}, {"gpuMs", frame.gpuMs}});
+        cpuSum += frame.cpuMs;
+        if (frame.gpuMs > 0.0) {
+            gpuSum += frame.gpuMs;
+            gpuCount++;
+        }
+    }
+    double cpuAverage = history.empty() ? 0.0 : cpuSum / (double) history.size();
+    double gpuAverage = gpuCount == 0 ? 0.0 : gpuSum / (double) gpuCount;
+    return {
+        {"frameCount", history.size()},
+        {"cpuMsAverage", cpuAverage},
+        {"gpuMsAverage", gpuAverage},
+        {"frames", frames},
+    };
+}
+
 } // namespace
 
 auto registerViewMethods(RpcRegistry& registry, ViewContext& view) -> void {
@@ -748,4 +855,31 @@ auto runViewScriptCommand(const RpcRegistry& registry, const SessionCommand& com
         }
     });
     registry.invoke(verb->method, *params, responder);
+}
+
+auto registerViewRecords(RpcRecords& records, ViewContext& view) -> void {
+    records.add("status", "frame counter, scene, selection and camera", [&view](RpcResponder responder) {
+        responder.respond(statusRecord(view));
+    });
+    records.add("scene", "the open scene: layers, prim count, up axis, mesh instances and lights", [&view](RpcResponder responder) {
+        responder.respond(sceneRecord(view));
+    });
+    records.add("assets", "what the view asked the asset server for and received", [&view](RpcResponder responder) {
+        responder.respond(assetsRecord(view));
+    });
+    records.add("culling", "GPU culling's latest readback: instances and triangles drawn and culled, per view", [&view](RpcResponder responder) {
+        responder.respond(cullingRecord(view));
+    });
+    records.add("profile", "the profiler's frame history: CPU and GPU time per frame", [](RpcResponder responder) {
+        responder.respond(profileRecord());
+    });
+    records.add("render", "the render debug snapshot: device, swapchain, scene tables, per-pass stats, draw log (next frames)", [&view](RpcResponder responder) {
+        view.dumps.requestRenderDebug({.responder = std::move(responder)});
+    });
+    records.add("memory", "every allocation and memory heap (next frames)", [&view](RpcResponder responder) {
+        view.dumps.requestMemory({.responder = std::move(responder)});
+    });
+    records.add("counters", "one frame's GPU zones and pipeline statistics per pass (next frames)", [&view](RpcResponder responder) {
+        view.dumps.requestCounters({.responder = std::move(responder)});
+    });
 }
