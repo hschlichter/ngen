@@ -1,7 +1,8 @@
 # Roadmap
 
-What is planned, open or parked, as of 2026-10-03. One line per item; the linked plans hold the detail. Items marked *parked* were discussed and
-set aside on purpose; *trigger* says what would bring an item back.
+What is planned, open or parked, as of 2026-10-06. One line per item; the linked plans hold the detail. Items marked *parked* were discussed and
+set aside on purpose; *trigger* says what would bring an item back. When an item lands it moves to [Landed](#landed) at the end, with its
+follow-ups left behind as open items.
 
 ## Objective
 
@@ -17,8 +18,7 @@ Items below that follow from the objective rather than from an existing plan are
 ## Direction: the tool architecture
 
 The umbrella is [plan_tool_architecture.md](plan_tool_architecture.md): a USD-free ngen-view fed by packed data, an editor that owns USD, an asset
-server that packs, and an introspection tool. Done so far: RPC (step 1), the asset server, shader/texture packing, scenes and textures through the
-asset server by copy.
+server that packs, and an introspection tool. What has landed of it is under [Landed](#landed).
 
 1. **Scene pack format** — *plan not written yet.* The critical path.
    - USD packer: layer packs, sub-packs (references/payloads packed once, instanced), variant sets, typed components.
@@ -35,9 +35,6 @@ asset server by copy.
 4. **Everything async** — *from the objective.* Scenes open instantly with placeholders; geometry, textures, shaders, sub-packs and LOD levels
    arrive and appear when ready, never blocking a frame. Builds on the asset server's streaming, async shaders, sub-packs as load units, and
    the editor split's incremental GPU scene. Today the view still waits for shaders and loads the scene synchronously.
-5. **Introspection tool (step 4)** — [plan_introspect_tool.md](plan_introspect_tool.md), landed. `ngen-introspect` shows every process's
-   records and merged trace, in a window or on the command line; `src/trace/` replaced the observation bus; agents verify with
-   `ngen-introspect trace`. Follow-ups: profiler zones on the trace stream, session recording, structured asset server events.
 
 ## Engine features
 
@@ -112,6 +109,8 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
   monolithic or static build). Only matters until ngen-view stops linking USD.
 - **CI**: move run cancellation from the workflow to the `build` job, so a push can't cancel an OpenUSD build before its cache is saved; report
   the lavapipe push-constant bug to Mesa (offered, not done).
+- **Introspection follow-ups** ([plan_introspect_tool.md](plan_introspect_tool.md), "Deferred"): profiler zones on the trace stream, session
+  recording in the windowed tool, structured asset server events (its messages are text lines today), `get --every` for a record over time.
 - **Introspection extras**: Tracy; GPU crash diagnostics (breadcrumbs, `VK_EXT_device_fault`); scene/USD provenance; per-pass GPU time column;
   zone statistics; a headless performance regression check; the GPU-driven debugging plan.
 - **Build system**: static libraries aren't passed on transitively (programs link each library directly); watch mode; Windows; deterministic
@@ -128,3 +127,18 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
   [plan_usd_lights.md](plan_usd_lights.md) in progress (it isn't started); [plan_editor_split.md](plan_editor_split.md) says "build server".
 - Plans referenced but never written: `plan_gpu_driven_debugging.md`, `plan_tracy.md`, `plan_rhi_queues.md`, `plan_shader_introspection.md`.
 - Headless runs started in the repo root write window layout to the developer's `imgui.ini`.
+
+## Landed
+
+Moved here from the sections above when they landed, newest first; the plan holds what was built.
+
+- **Introspection tool (step 4)** — [plan_introspect_tool.md](plan_introspect_tool.md). `ngen-introspect` shows every process's records and
+  merged trace, in a window or on the command line; `src/trace/` replaced the observation bus. The trace is flow and messages (levels, text,
+  printed on the console), data is records; start-up reads as a timeline; agents verify with records and `ngen-introspect trace`.
+- **Scenes and textures through the asset server (step 2)** — [plan_asset_copy.md](plan_asset_copy.md),
+  [plan_texture_packer.md](plan_texture_packer.md), [plan_texture_batch.md](plan_texture_batch.md). USD layers and textures stream from the
+  asset server through a USD asset resolver; textures are decoded and mip-mapped at pack time and requested in one batch per scene.
+- **Asset server (step 2)** — [plan_asset_server.md](plan_asset_server.md), after [plan_pack_rules.md](plan_pack_rules.md).
+  `ngen-asset-server` with rules by extension in `pack.cpp`, request-driven packing with its own cache, packed data streamed to clients;
+  shaders packed through it.
+- **RPC (step 1)** — [plan_rpc.md](plan_rpc.md). RPC core, the engine method registry, every view verb as a method.

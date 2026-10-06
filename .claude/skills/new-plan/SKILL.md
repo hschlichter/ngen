@@ -25,7 +25,9 @@ the file mechanics around it.
 
 1. Flip the status header to `**Status. Landed.**`.
 2. Update its annotation in `docs/README.md` to `(landed)`.
-3. For large multi-phase efforts, a retrospective summary doc (the `frame_graph_phaseN_summary.md`
+3. If `docs/roadmap.md` lists it, move the item to the roadmap's **Landed** section (newest first, one short paragraph with the plan link), and
+   leave its open follow-ups behind as items in the section they belong to.
+4. For large multi-phase efforts, a retrospective summary doc (the `frame_graph_phaseN_summary.md`
    pattern: past tense, "what changed", mirrors the plan's structure) may be worth writing — ask the user
    before adding one.
 
