@@ -251,7 +251,7 @@ samples the atlas with a hardware compare sampler (3×3 PCF by default).
 - **Culling introspection.** `instancecull.comp` writes, next to the visibility bits, the frustum plane that rejected each instance in each view
   (`cullPlanes`, 4 bits per view: plane 0–5, `E` visible, `F` not tested). The readback keeps every view's visibility bit (`CullResult::viewBits`).
 - **Trace events** (Render category, conventions in `src/trace/README.md`). The renderer traces flow and problems, never per-frame data:
-  `SceneUploaded` when an upload changes geometry (instances, meshes, textures, ms; a transform edit is silent), `SwapchainRecreate` and
+  `ShaderLoaded` per startup shader, `FirstFramePresented` once (ms since the process started), `SceneUploaded` when an upload changes geometry (instances, meshes, textures, ms; a transform edit is silent), `SwapchainRecreate` and
   `SwapchainRecreateFailed`, `Screenshot` and `TextureDump` per file written (`ScreenshotFailed`, `TextureDumpFailed`), `ShaderLoadFailed`,
   warnings for fallbacks (`FormatFallback`, `DebugViewsOff`, `TextureSlotsFull`), and the RHI's messages (`RhiMessage`: validation and native
   errors, through `RhiDeviceOptions::onMessage`). Per-frame numbers are in the view's records: `render` (passes with draw counters and GPU time,

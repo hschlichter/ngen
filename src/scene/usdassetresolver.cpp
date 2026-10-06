@@ -206,6 +206,7 @@ auto registerAssetResolver(AssetClient* client, const std::filesystem::path& bin
         }
     }
     ArSetPreferredResolver("NgenAssetResolver");
+    TRACE_EVENT("Scene", "ResolverRegistered", "NgenAssetResolver").text(std::format("USD asset resolver registered from {}", (binDirectory / "usdplugins").string()));
     return true;
 }
 

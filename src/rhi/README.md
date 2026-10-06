@@ -81,7 +81,8 @@ never sees a `VkResult`.
 
 ### Messages go to the integrator
 
-Everything the backend has to say — what it set up (API version, instance extensions, swapchain size), validation
+Everything the backend has to say — what it set up (API version, instance extensions, the GPU and its driver, the
+optional features it found, swapchain size), validation
 messages and native errors — goes to `RhiDeviceOptions::onMessage`, a `RhiMessageHandler` taking a `RhiMessageSeverity`
 (`Info`, `Warning`, `Error`) and the text. The device passes it on to the swapchains it creates. Without a handler info
 prints on stdout and the rest on stderr, which is what the examples use; ngen-view puts them into its trace. The RHI

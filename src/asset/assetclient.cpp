@@ -91,7 +91,7 @@ AssetClient::~AssetClient() {
     state->rpc.stop();
 }
 
-auto AssetClient::connect(const std::string& variant) -> std::expected<void, std::string> {
+auto AssetClient::connect(const std::string& variant) -> std::expected<RpcEndpointInfo, std::string> {
     const RpcEndpointInfo* server = nullptr;
     auto endpoints = listRpcEndpoints();
     for (const auto& endpoint : endpoints) {
@@ -124,7 +124,7 @@ auto AssetClient::connect(const std::string& variant) -> std::expected<void, std
     std::lock_guard lock(state->mutex);
     state->connection = *connection;
     state->connected = true;
-    return {};
+    return *server;
 }
 
 auto AssetClient::request(std::span<const std::string> ids) -> void {

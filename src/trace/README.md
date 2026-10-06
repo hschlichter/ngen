@@ -52,12 +52,39 @@ path);` pushes when `event` goes out of scope.
 
 | Category | Covers |
 |---|---|
-| `Scene` | Scene open and save, applied edits (not preview edits), undo/redo, assets the scene could not read |
-| `Render` | Scene uploads, swapchain recreation, files written (screenshots, captures, dumps), shader and format problems, RHI messages |
-| `Engine` | Cross-cutting infrastructure: process start and exit, RPC listen, connect and failed calls, script commands, RenderDoc |
+| `Scene` | Scene open requests, open and save, meshes and materials built, render world extracted, applied edits (not preview edits), undo/redo, assets the scene could not read, OpenUSD's own diagnostics (`UsdError`, `UsdWarning`, `UsdStatus`) |
+| `Render` | Startup shaders requested and ready, renderer initialised, scene uploads, the first frame presented, swapchain recreation, files written (screenshots, captures, dumps), shader and format problems, RHI messages (GPU, features, validation) |
+| `Engine` | Cross-cutting infrastructure: process start and exit, the asset server connected, the session script, the window, the job system, the main loop starting, RPC listen, connect and failed calls, script commands, RenderDoc |
 | `Asset` | The asset server: every line of its log, as `Message` events with the line in `text`; failed requests are warnings |
 
 Add a category only when nothing existing fits.
+
+## Start-up reads as a timeline
+
+A view's console, and its trace, from start to the first frame:
+
+```text
+ngen-view started, pid 38191
+asset server linux-vulkan/release connected: pid 37772, port 35215
+17 startup shaders requested
+USD asset resolver registered from …/usdplugins
+scene assets/main_sponza/NewSponza_Main_USD_Zup_003.usda from the command line
+opening the scene assets/main_sponza/NewSponza_Main_USD_Zup_003.usda
+scene opened: … (1172 prims, 2 layers) in 2644 ms
+meshes and materials built: 115 meshes, 28 materials in 1321 ms
+render world extracted: 407 mesh instances, 1 lights in 20 ms
+window created: 2560x1440 pixels, SDL video driver offscreen
+startup shaders ready: 17 of 17 after waiting 0 ms
+job system: 23 workers
+GPU: AMD Radeon 890M Graphics (…), Vulkan 1.4.354, validation off
+device features: timestamps yes, calibrated timestamps yes, …
+renderer initialized in 4 ms
+scene on the GPU: 407 instances, 115 meshes, 28 textures in 973 ms
+main loop started, 5379 ms after start
+first frame presented (frame 1), 5385 ms after start
+```
+
+Each step that takes time says how long; the two "after start" lines count from the process's start (`trace::msSinceStart`).
 
 ## What not to trace
 

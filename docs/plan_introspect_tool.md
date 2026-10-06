@@ -160,6 +160,11 @@ Locked with Henrik:
   prints nothing else, so a process's console and its trace hold the same lines. The asset server's own timestamped printing moved into the
   trace; the RHI's handler gained `Info` for what it used to print on stdout; ResourcePool's per-allocation line went (the `memory` record
   has every texture).
+- **Start-up reads as a timeline.** Events for each step up to the first frame: asset server connected, shaders requested and ready (with the
+  time waited), resolver registered, scene open requested (command line or editor), meshes and materials built and the render world
+  extracted (counts, ms), window created, job system, GPU and device features (RHI info), renderer initialised, main loop started and first
+  frame presented (ms since the process started), the session script, real window resizes. OpenUSD's diagnostics go into the trace through a
+  `TfDiagnosticMgr` delegate. Sponza: 5.4 s to the first frame, 2.6 s of it opening the stage and 1.3 s building meshes and materials.
 - `--dump-profile` went, but the `dump-profile` verb and `introspect.profile` stay: the Chrome trace has the profiler zones, which neither a
   record nor the trace carries.
 - `trace --output` sorts the whole file at the end: a process the tool connects to late brings history older than lines already merged. On

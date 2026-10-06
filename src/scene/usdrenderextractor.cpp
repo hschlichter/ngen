@@ -1,9 +1,14 @@
 #include "usdrenderextractor.h"
 #include "mesh.h"
 #include "renderworld.h"
+#include "trace.h"
 #include "usdscene.h"
 
+#include <chrono>
+#include <format>
+
 void USDRenderExtractor::extract(const USDScene& scene, const MeshLibrary& meshLib, RenderWorld& out) {
+    auto start = std::chrono::steady_clock::now();
     out.clear();
 
     for (const auto& prim : scene.allPrims()) {
@@ -65,6 +70,12 @@ void USDRenderExtractor::extract(const USDScene& scene, const MeshLibrary& meshL
         }
         out.primToInstance[prim.handle.index] = {.first = first, .count = (uint32_t) meshData->submeshes.size()};
     }
+    auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    TRACE_EVENT("Scene", "SceneExtracted", "RenderWorld")
+        .text(std::format("render world extracted: {} mesh instances, {} lights in {:.0f} ms", out.meshInstances.size(), out.lights.size(), ms))
+        .field("mesh_instances", (int64_t) out.meshInstances.size())
+        .field("lights", (int64_t) out.lights.size())
+        .field("ms", ms);
 }
 
 void USDRenderExtractor::patchTransforms(const USDScene& scene, const MeshLibrary& meshLib, std::span<const PrimHandle> dirty, RenderWorld& out) {

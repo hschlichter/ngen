@@ -38,6 +38,7 @@ public:
     // Commands due at `frame`, in insertion order, removed from the queue.
     auto takeDue(uint64_t frame, std::vector<SessionCommand>& out) -> void;
     auto empty() const -> bool { return pending.empty(); }
+    auto size() const -> size_t { return pending.size(); }
     auto lastFrame() const -> uint64_t;
 
 private:

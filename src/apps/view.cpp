@@ -28,6 +28,7 @@
 #include "trace.h"
 #include "translategizmo.h"
 #include "usdassetresolver.h"
+#include "usddiagnostics.h"
 #include "usdrenderextractor.h"
 #include "usdscene.h"
 #include "viewcommands.h"
@@ -218,6 +219,12 @@ auto main(int argc, char* argv[]) -> int {
         .text(std::format("ngen-view started, pid {}", getpid()))
         .field("pid", (int64_t) getpid())
         .field("scene", positional.size() >= 2 ? positional[1] : "");
+    if (!session.empty()) {
+        TRACE_EVENT("Engine", "ScriptLoaded", "view")
+            .text(std::format("session script: {} commands, the last at frame {}", session.size(), session.lastFrame()))
+            .field("commands", (int64_t) session.size())
+            .field("last_frame", (int64_t) session.lastFrame());
+    }
 
     // Every asset comes streamed from this variant's asset server, running in the same working directory (asset ids are
     // relative to it); the view doesn't start without one. The variant is
@@ -229,12 +236,21 @@ auto main(int argc, char* argv[]) -> int {
     auto binDirectory = std::filesystem::canonical("/proc/self/exe", binError).parent_path();
     {
         auto variant = binDirectory.parent_path().filename().string() + "/" + binDirectory.filename().string();
-        if (auto connected = assetClient.connect(variant); !connected) {
+        auto connected = assetClient.connect(variant);
+        if (!connected) {
             std::println(stderr, "ngen-view: {}", connected.error());
             return 1;
         }
+        TRACE_EVENT("Engine", "AssetServerConnected", connected->label)
+            .text(std::format("asset server {} connected: pid {}, port {}", connected->label, connected->pid, connected->port))
+            .field("pid", (int64_t) connected->pid)
+            .field("port", (int64_t) connected->port);
     }
     assetClient.request(startupShaderIds());
+    TRACE_EVENT("Render", "ShadersRequested", "startup")
+        .text(std::format("{} startup shaders requested", startupShaderIds().size()))
+        .field("count", (int64_t) startupShaderIds().size());
+    installUsdDiagnostics();
     if (!registerAssetResolver(&assetClient, binDirectory)) {
         return 1;
     }
@@ -257,12 +273,14 @@ auto main(int argc, char* argv[]) -> int {
     SceneUpdater sceneUpdater;
 
     if (positional.size() >= 2) {
+        TRACE_EVENT("Scene", "SceneOpenRequested", sceneId).text(std::format("scene {} from the command line", sceneId)).field("source", "command line");
         if (!usdScene.open(sceneId.c_str())) {
             return 1;
         }
     } else {
         // No scene argument — start with a blank in-memory stage so the editor has
         // something to act on (default light, empty Scene tree, ready to create prims).
+        TRACE_EVENT("Scene", "SceneOpenRequested", "(new scene)").text("new scene: no scene on the command line").field("source", "command line");
         if (!usdScene.newScene()) {
             return 1;
         }
@@ -289,12 +307,37 @@ auto main(int argc, char* argv[]) -> int {
         return 1;
     }
     SDL_DestroyProperties(windowProps);
+    // The size the trace last reported; SDL also sends a size event for the size the window starts with.
+    int tracedWindowWidth = 0;
+    int tracedWindowHeight = 0;
+    {
+        SDL_GetWindowSizeInPixels(window, &tracedWindowWidth, &tracedWindowHeight);
+        const char* driver = SDL_GetCurrentVideoDriver();
+        TRACE_EVENT("Engine", "WindowCreated", "window")
+            .text(std::format("window created: {}x{} pixels, SDL video driver {}", tracedWindowWidth, tracedWindowHeight, driver != nullptr ? driver : "none"))
+            .field("width", tracedWindowWidth)
+            .field("height", tracedWindowHeight)
+            .field("driver", driver != nullptr ? driver : "");
+    }
 
-    assetClient.wait(startupShaderIds());
+    {
+        // The shaders were requested before the scene was opened, so packing them overlapped loading it; this is
+        // how much of it was left.
+        auto waitStart = std::chrono::steady_clock::now();
+        assetClient.wait(startupShaderIds());
+        auto waitedMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - waitStart).count();
+        auto failed = std::ranges::count_if(startupShaderIds(), [&](const std::string& id) { return assetClient.find(id) == nullptr; });
+        TRACE_EVENT("Render", "ShadersReady", "startup")
+            .text(std::format("startup shaders ready: {} of {} after waiting {:.0f} ms", startupShaderIds().size() - failed, startupShaderIds().size(), waitedMs))
+            .field("count", (int64_t) startupShaderIds().size())
+            .field("failed", (int64_t) failed)
+            .field("waited_ms", waitedMs);
+    }
     setShaderSource(&assetClient);
 
     // Job system
     JobSystem::init();
+    TRACE_EVENT("Engine", "JobSystemStarted", "jobs").text(std::format("job system: {} workers", JobSystem::workerCount())).field("workers", (int64_t) JobSystem::workerCount());
 
     // RHI device. The window layer (SDL) hands the backend what it needs through
     // hooks; the RHI never includes SDL.
@@ -346,10 +389,15 @@ auto main(int argc, char* argv[]) -> int {
     ImGuiBackendVulkan imguiBackend(window);
     Renderer renderer;
     StatusBarGatherer statusBar;
+    auto rendererInitStart = std::chrono::steady_clock::now();
     if (!renderer.init(&rhiDevice, &imguiBackend, initialExtent)) {
         TRACE_ERROR("Render", "RendererInitFailed", "renderer").text("renderer init failed");
         rhiDevice.waitIdle();
         return failAfterInit();
+    }
+    {
+        auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - rendererInitStart).count();
+        TRACE_EVENT("Render", "RendererInitialized", "renderer").text(std::format("renderer initialized in {:.0f} ms", ms)).field("ms", ms);
     }
     renderer.setValidationEnabled(enableValidation);
     renderer.setScreenshotsShowUi(screenshotsShowUi);
@@ -462,6 +510,7 @@ auto main(int argc, char* argv[]) -> int {
     (void) rpcEnabled;
 #endif
 
+    TRACE_EVENT("Engine", "MainLoopStarted", "view").text(std::format("main loop started, {:.0f} ms after start", trace::msSinceStart())).field("since_start_ms", trace::msSinceStart());
     while (!quit && !editorUI.wantsQuit()) {
         PROFILE_FRAME_MARK();
         frameCounter++;
@@ -488,6 +537,7 @@ auto main(int argc, char* argv[]) -> int {
 
         if (editorUI.hasPendingOpen()) {
             auto path = editorUI.consumePendingOpenPath();
+            TRACE_EVENT("Scene", "SceneOpenRequested", path).text(std::format("scene {} from the editor", path)).field("source", "editor");
             if (editorUI.openScene(path.c_str(), usdScene, usdExtractor, meshLib, matLib, renderWorld, sceneQuery, sceneUpdater, selectedPrim)) {
                 refreshCachedLibs();
                 cam.worldUp = usdScene.worldUp();
@@ -496,6 +546,7 @@ auto main(int argc, char* argv[]) -> int {
             }
         }
         if (editorUI.consumePendingNewScene()) {
+            TRACE_EVENT("Scene", "SceneOpenRequested", "(new scene)").text("new scene from the editor").field("source", "editor");
             if (editorUI.newScene(usdScene, usdExtractor, meshLib, matLib, renderWorld, sceneQuery, sceneUpdater, selectedPrim)) {
                 refreshCachedLibs();
                 cam.worldUp = usdScene.worldUp();
@@ -546,6 +597,17 @@ auto main(int argc, char* argv[]) -> int {
             if (ev.type == SDL_EVENT_QUIT) {
                 TRACE_EVENT("Engine", "QuitRequested", "view").text("quitting");
                 quit = true;
+            }
+            if (ev.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
+                bool sizeChanged = ev.window.data1 != tracedWindowWidth || ev.window.data2 != tracedWindowHeight;
+                if (sizeChanged) {
+                    tracedWindowWidth = ev.window.data1;
+                    tracedWindowHeight = ev.window.data2;
+                    TRACE_EVENT("Engine", "WindowResized", "window")
+                        .text(std::format("window resized to {}x{} pixels", ev.window.data1, ev.window.data2))
+                        .field("width", ev.window.data1)
+                        .field("height", ev.window.data2);
+                }
             }
 
             if (uiCaptured) {

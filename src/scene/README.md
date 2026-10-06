@@ -40,6 +40,13 @@ streamed from the asset server and the view never opens an asset file.
   no library) declaring `NgenAssetResolver`; the build copies it to `_out/<platform>/<config>/usdplugins/`, and `registerAssetResolver` registers
   it and makes the resolver USD's preferred one. It runs before anything uses USD.
 
+## Diagnostics
+
+`installUsdDiagnostics` (`usddiagnostics.*`) registers a `TfDiagnosticMgr` delegate, so OpenUSD's errors, warnings and status messages become
+trace events (`UsdError`, `UsdWarning`, `UsdStatus`, named by the OpenUSD function) instead of lines OpenUSD prints on stderr itself. ngen-view
+installs it before it registers the resolver. Opening a stage, building meshes and materials (`updateAssetBindings`) and extracting the render
+world are traced with their counts and times.
+
 ## C++ standard
 
 `usd*.cpp` compile as C++20: OpenUSD's `usd/usd/schemaRegistry.h` holds `unique_ptr`s to an incomplete type that C++23's standard library

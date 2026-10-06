@@ -26,6 +26,20 @@ auto now() -> uint64_t {
     return (uint64_t) std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
+namespace {
+
+const uint64_t startNs = now();
+
+} // namespace
+
+auto processStartNs() -> uint64_t {
+    return startNs;
+}
+
+auto msSinceStart() -> double {
+    return (double) (now() - startNs) * 1e-6;
+}
+
 auto levelName(Level level) -> const char* {
     switch (level) {
         case Level::Info:

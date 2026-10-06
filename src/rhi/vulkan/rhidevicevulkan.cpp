@@ -572,6 +572,25 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
         return std::unexpected(RhiError::Failed);
     }
 
+    auto yesNo = [](bool value) {
+        return value ? "yes" : "no";
+    };
+    report(RhiMessageSeverity::Info,
+           std::format("GPU: {} ({}), Vulkan {}.{}.{}, validation {}",
+                       deviceLimits.deviceName,
+                       deviceLimits.driverName,
+                       VK_API_VERSION_MAJOR(properties.apiVersion),
+                       VK_API_VERSION_MINOR(properties.apiVersion),
+                       VK_API_VERSION_PATCH(properties.apiVersion),
+                       options.enableValidation ? "on" : "off"));
+    report(RhiMessageSeverity::Info,
+           std::format("device features: timestamps {}, calibrated timestamps {}, pipeline statistics {}, geometry shaders {}, wide lines {}, anisotropy {}",
+                       yesNo(deviceLimits.timestamps),
+                       yesNo(deviceLimits.calibratedTimestamps),
+                       yesNo(deviceLimits.pipelineStatistics),
+                       yesNo(deviceLimits.geometryShaders),
+                       yesNo(deviceLimits.wideLines),
+                       yesNo(deviceLimits.samplerAnisotropy)));
     return {};
 }
 

@@ -41,6 +41,12 @@ struct Event {
 // CLOCK_MONOTONIC in nanoseconds; the profiler's clock too.
 auto now() -> uint64_t;
 
+// now() when the process started (taken while static objects are built, before main), for "ready after N ms".
+auto processStartNs() -> uint64_t;
+
+// Milliseconds from processStartNs() to now().
+auto msSinceStart() -> double;
+
 // The calling thread's label in events.
 auto threadLabel() -> const std::string&;
 

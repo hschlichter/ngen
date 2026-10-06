@@ -1353,7 +1353,14 @@ void USDScene::processChanges() {
     m_impl->processChanges();
 }
 void USDScene::updateAssetBindings(MeshLibrary& meshLib, MaterialLibrary& matLib) {
+    auto start = std::chrono::steady_clock::now();
     m_impl->updateAssetBindings(meshLib, matLib);
+    auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    TRACE_EVENT("Scene", "AssetBindingsUpdated", "USDScene")
+        .text(std::format("meshes and materials built: {} meshes, {} materials in {:.0f} ms", meshLib.count(), matLib.count(), ms))
+        .field("meshes", (int64_t) meshLib.count())
+        .field("materials", (int64_t) matLib.count())
+        .field("ms", ms);
 }
 
 void USDScene::endFrame() {

@@ -1108,6 +1108,13 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         return;
     }
 
+    if (!firstFramePresented) {
+        firstFramePresented = true;
+        TRACE_EVENT("Render", "FirstFramePresented", "frame")
+            .text(std::format("first frame presented (frame {}), {:.0f} ms after start", frame, trace::msSinceStart()))
+            .field("frame", (int64_t) frame)
+            .field("since_start_ms", trace::msSinceStart());
+    }
     currentFrame = (currentFrame + 1) % swapchain->imageCount();
 }
 

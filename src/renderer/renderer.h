@@ -190,6 +190,7 @@ private:
     FrameGraphPreviews fgPreviews;
     bool fgDebugEnabled = false;
     bool validationEnabled = false;
+    bool firstFramePresented = false;
     bool renderDebugEnabled = false;
     std::string screenshotPath;
     bool screenshotsShowUi = false;

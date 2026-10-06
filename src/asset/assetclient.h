@@ -1,5 +1,7 @@
 #pragma once
 
+#include "rpcdiscovery.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -37,8 +39,9 @@ public:
     ~AssetClient();
 
     // Finds the asset server of this variant ("linux-vulkan/debug") running in the working directory, through its
-    // discovery file in .ngen-discovery/, and connects; an error when none is running.
-    auto connect(const std::string& variant) -> std::expected<void, std::string>;
+    // discovery file in .ngen-discovery/, and connects; returns the server it connected to, or an error when none is
+    // running.
+    auto connect(const std::string& variant) -> std::expected<RpcEndpointInfo, std::string>;
 
     // Sends one asset.request for all of `ids`; returns at once.
     auto request(std::span<const std::string> ids) -> void;

@@ -47,8 +47,9 @@ from `./ngen-cli introspect list`).
   is written, sorted, once the view has exited and its last events are in (`ProcessExiting` is the view's last event). Without
   `--until-exit` it runs until Ctrl-C. Filters: `--category=`, `--type=`, `--process=` (comma lists), `--level=warning|error`; `--history`
   takes everything the processes' rings still hold.
-- A view's trace is short: start-up, `SceneOpened`, `SceneUploaded`, the files the run wrote, exit — a dozen events for a clean run, however
-  many frames. Nothing is traced per frame; per-frame numbers are records.
+- A view's trace is short: the start-up timeline (each step with its time, up to `FirstFramePresented`), the files the run wrote, exit — a
+  few dozen events for a clean run, however many frames. Nothing is traced per frame; per-frame numbers are records. The console shows the
+  same lines, so `./ngen-cli view … 2>&1 | less` reads a run without the tool; for a slow start, look at which step's `ms` is large.
 - `ngen-cli view` replaces itself with the set variant's `ngen-view`, so `timeout`, signals and exit codes behave exactly as with the binary.
   Prefer `--frames` to a `timeout` kill, so the view exits cleanly and its last events are sent.
 - Write the trace to `/tmp` or the session scratchpad, not into the repo.

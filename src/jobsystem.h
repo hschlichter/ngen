@@ -25,6 +25,7 @@ class JobSystem {
 public:
     static auto init(uint32_t numWorkers = 0) -> void;
     static auto shutdown() -> void;
+    static auto workerCount() -> uint32_t { return (uint32_t) workers.size(); }
 
     // `name` labels the job in the profiler; must be a string literal or otherwise outlive the job.
     static auto submit(JobFunc job, const char* name = "Job") -> JobFence;
