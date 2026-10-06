@@ -62,7 +62,7 @@ Every plan has, in order:
    ideally with the condition that would trigger them.
 4. **Steps** — concrete: name the files, sketch the real structs/signatures. Prefer a short sequential step
    list sized to one iteration; use phases only when each phase ships something observable on its own.
-5. **Verification** — observable, binary criteria: obs-bus events to check, byte-identical outputs, what a
+5. **Verification** — observable, binary criteria: trace events to check, byte-identical outputs, what a
    test scene should show. "Compiles" is not a criterion.
 
 Decisions in plans: when there are meaningful alternatives, list them with trade-offs and a recommendation
@@ -104,8 +104,10 @@ items in an "Open questions" section instead of picking silently.
   the C++20/C++23 split) in `src/scene/README.md`.
 - `src/rpc/` — how processes and agents talk: the RPC core (`core/`, no engine code, shared with the build server) and the engine layer (method
   registry, endpoint). Protocol and how to add a method in `src/rpc/README.md`.
-- `src/introspect/` — `ngen-introspect`, the tool that shows every running process's records and calls their methods: a window (SDL renderer
-  and Dear ImGui) and a command line. Records and the tool in `src/introspect/README.md`.
+- `src/introspect/` — `ngen-introspect`, the tool that shows every running process's records and trace, and calls their methods: a window
+  (SDL renderer and Dear ImGui) and a command line. Records and the tool in `src/introspect/README.md`.
+- `src/trace/` — the trace: structured events (`TRACE_EVENT`) in an always-on ring per process, streamed over RPC. Conventions in
+  `src/trace/README.md`.
 - `src/view/` — ngen-view's commands as RPC methods and script verbs (`viewcommands.*`), and its dumps (`viewdumps.*`).
 - `src/asset/` — the asset system: `ngen-asset-server` (`server/`), `AssetClient`, and packing (`pack/`: the rule type and what every packer
   shares). Assets are the system, packing is the process that makes an asset engine-ready. Asset ids, the server, its cache, the stream, `pack.cpp`
@@ -162,15 +164,16 @@ adding platforms/configurations).
 
 ## Verifying changes
 
-Verification runs headless through the observation bus — build, run with `--obs-output`, read the JSONL
-evidence. ngen-view needs its variant's asset server running (`./ngen-cli asset-server &` for the set variant,
+Verification runs headless — build, start `./ngen-cli introspect trace --until-exit=view --output=…`, run the view with a `--script` that
+records the values the change is about (`120 record render /tmp/records.jsonl`), then read both: the records for the numbers, the trace for the
+flow and for warnings and errors (none on a clean run). ngen-view needs its variant's asset server running (`./ngen-cli asset-server &` for the set variant,
 `./_out/<platform>/<config>/ngen-asset-server &` for another), started in the same directory as the view; without one it exits at start-up.
-Scenes and textures are assets too: a scene argument is an asset id, a path relative to that directory. The `run-headless` skill (`.claude/skills/run-headless/SKILL.md`) has the full procedure, test
-scenes, and machine constraints; `obs.md` documents the observation conventions. Observations added for a
-change stay in the code — there is no "remove when done" step.
+Scenes and textures are assets too: a scene argument is an asset id, a path relative to that directory. The `run-headless` skill
+(`.claude/skills/run-headless/SKILL.md`) has the full procedure, test scenes, and machine constraints; `src/trace/README.md` documents the
+event conventions: the trace is flow and messages, data is a record. Events added for a change stay in the code — there is no "remove when done" step.
 
-`ngen-view` also takes `--screenshot`, `--camera`, `--view`, `--script` and dump flags (see the `run-headless` skill), so a change can be
-looked at through a PNG and its numbers read from JSON, without the window.
+`ngen-view` also takes `--screenshot`, `--camera`, `--view` and `--script` (see the `run-headless` skill), so a change can be looked at
+through a PNG, and its numbers read from records the script writes to a file (`record render <file>`), without the window.
 
 RHI changes have a second, faster loop: the examples under `src/rhi/examples/` (`ngen-example-triangle` and successors, built together
 by the `examples` target) run offscreen with

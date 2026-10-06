@@ -5,10 +5,10 @@
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "shaderloader.h"
+#include "trace.h"
 
 #include <array>
 #include <format>
-#include <print>
 
 auto GeometryPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFormat) -> bool {
     using enum RhiDescriptorType;
@@ -32,7 +32,7 @@ auto GeometryPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFo
     // enough precision for a unit vector. Keep R32 where the device cannot render to it.
     auto neededUsage = RhiTextureUsage::ColorAttachment | RhiTextureUsage::Sampled;
     if (!device->supportsTextureFormat(R16G16B16A16_SFLOAT, neededUsage)) {
-        std::println(stderr, "GeometryPass: R16G16B16A16_SFLOAT not renderable, normal target stays R32G32B32A32_SFLOAT");
+        TRACE_WARNING("Render", "FormatFallback", "GeometryPass").text("R16G16B16A16_SFLOAT not renderable, normal target stays R32G32B32A32_SFLOAT");
         normalTargetFormat = R32G32B32A32_SFLOAT;
     }
     std::array<RhiFormat, 2> colorFormats = {R8G8B8A8_UNORM, normalTargetFormat};

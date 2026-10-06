@@ -3,7 +3,6 @@
 #include "deletionqueue.h"
 #include "framegraph.h"
 #include "framegraphcontext.h"
-#include "observationmacros.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 
@@ -68,7 +67,6 @@ auto DrawLists::ensureCapacity(uint32_t instanceCount, uint64_t frame) -> bool {
         });
         slot.readbackMapped = device->mapBuffer(slot.readback);
     }
-    OBS_EVENT("Render", "DrawListsCreated", "drawlists").field("capacity", (int64_t) capacity).field("regions", (int64_t) regionCount);
     return true;
 }
 
@@ -171,17 +169,6 @@ auto DrawLists::parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void {
         if (slot.capturedCommands) {
             auto count = std::min(latest.totals[counterDraws + r], capacity);
             latest.commands[r].assign(commands + ((size_t) r * capacity), commands + ((size_t) r * capacity) + count);
-        }
-    }
-
-    if (obs::bus().categoryEnabled("Render")) {
-        obs::detail::Builder event("Render", "CullReadback", "cull");
-        event.field("frame", (int64_t) slotFrame);
-        event.field("instances", (int64_t) slot.instanceCount);
-        event.field("camera_culled", (int64_t) cameraCulled());
-        static constexpr std::array<const char*, maxShadowCascades> cascadeFields = {"cascade_culled_0", "cascade_culled_1", "cascade_culled_2", "cascade_culled_3"};
-        for (uint32_t c = 0; c < cascadeCount(); c++) {
-            event.field(cascadeFields[c], (int64_t) cascadeCulled(c));
         }
     }
 }

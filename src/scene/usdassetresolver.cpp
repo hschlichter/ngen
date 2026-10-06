@@ -8,6 +8,7 @@
 
 #include "assetclient.h"
 #include "assetid.h"
+#include "trace.h"
 
 #include <pxr/base/plug/plugin.h>
 #include <pxr/base/plug/registry.h>
@@ -24,10 +25,10 @@
 #include <pxr/usd/ar/writableAsset.h>
 
 #include <cstdio>
+#include <format>
 #include <future>
 #include <memory>
 #include <mutex>
-#include <print>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -100,10 +101,11 @@ auto fetch(const std::string& id) -> Bytes {
         versions[id] = parseVersion(asset->version);
         bytes = std::make_shared<const std::vector<std::byte>>(std::move(asset->bytes));
     } else {
-        std::println(stderr, "NgenAssetResolver: cannot open {}:", id);
+        std::string text = std::format("cannot open {}", id);
         for (const auto& line : assetClient->errors(id)) {
-            std::println(stderr, "  {}", line);
+            text += "\n  " + line;
         }
+        TRACE_ERROR("Scene", "AssetOpenFailed", id).text(text);
     }
     promise.set_value(bytes);
     std::lock_guard lock(fetchMutex);
@@ -194,7 +196,7 @@ auto registerAssetResolver(AssetClient* client, const std::filesystem::path& bin
     assetClient = client;
     auto plugins = PlugRegistry::GetInstance().RegisterPlugins((binDirectory / "usdplugins").string());
     if (plugins.empty()) {
-        std::println(stderr, "NgenAssetResolver: no plugin in {}", (binDirectory / "usdplugins").string());
+        TRACE_ERROR("Scene", "ResolverPluginMissing", "NgenAssetResolver").text(std::format("no USD resolver plugin in {}", (binDirectory / "usdplugins").string()));
         return false;
     }
     for (const auto& plugin : PlugRegistry::GetInstance().GetAllPlugins()) {

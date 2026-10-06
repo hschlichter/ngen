@@ -2,14 +2,13 @@
 #include "rhicommandbuffervulkan.h"
 #include "rhidevicevulkan.h"
 #include "rhiresourcesvulkan.h"
+#include "trace.h"
 
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 
 #include <SDL3/SDL.h>
-
-#include <print>
 
 auto ImGuiBackendVulkan::init(const ImGuiBackendInitInfo& info) -> void {
     auto* vkDev = static_cast<RhiDeviceVulkan*>(info.device);
@@ -57,7 +56,7 @@ auto ImGuiBackendVulkan::init(const ImGuiBackendInitInfo& info) -> void {
 
     ImGui_ImplVulkan_Init(&initInfo);
 
-    std::println("Dear ImGui initialized");
+    TRACE_EVENT("Engine", "ImGuiInitialized", "imgui").text("Dear ImGui initialized");
 }
 
 auto ImGuiBackendVulkan::processEvent(SDL_Event* event) -> bool {

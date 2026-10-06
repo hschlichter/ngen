@@ -62,7 +62,7 @@ struct FrameStats {
     double gpuMs = 0.0; // most recent GPU frame known when the frame closed; 0 = unknown
 };
 
-// Monotonic nanoseconds, same base as the observation bus.
+// CLOCK_MONOTONIC nanoseconds, the same clock as trace events (shared by every process on the machine).
 auto now() -> uint64_t;
 
 // Name interning. Static strings only; call once per call site and keep the id.

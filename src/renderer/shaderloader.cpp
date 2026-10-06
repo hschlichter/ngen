@@ -2,10 +2,11 @@
 
 #include "assetclient.h"
 #include "rhidevice.h"
+#include "trace.h"
 
 #include <algorithm>
 #include <array>
-#include <print>
+#include <format>
 #include <string>
 
 static const AssetClient* shaderSource = nullptr;
@@ -40,19 +41,20 @@ auto setShaderSource(const AssetClient* source) -> void {
 
 auto loadShaderModule(RhiDevice* device, RhiShaderStage stage, const char* id) -> RhiShaderModule* {
     if (std::find(startupShaders.begin(), startupShaders.end(), id) == startupShaders.end()) {
-        std::println(stderr, "Shader {} is not in startupShaderIds(); add it there so it is requested at start-up", id);
+        TRACE_ERROR("Render", "ShaderLoadFailed", id).text(std::format("shader {} is not in startupShaderIds(); add it there so it is requested at start-up", id));
         return nullptr;
     }
     if (shaderSource == nullptr) {
-        std::println(stderr, "No shader source set; cannot load {}", id);
+        TRACE_ERROR("Render", "ShaderLoadFailed", id).text(std::format("no shader source set; cannot load {}", id));
         return nullptr;
     }
     const auto* asset = shaderSource->find(id);
     if (asset == nullptr) {
-        std::println(stderr, "Shader {} was not packed:", id);
+        std::string text = std::format("shader {} was not packed", id);
         for (const auto& line : shaderSource->errors(id)) {
-            std::println(stderr, "  {}", line);
+            text += "\n  " + line;
         }
+        TRACE_ERROR("Render", "ShaderLoadFailed", id).text(text);
         return nullptr;
     }
 
@@ -63,10 +65,10 @@ auto loadShaderModule(RhiDevice* device, RhiShaderStage stage, const char* id) -
     };
     auto* module = device->createShaderModule(desc);
     if (module == nullptr) {
-        std::println(stderr, "Failed to create shader module: {}", id);
+        TRACE_ERROR("Render", "ShaderLoadFailed", id).text(std::format("cannot create the shader module {}", id));
         return nullptr;
     }
 
-    std::println("Loaded shader: {}", id);
+    TRACE_EVENT("Render", "ShaderLoaded", id).text(std::format("loaded shader: {}", id));
     return module;
 }

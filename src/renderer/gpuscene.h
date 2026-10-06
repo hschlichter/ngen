@@ -109,7 +109,6 @@ public:
     auto vertexBuffer() const -> RhiBuffer* { return poolVertices; }
     auto positionBuffer() const -> RhiBuffer* { return poolPositions; }
     auto indexBuffer() const -> RhiBuffer* { return poolIndices; }
-    auto geometryPoolBytes() const -> uint64_t { return poolBytes; }
     auto meshTableBuffer() const -> RhiBuffer* { return meshTable; }
     auto meshTableBytes() const -> uint64_t { return meshTableSize; }
 
@@ -136,11 +135,10 @@ public:
     // Returns the handle the draw passes read.
     auto addUploadPasses(FrameGraph& fg, std::span<const GpuInstance> instances, uint32_t frameSlot) -> FgBufferHandle;
     // Stores the access the instance buffer is left in for the next frame's import.
-    auto afterExecute(const FrameGraph& fg, uint64_t frame) -> void;
+    auto afterExecute(const FrameGraph& fg) -> void;
     auto instanceBuffer() const -> RhiBuffer* { return instances; }
     auto instanceGeneration() const -> uint32_t { return generation; }
     auto instanceBufferBytes() const -> uint64_t { return (uint64_t) instanceCapacity * sizeof(GpuInstanceRecord); }
-    auto lastInstanceUploadBytes() const -> uint64_t { return uploadBytes; }
 
 private:
     auto ensureInstanceCapacity(uint32_t count, uint32_t liveCount, uint64_t frame) -> void;
@@ -153,7 +151,6 @@ private:
     RhiBuffer* poolVertices = nullptr;
     RhiBuffer* poolPositions = nullptr;
     RhiBuffer* poolIndices = nullptr;
-    uint64_t poolBytes = 0;
     std::unordered_map<uint32_t, GpuMeshRange> meshes;
     RhiBuffer* meshTable = nullptr; // GpuMeshEntry per mesh index, for culling
     uint64_t meshTableSize = 0;
@@ -178,9 +175,6 @@ private:
     uint32_t dirtyFirst = 0;
     uint32_t dirtyEnd = 0;
 
-    // This frame's upload, for RenderStats and the InstanceUpload observation.
+    // This frame's import of the instance buffer, whose final access afterExecute keeps.
     FgBufferHandle instanceImport;
-    FgAccessFlags carriedAccess = FgAccessFlags::None;
-    uint32_t uploadFirst = 0;
-    uint64_t uploadBytes = 0;
 };

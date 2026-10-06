@@ -33,6 +33,7 @@ private:
     RhiFormat rhiColorFormat = RhiFormat::Undefined;
 
     std::vector<RhiTextureVulkan> colorImages;
+    RhiMessageHandler messageHandler; // the device's, set when it creates the swapchain
 
-    static auto vkFormatToRhiFormat(VkFormat format) -> RhiFormat;
+    auto vkFormatToRhiFormat(VkFormat format) const -> RhiFormat;
 };

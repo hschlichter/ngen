@@ -21,6 +21,7 @@ public:
     auto add(std::string name, std::string description, Producer producer) -> void;
     // [{name, description}], sorted by name.
     auto list() const -> rpc::Json;
+    auto contains(std::string_view name) const -> bool;
     // Runs the record's producer; fails the responder with invalidParams when there is no record of that name.
     auto get(std::string_view name, RpcResponder responder) const -> void;
 

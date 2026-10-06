@@ -3,8 +3,10 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -82,14 +84,25 @@ template <>
 struct RhiFlagEnum<RhiShaderStage> : std::true_type {};
 using RhiShaderStageFlags = RhiFlags<RhiShaderStage>;
 
-// Backend-agnostic failure classes. Backends log the native error code before
-// returning one of these; callers only branch on the class.
+// Backend-agnostic failure classes. Backends report the native error code (RhiMessageHandler)
+// before returning one of these; callers only branch on the class.
 enum class RhiError {
-    Failed,     // generic backend failure, details on stderr
+    Failed,     // generic backend failure, details in the reported message
     OutOfDate,  // swapchain no longer matches the surface; recreate it
     Suboptimal, // presentation still works but the swapchain should be recreated
     DeviceLost,
 };
+
+enum class RhiMessageSeverity : uint8_t {
+    Info,
+    Warning,
+    Error,
+};
+
+// Receives everything the backend has to say: what it set up (API version, extensions, swapchain
+// size), validation messages and native errors. Without one, info prints on stdout and the rest
+// on stderr.
+using RhiMessageHandler = std::function<void(RhiMessageSeverity severity, std::string_view message)>;
 
 enum class RhiPrimitiveTopology {
     TriangleList,

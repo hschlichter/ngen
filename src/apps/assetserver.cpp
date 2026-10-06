@@ -46,12 +46,12 @@ auto main(int argc, char** argv) -> int {
         std::println(stderr, "ngen-asset-server: {}", started.error());
         return 1;
     }
-    trace("ngen-asset-server {} in {} on 127.0.0.1:{}, pid {}", server.variant(), fs::current_path().string(), server.port(), getpid());
+    traceLine("ngen-asset-server {} in {} on 127.0.0.1:{}, pid {}", server.variant(), fs::current_path().string(), server.port(), getpid());
 
     int received = 0;
     sigwait(&signals, &received);
-    trace("{}: stopping", received == SIGINT ? "SIGINT" : "SIGTERM");
+    traceLine("{}: stopping", received == SIGINT ? "SIGINT" : "SIGTERM");
     server.stop();
-    trace("stopped");
+    traceLine("stopped");
     return 0;
 }

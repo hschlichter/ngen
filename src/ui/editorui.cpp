@@ -17,7 +17,6 @@
 #include "usdscene.h"
 
 #include <functional>
-#include <print>
 #include <utility>
 
 auto EditorUI::togglePanels() -> void {
@@ -236,7 +235,6 @@ auto EditorUI::openScene(
     selectedPrim = {};
 
     if (!usdScene.open(path)) {
-        std::println(stderr, "Failed to open: {}", path);
         return false;
     }
     usdScene.updateAssetBindings(meshLib, matLib);
@@ -274,7 +272,6 @@ auto EditorUI::newScene(
     selectedPrim = {};
 
     if (!usdScene.newScene()) {
-        std::println(stderr, "Failed to create new scene");
         return false;
     }
     usdScene.updateAssetBindings(meshLib, matLib);

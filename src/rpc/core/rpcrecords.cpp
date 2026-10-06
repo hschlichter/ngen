@@ -16,6 +16,10 @@ auto RpcRecords::list() const -> rpc::Json {
     return result;
 }
 
+auto RpcRecords::contains(std::string_view name) const -> bool {
+    return records.contains(name);
+}
+
 auto RpcRecords::get(std::string_view name, RpcResponder responder) const -> void {
     auto it = records.find(name);
     if (it == records.end()) {

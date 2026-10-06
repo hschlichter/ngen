@@ -20,7 +20,7 @@ auto processName(const RpcEndpointInfo& endpoint) -> std::string {
     return std::format("{}:{}", endpoint.kind, endpoint.pid);
 }
 
-auto resolveTarget(std::string_view target, const std::vector<RpcEndpointInfo>& endpoints) -> std::expected<RpcEndpointInfo, std::string> {
+auto matchesTarget(std::string_view target, const RpcEndpointInfo& endpoint) -> bool {
     std::string kind(target);
     int pid = parsePid(target);
     if (auto colon = target.find(':'); colon != std::string_view::npos) {
@@ -29,11 +29,15 @@ auto resolveTarget(std::string_view target, const std::vector<RpcEndpointInfo>& 
     } else if (pid != 0) {
         kind.clear();
     }
+    bool kindMatches = kind.empty() || endpoint.kind == kind;
+    bool pidMatches = pid == 0 || endpoint.pid == pid;
+    return kindMatches && pidMatches;
+}
+
+auto resolveTarget(std::string_view target, const std::vector<RpcEndpointInfo>& endpoints) -> std::expected<RpcEndpointInfo, std::string> {
     std::vector<RpcEndpointInfo> matches;
     for (const auto& e : endpoints) {
-        bool kindMatches = kind.empty() || e.kind == kind;
-        bool pidMatches = pid == 0 || e.pid == pid;
-        if (kindMatches && pidMatches) {
+        if (matchesTarget(target, e)) {
             matches.push_back(e);
         }
     }

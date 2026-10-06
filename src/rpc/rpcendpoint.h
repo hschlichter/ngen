@@ -2,7 +2,9 @@
 
 #include "rpcregistry.h"
 #include "rpcserver.h"
+#include "tracestream.h"
 
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
@@ -13,6 +15,9 @@
 
 // An engine process's RPC endpoint: the server, discovery, and dispatch of calls onto the
 // thread that owns the data.
+//
+// trace.subscribe and trace.unsubscribe are answered on the I/O thread by the endpoint's trace stream, which sends
+// the process's events to subscribers (src/trace/README.md).
 //
 // Requests arrive on the server's I/O thread and are queued. drain() runs them on the calling
 // thread (the main thread, at the point in the frame where session commands run) through the
@@ -34,12 +39,15 @@ public:
     auto drain() -> void;
     static constexpr int64_t drainBudgetNs = 2'000'000;
     auto port() const -> uint16_t { return boundPort; }
+    // Sends the trace's last events to its subscribers, waiting at most `timeout`. Call before stop() at exit.
+    auto finishTrace(std::chrono::milliseconds timeout) -> void;
 
 private:
     struct Queued; // a received call; defined in the .cpp so this header needs no full JSON type
 
     const RpcRegistry* registry = nullptr;
     std::unique_ptr<RpcServer> server;
+    std::unique_ptr<trace::TraceStream> traceStream; // reset before the server it sends on
     std::string kind;
     uint16_t boundPort = 0;
     std::filesystem::path discoveryFile;

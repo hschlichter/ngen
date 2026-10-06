@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <print>
+#include <format>
 #include <utility>
 #include <vector>
 
@@ -239,7 +239,7 @@ auto RhiDeviceVulkan::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags 
             return i;
         }
     }
-    std::println(stderr, "Failed to find suitable memory type");
+    report(RhiMessageSeverity::Error, "Failed to find suitable memory type");
     return UINT32_MAX;
 }
 
@@ -256,22 +256,23 @@ static VKAPI_ATTR auto VKAPI_CALL debugMessengerCallback(
 auto RhiDeviceVulkan::onValidationMessage(uint32_t severity, const char* message) -> void {
     if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0u) {
         validationErrors++;
-        std::println(stderr, "[vulkan validation] error: {}", message);
+        report(RhiMessageSeverity::Error, std::format("vulkan validation: {}", message));
     } else if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0u) {
         validationWarnings++;
-        std::println(stderr, "[vulkan validation] warning: {}", message);
+        report(RhiMessageSeverity::Warning, std::format("vulkan validation: {}", message));
     }
 }
 
 auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& options) -> std::expected<void, RhiError> {
+    messageHandler = options.onMessage;
     uint32_t apiVersion = VK_API_VERSION_1_0;
     auto result = vkEnumerateInstanceVersion(&apiVersion);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkEnumerateInstanceVersion failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkEnumerateInstanceVersion failed: {}({})", string_VkResult(result), (int) result));
         return std::unexpected(RhiError::Failed);
     }
 
-    std::println("Vulkan API version: {}.{}.{}", VK_API_VERSION_MAJOR(apiVersion), VK_API_VERSION_MINOR(apiVersion), VK_API_VERSION_PATCH(apiVersion));
+    report(RhiMessageSeverity::Info, std::format("Vulkan API version: {}.{}.{}", VK_API_VERSION_MAJOR(apiVersion), VK_API_VERSION_MINOR(apiVersion), VK_API_VERSION_PATCH(apiVersion)));
 
     VkApplicationInfo appInfo = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -304,8 +305,13 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
     }
 
     auto extensionsCount = (uint32_t) extensions.size();
-    for (const auto* extension : extensions) {
-        std::println("{}", extension);
+    {
+        std::string list;
+        for (const auto* extension : extensions) {
+            list += list.empty() ? "" : ", ";
+            list += extension;
+        }
+        report(RhiMessageSeverity::Info, std::format("Vulkan instance extensions: {}", list));
     }
 
     const char* validationLayers[] = {
@@ -326,7 +332,7 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
             }
         }
         if (!layerFound || !debugUtilsAvailable) {
-            std::println(stderr, "Validation requested but {} or {} is not available", validationLayers[0], VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+            report(RhiMessageSeverity::Error, std::format("Validation requested but {} or {} is not available", validationLayers[0], VK_EXT_DEBUG_UTILS_EXTENSION_NAME));
             return std::unexpected(RhiError::Failed);
         }
         validationLayersCount = 1;
@@ -349,7 +355,7 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
 
     result = vkCreateInstance(&instanceCreateInfo, nullptr, &instance);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateInstance failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkCreateInstance failed: {}({})", string_VkResult(result), (int) result));
         return std::unexpected(RhiError::Failed);
     }
 
@@ -369,20 +375,20 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
         };
         auto createMessenger = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
         if (createMessenger == nullptr || createMessenger(instance, &messengerInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
-            std::println(stderr, "vkCreateDebugUtilsMessengerEXT failed");
+            report(RhiMessageSeverity::Error, "vkCreateDebugUtilsMessengerEXT failed");
             return std::unexpected(RhiError::Failed);
         }
     }
 
     if (!window.createSurface || !window.createSurface(instance, (void**) &surface)) {
-        std::println(stderr, "RhiWindow::createSurface failed");
+        report(RhiMessageSeverity::Error, "RhiWindow::createSurface failed");
         return std::unexpected(RhiError::Failed);
     }
 
     uint32_t deviceCount = 0;
     result = vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkEnumeratePhysicalDevices failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkEnumeratePhysicalDevices failed: {}({})", string_VkResult(result), (int) result));
         return std::unexpected(RhiError::Failed);
     }
 
@@ -400,7 +406,7 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
             uint32_t presentSupport = 0;
             result = vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevices[i], j, surface, &presentSupport);
             if (result != VK_SUCCESS) {
-                std::println(stderr, "vkGetPhysicalDeviceSurfaceSupportKHR failed: {}({})", string_VkResult(result), (int) result);
+                report(RhiMessageSeverity::Error, std::format("vkGetPhysicalDeviceSurfaceSupportKHR failed: {}({})", string_VkResult(result), (int) result));
                 return std::unexpected(RhiError::Failed);
             }
 
@@ -479,14 +485,14 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
     // Array bindings indexed with one value per draw (bindless materials). Core 1.0 and on
     // every desktop driver; required.
     if (supportedFeatures.shaderSampledImageArrayDynamicIndexing != VK_TRUE) {
-        std::println(stderr, "Vulkan device lacks shaderSampledImageArrayDynamicIndexing");
+        report(RhiMessageSeverity::Error, "Vulkan device lacks shaderSampledImageArrayDynamicIndexing");
         return std::unexpected(RhiError::Failed);
     }
     enabledFeatures.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
     // Indirect draws: many commands per call, each carrying its
     // instance index in firstInstance. Required; there is no CPU-driven fallback.
     if (supportedFeatures.multiDrawIndirect != VK_TRUE || supportedFeatures.drawIndirectFirstInstance != VK_TRUE) {
-        std::println(stderr, "Vulkan device lacks multiDrawIndirect or drawIndirectFirstInstance");
+        report(RhiMessageSeverity::Error, "Vulkan device lacks multiDrawIndirect or drawIndirectFirstInstance");
         return std::unexpected(RhiError::Failed);
     }
     enabledFeatures.multiDrawIndirect = VK_TRUE;
@@ -497,7 +503,7 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
     VkPhysicalDeviceFeatures2 supported2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &supported12};
     vkGetPhysicalDeviceFeatures2(physicalDevice, &supported2);
     if (supported12.drawIndirectCount != VK_TRUE) {
-        std::println(stderr, "Vulkan device lacks drawIndirectCount");
+        report(RhiMessageSeverity::Error, "Vulkan device lacks drawIndirectCount");
         return std::unexpected(RhiError::Failed);
     }
     VkPhysicalDeviceVulkan12Features vulkan12Features = {
@@ -511,7 +517,7 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
     // 1.3 makes synchronization2 and dynamicRendering core, which the feature chain enables
     // without their extensions.
     if (properties.apiVersion < VK_API_VERSION_1_3) {
-        std::println(stderr, "Vulkan device reports API {}.{}; 1.3 is required", VK_API_VERSION_MAJOR(properties.apiVersion), VK_API_VERSION_MINOR(properties.apiVersion));
+        report(RhiMessageSeverity::Error, std::format("Vulkan device reports API {}.{}; 1.3 is required", VK_API_VERSION_MAJOR(properties.apiVersion), VK_API_VERSION_MINOR(properties.apiVersion)));
         return std::unexpected(RhiError::Failed);
     }
     VkPhysicalDeviceDriverProperties driverProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
@@ -544,7 +550,7 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
 
     result = vkCreateDevice(physicalDevice, &deviceCreateInfo, nullptr, &device);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateDevice failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkCreateDevice failed: {}({})", string_VkResult(result), (int) result));
         return std::unexpected(RhiError::Failed);
     }
 
@@ -562,7 +568,7 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
     };
     result = vkCreateCommandPool(device, &poolInfo, nullptr, &cmdPool);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateCommandPool failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkCreateCommandPool failed: {}({})", string_VkResult(result), (int) result));
         return std::unexpected(RhiError::Failed);
     }
 
@@ -589,6 +595,7 @@ auto RhiDeviceVulkan::waitIdle() -> void {
 
 auto RhiDeviceVulkan::createSwapchain(RhiExtent2D extent) -> RhiSwapchain* {
     auto* sc = new RhiSwapchainVulkan();
+    sc->messageHandler = messageHandler;
     if (!sc->init(physicalDevice, device, surface, queueFamilyIndex, extent)) {
         delete sc;
         return nullptr;
@@ -607,7 +614,7 @@ auto RhiDeviceVulkan::createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* {
     auto* buf = new RhiBufferVulkan();
     auto result = vkCreateBuffer(device, &bufferInfo, nullptr, &buf->buffer);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateBuffer failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkCreateBuffer failed: {}({})", string_VkResult(result), (int) result));
         delete buf;
         return nullptr;
     }
@@ -629,7 +636,7 @@ auto RhiDeviceVulkan::createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* {
     };
     result = vkAllocateMemory(device, &allocInfo, nullptr, &buf->memory);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkAllocateMemory failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkAllocateMemory failed: {}({})", string_VkResult(result), (int) result));
         vkDestroyBuffer(device, buf->buffer, nullptr);
         delete buf;
         return nullptr;
@@ -637,7 +644,7 @@ auto RhiDeviceVulkan::createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* {
 
     result = vkBindBufferMemory(device, buf->buffer, buf->memory, 0);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkBindBufferMemory failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkBindBufferMemory failed: {}({})", string_VkResult(result), (int) result));
         vkFreeMemory(device, buf->memory, nullptr);
         vkDestroyBuffer(device, buf->buffer, nullptr);
         delete buf;
@@ -773,7 +780,7 @@ auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {
     };
     auto result = vkCreateImage(device, &imageInfo, nullptr, &tex->image);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateImage failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkCreateImage failed: {}({})", string_VkResult(result), (int) result));
         delete tex;
         return nullptr;
     }
@@ -874,7 +881,7 @@ auto RhiDeviceVulkan::createSampler(const RhiSamplerDesc& desc) -> RhiSampler* {
     };
     auto result = vkCreateSampler(device, &samplerInfo, nullptr, &sampler->sampler);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateSampler failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkCreateSampler failed: {}({})", string_VkResult(result), (int) result));
         delete sampler;
         return nullptr;
     }
@@ -886,7 +893,7 @@ auto RhiDeviceVulkan::createSampler(const RhiSamplerDesc& desc) -> RhiSampler* {
 
 auto RhiDeviceVulkan::createShaderModule(const RhiShaderDesc& desc) -> RhiShaderModule* {
     if (desc.code.empty() || (desc.code.size() % 4) != 0) {
-        std::println(stderr, "createShaderModule: SPIR-V code size {} is not a multiple of 4", desc.code.size());
+        report(RhiMessageSeverity::Error, std::format("createShaderModule: SPIR-V code size {} is not a multiple of 4", desc.code.size()));
         return nullptr;
     }
 
@@ -900,7 +907,7 @@ auto RhiDeviceVulkan::createShaderModule(const RhiShaderDesc& desc) -> RhiShader
     sm->entryPoint = (desc.entryPoint != nullptr) ? desc.entryPoint : "main";
     auto result = vkCreateShaderModule(device, &createInfo, nullptr, &sm->module);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateShaderModule failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkCreateShaderModule failed: {}({})", string_VkResult(result), (int) result));
         delete sm;
         return nullptr;
     }
@@ -934,7 +941,7 @@ auto RhiDeviceVulkan::createPipelineLayout(std::span<RhiDescriptorSetLayout* con
     VkPipelineLayout layout = VK_NULL_HANDLE;
     auto result = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &layout);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreatePipelineLayout failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkCreatePipelineLayout failed: {}({})", string_VkResult(result), (int) result));
         return VK_NULL_HANDLE;
     }
     return layout;
@@ -965,7 +972,7 @@ auto RhiDeviceVulkan::createComputePipeline(const RhiComputePipelineDesc& desc) 
 
     auto result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pip->pipeline);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateComputePipelines failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkCreateComputePipelines failed: {}({})", string_VkResult(result), (int) result));
         vkDestroyPipelineLayout(device, pip->layout, nullptr);
         delete pip;
         return nullptr;
@@ -1136,7 +1143,7 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
 
     auto result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pip->pipeline);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateGraphicsPipelines failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkCreateGraphicsPipelines failed: {}({})", string_VkResult(result), (int) result));
         vkDestroyPipelineLayout(device, pip->layout, nullptr);
         delete pip;
         return nullptr;
@@ -1170,7 +1177,7 @@ auto RhiDeviceVulkan::createDescriptorSetLayout(std::span<const RhiDescriptorBin
     auto* layout = new RhiDescriptorSetLayoutVulkan();
     auto result = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &layout->layout);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateDescriptorSetLayout failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkCreateDescriptorSetLayout failed: {}({})", string_VkResult(result), (int) result));
         delete layout;
         return nullptr;
     }
@@ -1214,7 +1221,7 @@ auto RhiDeviceVulkan::allocateDescriptorSets(RhiDescriptorPool* pool, RhiDescrip
     };
     auto result = vkAllocateDescriptorSets(device, &allocInfo, vkSets.data());
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkAllocateDescriptorSets failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkAllocateDescriptorSets failed: {}({})", string_VkResult(result), (int) result));
         return false;
     }
 
@@ -1323,7 +1330,7 @@ auto RhiDeviceVulkan::createQueryPool(uint32_t timestampCount) -> RhiQueryPool* 
     pool->count = timestampCount;
     auto result = vkCreateQueryPool(device, &info, nullptr, &pool->pool);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateQueryPool failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkCreateQueryPool failed: {}({})", string_VkResult(result), (int) result));
         delete pool;
         return nullptr;
     }
@@ -1344,7 +1351,7 @@ auto RhiDeviceVulkan::readTimestamps(RhiQueryPool* pool, uint32_t first, std::sp
     auto result = vkGetQueryPoolResults(
         device, p->pool, first, count, raw.size() * sizeof(uint64_t), raw.data(), 2 * sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
     if (result != VK_SUCCESS && result != VK_NOT_READY) {
-        std::println(stderr, "vkGetQueryPoolResults failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkGetQueryPoolResults failed: {}({})", string_VkResult(result), (int) result));
         return false;
     }
     for (uint32_t i = 0; i < count; i++) {
@@ -1386,7 +1393,7 @@ auto RhiDeviceVulkan::collectGpuZones(RhiCommandBuffer* cmd, std::vector<RhiGpuZ
     auto result = vkGetQueryPoolResults(
         device, cb->zonePool, 0, count, raw.size() * sizeof(uint64_t), raw.data(), 2 * sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
     if (result != VK_SUCCESS && result != VK_NOT_READY) {
-        std::println(stderr, "vkGetQueryPoolResults failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkGetQueryPoolResults failed: {}({})", string_VkResult(result), (int) result));
         return false;
     }
     auto periodNs = (double) deviceLimits.timestampPeriodNs;
@@ -1423,7 +1430,7 @@ auto RhiDeviceVulkan::collectPipelineStats(RhiCommandBuffer* cmd, std::vector<Rh
     auto result = vkGetQueryPoolResults(
         device, cb->statsPool, 0, count, raw.size() * sizeof(uint64_t), raw.data(), valuesPerQuery * sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
     if (result != VK_SUCCESS && result != VK_NOT_READY) {
-        std::println(stderr, "vkGetQueryPoolResults failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkGetQueryPoolResults failed: {}({})", string_VkResult(result), (int) result));
         return false;
     }
     out.reserve(count);
@@ -1458,7 +1465,7 @@ auto RhiDeviceVulkan::createCommandBuffer() -> RhiCommandBuffer* {
     };
     auto result = vkAllocateCommandBuffers(device, &allocInfo, &cb->cmd);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkAllocateCommandBuffers failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkAllocateCommandBuffers failed: {}({})", string_VkResult(result), (int) result));
         delete cb;
         return nullptr;
     }
@@ -1494,7 +1501,7 @@ auto RhiDeviceVulkan::createSemaphore() -> RhiSemaphore* {
     VkSemaphoreCreateInfo info = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
     auto result = vkCreateSemaphore(device, &info, nullptr, &sem->semaphore);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateSemaphore failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkCreateSemaphore failed: {}({})", string_VkResult(result), (int) result));
         delete sem;
         return nullptr;
     }
@@ -1509,7 +1516,7 @@ auto RhiDeviceVulkan::createFence(bool signaled) -> RhiFence* {
     };
     auto result = vkCreateFence(device, &info, nullptr, &fence->fence);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateFence failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkCreateFence failed: {}({})", string_VkResult(result), (int) result));
         delete fence;
         return nullptr;
     }
@@ -1565,7 +1572,7 @@ auto RhiDeviceVulkan::present(RhiSwapchain* swapchain, RhiSemaphore* waitSemapho
         return std::unexpected(toRhiError(result));
     }
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkQueuePresentKHR failed: {}({})", string_VkResult(result), (int) result);
+        report(RhiMessageSeverity::Error, std::format("vkQueuePresentKHR failed: {}({})", string_VkResult(result), (int) result));
         return std::unexpected(toRhiError(result));
     }
     return {};

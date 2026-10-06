@@ -35,9 +35,9 @@ asset server by copy.
 4. **Everything async** — *from the objective.* Scenes open instantly with placeholders; geometry, textures, shaders, sub-packs and LOD levels
    arrive and appear when ready, never blocking a frame. Builds on the asset server's streaming, async shaders, sub-packs as load units, and
    the editor split's incremental GPU scene. Today the view still waits for shaders and loads the scene synchronously.
-5. **Introspection tool (step 4)** — [plan_introspect_tool.md](plan_introspect_tool.md), draft. `ngen-introspect` queries every process's
-   records and gathers every trace; `src/trace/` replaces the observation bus; agents verify through the tool; the view keeps its windows.
-   - `ngen-rpc` folds into the tool; CPU-side `--dump-*` flags become a frame-exact `record` script verb into the trace.
+5. **Introspection tool (step 4)** — [plan_introspect_tool.md](plan_introspect_tool.md), landed. `ngen-introspect` shows every process's
+   records and merged trace, in a window or on the command line; `src/trace/` replaced the observation bus; agents verify with
+   `ngen-introspect trace`. Follow-ups: profiler zones on the trace stream, session recording, structured asset server events.
 
 ## Engine features
 

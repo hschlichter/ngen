@@ -1,13 +1,14 @@
 ---
 name: run-headless
-description: Build and run ngen-view headless with the observation bus to verify engine behavior. Use when running the app, confirming a change works, or checking rendering/scene/material behavior — headless obs-bus runs are this project's primary verification loop (the app is a Vulkan window; this machine cannot screenshot it).
+description: Build and run ngen-view headless, read its records and its trace through ngen-introspect to verify engine behavior. Use when running the app, confirming a change works, or checking rendering/scene/material behavior — headless runs traced with ngen-introspect are this project's primary verification loop (the app is a Vulkan window; this machine cannot screenshot it).
 ---
 
 # Run ngen headless and read the evidence
 
-The verification loop for engine changes: build, run headless with the observation bus, read the JSONL
-evidence, judge whether the intended behavior actually happened. Prefer this over screenshots or "it
-compiles".
+The verification loop for engine changes: build, run headless with a script that records the values the change is about, while
+`ngen-introspect trace` records every process's flow and messages; read both, judge whether the intended behavior actually happened. Records
+hold the numbers (passes, draws, textures, culling, memory); the trace holds what happened in what order, and the warnings and errors, which a
+clean run has none of. Prefer this over screenshots or "it compiles".
 
 ## Build
 
@@ -33,18 +34,25 @@ across runs (it packs only what a view requests, and caches the result in `.ngen
 
 ```sh
 ./ngen-cli asset-server > /tmp/asset-server.log 2>&1 &        # the set variant's server; leave it running
-SDL_VIDEODRIVER=offscreen timeout --signal=TERM 5 ./ngen-cli view --obs-output=/tmp/obs.jsonl <scene>
+./ngen-cli introspect trace --until-exit=view --output=/tmp/trace.jsonl & trace=$!   # first; records until the view has exited
+SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=200
+wait $trace                                                     # the trace file is written when the view has gone
 ```
 
 Rebuild and restart the asset server after changing `pack.cpp` or anything under `src/asset/server/`. `./ngen-cli introspect get asset status`
 shows what it is doing (also `rules`, `cache`, `requests`, `clients`); with servers for several variants running, name one by pid (`asset:<pid>`,
 from `./ngen-cli introspect list`).
 
+- Start the trace before the view. It takes events from its own start, from the view and the asset server alike, merged by time; the file
+  is written, sorted, once the view has exited and its last events are in (`ProcessExiting` is the view's last event). Without
+  `--until-exit` it runs until Ctrl-C. Filters: `--category=`, `--type=`, `--process=` (comma lists), `--level=warning|error`; `--history`
+  takes everything the processes' rings still hold.
+- A view's trace is short: start-up, `SceneOpened`, `SceneUploaded`, the files the run wrote, exit — a dozen events for a clean run, however
+  many frames. Nothing is traced per frame; per-frame numbers are records.
 - `ngen-cli view` replaces itself with the set variant's `ngen-view`, so `timeout`, signals and exit codes behave exactly as with the binary.
-- The `timeout` kill is the expected exit — judge the run by the JSONL contents, not the exit code.
-- Write `--obs-output` to `/tmp` or the session scratchpad, not into the repo.
-- Size the timeout to the scene: 3–5 s for small scenes, 45+ s for Sponza (4K PNG decode takes ~30–40 s
-  before textures appear).
+  Prefer `--frames` to a `timeout` kill, so the view exits cleanly and its last events are sent.
+- Write the trace to `/tmp` or the session scratchpad, not into the repo.
+- Sponza loads for a while before its frames start: give `--frames` runs time, and the trace command a `timeout` above that if you add one.
 
 ## See and drive the frame
 
@@ -53,8 +61,7 @@ from `./ngen-cli introspect list`).
 ```sh
 SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   --camera=2,1.5,2,-135,-20 --view=normals --overlay=grid=off \
-  --screenshot=/tmp/shot.png --dump-render-debug=/tmp/rd.json --dump-profile=/tmp/trace.json \
-  --fail-on-validation --obs-output=/tmp/obs.jsonl
+  --screenshot=/tmp/shot.png --script=/tmp/records.txt --fail-on-validation
 ```
 
 - `--screenshot=PATH` writes the presented frame as PNG on the last frame of `--frames`; Read the PNG to see it. Screenshots leave the UI out
@@ -62,8 +69,12 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
 - `--view=lit|albedo|normals|depth|shadowfactor|shadowmap|shadowuv|worldpos|miplevel|cascades` (miplevel: red level 0 to white
   level 7+; cascades: red, green, blue, yellow near to far; shadowmap shows the cascade atlas), `--overlay=grid=on,aabbs=off,...`
   (grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa), `--camera=x,y,z,yaw,pitch`, `--camera-frame=scene|/prim`, `--select=/prim`.
-- `--dump-render-debug=PATH`: meshes, textures, passes with draw counters, draw log with prim paths, as JSON.
-  `--dump-profile=PATH`: profiler history as Chrome trace JSON (`jq '.traceEvents'`, or open in Perfetto).
+- Records at a frame go to a file: a script line `120 record render /tmp/records.jsonl` appends the render debug record (meshes, textures,
+  passes with draw counters and GPU time, culled passes, draw log with prim paths) as one JSON line, `value` holding the record,
+  `requested_frame` the frame asked for and `frame` the frame it was ready (GPU readbacks take a few). Any record works: `render`, `memory`,
+  `counters`, `culling`, `scene`, `assets`, `profile`, `status` (`src/introspect/README.md`); several lines into one file are fine. Read it
+  with `jq 'select(.record == "render") | .value.passes' /tmp/records.jsonl`.
+- `dump-profile PATH` (script verb): the profiler history as a Chrome trace file (`jq '.traceEvents'`, or open in Perfetto).
 - `--script=FILE`: `<frame> <verb> [args]` per line, same verbs as the flags plus `quit`, `translate /prim dx,dy,dz` (preview transform
   edit, no layer write) and `cull on|off|freeze|unfreeze|show|hide`
   (frustum culling toggle, frozen frustum, red/green AABB overlay), `prepass on|off` (depth prepass) and
@@ -79,22 +90,21 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
     every resource each pass writes.
   - `dump-gpuscene DIR`: the GPU scene tables and culling buffers, and `DIR/instances_joined.json` (per instance: prim, mesh, material, bounds,
     visibility and cull plane per view).
-  - `dump-counters PATH`: one frame's GPU zones (passes and per-region indirect calls) and pipeline statistics per pass.
-  - `dump-memory PATH` (also `--dump-memory=PATH`): every allocation and heap.
   - `debugview off|wireframe|trianglesize|overdraw|instance|mesh|material|primitive|uv`: replaces the lit image; read raw values with
     `capture DebugViewPass debugview.value <path> X Y W H`.
   - `cull view N`: colour the AABB overlay by view N's visibility (0 camera, 1+ cascades); `overlay cascadefrusta=on` draws the cascade frusta.
   - `window memory|capture|framedebugger|gpuscene|counters|shaders|culling on|off`: open an introspection window (or the Culling window), to
     exercise its drawing headless; with `--show-ui` the screenshot shows it.
   - `renderdoc-capture` with `--renderdoc`: a RenderDoc capture of the next frame under `captures/`.
-- Observations `DeviceInfo` (startup), `CameraPose` (every 60 frames), `Screenshot` (per shot) complement `FrameStats`, `RenderStats`
-  (`instances`, `culled`, `cascades`, `shadow_culled`, `draws`, `primitives`), `GpuTime`.
-- Culling runs on the GPU (`src/renderer/README.md`). `culled`, `shadow_culled`, per-pass `draws`/`primitives`, the draw log and `CullReadback`
-  are read back and lag a few frames: judge them at steady state (frame 120 or later), not right after a camera or scene change.
+- Where the numbers are: the device and swapchain, scene tables, passes and draws in `render`; camera, anti-aliasing and sampler in `status`;
+  instances drawn and culled per view in `culling`; CPU and GPU frame times in `profile`; GPU zones and pipeline statistics in `counters`
+  (asking for it turns them on; it answers a few frames later); every buffer and texture in `memory`.
+- Culling runs on the GPU (`src/renderer/README.md`). The `culling` record, per-pass `draws`/`primitives` and the draw log are read back and
+  lag a few frames: record them at steady state (frame 120 or later), not right after a camera or scene change.
 
 ## Live investigation over RPC
 
-A running ngen-view answers RPC calls (`src/rpc/README.md`). Every script verb is also a method, and the dumps return their JSON directly:
+A running ngen-view answers RPC calls (`src/rpc/README.md`). Every script verb is also a method, and records return their JSON directly:
 
 ```sh
 SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> &          # keeps running; no --frames
@@ -115,23 +125,25 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> &          # keeps running; no
 
 ## Inspect
 
-Read the stream with `jq`. Typical checks:
+Read the records and the trace with `jq`. Typical checks:
 
 ```sh
-jq -r .name /tmp/obs.jsonl | sort | uniq -c        # what happened, by event
-jq 'select(.name == "TextureUploaded")' /tmp/obs.jsonl
+jq -c 'select(.level != "info") | {process, level, type, text}' /tmp/trace.jsonl   # warnings and errors; empty on a clean run
+jq -r '[.process, .type, .text] | @tsv' /tmp/trace.jsonl                            # the run's flow
+jq -c 'select(.record == "render") | [.value.textures[] | "\(.width)x\(.height)"] | group_by(.) | map({(.[0]): length}) | add' /tmp/records.jsonl
 ```
 
-If the behavior under test is not visible in existing observations, add an `OBS_EVENT` at the decision
-point (conventions in `obs.md`: stable field values, no pointers/handles, side-effect-free arguments),
-rebuild, rerun. Observations added for a change stay in the code — there is no "remove when done" step.
+If the value under test is not in a record, add it to one (`registerViewRecords` in `src/view/viewcommands.cpp`). If a step of the flow or
+a failure is not visible in the trace, add a `TRACE_EVENT`, `TRACE_WARNING` or `TRACE_ERROR` at that point (conventions in
+`src/trace/README.md`: flow and messages, not data; stable field values, no pointers/handles), rebuild, rerun. Events added for a change stay
+in the code — there is no "remove when done" step.
 
 ## Test scenes
 
 - Minimal: `assets/three_cubes.usda` — cheap smoke test for extraction, lighting, frame graph.
 - Materials/textures stress test: Intel NewSponza at `assets/main_sponza/NewSponza_Main_USD_Zup_003.usda` (git-ignored; scenes must be
-  under the asset server's directory, since they are assets). Correct result: ≈25 `TextureUploaded` events at 4096×4096 plus a few 1×1
-  (materials without a diffuse map), 28 unique materials. All-1×1 means texturing is broken. It exercises GeomSubset per-face materials, NodeGraph-wrapped textures, backslash
+  under the asset server's directory, since they are assets). Correct result: the `render` record's `textures` hold 25 at 4096×4096 plus 3 at
+  1×1 (materials without a diffuse map), 28 in all, and `SceneUploaded` says 28 textures. All-1×1 means texturing is broken. It exercises GeomSubset per-face materials, NodeGraph-wrapped textures, backslash
   asset paths, and indexed faceVarying primvars.
 
 ## Machine constraints

@@ -47,9 +47,11 @@
 #include <pxr/usd/usdShade/shader.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <format>
 #include <map>
 #include <mutex>
 #include <set>
@@ -58,6 +60,7 @@
 
 #include "packedtexture.h"
 #include "profile.h"
+#include "trace.h"
 #include "usdassetresolver.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -162,13 +165,20 @@ struct USDScene::Impl {
     }
 
     bool open(const char* path) {
+        auto start = std::chrono::steady_clock::now();
+        TRACE_EVENT("Scene", "SceneOpenStarted", path).text(std::format("opening the scene {}", path));
         stage = UsdStage::Open(path);
         if (!stage) {
-            fprintf(stderr, "USDScene: failed to open stage: %s\n", path);
+            TRACE_ERROR("Scene", "SceneOpenFailed", path).text(std::format("cannot open the scene {}", path));
             return false;
         }
         postStageInit();
-        printf("USDScene: opened %s (%zu prims)\n", path, prims.size());
+        auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        TRACE_EVENT("Scene", "SceneOpened", path)
+            .text(std::format("scene opened: {} ({} prims, {} layers) in {:.0f} ms", path, prims.size(), layerInfos.size(), ms))
+            .field("prims", (int64_t) prims.size())
+            .field("layers", (int64_t) layerInfos.size())
+            .field("ms", ms);
         return true;
     }
 
@@ -179,7 +189,7 @@ struct USDScene::Impl {
     bool newScene() {
         stage = UsdStage::CreateInMemory();
         if (!stage) {
-            fprintf(stderr, "USDScene: failed to create in-memory stage\n");
+            TRACE_ERROR("Scene", "SceneOpenFailed", "(new scene)").text("cannot create an in-memory stage");
             return false;
         }
         UsdGeomSetStageUpAxis(stage, UsdGeomTokens->y);
@@ -193,7 +203,7 @@ struct USDScene::Impl {
             stage->SetDefaultPrim(world);
         }
         postStageInit();
-        printf("USDScene: created new in-memory stage\n");
+        TRACE_EVENT("Scene", "SceneOpened", "(new scene)").text("new in-memory scene").field("prims", (int64_t) prims.size()).field("layers", (int64_t) layerInfos.size());
         return true;
     }
 
@@ -1054,7 +1064,7 @@ struct USDScene::Impl {
         auto bytes = std::span(reinterpret_cast<const std::byte*>(buffer.get()), asset->GetSize());
         auto texture = readPackedTexture(bytes);
         if (!texture) {
-            fprintf(stderr, "USDScene: %s is not a packed texture\n", resolvedPath.c_str());
+            TRACE_WARNING("Scene", "TextureNotPacked", resolvedPath).text(std::format("{} is not a packed texture; the material has none", resolvedPath));
             return false;
         }
 

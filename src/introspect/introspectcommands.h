@@ -10,6 +10,7 @@
 //   get <target> <record>                one record as JSON (introspect.get)
 //   describe <target>                    the target's methods with parameter schemas (rpc.describe)
 //   call <target> <method> [params]      call a method; params is a JSON object
+//   trace [options]                      every process's trace events as JSON lines (introspecttrace.h)
 //
 // Output is JSON on stdout. Returns the exit code: 0 success, 1 the call returned an error, 2 no such endpoint or it
 // can't be reached, 3 bad usage.

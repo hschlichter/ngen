@@ -85,7 +85,7 @@ image, because present consumes it per image.
 
 **A frame (`Renderer::render`).**
 
-1. Wait for the slot's fence. Drain the deletion queue up to that slot's last frame, read its GPU zones (`GpuTime`, profiler lane) and its culling
+1. Wait for the slot's fence. Drain the deletion queue up to that slot's last frame, read its GPU zones (profiler lane) and its culling
    readback.
 2. Acquire a swapchain image; on `OutOfDate` recreate the swapchain and depth texture and skip the frame.
 3. Write the slot's view UBO. Pick the shadow light and the cascades (from the snapshot, or one fitted here if the snapshot has none).
@@ -104,7 +104,7 @@ image, because present consumes it per image.
 - **`FrameGraphContext`** is what a pass's execute sees: the command buffer, `texture(handle)`/`buffer(handle)` for the physical resources, `logDraw`
   for the draw log and `addIndirectStats` for draws the RHI cannot count.
 - **Compile.** Edges run from each resource's writer to its readers and between consecutive writers; a topological sort gives the execution order.
-  Passes without side effects whose outputs nobody reads are culled (`PassCulled`). Transient texture lifetimes are computed over the order.
+  Passes without side effects whose outputs nobody reads are culled (`culled` in the `render` record's passes). Transient texture lifetimes are computed over the order.
 - **Execute.** Per pass: allocate transient textures that start here from `ResourcePool`, derive and record the barriers for every declared access, run
   the pass inside a debug label, a GPU zone and a CPU profile zone, record its `RhiCommandStats`, then release transients that end here.
 - **Textures.** Created textures are transient and pooled by size, format and usage. Imported textures start every frame undefined; that is right for
@@ -138,7 +138,7 @@ Tables:
 
 `GpuInstance` is the CPU mirror the renderer keeps (`Renderer::gpuInstances`): one per `RenderMeshInstance`, a prim's mesh expanded per material
 submesh. When a table or buffer is replaced, every descriptor set naming it is rewritten (`Renderer::rebuildGeometryDescriptorSets`, which also rebuilds
-the culling sets and reports `GeometryDescriptorsRebuilt` with the reason).
+the culling sets).
 
 ## Culling and draw lists
 
@@ -160,7 +160,7 @@ the culling sets and reports `GeometryDescriptorsRebuilt` with the reason).
 - **Per-slot buffers.** Parameters, visibility, counters, offsets, commands and counts are per frame slot and imported every frame. The graph has no
   transient buffers yet: a pooled buffer reused next frame would need synchronisation against the previous frame's reads.
 - **Readback.** `CullReadback` copies the totals, the visibility bits and, while the render debugger is open, the commands into the slot's host-visible
-  readback buffer; `DrawLists::parseReadback` reads it after the slot's fence. `RenderStats.culled`/`shadow_culled`, `CullResult` (Culling window, AABB
+  readback buffer; `DrawLists::parseReadback` reads it after the slot's fence. `CullResult` (the view's `culling` record, Culling window, AABB
   overlay), the per-pass `draws`/`primitives` (through `addIndirectStats`) and the draw log all come from there.
 
 The mesh passes bind the pipeline, descriptor set and pool once per bucket and issue one `drawIndexedIndirectCount` with the region's capacity as
@@ -232,7 +232,7 @@ samples the atlas with a hardware compare sampler (3×3 PCF by default).
 
 - **Render Debug snapshot** (`RenderDebugSnapshot`): device limits, swapchain and pacing, scene tables (meshes, textures, materials, culled instances),
   per-pass stats with GPU times, pool textures, the draw log, and every live allocation and memory heap (from `RhiDevice::allocations` and
-  `memoryHeaps`). `renderdebugjson` writes it for `--dump-render-debug` and the memory part for `--dump-memory`.
+  `memoryHeaps`). `renderdebugjson` writes it for the view's `render` record and the memory part for its `memory` record.
 - **Debug names.** Every buffer, texture, pipeline, set and shader gets a name at creation (`gpuscene.pool.*`, `gpuscene.instances`,
   `material.N.basecolor`, `cull.*`, `fg.<resource>` for transient textures, `frameslotN.*`, `swapchain.imageN`). They show in validation messages,
   the Memory window, command logs and RenderDoc.
@@ -246,17 +246,17 @@ samples the atlas with a hardware compare sampler (3×3 PCF by default).
   pass: the barriers the graph issued (`FgBarrierRecord`, always kept) with the backend's derived stages, accesses and layouts
   (`RhiDevice::describeTransition`), the logged commands, and the contents of every descriptor set a pass bound (`describeDescriptorSet`).
 - **GPU timings and counters.** Every pass is a GPU zone, and every indirect call in the depth prepass, geometry and shadow passes is a nested zone
-  named by its region (`DrawLists::regionName`). The zones of a slot are read after its fence, reported as `GpuTime` and handed to the profiler's GPU
-  lane on the CPU clock. While counters are enabled (`setCountersEnabled`), the frame graph also wraps each pass in a pipeline statistics query, and
-  `GpuCounters` (zones plus statistics per pass) is queued per frame for the Counters window and `dump-counters`.
+  named by its region (`DrawLists::regionName`). The zones of a slot are read after its fence and handed to the profiler's GPU lane on the CPU clock. While counters are enabled (`setCountersEnabled`), the frame graph also wraps each pass in a pipeline statistics query, and
+  `GpuCounters` (zones plus statistics per pass) is queued per frame for the Counters window and the view's `counters` record.
 - **Culling introspection.** `instancecull.comp` writes, next to the visibility bits, the frustum plane that rejected each instance in each view
   (`cullPlanes`, 4 bits per view: plane 0–5, `E` visible, `F` not tested). The readback keeps every view's visibility bit (`CullResult::viewBits`).
-- **Observation events** (Render category, conventions in `obs.md`): `RenderStats` every 60 frames (`draws`, `indirect_draws`, `draw_commands`,
-  `primitives`, `instances`, `culled`, `shadow_culled`, `instance_buffer_bytes`, `instance_upload_bytes`, `geometry_pool_bytes`, `material_count`, ...),
-  `GpuTime` per frame, `PipelineStats` per pass while counters are on, `CullReadback` per readback, `InstanceUpload` per upload frame (with the access
-  carried in from the previous frame), `CaptureResult` per capture, and one-off events for table and buffer creation (`GeometryPoolBuilt`,
-  `MaterialTableBuilt`, `InstanceBufferCreated`, `DrawListsCreated`, `GeometryDescriptorsRebuilt`), frame begin and end, pass execution and culling,
-  swapchain recreation, screenshots and texture dumps.
+- **Trace events** (Render category, conventions in `src/trace/README.md`). The renderer traces flow and problems, never per-frame data:
+  `SceneUploaded` when an upload changes geometry (instances, meshes, textures, ms; a transform edit is silent), `SwapchainRecreate` and
+  `SwapchainRecreateFailed`, `Screenshot` and `TextureDump` per file written (`ScreenshotFailed`, `TextureDumpFailed`), `ShaderLoadFailed`,
+  warnings for fallbacks (`FormatFallback`, `DebugViewsOff`, `TextureSlotsFull`), and the RHI's messages (`RhiMessage`: validation and native
+  errors, through `RhiDeviceOptions::onMessage`). Per-frame numbers are in the view's records: `render` (passes with draw counters and GPU time,
+  culled passes, meshes, textures, frame totals, draw log), `counters` (GPU zones and pipeline statistics), `culling`, `memory` (every buffer and
+  texture, the geometry pool and instance buffer among them) and `profile`.
 - **RenderDoc.** The in-app API lives in `src/renderdoccapture.*`, outside the renderer; the debug names make its captures readable.
 
 ## Device requirements

@@ -1,7 +1,6 @@
 #include "resourcepool.h"
 #include "rhidevice.h"
 
-#include <print>
 
 auto ResourcePool::init(RhiDevice* rhiDevice) -> void {
     device = rhiDevice;
@@ -51,7 +50,6 @@ auto ResourcePool::acquireTexture(const RhiTextureDesc& desc) -> RhiTexture* {
     if (tex != nullptr) {
         allocations++;
         inUse.push_back({key, tex});
-        std::println("ResourcePool: allocated new texture {}x{} fmt={}", desc.width, desc.height, (int) desc.format);
     }
     return tex;
 }

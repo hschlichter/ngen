@@ -14,6 +14,7 @@
 #include "scenequery.h"
 #include "sceneupdater.h"
 #include "shadowcascades.h"
+#include "trace.h"
 #include "usdscene.h"
 #include "viewdumps.h"
 
@@ -25,7 +26,7 @@
 #include <expected>
 #include <filesystem>
 #include <format>
-#include <print>
+#include <fstream>
 #include <sstream>
 #include <string_view>
 #include <unistd.h>
@@ -232,6 +233,17 @@ auto parsePath(const std::string& args) -> std::expected<Json, std::string> {
     return Json{{"path", args}};
 }
 
+auto parseRecord(const std::string& args) -> std::expected<Json, std::string> {
+    std::istringstream in(args);
+    std::string name;
+    std::string path;
+    std::string extra;
+    if (!(in >> name >> path) || (in >> extra)) {
+        return std::unexpected(std::format("expected '<record> <file>', such as 'render records.jsonl', got '{}'", args));
+    }
+    return Json{{"name", name}, {"path", path}};
+}
+
 auto parseDir(const std::string& args) -> std::expected<Json, std::string> {
     return Json{{"dir", args}};
 }
@@ -278,14 +290,12 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"shadow", "view.shadow", parseShadow},
     ScriptVerb{"prepass", "view.prepass", parsePrepass},
     ScriptVerb{"screenshot", "view.screenshot", parsePath},
-    ScriptVerb{"dump-render-debug", "introspect.render", parsePath},
     ScriptVerb{"renderdoc-capture", "renderdoc.capture", parseNothing},
     ScriptVerb{"capture", "capture.request", parseCapture},
     ScriptVerb{"dump-frame", "introspect.frame", parseDir},
     ScriptVerb{"dump-gpuscene", "introspect.gpuscene", parseDir},
-    ScriptVerb{"dump-counters", "introspect.counters", parsePath},
-    ScriptVerb{"dump-memory", "introspect.memory", parsePath},
     ScriptVerb{"dump-profile", "introspect.profile", parsePath},
+    ScriptVerb{"record", "introspect.record", parseRecord},
     ScriptVerb{"quit", "view.quit", parseNothing},
 };
 
@@ -613,36 +623,6 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
 auto registerIntrospection(RpcRegistry& registry, ViewContext& view) -> void {
     registry.add(
         {
-            .name = "introspect.render",
-            .summary = "The render debug snapshot: device, swapchain, scene tables, per-pass stats, draw log.",
-            .params = {optionalField("path", RpcType::String, "also write it here")},
-            .result = "the render debug JSON",
-        },
-        [&view](const Json& p, RpcResponder responder) {
-            view.dumps.requestRenderDebug(dumpTarget(p, "path", std::move(responder)));
-        });
-    registry.add(
-        {
-            .name = "introspect.memory",
-            .summary = "Every allocation and memory heap.",
-            .params = {optionalField("path", RpcType::String, "also write it here")},
-            .result = "{heaps, allocations, categories, totalBytes}",
-        },
-        [&view](const Json& p, RpcResponder responder) {
-            view.dumps.requestMemory(dumpTarget(p, "path", std::move(responder)));
-        });
-    registry.add(
-        {
-            .name = "introspect.counters",
-            .summary = "One frame's GPU zones and pipeline statistics per pass.",
-            .params = {optionalField("path", RpcType::String, "also write it here")},
-            .result = "{frame, gpuFrameMs, zones, passes}",
-        },
-        [&view](const Json& p, RpcResponder responder) {
-            view.dumps.requestCounters(dumpTarget(p, "path", std::move(responder)));
-        });
-    registry.add(
-        {
             .name = "introspect.frame",
             .summary = "The frame debug capture: passes, barriers with Vulkan details, commands, descriptor contents.",
             .params = {optionalField("dir", RpcType::String, "also write frame.json and every pass's written resources here")},
@@ -674,7 +654,7 @@ auto registerIntrospection(RpcRegistry& registry, ViewContext& view) -> void {
                 responder.fail(rpc::appError, std::format("cannot write {}", path));
                 return;
             }
-            std::println("Profile trace written: {}", path);
+            TRACE_EVENT("Engine", "ProfileWritten", path).text(std::format("profile trace written: {}", path));
             responder.respond({{"path", path}});
         });
     registry.add(
@@ -733,11 +713,14 @@ auto statusRecord(const ViewContext& view) -> Json {
             selected = rec->path;
         }
     }
+    const auto& sampler = view.editorUI.getSamplerSettings();
     return {
         {"frame", view.frameCounter},
         {"scene", view.sceneLabel},
         {"selected", selected},
         {"camera", {{"position", vec3Json(view.cam.position)}, {"yaw", view.cam.yaw}, {"pitch", view.cam.pitch}}},
+        {"antiAliasing", view.editorUI.getAntiAliasing()},
+        {"sampler", {{"anisotropy", sampler.maxAnisotropy}, {"lodBias", sampler.lodBias}, {"minLod", sampler.minLod}, {"nearestMip", sampler.nearestMip}}},
     };
 }
 
@@ -840,25 +823,25 @@ auto registerViewMethods(RpcRegistry& registry, ViewContext& view) -> void {
 auto runViewScriptCommand(const RpcRegistry& registry, const SessionCommand& command) -> void {
     const auto* verb = std::ranges::find_if(scriptVerbs, [&](const ScriptVerb& v) { return command.verb == v.verb; });
     if (verb == scriptVerbs.end()) {
-        std::println(stderr, "unknown session command '{}'", command.verb);
+        TRACE_ERROR("Engine", "ScriptCommandFailed", command.verb).text(std::format("unknown script command '{}'", command.verb));
         return;
     }
     auto params = verb->parse(command.args);
     if (!params) {
-        std::println(stderr, "{}: {}", command.verb, params.error());
+        TRACE_ERROR("Engine", "ScriptCommandFailed", command.verb).text(std::format("{}: {}", command.verb, params.error()));
         return;
     }
     std::string name = verb->verb;
     RpcResponder responder([name](const RpcReply& reply) {
         if (!reply.ok) {
-            std::println(stderr, "{}: {}", name, reply.message);
+            TRACE_ERROR("Engine", "ScriptCommandFailed", name).text(std::format("{}: {}", name, reply.message));
         }
     });
     registry.invoke(verb->method, *params, responder);
 }
 
-auto registerViewRecords(RpcRecords& records, ViewContext& view) -> void {
-    records.add("status", "frame counter, scene, selection and camera", [&view](RpcResponder responder) {
+auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext& view) -> void {
+    records.add("status", "frame counter, scene, selection, camera, anti-aliasing and the material sampler", [&view](RpcResponder responder) {
         responder.respond(statusRecord(view));
     });
     records.add("scene", "the open scene: layers, prim count, up axis, mesh instances and lights", [&view](RpcResponder responder) {
@@ -874,12 +857,54 @@ auto registerViewRecords(RpcRecords& records, ViewContext& view) -> void {
         responder.respond(profileRecord());
     });
     records.add("render", "the render debug snapshot: device, swapchain, scene tables, per-pass stats, draw log (next frames)", [&view](RpcResponder responder) {
-        view.dumps.requestRenderDebug({.responder = std::move(responder)});
+        view.dumps.requestRenderDebug(std::move(responder));
     });
     records.add("memory", "every allocation and memory heap (next frames)", [&view](RpcResponder responder) {
-        view.dumps.requestMemory({.responder = std::move(responder)});
+        view.dumps.requestMemory(std::move(responder));
     });
     records.add("counters", "one frame's GPU zones and pipeline statistics per pass (next frames)", [&view](RpcResponder responder) {
-        view.dumps.requestCounters({.responder = std::move(responder)});
+        view.dumps.requestCounters(std::move(responder));
     });
+
+    // A record taken at a known frame, for scripted runs: the view samples it, so the frame is exact, and appends it to
+    // a file, so nothing has to be connected at that frame to receive it.
+    registry.add(
+        {
+            .name = "introspect.record",
+            .summary = "Append a record to a file as one JSON line: {record, requested_frame, frame, ts_ns, value}.",
+            .params = {
+                requiredField("name", RpcType::String, "record name, from introspect.list"),
+                requiredField("path", RpcType::String, "the file the line is appended to"),
+            },
+            .result = "{path, frame} once the line is written",
+        },
+        [&view, &records](const Json& p, RpcResponder responder) {
+            auto name = p["name"].get<std::string>();
+            if (!records.contains(name)) {
+                responder.fail(rpc::invalidParams, std::format("no record '{}'", name));
+                return;
+            }
+            auto path = p["path"].get<std::string>();
+            auto requested = view.frameCounter;
+            RpcResponder write([&view, name, path, requested, responder](const RpcReply& reply) mutable {
+                if (!reply.ok) {
+                    responder.fail(reply.code, reply.message);
+                    return;
+                }
+                nlohmann::ordered_json line;
+                line["record"] = name;
+                line["requested_frame"] = requested;
+                line["frame"] = view.frameCounter;
+                line["ts_ns"] = trace::now();
+                line["value"] = *reply.result;
+                std::ofstream out(path, std::ios::app);
+                out << line.dump() << '\n';
+                if (!out) {
+                    responder.fail(rpc::appError, std::format("cannot write {}", path));
+                    return;
+                }
+                responder.respond({{"path", path}, {"frame", view.frameCounter}});
+            });
+            records.get(name, write);
+        });
 }

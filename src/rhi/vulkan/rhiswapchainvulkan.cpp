@@ -3,9 +3,9 @@
 #include <vulkan/vk_enum_string_helper.h>
 
 #include <algorithm>
-#include <print>
+#include <format>
 
-auto RhiSwapchainVulkan::vkFormatToRhiFormat(VkFormat format) -> RhiFormat {
+auto RhiSwapchainVulkan::vkFormatToRhiFormat(VkFormat format) const -> RhiFormat {
     switch (format) {
         case VK_FORMAT_B8G8R8A8_SRGB:
             return RhiFormat::B8G8R8A8_SRGB;
@@ -16,7 +16,7 @@ auto RhiSwapchainVulkan::vkFormatToRhiFormat(VkFormat format) -> RhiFormat {
         case VK_FORMAT_R8G8B8A8_UNORM:
             return RhiFormat::R8G8B8A8_UNORM;
         default:
-            std::println(stderr, "Unsupported swapchain format: {}", (int) format);
+            rhiReport(messageHandler, RhiMessageSeverity::Warning, std::format("Unsupported swapchain format: {}", (int) format));
             return RhiFormat::B8G8R8A8_SRGB;
     }
 }
@@ -32,21 +32,21 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     VkSurfaceCapabilitiesKHR capabilities;
     result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed: {}({})", string_VkResult(result), (int) result);
+        rhiReport(messageHandler, RhiMessageSeverity::Error, std::format("vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed: {}({})", string_VkResult(result), (int) result));
         return std::unexpected(RhiError::Failed);
     }
 
     uint32_t formatCount = 0;
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, nullptr);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkGetPhysicalDeviceSurfaceFormatsKHR failed: {}({})", string_VkResult(result), (int) result);
+        rhiReport(messageHandler, RhiMessageSeverity::Error, std::format("vkGetPhysicalDeviceSurfaceFormatsKHR failed: {}({})", string_VkResult(result), (int) result));
         return std::unexpected(RhiError::Failed);
     }
 
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, formats.data());
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkGetPhysicalDeviceSurfaceFormatsKHR failed: {}({})", string_VkResult(result), (int) result);
+        rhiReport(messageHandler, RhiMessageSeverity::Error, std::format("vkGetPhysicalDeviceSurfaceFormatsKHR failed: {}({})", string_VkResult(result), (int) result));
         return std::unexpected(RhiError::Failed);
     }
 
@@ -58,7 +58,7 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     ext.width = std::min(ext.width, capabilities.maxImageExtent.width);
     ext.height = std::max(ext.height, capabilities.minImageExtent.height);
     ext.height = std::min(ext.height, capabilities.maxImageExtent.height);
-    std::println("Swapchain extent: {}x{}", ext.width, ext.height);
+    rhiReport(messageHandler, RhiMessageSeverity::Info, std::format("swapchain extent: {}x{}", ext.width, ext.height));
 
     imgCount = capabilities.minImageCount + 1;
     if (capabilities.maxImageCount > 0 && imgCount > capabilities.maxImageCount) {
@@ -83,14 +83,14 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
 
     result = vkCreateSwapchainKHR(device, &swapchainInfo, nullptr, &swapchain);
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkCreateSwapchainKHR failed: {}({})", string_VkResult(result), (int) result);
+        rhiReport(messageHandler, RhiMessageSeverity::Error, std::format("vkCreateSwapchainKHR failed: {}({})", string_VkResult(result), (int) result));
         return std::unexpected(RhiError::Failed);
     }
 
     std::vector<VkImage> images(imgCount);
     result = vkGetSwapchainImagesKHR(device, swapchain, &imgCount, images.data());
     if (result != VK_SUCCESS) {
-        std::println(stderr, "vkGetSwapchainImagesKHR failed: {}({})", string_VkResult(result), (int) result);
+        rhiReport(messageHandler, RhiMessageSeverity::Error, std::format("vkGetSwapchainImagesKHR failed: {}({})", string_VkResult(result), (int) result));
         return std::unexpected(RhiError::Failed);
     }
 
@@ -116,7 +116,7 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
 
         result = vkCreateImageView(device, &viewInfo, nullptr, &colorImages[i].view);
         if (result != VK_SUCCESS) {
-            std::println(stderr, "vkCreateImageView failed: {}({})", string_VkResult(result), (int) result);
+            rhiReport(messageHandler, RhiMessageSeverity::Error, std::format("vkCreateImageView failed: {}({})", string_VkResult(result), (int) result));
             return std::unexpected(RhiError::Failed);
         }
     }
@@ -139,7 +139,7 @@ auto RhiSwapchainVulkan::acquireNextImage(RhiSemaphore* signalSemaphore) -> std:
         return std::unexpected(RhiError::OutOfDate);
     }
     if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-        std::println(stderr, "vkAcquireNextImageKHR failed: {}({})", string_VkResult(result), (int) result);
+        rhiReport(messageHandler, RhiMessageSeverity::Error, std::format("vkAcquireNextImageKHR failed: {}({})", string_VkResult(result), (int) result));
         return std::unexpected(toRhiError(result));
     }
     return index;

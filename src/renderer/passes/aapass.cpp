@@ -3,10 +3,10 @@
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "shaderloader.h"
+#include "trace.h"
 
 #include <array>
 #include <format>
-#include <print>
 
 namespace {
 struct FxaaPush {
@@ -23,7 +23,7 @@ auto AAPass::init(RhiDevice* dev, uint32_t frameCount, RhiFormat inputFormat) ->
     auto neededUsage = RhiTextureUsage::Storage | RhiTextureUsage::TransferSrc;
     computeSupported = device->supportsTextureFormat(floatFormat, neededUsage);
     if (!computeSupported) {
-        std::println(stderr, "AAPass: R16G16B16A16_SFLOAT not usable as storage image; falling back to blit");
+        TRACE_WARNING("Render", "FormatFallback", "AAPass").text("R16G16B16A16_SFLOAT not usable as storage image; falling back to blit");
         format = inputFormat;
         return true;
     }

@@ -8,7 +8,7 @@ discovery files.
 | Part | Files | Depends on |
 |---|---|---|
 | Core | `core/rpcframe.*` (frames), `core/rpcprotocol.*` (JSON-RPC messages, error codes), `core/rpcsocket.*` (loopback TCP), `core/rpcserver.*` (an endpoint with an I/O thread that listens, connects out, or both), `core/rpcclient.*` (blocking client), `core/rpcdiscovery.*` (discovery files), `core/rpcresponder.*` (replies that can complete later), `core/rpcrecords.*` (named records: `introspect.list`, `introspect.get`) | the standard library and header-only nlohmann/json (`external/json`) |
-| Engine layer | `rpcregistry.*` (methods, parameter schemas, `rpc.*` builtins, records as methods), `rpcendpoint.*` (server + discovery + main-thread dispatch) | the core, `src/obs` |
+| Engine layer | `rpcregistry.*` (methods, parameter schemas, `rpc.*` builtins, records as methods), `rpcendpoint.*` (server + discovery + main-thread dispatch, the trace stream) | the core, `src/trace` |
 | Tool | `ngen-introspect` (`src/introspect/`) | the core |
 
 The core stays free of engine code, so the build server (`src/build/`) can use it as well. Only `.cpp` files include `nlohmann/json.hpp`; headers
@@ -80,14 +80,19 @@ Data a process gives for reading is a record, not a method: a name, a descriptio
 ./ngen-cli introspect call view:12345 view.camera.set '{"x": 5.3, "y": 11.3, "z": 1.2, "yaw": -169.8, "pitch": -0.2}'
 ```
 
-## Observations
+## Trace
 
-Engine category: `RpcListening` (port, discovery file), `RpcConnected` and `RpcDisconnected` (connection id), `RpcCall` per call (method, ms, ok,
-error code).
+`RpcEndpoint` answers `trace.subscribe` and `trace.unsubscribe` itself, on the I/O thread, and streams the process's trace to subscribers as
+`trace.events` notifications (protocol in [`src/trace/README.md`](../trace/README.md)). They are not registry methods, so `rpc.describe` doesn't
+list them. At exit, `finishTrace` sends the last events before `stop` closes the connections.
+
+Engine category events: `RpcListening` (port, discovery file), `RpcConnected` and `RpcDisconnected` (connection id), and a warning
+`RpcCallFailed` (method, message, error code) for each call that fails. Calls that work aren't traced: their result goes to the caller.
+Failing to listen or to write the discovery file are errors (`RpcListenFailed`, `RpcDiscoveryFailed`).
 
 ## Known gaps
 
 - Loopback only, no authentication: any local process can drive an endpoint.
-- Request/response only; no subscriptions yet, so clients poll for anything that changes.
+- The trace is the only subscription; records are polled.
 - Bulk results (screenshots, captures) travel as base64 or as files, not yet as attachments.
 - `--no-rpc` turns ngen-view's endpoint off. It's compiled out of `gamerelease` (`NGEN_INTROSPECTION`).

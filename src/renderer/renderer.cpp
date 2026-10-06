@@ -6,7 +6,6 @@
 #include "material.h"
 #include "mesh.h"
 #include "mipchain.h"
-#include "observationmacros.h"
 #include "presentpass.h"
 #include "profile.h"
 #include "rendersnapshot.h"
@@ -15,13 +14,14 @@
 #include "rhiswapchain.h"
 #include "screenshot.h"
 #include "shadowpass.h"
+#include "trace.h"
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstring>
 #include <format>
 #include <limits>
-#include <print>
 #include <span>
 
 auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2D windowExtent) -> std::expected<void, int> {
@@ -160,9 +160,11 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
     }
 
     if (!device->limits().timestamps) {
-        std::println("GPU timestamps not supported on this device; pass timings disabled");
+        TRACE_WARNING("Render", "TimestampsUnavailable", "device").text("GPU timestamps not supported on this device; pass timings disabled");
     } else {
-        std::println("GPU clock calibration: {}", device->limits().calibratedTimestamps ? "available" : "unavailable, GPU lane anchored at submit");
+        TRACE_EVENT("Render", "GpuClockCalibration", "device")
+            .text(std::format("GPU clock calibration: {}", device->limits().calibratedTimestamps ? "available" : "unavailable, GPU lane anchored at submit"))
+            .field("available", device->limits().calibratedTimestamps);
     }
 
     // Editor UI
@@ -359,18 +361,6 @@ auto Renderer::readGpuTimings(uint32_t slot) -> void {
     }
     profile::submitGpuZones(lastGpuFrame, slotSubmitNs[slot], profileZones);
 
-    // Builder emits on destruction, so scope it; one field per pass keeps headless runs self-describing.
-    // gpu_lag_ms: submit to first GPU zone start on the CPU clock; only meaningful when calibrated.
-    if (obs::bus().categoryEnabled("Render")) {
-        obs::detail::Builder event("Render", "GpuTime", "frame");
-        event.field("frame", (int64_t) lastGpuFrame).field("gpu_ms", lastGpuFrameMs);
-        event.field("calibrated", gpuClockCalibrated);
-        event.field("gpu_lag_ms", ((double) toCpu(minStart) - (double) slotSubmitNs[slot]) * 1e-6);
-        for (const auto& timing : lastGpuTimes) {
-            event.field(timing.name, timing.ms);
-        }
-    }
-
     if (countersEnabled) {
         GpuCounters counters = {
             .frame = lastGpuFrame,
@@ -385,16 +375,6 @@ auto Renderer::readGpuTimings(uint32_t slot) -> void {
         if (device->collectPipelineStats(cmdBuffers[slot], pipelineStatsScratch)) {
             for (const auto& zone : pipelineStatsScratch) {
                 counters.passes.push_back({.name = zone.name, .stats = zone.stats});
-                const auto& st = zone.stats;
-                OBS_EVENT("Render", "PipelineStats", zone.name)
-                    .field("frame", (int64_t) lastGpuFrame)
-                    .field("ia_vertices", (int64_t) st.iaVertices)
-                    .field("ia_primitives", (int64_t) st.iaPrimitives)
-                    .field("vs_invocations", (int64_t) st.vertexInvocations)
-                    .field("clip_invocations", (int64_t) st.clippingInvocations)
-                    .field("clip_primitives", (int64_t) st.clippingPrimitives)
-                    .field("fs_invocations", (int64_t) st.fragmentInvocations)
-                    .field("cs_invocations", (int64_t) st.computeInvocations);
             }
         }
         // Bounded: a consumer that stops taking keeps only recent frames.
@@ -407,6 +387,7 @@ auto Renderer::readGpuTimings(uint32_t slot) -> void {
 
 auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void {
     using enum RhiDescriptorType;
+    auto start = std::chrono::steady_clock::now();
 
     lights = world.lights;
 
@@ -483,7 +464,7 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
 
     if (!geometryChanged) {
         if (instanceBufferReplaced || listsReplaced) {
-            rebuildGeometryDescriptorSets("instance_buffer");
+            rebuildGeometryDescriptorSets();
         }
         return;
     }
@@ -535,12 +516,6 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
                     .bytes = packed.size(),
                     .format = texDesc.format,
                 };
-
-                OBS_EVENT("Render", "TextureUploaded", "Texture")
-                    .field("width", (int64_t) matData->texWidth)
-                    .field("height", (int64_t) matData->texHeight)
-                    .field("mips", (int64_t) texDesc.mipLevels)
-                    .field("bytes", (int64_t) packed.size());
             }
         }
     }
@@ -551,7 +526,15 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
     }
 
     gpuScene.rebuildMaterials(gpuInstances, textureCache, fallbackTexture, uploader, m_frameIndex);
-    rebuildGeometryDescriptorSets("geometry");
+    rebuildGeometryDescriptorSets();
+    // Only uploads that change geometry get here; a transform edit returns above.
+    auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    TRACE_EVENT("Render", "SceneUploaded", "RenderWorld")
+        .text(std::format("scene on the GPU: {} instances, {} meshes, {} textures in {:.0f} ms", gpuInstances.size(), gpuScene.meshRanges().size(), textureCache.size(), ms))
+        .field("instances", (int64_t) gpuInstances.size())
+        .field("meshes", (int64_t) gpuScene.meshRanges().size())
+        .field("textures", (int64_t) textureCache.size())
+        .field("ms", ms);
 }
 
 // Preview extent for the inspector: the level scaled to fit a 256 box, up or down, so a
@@ -658,15 +641,10 @@ auto Renderer::applySamplerSettings(const SamplerSettings& settings) -> void {
     deletionQueue.defer(m_frameIndex, [dev = device, sampler = materialSampler] { dev->destroySampler(sampler); });
     materialSampler = device->createSampler(toSamplerDesc(settings));
     device->setDebugName(materialSampler, "sampler.material");
-    rebuildGeometryDescriptorSets("sampler");
-    OBS_EVENT("Render", "SamplerSettings", "material")
-        .field("anisotropy", (double) settings.maxAnisotropy)
-        .field("lod_bias", (double) settings.lodBias)
-        .field("min_lod", (double) settings.minLod)
-        .field("nearest_mip", settings.nearestMip);
+    rebuildGeometryDescriptorSets();
 }
 
-auto Renderer::rebuildGeometryDescriptorSets(const char* reason) -> void {
+auto Renderer::rebuildGeometryDescriptorSets() -> void {
     using enum RhiDescriptorType;
     PROFILE_ZONE("DescriptorSets");
     // Sets and pool may still be bound by frames in flight: free and destroy together, later.
@@ -731,7 +709,6 @@ auto Renderer::rebuildGeometryDescriptorSets(const char* reason) -> void {
         });
         device->updateDescriptorSet(geometryDescriptorSets[i], writes);
     }
-    OBS_EVENT("Render", "GeometryDescriptorsRebuilt", "descriptors").field("sets", (int64_t) imgCount).field("reason", reason);
 }
 
 auto Renderer::cullResult() const -> CullResult {
@@ -799,7 +776,6 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     auto frame = ++m_frameIndex;
     // Taken now, so the frame that builds without UI is the frame that is read back.
     auto screenshotPending = std::exchange(screenshotPath, {});
-    OBS_EVENT("Render", "FrameBegin", "frame").field("frame", (int64_t) frame);
 
     {
         PROFILE_ZONE("WaitFence");
@@ -819,9 +795,9 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     }
     if (!index) {
         if (index.error() == RhiError::OutOfDate) {
-            OBS_EVENT("Render", "SwapchainRecreate", "swapchain").field("reason", "acquire_failed");
+            TRACE_EVENT("Render", "SwapchainRecreate", "swapchain").text("swapchain out of date at acquire; recreating").field("reason", "acquire_failed");
             if (!swapchain->recreate({.width = (uint32_t) snapshot.windowWidth, .height = (uint32_t) snapshot.windowHeight})) {
-                std::println(stderr, "Swapchain recreate failed after acquire");
+                TRACE_ERROR("Render", "SwapchainRecreateFailed", "swapchain").text("swapchain recreate failed after acquire");
             } else {
                 recreateDepthTexture(swapchain->extent());
             }
@@ -832,7 +808,6 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         if (screenshotPath.empty()) {
             screenshotPath = std::move(screenshotPending);
         }
-        OBS_EVENT("Render", "FrameEnd", "frame").field("frame", (int64_t) frame);
         return;
     }
 
@@ -910,12 +885,6 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         atlasExtent = {std::max(64u, snapshot.shadowSettings.tileSize), std::max(64u, snapshot.shadowSettings.tileSize)};
     }
     debugShadowExtent = atlasExtent;
-    debugCascadeCount = (uint32_t) cascades.size();
-    // Culling statistics come back from the GPU one frame-slot cycle late.
-    debugShadowCulled = 0;
-    for (uint32_t c = 0; c < drawLists.cascadeCount(); c++) {
-        debugShadowCulled += drawLists.cascadeCulled(c);
-    }
 
     auto invViewProj = glm::inverse(snapshot.projMatrix * snapshot.viewMatrix);
 
@@ -959,10 +928,6 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     // AA filters only the lit scene. Its output is blitted to the backbuffer and the
     // overlays (debug lines, gizmos, UI) draw on the backbuffer afterwards, so they are
     // never filtered and sceneColorAA holds nothing but the AA result.
-    if (snapshot.antiAliasing != lastAntiAliasing) {
-        lastAntiAliasing = snapshot.antiAliasing;
-        OBS_EVENT("Render", "AntiAliasing", "aa").field("enabled", snapshot.antiAliasing ? "true" : "false");
-    }
     const auto& aaData = aaPass.addPass(frameGraph, lightData.sceneColor, ext, imageIdx, textureSampler, snapshot.antiAliasing);
 
     // A debug view replaces the lit image; it is drawn after everything the geometry pass
@@ -998,9 +963,6 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         PROFILE_ZONE("Compile");
         frameGraph.compile();
     }
-    OBS_EVENT("Render", "FrameGraphCompiled", "frame")
-        .field("pass_count", (int64_t) frameGraph.passCount())
-        .field("culled_count", (int64_t) frameGraph.culledCount());
 
     // Command buffer and fence belong to the frame slot; the render-finished semaphore
     // belongs to the swapchain image, since present consumes it per image.
@@ -1029,7 +991,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
             cmd->setCommandLog(false);
             frameGraph.setCommandLogEnabled(false);
         }
-        gpuScene.afterExecute(frameGraph, frame);
+        gpuScene.afterExecute(frameGraph);
         captureService.recordStatic(cmd, currentFrame, frame);
         recordTextureInspect(cmd);
         if (dumpPending.has_value()) {
@@ -1051,7 +1013,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
                 std::array<RhiTextureBarrierDesc, 1> toShader = {{{.texture = cached.texture, .oldState = RhiTextureState::TransferSrc, .newState = RhiTextureState::ShaderReadOnly}}};
                 cmd->pipelineBarrier(toShader);
             } else {
-                std::println(stderr, "dump-texture: material {} level {} not found", dumpPending->material, dumpPending->level);
+                TRACE_ERROR("Render", "TextureDumpFailed", dumpPending->path).text(std::format("dump-texture: material {} level {} not found", dumpPending->material, dumpPending->level));
             }
         }
         if (!screenshotPending.empty()) {
@@ -1072,30 +1034,6 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         cmd->end();
     }
     slotDrawLogs[currentFrame] = frameGraph.drawLog();
-    if (frame % 60 == 0) {
-        // Headless-checkable summary of what the frame drew and what the scene holds.
-        const auto& stats = cmd->stats();
-        OBS_EVENT("Render", "RenderStats", "frame")
-            .field("frame", (int64_t) frame)
-            .field("draws", (int64_t) stats.draws)
-            .field("dispatches", (int64_t) stats.dispatches)
-            .field("barriers", (int64_t) stats.barriers)
-            .field("primitives", (int64_t) stats.primitives)
-            .field("instances", (int64_t) gpuInstances.size())
-            .field("culled", (int64_t) debugCulledInstances)
-            .field("cascades", (int64_t) debugCascadeCount)
-            .field("shadow_culled", (int64_t) debugShadowCulled)
-            .field("meshes", (int64_t) gpuScene.meshRanges().size())
-            .field("textures", (int64_t) textureCache.size())
-            .field("logged_draws", (int64_t) slotDrawLogs[currentFrame].size())
-            .field("instance_buffer_bytes", (int64_t) gpuScene.instanceBufferBytes())
-            .field("instance_upload_bytes", (int64_t) gpuScene.lastInstanceUploadBytes())
-            .field("geometry_pool_bytes", (int64_t) gpuScene.geometryPoolBytes())
-            .field("material_count", (int64_t) gpuScene.materialCount())
-            .field("indirect_draws", (int64_t) stats.indirectDraws)
-            .field("draw_commands", (int64_t) drawLists.commandCount());
-    }
-
     RhiSubmitInfo submitInfo = {
         .waitSemaphore = imageAvailableSemaphores[currentFrame],
         .signalSemaphore = renderFinishedSemaphores[*index],
@@ -1118,14 +1056,14 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         device->unmapBuffer(textureDumpBuffer);
         device->destroyBuffer(textureDumpBuffer);
         bool ok = writeScreenshotPng(dumpPending->path.c_str(), rgba, dumpWidth, dumpHeight);
-        std::println("{}: {} material {} level {} ({}x{})", ok ? "Texture dump written" : "Texture dump failed", dumpPending->path, dumpPending->material, dumpPending->level, dumpWidth, dumpHeight);
-        OBS_EVENT("Render", "TextureDump", "texture")
-            .field("material", (int64_t) dumpPending->material)
-            .field("level", (int64_t) dumpPending->level)
-            .field("path", dumpPending->path)
-            .field("width", (int64_t) dumpWidth)
-            .field("height", (int64_t) dumpHeight)
-            .field("ok", ok);
+        if (ok) {
+            TRACE_EVENT("Render", "TextureDump", dumpPending->path)
+                .text(std::format("texture dump written: {} material {} level {} ({}x{})", dumpPending->path, dumpPending->material, dumpPending->level, dumpWidth, dumpHeight))
+                .field("material", (int64_t) dumpPending->material)
+                .field("level", (int64_t) dumpPending->level);
+        } else {
+            TRACE_ERROR("Render", "TextureDumpFailed", dumpPending->path).text(std::format("cannot write texture dump {}", dumpPending->path));
+        }
     }
     if (screenshotBuffer != nullptr) {
         PROFILE_ZONE("Screenshot");
@@ -1146,14 +1084,12 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
             rgba[i] = 255; // swapchain alpha is undefined for the viewer
         }
         bool ok = writeScreenshotPng(screenshotPending.c_str(), rgba, ext.width, ext.height);
-        std::println("{}: {} ({}x{})", ok ? "Screenshot written" : "Screenshot failed", screenshotPending, ext.width, ext.height);
         screenshotResults.push_back({.path = screenshotPending, .ok = ok, .frame = frame, .width = ext.width, .height = ext.height});
-        OBS_EVENT("Render", "Screenshot", "frame")
-            .field("frame", (int64_t) frame)
-            .field("path", screenshotPending)
-            .field("width", (int64_t) ext.width)
-            .field("height", (int64_t) ext.height)
-            .field("ok", ok);
+        if (ok) {
+            TRACE_EVENT("Render", "Screenshot", screenshotPending).text(std::format("screenshot written: {} ({}x{})", screenshotPending, ext.width, ext.height)).field("frame", (int64_t) frame);
+        } else {
+            TRACE_ERROR("Render", "ScreenshotFailed", screenshotPending).text(std::format("cannot write screenshot {}", screenshotPending)).field("frame", (int64_t) frame);
+        }
     }
     std::expected<void, RhiError> presented;
     {
@@ -1161,20 +1097,18 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         presented = device->present(swapchain, renderFinishedSemaphores[*index], *index);
     }
     if (!presented) {
-        OBS_EVENT("Render", "SwapchainRecreate", "swapchain").field("reason", "present_failed");
+        TRACE_EVENT("Render", "SwapchainRecreate", "swapchain").text("swapchain out of date at present; recreating").field("reason", "present_failed");
         if (!swapchain->recreate({.width = (uint32_t) snapshot.windowWidth, .height = (uint32_t) snapshot.windowHeight})) {
-            std::println(stderr, "Swapchain recreate failed after present");
+            TRACE_ERROR("Render", "SwapchainRecreateFailed", "swapchain").text("swapchain recreate failed after present");
         } else {
             recreateDepthTexture(swapchain->extent());
         }
         resourcePool.flush();
         currentFrame = 0;
-        OBS_EVENT("Render", "FrameEnd", "frame").field("frame", (int64_t) frame);
         return;
     }
 
     currentFrame = (currentFrame + 1) % swapchain->imageCount();
-    OBS_EVENT("Render", "FrameEnd", "frame").field("frame", (int64_t) frame);
 }
 
 auto Renderer::destroy() -> void {

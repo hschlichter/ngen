@@ -3,6 +3,7 @@
 #include "gpuscenewindow.h"
 #include "renderdebugjson.h"
 #include "renderworld.h"
+#include "trace.h"
 #include "usdscene.h"
 
 #include <nlohmann/json.hpp>
@@ -14,7 +15,6 @@
 #include <format>
 #include <fstream>
 #include <functional>
-#include <print>
 #include <sstream>
 
 namespace {
@@ -54,6 +54,16 @@ auto respondWith(DumpTarget& target, const std::function<void(FILE*)>& write) ->
     target.responder.respond(*json);
 }
 
+// Answers a responder with the writer's JSON.
+auto respondWithJson(RpcResponder& responder, const std::function<void(FILE*)>& write) -> void {
+    auto json = writerJson(write);
+    if (!json.has_value()) {
+        responder.fail(rpc::internalError, "the dump did not produce valid JSON");
+        return;
+    }
+    responder.respond(*json);
+}
+
 auto base64(const std::vector<char>& bytes) -> std::string {
     static constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     std::string out;
@@ -85,17 +95,16 @@ auto ViewDumps::primPath(uint32_t prim) const -> std::string {
     return rec != nullptr ? rec->path : std::string{};
 }
 
-auto ViewDumps::requestRenderDebug(DumpTarget target) -> void {
-    renderDebugTargets.push_back(std::move(target));
-    renderDebugForced = true;
+auto ViewDumps::requestRenderDebug(RpcResponder responder) -> void {
+    renderDebugTargets.push_back(std::move(responder));
 }
 
-auto ViewDumps::requestMemory(DumpTarget target) -> void {
-    memoryTargets.push_back(std::move(target));
+auto ViewDumps::requestMemory(RpcResponder responder) -> void {
+    memoryTargets.push_back(std::move(responder));
 }
 
-auto ViewDumps::requestCounters(DumpTarget target) -> void {
-    counterTargets.push_back(std::move(target));
+auto ViewDumps::requestCounters(RpcResponder responder) -> void {
+    counterTargets.push_back(std::move(responder));
 }
 
 auto ViewDumps::requestCapture(CaptureWatch watch, DumpTarget target) -> void {
@@ -136,7 +145,7 @@ auto ViewDumps::wantsFrameGraphDebug() const -> bool {
 }
 
 auto ViewDumps::wantsRenderDebug() const -> bool {
-    return renderDebugForced || !memoryTargets.empty();
+    return !renderDebugTargets.empty() || !memoryTargets.empty();
 }
 
 auto ViewDumps::wantsCounters() const -> bool {
@@ -200,9 +209,11 @@ auto ViewDumps::onFrameDebug(const FrameDebugCapture& capture) -> void {
         if (!target.path.empty()) {
             auto path = target.path + "/frame.json";
             if (writeFrameDebugJson(path.c_str(), capture)) {
-                std::println("Frame debug written: {} (frame {}, {} passes)", path, capture.frame, capture.passes.size());
+                TRACE_EVENT("Render", "FrameDebugWritten", path)
+                    .text(std::format("frame debug written: {} (frame {}, {} passes)", path, capture.frame, capture.passes.size()))
+                    .field("frame", (int64_t) capture.frame);
             } else {
-                std::println(stderr, "dump-frame: cannot write {}", path);
+                TRACE_ERROR("Render", "DumpFailed", path).text(std::format("dump-frame: cannot write {}", path));
             }
         }
         respondWith(target, [&](FILE* f) { writeFrameDebugJson(f, capture); });
@@ -218,15 +229,17 @@ auto ViewDumps::onCaptureResult(CaptureResult& result) -> bool {
     auto& target = dump->target;
     if (!result.error.empty()) {
         if (!target.path.empty() || dump->gpuSceneGroup >= 0 || !target.responder.valid()) {
-            std::println(stderr, "capture {} {}: {}", result.pass, result.resource, result.error);
+            TRACE_ERROR("Render", "CaptureFailed", result.resource).text(std::format("capture {} {}: {}", result.pass, result.resource, result.error));
         }
         target.responder.fail(rpc::appError, result.error);
     } else {
         if (!target.path.empty()) {
             if (writeCaptureFiles(target.path, result, dump->watch.display, 65536)) {
-                std::println("Capture written: {} ({} {}, frame {})", target.path, result.pass.empty() ? "-" : result.pass, result.resource, result.frame);
+                TRACE_EVENT("Render", "CaptureWritten", target.path)
+                    .text(std::format("capture written: {} ({} {}, frame {})", target.path, result.pass.empty() ? "-" : result.pass, result.resource, result.frame))
+                    .field("frame", (int64_t) result.frame);
             } else {
-                std::println(stderr, "capture: cannot write {}", target.path);
+                TRACE_ERROR("Render", "DumpFailed", target.path).text(std::format("capture: cannot write {}", target.path));
             }
         }
         respondWith(target, [&](FILE* f) { writeCaptureJson(f, result, 65536); });
@@ -257,9 +270,9 @@ auto ViewDumps::finishGpuScene(int group) -> void {
     if (!target.path.empty()) {
         auto file = target.path + "/instances_joined.json";
         if (writeGpuSceneJoinedJson(file, rows, viewCount)) {
-            std::println("GPU scene written: {} ({} instances)", file, rows.size());
+            TRACE_EVENT("Render", "GpuSceneWritten", file).text(std::format("GPU scene written: {} ({} instances)", file, rows.size()));
         } else {
-            std::println(stderr, "dump-gpuscene: cannot write {}", file);
+            TRACE_ERROR("Render", "DumpFailed", file).text(std::format("dump-gpuscene: cannot write {}", file));
         }
     }
     respondWith(target, [&](FILE* f) { writeGpuSceneJoinedJson(f, rows, viewCount); });
@@ -272,15 +285,8 @@ auto ViewDumps::onCounters(const GpuCounters& counters) -> void {
     if (counterTargets.empty() || !complete) {
         return;
     }
-    for (auto& target : counterTargets) {
-        if (!target.path.empty()) {
-            if (writeGpuCountersJson(target.path.c_str(), counters)) {
-                std::println("GPU counters written: {} (frame {}, {} zones, {} passes)", target.path, counters.frame, counters.zones.size(), counters.passes.size());
-            } else {
-                std::println(stderr, "dump-counters: cannot write {}", target.path);
-            }
-        }
-        respondWith(target, [&](FILE* f) { writeGpuCountersJson(f, counters); });
+    for (auto& responder : counterTargets) {
+        respondWithJson(responder, [&](FILE* f) { writeGpuCountersJson(f, counters); });
     }
     counterTargets.clear();
 }
@@ -289,15 +295,8 @@ auto ViewDumps::writeRenderDebug(const RenderDebugSnapshot& snapshot) -> void {
     auto path = [&](uint32_t prim) {
         return primPath(prim);
     };
-    for (auto& target : renderDebugTargets) {
-        if (!target.path.empty()) {
-            if (writeRenderDebugJson(target.path.c_str(), snapshot, path)) {
-                std::println("Render debug dump written: {}", target.path);
-            } else {
-                std::println(stderr, "dump-render-debug: cannot write {}", target.path);
-            }
-        }
-        respondWith(target, [&](FILE* f) { writeRenderDebugJson(f, snapshot, path); });
+    for (auto& responder : renderDebugTargets) {
+        respondWithJson(responder, [&](FILE* f) { writeRenderDebugJson(f, snapshot, path); });
     }
     renderDebugTargets.clear();
 }
@@ -311,15 +310,8 @@ auto ViewDumps::onRenderDebug(const std::optional<RenderDebugSnapshot>& snapshot
         writeRenderDebug(*snapshot);
     }
     if (!memoryTargets.empty() && !snapshot->allocations.empty()) {
-        for (auto& target : memoryTargets) {
-            if (!target.path.empty()) {
-                if (writeMemoryJson(target.path.c_str(), *snapshot)) {
-                    std::println("Memory dump written: {}", target.path);
-                } else {
-                    std::println(stderr, "dump-memory: cannot write {}", target.path);
-                }
-            }
-            respondWith(target, [&](FILE* f) { writeMemoryJson(f, *snapshot); });
+        for (auto& responder : memoryTargets) {
+            respondWithJson(responder, [&](FILE* f) { writeMemoryJson(f, *snapshot); });
         }
         memoryTargets.clear();
     }
@@ -348,18 +340,5 @@ auto ViewDumps::onScreenshots(const std::vector<ScreenshotResult>& results) -> v
             pending->responder.respond(reply);
         }
         screenshots.erase(pending);
-    }
-}
-
-auto ViewDumps::finish(const std::optional<RenderDebugSnapshot>& lastSnapshot) -> void {
-    // Dumps requested for exit: the render debug snapshot needs one more frame's data, which
-    // the last delivered snapshot already holds.
-    if (renderDebugTargets.empty()) {
-        return;
-    }
-    if (lastSnapshot.has_value()) {
-        writeRenderDebug(*lastSnapshot);
-    } else {
-        std::println(stderr, "dump-render-debug: no snapshot was produced (run at least a few frames)");
     }
 }

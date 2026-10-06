@@ -1,24 +1,57 @@
 #include "sceneupdater.h"
 #include "profile.h"
 
-#include "observationmacros.h"
+#include "trace.h"
 #include "usdrenderextractor.h"
 #include "usdscene.h"
 
 #include <algorithm>
+#include <format>
 #include <unordered_map>
 
 namespace {
-auto resultToString(SceneUpdateResult r) -> const char* {
-    switch (r) {
-        case SceneUpdateResult::None:
-            return "None";
-        case SceneUpdateResult::TransformsOnly:
-            return "TransformsOnly";
-        case SceneUpdateResult::Full:
-            return "Full";
+auto editTypeName(SceneEditCommand::Type type) -> const char* {
+    switch (type) {
+        case SceneEditCommand::Type::MuteLayer:
+            return "MuteLayer";
+        case SceneEditCommand::Type::SetTransform:
+            return "SetTransform";
+        case SceneEditCommand::Type::SetVisibility:
+            return "SetVisibility";
+        case SceneEditCommand::Type::AddSubLayer:
+            return "AddSubLayer";
+        case SceneEditCommand::Type::ClearSession:
+            return "ClearSession";
+        case SceneEditCommand::Type::CreatePrim:
+            return "CreatePrim";
+        case SceneEditCommand::Type::CreateReferencePrim:
+            return "CreateReferencePrim";
+        case SceneEditCommand::Type::RemovePrim:
+            return "RemovePrim";
+        case SceneEditCommand::Type::SetDisplayColor:
+            return "SetDisplayColor";
     }
     return "Unknown";
+}
+
+// One applied edit, named by the prim path it touches. Preview edits arrive every frame while a gizmo drags and only
+// update the runtime cache; the Authoring edit that commits the drag is the one traced.
+auto traceEdit(const USDScene& usdScene, const SceneEditCommand& cmd) -> void {
+    if (cmd.purpose == SceneEditRequestContext::Purpose::Preview) {
+        return;
+    }
+    std::string subject;
+    if (cmd.prim) {
+        if (const auto* rec = usdScene.getPrimRecord(cmd.prim)) {
+            subject = rec->path;
+        }
+    } else if (!cmd.parentPath.empty()) {
+        subject = cmd.parentPath + "/" + cmd.primName;
+    } else {
+        subject = cmd.stringValue;
+    }
+    const auto* name = editTypeName(cmd.type);
+    TRACE_EVENT("Scene", "EditApplied", subject).text(std::format("{}{}", name, cmd.fromHistory ? " (undo/redo)" : "")).field("edit", name).field("from_history", cmd.fromHistory);
 }
 } // namespace
 
@@ -73,11 +106,7 @@ auto SceneUpdater::update(
         for (auto& [_, cmd] : latest) {
             usdScene.setTransform(cmd->prim, cmd->transform, {.purpose = cmd->purpose});
             appendSubtree(usdScene, cmd->prim, dirty);
-
-            // Name the observation by the USD prim path — stable across runs,
-            // unlike PrimHandle::index (see §5.4).
-            const auto* rec = usdScene.getPrimRecord(cmd->prim);
-            OBS_EVENT("Scene", "PrimTransformed", rec != nullptr ? rec->path : std::string{}).field("path", "fast");
+            traceEdit(usdScene, *cmd);
         }
         pendingEdits.clear();
 
@@ -88,12 +117,7 @@ auto SceneUpdater::update(
             sceneQuery.updateDirty(usdScene, meshLib, dirty, usdScene.frameIndex());
         }
         // Promote None -> TransformsOnly; preserve Full from a Phase 1 swap above.
-        auto finalResult = result == SceneUpdateResult::Full ? SceneUpdateResult::Full : SceneUpdateResult::TransformsOnly;
-        OBS_EVENT("Scene", "SystemExecuted", "SceneUpdater")
-            .field("edits", (int64_t) latest.size())
-            .field("path", "fast")
-            .field("result", resultToString(finalResult));
-        return finalResult;
+        return result == SceneUpdateResult::Full ? SceneUpdateResult::Full : SceneUpdateResult::TransformsOnly;
     }
 
     // Phase 2: Kick off background job if edits are pending
@@ -101,6 +125,9 @@ auto SceneUpdater::update(
         // Record inverses while we still have the pre-edit scene state on the
         // main thread; the job will mutate USD asynchronously.
         m_undoStack.recordBatch(pendingEdits, usdScene);
+        for (const auto& cmd : pendingEdits) {
+            traceEdit(usdScene, cmd);
+        }
 
         editingBlocked = true;
         pendingMeshLib = meshLib;
@@ -221,13 +248,6 @@ auto SceneUpdater::update(
                 result = SceneUpdateResult::TransformsOnly;
             }
         }
-    }
-
-    // Silent frames (result == None) are the common case — don't spam an
-    // observation for every tick that did nothing. Only narrate ticks that
-    // actually changed something.
-    if (result != SceneUpdateResult::None) {
-        OBS_EVENT("Scene", "SystemExecuted", "SceneUpdater").field("path", "async").field("result", resultToString(result));
     }
 
     return result;

@@ -6,10 +6,7 @@
 #include "editorui.h"
 #include "imguibackendvulkan.h"
 #include "jobsystem.h"
-#include "jsonlinesfilesink.h"
 #include "mesh.h"
-#include "observationbus.h"
-#include "observationmacros.h"
 #include "profile.h"
 #include "renderdebugjson.h"
 #include "renderdoccapture.h"
@@ -28,6 +25,7 @@
 #include "shaderloader.h"
 #include "shadowcascades.h"
 #include "statusbar.h"
+#include "trace.h"
 #include "translategizmo.h"
 #include "usdassetresolver.h"
 #include "usdrenderextractor.h"
@@ -41,6 +39,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <format>
@@ -66,38 +65,13 @@ static auto makeRhiWindowSdl(SDL_Window* window) -> RhiWindow {
         auto instance = (VkInstance) nativeInstance;
         auto* surface = (VkSurfaceKHR*) nativeSurface;
         if (!SDL_Vulkan_CreateSurface(window, instance, nullptr, surface)) {
-            std::println(stderr, "SDL_Vulkan_CreateSurface failed: {}", SDL_GetError());
+            TRACE_ERROR("Engine", "SurfaceCreateFailed", "window").text(std::format("SDL_Vulkan_CreateSurface failed: {}", SDL_GetError()));
             return false;
         }
         return true;
     };
 
     return rhiWindow;
-}
-
-// Split a comma-separated category list into individual names. Trims whitespace
-// around each token; empty tokens are dropped.
-static auto splitCategoryList(std::string_view s) -> std::vector<std::string> {
-    std::vector<std::string> out;
-    size_t i = 0;
-    while (i < s.size()) {
-        size_t j = s.find(',', i);
-        if (j == std::string_view::npos) {
-            j = s.size();
-        }
-        auto tok = s.substr(i, j - i);
-        while (!tok.empty() && (tok.front() == ' ' || tok.front() == '\t')) {
-            tok.remove_prefix(1);
-        }
-        while (!tok.empty() && (tok.back() == ' ' || tok.back() == '\t')) {
-            tok.remove_suffix(1);
-        }
-        if (!tok.empty()) {
-            out.emplace_back(tok);
-        }
-        i = j + 1;
-    }
-    return out;
 }
 
 namespace {
@@ -170,13 +144,7 @@ private:
 } // namespace
 
 auto main(int argc, char* argv[]) -> int {
-    // Parse --obs-* flags out of argv before anything else. The rest of argv
-    // (scene path, etc.) is collected into `positional` and consumed as before.
-    // Done before any thread starts so the category filter is frozen by the
-    // time producer threads read it.
-    std::string obsOutputPath;
-    std::vector<std::string> obsOnly;
-    std::vector<std::string> obsExclude;
+    // Flags are parsed first; the rest of argv (the scene) is collected into `positional`.
     std::vector<const char*> positional;
     bool enableValidation = false;
     bool forceRenderDebug = false;
@@ -184,9 +152,6 @@ auto main(int argc, char* argv[]) -> int {
     bool failOnValidation = false;
     bool screenshotsShowUi = false;
     uint64_t maxFrames = 0;
-    std::string dumpRenderDebugPath;
-    std::string dumpMemoryPath;
-    std::string dumpProfilePath;
     bool rpcEnabled = true; // --no-rpc: no endpoint, no discovery file
     SessionScript session;
     std::string sessionError;
@@ -224,24 +189,11 @@ auto main(int argc, char* argv[]) -> int {
         } else if (arg.starts_with("--screenshot=")) {
             // Taken on the last frame of --frames, or frame 3 when unbounded; resolved below.
             session.add(UINT64_MAX, "screenshot", flagValue(arg, "--screenshot="));
-        } else if (arg.starts_with("--dump-render-debug=")) {
-            dumpRenderDebugPath = flagValue(arg, "--dump-render-debug=");
-            forceRenderDebug = true;
-        } else if (arg.starts_with("--dump-memory=")) {
-            dumpMemoryPath = flagValue(arg, "--dump-memory=");
-        } else if (arg.starts_with("--dump-profile=")) {
-            dumpProfilePath = flagValue(arg, "--dump-profile=");
         } else if (arg.starts_with("--script=")) {
             if (!session.loadFile(flagValue(arg, "--script=").c_str(), sessionError)) {
                 std::println(stderr, "--script: {}", sessionError);
                 return 1;
             }
-        } else if (arg.starts_with("--obs-output=")) {
-            obsOutputPath = std::string(arg.substr(std::string_view("--obs-output=").size()));
-        } else if (arg.starts_with("--obs-only=")) {
-            obsOnly = splitCategoryList(arg.substr(std::string_view("--obs-only=").size()));
-        } else if (arg.starts_with("--obs-exclude=")) {
-            obsExclude = splitCategoryList(arg.substr(std::string_view("--obs-exclude=").size()));
         } else {
             positional.push_back(argv[i]);
         }
@@ -262,40 +214,10 @@ auto main(int argc, char* argv[]) -> int {
             session.add(c.frame, c.verb, c.args);
         }
     }
-    if (!obsOnly.empty() && !obsExclude.empty()) {
-        std::println(stderr, "--obs-only and --obs-exclude are mutually exclusive");
-        return 1;
-    }
-
-    // Canonical category set. Anything not in this set defaults to enabled
-    // (see observationbus.h::categoryEnabled). We still list them explicitly
-    // so --obs-only / --obs-exclude affect the known vocabulary.
-    static constexpr std::string_view canonicalCategories[] = {"Scene", "Render", "Engine"};
-
-    if (!obsOutputPath.empty()) {
-        auto sink = std::make_unique<obs::JsonLinesFileSink>();
-        if (!sink->open(obsOutputPath)) {
-            std::println(stderr, "Failed to open observation output: {}", obsOutputPath);
-            return 1;
-        }
-        if (!obsOnly.empty()) {
-            // Allowlist: disable every canonical category, then re-enable the
-            // listed ones. Unknown names in obsOnly are still honored (users
-            // may emit from their own categories).
-            for (auto cat : canonicalCategories) {
-                obs::bus().setCategoryEnabled(cat, false);
-            }
-            for (const auto& cat : obsOnly) {
-                obs::bus().setCategoryEnabled(cat, true);
-            }
-        } else if (!obsExclude.empty()) {
-            for (const auto& cat : obsExclude) {
-                obs::bus().setCategoryEnabled(cat, false);
-            }
-        }
-        obs::bus().setSink(std::move(sink));
-        OBS_EVENT("Engine", "BusStarted", "ObservationBus").field("output", obsOutputPath);
-    }
+    TRACE_EVENT("Engine", "ProcessStarted", "view")
+        .text(std::format("ngen-view started, pid {}", getpid()))
+        .field("pid", (int64_t) getpid())
+        .field("scene", positional.size() >= 2 ? positional[1] : "");
 
     // Every asset comes streamed from this variant's asset server, running in the same working directory (asset ids are
     // relative to it); the view doesn't start without one. The variant is
@@ -336,14 +258,12 @@ auto main(int argc, char* argv[]) -> int {
 
     if (positional.size() >= 2) {
         if (!usdScene.open(sceneId.c_str())) {
-            std::println(stderr, "Failed to open USD scene: {}", sceneId);
             return 1;
         }
     } else {
         // No scene argument — start with a blank in-memory stage so the editor has
         // something to act on (default light, empty Scene tree, ready to create prims).
         if (!usdScene.newScene()) {
-            std::println(stderr, "Failed to create new scene");
             return 1;
         }
     }
@@ -353,7 +273,7 @@ auto main(int argc, char* argv[]) -> int {
 
     // SDL init and window
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        std::println(stderr, "SDL_Init failed: {}", SDL_GetError());
+        TRACE_ERROR("Engine", "SdlInitFailed", "window").text(std::format("SDL_Init failed: {}", SDL_GetError()));
         return 1;
     }
 
@@ -365,7 +285,7 @@ auto main(int argc, char* argv[]) -> int {
     SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, 1);
     auto* window = SDL_CreateWindowWithProperties(windowProps);
     if (window == nullptr) {
-        std::println(stderr, "SDL_CreateWindowWithProperties failed: {}", SDL_GetError());
+        TRACE_ERROR("Engine", "WindowCreateFailed", "window").text(std::format("SDL_CreateWindowWithProperties failed: {}", SDL_GetError()));
         return 1;
     }
     SDL_DestroyProperties(windowProps);
@@ -393,7 +313,25 @@ auto main(int argc, char* argv[]) -> int {
     renderDoc.load(loadRenderDoc);
 
     RhiDeviceVulkan rhiDevice;
-    if (!rhiDevice.init(makeRhiWindowSdl(window), {.enableValidation = enableValidation})) {
+    // The device's diagnostics, validation messages among them, go into the trace.
+    RhiDeviceOptions deviceOptions = {
+        .enableValidation = enableValidation,
+        .onMessage =
+            [](RhiMessageSeverity severity, std::string_view message) {
+                switch (severity) {
+                    case RhiMessageSeverity::Info:
+                        TRACE_EVENT("Render", "RhiMessage", "rhi").text(message);
+                        break;
+                    case RhiMessageSeverity::Warning:
+                        TRACE_WARNING("Render", "RhiMessage", "rhi").text(message);
+                        break;
+                    case RhiMessageSeverity::Error:
+                        TRACE_ERROR("Render", "RhiMessage", "rhi").text(message);
+                        break;
+                }
+            },
+    };
+    if (!rhiDevice.init(makeRhiWindowSdl(window), deviceOptions)) {
         return failAfterInit();
     }
 
@@ -409,22 +347,12 @@ auto main(int argc, char* argv[]) -> int {
     Renderer renderer;
     StatusBarGatherer statusBar;
     if (!renderer.init(&rhiDevice, &imguiBackend, initialExtent)) {
-        std::println(stderr, "Renderer init failed");
+        TRACE_ERROR("Render", "RendererInitFailed", "renderer").text("renderer init failed");
         rhiDevice.waitIdle();
         return failAfterInit();
     }
     renderer.setValidationEnabled(enableValidation);
     renderer.setScreenshotsShowUi(screenshotsShowUi);
-    {
-        const auto& limits = rhiDevice.limits();
-        OBS_EVENT("Render", "DeviceInfo", "device")
-            .field("name", std::string(limits.deviceName))
-            .field("driver", std::string(limits.driverName))
-            .field("timestamps", limits.timestamps)
-            .field("calibrated_timestamps", limits.calibratedTimestamps)
-            .field("wide_lines", limits.wideLines)
-            .field("validation", enableValidation);
-    }
 
     renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
     EditorUI editorUI;
@@ -497,12 +425,6 @@ auto main(int argc, char* argv[]) -> int {
 
     // Dumps and captures that finish frames later, for script verbs and RPC calls alike.
     ViewDumps dumps(renderWorld, usdScene, latestCull, rhiDevice.limits().pipelineStatistics);
-    if (!dumpRenderDebugPath.empty()) {
-        dumps.requestRenderDebug({.path = dumpRenderDebugPath});
-    }
-    if (!dumpMemoryPath.empty()) {
-        dumps.requestMemory({.path = dumpMemoryPath});
-    }
 
     // Every command is an RPC method; script lines and live calls run the same code.
     RpcRegistry registry;
@@ -528,7 +450,7 @@ auto main(int argc, char* argv[]) -> int {
     };
     registerViewMethods(registry, viewContext);
     RpcRecords records;
-    registerViewRecords(records, viewContext);
+    registerViewRecords(records, registry, viewContext);
     registerRpcRecords(registry, records);
     // The endpoint is tooling: debug and release only (NGEN_INTROSPECTION), off with --no-rpc.
     RpcEndpoint endpoint;
@@ -550,38 +472,6 @@ auto main(int argc, char* argv[]) -> int {
         endpoint.drain();
         if (maxFrames > 0 && frameCounter > maxFrames) {
             quit = true;
-        }
-        if (frameCounter % 60 == 0 && obs::bus().categoryEnabled("Scene")) {
-            OBS_EVENT("Scene", "CameraPose", "camera")
-                .field("x", (double) cam.position.x)
-                .field("y", (double) cam.position.y)
-                .field("z", (double) cam.position.z)
-                .field("yaw", (double) cam.yaw)
-                .field("pitch", (double) cam.pitch);
-        }
-        if (frameCounter % 60 == 0 && obs::bus().categoryEnabled("Render")) {
-            // Profiler summary: main frame time, latest GPU frame, top-level zones of every lane.
-            auto lastFrame = profile::lastFrame();
-            if (lastFrame.has_value()) {
-                obs::detail::Builder event("Render", "FrameStats", "frame");
-                event.field("frame", (int64_t) lastFrame->frameIndex).field("main_ms", (double) (lastFrame->endNs - lastFrame->startNs) * 1e-6);
-                std::vector<profile::FrameStats> history;
-                profile::frameHistory(history);
-                if (!history.empty()) {
-                    event.field("gpu_ms", history.back().gpuMs);
-                }
-                std::vector<profile::LaneInfo> lanes;
-                profile::lanes(lanes);
-                std::vector<profile::Zone> zones;
-                for (const auto& lane : lanes) {
-                    profile::zonesIn(lane.index, lastFrame->startNs, lastFrame->endNs, zones);
-                    for (const auto& zone : zones) {
-                        if (zone.depth == 0) {
-                            event.field(lane.name + "." + profile::nameOf(zone.nameId), (double) (zone.endNs - zone.startNs) * 1e-6);
-                        }
-                    }
-                }
-            }
         }
         auto nowTicks = SDL_GetTicksNS();
         auto dt = (float) (nowTicks - lastTicks) / 1.0e9f;
@@ -616,9 +506,9 @@ auto main(int argc, char* argv[]) -> int {
         if (editorUI.hasPendingSave()) {
             auto path = editorUI.consumePendingSavePath();
             if (!usdScene.exportRootLayerTo(path.c_str())) {
-                std::println(stderr, "Failed to save scene to: {}", path);
+                TRACE_ERROR("Scene", "SceneSaveFailed", path).text(std::format("cannot save the scene to {}", path));
             } else {
-                std::println("Saved scene to {}", path);
+                TRACE_EVENT("Scene", "SceneSaved", path).text(std::format("scene saved to {}", path));
             }
         }
 
@@ -654,7 +544,7 @@ auto main(int argc, char* argv[]) -> int {
             }
 
             if (ev.type == SDL_EVENT_QUIT) {
-                std::println("Quitting");
+                TRACE_EVENT("Engine", "QuitRequested", "view").text("quitting");
                 quit = true;
             }
 
@@ -930,12 +820,11 @@ auto main(int argc, char* argv[]) -> int {
             if (flags.renderDocOpenRequested) {
                 flags.renderDocOpenRequested = false;
                 if (!renderDoc.openInUi(renderDoc.lastCapture())) {
-                    std::println(stderr, "RenderDoc: no capture to open");
+                    TRACE_WARNING("Engine", "RenderDocOpenFailed", "renderdoc").text("RenderDoc: no capture to open");
                 }
             }
             for (const auto& path : renderDoc.pollNewCaptures()) {
-                std::println("RenderDoc capture written: {}", path);
-                OBS_EVENT("Engine", "RenderDocCapture", "renderdoc").field("path", path).field("frame", (int64_t) frameCounter);
+                TRACE_EVENT("Engine", "RenderDocCapture", path).text(std::format("RenderDoc capture written: {}", path)).field("frame", (int64_t) frameCounter);
             }
         }
         if (editorUI.takeScreenshotRequest()) {
@@ -1023,15 +912,6 @@ auto main(int argc, char* argv[]) -> int {
         }
     }
 
-    endpoint.stop();
-    dumps.finish(renderThread.latestRenderDebug());
-    if (!dumpProfilePath.empty()) {
-        if (profile::exportChromeTrace(dumpProfilePath.c_str())) {
-            std::println("Profile trace written: {}", dumpProfilePath);
-        } else {
-            std::println(stderr, "dump-profile: cannot write {}", dumpProfilePath);
-        }
-    }
     auto validationErrors = rhiDevice.validationErrorCount();
 
     renderThread.stop();
@@ -1041,12 +921,20 @@ auto main(int argc, char* argv[]) -> int {
     SDL_DestroyWindow(window);
     SDL_Quit();
 
-    // Drain and flush the observation stream before exit. No-op if no sink was
-    // installed (common case when --obs-output wasn't passed).
-    obs::bus().shutdown();
+    // The endpoint goes last, so subscribers get the trace up to here: the last events are sent before the
+    // connections close, waiting up to a second for a subscriber to take them.
+    bool failed = failOnValidation && validationErrors > 0;
+    if (failed) {
+        TRACE_ERROR("Engine", "ValidationFailed", "view").text(std::format("validation errors: {}", validationErrors)).field("count", (int64_t) validationErrors);
+    }
+    TRACE_EVENT("Engine", "ProcessExiting", "view")
+        .text(std::format("exiting after {} frames", frameCounter))
+        .field("frames", (int64_t) frameCounter)
+        .field("validation_errors", (int64_t) validationErrors);
+    endpoint.finishTrace(std::chrono::seconds(1));
+    endpoint.stop();
 
-    if (failOnValidation && validationErrors > 0) {
-        std::println(stderr, "validation errors: {}", validationErrors);
+    if (failed) {
         return 2;
     }
     return 0;

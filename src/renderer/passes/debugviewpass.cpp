@@ -5,10 +5,10 @@
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "shaderloader.h"
+#include "trace.h"
 
 #include <array>
 #include <format>
-#include <print>
 
 namespace {
 
@@ -33,12 +33,12 @@ auto DebugViewPass::init(RhiDevice* dev, uint32_t frameCount, RhiFormat depthFor
     using enum RhiFormat;
     device = dev;
     if (!device->limits().geometryShaders) {
-        std::println(stderr, "DebugViewPass: no geometry shaders on this device; debug views are off");
+        TRACE_WARNING("Render", "DebugViewsOff", "DebugViewPass").text("no geometry shaders on this device; debug views are off");
         return true;
     }
     if (!device->supportsTextureFormat(valueFormat, RhiTextureUsage::ColorAttachment | RhiTextureUsage::Sampled | RhiTextureUsage::TransferSrc) ||
         !device->supportsTextureFormat(colorFormat, RhiTextureUsage::Storage | RhiTextureUsage::TransferSrc)) {
-        std::println(stderr, "DebugViewPass: value or colour format unsupported; debug views are off");
+        TRACE_WARNING("Render", "DebugViewsOff", "DebugViewPass").text("value or colour format unsupported; debug views are off");
         return true;
     }
 

@@ -76,8 +76,16 @@ from a higher layer to make sense, it is in the wrong folder. `ImGuiBackend` liv
 ### Errors are classes, not codes
 
 Fallible calls return `std::expected<T, RhiError>`. `RhiError` names the class the caller can branch on: `Failed`,
-`OutOfDate`, `Suboptimal`, `DeviceLost`. The backend logs the native code to stderr before returning; the caller never
-sees a `VkResult`.
+`OutOfDate`, `Suboptimal`, `DeviceLost`. The backend reports the native code as a message before returning; the caller
+never sees a `VkResult`.
+
+### Messages go to the integrator
+
+Everything the backend has to say — what it set up (API version, instance extensions, swapchain size), validation
+messages and native errors — goes to `RhiDeviceOptions::onMessage`, a `RhiMessageHandler` taking a `RhiMessageSeverity`
+(`Info`, `Warning`, `Error`) and the text. The device passes it on to the swapchains it creates. Without a handler info
+prints on stdout and the rest on stderr, which is what the examples use; ngen-view puts them into its trace. The RHI
+depends on no logging or trace library and prints nothing on its own.
 
 ### Descs with defaults, flags with types
 
@@ -220,7 +228,8 @@ program can check.
   set (for `describeDescriptorSet`); the resource structs keep their debug names.
 - **Swapchain.** FIFO present mode, an sRGB surface format when available; `recreate` rebuilds the images, which
   invalidates earlier `image(i)` pointers.
-- **Validation.** Messages go to stderr; errors and warnings are counted, and `validationErrorCount()` reports the errors.
+- **Validation.** Messages go to the message handler (stderr without one), prefixed `vulkan validation:`; errors and
+  warnings are counted, and `validationErrorCount()` reports the errors.
 
 ## What an integrator provides
 
@@ -228,7 +237,8 @@ program can check.
 `src/rhi/examples/triangle.cpp` is the smallest program on top of it: shaders, pipeline, draw, checks.
 
 1. A window and an `RhiWindow` filled from it.
-2. A concrete backend instance, `init(window)`, then `createSwapchain(extent)` with the framebuffer size in pixels.
+2. A concrete backend instance, `init(window, options)`, then `createSwapchain(extent)` with the framebuffer size in pixels.
+   `options.onMessage` takes the backend's messages; leave it unset for stdout and stderr.
 3. Frame pacing: N command buffers, N fences, semaphores per frame slot and per swapchain image, and the decision of
    which resource is indexed by which. Fences and command buffers belong to the frame slot; the render-finished
    semaphore belongs to the swapchain image because `present` consumes it per image.

@@ -1,6 +1,6 @@
 # Introspection tool
 
-**Status. In progress: Phase A landed, Phase B next.**
+**Status. Landed.**
 
 Step 4 of [plan_tool_architecture.md](plan_tool_architecture.md), reshaped. `ngen-introspect` is the one tool for seeing what goes on in the engine
 as a whole, for humans and for agents. It has two purposes:
@@ -142,6 +142,45 @@ Locked with Henrik:
 8. **The tool**: the Trace window; the `trace` subcommand with filters, `--until-exit` and `--output`.
 9. **Docs**: `src/trace/README.md` (replaces `obs.md`) and `src/introspect/README.md`; `src/rpc/README.md` (records, `trace.subscribe`),
    `src/asset/README.md`, the root README; `AGENTS.md` and the run-headless skill move verification to `ngen-introspect`.
+
+**Phase B as built.** Beyond the steps above:
+- `BusStarted` became `ProcessStarted`; `ProcessExiting` is the view's last event, sent before its endpoint stops.
+- The asset server's log lines are `Asset`/`Message` events with the line in `text`; nothing more structured yet.
+- **The trace became flow and messages, not data** (decided after the first runs, which showed a constant stream of `PassExecuted`,
+  `FrameEnd`, `RenderStats` and the like: the migration had carried the observation bus's per-frame narration into an always-on ring).
+  Events gained a level (info, warning, error) and a `text` message; `TRACE_WARNING` and `TRACE_ERROR` sit next to `TRACE_EVENT`, and an error
+  is also printed on stderr. Per-frame and data events were removed where a record holds the data (`render`, `counters`, `culling`,
+  `memory`, `profile`; `status` gained anti-aliasing and the sampler). Flow events were added (`SceneOpenStarted`, `SceneOpened`,
+  `SceneUploaded`, `EditApplied` for committed edits). Engine diagnostics on stderr became warnings and errors, the RHI's through a new
+  `RhiDeviceOptions::onMessage` handler; the asset server's failed requests are warnings. `RpcCall` became `RpcCallFailed`.
+- Records don't go into the trace: the `record` verb is `record <name> <file>` (method `introspect.record`), appending
+  `{record, requested_frame, frame, ts_ns, value}` to a file. `introspect.trace` and the `Record` category are gone. `trace` takes
+  `--level=`, and the Trace tab shows level and text.
+- **The console is the trace.** Every event is printed with the local time, info on stdout and warnings and errors on stderr, and engine code
+  prints nothing else, so a process's console and its trace hold the same lines. The asset server's own timestamped printing moved into the
+  trace; the RHI's handler gained `Info` for what it used to print on stdout; ResourcePool's per-allocation line went (the `memory` record
+  has every texture).
+- `--dump-profile` went, but the `dump-profile` verb and `introspect.profile` stay: the Chrome trace has the profiler zones, which neither a
+  record nor the trace carries.
+- `trace --output` sorts the whole file at the end: a process the tool connects to late brings history older than lines already merged. On
+  stdout lines go out live, a quarter of a second after arrival.
+- Without `--history`, `trace` takes events from its own start, so a long-running asset server's earlier events stay out.
+
+**Results** (the first paragraph is the migration as planned, before the trace became flow and messages). three_cubes, 200 frames: the
+view's 3,636 events match the pre-migration `--obs-output` run in type, name and field keys (three neighbouring pairs swapped by cross-thread
+timing), plus `ProcessStarted`, `ProcessExiting`, the tool's own `RpcConnected`/`RpcCall` and the
+asset server's messages; the file is sorted by time. `record` at frames 120 and 150 put `culling`, `render` and `memory` into the trace. A
+tool stopped for 8 s and 40 s left the view's frame time at 1.14 ms; after the 40 s stop it reported 447,377 dropped events. Sponza, GPU-bound
+in debug: 8.24–8.27 ms before, 8.24–8.39 ms after. A CPU-bound before/after comparison wasn't run. The Trace tab shows the view's and the
+asset server's events live (headless screenshot).
+
+After the change: three_cubes, 200 frames, gives the view 11 events (start-up, `SceneOpenStarted`, `SceneOpened`, `SceneUploaded`, render
+thread start and stop, RPC, exit), plus two `ScriptCommandFailed` errors for a deliberately bad script line and an unknown record, which also
+print on stderr. `record render` at frame 100 and `record status` at 120 wrote two lines (render ready at frame 111). Sponza: 9 view events;
+the `render` record holds 25 textures at 4096×4096 and 3 at 1×1. A missing scene gives the asset server's `failed: no such file` as a warning
+(`trace --level=warning` shows only it) and the view's `AssetOpenFailed` and `SceneOpenFailed` on stderr. The debug view with `--validation`
+on three_cubes reports no validation messages; the triangle, compute and bindless examples pass `--check --validation` with the default
+stderr handler.
 
 ## Verification
 

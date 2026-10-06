@@ -13,9 +13,11 @@ class RhiCommandBuffer;
 // Runtime options for device creation. Validation is a runtime choice so one
 // backend build serves the engine (off by default) and the examples (on when
 // asked); the error count turns validation output into a result a program can
-// check instead of a log a human must read.
+// check instead of a log a human must read. onMessage takes the device's and its
+// swapchains' messages; unset, they print on stdout and stderr.
 struct RhiDeviceOptions {
     bool enableValidation = false;
+    RhiMessageHandler onMessage;
 };
 
 class RhiDevice {

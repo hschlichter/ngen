@@ -6,15 +6,14 @@
 #include "gpuuploader.h"
 #include "instanceuploadpass.h"
 #include "mesh.h"
-#include "observationmacros.h"
 #include "profile.h"
 #include "rhidevice.h"
+#include "trace.h"
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cstring>
-#include <print>
+#include <format>
 
 auto GpuScene::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* queue) -> void {
     device = rhiDevice;
@@ -49,7 +48,6 @@ auto GpuScene::destroy() -> void {
 
 auto GpuScene::rebuildGeometry(std::span<const GpuInstance> sceneInstances, const MeshLibrary& meshLib, GpuUploader& uploader, uint64_t frame) -> void {
     PROFILE_ZONE("RebuildGeometryPool");
-    auto start = std::chrono::steady_clock::now();
 
     // Frames in flight may still draw from the old pool.
     deletionQueue->deferBuffer(frame, poolVertices);
@@ -60,7 +58,6 @@ auto GpuScene::rebuildGeometry(std::span<const GpuInstance> sceneInstances, cons
     poolVertices = nullptr;
     poolPositions = nullptr;
     poolIndices = nullptr;
-    poolBytes = 0;
     meshes.clear();
 
     // Concatenate every referenced mesh, in instance order. Depth-only passes read the
@@ -90,8 +87,6 @@ auto GpuScene::rebuildGeometry(std::span<const GpuInstance> sceneInstances, cons
         }
         indices.insert(indices.end(), meshData->indices.begin(), meshData->indices.end());
         meshes[inst.mesh.index] = range;
-
-        OBS_EVENT("Render", "MeshUploaded", "Mesh").field("vertex_count", (int64_t) range.vertexCount).field("index_count", (int64_t) range.indexCount);
     }
 
     // Mesh table for the culling passes: dense by mesh index; entry 0 and meshes outside the
@@ -114,18 +109,6 @@ auto GpuScene::rebuildGeometry(std::span<const GpuInstance> sceneInstances, cons
     meshTable = uploader.uploadBuffer(std::as_bytes(std::span(table)), RhiBufferUsage::Storage, "gpuscene.meshtable");
     meshTableSize = table.size() * sizeof(GpuMeshEntry);
     uploader.end();
-
-    auto vertexBytes = vertices.size() * sizeof(Vertex);
-    auto positionBytes = positions.size() * sizeof(positions[0]);
-    auto indexBytes = indices.size() * sizeof(uint32_t);
-    poolBytes = vertexBytes + positionBytes + indexBytes;
-    auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-    OBS_EVENT("Render", "GeometryPoolBuilt", "geometry")
-        .field("meshes", (int64_t) meshes.size())
-        .field("vertex_bytes", (int64_t) vertexBytes)
-        .field("position_bytes", (int64_t) positionBytes)
-        .field("index_bytes", (int64_t) indexBytes)
-        .field("ms", ms);
 }
 
 auto GpuScene::rebuildMaterials(std::span<const GpuInstance> sceneInstances,
@@ -164,7 +147,7 @@ auto GpuScene::rebuildMaterials(std::span<const GpuInstance> sceneInstances,
         instanceMaterial[m] = it->second;
     }
     if (overflow > 0) {
-        std::println(stderr, "GpuScene: {} material textures past the {}-slot limit use the fallback", overflow, maxTextures);
+        TRACE_WARNING("Render", "TextureSlotsFull", "materials").text(std::format("{} material textures past the {}-slot limit use the fallback", overflow, maxTextures)).field("overflow", (int64_t) overflow);
     }
 
     uploader.begin();
@@ -174,10 +157,6 @@ auto GpuScene::rebuildMaterials(std::span<const GpuInstance> sceneInstances,
 
     // Instance records carry the material index; rewrite them all.
     markDirty(0, (uint32_t) sceneInstances.size());
-    OBS_EVENT("Render", "MaterialTableBuilt", "materials")
-        .field("materials", (int64_t) materialIndexOf.size())
-        .field("texture_slots", (int64_t) slots.size())
-        .field("max_textures", (int64_t) maxTextures);
 }
 
 auto GpuScene::meshRange(uint32_t meshIndex) const -> const GpuMeshRange* {
@@ -227,7 +206,6 @@ auto GpuScene::ensureInstanceCapacity(uint32_t count, uint32_t liveCount, uint64
     instanceAccess = FgAccessFlags::None;
     generation++;
     markDirty(0, liveCount);
-    OBS_EVENT("Render", "InstanceBufferCreated", "instances").field("capacity", (int64_t) instanceCapacity).field("bytes", (int64_t) bytes);
 }
 
 auto GpuScene::markDirty(uint32_t first, uint32_t end) -> void {
@@ -252,9 +230,6 @@ auto GpuScene::addUploadPasses(FrameGraph& fg, std::span<const GpuInstance> scen
     };
     instanceImport = fg.importBuffer("instances", instances, desc, instanceAccess);
     auto handle = instanceImport;
-    carriedAccess = instanceAccess;
-    uploadFirst = dirtyFirst;
-    uploadBytes = 0;
     dirtyEnd = std::min(dirtyEnd, (uint32_t) sceneInstances.size());
     if (dirtyEnd > dirtyFirst) {
         auto* dst = static_cast<GpuInstanceRecord*>(stagingMapped[frameSlot]);
@@ -288,28 +263,12 @@ auto GpuScene::addUploadPasses(FrameGraph& fg, std::span<const GpuInstance> scen
         };
         auto stagingHandle = fg.importBuffer("instanceStaging", staging[frameSlot], {.size = desc.size, .usage = RhiBufferUsage::TransferSrc});
         handle = addInstanceUploadPass(fg, stagingHandle, instanceImport, region);
-        uploadBytes = region.size;
     }
     dirtyFirst = 0;
     dirtyEnd = 0;
     return handle;
 }
 
-auto GpuScene::afterExecute(const FrameGraph& fg, uint64_t frame) -> void {
+auto GpuScene::afterExecute(const FrameGraph& fg) -> void {
     instanceAccess = fg.finalAccess(instanceImport);
-    if (uploadBytes == 0) {
-        return;
-    }
-    // carried_access is what the previous frame left the buffer in: StorageRead on any
-    // upload after the first, so the upload's barrier waits for those reads.
-    const auto* upload = fg.passStats("InstanceUpload");
-    const auto* shadow = fg.passStats("ShadowPass");
-    OBS_EVENT("Render", "InstanceUpload", "instances")
-        .field("frame", (int64_t) frame)
-        .field("first", (int64_t) uploadFirst)
-        .field("count", (int64_t) (uploadBytes / sizeof(GpuInstanceRecord)))
-        .field("bytes", (int64_t) uploadBytes)
-        .field("carried_access", toString(carriedAccess))
-        .field("upload_barriers", upload != nullptr ? (int64_t) upload->barriers : -1)
-        .field("shadow_barriers", shadow != nullptr ? (int64_t) shadow->barriers : -1);
 }

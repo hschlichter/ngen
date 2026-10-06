@@ -5,7 +5,9 @@
 
 #include "rhitypes.h"
 
+#include <cstdio>
 #include <string>
+#include <string_view>
 #include <vulkan/vulkan.h>
 
 struct RhiBufferVulkan : public RhiBuffer {
@@ -69,6 +71,25 @@ struct RhiQueryPoolVulkan : public RhiQueryPool {
 struct RhiFenceVulkan : public RhiFence {
     VkFence fence = VK_NULL_HANDLE;
 };
+
+// Passes a message to the integrator's handler. Without one, info prints on stdout and the rest on stderr.
+inline auto rhiReport(const RhiMessageHandler& handler, RhiMessageSeverity severity, std::string_view message) -> void {
+    if (handler) {
+        handler(severity, message);
+        return;
+    }
+    switch (severity) {
+        case RhiMessageSeverity::Info:
+            std::fprintf(stdout, "%.*s\n", (int) message.size(), message.data());
+            break;
+        case RhiMessageSeverity::Warning:
+            std::fprintf(stderr, "warning: %.*s\n", (int) message.size(), message.data());
+            break;
+        case RhiMessageSeverity::Error:
+            std::fprintf(stderr, "error: %.*s\n", (int) message.size(), message.data());
+            break;
+    }
+}
 
 inline auto toRhiError(VkResult result) -> RhiError {
     switch (result) {

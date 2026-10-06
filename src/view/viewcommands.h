@@ -48,8 +48,9 @@ struct ViewContext {
 auto registerViewMethods(RpcRegistry& registry, ViewContext& view) -> void;
 
 // Registers ngen-view's records (status, scene, assets, culling, profile, render, memory, counters), served by
-// introspect.list and introspect.get.
-auto registerViewRecords(RpcRecords& records, ViewContext& view) -> void;
+// introspect.list and introspect.get, and introspect.trace (the `record` verb), which puts a record into the trace.
+// `records` must outlive the registry.
+auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext& view) -> void;
 
 // Runs one `<frame> <verb> [args]` script command: the verb's parser turns the text into the
 // method's parameters, and failures print as `<verb>: <message>`, as the verbs always have.

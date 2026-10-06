@@ -1,12 +1,12 @@
 #include "rpcendpoint.h"
 
-#include "observationmacros.h"
 #include "rpcdiscovery.h"
+#include "trace.h"
 
 #include <nlohmann/json.hpp>
 
 #include <chrono>
-#include <print>
+#include <format>
 #include <unistd.h>
 
 namespace {
@@ -33,20 +33,26 @@ auto RpcEndpoint::start(const RpcRegistry* methods, std::string endpointKind, st
     registry = methods;
     kind = std::move(endpointKind);
     server = std::make_unique<RpcServer>();
+    traceStream = std::make_unique<trace::TraceStream>(*server, std::format("{}:{}", kind, getpid()));
     server->setRequestHandler([this](RpcServer::ConnectionId connection, const rpc::Json& message, std::vector<std::byte> attachment) {
+        if (traceStream->handle(connection, message)) {
+            return;
+        }
         std::lock_guard lock(queueMutex);
         queue.push_back(std::make_unique<Queued>(Queued{.connection = connection, .message = message, .attachment = std::move(attachment)}));
     });
     server->setConnectionHandler([this](RpcServer::ConnectionId connection, bool connected) {
         if (connected) {
-            OBS_EVENT("Engine", "RpcConnected", kind).field("connection", (int64_t) connection);
+            TRACE_EVENT("Engine", "RpcConnected", kind).text(std::format("rpc: connection {} opened", connection)).field("connection", (int64_t) connection);
         } else {
-            OBS_EVENT("Engine", "RpcDisconnected", kind).field("connection", (int64_t) connection);
+            traceStream->disconnected(connection);
+            TRACE_EVENT("Engine", "RpcDisconnected", kind).text(std::format("rpc: connection {} closed", connection)).field("connection", (int64_t) connection);
         }
     });
     auto port = server->start(0);
     if (!port) {
-        std::println(stderr, "rpc: cannot listen: {}", port.error());
+        TRACE_ERROR("Engine", "RpcListenFailed", kind).text(std::format("rpc: cannot listen: {}", port.error()));
+        traceStream.reset();
         server.reset();
         return false;
     }
@@ -61,19 +67,31 @@ auto RpcEndpoint::start(const RpcRegistry* methods, std::string endpointKind, st
     };
     auto file = writeRpcEndpoint(info);
     if (!file) {
-        std::println(stderr, "rpc: {}", file.error());
+        TRACE_ERROR("Engine", "RpcDiscoveryFailed", kind).text(std::format("rpc: {}", file.error()));
     } else {
         discoveryFile = *file;
     }
-    OBS_EVENT("Engine", "RpcListening", kind).field("port", (int64_t) boundPort).field("discovery", discoveryFile.string());
+    TRACE_EVENT("Engine", "RpcListening", kind)
+        .text(std::format("rpc: listening on 127.0.0.1:{}", boundPort))
+        .field("port", (int64_t) boundPort)
+        .field("discovery", discoveryFile.string());
     return true;
 }
 
+auto RpcEndpoint::finishTrace(std::chrono::milliseconds timeout) -> void {
+    if (traceStream) {
+        traceStream->finish(timeout);
+    }
+}
+
 auto RpcEndpoint::stop() -> void {
+    // The server stops first (its connection handler still reaches the trace stream as connections close); the
+    // stream goes before the server object it sends on.
     if (server) {
         server->stop();
-        server.reset();
     }
+    traceStream.reset();
+    server.reset();
     if (!discoveryFile.empty()) {
         removeRpcEndpoint(discoveryFile);
         discoveryFile.clear();
@@ -97,12 +115,12 @@ auto RpcEndpoint::drain() -> void {
         auto params = call.message.contains("params") ? call.message["params"] : rpc::Json::object();
         bool notification = !call.message.contains("id") || call.message["id"].is_null();
         auto id = notification ? rpc::Json() : call.message["id"];
-        auto started = nowNs();
         auto* srv = server.get();
         auto connection = call.connection;
-        RpcResponder responder([srv, connection, id, notification, method, started](const RpcReply& reply) {
-            auto ms = (double) (nowNs() - started) * 1e-6;
-            OBS_EVENT("Engine", "RpcCall", method).field("ms", ms).field("ok", reply.ok).field("code", (int64_t) reply.code);
+        RpcResponder responder([srv, connection, id, notification, method](const RpcReply& reply) {
+            if (!reply.ok) {
+                TRACE_WARNING("Engine", "RpcCallFailed", method).text(reply.message).field("code", (int64_t) reply.code);
+            }
             if (notification || srv == nullptr) {
                 return;
             }

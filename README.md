@@ -77,7 +77,8 @@ Each library documents its design and rules in a README next to the code:
 
 - [`src/rhi/README.md`](src/rhi/README.md) — RHI principles, the integrator contract, the example programs, known gaps.
 - [`src/renderer/README.md`](src/renderer/README.md) — how a frame is built: GPU scene tables, GPU culling and indirect draws, descriptor sets, frame graph
-  rules, shadows, observation.
+  rules, shadows, trace events.
+- [`src/trace/README.md`](src/trace/README.md) — the trace: `TRACE_EVENT`, the always-on ring per process, streaming events over RPC, conventions.
 - [`src/rpc/README.md`](src/rpc/README.md) — how ngen processes and agents talk: JSON-RPC over loopback TCP, discovery, threading, adding a method, records.
 - [`src/introspect/README.md`](src/introspect/README.md) — `ngen-introspect`: every running process's records in a window or on the command line, and calling their methods.
 - [`src/build/README.md`](src/build/README.md) — the self-hosted build system: framework, IR, runner, bootstrap.

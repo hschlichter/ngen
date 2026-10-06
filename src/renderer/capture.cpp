@@ -5,7 +5,6 @@
 #include "gpuschema.h"
 #include "gpuuploader.h"
 #include "imguibackend.h"
-#include "observationmacros.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "screenshot.h"
@@ -325,13 +324,6 @@ auto CaptureService::afterFence(uint32_t frameSlot) -> void {
         if (k.result.texture && k.result.bytes) {
             buildPreview(k);
         }
-        OBS_EVENT("Render", "CaptureResult", "capture")
-            .field("id", (int64_t) k.result.id)
-            .field("frame", (int64_t) k.result.frame)
-            .field("pass", k.result.pass)
-            .field("resource", k.result.resource)
-            .field("bytes", (int64_t) k.result.byteSize)
-            .field("error", k.result.error);
         ready.push_back(k.result);
     }
     pending[frameSlot].clear();

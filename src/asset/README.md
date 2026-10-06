@@ -77,10 +77,12 @@ is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own c
   8 MiB of pack data is queued on a connection; the next chunk goes out as the queue drains, so a slow client is never dropped for a full queue.
 - **Nothing packs without a request.** The server doesn't watch files and packs nothing at start-up. An edit is picked up by the next request for
   the asset.
-- **The trace.** The server prints one timestamped line per event on stdout (`server/assettrace.h`): its rules and cache at start-up, clients
-  connecting and leaving, each request with its asset count, per asset whether it was up to date, packed (time, size, inputs, version) or failed
+- **The trace.** The server's log is its trace (`server/assettrace.h`), printed one timestamped line per event like every process's: its
+  rules and cache at start-up, clients connecting and leaving, each request with its asset count, per asset whether it was up to date, packed (time, size, inputs, version) or failed
   (with the packer's output), and per request a summary when it is done (time, assets sent and bytes, held, failed). Redirect it to a file to keep
-  it: `./ngen-cli asset-server > /tmp/asset-server.log &`.
+  it: `./ngen-cli asset-server > /tmp/asset-server.log 2>&1 &`. Every line is a trace event (category `Asset`, type `Message`, the line in
+  `text`), streamed like any process's trace (`src/trace/README.md`), so `ngen-introspect` shows it next to the view's events. A request
+  that fails (refused, no rule, no such file, the packer failed, and the packer's output) is a warning, on stderr; the rest is info, on stdout.
 - **Records** (`introspect.list`, `introspect.get`; [`src/introspect/README.md`](../introspect/README.md)): `status` (pid, variant, clients,
   tasks running and queued, and `packerRuns`, the number of packer processes run so far), `rules`, `cache` (every packed asset with its inputs),
   `requests` (in flight and recently finished) and `clients` (bytes queued and peak queued, assets waiting to stream). For example

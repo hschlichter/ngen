@@ -89,14 +89,6 @@ auto main(int argc, char** argv) -> int {
     p.config(release);
     p.config(gamerelease);
 
-    auto obs =
-        cxx::static_library("obs")
-            .sources(glob({.include = "src/obs/**/*.cpp"}))
-            .public_include({
-                "src/obs",
-                "external/concurrentqueue",
-            });
-
     auto profile =
         cxx::static_library("profile")
             .sources(glob({.include = "src/profile/**/*.cpp"}))
@@ -113,6 +105,14 @@ auto main(int argc, char** argv) -> int {
                 "external/json/single_include",
             });
 
+    // Trace (src/trace/README.md): structured events in an always-on ring per process, streamed to subscribers over
+    // RPC. Every process that emits events links it, the asset server included.
+    auto traceLib =
+        cxx::static_library("trace")
+            .sources(glob({.include = "src/trace/*.cpp"}))
+            .public_include({"src/trace"})
+            .link(rpccore);
+
     // RPC engine layer: method registry with parameter schemas, responders, the endpoint that
     // dispatches calls onto the main thread.
     auto rpc =
@@ -120,7 +120,7 @@ auto main(int argc, char** argv) -> int {
             .sources(glob({.include = "src/rpc/*.cpp"}))
             .public_include({"src/rpc"})
             .link(rpccore)
-            .link(obs);
+            .link(traceLib);
 
     // The engine side of the asset server's stream (src/asset/README.md).
     auto assetClient =
@@ -174,13 +174,13 @@ auto main(int argc, char** argv) -> int {
                 "src/rhi",
                 "src/rhi/vulkan",
                 "src/scene",
-                "src/obs",
+                "src/trace",
                 "src/profile",
                 "external/imgui",
                 "external/stb",
                 "external/glm",
             })
-            .link(obs)
+            .link(traceLib)
             .link(profile)
             .link(assetClient)
             .link(packer)
@@ -196,7 +196,7 @@ auto main(int argc, char** argv) -> int {
             .include({
                 "src/ui",
                 "src/renderer",
-                "src/obs",
+                "src/trace",
                 "src/profile",
                 "external/glm",
             })
@@ -211,7 +211,7 @@ auto main(int argc, char** argv) -> int {
                 "src/scene",
             })
             .include({
-                "src/obs",
+                "src/trace",
                 "src/rhi",
                 "src/rhi/vulkan",
                 "src/renderer",
@@ -263,7 +263,7 @@ auto main(int argc, char** argv) -> int {
             .public_include({"src/ui"})
             .include({
                 "src",
-                "src/obs",
+                "src/trace",
                 "src/rhi",
                 "src/rhi/vulkan",
                 "src/renderer",
@@ -298,6 +298,7 @@ auto main(int argc, char** argv) -> int {
                 "src/asset/pack",
                 "src/asset/server",
             })
+            .link(traceLib)
             .link(rpccore)
             .depend_on(packerShader)
             .depend_on(packerCopy)
@@ -318,7 +319,7 @@ auto main(int argc, char** argv) -> int {
             .include({
                 "src",
                 "src/view",
-                "src/obs",
+                "src/trace",
                 "src/rhi",
                 "src/rhi/vulkan",
                 "src/renderer",
@@ -335,7 +336,7 @@ auto main(int argc, char** argv) -> int {
                 "external/concurrentqueue",
                 "external/renderdoc", // renderdoc_app.h only; the library is dlopen'd at runtime
             })
-            .link(obs)
+            .link(traceLib)
             .link(profile)
             .link(session)
             .link(rhivulkan)

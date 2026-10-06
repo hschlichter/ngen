@@ -33,9 +33,10 @@ class ViewDumps {
 public:
     ViewDumps(const RenderWorld& renderWorld, const USDScene& usdScene, const CullResult& latestCull, bool pipelineStatistics);
 
-    auto requestRenderDebug(DumpTarget target) -> void;
-    auto requestMemory(DumpTarget target) -> void;
-    auto requestCounters(DumpTarget target) -> void;
+    // Render debug, memory and counters answer a responder only; they are records (introspect.get), not files.
+    auto requestRenderDebug(RpcResponder responder) -> void;
+    auto requestMemory(RpcResponder responder) -> void;
+    auto requestCounters(RpcResponder responder) -> void;
     // `watch.id` is assigned here.
     auto requestCapture(CaptureWatch watch, DumpTarget target) -> void;
     // target.path is a directory: frame.json plus every written resource after every pass.
@@ -60,8 +61,6 @@ public:
     auto onCounters(const GpuCounters& counters) -> void;
     auto onRenderDebug(const std::optional<RenderDebugSnapshot>& snapshot) -> void;
     auto onScreenshots(const std::vector<ScreenshotResult>& results) -> void;
-    // At exit: a render debug dump still waiting uses the last snapshot.
-    auto finish(const std::optional<RenderDebugSnapshot>& lastSnapshot) -> void;
 
 private:
     struct CaptureDump {
@@ -92,10 +91,9 @@ private:
     const CullResult& latestCull;
     bool pipelineStatistics = false;
 
-    std::vector<DumpTarget> renderDebugTargets;
-    bool renderDebugForced = false; // sticky once asked for, like the old --dump-render-debug
-    std::vector<DumpTarget> memoryTargets;
-    std::vector<DumpTarget> counterTargets;
+    std::vector<RpcResponder> renderDebugTargets;
+    std::vector<RpcResponder> memoryTargets;
+    std::vector<RpcResponder> counterTargets;
     std::vector<CaptureDump> captureDumps;
     uint32_t nextCaptureId = 100000;
     std::map<int, GpuSceneGroup> gpuSceneGroups;

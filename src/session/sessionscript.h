@@ -11,7 +11,7 @@
 //   view lit|albedo|normals|depth|shadowfactor|shadowmap|shadowuv|worldpos
 //   overlay name=on|off[,...]     grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa
 //   screenshot PATH               write the presented frame as PNG
-//   dump-render-debug PATH        write the render debug snapshot as JSON
+//   record NAME                   put a record (render, memory, culling, …) into the trace as one event
 //   dump-profile PATH             write the profiler history as Chrome trace JSON
 //   quit
 //

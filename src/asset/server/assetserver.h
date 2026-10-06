@@ -7,6 +7,7 @@
 #include "rpcprotocol.h"
 #include "rpcrecords.h"
 #include "rpcserver.h"
+#include "tracestream.h"
 
 #include <atomic>
 #include <chrono>
@@ -118,6 +119,8 @@ private:
     AssetCache cache;
     std::unique_ptr<PackJobs> jobs;
     RpcServer rpc;
+    // Answers trace.subscribe and streams the trace; created in start(), reset in stop() after rpc has stopped.
+    std::unique_ptr<trace::TraceStream> traceStream;
     uint16_t boundPort = 0;
     std::filesystem::path discoveryFile;
     std::atomic<int64_t> nextRequest{1};

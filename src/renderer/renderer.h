@@ -110,17 +110,15 @@ private:
     std::unordered_map<uint32_t, CachedTexture> textureCache;
     std::vector<GpuInstance> gpuInstances;
     AABB sceneBounds;                  // union of instance world bounds, refreshed with gpuInstances
-    uint32_t debugCulledInstances = 0; // from the last snapshot, for RenderStats and the debug window
+    uint32_t debugCulledInstances = 0; // from the last snapshot, for the debug window
     RhiSampler* materialSampler = nullptr;
     RhiSampler* shadowSampler = nullptr; // compare sampler for the cascade atlas
-    uint32_t debugCascadeCount = 0;
-    uint32_t debugShadowCulled = 0;
     SamplerSettings materialSamplerSettings;
 
     static auto toSamplerDesc(const SamplerSettings& settings) -> RhiSamplerDesc;
     auto applySamplerSettings(const SamplerSettings& settings) -> void;
     // reason: geometry, sampler or instance_buffer (GeometryDescriptorsRebuilt observation).
-    auto rebuildGeometryDescriptorSets(const char* reason) -> void;
+    auto rebuildGeometryDescriptorSets() -> void;
     std::vector<RenderLight> lights;
     RhiDescriptorPool* geometryDescriptorPool = nullptr;
     std::vector<RhiDescriptorSet*> geometryDescriptorSets;
@@ -191,7 +189,6 @@ private:
     ResourcePool resourcePool;
     FrameGraphPreviews fgPreviews;
     bool fgDebugEnabled = false;
-    bool lastAntiAliasing = true;
     bool validationEnabled = false;
     bool renderDebugEnabled = false;
     std::string screenshotPath;

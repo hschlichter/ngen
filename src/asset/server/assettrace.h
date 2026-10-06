@@ -1,30 +1,25 @@
 #pragma once
 
+#include "trace.h"
+
 #include <chrono>
 #include <cstdint>
-#include <cstdio>
-#include <ctime>
 #include <format>
-#include <mutex>
-#include <print>
 #include <string>
 
-// The asset server's trace: one line per event on stdout, prefixed with the local time, flushed at once so a
-// redirected log is current. Thread-safe.
-
-inline std::mutex traceMutex;
+// The asset server's log: one trace event per line (category Asset, type Message, the line as its text), which the
+// trace prints on the console with the local time and streams like any process's trace, so ngen-introspect shows it
+// next to the view's events. traceWarning marks a request that failed: the asset could not be given, the server
+// itself goes on.
 
 template <typename... Args>
-auto trace(std::format_string<Args...> format, Args&&... args) -> void {
-    auto now = std::chrono::system_clock::now();
-    auto seconds = std::chrono::system_clock::to_time_t(now);
-    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() % 1000;
-    std::tm local = {};
-    localtime_r(&seconds, &local);
-    auto message = std::format(format, std::forward<Args>(args)...);
-    std::lock_guard lock(traceMutex);
-    std::println("{:02}:{:02}:{:02}.{:03}  {}", local.tm_hour, local.tm_min, local.tm_sec, millis, message);
-    std::fflush(stdout);
+auto traceLine(std::format_string<Args...> format, Args&&... args) -> void {
+    TRACE_EVENT("Asset", "Message", "asset-server").text(std::format(format, std::forward<Args>(args)...));
+}
+
+template <typename... Args>
+auto traceWarning(std::format_string<Args...> format, Args&&... args) -> void {
+    TRACE_WARNING("Asset", "Message", "asset-server").text(std::format(format, std::forward<Args>(args)...));
 }
 
 // A byte count for people: "812 B", "10.2 KiB", "3.4 MiB".

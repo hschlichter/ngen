@@ -51,6 +51,8 @@ public:
     [[nodiscard]] auto supportsTextureFormat(RhiFormat format, RhiTextureUsageFlags usage) const -> bool override;
     [[nodiscard]] auto validationErrorCount() const -> uint64_t override { return validationErrors; }
     auto onValidationMessage(uint32_t severity, const char* message) -> void;
+    // A diagnostic to the integrator's handler (RhiDeviceOptions::onMessage), or stderr.
+    auto report(RhiMessageSeverity severity, std::string_view message) const -> void { rhiReport(messageHandler, severity, message); }
 
     auto setDebugName(RhiDebugObject object, const char* name) -> void override;
     auto allocations(std::vector<RhiAllocationInfo>& out) const -> void override;
@@ -93,6 +95,7 @@ private:
     PFN_vkGetCalibratedTimestampsEXT getCalibratedTimestampsFn = nullptr;
     uint64_t validationErrors = 0;
     uint64_t validationWarnings = 0;
+    RhiMessageHandler messageHandler;
 
     // Debug names (VK_EXT_debug_utils; null when unavailable) and the allocation registry
     // behind allocations(), keyed by the RHI object.
