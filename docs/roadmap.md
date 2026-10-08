@@ -42,12 +42,12 @@ server that packs, and an introspection tool. What has landed of it is under [La
   physics and audio domains), in OpenUSD since v26.08, which is the vendored version (`libusd_usdLod`; not linked yet). The packer reads LOD
   roots into the scene pack; the view selects levels at runtime; levels stream in on demand.
   Ties into GPU-side LOD selection and meshlets.
-- **Streaming** — *plan not written yet.* Load and unload scene data by where the camera is and what fits in memory, so a world much larger than
-  memory (Caldera, below) can be opened and moved through. Covers geometry and sub-packs, and textures: mip levels loaded by the screen size
-  they're seen at, lowest first, within a GPU memory budget (texture streaming could stand alone, but shares the budget, the residency
-  tracking and the request path). Builds on USD's own streaming points: payloads loaded and unloaded per prim (`UsdStage::Load`/`Unload`,
-  load rules), population masks, and UsdLod's levels. The asset server already streams on request; the scene pack's sub-packs are the
-  natural load units, and "Everything async" is what makes data arriving late look right.
+- **Streaming** — [plan_streaming_lod.md](plan_streaming_lod.md), draft design. Load and unload scene data by where the camera is and what fits in
+  memory, so a world much larger than memory (Caldera, below) can be opened and moved through. Covers geometry and sub-packs, and textures: mip levels
+  loaded by the screen size they're seen at, lowest first, within a GPU memory budget (texture streaming could stand alone, but shares the budget, the
+  residency tracking and the request path). Builds on USD's own streaming points: payloads loaded and unloaded per prim (`UsdStage::Load`/`Unload`, load
+  rules), population masks, and UsdLod's levels. The asset server already streams on request; the scene pack's sub-packs are the natural load units, and
+  "Everything async" is what makes data arriving late look right.
   - Open, the main challenge: how streaming and LOD fit together. A coarse LOD level is also what is shown while the detail streams in, and
     a payload is both a load unit and, through UsdLod, a detail level. Who decides what is resident: the LOD selection, a streaming system
     with its own priorities, or one system for both?
@@ -72,8 +72,8 @@ Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's ma
 2×2 miles, Z-up in inches; non-commercial licence). It is the large-scene test for most of the above.
 - **Load it at all**: payloads and proxies as sub-packs, loaded on demand; the default lightweight view first, detail streamed in (Streaming,
   above).
-- **LOD through UsdLod**: Caldera ships its own representations (proxies, detail levels) but not UsdLod. An authored layer adds `LodRootAPI` roots
-  and heuristics over them, without editing the source files, and the engine's LOD system selects and streams from it.
+- **LOD through UsdLod**: the engine's LOD system selects and streams from Caldera's UsdLod roots (the converted branch, under Landed); it
+  reads no other LOD convention. The converter's thresholds are a starting point, tuned once the engine draws levels.
 - **Shading without textures**: Caldera has no textures or materials. An authored layer adds them: generated materials by prim type, name or
   region (colour palettes, procedural or triplanar shading), so the map reads well. Good work for the AI and human collaboration flow.
 - **Scale it exposes**: occlusion culling, meshlets, GPU memory and streaming budgets, packing time on cold caches.
@@ -148,6 +148,11 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 ## Landed
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
+
+- **Caldera in UsdLod** — [plan_caldera_usdlod.md](plan_caldera_usdlod.md). A converter in a Caldera fork (branch `usdlod` of
+  `hschlichter/caldera`) rewrites Caldera's `districtLod` and `modelLod` variant sets into UsdLod roots: levels as payloads, a screen-size
+  heuristic per root, instanceable models kept instanced through a class prim. 45 district and tile roots, 2,563 model roots; verified to
+  compose the same geometry and instancing, level for level.
 
 - **OpenUSD v26.08** — the submodule moved from v26.03, rebuilt with the same minimal flags; it brings the UsdLod schema. three_cubes and
   Sponza load the same (prims, meshes, instances, textures). Its headers still don't compile as C++23, so `usd*.cpp` stay C++20. CI's
