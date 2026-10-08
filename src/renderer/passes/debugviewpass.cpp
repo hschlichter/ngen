@@ -50,10 +50,10 @@ auto DebugViewPass::init(RhiDevice* dev, uint32_t frameCount, RhiFormat depthFor
         return false;
     }
 
-    std::array<RhiVertexAttribute, 4> vertexAttrs = {{
+    // The debug views read no vertex colour, so location 2 (the geometry pass's colour) is left out.
+    std::array<RhiVertexAttribute, 3> vertexAttrs = {{
         {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
         {.location = 1, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, normal)},
-        {.location = 2, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, color)},
         {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
     }};
     std::array<RhiFormat, 1> colorFormats = {valueFormat};
