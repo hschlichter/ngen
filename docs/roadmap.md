@@ -1,6 +1,6 @@
 # Roadmap
 
-What is planned, open or parked, as of 2026-10-06. One line per item; the linked plans hold the detail. Items marked *parked* were discussed and
+What is planned, open or parked, as of 2026-10-07. One line per item; the linked plans hold the detail. Items marked *parked* were discussed and
 set aside on purpose; *trigger* says what would bring an item back. When an item lands it moves to [Landed](#landed) at the end, with its
 follow-ups left behind as open items.
 
@@ -42,6 +42,17 @@ server that packs, and an introspection tool. What has landed of it is under [La
   physics and audio domains). Landed upstream in OpenUSD v26.08; the vendored OpenUSD is v26.03, so it needs an **OpenUSD upgrade** first (submodule
   bump, rebuild, the CI cache key). The packer reads LOD roots into the scene pack; the view selects levels at runtime; levels stream in on demand.
   Ties into GPU-side LOD selection and meshlets.
+- **Streaming** — *plan not written yet.* Load and unload scene data by where the camera is and what fits in memory, so a world much larger than
+  memory (Caldera, below) can be opened and moved through. Covers geometry and sub-packs, and textures: mip levels loaded by the screen size
+  they're seen at, lowest first, within a GPU memory budget (texture streaming could stand alone, but shares the budget, the residency
+  tracking and the request path). Builds on USD's own streaming points: payloads loaded and unloaded per prim (`UsdStage::Load`/`Unload`,
+  load rules), population masks, and UsdLod's levels. The asset server already streams on request; the scene pack's sub-packs are the
+  natural load units, and "Everything async" is what makes data arriving late look right.
+  - Open, the main challenge: how streaming and LOD fit together. A coarse LOD level is also what is shown while the detail streams in, and
+    a payload is both a load unit and, through UsdLod, a detail level. Who decides what is resident: the LOD selection, a streaming system
+    with its own priorities, or one system for both?
+  - Open: what is streamed in which unit (sub-pack, mesh, LOD level, mip level), the memory budgets (CPU, GPU, cache) and eviction, and
+    priority (distance, screen size, visibility from culling).
 - **Physics** — UsdPhysics schemas (rigid bodies, colliders, joints, scenes; already in the vendored OpenUSD) mapped to physics components by
   the packer, simulated with **Jolt**. Physics is a UsdLod domain of its own.
 - **Skinning** — UsdSkel skeletons and skinned meshes; GPU skinning.
@@ -55,7 +66,8 @@ server that packs, and an introspection tool. What has landed of it is under [La
 
 Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's map as USD: about 17.5 million prims and over 2 billion points over
 2×2 miles, Z-up in inches; non-commercial licence). It is the large-scene test for most of the above.
-- **Load it at all**: payloads and proxies as sub-packs, loaded on demand; the default lightweight view first, detail streamed in.
+- **Load it at all**: payloads and proxies as sub-packs, loaded on demand; the default lightweight view first, detail streamed in (Streaming,
+  above).
 - **LOD through UsdLod**: Caldera ships its own representations (proxies, detail levels) but not UsdLod. An authored layer adds `LodRootAPI` roots
   and heuristics over them, without editing the source files, and the engine's LOD system selects and streams from it.
 - **Shading without textures**: Caldera has no textures or materials. An authored layer adds them: generated materials by prim type, name or
@@ -66,7 +78,8 @@ Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's ma
 
 - **BC7 / BC5 textures** — needs approval for Vulkan's `textureCompressionBC`, a vendored encoder, RHI formats. 4× smaller cache and stream.
 - **Linear (non-colour) textures** — the request must carry intent (e.g. `#linear` id or a per-pattern rule). Trigger: first normal/roughness map.
-- **Mip-level streaming** (lowest levels first). Trigger: load time dominated by texture bytes.
+- **Mip-level streaming** — now part of **Streaming** (Engine features). Packing side: levels addressable on their own, so the server can send
+  the lowest first.
 - **Hot reload / source edits reaching a running view** — *parked* until the architecture is up. Options: server sends `pack.stale`, or clients
   re-request on command. Nothing packs without a request either way.
 - **Client-side cache** keyed by id and version. Trigger: start-up transfer time, or a remote view.
