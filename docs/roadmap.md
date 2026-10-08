@@ -1,6 +1,6 @@
 # Roadmap
 
-What is planned, open or parked, as of 2026-10-07. One line per item; the linked plans hold the detail. Items marked *parked* were discussed and
+What is planned, open or parked, as of 2026-10-08. One line per item; the linked plans hold the detail. Items marked *parked* were discussed and
 set aside on purpose; *trigger* says what would bring an item back. When an item lands it moves to [Landed](#landed) at the end, with its
 follow-ups left behind as open items.
 
@@ -39,8 +39,8 @@ server that packs, and an introspection tool. What has landed of it is under [La
 ## Engine features
 
 - **LOD with UsdLod** — the USD Level of Detail schema (`LodRootAPI`, distance and screen-size heuristics, overrides, separate imaging,
-  physics and audio domains). Landed upstream in OpenUSD v26.08; the vendored OpenUSD is v26.03, so it needs an **OpenUSD upgrade** first (submodule
-  bump, rebuild, the CI cache key). The packer reads LOD roots into the scene pack; the view selects levels at runtime; levels stream in on demand.
+  physics and audio domains), in OpenUSD since v26.08, which is the vendored version (`libusd_usdLod`; not linked yet). The packer reads LOD
+  roots into the scene pack; the view selects levels at runtime; levels stream in on demand.
   Ties into GPU-side LOD selection and meshlets.
 - **Streaming** — *plan not written yet.* Load and unload scene data by where the camera is and what fits in memory, so a world much larger than
   memory (Caldera, below) can be opened and moved through. Covers geometry and sub-packs, and textures: mip levels loaded by the screen size
@@ -53,6 +53,10 @@ server that packs, and an introspection tool. What has landed of it is under [La
     with its own priorities, or one system for both?
   - Open: what is streamed in which unit (sub-pack, mesh, LOD level, mip level), the memory budgets (CPU, GPU, cache) and eviction, and
     priority (distance, screen size, visibility from culling).
+  - Open: the spatial layout. Cells (a grid, a quadtree, or the scene's own payload hierarchy and UsdLod roots), built by the packer and
+    written into the scene pack, that streaming loads by, coarse culling tests before the per-instance pass (two-level culling, for millions
+    of instances), and LOD selects within: one structure for all three. Per-frame culling stays flat on the GPU; no octree or kd-tree in the
+    renderer. The editor's picking BVH (`SpatialIndex`) stays as it is.
 - **Physics** — UsdPhysics schemas (rigid bodies, colliders, joints, scenes; already in the vendored OpenUSD) mapped to physics components by
   the packer, simulated with **Jolt**. Physics is a UsdLod domain of its own.
 - **Skinning** — UsdSkel skeletons and skinned meshes; GPU skinning.
@@ -144,6 +148,10 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 ## Landed
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
+
+- **OpenUSD v26.08** — the submodule moved from v26.03, rebuilt with the same minimal flags; it brings the UsdLod schema. three_cubes and
+  Sponza load the same (prims, meshes, instances, textures). Its headers still don't compile as C++23, so `usd*.cpp` stay C++20. CI's
+  OpenUSD cache key follows the submodule commit, so CI rebuilds it once.
 
 - **Introspection tool (step 4)** — [plan_introspect_tool.md](plan_introspect_tool.md). `ngen-introspect` shows every process's records and
   merged trace, in a window or on the command line; `src/trace/` replaced the observation bus. The trace is flow and messages (levels, text,

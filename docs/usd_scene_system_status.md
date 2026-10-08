@@ -41,13 +41,13 @@ What IS borrowed from Hydra's design:
 
 ### C++20 Containment
 
-OpenUSD v26.03 headers are incompatible with GCC 15's libstdc++ in C++23 mode (`unique_ptr` incomplete type errors in `schemaRegistry.h`). All
+OpenUSD v26.03 headers (and still v26.08's) are incompatible with GCC 15's libstdc++ in C++23 mode (`unique_ptr` incomplete type errors in `schemaRegistry.h`). All
 `src/scene/usd*.cpp` files are compiled with `-std=c++20`. The rest of the engine stays C++23. The pimpl pattern in `usdscene.h` ensures no pxr headers leak
 into engine-facing code.
 
 ### OpenUSD Build
 
-OpenUSD is vendored as a git submodule at `external/openusd` (v26.03). Built separately with:
+OpenUSD is vendored as a git submodule at `external/openusd` (v26.08). Built separately with:
 
 ```bash
 python3 external/openusd/build_scripts/build_usd.py \
