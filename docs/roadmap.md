@@ -42,21 +42,14 @@ server that packs, and an introspection tool. What has landed of it is under [La
   physics and audio domains), in OpenUSD since v26.08, which is the vendored version (`libusd_usdLod`; not linked yet). The packer reads LOD
   roots into the scene pack; the view selects levels at runtime; levels stream in on demand.
   Ties into GPU-side LOD selection and meshlets.
-- **Streaming** — [plan_streaming_lod.md](plan_streaming_lod.md), draft design. Load and unload scene data by where the camera is and what fits in
-  memory, so a world much larger than memory (Caldera, below) can be opened and moved through. Covers geometry and sub-packs, and textures: mip levels
-  loaded by the screen size they're seen at, lowest first, within a GPU memory budget (texture streaming could stand alone, but shares the budget, the
-  residency tracking and the request path). Builds on USD's own streaming points: payloads loaded and unloaded per prim (`UsdStage::Load`/`Unload`, load
-  rules), population masks, and UsdLod's levels. The asset server already streams on request; the scene pack's sub-packs are the natural load units, and
-  "Everything async" is what makes data arriving late look right.
-  - Open, the main challenge: how streaming and LOD fit together. A coarse LOD level is also what is shown while the detail streams in, and
-    a payload is both a load unit and, through UsdLod, a detail level. Who decides what is resident: the LOD selection, a streaming system
-    with its own priorities, or one system for both?
-  - Open: what is streamed in which unit (sub-pack, mesh, LOD level, mip level), the memory budgets (CPU, GPU, cache) and eviction, and
-    priority (distance, screen size, visibility from culling).
-  - Open: the spatial layout. Cells (a grid, a quadtree, or the scene's own payload hierarchy and UsdLod roots), built by the packer and
-    written into the scene pack, that streaming loads by, coarse culling tests before the per-instance pass (two-level culling, for millions
-    of instances), and LOD selects within: one structure for all three. Per-frame culling stays flat on the GPU; no octree or kd-tree in the
-    renderer. The editor's picking BVH (`SpatialIndex`) stays as it is.
+- **Streaming** — [plan_streaming_lod.md](plan_streaming_lod.md), design decisions locked. Load and unload scene data by where the camera is
+  and what fits in memory, so a world much larger than memory (Caldera, below) can be opened and moved through; geometry and textures (mip
+  levels by screen size). Decided: one system gives both LOD's wanted level and what is resident (the coarsest level always resident as the
+  placeholder); UsdLod is the only LOD; the packer builds a uniform XY grid of cells, two or three levels deep, shared by streaming and coarse
+  culling; one cell pack per LOD level of a cell; budgets per memory kind, priority by on-screen error; district-scale LOD as authored first.
+  - Next: the scene pack plan takes the design's requirements (decision 5); then Caldera's proxy map through the scene pack, districts
+    streaming, models streaming, textures streaming, each a plan of its own.
+  - Open: cell size and grid depth for Caldera, the far-field floor's cost, tuned thresholds.
 - **Physics** — UsdPhysics schemas (rigid bodies, colliders, joints, scenes; already in the vendored OpenUSD) mapped to physics components by
   the packer, simulated with **Jolt**. Physics is a UsdLod domain of its own.
 - **Skinning** — UsdSkel skeletons and skinned meshes; GPU skinning.

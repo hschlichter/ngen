@@ -1,16 +1,21 @@
 # Streaming and LOD
 
-**Status. Draft.**
+**Status. In progress.** The decisions are locked; the steps they lead to are plans of their own.
 
 A design doc, not an implementation plan: it decides how streaming and level of detail fit together, so the scene pack format
 ([plan_tool_architecture.md](plan_tool_architecture.md), step 3 of the roadmap's next steps) is built around the right load units. Caldera is the
-case it has to work for. Decisions here are recommendations until locked; pushback welcome on each.
+case it has to work for. The decisions below are locked (2026-10-11).
 
 **Two different things.** *LOD* decides which representation of something to draw: per object, every frame, from a heuristic (screen size,
 distance); it assumes the levels are there. *Streaming* decides what data is in memory: what to load, what to evict, in which order, within a
 budget; it is about residency and I/O, not appearance. They meet because the levels LOD wants are what streaming most often has to deliver,
 which is why decision 1 has one system give both outputs; but a scene's LOD (its UsdLod roots, authored or converted) says nothing about
 streaming, and the engine's streaming units (cells, cell packs) are the packer's, not the source data's.
+
+**Resident** means loaded into memory and ready to draw. A unit of data (one LOD level of a group in one cell, a texture's mip level) is
+*packed* (in the asset server's cache, or not yet packed), *requested* (streaming in), *resident* (received and uploaded into the GPU's geometry
+pool or textures) or *evicted* (dropped, back to packed). Today everything is resident from start-up to exit; with streaming, only the part
+chosen to fit the budgets is.
 
 ## Current state
 
@@ -79,8 +84,9 @@ payload on that child.
   (the floor). The budget trims from the lowest priority. Drawing shows the finest resident level that is not finer than the wanted one, so a
   missing level falls back to a coarser one, never to a hole.
 
-I lean **C**: one computation, prefetching without a second system, and the coarse level doubling as the placeholder is exactly the "everything
-async" behaviour the roadmap asks for. Its cost is that the floor must be cheap enough to keep for every loaded cell; Caldera's proxies are.
+**Locked: C.** One computation, prefetching without a second system, and the coarse level doubling as the placeholder is exactly the
+"everything async" behaviour the roadmap asks for. Its cost is that the floor must be cheap enough to keep for every loaded cell; Caldera's
+proxies are (14.6 M points for the whole map).
 
 ### 2. The units
 
@@ -100,8 +106,9 @@ conventions.
   larger levels as units of their own, lowest first. The wanted level comes from the screen size of the instances using it, estimated on the
   CPU from bounds; GPU feedback (which levels the sampler actually touched) is deferred. Caldera has no textures; Sponza is the test.
 
-I lean **cell packs over sub-packs per payload**. Open: whether a cell pack holds one level of one
-cell, or all levels of a cell with levels addressable inside it (fewer files, partial reads).
+**Locked: cell packs over sub-packs per payload, one cell pack per level of a cell.** A cell pack holds one LOD level's units for one cell,
+so loading or evicting a level is one request for a whole asset, which the asset server already serves. Rejected: all levels of a cell in one
+pack with addressable parts (fewer files, but the asset server and client would need partial reads).
 
 ### 3. The spatial layout
 
@@ -112,12 +119,23 @@ cell, or all levels of a cell with levels addressable inside it (fewer files, pa
 - **C. A quadtree.** Adapts cell size to density (the town centre finer than the sea), at the cost of variable cell sizes for streaming and
   culling.
 
-I lean **B, a uniform XY grid, with the authored hierarchy kept as the LOD structure inside it**: cells say *where*, LOD groups say *how
+**Locked: B, a uniform XY grid, with the authored hierarchy kept as the LOD structure inside it**: cells say *where*, LOD groups say *how
 detailed*. A group belongs to the cell its bounds' centre falls in; groups much larger than a cell (`map_vista`, terrain tiles) belong to a
 coarse level of the grid (cells of 4 × 4 cells), so the grid is two or three levels deep rather than a full quadtree. The same cells are the
 coarse culling groups (two-level culling) and the streaming units. Per-frame culling stays flat on the GPU; the editor's BVH stays as it is.
 
+**Area-scale LOD (HLOD) against cells. Locked: district LOD as authored first; per-cell coarse levels when Caldera needs them.** A converted
+Caldera district is a UsdLod root whose coarse level is one proxy mesh for the whole district and whose fine level is everything in it.
+Per-model LOD fits streaming by cells without trouble; district LOD does not: a district's single heuristic over its whole extent
+(`map_gulags` and `mv_intel` spread over most of the island) makes all of it want `full` when the camera is near any part, and one proxy mesh
+can't be shown for the far half of a district while the near half is in full. First, a district switches proxy or full as a whole and its full
+level streams by cells underneath it. When Caldera shows the coarse switch (a district's whole full level loading for a corner of it), the
+packer cuts area-scale levels per cell: it splits the proxy mesh by cell, so the coarse level is per cell and lines up with streaming. The
+converted data stays as it is either way (deferred below).
+
 ### 4. Budgets, priority, eviction
+
+Locked as follows.
 
 - **Budgets**: GPU geometry, GPU textures, CPU resident packs, the view's cache of fetched packs. Each is a number in the project settings, read
   as a record.
@@ -127,6 +145,8 @@ coarse culling groups (two-level culling) and the streaming units. Per-frame cul
   far out of its band) so the camera moving back and forth doesn't thrash.
 
 ### 5. What this requires of the scene pack format and the engine
+
+Locked; carried into the scene pack plan.
 
 - **Scene pack**: the grid (cell size, levels, each cell's bounds and units), LOD groups (one per UsdLod root: its levels, bounds and
   heuristics), cell packs per cell and level, prototype sub-packs, and textures as mip tail plus level units. LOD roots nest (a converted
@@ -142,7 +162,8 @@ coarse culling groups (two-level culling) and the streaming units. Per-frame cul
 
 ## Steps
 
-1. **Lock the decisions above** (this doc), then move the requirements of decision 5 into the scene pack plan when it is written.
+1. **Lock the decisions above** (this doc; done 2026-10-11), then move the requirements of decision 5 into the scene pack plan when it is
+   written.
 2. **Caldera's proxy map through the scene pack**: the packer packs the converted `caldera.usda` ([plan_caldera_usdlod.md](plan_caldera_usdlod.md))
    with every root's coarsest level; the view loads it as cells.
    No streaming yet, but the grid, LOD groups and cell packs exist and are inspected as records.
@@ -167,23 +188,10 @@ leads to, the observable criteria to carry into their plans:
 
 ## Open questions
 
-- Cell pack granularity: one level of one cell per pack, or all levels of a cell in one pack with addressable parts.
 - Caldera's heuristic thresholds: the converter generates a starting point ([plan_caldera_usdlod.md](plan_caldera_usdlod.md)); the engine
   tunes them.
 - Cell size, and whether two or three grid levels are enough for Caldera's large groups.
 - What the floor costs at Caldera scale: the proxy map is 14.6 M points; is it the floor everywhere, or does the far field need a coarser one?
-- **Area-scale LOD (HLOD) against cells.** A converted Caldera district is a UsdLod root whose coarse level is one proxy mesh for the whole
-  district and whose fine level is everything in it. Per-model LOD fits streaming by cells without trouble; district LOD does not: a
-  district's single heuristic over its whole extent (`map_gulags` and `mv_intel` spread over most of the island) makes all of it want `full`
-  when the camera is near any part, and one proxy mesh can't be shown for the far half of a district while the near half is in full. Two
-  answers:
-  1. **District LOD as authored**: a district switches as a whole; its full level streams by cells underneath it. Simple; the proxy-or-full
-     decision is coarse.
-  2. **The packer cuts area-scale levels per cell**: it splits the proxy mesh by cell, so the coarse level is per cell and lines up with
-     streaming. Behaves at Caldera's scale; a packer feature.
-
-  I lean 1 first, 2 when Caldera shows the coarse switch (a district's whole full level loading for a corner of it). This is a packer and
-  engine question; the converted data stays as it is either way.
 
 ## Deferred / follow-ups
 
@@ -192,4 +200,6 @@ leads to, the observable criteria to carry into their plans:
 - **LOD generation in the packer** (mesh simplification for assets without authored levels). Trigger: a scene without levels that is too
   heavy to draw at full detail.
 - **Physics and audio LOD domains.** Trigger: physics (roadmap, Engine features).
+- **Per-cell coarse levels (HLOD) in the packer**: split a district's proxy mesh by cell. Trigger: a district's whole full level loading for a
+  corner of it (decision 3).
 - **A quadtree instead of the grid.** Trigger: one cell size can't fit both dense and empty areas within budget.
