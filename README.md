@@ -84,6 +84,7 @@ Each library documents its design and rules in a README next to the code:
 - [`src/build/README.md`](src/build/README.md) — the self-hosted build system: framework, IR, runner, bootstrap.
 - [`src/scene/README.md`](src/scene/README.md) — the scene as a USD stage, and how its layers and textures are read through the asset server.
 - [`src/asset/README.md`](src/asset/README.md) — the asset system: asset ids, `ngen-asset-server`, its cache and stream, `AssetClient`, and packing (`pack.cpp` rules, packers).
+- [`src/world/README.md`](src/world/README.md) — the runtime scene: the World composed from scene packs as USD composes a stage, and `ngen-worldcheck` / `ngen-usdcheck` to compare the two.
 
 `docs/` holds plans and design history; code and library READMEs do not depend on it.
 

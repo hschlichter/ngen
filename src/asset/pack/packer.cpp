@@ -49,6 +49,17 @@ auto parsePackerArgs(int argc, char** argv) -> std::expected<PackerArgs, std::st
     return args;
 }
 
+auto depfileEscape(const std::string& path) -> std::string {
+    std::string out;
+    for (char ch : path) {
+        if (ch == ' ' || ch == '#' || ch == '\\') {
+            out += '\\';
+        }
+        out += ch;
+    }
+    return out;
+}
+
 auto readPackerFile(const std::string& path) -> std::expected<std::vector<std::byte>, std::string> {
     std::ifstream in(path, std::ios::binary | std::ios::ate);
     if (!in) {

@@ -19,18 +19,6 @@
 
 namespace {
 
-// Make escapes spaces, '#' and '\' in depfile paths.
-auto depfileEscape(const std::string& path) -> std::string {
-    std::string out;
-    for (char ch : path) {
-        if (ch == ' ' || ch == '#' || ch == '\\') {
-            out += '\\';
-        }
-        out += ch;
-    }
-    return out;
-}
-
 // Copies with read and write, for filesystems that can't clone.
 auto copyBytes(int from, int to) -> bool {
     char buffer[1 << 16];

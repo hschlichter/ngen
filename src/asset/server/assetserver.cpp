@@ -154,6 +154,7 @@ auto AssetServer::stop() -> void {
     rpc.stop();
     traceStream.reset();
     jobs.reset();
+    cache.flush();
     if (!discoveryFile.empty()) {
         removeRpcEndpoint(discoveryFile);
         discoveryFile.clear();
@@ -233,7 +234,7 @@ auto AssetServer::addRecords() -> void {
     records.add("rules", "the pack rules from pack.cpp: extensions, packer, parameters, version", [this](RpcResponder responder) {
         responder.respond(rulesRecord());
     });
-    records.add("cache", "every packed asset: version, packer, inputs and the packed file", [this](RpcResponder responder) {
+    records.add("cache", "every packed asset: version, packer, inputs, the packed file and its secondary outputs", [this](RpcResponder responder) {
         responder.respond(cacheRecord());
     });
     records.add("requests", "asset requests in flight, and the most recent finished ones", [this](RpcResponder responder) {
@@ -326,12 +327,17 @@ auto AssetServer::cacheRecord() -> rpc::Json {
         for (const auto& input : record.inputs) {
             inputs.push_back(fileJson(input));
         }
+        auto secondaries = rpc::Json::array();
+        for (const auto& [secondaryId, secondaryFile] : record.secondaries) {
+            secondaries.push_back({{"id", secondaryId}, {"version", hashText(secondaryFile.hash)}, {"output", fileJson(secondaryFile)}});
+        }
         assets.push_back({
             {"id", id},
             {"version", hashText(record.output.hash)},
             {"packer", fileJson(record.packer)},
             {"inputs", inputs},
             {"output", fileJson(record.output)},
+            {"secondaries", secondaries},
         });
     }
     return {{"directory", cacheDirectory.string()}, {"assets", assets}};

@@ -163,6 +163,16 @@ auto main(int argc, char** argv) -> int {
             })
             .public_include({"src/asset/pack"});
 
+    // The runtime scene (src/world/README.md): the World, composed from scene packs. No OpenUSD.
+    auto worldLib =
+        cxx::static_library("world")
+            .sources(glob({.include = "src/world/*.cpp"}))
+            .public_include({
+                "src/world",
+                "external/glm",
+            })
+            .link(packer);
+
     auto renderer =
         cxx::static_library("renderer")
             .sources(glob({.include = "src/renderer/**/*.cpp"}))
@@ -320,6 +330,38 @@ auto main(int argc, char** argv) -> int {
             .link_flag("-lusd_usd")
             .link_flag("-lusd_usdGeom")
             .link_flag("-lusd_usdShade")
+            .link_flag("-lusd_sdf")
+            .link_flag("-lusd_pcp")
+            .link_flag("-lusd_tf")
+            .link_flag("-lusd_vt")
+            .link_flag("-lusd_gf")
+            .link_flag("-lusd_ar")
+            .link_flag("-lusd_arch")
+            .link_flag("-lusd_plug")
+            .link_flag("-lusd_js")
+            .link_flag("-lusd_work")
+            .link_flag("-lusd_trace")
+            .link_flag("-lusd_ts")
+            .link_flag("-lusd_pegtl")
+            .link_flag("-lusd_kind")
+            .link_flag("-ltbb");
+    // ngen-worldcheck and ngen-usdcheck (src/world/README.md): a scene's fingerprint as the World composes it from packs, and as
+    // OpenUSD composes it, to compare. ngen-usdcheck links OpenUSD and builds as C++20, as OpenUSD's headers require.
+    auto worldCheck = cxx::program("ngen-worldcheck").sources({"src/apps/worldcheck.cpp"}).include({"src/asset"}).link(worldLib).link(packer).link(assetClient).link(rpccore);
+    auto usdCheck =
+        cxx::program("ngen-usdcheck")
+            .sources({"src/apps/usdcheck.cpp"})
+            .include({
+                "src/world",
+                "external/openusd_build/include",
+            })
+            .warning_off("deprecated-declarations")
+            .for_source("src/apps/usdcheck.cpp", [](cxx::ObjectFile& file) { file.std("c++20"); })
+            .lib_search("external/openusd_build/lib")
+            .rpath((std::filesystem::current_path() / "external/openusd_build/lib").string())
+            .link_flag("-lusd_usd")
+            .link_flag("-lusd_usdGeom")
+            .link_flag("-lusd_usdLod")
             .link_flag("-lusd_sdf")
             .link_flag("-lusd_pcp")
             .link_flag("-lusd_tf")
@@ -516,6 +558,8 @@ auto main(int argc, char** argv) -> int {
     p.target(packerTexture);
     p.target(packerUsd);
     p.target(packDump);
+    p.target(worldCheck);
+    p.target(usdCheck);
     p.target(assetServer);
     p.target(usdPlugins);
     p.target(format);

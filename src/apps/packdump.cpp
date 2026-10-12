@@ -102,6 +102,9 @@ auto layerJson(const LayerPack& pack) -> Json {
             }
             p["placements"] = placements;
         }
+        if (prim.pointCount >= 0) {
+            p["points"] = prim.pointCount;
+        }
         if (!prim.meshAsset.empty()) {
             p["mesh"] = prim.meshAsset;
         }

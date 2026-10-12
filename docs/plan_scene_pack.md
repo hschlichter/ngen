@@ -1,6 +1,6 @@
 # Scene pack
 
-**Status. In progress.** Phase A started 2026-10-12.
+**Status. In progress.** Phase A started 2026-10-12; phases A and B done 2026-10-12 (results under Verification).
 
 Step 2 of [plan_tool_architecture.md](plan_tool_architecture.md), the scene half: ngen-view stops reading USD. A USD packer turns every USD file
 into a pack of engine-ready data, one pack job per file; a runtime scene library composes the packs into the scene the renderer draws; and the
@@ -142,6 +142,14 @@ Locked 2026-10-12:
     The Caldera fork's `verify.py` stays for verifying the conversion itself. Rejected: using the fork's Python script for ngen's scenes too,
     which would make ngen's verification depend on another repository and its Python environment.
 
+Locked 2026-10-12, at the start of phase B:
+
+20. **The point count is in the layer pack.** Each prim spec that authors `points` records how many (a mesh's, a point cloud's), so a
+    fingerprint needs only layer packs. Rejected: reading it from the mesh packs, which would stream every mesh of a scene for a count (141 M
+    points for `map_capital`) and has nothing for `Points` prims, which get no mesh asset. The count checks composition, not the mesh asset.
+21. **Fingerprints can carry transforms.** `--transforms` on both check tools adds each prim's world matrix, so transform overrides and
+    `xformOp` evaluation are checked on `assets/layered/` too, not only through screenshots of three_cubes and Sponza.
+
 ## Steps
 
 ### Phase A: packs
@@ -196,6 +204,10 @@ Ships: a `World` composed from packs that matches USD's composition, checked out
    with relationship targets mapped through them; one composed pack per instanced file, shared by its placements; `over`s into referenced
    content outside instances; material bindings resolved (decision 3); each LOD root's wanted, loaded and drawn level (decision 17). Instanced
    content is composed once per shared pack, with per-instance state beside it (decision 18).
+
+   *As built:* `addPack` only stores a pack, and `compose()` composes from the packs held and returns the layer packs it still needs; the
+   caller loops, one level of arcs deeper per round. What a pack needs depends on composition (a payload under a level that isn't loaded
+   isn't needed), which a pack alone doesn't know. `setLodLevel` takes effect at the next `compose()`.
 
    ```cpp
    class WorldComposer {
@@ -254,8 +266,18 @@ Ships: the view is interactive again on entities, and nothing of the editor or O
   three_cubes and Sponza run one job each; a second request runs no job (`packed: false` on every `asset.ready`).
 - **Warnings, not silence**: the layered scene's cross-file inherit is a warning in its pack and in the server's trace, naming the prim.
 - **The same scene as USD**: `ngen-worldcheck`'s fingerprint equals `ngen-usdcheck`'s, byte for byte, every prim included (decision 18), for
-  `assets/layered/`, three_cubes, Sponza (its internal references), Caldera's default map (19,156 meshes, 21,937,137 points, as the USD
-  fingerprint counts them) and `map_capital` at its full level (`--lod`; 596,867 meshes, 141,852,999 points, instances expanded).
+  `assets/layered/`, three_cubes, Sponza (its internal references), Caldera's default map and `map_capital` at its full level (`--lod`,
+  instances expanded). The Caldera fork's `verify.py` counted every model at its finest level (19,156 and 596,867 meshes); decision 17 loads
+  each LOD root's `lod:default:index` level, so the counts are the ones below.
+  *Phase B, 2026-10-12:* equal for all five. With `--transforms` too for the layered scene, three_cubes, Sponza and Caldera's default map;
+  the layered scene's one difference is `/World/Inherited`, the cross-file inherit the packer warns about.
+
+  | Scene | Prims | Meshes | Points | Prototypes | USD (`ngen-usdcheck`) | World (`ngen-worldcheck`, warm cache) |
+  |---|---|---|---|---|---|---|
+  | `assets/layered/` | 32 | 2 | 10 | 1 | 26 ms | 81 ms |
+  | Sponza | 1,170 | 115 | 1,932,379 | 0 | 2.9 s | 3 ms |
+  | Caldera, default map | 54,124 | 19,082 | 18,561,033 | 57 | 0.4 s | 0.3 s (265 packs) |
+  | Caldera, `map_capital` at level 0 | 2,248,983 | 608,978 | 117,577,727 | 2,729 | 25 min, 5.8 GB | 37 s, 2.8 GB (16,575 packs) |
 - **The same instancing as USD, or explained**: `ngen-worldcheck --instancing` against `ngen-usdcheck --instancing` for `map_capital` at full
   (every instance at the same level, as USD splits prototypes by what is loaded in them; USD's are 139,137 instances and 2,675 prototypes,
   [plan_caldera_usdlod.md](plan_caldera_usdlod.md)); any difference listed with its cause (the view shares one composed pack per instanced

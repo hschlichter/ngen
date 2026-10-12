@@ -274,6 +274,9 @@ auto packSpec(const SdfPrimSpecHandle& spec, const std::string& fileId, LayerPac
             overriddenGeometry.push_back(name);
             continue;
         }
+        if (name == "points" && attribute->HasDefaultValue()) {
+            prim.pointCount = (int64_t) attribute->GetDefaultValue().GetArraySize();
+        }
         if (shading || !isEngineAttribute(name)) {
             continue;
         }

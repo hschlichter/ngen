@@ -70,6 +70,7 @@ struct PackPrim {
     std::vector<PackAttribute> attributes;
     std::vector<PackRelationship> relationships;
     std::vector<PackPlacement> placements;
+    int64_t pointCount = -1;   // the number of `points` the spec authors (a mesh's, a point cloud's), -1 when it authors none
     std::string meshAsset;     // set when this spec defines geometry: "<file>#<path>"
     std::string materialAsset; // set when this spec defines a material
 };

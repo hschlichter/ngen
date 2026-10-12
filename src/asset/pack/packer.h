@@ -34,6 +34,9 @@ struct PackerArgs {
 
 auto parsePackerArgs(int argc, char** argv) -> std::expected<PackerArgs, std::string>;
 
+// A path as a Make-format depfile writes it: spaces, '#' and '\' escaped with '\'.
+auto depfileEscape(const std::string& path) -> std::string;
+
 // Reads a whole file; an error message when it can't.
 auto readPackerFile(const std::string& path) -> std::expected<std::vector<std::byte>, std::string>;
 

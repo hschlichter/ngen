@@ -56,8 +56,13 @@ auto unchanged(const AssetCache::File& recorded) -> bool {
     return hash.has_value() && *hash == recorded.hash;
 }
 
+auto writeFields(std::ostream& out, const AssetCache::File& file) -> void {
+    out << file.path << '\t' << file.size << '\t' << file.mtimeNs << '\t' << hashText(file.hash) << '\n';
+}
+
 auto writeFile(std::ostream& out, const char* tag, const AssetCache::File& file) -> void {
-    out << tag << '\t' << file.path << '\t' << file.size << '\t' << file.mtimeNs << '\t' << hashText(file.hash) << '\n';
+    out << tag << '\t';
+    writeFields(out, file);
 }
 
 auto readFile(std::istringstream& fields, AssetCache::File& file) -> bool {
@@ -80,55 +85,84 @@ auto readFile(std::istringstream& fields, AssetCache::File& file) -> bool {
 
 } // namespace
 
+AssetCache::~AssetCache() {
+    {
+        std::lock_guard lock(mutex);
+        stopping = true;
+    }
+    changed.notify_all();
+    if (saver.joinable()) {
+        saver.join();
+    }
+    flush();
+}
+
 auto AssetCache::load(const fs::path& path) -> void {
-    std::lock_guard lock(mutex);
-    file = path;
-    records.clear();
-    std::ifstream in(path);
-    std::string line;
-    if (!std::getline(in, line) || line != "ngen-assetcache 1") {
-        return;
-    }
-    Record* record = nullptr;
-    while (std::getline(in, line)) {
-        std::istringstream fields(line);
-        std::string tag;
-        std::getline(fields, tag, '\t');
-        if (tag == "asset") {
-            std::string id;
-            std::string key;
-            std::getline(fields, id, '\t');
-            std::getline(fields, key, '\t');
-            record = &records[id];
-            *record = Record{};
-            try {
-                record->jobKey = std::stoull(key, nullptr, 16);
-            } catch (...) {
-                records.erase(id);
-                record = nullptr;
+    {
+        std::lock_guard lock(mutex);
+        file = path;
+        records.clear();
+        secondaryOf.clear();
+        std::ifstream in(path);
+        std::string line;
+        // Version 1 kept a record per secondary output; its records are dropped, and their assets packed again.
+        if (std::getline(in, line) && line == "ngen-assetcache 2") {
+            Record* record = nullptr;
+            std::string recordId;
+            while (std::getline(in, line)) {
+                std::istringstream fields(line);
+                std::string tag;
+                std::getline(fields, tag, '\t');
+                if (tag == "asset") {
+                    std::string key;
+                    std::getline(fields, recordId, '\t');
+                    std::getline(fields, key, '\t');
+                    record = &records[recordId];
+                    *record = Record{};
+                    try {
+                        record->jobKey = std::stoull(key, nullptr, 16);
+                    } catch (...) {
+                        records.erase(recordId);
+                        record = nullptr;
+                    }
+                    continue;
+                }
+                if (record == nullptr) {
+                    continue;
+                }
+                std::string secondaryId;
+                if (tag == "secondary" && !std::getline(fields, secondaryId, '\t')) {
+                    continue;
+                }
+                File entry;
+                if (!readFile(fields, entry)) {
+                    continue;
+                }
+                if (tag == "packer") {
+                    record->packer = entry;
+                } else if (tag == "input") {
+                    record->inputs.push_back(entry);
+                } else if (tag == "output") {
+                    record->output = entry;
+                } else if (tag == "secondary") {
+                    record->secondaries.emplace_back(secondaryId, entry);
+                    secondaryOf[secondaryId] = recordId;
+                }
             }
-            continue;
-        }
-        if (record == nullptr) {
-            continue;
-        }
-        File entry;
-        if (!readFile(fields, entry)) {
-            continue;
-        }
-        if (tag == "packer") {
-            record->packer = entry;
-        } else if (tag == "input") {
-            record->inputs.push_back(entry);
-        } else if (tag == "output") {
-            record->output = entry;
         }
     }
+    if (!saver.joinable()) {
+        saver = std::thread([this] { saveLoop(); });
+    }
+}
+
+auto AssetCache::flush() -> void {
+    save();
 }
 
 auto AssetCache::size() -> size_t {
     std::lock_guard lock(mutex);
-    return records.size();
+    return records.size() + secondaryOf.size();
 }
 
 auto AssetCache::entries() -> std::vector<std::pair<std::string, Record>> {
@@ -141,25 +175,46 @@ auto AssetCache::entries() -> std::vector<std::pair<std::string, Record>> {
     return result;
 }
 
+auto AssetCache::find(const std::string& id) -> std::pair<const Record*, const File*> {
+    if (auto it = records.find(id); it != records.end()) {
+        return {&it->second, &it->second.output};
+    }
+    auto owner = secondaryOf.find(id);
+    if (owner == secondaryOf.end()) {
+        return {nullptr, nullptr};
+    }
+    const Record& record = records.at(owner->second);
+    for (const auto& [secondaryId, secondaryFile] : record.secondaries) {
+        if (secondaryId == id) {
+            return {&record, &secondaryFile};
+        }
+    }
+    return {nullptr, nullptr};
+}
+
 auto AssetCache::upToDate(const std::string& id, uint64_t jobKey) -> std::optional<uint64_t> {
-    Record record;
+    File packer;
+    File output;
+    std::vector<File> inputs;
     {
         std::lock_guard lock(mutex);
-        auto it = records.find(id);
-        if (it == records.end() || it->second.jobKey != jobKey) {
+        auto [record, outputFile] = find(id);
+        if (record == nullptr || record->jobKey != jobKey) {
             return std::nullopt;
         }
-        record = it->second;
+        packer = record->packer;
+        output = *outputFile;
+        inputs = record->inputs;
     }
-    if (!unchanged(record.packer) || !unchanged(record.output)) {
+    if (!unchanged(packer) || !unchanged(output)) {
         return std::nullopt;
     }
-    for (const auto& input : record.inputs) {
+    for (const auto& input : inputs) {
         if (!unchanged(input)) {
             return std::nullopt;
         }
     }
-    return record.output.hash;
+    return output.hash;
 }
 
 auto AssetCache::record(const std::string& id,
@@ -184,58 +239,98 @@ auto AssetCache::record(const std::string& id,
         }
         record.inputs.push_back(*input);
     }
-    std::vector<std::pair<std::string, Record>> secondaryRecords;
     for (const auto& [secondaryId, secondaryFile] : secondaries) {
         auto secondaryOutput = current(secondaryFile);
         if (!secondaryOutput) {
             return std::nullopt;
         }
-        Record secondary = record;
-        secondary.output = *secondaryOutput;
-        secondaryRecords.emplace_back(secondaryId, std::move(secondary));
+        record.secondaries.emplace_back(secondaryId, *secondaryOutput);
     }
     auto version = record.output.hash;
-    std::lock_guard lock(mutex);
-    auto prefix = id + "#";
-    std::erase_if(records, [&prefix](const auto& entry) { return entry.first.starts_with(prefix); });
-    records[id] = std::move(record);
-    for (auto& [secondaryId, secondary] : secondaryRecords) {
-        records[secondaryId] = std::move(secondary);
+    {
+        std::lock_guard lock(mutex);
+        if (auto old = records.find(id); old != records.end()) {
+            for (const auto& [secondaryId, secondaryFile] : old->second.secondaries) {
+                secondaryOf.erase(secondaryId);
+            }
+        }
+        for (const auto& [secondaryId, secondaryFile] : record.secondaries) {
+            secondaryOf[secondaryId] = id;
+        }
+        records[id] = std::move(record);
+        dirty = true;
     }
-    save();
+    changed.notify_all();
     return version;
 }
 
 auto AssetCache::outputPath(const std::string& id) -> std::optional<std::string> {
     std::lock_guard lock(mutex);
-    auto it = records.find(id);
-    if (it == records.end()) {
+    auto [record, outputFile] = find(id);
+    if (record == nullptr) {
         return std::nullopt;
     }
-    return it->second.output.path;
+    return outputFile->path;
+}
+
+// Saves once a second at most while records change.
+auto AssetCache::saveLoop() -> void {
+    for (;;) {
+        {
+            std::unique_lock lock(mutex);
+            changed.wait(lock, [this] { return dirty || stopping; });
+            if (stopping) {
+                return;
+            }
+        }
+        save();
+        std::unique_lock lock(mutex);
+        changed.wait_for(lock, std::chrono::seconds(1), [this] { return stopping; });
+        if (stopping) {
+            return;
+        }
+    }
 }
 
 auto AssetCache::save() -> void {
+    std::lock_guard saving(saveMutex);
+    std::unordered_map<std::string, Record> snapshot;
+    fs::path path;
+    {
+        std::lock_guard lock(mutex);
+        if (!dirty || file.empty()) {
+            return;
+        }
+        snapshot = records;
+        path = file;
+        dirty = false;
+    }
     std::error_code ec;
-    fs::create_directories(file.parent_path(), ec);
-    auto temporary = file;
+    fs::create_directories(path.parent_path(), ec);
+    auto temporary = path;
     temporary += ".tmp";
     {
         std::ofstream out(temporary, std::ios::trunc);
-        out << "ngen-assetcache 1\n";
-        for (const auto& [id, record] : records) {
+        out << "ngen-assetcache 2\n";
+        for (const auto& [id, record] : snapshot) {
             out << "asset\t" << id << '\t' << hashText(record.jobKey) << '\n';
             writeFile(out, "packer", record.packer);
             for (const auto& input : record.inputs) {
                 writeFile(out, "input", input);
             }
             writeFile(out, "output", record.output);
+            for (const auto& [secondaryId, secondaryFile] : record.secondaries) {
+                out << "secondary\t" << secondaryId << '\t';
+                writeFields(out, secondaryFile);
+            }
         }
         if (!out) {
+            std::lock_guard lock(mutex);
+            dirty = true;
             return;
         }
     }
-    fs::rename(temporary, file, ec);
+    fs::rename(temporary, path, ec);
 }
 
 auto parseDepfile(const std::string& path) -> std::vector<std::string> {

@@ -18,22 +18,6 @@
 #include <string>
 #include <vector>
 
-namespace {
-
-// Make escapes spaces, '#' and '\' in depfile paths.
-auto depfileEscape(const std::string& path) -> std::string {
-    std::string out;
-    for (char ch : path) {
-        if (ch == ' ' || ch == '#' || ch == '\\') {
-            out += '\\';
-        }
-        out += ch;
-    }
-    return out;
-}
-
-} // namespace
-
 auto main(int argc, char** argv) -> int {
     auto args = parsePackerArgs(argc, argv);
     if (!args) {

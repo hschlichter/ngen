@@ -102,6 +102,8 @@ items in an "Open questions" section instead of picking silently.
 - `src/renderer/` — renderer front-end (frame graph, GPU scene tables, GPU culling, passes). Design and rules in `src/renderer/README.md`.
 - `src/scene/` — scene loading, ECS, materials; the USD asset resolver that reads scenes through the asset server. Design and rules (asset ids,
   the C++20/C++23 split) in `src/scene/README.md`.
+- `src/world/` — the runtime scene: `World`, composed from scene packs by `WorldComposer` as USD composes a stage, with no OpenUSD. Composition,
+  instancing, LOD loading and the `ngen-worldcheck` / `ngen-usdcheck` comparison in `src/world/README.md`.
 - `src/rpc/` — how processes and agents talk: the RPC core (`core/`, no engine code, shared with the build server) and the engine layer (method
   registry, endpoint). Protocol and how to add a method in `src/rpc/README.md`.
 - `src/introspect/` — `ngen-introspect`, the tool that shows every running process's records and trace, and calls their methods: a window

@@ -32,6 +32,7 @@ public:
     auto u32(uint32_t value) -> void { put(&value, sizeof(value)); }
     auto i32(int32_t value) -> void { put(&value, sizeof(value)); }
     auto u64(uint64_t value) -> void { put(&value, sizeof(value)); }
+    auto i64(int64_t value) -> void { put(&value, sizeof(value)); }
     auto f32(float value) -> void { put(&value, sizeof(value)); }
     auto f64(double value) -> void { put(&value, sizeof(value)); }
 
@@ -138,6 +139,7 @@ public:
     auto u32() -> uint32_t { return get<uint32_t>(); }
     auto i32() -> int32_t { return get<int32_t>(); }
     auto u64() -> uint64_t { return get<uint64_t>(); }
+    auto i64() -> int64_t { return get<int64_t>(); }
     auto f32() -> float { return get<float>(); }
     auto f64() -> double { return get<double>(); }
 
@@ -341,6 +343,7 @@ auto writeLayerPack(const LayerPack& pack) -> std::vector<std::byte> {
             prims.str(placement.assetId);
             prims.str(placement.primPath);
         }
+        prims.i64(prim.pointCount);
         prims.str(prim.meshAsset);
         prims.str(prim.materialAsset);
     }
@@ -458,6 +461,7 @@ auto readLayerPack(std::span<const std::byte> bytes) -> std::expected<LayerPack,
             placement.primPath = prims.str();
             prim.placements.push_back(std::move(placement));
         }
+        prim.pointCount = prims.i64();
         prim.meshAsset = prims.str();
         prim.materialAsset = prims.str();
         pack.prims.push_back(std::move(prim));

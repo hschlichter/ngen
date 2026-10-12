@@ -102,8 +102,11 @@ from (`server/assetcache.*`):
 - the source and every file in the packer's depfile
 - the packed file
 
-A secondary output is recorded like its file, with the same inputs; when the file is packed again, the secondary outputs it no longer writes are
-dropped.
+A job's secondary outputs are kept in its record, each with its packed file: they share the job's packer and inputs, and are up to date when
+those are and their own file is. When the file is packed again, its new list replaces the old one.
+
+The cache file is rewritten through a temporary file and a rename at most once a second while records change, and when the server stops.
+A record lost to a crash in between only means that asset is packed again.
 
 Each file is recorded with its size, modification time and content hash. An asset is up to date when its job key matches and every recorded file
 still has the same contents; unchanged size and modification time skip re-hashing. So a request repacks an asset when its source, a file it
@@ -140,7 +143,8 @@ file alone, so editing one file of a scene repacks that file only. A file's outp
   default prim and sublayers (asset ids), and per prim spec: its path, specifier, type, API schemas, `active`, `instanceable`, kind, the
   attributes the engine reads (`xformOp:*` and `xformOpOrder`, `visibility`, `purpose`, `extent`, `extentsHint`, `lod:*`, `thresholds`,
   `blendThresholds`, `projectionMethod`, and `inputs:*` outside materials), the relationships (`material:binding*`, `lod:heuristics`), its
-  references and payloads (asset id and prim path; an empty id is a reference inside the file), and the mesh and material assets it defines.
+  references and payloads (asset id and prim path; an empty id is a reference inside the file), the number of `points` it authors, and the
+  mesh and material assets it defines.
   Asset paths are resolved to asset ids, against the file's folder. Variants aren't read.
 - **A mesh pack per prim the file defines with geometry** (`def` of `Mesh`, `Cube`, `Sphere`, `Cylinder`, `Cone`): triangles with position,
   normal, display colour and texture coordinate (44-byte vertices), 32-bit indices, one submesh per `GeomSubset` (named by its path) and one for
