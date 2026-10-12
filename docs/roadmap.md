@@ -42,14 +42,16 @@ server that packs, and an introspection tool. What has landed of it is under [La
   physics and audio domains), in OpenUSD since v26.08, which is the vendored version (`libusd_usdLod`; not linked yet). The packer reads LOD
   roots into the scene pack; the view selects levels at runtime; levels stream in on demand.
   Ties into GPU-side LOD selection and meshlets.
-- **Streaming** — [plan_streaming_lod.md](plan_streaming_lod.md), design decisions locked. Load and unload scene data by where the camera is
+- **Streaming** — [plan_streaming_lod.md](plan_streaming_lod.md), design in progress. Load and unload scene data by where the camera is
   and what fits in memory, so a world much larger than memory (Caldera, below) can be opened and moved through; geometry and textures (mip
   levels by screen size). Decided: one system gives both LOD's wanted level and what is resident (the coarsest level always resident as the
-  placeholder); UsdLod is the only LOD; the packer builds a uniform XY grid of cells, two or three levels deep, shared by streaming and coarse
-  culling; one cell pack per LOD level of a cell; budgets per memory kind, priority by on-screen error; district-scale LOD as authored first.
+  placeholder); UsdLod is the only LOD; the streaming structure is authored with standard USD (payloads as units, `extentsHint` as their bounds,
+  load rules for residency), never computed at pack time; budgets per memory kind, priority by on-screen error.
+  - Also decided: no grouping beyond payloads; draw whatever is resident as soon as it is (gaps while content arrives are accepted); a payload
+    without `extentsHint` is always wanted and reported; every wanted payload is requested with a priority, nearest first, and never cancelled.
+  - Open: tuned thresholds, the far-field floor's cost.
   - Next: the scene pack plan takes the design's requirements (decision 5); then Caldera's proxy map through the scene pack, districts
     streaming, models streaming, textures streaming, each a plan of its own.
-  - Open: cell size and grid depth for Caldera, the far-field floor's cost, tuned thresholds.
 - **Physics** — UsdPhysics schemas (rigid bodies, colliders, joints, scenes; already in the vendored OpenUSD) mapped to physics components by
   the packer, simulated with **Jolt**. Physics is a UsdLod domain of its own.
 - **Skinning** — UsdSkel skeletons and skinned meshes; GPU skinning.
@@ -81,7 +83,8 @@ Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's ma
   re-request on command. Nothing packs without a request either way.
 - **Client-side cache** keyed by id and version. Trigger: start-up transfer time, or a remote view.
 - **Remote connections and authentication** (beyond loopback). Trigger: a view on another machine or a devkit.
-- **Priority and cancellation** of pack requests. Trigger: interactive requests wait behind bulk packing.
+- **Priority** of pack requests, and changing a request's priority; no cancellation: a request no longer needed still completes and is cached,
+  and the view ignores it ([plan_streaming_lod.md](plan_streaming_lod.md), decision 7). Trigger: streaming (Engine features).
 - **Refuse a second asset server** for the same variant in the same directory.
 - **Unified build and asset server** — the likely end state. Trigger: the two keep needing the same state.
 - **Long-running packer workers**; **shared content store across variants**; **bundling packed assets for shipping**.
