@@ -3,15 +3,15 @@
 The asset system gets engine-ready data to the engine. Something requests an asset by id from `ngen-asset-server`; the server packs it if its cached
 packed form is out of date, and streams the packed bytes over RPC to whoever asked. No client reads the server's files.
 
-**Packing** is the process inside it: one packer program per asset type turns a source file (shaders today, later USD scenes, textures, meshes) into
-its engine-ready form, under the rules in the root `pack.cpp`.
+**Packing** is the process inside it: one packer program per asset type turns a source file (shaders, textures, USD files) into its engine-ready
+form, under the rules in the root `pack.cpp`.
 
 | | |
 |---|---|
 | `assetclient.*` | `AssetClient`, the engine side of the stream |
 | `assethash.h` | the content hash behind asset versions |
 | `server/` | `ngen-asset-server`: requests, the cache (`assetcache.*`), the stream, and running packers (`packjobs.*`) |
-| `pack/` | packing: `packrule.h` (the rule type `pack.cpp` fills in), `packer.h` (what every packer program shares), the packed texture format (`packedtexture.*`) and the mip filter (`mipchain.*`), which the renderer uses too |
+| `pack/` | packing: `packrule.h` (the rule type `pack.cpp` fills in), `packer.h` (what every packer program shares), the packed texture format (`packedtexture.*`) and the mip filter (`mipchain.*`), which the renderer uses too, the scene pack format (`scenepacktypes.h`, `scenepack.*`), and the USD packer (`usd/`) |
 
 The asset system is separate from the build system. `ngen-build` builds the asset server and the packers as ordinary programs, and knows nothing
 else about assets.
@@ -20,6 +20,8 @@ else about assets.
 
 An asset's id is its source path relative to the asset server's working directory, with forward slashes, as USD names assets: `shaders/gbuffer.vert`,
 `assets/textures/brick.png`.
+A file can define more assets than itself: a packer may write **secondary outputs**, each its own asset with the id `<file>#<fragment>`, packed by
+the file's job. A USD file's meshes and materials are `assets/layered/base.usda#/World/Group/Own`: the file, `#`, the prim path in it.
 The id never changes when the asset's content does. The asset's **version** is the content hash of its packed file (FNV-1a 64, `assethash.h`), sent as
 16 hex digits.
 
@@ -69,8 +71,10 @@ is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own c
   - then `asset.ready` `{request, id, version, size, sent, packed}`; `packed` is true when a packer ran for it, false when the cache was up to
     date. An asset whose held version (`have`) is current gets `asset.ready` with `sent: false`
     and no data.
-  - or `asset.failed` `{request, id, errors}`: no rule for the extension, no such file, an id outside the project, or the packer's output when it
-    failed
+  - or `asset.failed` `{request, id, errors}`: no rule for the extension, no such file, an id outside the project, the packer's output when it
+    failed, or a `<file>#<fragment>` id the file's job didn't write
+- **Secondary outputs.** An id with a `#` is served by its file's job: the rule is the file's, and the file is packed (once, for every id of it in
+  flight) when it is out of date. One file is packed by one job at a time.
 - **Bulk and shared.** A request's assets are packed in parallel on one worker per hardware thread. An id already being packed, for any client, is
   not packed twice; the result goes to every request that asked.
 - **Streaming and flow control.** Chunks of different assets interleave, so a large asset doesn't hold back small ones requested with it. At most
@@ -98,6 +102,9 @@ from (`server/assetcache.*`):
 - the source and every file in the packer's depfile
 - the packed file
 
+A secondary output is recorded like its file, with the same inputs; when the file is packed again, the secondary outputs it no longer writes are
+dropped.
+
 Each file is recorded with its size, modification time and content hash. An asset is up to date when its job key matches and every recorded file
 still has the same contents; unchanged size and modification time skip re-hashing. So a request repacks an asset when its source, a file it
 includes, the packer binary or its rule changed, and otherwise streams the cached file.
@@ -111,13 +118,56 @@ A packer is a standalone program (`src/apps/packer<type>.cpp`) run with the same
 ```
 
 It reads `--source`, writes the packed asset to `--out`, and writes a Make-format depfile listing every file it read to `--depfile`. It exits
-nonzero, with a message on stdout or stderr, when it fails. `pack/packer.h` parses the arguments.
+nonzero, with a message on stdout or stderr, when it fails. What it prints on stdout when it succeeds is a warning, in the server's trace.
+`pack/packer.h` parses the arguments.
+
+A packer with secondary outputs writes each to `secondaryOutputFile(out, fragment)` (`<out>#<fragment>`, `/` replaced by `.`) and lists them in
+`<out>.outputs`, one `<id>\t<file>` line each (`writeSecondaryOutputs`). The server records what the list names, and only that.
 
 | Program | Packs | Output |
 |---|---|---|
 | `ngen-packer-shader` | GLSL with `glslc`: `optimize` (0 = `-O0`, 1 = `-O`) and `debug_info` (1 = `-g`); glslc's depfile gives the `#include`s | SPIR-V |
 | `ngen-packer-texture` | `.png .jpg .jpeg`: decoded with stb_image, the full mip chain built with `pack/mipchain.h` (2×2 box filter, colour averaged in linear space), written as a packed texture (`pack/packedtexture.h`): a 24-byte `NGTX` header (version, format, width, height, mip levels) and every level, level 0 first, tightly packed | RGBA8 sRGB, all mips |
-| `ngen-packer-copy` | `.usda .usdc .usd .hdr`: the source's bytes, unchanged, for assets the engine still reads in their source format. A clone (`FICLONE`) where the filesystem has one (btrfs, XFS), so the cache shares the source's blocks; a byte copy elsewhere | the source |
+| `ngen-packer-usd` | `.usda .usdc .usd`, one job per file (below) | a layer pack, and a mesh or material pack per prim that defines one |
+| `ngen-packer-copy` | `.hdr`: the source's bytes, unchanged, for assets the engine still reads in their source format. A clone (`FICLONE`) where the filesystem has one (btrfs, XFS), so the cache shares the source's blocks; a byte copy elsewhere | the source |
+
+## Scene packs
+
+`ngen-packer-usd` (`src/apps/packerusd.cpp`, `pack/usd/usdpacker.*`) packs one USD file, and reads nothing from any other: its depfile names the
+file alone, so editing one file of a scene repacks that file only. A file's outputs are:
+
+- **The layer pack**, the file's own asset: the opinions the file authors, read as written (Sdf, no composition). Its up axis, meters per unit,
+  default prim and sublayers (asset ids), and per prim spec: its path, specifier, type, API schemas, `active`, `instanceable`, kind, the
+  attributes the engine reads (`xformOp:*` and `xformOpOrder`, `visibility`, `purpose`, `extent`, `extentsHint`, `lod:*`, `thresholds`,
+  `blendThresholds`, `projectionMethod`, and `inputs:*` outside materials), the relationships (`material:binding*`, `lod:heuristics`), its
+  references and payloads (asset id and prim path; an empty id is a reference inside the file), and the mesh and material assets it defines.
+  Asset paths are resolved to asset ids, against the file's folder. Variants aren't read.
+- **A mesh pack per prim the file defines with geometry** (`def` of `Mesh`, `Cube`, `Sphere`, `Cylinder`, `Cone`): triangles with position,
+  normal, display colour and texture coordinate (44-byte vertices), 32-bit indices, one submesh per `GeomSubset` (named by its path) and one for
+  the faces no subset holds, the display colour, and the bounds.
+- **A material pack per `def Material`**: the `UsdPreviewSurface` diffuse colour, constant or from a `UsdUVTexture` file (an asset id).
+
+Meshes and materials are read through a stage of the file alone: a copy of the layer with every sublayer and every reference and payload to
+another file removed, so composition inside the file (internal references, node graphs) still applies and nothing outside it is read.
+
+What the engine doesn't support is reported, not packed: a warning per prim in the layer pack, and on stdout, so in the server's trace. Inherits,
+specializes, variants, relocates, layer offsets, collection-based bindings, time samples without a default value, value types the format has no
+form for, asset paths that don't resolve, and an `over` that authors geometry (a mesh is packed from the file that defines it).
+
+The format (`pack/scenepack.h`) is binary and little-endian: a 32-byte header (`NGPK`, the kind, the format version, the section count, and the
+offsets of the string table and the section table), a string table, and a table of typed sections. Readers check every offset and index, and
+return an error rather than read past the bytes. A change to the format bumps `scenePackFormatVersion` and the `usd` rule's version.
+
+`ngen-packdump` (`src/apps/packdump.cpp`) prints scene packs as JSON, from files or, with `--id`, fetched from its variant's asset server, which
+packs them when needed; `--vertices` adds every vertex and index:
+
+```sh
+./_out/linux-vulkan/release/ngen-packdump --id assets/layered/root.usda assets/layered/base.usda
+./_out/linux-vulkan/release/ngen-packdump --id 'assets/layered/base.usda#/World/Looks/Checker'
+```
+
+`assets/layered/` is the test scene for what a single-file scene doesn't show: sublayers, references (one instanced, one inside the file), a
+payload, a UsdLod root with payload levels, bindings on a parent and a child, visibility, a guide, a texture, and two arcs that warn.
 
 ## The client
 
@@ -141,3 +191,4 @@ view uses it for its scene argument, which is an id, and the USD resolver for ev
    `--depfile`.
 2. Add a program target linking the `packer` library in `build.cpp`, and make `ngen-asset-server` depend on it.
 3. Add a rule for its extensions in `pack.cpp`.
+4. If it writes secondary outputs, list them as the contract says; the server picks them up from the list.

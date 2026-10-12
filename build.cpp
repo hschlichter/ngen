@@ -159,6 +159,7 @@ auto main(int argc, char** argv) -> int {
                 "src/asset/pack/packer.cpp",
                 "src/asset/pack/mipchain.cpp",
                 "src/asset/pack/packedtexture.cpp",
+                "src/asset/pack/scenepack.cpp",
             })
             .public_include({"src/asset/pack"});
 
@@ -286,6 +287,54 @@ auto main(int argc, char** argv) -> int {
     auto packerShader = cxx::program("ngen-packer-shader").sources({"src/apps/packershader.cpp"}).link(packer);
     auto packerCopy = cxx::program("ngen-packer-copy").sources({"src/apps/packercopy.cpp"}).link(packer);
     auto packerTexture = cxx::program("ngen-packer-texture").sources({"src/apps/packertexture.cpp"}).include({"external/stb"}).link(packer);
+    // ngen-packdump: prints a scene pack, from a file or fetched from the asset server, as JSON.
+    auto packDump = cxx::program("ngen-packdump")
+                        .sources({"src/apps/packdump.cpp"})
+                        .include({"src/asset", "src/asset/pack", "external/json/single_include"})
+                        .link(packer)
+                        .link(assetClient)
+                        .link(rpccore);
+    // The USD packer (src/asset/README.md): one USD file to a layer pack plus its meshes and materials. It links OpenUSD; the USD half
+    // builds as C++20, as OpenUSD's headers require.
+    auto packerUsd =
+        cxx::program("ngen-packer-usd")
+            .sources({
+                "src/apps/packerusd.cpp",
+                "src/asset/pack/usd/usdpacker.cpp",
+                "src/scene/primshapemesh.cpp",
+            })
+            .include({
+                "src",
+                "src/asset",
+                "src/asset/pack",
+                "src/asset/pack/usd",
+                "src/scene",
+                "external/openusd_build/include",
+                "external/glm",
+            })
+            .warning_off("deprecated-declarations")
+            .for_source("src/asset/pack/usd/usdpacker.cpp", [](cxx::ObjectFile& file) { file.std("c++20"); })
+            .link(packer)
+            .lib_search("external/openusd_build/lib")
+            .rpath((std::filesystem::current_path() / "external/openusd_build/lib").string())
+            .link_flag("-lusd_usd")
+            .link_flag("-lusd_usdGeom")
+            .link_flag("-lusd_usdShade")
+            .link_flag("-lusd_sdf")
+            .link_flag("-lusd_pcp")
+            .link_flag("-lusd_tf")
+            .link_flag("-lusd_vt")
+            .link_flag("-lusd_gf")
+            .link_flag("-lusd_ar")
+            .link_flag("-lusd_arch")
+            .link_flag("-lusd_plug")
+            .link_flag("-lusd_js")
+            .link_flag("-lusd_work")
+            .link_flag("-lusd_trace")
+            .link_flag("-lusd_ts")
+            .link_flag("-lusd_pegtl")
+            .link_flag("-lusd_kind")
+            .link_flag("-ltbb");
     auto assetServer =
         cxx::program("ngen-asset-server")
             .sources({
@@ -300,9 +349,11 @@ auto main(int argc, char** argv) -> int {
             })
             .link(traceLib)
             .link(rpccore)
+            .link(packer)
             .depend_on(packerShader)
             .depend_on(packerCopy)
-            .depend_on(packerTexture);
+            .depend_on(packerTexture)
+            .depend_on(packerUsd);
 
     auto view =
         cxx::program("ngen-view")
@@ -463,6 +514,8 @@ auto main(int argc, char** argv) -> int {
     p.target(packerShader);
     p.target(packerCopy);
     p.target(packerTexture);
+    p.target(packerUsd);
+    p.target(packDump);
     p.target(assetServer);
     p.target(usdPlugins);
     p.target(format);

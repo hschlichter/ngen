@@ -44,10 +44,18 @@ public:
     // The packed file's hash (the asset's version) when the asset is up to date for this job; nullopt otherwise.
     auto upToDate(const std::string& id, uint64_t jobKey) -> std::optional<uint64_t>;
 
-    // Records a finished job and saves the cache. `inputs` are the source and the depfile's files. Returns the
-    // packed file's hash, or nullopt when a file can't be read.
-    auto record(const std::string& id, uint64_t jobKey, const std::string& packer, const std::vector<std::string>& inputs, const std::string& output)
-        -> std::optional<uint64_t>;
+    // Records a finished job and saves the cache. `inputs` are the source and the depfile's files; `secondaries` the job's
+    // secondary outputs (id and file), recorded with the same inputs. Records of secondary outputs an earlier run of the job
+    // wrote ("<id>#…") and this one didn't are dropped. Returns the packed file's hash, or nullopt when a file can't be read.
+    auto record(const std::string& id,
+                uint64_t jobKey,
+                const std::string& packer,
+                const std::vector<std::string>& inputs,
+                const std::string& output,
+                const std::vector<std::pair<std::string, std::string>>& secondaries = {}) -> std::optional<uint64_t>;
+
+    // The packed file recorded for an asset; nullopt when it has no record.
+    auto outputPath(const std::string& id) -> std::optional<std::string>;
 
 private:
     auto save() -> void;

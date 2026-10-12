@@ -26,11 +26,20 @@ auto packRules(const std::string& config) -> std::vector<PackRule> {
         .params = {},
         .version = 1,
     });
+    // USD files become scene packs, one job per file: the opinions the file authors as a layer pack, and each mesh and material
+    // it defines as its own asset, "<file>#<prim path>".
+    rules.push_back(PackRule{
+        .name = "usd",
+        .extensions = {".usda", ".usdc", ".usd"},
+        .packer = "ngen-packer-usd",
+        .params = {},
+        .version = 1,
+    });
     // Assets the engine still reads in their source format, until a packer for their engine-ready format exists: the packed
     // asset is the source's bytes.
     rules.push_back(PackRule{
         .name = "copy",
-        .extensions = {".usda", ".usdc", ".usd", ".hdr"},
+        .extensions = {".hdr"},
         .packer = "ngen-packer-copy",
         .params = {},
         .version = 1,

@@ -101,7 +101,10 @@ private:
     auto rulesRecord() const -> rpc::Json;
 
     auto subscribe(const std::string& id, Subscriber subscriber) -> void;
+    // Packs an asset if it is out of date: "<file>" or "<file>#<fragment>", a secondary output of <file>'s job.
     auto pack(const std::string& id) -> Outcome;
+    // Runs a file's packer and records its outputs, primary and secondary.
+    auto runPacker(const std::string& primary, const PackRule& rule, uint64_t key) -> Outcome;
     auto deliver(const std::string& id, const Outcome& outcome) -> void;
     auto pump(RpcServer::ConnectionId connection) -> void;
     // One of a request's assets was answered: sent with its bytes, held (the client had it), or failed.
@@ -128,6 +131,10 @@ private:
 
     std::mutex inFlightMutex;
     std::unordered_map<std::string, std::vector<Subscriber>> inFlight;
+
+    // One lock per file, held while its job checks the cache and runs: requests for several outputs of one file pack it once.
+    std::mutex fileLocksMutex;
+    std::unordered_map<std::string, std::shared_ptr<std::mutex>> fileLocks;
 
     // The data introspect.list and introspect.get serve.
     RpcRecords records;

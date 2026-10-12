@@ -1,6 +1,7 @@
 #include "assetserver.h"
 
 #include "assethash.h"
+#include "packer.h"
 #include "rpcdiscovery.h"
 
 #include <nlohmann/json.hpp>
@@ -374,12 +375,15 @@ auto AssetServer::subscribe(const std::string& id, Subscriber subscriber) -> voi
 
 auto AssetServer::pack(const std::string& id) -> Outcome {
     Outcome outcome;
-    if (!validId(id)) {
+    // "<file>#<fragment>" names a secondary output of <file>'s job: a mesh or material the file defines.
+    auto hash = id.find('#');
+    auto primary = id.substr(0, hash);
+    if (!validId(primary)) {
         outcome.errors.push_back(std::format("{} is not an asset id: a relative path below the server's directory", id));
         traceWarning("  {}  refused: not a relative path below the server's directory", id);
         return outcome;
     }
-    auto extension = fs::path(id).extension().string();
+    auto extension = fs::path(primary).extension().string();
     auto ruleIt = ruleByExtension.find(extension);
     if (ruleIt == ruleByExtension.end()) {
         outcome.errors.push_back(std::format("{}: no pack rule for '{}' files", id, extension));
@@ -388,23 +392,58 @@ auto AssetServer::pack(const std::string& id) -> Outcome {
     }
     const auto& rule = rules[ruleIt->second];
     std::error_code ec;
-    if (!fs::is_regular_file(id, ec)) {
-        outcome.errors.push_back(std::format("{}: no such file", id));
+    if (!fs::is_regular_file(primary, ec)) {
+        outcome.errors.push_back(std::format("{}: no such file", primary));
         traceWarning("  {}  failed: no such file", id);
         return outcome;
     }
     auto key = jobKey(rule);
-    auto packer = (options.binDirectory / rule.packer).string();
-    auto output = (cacheDirectory / id).string();
-    auto depfile = output + ".d";
-    outcome.path = output;
-    if (auto version = cache.upToDate(id, key)) {
+
+    // One job per file at a time: the outputs of one file, requested together, pack it once.
+    std::shared_ptr<std::mutex> fileLock;
+    {
+        std::lock_guard lock(fileLocksMutex);
+        auto& slot = fileLocks[primary];
+        if (!slot) {
+            slot = std::make_shared<std::mutex>();
+        }
+        fileLock = slot;
+    }
+    std::lock_guard jobLock(*fileLock);
+
+    auto upToDate = [&]() -> bool {
+        auto version = cache.upToDate(id, key);
+        if (!version) {
+            return false;
+        }
         outcome.ok = true;
         outcome.version = *version;
-        traceLine("  {}  up to date ({})", id, hashText(*version));
+        outcome.path = cache.outputPath(id).value_or((cacheDirectory / id).string());
+        return true;
+    };
+    if (upToDate()) {
+        traceLine("  {}  up to date ({})", id, hashText(outcome.version));
         return outcome;
     }
+    auto ran = runPacker(primary, rule, key);
+    if (!ran.ok) {
+        outcome.errors = std::move(ran.errors);
+        return outcome;
+    }
+    if (!upToDate()) {
+        outcome.errors.push_back(std::format("{}: packing {} wrote no such output", id, primary));
+        traceWarning("  {}  failed: packing {} wrote no such output", id, primary);
+        return outcome;
+    }
+    outcome.packed = true;
+    return outcome;
+}
 
+auto AssetServer::runPacker(const std::string& primary, const PackRule& rule, uint64_t key) -> Outcome {
+    Outcome outcome;
+    auto packer = (options.binDirectory / rule.packer).string();
+    auto output = (cacheDirectory / primary).string();
+    auto depfile = output + ".d";
     std::vector<std::string> argv = {
         packer,
         "--rule",
@@ -412,9 +451,9 @@ auto AssetServer::pack(const std::string& id) -> Outcome {
         "--rule-version",
         std::to_string(rule.version),
         "--asset",
-        id,
+        primary,
         "--source",
-        id,
+        primary,
         "--out",
         output,
         "--depfile",
@@ -424,36 +463,55 @@ auto AssetServer::pack(const std::string& id) -> Outcome {
         argv.push_back("--param");
         argv.push_back(name + "=" + value);
     }
-    traceLine("  {}  packing with {}", id, rule.packer);
+    // A job writes its secondary outputs afresh; an earlier run's list would name files that may no longer exist.
+    clearSecondaryOutputs(output);
+    traceLine("  {}  packing with {}", primary, rule.packer);
     packerRuns++;
     auto started = std::chrono::steady_clock::now();
     auto result = runProcess(argv);
     if (result.exitCode != 0) {
         outcome.errors = splitLines(result.output);
         outcome.errors.push_back(std::format("{} exited with {}", rule.packer, result.exitCode));
-        traceWarning("  {}  failed after {} ms: {} exited with {}", id, millisSince(started), rule.packer, result.exitCode);
+        traceWarning("  {}  failed after {} ms: {} exited with {}", primary, millisSince(started), rule.packer, result.exitCode);
         for (const auto& line : splitLines(result.output)) {
-            traceWarning("  {}    {}", id, line);
+            traceWarning("  {}    {}", primary, line);
         }
         return outcome;
     }
-    std::vector<std::string> inputs = {id};
+    // A packer's output on success is its warnings: shown, the job still succeeds.
+    for (const auto& line : splitLines(result.output)) {
+        traceWarning("  {}    {}", primary, line);
+    }
+    std::vector<std::string> inputs = {primary};
     for (const auto& dep : parseDepfile(depfile)) {
         if (std::find(inputs.begin(), inputs.end(), dep) == inputs.end()) {
             inputs.push_back(dep);
         }
     }
-    auto version = cache.record(id, key, packer, inputs, output);
+    auto secondaries = readSecondaryOutputs(output);
+    auto version = cache.record(primary, key, packer, inputs, output, secondaries);
     if (!version) {
-        outcome.errors.push_back(std::format("{}: cannot hash the packer's inputs or output", id));
-        traceWarning("  {}  failed: cannot hash the packer's inputs or output", id);
+        outcome.errors.push_back(std::format("{}: cannot hash the packer's inputs or outputs", primary));
+        traceWarning("  {}  failed: cannot hash the packer's inputs or outputs", primary);
         return outcome;
     }
     outcome.ok = true;
     outcome.packed = true;
     outcome.version = *version;
+    outcome.path = output;
+    std::error_code ec;
     auto size = fs::file_size(output, ec);
-    traceLine("  {}  packed in {} ms, {}, {} inputs ({})", id, millisSince(started), bytesText(ec ? 0 : size), inputs.size(), hashText(*version));
+    if (secondaries.empty()) {
+        traceLine("  {}  packed in {} ms, {}, {} inputs ({})", primary, millisSince(started), bytesText(ec ? 0 : size), inputs.size(), hashText(*version));
+    } else {
+        traceLine("  {}  packed in {} ms, {} and {} more outputs, {} inputs ({})",
+                  primary,
+                  millisSince(started),
+                  bytesText(ec ? 0 : size),
+                  secondaries.size(),
+                  inputs.size(),
+                  hashText(*version));
+    }
     return outcome;
 }
 

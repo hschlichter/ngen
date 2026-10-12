@@ -162,8 +162,12 @@ auto AssetCache::upToDate(const std::string& id, uint64_t jobKey) -> std::option
     return record.output.hash;
 }
 
-auto AssetCache::record(const std::string& id, uint64_t jobKey, const std::string& packer, const std::vector<std::string>& inputs, const std::string& output)
-    -> std::optional<uint64_t> {
+auto AssetCache::record(const std::string& id,
+                        uint64_t jobKey,
+                        const std::string& packer,
+                        const std::vector<std::string>& inputs,
+                        const std::string& output,
+                        const std::vector<std::pair<std::string, std::string>>& secondaries) -> std::optional<uint64_t> {
     Record record;
     record.jobKey = jobKey;
     auto packerFile = current(packer);
@@ -180,11 +184,35 @@ auto AssetCache::record(const std::string& id, uint64_t jobKey, const std::strin
         }
         record.inputs.push_back(*input);
     }
+    std::vector<std::pair<std::string, Record>> secondaryRecords;
+    for (const auto& [secondaryId, secondaryFile] : secondaries) {
+        auto secondaryOutput = current(secondaryFile);
+        if (!secondaryOutput) {
+            return std::nullopt;
+        }
+        Record secondary = record;
+        secondary.output = *secondaryOutput;
+        secondaryRecords.emplace_back(secondaryId, std::move(secondary));
+    }
     auto version = record.output.hash;
     std::lock_guard lock(mutex);
+    auto prefix = id + "#";
+    std::erase_if(records, [&prefix](const auto& entry) { return entry.first.starts_with(prefix); });
     records[id] = std::move(record);
+    for (auto& [secondaryId, secondary] : secondaryRecords) {
+        records[secondaryId] = std::move(secondary);
+    }
     save();
     return version;
+}
+
+auto AssetCache::outputPath(const std::string& id) -> std::optional<std::string> {
+    std::lock_guard lock(mutex);
+    auto it = records.find(id);
+    if (it == records.end()) {
+        return std::nullopt;
+    }
+    return it->second.output.path;
 }
 
 auto AssetCache::save() -> void {

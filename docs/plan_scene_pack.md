@@ -1,6 +1,6 @@
 # Scene pack
 
-**Status. Draft.**
+**Status. In progress.** Phase A started 2026-10-12.
 
 Step 2 of [plan_tool_architecture.md](plan_tool_architecture.md), the scene half: ngen-view stops reading USD. A USD packer turns every USD file
 into a pack of engine-ready data, one pack job per file; a runtime scene library composes the packs into the scene the renderer draws; and the
@@ -69,6 +69,9 @@ Locked in discussion (2026-10-11 to 2026-10-12):
    files it references (sublayers, references, payloads, textures), which become jobs of their own when requested. Jobs are self-contained
    (sources and rule in; packs and depfile out), so they can later run on other machines. A scene authored as one large file is one job: that
    is the author's choice.
+   *As built (phase A):* the opinions are read with `Sdf` as decided; meshes and materials are read through a stage of the file alone (a copy of
+   the layer with every arc to another file removed), so in-file composition (Sponza's materials reach their textures through internal
+   references to a `NodeGraph`) works with the `UsdGeom`/`UsdShade` APIs. Nothing outside the file is read, so the job stays self-contained.
 3. **Layer packs hold opinions per attribute, for the attributes the engine uses**: the transform operations and their order, `visibility`,
    `purpose`, `active`, `instanceable`, material bindings (relationships, with `bindMaterialAs`), light attributes, references and payloads (as
    placements, internal ones included), `extentsHint`, the UsdLod root's attributes and heuristics. The view resolves each attribute and

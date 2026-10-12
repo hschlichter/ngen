@@ -1,5 +1,6 @@
 #include "packer.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -61,4 +62,59 @@ auto readPackerFile(const std::string& path) -> std::expected<std::vector<std::b
         return std::unexpected(std::format("cannot read {}", path));
     }
     return bytes;
+}
+
+auto writePackerFile(const std::string& path, std::span<const std::byte> bytes) -> std::expected<void, std::string> {
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out.write(reinterpret_cast<const char*>(bytes.data()), (std::streamsize) bytes.size());
+    if (!out) {
+        return std::unexpected(std::format("cannot write {}", path));
+    }
+    return {};
+}
+
+auto secondaryOutputFile(const std::string& out, const std::string& fragment) -> std::string {
+    std::string name = fragment;
+    std::ranges::replace(name, '/', '.');
+    return out + "#" + name;
+}
+
+auto secondaryOutputsList(const std::string& out) -> std::string {
+    return out + ".outputs";
+}
+
+auto clearSecondaryOutputs(const std::string& out) -> void {
+    std::error_code ec;
+    for (const auto& [id, file] : readSecondaryOutputs(out)) {
+        std::filesystem::remove(file, ec);
+    }
+    std::filesystem::remove(secondaryOutputsList(out), ec);
+}
+
+auto writeSecondaryOutputs(const std::string& out, const std::vector<std::pair<std::string, std::string>>& outputs) -> std::expected<void, std::string> {
+    auto path = secondaryOutputsList(out);
+    std::ofstream list(path, std::ios::trunc);
+    for (const auto& [id, file] : outputs) {
+        list << id << '\t' << file << '\n';
+    }
+    if (!list) {
+        return std::unexpected(std::format("cannot write {}", path));
+    }
+    return {};
+}
+
+auto readSecondaryOutputs(const std::string& out) -> std::vector<std::pair<std::string, std::string>> {
+    std::vector<std::pair<std::string, std::string>> outputs;
+    std::ifstream list(secondaryOutputsList(out));
+    std::string line;
+    while (std::getline(list, line)) {
+        auto tab = line.find('\t');
+        if (tab == std::string::npos) {
+            continue;
+        }
+        outputs.emplace_back(line.substr(0, tab), line.substr(tab + 1));
+    }
+    return outputs;
 }
