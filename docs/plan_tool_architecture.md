@@ -237,7 +237,8 @@ Plan: [plan_rpc.md](plan_rpc.md).
   - `scene.variants.set` on a test scene with a variant set renders the same image as the stage packed with that selection
   - the engine libraries link no `libusd_*` (link graph and `nm`)
 - **Gaps:**
-  - the in-view editor windows still use USD in-process, so the ngen-view binary still links pxr until step 3
+  - the in-view editor windows still use USD in-process, so the ngen-view binary still links pxr until step 3. *Revised in
+    [plan_scene_pack.md](plan_scene_pack.md): the view drops pxr and the in-view editor in this step; there is no USD editing until step 3.*
   - an edit in the in-view editor repacks the whole layer and reloads the scene: no deltas yet
   - non-transform changes still re-upload the GPU scene in full
   - the server reloads the whole graph after a `build.cpp` change

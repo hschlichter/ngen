@@ -20,12 +20,14 @@ Items below that follow from the objective rather than from an existing plan are
 The umbrella is [plan_tool_architecture.md](plan_tool_architecture.md): a USD-free ngen-view fed by packed data, an editor that owns USD, an asset
 server that packs, and an introspection tool. What has landed of it is under [Landed](#landed).
 
-1. **Scene pack format** — *plan not written yet.* The critical path.
-   - USD packer: layer packs, sub-packs (references/payloads packed once, instanced), variant sets, typed components.
+1. **Scene pack format** — [plan_scene_pack.md](plan_scene_pack.md), draft. The critical path: one pack job per USD file, layer packs composed
+   in the view, no OpenUSD in the view, no USD editing until `ngen-editor`.
+   - USD packer: layer packs (references and payloads packed once, instanced), typed components; mesh and material assets as
+     `file.usd#/prim`, written by the file's one job.
    - Stable entity ids (prim path + submesh index).
-   - Runtime scene library (no pxr): layer stack and variant composition, transform hierarchy; replaces `RenderWorld`.
-   - Packer-discovered assets (references, textures) sent as new requests to the asset server, not rounds.
-   - Open: nested variant sets; meshes addressed as `file.usda#/prim` (one step writing many files vs re-reading the source).
+   - Runtime scene library (no pxr, `src/world/`): layer stack composition, transform hierarchy; replaces `RenderWorld`.
+   - Packer-discovered assets (references, payloads, textures) named in the pack and requested by the view.
+   - Later: variant sets, with a test scene of their own.
 2. **Async shaders** — [plan_async_shaders.md](plan_async_shaders.md), draft. Pipeline registry, start-up shaders from registrations (replaces
    `startupShaderIds()`), debug view shaders on first use.
 3. **Editor split (step 3)** — [plan_editor_split.md](plan_editor_split.md), draft. Deltas and incremental GPU scene, then `ngen-editor` as its

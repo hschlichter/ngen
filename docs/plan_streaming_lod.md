@@ -153,7 +153,8 @@ Locked (2026-10-11).
 
 ### 5. What this requires of the scene pack format and the engine
 
-Carried into the scene pack plan.
+Carried into the scene pack plan ([plan_scene_pack.md](plan_scene_pack.md): placements, LOD roots and the level per instance in its decisions 3,
+17 and 18; the renderer and asset server parts are left to the streaming steps).
 - **Scene pack**: per placement of a payload, which sub-pack, its transform and its bounds (from `extentsHint`, or none: decision 6); LOD roots
   (levels, bounds, heuristics), nesting (a converted Caldera district's levels hold model roots of their own) and sitting inside instance
   prototypes (a model asset is instanceable: a root is per prototype, its level chosen per instance); textures as mip tail plus level parts. One
@@ -178,7 +179,8 @@ models then appear as they arrive, with gaps where they haven't yet.
 
 A payload without `extentsHint` has no bounds to judge, so it is always wanted while its parent is resident, and the packer reports it as a
 trace warning naming the prim. Adding the bounds is an authoring fix; the engine doesn't measure or guess them (90 of 159,393 payload prims in
-`map_capital`).
+`map_capital`). This applies to payloads that aren't LOD levels: a level is wanted through its root (decision 1), and its bounds are the root's
+heuristic extent, so a level prim needs none of its own (the converted Caldera's levels have none).
 
 ### 7. Requests and priorities
 
