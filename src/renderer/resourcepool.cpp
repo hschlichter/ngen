@@ -1,7 +1,6 @@
 #include "resourcepool.h"
 #include "rhidevice.h"
 
-
 auto ResourcePool::init(RhiDevice* rhiDevice) -> void {
     device = rhiDevice;
 }
