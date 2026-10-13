@@ -47,6 +47,9 @@ public:
 
     auto descriptorSetLayout() const -> RhiDescriptorSetLayout* { return descSetLayout; }
 
+    // Whether its pipelines have been created; until then the frame leaves the pass out.
+    auto ready() -> bool;
+
 private:
     PipelineRegistry* registry = nullptr;
     // [cutout][doubleSided][depthPrepassed]: gbuffer.frag or gbuffercutout.frag, cull back or none, Greater-with-write (reversed-Z) or Equal-without.

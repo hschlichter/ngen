@@ -53,18 +53,19 @@ public:
 
     // Creates the passes, which register their pipelines; no pipeline exists yet. `shaders` is where they come from.
     auto init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, AssetClient* shaders, RhiExtent2D windowExtent) -> std::expected<void, int>;
-    // Sends one request for the start-up pipelines' shaders; returns how many shaders it names.
-    auto requestStartupShaders() -> size_t;
-    // Waits for the start-up shaders and creates the start-up pipelines, before the first frame. False when one can't be (the reason is in
-    // the trace).
-    auto createStartupPipelines() -> bool;
+    // Sends one request for the at-start pipelines' shaders; returns how many shaders it names. The pipelines are created as they arrive.
+    auto requestShaders() -> size_t;
+    // Whether a pipeline failed (its shader didn't pack, or the device couldn't create it).
+    auto pipelinesFailed() const -> bool { return pipelineRegistry.anyFailed(); }
     // Thread-safe: every pipeline and its state, for the `pipelines` record.
     auto pipelineInfos() const -> std::vector<PipelineInfo> { return pipelineRegistry.infos(); }
     // Applies what changed in the scene to the GPU scene: meshes, textures and materials added and removed, draw slots changed, lights.
     // Uploads are queued and recorded a budget per frame; nothing waits.
     auto applySceneChanges(const SceneChanges& changes) -> void;
-    // Records every queued upload and waits for it: start-up, so the first frame has the scene.
+    // Records every queued upload and waits for it.
     auto flushSceneUploads() -> void;
+    // Nothing of the scene left to upload, and no pipeline waiting for its shaders: the last frame drew everything applied.
+    auto sceneGpuIdle() const -> bool { return gpuScene.idle() && !pipelineRegistry.anyPending(); }
     auto render(RenderSnapshot& snapshot) -> void;
     auto destroy() -> void;
 

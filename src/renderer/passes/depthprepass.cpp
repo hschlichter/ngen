@@ -23,9 +23,9 @@ auto DepthPrepass::init(PipelineRegistry& pipelines, RhiFormat depthFormat, RhiD
         .raster = {.cullMode = RhiCullMode::Back},
         .depth = {.testEnable = true, .writeEnable = true, .compareOp = RhiCompareOp::Greater}, // reversed-Z
     };
-    this->pipelines[DrawLists::bucket(false, false)] = pipelines.registerGraphics("prepass.pipeline.cullback", request, PipelineUse::Startup);
+    this->pipelines[DrawLists::bucket(false, false)] = pipelines.registerGraphics("prepass.pipeline.cullback", request, PipelineUse::AtStart);
     request.raster.cullMode = RhiCullMode::None;
-    this->pipelines[DrawLists::bucket(true, false)] = pipelines.registerGraphics("prepass.pipeline.cullnone", request, PipelineUse::Startup);
+    this->pipelines[DrawLists::bucket(true, false)] = pipelines.registerGraphics("prepass.pipeline.cullnone", request, PipelineUse::AtStart);
 
     // Cutout: the texture coordinates too, from the full vertex stream.
     request.vertex.id = "shaders/depthcutout.vert";
@@ -36,9 +36,9 @@ auto DepthPrepass::init(PipelineRegistry& pipelines, RhiFormat depthFormat, RhiD
         {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
     };
     request.raster.cullMode = RhiCullMode::Back;
-    this->pipelines[DrawLists::bucket(false, true)] = pipelines.registerGraphics("prepass.pipeline.cullback.cutout", request, PipelineUse::Startup);
+    this->pipelines[DrawLists::bucket(false, true)] = pipelines.registerGraphics("prepass.pipeline.cullback.cutout", request, PipelineUse::AtStart);
     request.raster.cullMode = RhiCullMode::None;
-    this->pipelines[DrawLists::bucket(true, true)] = pipelines.registerGraphics("prepass.pipeline.cullnone.cutout", request, PipelineUse::Startup);
+    this->pipelines[DrawLists::bucket(true, true)] = pipelines.registerGraphics("prepass.pipeline.cullnone.cutout", request, PipelineUse::AtStart);
     return true;
 }
 
@@ -106,4 +106,9 @@ auto DepthPrepass::addPass(
 
             cmd->endRendering();
         });
+}
+
+auto DepthPrepass::ready() -> bool {
+    const auto& handles = pipelines;
+    return registry->ready(handles);
 }

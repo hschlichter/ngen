@@ -35,7 +35,7 @@ auto DebugRenderer::init(
         .topology = RhiPrimitiveTopology::LineList,
         .depth = {.testEnable = true, .writeEnable = false, .compareOp = RhiCompareOp::Greater}, // reversed-Z
     };
-    pipelineHandle = pipelines.registerGraphics("debuglines.pipeline", request, PipelineUse::Startup);
+    pipelineHandle = pipelines.registerGraphics("debuglines.pipeline", request, PipelineUse::AtStart);
 
     vertexBuffers.resize(imageCount);
     vertexBuffersMapped.resize(imageCount);
@@ -135,4 +135,9 @@ auto DebugRenderer::addPass(FrameGraph& fg, FgTextureHandle color, FgTextureHand
             cmd->draw(vertexCount, 1, 0, 0);
             cmd->endRendering();
         });
+}
+
+auto DebugRenderer::ready() -> bool {
+    std::array<PipelineHandle, 1> handles = {pipelineHandle};
+    return registry->ready(handles);
 }

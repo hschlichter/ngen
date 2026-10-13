@@ -3,6 +3,7 @@
 #include "rpcrecords.h"
 #include "rpcregistry.h"
 #include "sessionscript.h"
+#include <nlohmann/json.hpp>
 
 #include <cstdint>
 #include <functional>
@@ -29,6 +30,13 @@ struct AssetGoToState {
     uint64_t revision = 0;
 };
 
+// An answer that waits until the scene is resident: everything it wants is loaded, uploaded and drawn. A method that changes what is
+// drawn answers when the change is on screen; a script holds its clock while one waits.
+struct ResidentWaiter {
+    RpcResponder responder;
+    rpc::Json result;
+};
+
 // What ngen-view's commands act on. Owned by the view's main; the commands hold references.
 struct ViewContext {
     Camera& cam;
@@ -46,6 +54,7 @@ struct ViewContext {
     std::function<void()> frameSceneView;
     bool& quit;
     const uint64_t& frameCounter;
+    std::vector<ResidentWaiter>& residentWaiters;
     std::string sceneLabel;
 };
 

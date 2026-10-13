@@ -54,7 +54,7 @@ auto GeometryPass::init(RhiDevice* device, PipelineRegistry& pipelineRegistry, R
                     request.depth = {.testEnable = true, .writeEnable = true, .compareOp = RhiCompareOp::Greater};
                 }
                 auto name = std::format("geometry.pipeline.{}.{}{}", doubleSided != 0 ? "cullnone" : "cullback", prepassed != 0 ? "equal" : "less", cutout != 0 ? ".cutout" : "");
-                pipelines[cutout][doubleSided][prepassed] = pipelineRegistry.registerGraphics(name, request, PipelineUse::Startup);
+                pipelines[cutout][doubleSided][prepassed] = pipelineRegistry.registerGraphics(name, request, PipelineUse::AtStart);
             }
         }
     }
@@ -191,4 +191,9 @@ auto GeometryPass::addPass(
 
             cmd->endRendering();
         });
+}
+
+auto GeometryPass::ready() -> bool {
+    std::span<const PipelineHandle> handles(&pipelines[0][0][0], 8);
+    return registry->ready(handles);
 }

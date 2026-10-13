@@ -39,9 +39,9 @@ auto ShadowPass::init(RhiDevice* device, PipelineRegistry& pipelines, RhiExtent2
         .vertexAttributes = {{.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0}}, // position-only stream
         .raster = {.cullMode = RhiCullMode::Back},
     };
-    this->pipelines[DrawLists::bucket(false, false)] = pipelines.registerGraphics("shadow.pipeline.cullback", request, PipelineUse::Startup);
+    this->pipelines[DrawLists::bucket(false, false)] = pipelines.registerGraphics("shadow.pipeline.cullback", request, PipelineUse::AtStart);
     request.raster.cullMode = RhiCullMode::None;
-    this->pipelines[DrawLists::bucket(true, false)] = pipelines.registerGraphics("shadow.pipeline.cullnone", request, PipelineUse::Startup);
+    this->pipelines[DrawLists::bucket(true, false)] = pipelines.registerGraphics("shadow.pipeline.cullnone", request, PipelineUse::AtStart);
 
     // Cutout: the texture coordinates too, from the full vertex stream, and the geometry set for the material's opacity.
     request.vertex.id = "shaders/shadowcutout.vert";
@@ -53,9 +53,9 @@ auto ShadowPass::init(RhiDevice* device, PipelineRegistry& pipelines, RhiExtent2
         {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
     };
     request.raster.cullMode = RhiCullMode::Back;
-    this->pipelines[DrawLists::bucket(false, true)] = pipelines.registerGraphics("shadow.pipeline.cullback.cutout", request, PipelineUse::Startup);
+    this->pipelines[DrawLists::bucket(false, true)] = pipelines.registerGraphics("shadow.pipeline.cullback.cutout", request, PipelineUse::AtStart);
     request.raster.cullMode = RhiCullMode::None;
-    this->pipelines[DrawLists::bucket(true, true)] = pipelines.registerGraphics("shadow.pipeline.cullnone.cutout", request, PipelineUse::Startup);
+    this->pipelines[DrawLists::bucket(true, true)] = pipelines.registerGraphics("shadow.pipeline.cullnone.cutout", request, PipelineUse::AtStart);
     return true;
 }
 
@@ -172,4 +172,9 @@ auto ShadowPass::addPass(
 
             cmd->endRendering();
         });
+}
+
+auto ShadowPass::ready() -> bool {
+    const auto& handles = pipelines;
+    return registry->ready(handles);
 }

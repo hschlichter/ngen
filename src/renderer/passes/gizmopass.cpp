@@ -34,7 +34,7 @@ auto GizmoPass::init(RhiDevice* device, PipelineRegistry& pipelines, uint32_t im
         .raster = {.cullMode = RhiCullMode::None, .lineWidth = lineWidth},
         .depth = {.testEnable = false, .writeEnable = false},
     };
-    pipelineHandle = pipelines.registerGraphics("gizmo.pipeline", request, PipelineUse::Startup);
+    pipelineHandle = pipelines.registerGraphics("gizmo.pipeline", request, PipelineUse::AtStart);
 
     vertexBuffers.resize(imageCount);
     vertexBuffersMapped.resize(imageCount);
@@ -137,4 +137,9 @@ auto GizmoPass::addPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D fullE
 
             cmd->endRendering();
         });
+}
+
+auto GizmoPass::ready() -> bool {
+    std::array<PipelineHandle, 1> handles = {pipelineHandle};
+    return registry->ready(handles);
 }

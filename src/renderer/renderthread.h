@@ -31,6 +31,13 @@ public:
     auto submitSnapshot(RenderSnapshot snapshot) -> void;
     // Scene changes are applied in the order submitted; several submitted between frames are applied together.
     auto submitSceneChanges(SceneChanges changes) -> void;
+    // Every change list submitted has been applied and drawn, with nothing left to upload and no pipeline pending, as of the last frame
+    // the render thread finished.
+    auto sceneDrawn() const -> bool {
+        auto submittedSoFar = submitted.load(std::memory_order_acquire);
+        auto drawnSoFar = drawnUpTo.load(std::memory_order_acquire);
+        return drawnSoFar == submittedSoFar && gpuIdle.load(std::memory_order_acquire);
+    }
 
     auto setFrameGraphDebugEnabled(bool enabled) -> void { fgDebugWanted.store(enabled, std::memory_order_relaxed); }
     auto latestFrameGraphDebug() -> std::optional<FrameGraphDebugSnapshot>;
@@ -93,6 +100,9 @@ private:
     // Scene upload slot (separate channel)
     std::mutex uploadMutex;
     std::optional<SceneChanges> pendingChanges;
+    std::atomic<uint64_t> submitted{0}; // change lists submitted
+    std::atomic<uint64_t> drawnUpTo{0}; // change lists applied by a frame the render thread finished
+    std::atomic<bool> gpuIdle{true};    // that frame left nothing to upload
 
     // Frame graph debug slot (separate channel, latest-only, non-blocking)
     std::atomic<bool> fgDebugWanted{false};

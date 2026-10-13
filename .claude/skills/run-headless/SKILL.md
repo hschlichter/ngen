@@ -53,7 +53,11 @@ from `./ngen-cli introspect list`).
 - `ngen-cli view` replaces itself with the set variant's `ngen-view`, so `timeout`, signals and exit codes behave exactly as with the binary.
   Prefer `--frames` to a `timeout` kill, so the view exits cleanly and its last events are sent.
 - Write the trace to `/tmp` or the session scratchpad, not into the repo.
-- Sponza loads for a while before its frames start: give `--frames` runs time, and the trace command a `timeout` above that if you add one.
+- The view's first frame comes at once; the scene arrives while it runs. `--frames`, `--screenshot` and script frame numbers count from when
+  the scene is first resident (everything it wants loaded, uploaded and drawn; the trace's `SceneResident`), so a script sees the loaded
+  scene. `--no-wait-resident` counts from start-up instead, to look at loading itself. Verbs that change what is drawn (`lod`, `purposes`,
+  `repack`) hold the script's count until the change is drawn, and `wait-resident` does the same. Sponza takes a few seconds to be resident:
+  give the trace command a `timeout` above that if you add one.
 
 ## See and drive the frame
 

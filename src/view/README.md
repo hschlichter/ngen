@@ -5,10 +5,34 @@ ngen-view's library: the scene it shows (`viewscene.*`), picking (`viewpicking.*
 
 ## The scene: `ViewScene`
 
-The view shows a scene composed from its packs, with nothing of USD in it (`src/world/README.md`). `ViewScene::open(id)` composes the
-scene's World from its layer packs, fetched from the asset server round by round, then fetches the meshes and materials of what is drawn
-and the textures those materials name, and builds the renderer's inputs. It blocks until all of it has arrived; a pack that fails is a gap,
-with a warning.
+The view shows a scene composed from its packs, with nothing of USD in it (`src/world/README.md`). Nothing about it waits.
+
+**The scene thread.** `ViewScene` owns a thread, which owns the composer, the packs and the libraries.
+- **Requests.** It takes requests in order: `open`, `setLodLevel`, `setPurposeShown`, `refresh` (Repack and change notices) and
+  `setLocalTransform` (gizmo drags and `translate`). Each returns at once.
+- **Arrivals.** It takes what the asset server answered (`AssetClient::takeAnswered`, woken by the client).
+- **Per batch** of requests and arrivals it composes with the layer packs held (one that hasn't arrived is a gap), requests the packs it names
+  and lacks, requests the meshes and materials of what is drawn and the textures of the materials held, and extracts.
+- **Publishing.** It publishes a `SceneSnapshot`, which the main thread takes once a frame (`update`) and all queries read, and the changes for
+  the renderer.
+- **Unchanged arrivals.** An asset fetched again that arrives with the same version keeps its library entry, so nothing is uploaded again.
+
+**What draws while things arrive.** A prim draws once its mesh is on the GPU. A material whose texture is still uploading samples white. A
+cutout whose opacity texture is still uploading draws opaque. A material that hasn't arrived uses the display colour.
+
+**Resident.** The scene is resident when everything it wants is loaded, uploaded and drawn:
+- the scene thread has nothing queued, requested or unextracted;
+- the render thread has applied every change list in a frame it finished, with no upload or pipeline pending.
+
+The main loop checks once a frame, and traces `SceneResident` when it becomes true, with the time since start and the longest frame while
+loading.
+
+Until the scene is first resident the camera frames what has arrived, unless it is moved by hand. Script frames, `--frames` and `--screenshot`
+count only while nothing waits for residency, so a script sees the scene loaded:
+- **The start.** Counting starts when the scene is first resident; `--no-wait-resident` counts from start-up instead, to measure loading.
+- **Methods that change what is drawn** (`view.lod.set`, `view.purposes`, `view.repack`) answer once the scene is resident again, and a script
+  holds its count until they have.
+- **`wait-resident`** (`view.waitResident`) waits the same way.
 
 The inputs persist across rebuilds:
 - **Libraries.** `MeshLibrary`, `MaterialLibrary` and `TextureLibrary` keep one entry per mesh asset, per material (or display colour) and per
@@ -29,14 +53,19 @@ The inputs persist across rebuilds:
   camera's up is the scene's up axis.
 - **The engine's light**: when the scene has no distant light, one is added, upper-front-right in the scene's frame (intensity 1, colour
   (1, 0.95, 0.88), angle 0.53).
-- **Changing what is drawn**: `setLodLevel` (the `lod` verb, `view.lod.set`) and `setPurposeShown` compose and fetch what the change
-  needs and rebuild the inputs; the changes go to the renderer, which uploads them over the next frames within its budget.
+- **Changing what is drawn**: `setLodLevel` (the `lod` verb, `view.lod.set`) and `setPurposeShown` are requests: the scene thread
+  composes, fetches what the change needs and rebuilds, and the renderer uploads the changes over the next frames within its budget.
 - **Names**: draw instances and lights carry a prim index; `primPath` turns it into the entity's full path, for the render debugger, the
   frame debugger, the GPU scene window and the dumps.
 
-The trace shows the steps: `SceneRequested`, `PacksComposed` (packs, rounds, prims, prototypes, time), `SceneAssetsReceived` (meshes,
-materials, textures, time), `WorldExtracted` (instances, meshes, materials, lights, time), and `SceneAssetFailed` or `CompositionMessage`
-warnings.
+The trace shows the steps:
+- `SceneRequested`;
+- `PacksComposed`, once every layer pack named has been answered (packs, prims, prototypes);
+- `SceneAssetsReceived`, once the meshes, materials and textures wanted have been answered;
+- `WorldExtracted`, per batch (instances, meshes, materials, textures, lights, time);
+- `AssetsRefreshRequested`;
+- `SceneResident`;
+- and `SceneAssetFailed` or `CompositionMessage` warnings.
 
 ## What arrived: the Assets window
 
@@ -59,15 +88,16 @@ them, ready for Repack selected. `assets-of [prim]` and `view.assetsOf` answer w
 or Select shown for every row shown. Repack selected (or the row's menu) has the asset server repack the selection even when its cache is up
 to date; Repack scene does it for every asset of the scene (`ViewScene::assetIds`: layer packs, meshes, materials, textures). The view
 fetches what was repacked, fetches again the meshes and materials of a repacked USD file, and rebuilds its scene, so an edit to a source shows
-without a restart (`ViewScene::refresh` with `force`, the `repack <id>... | scene` verb and `view.repack`; it blocks, as loading does, and traces
-`AssetsRefreshed`). A shader's repack refreshes only the server's cache.
+without a restart (`ViewScene::refresh` with `force`, the `repack <id>... | scene` verb and `view.repack`, which answers once the scene is resident
+again; the trace has `AssetsRefreshRequested`). What arrives unchanged keeps its library entry and isn't uploaded again. A shader's repack
+refreshes only the server's cache.
 
 **Edits reach the view by themselves.** The asset server tells the view when a source of something it received changes (`asset.changed`,
 `src/asset/README.md`, "Change notices"). Each frame the view takes the changed ids: shaders are requested again and their pipelines recreated
-when they arrive (`src/renderer/README.md`, "Pipelines"); the scene's assets go through `ViewScene::refresh` without `force`, which fetches what
-changed and rebuilds the scene, the same blocking path as Repack (`AssetsRefreshed` with `forced: false`). The Assets window marks a changed
-row stale until its new version arrives; the `assets` record has `stale` and `changes`. A rebuild hands the renderer new mesh and material
-libraries, and the renderer then uploads everything again, since the same handles may name new content.
+when they arrive (`src/renderer/README.md`, "Pipelines"); the scene's assets go through `ViewScene::refresh` without `force`, the same path as
+Repack (`AssetsRefreshRequested` with `forced: false`). Only what changed is uploaded: an edit to a prim's display colour changes its mesh pack
+(the colour is in it), so that one mesh, its material and the material's colour texture. The Assets window marks a changed row stale until
+its new version arrives; the `assets` record has `stale` and `changes`.
 
 ## Selection, picking and gizmos
 

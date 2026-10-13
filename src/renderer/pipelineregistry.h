@@ -19,9 +19,10 @@ class RhiDevice;
 // pipelines once, as a request: the pipeline description with shader ids in place of modules. It gets a stable handle and asks for the
 // pipeline at record time; while the pipeline's shaders haven't arrived it is pending, and `get` returns null.
 //
-// Start-up pipelines are created before the first frame, from one request for all their shaders. First-use pipelines request their shaders
-// the first time they are asked for and are created at `update`, a few per frame; until then the pass that wants them is skipped.
-// Shaders come from the asset server through AssetClient; the render thread never waits on them after start-up.
+// Nothing waits for a shader. At-start pipelines are requested at start-up, in one request; first-use pipelines the first time they are asked
+// for. Either is created at `update`, a few per frame, when its shaders have arrived; until then `get` returns null and the pass that wants
+// it is skipped (the frame shows the clear colour and the UI until the lit path is ready). A shader that fails leaves its pipeline failed,
+// with the reason in the trace and the pipeline's info; the view goes on. Shaders come from the asset server through AssetClient.
 //
 // Hot reload: `reload` requests changed shaders again; `update` takes a new version when it arrives and recreates every pipeline using it.
 // Handles keep their index; the old pipelines and modules go through the deletion queue. A shader that fails keeps the old module and
@@ -34,8 +35,8 @@ struct PipelineHandle {
 };
 
 enum class PipelineUse : uint8_t {
-    Startup,  // created before the first frame; the view stops when one can't be
-    FirstUse, // requested when first asked for; only for passes that may be skipped
+    AtStart,  // requested at start-up, in one request, and created when its shaders arrive
+    FirstUse, // requested when first asked for (the debug views)
 };
 
 struct ShaderRef {
@@ -76,7 +77,7 @@ enum class PipelineState : uint8_t {
 // A pipeline as the `pipelines` record and the Render Debug window show it.
 struct PipelineInfo {
     std::string name;
-    PipelineUse use = PipelineUse::Startup;
+    PipelineUse use = PipelineUse::AtStart;
     PipelineState state = PipelineState::Pending;
     bool requested = false;
     std::vector<std::pair<std::string, std::string>> shaders; // id and version ("" until it arrived)
@@ -96,12 +97,12 @@ public:
     // Whether every one of these is ready; the shaders of those that aren't are requested together, in one request.
     auto ready(std::span<const PipelineHandle> handles) -> bool;
 
-    // The shader ids of every start-up pipeline, each once, sorted.
-    auto startupShaders() const -> std::vector<std::string>;
-    // Sends one request for the start-up pipelines' shaders.
-    auto requestStartup() -> void;
-    // Waits for the start-up shaders and creates every start-up pipeline. False when one can't be, with the reason in the trace.
-    auto createStartup() -> bool;
+    // The shader ids of every at-start pipeline, each once, sorted.
+    auto atStartShaders() const -> std::vector<std::string>;
+    // Sends one request for the at-start pipelines' shaders; update() creates them as they arrive.
+    auto requestAtStart() -> void;
+    // Whether a pipeline failed: its shader didn't pack, or the device couldn't create it.
+    auto anyFailed() const -> bool;
 
     // Requests these shaders again, the ones a module was created for; the asset server said their sources changed. On the render thread.
     auto reload(std::span<const std::string> shaderIds) -> void;
@@ -111,6 +112,9 @@ public:
     // at most `budget` of them.
     auto update(uint64_t frame, uint32_t budget = 4) -> void;
 
+    // Whether a pipeline that was asked for (start-up, or a first-use one requested) or a shader reload is still waiting for its shaders.
+    auto anyPending() const -> bool;
+
     // Thread-safe: what each pipeline is, for the `pipelines` record and the Render Debug window.
     auto infos() const -> std::vector<PipelineInfo>;
 
@@ -119,7 +123,7 @@ public:
 private:
     struct Entry {
         std::string name;
-        PipelineUse use = PipelineUse::Startup;
+        PipelineUse use = PipelineUse::AtStart;
         std::optional<GraphicsPipelineRequest> graphics;
         std::optional<ComputePipelineRequest> compute;
         RhiPipeline* pipeline = nullptr;

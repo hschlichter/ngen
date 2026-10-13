@@ -1,6 +1,6 @@
 # Async scene
 
-**Status. In progress.** Decisions locked 2026-10-13; phase 1 landed 2026-10-13, phase 2 next.
+**Status. In progress.** Decisions locked 2026-10-13; phase 1 landed 2026-10-13; phase 2 implemented 2026-10-13, its responsiveness criterion open.
 
 ngen-view never waits for its scene, and starts with the absolute minimum: no scene and no shader stands between start-up and the first
 frame, and the view stays responsive throughout. It opens a scene and draws its first frame at once. Layer packs, meshes, materials and textures appear as
@@ -292,9 +292,60 @@ Changed or found on the way:
   (three_cubes' colour edit re-adds its 4 meshes). Phase 2's "patches one material entry" needs the entry kept when the pack's version is the
   same.
 
+### Phase 2 results (2026-10-13)
+
+What passes:
+- **First frame at once.**
+  - Warm Sponza: the first frame 37 ms after start, resident at 4.0 s.
+  - Cold Sponza (a fresh server and cache in a scratch root): the first frame 37 ms after start, before any shader loaded (the shaders by
+    about 350 ms), the USD file packed by 5.1 s, resident at 9.5 s.
+  - Cold three_cubes: the first frame 27 ms after start in one run, but 437 ms in another, while the server compiled shaders on every core
+    (contention, not a wait).
+  - Caldera's capital: the first frame 33 ms after start, resident at 4.7 s, its image byte-identical to the depth-range one.
+- **Scripts are unchanged.** three_cubes and Sponza in the lit, albedo, normals and prepass views are byte-identical to
+  `_out/depthrange-baseline/after`. The LOD, pick and translate, and texture repack scripts give the same results as in phase 1.
+- **RPC still means done.** A screenshot one script frame after `lod /World/Tree/lod 0` already shows the new level, byte-identical to the one
+  30 frames later.
+- **A broken shader doesn't stop the view.**
+  - With a syntax error in `lighting.frag` at start-up the view runs, showing the clear colour, the trace has glslc's error, and
+    `--fail-on-validation` exits with 2.
+  - Fixing the file during the run retries the failed pipeline, and the final frame is byte-identical to the lit baseline.
+- **Unchanged assets aren't uploaded.** A forced repack of one texture that packs to the same bytes keeps its entry: no upload.
+- **Debug and release build**, and the debug build runs the LOD script and three_cubes clean.
+
+What doesn't:
+- **Responsive throughout: not met.** The longest main-thread frame while loading is 84.7 ms on warm Sponza and 435 ms on Caldera. The main
+  thread waits on the render thread (one snapshot in flight), whose long frames are allocations:
+  - growing a pool or table buffer, up to 68 ms (two in one change list, 90 ms);
+  - a frame's staging buffer, 15–23 ms of each upload frame;
+  - a 4096² texture, 12–17 ms.
+
+  The 50 ms target needs at least the staging ring (its trigger, "staging allocations showing in the frame time", fired) and pool growth
+  that doesn't create a large buffer in one frame. Both are decisions; see Open questions.
+- **"Edits apply live" as written.** three_cubes' colour edit re-uploads the edited cube's mesh, not only a material entry: the display colour
+  is in the mesh pack. It uploads only that mesh (1 of 4), its material and its colour texture, which is what changed. The criterion assumed
+  wrongly.
+- **Placeholders: not checked.** There is no way yet to hold back one asset on the server, so the white-while-uploading texture and the
+  display-colour material are only seen in passing during loads.
+
+Changed on the way:
+- **`setLocalTransform` is a request to the scene thread**, not a main-thread fast path (step 5 said it stayed). The thread owns the
+  transforms, so a drag waits for the thread's current batch, at most a frame or two at Sponza's size.
+- **The open doesn't fail the view.** A root layer that can't be had is a `SceneFailed` error and an empty scene, and the view runs on.
+- **`view.repack` answers `{assets}`.** `sceneAssets` went, since what is the scene's is known only on the scene thread.
+- **The trace has `AssetsRefreshRequested`** in place of `AssetsRefreshed`, and `SceneResident` carries the longest frame while loading.
+- **A failed shader's pipeline is retried by a change notice**, even with no module made.
+- **Two crashes fixed:** recording an upload before any mesh existed (no pool buffers yet), and exiting before one existed.
+
 ## Open questions
 
 - The upload budget's default (64 MiB a frame) is a guess, to be measured on Sponza's 4096² textures (89 MB with mips each, so split by level).
+- **Responsiveness** (phase 2 results): to bring loading frames under 50 ms, which of
+  - the staging ring (one staging block per frame slot, kept);
+  - pool growth that spreads its cost, for example pre-sizing from a change list's meshes and growing further ahead, or several fixed-size
+    pool chunks (rejected in decision 4 for multiplying draws);
+  - making large textures and buffers off the render thread (the RHI isn't thread-safe for it today);
+  - a lower upload budget (slower loads)?
 
 ## Deferred / follow-ups
 

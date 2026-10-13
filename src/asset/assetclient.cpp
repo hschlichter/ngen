@@ -28,6 +28,8 @@ struct AssetClient::State {
     std::unordered_map<std::string, uint32_t> outstanding; // requests for the id not answered yet
     std::vector<std::string> changedIds;                   // told by asset.changed, not taken yet
     std::set<std::string> changedPending;
+    std::vector<std::string> answeredIds; // arrived or failed, not taken yet
+    std::function<void()> answeredCallback;
     AssetClientStats stats;
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     std::vector<AssetLogEntry> logEntries;
@@ -46,6 +48,9 @@ struct AssetClient::State {
     }
 
     auto answered(const std::string& id) -> void {
+        if (answeredCallback) {
+            answeredIds.push_back(id);
+        }
         auto it = outstanding.find(id);
         if (it == outstanding.end()) {
             return;
@@ -141,6 +146,9 @@ struct AssetClient::State {
             return;
         }
         changed.notify_all();
+        if (answeredCallback) {
+            answeredCallback();
+        }
     }
 };
 
@@ -174,6 +182,9 @@ auto AssetClient::connect(const std::string& variant) -> std::expected<RpcEndpoi
         std::lock_guard lock(state->mutex);
         state->connected = false;
         state->changed.notify_all();
+        if (state->answeredCallback) {
+            state->answeredCallback();
+        }
     });
     state->rpc.startWithoutListening();
     auto connection = state->rpc.connect(server->port);
@@ -289,6 +300,16 @@ auto AssetClient::log() const -> std::vector<AssetLogEntry> {
 auto AssetClient::pending(const std::string& id) const -> bool {
     std::lock_guard lock(state->mutex);
     return state->outstanding.contains(id);
+}
+
+auto AssetClient::takeAnswered() -> std::vector<std::string> {
+    std::lock_guard lock(state->mutex);
+    return std::exchange(state->answeredIds, {});
+}
+
+auto AssetClient::setAnsweredCallback(std::function<void()> callback) -> void {
+    std::lock_guard lock(state->mutex);
+    state->answeredCallback = std::move(callback);
 }
 
 auto AssetClient::takeChanged() -> std::vector<std::string> {

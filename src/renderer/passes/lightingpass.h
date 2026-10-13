@@ -5,6 +5,7 @@
 #include "rhitypes.h"
 #include "shadowcascades.h"
 
+#include <array>
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <span>
@@ -81,6 +82,9 @@ public:
         bool pcf,
         RhiExtent2D atlasExtent,
         float previewFar) -> const LightingPassData&;
+
+    // Whether its pipelines have been created; until then the frame leaves the pass out.
+    auto ready() -> bool;
 
 private:
     RhiDevice* device = nullptr;

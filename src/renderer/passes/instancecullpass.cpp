@@ -54,7 +54,7 @@ auto InstanceCullPass::init(RhiDevice* device, PipelineRegistry& pipelines) -> b
         .descriptorSetLayouts = {setLayout},
         .pushConstant = {.stage = RhiShaderStage::Compute, .offset = 0, .size = sizeof(uint32_t)},
     };
-    pipelineHandle = pipelines.registerCompute("cull.pipeline", request, PipelineUse::Startup);
+    pipelineHandle = pipelines.registerCompute("cull.pipeline", request, PipelineUse::AtStart);
     return true;
 }
 
@@ -149,4 +149,9 @@ auto InstanceCullPass::addPasses(FrameGraph& fg, const DrawLists::Handles& handl
             data.commands = builder.write(handles.commands, FgAccessFlags::StorageWrite);
         },
         [dispatchMode, groupCount](FrameGraphContext& ctx, const ScatterPassData&) { dispatchMode(ctx, CullMode::Scatter, groupCount); });
+}
+
+auto InstanceCullPass::ready() -> bool {
+    std::array<PipelineHandle, 1> handles = {pipelineHandle};
+    return registry->ready(handles);
 }

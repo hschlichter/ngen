@@ -42,6 +42,9 @@ public:
         const GpuScene& scene,
         RhiDescriptorSet* descriptorSet) -> const DepthPrepassData&;
 
+    // Whether its pipelines have been created; until then the frame leaves the pass out.
+    auto ready() -> bool;
+
 private:
     PipelineRegistry* registry = nullptr;
     // By bucket (DrawLists::bucket): single-sided, double-sided, then the same two cutout.

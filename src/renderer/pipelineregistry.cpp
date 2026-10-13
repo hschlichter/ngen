@@ -237,10 +237,10 @@ auto PipelineRegistry::ready(std::span<const PipelineHandle> handles) -> bool {
     return all;
 }
 
-auto PipelineRegistry::startupShaders() const -> std::vector<std::string> {
+auto PipelineRegistry::atStartShaders() const -> std::vector<std::string> {
     std::set<std::string> ids;
     for (const auto& entry : entries) {
-        if (entry.use != PipelineUse::Startup) {
+        if (entry.use != PipelineUse::AtStart) {
             continue;
         }
         for (const auto& shader : shadersOf(entry)) {
@@ -250,39 +250,18 @@ auto PipelineRegistry::startupShaders() const -> std::vector<std::string> {
     return {ids.begin(), ids.end()};
 }
 
-auto PipelineRegistry::requestStartup() -> void {
+auto PipelineRegistry::requestAtStart() -> void {
     std::vector<Entry*> startup;
     for (auto& entry : entries) {
-        if (entry.use == PipelineUse::Startup) {
+        if (entry.use == PipelineUse::AtStart) {
             startup.push_back(&entry);
         }
     }
     request(startup);
 }
 
-auto PipelineRegistry::createStartup() -> bool {
-    auto ids = startupShaders();
-    source->wait(ids);
-    bool ok = true;
-    for (auto& entry : entries) {
-        if (entry.use != PipelineUse::Startup || entry.pipeline != nullptr) {
-            continue;
-        }
-        if (auto failed = failedShader(entry); !failed.empty()) {
-            TRACE_ERROR("Render", "ShaderPackFailed", entry.name).text(failed);
-            std::lock_guard lock(infoMutex);
-            entry.state = PipelineState::Failed;
-            entry.error = failed;
-            TRACE_ERROR("Render", "PipelineCreateFailed", entry.name).text(std::format("pipeline {}: {}", entry.name, failed)).field("reason", failed);
-            ok = false;
-            continue;
-        }
-        create(entry);
-        if (entry.state != PipelineState::Ready) {
-            ok = false;
-        }
-    }
-    return ok;
+auto PipelineRegistry::anyFailed() const -> bool {
+    return std::ranges::any_of(entries, [](const Entry& entry) { return entry.state == PipelineState::Failed; });
 }
 
 auto PipelineRegistry::reload(std::span<const std::string> shaderIds) -> void {
@@ -291,6 +270,23 @@ auto PipelineRegistry::reload(std::span<const std::string> shaderIds) -> void {
         // Requested even while an earlier reload of it is in flight: that one may answer with the content before this change.
         if (modules.contains(id)) {
             reloading.insert(id);
+            ids.push_back(id);
+            continue;
+        }
+        // A shader that never made a module (it failed to pack): its failed pipelines try again with what arrives now.
+        bool retried = false;
+        std::lock_guard lock(infoMutex);
+        for (auto& entry : entries) {
+            if (entry.state != PipelineState::Failed || !std::ranges::any_of(shadersOf(entry), [&](const ShaderRef& shader) { return shader.id == id; })) {
+                continue;
+            }
+            entry.state = PipelineState::Pending;
+            entry.error.clear();
+            entry.reportedPending = false;
+            entry.requested = true;
+            retried = true;
+        }
+        if (retried) {
             ids.push_back(id);
         }
     }
@@ -439,6 +435,16 @@ auto PipelineRegistry::update(uint64_t frame, uint32_t budget) -> void {
             entry.error = failed;
         }
     }
+}
+
+auto PipelineRegistry::anyPending() const -> bool {
+    if (!reloading.empty()) {
+        return true;
+    }
+    return std::ranges::any_of(entries, [](const Entry& entry) {
+        bool asked = entry.use == PipelineUse::AtStart || entry.requested;
+        return asked && entry.state == PipelineState::Pending;
+    });
 }
 
 auto PipelineRegistry::infos() const -> std::vector<PipelineInfo> {

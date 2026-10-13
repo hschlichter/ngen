@@ -38,6 +38,7 @@ auto RenderThread::submitSnapshot(RenderSnapshot snapshot) -> void {
 
 auto RenderThread::submitSceneChanges(SceneChanges changes) -> void {
     std::lock_guard lock(uploadMutex);
+    submitted.fetch_add(1, std::memory_order_acq_rel);
     if (pendingChanges) {
         pendingChanges->append(std::move(changes));
     } else {
@@ -77,8 +78,10 @@ auto RenderThread::threadLoop() -> void {
         slotAvailable.notify_one();
 
         // Check for pending scene upload
+        uint64_t appliedUpTo = 0;
         {
             std::lock_guard lock(uploadMutex);
+            appliedUpTo = submitted.load(std::memory_order_acquire);
             if (pendingChanges) {
                 auto changes = std::move(*pendingChanges);
                 pendingChanges.reset();
@@ -117,6 +120,9 @@ auto RenderThread::threadLoop() -> void {
         }
 
         renderer->render(snapshot);
+        // What this frame drew: published after it, so the main thread sees residency only once it is on screen.
+        gpuIdle.store(renderer->sceneGpuIdle(), std::memory_order_release);
+        drawnUpTo.store(appliedUpTo, std::memory_order_release);
 
         {
             auto results = renderer->takeCaptureResults();

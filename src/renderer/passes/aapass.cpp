@@ -41,7 +41,7 @@ auto AAPass::init(RhiDevice* dev, PipelineRegistry& pipelines, uint32_t frameCou
         .descriptorSetLayouts = {setLayout},
         .pushConstant = {.stage = RhiShaderStage::Compute, .offset = 0, .size = sizeof(FxaaPush)},
     };
-    pipelineHandle = pipelines.registerCompute("aa.pipeline", request, PipelineUse::Startup);
+    pipelineHandle = pipelines.registerCompute("aa.pipeline", request, PipelineUse::AtStart);
 
     pool = device->createDescriptorPool(frameCount, bindings);
     device->setDebugName(pool, "aa.sets.pool");
@@ -114,4 +114,9 @@ auto AAPass::addPass(FrameGraph& fg, FgTextureHandle input, RhiExtent2D extent, 
             cmd->pushConstants(pipeline, RhiShaderStage::Compute, 0, sizeof(push), &push);
             cmd->dispatch((extent.width + 7) / 8, (extent.height + 7) / 8, 1);
         });
+}
+
+auto AAPass::ready() -> bool {
+    std::array<PipelineHandle, 1> handles = {pipelineHandle};
+    return registry->ready(handles);
 }

@@ -47,6 +47,9 @@ public:
         const GpuScene& scene,
         RhiDescriptorSet* geometrySet) -> const ShadowPassData&;
 
+    // Whether its pipelines have been created; until then the frame leaves the pass out.
+    auto ready() -> bool;
+
 private:
     RhiDescriptorSetLayout* descSetLayout = nullptr; // binding 0: instance buffer
     RhiDescriptorPool* descPool = nullptr;

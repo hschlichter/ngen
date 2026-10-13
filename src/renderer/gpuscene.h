@@ -161,6 +161,8 @@ public:
     // Records every queued upload on the uploader's command buffer and waits. Start-up only.
     auto flushUploads(GpuUploader& uploader, uint64_t frame) -> void;
     auto pendingUploads() const -> size_t { return queue.size(); }
+    // Nothing queued, no texture waiting for its slot, no grown buffer waiting for its copy: what was applied is on the GPU.
+    auto idle() const -> bool;
     auto pendingBytes() const -> uint64_t;
     auto setUploadBudget(uint64_t bytes) -> void { uploadBudget = bytes; }
 
@@ -287,6 +289,7 @@ private:
     uint32_t dirtyFirst = 0;
     uint32_t dirtyEnd = 0;
 
-    // This frame's import of the instance buffer, whose final access afterExecute keeps.
+    // This frame's import of the instance buffer, whose final access afterExecute keeps; none in a frame without the lit path.
     FgBufferHandle instanceImport;
+    bool instanceImported = false;
 };

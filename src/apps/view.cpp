@@ -148,6 +148,8 @@ auto main(int argc, char* argv[]) -> int {
     bool screenshotsShowUi = false;
     uint64_t maxFrames = 0;
     bool rpcEnabled = true; // --no-rpc: no endpoint, no discovery file
+    // --no-wait-resident: script frames (and --frames, --screenshot) count from start-up instead of from the scene first being resident.
+    bool waitForResident = true;
     SessionScript session;
     std::string sessionError;
     auto flagValue = [](std::string_view arg, std::string_view flag) -> std::string {
@@ -166,6 +168,8 @@ auto main(int argc, char* argv[]) -> int {
             forceRenderDebug = true;
         } else if (arg == "--show-ui") {
             screenshotsShowUi = true;
+        } else if (arg == "--no-wait-resident") {
+            waitForResident = false;
         } else if (arg == "--fail-on-validation") {
             failOnValidation = true;
             enableValidation = true;
@@ -347,37 +351,14 @@ auto main(int argc, char* argv[]) -> int {
     renderer.setValidationEnabled(enableValidation);
     renderer.setScreenshotsShowUi(screenshotsShowUi);
 
-    // The passes have registered their pipelines: their start-up shaders go out in one request now and pack while the scene loads.
-    auto stopAfterRenderer = [&] -> int {
-        renderer.destroy();
-        rhiDevice.destroy();
-        return failAfterInit();
-    };
-    renderer.requestStartupShaders();
+    // The passes have registered their pipelines: their shaders go out in one request, and each pipeline is made when its shaders arrive.
+    // Nothing waits for them: the frame is the clear colour and the UI until the lit path's pipelines are there.
+    renderer.requestShaders();
 
-    // The scene, composed from its packs; no scene argument is an empty scene.
+    // The scene, composed from its packs as they arrive; no scene argument is an empty scene.
     ViewScene scene(assetClient);
-    if (!scene.open(sceneId)) {
-        return stopAfterRenderer();
-    }
+    scene.open(sceneId);
 
-    {
-        // How much of the shaders' packing the scene's loading didn't cover.
-        auto waitStart = std::chrono::steady_clock::now();
-        bool created = renderer.createStartupPipelines();
-        auto waitedMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - waitStart).count();
-        if (!created) {
-            TRACE_ERROR("Render", "StartupPipelinesFailed", "startup").text("a start-up pipeline can't be created; the reason is above");
-            return stopAfterRenderer();
-        }
-        TRACE_EVENT("Render", "ShadersReady", "startup")
-            .text(std::format("start-up pipelines created after waiting {:.0f} ms for their shaders", waitedMs))
-            .field("waited_ms", waitedMs);
-    }
-
-    // The scene as it opened, uploaded before the first frame.
-    renderer.applySceneChanges(scene.takeChanges());
-    renderer.flushSceneUploads();
     ViewUI viewUI;
     if (positional.size() > 1) {
         viewUI.setBookmarkPath(std::string(positional[1]) + ".cameras.txt");
@@ -447,7 +428,17 @@ auto main(int argc, char* argv[]) -> int {
             cam.frame(sceneBounds, glm::radians(45.0f));
         }
     };
-    frameSceneView();
+    // Until the scene is first resident the camera follows it, framing what has arrived, unless it is moved by hand.
+    bool autoFrame = true;
+    bool everResident = false;
+    bool wasResident = false;
+    // Answers waiting for the scene to be resident (view.waitResident, view.lod.set, view.repack, view.purposes).
+    std::vector<ResidentWaiter> residentWaiters;
+    // Script frames: counted only while nothing waits for residency, so a script sees the scene as it is once loaded.
+    uint64_t scriptFrame = 0;
+    // The longest main-loop frame while the scene wasn't resident: how responsive the view stayed while it loaded.
+    double longestLoadingFrameMs = 0.0;
+    uint64_t loadingFrames = 0;
 
     // Main loop
     profile::registerThread("Main");
@@ -480,6 +471,7 @@ auto main(int argc, char* argv[]) -> int {
         .frameSceneView = frameSceneView,
         .quit = quit,
         .frameCounter = frameCounter,
+        .residentWaiters = residentWaiters,
         .sceneLabel = positional.size() >= 2 ? std::string(positional[1]) : std::string("(new scene)"),
     };
     registerViewMethods(registry, viewContext);
@@ -500,17 +492,33 @@ auto main(int argc, char* argv[]) -> int {
     while (!quit && !viewUI.wantsQuit()) {
         PROFILE_FRAME_MARK();
         frameCounter++;
-        session.takeDue(frameCounter, dueCommands);
+        // The scene as the scene thread last published it. Until it is first resident the camera follows it.
+        if (scene.update()) {
+            cam.worldUp = scene.worldUp();
+            if (autoFrame) {
+                frameSceneView();
+            }
+        }
+        bool holdScript = (waitForResident && !everResident) || !residentWaiters.empty();
+        dueCommands.clear();
+        if (!holdScript) {
+            scriptFrame++;
+            session.takeDue(scriptFrame, dueCommands);
+        }
         for (const auto& c : dueCommands) {
             runViewScriptCommand(registry, c);
         }
         endpoint.drain();
-        if (maxFrames > 0 && frameCounter > maxFrames) {
+        if (maxFrames > 0 && scriptFrame > maxFrames) {
             quit = true;
         }
         auto nowTicks = SDL_GetTicksNS();
         auto dt = (float) (nowTicks - lastTicks) / 1.0e9f;
         lastTicks = nowTicks;
+        if (!wasResident && frameCounter > 1) {
+            longestLoadingFrameMs = std::max(longestLoadingFrameMs, (double) dt * 1000.0);
+            loadingFrames++;
+        }
 
         int winW = 0;
         int winH = 0;
@@ -528,6 +536,41 @@ auto main(int argc, char* argv[]) -> int {
         // What changed in the scene since the last frame: the render thread applies it, uploads go out a budget per frame.
         if (auto changes = scene.takeChanges(); !changes.empty()) {
             renderThread.submitSceneChanges(std::move(changes));
+        }
+        // Resident: the scene thread has nothing left to do, and the render thread has drawn every change with nothing left to upload.
+        bool resident = scene.idle() && renderThread.sceneDrawn();
+        if (resident && !wasResident) {
+            if (!everResident) {
+                everResident = true;
+                if (autoFrame) {
+                    frameSceneView();
+                }
+                autoFrame = false;
+            }
+            if (!residentWaiters.empty() || frameCounter > 0) {
+                auto stats = assetClient.stats();
+                TRACE_EVENT("Scene", "SceneResident", scene.sceneId().empty() ? "(empty scene)" : scene.sceneId())
+                    .text(std::format("scene resident at frame {}, {:.0f} ms after start: {} draws, {} assets received; longest of the {} frames before, {:.1f} ms",
+                                      frameCounter,
+                                      trace::msSinceStart(),
+                                      scene.renderWorld().meshInstances.size(),
+                                      stats.received,
+                                      loadingFrames,
+                                      longestLoadingFrameMs))
+                    .field("frame", (int64_t) frameCounter)
+                    .field("since_start_ms", trace::msSinceStart())
+                    .field("assets", (int64_t) stats.received)
+                    .field("longest_frame_ms", longestLoadingFrameMs);
+                longestLoadingFrameMs = 0.0;
+                loadingFrames = 0;
+            }
+        }
+        wasResident = resident;
+        if (resident) {
+            for (auto& waiter : residentWaiters) {
+                waiter.responder.respond(waiter.result);
+            }
+            residentWaiters.clear();
         }
 
         static const uint32_t pollZoneId = profile::registerName("PollEvents");
@@ -607,6 +650,7 @@ auto main(int argc, char* argv[]) -> int {
             }
             if (ev.type == SDL_EVENT_MOUSE_MOTION && mouseCapture) {
                 cam.handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
+                autoFrame = false;
             }
 
             // A gizmo drag in progress: the new local transform is the view's own opinion on the prim, until the view closes.
@@ -675,7 +719,11 @@ auto main(int argc, char* argv[]) -> int {
         profile::endZone(); // PollEvents
 
         const auto* keys = SDL_GetKeyboardState(nullptr);
+        auto camBefore = cam.position;
         cam.update(keys, dt);
+        if (cam.position != camBefore) {
+            autoFrame = false;
+        }
 
         // Culling runs on the GPU: the snapshot carries the frustum
         // to cull against (live, or frozen so the culled set can be inspected from elsewhere),
@@ -900,6 +948,7 @@ auto main(int argc, char* argv[]) -> int {
 
     renderThread.stop();
     JobSystem::shutdown();
+    bool pipelinesFailed = renderer.pipelinesFailed();
     renderer.destroy();
     rhiDevice.destroy();
     SDL_DestroyWindow(window);
@@ -907,9 +956,12 @@ auto main(int argc, char* argv[]) -> int {
 
     // The endpoint goes last, so subscribers get the trace up to here: the last events are sent before the
     // connections close, waiting up to a second for a subscriber to take them.
-    bool failed = failOnValidation && validationErrors > 0;
-    if (failed) {
+    bool failed = failOnValidation && (validationErrors > 0 || pipelinesFailed);
+    if (failOnValidation && validationErrors > 0) {
         TRACE_ERROR("Engine", "ValidationFailed", "view").text(std::format("validation errors: {}", validationErrors)).field("count", (int64_t) validationErrors);
+    }
+    if (failOnValidation && pipelinesFailed) {
+        TRACE_ERROR("Engine", "PipelinesFailed", "view").text("a pipeline failed: its shader didn't pack or the device couldn't create it (the reason is above)");
     }
     TRACE_EVENT("Engine", "ProcessExiting", "view")
         .text(std::format("exiting after {} frames", frameCounter))

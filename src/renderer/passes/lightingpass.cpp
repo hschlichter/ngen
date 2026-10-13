@@ -38,7 +38,7 @@ auto LightingPass::init(RhiDevice* dev, PipelineRegistry& pipelines, uint32_t im
         .raster = {.cullMode = RhiCullMode::None},
         .depth = {.testEnable = false, .writeEnable = false},
     };
-    pipelineHandle = pipelines.registerGraphics("lighting.pipeline", request, PipelineUse::Startup);
+    pipelineHandle = pipelines.registerGraphics("lighting.pipeline", request, PipelineUse::AtStart);
 
     descriptorPool = device->createDescriptorPool(imageCount, bindings);
     device->setDebugName(descriptorPool, "lighting.sets.pool");
@@ -209,4 +209,9 @@ auto LightingPass::addPass(
             cmd->draw(3, 1, 0, 0);
             cmd->endRendering();
         });
+}
+
+auto LightingPass::ready() -> bool {
+    std::array<PipelineHandle, 1> handles = {pipelineHandle};
+    return registry->ready(handles);
 }

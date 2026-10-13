@@ -344,6 +344,7 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"goto-asset", "view.gotoAsset", parseGoToAsset},
     ScriptVerb{"assets-of", "view.assetsOf", parsePrim},
     ScriptVerb{"lod", "view.lod.set", parseLod},
+    ScriptVerb{"wait-resident", "view.waitResident", parseNothing},
     ScriptVerb{"view", "view.mode", parseViewMode},
     ScriptVerb{"window", "view.window", parseWindow},
     ScriptVerb{"debugview", "view.debugview", parseDebugView},
@@ -485,7 +486,7 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.purposes",
-            .summary = "Draw the prims of the guide and proxy purposes, or not; default and render prims are always drawn.",
+            .summary = "Draw the prims of the guide and proxy purposes, or not; default and render prims are always drawn. Answers once the change is drawn.",
             .params = {
                 optionalField("guide", RpcType::Bool, "guides drawn"),
                 optionalField("proxy", RpcType::Bool, "proxies drawn"),
@@ -495,16 +496,18 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
         [&view](const Json& p, RpcResponder responder) {
             if (p.contains("guide")) {
                 view.ui.setShowGuides(p["guide"].get<bool>());
+                view.scene.setPurposeShown(Purpose::Guide, p["guide"].get<bool>());
             }
             if (p.contains("proxy")) {
                 view.ui.setShowProxies(p["proxy"].get<bool>());
+                view.scene.setPurposeShown(Purpose::Proxy, p["proxy"].get<bool>());
             }
-            responder.respond(Json::object());
+            view.residentWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
         });
     registry.add(
         {
             .name = "view.lod.set",
-            .summary = "The level a LOD root wants, by its full path (instances expanded); loads it, and the root draws it once it has.",
+            .summary = "The level a LOD root wants, by its full path (instances expanded); loads it. Answers once the scene is resident with it drawn.",
             .params = {
                 requiredField("root", RpcType::String, "the path of the prim with LODRootAPI"),
                 requiredField("level", RpcType::Int, "0 is the finest"),
@@ -513,17 +516,27 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
         },
         [&view](const Json& p, RpcResponder responder) {
             view.scene.setLodLevel(p["root"].get<std::string>(), (uint32_t) std::max(0, p["level"].get<int>()));
-            responder.respond(Json::object());
+            view.residentWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
+        });
+    registry.add(
+        {
+            .name = "view.waitResident",
+            .summary = "Answers once the scene is resident: everything it wants loaded, uploaded and drawn. A script holds its frame count until then.",
+            .params = {},
+            .result = "{}",
+        },
+        [&view](const Json&, RpcResponder responder) {
+            view.residentWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
         });
     registry.add(
         {
             .name = "view.repack",
-            .summary = "Have the asset server repack assets even when its cache is up to date, and rebuild the scene from them; blocks until done.",
+            .summary = "Have the asset server repack assets even when its cache is up to date, and rebuild the scene from them. Answers once the scene is resident with them drawn.",
             .params = {
                 optionalField("ids", RpcType::Array, "asset ids"),
                 optionalField("scene", RpcType::Bool, "every asset of the scene"),
             },
-            .result = "{assets, sceneAssets}",
+            .result = "{assets}",
         },
         [&view](const Json& p, RpcResponder responder) {
             std::vector<std::string> ids;
@@ -538,8 +551,8 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
                 responder.fail(rpc::invalidParams, "expected ids or scene");
                 return;
             }
-            auto sceneAssets = view.scene.refresh(ids, true);
-            responder.respond({{"assets", ids.size()}, {"sceneAssets", sceneAssets}});
+            view.scene.refresh(ids, true);
+            view.residentWaiters.push_back({.responder = std::move(responder), .result = {{"assets", ids.size()}}});
         });
     registry.add(
         {
@@ -884,24 +897,19 @@ auto statusRecord(const ViewContext& view) -> Json {
 }
 
 auto sceneRecord(const ViewContext& view) -> Json {
-    const auto& world = view.scene.world();
-    size_t prims = 0;
-    world.visit([&prims](const VisitedEntity&) {
-        prims++;
-        return true;
-    });
+    const auto& snapshot = view.scene.snapshot();
     auto lodLevels = Json::object();
-    for (const auto& [root, level] : world.lodLevels) {
+    for (const auto& [root, level] : snapshot.lodLevels) {
         lodLevels[root] = level;
     }
     return {
         {"scene", view.sceneLabel},
-        {"layerStack", world.layerStack},
-        {"upAxis", world.upAxis},
-        {"metersPerUnit", world.metersPerUnit},
+        {"layerStack", snapshot.layerStack},
+        {"upAxis", snapshot.upAxis},
+        {"metersPerUnit", snapshot.metersPerUnit},
         {"up", vec3Json(view.scene.worldUp())},
-        {"prims", prims},
-        {"prototypes", world.prototypes.size()},
+        {"prims", snapshot.prims},
+        {"prototypes", snapshot.prototypes},
         {"meshInstances", view.scene.renderWorld().meshInstances.size()},
         {"lights", view.scene.renderWorld().lights.size()},
         {"lodLevels", lodLevels},
@@ -973,7 +981,7 @@ auto pipelinesRecord(const ViewContext& view) -> Json {
         const char* state = info.state == PipelineState::Ready ? "ready" : (info.state == PipelineState::Failed ? "failed" : "pending");
         pipelines.push_back({
             {"name", info.name},
-            {"use", info.use == PipelineUse::Startup ? "startup" : "firstUse"},
+            {"use", info.use == PipelineUse::AtStart ? "atStart" : "firstUse"},
             {"state", state},
             {"requested", info.requested},
             {"shaders", shaders},

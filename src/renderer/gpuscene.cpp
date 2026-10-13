@@ -111,7 +111,10 @@ auto GpuScene::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* qu
 
 auto GpuScene::destroy() -> void {
     for (auto* target : {&vertices, &positions, &indices, &meshTable, &materialTable}) {
-        device->destroyBuffer(target->buffer);
+        // The pool's buffers exist once a mesh has been added.
+        if (target->buffer != nullptr) {
+            device->destroyBuffer(target->buffer);
+        }
         if (target->moveFrom != nullptr) {
             device->destroyBuffer(target->moveFrom);
         }
@@ -120,7 +123,10 @@ auto GpuScene::destroy() -> void {
     meshes.clear();
     meshData.clear();
     for (auto& [index, info] : gpuTextures) {
-        device->destroyTexture(info.texture);
+        // Made when its first level is recorded.
+        if (info.texture != nullptr) {
+            device->destroyTexture(info.texture);
+        }
     }
     gpuTextures.clear();
     textureData.clear();
@@ -139,6 +145,8 @@ auto GpuScene::ensureCapacity(GrowableBuffer& target, uint64_t bytes) -> bool {
     if (target.buffer != nullptr && bytes <= target.capacity) {
         return false;
     }
+    PROFILE_ZONE("GrowBuffer");
+    PROFILE_ZONE_VALUE(bytes);
     auto capacity = std::max({bytes, target.capacity * 2, minimumBufferBytes});
     auto* grown = device->createBuffer({
         .size = capacity,
@@ -430,6 +438,11 @@ auto GpuScene::beginFrame(uint64_t frame) -> bool {
     return std::exchange(descriptorsDirty, false);
 }
 
+auto GpuScene::idle() const -> bool {
+    bool fresh = std::ranges::any_of(std::array{&vertices, &positions, &indices, &meshTable, &materialTable}, [](const GrowableBuffer* target) { return target->fresh; });
+    return queue.empty() && texturesCopied.empty() && !fresh;
+}
+
 auto GpuScene::pendingBytes() const -> uint64_t {
     uint64_t bytes = 0;
     for (const auto& upload : queue) {
@@ -440,7 +453,13 @@ auto GpuScene::pendingBytes() const -> uint64_t {
 
 template <typename Retire>
 auto GpuScene::record(RhiCommandBuffer* cmd, uint64_t budget, const Retire& retire) -> void {
-    std::array<GrowableBuffer*, 5> targets = {&vertices, &positions, &indices, &meshTable, &materialTable};
+    // The buffers there are: the pool's exist once a mesh has been added.
+    std::vector<GrowableBuffer*> targets;
+    for (auto* target : {&vertices, &positions, &indices, &meshTable, &materialTable}) {
+        if (target->buffer != nullptr) {
+            targets.push_back(target);
+        }
+    }
 
     // What this record takes: at most `budget` bytes, at least one upload.
     size_t taken = 0;
@@ -460,6 +479,7 @@ auto GpuScene::record(RhiCommandBuffer* cmd, uint64_t budget, const Retire& reti
     RhiBuffer* batch = nullptr;
     std::byte* mapped = nullptr;
     if (stagingBytes > 0) {
+        PROFILE_ZONE("UploadStaging");
         batch = device->createBuffer({.size = stagingBytes, .usage = RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "gpuscene.upload.staging"});
         mapped = static_cast<std::byte*>(device->mapBuffer(batch));
         std::memset(mapped + takenBytes, 0, zeroBytes);
@@ -502,6 +522,7 @@ auto GpuScene::record(RhiCommandBuffer* cmd, uint64_t budget, const Retire& reti
     for (size_t i = 0; i < taken; i++) {
         const auto& upload = queue[i];
         if (upload.kind == Upload::Kind::TextureLevel && upload.level == 0) {
+            PROFILE_ZONE("CreateTexture");
             auto& info = gpuTextures.at(upload.handle);
             auto name = std::format("texture.{}", upload.handle);
             info.texture = device->createTexture({
@@ -696,6 +717,7 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
         .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferDst,
     };
     instanceImport = fg.importBuffer("instances", instances, desc, instanceAccess);
+    instanceImported = true;
     auto handle = instanceImport;
     dirtyEnd = std::min(dirtyEnd, (uint32_t) sceneInstances.size());
     if (dirtyEnd > dirtyFirst) {
@@ -747,5 +769,9 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
 }
 
 auto GpuScene::afterExecute(const FrameGraph& fg) -> void {
+    if (!instanceImported) {
+        return;
+    }
     instanceAccess = fg.finalAccess(instanceImport);
+    instanceImported = false;
 }

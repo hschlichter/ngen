@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -95,6 +96,12 @@ public:
     // The ids the server said changed at their source since the last call (asset.changed), each once, in the order told. The client
     // requests nothing by itself: what still wants an asset requests it again.
     auto takeChanged() -> std::vector<std::string>;
+
+    // The ids answered (arrived or failed) since the last call, in order; an id answered twice is listed twice. For one consumer that
+    // doesn't wait: it requests, and takes what was answered when woken.
+    auto takeAnswered() -> std::vector<std::string>;
+    // Called on the client's I/O thread after each answer (and when the connection closes); it must only wake someone.
+    auto setAnsweredCallback(std::function<void()> callback) -> void;
 
 private:
     struct State;

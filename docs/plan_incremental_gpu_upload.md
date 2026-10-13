@@ -1,5 +1,8 @@
 # Plan: Incremental GPU Upload
 
+**Status. Superseded by [plan_async_scene.md](plan_async_scene.md).** Never implemented in this form: it predates the geometry pool, bindless
+materials and the scene packs; the async scene plan's incremental GPU scene does what it set out to.
+
 ## Context
 
 `uploadRenderWorld` takes 1.2 seconds on the 5x5 city (~100 meshes) because it calls `waitIdle()`, destroys every GPU resource, and recreates everything from

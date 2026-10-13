@@ -4,6 +4,7 @@
 #include "pipelineregistry.h"
 #include "rhitypes.h"
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -31,6 +32,9 @@ public:
     // Format of sceneColorAA.
     auto outputFormat() const -> RhiFormat { return format; }
     auto isCompute() const -> bool { return computeSupported; }
+
+    // Whether its pipelines have been created; until then the frame leaves the pass out.
+    auto ready() -> bool;
 
 private:
     RhiDevice* device = nullptr;

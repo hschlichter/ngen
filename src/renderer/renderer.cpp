@@ -226,13 +226,9 @@ auto Renderer::setFrameGraphDebugEnabled(bool enabled) -> void {
     }
 }
 
-auto Renderer::requestStartupShaders() -> size_t {
-    pipelineRegistry.requestStartup();
-    return pipelineRegistry.startupShaders().size();
-}
-
-auto Renderer::createStartupPipelines() -> bool {
-    return pipelineRegistry.createStartup();
+auto Renderer::requestShaders() -> size_t {
+    pipelineRegistry.requestAtStart();
+    return pipelineRegistry.atStartShaders().size();
 }
 
 auto Renderer::buildRenderDebugSnapshot() const -> RenderDebugSnapshot {
@@ -407,6 +403,28 @@ auto Renderer::readGpuTimings(uint32_t slot) -> void {
         }
         countersResults.push_back(std::move(counters));
     }
+}
+
+// The backbuffer cleared to the lit image's background: the frame while the lit path's pipelines are still on their way.
+static auto addClearPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D extent) -> void {
+    struct ClearData {
+        FgTextureHandle color;
+    };
+    fg.addPass<ClearData>(
+        "ClearBackbuffer",
+        [&](FrameGraphBuilder& builder, ClearData& data) { data.color = builder.write(color, FgAccessFlags::ColorAttachment); },
+        [extent](FrameGraphContext& ctx, const ClearData& data) {
+            std::array<RhiRenderingAttachmentInfo, 1> attachments = {{
+                {
+                    .texture = ctx.texture(data.color),
+                    .state = RhiTextureState::ColorAttachment,
+                    .clear = true,
+                    .clearColor = {0.12f, 0.12f, 0.15f, 1.0f},
+                },
+            }};
+            ctx.cmd()->beginRendering({.extent = extent, .colorAttachments = {attachments.data(), attachments.size()}});
+            ctx.cmd()->endRendering();
+        });
 }
 
 // A byte count for the trace: "812 B", "10.2 MiB".
@@ -850,139 +868,151 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         descriptorSetsDirty = false;
     }
     gpuScene.addUploadPass(frameGraph, m_frameIndex);
-    auto instanceHandle = gpuScene.addInstanceUploadPasses(frameGraph, gpuInstances, currentFrame);
-
     // Per-frame resources (UBOs, descriptor sets, dynamic vertex buffers) are owned by
     // the frame slot whose fence guards them, not by the swapchain image.
     auto imageIdx = currentFrame;
     auto instanceCount = (uint32_t) gpuInstances.size();
 
-    static const uint32_t shadowSetupZoneId = profile::registerName("ShadowSetup");
-    profile::beginZone(shadowSetupZoneId);
-    // Pick a shadow-casting directional light: first directional with shadowEnable,
-    // else first directional. USDScene authors a session-layer UsdLuxDistantLight when
-    // the scene has none, so this search almost always succeeds.
-    const RenderLight* shadowLight = nullptr;
-    const RenderLight* fallbackDirectional = nullptr;
-    for (const auto& l : lights) {
-        if (l.type != LightType::Directional) {
-            continue;
-        }
-        if (fallbackDirectional == nullptr) {
-            fallbackDirectional = &l;
-        }
-        if (l.shadowEnable && shadowLight == nullptr) {
-            shadowLight = &l;
-        }
-    }
-    const RenderLight* picked = shadowLight != nullptr ? shadowLight : fallbackDirectional;
-
-    // Resolve into the small value struct LightingPass consumes. If no directional light
-    // exists at all (pathological — USDScene would usually author one) just aim the sun
-    // straight up the scene's up axis with unit radiance.
-    LightingInputs lighting;
-    if (picked != nullptr) {
-        auto raw = glm::vec3(picked->worldTransform[2]);
-        lighting.direction = glm::dot(raw, raw) > 1e-6f ? glm::normalize(raw) : snapshot.worldUp;
-        lighting.radiance = picked->color * (picked->intensity * std::exp2(picked->exposure));
-        lighting.shadowColor = picked->shadowColor;
+    // The lit path needs its pipelines, which come as their shaders arrive: until then the frame is the clear colour and the UI. The
+    // instance records wait too, so their upload isn't lost to a frame that doesn't draw them.
+    bool litReady = instanceCullPass.ready() && shadowPass.ready() && geometryPass.ready() && (!snapshot.depthPrepass || depthPrepass.ready()) && lightingPass.ready() &&
+                    aaPass.ready();
+    if (!litReady) {
+        addClearPass(frameGraph, colorHandle, ext);
     } else {
-        lighting.direction = snapshot.worldUp;
-    }
-    debugHasSun = picked != nullptr;
-    debugSun = lighting;
+        auto instanceHandle = gpuScene.addInstanceUploadPasses(frameGraph, gpuInstances, currentFrame);
 
-    // Cascades come fitted and culled from the main thread. A snapshot without them (no
-    // cull ran yet) gets a single cascade fitted here from the scene bounds.
-    std::array<ShadowCascade, maxShadowCascades> fallbackCascades;
-    std::span<const ShadowCascade> cascades(snapshot.cascades.data(), snapshot.cascadeCount);
-    if (snapshot.cascadeCount == 0) {
-        ShadowCascadeSettings single = snapshot.shadowSettings;
-        single.count = 1;
-        auto count = fitShadowCascades(single, snapshot.viewMatrix, snapshot.projMatrix, cameraNear, lighting.direction, snapshot.worldUp, sceneBounds, fallbackCascades);
-        cascades = std::span<const ShadowCascade>(fallbackCascades.data(), count);
-    }
-    auto atlasExtent = shadowAtlasExtent(snapshot.shadowSettings);
-    if (cascades.size() <= 1) {
-        atlasExtent = {std::max(64u, snapshot.shadowSettings.tileSize), std::max(64u, snapshot.shadowSettings.tileSize)};
-    }
-    debugShadowExtent = atlasExtent;
-
-    auto invViewProj = glm::inverse(snapshot.projMatrix * snapshot.viewMatrix);
-
-    profile::endZone(); // ShadowSetup
-    // GPU culling writes the indirect commands for every view; the passes below read them.
-    auto cullGroups = drawLists.writeParams(currentFrame, instanceCount, snapshot.cullViewProj, cascades, snapshot.cullEnabled);
-    auto drawHandles = drawLists.import(frameGraph, currentFrame);
-    instanceCullPass.addPasses(frameGraph, drawHandles, instanceHandle, cullGroups, currentFrame);
-    if (snapshot.sampler != materialSamplerSettings) {
-        applySamplerSettings(snapshot.sampler);
-    }
-    auto* geometrySet = imageIdx < geometryDescriptorSets.size() ? geometryDescriptorSets[imageIdx] : nullptr;
-    const auto& shadowData = shadowPass.addPass(frameGraph, atlasExtent, depthFormat, cascades, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet);
-
-    debugCulledInstances = drawLists.cameraCulled();
-    if (snapshot.depthPrepass) {
-        depthPrepass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet);
-    }
-    const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, snapshot.depthPrepass);
-
-    drawLists.addReadbackPass(frameGraph, drawHandles, currentFrame, renderDebugEnabled);
-
-    // The depth preview's far end: the camera has no far plane, so the farthest corner of the scene.
-    float previewFar = cameraNear * 10.0f;
-    if (sceneBounds.valid()) {
-        auto eye = glm::vec3(glm::inverse(snapshot.viewMatrix)[3]);
-        for (int i = 0; i < 8; i++) {
-            glm::vec3 corner = {
-                (i & 1) != 0 ? sceneBounds.max.x : sceneBounds.min.x,
-                (i & 2) != 0 ? sceneBounds.max.y : sceneBounds.min.y,
-                (i & 4) != 0 ? sceneBounds.max.z : sceneBounds.min.z,
-            };
-            previewFar = std::max(previewFar, glm::length(corner - eye));
+        static const uint32_t shadowSetupZoneId = profile::registerName("ShadowSetup");
+        profile::beginZone(shadowSetupZoneId);
+        // Pick a shadow-casting directional light: first directional with shadowEnable,
+        // else first directional. USDScene authors a session-layer UsdLuxDistantLight when
+        // the scene has none, so this search almost always succeeds.
+        const RenderLight* shadowLight = nullptr;
+        const RenderLight* fallbackDirectional = nullptr;
+        for (const auto& l : lights) {
+            if (l.type != LightType::Directional) {
+                continue;
+            }
+            if (fallbackDirectional == nullptr) {
+                fallbackDirectional = &l;
+            }
+            if (l.shadowEnable && shadowLight == nullptr) {
+                shadowLight = &l;
+            }
         }
+        const RenderLight* picked = shadowLight != nullptr ? shadowLight : fallbackDirectional;
+
+        // Resolve into the small value struct LightingPass consumes. If no directional light
+        // exists at all (pathological — USDScene would usually author one) just aim the sun
+        // straight up the scene's up axis with unit radiance.
+        LightingInputs lighting;
+        if (picked != nullptr) {
+            auto raw = glm::vec3(picked->worldTransform[2]);
+            lighting.direction = glm::dot(raw, raw) > 1e-6f ? glm::normalize(raw) : snapshot.worldUp;
+            lighting.radiance = picked->color * (picked->intensity * std::exp2(picked->exposure));
+            lighting.shadowColor = picked->shadowColor;
+        } else {
+            lighting.direction = snapshot.worldUp;
+        }
+        debugHasSun = picked != nullptr;
+        debugSun = lighting;
+
+        // Cascades come fitted and culled from the main thread. A snapshot without them (no
+        // cull ran yet) gets a single cascade fitted here from the scene bounds.
+        std::array<ShadowCascade, maxShadowCascades> fallbackCascades;
+        std::span<const ShadowCascade> cascades(snapshot.cascades.data(), snapshot.cascadeCount);
+        if (snapshot.cascadeCount == 0) {
+            ShadowCascadeSettings single = snapshot.shadowSettings;
+            single.count = 1;
+            auto count = fitShadowCascades(single, snapshot.viewMatrix, snapshot.projMatrix, cameraNear, lighting.direction, snapshot.worldUp, sceneBounds, fallbackCascades);
+            cascades = std::span<const ShadowCascade>(fallbackCascades.data(), count);
+        }
+        auto atlasExtent = shadowAtlasExtent(snapshot.shadowSettings);
+        if (cascades.size() <= 1) {
+            atlasExtent = {std::max(64u, snapshot.shadowSettings.tileSize), std::max(64u, snapshot.shadowSettings.tileSize)};
+        }
+        debugShadowExtent = atlasExtent;
+
+        auto invViewProj = glm::inverse(snapshot.projMatrix * snapshot.viewMatrix);
+
+        profile::endZone(); // ShadowSetup
+        // GPU culling writes the indirect commands for every view; the passes below read them.
+        auto cullGroups = drawLists.writeParams(currentFrame, instanceCount, snapshot.cullViewProj, cascades, snapshot.cullEnabled);
+        auto drawHandles = drawLists.import(frameGraph, currentFrame);
+        instanceCullPass.addPasses(frameGraph, drawHandles, instanceHandle, cullGroups, currentFrame);
+        if (snapshot.sampler != materialSamplerSettings) {
+            applySamplerSettings(snapshot.sampler);
+        }
+        auto* geometrySet = imageIdx < geometryDescriptorSets.size() ? geometryDescriptorSets[imageIdx] : nullptr;
+        const auto& shadowData = shadowPass.addPass(frameGraph, atlasExtent, depthFormat, cascades, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet);
+
+        debugCulledInstances = drawLists.cameraCulled();
+        if (snapshot.depthPrepass) {
+            depthPrepass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet);
+        }
+        const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, snapshot.depthPrepass);
+
+        drawLists.addReadbackPass(frameGraph, drawHandles, currentFrame, renderDebugEnabled);
+
+        // The depth preview's far end: the camera has no far plane, so the farthest corner of the scene.
+        float previewFar = cameraNear * 10.0f;
+        if (sceneBounds.valid()) {
+            auto eye = glm::vec3(glm::inverse(snapshot.viewMatrix)[3]);
+            for (int i = 0; i < 8; i++) {
+                glm::vec3 corner = {
+                    (i & 1) != 0 ? sceneBounds.max.x : sceneBounds.min.x,
+                    (i & 2) != 0 ? sceneBounds.max.y : sceneBounds.min.y,
+                    (i & 4) != 0 ? sceneBounds.max.z : sceneBounds.min.z,
+                };
+                previewFar = std::max(previewFar, glm::length(corner - eye));
+            }
+        }
+        const auto& lightData = lightingPass.addPass(
+            frameGraph,
+            geomData,
+            depthHandle,
+            shadowData.shadowMap,
+            ext,
+            imageIdx,
+            textureSampler,
+            lighting,
+            snapshot.gbufferViewMode,
+            snapshot.showBufferOverlay,
+            snapshot.showShadowOverlay,
+            invViewProj,
+            shadowSampler,
+            cascades,
+            snapshot.shadowSettings.pcf,
+            atlasExtent,
+            previewFar);
+
+        // AA filters only the lit scene. Its output is blitted to the backbuffer and the
+        // overlays (debug lines, gizmos, UI) draw on the backbuffer afterwards, so they are
+        // never filtered and sceneColorAA holds nothing but the AA result.
+        const auto& aaData = aaPass.addPass(frameGraph, lightData.sceneColor, ext, imageIdx, textureSampler, snapshot.antiAliasing);
+
+        // A debug view replaces the lit image; it is drawn after everything the geometry pass
+        // wrote and never anti-aliased (AA would blend IDs).
+        auto finalImage = aaData.sceneColorAA;
+        // Its pipelines come on first use: until they are ready the lit image shows.
+        if (snapshot.debugView != DebugView::None && debugViewPass.available() && debugViewPass.ready()) {
+            const auto& debugViewData = debugViewPass.addPass(frameGraph, snapshot.debugView, geomData.depth, ext, imageIdx, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet);
+            finalImage = debugViewData.color;
+        }
+        addBlitPass(frameGraph, "BlitToBackbuffer", finalImage, colorHandle, ext, ext);
     }
-    const auto& lightData = lightingPass.addPass(
-        frameGraph,
-        geomData,
-        depthHandle,
-        shadowData.shadowMap,
-        ext,
-        imageIdx,
-        textureSampler,
-        lighting,
-        snapshot.gbufferViewMode,
-        snapshot.showBufferOverlay,
-        snapshot.showShadowOverlay,
-        invViewProj,
-        shadowSampler,
-        cascades,
-        snapshot.shadowSettings.pcf,
-        atlasExtent,
-        previewFar);
 
-    // AA filters only the lit scene. Its output is blitted to the backbuffer and the
-    // overlays (debug lines, gizmos, UI) draw on the backbuffer afterwards, so they are
-    // never filtered and sceneColorAA holds nothing but the AA result.
-    const auto& aaData = aaPass.addPass(frameGraph, lightData.sceneColor, ext, imageIdx, textureSampler, snapshot.antiAliasing);
-
-    // A debug view replaces the lit image; it is drawn after everything the geometry pass
-    // wrote and never anti-aliased (AA would blend IDs).
-    auto finalImage = aaData.sceneColorAA;
-    // Its pipelines come on first use: until they are ready the lit image shows.
-    if (snapshot.debugView != DebugView::None && debugViewPass.available() && debugViewPass.ready()) {
-        const auto& debugViewData = debugViewPass.addPass(frameGraph, snapshot.debugView, geomData.depth, ext, imageIdx, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet);
-        finalImage = debugViewData.color;
+    if (debugRenderer.ready()) {
+        debugRenderer.addPass(frameGraph, colorHandle, depthHandle, ext, snapshot.debugData, imageIdx);
     }
-    addBlitPass(frameGraph, "BlitToBackbuffer", finalImage, colorHandle, ext, ext);
-
-    debugRenderer.addPass(frameGraph, colorHandle, depthHandle, ext, snapshot.debugData, imageIdx);
 
     static const uint32_t gizmoZoneId = profile::registerName("GizmoUpdate");
     profile::beginZone(gizmoZoneId);
     auto gizmoRequests = gizmoUpdate(snapshot, ext);
     profile::endZone(); // GizmoUpdate
-    gizmoPass.addPass(frameGraph, colorHandle, ext, gizmoRequests, imageIdx);
+    if (gizmoPass.ready()) {
+        gizmoPass.addPass(frameGraph, colorHandle, ext, gizmoRequests, imageIdx);
+    }
 
     if (screenshotPending.empty() || screenshotsShowUi) {
         editorUIPass.addPass(frameGraph, colorHandle, ext, editorUI, snapshot.imguiSnapshot);

@@ -452,7 +452,7 @@ auto drawPipelinesTab(const RenderDebugSnapshot& s) -> void {
         ImGui::TableSetColumnIndex(0);
         ImGui::TextUnformatted(p.name.c_str());
         ImGui::TableSetColumnIndex(1);
-        ImGui::TextUnformatted(p.use == PipelineUse::Startup ? "start-up" : "first use");
+        ImGui::TextUnformatted(p.use == PipelineUse::AtStart ? "at start" : "first use");
         ImGui::TableSetColumnIndex(2);
         ImGui::TextUnformatted(pipelineStateName(p.state));
         ImGui::TableSetColumnIndex(3);

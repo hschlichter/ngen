@@ -4,6 +4,7 @@
 #include "pipelineregistry.h"
 #include "rhitypes.h"
 
+#include <array>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -18,6 +19,9 @@ public:
     auto destroy(RhiDevice* device) -> void;
 
     auto addPass(FrameGraph& fg, FgTextureHandle color, FgTextureHandle depth, RhiExtent2D extent, const DebugDrawData& data, uint32_t imageIndex) -> void;
+
+    // Whether its pipelines have been created; until then the frame leaves the pass out.
+    auto ready() -> bool;
 
 private:
     PipelineRegistry* registry = nullptr;

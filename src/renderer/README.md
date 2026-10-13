@@ -43,23 +43,28 @@ pipelines by the pipeline registry ("Pipelines", below).
 - **A pass registers its pipelines in `init()`, as requests**: the RHI pipeline description with shader ids (`ShaderRef { id, stage }`) in
   place of modules, and owned arrays, so the registry can create the pipeline at any time. It gets a stable `PipelineHandle` and asks
   `registry.get(handle)` while the frame graph is built or recorded. Debug names are the registered names (`geometry.pipeline.cullback.less`).
-- **Start-up or first use.** Start-up pipelines (`PipelineUse::Startup`) are created before the first frame: `requestStartupShaders()` sends one
-  request for all their shaders, and `createStartupPipelines()` waits for them and creates the pipelines; a shader that fails to pack stops the
-  view with the packer's errors. First-use pipelines (`PipelineUse::FirstUse`) request their shaders the first time they are asked for
-  (`get`, or `ready` for a group, in one request) and are pending until then: `get` returns null. Only a pass that may be skipped registers for
-  first use; today that is `DebugViewPass`, which isn't added to the graph until its five pipelines are ready, so the lit image shows meanwhile.
+- **Nothing waits for a shader.**
+  - **At start or first use.** At-start pipelines (`PipelineUse::AtStart`) have their shaders requested at start-up, in one request
+    (`Renderer::requestShaders`). First-use pipelines (`PipelineUse::FirstUse`, the debug views) request theirs the first time they are asked
+    for (`get`, or `ready` for a group).
+  - **Pending until made.** Either kind is pending, and `get` returns null, until `update()` has made it.
+  - **Passes are left out until ready.** Each pass says when its pipelines are ready (`ready()`), and the frame leaves it out until then. Until
+    the lit path is ready (culling, shadow, geometry, the prepass when on, lighting, AA), the frame is the backbuffer cleared to the background
+    colour (`ClearBackbuffer`), the overlays whose pipelines are ready, and the UI. The scene uploads go on meanwhile.
+  - **A failed pipeline doesn't stop the view.** When a shader fails to pack, its pipeline is failed and its pass stays out. The reason is in the
+    trace and the pipeline's info, `--fail-on-validation` makes the run exit with 2, and a fixed source retries it (hot reload, below).
 - **One point in the frame.** `update()` runs on the render thread before the frame graph is built: it creates pending pipelines whose shaders
   have arrived (polling `AssetClient::find`, so the render thread never waits on the network), at most four per frame. Nothing changes a
   pipeline during a frame's recording; debug builds assert it.
 - **Shader modules are shared.** One module per shader id, for every pipeline that uses it (`shaders/shadow.frag`: the shadow pass and the
   depth prepass).
 - **Observable.** Events `ShadersRequested`, `ShaderLoaded` (id, version), `PipelinePending`, `PipelineCreated`, `PipelineCreateFailed`
-  (reason), `ShaderPackFailed`; the `pipelines` record (name, start-up or first use, state, shaders and versions, the last error) and the Render
+  (reason), `ShaderPackFailed`; the `pipelines` record (name, `atStart` or `firstUse`, state, shaders and versions, the last error) and the Render
   Debug window's Pipelines tab.
 - **Hot reload.** `reload(ids)` (the renderer's `reloadShaders`, with the ids the asset server said changed) requests the shaders it has
   modules for again. When the request is answered, `update()` creates the new module and recreates every ready pipeline using it; the handle
   keeps its index, and the old pipeline and module go to the deletion queue, since frames in flight may use them. A failed pipeline using the
-  shader is tried again. A shader that fails to pack or to become a module keeps the old module and pipelines, with the error in the trace
+  shader, including one whose shader never made a module, is tried again. A shader that fails to pack or to become a module keeps the old module and pipelines, with the error in the trace
   (`ShaderReloadFailed`) and the pipelines' info until a later version loads or the source goes back. Events `ShadersReloadRequested`,
   `ShaderReloaded` (version, pipelines recreated), `PipelineRecreateFailed`.
 - **Not yet**: shader reflection, creation off the render thread, a disk pipeline cache.

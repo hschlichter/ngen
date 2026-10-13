@@ -5,6 +5,7 @@
 #include "pipelineregistry.h"
 #include "rhitypes.h"
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -27,6 +28,9 @@ public:
 
     // Adds InstanceCull, InstanceCullScan and InstanceCullScatter for the frame slot.
     auto addPasses(FrameGraph& fg, const DrawLists::Handles& handles, FgBufferHandle instanceBuffer, uint32_t groupCount, uint32_t frameSlot) -> void;
+
+    // Whether its pipelines have been created; until then the frame leaves the pass out.
+    auto ready() -> bool;
 
 private:
     PipelineRegistry* registry = nullptr;

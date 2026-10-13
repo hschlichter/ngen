@@ -2,6 +2,7 @@
 
 #include "assetclient.h"
 #include "packedtexture.h"
+#include "profile.h"
 #include "scenepack.h"
 #include "trace.h"
 
@@ -48,29 +49,6 @@ auto textureDesc(std::span<const std::byte> bytes) -> std::shared_ptr<const Text
     return desc;
 }
 
-// Fetches ids from the asset server and hands each to `arrived`, or records it failed. Blocks.
-template <typename Arrived>
-auto fetch(AssetClient& assets, const std::vector<std::string>& ids, std::set<std::string>& failed, Arrived arrived) -> void {
-    if (ids.empty()) {
-        return;
-    }
-    assets.request(ids);
-    assets.wait(ids);
-    for (const auto& id : ids) {
-        auto asset = assets.take(id);
-        if (!asset) {
-            failed.insert(id);
-            std::string reason;
-            for (const auto& line : assets.errors(id)) {
-                reason += reason.empty() ? line : "; " + line;
-            }
-            TRACE_WARNING("Scene", "SceneAssetFailed", id).text(std::format("{} failed: {}", id, reason.empty() ? std::string("no reason given") : reason));
-            continue;
-        }
-        arrived(id, std::move(asset->bytes));
-    }
-}
-
 } // namespace
 
 auto decomposeTransform(const glm::mat4& local) -> Transform {
@@ -82,41 +60,39 @@ auto decomposeTransform(const glm::mat4& local) -> Transform {
     return out;
 }
 
-ViewScene::ViewScene(AssetClient& client)
-    : assets(client) {
+ViewScene::ViewScene(AssetClient& client) : assets(client) {
+    published = current;
+    assets.setAnsweredCallback([this] {
+        {
+            std::lock_guard lock(mutex);
+            answered = true;
+        }
+        wake.notify_one();
+    });
+    thread = std::jthread([this](const std::stop_token& stop) { run(stop); });
 }
 
-auto ViewScene::open(const std::string& sceneId) -> bool {
-    // Every draw of the scene before goes: its slots die and are reused, lowest first, so a scene opened draws in visit order.
-    for (auto& [key, slot] : slotOfDraw) {
-        drawn.meshInstances[slot] = RenderMeshInstance{.primFirst = false, .alive = false};
-        pending.instances.emplace_back(slot, drawn.meshInstances[slot]);
-        freeSlots.insert(slot);
+ViewScene::~ViewScene() {
+    assets.setAnsweredCallback({});
+    thread.request_stop();
+    wake.notify_one();
+}
+
+auto ViewScene::post(Request request) -> void {
+    requestsPosted++;
+    {
+        std::lock_guard lock(mutex);
+        requests.push_back(std::move(request));
     }
-    slotOfDraw.clear();
-    id = sceneId;
-    composer = std::make_unique<WorldComposer>(sceneId);
-    requestedPacks.clear();
-    meshPacks.clear();
-    materialPacks.clear();
-    texturePacks.clear();
-    failedAssets.clear();
-    TRACE_EVENT("Scene", "SceneRequested", sceneId.empty() ? "(empty scene)" : sceneId).text(sceneId.empty() ? std::string("an empty scene") : std::format("scene {} requested", sceneId));
-    if (!sceneId.empty()) {
-        compose();
-        if (composer->world().layerStack.empty()) {
-            TRACE_ERROR("Scene", "SceneFailed", sceneId).text(std::format("scene {}: its root layer can't be had", sceneId));
-            return false;
-        }
-    }
-    fetchAssets();
-    extract();
-    return true;
+    wake.notify_one();
+}
+
+auto ViewScene::open(const std::string& sceneId) -> void {
+    post(OpenRequest{.id = sceneId});
 }
 
 auto ViewScene::setLodLevel(const std::string& rootPath, uint32_t level) -> void {
-    composer->setLodLevel(rootPath, level);
-    rebuild();
+    post(LodRequest{.root = rootPath, .level = level});
 }
 
 auto ViewScene::setPurposeShown(Purpose purpose, bool shown) -> void {
@@ -128,315 +104,346 @@ auto ViewScene::setPurposeShown(Purpose purpose, bool shown) -> void {
     } else {
         shownPurposes.erase(purpose);
     }
-    rebuild();
+    post(PurposeRequest{.purpose = purpose, .shown = shown});
 }
 
 auto ViewScene::purposeShown(Purpose purpose) const -> bool {
     return shownPurposes.contains(purpose);
 }
 
-auto ViewScene::drawsPurpose(Purpose purpose) const -> bool {
-    return shownPurposes.contains(purpose);
-}
-
-auto ViewScene::rebuild() -> void {
-    if (!id.empty()) {
-        compose();
-    }
-    fetchAssets();
-    extract();
-}
-
-auto ViewScene::assetIds() const -> std::vector<std::string> {
-    std::set<std::string> ids(requestedPacks.begin(), requestedPacks.end());
-    for (const auto& [assetId, pack] : meshPacks) {
-        ids.insert(assetId);
-    }
-    for (const auto& [assetId, pack] : materialPacks) {
-        ids.insert(assetId);
-    }
-    for (const auto& [assetId, bytes] : texturePacks) {
-        ids.insert(assetId);
-    }
-    ids.insert(failedAssets.begin(), failedAssets.end());
-    return {ids.begin(), ids.end()};
-}
-
-auto ViewScene::refresh(const std::vector<std::string>& requested, bool force) -> size_t {
-    auto start = std::chrono::steady_clock::now();
-    auto ours = [this](const std::string& assetId) {
-        return requestedPacks.contains(assetId) || meshPacks.contains(assetId) || materialPacks.contains(assetId) || texturePacks.contains(assetId) ||
-               failedAssets.contains(assetId);
-    };
-    // Without force only the scene's own: another user of the client (the pipeline registry) fetches its assets itself.
-    std::vector<std::string> ids;
-    for (const auto& assetId : requested) {
-        if (force || ours(assetId)) {
-            ids.push_back(assetId);
-        }
-    }
+auto ViewScene::refresh(const std::vector<std::string>& ids, bool force) -> void {
     if (ids.empty()) {
-        return 0;
+        return;
     }
-    size_t sceneAssets = (size_t) std::ranges::count_if(ids, ours);
-    assets.request(ids, force);
-    assets.wait(ids);
-    std::set<std::string> repackedIds(ids.begin(), ids.end());
-    std::set<std::string> repackedFiles;
-    size_t failed = 0;
-    for (const auto& assetId : ids) {
-        if (!ours(assetId)) {
-            // Repacked on the server; left in the client for whoever uses it.
-            continue;
-        }
-        auto asset = assets.take(assetId);
-        if (!asset) {
-            failed++;
-            std::string reason;
-            for (const auto& line : assets.errors(assetId)) {
-                reason += reason.empty() ? line : "; " + line;
-            }
-            TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(std::format("{}: {} failed, the scene keeps what it had: {}", assetId, force ? "repack" : "refresh", reason.empty() ? std::string("no reason given") : reason));
-            continue;
-        }
-        failedAssets.erase(assetId);
-        repackedFiles.insert(assetId.substr(0, assetId.find('#')));
-        auto kind = scenePackKind(asset->bytes);
-        if (kind && *kind == ScenePackKind::Layer) {
-            if (auto error = composer->addPack(assetId, asset->bytes)) {
-                TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(*error);
-            }
-        } else if (kind && *kind == ScenePackKind::Mesh) {
-            if (auto mesh = readMeshPack(asset->bytes)) {
-                meshPacks[assetId] = std::move(*mesh);
-                // New content: a new library entry, so the renderer uploads it.
-                meshLibrary.forget(assetId);
-            }
-        } else if (kind && *kind == ScenePackKind::Material) {
-            if (auto material = readMaterialPack(asset->bytes)) {
-                materialPacks[assetId] = std::move(*material);
-            }
-        } else if (auto desc = textureDesc(asset->bytes)) {
-            texturePacks[assetId] = std::move(desc);
-            textureLibrary.forget(assetId);
-        }
-    }
-    // The meshes and materials of a repacked file that weren't repacked by id are fetched again by the rebuild.
-    auto fetchAgain = [&](const std::string& assetId) {
-        return !repackedIds.contains(assetId) && repackedFiles.contains(assetId.substr(0, assetId.find('#')));
-    };
-    std::erase_if(meshPacks, [&](const auto& entry) {
-        if (!fetchAgain(entry.first)) {
-            return false;
-        }
-        meshLibrary.forget(entry.first);
-        return true;
-    });
-    std::erase_if(materialPacks, [&](const auto& entry) { return fetchAgain(entry.first); });
-    if (sceneAssets > 0) {
-        rebuild();
-    }
-    auto ms = msSince(start);
-    TRACE_EVENT("Scene", "AssetsRefreshed", id)
-        .text(std::format("{} assets {} ({} of the scene's, {} failed) and the scene rebuilt in {:.0f} ms", ids.size(), force ? "repacked" : "changed at their source fetched again", sceneAssets, failed, ms))
-        .field("forced", force)
-        .field("assets", (int64_t) ids.size())
-        .field("scene_assets", (int64_t) sceneAssets)
-        .field("failed", (int64_t) failed)
-        .field("ms", ms);
-    return sceneAssets;
+    post(RefreshRequest{.ids = ids, .force = force});
 }
 
-auto ViewScene::worldUp() const -> glm::vec3 {
-    if (world().upAxis == "Z") {
-        return {0.0f, 0.0f, 1.0f};
-    }
-    return {0.0f, 1.0f, 0.0f};
-}
-
-auto ViewScene::primPath(uint32_t prim) const -> std::string {
-    if (prim == 0 || prim > primPaths.size()) {
-        return {};
-    }
-    return primPaths[prim - 1];
-}
-
-auto ViewScene::instancePath(uint32_t instance) const -> std::string {
-    if (instance >= drawn.meshInstances.size() || !drawn.meshInstances[instance].alive) {
-        return {};
-    }
-    return primPath(drawn.meshInstances[instance].prim);
-}
-
-auto ViewScene::drawsOf(const std::string& assetId) const -> std::vector<uint32_t> {
-    if (auto it = drawsByAsset.find(assetId); it != drawsByAsset.end()) {
-        return it->second;
-    }
-    return {};
-}
-
-auto ViewScene::drawCount(const std::string& assetId) const -> size_t {
-    if (auto it = drawsByAsset.find(assetId); it != drawsByAsset.end()) {
-        return it->second.size();
-    }
-    return 0;
-}
-
-auto ViewScene::assetsUnder(const std::string& path) const -> std::vector<std::string> {
-    std::set<std::string> out;
-    for (const auto& [prim, uses] : assetsByPrim) {
-        const auto& candidate = primPaths[prim - 1];
-        bool under = path == "/" || candidate == path || (candidate.size() > path.size() && candidate.starts_with(path) && candidate[path.size()] == '/');
-        if (under) {
-            out.insert(uses.begin(), uses.end());
-        }
-    }
-    return {out.begin(), out.end()};
-}
-
-auto ViewScene::primBounds(uint32_t prim) const -> AABB {
-    AABB out = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
-    if (auto it = drawn.primInstances.find(prim); it != drawn.primInstances.end()) {
-        for (auto i : it->second) {
-            const auto& bounds = drawn.meshInstances[i].worldBounds;
-            if (bounds.valid()) {
-                out.min = glm::min(out.min, bounds.min);
-                out.max = glm::max(out.max, bounds.max);
-            }
-        }
-    }
-    return out;
-}
-
-auto ViewScene::bounds(const std::string& path) const -> AABB {
-    AABB out = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
-    auto under = [&path](const std::string& candidate) {
-        if (path == "/") {
-            return true;
-        }
-        return candidate == path || (candidate.size() > path.size() && candidate.starts_with(path) && candidate[path.size()] == '/');
-    };
-    for (const auto& [prim, slots] : drawn.primInstances) {
-        if (!under(primPath(prim))) {
-            continue;
-        }
-        for (auto i : slots) {
-            const auto& bounds = drawn.meshInstances[i].worldBounds;
-            if (bounds.valid()) {
-                out.min = glm::min(out.min, bounds.min);
-                out.max = glm::max(out.max, bounds.max);
-            }
-        }
-    }
-    return out;
-}
-
-auto ViewScene::transform(const std::string& path) const -> std::optional<PrimTransform> {
-    auto it = transforms.find(path);
-    if (it == transforms.end()) {
-        return std::nullopt;
-    }
-    return PrimTransform{.local = it->second.local, .world = unitScale * it->second.world, .xformable = it->second.xformable};
-}
-
-// The prim's new world transform, and the change of it applied to every prim under it, so a drag doesn't rebuild the draws: each draw
-// instance and light under the prim gets its new world transform and bounds.
 auto ViewScene::setLocalTransform(const std::string& path, const glm::mat4& local) -> bool {
-    auto it = transforms.find(path);
-    if (it == transforms.end() || !it->second.xformable) {
+    auto it = current->transforms.find(path);
+    if (it == current->transforms.end() || !it->second.xformable) {
         return false;
     }
-    localOverrides[path] = local;
-    auto& entry = it->second;
-    glm::mat4 parentWorld = entry.world * glm::inverse(entry.local);
-    glm::mat4 newWorld = entry.resetsXformStack ? local : parentWorld * local;
-    glm::mat4 change = newWorld * glm::inverse(entry.world);
-    entry.local = local;
-    entry.world = newWorld;
-    auto prefix = path + "/";
-    for (auto under = transforms.lower_bound(prefix); under != transforms.end() && under->first.starts_with(prefix); ++under) {
-        under->second.world = change * under->second.world;
-    }
-    auto isUnder = [&](const std::string& candidate) {
-        return candidate == path || candidate.starts_with(prefix);
-    };
-    for (const auto& [prim, slots] : drawn.primInstances) {
-        const auto& primPathOf = primPaths[prim - 1];
-        if (!isUnder(primPathOf)) {
-            continue;
-        }
-        auto world = unitScale * transforms.at(primPathOf).world;
-        for (auto i : slots) {
-            auto& instance = drawn.meshInstances[i];
-            instance.worldTransform = world;
-            instance.worldBounds = meshBoundsOf[instance.mesh.index].transformed(world);
-            pending.instances.emplace_back(i, instance);
-        }
-    }
-    for (auto& light : drawn.lights) {
-        const auto& lightPath = primPaths[light.primHandle.index - 1];
-        if (isUnder(lightPath)) {
-            if (auto lit = transforms.find(lightPath); lit != transforms.end()) {
-                light.worldTransform = unitScale * lit->second.world;
-                pending.lightsChanged = true;
-                pending.lights = drawn.lights;
-            }
-        }
-    }
-    pending.slotCount = (uint32_t) drawn.meshInstances.size();
-    inputsRevision++;
+    post(TransformRequest{.path = path, .local = local});
     return true;
 }
 
-// Composes in rounds: each names the layer packs it needs next (sublayers, references, payloads), which are fetched for the next.
-auto ViewScene::compose() -> void {
-    auto start = std::chrono::steady_clock::now();
-    size_t rounds = 0;
-    for (;;) {
-        std::vector<std::string> fresh;
-        for (const auto& needed : composer->compose()) {
-            if (requestedPacks.insert(needed).second) {
-                fresh.push_back(needed);
+auto ViewScene::update() -> bool {
+    std::lock_guard lock(mutex);
+    if (published == current) {
+        return false;
+    }
+    current = published;
+    return true;
+}
+
+auto ViewScene::idle() const -> bool {
+    if (requestsApplied.load() != requestsPosted.load()) {
+        return false;
+    }
+    std::lock_guard lock(mutex);
+    // The snapshot taken is the latest, and it was published with nothing left to do.
+    return published == current && current->idle && requests.empty() && !answered;
+}
+
+auto ViewScene::takeChanges() -> SceneChanges {
+    std::lock_guard lock(mutex);
+    auto changes = std::move(pending);
+    pending = {};
+    pending.slotCount = changes.slotCount;
+    return changes;
+}
+
+auto ViewScene::addChanges(SceneChanges changes) -> void {
+    std::lock_guard lock(mutex);
+    pending.append(std::move(changes));
+}
+
+// The scene thread: requests in order, then what the asset server answered, then one compose and extract for the batch. Nothing waits
+// but the loop itself, for the next request or answer.
+auto ViewScene::run(const std::stop_token& stop) -> void {
+    profile::registerThread("Scene");
+    while (!stop.stop_requested()) {
+        std::deque<Request> batch;
+        bool answers = false;
+        {
+            std::unique_lock lock(mutex);
+            wake.wait(lock, stop, [this] { return !requests.empty() || answered; });
+            if (stop.stop_requested()) {
+                return;
+            }
+            batch = std::move(requests);
+            requests.clear();
+            answers = answered;
+            answered = false;
+        }
+        PROFILE_ZONE("SceneBatch");
+        for (auto& request : batch) {
+            apply(request);
+        }
+        if (answers) {
+            for (const auto& assetId : assets.takeAnswered()) {
+                receive(assetId);
             }
         }
-        if (fresh.empty()) {
-            break;
+        if (composeNeeded) {
+            compose();
         }
-        rounds++;
-        std::set<std::string> failed;
-        fetch(assets, fresh, failed, [this](const std::string& packId, std::vector<std::byte> bytes) {
-            if (auto error = composer->addPack(packId, bytes)) {
-                TRACE_WARNING("Scene", "SceneAssetFailed", packId).text(*error);
-            }
-        });
-        for (const auto& packId : failed) {
-            composer->markFailed(packId);
+        if (extractNeeded) {
+            requestDrawnAssets();
+            extract();
+        }
+        publish();
+        requestsApplied += batch.size();
+    }
+}
+
+auto ViewScene::apply(Request& request) -> void {
+    if (auto* open = std::get_if<OpenRequest>(&request)) {
+        applyOpen(open->id);
+    } else if (auto* lod = std::get_if<LodRequest>(&request)) {
+        if (composer) {
+            composer->setLodLevel(lod->root, lod->level);
+            composeNeeded = true;
+        }
+    } else if (auto* purpose = std::get_if<PurposeRequest>(&request)) {
+        if (purpose->shown) {
+            drawnPurposes.insert(purpose->purpose);
+        } else {
+            drawnPurposes.erase(purpose->purpose);
+        }
+        extractNeeded = true;
+    } else if (auto* refresh = std::get_if<RefreshRequest>(&request)) {
+        applyRefresh(refresh->ids, refresh->force);
+    } else if (auto* transform = std::get_if<TransformRequest>(&request)) {
+        applyTransform(transform->path, transform->local);
+    }
+}
+
+auto ViewScene::applyOpen(const std::string& sceneId) -> void {
+    // Every draw of the scene before goes: its slots die and are reused, lowest first, so a scene opened draws in visit order.
+    SceneChanges changes;
+    for (auto& [key, slot] : slotOfDraw) {
+        drawn.meshInstances[slot] = RenderMeshInstance{.primFirst = false, .alive = false};
+        changes.instances.emplace_back(slot, drawn.meshInstances[slot]);
+        freeSlots.insert(slot);
+    }
+    changes.slotCount = (uint32_t) drawn.meshInstances.size();
+    addChanges(std::move(changes));
+    slotOfDraw.clear();
+    id = sceneId;
+    composer = std::make_unique<WorldComposer>(sceneId);
+    requestedPacks.clear();
+    meshPacks.clear();
+    materialPacks.clear();
+    texturePacks.clear();
+    packVersions.clear();
+    failedAssets.clear();
+    refreshing.clear();
+    composeReported = false;
+    openedAt = std::chrono::steady_clock::now();
+    TRACE_EVENT("Scene", "SceneRequested", sceneId.empty() ? "(empty scene)" : sceneId).text(sceneId.empty() ? std::string("an empty scene") : std::format("scene {} requested", sceneId));
+    composeNeeded = !sceneId.empty();
+    extractNeeded = true;
+}
+
+auto ViewScene::requestAssets(const std::vector<std::pair<std::string, AssetKind>>& wanted, bool force) -> void {
+    std::vector<std::string> ids;
+    for (const auto& [assetId, kind] : wanted) {
+        if (!force && inFlight.contains(assetId)) {
+            continue;
+        }
+        inFlight[assetId] = kind;
+        ids.push_back(assetId);
+    }
+    if (ids.empty()) {
+        return;
+    }
+    assetsReported = false;
+    assets.request(ids, force);
+}
+
+// A refresh: the ids are fetched again (repacked first when forced); what arrives replaces what the scene holds.
+auto ViewScene::applyRefresh(const std::vector<std::string>& ids, bool force) -> void {
+    auto kindOf = [this](const std::string& assetId) -> std::optional<AssetKind> {
+        if (requestedPacks.contains(assetId)) {
+            return AssetKind::Layer;
+        }
+        if (meshPacks.contains(assetId)) {
+            return AssetKind::Mesh;
+        }
+        if (materialPacks.contains(assetId)) {
+            return AssetKind::Material;
+        }
+        if (texturePacks.contains(assetId)) {
+            return AssetKind::Texture;
+        }
+        if (failedAssets.contains(assetId)) {
+            // Failed before: what it is shows when it arrives.
+            return AssetKind::Other;
+        }
+        return std::nullopt;
+    };
+    std::vector<std::pair<std::string, AssetKind>> wanted;
+    size_t sceneAssets = 0;
+    for (const auto& assetId : ids) {
+        auto kind = kindOf(assetId);
+        if (kind) {
+            sceneAssets++;
+            refreshing.insert(assetId);
+            wanted.emplace_back(assetId, *kind);
+        } else if (force) {
+            // Not the scene's (a shader): repacked on the server; whoever uses it fetches it.
+            wanted.emplace_back(assetId, AssetKind::Other);
         }
     }
+    requestAssets(wanted, force);
+    TRACE_EVENT("Scene", "AssetsRefreshRequested", id)
+        .text(std::format("{} assets {} ({} of the scene's)", wanted.size(), force ? "to repack" : "changed at their source, fetched again", sceneAssets))
+        .field("forced", force)
+        .field("assets", (int64_t) wanted.size())
+        .field("scene_assets", (int64_t) sceneAssets);
+}
+
+// What the asset server answered for an asset this thread asked for: stored by its kind, or a failure. A refreshed one replaces what the
+// scene held; a mesh or texture that arrives unchanged (the same version) keeps its library entry, so nothing is uploaded again.
+auto ViewScene::receive(const std::string& assetId) -> void {
+    auto it = inFlight.find(assetId);
+    if (it == inFlight.end()) {
+        return;
+    }
+    auto kind = it->second;
+    inFlight.erase(it);
+    bool refreshed = refreshing.erase(assetId) > 0;
+    assetsSinceReport++;
+    auto asset = kind == AssetKind::Other && !refreshed ? std::optional<PackedAsset>{} : assets.take(assetId);
+    if (kind == AssetKind::Other && !refreshed) {
+        return;
+    }
+    if (!asset) {
+        std::string reason;
+        for (const auto& line : assets.errors(assetId)) {
+            reason += reason.empty() ? line : "; " + line;
+        }
+        if (refreshed) {
+            TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(std::format("{}: fetching it again failed, the scene keeps what it had: {}", assetId, reason.empty() ? std::string("no reason given") : reason));
+            return;
+        }
+        failedAssets.insert(assetId);
+        TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(std::format("{} failed: {}", assetId, reason.empty() ? std::string("no reason given") : reason));
+        if (kind == AssetKind::Layer && composer) {
+            composer->markFailed(assetId);
+            composeNeeded = true;
+        }
+        extractNeeded = true;
+        return;
+    }
+    failedAssets.erase(assetId);
+    bool unchanged = refreshed && packVersions[assetId] == asset->version;
+    packVersions[assetId] = asset->version;
+    auto packKind = scenePackKind(asset->bytes);
+    if (packKind && *packKind == ScenePackKind::Layer) {
+        if (auto error = composer->addPack(assetId, asset->bytes)) {
+            TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(*error);
+            composer->markFailed(assetId);
+        }
+        composeNeeded = true;
+        composeReported = false;
+        if (refreshed && !unchanged) {
+            // The file's meshes and materials, which the file's job packed with it, are fetched again too.
+            auto file = assetId + "#";
+            std::vector<std::pair<std::string, AssetKind>> again;
+            for (const auto& [meshId, pack] : meshPacks) {
+                if (meshId.starts_with(file)) {
+                    again.emplace_back(meshId, AssetKind::Mesh);
+                    refreshing.insert(meshId);
+                }
+            }
+            for (const auto& [materialId, pack] : materialPacks) {
+                if (materialId.starts_with(file)) {
+                    again.emplace_back(materialId, AssetKind::Material);
+                    refreshing.insert(materialId);
+                }
+            }
+            requestAssets(again, false);
+        }
+    } else if (packKind && *packKind == ScenePackKind::Mesh) {
+        if (auto mesh = readMeshPack(asset->bytes)) {
+            meshPacks[assetId] = std::move(*mesh);
+            if (!unchanged) {
+                // New content: a new library entry, so the renderer uploads it.
+                meshLibrary.forget(assetId);
+            }
+        } else {
+            failedAssets.insert(assetId);
+        }
+    } else if (packKind && *packKind == ScenePackKind::Material) {
+        if (auto material = readMaterialPack(asset->bytes)) {
+            materialPacks[assetId] = std::move(*material);
+        } else {
+            failedAssets.insert(assetId);
+        }
+    } else if (auto desc = textureDesc(asset->bytes)) {
+        texturePacks[assetId] = std::move(desc);
+        if (!unchanged) {
+            textureLibrary.forget(assetId);
+        }
+    } else {
+        failedAssets.insert(assetId);
+        TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(std::format("{} isn't a layer, mesh, material or texture pack", assetId));
+    }
+    extractNeeded = true;
+}
+
+// Composes with the layer packs held, gaps where one hasn't arrived, and asks for those it names and lacks.
+auto ViewScene::compose() -> void {
+    composeNeeded = false;
+    extractNeeded = true;
+    if (!composer) {
+        return;
+    }
+    auto start = std::chrono::steady_clock::now();
+    std::vector<std::pair<std::string, AssetKind>> fresh;
+    for (const auto& needed : composer->compose()) {
+        if (requestedPacks.insert(needed).second) {
+            fresh.emplace_back(needed, AssetKind::Layer);
+        }
+    }
+    requestAssets(fresh, false);
+    bool layersInFlight = std::ranges::any_of(inFlight, [](const auto& entry) { return entry.second == AssetKind::Layer; });
+    if (layersInFlight || composeReported) {
+        return;
+    }
+    // Every layer pack it names has been answered: the composition is the scene's.
+    composeReported = true;
     for (const auto& message : composer->messages()) {
         TRACE_WARNING("Scene", "CompositionMessage", id).text(message);
     }
+    const auto& world = composer->world();
+    if (world.layerStack.empty()) {
+        TRACE_ERROR("Scene", "SceneFailed", id).text(std::format("scene {}: its root layer can't be had", id));
+    }
     size_t entities = 0;
-    world().visit([&entities](const VisitedEntity&) {
+    world.visit([&entities](const VisitedEntity&) {
         entities++;
         return true;
     });
     auto ms = msSince(start);
     TRACE_EVENT("Scene", "PacksComposed", id)
-        .text(std::format("{} composed: {} layer packs in {} rounds, {} prims, {} prototypes in {:.0f} ms", id, requestedPacks.size(), rounds, entities, world().prototypes.size(), ms))
+        .text(std::format("{} composed: {} layer packs, {} prims, {} prototypes, {:.0f} ms after it was requested", id, requestedPacks.size(), entities, world.prototypes.size(), msSince(openedAt)))
         .field("packs", (int64_t) requestedPacks.size())
-        .field("rounds", (int64_t) rounds)
         .field("prims", (int64_t) entities)
-        .field("prototypes", (int64_t) world().prototypes.size())
+        .field("prototypes", (int64_t) world.prototypes.size())
         .field("ms", ms);
 }
 
-// The meshes and materials of everything drawn, then the textures those materials name.
-auto ViewScene::fetchAssets() -> void {
-    auto start = std::chrono::steady_clock::now();
+// The meshes and materials of everything drawn, and the textures of the materials held; each asked for once.
+auto ViewScene::requestDrawnAssets() -> void {
+    if (!composer) {
+        return;
+    }
     std::set<std::string> meshIds;
     std::set<std::string> materialIds;
-    world().visit([&](const VisitedEntity& visited) {
+    composer->world().visit([&](const VisitedEntity& visited) {
         const auto& entity = *visited.entity;
         if (!entity.active || !entity.defined || entity.abstract || visited.inUndrawnLevel || !visited.visible) {
             return false;
@@ -457,64 +464,224 @@ auto ViewScene::fetchAssets() -> void {
         }
         return true;
     });
-    std::vector<std::string> wanted;
+    std::vector<std::pair<std::string, AssetKind>> wanted;
+    auto want = [&](const std::string& assetId, AssetKind kind, bool held) {
+        if (!held && !failedAssets.contains(assetId) && !inFlight.contains(assetId)) {
+            wanted.emplace_back(assetId, kind);
+        }
+    };
     for (const auto& meshId : meshIds) {
-        if (!meshPacks.contains(meshId) && !failedAssets.contains(meshId)) {
-            wanted.push_back(meshId);
-        }
+        want(meshId, AssetKind::Mesh, meshPacks.contains(meshId));
     }
     for (const auto& materialId : materialIds) {
-        if (!materialPacks.contains(materialId) && !failedAssets.contains(materialId)) {
-            wanted.push_back(materialId);
+        want(materialId, AssetKind::Material, materialPacks.contains(materialId));
+        if (auto it = materialPacks.find(materialId); it != materialPacks.end()) {
+            for (const auto& texture : {it->second.baseColorTexture, it->second.opacityTexture}) {
+                if (!texture.empty()) {
+                    want(texture, AssetKind::Texture, texturePacks.contains(texture));
+                }
+            }
         }
     }
-    size_t received = wanted.size();
-    fetch(assets, wanted, failedAssets, [this](const std::string& assetId, std::vector<std::byte> bytes) {
-        auto kind = scenePackKind(bytes);
-        if (kind && *kind == ScenePackKind::Mesh) {
-            if (auto mesh = readMeshPack(bytes)) {
-                meshPacks[assetId] = std::move(*mesh);
-                return;
-            }
-        } else if (kind && *kind == ScenePackKind::Material) {
-            if (auto material = readMaterialPack(bytes)) {
-                materialPacks[assetId] = std::move(*material);
-                return;
-            }
-        }
-        failedAssets.insert(assetId);
-        TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(std::format("{} isn't a mesh or material pack", assetId));
-    });
+    requestAssets(wanted, false);
+    bool assetsInFlight = std::ranges::any_of(inFlight, [](const auto& entry) { return entry.second != AssetKind::Layer; });
+    if (assetsInFlight || assetsReported || !composeReported) {
+        return;
+    }
+    assetsReported = true;
+    TRACE_EVENT("Scene", "SceneAssetsReceived", id)
+        .text(std::format("{} meshes, {} materials and {} textures drawn; {} answers since the last report, {:.0f} ms after the scene was requested", meshPacks.size(), materialPacks.size(), texturePacks.size(), assetsSinceReport, msSince(openedAt)))
+        .field("meshes", (int64_t) meshPacks.size())
+        .field("materials", (int64_t) materialPacks.size())
+        .field("textures", (int64_t) texturePacks.size())
+        .field("received", (int64_t) assetsSinceReport);
+    assetsSinceReport = 0;
+}
 
-    std::vector<std::string> textures;
-    for (const auto& materialId : materialIds) {
-        auto it = materialPacks.find(materialId);
-        if (it == materialPacks.end()) {
+// The prim's new world transform, and the change of it applied to every prim under it, so a drag doesn't rebuild the draws: each draw
+// instance and light under the prim gets its new world transform and bounds.
+auto ViewScene::applyTransform(const std::string& path, const glm::mat4& local) -> void {
+    auto it = transforms.find(path);
+    if (it == transforms.end() || !it->second.xformable) {
+        return;
+    }
+    localOverrides[path] = local;
+    auto& entry = it->second;
+    glm::mat4 parentWorld = entry.world * glm::inverse(entry.local);
+    glm::mat4 newWorld = entry.resetsXformStack ? local : parentWorld * local;
+    glm::mat4 change = newWorld * glm::inverse(entry.world);
+    entry.local = local;
+    entry.world = newWorld;
+    auto prefix = path + "/";
+    for (auto under = transforms.lower_bound(prefix); under != transforms.end() && under->first.starts_with(prefix); ++under) {
+        under->second.world = change * under->second.world;
+    }
+    auto isUnder = [&](const std::string& candidate) {
+        return candidate == path || candidate.starts_with(prefix);
+    };
+    SceneChanges changes;
+    for (const auto& [prim, slots] : drawn.primInstances) {
+        const auto& primPathOf = primPaths[prim - 1];
+        if (!isUnder(primPathOf)) {
             continue;
         }
-        for (const auto& texture : {it->second.baseColorTexture, it->second.opacityTexture}) {
-            if (!texture.empty() && !texturePacks.contains(texture) && !failedAssets.contains(texture) && std::ranges::find(textures, texture) == textures.end()) {
-                textures.push_back(texture);
+        auto world = unitScale * transforms.at(primPathOf).world;
+        for (auto i : slots) {
+            auto& instance = drawn.meshInstances[i];
+            instance.worldTransform = world;
+            instance.worldBounds = meshBoundsOf[instance.mesh.index].transformed(world);
+            changes.instances.emplace_back(i, instance);
+        }
+    }
+    for (auto& light : drawn.lights) {
+        const auto& lightPath = primPaths[light.primHandle.index - 1];
+        if (isUnder(lightPath)) {
+            if (auto lit = transforms.find(lightPath); lit != transforms.end()) {
+                light.worldTransform = unitScale * lit->second.world;
+                changes.lightsChanged = true;
+                changes.lights = drawn.lights;
             }
         }
     }
-    received += textures.size();
-    fetch(assets, textures, failedAssets, [this](const std::string& assetId, std::vector<std::byte> bytes) {
-        if (auto desc = textureDesc(bytes)) {
-            texturePacks[assetId] = std::move(desc);
-            return;
+    changes.slotCount = (uint32_t) drawn.meshInstances.size();
+    addChanges(std::move(changes));
+    inputsRevision++;
+}
+
+auto ViewScene::publish() -> void {
+    auto snapshot = std::make_shared<SceneSnapshot>();
+    snapshot->id = id;
+    snapshot->revision = inputsRevision;
+    snapshot->drawn = drawn;
+    snapshot->primPaths = primPaths;
+    snapshot->drawsByAsset = drawsByAsset;
+    snapshot->assetsByPrim = assetsByPrim;
+    snapshot->transforms = transforms;
+    snapshot->unitScale = unitScale;
+    std::set<std::string> ids(requestedPacks.begin(), requestedPacks.end());
+    for (const auto& [assetId, pack] : meshPacks) {
+        ids.insert(assetId);
+    }
+    for (const auto& [assetId, pack] : materialPacks) {
+        ids.insert(assetId);
+    }
+    for (const auto& [assetId, pack] : texturePacks) {
+        ids.insert(assetId);
+    }
+    ids.insert(failedAssets.begin(), failedAssets.end());
+    snapshot->assetIds.assign(ids.begin(), ids.end());
+    if (composer) {
+        const auto& world = composer->world();
+        snapshot->layerStack = world.layerStack;
+        snapshot->upAxis = world.upAxis;
+        snapshot->metersPerUnit = world.metersPerUnit;
+        world.visit([&snapshot](const VisitedEntity&) {
+            snapshot->prims++;
+            return true;
+        });
+        snapshot->prototypes = world.prototypes.size();
+        snapshot->lodLevels = world.lodLevels;
+    }
+    snapshot->idle = inFlight.empty() && !composeNeeded && !extractNeeded;
+    std::lock_guard lock(mutex);
+    published = std::move(snapshot);
+}
+
+auto ViewScene::drawsPurpose(Purpose purpose) const -> bool {
+    return drawnPurposes.contains(purpose);
+}
+
+auto ViewScene::worldUp() const -> glm::vec3 {
+    if (current->upAxis == "Z") {
+        return {0.0f, 0.0f, 1.0f};
+    }
+    return {0.0f, 1.0f, 0.0f};
+}
+
+auto ViewScene::primPath(uint32_t prim) const -> std::string {
+    if (prim == 0 || prim > current->primPaths.size()) {
+        return {};
+    }
+    return current->primPaths[prim - 1];
+}
+
+auto ViewScene::instancePath(uint32_t instance) const -> std::string {
+    const auto& instances = current->drawn.meshInstances;
+    if (instance >= instances.size() || !instances[instance].alive) {
+        return {};
+    }
+    return primPath(instances[instance].prim);
+}
+
+auto ViewScene::drawsOf(const std::string& assetId) const -> std::vector<uint32_t> {
+    if (auto it = current->drawsByAsset.find(assetId); it != current->drawsByAsset.end()) {
+        return it->second;
+    }
+    return {};
+}
+
+auto ViewScene::drawCount(const std::string& assetId) const -> size_t {
+    if (auto it = current->drawsByAsset.find(assetId); it != current->drawsByAsset.end()) {
+        return it->second.size();
+    }
+    return 0;
+}
+
+auto ViewScene::assetsUnder(const std::string& path) const -> std::vector<std::string> {
+    std::set<std::string> out;
+    for (const auto& [prim, uses] : current->assetsByPrim) {
+        const auto& candidate = current->primPaths[prim - 1];
+        bool under = path == "/" || candidate == path || (candidate.size() > path.size() && candidate.starts_with(path) && candidate[path.size()] == '/');
+        if (under) {
+            out.insert(uses.begin(), uses.end());
         }
-        failedAssets.insert(assetId);
-        TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(std::format("{} isn't a packed texture", assetId));
-    });
-    auto ms = msSince(start);
-    TRACE_EVENT("Scene", "SceneAssetsReceived", id)
-        .text(std::format("{} meshes, {} materials and {} textures drawn; {} fetched in {:.0f} ms", meshIds.size(), materialIds.size(), textures.size(), received, ms))
-        .field("meshes", (int64_t) meshIds.size())
-        .field("materials", (int64_t) materialIds.size())
-        .field("textures", (int64_t) textures.size())
-        .field("fetched", (int64_t) received)
-        .field("ms", ms);
+    }
+    return {out.begin(), out.end()};
+}
+
+auto ViewScene::primBounds(uint32_t prim) const -> AABB {
+    AABB out = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
+    if (auto it = current->drawn.primInstances.find(prim); it != current->drawn.primInstances.end()) {
+        for (auto i : it->second) {
+            const auto& bounds = current->drawn.meshInstances[i].worldBounds;
+            if (bounds.valid()) {
+                out.min = glm::min(out.min, bounds.min);
+                out.max = glm::max(out.max, bounds.max);
+            }
+        }
+    }
+    return out;
+}
+
+auto ViewScene::bounds(const std::string& path) const -> AABB {
+    AABB out = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
+    auto under = [&path](const std::string& candidate) {
+        if (path == "/") {
+            return true;
+        }
+        return candidate == path || (candidate.size() > path.size() && candidate.starts_with(path) && candidate[path.size()] == '/');
+    };
+    for (const auto& [prim, slots] : current->drawn.primInstances) {
+        if (!under(primPath(prim))) {
+            continue;
+        }
+        for (auto i : slots) {
+            const auto& bounds = current->drawn.meshInstances[i].worldBounds;
+            if (bounds.valid()) {
+                out.min = glm::min(out.min, bounds.min);
+                out.max = glm::max(out.max, bounds.max);
+            }
+        }
+    }
+    return out;
+}
+
+auto ViewScene::transform(const std::string& path) const -> std::optional<PrimTransform> {
+    auto it = current->transforms.find(path);
+    if (it == current->transforms.end()) {
+        return std::nullopt;
+    }
+    return PrimTransform{.local = it->second.local, .world = current->unitScale * it->second.world, .xformable = it->second.xformable};
 }
 
 auto ViewScene::texture(const std::string& textureAsset) -> TextureHandle {
@@ -619,7 +786,9 @@ auto ViewScene::material(const std::string& materialAsset, const std::optional<s
 // The renderer's inputs from the World: a draw instance per submesh of every drawn mesh, and the distant lights. World transforms are
 // computed as the view always has: in float, parent times local, then scaled to metres by the scene's metersPerUnit.
 auto ViewScene::extract() -> void {
+    extractNeeded = false;
     auto start = std::chrono::steady_clock::now();
+    SceneChanges changes;
     auto previousLights = std::move(drawn.lights);
     drawn.lights.clear();
     drawn.primInstances.clear();
@@ -628,7 +797,8 @@ auto ViewScene::extract() -> void {
     transforms.clear();
     drawsByAsset.clear();
     assetsByPrim.clear();
-    const auto& w = world();
+    static const World emptyWorld;
+    const auto& w = composer ? composer->world() : emptyWorld;
     unitScale = glm::mat4(1.0f);
     if (w.metersPerUnit != 1.0) {
         unitScale = glm::scale(glm::mat4(1.0f), glm::vec3((float) w.metersPerUnit));
@@ -813,7 +983,7 @@ auto ViewScene::extract() -> void {
     }
 
     // Library entries first, so the draws below name only what the renderer has been told about.
-    collectChanges(meshesUsed, materialsUsed, texturesUsed);
+    collectChanges(meshesUsed, materialsUsed, texturesUsed, changes);
 
     // Slots: a draw kept from the last extract keeps its slot, a new one takes the lowest free slot or a new one, a gone one's slot dies.
     std::set<std::string> present;
@@ -827,7 +997,7 @@ auto ViewScene::extract() -> void {
         }
         auto slot = it->second;
         drawn.meshInstances[slot] = RenderMeshInstance{.primFirst = false, .alive = false};
-        pending.instances.emplace_back(slot, drawn.meshInstances[slot]);
+        changes.instances.emplace_back(slot, drawn.meshInstances[slot]);
         freeSlots.insert(slot);
         it = slotOfDraw.erase(it);
     }
@@ -849,14 +1019,15 @@ auto ViewScene::extract() -> void {
             slotOfDraw[draw.key] = slot;
         }
         drawn.meshInstances[slot] = draw.instance;
-        pending.instances.emplace_back(slot, draw.instance);
+        changes.instances.emplace_back(slot, draw.instance);
         drawn.primInstances[draw.instance.prim].push_back(slot);
     }
-    pending.slotCount = (uint32_t) drawn.meshInstances.size();
+    changes.slotCount = (uint32_t) drawn.meshInstances.size();
     if (drawn.lights != previousLights) {
-        pending.lightsChanged = true;
-        pending.lights = drawn.lights;
+        changes.lightsChanged = true;
+        changes.lights = drawn.lights;
     }
+    addChanges(std::move(changes));
 
     inputsRevision++;
     auto ms = msSince(start);
@@ -870,36 +1041,36 @@ auto ViewScene::extract() -> void {
         .field("ms", ms);
 }
 
-auto ViewScene::collectChanges(const std::set<uint32_t>& meshesNow, const std::set<uint32_t>& materialsNow, const std::set<uint32_t>& texturesNow) -> void {
+auto ViewScene::collectChanges(const std::set<uint32_t>& meshesNow, const std::set<uint32_t>& materialsNow, const std::set<uint32_t>& texturesNow, SceneChanges& changes) -> void {
     for (auto index : texturesNow) {
         if (!usedTextures.contains(index)) {
-            pending.texturesAdded.emplace_back(TextureHandle{index}, textureLibrary.shared(TextureHandle{index}));
+            changes.texturesAdded.emplace_back(TextureHandle{index}, textureLibrary.shared(TextureHandle{index}));
         }
     }
     for (auto index : meshesNow) {
         if (!usedMeshes.contains(index)) {
-            pending.meshesAdded.emplace_back(MeshHandle{index}, meshLibrary.shared(MeshHandle{index}));
+            changes.meshesAdded.emplace_back(MeshHandle{index}, meshLibrary.shared(MeshHandle{index}));
         }
     }
     for (auto index : materialsNow) {
         if (!usedMaterials.contains(index)) {
-            pending.materialsChanged.emplace_back(MaterialHandle{index}, *materialLibrary.get(MaterialHandle{index}));
+            changes.materialsChanged.emplace_back(MaterialHandle{index}, *materialLibrary.get(MaterialHandle{index}));
         }
     }
     // What isn't used any more leaves the libraries; a handle is never reused, so the renderer can't confuse it with a later entry.
     for (auto index : usedMaterials) {
         if (!materialsNow.contains(index)) {
-            pending.materialsRemoved.push_back(MaterialHandle{index});
+            changes.materialsRemoved.push_back(MaterialHandle{index});
         }
     }
     for (auto index : usedMeshes) {
         if (!meshesNow.contains(index)) {
-            pending.meshesRemoved.push_back(MeshHandle{index});
+            changes.meshesRemoved.push_back(MeshHandle{index});
         }
     }
     for (auto index : usedTextures) {
         if (!texturesNow.contains(index)) {
-            pending.texturesRemoved.push_back(TextureHandle{index});
+            changes.texturesRemoved.push_back(TextureHandle{index});
         }
     }
     // Entries made this extract but not used (a material replaced within it) and entries no longer used are dropped.
@@ -934,11 +1105,4 @@ auto ViewScene::collectChanges(const std::set<uint32_t>& meshesNow, const std::s
     usedMeshes = meshesNow;
     usedMaterials = materialsNow;
     usedTextures = texturesNow;
-}
-
-auto ViewScene::takeChanges() -> SceneChanges {
-    auto changes = std::move(pending);
-    pending = {};
-    pending.slotCount = (uint32_t) drawn.meshInstances.size();
-    return changes;
 }

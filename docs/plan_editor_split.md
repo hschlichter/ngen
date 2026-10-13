@@ -38,11 +38,8 @@ What exists today (after step 2, the scene side has moved to packs, but the edit
   - the view's **manifest**: scene version, layer stack with each layer pack's version, variant selections, sub-packs and assets held
   - **`scene.applyDelta`**: base version, layer pack replacements, layer stack and variant changes, and required sub-packs and assets by id
   - **`scene.manifest`**, and **resync**: on a version mismatch the view reports its manifest, and the producer answers with one catch-up delta
-  - **incremental GPU scene updates:**
-    - geometry pool allocation and freeing per mesh
-    - material table and texture slot patches
-    - instance adds, removes and updates
-    - transform-only updates, as today
+  - ~~incremental GPU scene updates~~: done by [plan_async_scene.md](plan_async_scene.md) (pool ranges per mesh, texture slots, material
+    entries, instance slots, `SceneChanges`); the deltas here land on `SceneChanges`
   - the in-view editor's authored edits go editor code → changed layer → build server repack → delta → view, the same path the split editor will
     use
 - **Phase B, the split:**
