@@ -220,6 +220,7 @@ auto main(int argc, char** argv) -> int {
             .public_include({"src/ui"})
             .include({
                 "src",
+                "src/asset",
                 "src/trace",
                 "src/rhi",
                 "src/rhi/vulkan",

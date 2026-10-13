@@ -521,7 +521,7 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
             .name = "view.window",
             .summary = "Open or close an introspection window.",
             .params = {
-                requiredField("name", RpcType::String, "memory, capture, framedebugger, gpuscene, counters, shaders, culling"),
+                requiredField("name", RpcType::String, "memory, capture, framedebugger, gpuscene, counters, shaders, culling, assets"),
                 optionalField("open", RpcType::Bool, "default true"),
             },
             .result = "{}",
@@ -808,6 +808,25 @@ auto sceneRecord(const ViewContext& view) -> Json {
 
 auto assetsRecord(const ViewContext& view) -> Json {
     auto stats = view.assets.stats();
+    auto assets = Json::array();
+    for (const auto& entry : view.assets.log()) {
+        const char* state = entry.state == AssetLogState::Received ? "received" : (entry.state == AssetLogState::Failed ? "failed" : "inFlight");
+        auto total = entry.doneMs >= 0 && entry.requestedMs >= 0 ? entry.doneMs - entry.requestedMs : -1.0;
+        assets.push_back({
+            {"id", entry.id},
+            {"state", state},
+            {"packed", entry.packed},
+            {"version", entry.version},
+            {"bytes", entry.bytes},
+            {"requests", entry.requests},
+            {"requestedMs", entry.requestedMs},
+            {"firstDataMs", entry.firstDataMs},
+            {"doneMs", entry.doneMs},
+            {"totalMs", total},
+            {"serverMs", entry.serverMs},
+            {"errors", entry.errors},
+        });
+    }
     return {
         {"requested", stats.requested},
         {"received", stats.received},
@@ -816,6 +835,7 @@ auto assetsRecord(const ViewContext& view) -> Json {
         {"failed", stats.failed},
         {"inFlight", stats.inFlight()},
         {"bytes", stats.bytes},
+        {"assets", assets},
     };
 }
 
@@ -920,7 +940,7 @@ auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext
     records.add("scene", "the open scene: its layer stack, up axis and units, prims (instances expanded), prototypes, draws, lights and LOD levels set", [&view](RpcResponder responder) {
         responder.respond(sceneRecord(view));
     });
-    records.add("assets", "what the view asked the asset server for and received", [&view](RpcResponder responder) {
+    records.add("assets", "what the view asked the asset server for and received: totals, and every asset with its state, size and times", [&view](RpcResponder responder) {
         responder.respond(assetsRecord(view));
     });
     records.add("culling", "GPU culling's latest readback: instances and triangles drawn and culled, per view", [&view](RpcResponder responder) {

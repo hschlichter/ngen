@@ -758,6 +758,9 @@ auto main(int argc, char* argv[]) -> int {
         profile::beginZone(uiZoneId);
         imguiBackend.beginFrame();
         viewUI.setStatusBar(statusBar.gather(rhiDevice, assetClient, latestCull));
+        if (viewUI.wantsAssetLog()) {
+            viewUI.setAssetLog(assetClient.log());
+        }
         viewUI.draw(primPathOf, !selectedPath.empty(), scene.renderWorld(), cam, std::move(fgDebugSnap), std::move(renderDebugSnap));
         switch (viewUI.takeEditRequest()) {
             case ViewEditRequest::Deselect:

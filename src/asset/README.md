@@ -68,10 +68,11 @@ is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own c
 
 - **`asset.request`** `{ids: [...], have: {id: version}}` answers at once with `{request}`. Then each asset is answered on its own as it finishes:
   - `asset.data` `{request, id, version, offset, total}` notifications, each with up to 1 MiB of the packed file as the frame's attachment, in order
-  - then `asset.ready` `{request, id, version, size, sent, packed}`; `packed` is true when a packer ran for it, false when the cache was up to
+  - then `asset.ready` `{request, id, version, size, sent, packed, ms}`; `ms` is the server's time for it (the cache check, and packing when it
+    ran, waiting for its file's job included); `packed` is true when a packer ran for it, false when the cache was up to
     date. An asset whose held version (`have`) is current gets `asset.ready` with `sent: false`
     and no data.
-  - or `asset.failed` `{request, id, errors}`: no rule for the extension, no such file, an id outside the project, the packer's output when it
+  - or `asset.failed` `{request, id, errors, ms}`: no rule for the extension, no such file, an id outside the project, the packer's output when it
     failed, or a `<file>#<fragment>` id the file's job didn't write
 - **Secondary outputs.** An id with a `#` is served by its file's job: the rule is the file's, and the file is packed (once, for every id of it in
   flight) when it is out of date. One file is packed by one job at a time.
@@ -178,7 +179,9 @@ payload, a UsdLod root with payload levels, bindings on a parent and a child, vi
 `AssetClient` (`assetclient.h`, the `assetclient` library) is the engine side. `connect(variant)` finds the asset server of that variant and project
 through discovery, and fails when none is running. `request(ids)` sends one `asset.request`; `wait(ids)` blocks until each has arrived or failed;
 `find(id)` returns the bytes and version, `take(id)` moves them out of the client (a later request streams them again), `stats()` counts what
-the client requested, received (packed or cached), failed and has in flight, and the bytes received (ngen-view's status bar shows them), and
+the client requested, received (packed or cached), failed and has in flight, and the bytes received (ngen-view's status bar shows them),
+`log()` every id it requested, in order, with its state, how it arrived, its size, the times of its last request, first data and arrival,
+and the server's time for it (ngen-view's Assets window and `assets` record show it), and
 `errors(id)` gives
 the reasons it failed. A new request for an id clears an earlier failure.
 

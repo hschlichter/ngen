@@ -374,7 +374,9 @@ auto AssetServer::subscribe(const std::string& id, Subscriber subscriber) -> voi
         inFlight[id].push_back(subscriber);
     }
     jobs->submit([this, id] {
+        auto started = std::chrono::steady_clock::now();
         auto outcome = pack(id);
+        outcome.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
         deliver(id, outcome);
     });
 }
@@ -532,7 +534,7 @@ auto AssetServer::deliver(const std::string& id, const Outcome& outcome) -> void
     std::shared_ptr<const std::vector<std::byte>> bytes;
     for (const auto& subscriber : subscribers) {
         if (!outcome.ok) {
-            rpc.send(subscriber.connection, rpc::makeNotification("asset.failed", {{"request", subscriber.request}, {"id", id}, {"errors", outcome.errors}}));
+            rpc.send(subscriber.connection, rpc::makeNotification("asset.failed", {{"request", subscriber.request}, {"id", id}, {"errors", outcome.errors}, {"ms", outcome.ms}}));
             answered(subscriber.request, Answer::Failed, 0);
             continue;
         }
@@ -540,7 +542,7 @@ auto AssetServer::deliver(const std::string& id, const Outcome& outcome) -> void
             std::error_code ec;
             auto size = fs::file_size(outcome.path, ec);
             rpc.send(subscriber.connection,
-                     rpc::makeNotification("asset.ready", {{"request", subscriber.request}, {"id", id}, {"version", version}, {"size", ec ? 0 : size}, {"sent", false}, {"packed", outcome.packed}}));
+                     rpc::makeNotification("asset.ready", {{"request", subscriber.request}, {"id", id}, {"version", version}, {"size", ec ? 0 : size}, {"sent", false}, {"packed", outcome.packed}, {"ms", outcome.ms}}));
             answered(subscriber.request, Answer::Held, 0);
             continue;
         }
@@ -567,6 +569,7 @@ auto AssetServer::deliver(const std::string& id, const Outcome& outcome) -> void
                 .id = id,
                 .version = version,
                 .packed = outcome.packed,
+                .ms = outcome.ms,
                 .bytes = bytes,
                 .offset = 0,
             });
@@ -605,7 +608,7 @@ auto AssetServer::pump(RpcServer::ConnectionId connection) -> void {
         if (outgoing.offset == bytes.size()) {
             rpc.send(connection,
                      rpc::makeNotification("asset.ready",
-                                           {{"request", outgoing.request}, {"id", outgoing.id}, {"version", outgoing.version}, {"size", bytes.size()}, {"sent", true}, {"packed", outgoing.packed}}));
+                                           {{"request", outgoing.request}, {"id", outgoing.id}, {"version", outgoing.version}, {"size", bytes.size()}, {"sent", true}, {"packed", outgoing.packed}, {"ms", outgoing.ms}}));
             answered(outgoing.request, Answer::Sent, bytes.size());
             stream.queue.pop_front();
             continue;

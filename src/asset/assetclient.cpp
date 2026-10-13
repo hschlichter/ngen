@@ -6,6 +6,7 @@
 #include "rpcserver.h"
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <condition_variable>
 #include <cstring>
 #include <format>
@@ -23,9 +24,29 @@ struct AssetClient::State {
     std::unordered_map<std::string, std::unique_ptr<PackedAsset>> ready;
     std::unordered_map<std::string, std::vector<std::string>> failed;
     AssetClientStats stats;
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+    std::vector<AssetLogEntry> logEntries;
+    std::unordered_map<std::string, size_t> logIndex;
 
-    auto fail(const std::string& id, std::vector<std::string> messages) -> void {
+    auto nowMs() const -> double {
+        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    }
+
+    auto entry(const std::string& id) -> AssetLogEntry& {
+        auto [it, added] = logIndex.try_emplace(id, logEntries.size());
+        if (added) {
+            logEntries.push_back({.id = id});
+        }
+        return logEntries[it->second];
+    }
+
+    auto fail(const std::string& id, std::vector<std::string> messages, double serverMs = -1) -> void {
         partial.erase(id);
+        auto& logged = entry(id);
+        logged.state = AssetLogState::Failed;
+        logged.doneMs = nowMs();
+        logged.serverMs = serverMs;
+        logged.errors = messages;
         failed[id] = std::move(messages);
         stats.failed++;
     }
@@ -49,6 +70,9 @@ struct AssetClient::State {
                 std::memcpy(asset.bytes.data() + offset, attachment.data(), attachment.size());
             }
             stats.bytes += attachment.size();
+            if (auto& logged = entry(id); logged.firstDataMs < 0) {
+                logged.firstDataMs = nowMs();
+            }
         } else if (method == "asset.ready") {
             if (params.value("sent", false) && params.value("size", size_t(0)) == 0 && !partial.contains(id)) {
                 // An empty asset: no asset.data precedes it.
@@ -65,6 +89,14 @@ struct AssetClient::State {
                 } else {
                     stats.cached++;
                 }
+                auto& logged = entry(id);
+                logged.state = AssetLogState::Received;
+                logged.packed = params.value("packed", false);
+                logged.version = params.value("version", std::string());
+                logged.bytes = params.value("size", uint64_t(0));
+                logged.doneMs = nowMs();
+                logged.serverMs = params.value("ms", -1.0);
+                logged.errors.clear();
                 if (it != partial.end()) {
                     ready[id] = std::make_unique<PackedAsset>(std::move(it->second));
                     partial.erase(it);
@@ -76,7 +108,7 @@ struct AssetClient::State {
             for (const auto& line : params.value("errors", rpc::Json::array())) {
                 messages.push_back(line.get<std::string>());
             }
-            fail(id, std::move(messages));
+            fail(id, std::move(messages), params.value("ms", -1.0));
         } else {
             return;
         }
@@ -136,8 +168,16 @@ auto AssetClient::request(std::span<const std::string> ids) -> void {
     {
         // A new request supersedes an earlier failure for the same id.
         std::lock_guard lock(state->mutex);
+        auto now = state->nowMs();
         for (const auto& id : ids) {
             state->failed.erase(id);
+            auto& logged = state->entry(id);
+            logged.requests++;
+            logged.state = AssetLogState::InFlight;
+            logged.requestedMs = now;
+            logged.firstDataMs = -1;
+            logged.doneMs = -1;
+            logged.serverMs = -1;
         }
         state->stats.requested += ids.size();
     }
@@ -197,6 +237,11 @@ auto AssetClient::take(const std::string& id) -> std::optional<PackedAsset> {
 auto AssetClient::stats() const -> AssetClientStats {
     std::lock_guard lock(state->mutex);
     return state->stats;
+}
+
+auto AssetClient::log() const -> std::vector<AssetLogEntry> {
+    std::lock_guard lock(state->mutex);
+    return state->logEntries;
 }
 
 auto AssetClient::errors(const std::string& id) const -> std::vector<std::string> {

@@ -72,6 +72,7 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::MenuItem("Render Debug", nullptr, &state.showRenderDebug);
         ImGui::MenuItem("Camera", nullptr, &state.showCamera);
         ImGui::MenuItem("Culling", nullptr, &state.showCulling);
+        ImGui::MenuItem("Assets", nullptr, &state.showAssets);
         if (ImGui::BeginMenu("Introspection")) {
             ImGui::MenuItem("Capture", nullptr, &state.introspection.capture);
             ImGui::MenuItem("Frame Debugger", nullptr, &state.introspection.frameDebugger);

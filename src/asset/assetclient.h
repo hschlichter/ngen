@@ -29,6 +29,28 @@ struct AssetClientStats {
     auto inFlight() const -> uint64_t { return requested - received - failed; }
 };
 
+// One asset as the client has seen it: every request for its id, and how the last one ended. Times are milliseconds since the client was
+// created; -1 for what hasn't happened yet.
+enum class AssetLogState : uint8_t {
+    InFlight,
+    Received,
+    Failed,
+};
+
+struct AssetLogEntry {
+    std::string id;
+    AssetLogState state = AssetLogState::InFlight;
+    uint32_t requests = 0; // how often the id was requested
+    bool packed = false;   // the last arrival: a packer ran for it (else the server's cache was up to date)
+    std::string version;
+    uint64_t bytes = 0;      // the last arrival's size
+    double requestedMs = -1; // the last request
+    double firstDataMs = -1; // its first asset.data
+    double doneMs = -1;      // its asset.ready or asset.failed
+    double serverMs = -1;    // the server's time for it (the cache check, and packing when it ran), as the server reports it
+    std::vector<std::string> errors;
+};
+
 // The engine side of the asset server's stream: sends pack requests and collects the streamed assets. No file
 // of the server's is ever read. Thread-safe. See src/asset/README.md.
 class AssetClient {
@@ -56,6 +78,9 @@ public:
     auto take(const std::string& id) -> std::optional<PackedAsset>;
 
     auto stats() const -> AssetClientStats;
+
+    // Every id requested so far, in the order first requested.
+    auto log() const -> std::vector<AssetLogEntry>;
 
     // The packer's errors for an asset that failed; empty otherwise.
     auto errors(const std::string& id) const -> std::vector<std::string>;

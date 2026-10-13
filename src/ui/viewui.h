@@ -1,5 +1,6 @@
 #pragma once
 
+#include "assetswindow.h"
 #include "camerawindow.h"
 #include "capturewindow.h"
 #include "counterswindow.h"
@@ -135,12 +136,15 @@ public:
 
     // grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa, cascadefrusta; false if the name is unknown.
     auto setOverlay(std::string_view name, bool on) -> bool;
-    // Opens or closes an introspection window by name (memory, capture, framedebugger, gpuscene, counters, shaders, culling).
+    // Opens or closes an introspection window by name (memory, capture, framedebugger, gpuscene, counters, shaders, culling, assets).
     // Returns false for an unknown name.
     auto setIntrospectionWindow(std::string_view name, bool on) -> bool;
     // Screenshot requested from the UI (button or F12); main hands it to the renderer.
     auto takeScreenshotRequest() -> bool { return std::exchange(screenshotRequested, false); }
     auto requestScreenshot() -> void { screenshotRequested = true; }
+    // The Assets window's rows: the application sets them each frame while the window is open.
+    auto wantsAssetLog() const -> bool { return showAssetsWindow; }
+    auto setAssetLog(std::vector<AssetLogEntry> log) -> void { assetLog = std::move(log); }
     // What the status bar shows next frame; the application sets it each frame.
     auto setStatusBar(const StatusBarData& data) -> void { statusBarData = data; }
     auto cameraWindow() -> CameraWindowState& { return cameraState; }
@@ -189,6 +193,9 @@ private:
     bool showRenderDebugWindow = false;
     bool showCameraWindow = false;
     bool showCullingWindow = false;
+    bool showAssetsWindow = false;
+    std::vector<AssetLogEntry> assetLog;
+    AssetsWindowState assetsState;
     uint32_t cullStatInstances = 0;
     uint32_t cullStatCulled = 0;
     uint64_t cullTrianglesDrawn = 0;

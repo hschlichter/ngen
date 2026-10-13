@@ -73,7 +73,7 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
 - Records at a frame go to a file: a script line `120 record render /tmp/records.jsonl` appends the render debug record (meshes, textures,
   passes with draw counters and GPU time, culled passes, draw log with prim paths) as one JSON line, `value` holding the record,
   `requested_frame` the frame asked for and `frame` the frame it was ready (GPU readbacks take a few). Any record works: `render`, `memory`,
-  `counters`, `culling`, `scene`, `assets`, `profile`, `status` (`src/introspect/README.md`); several lines into one file are fine. Read it
+  `counters`, `culling`, `scene`, `assets` (per asset: state, size, times), `pipelines`, `profile`, `status` (`src/introspect/README.md`); several lines into one file are fine. Read it
   with `jq 'select(.record == "render") | .value.passes' /tmp/records.jsonl`.
 - `dump-profile PATH` (script verb): the profiler history as a Chrome trace file (`jq '.traceEvents'`, or open in Perfetto).
 - `--script=FILE`: `<frame> <verb> [args]` per line, same verbs as the flags plus `quit`, `pick <x> <y>` (select what is drawn at that framebuffer pixel,
@@ -95,7 +95,7 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   - `debugview off|wireframe|trianglesize|overdraw|instance|mesh|material|primitive|uv`: replaces the lit image; read raw values with
     `capture DebugViewPass debugview.value <path> X Y W H`.
   - `cull view N`: colour the AABB overlay by view N's visibility (0 camera, 1+ cascades); `overlay cascadefrusta=on` draws the cascade frusta.
-  - `window memory|capture|framedebugger|gpuscene|counters|shaders|culling on|off`: open an introspection window (or the Culling window), to
+  - `window memory|capture|framedebugger|gpuscene|counters|shaders|culling|assets on|off`: open an introspection window (or the Culling or Assets window), to
     exercise its drawing headless; with `--show-ui` the screenshot shows it.
   - `renderdoc-capture` with `--renderdoc`: a RenderDoc capture of the next frame under `captures/`.
 - Where the numbers are: the device and swapchain, scene tables, passes and draws in `render`; camera, anti-aliasing and sampler in `status`;

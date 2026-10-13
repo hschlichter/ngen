@@ -30,6 +30,13 @@ The trace shows the steps: `SceneRequested`, `PacksComposed` (packs, rounds, pri
 materials, textures, time), `WorldExtracted` (instances, meshes, materials, lights, time), and `SceneAssetFailed` or `CompositionMessage`
 warnings.
 
+## What arrived: the Assets window
+
+Windows → Assets (or `window assets`) lists every asset the view requested from `AssetClient::log()`: its state, whether the server packed it
+or served its cache, its size, and its times. Total is request to arrival; Server is the server's own time (the cache check, and packing when
+it ran); Rest is the difference, waiting in the server's queue and streaming. A filter by id and by state, sorting by any column, and a
+failed asset's errors on hover. The `assets` record carries the same list next to the totals.
+
 ## Selection, picking and gizmos
 
 The selection is a prim's full path (instances expanded), so a prim inside an instance is that instance's. A click picks on the GPU

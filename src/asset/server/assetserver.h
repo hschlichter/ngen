@@ -54,6 +54,7 @@ private:
     struct Outcome {
         bool ok = false;
         bool packed = false; // a packer ran for it; false when the cache was up to date
+        double ms = 0.0;     // the server's time for it: the cache check, and packing when it ran (waiting for the file's job included)
         uint64_t version = 0;
         std::string path;
         std::vector<std::string> errors;
@@ -70,6 +71,7 @@ private:
         std::string id;
         std::string version;
         bool packed = false;
+        double ms = 0.0;
         std::shared_ptr<const std::vector<std::byte>> bytes;
         size_t offset = 0;
     };
