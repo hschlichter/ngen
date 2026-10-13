@@ -7,9 +7,11 @@ layout(location = 0) in vec3 fragNormal;
 layout(location = 1) in vec3 fragColor;
 layout(location = 2) in vec2 fragTexCoord;
 layout(location = 3) flat in uint fragTexture;
+layout(location = 4) flat in uint fragInstance;
 
 layout(location = 0) out vec4 outAlbedo;
 layout(location = 1) out vec4 outNormal;
+layout(location = 2) out uint outInstance;
 
 void main() {
     vec4 texColor = texture(textures[fragTexture], fragTexCoord);
@@ -22,4 +24,5 @@ void main() {
         n = vec3(0.0, 1.0, 0.0);
     }
     outNormal = vec4(normalize(n) * 0.5 + 0.5, 1.0);
+    outInstance = fragInstance;
 }

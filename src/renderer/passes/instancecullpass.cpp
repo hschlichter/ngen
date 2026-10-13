@@ -4,7 +4,6 @@
 #include "gpuscene.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "shaderloader.h"
 
 #include <array>
 #include <format>
@@ -46,21 +45,17 @@ struct ScatterPassData {
 
 } // namespace
 
-auto InstanceCullPass::init(RhiDevice* device) -> bool {
-    shader = loadShaderModule(device, RhiShaderStage::Compute, "shaders/instancecull.comp");
-    if (shader == nullptr) {
-        return false;
-    }
+auto InstanceCullPass::init(RhiDevice* device, PipelineRegistry& pipelines) -> bool {
+    registry = &pipelines;
     setLayout = device->createDescriptorSetLayout(cullBindings);
     device->setDebugName(setLayout, "cull.setlayout");
-    RhiComputePipelineDesc pipelineDesc = {
-        .shader = shader,
-        .descriptorSetLayouts = {&setLayout, 1},
+    ComputePipelineRequest request = {
+        .shader = {.id = "shaders/instancecull.comp", .stage = RhiShaderStage::Compute},
+        .descriptorSetLayouts = {setLayout},
         .pushConstant = {.stage = RhiShaderStage::Compute, .offset = 0, .size = sizeof(uint32_t)},
     };
-    pipeline = device->createComputePipeline(pipelineDesc);
-    device->setDebugName(pipeline, "cull.pipeline");
-    return pipeline != nullptr;
+    pipelineHandle = pipelines.registerCompute("cull.pipeline", request, PipelineUse::Startup);
+    return true;
 }
 
 auto InstanceCullPass::destroy(RhiDevice* device) -> void {
@@ -68,9 +63,7 @@ auto InstanceCullPass::destroy(RhiDevice* device) -> void {
         device->freeDescriptorSets(pool, sets);
         device->destroyDescriptorPool(pool);
     }
-    device->destroyPipeline(pipeline);
     device->destroyDescriptorSetLayout(setLayout);
-    device->destroyShaderModule(shader);
 }
 
 auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& lists, const GpuScene& scene, DeletionQueue& deletionQueue, uint64_t frame) -> void {
@@ -111,7 +104,7 @@ auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& li
 }
 
 auto InstanceCullPass::addPasses(FrameGraph& fg, const DrawLists::Handles& handles, FgBufferHandle instanceBuffer, uint32_t groupCount, uint32_t frameSlot) -> void {
-    auto* pip = pipeline;
+    auto* pip = registry->get(pipelineHandle);
     auto* set = frameSlot < sets.size() ? sets[frameSlot] : nullptr;
     auto dispatchMode = [pip, set](FrameGraphContext& ctx, CullMode mode, uint32_t groups) {
         auto* cmd = ctx.cmd();

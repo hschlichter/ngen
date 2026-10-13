@@ -4,44 +4,28 @@
 #include "profilegpu.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "shaderloader.h"
 
 #include <array>
 
-auto DepthPrepass::init(RhiDevice* device, RhiFormat depthFormat, RhiDescriptorSetLayout* geometrySetLayout) -> bool {
+auto DepthPrepass::init(PipelineRegistry& pipelines, RhiFormat depthFormat, RhiDescriptorSetLayout* geometrySetLayout) -> bool {
     using enum RhiFormat;
+    registry = &pipelines;
 
-    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/depthonly.vert");
-    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/shadow.frag");
-
-    std::array<RhiVertexAttribute, 1> vertexAttrs = {{
-        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0}, // position-only stream
-    }};
-
-    RhiGraphicsPipelineDesc pipelineDesc = {
-        .vertexShader = vertShader,
-        .fragmentShader = fragShader,
-        .descriptorSetLayouts = {&geometrySetLayout, 1},
+    GraphicsPipelineRequest request = {
+        .vertex = {.id = "shaders/depthonly.vert", .stage = RhiShaderStage::Vertex},
+        .fragment = {.id = "shaders/shadow.frag", .stage = RhiShaderStage::Fragment},
+        .descriptorSetLayouts = {geometrySetLayout},
         .pushConstant = {}, // model matrix comes from the instance buffer at gl_InstanceIndex
         .colorFormats = {},
         .depthFormat = depthFormat,
         .vertexStride = sizeof(std::array<float, 3>),
-        .vertexAttributes = vertexAttrs,
+        .vertexAttributes = {{.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0}}, // position-only stream
         .raster = {.cullMode = RhiCullMode::Back},
     };
-    pipelineCullBack = device->createGraphicsPipeline(pipelineDesc);
-    device->setDebugName(pipelineCullBack, "prepass.pipeline.cullback");
-    pipelineDesc.raster.cullMode = RhiCullMode::None;
-    pipelineCullNone = device->createGraphicsPipeline(pipelineDesc);
-    device->setDebugName(pipelineCullNone, "prepass.pipeline.cullnone");
-    return pipelineCullBack != nullptr && pipelineCullNone != nullptr;
-}
-
-auto DepthPrepass::destroy(RhiDevice* device) -> void {
-    device->destroyPipeline(pipelineCullBack);
-    device->destroyPipeline(pipelineCullNone);
-    device->destroyShaderModule(vertShader);
-    device->destroyShaderModule(fragShader);
+    pipelineCullBack = pipelines.registerGraphics("prepass.pipeline.cullback", request, PipelineUse::Startup);
+    request.raster.cullMode = RhiCullMode::None;
+    pipelineCullNone = pipelines.registerGraphics("prepass.pipeline.cullnone", request, PipelineUse::Startup);
+    return true;
 }
 
 auto DepthPrepass::addPass(
@@ -54,8 +38,8 @@ auto DepthPrepass::addPass(
     DrawLists::Handles drawHandles,
     const GpuScene& scene,
     RhiDescriptorSet* descriptorSet) -> const DepthPrepassData& {
-    auto* cullBack = pipelineCullBack;
-    auto* cullNone = pipelineCullNone;
+    auto* cullBack = registry->get(pipelineCullBack);
+    auto* cullNone = registry->get(pipelineCullNone);
 
     return fg.addPass<DepthPrepassData>(
         "DepthPrepass",

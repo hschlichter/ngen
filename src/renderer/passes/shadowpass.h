@@ -3,6 +3,7 @@
 #include "drawlists.h"
 #include "framegraph.h"
 #include "geometrypass.h" // GpuInstance, GpuScene
+#include "pipelineregistry.h"
 #include "rhitypes.h"
 #include "shadowcascades.h"
 
@@ -20,7 +21,7 @@ struct ShadowPassData {
 
 class ShadowPass {
 public:
-    auto init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFormat) -> bool;
+    auto init(RhiDevice* device, PipelineRegistry& pipelines, RhiExtent2D extent, RhiFormat depthFormat) -> bool;
     auto destroy(RhiDevice* device) -> void;
 
     // Points the pass's descriptor set at the instance buffer. Called whenever the buffer is
@@ -46,8 +47,7 @@ private:
     RhiDescriptorSetLayout* descSetLayout = nullptr; // binding 0: instance buffer
     RhiDescriptorPool* descPool = nullptr;
     RhiDescriptorSet* descSet = nullptr;
-    RhiPipeline* pipelineCullBack = nullptr;
-    RhiPipeline* pipelineCullNone = nullptr;
-    RhiShaderModule* vertShader = nullptr;
-    RhiShaderModule* fragShader = nullptr;
+    PipelineRegistry* registry = nullptr;
+    PipelineHandle pipelineCullBack;
+    PipelineHandle pipelineCullNone;
 };

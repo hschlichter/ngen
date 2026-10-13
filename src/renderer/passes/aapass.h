@@ -1,6 +1,7 @@
 #pragma once
 
 #include "framegraph.h"
+#include "pipelineregistry.h"
 #include "rhitypes.h"
 
 #include <cstdint>
@@ -22,7 +23,7 @@ struct AAPassData {
 // back to the old blit and outputFormat() reports the input format instead.
 class AAPass {
 public:
-    auto init(RhiDevice* device, uint32_t frameCount, RhiFormat inputFormat) -> bool;
+    auto init(RhiDevice* device, PipelineRegistry& pipelines, uint32_t frameCount, RhiFormat inputFormat) -> bool;
     auto destroy(RhiDevice* device) -> void;
 
     auto addPass(FrameGraph& fg, FgTextureHandle input, RhiExtent2D extent, uint32_t frameSlot, RhiSampler* sampler, bool enabled) -> const AAPassData&;
@@ -35,9 +36,9 @@ private:
     RhiDevice* device = nullptr;
     RhiFormat format = RhiFormat::Undefined;
     bool computeSupported = false;
-    RhiShaderModule* shader = nullptr;
+    PipelineRegistry* registry = nullptr;
     RhiDescriptorSetLayout* setLayout = nullptr;
-    RhiPipeline* pipeline = nullptr;
+    PipelineHandle pipelineHandle;
     RhiDescriptorPool* pool = nullptr;
     std::vector<RhiDescriptorSet*> sets; // one per frame slot; rewritten at execute
 };

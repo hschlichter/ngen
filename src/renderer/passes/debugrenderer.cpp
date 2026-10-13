@@ -3,7 +3,6 @@
 #include "renderertypes.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "shaderloader.h"
 
 #include <algorithm>
 #include <array>
@@ -11,12 +10,10 @@
 #include <format>
 
 auto DebugRenderer::init(
-    RhiDevice* device, uint32_t imageCount, RhiExtent2D extent, RhiFormat colorFormat, RhiFormat depthFormat, std::span<RhiBuffer*> uniformBuffers) -> bool {
+    RhiDevice* device, PipelineRegistry& pipelines, uint32_t imageCount, RhiExtent2D extent, RhiFormat colorFormat, RhiFormat depthFormat, std::span<RhiBuffer*> uniformBuffers) -> bool {
     using enum RhiDescriptorType;
     using enum RhiFormat;
-
-    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/debug.vert");
-    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/debug.frag");
+    registry = &pipelines;
 
     std::array<RhiDescriptorBinding, 1> bindings = {{
         {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
@@ -24,24 +21,21 @@ auto DebugRenderer::init(
     descriptorSetLayout = device->createDescriptorSetLayout(bindings);
     device->setDebugName(descriptorSetLayout, "debuglines.setlayout");
 
-    std::array<RhiVertexAttribute, 2> vertexAttrs = {{
-        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0},
-        {.location = 1, .binding = 0, .format = R32G32B32A32_SFLOAT, .offset = sizeof(float) * 3},
-    }};
-
-    RhiGraphicsPipelineDesc pipelineDesc = {
-        .vertexShader = vertShader,
-        .fragmentShader = fragShader,
-        .descriptorSetLayouts = {&descriptorSetLayout, 1},
-        .colorFormats = {&colorFormat, 1},
+    GraphicsPipelineRequest request = {
+        .vertex = {.id = "shaders/debug.vert", .stage = RhiShaderStage::Vertex},
+        .fragment = {.id = "shaders/debug.frag", .stage = RhiShaderStage::Fragment},
+        .descriptorSetLayouts = {descriptorSetLayout},
+        .colorFormats = {colorFormat},
         .depthFormat = depthFormat,
         .vertexStride = sizeof(DebugVertex),
-        .vertexAttributes = vertexAttrs,
+        .vertexAttributes = {
+            {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0},
+            {.location = 1, .binding = 0, .format = R32G32B32A32_SFLOAT, .offset = sizeof(float) * 3},
+        },
         .topology = RhiPrimitiveTopology::LineList,
         .depth = {.testEnable = true, .writeEnable = false},
     };
-    pipeline = device->createGraphicsPipeline(pipelineDesc);
-    device->setDebugName(pipeline, "debuglines.pipeline");
+    pipelineHandle = pipelines.registerGraphics("debuglines.pipeline", request, PipelineUse::Startup);
 
     vertexBuffers.resize(imageCount);
     vertexBuffersMapped.resize(imageCount);
@@ -75,7 +69,7 @@ auto DebugRenderer::init(
         device->updateDescriptorSet(descriptorSets[i], writes);
     }
 
-    return pipeline != nullptr;
+    return true;
 }
 
 auto DebugRenderer::destroy(RhiDevice* device) -> void {
@@ -87,10 +81,6 @@ auto DebugRenderer::destroy(RhiDevice* device) -> void {
         device->unmapBuffer(vertexBuffers[i]);
         device->destroyBuffer(vertexBuffers[i]);
     }
-
-    device->destroyPipeline(pipeline);
-    device->destroyShaderModule(vertShader);
-    device->destroyShaderModule(fragShader);
 }
 
 struct DebugLinePassData {
@@ -109,7 +99,7 @@ auto DebugRenderer::addPass(FrameGraph& fg, FgTextureHandle color, FgTextureHand
 
     auto* vb = vertexBuffers[imageIndex];
     auto* ds = descriptorSets[imageIndex];
-    auto* pip = pipeline;
+    auto* pip = registry->get(pipelineHandle);
 
     fg.addPass<DebugLinePassData>(
         "DebugLinePass",

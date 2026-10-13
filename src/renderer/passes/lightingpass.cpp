@@ -3,21 +3,18 @@
 #include "renderworld.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "shaderloader.h"
 
 #include <algorithm>
 #include <array>
 #include <cstring>
 #include <format>
 
-auto LightingPass::init(RhiDevice* dev, uint32_t imageCount, RhiExtent2D extent, RhiFormat colorFormat) -> bool {
+auto LightingPass::init(RhiDevice* dev, PipelineRegistry& pipelines, uint32_t imageCount, RhiExtent2D extent, RhiFormat colorFormat) -> bool {
     using enum RhiDescriptorType;
 
     device = dev;
+    registry = &pipelines;
     sceneColorFormat = colorFormat;
-
-    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/lighting.vert");
-    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/lighting.frag");
 
     std::array<RhiDescriptorBinding, 6> bindings = {{
         {.binding = 0, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
@@ -30,21 +27,17 @@ auto LightingPass::init(RhiDevice* dev, uint32_t imageCount, RhiExtent2D extent,
     descriptorSetLayout = device->createDescriptorSetLayout(bindings);
     device->setDebugName(descriptorSetLayout, "lighting.setlayout");
 
-    RhiGraphicsPipelineDesc pipelineDesc = {
-        .vertexShader = vertShader,
-        .fragmentShader = fragShader,
-        .descriptorSetLayouts = {&descriptorSetLayout, 1},
+    GraphicsPipelineRequest request = {
+        .vertex = {.id = "shaders/lighting.vert", .stage = RhiShaderStage::Vertex},
+        .fragment = {.id = "shaders/lighting.frag", .stage = RhiShaderStage::Fragment},
+        .descriptorSetLayouts = {descriptorSetLayout},
         .pushConstant = {.stage = RhiShaderStage::Fragment, .offset = 0, .size = 3 * sizeof(int32_t)},
-        .colorFormats = {&colorFormat, 1},
+        .colorFormats = {colorFormat},
         .vertexStride = 0,
         .raster = {.cullMode = RhiCullMode::None},
         .depth = {.testEnable = false, .writeEnable = false},
     };
-    pipeline = device->createGraphicsPipeline(pipelineDesc);
-    device->setDebugName(pipeline, "lighting.pipeline");
-    if (pipeline == nullptr) {
-        return false;
-    }
+    pipelineHandle = pipelines.registerGraphics("lighting.pipeline", request, PipelineUse::Startup);
 
     descriptorPool = device->createDescriptorPool(imageCount, bindings);
     device->setDebugName(descriptorPool, "lighting.sets.pool");
@@ -79,10 +72,6 @@ auto LightingPass::destroy(RhiDevice* dev) -> void {
         dev->unmapBuffer(uniformBuffers[i]);
         dev->destroyBuffer(uniformBuffers[i]);
     }
-
-    dev->destroyPipeline(pipeline);
-    dev->destroyShaderModule(vertShader);
-    dev->destroyShaderModule(fragShader);
 }
 
 auto LightingPass::addPass(
@@ -125,7 +114,7 @@ auto LightingPass::addPass(
             data.sceneColor = builder.write(builder.createTexture("sceneColor", sceneColorDesc), FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);
         },
-        [this, imageIndex, extent, sampler, lightInputs, viewMode, showOverlay, showShadowOverlay, invViewProj, shadowSampler, cascadeCopy, cascadeCount, pcf, atlasExtent](
+        [this, pipeline = registry->get(pipelineHandle), imageIndex, extent, sampler, lightInputs, viewMode, showOverlay, showShadowOverlay, invViewProj, shadowSampler, cascadeCopy, cascadeCount, pcf, atlasExtent](
             FrameGraphContext& ctx, const LightingPassData& data) {
             auto* cmd = ctx.cmd();
 

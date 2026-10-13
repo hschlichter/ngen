@@ -414,6 +414,49 @@ auto drawDeviceTab(const RenderDebugSnapshot& s) -> void {
 
 } // namespace
 
+auto pipelineStateName(PipelineState state) -> const char* {
+    switch (state) {
+        case PipelineState::Pending:
+            return "pending";
+        case PipelineState::Ready:
+            return "ready";
+        case PipelineState::Failed:
+            return "failed";
+    }
+    return "pending";
+}
+
+// Every pipeline the passes registered: when it is created (start-up or first use), its state, and its shaders with their versions.
+auto drawPipelinesTab(const RenderDebugSnapshot& s) -> void {
+    ImGui::Text("%zu pipelines", s.pipelines.size());
+    if (!ImGui::BeginTable("##pipelines", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp, ImVec2(0, 360.0f))) {
+        return;
+    }
+    ImGui::TableSetupColumn("Pipeline");
+    ImGui::TableSetupColumn("Use", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+    ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+    ImGui::TableSetupColumn("Shaders");
+    ImGui::TableSetupScrollFreeze(0, 1);
+    ImGui::TableHeadersRow();
+    for (const auto& p : s.pipelines) {
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted(p.name.c_str());
+        ImGui::TableSetColumnIndex(1);
+        ImGui::TextUnformatted(p.use == PipelineUse::Startup ? "start-up" : "first use");
+        ImGui::TableSetColumnIndex(2);
+        ImGui::TextUnformatted(pipelineStateName(p.state));
+        ImGui::TableSetColumnIndex(3);
+        for (const auto& [id, version] : p.shaders) {
+            ImGui::Text("%s %s", id.c_str(), version.empty() ? "(not arrived)" : version.c_str());
+        }
+        if (!p.error.empty()) {
+            ImGui::TextWrapped("%s", p.error.c_str());
+        }
+    }
+    ImGui::EndTable();
+}
+
 auto drawRenderDebugWindow(bool& show, const std::optional<RenderDebugSnapshot>& snap, RenderDebugViewFlags& view, const PrimPathOf& primPath, uint32_t& selectedPrim, RenderDebugDrawState& drawState) -> bool {
     bool screenshot = false;
     if (!show) {
@@ -450,6 +493,14 @@ auto drawRenderDebugWindow(bool& show, const std::optional<RenderDebugSnapshot>&
             }
             ImGui::SameLine();
             ImGui::TextDisabled("writes screenshot_<frame>.png in the working directory");
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Pipelines")) {
+            if (snap.has_value()) {
+                drawPipelinesTab(*snap);
+            } else {
+                ImGui::TextDisabled("Waiting for render thread snapshot...");
+            }
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Device")) {

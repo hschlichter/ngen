@@ -4,6 +4,7 @@
 #include "drawlists.h"
 #include "framegraph.h"
 #include "gpuscene.h"
+#include "pipelineregistry.h"
 #include "rhitypes.h"
 
 #include <cstdint>
@@ -18,14 +19,17 @@ struct DebugViewPassData {
 
 // Viewport debug views: draws the camera's indirect commands again through a geometry
 // shader, writing one raw value per pixel, then colours the values in a compute pass.
-// Only added to the graph while a view is on.
+// Only added to the graph while a view is on, and once its pipelines are ready: they are registered for first use, so their shaders are
+// requested the first time a view is turned on, and the lit image shows until they have arrived.
 class DebugViewPass {
 public:
     // Uses the geometry pass's set 0 layout (UBO, textures, instances, materials).
-    auto init(RhiDevice* device, uint32_t frameCount, RhiFormat depthFormat, RhiDescriptorSetLayout* geometrySetLayout) -> bool;
+    auto init(RhiDevice* device, PipelineRegistry& pipelines, uint32_t frameCount, RhiFormat depthFormat, RhiDescriptorSetLayout* geometrySetLayout) -> bool;
     auto destroy(RhiDevice* device) -> void;
     // False when the device lacks geometry shaders or the formats; the views are then off.
     auto available() const -> bool { return supported; }
+    // Whether its pipelines are ready; the first call requests their shaders.
+    auto ready() -> bool;
 
     auto addPass(
         FrameGraph& fg,
@@ -42,15 +46,12 @@ public:
 private:
     RhiDevice* device = nullptr;
     bool supported = false;
-    RhiShaderModule* vertShader = nullptr;
-    RhiShaderModule* geomShader = nullptr;
-    RhiShaderModule* fragShader = nullptr;
-    RhiShaderModule* resolveShader = nullptr;
+    PipelineRegistry* registry = nullptr;
     // [doubleSided]: depth-tested views, and the overdraw view (no depth, additive).
-    RhiPipeline* pipelines[2] = {};
-    RhiPipeline* overdrawPipelines[2] = {};
+    PipelineHandle pipelines[2] = {};
+    PipelineHandle overdrawPipelines[2] = {};
     RhiDescriptorSetLayout* resolveLayout = nullptr;
-    RhiPipeline* resolvePipeline = nullptr;
+    PipelineHandle resolvePipeline;
     RhiDescriptorPool* resolvePool = nullptr;
     std::vector<RhiDescriptorSet*> resolveSets; // one per frame slot; rewritten at execute
     RhiSampler* pointSampler = nullptr;

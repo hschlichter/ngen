@@ -1,6 +1,6 @@
 # Async shaders
 
-**Status. Draft.**
+**Status. Landed.** 2026-10-13.
 
 Part of step 2 of [plan_tool_architecture.md](plan_tool_architecture.md). It builds on [plan_asset_server.md](plan_asset_server.md): shaders are
 requested with `asset.request` and arrive streamed over the connection through `AssetClient`, and a view doesn't start without an asset server.
@@ -67,9 +67,14 @@ requested with `asset.request` and arrive streamed over the connection through `
 4. **What an optional pass does while pending: skip.** The debug view pass isn't added to the graph until its pipelines are ready, and the lit image
    shows until then. A pass that must draw something registers its pipelines as start-up. That's the rule that keeps "the frame always renders" true
    without fallback shaders.
-5. **Shaders reach the render thread through one queue.** `AssetClient` assembles streamed assets on its connection's I/O thread and pushes each
-   finished one (id, version, bytes) to a queue the registry drains at its update point. The registry sends its requests with `AssetClient::request`,
-   which only queues bytes, so the render thread never waits on the network after start-up.
+5. **The registry polls for arrived shaders** (revised 2026-10-13). At its update point it checks `AssetClient::find` for its pending shader ids,
+   a handful at most, and creates what has arrived; it sends its requests with `AssetClient::request`, which only queues bytes, so the render
+   thread never waits on the network after start-up. Rejected: a queue `AssetClient` pushes finished assets to (the first version of this
+   decision), the same behaviour with a new `AssetClient` API.
+6. **Start-up: the renderer first, then the scene** (2026-10-13). Registering needs no shaders, so the view creates the window, the device and
+   the renderer (whose passes register), sends the start-up request, loads the scene while the shaders pack, and waits for them and creates the
+   start-up pipelines before the first frame. That keeps today's overlap of shader packing and scene loading, which requesting after
+   `renderer.init()` in today's order would lose. Rejected: today's order with the request after `renderer.init()`.
 ## Steps
 
 1. **`PipelineRegistry`**: `registerGraphics(name, GraphicsPipelineRequest, PipelineUse)`, `registerCompute(name, ComputePipelineRequest,
@@ -91,17 +96,26 @@ requested with `asset.request` and arrive streamed over the connection through `
 
 ## Verification
 
-- The six headless screenshots are byte-identical to the baseline, and validation is clean.
+- The six headless screenshots are byte-identical to the baseline (`_out/asyncshaders-baseline/`, captured before the change: three_cubes and
+  Sponza lit, and with `debugview wireframe` and `debugview overdraw` at frame 10), and validation is clean.
 - At start-up the view sends one `asset.request` with the 13 start-up shader ids, all but the four `debugview.*`.
 - The `pipelines` record lists the same 18 pipelines with the same debug names. After the first frame every start-up pipeline is `ready`, and the
   debug view pipelines are `pending`.
 - `debugview wireframe` on three_cubes:
   - the first frame after the verb has no debug view pass (the frame graph shows it absent) and is the lit image
   - a `asset.request` for the four `debugview.*` ids goes out; after they arrive, `PipelineCreated` events appear for the debug view pipelines, and
-    the next screenshot is the wireframe view, byte-identical to the stage 6 wireframe screenshot
+    the next screenshot is the wireframe view, byte-identical to the baseline's
   - turning the debug view off and on again sends no further request
 - `startupShaderIds` and `loadShaderModule` no longer exist (`rg`).
 - A frame's `get` for a handle returns the same pointer throughout the frame's recording (debug assertion in the registry).
+
+*Landed 2026-10-13:* all of the above. The six screenshots are byte-identical with validation on and no warnings. At start-up one request
+names the 13 start-up shaders, and the scene is requested right after, so they pack while it loads (Sponza waited 1 ms for them). The
+`pipelines` record lists the 18 pipelines with their debug names: 13 `ready` at start-up, the five debug view ones `pending` and not
+requested. `debugview wireframe` on three_cubes: the next frame is the lit image (byte-identical to the lit baseline), one request names
+the four `debugview.*` shaders, the five pipelines are created, the final screenshot is byte-identical to the wireframe baseline, and turning
+the view off and on sends nothing more. `rg` finds neither name outside `docs/`; the debug build runs the toggle without tripping the
+assertion. As built, the registry's start-up query is `startupShaders()`, and decision 5 polls `AssetClient::find`.
 
 ## Gaps
 

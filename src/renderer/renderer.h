@@ -19,6 +19,7 @@
 #include "gpuuploader.h"
 #include "instancecullpass.h"
 #include "lightingpass.h"
+#include "pipelineregistry.h"
 #include "renderdebug.h"
 #include "renderertypes.h"
 #include "rendersnapshot.h"
@@ -34,6 +35,7 @@
 #include <unordered_map>
 #include <vector>
 
+class AssetClient;
 class RhiDevice;
 class RhiSwapchain;
 class RhiCommandBuffer;
@@ -51,7 +53,15 @@ public:
     Renderer& operator=(Renderer&&) = default;
     ~Renderer() = default;
 
-    auto init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2D windowExtent) -> std::expected<void, int>;
+    // Creates the passes, which register their pipelines; no pipeline exists yet. `shaders` is where they come from.
+    auto init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, AssetClient* shaders, RhiExtent2D windowExtent) -> std::expected<void, int>;
+    // Sends one request for the start-up pipelines' shaders; returns how many shaders it names.
+    auto requestStartupShaders() -> size_t;
+    // Waits for the start-up shaders and creates the start-up pipelines, before the first frame. False when one can't be (the reason is in
+    // the trace).
+    auto createStartupPipelines() -> bool;
+    // Thread-safe: every pipeline and its state, for the `pipelines` record.
+    auto pipelineInfos() const -> std::vector<PipelineInfo> { return pipelineRegistry.infos(); }
     auto uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void;
     auto render(RenderSnapshot& snapshot) -> void;
     auto destroy() -> void;
@@ -160,6 +170,7 @@ private:
 
     GpuUploader uploader;
     DeletionQueue deletionQueue;
+    PipelineRegistry pipelineRegistry; // every pipeline the passes draw with
 
     // GPU timings come from the zones recorded on each slot's command buffer, read back
     // when the slot's fence has signalled, so results lag by the number of frames in flight.

@@ -18,7 +18,6 @@
 #include "rpcregistry.h"
 #include "scalegizmo.h"
 #include "sessionscript.h"
-#include "shaderloader.h"
 #include "shadowcascades.h"
 #include "statusbar.h"
 #include "trace.h"
@@ -241,10 +240,6 @@ auto main(int argc, char* argv[]) -> int {
             .field("pid", (int64_t) connected->pid)
             .field("port", (int64_t) connected->port);
     }
-    assetClient.request(startupShaderIds());
-    TRACE_EVENT("Render", "ShadersRequested", "startup")
-        .text(std::format("{} startup shaders requested", startupShaderIds().size()))
-        .field("count", (int64_t) startupShaderIds().size());
     std::string sceneId;
     if (positional.size() >= 2) {
         sceneId = assetIdForPath(positional[1]);
@@ -252,12 +247,6 @@ auto main(int argc, char* argv[]) -> int {
             std::println(stderr, "ngen-view: {} is not an asset id; give the scene's path relative to the asset server's directory", positional[1]);
             return 1;
         }
-    }
-
-    // The scene, composed from its packs; no scene argument is an empty scene.
-    ViewScene scene(assetClient);
-    if (!scene.open(sceneId)) {
-        return 1;
     }
 
     // SDL init and window
@@ -290,21 +279,6 @@ auto main(int argc, char* argv[]) -> int {
             .field("height", tracedWindowHeight)
             .field("driver", driver != nullptr ? driver : "");
     }
-
-    {
-        // The shaders were requested before the scene was opened, so packing them overlapped loading it; this is
-        // how much of it was left.
-        auto waitStart = std::chrono::steady_clock::now();
-        assetClient.wait(startupShaderIds());
-        auto waitedMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - waitStart).count();
-        auto failed = std::ranges::count_if(startupShaderIds(), [&](const std::string& id) { return assetClient.find(id) == nullptr; });
-        TRACE_EVENT("Render", "ShadersReady", "startup")
-            .text(std::format("startup shaders ready: {} of {} after waiting {:.0f} ms", startupShaderIds().size() - failed, startupShaderIds().size(), waitedMs))
-            .field("count", (int64_t) startupShaderIds().size())
-            .field("failed", (int64_t) failed)
-            .field("waited_ms", waitedMs);
-    }
-    setShaderSource(&assetClient);
 
     // Job system
     JobSystem::init();
@@ -361,7 +335,7 @@ auto main(int argc, char* argv[]) -> int {
     Renderer renderer;
     StatusBarGatherer statusBar;
     auto rendererInitStart = std::chrono::steady_clock::now();
-    if (!renderer.init(&rhiDevice, &imguiBackend, initialExtent)) {
+    if (!renderer.init(&rhiDevice, &imguiBackend, &assetClient, initialExtent)) {
         TRACE_ERROR("Render", "RendererInitFailed", "renderer").text("renderer init failed");
         rhiDevice.waitIdle();
         return failAfterInit();
@@ -372,6 +346,34 @@ auto main(int argc, char* argv[]) -> int {
     }
     renderer.setValidationEnabled(enableValidation);
     renderer.setScreenshotsShowUi(screenshotsShowUi);
+
+    // The passes have registered their pipelines: their start-up shaders go out in one request now and pack while the scene loads.
+    auto stopAfterRenderer = [&] -> int {
+        renderer.destroy();
+        rhiDevice.destroy();
+        return failAfterInit();
+    };
+    renderer.requestStartupShaders();
+
+    // The scene, composed from its packs; no scene argument is an empty scene.
+    ViewScene scene(assetClient);
+    if (!scene.open(sceneId)) {
+        return stopAfterRenderer();
+    }
+
+    {
+        // How much of the shaders' packing the scene's loading didn't cover.
+        auto waitStart = std::chrono::steady_clock::now();
+        bool created = renderer.createStartupPipelines();
+        auto waitedMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - waitStart).count();
+        if (!created) {
+            TRACE_ERROR("Render", "StartupPipelinesFailed", "startup").text("a start-up pipeline can't be created; the reason is above");
+            return stopAfterRenderer();
+        }
+        TRACE_EVENT("Render", "ShadersReady", "startup")
+            .text(std::format("start-up pipelines created after waiting {:.0f} ms for their shaders", waitedMs))
+            .field("waited_ms", waitedMs);
+    }
 
     renderer.uploadRenderWorld(scene.renderWorld(), *scene.meshes(), *scene.materials());
     uint64_t uploadedRevision = scene.revision();

@@ -53,7 +53,7 @@ path);` pushes when `event` goes out of scope.
 | Category | Covers |
 |---|---|
 | `Scene` | Scene open requests, open and save, meshes and materials built, render world extracted, applied edits (not preview edits), undo/redo, assets the scene could not read, OpenUSD's own diagnostics (`UsdError`, `UsdWarning`, `UsdStatus`) |
-| `Render` | Startup shaders requested and ready, renderer initialised, scene uploads, the first frame presented, swapchain recreation, files written (screenshots, captures, dumps), shader and format problems, RHI messages (GPU, features, validation) |
+| `Render` | Shaders requested and loaded, pipelines created or pending, renderer initialised, scene uploads, the first frame presented, swapchain recreation, files written (screenshots, captures, dumps), shader and format problems, RHI messages (GPU, features, validation) |
 | `Engine` | Cross-cutting infrastructure: process start and exit, the asset server connected, the session script, the window, the job system, the main loop starting, RPC listen, connect and failed calls, script commands, RenderDoc |
 | `Asset` | The asset server: every line of its log, as `Message` events with the line in `text`; failed requests are warnings |
 
@@ -61,30 +61,31 @@ Add a category only when nothing existing fits.
 
 ## Start-up reads as a timeline
 
-A view's console, and its trace, from start to the first frame:
+A view's console, and its trace, from start to the first frame (Sponza, warm cache; the shader and pipeline lines shortened):
 
 ```text
-ngen-view started, pid 38191
-asset server linux-vulkan/release connected: pid 37772, port 35215
-17 startup shaders requested
-USD asset resolver registered from …/usdplugins
-scene assets/main_sponza/NewSponza_Main_USD_Zup_003.usda from the command line
-opening the scene assets/main_sponza/NewSponza_Main_USD_Zup_003.usda
-scene opened: … (1172 prims, 2 layers) in 2644 ms
-meshes and materials built: 115 meshes, 28 materials in 1321 ms
-render world extracted: 407 mesh instances, 1 lights in 20 ms
+ngen-view started, pid 1269834
+asset server linux-vulkan/release connected: pid 745007, port 39717
 window created: 2560x1440 pixels, SDL video driver offscreen
-startup shaders ready: 17 of 17 after waiting 0 ms
 job system: 23 workers
-GPU: AMD Radeon 890M Graphics (…), Vulkan 1.4.354, validation off
+GPU: AMD Radeon 890M Graphics (RADV STRIX1) (…), Vulkan 1.4.354, validation off
 device features: timestamps yes, calibrated timestamps yes, …
-renderer initialized in 4 ms
-scene on the GPU: 407 instances, 115 meshes, 28 textures in 973 ms
-main loop started, 5379 ms after start
-first frame presented (frame 1), 5385 ms after start
+renderer initialized in 2 ms
+13 shaders requested: shaders/shadow.vert, shaders/shadow.frag, …
+scene assets/main_sponza/NewSponza_Main_USD_Zup_003.usda requested
+assets/main_sponza/NewSponza_Main_USD_Zup_003.usda composed: 1 layer packs in 1 rounds, 1170 prims, 0 prototypes in 3 ms
+115 meshes, 28 materials and 25 textures drawn; 168 fetched in 1246 ms
+draws built: 407 instances of 115 meshes, 28 materials, 1 lights in 408 ms
+loaded shader shaders/shadow.vert (70f3f74fed72fa1f)
+pipeline shadow.pipeline.cullback created
+start-up pipelines created after waiting 1 ms for their shaders
+scene on the GPU: 407 instances, 115 meshes, 28 textures in 1911 ms
+main loop started, 3601 ms after start
+first frame presented (frame 1), 3614 ms after start
 ```
 
-Each step that takes time says how long; the two "after start" lines count from the process's start (`trace::msSinceStart`).
+The renderer registers its pipelines before the scene loads, so their shaders pack while it does; "after waiting" is what the scene's
+loading didn't cover. Each step that takes time says how long; the two "after start" lines count from the process's start (`trace::msSinceStart`).
 
 ## What not to trace
 
@@ -122,7 +123,7 @@ Each step that takes time says how long; the two "after start" lines count from 
 An event on the wire, and as a line from `ngen-introspect trace` (which adds `process` and leaves out `seq`):
 
 ```json
-{"ts_ns":5844865854761,"process":"view:25117","thread":"140688089557888","level":"info","category":"Scene","type":"SceneOpened","name":"assets/three_cubes.usda","text":"scene opened: 8 prims, 2 layers in 55 ms","fields":{"layers":2,"ms":55.13,"prims":8}}
+{"ts_ns":150476660312619,"process":"view:1270004","thread":"140258363158208","level":"info","category":"Scene","type":"PacksComposed","name":"assets/main_sponza/NewSponza_Main_USD_Zup_003.usda","text":"assets/main_sponza/NewSponza_Main_USD_Zup_003.usda composed: 1 layer packs in 1 rounds, 1170 prims, 0 prototypes in 3 ms","fields":{"ms":3.132717,"packs":1,"prims":1170,"prototypes":0,"rounds":1}}
 ```
 
 ## Reading a trace

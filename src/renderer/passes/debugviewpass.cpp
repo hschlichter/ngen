@@ -4,7 +4,6 @@
 #include "profilegpu.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "shaderloader.h"
 #include "trace.h"
 
 #include <array>
@@ -29,9 +28,10 @@ struct ResolvePush {
 
 } // namespace
 
-auto DebugViewPass::init(RhiDevice* dev, uint32_t frameCount, RhiFormat depthFormat, RhiDescriptorSetLayout* geometrySetLayout) -> bool {
+auto DebugViewPass::init(RhiDevice* dev, PipelineRegistry& pipelineRegistry, uint32_t frameCount, RhiFormat depthFormat, RhiDescriptorSetLayout* geometrySetLayout) -> bool {
     using enum RhiFormat;
     device = dev;
+    registry = &pipelineRegistry;
     if (!device->limits().geometryShaders) {
         TRACE_WARNING("Render", "DebugViewsOff", "DebugViewPass").text("no geometry shaders on this device; debug views are off");
         return true;
@@ -42,31 +42,21 @@ auto DebugViewPass::init(RhiDevice* dev, uint32_t frameCount, RhiFormat depthFor
         return true;
     }
 
-    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/debugview.vert");
-    geomShader = loadShaderModule(device, RhiShaderStage::Geometry, "shaders/debugview.geom");
-    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/debugview.frag");
-    resolveShader = loadShaderModule(device, RhiShaderStage::Compute, "shaders/debugview.comp");
-    if (vertShader == nullptr || geomShader == nullptr || fragShader == nullptr || resolveShader == nullptr) {
-        return false;
-    }
-
-    // The debug views read no vertex colour, so location 2 (the geometry pass's colour) is left out.
-    std::array<RhiVertexAttribute, 3> vertexAttrs = {{
-        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
-        {.location = 1, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, normal)},
-        {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
-    }};
-    std::array<RhiFormat, 1> colorFormats = {valueFormat};
-    RhiGraphicsPipelineDesc desc = {
-        .vertexShader = vertShader,
-        .fragmentShader = fragShader,
-        .geometryShader = geomShader,
-        .descriptorSetLayouts = {&geometrySetLayout, 1},
+    GraphicsPipelineRequest desc = {
+        .vertex = {.id = "shaders/debugview.vert", .stage = RhiShaderStage::Vertex},
+        .fragment = {.id = "shaders/debugview.frag", .stage = RhiShaderStage::Fragment},
+        .geometry = ShaderRef{.id = "shaders/debugview.geom", .stage = RhiShaderStage::Geometry},
+        .descriptorSetLayouts = {geometrySetLayout},
         .pushConstant = {.stage = RhiShaderStage::Geometry | RhiShaderStage::Fragment, .offset = 0, .size = sizeof(DrawPush)},
-        .colorFormats = colorFormats,
+        .colorFormats = {valueFormat},
         .depthFormat = depthFormat,
         .vertexStride = sizeof(Vertex),
-        .vertexAttributes = vertexAttrs,
+        // The debug views read no vertex colour, so location 2 (the geometry pass's colour) is left out.
+        .vertexAttributes = {
+            {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
+            {.location = 1, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, normal)},
+            {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
+        },
     };
     for (int doubleSided = 0; doubleSided < 2; doubleSided++) {
         const char* cull = doubleSided != 0 ? "cullnone" : "cullback";
@@ -75,8 +65,7 @@ auto DebugViewPass::init(RhiDevice* dev, uint32_t frameCount, RhiFormat depthFor
         desc.depthFormat = depthFormat;
         desc.depth = {.testEnable = true, .writeEnable = false, .compareOp = RhiCompareOp::LessOrEqual};
         desc.blend = {};
-        pipelines[doubleSided] = device->createGraphicsPipeline(desc);
-        device->setDebugName(pipelines[doubleSided], std::format("debugview.pipeline.{}", cull).c_str());
+        pipelines[doubleSided] = registry->registerGraphics(std::format("debugview.pipeline.{}", cull), desc, PipelineUse::FirstUse);
         // Overdraw: every fragment counts, so no depth; blending adds 1 per fragment.
         desc.depthFormat = RhiFormat::Undefined;
         desc.depth = {.testEnable = false, .writeEnable = false};
@@ -89,11 +78,7 @@ auto DebugViewPass::init(RhiDevice* dev, uint32_t frameCount, RhiFormat depthFor
             .dstAlpha = RhiBlendFactor::One,
             .alphaOp = RhiBlendOp::Add,
         };
-        overdrawPipelines[doubleSided] = device->createGraphicsPipeline(desc);
-        device->setDebugName(overdrawPipelines[doubleSided], std::format("debugview.overdraw.{}", cull).c_str());
-        if (pipelines[doubleSided] == nullptr || overdrawPipelines[doubleSided] == nullptr) {
-            return false;
-        }
+        overdrawPipelines[doubleSided] = registry->registerGraphics(std::format("debugview.overdraw.{}", cull), desc, PipelineUse::FirstUse);
     }
 
     std::array<RhiDescriptorBinding, 2> bindings = {{
@@ -102,16 +87,12 @@ auto DebugViewPass::init(RhiDevice* dev, uint32_t frameCount, RhiFormat depthFor
     }};
     resolveLayout = device->createDescriptorSetLayout(bindings);
     device->setDebugName(resolveLayout, "debugview.resolve.setlayout");
-    RhiComputePipelineDesc resolveDesc = {
-        .shader = resolveShader,
-        .descriptorSetLayouts = {&resolveLayout, 1},
+    ComputePipelineRequest resolveDesc = {
+        .shader = {.id = "shaders/debugview.comp", .stage = RhiShaderStage::Compute},
+        .descriptorSetLayouts = {resolveLayout},
         .pushConstant = {.stage = RhiShaderStage::Compute, .offset = 0, .size = sizeof(ResolvePush)},
     };
-    resolvePipeline = device->createComputePipeline(resolveDesc);
-    device->setDebugName(resolvePipeline, "debugview.resolve.pipeline");
-    if (resolvePipeline == nullptr) {
-        return false;
-    }
+    resolvePipeline = registry->registerCompute("debugview.resolve.pipeline", resolveDesc, PipelineUse::FirstUse);
     resolvePool = device->createDescriptorPool(frameCount, bindings);
     device->setDebugName(resolvePool, "debugview.resolve.pool");
     resolveSets.assign(frameCount, nullptr);
@@ -135,16 +116,15 @@ auto DebugViewPass::destroy(RhiDevice* dev) -> void {
     dev->destroySampler(pointSampler);
     dev->freeDescriptorSets(resolvePool, resolveSets);
     dev->destroyDescriptorPool(resolvePool);
-    dev->destroyPipeline(resolvePipeline);
     dev->destroyDescriptorSetLayout(resolveLayout);
-    for (int i = 0; i < 2; i++) {
-        dev->destroyPipeline(pipelines[i]);
-        dev->destroyPipeline(overdrawPipelines[i]);
+}
+
+auto DebugViewPass::ready() -> bool {
+    if (!supported) {
+        return false;
     }
-    dev->destroyShaderModule(vertShader);
-    dev->destroyShaderModule(geomShader);
-    dev->destroyShaderModule(fragShader);
-    dev->destroyShaderModule(resolveShader);
+    std::array<PipelineHandle, 5> handles = {pipelines[0], pipelines[1], overdrawPipelines[0], overdrawPipelines[1], resolvePipeline};
+    return registry->ready(handles);
 }
 
 auto DebugViewPass::addPass(
@@ -226,7 +206,7 @@ auto DebugViewPass::addPass(
                     continue;
                 }
                 auto region = DrawLists::cameraRegion(doubleSided);
-                auto* pip = overdraw ? overdrawPipelines[doubleSided ? 1 : 0] : pipelines[doubleSided ? 1 : 0];
+                auto* pip = registry->get(overdraw ? overdrawPipelines[doubleSided ? 1 : 0] : pipelines[doubleSided ? 1 : 0]);
                 cmd->bindPipeline(pip);
                 cmd->bindDescriptorSet(pip, 0, geometrySet);
                 cmd->bindVertexBuffer(scene.vertexBuffer());
@@ -257,9 +237,10 @@ auto DebugViewPass::addPass(
                 .overdrawMax = 8.0f,
             };
             auto* cmd = ctx.cmd();
-            cmd->bindPipeline(resolvePipeline);
-            cmd->bindDescriptorSet(resolvePipeline, 0, resolveSets[frameSlot]);
-            cmd->pushConstants(resolvePipeline, RhiShaderStage::Compute, 0, sizeof(push), &push);
+            auto* resolve = registry->get(resolvePipeline);
+            cmd->bindPipeline(resolve);
+            cmd->bindDescriptorSet(resolve, 0, resolveSets[frameSlot]);
+            cmd->pushConstants(resolve, RhiShaderStage::Compute, 0, sizeof(push), &push);
             cmd->dispatch((extent.width + 7) / 8, (extent.height + 7) / 8, 1);
         });
 }

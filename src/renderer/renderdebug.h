@@ -2,6 +2,7 @@
 
 #include "framegraphdebug.h"
 #include "framegraphdraw.h"
+#include "pipelineregistry.h"
 #include "rhitypes.h"
 
 #include <cstdint>
@@ -87,6 +88,9 @@ struct RenderDebugSnapshot {
     glm::vec3 sunRadiance = glm::vec3(0.0f);
     glm::vec3 sunShadowColor = glm::vec3(0.0f);
     RhiExtent2D shadowMapExtent = {};
+
+    // Pipelines: every one the passes registered, with its shaders and state
+    std::vector<PipelineInfo> pipelines;
 
     // Frame
     std::vector<FgPassDebug> passes; // execution order, with stats and GPU time

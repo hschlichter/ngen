@@ -1,6 +1,7 @@
 #pragma once
 
 #include "framegraph.h"
+#include "pipelineregistry.h"
 #include "rhitypes.h"
 #include "shadowcascades.h"
 
@@ -59,7 +60,7 @@ struct LightingPassData {
 
 class LightingPass {
 public:
-    auto init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent, RhiFormat colorFormat) -> bool;
+    auto init(RhiDevice* device, PipelineRegistry& pipelines, uint32_t imageCount, RhiExtent2D extent, RhiFormat colorFormat) -> bool;
     auto destroy(RhiDevice* device) -> void;
 
     auto addPass(
@@ -82,12 +83,11 @@ public:
 
 private:
     RhiDevice* device = nullptr;
-    RhiPipeline* pipeline = nullptr;
+    PipelineRegistry* registry = nullptr;
+    PipelineHandle pipelineHandle;
     RhiDescriptorSetLayout* descriptorSetLayout = nullptr;
     RhiDescriptorPool* descriptorPool = nullptr;
     std::vector<RhiDescriptorSet*> descriptorSets;
-    RhiShaderModule* vertShader = nullptr;
-    RhiShaderModule* fragShader = nullptr;
     std::vector<RhiBuffer*> uniformBuffers;
     std::vector<void*> uniformBuffersMapped;
     RhiFormat sceneColorFormat = RhiFormat::Undefined;

@@ -3,6 +3,7 @@
 #include "drawlists.h"
 #include "framegraph.h"
 #include "geometrypass.h" // GpuInstance, GpuScene
+#include "pipelineregistry.h"
 #include "rhitypes.h"
 
 #include <cstdint>
@@ -24,8 +25,7 @@ class DepthPrepass {
 public:
     // Uses the geometry pass's descriptor set layout: the UBO at binding 0 and the instance
     // buffer at binding 2 are what the position depends on; the texture binding is unused.
-    auto init(RhiDevice* device, RhiFormat depthFormat, RhiDescriptorSetLayout* geometrySetLayout) -> bool;
-    auto destroy(RhiDevice* device) -> void;
+    auto init(PipelineRegistry& pipelines, RhiFormat depthFormat, RhiDescriptorSetLayout* geometrySetLayout) -> bool;
 
     auto addPass(
         FrameGraph& fg,
@@ -39,8 +39,7 @@ public:
         RhiDescriptorSet* descriptorSet) -> const DepthPrepassData&;
 
 private:
-    RhiPipeline* pipelineCullBack = nullptr;
-    RhiPipeline* pipelineCullNone = nullptr;
-    RhiShaderModule* vertShader = nullptr;
-    RhiShaderModule* fragShader = nullptr;
+    PipelineRegistry* registry = nullptr;
+    PipelineHandle pipelineCullBack;
+    PipelineHandle pipelineCullNone;
 };

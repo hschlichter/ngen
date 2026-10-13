@@ -3,6 +3,7 @@
 #include "drawlists.h"
 #include "framegraph.h"
 #include "gpuscene.h"
+#include "pipelineregistry.h"
 #include "rhitypes.h"
 #include "scenehandles.h"
 
@@ -23,7 +24,7 @@ struct GeometryPassData {
 
 class GeometryPass {
 public:
-    auto init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFormat) -> bool;
+    auto init(RhiDevice* device, PipelineRegistry& pipelines, RhiExtent2D extent, RhiFormat depthFormat) -> bool;
 
     // Set 0, one set per frame slot: 0 view UBO, 1 material
     // texture array (GpuScene::maxTextures), 2 instance buffer, 3 material table.
@@ -47,10 +48,9 @@ public:
     auto descriptorSetLayout() const -> RhiDescriptorSetLayout* { return descSetLayout; }
 
 private:
+    PipelineRegistry* registry = nullptr;
     // [doubleSided][depthPrepassed]: cull back or none, Less-with-write or Equal-without.
-    RhiPipeline* pipelines[2][2] = {};
+    PipelineHandle pipelines[2][2] = {};
     RhiFormat normalTargetFormat = RhiFormat::R16G16B16A16_SFLOAT;
     RhiDescriptorSetLayout* descSetLayout = nullptr;
-    RhiShaderModule* vertShader = nullptr;
-    RhiShaderModule* fragShader = nullptr;
 };

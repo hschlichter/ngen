@@ -27,14 +27,36 @@ changing how scene data reaches the GPU.
 | Frame graph | `framegraph.h/.cpp`, `framegraphbuilder.h`, `framegraphcontext.h`, `framegraphresource.h`, `passnode.h`, `framegraphdraw.h`, `framegraphdebug.h`, `framegraphpreviews.h/.cpp`, `resourcepool.h/.cpp` |
 | GPU scene and culling | `gpuscene.h/.cpp` (`GpuScene`), `drawlists.h/.cpp` (`DrawLists`), `passes/instanceuploadpass`, `passes/instancecullpass`, `culling.h/.cpp` (`CullState`) |
 | Passes | `passes/`: shadow, depth prepass, geometry, debug views, lighting, AA, blit, debug lines, gizmos, editor UI, present |
-| Resource lifetime and upload | `deletionqueue.h/.cpp`, `gpuuploader.h/.cpp`, `shaderloader.h/.cpp` |
+| Resource lifetime and upload | `deletionqueue.h/.cpp`, `gpuuploader.h/.cpp` |
+| Pipelines | `pipelineregistry.h/.cpp` (`PipelineRegistry`): every pipeline and shader module |
 | Shadows | `shadowcascades.h/.cpp` |
 | Editor support | `imguibackend.h/.cpp` (interface), `gizmo.h`, `axis3dgizmo`, `translategizmo`, `rotategizmo`, `scalegizmo` |
 | Debugging and introspection | `renderdebug.h`, `renderdebugjson.h/.cpp`, `screenshot.h/.cpp`, `capture.h/.cpp` (`CaptureService`), `gpuschema.h/.cpp`, `framedebug.h/.cpp`, `gpucounters.h/.cpp`, `debugview.h` |
 
-Shaders live in `shaders/` at the repository root. They are packed assets, requested from the asset server at start-up: every id on
-`startupShaderIds()` goes out in one request, and `loadShaderModule(device, stage, "shaders/gbuffer.vert")` creates the module from the streamed
-bytes (`shaderloader.*`, `src/asset/README.md`). A shader not on that list fails to load, naming itself.
+Shaders live in `shaders/` at the repository root. They are packed assets, streamed from the asset server (`src/asset/README.md`) and turned into
+pipelines by the pipeline registry ("Pipelines", below).
+
+## Pipelines
+
+`PipelineRegistry` creates every pipeline the passes draw with, and nothing else creates one.
+
+- **A pass registers its pipelines in `init()`, as requests**: the RHI pipeline description with shader ids (`ShaderRef { id, stage }`) in
+  place of modules, and owned arrays, so the registry can create the pipeline at any time. It gets a stable `PipelineHandle` and asks
+  `registry.get(handle)` while the frame graph is built or recorded. Debug names are the registered names (`geometry.pipeline.cullback.less`).
+- **Start-up or first use.** Start-up pipelines (`PipelineUse::Startup`) are created before the first frame: `requestStartupShaders()` sends one
+  request for all their shaders, and `createStartupPipelines()` waits for them and creates the pipelines; a shader that fails to pack stops the
+  view with the packer's errors. First-use pipelines (`PipelineUse::FirstUse`) request their shaders the first time they are asked for
+  (`get`, or `ready` for a group, in one request) and are pending until then: `get` returns null. Only a pass that may be skipped registers for
+  first use; today that is `DebugViewPass`, which isn't added to the graph until its five pipelines are ready, so the lit image shows meanwhile.
+- **One point in the frame.** `update()` runs on the render thread before the frame graph is built: it creates pending pipelines whose shaders
+  have arrived (polling `AssetClient::find`, so the render thread never waits on the network), at most four per frame. Nothing changes a
+  pipeline during a frame's recording; debug builds assert it.
+- **Shader modules are shared.** One module per shader id, for every pipeline that uses it (`shaders/shadow.frag`: the shadow pass and the
+  depth prepass).
+- **Observable.** Events `ShadersRequested`, `ShaderLoaded` (id, version), `PipelinePending`, `PipelineCreated`, `PipelineCreateFailed`
+  (reason), `ShaderPackFailed`; the `pipelines` record (name, start-up or first use, state, shaders and versions, the last error) and the Render
+  Debug window's Pipelines tab.
+- **Not yet**: new versions of a running shader (hot reload), shader reflection, creation off the render thread, a disk pipeline cache.
 
 ## How the pieces fit
 

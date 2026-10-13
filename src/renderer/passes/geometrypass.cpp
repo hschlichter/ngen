@@ -4,29 +4,19 @@
 #include "renderertypes.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "shaderloader.h"
 #include "trace.h"
 
 #include <array>
 #include <format>
 
-auto GeometryPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFormat) -> bool {
+auto GeometryPass::init(RhiDevice* device, PipelineRegistry& pipelineRegistry, RhiExtent2D extent, RhiFormat depthFormat) -> bool {
     using enum RhiDescriptorType;
     using enum RhiFormat;
-
-    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/gbuffer.vert");
-    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/gbuffer.frag");
+    registry = &pipelineRegistry;
 
     auto bindings = descriptorBindings();
     descSetLayout = device->createDescriptorSetLayout(bindings);
     device->setDebugName(descSetLayout, "geometry.setlayout");
-
-    std::array<RhiVertexAttribute, 4> vertexAttrs = {{
-        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
-        {.location = 1, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, normal)},
-        {.location = 2, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, color)},
-        {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
-    }};
 
     // 16-bit float normals: a quarter of the R32 target's write bandwidth, more than
     // enough precision for a unit vector. Keep R32 where the device cannot render to it.
@@ -35,33 +25,33 @@ auto GeometryPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFo
         TRACE_WARNING("Render", "FormatFallback", "GeometryPass").text("R16G16B16A16_SFLOAT not renderable, normal target stays R32G32B32A32_SFLOAT");
         normalTargetFormat = R32G32B32A32_SFLOAT;
     }
-    std::array<RhiFormat, 3> colorFormats = {R8G8B8A8_UNORM, normalTargetFormat, R32_UINT};
-
-    RhiGraphicsPipelineDesc pipelineDesc = {
-        .vertexShader = vertShader,
-        .fragmentShader = fragShader,
-        .descriptorSetLayouts = {&descSetLayout, 1},
+    GraphicsPipelineRequest request = {
+        .vertex = {.id = "shaders/gbuffer.vert", .stage = RhiShaderStage::Vertex},
+        .fragment = {.id = "shaders/gbuffer.frag", .stage = RhiShaderStage::Fragment},
+        .descriptorSetLayouts = {descSetLayout},
         .pushConstant = {}, // model matrix comes from the instance buffer at gl_InstanceIndex
-        .colorFormats = colorFormats,
+        .colorFormats = {R8G8B8A8_UNORM, normalTargetFormat, R32_UINT},
         .depthFormat = depthFormat,
         .vertexStride = sizeof(Vertex),
-        .vertexAttributes = vertexAttrs,
+        .vertexAttributes = {
+            {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
+            {.location = 1, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, normal)},
+            {.location = 2, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, color)},
+            {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
+        },
     };
     // Four variants: back-face culling or none (USD doubleSided), and Less-with-write
     // when the pass owns the depth buffer or Equal-without after the depth prepass.
     for (int doubleSided = 0; doubleSided < 2; doubleSided++) {
         for (int prepassed = 0; prepassed < 2; prepassed++) {
-            pipelineDesc.raster.cullMode = doubleSided != 0 ? RhiCullMode::None : RhiCullMode::Back;
+            request.raster.cullMode = doubleSided != 0 ? RhiCullMode::None : RhiCullMode::Back;
             if (prepassed != 0) {
-                pipelineDesc.depth = {.testEnable = true, .writeEnable = false, .compareOp = RhiCompareOp::Equal};
+                request.depth = {.testEnable = true, .writeEnable = false, .compareOp = RhiCompareOp::Equal};
             } else {
-                pipelineDesc.depth = {.testEnable = true, .writeEnable = true, .compareOp = RhiCompareOp::Less};
+                request.depth = {.testEnable = true, .writeEnable = true, .compareOp = RhiCompareOp::Less};
             }
-            pipelines[doubleSided][prepassed] = device->createGraphicsPipeline(pipelineDesc);
-            device->setDebugName(pipelines[doubleSided][prepassed], std::format("geometry.pipeline.{}.{}", doubleSided != 0 ? "cullnone" : "cullback", prepassed != 0 ? "equal" : "less").c_str());
-            if (pipelines[doubleSided][prepassed] == nullptr) {
-                return false;
-            }
+            auto name = std::format("geometry.pipeline.{}.{}", doubleSided != 0 ? "cullnone" : "cullback", prepassed != 0 ? "equal" : "less");
+            pipelines[doubleSided][prepassed] = pipelineRegistry.registerGraphics(name, request, PipelineUse::Startup);
         }
     }
     return true;
@@ -79,13 +69,6 @@ auto GeometryPass::descriptorBindings() -> std::array<RhiDescriptorBinding, 4> {
 
 auto GeometryPass::destroy(RhiDevice* device) -> void {
     device->destroyDescriptorSetLayout(descSetLayout);
-    for (auto& row : pipelines) {
-        for (auto* pip : row) {
-            device->destroyPipeline(pip);
-        }
-    }
-    device->destroyShaderModule(vertShader);
-    device->destroyShaderModule(fragShader);
 }
 
 auto GeometryPass::addPass(
@@ -118,8 +101,8 @@ auto GeometryPass::addPass(
         .usage = RhiTextureUsage::ColorAttachment | RhiTextureUsage::Sampled,
     };
 
-    auto* cullBack = pipelines[0][depthPrepassed ? 1 : 0];
-    auto* cullNone = pipelines[1][depthPrepassed ? 1 : 0];
+    auto* cullBack = registry->get(pipelines[0][depthPrepassed ? 1 : 0]);
+    auto* cullNone = registry->get(pipelines[1][depthPrepassed ? 1 : 0]);
 
     return fg.addPass<GeometryPassData>(
         "GeometryPass",

@@ -1,46 +1,40 @@
 #include "gizmopass.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "shaderloader.h"
 
 #include <algorithm>
 #include <array>
 #include <cstring>
 
-auto GizmoPass::init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent, RhiFormat colorFormat) -> bool {
+auto GizmoPass::init(RhiDevice* device, PipelineRegistry& pipelines, uint32_t imageCount, RhiExtent2D extent, RhiFormat colorFormat) -> bool {
     using enum RhiFormat;
-
-    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/gizmo.vert");
-    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/gizmo.frag");
+    registry = &pipelines;
 
     // Empty descriptor set layout: pipeline has no descriptors, viewProj is a push constant.
     std::array<RhiDescriptorBinding, 0> bindings = {};
     descriptorSetLayout = device->createDescriptorSetLayout(bindings);
     device->setDebugName(descriptorSetLayout, "gizmo.setlayout");
 
-    std::array<RhiVertexAttribute, 2> vertexAttrs = {{
-        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0},
-        {.location = 1, .binding = 0, .format = R32G32B32A32_SFLOAT, .offset = sizeof(float) * 3},
-    }};
-
     // Wide lines are an optional feature; fall back to 1px rather than trip validation.
     auto lineWidth = device->limits().wideLines ? std::min(4.0f, device->limits().maxLineWidth) : 1.0f;
 
-    RhiGraphicsPipelineDesc pipelineDesc = {
-        .vertexShader = vertShader,
-        .fragmentShader = fragShader,
-        .descriptorSetLayouts = {&descriptorSetLayout, 1},
+    GraphicsPipelineRequest request = {
+        .vertex = {.id = "shaders/gizmo.vert", .stage = RhiShaderStage::Vertex},
+        .fragment = {.id = "shaders/gizmo.frag", .stage = RhiShaderStage::Fragment},
+        .descriptorSetLayouts = {descriptorSetLayout},
         .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(glm::mat4)},
-        .colorFormats = {&colorFormat, 1},
+        .colorFormats = {colorFormat},
         .depthFormat = Undefined,
         .vertexStride = sizeof(GizmoVertex),
-        .vertexAttributes = vertexAttrs,
+        .vertexAttributes = {
+            {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0},
+            {.location = 1, .binding = 0, .format = R32G32B32A32_SFLOAT, .offset = sizeof(float) * 3},
+        },
         .topology = RhiPrimitiveTopology::LineList,
         .raster = {.cullMode = RhiCullMode::None, .lineWidth = lineWidth},
         .depth = {.testEnable = false, .writeEnable = false},
     };
-    pipeline = device->createGraphicsPipeline(pipelineDesc);
-    device->setDebugName(pipeline, "gizmo.pipeline");
+    pipelineHandle = pipelines.registerGraphics("gizmo.pipeline", request, PipelineUse::Startup);
 
     vertexBuffers.resize(imageCount);
     vertexBuffersMapped.resize(imageCount);
@@ -55,7 +49,7 @@ auto GizmoPass::init(RhiDevice* device, uint32_t imageCount, RhiExtent2D extent,
         vertexBuffersMapped[i] = device->mapBuffer(vertexBuffers[i]);
     }
 
-    return pipeline != nullptr;
+    return true;
 }
 
 auto GizmoPass::destroy(RhiDevice* device) -> void {
@@ -65,10 +59,6 @@ auto GizmoPass::destroy(RhiDevice* device) -> void {
         device->unmapBuffer(vertexBuffers[i]);
         device->destroyBuffer(vertexBuffers[i]);
     }
-
-    device->destroyPipeline(pipeline);
-    device->destroyShaderModule(vertShader);
-    device->destroyShaderModule(fragShader);
 }
 
 struct GizmoPassData {
@@ -114,7 +104,7 @@ auto GizmoPass::addPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D fullE
     }
 
     auto* vb = vertexBuffers[imageIndex];
-    auto* pip = pipeline;
+    auto* pip = registry->get(pipelineHandle);
 
     fg.addPass<GizmoPassData>(
         "GizmoPass",

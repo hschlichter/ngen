@@ -839,6 +839,26 @@ auto cullingRecord(const ViewContext& view) -> Json {
     };
 }
 
+auto pipelinesRecord(const ViewContext& view) -> Json {
+    auto pipelines = Json::array();
+    for (const auto& info : view.renderer.pipelineInfos()) {
+        auto shaders = Json::array();
+        for (const auto& [id, version] : info.shaders) {
+            shaders.push_back({{"id", id}, {"version", version}});
+        }
+        const char* state = info.state == PipelineState::Ready ? "ready" : (info.state == PipelineState::Failed ? "failed" : "pending");
+        pipelines.push_back({
+            {"name", info.name},
+            {"use", info.use == PipelineUse::Startup ? "startup" : "firstUse"},
+            {"state", state},
+            {"requested", info.requested},
+            {"shaders", shaders},
+            {"error", info.error},
+        });
+    }
+    return {{"pipelines", pipelines}};
+}
+
 auto profileRecord() -> Json {
     std::vector<profile::FrameStats> history;
     profile::frameHistory(history);
@@ -905,6 +925,9 @@ auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext
     });
     records.add("culling", "GPU culling's latest readback: instances and triangles drawn and culled, per view", [&view](RpcResponder responder) {
         responder.respond(cullingRecord(view));
+    });
+    records.add("pipelines", "every pipeline the renderer registered: start-up or first use, state, shaders and their versions, the last error", [&view](RpcResponder responder) {
+        responder.respond(pipelinesRecord(view));
     });
     records.add("profile", "the profiler's frame history: CPU and GPU time per frame", [](RpcResponder responder) {
         responder.respond(profileRecord());

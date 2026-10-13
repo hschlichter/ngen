@@ -182,9 +182,10 @@ the client requested, received (packed or cached), failed and has in flight, and
 `errors(id)` gives
 the reasons it failed. A new request for an id clears an earlier failure.
 
-ngen-view connects at start-up and exits with an error naming the server command when there is none. It requests every shader on
-`startupShaderIds()` in one request, loads the scene meanwhile, and waits for them just before the renderer needs them (`src/renderer/shaderloader.*`).
-The scene's USD layers and textures come through the same client, by USD's asset resolver (`src/scene/README.md`).
+ngen-view connects at start-up and exits with an error naming the server command when there is none. Once its renderer's passes have
+registered their pipelines it requests their start-up shaders in one request, loads the scene meanwhile, and waits for them before the first
+frame; the debug views' shaders are requested when a debug view is first turned on (`src/renderer/README.md`, "Pipelines"). The scene's packs,
+meshes, materials and textures come through the same client (`src/view/README.md`).
 
 `assetid.h` turns a relative path into an asset id (normalised; empty for an absolute path or one that climbs above the server's directory). The
 view uses it for its scene argument, which is an id, and the USD resolver for every asset path.

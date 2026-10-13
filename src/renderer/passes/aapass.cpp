@@ -2,7 +2,6 @@
 
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "shaderloader.h"
 #include "trace.h"
 
 #include <array>
@@ -15,7 +14,8 @@ struct FxaaPush {
 };
 } // namespace
 
-auto AAPass::init(RhiDevice* dev, uint32_t frameCount, RhiFormat inputFormat) -> bool {
+auto AAPass::init(RhiDevice* dev, PipelineRegistry& pipelines, uint32_t frameCount, RhiFormat inputFormat) -> bool {
+    registry = &pipelines;
     device = dev;
 
     // Storage images cannot be sRGB; the blit to the backbuffer re-encodes.
@@ -29,11 +29,6 @@ auto AAPass::init(RhiDevice* dev, uint32_t frameCount, RhiFormat inputFormat) ->
     }
     format = floatFormat;
 
-    shader = loadShaderModule(device, RhiShaderStage::Compute, "shaders/fxaa.comp");
-    if (shader == nullptr) {
-        return false;
-    }
-
     std::array<RhiDescriptorBinding, 2> bindings = {{
         {.binding = 0, .type = RhiDescriptorType::CombinedImageSampler, .stage = RhiShaderStage::Compute},
         {.binding = 1, .type = RhiDescriptorType::StorageImage, .stage = RhiShaderStage::Compute},
@@ -41,16 +36,12 @@ auto AAPass::init(RhiDevice* dev, uint32_t frameCount, RhiFormat inputFormat) ->
     setLayout = device->createDescriptorSetLayout(bindings);
     device->setDebugName(setLayout, "aa.setlayout");
 
-    RhiComputePipelineDesc pipelineDesc = {
-        .shader = shader,
-        .descriptorSetLayouts = {&setLayout, 1},
+    ComputePipelineRequest request = {
+        .shader = {.id = "shaders/fxaa.comp", .stage = RhiShaderStage::Compute},
+        .descriptorSetLayouts = {setLayout},
         .pushConstant = {.stage = RhiShaderStage::Compute, .offset = 0, .size = sizeof(FxaaPush)},
     };
-    pipeline = device->createComputePipeline(pipelineDesc);
-    device->setDebugName(pipeline, "aa.pipeline");
-    if (pipeline == nullptr) {
-        return false;
-    }
+    pipelineHandle = pipelines.registerCompute("aa.pipeline", request, PipelineUse::Startup);
 
     pool = device->createDescriptorPool(frameCount, bindings);
     device->setDebugName(pool, "aa.sets.pool");
@@ -70,9 +61,7 @@ auto AAPass::destroy(RhiDevice* dev) -> void {
     }
     dev->freeDescriptorSets(pool, sets);
     dev->destroyDescriptorPool(pool);
-    dev->destroyPipeline(pipeline);
     dev->destroyDescriptorSetLayout(setLayout);
-    dev->destroyShaderModule(shader);
 }
 
 auto AAPass::addPass(FrameGraph& fg, FgTextureHandle input, RhiExtent2D extent, uint32_t frameSlot, RhiSampler* sampler, bool enabled) -> const AAPassData& {
@@ -106,7 +95,7 @@ auto AAPass::addPass(FrameGraph& fg, FgTextureHandle input, RhiExtent2D extent, 
             data.sceneColor = builder.read(input, FgAccessFlags::ShaderRead);
             data.sceneColorAA = builder.write(builder.createTexture("sceneColorAA", desc), FgAccessFlags::StorageWrite);
         },
-        [this, extent, frameSlot, sampler, enabled](FrameGraphContext& ctx, const AAPassData& data) {
+        [this, pipeline = registry->get(pipelineHandle), extent, frameSlot, sampler, enabled](FrameGraphContext& ctx, const AAPassData& data) {
             // Transient textures come from the pool and may differ per frame, so the
             // slot's set is rewritten here. The slot's fence guarantees nothing in flight binds it.
             std::array<RhiDescriptorWrite, 2> writes = {{

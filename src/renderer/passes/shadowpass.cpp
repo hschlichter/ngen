@@ -6,7 +6,6 @@
 #include "profilegpu.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "shaderloader.h"
 
 #include <algorithm>
 #include <array>
@@ -22,36 +21,28 @@ constexpr std::array<RhiDescriptorBinding, 1> instanceBindings = {{
 }};
 } // namespace
 
-auto ShadowPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFormat) -> bool {
+auto ShadowPass::init(RhiDevice* device, PipelineRegistry& pipelines, RhiExtent2D extent, RhiFormat depthFormat) -> bool {
     using enum RhiFormat;
-
-    vertShader = loadShaderModule(device, RhiShaderStage::Vertex, "shaders/shadow.vert");
-    fragShader = loadShaderModule(device, RhiShaderStage::Fragment, "shaders/shadow.frag");
-
-    std::array<RhiVertexAttribute, 1> vertexAttrs = {{
-        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0}, // position-only stream
-    }};
+    registry = &pipelines;
 
     descSetLayout = device->createDescriptorSetLayout(instanceBindings);
     device->setDebugName(descSetLayout, "shadow.setlayout");
 
-    RhiGraphicsPipelineDesc pipelineDesc = {
-        .vertexShader = vertShader,
-        .fragmentShader = fragShader,
-        .descriptorSetLayouts = {&descSetLayout, 1}, // instance buffer; the cascade matrix is a push constant
+    GraphicsPipelineRequest request = {
+        .vertex = {.id = "shaders/shadow.vert", .stage = RhiShaderStage::Vertex},
+        .fragment = {.id = "shaders/shadow.frag", .stage = RhiShaderStage::Fragment},
+        .descriptorSetLayouts = {descSetLayout}, // instance buffer; the cascade matrix is a push constant
         .pushConstant = {.stage = RhiShaderStage::Vertex, .offset = 0, .size = sizeof(ShadowPush)},
         .colorFormats = {}, // depth-only
         .depthFormat = depthFormat,
         .vertexStride = sizeof(std::array<float, 3>),
-        .vertexAttributes = vertexAttrs,
+        .vertexAttributes = {{.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0}}, // position-only stream
         .raster = {.cullMode = RhiCullMode::Back},
     };
-    pipelineCullBack = device->createGraphicsPipeline(pipelineDesc);
-    device->setDebugName(pipelineCullBack, "shadow.pipeline.cullback");
-    pipelineDesc.raster.cullMode = RhiCullMode::None;
-    pipelineCullNone = device->createGraphicsPipeline(pipelineDesc);
-    device->setDebugName(pipelineCullNone, "shadow.pipeline.cullnone");
-    return pipelineCullBack != nullptr && pipelineCullNone != nullptr;
+    pipelineCullBack = pipelines.registerGraphics("shadow.pipeline.cullback", request, PipelineUse::Startup);
+    request.raster.cullMode = RhiCullMode::None;
+    pipelineCullNone = pipelines.registerGraphics("shadow.pipeline.cullnone", request, PipelineUse::Startup);
+    return true;
 }
 
 auto ShadowPass::bindInstanceBuffer(RhiDevice* device, RhiBuffer* instanceBuffer, DeletionQueue& deletionQueue, uint64_t frame) -> void {
@@ -77,10 +68,6 @@ auto ShadowPass::destroy(RhiDevice* device) -> void {
         device->destroyDescriptorPool(descPool);
     }
     device->destroyDescriptorSetLayout(descSetLayout);
-    device->destroyPipeline(pipelineCullBack);
-    device->destroyPipeline(pipelineCullNone);
-    device->destroyShaderModule(vertShader);
-    device->destroyShaderModule(fragShader);
 }
 
 auto ShadowPass::addPass(
@@ -100,8 +87,8 @@ auto ShadowPass::addPass(
         .usage = RhiTextureUsage::DepthAttachment | RhiTextureUsage::Sampled,
     };
 
-    auto* cullBack = pipelineCullBack;
-    auto* cullNone = pipelineCullNone;
+    auto* cullBack = registry->get(pipelineCullBack);
+    auto* cullNone = registry->get(pipelineCullNone);
     auto* instanceSet = descSet;
     // Copies: the execute lambda runs later in the frame, after the snapshot may be gone.
     std::array<ShadowCascade, maxShadowCascades> cascadeCopy;

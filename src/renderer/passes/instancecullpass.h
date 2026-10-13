@@ -2,6 +2,7 @@
 
 #include "drawlists.h"
 #include "framegraph.h"
+#include "pipelineregistry.h"
 #include "rhitypes.h"
 
 #include <cstdint>
@@ -16,7 +17,7 @@ class RhiDevice;
 // and counts the shadow, prepass and geometry passes read indirectly.
 class InstanceCullPass {
 public:
-    auto init(RhiDevice* device) -> bool;
+    auto init(RhiDevice* device, PipelineRegistry& pipelines) -> bool;
     auto destroy(RhiDevice* device) -> void;
 
     // Rewrites every frame slot's descriptor set. Call whenever the instance buffer, the
@@ -28,9 +29,9 @@ public:
     auto addPasses(FrameGraph& fg, const DrawLists::Handles& handles, FgBufferHandle instanceBuffer, uint32_t groupCount, uint32_t frameSlot) -> void;
 
 private:
-    RhiShaderModule* shader = nullptr;
+    PipelineRegistry* registry = nullptr;
     RhiDescriptorSetLayout* setLayout = nullptr;
-    RhiPipeline* pipeline = nullptr;
+    PipelineHandle pipelineHandle;
     RhiDescriptorPool* pool = nullptr;
     std::vector<RhiDescriptorSet*> sets; // per frame slot
 };

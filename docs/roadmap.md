@@ -20,16 +20,15 @@ Items below that follow from the objective rather than from an existing plan are
 The umbrella is [plan_tool_architecture.md](plan_tool_architecture.md): a USD-free ngen-view fed by packed data, an editor that owns USD, an asset
 server that packs, and an introspection tool. What has landed of it is under [Landed](#landed).
 
-1. **Async shaders** — [plan_async_shaders.md](plan_async_shaders.md), draft. Pipeline registry, start-up shaders from registrations (replaces
-   `startupShaderIds()`), debug view shaders on first use.
-2. **Editor split (step 3)** — [plan_editor_split.md](plan_editor_split.md), draft. Deltas and incremental GPU scene, then `ngen-editor` as its
+1. **Editor split (step 3)** — [plan_editor_split.md](plan_editor_split.md), draft. Deltas and incremental GPU scene, then `ngen-editor` as its
    own process. View gizmos as local opinions and ngen-view without pxr landed with the scene pack; the plan needs revising for that
    (it assumes the editor still runs in the view).
    - Open: how unsaved editor edits reach packed data.
    - Fix: the plan still says "build server" in places.
-3. **Everything async** — *from the objective.* Scenes open instantly with placeholders; geometry, textures, shaders, sub-packs and LOD levels
+2. **Everything async** — *from the objective.* Scenes open instantly with placeholders; geometry, textures, shaders, sub-packs and LOD levels
    arrive and appear when ready, never blocking a frame. Builds on the asset server's streaming, async shaders, sub-packs as load units, and
-   the editor split's incremental GPU scene. Today the view still waits for shaders and loads the scene synchronously.
+   the editor split's incremental GPU scene. Shaders are async since [plan_async_shaders.md](plan_async_shaders.md) (start-up ones before
+   the first frame, the debug views' on first use); the view still loads the scene synchronously.
 
 ## Engine features
 
@@ -150,6 +149,10 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
 
+- **Async shaders** — [plan_async_shaders.md](plan_async_shaders.md). `PipelineRegistry` creates every pipeline from requests the passes
+  register (descriptions with shader ids). Start-up shaders go out in one request derived from the registrations and pack while the scene
+  loads; the debug views' shaders are requested the first time a view is turned on, and the lit image shows until they arrive. A `pipelines`
+  record and a Render Debug tab show each pipeline's state. Hot reload, reflection and off-thread creation are deferred.
 - **Scene pack (step 2, the scene half)** — [plan_scene_pack.md](plan_scene_pack.md). `ngen-packer-usd` packs each USD file in one job: a
   layer pack of its opinions plus a mesh or material asset per prim, `file.usd#/prim`. `src/world/` composes the packs as USD composes a stage
   (layer stack, references and payloads, instancing, UsdLod roots), checked byte for byte against OpenUSD with `ngen-worldcheck` and

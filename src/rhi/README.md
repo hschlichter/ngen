@@ -71,7 +71,7 @@ from a higher layer to make sense, it is in the wrong folder. `ImGuiBackend` liv
 
 `createShaderModule` takes `RhiShaderDesc`: stage, a span of compiled bytecode in the backend's native format
 (SPIR-V for Vulkan), entry point. Loading files and cross-compiling shader languages happen outside. ngen's
-`loadShaderModule` in `src/renderer/shaderloader.cpp` does the file part.
+`PipelineRegistry` (`src/renderer/pipelineregistry.cpp`) creates modules from packed shaders streamed from the asset server.
 
 ### Errors are classes, not codes
 

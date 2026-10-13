@@ -24,10 +24,11 @@
 #include <limits>
 #include <span>
 
-auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2D windowExtent) -> std::expected<void, int> {
+auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, AssetClient* shaders, RhiExtent2D windowExtent) -> std::expected<void, int> {
     using enum RhiFormat;
 
     device = rhiDevice;
+    pipelineRegistry.init(device, shaders);
 
     swapchain = device->createSwapchain(windowExtent);
     if (swapchain == nullptr) {
@@ -101,33 +102,33 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, RhiExtent2
     // Passes
     RhiExtent2D shadowExtent{2048, 2048};
     debugShadowExtent = shadowExtent;
-    if (!shadowPass.init(device, shadowExtent, depthFmt)) {
+    if (!shadowPass.init(device, pipelineRegistry, shadowExtent, depthFmt)) {
         return std::unexpected(1);
     }
-    if (!geometryPass.init(device, ext, depthFmt)) {
+    if (!geometryPass.init(device, pipelineRegistry, ext, depthFmt)) {
         return std::unexpected(1);
     }
-    if (!depthPrepass.init(device, depthFmt, geometryPass.descriptorSetLayout())) {
+    if (!depthPrepass.init(pipelineRegistry, depthFmt, geometryPass.descriptorSetLayout())) {
         return std::unexpected(1);
     }
-    if (!instanceCullPass.init(device)) {
+    if (!instanceCullPass.init(device, pipelineRegistry)) {
         return std::unexpected(1);
     }
-    if (!lightingPass.init(device, imgCount, ext, colorFmt)) {
+    if (!lightingPass.init(device, pipelineRegistry, imgCount, ext, colorFmt)) {
         return std::unexpected(1);
     }
-    if (!aaPass.init(device, imgCount, colorFmt)) {
+    if (!aaPass.init(device, pipelineRegistry, imgCount, colorFmt)) {
         return std::unexpected(1);
     }
-    if (!debugViewPass.init(device, imgCount, depthFmt, geometryPass.descriptorSetLayout())) {
+    if (!debugViewPass.init(device, pipelineRegistry, imgCount, depthFmt, geometryPass.descriptorSetLayout())) {
         return std::unexpected(1);
     }
     // Overlays draw on the backbuffer after the AA result has been blitted there,
     // so they keep the swapchain format and stay outside the AA filter.
-    if (!debugRenderer.init(device, imgCount, ext, colorFmt, depthFmt, uniformBuffers)) {
+    if (!debugRenderer.init(device, pipelineRegistry, imgCount, ext, colorFmt, depthFmt, uniformBuffers)) {
         return std::unexpected(1);
     }
-    if (!gizmoPass.init(device, imgCount, ext, colorFmt)) {
+    if (!gizmoPass.init(device, pipelineRegistry, imgCount, ext, colorFmt)) {
         return std::unexpected(1);
     }
 
@@ -215,9 +216,19 @@ auto Renderer::setFrameGraphDebugEnabled(bool enabled) -> void {
     }
 }
 
+auto Renderer::requestStartupShaders() -> size_t {
+    pipelineRegistry.requestStartup();
+    return pipelineRegistry.startupShaders().size();
+}
+
+auto Renderer::createStartupPipelines() -> bool {
+    return pipelineRegistry.createStartup();
+}
+
 auto Renderer::buildRenderDebugSnapshot() const -> RenderDebugSnapshot {
     RenderDebugSnapshot snap;
     snap.frameIndex = m_frameIndex;
+    snap.pipelines = pipelineRegistry.infos();
     snap.limits = device->limits();
     snap.validation = validationEnabled;
     snap.swapchainExtent = swapchain->extent();
@@ -819,6 +830,12 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     };
     memcpy(uniformBuffersMapped[currentFrame], &ubo, sizeof(ubo));
 
+    // Pipelines whose shaders arrived since the last frame, a few at a time; none change while the frame records.
+    {
+        PROFILE_ZONE("PipelineUpdate");
+        pipelineRegistry.update();
+    }
+
     // Build frame graph
     static const uint32_t buildZoneId = profile::registerName("BuildFrameGraph");
     profile::beginZone(buildZoneId);
@@ -933,7 +950,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     // A debug view replaces the lit image; it is drawn after everything the geometry pass
     // wrote and never anti-aliased (AA would blend IDs).
     auto finalImage = aaData.sceneColorAA;
-    if (snapshot.debugView != DebugView::None && debugViewPass.available()) {
+    // Its pipelines come on first use: until they are ready the lit image shows.
+    if (snapshot.debugView != DebugView::None && debugViewPass.available() && debugViewPass.ready()) {
         const auto& debugViewData = debugViewPass.addPass(frameGraph, snapshot.debugView, geomData.depth, ext, imageIdx, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet);
         finalImage = debugViewData.color;
     }
@@ -1149,9 +1167,9 @@ auto Renderer::destroy() -> void {
     gpuScene.destroy();
     drawLists.destroy();
 
+    pipelineRegistry.destroy();
     instanceCullPass.destroy(device);
     shadowPass.destroy(device);
-    depthPrepass.destroy(device);
     geometryPass.destroy(device);
     lightingPass.destroy(device);
     aaPass.destroy(device);

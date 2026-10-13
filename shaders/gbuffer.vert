@@ -43,6 +43,8 @@ layout(location = 1) out vec3 fragColor;
 layout(location = 2) out vec2 fragTexCoord;
 // One value per draw, so the fragment shader's array index is dynamically uniform.
 layout(location = 3) flat out uint fragTexture;
+// The instance index + 1, for the id target picking reads; 0 is nothing drawn.
+layout(location = 4) flat out uint fragInstance;
 
 // Invariant so the depth prepass (depthonly.vert, same expression) produces identical depth.
 invariant gl_Position;
@@ -50,6 +52,7 @@ invariant gl_Position;
 void main() {
     mat4 model = instances.data[gl_InstanceIndex].model;
     fragTexture = materials.data[instances.data[gl_InstanceIndex].material].baseColorTexture;
+    fragInstance = uint(gl_InstanceIndex) + 1u;
     gl_Position = ubo.proj * ubo.view * model * vec4(inPosition, 1.0);
     // Normalise here: the model matrix carries the scene's unit scale (Kitchen_set is
     // authored in cm under a 0.01 root scale), which would leave a near-zero normal for
