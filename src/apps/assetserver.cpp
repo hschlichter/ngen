@@ -10,25 +10,33 @@
 
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <print>
 #include <pthread.h>
 #include <string_view>
 #include <unistd.h>
+#include <vector>
 
 namespace fs = std::filesystem;
 
 auto main(int argc, char** argv) -> int {
     bool pollOnly = false;
+    std::vector<AssetServer::Options::Delay> delays;
     for (int i = 1; i < argc; i++) {
         std::string_view arg = argv[i];
         if (arg == "--watch=poll") {
             pollOnly = true;
         } else if (arg == "--watch=inotify") {
             pollOnly = false;
+        } else if (arg.starts_with("--delay=") && arg.rfind(':') != std::string_view::npos && arg.rfind(':') > 8) {
+            auto value = arg.substr(8);
+            auto colon = value.rfind(':');
+            delays.push_back({.pattern = std::string(value.substr(0, colon)), .ms = std::atoi(std::string(value.substr(colon + 1)).c_str())});
         } else {
-            std::println(stderr, "usage: {} [--watch=inotify|poll]   (stop it with Ctrl-C)", argv[0]);
+            std::println(stderr, "usage: {} [--watch=inotify|poll] [--delay=<id pattern>:<ms>]...   (stop it with Ctrl-C)", argv[0]);
             std::println(stderr, "  --watch=poll  poll the sources of what clients received once a second, instead of inotify");
+            std::println(stderr, "  --delay       a test aid: hold answers for matching ids ('*' matches anything) that long after packing");
             return 2;
         }
     }
@@ -51,6 +59,7 @@ auto main(int argc, char** argv) -> int {
     options.config = bin.filename().string();
     options.platform = bin.parent_path().filename().string();
     options.pollOnly = pollOnly;
+    options.delays = std::move(delays);
 
     AssetServer server;
     if (auto started = server.start(options); !started) {

@@ -25,14 +25,11 @@ server that packs, and an introspection tool. What has landed of it is under [La
    (it assumes the editor still runs in the view).
    - Open: how unsaved editor edits reach packed data.
    - Fix: the plan still says "build server" in places.
-2. **Everything async** — *from the objective.* Scenes open instantly with placeholders; geometry, textures, shaders, sub-packs and LOD levels
-   arrive and appear when ready, never blocking a frame. Builds on the asset server's streaming, async shaders, sub-packs as load units, and
-   the editor split's incremental GPU scene. Shaders are async since [plan_async_shaders.md](plan_async_shaders.md) (start-up ones before
-   the first frame, the debug views' on first use); the view still loads the scene synchronously, and changes to what is drawn (LOD,
-   purposes, repack) block and re-upload every texture.
-   - Edits reach a running view since [plan_asset_change_notices.md](plan_asset_change_notices.md) (under Landed), but scene assets through
-     the blocking rebuild. Next: [plan_async_scene.md](plan_async_scene.md), in progress: the scene on its own thread and an incremental GPU scene,
-     so opening, LOD, purposes, Repack and notices never stall.
+2. **Everything async** — *from the objective.* The view opens a scene and draws its first frame at once, and the scene arrives while it runs,
+   with no start-up shaders (since [plan_async_scene.md](plan_async_scene.md), under Landed). What is left:
+   - **Off-thread allocation**: large buffers and textures are still made on the render thread, so a load shows hitches (Sponza 80–104 ms,
+     Caldera 312 ms at worst). In that plan's Deferred, with its trigger: streaming.
+   - **Sub-packs and LOD levels streaming in by residency**: the streaming steps of [plan_streaming_lod.md](plan_streaming_lod.md).
 
 ## Engine features
 
@@ -155,6 +152,11 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
 
+- **Async scene** — [plan_async_scene.md](plan_async_scene.md). ngen-view never waits for its scene. A scene thread composes, extracts and
+  diffs as assets arrive, and publishes snapshots and change lists. Meshes, materials and textures are kept per asset across rebuilds, and the
+  GPU scene changes piece by piece: pool ranges, texture slots, material entries, instance slots, uploads a budget per frame. Pipelines are made
+  as their shaders arrive; a broken one no longer stops the view. Scripts count frames from when the scene is resident (`wait-resident`,
+  `--no-wait-resident`), and the asset server has a `--delay` test aid. First frame 30–40 ms after start on Sponza and Caldera.
 - **Depth range for large scenes** — [plan_depth_range.md](plan_depth_range.md). The camera uses reversed-Z with no far plane, so scenes of
   any size draw and nothing is clipped at a distance. Shadows end at a shadow distance (200 m by default), and framing sets the fly speed. One
   `cameraProjection` replaces four copies of the range, and frustum planes, corners and gizmo rays follow the convention. Caldera draws with no

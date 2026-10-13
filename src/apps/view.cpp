@@ -505,10 +505,17 @@ auto main(int argc, char* argv[]) -> int {
             scriptFrame++;
             session.takeDue(scriptFrame, dueCommands);
         }
+        // A script or an RPC call that moves the camera ends the following, as a hand on the controls does.
+        auto camPositionBefore = cam.position;
+        auto camYawBefore = cam.yaw;
+        auto camPitchBefore = cam.pitch;
         for (const auto& c : dueCommands) {
             runViewScriptCommand(registry, c);
         }
         endpoint.drain();
+        if (cam.position != camPositionBefore || cam.yaw != camYawBefore || cam.pitch != camPitchBefore) {
+            autoFrame = false;
+        }
         if (maxFrames > 0 && scriptFrame > maxFrames) {
             quit = true;
         }

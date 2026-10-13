@@ -60,7 +60,12 @@ by hand and runs until Ctrl-C or SIGTERM:
 ./ngen-cli asset-server &                          # the set variant's
 ./_out/linux-vulkan/debug/ngen-asset-server &      # any variant's
 ./ngen-cli asset-server --watch=poll &             # poll the watched sources instead of inotify
+./ngen-cli asset-server '--delay=assets/x/*.png:3000' &   # a test aid: hold answers for matching ids 3 s after packing
 ```
+
+`--delay=<id pattern>:<ms>` (repeatable; `*` matches any run of characters) holds the answer for matching ids that long after packing, so a test
+can see what a client does while an asset is missing. The server traces each pattern as a warning at start-up and each held answer, so a run
+with it can't be mistaken for a normal one.
 
 **Its working directory is the root.** Asset ids are relative to it, packers run in it, the cache is `.ngen-assets/` in it, and it registers in
 `.ngen-discovery/` in it, as kind `asset` with its variant as the label; a view running in the same directory finds it. Nothing depends on where

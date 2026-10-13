@@ -48,7 +48,7 @@ Current truth for the build framework is [`../src/build/README.md`](../src/build
 - [basic_lighting_pass_plan_v2.md](basic_lighting_pass_plan_v2.md) — deferred G-buffer + lighting pass (landed)
 - [plan_threaded_rendering.md](plan_threaded_rendering.md) — dedicated render thread with snapshots (landed)
 - [plan_incremental_gpu_upload.md](plan_incremental_gpu_upload.md) — incremental mesh/instance uploads (superseded by plan_async_scene.md)
-- [plan_async_scene.md](plan_async_scene.md) — ngen-view never waits for its scene: a scene thread composes and diffs, identity by asset, an incremental GPU scene (pool suballocator, texture slots, instance slots), non-blocking uploads within a per-frame budget, placeholders, scripts count frames from when the scene is resident (in progress)
+- [plan_async_scene.md](plan_async_scene.md) — ngen-view never waits for its scene: a scene thread composes and diffs, identity by asset, an incremental GPU scene (pool suballocator, texture slots, instance slots), non-blocking uploads within a per-frame budget, placeholders, scripts count frames from when the scene is resident (landed)
 - [plan_imgui_integration.md](plan_imgui_integration.md) — ImGui as a frame-graph pass (landed)
 - [debug_renderer_implementation_plan.md](debug_renderer_implementation_plan.md) — debug line rendering (landed)
 

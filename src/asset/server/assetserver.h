@@ -33,6 +33,13 @@ public:
         std::string platform;
         std::string config;
         bool pollOnly = false; // poll watched sources instead of inotify
+        // A test aid: answers for ids matching a pattern ('*' matches any run of characters) are held this long after packing, so a test can
+        // see what a client does while an asset is missing.
+        struct Delay {
+            std::string pattern;
+            int ms = 0;
+        };
+        std::vector<Delay> delays;
     };
 
     // Packed data is sent in chunks of at most this many bytes, and no more than packWindow bytes are queued on

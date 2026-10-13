@@ -31,6 +31,32 @@ auto jobKey(const PackRule& rule) -> uint64_t {
     return hash;
 }
 
+// Whether `text` matches `pattern`, where '*' matches any run of characters (slashes too).
+auto globMatch(std::string_view pattern, std::string_view text) -> bool {
+    size_t p = 0;
+    size_t t = 0;
+    size_t starAt = std::string_view::npos;
+    size_t starText = 0;
+    while (t < text.size()) {
+        if (p < pattern.size() && pattern[p] == '*') {
+            starAt = p++;
+            starText = t;
+        } else if (p < pattern.size() && pattern[p] == text[t]) {
+            p++;
+            t++;
+        } else if (starAt != std::string_view::npos) {
+            p = starAt + 1;
+            t = ++starText;
+        } else {
+            return false;
+        }
+    }
+    while (p < pattern.size() && pattern[p] == '*') {
+        p++;
+    }
+    return p == pattern.size();
+}
+
 // An asset id is a relative path below the server's directory, with no ".." segment.
 auto validId(const std::string& id) -> bool {
     if (id.empty()) {
@@ -104,6 +130,9 @@ auto AssetServer::start(const Options& startOptions) -> std::expected<void, std:
         traceLine("rule {}: {} -> {}", rule.name, extensions, rule.packer);
     }
     traceLine("cache {}: {} assets recorded", cacheDirectory.string(), cache.size());
+    for (const auto& delay : options.delays) {
+        traceWarning("test aid: answers for {} are held {} ms (--delay)", delay.pattern, delay.ms);
+    }
     auto workers = std::max(1u, std::thread::hardware_concurrency());
     jobs = std::make_unique<PackJobs>(workers);
 
@@ -395,6 +424,13 @@ auto AssetServer::subscribe(const std::string& id, Subscriber subscriber, int64_
         auto started = std::chrono::steady_clock::now();
         auto outcome = pack(id, forceRequest);
         outcome.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+        for (const auto& delay : options.delays) {
+            if (globMatch(delay.pattern, id)) {
+                traceLine("  {}  answer held {} ms (--delay)", id, delay.ms);
+                std::this_thread::sleep_for(std::chrono::milliseconds(delay.ms));
+                break;
+            }
+        }
         deliver(id, outcome);
     });
 }
