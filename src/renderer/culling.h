@@ -22,6 +22,7 @@ struct CullState {
     // freezing starts. Returns the matrix the cull test uses.
     auto update(const glm::mat4& liveViewProj) -> glm::mat4;
 
-    // Corners of the frozen frustum for the debug overlay; only meaningful while frozenActive.
-    auto frozenCorners() const -> std::array<glm::vec3, 8>;
+    // Corners of the frozen frustum for the debug overlay; only meaningful while frozenActive. The camera's projection is reversed with no
+    // far plane, so the far corners are drawn at `farDepth`.
+    auto frozenCorners(float farDepth) const -> std::array<glm::vec3, 8>;
 };

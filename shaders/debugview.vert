@@ -1,7 +1,7 @@
 #version 450
 
 // Debug views (DebugViewPass). Same UBO, instance buffer and position expression as
-// gbuffer.vert, so the LessOrEqual test against the frame's depth keeps exactly the
+// gbuffer.vert, so the GreaterOrEqual test (reversed-Z) against the frame's depth keeps exactly the
 // surfaces the geometry pass drew.
 layout(set = 0, binding = 0) uniform UBO {
     mat4 view;

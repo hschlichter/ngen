@@ -35,16 +35,16 @@ const float BORDER = 0.003;
 const int NUM_GBUFFER_PREVIEWS = 4;
 const int NUM_SHADOW_PREVIEWS = 3;
 
+// The camera's depth is reversed with no far plane: depth = near / view distance, 0 at infinity.
 float linearizeDepth(float d) {
     float near = light.depthParams.x;
-    float far = light.depthParams.y;
-    return near * far / (far - d * (far - near));
+    return near / max(d, 1e-30);
 }
 
 const vec3 BACKGROUND_COLOR = vec3(0.12, 0.12, 0.15);
 
 bool isBackground(vec2 uv) {
-    return texture(gbufferDepth, uv).r >= 1.0;
+    return texture(gbufferDepth, uv).r <= 0.0;
 }
 
 // Reconstruct world-space position from screen UV + sampled depth using the inverse
@@ -120,7 +120,7 @@ float sampleShadow(vec3 worldPos, vec3 normal, float viewDepth) {
 vec3 sampleBuffer(int mode, vec2 uv) {
     if (mode == 3) {
         float d = texture(gbufferDepth, uv).r;
-        if (d >= 1.0) return vec3(0.0);
+        if (d <= 0.0) return vec3(0.0);
         float near = light.depthParams.x;
         float far = light.depthParams.y;
         float lin = linearizeDepth(d);

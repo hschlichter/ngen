@@ -79,7 +79,8 @@ auto DrawLists::writeParams(uint32_t frameSlot, uint32_t instanceCount, const gl
     params.groupCount = groupCountFor(instanceCount);
     // Normalized planes from Frustum::fromViewProj, tested per instance in instancecull.comp.
     for (uint32_t v = 0; v < params.viewCount; v++) {
-        auto frustum = Frustum::fromViewProj(v == 0 ? cameraViewProj : cascades[v - 1].viewProj);
+        // The camera's projection is reversed-Z with no far plane; the cascades' are standard.
+        auto frustum = v == 0 ? Frustum::fromViewProj(cameraViewProj, true) : Frustum::fromViewProj(cascades[v - 1].viewProj);
         for (uint32_t p = 0; p < 6; p++) {
             params.planes[(v * 6) + p] = frustum.planes[p];
         }

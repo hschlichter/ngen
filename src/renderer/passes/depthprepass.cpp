@@ -21,6 +21,7 @@ auto DepthPrepass::init(PipelineRegistry& pipelines, RhiFormat depthFormat, RhiD
         .vertexStride = sizeof(std::array<float, 3>),
         .vertexAttributes = {{.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0}}, // position-only stream
         .raster = {.cullMode = RhiCullMode::Back},
+        .depth = {.testEnable = true, .writeEnable = true, .compareOp = RhiCompareOp::Greater}, // reversed-Z
     };
     this->pipelines[DrawLists::bucket(false, false)] = pipelines.registerGraphics("prepass.pipeline.cullback", request, PipelineUse::Startup);
     request.raster.cullMode = RhiCullMode::None;
@@ -72,7 +73,7 @@ auto DepthPrepass::addPass(
                 .texture = ctx.texture(data.depth),
                 .state = RhiTextureState::DepthStencilAttachment,
                 .clear = true,
-                .clearDepth = 1.0f,
+                .clearDepth = 0.0f, // reversed-Z: 0 is infinitely far
             };
             RhiRenderingInfo info = {
                 .extent = extent,

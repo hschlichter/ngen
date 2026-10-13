@@ -518,8 +518,7 @@ auto main(int argc, char* argv[]) -> int {
         int winH = 0;
         SDL_GetWindowSizeInPixels(window, &winW, &winH);
         RhiExtent2D winExtent = {.width = (uint32_t) winW, .height = (uint32_t) winH};
-        auto proj = glm::perspective(glm::radians(45.0f), (float) winW / (float) winH, 0.1f, 3000.0f);
-        proj[1][1] *= -1.0f;
+        auto proj = cameraProjection((float) winW / (float) winH);
 
         // The purposes the View menu or a script turned on or off: the scene loads and draws them, and moves its revision on.
         if (scene.purposeShown(Purpose::Guide) != viewUI.showGuides()) {
@@ -708,11 +707,12 @@ auto main(int argc, char* argv[]) -> int {
             PROFILE_ZONE("FitCascades");
             auto sceneBounds = sceneBoundsOf(scene.renderWorld().meshInstances);
             auto lightDir = pickShadowLightDirection(scene.renderWorld().lights, cam.worldUp);
-            cascadeCount = fitShadowCascades(viewUI.getShadowSettings(), cam.viewMatrix(), proj, 0.1f, 3000.0f, lightDir, cam.worldUp, sceneBounds, cascades);
+            cascadeCount = fitShadowCascades(viewUI.getShadowSettings(), cam.viewMatrix(), proj, cameraNear, lightDir, cam.worldUp, sceneBounds, cascades);
         }
         std::array<glm::vec3, 8> frozenCorners;
         if (cullState.frozenActive) {
-            frozenCorners = cullState.frozenCorners();
+            // The frozen frustum has no far plane: drawn out to the shadow distance.
+            frozenCorners = cullState.frozenCorners(cameraDepthAt(viewUI.getShadowSettings().maxDistance));
         }
 
         // The AABB overlay shows one view's GPU culling result: the camera or a cascade.

@@ -49,7 +49,7 @@ public:
 
 private:
     PipelineRegistry* registry = nullptr;
-    // [cutout][doubleSided][depthPrepassed]: gbuffer.frag or gbuffercutout.frag, cull back or none, Less-with-write or Equal-without.
+    // [cutout][doubleSided][depthPrepassed]: gbuffer.frag or gbuffercutout.frag, cull back or none, Greater-with-write (reversed-Z) or Equal-without.
     PipelineHandle pipelines[2][2][2] = {};
     RhiFormat normalTargetFormat = RhiFormat::R16G16B16A16_SFLOAT;
     RhiDescriptorSetLayout* descSetLayout = nullptr;

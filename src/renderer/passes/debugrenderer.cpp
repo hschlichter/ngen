@@ -33,7 +33,7 @@ auto DebugRenderer::init(
             {.location = 1, .binding = 0, .format = R32G32B32A32_SFLOAT, .offset = sizeof(float) * 3},
         },
         .topology = RhiPrimitiveTopology::LineList,
-        .depth = {.testEnable = true, .writeEnable = false},
+        .depth = {.testEnable = true, .writeEnable = false, .compareOp = RhiCompareOp::Greater}, // reversed-Z
     };
     pipelineHandle = pipelines.registerGraphics("debuglines.pipeline", request, PipelineUse::Startup);
 

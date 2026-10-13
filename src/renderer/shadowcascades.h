@@ -17,10 +17,11 @@
 constexpr uint32_t maxShadowCascades = 4;
 
 struct ShadowCascadeSettings {
-    uint32_t count = 3;       // 1..maxShadowCascades; three by default, the fourth tile stays free
-    uint32_t tileSize = 1024; // texels per cascade
-    float splitLambda = 0.5f; // 0 = uniform splits, 1 = logarithmic
-    bool pcf = true;          // hardware compare sampler with a 3x3 tap loop; off = one manual compare
+    uint32_t count = 3;         // 1..maxShadowCascades; three by default, the fourth tile stays free
+    uint32_t tileSize = 1024;   // texels per cascade
+    float splitLambda = 0.5f;   // 0 = uniform splits, 1 = logarithmic
+    bool pcf = true;            // hardware compare sampler with a 3x3 tap loop; off = one manual compare
+    float maxDistance = 200.0f; // metres from the camera where shadows end; beyond, surfaces are lit without shadow
 
     auto operator==(const ShadowCascadeSettings&) const -> bool = default;
 };
@@ -44,6 +45,6 @@ auto pickShadowLightDirection(std::span<const RenderLight> lights, glm::vec3 wor
 // Union of the instance world bounds; invalid when there are none.
 auto sceneBoundsOf(std::span<const RenderMeshInstance> instances) -> AABB;
 
-// Fits the cascades. nearZ/farZ are the camera's; farZ is pulled in to the scene bounds so
-// no cascade is spent behind the last mesh. Returns the cascade count written to out.
-auto fitShadowCascades(const ShadowCascadeSettings& settings, const glm::mat4& view, const glm::mat4& proj, float nearZ, float farZ, glm::vec3 lightDir, glm::vec3 worldUp, const AABB& sceneBounds, std::span<ShadowCascade> out) -> uint32_t;
+// Fits the cascades from the camera's near plane to the shadow distance (settings.maxDistance), pulled in to the scene bounds so no
+// cascade is spent behind the last mesh. The camera's projection has no far plane. Returns the cascade count written to out.
+auto fitShadowCascades(const ShadowCascadeSettings& settings, const glm::mat4& view, const glm::mat4& proj, float nearZ, glm::vec3 lightDir, glm::vec3 worldUp, const AABB& sceneBounds, std::span<ShadowCascade> out) -> uint32_t;

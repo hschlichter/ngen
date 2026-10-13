@@ -12,12 +12,8 @@ static constexpr int kSegments = 48;
 static auto mouseRay(float mx, float my, RhiExtent2D ext, const glm::mat4& view, const glm::mat4& proj) -> std::pair<glm::vec3, glm::vec3> {
     float ndcX = (2.0f * mx / (float) ext.width) - 1.0f;
     float ndcY = (2.0f * my / (float) ext.height) - 1.0f;
-    auto invVP = glm::inverse(proj * view);
-    auto n = invVP * glm::vec4(ndcX, ndcY, 0.0f, 1.0f);
-    auto f = invVP * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
-    n /= n.w;
-    f /= f.w;
-    return {glm::vec3(n), glm::normalize(glm::vec3(f - n))};
+    auto ray = Ray::fromCamera(ndcX, ndcY, glm::inverse(proj * view));
+    return {ray.origin, ray.direction};
 }
 
 // Circle sample point for axis `i` at angle `theta`, centered at `center` with `radius`.

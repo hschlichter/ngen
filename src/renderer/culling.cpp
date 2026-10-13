@@ -14,6 +14,6 @@ auto CullState::update(const glm::mat4& liveViewProj) -> glm::mat4 {
     return liveViewProj;
 }
 
-auto CullState::frozenCorners() const -> std::array<glm::vec3, 8> {
-    return Frustum::corners(frozenViewProj);
+auto CullState::frozenCorners(float farDepth) const -> std::array<glm::vec3, 8> {
+    return Frustum::corners(frozenViewProj, 1.0f, farDepth);
 }

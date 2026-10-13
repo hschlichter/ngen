@@ -17,7 +17,7 @@ struct GeometryPassData;
 struct LightingUBO {
     glm::vec4 lightDirection;                     // xyz = direction toward light, w = unused
     glm::vec4 lightColor;                         // xyz = radiance (color * intensity * 2^exposure), w = ambient
-    glm::vec4 depthParams;                        // x = near, y = far, zw = unused
+    glm::vec4 depthParams;                        // x = the camera's near plane, y = the depth preview's far end, zw = unused
     glm::vec4 shadowTint;                         // xyz = light contribution when shadowed (from UsdLuxShadowAPI::shadow:color), w = unused
     glm::mat4 invViewProj;                        // inverse(proj * view), for world-pos reconstruction from gbuffer
     glm::mat4 cascadeViewProj[maxShadowCascades]; // light view-projection per cascade
@@ -79,7 +79,8 @@ public:
         RhiSampler* shadowSampler,
         std::span<const ShadowCascade> cascades,
         bool pcf,
-        RhiExtent2D atlasExtent) -> const LightingPassData&;
+        RhiExtent2D atlasExtent,
+        float previewFar) -> const LightingPassData&;
 
 private:
     RhiDevice* device = nullptr;

@@ -248,6 +248,8 @@ auto parseShadow(const std::string& args) -> std::expected<Json, std::string> {
             params["lambda"] = std::strtof(value.c_str(), nullptr);
         } else if (key == "pcf") {
             params["pcf"] = value == "on";
+        } else if (key == "distance") {
+            params["distance"] = std::strtof(value.c_str(), nullptr);
         } else {
             return std::unexpected(std::format("unknown key '{}'", key));
         }
@@ -708,6 +710,7 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
                 optionalField("tile", RpcType::Int, "texels per cascade, at least 64"),
                 optionalField("lambda", RpcType::Float, "0 uniform .. 1 logarithmic splits"),
                 optionalField("pcf", RpcType::Bool, "3x3 PCF"),
+                optionalField("distance", RpcType::Float, "metres from the camera where shadows end"),
             },
             .result = "{}",
         },
@@ -724,6 +727,9 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
             }
             if (p.contains("pcf")) {
                 settings.pcf = p["pcf"].get<bool>();
+            }
+            if (p.contains("distance")) {
+                settings.maxDistance = std::max(1.0f, p["distance"].get<float>());
             }
             responder.respond(Json::object());
         });
@@ -864,11 +870,13 @@ auto registerIntrospection(RpcRegistry& registry, ViewContext& view) -> void {
 
 auto statusRecord(const ViewContext& view) -> Json {
     const auto& sampler = view.ui.getSamplerSettings();
+    const auto& shadow = view.ui.getShadowSettings();
     return {
         {"frame", view.frameCounter},
         {"scene", view.sceneLabel},
         {"selected", view.selectedPath},
-        {"camera", {{"position", vec3Json(view.cam.position)}, {"yaw", view.cam.yaw}, {"pitch", view.cam.pitch}}},
+        {"camera", {{"position", vec3Json(view.cam.position)}, {"yaw", view.cam.yaw}, {"pitch", view.cam.pitch}, {"speed", view.cam.speed}}},
+        {"shadow", {{"cascades", shadow.count}, {"tile", shadow.tileSize}, {"lambda", shadow.splitLambda}, {"pcf", shadow.pcf}, {"distance", shadow.maxDistance}}},
         {"antiAliasing", view.ui.getAntiAliasing()},
         {"sampler", {{"anisotropy", sampler.maxAnisotropy}, {"lodBias", sampler.lodBias}, {"minLod", sampler.minLod}, {"nearestMip", sampler.nearestMip}}},
         {"purposes", {{"guide", view.ui.showGuides()}, {"proxy", view.ui.showProxies()}}},

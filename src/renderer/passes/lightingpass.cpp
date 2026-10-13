@@ -1,4 +1,5 @@
 #include "lightingpass.h"
+#include "camera.h"
 #include "geometrypass.h"
 #include "renderworld.h"
 #include "rhicommandbuffer.h"
@@ -90,7 +91,8 @@ auto LightingPass::addPass(
     RhiSampler* shadowSampler,
     std::span<const ShadowCascade> cascades,
     bool pcf,
-    RhiExtent2D atlasExtent) -> const LightingPassData& {
+    RhiExtent2D atlasExtent,
+    float previewFar) -> const LightingPassData& {
     // Copied for the execute lambda; the snapshot the span points into may be gone by then.
     std::array<ShadowCascade, maxShadowCascades> cascadeCopy;
     uint32_t cascadeCount = (uint32_t) std::min(cascades.size(), (size_t) maxShadowCascades);
@@ -114,14 +116,14 @@ auto LightingPass::addPass(
             data.sceneColor = builder.write(builder.createTexture("sceneColor", sceneColorDesc), FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);
         },
-        [this, pipeline = registry->get(pipelineHandle), imageIndex, extent, sampler, lightInputs, viewMode, showOverlay, showShadowOverlay, invViewProj, shadowSampler, cascadeCopy, cascadeCount, pcf, atlasExtent](
+        [this, pipeline = registry->get(pipelineHandle), imageIndex, extent, sampler, lightInputs, viewMode, showOverlay, showShadowOverlay, invViewProj, shadowSampler, cascadeCopy, cascadeCount, pcf, atlasExtent, previewFar](
             FrameGraphContext& ctx, const LightingPassData& data) {
             auto* cmd = ctx.cmd();
 
             LightingUBO lightUbo = {
                 .lightDirection = glm::vec4(lightInputs.direction, 1.0f),
                 .lightColor = glm::vec4(lightInputs.radiance, 0.15f),
-                .depthParams = glm::vec4(0.1f, 3000.0f, 0.0f, 0.0f),
+                .depthParams = glm::vec4(cameraNear, previewFar, 0.0f, 0.0f),
                 .shadowTint = glm::vec4(lightInputs.shadowColor, 0.0f),
                 .invViewProj = invViewProj,
                 .cascadeParams = glm::vec4((float) cascadeCount, pcf ? 1.0f : 0.0f, (float) atlasExtent.width, 0.0f),

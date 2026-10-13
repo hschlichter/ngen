@@ -42,7 +42,7 @@ auto GeometryPass::init(RhiDevice* device, PipelineRegistry& pipelineRegistry, R
     };
     // Eight variants: opaque or cutout (gbuffercutout.frag discards where the material's
     // opacity is below its threshold), back-face culling or none (USD doubleSided), and
-    // Less-with-write when the pass owns the depth buffer or Equal-without after the depth prepass.
+    // Greater-with-write (reversed-Z) when the pass owns the depth buffer or Equal-without after the depth prepass.
     for (int cutout = 0; cutout < 2; cutout++) {
         request.fragment.id = cutout != 0 ? "shaders/gbuffercutout.frag" : "shaders/gbuffer.frag";
         for (int doubleSided = 0; doubleSided < 2; doubleSided++) {
@@ -51,7 +51,7 @@ auto GeometryPass::init(RhiDevice* device, PipelineRegistry& pipelineRegistry, R
                 if (prepassed != 0) {
                     request.depth = {.testEnable = true, .writeEnable = false, .compareOp = RhiCompareOp::Equal};
                 } else {
-                    request.depth = {.testEnable = true, .writeEnable = true, .compareOp = RhiCompareOp::Less};
+                    request.depth = {.testEnable = true, .writeEnable = true, .compareOp = RhiCompareOp::Greater};
                 }
                 auto name = std::format("geometry.pipeline.{}.{}{}", doubleSided != 0 ? "cullnone" : "cullback", prepassed != 0 ? "equal" : "less", cutout != 0 ? ".cutout" : "");
                 pipelines[cutout][doubleSided][prepassed] = pipelineRegistry.registerGraphics(name, request, PipelineUse::Startup);
@@ -155,7 +155,7 @@ auto GeometryPass::addPass(
                 .texture = ctx.texture(data.depth),
                 .state = RhiTextureState::DepthStencilAttachment,
                 .clear = !depthPrepassed,
-                .clearDepth = 1.0f,
+                .clearDepth = 0.0f, // reversed-Z: 0 is infinitely far
             };
             RhiRenderingInfo renderInfo = {
                 .extent = extent,

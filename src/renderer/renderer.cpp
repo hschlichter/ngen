@@ -1,6 +1,7 @@
 #include "renderer.h"
 
 #include "blitpass.h"
+#include "camera.h"
 #include "imguibackend.h"
 #include "instanceuploadpass.h"
 #include "material.h"
@@ -993,7 +994,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     if (snapshot.cascadeCount == 0) {
         ShadowCascadeSettings single = snapshot.shadowSettings;
         single.count = 1;
-        auto count = fitShadowCascades(single, snapshot.viewMatrix, snapshot.projMatrix, 0.1f, 3000.0f, lighting.direction, snapshot.worldUp, sceneBounds, fallbackCascades);
+        auto count = fitShadowCascades(single, snapshot.viewMatrix, snapshot.projMatrix, cameraNear, lighting.direction, snapshot.worldUp, sceneBounds, fallbackCascades);
         cascades = std::span<const ShadowCascade>(fallbackCascades.data(), count);
     }
     auto atlasExtent = shadowAtlasExtent(snapshot.shadowSettings);
@@ -1023,6 +1024,19 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
 
     drawLists.addReadbackPass(frameGraph, drawHandles, currentFrame, renderDebugEnabled);
 
+    // The depth preview's far end: the camera has no far plane, so the farthest corner of the scene.
+    float previewFar = cameraNear * 10.0f;
+    if (sceneBounds.valid()) {
+        auto eye = glm::vec3(glm::inverse(snapshot.viewMatrix)[3]);
+        for (int i = 0; i < 8; i++) {
+            glm::vec3 corner = {
+                (i & 1) != 0 ? sceneBounds.max.x : sceneBounds.min.x,
+                (i & 2) != 0 ? sceneBounds.max.y : sceneBounds.min.y,
+                (i & 4) != 0 ? sceneBounds.max.z : sceneBounds.min.z,
+            };
+            previewFar = std::max(previewFar, glm::length(corner - eye));
+        }
+    }
     const auto& lightData = lightingPass.addPass(
         frameGraph,
         geomData,
@@ -1039,7 +1053,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         shadowSampler,
         cascades,
         snapshot.shadowSettings.pcf,
-        atlasExtent);
+        atlasExtent,
+        previewFar);
 
     // AA filters only the lit scene. Its output is blitted to the backbuffer and the
     // overlays (debug lines, gizmos, UI) draw on the backbuffer afterwards, so they are

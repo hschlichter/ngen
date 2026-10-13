@@ -84,7 +84,7 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   `assets-of [/prim]` (the assets drawn at or under a prim use, or the selection's; `view.assetsOf` answers with them),
   `lod <LOD root path> <level>` (the level a LOD root wants; loads it) and `cull on|off|freeze|unfreeze|show|hide`
   (frustum culling toggle, frozen frustum, red/green AABB overlay), `prepass on|off` (depth prepass) and
-  `sampler aniso=8,bias=0,minlod=0,mip=linear|nearest` (material sampler), `shadow cascades=3,tile=1024,lambda=0.5,pcf=on|off`
+  `sampler aniso=8,bias=0,minlod=0,mip=linear|nearest` (material sampler), `shadow cascades=3,tile=1024,lambda=0.5,pcf=on|off,distance=200`
   (cascaded shadows), `inspect <material> <level>|off` (texture inspector
   capture) and `dump-texture <material> <level> <path>` (one mip level as PNG); several screenshots in one run.
 - `--fail-on-validation`: exit code 2 if the validation layer reported anything. `--render-debug`: draw log on without the window.
@@ -150,10 +150,14 @@ in the code — there is no "remove when done" step.
 - Composition: `assets/layered/root.usda` — sublayers, references (one instanced, one internal), a payload, a UsdLod root, bindings on a
   parent and a child, visibility, a guide, a texture. Default: 10 draws; `purposes guide=on` 11; `lod /World/Tree/lod 0` 12.
 - Materials/textures stress test: Intel NewSponza at `assets/main_sponza/NewSponza_Main_USD_Zup_003.usda` (git-ignored; scenes must be
-  under the asset server's directory, since they are assets). Correct result: the `render` record's `textures` hold 25 at 4096×4096 plus 3 at
-  1×1 (materials without a diffuse map), 28 in all, and `SceneUploaded` says 28 textures. Byte-identical screenshots of three_cubes and
+  under the asset server's directory, since they are assets). Correct result: the `render` record's `textures` hold 25 base colours at
+  4096×4096, 3 at 1×1 (materials without a diffuse map) and the decals' 4096×4096 opacity mask (`opacity: true`), 29 in all, and
+  `SceneUploaded` says 29 textures; `cutoutMaterials` 1, `cutoutInstances` 4. Byte-identical screenshots of three_cubes and
   Sponza at the default camera (`--frames=80`, headless) are the check that the scene path draws what it always drew. All-1×1 means texturing is broken. It exercises GeomSubset per-face materials, NodeGraph-wrapped textures, backslash
   asset paths, and indexed faceVarying primvars.
+- Large scene: Caldera at `assets/caldera/caldera.usda` (git-ignored; its own checkout, the UsdLod-converted fork on branch `usdlod`). It
+  opens its default lightweight map. Its first open after a cache wipe or a move packs thousands of files: give the run minutes, not seconds,
+  and watch the server's `status` record (`tasksQueued`, `packerRuns`).
 
 ## Machine constraints
 

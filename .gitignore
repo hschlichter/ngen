@@ -59,8 +59,9 @@ compile_commands.json
 *.spv
 imgui.ini
 
-# Large downloaded test assets (NewSponza, 6.3 GB)
+# Large downloaded test assets (NewSponza, 6.3 GB; Caldera, 10 GB, a git checkout of its own)
 assets/main_sponza/
+assets/caldera/
 
 # The asset server's cache and the tools' discovery files, in the directory they run in
 .ngen-assets/

@@ -56,14 +56,15 @@ auto splitDistance(float nearZ, float farZ, float fraction, float lambda) -> flo
 
 } // namespace
 
-auto fitShadowCascades(const ShadowCascadeSettings& settings, const glm::mat4& view, const glm::mat4& proj, float nearZ, float farZ, glm::vec3 lightDir, glm::vec3 worldUp, const AABB& sceneBounds, std::span<ShadowCascade> out) -> uint32_t {
+auto fitShadowCascades(const ShadowCascadeSettings& settings, const glm::mat4& view, const glm::mat4& proj, float nearZ, glm::vec3 lightDir, glm::vec3 worldUp, const AABB& sceneBounds, std::span<ShadowCascade> out) -> uint32_t {
     uint32_t count = std::clamp(settings.count, 1u, std::min(maxShadowCascades, (uint32_t) out.size()));
     uint32_t tile = std::max(64u, settings.tileSize);
     auto invView = glm::inverse(view);
     auto cameraPos = glm::vec3(invView[3]);
 
-    // Far plane pulled in to the scene: the distance from the camera to the farthest bounds
-    // corner. Cascades past the last mesh would shadow nothing.
+    // Shadows end at the shadow distance, pulled in to the scene: the distance from the camera to the
+    // farthest bounds corner. Cascades past the last mesh would shadow nothing.
+    float farZ = std::max(settings.maxDistance, nearZ * 4.0f);
     if (sceneBounds.valid()) {
         float farthest = 0.0f;
         for (int i = 0; i < 8; i++) {

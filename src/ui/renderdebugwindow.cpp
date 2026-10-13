@@ -374,6 +374,8 @@ auto drawViewTab(RenderDebugViewFlags& view) -> void {
     }
     ImGui::SetNextItemWidth(160.0f);
     ImGui::SliderFloat("Split lambda", &view.shadow.splitLambda, 0.0f, 1.0f, "%.2f");
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::SliderFloat("Shadow distance (m)", &view.shadow.maxDistance, 10.0f, 5000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
     ImGui::Checkbox("PCF (hardware compare, 3x3)", &view.shadow.pcf);
 
     ImGui::Separator();

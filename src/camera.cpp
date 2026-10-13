@@ -4,6 +4,21 @@
 #include <algorithm>
 #include <cmath>
 
+auto cameraProjection(float aspect) -> glm::mat4 {
+    float f = 1.0f / std::tan(glm::radians(cameraFovDegrees) * 0.5f);
+    // Clip z is the near distance and w the view depth, so depth is near / distance.
+    glm::mat4 proj(0.0f);
+    proj[0][0] = f / aspect;
+    proj[1][1] = -f; // Vulkan's y points down
+    proj[2][3] = -1.0f;
+    proj[3][2] = cameraNear;
+    return proj;
+}
+
+auto cameraDepthAt(float distance) -> float {
+    return cameraNear / std::max(distance, cameraNear);
+}
+
 // Pick a stable horizontal axis perpendicular to worldUp for yaw=0.
 static auto horizontalReference(glm::vec3 worldUp) -> glm::vec3 {
     // When worldUp ≈ ±X, fall back to Y; otherwise use X.
@@ -94,4 +109,5 @@ auto Camera::frame(const AABB& bounds, float fovRadians) -> void {
     // small padding so the object isn't right against the screen edge.
     auto dist = std::max(radius / std::sin(fovRadians * 0.5f), 0.01f) * 1.2f;
     position = center - forward() * dist;
+    speed = std::clamp(dist * 0.1f, 1.0f, 500.0f);
 }

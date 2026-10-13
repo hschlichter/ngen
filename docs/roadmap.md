@@ -61,7 +61,8 @@ server that packs, and an introspection tool. What has landed of it is under [La
 ## Caldera
 
 Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's map as USD: about 17.5 million prims and over 2 billion points over
-2×2 miles, Z-up in inches; non-commercial licence). It is the large-scene test for most of the above.
+2×2 miles, Z-up in inches; non-commercial licence). It is the large-scene test for most of the above. The UsdLod-converted fork (branch
+`usdlod`) is checked out at `assets/caldera/` (git-ignored) and served by the repo's asset server like any test asset.
 - **Load it at all**: payloads and proxies as sub-packs, loaded on demand; the default lightweight view first, detail streamed in (Streaming,
   above).
 - **LOD through UsdLod**: the engine's LOD system selects and streams from Caldera's UsdLod roots (the converted branch, under Landed); it
@@ -106,13 +107,11 @@ Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's ma
   at a distance); a per-material "casts no shadow" for decals, which today cast mask-shaped shadows onto the wall they lie on (trigger: it bothers).
 - **Material model**: factors and more texture maps; per-material sampler state from USD.
 - **Incremental GPU updates** for non-transform changes (part of the editor split).
-- **Lighting at kilometre scale** — one sun and nothing else: surfaces facing away from it are flat black, with no sky or ambient term, and
-  the shadow cascades are fitted to the 3,000 m far plane, so shadows across a map are coarse. Needs a sky or ambient term (a constant one
-  until dome lights and IBL, under Multiple lights), and cascades fitted to what is near the camera rather than the whole depth range, or
-  shadows limited by distance. Trigger: Caldera in the view.
-- **Depth range and camera framing for large scenes** — the far plane is a fixed 3,000 m, and framing a scene puts the camera where the whole
-  of it fits: Caldera's map frames from 60 km out, past the far plane, and the frame is empty. Options: reversed-Z depth with an infinite or
-  scene-fitted far plane; framing that keeps the camera inside the depth range. Trigger: Caldera in the view.
+- **Lighting at kilometre scale** — one sun and nothing else: surfaces facing away from it are flat black, with no sky or ambient term. Needs a
+  sky or ambient term (a constant one until dome lights and IBL, under Multiple lights). Shadows end at a shadow distance since
+  [plan_depth_range.md](plan_depth_range.md); a fade before it is deferred there. Trigger: Caldera in the view (it is, now).
+- **Framing Caldera** — framing the whole scene fits a large flat ground disc, so the map frames from about 60 km with the island small in the
+  middle; `--camera-frame=<district>` frames a district. Options: frame the island's prims by default, or author the default camera in the map.
 - **Swapchain format** — the backbuffer takes whatever format the driver lists first: headless runs get UNORM, a window sRGB, so headless
   screenshots don't match the window's brightness. Needs a decision (the imgui colours are corrected for sRGB targets).
 - Smaller items with triggers: octahedral normals, front-to-back sort, de-interleaved/16-bit vertex streams, 16-bit indices.
@@ -155,6 +154,10 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
 
+- **Depth range for large scenes** — [plan_depth_range.md](plan_depth_range.md). The camera uses reversed-Z with no far plane, so scenes of
+  any size draw and nothing is clipped at a distance. Shadows end at a shadow distance (200 m by default), and framing sets the fly speed. One
+  `cameraProjection` replaces four copies of the range, and frustum planes, corners and gizmo rays follow the convention. Caldera draws with no
+  camera flag.
 - **Asset change notices** — [plan_asset_change_notices.md](plan_asset_change_notices.md). The asset server watches the sources of what each
   client received (inotify on directories, polling as the fallback and `--watch=poll`) and sends `asset.changed`; clients request again, and
   nothing packs without a request. ngen-view reloads changed shaders in place (pipelines recreated, old ones retired, a broken shader keeps the

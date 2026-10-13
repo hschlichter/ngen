@@ -61,9 +61,9 @@ auto DebugViewPass::init(RhiDevice* dev, PipelineRegistry& pipelineRegistry, uin
     for (int doubleSided = 0; doubleSided < 2; doubleSided++) {
         const char* cull = doubleSided != 0 ? "cullnone" : "cullback";
         desc.raster.cullMode = doubleSided != 0 ? RhiCullMode::None : RhiCullMode::Back;
-        // Same position expression as the geometry pass: LessOrEqual keeps its visible surfaces.
+        // Same position expression as the geometry pass: GreaterOrEqual (reversed-Z) keeps its visible surfaces.
         desc.depthFormat = depthFormat;
-        desc.depth = {.testEnable = true, .writeEnable = false, .compareOp = RhiCompareOp::LessOrEqual};
+        desc.depth = {.testEnable = true, .writeEnable = false, .compareOp = RhiCompareOp::GreaterOrEqual};
         desc.blend = {};
         pipelines[doubleSided] = registry->registerGraphics(std::format("debugview.pipeline.{}", cull), desc, PipelineUse::FirstUse);
         // Overdraw: every fragment counts, so no depth; blending adds 1 per fragment.

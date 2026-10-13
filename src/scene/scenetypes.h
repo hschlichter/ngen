@@ -76,7 +76,9 @@ struct AABB {
 struct Frustum {
     std::array<glm::vec4, 6> planes;
 
-    static auto fromViewProj(const glm::mat4& viewProj) -> Frustum {
+    // `reversedDepth`: the matrix maps the near plane to depth 1 and the far one to 0 (the camera's; a shadow cascade's is standard). The
+    // planes keep their order either way: 4 is near, 5 far. An infinite far plane has no normal: it is kept as an always-passing plane.
+    static auto fromViewProj(const glm::mat4& viewProj, bool reversedDepth = false) -> Frustum {
         // glm is column-major: row i of the matrix is (m[0][i], m[1][i], m[2][i], m[3][i]).
         auto row = [&](int i) {
             return glm::vec4(viewProj[0][i], viewProj[1][i], viewProj[2][i], viewProj[3][i]);
@@ -86,16 +88,18 @@ struct Frustum {
         auto r2 = row(2);
         auto r3 = row(3);
         Frustum f;
-        f.planes[0] = r3 + r0; // left:   x >= -w
-        f.planes[1] = r3 - r0; // right:  x <=  w
-        f.planes[2] = r3 + r1; // bottom: y >= -w
-        f.planes[3] = r3 - r1; // top:    y <=  w
-        f.planes[4] = r2;      // near:   z >= 0 (Vulkan depth range)
-        f.planes[5] = r3 - r2; // far:    z <= w
+        f.planes[0] = r3 + r0;                      // left:   x >= -w
+        f.planes[1] = r3 - r0;                      // right:  x <=  w
+        f.planes[2] = r3 + r1;                      // bottom: y >= -w
+        f.planes[3] = r3 - r1;                      // top:    y <=  w
+        f.planes[4] = reversedDepth ? r3 - r2 : r2; // near: z <= w reversed, z >= 0 standard (Vulkan depth range)
+        f.planes[5] = reversedDepth ? r2 : r3 - r2; // far:  z >= 0 reversed, z <= w standard
         for (auto& p : f.planes) {
             float len = glm::length(glm::vec3(p));
             if (len > 0.0f) {
                 p /= len;
+            } else {
+                p = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
             }
         }
         return f;
@@ -119,12 +123,13 @@ struct Frustum {
     }
 
     // World-space corners of the frustum the matrix describes, for drawing it. Order:
-    // near plane (-x-y, +x-y, +x+y, -x+y) then far plane in the same order.
-    static auto corners(const glm::mat4& viewProj) -> std::array<glm::vec3, 8> {
+    // near plane (-x-y, +x-y, +x+y, -x+y) then far plane in the same order. The depths of the two
+    // planes default to a standard matrix's; a reversed one with no far plane passes a finite far depth.
+    static auto corners(const glm::mat4& viewProj, float nearDepth = 0.0f, float farDepth = 1.0f) -> std::array<glm::vec3, 8> {
         auto inv = glm::inverse(viewProj);
         std::array<glm::vec3, 8> out;
         int i = 0;
-        for (float z : {0.0f, 1.0f}) {
+        for (float z : {nearDepth, farDepth}) {
             for (auto [x, y] : {std::pair{-1.0f, -1.0f}, std::pair{1.0f, -1.0f}, std::pair{1.0f, 1.0f}, std::pair{-1.0f, 1.0f}}) {
                 auto p = inv * glm::vec4(x, y, z, 1.0f);
                 out[i++] = glm::vec3(p) / p.w;
@@ -137,4 +142,14 @@ struct Frustum {
 struct Ray {
     glm::vec3 origin;
     glm::vec3 direction;
+
+    // The camera ray through a point in normalised device coordinates, from the inverse of the camera's view-projection (reversed depth:
+    // 1 at the near plane, 0 at infinity). It starts on the near plane and passes the point at depth 0.5, twice as far.
+    static auto fromCamera(float ndcX, float ndcY, const glm::mat4& invViewProj) -> Ray {
+        auto nearPoint = invViewProj * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
+        auto farther = invViewProj * glm::vec4(ndcX, ndcY, 0.5f, 1.0f);
+        auto origin = glm::vec3(nearPoint) / nearPoint.w;
+        auto through = glm::vec3(farther) / farther.w;
+        return {.origin = origin, .direction = glm::normalize(through - origin)};
+    }
 };

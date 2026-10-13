@@ -221,7 +221,7 @@ so early depth testing holds for everything else. The debug views discard in `de
 | `InstanceCullPass` | The three culling passes above. |
 | `ShadowPass` | Depth-only into the cascade atlas: per cascade, the tile's viewport and scissor, the cascade matrix as a push constant, one indirect call per bucket. Position pool only, except the cutout buckets. |
 | `DepthPrepass` | Optional depth-only pass over the camera regions so the geometry pass can use an Equal depth test and shade each pixel once. `depthonly.vert` mirrors `gbuffer.vert`'s position expression with `invariant gl_Position`. |
-| `GeometryPass` | G-buffer: albedo (RGBA8, alpha carries the sampled mip level for the mip view), normals (RGBA16F), the instance id (`gbuffer.instance`, R32_UINT: instance index + 1, 0 where nothing is drawn), depth. Eight pipelines: opaque or cutout, cull back or none, Less-with-write or Equal-without after the prepass. |
+| `GeometryPass` | G-buffer: albedo (RGBA8, alpha carries the sampled mip level for the mip view), normals (RGBA16F), the instance id (`gbuffer.instance`, R32_UINT: instance index + 1, 0 where nothing is drawn), depth. Eight pipelines: opaque or cutout, cull back or none, Greater-with-write or Equal-without after the prepass. |
 | `DebugViewPass`, `DebugViewResolve` | Only while a debug view is on (`DebugView`): the camera regions drawn again through `debugview.vert/.geom/.frag` into an RGBA32F value target (`debugview.value`), then coloured by `debugview.comp` into `debugview.color`, which the blit takes instead of the AA result. |
 | `LightingPass` | Fullscreen deferred shading into a float scene-colour target: one directional light (the first shadow-enabled directional light, else the first directional), cascade selection by view depth, hardware-compare PCF, shadow tint, and the debug views (`GBufferView`) and overlays. |
 | `AAPass` | FXAA as a compute pass, scene colour to a float storage image; falls back to a blit when the format cannot be a storage image. |
@@ -265,9 +265,23 @@ is its own invocation group.
 ## Shadows
 
 Cascaded shadow maps in one atlas: one tile for a single cascade, a 2×2 grid otherwise (three cascades by default, `ShadowCascadeSettings`). The main
-thread fits the cascades (`fitShadowCascades`: practical split scheme, bounding-sphere ortho frusta snapped to texels, far plane pulled in to the scene
-bounds) and puts them in the snapshot; the GPU culling tests instances against each cascade; the lighting pass picks the cascade by view depth and
-samples the atlas with a hardware compare sampler (3×3 PCF by default).
+thread fits the cascades (`fitShadowCascades`: practical split scheme, bounding-sphere ortho frusta snapped to texels) from the near plane to the
+shadow distance (`ShadowCascadeSettings::maxDistance`, 200 m by default, the Render Debug window's slider and `shadow distance=`), pulled in to the
+scene bounds; beyond it surfaces are lit without shadow. It puts them in the snapshot; the GPU culling tests instances against each cascade; the
+lighting pass picks the cascade by view depth and samples the atlas with a hardware compare sampler (3×3 PCF by default). The shadow maps use
+standard depth (cleared to 1, compare `LessOrEqual`): each cascade's orthographic depth is linear and fitted to it, so reversing it gains nothing.
+
+## Depth
+
+The camera uses reversed-Z with no far plane (`cameraProjection` in `src/camera.h`): depth is `near / distance`, 1 at the near plane (0.1 m) and
+falling to 0 at infinity, so nothing is clipped at a distance and the 32-bit float depth keeps its precision far away.
+- **Conventions.** Camera depth is cleared to 0. The depth prepass and geometry pass write with `Greater`, the geometry pass tests `Equal` after
+  the prepass, the debug views test `GreaterOrEqual` and the debug lines `Greater`. `RhiDepthState`'s default (`Less`) is the shadow pass's.
+- **Reading it.** `lighting.frag`: background where depth is 0, view distance `near / depth` (cascade selection), world position through the inverse
+  view-projection. The depth preview is a log scale from the near plane to the scene's farthest corner.
+- **Frustum and rays.** `Frustum::fromViewProj(viewProj, reversedDepth)` keeps the plane order (4 near, 5 far) for the camera and the cascades; the
+  camera's far plane has no normal and always passes. `Frustum::corners` takes the depths of its two planes, so the frozen-frustum overlay ends
+  at the shadow distance. `Ray::fromCamera` unprojects depths 1 and 0.5 for the gizmos' mouse rays.
 
 ## Editor support
 
