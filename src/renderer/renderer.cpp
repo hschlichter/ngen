@@ -28,7 +28,7 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, AssetClien
     using enum RhiFormat;
 
     device = rhiDevice;
-    pipelineRegistry.init(device, shaders);
+    pipelineRegistry.init(device, shaders, &deletionQueue);
 
     swapchain = device->createSwapchain(windowExtent);
     if (swapchain == nullptr) {
@@ -454,13 +454,13 @@ auto Renderer::uploadCutout(uint32_t materialIndex, const MaterialDesc& material
     return cutout;
 }
 
-auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void {
+auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib, bool librariesReplaced) -> void {
     using enum RhiDescriptorType;
     auto start = std::chrono::steady_clock::now();
 
     lights = world.lights;
 
-    bool instancesChanged = (gpuInstances.size() != world.meshInstances.size());
+    bool instancesChanged = librariesReplaced || gpuInstances.size() != world.meshInstances.size();
     if (!instancesChanged) {
         for (size_t m = 0; m < world.meshInstances.size(); m++) {
             const auto& inst = world.meshInstances[m];
@@ -475,7 +475,7 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         return;
     }
 
-    bool geometryChanged = (gpuInstances.size() != world.meshInstances.size());
+    bool geometryChanged = librariesReplaced || gpuInstances.size() != world.meshInstances.size();
     if (!geometryChanged) {
         for (size_t m = 0; m < world.meshInstances.size(); m++) {
             const auto& inst = world.meshInstances[m];
@@ -932,7 +932,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     // Pipelines whose shaders arrived since the last frame, a few at a time; none change while the frame records.
     {
         PROFILE_ZONE("PipelineUpdate");
-        pipelineRegistry.update();
+        pipelineRegistry.update(m_frameIndex);
     }
 
     // Build frame graph

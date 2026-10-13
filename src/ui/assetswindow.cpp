@@ -306,6 +306,14 @@ auto drawAssetsWindow(bool& show, const std::vector<AssetLogEntry>& log, AssetsW
                 } else {
                     ImGui::TextUnformatted(stateName(entry.state));
                 }
+                if (entry.stale) {
+                    // The server said its sources changed; it is requested again or waits for whoever uses it.
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "stale");
+                }
+                if (entry.changes > 0 && ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("its sources changed %u time%s since the view started", entry.changes, entry.changes == 1 ? "" : "s");
+                }
                 ImGui::TableSetColumnIndex(ColumnSource);
                 if (entry.state == AssetLogState::Received) {
                     ImGui::TextUnformatted(entry.packed ? "packed" : "cache");

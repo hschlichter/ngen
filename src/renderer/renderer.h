@@ -63,7 +63,9 @@ public:
     auto createStartupPipelines() -> bool;
     // Thread-safe: every pipeline and its state, for the `pipelines` record.
     auto pipelineInfos() const -> std::vector<PipelineInfo> { return pipelineRegistry.infos(); }
-    auto uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void;
+    // Uploads what changed since the last call: transforms only when draws keep their meshes and materials, else the geometry, materials
+    // and textures. `librariesReplaced`: the handles may name new content, so everything is uploaded again.
+    auto uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib, bool librariesReplaced = false) -> void;
     auto render(RenderSnapshot& snapshot) -> void;
     auto destroy() -> void;
 
@@ -81,6 +83,8 @@ public:
     // Render debugger inputs, set by the render thread before render().
     auto setRenderDebugEnabled(bool enabled) -> void { renderDebugEnabled = enabled; }
     auto setTextureInspect(const TextureInspectRequest& request) -> void { textureInspectRequest = request; }
+    // Asset ids whose sources changed: the ones that are shaders are requested again and their pipelines recreated when they arrive.
+    auto reloadShaders(std::span<const std::string> ids) -> void { pipelineRegistry.reload(ids); }
     // Writes one mip level of a material texture as PNG after this frame's fence.
     auto requestTextureDump(uint32_t material, uint32_t level, std::string path) -> void {
         textureDump = {.material = material, .level = level, .path = std::move(path)};

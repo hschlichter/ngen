@@ -79,7 +79,7 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
 - `--script=FILE`: `<frame> <verb> [args]` per line, same verbs as the flags plus `quit`, `pick <x> <y>` (select what is drawn at that framebuffer pixel,
   read back from the GPU; the `Picked` event names it), `translate /prim dx,dy,dz` (the view's own local opinion, never saved),
   `purposes guide=on|off,proxy=on|off` (draw guide and proxy prims), `repack <id>...|scene` (force the asset server to repack them, and
-  rebuild the scene; a live view takes a source edit this way: `./ngen-cli introspect call view view.repack '{"ids":["file.usda"]}'`),
+  rebuild the scene; a live view takes a source edit by itself, from the asset server's change notice, so this is for repacking an unchanged source),
   `goto-asset <id> [all]` (move the camera to an asset's next draw, nearest first, and select it; `all` frames every draw),
   `assets-of [/prim]` (the assets drawn at or under a prim use, or the selection's; `view.assetsOf` answers with them),
   `lod <LOD root path> <level>` (the level a LOD root wants; loads it) and `cull on|off|freeze|unfreeze|show|hide`

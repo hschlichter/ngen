@@ -12,6 +12,7 @@
 #include <format>
 #include <fstream>
 #include <print>
+#include <set>
 #include <thread>
 #include <unistd.h>
 
@@ -107,6 +108,8 @@ auto AssetServer::start(const Options& startOptions) -> std::expected<void, std:
     jobs = std::make_unique<PackJobs>(workers);
 
     addRecords();
+    watcher.start([this](std::vector<fs::path> files) { onFilesChanged(std::move(files)); }, [](const std::string& message) { traceWarning("watch: {}", message); }, options.pollOnly);
+    traceLine("watching the sources of what clients receive, {}", options.pollOnly ? "polled once a second" : "through inotify");
     traceStream = std::make_unique<trace::TraceStream>(rpc, std::format("asset:{}", getpid()));
     rpc.setRequestHandler([this](RpcServer::ConnectionId connection, const rpc::Json& message, std::vector<std::byte>) {
         onMessage(connection, message);
@@ -115,6 +118,7 @@ auto AssetServer::start(const Options& startOptions) -> std::expected<void, std:
         traceLine("client {} {}", connection, connected ? "connected" : "disconnected");
         if (!connected) {
             traceStream->disconnected(connection);
+            forget(connection);
         }
         std::lock_guard lock(streamMutex);
         if (connected) {
@@ -148,6 +152,8 @@ auto AssetServer::start(const Options& startOptions) -> std::expected<void, std:
 }
 
 auto AssetServer::stop() -> void {
+    // First: the watcher's thread sends notices through rpc.
+    watcher.stop();
     if (traceStream) {
         traceStream->finish(std::chrono::seconds(1));
     }
@@ -260,11 +266,21 @@ auto AssetServer::status() -> rpc::Json {
         {"tasksRunning", jobs->running()},
         {"tasksQueued", jobs->queued()},
         {"packerRuns", packerRuns.load()},
+        {"watchedDirectories", watcher.watchedDirectories()},
+        {"polledDirectories", watcher.polledDirectories()},
+        {"changeNotices", noticesSent.load()},
     };
 }
 
 auto AssetServer::clientsRecord() -> rpc::Json {
     auto clients = rpc::Json::array();
+    std::unordered_map<RpcServer::ConnectionId, size_t> receivedCount;
+    {
+        std::lock_guard lock(watchMutex);
+        for (const auto& [connection, ids] : receivedBy) {
+            receivedCount[connection] = ids.size();
+        }
+    }
     std::lock_guard lock(streamMutex);
     for (auto connection : connections) {
         size_t peak = 0;
@@ -279,6 +295,7 @@ auto AssetServer::clientsRecord() -> rpc::Json {
             {"queuedBytes", rpc.queuedBytes(connection)},
             {"peakQueuedBytes", peak},
             {"assetsWaiting", waiting},
+            {"received", receivedCount[connection]},
         });
     }
     return clients;
@@ -548,6 +565,8 @@ auto AssetServer::deliver(const std::string& id, const Outcome& outcome) -> void
     auto version = hashText(outcome.version);
     std::shared_ptr<const std::vector<std::byte>> bytes;
     for (const auto& subscriber : subscribers) {
+        // Answered, sent, held or failed: a failed repack leaves the client with what it had, and a fix to the source is a change too.
+        received(subscriber.connection, id, !outcome.ok);
         if (!outcome.ok) {
             rpc.send(subscriber.connection, rpc::makeNotification("asset.failed", {{"request", subscriber.request}, {"id", id}, {"errors", outcome.errors}, {"ms", outcome.ms}}));
             answered(subscriber.request, Answer::Failed, 0);
@@ -635,6 +654,156 @@ auto AssetServer::pump(RpcServer::ConnectionId connection) -> void {
             stream.queue.push_back(std::move(rest));
         }
     }
+}
+
+auto AssetServer::jobKeyFor(const std::string& id) const -> std::optional<uint64_t> {
+    auto primary = id.substr(0, id.find('#'));
+    auto ruleIt = ruleByExtension.find(fs::path(primary).extension().string());
+    if (ruleIt == ruleByExtension.end()) {
+        return std::nullopt;
+    }
+    return jobKey(rules[ruleIt->second]);
+}
+
+auto AssetServer::received(RpcServer::ConnectionId connection, const std::string& id, bool failed) -> void {
+    auto files = cache.filesOf(id);
+    std::lock_guard lock(watchMutex);
+    {
+        std::lock_guard streamLock(streamMutex);
+        if (!connections.contains(connection)) {
+            return;
+        }
+    }
+    if (receivedBy[connection].insert(id).second) {
+        holders[id]++;
+    }
+    if (failed) {
+        failedFor[connection].insert(id);
+    } else if (auto it = failedFor.find(connection); it != failedFor.end()) {
+        it->second.erase(id);
+    }
+    watchFiles(id, std::move(files));
+}
+
+auto AssetServer::forget(RpcServer::ConnectionId connection) -> void {
+    std::lock_guard lock(watchMutex);
+    auto it = receivedBy.find(connection);
+    if (it == receivedBy.end()) {
+        return;
+    }
+    for (const auto& id : it->second) {
+        auto holder = holders.find(id);
+        if (holder == holders.end() || --holder->second > 0) {
+            continue;
+        }
+        holders.erase(holder);
+        watchFiles(id, {});
+    }
+    receivedBy.erase(it);
+    failedFor.erase(connection);
+}
+
+auto AssetServer::watchFiles(const std::string& id, std::vector<std::string> files) -> void {
+    std::ranges::sort(files);
+    auto& current = filesOfAsset[id];
+    std::vector<fs::path> added;
+    std::vector<fs::path> removed;
+    for (const auto& file : current) {
+        if (std::ranges::binary_search(files, file)) {
+            continue;
+        }
+        auto& assets = assetsOfFile[file];
+        assets.erase(id);
+        if (assets.empty()) {
+            assetsOfFile.erase(file);
+            removed.emplace_back(file);
+        }
+    }
+    for (const auto& file : files) {
+        if (std::ranges::binary_search(current, file)) {
+            continue;
+        }
+        auto& assets = assetsOfFile[file];
+        if (assets.empty()) {
+            added.emplace_back(file);
+        }
+        assets.insert(id);
+    }
+    if (files.empty()) {
+        filesOfAsset.erase(id);
+    } else {
+        current = std::move(files);
+    }
+    watcher.unwatch(removed);
+    watcher.watch(added);
+}
+
+auto AssetServer::onFilesChanged(std::vector<fs::path> files) -> void {
+    std::set<std::string> candidates;
+    {
+        std::lock_guard lock(watchMutex);
+        for (const auto& file : files) {
+            auto it = assetsOfFile.find(file.string());
+            if (it != assetsOfFile.end()) {
+                candidates.insert(it->second.begin(), it->second.end());
+            }
+        }
+    }
+    // A touch, or a save of the same bytes, leaves the cache up to date: nothing changed, except to a client whose last answer for the id
+    // was a failure (an edit that broke the source, undone).
+    std::vector<std::string> changed;
+    std::vector<std::string> restored;
+    for (const auto& id : candidates) {
+        auto key = jobKeyFor(id);
+        if (!key || !cache.upToDate(id, *key)) {
+            changed.push_back(id);
+        } else {
+            restored.push_back(id);
+        }
+    }
+    std::string fileList;
+    for (const auto& file : files) {
+        fileList += (fileList.empty() ? "" : ", ") + file.string();
+    }
+    std::vector<std::pair<RpcServer::ConnectionId, std::vector<std::string>>> notices;
+    size_t told = changed.size();
+    {
+        std::lock_guard lock(watchMutex);
+        std::set<std::string> restoredTold;
+        for (const auto& [connection, ids] : receivedBy) {
+            std::vector<std::string> held;
+            for (const auto& id : changed) {
+                if (ids.contains(id)) {
+                    held.push_back(id);
+                }
+            }
+            if (auto failedIt = failedFor.find(connection); failedIt != failedFor.end()) {
+                for (const auto& id : restored) {
+                    if (failedIt->second.contains(id)) {
+                        held.push_back(id);
+                        restoredTold.insert(id);
+                    }
+                }
+            }
+            if (!held.empty()) {
+                notices.emplace_back(connection, std::move(held));
+            }
+        }
+        told += restoredTold.size();
+    }
+    if (notices.empty()) {
+        traceLine("changed: {}; content unchanged, nothing to tell", fileList);
+        return;
+    }
+    for (const auto& [connection, ids] : notices) {
+        rpc.send(connection, rpc::makeNotification("asset.changed", {{"ids", ids}}));
+        noticesSent++;
+    }
+    TRACE_EVENT("Asset", "AssetChanged", "asset-server")
+        .text(std::format("changed: {}; {} asset{} out of date, {} client{} told", fileList, told, told == 1 ? "" : "s", notices.size(), notices.size() == 1 ? "" : "s"))
+        .field("files", (int64_t) files.size())
+        .field("assets", (int64_t) told)
+        .field("clients", (int64_t) notices.size());
 }
 
 auto AssetServer::answered(int64_t request, Answer answer, uint64_t bytes) -> void {

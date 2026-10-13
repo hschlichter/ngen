@@ -28,7 +28,10 @@ server that packs, and an introspection tool. What has landed of it is under [La
 2. **Everything async** — *from the objective.* Scenes open instantly with placeholders; geometry, textures, shaders, sub-packs and LOD levels
    arrive and appear when ready, never blocking a frame. Builds on the asset server's streaming, async shaders, sub-packs as load units, and
    the editor split's incremental GPU scene. Shaders are async since [plan_async_shaders.md](plan_async_shaders.md) (start-up ones before
-   the first frame, the debug views' on first use); the view still loads the scene synchronously.
+   the first frame, the debug views' on first use); the view still loads the scene synchronously, and changes to what is drawn (LOD,
+   purposes, repack) block and re-upload every texture.
+   - Edits reach a running view since [plan_asset_change_notices.md](plan_asset_change_notices.md) (under Landed), but scene assets through
+     the blocking rebuild. Next: the async scene and incremental GPU updates, which take the same notices without the stall.
 
 ## Engine features
 
@@ -76,8 +79,8 @@ Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's ma
 - **Linear (non-colour) textures** — the request must carry intent (e.g. `#linear` id or a per-pattern rule). Trigger: first normal/roughness map.
 - **Mip-level streaming** — now part of **Streaming** (Engine features). Packing side: levels addressable on their own, so the server can send
   the lowest first.
-- **Hot reload / source edits reaching a running view** — *parked* until the architecture is up. Options: server sends `pack.stale`, or clients
-  re-request on command. Nothing packs without a request either way.
+- **An edit while its file's job packs** can be recorded as packed from the new content
+  ([plan_asset_change_notices.md](plan_asset_change_notices.md), Deferred). Trigger: a stale asset after a quick double save.
 - **Client-side cache** keyed by id and version. Trigger: start-up transfer time, or a remote view.
 - **Remote connections and authentication** (beyond loopback). Trigger: a view on another machine or a devkit.
 - **Priority** of pack requests, and changing a request's priority; no cancellation: a request no longer needed still completes and is cached,
@@ -152,6 +155,10 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
 
+- **Asset change notices** — [plan_asset_change_notices.md](plan_asset_change_notices.md). The asset server watches the sources of what each
+  client received (inotify on directories, polling as the fallback and `--watch=poll`) and sends `asset.changed`; clients request again, and
+  nothing packs without a request. ngen-view reloads changed shaders in place (pipelines recreated, old ones retired, a broken shader keeps the
+  old ones) and fetches and rebuilds changed scene assets through the blocking Repack path.
 - **Cutout materials** — [plan_cutout_materials.md](plan_cutout_materials.md). UsdPreviewSurface opacity with `opacityThreshold > 0` is packed
   (constant or texture channel, raw flag, threshold) and drawn through four buckets per view, with cutout pipelines that discard in the geometry
   pass, depth prepass, shadow pass and debug views; prims with a cutout submesh cast shadows per submesh. Sponza's decals draw as dirt, not quads,

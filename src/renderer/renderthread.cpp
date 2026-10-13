@@ -80,7 +80,7 @@ auto RenderThread::threadLoop() -> void {
                 pendingUpload.reset();
                 PROFILE_ZONE("Upload");
                 PROFILE_ZONE_VALUE(upload.world.meshInstances.size());
-                renderer->uploadRenderWorld(upload.world, *upload.meshLib, *upload.matLib);
+                renderer->uploadRenderWorld(upload.world, *upload.meshLib, *upload.matLib, upload.librariesReplaced);
             }
         }
 
@@ -92,6 +92,12 @@ auto RenderThread::threadLoop() -> void {
         {
             std::lock_guard lock(textureInspectMutex);
             renderer->setTextureInspect(textureInspectRequest);
+        }
+        {
+            std::lock_guard lock(reloadMutex);
+            if (!reloadIds.empty()) {
+                renderer->reloadShaders(std::exchange(reloadIds, {}));
+            }
         }
 
         {

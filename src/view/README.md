@@ -52,8 +52,15 @@ them, ready for Repack selected. `assets-of [prim]` and `view.assetsOf` answer w
 or Select shown for every row shown. Repack selected (or the row's menu) has the asset server repack the selection even when its cache is up
 to date; Repack scene does it for every asset of the scene (`ViewScene::assetIds`: layer packs, meshes, materials, textures). The view
 fetches what was repacked, fetches again the meshes and materials of a repacked USD file, and rebuilds its scene, so an edit to a source shows
-without a restart (`ViewScene::repack`, the `repack <id>... | scene` verb and `view.repack`; it blocks, as loading does, and traces
-`AssetsRepacked`). A shader's repack refreshes only the server's cache: the view takes new shaders at its next start.
+without a restart (`ViewScene::refresh` with `force`, the `repack <id>... | scene` verb and `view.repack`; it blocks, as loading does, and traces
+`AssetsRefreshed`). A shader's repack refreshes only the server's cache.
+
+**Edits reach the view by themselves.** The asset server tells the view when a source of something it received changes (`asset.changed`,
+`src/asset/README.md`, "Change notices"). Each frame the view takes the changed ids: shaders are requested again and their pipelines recreated
+when they arrive (`src/renderer/README.md`, "Pipelines"); the scene's assets go through `ViewScene::refresh` without `force`, which fetches what
+changed and rebuilds the scene, the same blocking path as Repack (`AssetsRefreshed` with `forced: false`). The Assets window marks a changed
+row stale until its new version arrives; the `assets` record has `stale` and `changes`. A rebuild hands the renderer new mesh and material
+libraries, and the renderer then uploads everything again, since the same handles may name new content.
 
 ## Selection, picking and gizmos
 

@@ -13,14 +13,24 @@
 #include <filesystem>
 #include <print>
 #include <pthread.h>
+#include <string_view>
 #include <unistd.h>
 
 namespace fs = std::filesystem;
 
 auto main(int argc, char** argv) -> int {
-    if (argc > 1) {
-        std::println(stderr, "usage: {}   (no arguments; stop it with Ctrl-C)", argv[0]);
-        return 2;
+    bool pollOnly = false;
+    for (int i = 1; i < argc; i++) {
+        std::string_view arg = argv[i];
+        if (arg == "--watch=poll") {
+            pollOnly = true;
+        } else if (arg == "--watch=inotify") {
+            pollOnly = false;
+        } else {
+            std::println(stderr, "usage: {} [--watch=inotify|poll]   (stop it with Ctrl-C)", argv[0]);
+            std::println(stderr, "  --watch=poll  poll the sources of what clients received once a second, instead of inotify");
+            return 2;
+        }
     }
     // Signals are waited for on the main thread; every other thread starts with them blocked.
     sigset_t signals;
@@ -40,6 +50,7 @@ auto main(int argc, char** argv) -> int {
     options.binDirectory = bin;
     options.config = bin.filename().string();
     options.platform = bin.parent_path().filename().string();
+    options.pollOnly = pollOnly;
 
     AssetServer server;
     if (auto started = server.start(options); !started) {

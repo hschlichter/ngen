@@ -16,7 +16,10 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
+#include <string>
 #include <thread>
+#include <vector>
 
 class Renderer;
 class MeshLibrary;
@@ -26,6 +29,8 @@ struct RenderUpload {
     RenderWorld world;
     std::shared_ptr<const MeshLibrary> meshLib;
     std::shared_ptr<const MaterialLibrary> matLib;
+    // The libraries are new ones: meshes and materials may have new content behind the same handles, so everything is uploaded again.
+    bool librariesReplaced = false;
 };
 
 class RenderThread {
@@ -74,6 +79,11 @@ public:
         std::lock_guard lock(textureInspectMutex);
         textureInspectRequest = request;
     }
+    // Asset ids whose sources changed; the renderer reloads those that are its shaders before its next frame.
+    auto reloadShaders(std::span<const std::string> ids) -> void {
+        std::lock_guard lock(reloadMutex);
+        reloadIds.insert(reloadIds.end(), ids.begin(), ids.end());
+    }
 
 private:
     auto threadLoop() -> void;
@@ -115,5 +125,7 @@ private:
     uint64_t lastCullResultFrame = 0;
     std::mutex textureInspectMutex;
     TextureInspectRequest textureInspectRequest;
+    std::mutex reloadMutex;
+    std::vector<std::string> reloadIds;
     uint64_t fgDebugFrameCounter = 0;
 };

@@ -141,19 +141,33 @@ auto ViewScene::assetIds() const -> std::vector<std::string> {
     return {ids.begin(), ids.end()};
 }
 
-auto ViewScene::repack(const std::vector<std::string>& ids) -> size_t {
+auto ViewScene::refresh(const std::vector<std::string>& requested, bool force) -> size_t {
     auto start = std::chrono::steady_clock::now();
     auto ours = [this](const std::string& assetId) {
         return requestedPacks.contains(assetId) || meshPacks.contains(assetId) || materialPacks.contains(assetId) || texturePacks.contains(assetId) ||
                failedAssets.contains(assetId);
     };
+    // Without force only the scene's own: another user of the client (the pipeline registry) fetches its assets itself.
+    std::vector<std::string> ids;
+    for (const auto& assetId : requested) {
+        if (force || ours(assetId)) {
+            ids.push_back(assetId);
+        }
+    }
+    if (ids.empty()) {
+        return 0;
+    }
     size_t sceneAssets = (size_t) std::ranges::count_if(ids, ours);
-    assets.request(ids, true);
+    assets.request(ids, force);
     assets.wait(ids);
     std::set<std::string> repackedIds(ids.begin(), ids.end());
     std::set<std::string> repackedFiles;
     size_t failed = 0;
     for (const auto& assetId : ids) {
+        if (!ours(assetId)) {
+            // Repacked on the server; left in the client for whoever uses it.
+            continue;
+        }
         auto asset = assets.take(assetId);
         if (!asset) {
             failed++;
@@ -161,10 +175,7 @@ auto ViewScene::repack(const std::vector<std::string>& ids) -> size_t {
             for (const auto& line : assets.errors(assetId)) {
                 reason += reason.empty() ? line : "; " + line;
             }
-            TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(std::format("{}: repack failed, the scene keeps what it had: {}", assetId, reason.empty() ? std::string("no reason given") : reason));
-            continue;
-        }
-        if (!ours(assetId)) {
+            TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(std::format("{}: {} failed, the scene keeps what it had: {}", assetId, force ? "repack" : "refresh", reason.empty() ? std::string("no reason given") : reason));
             continue;
         }
         failedAssets.erase(assetId);
@@ -196,8 +207,9 @@ auto ViewScene::repack(const std::vector<std::string>& ids) -> size_t {
         rebuild();
     }
     auto ms = msSince(start);
-    TRACE_EVENT("Scene", "AssetsRepacked", id)
-        .text(std::format("{} assets repacked ({} of the scene's, {} failed) and the scene rebuilt in {:.0f} ms", ids.size(), sceneAssets, failed, ms))
+    TRACE_EVENT("Scene", "AssetsRefreshed", id)
+        .text(std::format("{} assets {} ({} of the scene's, {} failed) and the scene rebuilt in {:.0f} ms", ids.size(), force ? "repacked" : "changed at their source fetched again", sceneAssets, failed, ms))
+        .field("forced", force)
         .field("assets", (int64_t) ids.size())
         .field("scene_assets", (int64_t) sceneAssets)
         .field("failed", (int64_t) failed)

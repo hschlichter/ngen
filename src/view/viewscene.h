@@ -38,10 +38,11 @@ public:
 
     // The level a LOD root wants, by its full path; loads it.
     auto setLodLevel(const std::string& rootPath, uint32_t level) -> void;
-    // Has the asset server repack these assets even when its cache is up to date, fetches them, and rebuilds the scene from them; the
-    // meshes and materials of a repacked USD file are fetched again too. Blocks. An asset that isn't the scene's (a shader) is repacked
-    // only on the server. Returns how many of the ids are the scene's.
-    auto repack(const std::vector<std::string>& ids) -> size_t;
+    // Fetches these assets again and rebuilds the scene from them; the meshes and materials of a USD file fetched again are fetched again
+    // too. Blocks. `force` has the asset server repack them even when its cache is up to date (the Assets window's Repack); without it,
+    // what changed at its source is packed again (a change notice), and ids that aren't the scene's are left alone. With it, an asset that
+    // isn't the scene's (a shader) is repacked only on the server. Returns how many of the ids are the scene's.
+    auto refresh(const std::vector<std::string>& ids, bool force = true) -> size_t;
     // Every asset the scene uses: its layer packs, meshes, materials and textures.
     auto assetIds() const -> std::vector<std::string>;
 

@@ -72,6 +72,9 @@ public:
     // The packed file recorded for an asset; nullopt when it has no record.
     auto outputPath(const std::string& id) -> std::optional<std::string>;
 
+    // The files an asset was packed from: its job's packer and inputs. Empty when it has no record.
+    auto filesOf(const std::string& id) -> std::vector<std::string>;
+
 private:
     // The record holding an asset (its own, or its job's for a secondary output) and the asset's packed file; null when none.
     auto find(const std::string& id) -> std::pair<const Record*, const File*>;

@@ -59,6 +59,7 @@ by hand and runs until Ctrl-C or SIGTERM:
 ```sh
 ./ngen-cli asset-server &                          # the set variant's
 ./_out/linux-vulkan/debug/ngen-asset-server &      # any variant's
+./ngen-cli asset-server --watch=poll &             # poll the watched sources instead of inotify
 ```
 
 **Its working directory is the root.** Asset ids are relative to it, packers run in it, the cache is `.ngen-assets/` in it, and it registers in
@@ -76,14 +77,24 @@ is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own c
     and no data.
   - or `asset.failed` `{request, id, errors, ms}`: no rule for the extension, no such file, an id outside the project, the packer's output when it
     failed, or a `<file>#<fragment>` id the file's job didn't write
+- **`asset.changed`** `{ids: [...]}`, a notification the server sends by itself: the sources of these assets, which the connection received,
+  changed (below, "Change notices").
 - **Secondary outputs.** An id with a `#` is served by its file's job: the rule is the file's, and the file is packed (once, for every id of it in
   flight) when it is out of date. One file is packed by one job at a time.
 - **Bulk and shared.** A request's assets are packed in parallel on one worker per hardware thread. An id already being packed, for any client, is
   not packed twice; the result goes to every request that asked.
 - **Streaming and flow control.** Chunks of different assets interleave, so a large asset doesn't hold back small ones requested with it. At most
   8 MiB of pack data is queued on a connection; the next chunk goes out as the queue drains, so a slow client is never dropped for a full queue.
-- **Nothing packs without a request.** The server doesn't watch files and packs nothing at start-up. An edit is picked up by the next request for
-  the asset.
+- **Nothing packs without a request.** The server packs nothing at start-up and nothing by itself. An edit is packed by the next request for
+  the asset; the server tells the clients that hold it that one is due (below).
+- **Change notices.** For every asset a connection was answered for (sent, held or failed), the server watches the files it was packed from:
+  the record's packer and inputs, the source and its depfile's files. It watches their directories (`server/filewatcher.h`, inotify on Linux),
+  so a save through a rename is seen; a directory inotify can't watch (out of watches) is polled once a second, and `--watch=poll` polls them
+  all. Changes are gathered for 100 ms and checked with the cache's up-to-date test, so a touch or a save of the same bytes says nothing.
+  Each connection holding an asset that is out of date gets one `asset.changed` with those ids, every id of the file it holds (a USD file's
+  layer pack, meshes and materials together). A connection whose last answer for an id was a failure is also told when the source goes back to
+  what the cache holds (a broken edit undone). The server packs nothing for a notice: a client that still wants the asset requests it. A
+  connection is watched until it closes. The trace has `AssetChanged` (files, assets, clients told) and a line for changes that tell nobody.
 - **The trace.** The server's log is its trace (`server/assettrace.h`), printed one timestamped line per event like every process's: its
   rules and cache at start-up, clients connecting and leaving, each request with its asset count, per asset whether it was up to date, packed (time, size, inputs, version) or failed
   (with the packer's output), and per request a summary when it is done (time, assets sent and bytes, held, failed). Redirect it to a file to keep
@@ -91,8 +102,9 @@ is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own c
   `text`), streamed like any process's trace (`src/trace/README.md`), so `ngen-introspect` shows it next to the view's events. A request
   that fails (refused, no rule, no such file, the packer failed, and the packer's output) is a warning, on stderr; the rest is info, on stdout.
 - **Records** (`introspect.list`, `introspect.get`; [`src/introspect/README.md`](../introspect/README.md)): `status` (pid, variant, clients,
-  tasks running and queued, and `packerRuns`, the number of packer processes run so far), `rules`, `cache` (every packed asset with its inputs),
-  `requests` (in flight and recently finished) and `clients` (bytes queued and peak queued, assets waiting to stream). For example
+  tasks running and queued, `packerRuns`, the number of packer processes run so far, `watchedDirectories` and `polledDirectories`, and
+  `changeNotices` sent), `rules`, `cache` (every packed asset with its inputs), `requests` (in flight and recently finished) and `clients` (bytes
+  queued and peak queued, assets waiting to stream, and `received`, the assets it is watched for). For example
   `./ngen-cli introspect get asset status`.
 
 ## The cache
@@ -182,18 +194,21 @@ payload, a UsdLod root with payload levels, bindings on a parent and a child, vi
 ## The client
 
 `AssetClient` (`assetclient.h`, the `assetclient` library) is the engine side. `connect(variant)` finds the asset server of that variant and project
-through discovery, and fails when none is running. `request(ids)` sends one `asset.request`; `wait(ids)` blocks until each has arrived or failed;
-`find(id)` returns the bytes and version, `take(id)` moves them out of the client (a later request streams them again), `stats()` counts what
+through discovery, and fails when none is running. `request(ids)` sends one `asset.request`; `wait(ids)` blocks until every request for each has been answered (`pending(id)` says
+whether one isn't yet); `find(id)` returns the bytes and version, as a shared pointer that keeps the version alive; a newer version replaces it
+when it is ready, and a failed request keeps it. `take(id)` moves them out of the client (a later request streams them again), `stats()` counts what
 the client requested, received (packed or cached), failed and has in flight, and the bytes received (ngen-view's status bar shows them),
 `log()` every id it requested, in order, with its state, how it arrived, its size, the times of its last request, first data and arrival,
 and the server's time for it (ngen-view's Assets window and `assets` record show it), and
 `errors(id)` gives
-the reasons it failed. A new request for an id clears an earlier failure.
+the reasons it failed. A new request for an id clears an earlier failure. `takeChanged()` returns the ids the server said changed
+(`asset.changed`) since the last call; the client marks them stale in its log and requests nothing by itself.
 
 ngen-view connects at start-up and exits with an error naming the server command when there is none. Once its renderer's passes have
 registered their pipelines it requests their start-up shaders in one request, loads the scene meanwhile, and waits for them before the first
 frame; the debug views' shaders are requested when a debug view is first turned on (`src/renderer/README.md`, "Pipelines"). The scene's packs,
-meshes, materials and textures come through the same client (`src/view/README.md`).
+meshes, materials and textures come through the same client (`src/view/README.md`). Each frame it takes the changed ids: shaders reload in the
+renderer, the scene's assets are fetched again and the scene rebuilt.
 
 `assetid.h` turns a relative path into an asset id (normalised; empty for an absolute path or one that climbs above the server's directory). The
 view uses it for its scene argument, which is an id, and the USD resolver for every asset path.

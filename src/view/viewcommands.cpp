@@ -536,7 +536,7 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
                 responder.fail(rpc::invalidParams, "expected ids or scene");
                 return;
             }
-            auto sceneAssets = view.scene.repack(ids);
+            auto sceneAssets = view.scene.refresh(ids, true);
             responder.respond({{"assets", ids.size()}, {"sceneAssets", sceneAssets}});
         });
     registry.add(
@@ -919,6 +919,8 @@ auto assetsRecord(const ViewContext& view) -> Json {
             {"totalMs", total},
             {"serverMs", entry.serverMs},
             {"errors", entry.errors},
+            {"stale", entry.stale},
+            {"changes", entry.changes},
         });
     }
     return {

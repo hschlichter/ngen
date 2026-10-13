@@ -377,6 +377,9 @@ auto main(int argc, char* argv[]) -> int {
 
     renderer.uploadRenderWorld(scene.renderWorld(), *scene.meshes(), *scene.materials());
     uint64_t uploadedRevision = scene.revision();
+    // Kept alive while uploaded, so a rebuild's new libraries can't reuse their addresses.
+    auto uploadedMeshes = scene.meshes();
+    auto uploadedMaterials = scene.materials();
     ViewUI viewUI;
     if (positional.size() > 1) {
         viewUI.setBookmarkPath(std::string(positional[1]) + ".cameras.txt");
@@ -527,10 +530,14 @@ auto main(int argc, char* argv[]) -> int {
         }
         if (scene.revision() != uploadedRevision) {
             uploadedRevision = scene.revision();
+            bool replaced = scene.meshes() != uploadedMeshes || scene.materials() != uploadedMaterials;
+            uploadedMeshes = scene.meshes();
+            uploadedMaterials = scene.materials();
             renderThread.submitRenderUpload(RenderUpload{
                 .world = scene.renderWorld(),
                 .meshLib = scene.meshes(),
                 .matLib = scene.materials(),
+                .librariesReplaced = replaced,
             });
         }
 
@@ -780,9 +787,15 @@ auto main(int argc, char* argv[]) -> int {
             }
         }
         if (auto repack = viewUI.takeRepackRequest(); repack.scene) {
-            scene.repack(scene.assetIds());
+            scene.refresh(scene.assetIds(), true);
         } else if (!repack.ids.empty()) {
-            scene.repack(repack.ids);
+            scene.refresh(repack.ids, true);
+        }
+        // What the asset server said changed at its source: shaders reload on the render thread, the scene's assets are fetched again and
+        // the scene rebuilt (blocking, as a repack is).
+        if (auto changed = assetClient.takeChanged(); !changed.empty()) {
+            renderThread.reloadShaders(changed);
+            scene.refresh(changed, false);
         }
         viewUI.draw(primPathOf, !selectedPath.empty(), scene.renderWorld(), cam, std::move(fgDebugSnap), std::move(renderDebugSnap));
         switch (viewUI.takeEditRequest()) {

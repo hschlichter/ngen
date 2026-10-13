@@ -11,7 +11,9 @@
 #include <cstring>
 #include <format>
 #include <mutex>
+#include <set>
 #include <unordered_map>
+#include <utility>
 
 struct AssetClient::State {
     RpcServer rpc;
@@ -21,8 +23,11 @@ struct AssetClient::State {
     mutable std::mutex mutex;
     std::condition_variable changed;
     std::unordered_map<std::string, PackedAsset> partial; // arriving: asset.data seen, asset.ready not yet
-    std::unordered_map<std::string, std::unique_ptr<PackedAsset>> ready;
+    std::unordered_map<std::string, std::shared_ptr<PackedAsset>> ready;
     std::unordered_map<std::string, std::vector<std::string>> failed;
+    std::unordered_map<std::string, uint32_t> outstanding; // requests for the id not answered yet
+    std::vector<std::string> changedIds;                   // told by asset.changed, not taken yet
+    std::set<std::string> changedPending;
     AssetClientStats stats;
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     std::vector<AssetLogEntry> logEntries;
@@ -40,8 +45,19 @@ struct AssetClient::State {
         return logEntries[it->second];
     }
 
+    auto answered(const std::string& id) -> void {
+        auto it = outstanding.find(id);
+        if (it == outstanding.end()) {
+            return;
+        }
+        if (--it->second == 0) {
+            outstanding.erase(it);
+        }
+    }
+
     auto fail(const std::string& id, std::vector<std::string> messages, double serverMs = -1) -> void {
         partial.erase(id);
+        answered(id);
         auto& logged = entry(id);
         logged.state = AssetLogState::Failed;
         logged.doneMs = nowMs();
@@ -59,7 +75,17 @@ struct AssetClient::State {
         const auto& params = message["params"];
         auto id = params.value("id", std::string());
         std::lock_guard lock(mutex);
-        if (method == "asset.data") {
+        if (method == "asset.changed") {
+            for (const auto& changedId : params.value("ids", rpc::Json::array())) {
+                auto name = changedId.get<std::string>();
+                auto& logged = entry(name);
+                logged.stale = true;
+                logged.changes++;
+                if (changedPending.insert(name).second) {
+                    changedIds.push_back(name);
+                }
+            }
+        } else if (method == "asset.data") {
             auto& asset = partial[id];
             auto offset = params.value("offset", size_t(0));
             auto total = params.value("total", size_t(0));
@@ -97,11 +123,13 @@ struct AssetClient::State {
                 logged.doneMs = nowMs();
                 logged.serverMs = params.value("ms", -1.0);
                 logged.errors.clear();
+                logged.stale = false;
                 if (it != partial.end()) {
-                    ready[id] = std::make_unique<PackedAsset>(std::move(it->second));
+                    ready[id] = std::make_shared<PackedAsset>(std::move(it->second));
                     partial.erase(it);
                     failed.erase(id);
                 }
+                answered(id);
             }
         } else if (method == "asset.failed") {
             std::vector<std::string> messages;
@@ -171,6 +199,7 @@ auto AssetClient::request(std::span<const std::string> ids, bool force) -> void 
         auto now = state->nowMs();
         for (const auto& id : ids) {
             state->failed.erase(id);
+            state->outstanding[id]++;
             auto& logged = state->entry(id);
             logged.requests++;
             logged.state = AssetLogState::InFlight;
@@ -205,7 +234,7 @@ auto AssetClient::wait(std::span<const std::string> ids) -> void {
             return true;
         }
         for (const auto& id : ids) {
-            if (!state->ready.contains(id) && !state->failed.contains(id)) {
+            if (state->outstanding.contains(id)) {
                 return false;
             }
         }
@@ -215,16 +244,19 @@ auto AssetClient::wait(std::span<const std::string> ids) -> void {
         return;
     }
     for (const auto& id : ids) {
-        if (!state->ready.contains(id) && !state->failed.contains(id)) {
+        while (state->outstanding.contains(id)) {
             state->fail(id, {"the connection to the asset server closed"});
         }
     }
 }
 
-auto AssetClient::find(const std::string& id) const -> const PackedAsset* {
+auto AssetClient::find(const std::string& id) const -> std::shared_ptr<const PackedAsset> {
     std::lock_guard lock(state->mutex);
     auto it = state->ready.find(id);
-    return it == state->ready.end() ? nullptr : it->second.get();
+    if (it == state->ready.end()) {
+        return nullptr;
+    }
+    return it->second;
 }
 
 auto AssetClient::take(const std::string& id) -> std::optional<PackedAsset> {
@@ -233,7 +265,13 @@ auto AssetClient::take(const std::string& id) -> std::optional<PackedAsset> {
     if (it == state->ready.end()) {
         return std::nullopt;
     }
-    auto asset = std::move(*it->second);
+    // Moved out unless a reader from find() still holds it.
+    std::optional<PackedAsset> asset;
+    if (it->second.use_count() == 1) {
+        asset = std::move(*it->second);
+    } else {
+        asset = *it->second;
+    }
     state->ready.erase(it);
     return asset;
 }
@@ -246,6 +284,17 @@ auto AssetClient::stats() const -> AssetClientStats {
 auto AssetClient::log() const -> std::vector<AssetLogEntry> {
     std::lock_guard lock(state->mutex);
     return state->logEntries;
+}
+
+auto AssetClient::pending(const std::string& id) const -> bool {
+    std::lock_guard lock(state->mutex);
+    return state->outstanding.contains(id);
+}
+
+auto AssetClient::takeChanged() -> std::vector<std::string> {
+    std::lock_guard lock(state->mutex);
+    state->changedPending.clear();
+    return std::exchange(state->changedIds, {});
 }
 
 auto AssetClient::errors(const std::string& id) const -> std::vector<std::string> {

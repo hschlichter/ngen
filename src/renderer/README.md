@@ -56,7 +56,13 @@ pipelines by the pipeline registry ("Pipelines", below).
 - **Observable.** Events `ShadersRequested`, `ShaderLoaded` (id, version), `PipelinePending`, `PipelineCreated`, `PipelineCreateFailed`
   (reason), `ShaderPackFailed`; the `pipelines` record (name, start-up or first use, state, shaders and versions, the last error) and the Render
   Debug window's Pipelines tab.
-- **Not yet**: new versions of a running shader (hot reload), shader reflection, creation off the render thread, a disk pipeline cache.
+- **Hot reload.** `reload(ids)` (the renderer's `reloadShaders`, with the ids the asset server said changed) requests the shaders it has
+  modules for again. When the request is answered, `update()` creates the new module and recreates every ready pipeline using it; the handle
+  keeps its index, and the old pipeline and module go to the deletion queue, since frames in flight may use them. A failed pipeline using the
+  shader is tried again. A shader that fails to pack or to become a module keeps the old module and pipelines, with the error in the trace
+  (`ShaderReloadFailed`) and the pipelines' info until a later version loads or the source goes back. Events `ShadersReloadRequested`,
+  `ShaderReloaded` (version, pipelines recreated), `PipelineRecreateFailed`.
+- **Not yet**: shader reflection, creation off the render thread, a disk pipeline cache.
 
 ## How the pieces fit
 

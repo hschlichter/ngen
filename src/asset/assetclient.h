@@ -49,6 +49,8 @@ struct AssetLogEntry {
     double doneMs = -1;      // its asset.ready or asset.failed
     double serverMs = -1;    // the server's time for it (the cache check, and packing when it ran), as the server reports it
     std::vector<std::string> errors;
+    bool stale = false;   // the server said its sources changed since the last arrival
+    uint32_t changes = 0; // how often the server said so
 };
 
 // The engine side of the asset server's stream: sends pack requests and collects the streamed assets. No file
@@ -69,11 +71,12 @@ public:
     // file once, for the outputs of one file).
     auto request(std::span<const std::string> ids, bool force = false) -> void;
 
-    // Blocks until every id in `ids` has arrived or failed.
+    // Blocks until every request for the ids in `ids` has been answered: each has arrived or failed.
     auto wait(std::span<const std::string> ids) -> void;
 
-    // The asset once it has arrived; nullptr before that, or when it failed.
-    auto find(const std::string& id) const -> const PackedAsset*;
+    // The asset once it has arrived; nullptr before that, or when it failed. A new version replaces it when it is ready, not when it starts
+    // arriving; the pointer keeps the version it holds alive. A request that fails keeps the version that had arrived.
+    auto find(const std::string& id) const -> std::shared_ptr<const PackedAsset>;
 
     // Moves an arrived asset out of the client; nullopt if it hasn't arrived. A later request for the id streams it again.
     auto take(const std::string& id) -> std::optional<PackedAsset>;
@@ -83,8 +86,15 @@ public:
     // Every id requested so far, in the order first requested.
     auto log() const -> std::vector<AssetLogEntry>;
 
+    // Whether a request for the id hasn't been answered yet.
+    auto pending(const std::string& id) const -> bool;
+
     // The packer's errors for an asset that failed; empty otherwise.
     auto errors(const std::string& id) const -> std::vector<std::string>;
+
+    // The ids the server said changed at their source since the last call (asset.changed), each once, in the order told. The client
+    // requests nothing by itself: what still wants an asset requests it again.
+    auto takeChanged() -> std::vector<std::string>;
 
 private:
     struct State;

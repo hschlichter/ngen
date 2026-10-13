@@ -273,6 +273,21 @@ auto AssetCache::outputPath(const std::string& id) -> std::optional<std::string>
     return outputFile->path;
 }
 
+auto AssetCache::filesOf(const std::string& id) -> std::vector<std::string> {
+    std::lock_guard lock(mutex);
+    auto [record, outputFile] = find(id);
+    if (record == nullptr) {
+        return {};
+    }
+    std::vector<std::string> files;
+    files.reserve(record->inputs.size() + 1);
+    files.push_back(record->packer.path);
+    for (const auto& input : record->inputs) {
+        files.push_back(input.path);
+    }
+    return files;
+}
+
 // Saves once a second at most while records change.
 auto AssetCache::saveLoop() -> void {
     for (;;) {

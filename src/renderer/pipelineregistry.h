@@ -12,6 +12,7 @@
 #include <vector>
 
 class AssetClient;
+class DeletionQueue;
 class RhiDevice;
 
 // Every pipeline the renderer draws with, created here and nowhere else (src/renderer/README.md, "Pipelines"). A pass registers each of its
@@ -21,6 +22,10 @@ class RhiDevice;
 // Start-up pipelines are created before the first frame, from one request for all their shaders. First-use pipelines request their shaders
 // the first time they are asked for and are created at `update`, a few per frame; until then the pass that wants them is skipped.
 // Shaders come from the asset server through AssetClient; the render thread never waits on them after start-up.
+//
+// Hot reload: `reload` requests changed shaders again; `update` takes a new version when it arrives and recreates every pipeline using it.
+// Handles keep their index; the old pipelines and modules go through the deletion queue. A shader that fails keeps the old module and
+// pipelines, with the error in the trace and the pipeline's info.
 
 struct PipelineHandle {
     uint32_t index = 0; // 0 = none
@@ -80,7 +85,7 @@ struct PipelineInfo {
 
 class PipelineRegistry {
 public:
-    auto init(RhiDevice* device, AssetClient* shaders) -> void;
+    auto init(RhiDevice* device, AssetClient* shaders, DeletionQueue* deletionQueue) -> void;
 
     // `name` is the pipeline's debug name, "geometry.pipeline.cullback.less".
     auto registerGraphics(std::string name, GraphicsPipelineRequest request, PipelineUse use) -> PipelineHandle;
@@ -98,9 +103,13 @@ public:
     // Waits for the start-up shaders and creates every start-up pipeline. False when one can't be, with the reason in the trace.
     auto createStartup() -> bool;
 
-    // Once per frame on the render thread, before the frame graph is built: creates pending first-use pipelines whose shaders have
-    // arrived, at most `budget` of them.
-    auto update(uint32_t budget = 4) -> void;
+    // Requests these shaders again, the ones a module was created for; the asset server said their sources changed. On the render thread.
+    auto reload(std::span<const std::string> shaderIds) -> void;
+
+    // Once per frame on the render thread, before the frame graph is built: takes reloaded shaders that have arrived, recreating the
+    // pipelines using them (what they replace is retired at `frame`), and creates pending first-use pipelines whose shaders have arrived,
+    // at most `budget` of them.
+    auto update(uint64_t frame, uint32_t budget = 4) -> void;
 
     // Thread-safe: what each pipeline is, for the `pipelines` record and the Render Debug window.
     auto infos() const -> std::vector<PipelineInfo>;
@@ -129,14 +138,20 @@ private:
     auto module(const ShaderRef& shader, std::string& error) -> RhiShaderModule*;
     auto arrived(const Entry& entry) const -> bool;
     auto failedShader(const Entry& entry) const -> std::string;
+    // The entry's pipeline from the modules there are now; null with `error` set when it can't be made.
+    auto build(const Entry& entry, std::string& error) -> RhiPipeline*;
     auto create(Entry& entry) -> void;
+    // A reloaded shader's request was answered: swaps in its new module and recreates the pipelines using it.
+    auto finishReload(const std::string& id, uint64_t frame) -> void;
     // Requests the shaders of these entries that aren't requested yet, in one request.
     auto request(std::span<Entry* const> wanted) -> void;
     auto reportPending(Entry& entry) -> void;
 
     RhiDevice* device = nullptr;
     AssetClient* source = nullptr;
-    std::vector<Entry> entries; // by handle index - 1
+    DeletionQueue* retired = nullptr;
+    std::set<std::string> reloading; // shader ids requested again, not answered yet
+    std::vector<Entry> entries;      // by handle index - 1
     std::unordered_map<std::string, Module> modules;
     std::set<std::string> requestedShaders;
 #ifndef NDEBUG

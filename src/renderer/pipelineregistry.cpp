@@ -1,6 +1,7 @@
 #include "pipelineregistry.h"
 
 #include "assetclient.h"
+#include "deletionqueue.h"
 #include "rhidevice.h"
 #include "trace.h"
 
@@ -8,9 +9,10 @@
 #include <cassert>
 #include <format>
 
-auto PipelineRegistry::init(RhiDevice* rhiDevice, AssetClient* shaders) -> void {
+auto PipelineRegistry::init(RhiDevice* rhiDevice, AssetClient* shaders, DeletionQueue* deletionQueue) -> void {
     device = rhiDevice;
     source = shaders;
+    retired = deletionQueue;
 }
 
 auto PipelineRegistry::registerGraphics(std::string name, GraphicsPipelineRequest request, PipelineUse use) -> PipelineHandle {
@@ -75,7 +77,7 @@ auto PipelineRegistry::module(const ShaderRef& shader, std::string& error) -> Rh
     if (auto it = modules.find(shader.id); it != modules.end()) {
         return it->second.module;
     }
-    const auto* asset = source->find(shader.id);
+    auto asset = source->find(shader.id);
     if (asset == nullptr) {
         return nullptr;
     }
@@ -97,8 +99,7 @@ auto PipelineRegistry::module(const ShaderRef& shader, std::string& error) -> Rh
     return created;
 }
 
-auto PipelineRegistry::create(Entry& entry) -> void {
-    std::string error;
+auto PipelineRegistry::build(const Entry& entry, std::string& error) -> RhiPipeline* {
     RhiPipeline* pipeline = nullptr;
     if (entry.graphics) {
         const auto& request = *entry.graphics;
@@ -137,10 +138,19 @@ auto PipelineRegistry::create(Entry& entry) -> void {
             pipeline = device->createComputePipeline(desc);
         }
     }
+    if (pipeline == nullptr && error.empty()) {
+        error = "the device couldn't create the pipeline";
+    }
+    return pipeline;
+}
+
+auto PipelineRegistry::create(Entry& entry) -> void {
+    std::string error;
+    auto* pipeline = build(entry, error);
     std::lock_guard lock(infoMutex);
     if (pipeline == nullptr) {
         entry.state = PipelineState::Failed;
-        entry.error = error.empty() ? std::string("the device couldn't create the pipeline") : error;
+        entry.error = error;
         TRACE_ERROR("Render", "PipelineCreateFailed", entry.name).text(std::format("pipeline {}: {}", entry.name, entry.error)).field("reason", entry.error);
         return;
     }
@@ -275,10 +285,141 @@ auto PipelineRegistry::createStartup() -> bool {
     return ok;
 }
 
-auto PipelineRegistry::update(uint32_t budget) -> void {
+auto PipelineRegistry::reload(std::span<const std::string> shaderIds) -> void {
+    std::vector<std::string> ids;
+    for (const auto& id : shaderIds) {
+        // Requested even while an earlier reload of it is in flight: that one may answer with the content before this change.
+        if (modules.contains(id)) {
+            reloading.insert(id);
+            ids.push_back(id);
+        }
+    }
+    if (ids.empty()) {
+        return;
+    }
+    source->request(ids);
+    std::string list;
+    for (const auto& id : ids) {
+        list += list.empty() ? id : ", " + id;
+    }
+    TRACE_EVENT("Render", "ShadersReloadRequested", "pipelines").text(std::format("{} changed shader{} requested again: {}", ids.size(), ids.size() == 1 ? "" : "s", list)).field("count", (int64_t) ids.size());
+}
+
+auto PipelineRegistry::finishReload(const std::string& id, uint64_t frame) -> void {
+    auto moduleIt = modules.find(id);
+    if (moduleIt == modules.end()) {
+        return;
+    }
+    auto oldVersion = moduleIt->second.version;
+    if (auto errors = source->errors(id); !errors.empty()) {
+        std::string text = std::format("shader {} failed to reload; the pipelines keep version {}", id, oldVersion);
+        for (const auto& line : errors) {
+            text += "\n  " + line;
+        }
+        TRACE_WARNING("Render", "ShaderReloadFailed", id).text(text);
+        std::lock_guard lock(infoMutex);
+        for (auto& entry : entries) {
+            if (std::ranges::any_of(shadersOf(entry), [&](const ShaderRef& shader) { return shader.id == id; })) {
+                entry.error = text;
+            }
+        }
+        return;
+    }
+    auto asset = source->find(id);
+    if (asset == nullptr) {
+        return;
+    }
+    if (asset->version == oldVersion) {
+        // Back to the version the pipelines have (a broken edit undone): an earlier reload's error no longer holds.
+        std::lock_guard lock(infoMutex);
+        for (auto& entry : entries) {
+            if (entry.state == PipelineState::Ready && std::ranges::any_of(shadersOf(entry), [&](const ShaderRef& shader) { return shader.id == id; })) {
+                entry.error.clear();
+            }
+        }
+        TRACE_EVENT("Render", "ShaderReloaded", id).text(std::format("shader {} is back to the version its pipelines have ({}): nothing to recreate", id, oldVersion)).field("version", oldVersion).field("pipelines", (int64_t) 0);
+        return;
+    }
+    std::optional<ShaderRef> ref;
+    for (const auto& entry : entries) {
+        for (const auto& shader : shadersOf(entry)) {
+            if (shader.id == id) {
+                ref = shader;
+            }
+        }
+    }
+    if (!ref) {
+        return;
+    }
+    RhiShaderDesc desc = {
+        .stage = ref->stage,
+        .code = asset->bytes,
+        .debugName = id.c_str(),
+    };
+    auto* created = device->createShaderModule(desc);
+    if (created == nullptr) {
+        TRACE_WARNING("Render", "ShaderReloadFailed", id).text(std::format("shader {} ({}): cannot create the shader module; the pipelines keep version {}", id, asset->version, oldVersion));
+        return;
+    }
+    auto* oldModule = moduleIt->second.module;
+    {
+        std::lock_guard lock(infoMutex);
+        moduleIt->second = {.module = created, .version = asset->version};
+    }
+    uint32_t recreated = 0;
+    uint32_t failed = 0;
+    for (auto& entry : entries) {
+        if (!std::ranges::any_of(shadersOf(entry), [&](const ShaderRef& shader) { return shader.id == id; })) {
+            continue;
+        }
+        if (entry.state == PipelineState::Failed) {
+            // Failed before, perhaps for this shader: tried again by update(), like a pending first-use pipeline.
+            std::lock_guard lock(infoMutex);
+            entry.state = PipelineState::Pending;
+            entry.error.clear();
+            entry.reportedPending = false;
+            continue;
+        }
+        if (entry.pipeline == nullptr) {
+            continue;
+        }
+        std::string error;
+        auto* pipeline = build(entry, error);
+        std::lock_guard lock(infoMutex);
+        if (pipeline == nullptr) {
+            entry.error = std::format("recreating it for {} ({}) failed, it keeps the old pipeline: {}", id, asset->version, error);
+            TRACE_WARNING("Render", "PipelineRecreateFailed", entry.name).text(std::format("pipeline {}: {}", entry.name, entry.error));
+            failed++;
+            continue;
+        }
+        device->setDebugName(pipeline, entry.name.c_str());
+        // Frames in flight may still draw with the old one.
+        retired->defer(frame, [rhiDevice = device, old = entry.pipeline] { rhiDevice->destroyPipeline(old); });
+        entry.pipeline = pipeline;
+        entry.error.clear();
+        recreated++;
+    }
+    retired->defer(frame, [rhiDevice = device, oldModule] { rhiDevice->destroyShaderModule(oldModule); });
+    TRACE_EVENT("Render", "ShaderReloaded", id)
+        .text(std::format("shader {} reloaded ({} to {}): {} pipeline{} recreated{}", id, oldVersion, asset->version, recreated, recreated == 1 ? "" : "s", failed > 0 ? std::format(", {} kept the old one", failed) : ""))
+        .field("version", asset->version)
+        .field("pipelines", (int64_t) recreated)
+        .field("failed", (int64_t) failed);
+}
+
+auto PipelineRegistry::update(uint64_t frame, uint32_t budget) -> void {
 #ifndef NDEBUG
     returnedThisFrame.clear();
 #endif
+    for (auto it = reloading.begin(); it != reloading.end();) {
+        if (source->pending(*it)) {
+            ++it;
+            continue;
+        }
+        auto id = *it;
+        it = reloading.erase(it);
+        finishReload(id, frame);
+    }
     for (auto& entry : entries) {
         if (budget == 0) {
             return;
