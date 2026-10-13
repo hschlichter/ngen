@@ -14,6 +14,9 @@ layout(set = 0, binding = 2) uniform LightUBO {
     vec4 cascadeTexelDepth;
     vec4 cascadeTexelWorld;
     vec4 cascadeParams; // x = count, y = pcf, z = atlas size
+    vec4 ambientUp;     // xyz = the scene's up axis
+    vec4 skyAmbient;    // ambient on faces turned up, as a fraction of the light's radiance
+    vec4 groundAmbient; // ambient on faces turned down
 } light;
 layout(set = 0, binding = 3) uniform sampler2D gbufferDepth;
 layout(set = 0, binding = 4) uniform sampler2D shadowMap;          // atlas, plain reads
@@ -177,11 +180,15 @@ vec3 sampleBuffer(int mode, vec2 uv) {
         return clamp(worldPos * (1.0 / 50.0) + 0.5, 0.0, 1.0);
     }
 
+    vec3 N = normalize(normal);
     vec3 lightDir = normalize(light.lightDirection.xyz);
-    float diff = max(dot(normalize(normal), lightDir), 0.0);
-    float ambient = light.lightColor.w;
+    float diff = max(dot(N, lightDir), 0.0);
+    // Hemisphere ambient: the sky's colour on faces turned up, the ground's on faces turned down, blended between, so faces out of the
+    // light keep their shape.
+    float upness = dot(N, normalize(light.ambientUp.xyz)) * 0.5 + 0.5;
+    vec3 ambient = mix(light.groundAmbient.rgb, light.skyAmbient.rgb, upness);
 
-    return albedo * (ambient * light.lightColor.rgb + diff * light.lightColor.rgb * shadowFactor);
+    return albedo * light.lightColor.rgb * (ambient + diff * shadowFactor);
 }
 
 void main() {

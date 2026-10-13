@@ -105,9 +105,10 @@ Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's ma
   at a distance); a per-material "casts no shadow" for decals, which today cast mask-shaped shadows onto the wall they lie on (trigger: it bothers).
 - **Material model**: factors and more texture maps; per-material sampler state from USD.
 - **Incremental GPU updates** for non-transform changes (part of the editor split).
-- **Lighting at kilometre scale** — one sun and nothing else: surfaces facing away from it are flat black, with no sky or ambient term. Needs a
-  sky or ambient term (a constant one until dome lights and IBL, under Multiple lights). Shadows end at a shadow distance since
-  [plan_depth_range.md](plan_depth_range.md); a fade before it is deferred there. Trigger: Caldera in the view (it is, now).
+- **Lighting at kilometre scale** — one sun and a hemisphere ambient (an engine sky and ground colour blended by how much a face turns up,
+  since 2026-10-13; it replaced a constant that made every face out of the sun one flat colour). Vertical faces out of the sun still look
+  alike whichever way they face; dome lights and IBL (under Multiple lights) replace the hemisphere. Shadows end at a shadow distance since
+  [plan_depth_range.md](plan_depth_range.md); a fade before it is deferred there.
 - **Framing Caldera** — framing the whole scene fits a large flat ground disc, so the map frames from about 60 km with the island small in the
   middle. Authored cameras are read (the Camera window, `--camera=/cameras/<name>`; Caldera authors 13, per district, none of the whole
   island). Open: a default camera, the one a `UsdRenderSettings` prim's `camera` names (stage metadata `renderSettingsPrimPath`), which needs

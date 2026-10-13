@@ -906,6 +906,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         // exists at all (pathological — USDScene would usually author one) just aim the sun
         // straight up the scene's up axis with unit radiance.
         LightingInputs lighting;
+        lighting.up = snapshot.worldUp;
         if (picked != nullptr) {
             auto raw = glm::vec3(picked->worldTransform[2]);
             lighting.direction = glm::dot(raw, raw) > 1e-6f ? glm::normalize(raw) : snapshot.worldUp;

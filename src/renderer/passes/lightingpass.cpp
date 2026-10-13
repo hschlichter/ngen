@@ -10,6 +10,15 @@
 #include <cstring>
 #include <format>
 
+namespace {
+
+// The engine's ambient until scenes light it themselves (dome lights): a slightly blue sky above and a darker, warm ground below, as fractions
+// of the sun's radiance. A vertical face gets their average, about the constant 0.15 the view had before.
+constexpr glm::vec3 skyAmbient = glm::vec3(0.20f, 0.21f, 0.24f);
+constexpr glm::vec3 groundAmbient = glm::vec3(0.10f, 0.09f, 0.08f);
+
+} // namespace
+
 auto LightingPass::init(RhiDevice* dev, PipelineRegistry& pipelines, uint32_t imageCount, RhiExtent2D extent, RhiFormat colorFormat) -> bool {
     using enum RhiDescriptorType;
 
@@ -122,11 +131,14 @@ auto LightingPass::addPass(
 
             LightingUBO lightUbo = {
                 .lightDirection = glm::vec4(lightInputs.direction, 1.0f),
-                .lightColor = glm::vec4(lightInputs.radiance, 0.15f),
+                .lightColor = glm::vec4(lightInputs.radiance, 0.0f),
                 .depthParams = glm::vec4(cameraNear, previewFar, 0.0f, 0.0f),
                 .shadowTint = glm::vec4(lightInputs.shadowColor, 0.0f),
                 .invViewProj = invViewProj,
                 .cascadeParams = glm::vec4((float) cascadeCount, pcf ? 1.0f : 0.0f, (float) atlasExtent.width, 0.0f),
+                .ambientUp = glm::vec4(lightInputs.up, 0.0f),
+                .skyAmbient = glm::vec4(skyAmbient, 0.0f),
+                .groundAmbient = glm::vec4(groundAmbient, 0.0f),
             };
             for (uint32_t c = 0; c < maxShadowCascades; c++) {
                 const auto& cascade = cascadeCopy[c < cascadeCount ? c : 0];

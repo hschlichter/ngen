@@ -17,7 +17,7 @@ struct GeometryPassData;
 
 struct LightingUBO {
     glm::vec4 lightDirection;                     // xyz = direction toward light, w = unused
-    glm::vec4 lightColor;                         // xyz = radiance (color * intensity * 2^exposure), w = ambient
+    glm::vec4 lightColor;                         // xyz = radiance (color * intensity * 2^exposure), w = unused
     glm::vec4 depthParams;                        // x = the camera's near plane, y = the depth preview's far end, zw = unused
     glm::vec4 shadowTint;                         // xyz = light contribution when shadowed (from UsdLuxShadowAPI::shadow:color), w = unused
     glm::mat4 invViewProj;                        // inverse(proj * view), for world-pos reconstruction from gbuffer
@@ -27,6 +27,9 @@ struct LightingUBO {
     glm::vec4 cascadeTexelDepth;                  // ndc depth per texel, per cascade; bias unit
     glm::vec4 cascadeTexelWorld;                  // world size of one texel, per cascade; normal offset
     glm::vec4 cascadeParams;                      // x = count, y = pcf (0/1), z = atlas size in texels
+    glm::vec4 ambientUp;                          // xyz = the scene's up axis, w = unused
+    glm::vec4 skyAmbient;                         // xyz = ambient on faces turned up, as a fraction of the light's radiance
+    glm::vec4 groundAmbient;                      // xyz = ambient on faces turned down, as a fraction of the light's radiance
 };
 
 // Pre-resolved per-frame lighting inputs. The renderer picks one active light and flattens
@@ -36,6 +39,7 @@ struct LightingInputs {
     glm::vec3 direction = glm::vec3(0.0f, 1.0f, 0.0f); // unit vector pointing toward the light
     glm::vec3 radiance = glm::vec3(1.0f);              // color × intensity × 2^exposure, pre-scaled
     glm::vec3 shadowColor = glm::vec3(0.0f);           // attenuation tint from UsdLuxShadowAPI::shadow:color
+    glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);        // the scene's up axis, for the hemisphere ambient
 };
 
 enum class GBufferView : int {
