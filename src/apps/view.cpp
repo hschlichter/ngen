@@ -13,15 +13,19 @@
 #include "renderthread.h"
 #include "renderworld.h"
 #include "rhidevicevulkan.h"
+#include "rotategizmo.h"
 #include "rpcendpoint.h"
 #include "rpcregistry.h"
+#include "scalegizmo.h"
 #include "sessionscript.h"
 #include "shaderloader.h"
 #include "shadowcascades.h"
 #include "statusbar.h"
 #include "trace.h"
+#include "translategizmo.h"
 #include "viewcommands.h"
 #include "viewdumps.h"
+#include "viewpicking.h"
 #include "viewscene.h"
 #include "viewui.h"
 
@@ -172,6 +176,8 @@ auto main(int argc, char* argv[]) -> int {
             session.add(0, "camera", flagValue(arg, "--camera="));
         } else if (arg.starts_with("--camera-frame=")) {
             session.add(0, "camera-frame", flagValue(arg, "--camera-frame="));
+        } else if (arg.starts_with("--select=")) {
+            session.add(0, "select", flagValue(arg, "--select="));
         } else if (arg.starts_with("--view=")) {
             session.add(0, "view", flagValue(arg, "--view="));
         } else if (arg.starts_with("--overlay=")) {
@@ -376,6 +382,9 @@ auto main(int argc, char* argv[]) -> int {
     auto primPathOf = [&scene](uint32_t prim) -> std::string {
         return scene.primPath(prim);
     };
+    // The selected prim, by full path (instances expanded); empty for none. A click picks it on the GPU.
+    std::string selectedPath;
+    ViewPicking picking;
 
     // Render thread
     RenderThread renderThread;
@@ -396,6 +405,28 @@ auto main(int argc, char* argv[]) -> int {
     auto mouseCapture = false;
 
     renderer.initGizmos(&cam);
+    TranslateGizmo translateGizmo;
+    RotateGizmo rotateGizmo;
+    ScaleGizmo scaleGizmo;
+    // Where the gizmo of the selection sits: its pivot, or its bounds' centre when the pivot lies outside what it draws.
+    auto gizmoAnchorOf = [&](const ViewScene::PrimTransform& xf) -> glm::vec3 {
+        auto anchor = glm::vec3(xf.world[3]);
+        auto bb = scene.bounds(selectedPath);
+        if (bb.valid() && !bb.contains(anchor)) {
+            anchor = (bb.min + bb.max) * 0.5f;
+        }
+        return anchor;
+    };
+    auto frameSelected = [&] -> void {
+        auto bb = scene.bounds(selectedPath);
+        if (!selectedPath.empty() && bb.valid()) {
+            cam.frame(bb, glm::radians(45.0f));
+        }
+    };
+    auto selectParent = [&] -> void {
+        auto slash = selectedPath.rfind('/');
+        selectedPath = slash == 0 || slash == std::string::npos ? std::string() : selectedPath.substr(0, slash);
+    };
 
     // Union the world bounds of all mesh instances and frame the camera on them.
     // Used at startup so the initial view works for any up-axis and asset scale.
@@ -432,6 +463,8 @@ auto main(int argc, char* argv[]) -> int {
         .cam = cam,
         .scene = scene,
         .ui = viewUI,
+        .selectedPath = selectedPath,
+        .picking = picking,
         .renderer = renderer,
         .renderThread = renderThread,
         .renderDoc = renderDoc,
@@ -532,6 +565,38 @@ auto main(int argc, char* argv[]) -> int {
                 viewUI.requestScreenshot();
                 continue;
             }
+            bool plainKey = ev.type == SDL_EVENT_KEY_DOWN && (ev.key.mod & SDL_KMOD_CTRL) == 0 && !ev.key.repeat;
+            // Z deselects, R selects the parent, F frames the selection, 1-4 pick the tool.
+            if (plainKey && ev.key.key == SDLK_Z) {
+                selectedPath.clear();
+                continue;
+            }
+            if (plainKey && ev.key.key == SDLK_R) {
+                selectParent();
+                continue;
+            }
+            if (plainKey && ev.key.key == SDLK_F) {
+                frameSelected();
+                continue;
+            }
+            if (plainKey) {
+                switch (ev.key.key) {
+                    case SDLK_1:
+                        viewUI.setActiveTool(ViewTool::Select);
+                        continue;
+                    case SDLK_2:
+                        viewUI.setActiveTool(ViewTool::Translate);
+                        continue;
+                    case SDLK_3:
+                        viewUI.setActiveTool(ViewTool::Rotate);
+                        continue;
+                    case SDLK_4:
+                        viewUI.setActiveTool(ViewTool::Scale);
+                        continue;
+                    default:
+                        break;
+                }
+            }
 
             if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_RIGHT) {
                 mouseCapture = true;
@@ -543,9 +608,65 @@ auto main(int argc, char* argv[]) -> int {
                 cam.handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
             }
 
-            // A left click on the axis gizmo turns the camera to that axis.
+            // A gizmo drag in progress: the new local transform is the view's own opinion on the prim, until the view closes.
+            bool dragging = translateGizmo.isDragging() || rotateGizmo.isDragging() || scaleGizmo.isDragging();
+            auto dragTo = [&](float x, float y) -> std::optional<Transform> {
+                if (translateGizmo.isDragging()) {
+                    return translateGizmo.dragUpdate(x, y, winExtent, cam.viewMatrix(), proj);
+                }
+                if (rotateGizmo.isDragging()) {
+                    return rotateGizmo.dragUpdate(x, y, winExtent, cam.viewMatrix(), proj);
+                }
+                return scaleGizmo.dragUpdate(x, y, winExtent, cam.viewMatrix(), proj);
+            };
+            if (ev.type == SDL_EVENT_MOUSE_MOTION && dragging) {
+                if (auto local = dragTo(ev.motion.x, ev.motion.y)) {
+                    scene.setLocalTransform(selectedPath, local->toMat4());
+                }
+                continue;
+            }
+            if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_LEFT && dragging) {
+                if (auto local = dragTo(ev.button.x, ev.button.y)) {
+                    scene.setLocalTransform(selectedPath, local->toMat4());
+                }
+                translateGizmo.release();
+                rotateGizmo.release();
+                scaleGizmo.release();
+                continue;
+            }
+
             if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_LEFT) {
-                renderer.gizmoHitTest(ev.button.x, ev.button.y, winExtent);
+                float mx = ev.button.x;
+                float my = ev.button.y;
+                // The axis gizmo turns the camera to an axis.
+                if (renderer.gizmoHitTest(mx, my, winExtent)) {
+                    continue;
+                }
+                if (auto xf = scene.transform(selectedPath); xf && xf->xformable && !selectedPath.empty()) {
+                    auto tool = viewUI.activeTool();
+                    auto local = decomposeTransform(xf->local);
+                    auto anchor = gizmoAnchorOf(*xf);
+                    bool grabbed = false;
+                    if (tool == ViewTool::Translate) {
+                        grabbed = translateGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, anchor, local, xf->world);
+                    } else if (tool == ViewTool::Rotate) {
+                        grabbed = rotateGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, anchor, local, xf->world);
+                    } else if (tool == ViewTool::Scale) {
+                        grabbed = scaleGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, anchor, local, xf->world);
+                    }
+                    if (grabbed) {
+                        continue;
+                    }
+                }
+                // Anything else picks: the instance under the cursor, read back from the GPU a few frames later.
+                int pointsW = 0;
+                int pointsH = 0;
+                SDL_GetWindowSize(window, &pointsW, &pointsH);
+                auto px = (uint32_t) std::max(0.0f, mx * (float) winW / (float) std::max(pointsW, 1));
+                auto py = (uint32_t) std::max(0.0f, my * (float) winH / (float) std::max(pointsH, 1));
+                picking.request(px, py, [&scene, &selectedPath](std::optional<uint32_t> instance) {
+                    selectedPath = instance ? scene.instancePath(*instance) : std::string();
+                });
             }
         }
 
@@ -588,7 +709,8 @@ auto main(int argc, char* argv[]) -> int {
         for (size_t i = 0; i < overlayVisible.size(); i++) {
             overlayVisible[i] = (latestCull.viewBits[i] & overlayBit) != 0 ? 1 : 0;
         }
-        viewUI.drawDebug(debugDraw, scene.renderWorld(), cam.position, cam.worldUp, overlayVisible, cullState.frozenActive ? &frozenCorners : nullptr, std::span<const ShadowCascade>(cascades.data(), cascadeCount));
+        auto selectedBounds = scene.bounds(selectedPath);
+        viewUI.drawDebug(debugDraw, scene.renderWorld(), cam.position, cam.worldUp, overlayVisible, cullState.frozenActive ? &frozenCorners : nullptr, std::span<const ShadowCascade>(cascades.data(), cascadeCount), selectedPath.empty() ? nullptr : &selectedBounds);
 
         renderThread.setFrameGraphDebugEnabled(viewUI.wantsFrameGraphDebug() || dumps.wantsFrameGraphDebug());
         auto fgDebugSnap = renderThread.latestFrameGraphDebug();
@@ -605,6 +727,7 @@ auto main(int argc, char* argv[]) -> int {
             static std::vector<CaptureWatch> sentWatches;
             auto watches = viewUI.captureWatches();
             dumps.appendWatches(watches);
+            picking.appendWatches(watches);
             if (watches != sentWatches || frameDebugPending) {
                 sentWatches = watches;
                 renderThread.setCaptureWatches(watches, frameDebugPending);
@@ -614,6 +737,9 @@ auto main(int argc, char* argv[]) -> int {
                 viewUI.onFrameDebugCapture(std::move(*frameDebug));
             }
             for (auto& result : renderThread.takeCaptureResults()) {
+                if (picking.onCaptureResult(result)) {
+                    continue;
+                }
                 if (!dumps.onCaptureResult(result)) {
                     viewUI.onCaptureResult(std::move(result));
                 }
@@ -630,7 +756,20 @@ auto main(int argc, char* argv[]) -> int {
         profile::beginZone(uiZoneId);
         imguiBackend.beginFrame();
         viewUI.setStatusBar(statusBar.gather(rhiDevice, assetClient, latestCull));
-        viewUI.draw(primPathOf, scene.renderWorld(), cam, std::move(fgDebugSnap), std::move(renderDebugSnap));
+        viewUI.draw(primPathOf, !selectedPath.empty(), scene.renderWorld(), cam, std::move(fgDebugSnap), std::move(renderDebugSnap));
+        switch (viewUI.takeEditRequest()) {
+            case ViewEditRequest::Deselect:
+                selectedPath.clear();
+                break;
+            case ViewEditRequest::SelectParent:
+                selectParent();
+                break;
+            case ViewEditRequest::FrameSelected:
+                frameSelected();
+                break;
+            case ViewEditRequest::None:
+                break;
+        }
         if (auto inspect = viewUI.takeTextureInspectRequest(); inspect.has_value()) {
             renderThread.setTextureInspect(*inspect);
         }
@@ -663,8 +802,10 @@ auto main(int argc, char* argv[]) -> int {
                 camWindow.requestFrameScene = false;
                 frameSceneView();
             }
-            // Nothing is selected in the view yet.
-            camWindow.requestFrameSelected = false;
+            if (camWindow.requestFrameSelected) {
+                camWindow.requestFrameSelected = false;
+                frameSelected();
+            }
         }
         ImGuiFrameSnapshot imguiSnapshot;
         {
@@ -679,6 +820,15 @@ auto main(int argc, char* argv[]) -> int {
         float mouseX = 0;
         float mouseY = 0;
         SDL_GetMouseState(&mouseX, &mouseY);
+
+        // The active tool's gizmo, on the selection when it takes a transform.
+        auto selectedXf = selectedPath.empty() ? std::nullopt : scene.transform(selectedPath);
+        bool showTransformGizmo = selectedXf && selectedXf->xformable;
+        auto gizmoAnchor = showTransformGizmo ? gizmoAnchorOf(*selectedXf) : glm::vec3(0.0f);
+        auto activeTool = viewUI.activeTool();
+        translateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Translate, gizmoAnchor);
+        rotateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Rotate, gizmoAnchor);
+        scaleGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Scale, gizmoAnchor);
 
         RenderSnapshot snapshot = {
             .viewMatrix = cam.viewMatrix(),
@@ -701,6 +851,9 @@ auto main(int argc, char* argv[]) -> int {
             .shadowSettings = viewUI.getShadowSettings(),
             .cascadeCount = cascadeCount,
             .cascades = cascades,
+            .translateGizmoVerts = {translateGizmo.vertices().begin(), translateGizmo.vertices().end()},
+            .rotateGizmoVerts = {rotateGizmo.vertices().begin(), rotateGizmo.vertices().end()},
+            .scaleGizmoVerts = {scaleGizmo.vertices().begin(), scaleGizmo.vertices().end()},
             .debugData = debugDraw.data(),
             .imguiSnapshot = std::move(imguiSnapshot),
         };

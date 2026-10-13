@@ -6,6 +6,7 @@
 #include "trace.h"
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -57,6 +58,15 @@ auto fetch(AssetClient& assets, const std::vector<std::string>& ids, std::set<st
 }
 
 } // namespace
+
+auto decomposeTransform(const glm::mat4& local) -> Transform {
+    Transform out;
+    out.position = glm::vec3(local[3]);
+    out.scale = glm::vec3(glm::length(glm::vec3(local[0])), glm::length(glm::vec3(local[1])), glm::length(glm::vec3(local[2])));
+    glm::mat3 rotation(glm::vec3(local[0]) / out.scale.x, glm::vec3(local[1]) / out.scale.y, glm::vec3(local[2]) / out.scale.z);
+    out.rotation = glm::quat_cast(rotation);
+    return out;
+}
 
 ViewScene::ViewScene(AssetClient& client)
     : assets(client) {
@@ -130,6 +140,15 @@ auto ViewScene::primPath(uint32_t prim) const -> std::string {
     return primPaths[prim - 1];
 }
 
+auto ViewScene::instancePath(uint32_t instance) const -> std::string {
+    for (const auto& [prim, range] : drawn.primToInstance) {
+        if (instance >= range.first && instance < range.first + range.count) {
+            return primPath(prim);
+        }
+    }
+    return {};
+}
+
 auto ViewScene::bounds(const std::string& path) const -> AABB {
     AABB out = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
     auto under = [&path](const std::string& candidate) {
@@ -151,6 +170,59 @@ auto ViewScene::bounds(const std::string& path) const -> AABB {
         }
     }
     return out;
+}
+
+auto ViewScene::transform(const std::string& path) const -> std::optional<PrimTransform> {
+    auto it = transforms.find(path);
+    if (it == transforms.end()) {
+        return std::nullopt;
+    }
+    return PrimTransform{.local = it->second.local, .world = unitScale * it->second.world, .xformable = it->second.xformable};
+}
+
+// The prim's new world transform, and the change of it applied to every prim under it, so a drag doesn't rebuild the draws: each draw
+// instance and light under the prim gets its new world transform and bounds.
+auto ViewScene::setLocalTransform(const std::string& path, const glm::mat4& local) -> bool {
+    auto it = transforms.find(path);
+    if (it == transforms.end() || !it->second.xformable) {
+        return false;
+    }
+    localOverrides[path] = local;
+    auto& entry = it->second;
+    glm::mat4 parentWorld = entry.world * glm::inverse(entry.local);
+    glm::mat4 newWorld = entry.resetsXformStack ? local : parentWorld * local;
+    glm::mat4 change = newWorld * glm::inverse(entry.world);
+    entry.local = local;
+    entry.world = newWorld;
+    auto prefix = path + "/";
+    for (auto under = transforms.lower_bound(prefix); under != transforms.end() && under->first.starts_with(prefix); ++under) {
+        under->second.world = change * under->second.world;
+    }
+    auto isUnder = [&](const std::string& candidate) {
+        return candidate == path || candidate.starts_with(prefix);
+    };
+    for (const auto& [prim, range] : drawn.primToInstance) {
+        const auto& primPathOf = primPaths[prim - 1];
+        if (!isUnder(primPathOf)) {
+            continue;
+        }
+        auto world = unitScale * transforms.at(primPathOf).world;
+        for (uint32_t i = range.first; i < range.first + range.count; i++) {
+            auto& instance = drawn.meshInstances[i];
+            instance.worldTransform = world;
+            instance.worldBounds = meshLibrary->bounds(instance.mesh).transformed(world);
+        }
+    }
+    for (auto& light : drawn.lights) {
+        const auto& lightPath = primPaths[light.primHandle.index - 1];
+        if (isUnder(lightPath)) {
+            if (auto lit = transforms.find(lightPath); lit != transforms.end()) {
+                light.worldTransform = unitScale * lit->second.world;
+            }
+        }
+    }
+    inputsRevision++;
+    return true;
 }
 
 // Composes in rounds: each names the layer packs it needs next (sublayers, references, payloads), which are fetched for the next.
@@ -328,11 +400,12 @@ auto ViewScene::extract() -> void {
     drawn.clear();
     primPaths.clear();
     materialByAsset.clear();
+    transforms.clear();
     auto meshes = std::make_shared<MeshLibrary>();
     meshLibrary = meshes;
     materialLibrary = std::make_shared<MaterialLibrary>();
     const auto& w = world();
-    auto unitScale = glm::mat4(1.0f);
+    unitScale = glm::mat4(1.0f);
     if (w.metersPerUnit != 1.0) {
         unitScale = glm::scale(glm::mat4(1.0f), glm::vec3((float) w.metersPerUnit));
     }
@@ -348,6 +421,9 @@ auto ViewScene::extract() -> void {
         }
         const auto& parentWorld = worldByDepth[depth - 1];
         glm::mat4 local(visited.entity->localTransform);
+        if (auto authored = localOverrides.find(visited.path); authored != localOverrides.end() && entity.xformable) {
+            local = authored->second;
+        }
         if (!entity.xformable) {
             worldByDepth[depth] = parentWorld;
         } else if (entity.resetsXformStack) {
@@ -358,6 +434,7 @@ auto ViewScene::extract() -> void {
         if (!entity.active || !entity.defined || entity.abstract || visited.inUndrawnLevel || !visited.visible) {
             return false;
         }
+        transforms[visited.path] = {.local = local, .world = worldByDepth[depth], .xformable = entity.xformable, .resetsXformStack = entity.resetsXformStack};
         auto worldTransform = unitScale * worldByDepth[depth];
 
         if (auto light = visited.content->lights.find(visited.id); light != visited.content->lights.end()) {

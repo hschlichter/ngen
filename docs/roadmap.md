@@ -20,21 +20,14 @@ Items below that follow from the objective rather than from an existing plan are
 The umbrella is [plan_tool_architecture.md](plan_tool_architecture.md): a USD-free ngen-view fed by packed data, an editor that owns USD, an asset
 server that packs, and an introspection tool. What has landed of it is under [Landed](#landed).
 
-1. **Scene pack format** — [plan_scene_pack.md](plan_scene_pack.md), draft. The critical path: one pack job per USD file, layer packs composed
-   in the view, no OpenUSD in the view, no USD editing until `ngen-editor`.
-   - USD packer: layer packs (references and payloads packed once, instanced), typed components; mesh and material assets as
-     `file.usd#/prim`, written by the file's one job.
-   - Stable entity ids (prim path + submesh index).
-   - Runtime scene library (no pxr, `src/world/`): layer stack composition, transform hierarchy; replaces `RenderWorld`.
-   - Packer-discovered assets (references, payloads, textures) named in the pack and requested by the view.
-   - Later: variant sets, with a test scene of their own.
-2. **Async shaders** — [plan_async_shaders.md](plan_async_shaders.md), draft. Pipeline registry, start-up shaders from registrations (replaces
+1. **Async shaders** — [plan_async_shaders.md](plan_async_shaders.md), draft. Pipeline registry, start-up shaders from registrations (replaces
    `startupShaderIds()`), debug view shaders on first use.
-3. **Editor split (step 3)** — [plan_editor_split.md](plan_editor_split.md), draft. Deltas and incremental GPU scene, then `ngen-editor` as its
-   own process, view gizmos as local opinions, ngen-view without pxr.
+2. **Editor split (step 3)** — [plan_editor_split.md](plan_editor_split.md), draft. Deltas and incremental GPU scene, then `ngen-editor` as its
+   own process. View gizmos as local opinions and ngen-view without pxr landed with the scene pack; the plan needs revising for that
+   (it assumes the editor still runs in the view).
    - Open: how unsaved editor edits reach packed data.
    - Fix: the plan still says "build server" in places.
-4. **Everything async** — *from the objective.* Scenes open instantly with placeholders; geometry, textures, shaders, sub-packs and LOD levels
+3. **Everything async** — *from the objective.* Scenes open instantly with placeholders; geometry, textures, shaders, sub-packs and LOD levels
    arrive and appear when ready, never blocking a frame. Builds on the asset server's streaming, async shaders, sub-packs as load units, and
    the editor split's incremental GPU scene. Today the view still waits for shaders and loads the scene synchronously.
 
@@ -52,8 +45,8 @@ server that packs, and an introspection tool. What has landed of it is under [La
   - Also decided: no grouping beyond payloads; draw whatever is resident as soon as it is (gaps while content arrives are accepted); a payload
     without `extentsHint` is always wanted and reported; every wanted payload is requested with a priority, nearest first, and never cancelled.
   - Open: tuned thresholds, the far-field floor's cost.
-  - Next: the scene pack plan takes the design's requirements (decision 5); then Caldera's proxy map through the scene pack, districts
-    streaming, models streaming, textures streaming, each a plan of its own.
+  - Next: Caldera's proxy map through the scene pack (it opens as its default map since the scene pack landed), districts streaming, models
+    streaming, textures streaming, each a plan of its own.
 - **Physics** — UsdPhysics schemas (rigid bodies, colliders, joints, scenes; already in the vendored OpenUSD) mapped to physics components by
   the packer, simulated with **Jolt**. Physics is a UsdLod domain of its own.
 - **Skinning** — UsdSkel skeletons and skinned meshes; GPU skinning.
@@ -73,10 +66,13 @@ Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's ma
   reads no other LOD convention. The converter's thresholds are a starting point, tuned once the engine draws levels.
 - **Shading without textures**: Caldera has no textures or materials. An authored layer adds them: generated materials by prim type, name or
   region (colour palettes, procedural or triplanar shading), so the map reads well. Good work for the AI and human collaboration flow.
-- **Scale it exposes**: occlusion culling, meshlets, GPU memory and streaming budgets, packing time on cold caches.
+- **Scale it exposes**: occlusion culling, meshlets, GPU memory and streaming budgets, packing time on cold caches; lighting, depth range and
+  camera framing at kilometre scale (Rendering, below).
 
 ## Assets and packing
 
+- **Variant sets in scene packs** — packed as alternative opinions, switched in the view ([plan_scene_pack.md](plan_scene_pack.md), Deferred).
+  Trigger: a test scene with a variant set, or a project that uses them.
 - **BC7 / BC5 textures** — needs approval for Vulkan's `textureCompressionBC`, a vendored encoder, RHI formats. 4× smaller cache and stream.
 - **Linear (non-colour) textures** — the request must carry intent (e.g. `#linear` id or a per-pattern rule). Trigger: first normal/roughness map.
 - **Mip-level streaming** — now part of **Streaming** (Engine features). Packing side: levels addressable on their own, so the server can send
@@ -105,6 +101,13 @@ Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's ma
 - **Frame graph**: transient buffers; cross-frame history resources (TAA); multi-queue/async compute; parallel recording.
 - **Material model**: factors and more texture maps; per-material sampler state from USD.
 - **Incremental GPU updates** for non-transform changes (part of the editor split).
+- **Lighting at kilometre scale** — one sun and nothing else: surfaces facing away from it are flat black, with no sky or ambient term, and
+  the shadow cascades are fitted to the 3,000 m far plane, so shadows across a map are coarse. Needs a sky or ambient term (a constant one
+  until dome lights and IBL, under Multiple lights), and cascades fitted to what is near the camera rather than the whole depth range, or
+  shadows limited by distance. Trigger: Caldera in the view.
+- **Depth range and camera framing for large scenes** — the far plane is a fixed 3,000 m, and framing a scene puts the camera where the whole
+  of it fits: Caldera's map frames from 60 km out, past the far plane, and the frame is empty. Options: reversed-Z depth with an infinite or
+  scene-fitted far plane; framing that keeps the camera inside the depth range. Trigger: Caldera in the view.
 - **Swapchain format** — the backbuffer takes whatever format the driver lists first: headless runs get UNORM, a window sRGB, so headless
   screenshots don't match the window's brightness. Needs a decision (the imgui colours are corrected for sRGB targets).
 - Smaller items with triggers: octahedral normals, front-to-back sort, de-interleaved/16-bit vertex streams, 16-bit indices.
@@ -147,6 +150,11 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
 
+- **Scene pack (step 2, the scene half)** — [plan_scene_pack.md](plan_scene_pack.md). `ngen-packer-usd` packs each USD file in one job: a
+  layer pack of its opinions plus a mesh or material asset per prim, `file.usd#/prim`. `src/world/` composes the packs as USD composes a stage
+  (layer stack, references and payloads, instancing, UsdLod roots), checked byte for byte against OpenUSD with `ngen-worldcheck` and
+  `ngen-usdcheck` up to Caldera's `map_capital` at full detail. ngen-view renders from packs, with screenshots byte-identical to the USD view,
+  links no OpenUSD, picks on the GPU, and moves entities with gizmos as local opinions; the USD editor code waits in `src/editor/`, unbuilt.
 - **Caldera in UsdLod** — [plan_caldera_usdlod.md](plan_caldera_usdlod.md). A converter in a Caldera fork (branch `usdlod` of
   `hschlichter/caldera`) rewrites Caldera's `districtLod` and `modelLod` variant sets into UsdLod roots: levels as payloads, a screen-size
   heuristic per root, instanceable models kept instanced through a class prim. 45 district and tile roots, 2,563 model roots; verified to

@@ -35,7 +35,7 @@ auto GeometryPass::init(RhiDevice* device, RhiExtent2D extent, RhiFormat depthFo
         TRACE_WARNING("Render", "FormatFallback", "GeometryPass").text("R16G16B16A16_SFLOAT not renderable, normal target stays R32G32B32A32_SFLOAT");
         normalTargetFormat = R32G32B32A32_SFLOAT;
     }
-    std::array<RhiFormat, 2> colorFormats = {R8G8B8A8_UNORM, normalTargetFormat};
+    std::array<RhiFormat, 3> colorFormats = {R8G8B8A8_UNORM, normalTargetFormat, R32_UINT};
 
     RhiGraphicsPipelineDesc pipelineDesc = {
         .vertexShader = vertShader,
@@ -111,6 +111,12 @@ auto GeometryPass::addPass(
         .format = normalTargetFormat,
         .usage = RhiTextureUsage::ColorAttachment | RhiTextureUsage::Sampled,
     };
+    FgTextureDesc instanceDesc = {
+        .width = extent.width,
+        .height = extent.height,
+        .format = RhiFormat::R32_UINT,
+        .usage = RhiTextureUsage::ColorAttachment | RhiTextureUsage::Sampled,
+    };
 
     auto* cullBack = pipelines[0][depthPrepassed ? 1 : 0];
     auto* cullNone = pipelines[1][depthPrepassed ? 1 : 0];
@@ -120,6 +126,7 @@ auto GeometryPass::addPass(
         [&](FrameGraphBuilder& builder, GeometryPassData& data) {
             data.albedo = builder.write(builder.createTexture("gbuffer.albedo", albedoDesc), FgAccessFlags::ColorAttachment);
             data.normal = builder.write(builder.createTexture("gbuffer.normal", normalDesc), FgAccessFlags::ColorAttachment);
+            data.instance = builder.write(builder.createTexture("gbuffer.instance", instanceDesc), FgAccessFlags::ColorAttachment);
             data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             builder.read(drawHandles.commands, FgAccessFlags::IndirectRead);
@@ -129,7 +136,7 @@ auto GeometryPass::addPass(
         [cullBack, cullNone, depthPrepassed, extent, instances, &lists, drawHandles, &scene, descriptorSet](FrameGraphContext& ctx, const GeometryPassData& data) {
             auto* cmd = ctx.cmd();
 
-            std::array<RhiRenderingAttachmentInfo, 2> colorAtts = {{
+            std::array<RhiRenderingAttachmentInfo, 3> colorAtts = {{
                 {
                     .texture = ctx.texture(data.albedo),
                     .state = RhiTextureState::ColorAttachment,
@@ -138,6 +145,13 @@ auto GeometryPass::addPass(
                 },
                 {
                     .texture = ctx.texture(data.normal),
+                    .state = RhiTextureState::ColorAttachment,
+                    .clear = true,
+                    .clearColor = {0.0f, 0.0f, 0.0f, 0.0f},
+                },
+                {
+                    // Cleared to 0 (all bits zero, as an integer too): nothing drawn.
+                    .texture = ctx.texture(data.instance),
                     .state = RhiTextureState::ColorAttachment,
                     .clear = true,
                     .clearColor = {0.0f, 0.0f, 0.0f, 0.0f},

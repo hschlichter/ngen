@@ -263,7 +263,7 @@ Plan: [plan_editor_split.md](plan_editor_split.md).
     - the manifest and versioning; `scene.applyDelta` and `scene.manifest`; resync on a version mismatch
     - incremental GPU scene updates: geometry pool allocation and freeing, material table and texture slot patches, instance adds and removes
     - picking returns entity ids to the editor
-  - ngen-view links no pxr at all
+  - ngen-view links no pxr at all *(done in [plan_scene_pack.md](plan_scene_pack.md), phase C)*
 - **Verification:**
   - a gizmo drag in the view moves the object every frame with no RPC round trip in the frame
   - after release the editor's layer holds the new transform, the repacked layer arrives, the local opinion is dropped, and the image doesn't change

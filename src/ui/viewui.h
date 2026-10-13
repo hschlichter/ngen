@@ -26,15 +26,34 @@
 #include <vector>
 
 class DebugDraw;
+struct AABB;
 struct Camera;
 struct RenderWorld;
+
+// What a click and a drag do in the viewport: select, or move the selection with a gizmo.
+enum class ViewTool : uint8_t {
+    Select,
+    Translate,
+    Rotate,
+    Scale,
+};
+
+// A selection command from the Edit menu, for the view to carry out.
+enum class ViewEditRequest : uint8_t {
+    None,
+    Deselect,
+    SelectParent,
+    FrameSelected,
+};
 
 // ngen-view's UI: the menu bar, the status bar, the overlays, the camera window and the introspection windows (frame graph,
 // performance, render debug, culling, capture, frame debugger, GPU scene, counters, memory). It edits the settings the view renders
 // with; the view reads them each frame. Prims are named by the path `primPath` gives for a draw's prim index.
 class ViewUI {
 public:
+    // `hasSelection` enables the Edit menu's selection items.
     auto draw(const PrimPathOf& primPath,
+              bool hasSelection,
               const RenderWorld& renderWorld,
               Camera& camera,
               std::optional<FrameGraphDebugSnapshot> freshFrameGraphSnap,
@@ -46,7 +65,13 @@ public:
                    glm::vec3 worldUp,
                    std::span<const uint8_t> visible,
                    const std::array<glm::vec3, 8>* frozenFrustum,
-                   std::span<const ShadowCascade> cascades) -> void;
+                   std::span<const ShadowCascade> cascades,
+                   const AABB* selectedBounds) -> void;
+
+    auto activeTool() const -> ViewTool { return (ViewTool) toolIndex; }
+    auto setActiveTool(ViewTool tool) -> void { toolIndex = (int) tool; }
+    // The Edit menu's request this frame, once.
+    auto takeEditRequest() -> ViewEditRequest;
 
     auto wantsQuit() const -> bool { return requestQuit; }
 
@@ -133,6 +158,11 @@ private:
     bool showOriginFlag = true;
     bool showGizmoFlag = true;
     bool showAABBsFlag = false;
+    bool showSelectedAABBFlag = true;
+    int toolIndex = 0; // ViewTool
+    bool deselectRequested = false;
+    bool selectParentRequested = false;
+    bool frameSelectedRequested = false;
     bool showLightGizmosFlag = true;
     bool showGuidesFlag = false;
     bool showProxiesFlag = false;

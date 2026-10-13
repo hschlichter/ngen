@@ -100,8 +100,10 @@ items in an "Open questions" section instead of picking silently.
 - `src/rhi/` — backend-agnostic RHI interfaces. Principles and integrator contract in `src/rhi/README.md`; read it before touching the interface.
 - `src/rhi/vulkan/` — Vulkan backend implementation. Additional backends go in sibling folders (e.g. `src/rhi/d3d12/`).
 - `src/renderer/` — renderer front-end (frame graph, GPU scene tables, GPU culling, passes). Design and rules in `src/renderer/README.md`.
-- `src/scene/` — scene loading, ECS, materials; the USD asset resolver that reads scenes through the asset server. Design and rules (asset ids,
-  the C++20/C++23 split) in `src/scene/README.md`.
+- `src/scene/` — the plain types the renderer and ngen-view share for what is drawn (`MeshDesc`, `MaterialDesc`, `Transform`, handles). No USD;
+  `src/scene/README.md`.
+- `src/editor/` — the USD editor code (`USDScene`, the asset resolver, edits and undo, the editor windows), unchanged and unbuilt until
+  `ngen-editor` is built from it. What it is and what it relied on in `src/editor/README.md`.
 - `src/world/` — the runtime scene: `World`, composed from scene packs by `WorldComposer` as USD composes a stage, with no OpenUSD. Composition,
   instancing, LOD loading and the `ngen-worldcheck` / `ngen-usdcheck` comparison in `src/world/README.md`.
 - `src/rpc/` — how processes and agents talk: the RPC core (`core/`, no engine code, shared with the build server) and the engine layer (method

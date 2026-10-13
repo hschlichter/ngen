@@ -1,7 +1,7 @@
 # View
 
-ngen-view's library: the scene it shows (`viewscene.*`), its commands as RPC methods and script verbs (`viewcommands.*`), and its dumps
-(`viewdumps.*`). The program's `main` is `src/apps/view.cpp`; its UI is `ViewUI` (`src/ui/viewui.*`).
+ngen-view's library: the scene it shows (`viewscene.*`), picking (`viewpicking.*`), its commands as RPC methods and script verbs
+(`viewcommands.*`), and its dumps (`viewdumps.*`). The program's `main` is `src/apps/view.cpp`; its UI is `ViewUI` (`src/ui/viewui.*`).
 
 ## The scene: `ViewScene`
 
@@ -30,4 +30,14 @@ The trace shows the steps: `SceneRequested`, `PacksComposed` (packs, rounds, pri
 materials, textures, time), `WorldExtracted` (instances, meshes, materials, lights, time), and `SceneAssetFailed` or `CompositionMessage`
 warnings.
 
-Nothing is selected or edited in the view yet: there is no picking, no gizmo editing and no selection.
+## Selection, picking and gizmos
+
+The selection is a prim's full path (instances expanded), so a prim inside an instance is that instance's. A click picks on the GPU
+(`viewpicking.*`): the geometry pass writes each pixel's instance index + 1 into `gbuffer.instance`, the click asks for that one texel after the
+pass, and a few frames later the instance under the cursor maps to its prim (`instancePath`); nothing drawn there deselects. The `pick <x> <y>`
+verb and `view.pick` do the same at a framebuffer pixel and answer with the path; `select` and `view.select` select by path. Keys: Z
+deselects, R selects the parent, F frames the selection, 1 to 4 pick the tool (select, translate, rotate, scale); the Edit menu has the same.
+
+A gizmo drag is the view's own opinion on the prim's local transform (`setLocalTransform`), kept until the view closes and never saved: it
+moves the draw instances and lights under the prim at once, without rebuilding the draws, and every later rebuild applies it too. The
+`translate` verb and `view.translate` offset a local position the same way. Editing the scene for real is the editor's (`src/editor/`).

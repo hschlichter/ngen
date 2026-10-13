@@ -13,6 +13,7 @@
 #include "shadowcascades.h"
 #include "trace.h"
 #include "viewdumps.h"
+#include "viewpicking.h"
 #include "viewscene.h"
 #include "viewui.h"
 
@@ -89,6 +90,30 @@ auto parseCamera(const std::string& args) -> std::expected<Json, std::string> {
 
 auto parseTarget(const std::string& args) -> std::expected<Json, std::string> {
     return Json{{"target", args}};
+}
+
+auto parsePrim(const std::string& args) -> std::expected<Json, std::string> {
+    return Json{{"prim", args}};
+}
+
+auto parseTranslate(const std::string& args) -> std::expected<Json, std::string> {
+    auto space = args.find(' ');
+    glm::vec3 offset(0.0f);
+    bool parsed = space != std::string::npos && std::sscanf(args.c_str() + space + 1, "%f,%f,%f", &offset.x, &offset.y, &offset.z) == 3;
+    if (!parsed) {
+        return std::unexpected(std::format("expected '/prim dx,dy,dz', got '{}'", args));
+    }
+    return Json{{"prim", args.substr(0, space)}, {"offset", vec3Json(offset)}};
+}
+
+auto parsePick(const std::string& args) -> std::expected<Json, std::string> {
+    std::istringstream in(args);
+    int x = -1;
+    int y = -1;
+    if (!(in >> x >> y) || x < 0 || y < 0) {
+        return std::unexpected(std::format("expected '<x> <y>' in framebuffer pixels, got '{}'", args));
+    }
+    return Json{{"x", x}, {"y", y}};
 }
 
 auto parsePurposes(const std::string& args) -> std::expected<Json, std::string> {
@@ -282,6 +307,9 @@ auto parseCapture(const std::string& args) -> std::expected<Json, std::string> {
 constexpr std::array scriptVerbs = {
     ScriptVerb{"camera", "view.camera.set", parseCamera},
     ScriptVerb{"camera-frame", "view.camera.frame", parseTarget},
+    ScriptVerb{"select", "view.select", parsePrim},
+    ScriptVerb{"translate", "view.translate", parseTranslate},
+    ScriptVerb{"pick", "view.pick", parsePick},
     ScriptVerb{"purposes", "view.purposes", parsePurposes},
     ScriptVerb{"lod", "view.lod.set", parseLod},
     ScriptVerb{"view", "view.mode", parseViewMode},
@@ -362,6 +390,66 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
 }
 
 auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
+    registry.add(
+        {
+            .name = "view.select",
+            .summary = "Select a prim by its full path (instances expanded), as clicking it does; an empty path deselects.",
+            .params = {requiredField("prim", RpcType::String, "prim path, or empty")},
+            .result = "{}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto path = p["prim"].get<std::string>();
+            if (!path.empty() && !view.scene.transform(path)) {
+                responder.fail(rpc::appError, std::format("no prim at '{}' is drawn", path));
+                return;
+            }
+            view.selectedPath = path;
+            responder.respond(Json::object());
+        });
+    registry.add(
+        {
+            .name = "view.translate",
+            .summary = "Offset a prim's local position, as a gizmo drag does: the view's own opinion until it closes, never saved.",
+            .params = {
+                requiredField("prim", RpcType::String, "prim path"),
+                requiredField("offset", RpcType::Vec3, "added to the local position"),
+            },
+            .result = "{}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto path = p["prim"].get<std::string>();
+            auto xf = view.scene.transform(path);
+            if (!xf || !xf->xformable) {
+                responder.fail(rpc::appError, std::format("no prim at '{}' that takes a transform is drawn", path));
+                return;
+            }
+            const auto& o = p["offset"];
+            auto local = decomposeTransform(xf->local);
+            local.position += glm::vec3(o[0].get<float>(), o[1].get<float>(), o[2].get<float>());
+            view.scene.setLocalTransform(path, local.toMat4());
+            responder.respond(Json::object());
+        });
+    registry.add(
+        {
+            .name = "view.pick",
+            .summary = "Pick at a framebuffer pixel as a click does: the instance there is read back from the GPU and its prim selected.",
+            .params = {
+                requiredField("x", RpcType::Int, "pixel column"),
+                requiredField("y", RpcType::Int, "pixel row"),
+            },
+            .result = "{prim} a few frames later; empty when nothing is drawn there",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto x = (uint32_t) std::max(0, p["x"].get<int>());
+            auto y = (uint32_t) std::max(0, p["y"].get<int>());
+            view.picking.request(x, y, [&view, responder](std::optional<uint32_t> instance) mutable {
+                view.selectedPath = instance ? view.scene.instancePath(*instance) : std::string();
+                TRACE_EVENT("Engine", "Picked", view.selectedPath.empty() ? "(nothing)" : view.selectedPath)
+                    .text(view.selectedPath.empty() ? std::string("picked nothing") : std::format("picked {}", view.selectedPath))
+                    .field("prim", view.selectedPath);
+                responder.respond({{"prim", view.selectedPath}});
+            });
+        });
     registry.add(
         {
             .name = "view.purposes",
@@ -685,6 +773,7 @@ auto statusRecord(const ViewContext& view) -> Json {
     return {
         {"frame", view.frameCounter},
         {"scene", view.sceneLabel},
+        {"selected", view.selectedPath},
         {"camera", {{"position", vec3Json(view.cam.position)}, {"yaw", view.cam.yaw}, {"pitch", view.cam.pitch}}},
         {"antiAliasing", view.ui.getAntiAliasing()},
         {"sampler", {{"anisotropy", sampler.maxAnisotropy}, {"lodBias", sampler.lodBias}, {"minLod", sampler.minLod}, {"nearestMip", sampler.nearestMip}}},
@@ -805,7 +894,7 @@ auto runViewScriptCommand(const RpcRegistry& registry, const SessionCommand& com
 }
 
 auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext& view) -> void {
-    records.add("status", "frame counter, scene, camera, anti-aliasing, the material sampler and the purposes drawn", [&view](RpcResponder responder) {
+    records.add("status", "frame counter, scene, selection, camera, anti-aliasing, the material sampler and the purposes drawn", [&view](RpcResponder responder) {
         responder.respond(statusRecord(view));
     });
     records.add("scene", "the open scene: its layer stack, up axis and units, prims (instances expanded), prototypes, draws, lights and LOD levels set", [&view](RpcResponder responder) {

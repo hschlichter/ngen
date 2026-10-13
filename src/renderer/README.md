@@ -174,7 +174,7 @@ The mesh passes bind the pipeline, descriptor set and pool once per bucket and i
 | `InstanceCullPass` | The three culling passes above. |
 | `ShadowPass` | Depth-only into the cascade atlas: per cascade, the tile's viewport and scissor, the cascade matrix as a push constant, one indirect call per bucket. Position pool only. |
 | `DepthPrepass` | Optional depth-only pass over the camera regions so the geometry pass can use an Equal depth test and shade each pixel once. `depthonly.vert` mirrors `gbuffer.vert`'s position expression with `invariant gl_Position`. |
-| `GeometryPass` | G-buffer: albedo (RGBA8, alpha carries the sampled mip level for the mip view) and normals (RGBA16F), depth. Four pipelines: cull back or none, Less-with-write or Equal-without after the prepass. |
+| `GeometryPass` | G-buffer: albedo (RGBA8, alpha carries the sampled mip level for the mip view), normals (RGBA16F), the instance id (`gbuffer.instance`, R32_UINT: instance index + 1, 0 where nothing is drawn), depth. Four pipelines: cull back or none, Less-with-write or Equal-without after the prepass. |
 | `DebugViewPass`, `DebugViewResolve` | Only while a debug view is on (`DebugView`): the camera regions drawn again through `debugview.vert/.geom/.frag` into an RGBA32F value target (`debugview.value`), then coloured by `debugview.comp` into `debugview.color`, which the blit takes instead of the AA result. |
 | `LightingPass` | Fullscreen deferred shading into a float scene-colour target: one directional light (the first shadow-enabled directional light, else the first directional), cascade selection by view depth, hardware-compare PCF, shadow tint, and the debug views (`GBufferView`) and overlays. |
 | `AAPass` | FXAA as a compute pass, scene colour to a float storage image; falls back to a blit when the format cannot be a storage image. |
@@ -183,6 +183,10 @@ The mesh passes bind the pipeline, descriptor set and pool once per bucket and i
 | `GizmoPass` | Wide-line gizmo geometry: the axis gizmo the renderer owns and the translate, rotate and scale gizmo vertices the main thread computes. |
 | `EditorUIPass` | Renders the cloned ImGui draw data through `ImGuiBackend`. |
 | `PresentPass` | Moves the backbuffer to `PresentSrc`; no GPU work. |
+
+**Picking** reads the id target: a pick asks the capture service for the one texel of `gbuffer.instance` under a pixel, right after
+`GeometryPass`, and gets the instance index back a few frames later (ngen-view's `ViewPicking`, `src/view/README.md`). Nothing is read
+back without a pick, and the target is never shown, so screenshots don't change.
 
 Overlays and the UI draw on the backbuffer after the AA blit, so they are never filtered.
 

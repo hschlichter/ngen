@@ -14,6 +14,23 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         }
         ImGui::EndMenu();
     }
+    if (ImGui::BeginMenu("Edit")) {
+        if (ImGui::MenuItem("Deselect", "Z", false, state.hasSelection)) {
+            state.requestDeselect = true;
+        }
+        if (ImGui::MenuItem("Select Parent", "R", false, state.hasSelection)) {
+            state.requestSelectParent = true;
+        }
+        if (ImGui::MenuItem("Frame Selected", "F", false, state.hasSelection)) {
+            state.requestFrameSelected = true;
+        }
+        ImGui::Separator();
+        ImGui::RadioButton("Select (1)", &state.tool, 0);
+        ImGui::RadioButton("Translate (2)", &state.tool, 1);
+        ImGui::RadioButton("Rotate (3)", &state.tool, 2);
+        ImGui::RadioButton("Scale (4)", &state.tool, 3);
+        ImGui::EndMenu();
+    }
     if (ImGui::BeginMenu("View")) {
         ImGui::MenuItem("Show Guides", nullptr, &state.showGuides);
         ImGui::MenuItem("Show Proxies", nullptr, &state.showProxies);
@@ -22,6 +39,7 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::MenuItem("Show Origin", nullptr, &state.showOrigin);
         ImGui::MenuItem("Show Gizmos", nullptr, &state.showGizmo);
         ImGui::MenuItem("Show AABBs", nullptr, &state.showAABBs);
+        ImGui::MenuItem("Show Selected AABB", nullptr, &state.showSelectedAABB);
         ImGui::MenuItem("Show Light Gizmos", nullptr, &state.showLightGizmos);
         ImGui::Separator();
         ImGui::MenuItem("Depth Prepass", nullptr, &state.depthPrepass);

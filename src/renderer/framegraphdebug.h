@@ -85,6 +85,8 @@ inline auto toString(RhiFormat f) -> const char* {
             return "B8G8R8A8_UNORM";
         case RhiFormat::R32G32B32A32_SFLOAT:
             return "R32G32B32A32_SFLOAT";
+        case RhiFormat::R32_UINT:
+            return "R32_UINT";
         case RhiFormat::D32_SFLOAT:
             return "D32_SFLOAT";
         case RhiFormat::R8_UNORM:

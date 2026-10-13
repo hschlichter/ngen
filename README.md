@@ -82,7 +82,8 @@ Each library documents its design and rules in a README next to the code:
 - [`src/rpc/README.md`](src/rpc/README.md) — how ngen processes and agents talk: JSON-RPC over loopback TCP, discovery, threading, adding a method, records.
 - [`src/introspect/README.md`](src/introspect/README.md) — `ngen-introspect`: every running process's records in a window or on the command line, and calling their methods.
 - [`src/build/README.md`](src/build/README.md) — the self-hosted build system: framework, IR, runner, bootstrap.
-- [`src/scene/README.md`](src/scene/README.md) — the scene as a USD stage, and how its layers and textures are read through the asset server.
+- [`src/scene/README.md`](src/scene/README.md) — the plain types the renderer and ngen-view share for what is drawn.
+- [`src/editor/README.md`](src/editor/README.md) — the USD editor code, unbuilt until `ngen-editor` is built from it.
 - [`src/asset/README.md`](src/asset/README.md) — the asset system: asset ids, `ngen-asset-server`, its cache and stream, `AssetClient`, and packing (`pack.cpp` rules, packers).
 - [`src/view/README.md`](src/view/README.md) — ngen-view's scene: the World composed from packs and flattened into the renderer's inputs; its commands and dumps.
 - [`src/world/README.md`](src/world/README.md) — the runtime scene: the World composed from scene packs as USD composes a stage, and `ngen-worldcheck` / `ngen-usdcheck` to compare the two.

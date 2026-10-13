@@ -7,6 +7,7 @@
 #include "viewmenubar.h"
 
 auto ViewUI::draw(const PrimPathOf& primPath,
+                  bool hasSelection,
                   const RenderWorld& renderWorld,
                   Camera& camera,
                   std::optional<FrameGraphDebugSnapshot> freshFrameGraphSnap,
@@ -18,10 +19,16 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         renderDebugLast = std::move(freshRenderDebugSnap);
     }
     ViewMenuBarState menuState{
+        .hasSelection = hasSelection,
+        .tool = toolIndex,
+        .requestDeselect = deselectRequested,
+        .requestSelectParent = selectParentRequested,
+        .requestFrameSelected = frameSelectedRequested,
         .showGrid = showGridFlag,
         .showOrigin = showOriginFlag,
         .showGizmo = showGizmoFlag,
         .showAABBs = showAABBsFlag,
+        .showSelectedAABB = showSelectedAABBFlag,
         .showLightGizmos = showLightGizmosFlag,
         .showGuides = showGuidesFlag,
         .showProxies = showProxiesFlag,
@@ -157,7 +164,8 @@ auto ViewUI::drawDebug(DebugDraw& debugDraw,
                        glm::vec3 worldUp,
                        std::span<const uint8_t> visible,
                        const std::array<glm::vec3, 8>* frozenFrustum,
-                       std::span<const ShadowCascade> cascades) -> void {
+                       std::span<const ShadowCascade> cascades,
+                       const AABB* selectedBounds) -> void {
     debugDraw.newFrame();
     if (showGridFlag) {
         debugDraw.grid(cameraPos, worldUp, 1.0f, 50, {0.25f, 0.25f, 0.25f, 1.0f});
@@ -228,6 +236,22 @@ auto ViewUI::drawDebug(DebugDraw& debugDraw,
             debugDraw.sunLight(sunPos, -towardUnit, discRadius, shaftLength, {1.0f, 0.85f, 0.2f, 1.0f});
         }
     }
+    if (selectedBounds != nullptr && showSelectedAABBFlag && selectedBounds->valid()) {
+        debugDraw.box(*selectedBounds, {1.0f, 0.0f, 0.6f, 1.0f});
+    }
+}
+
+auto ViewUI::takeEditRequest() -> ViewEditRequest {
+    if (std::exchange(deselectRequested, false)) {
+        return ViewEditRequest::Deselect;
+    }
+    if (std::exchange(selectParentRequested, false)) {
+        return ViewEditRequest::SelectParent;
+    }
+    if (std::exchange(frameSelectedRequested, false)) {
+        return ViewEditRequest::FrameSelected;
+    }
+    return ViewEditRequest::None;
 }
 
 auto ViewUI::setOverlay(std::string_view name, bool on) -> bool {

@@ -1,6 +1,6 @@
 # Scene pack
 
-**Status. In progress.** Phase A started 2026-10-12; phases A, B and C done 2026-10-12 (results under Verification).
+**Status. Landed.** Phases A to C 2026-10-12, D 2026-10-13 (results under Verification).
 
 Step 2 of [plan_tool_architecture.md](plan_tool_architecture.md), the scene half: ngen-view stops reading USD. A USD packer turns every USD file
 into a pack of engine-ready data, one pack job per file; a runtime scene library composes the packs into the scene the renderer draws; and the
@@ -264,6 +264,9 @@ Ships: the view is interactive again on entities, and nothing of the editor or O
 14. **Selection and gizmos on entities**: the selection is an entity id; gizmo drags are local opinions on the entity's transform, kept until
     the view closes; `select` and `translate` script verbs and methods name entities by path; a `pick <x> <y>` script verb and `view.pick`
     method pick at a pixel as a click does, and answer with the entity's path.
+    *As built:* the id target is `gbuffer.instance`, a new `RhiFormat::R32_UINT` (instance index + 1, 0 for nothing), read through the capture
+    service (`src/view/viewpicking.*`). The selection is the entity's full path (instances expanded), so a prim inside an instance is that
+    instance's, and so is its transform override (`ViewScene::setLocalTransform`, which moves the draws without rebuilding them).
 15. **The editor code moves** to `src/editor/` with `git mv` (decision 14), unchanged and unbuilt; `build.cpp` stops building `sceneusd`,
     `scene` and the editor windows, and links no OpenUSD into ngen-view. A `src/editor/README.md` says what the code is and that `ngen-editor`
     will be built from it; `AGENTS.md`'s folder list gains `src/editor/`.
@@ -305,12 +308,18 @@ Ships: the view is interactive again on entities, and nothing of the editor or O
   *Phase C, 2026-10-12:* 4,427 draws with guides off, 30,574 with `purposes guide=on`.
 - **No USD in the view** (end of phase D): `ldd` and `nm` on ngen-view show no `libusd_*` or `pxr` symbols; `build.cpp`'s link graph has none
   under the view.
+  *Phase D, 2026-10-13:* none; `build.cpp` builds no `scene`, `sceneusd` or `usdplugins` target, and nothing of `src/editor/`. Every target
+  builds in debug and release; screenshots stay byte-identical, with validation on and no warnings; fingerprints unchanged.
 - **Start-up without USD**: Sponza's start-up trace has no USD stage events (`SceneOpened`, `AssetBindingsUpdated`, `SceneExtracted`) and, with a
   warm cache, no packer run; the time to first frame is recorded next to today's 5.4 s.
   *Phase C, 2026-10-12:* none of them; `SceneRequested`, `PacksComposed`, `SceneAssetsReceived` and `WorldExtracted` instead. The main
   loop starts 3.5 s after start (the baseline run: 7.0 s).
 - **Gizmos and picking** (end of phase D): a `pick` at a pixel selects the entity under it, read back from the GPU (its path in the
   `status` record), and a `translate` script verb moves it, visible in a screenshot.
+  *Phase D, 2026-10-13:* on three_cubes, `pick` on the red cube selects `/World/Cube` and on the background nothing (the `status` record);
+  `translate /World/Cube_2 0,1.5,0` lifts the blue cube and its shadow, with the selection box drawn. On the layered scene,
+  `translate /World/ModelB/Top 0,1.5,0` moves that instance's crown and not `ModelA`'s, which shares its content. Gizmo drags in a window are
+  yours to try.
 
 ## Open questions
 

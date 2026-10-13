@@ -2,13 +2,19 @@
 
 #include "introspectionflags.h"
 
-// ngen-view's menu bar: File (Quit), View (purposes, overlays, buffer and debug views) and Windows (the introspection windows). The
-// flags are ViewUI's; the menus edit them in place.
+// ngen-view's menu bar: File (Quit), Edit (selection and tools), View (purposes, overlays, buffer and debug views) and Windows (the
+// introspection windows). The flags are ViewUI's; the menus edit them in place.
 struct ViewMenuBarState {
+    bool hasSelection;
+    int& tool; // ViewTool
+    bool& requestDeselect;
+    bool& requestSelectParent;
+    bool& requestFrameSelected;
     bool& showGrid;
     bool& showOrigin;
     bool& showGizmo;
     bool& showAABBs;
+    bool& showSelectedAABB;
     bool& showLightGizmos;
     bool& showGuides;
     bool& showProxies;

@@ -10,6 +10,7 @@
 #include <glm/glm.hpp>
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -19,6 +20,9 @@
 
 class AssetClient;
 struct PackedTextureView;
+
+// A local matrix as position, rotation and scale, as the gizmos take it (shear is dropped).
+auto decomposeTransform(const glm::mat4& local) -> Transform;
 
 // The scene ngen-view shows: its World, composed from the scene's packs, and the renderer's inputs built from it (RenderWorld,
 // MeshLibrary, MaterialLibrary). Everything comes from the asset server; nothing of USD. See src/view/README.md.
@@ -49,8 +53,23 @@ public:
     auto worldUp() const -> glm::vec3;
     // The full path of the entity a draw instance or light names (RenderWorld's prim index); empty for none.
     auto primPath(uint32_t prim) const -> std::string;
+    // The full path of the entity a draw instance (RenderWorld::meshInstances' index) draws; empty for none.
+    auto instancePath(uint32_t instance) const -> std::string;
     // The world bounds of what is drawn at or under a path; invalid when nothing is.
     auto bounds(const std::string& path) const -> AABB;
+
+    // A prim's transforms as the view draws it: local, and world in metres. `xformable` is false for a prim whose type takes no
+    // transform (its world is its parent's).
+    struct PrimTransform {
+        glm::mat4 local = glm::mat4(1.0f);
+        glm::mat4 world = glm::mat4(1.0f);
+        bool xformable = false;
+    };
+    // Nullopt when there is no prim at the path (or it is under one that isn't drawn: inactive, invisible, a level not drawn).
+    auto transform(const std::string& path) const -> std::optional<PrimTransform>;
+    // Replaces a prim's local transform, as a gizmo drag does: a local opinion of the view, kept until it closes, never saved. Moves
+    // what is drawn under the prim; false for a prim that isn't there or takes no transform.
+    auto setLocalTransform(const std::string& path, const glm::mat4& local) -> bool;
 
 private:
     auto compose() -> void;
@@ -78,5 +97,15 @@ private:
     std::shared_ptr<const MaterialLibrary> materialLibrary = std::make_shared<MaterialLibrary>();
     std::unordered_map<std::string, MaterialHandle> materialByAsset; // by material asset id, or "displayColor r g b" for none
     std::vector<std::string> primPaths;                              // by prim index - 1
+    // Every prim reached while drawing, by full path: its local transform and its world one before the unit scale.
+    struct EntityTransform {
+        glm::mat4 local = glm::mat4(1.0f);
+        glm::mat4 world = glm::mat4(1.0f);
+        bool xformable = false;
+        bool resetsXformStack = false;
+    };
+    std::map<std::string, EntityTransform> transforms;
+    std::map<std::string, glm::mat4> localOverrides; // setLocalTransform's, applied by every extract
+    glm::mat4 unitScale = glm::mat4(1.0f);
     uint64_t inputsRevision = 0;
 };

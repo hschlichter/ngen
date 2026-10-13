@@ -121,6 +121,7 @@ enum class RhiFormat {
     R32G32_SFLOAT,
     R32G32B32_SFLOAT,
     R32G32B32A32_SFLOAT,
+    R32_UINT, // integer colour attachment (ids); not filterable, not blittable
     D32_SFLOAT,
     D24_UNORM_S8_UINT,  // optional on Vulkan; query supportsTextureFormat, or use D32_SFLOAT_S8_UINT
     D32_SFLOAT_S8_UINT, // Vulkan guarantees at least one of the two depth-stencil formats

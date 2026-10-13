@@ -37,6 +37,7 @@ auto captureTexelBytes(RhiFormat format) -> uint32_t {
         case RhiFormat::B8G8R8A8_UNORM:
         case RhiFormat::B8G8R8A8_SRGB:
         case RhiFormat::D32_SFLOAT:
+        case RhiFormat::R32_UINT:
             return 4;
         case RhiFormat::R16G16B16A16_SFLOAT:
         case RhiFormat::R32G32_SFLOAT:
@@ -54,6 +55,7 @@ auto captureChannelCount(RhiFormat format) -> uint32_t {
     switch (format) {
         case RhiFormat::R8_UNORM:
         case RhiFormat::D32_SFLOAT:
+        case RhiFormat::R32_UINT:
             return 1;
         case RhiFormat::R8G8_UNORM:
         case RhiFormat::R32G32_SFLOAT:
@@ -87,6 +89,11 @@ auto decodeTexel(RhiFormat format, const std::byte* texel) -> glm::vec4 {
             return {u8(2), u8(1), u8(0), u8(3)};
         case RhiFormat::D32_SFLOAT:
             return {f32(0), 0.0f, 0.0f, 1.0f};
+        case RhiFormat::R32_UINT: {
+            uint32_t v = 0;
+            std::memcpy(&v, texel, 4);
+            return {(float) v, 0.0f, 0.0f, 1.0f};
+        }
         case RhiFormat::R16G16B16A16_SFLOAT: {
             uint64_t packed = 0;
             std::memcpy(&packed, texel, 8);

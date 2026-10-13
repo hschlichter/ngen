@@ -17,6 +17,7 @@ class RhiDevice;
 struct GeometryPassData {
     FgTextureHandle albedo;
     FgTextureHandle normal;
+    FgTextureHandle instance; // R32_UINT: the instance index + 1 per pixel, 0 where nothing is drawn (picking reads it)
     FgTextureHandle depth;
 };
 

@@ -197,60 +197,6 @@ auto main(int argc, char** argv) -> int {
             .link(packer)
             .link(rhi_backend);
 
-    auto scene =
-        cxx::static_library("scene")
-            .sources(glob({.include = "src/scene/*.cpp", .exclude = "src/scene/usd*.cpp"}))
-            .public_include({
-                "src",
-                "src/scene",
-            })
-            .include({
-                "src/ui",
-                "src/renderer",
-                "src/trace",
-                "src/profile",
-                "external/glm",
-            })
-            .link(profile);
-
-    auto sceneusd =
-        cxx::static_library("sceneusd")
-            .std("c++20")
-            .sources(glob({.include = "src/scene/usd*.cpp"}))
-            .public_include({
-                "src",
-                "src/scene",
-            })
-            .include({
-                "src/trace",
-                "src/rhi",
-                "src/rhi/vulkan",
-                "src/renderer",
-                "src/renderer/passes",
-                "src/ui",
-                "external/openusd_build/include",
-                "external/glm",
-                "external/cgltf",
-                "external/stb",
-                "external/imgui",
-                "external/imgui/backends",
-                "external/concurrentqueue",
-            })
-            .warning_off("deprecated-declarations")
-            // The asset resolver uses AssetClient, which needs C++23. It includes only usd/ar, usd/sdf and base headers, which
-            // compile as C++23; the rest of OpenUSD's headers don't (usd/usd/schemaRegistry.h).
-            .for_source("src/scene/usdassetresolver.cpp", [](cxx::ObjectFile& file) { file.std("c++23"); })
-            .link(assetClient)
-            .link(packer)
-            .link(profile);
-
-    // The resolver's plugin metadata: USD only uses a resolver whose type a registered plugin declares.
-    auto usdPlugins =
-        tool("usdplugins")
-            .for_each({"src/scene/usdplugins/plugInfo.json"},
-                      [](const BuildVariant& variant, const Path& source) -> Path { return variant.out_dir / "usdplugins" / source.filename(); })
-            .command({"cp", "$in", "$out"});
-
     auto imgui =
         cxx::static_library("imgui")
             .sources({
@@ -288,8 +234,6 @@ auto main(int argc, char** argv) -> int {
             .link(renderer)
             .link(profile)
             .link(session)
-            .link(scene)
-            .link(sceneusd)
             .link(imgui);
 
     // Assets (src/asset/README.md): one packer program per asset type, and ngen-asset-server, which packs on
@@ -311,7 +255,7 @@ auto main(int argc, char** argv) -> int {
             .sources({
                 "src/apps/packerusd.cpp",
                 "src/asset/pack/usd/usdpacker.cpp",
-                "src/scene/primshapemesh.cpp",
+                "src/asset/pack/usd/primshapemesh.cpp",
             })
             .include({
                 "src",
@@ -408,6 +352,7 @@ auto main(int argc, char** argv) -> int {
                 "src/renderdoccapture.cpp",
                 "src/view/viewcommands.cpp",
                 "src/view/viewdumps.cpp",
+                "src/view/viewpicking.cpp",
                 "src/view/viewscene.cpp",
             })
             .include({
@@ -542,7 +487,6 @@ auto main(int argc, char** argv) -> int {
     p.target(worldCheck);
     p.target(usdCheck);
     p.target(assetServer);
-    p.target(usdPlugins);
     p.target(format);
     p.target(tidy);
     p.default_target(view);

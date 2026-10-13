@@ -13,6 +13,7 @@ class Renderer;
 class RenderThread;
 class RenderDocCapture;
 class ViewDumps;
+class ViewPicking;
 class ViewScene;
 class ViewUI;
 struct Camera;
@@ -23,6 +24,8 @@ struct ViewContext {
     Camera& cam;
     ViewScene& scene;
     ViewUI& ui;
+    std::string& selectedPath; // the selected prim's full path; empty for none
+    ViewPicking& picking;
     Renderer& renderer;
     RenderThread& renderThread;
     RenderDocCapture& renderDoc;
