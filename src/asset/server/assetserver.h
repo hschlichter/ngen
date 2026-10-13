@@ -102,9 +102,12 @@ private:
     auto cacheRecord() -> rpc::Json;
     auto rulesRecord() const -> rpc::Json;
 
-    auto subscribe(const std::string& id, Subscriber subscriber) -> void;
+    // `forceRequest` is the request that forces a repack of the asset, 0 for none.
+    auto subscribe(const std::string& id, Subscriber subscriber, int64_t forceRequest) -> void;
     // Packs an asset if it is out of date: "<file>" or "<file>#<fragment>", a secondary output of <file>'s job.
-    auto pack(const std::string& id) -> Outcome;
+    // Packs the asset when its cache is stale, or once per forcing request (`forceRequest`, 0 for none): the outputs of one file, forced
+    // together, pack it once.
+    auto pack(const std::string& id, int64_t forceRequest) -> Outcome;
     // Runs a file's packer and records its outputs, primary and secondary.
     auto runPacker(const std::string& primary, const PackRule& rule, uint64_t key) -> Outcome;
     auto deliver(const std::string& id, const Outcome& outcome) -> void;
@@ -137,6 +140,7 @@ private:
     // One lock per file, held while its job checks the cache and runs: requests for several outputs of one file pack it once.
     std::mutex fileLocksMutex;
     std::unordered_map<std::string, std::shared_ptr<std::mutex>> fileLocks;
+    std::unordered_map<std::string, int64_t> forcedBy; // by file: the last request that forced its job; guarded by fileLocksMutex
 
     // The data introspect.list and introspect.get serve.
     RpcRecords records;

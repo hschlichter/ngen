@@ -203,13 +203,14 @@ auto AssetServer::onAssetRequest(RpcServer::ConnectionId connection, const rpc::
         ids.push_back(value.get<std::string>());
     }
     rpc::Json held = params.contains("have") && params["have"].is_object() ? params["have"] : rpc::Json::object();
+    bool force = params.value("force", false);
     auto request = nextRequest++;
     if (ids.empty()) {
         traceLine("client {} request {}: no assets", connection, request);
     } else if (ids.size() == 1) {
-        traceLine("client {} request {}: {}", connection, request, ids.front());
+        traceLine("client {} request {}: {}{}", connection, request, ids.front(), force ? ", forced repack" : "");
     } else {
-        traceLine("client {} request {}: {} assets", connection, request, ids.size());
+        traceLine("client {} request {}: {} assets{}", connection, request, ids.size(), force ? ", forced repack" : "");
     }
     if (!ids.empty()) {
         std::lock_guard lock(requestMutex);
@@ -223,7 +224,7 @@ auto AssetServer::onAssetRequest(RpcServer::ConnectionId connection, const rpc::
         if (held.contains(asset) && held[asset].is_string()) {
             subscriber.held = held[asset].get<std::string>();
         }
-        subscribe(asset, subscriber);
+        subscribe(asset, subscriber, force ? request : 0);
     }
 }
 
@@ -361,7 +362,7 @@ auto AssetServer::rulesRecord() const -> rpc::Json {
     return result;
 }
 
-auto AssetServer::subscribe(const std::string& id, Subscriber subscriber) -> void {
+auto AssetServer::subscribe(const std::string& id, Subscriber subscriber, int64_t forceRequest) -> void {
     {
         std::lock_guard lock(inFlightMutex);
         auto it = inFlight.find(id);
@@ -373,15 +374,15 @@ auto AssetServer::subscribe(const std::string& id, Subscriber subscriber) -> voi
         }
         inFlight[id].push_back(subscriber);
     }
-    jobs->submit([this, id] {
+    jobs->submit([this, id, forceRequest] {
         auto started = std::chrono::steady_clock::now();
-        auto outcome = pack(id);
+        auto outcome = pack(id, forceRequest);
         outcome.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
         deliver(id, outcome);
     });
 }
 
-auto AssetServer::pack(const std::string& id) -> Outcome {
+auto AssetServer::pack(const std::string& id, int64_t forceRequest) -> Outcome {
     Outcome outcome;
     // "<file>#<fragment>" names a secondary output of <file>'s job: a mesh or material the file defines.
     auto hash = id.find('#');
@@ -429,9 +430,23 @@ auto AssetServer::pack(const std::string& id) -> Outcome {
         outcome.path = cache.outputPath(id).value_or((cacheDirectory / id).string());
         return true;
     };
-    if (upToDate()) {
-        traceLine("  {}  up to date ({})", id, hashText(outcome.version));
+    // A forcing request packs each file once: the first of its ids for the file forces the job, the others find what it wrote.
+    bool forced = false;
+    bool packedByThisRequest = false;
+    if (forceRequest != 0) {
+        std::lock_guard lock(fileLocksMutex);
+        auto& last = forcedBy[primary];
+        packedByThisRequest = last == forceRequest;
+        forced = !packedByThisRequest;
+        last = forceRequest;
+    }
+    if (!forced && upToDate()) {
+        outcome.packed = packedByThisRequest;
+        traceLine("  {}  {} ({})", id, packedByThisRequest ? "packed by this forced request" : "up to date", hashText(outcome.version));
         return outcome;
+    }
+    if (forced) {
+        traceLine("  {}  repack forced", id);
     }
     auto ran = runPacker(primary, rule, key);
     if (!ran.ok) {

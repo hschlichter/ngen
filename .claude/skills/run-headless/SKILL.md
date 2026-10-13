@@ -78,7 +78,11 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
 - `dump-profile PATH` (script verb): the profiler history as a Chrome trace file (`jq '.traceEvents'`, or open in Perfetto).
 - `--script=FILE`: `<frame> <verb> [args]` per line, same verbs as the flags plus `quit`, `pick <x> <y>` (select what is drawn at that framebuffer pixel,
   read back from the GPU; the `Picked` event names it), `translate /prim dx,dy,dz` (the view's own local opinion, never saved),
-  `purposes guide=on|off,proxy=on|off` (draw guide and proxy prims), `lod <LOD root path> <level>` (the level a LOD root wants; loads it) and `cull on|off|freeze|unfreeze|show|hide`
+  `purposes guide=on|off,proxy=on|off` (draw guide and proxy prims), `repack <id>...|scene` (force the asset server to repack them, and
+  rebuild the scene; a live view takes a source edit this way: `./ngen-cli introspect call view view.repack '{"ids":["file.usda"]}'`),
+  `goto-asset <id> [all]` (move the camera to an asset's next draw, nearest first, and select it; `all` frames every draw),
+  `assets-of [/prim]` (the assets drawn at or under a prim use, or the selection's; `view.assetsOf` answers with them),
+  `lod <LOD root path> <level>` (the level a LOD root wants; loads it) and `cull on|off|freeze|unfreeze|show|hide`
   (frustum culling toggle, frozen frustum, red/green AABB overlay), `prepass on|off` (depth prepass) and
   `sampler aniso=8,bias=0,minlod=0,mip=linear|nearest` (material sampler), `shadow cascades=3,tile=1024,lambda=0.5,pcf=on|off`
   (cascaded shadows), `inspect <material> <level>|off` (texture inspector

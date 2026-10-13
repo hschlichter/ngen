@@ -37,6 +37,23 @@ or served its cache, its size, and its times. Total is request to arrival; Serve
 it ran); Rest is the difference, waiting in the server's queue and streaming. A filter by id and by state, sorting by any column, and a
 failed asset's errors on hover. The `assets` record carries the same list next to the totals.
 
+**Going to an asset.** A double-click, or Go to in the row's menu, moves the camera to the asset's draws: the nearest first, then the next at
+each go-to ("draw 3 of 412"), each framed and its prim selected; Frame all frames every draw at once. An asset's draws are the prims whose
+draws use it (`ViewScene::drawsOf`, the Draws column): a mesh's prims, a material's or a texture's users, the prims drawing the meshes a USD
+file defines. A file that only overrides or arranges others, and a shader, draw nothing. The `goto-asset <id> [all]` verb and
+`view.gotoAsset` do the same and answer with the prim.
+
+The other way, **Selected prim's assets** selects the rows of every asset the prim selected in the view uses, and everything drawn under it
+(`ViewScene::assetsUnder`): its meshes, the USD files defining them, its materials and their textures; Show selected only narrows the list to
+them, ready for Repack selected. `assets-of [prim]` and `view.assetsOf` answer with the list (the selection when no prim is given).
+
+**Repacking.** Rows select as in a file list: click, Ctrl+click to add or remove one, Shift+click for a range as sorted and filtered, Ctrl+A
+or Select shown for every row shown. Repack selected (or the row's menu) has the asset server repack the selection even when its cache is up
+to date; Repack scene does it for every asset of the scene (`ViewScene::assetIds`: layer packs, meshes, materials, textures). The view
+fetches what was repacked, fetches again the meshes and materials of a repacked USD file, and rebuilds its scene, so an edit to a source shows
+without a restart (`ViewScene::repack`, the `repack <id>... | scene` verb and `view.repack`; it blocks, as loading does, and traces
+`AssetsRepacked`). A shader's repack refreshes only the server's cache: the view takes new shaders at its next start.
+
 ## Selection, picking and gizmos
 
 The selection is a prim's full path (instances expanded), so a prim inside an instance is that instance's. A click picks on the GPU

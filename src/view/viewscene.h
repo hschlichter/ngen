@@ -38,6 +38,13 @@ public:
 
     // The level a LOD root wants, by its full path; loads it.
     auto setLodLevel(const std::string& rootPath, uint32_t level) -> void;
+    // Has the asset server repack these assets even when its cache is up to date, fetches them, and rebuilds the scene from them; the
+    // meshes and materials of a repacked USD file are fetched again too. Blocks. An asset that isn't the scene's (a shader) is repacked
+    // only on the server. Returns how many of the ids are the scene's.
+    auto repack(const std::vector<std::string>& ids) -> size_t;
+    // Every asset the scene uses: its layer packs, meshes, materials and textures.
+    auto assetIds() const -> std::vector<std::string>;
+
     // Whether prims of a purpose are drawn: default and render always are, guide and proxy when turned on.
     auto setPurposeShown(Purpose purpose, bool shown) -> void;
     auto purposeShown(Purpose purpose) const -> bool;
@@ -57,6 +64,14 @@ public:
     auto instancePath(uint32_t instance) const -> std::string;
     // The world bounds of what is drawn at or under a path; invalid when nothing is.
     auto bounds(const std::string& path) const -> AABB;
+    // The draws (prim indices, for primPath and primBounds) that use an asset: a mesh's prims, a material's or a texture's users, the prims
+    // drawing the meshes a USD file defines. Empty for an asset nothing draws (a shader, a file that only overrides or arranges others).
+    auto drawsOf(const std::string& assetId) const -> std::vector<uint32_t>;
+    auto drawCount(const std::string& assetId) const -> size_t;
+    // The world bounds of one drawn prim.
+    auto primBounds(uint32_t prim) const -> AABB;
+    // The assets used by what is drawn at or under a path: meshes, the USD files defining them, materials and their textures; sorted.
+    auto assetsUnder(const std::string& path) const -> std::vector<std::string>;
 
     // A prim's transforms as the view draws it: local, and world in metres. `xformable` is false for a prim whose type takes no
     // transform (its world is its parent's).
@@ -95,8 +110,10 @@ private:
     RenderWorld drawn;
     std::shared_ptr<const MeshLibrary> meshLibrary = std::make_shared<MeshLibrary>();
     std::shared_ptr<const MaterialLibrary> materialLibrary = std::make_shared<MaterialLibrary>();
-    std::unordered_map<std::string, MaterialHandle> materialByAsset; // by material asset id, or "displayColor r g b" for none
-    std::vector<std::string> primPaths;                              // by prim index - 1
+    std::unordered_map<std::string, MaterialHandle> materialByAsset;     // by material asset id, or "displayColor r g b" for none
+    std::vector<std::string> primPaths;                                  // by prim index - 1
+    std::unordered_map<std::string, std::vector<uint32_t>> drawsByAsset; // asset id to the prims whose draws use it
+    std::unordered_map<uint32_t, std::vector<std::string>> assetsByPrim; // a drawn prim to the assets its draws use
     // Every prim reached while drawing, by full path: its local transform and its world one before the unit scale.
     struct EntityTransform {
         glm::mat4 local = glm::mat4(1.0f);

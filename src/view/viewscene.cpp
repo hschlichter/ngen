@@ -126,6 +126,85 @@ auto ViewScene::rebuild() -> void {
     extract();
 }
 
+auto ViewScene::assetIds() const -> std::vector<std::string> {
+    std::set<std::string> ids(requestedPacks.begin(), requestedPacks.end());
+    for (const auto& [assetId, pack] : meshPacks) {
+        ids.insert(assetId);
+    }
+    for (const auto& [assetId, pack] : materialPacks) {
+        ids.insert(assetId);
+    }
+    for (const auto& [assetId, bytes] : texturePacks) {
+        ids.insert(assetId);
+    }
+    ids.insert(failedAssets.begin(), failedAssets.end());
+    return {ids.begin(), ids.end()};
+}
+
+auto ViewScene::repack(const std::vector<std::string>& ids) -> size_t {
+    auto start = std::chrono::steady_clock::now();
+    auto ours = [this](const std::string& assetId) {
+        return requestedPacks.contains(assetId) || meshPacks.contains(assetId) || materialPacks.contains(assetId) || texturePacks.contains(assetId) ||
+               failedAssets.contains(assetId);
+    };
+    size_t sceneAssets = (size_t) std::ranges::count_if(ids, ours);
+    assets.request(ids, true);
+    assets.wait(ids);
+    std::set<std::string> repackedIds(ids.begin(), ids.end());
+    std::set<std::string> repackedFiles;
+    size_t failed = 0;
+    for (const auto& assetId : ids) {
+        auto asset = assets.take(assetId);
+        if (!asset) {
+            failed++;
+            std::string reason;
+            for (const auto& line : assets.errors(assetId)) {
+                reason += reason.empty() ? line : "; " + line;
+            }
+            TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(std::format("{}: repack failed, the scene keeps what it had: {}", assetId, reason.empty() ? std::string("no reason given") : reason));
+            continue;
+        }
+        if (!ours(assetId)) {
+            continue;
+        }
+        failedAssets.erase(assetId);
+        repackedFiles.insert(assetId.substr(0, assetId.find('#')));
+        auto kind = scenePackKind(asset->bytes);
+        if (kind && *kind == ScenePackKind::Layer) {
+            if (auto error = composer->addPack(assetId, asset->bytes)) {
+                TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(*error);
+            }
+        } else if (kind && *kind == ScenePackKind::Mesh) {
+            if (auto mesh = readMeshPack(asset->bytes)) {
+                meshPacks[assetId] = std::move(*mesh);
+            }
+        } else if (kind && *kind == ScenePackKind::Material) {
+            if (auto material = readMaterialPack(asset->bytes)) {
+                materialPacks[assetId] = std::move(*material);
+            }
+        } else {
+            texturePacks[assetId] = std::move(asset->bytes);
+        }
+    }
+    // The meshes and materials of a repacked file that weren't repacked by id are fetched again by the rebuild.
+    auto fetchAgain = [&](const std::string& assetId) {
+        return !repackedIds.contains(assetId) && repackedFiles.contains(assetId.substr(0, assetId.find('#')));
+    };
+    std::erase_if(meshPacks, [&](const auto& entry) { return fetchAgain(entry.first); });
+    std::erase_if(materialPacks, [&](const auto& entry) { return fetchAgain(entry.first); });
+    if (sceneAssets > 0) {
+        rebuild();
+    }
+    auto ms = msSince(start);
+    TRACE_EVENT("Scene", "AssetsRepacked", id)
+        .text(std::format("{} assets repacked ({} of the scene's, {} failed) and the scene rebuilt in {:.0f} ms", ids.size(), sceneAssets, failed, ms))
+        .field("assets", (int64_t) ids.size())
+        .field("scene_assets", (int64_t) sceneAssets)
+        .field("failed", (int64_t) failed)
+        .field("ms", ms);
+    return sceneAssets;
+}
+
 auto ViewScene::worldUp() const -> glm::vec3 {
     if (world().upAxis == "Z") {
         return {0.0f, 0.0f, 1.0f};
@@ -147,6 +226,46 @@ auto ViewScene::instancePath(uint32_t instance) const -> std::string {
         }
     }
     return {};
+}
+
+auto ViewScene::drawsOf(const std::string& assetId) const -> std::vector<uint32_t> {
+    if (auto it = drawsByAsset.find(assetId); it != drawsByAsset.end()) {
+        return it->second;
+    }
+    return {};
+}
+
+auto ViewScene::drawCount(const std::string& assetId) const -> size_t {
+    if (auto it = drawsByAsset.find(assetId); it != drawsByAsset.end()) {
+        return it->second.size();
+    }
+    return 0;
+}
+
+auto ViewScene::assetsUnder(const std::string& path) const -> std::vector<std::string> {
+    std::set<std::string> out;
+    for (const auto& [prim, uses] : assetsByPrim) {
+        const auto& candidate = primPaths[prim - 1];
+        bool under = path == "/" || candidate == path || (candidate.size() > path.size() && candidate.starts_with(path) && candidate[path.size()] == '/');
+        if (under) {
+            out.insert(uses.begin(), uses.end());
+        }
+    }
+    return {out.begin(), out.end()};
+}
+
+auto ViewScene::primBounds(uint32_t prim) const -> AABB {
+    AABB out = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
+    if (auto it = drawn.primToInstance.find(prim); it != drawn.primToInstance.end()) {
+        for (uint32_t i = it->second.first; i < it->second.first + it->second.count; i++) {
+            const auto& bounds = drawn.meshInstances[i].worldBounds;
+            if (bounds.valid()) {
+                out.min = glm::min(out.min, bounds.min);
+                out.max = glm::max(out.max, bounds.max);
+            }
+        }
+    }
+    return out;
 }
 
 auto ViewScene::bounds(const std::string& path) const -> AABB {
@@ -401,6 +520,8 @@ auto ViewScene::extract() -> void {
     primPaths.clear();
     materialByAsset.clear();
     transforms.clear();
+    drawsByAsset.clear();
+    assetsByPrim.clear();
     auto meshes = std::make_shared<MeshLibrary>();
     meshLibrary = meshes;
     materialLibrary = std::make_shared<MaterialLibrary>();
@@ -475,10 +596,22 @@ auto ViewScene::extract() -> void {
         }
         desc.indices = meshPack.indices;
         desc.doubleSided = meshPack.doubleSided;
+        // The assets this draw uses, for drawsOf: its mesh, the file defining it, and each submesh's material and that material's texture.
+        std::vector<std::string> uses = {entity.meshAsset, entity.meshAsset.substr(0, entity.meshAsset.find('#'))};
+        auto useMaterial = [&](const std::string& materialAsset) {
+            if (materialAsset.empty()) {
+                return;
+            }
+            uses.push_back(materialAsset);
+            if (auto pack = materialPacks.find(materialAsset); pack != materialPacks.end() && !pack->second.baseColorTexture.empty()) {
+                uses.push_back(pack->second.baseColorTexture);
+            }
+        };
         for (const auto& submesh : meshPack.submeshes) {
             SubMesh out = {.indexOffset = submesh.indexOffset, .indexCount = submesh.indexCount};
             if (submesh.subsetPath.empty()) {
                 out.material = material(visited.materialAsset, displayColor);
+                useMaterial(visited.materialAsset);
             } else {
                 // The subset's own binding, unless an ancestor's is stronger; a subset has no display colour of its own.
                 auto name = submesh.subsetPath.substr(submesh.subsetPath.rfind('/') + 1);
@@ -490,6 +623,7 @@ auto ViewScene::extract() -> void {
                     }
                 }
                 out.material = material(subsetMaterial, std::nullopt);
+                useMaterial(subsetMaterial);
             }
             desc.submeshes.push_back(out);
         }
@@ -514,6 +648,13 @@ auto ViewScene::extract() -> void {
             });
         }
         drawn.primToInstance[prim] = {.first = first, .count = (uint32_t) meshData->submeshes.size()};
+        std::ranges::sort(uses);
+        auto [last, end] = std::ranges::unique(uses);
+        uses.erase(last, end);
+        for (const auto& used : uses) {
+            drawsByAsset[used].push_back(prim);
+        }
+        assetsByPrim[prim] = std::move(uses);
         return true;
     });
 

@@ -65,8 +65,9 @@ public:
     // running.
     auto connect(const std::string& variant) -> std::expected<RpcEndpointInfo, std::string>;
 
-    // Sends one asset.request for all of `ids`; returns at once.
-    auto request(std::span<const std::string> ids) -> void;
+    // Sends one asset.request for all of `ids`; returns at once. `force` has the server pack them even when its cache is up to date (each
+    // file once, for the outputs of one file).
+    auto request(std::span<const std::string> ids, bool force = false) -> void;
 
     // Blocks until every id in `ids` has arrived or failed.
     auto wait(std::span<const std::string> ids) -> void;

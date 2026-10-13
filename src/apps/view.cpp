@@ -381,12 +381,14 @@ auto main(int argc, char* argv[]) -> int {
     if (positional.size() > 1) {
         viewUI.setBookmarkPath(std::string(positional[1]) + ".cameras.txt");
     }
+    viewUI.setAssetDrawCount([&scene](const std::string& assetId) { return scene.drawCount(assetId); });
     auto primPathOf = [&scene](uint32_t prim) -> std::string {
         return scene.primPath(prim);
     };
     // The selected prim, by full path (instances expanded); empty for none. A click picks it on the GPU.
     std::string selectedPath;
     ViewPicking picking;
+    AssetGoToState assetGoTo;
 
     // Render thread
     RenderThread renderThread;
@@ -467,6 +469,7 @@ auto main(int argc, char* argv[]) -> int {
         .ui = viewUI,
         .selectedPath = selectedPath,
         .picking = picking,
+        .goTo = assetGoTo,
         .renderer = renderer,
         .renderThread = renderThread,
         .renderDoc = renderDoc,
@@ -760,6 +763,26 @@ auto main(int argc, char* argv[]) -> int {
         viewUI.setStatusBar(statusBar.gather(rhiDevice, assetClient, latestCull));
         if (viewUI.wantsAssetLog()) {
             viewUI.setAssetLog(assetClient.log());
+        }
+        // Repacks the Assets window asked for: blocking, as loading the scene is; the rebuilt scene uploads as any change does.
+        viewUI.setHasPrimSelected(!selectedPath.empty());
+        if (viewUI.takeFindSelectedRequest()) {
+            viewUI.selectAssets(scene.assetsUnder(selectedPath));
+        }
+        if (auto goTo = viewUI.takeGoToRequest()) {
+            auto result = goToAsset(viewContext, goTo->id, goTo->all);
+            if (!result.error.empty()) {
+                viewUI.setGoToStatus(result.error);
+            } else if (goTo->all) {
+                viewUI.setGoToStatus(std::format("{}: all {} draws framed", goTo->id, result.count));
+            } else {
+                viewUI.setGoToStatus(std::format("{}: draw {} of {}, {}", goTo->id, result.index + 1, result.count, result.prim));
+            }
+        }
+        if (auto repack = viewUI.takeRepackRequest(); repack.scene) {
+            scene.repack(scene.assetIds());
+        } else if (!repack.ids.empty()) {
+            scene.repack(repack.ids);
         }
         viewUI.draw(primPathOf, !selectedPath.empty(), scene.renderWorld(), cam, std::move(fgDebugSnap), std::move(renderDebugSnap));
         switch (viewUI.takeEditRequest()) {

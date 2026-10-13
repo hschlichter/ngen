@@ -145,6 +145,28 @@ public:
     // The Assets window's rows: the application sets them each frame while the window is open.
     auto wantsAssetLog() const -> bool { return showAssetsWindow; }
     auto setAssetLog(std::vector<AssetLogEntry> log) -> void { assetLog = std::move(log); }
+    // The repacks the Assets window asked for this frame, once: asset ids, and whether the whole scene.
+    struct RepackRequest {
+        std::vector<std::string> ids;
+        bool scene = false;
+    };
+    // A "go to" the Assets window asked for this frame, once; the answer shows in the window.
+    auto takeGoToRequest() -> std::optional<AssetsWindowState::GoTo> { return std::exchange(assetsState.goToRequested, std::nullopt); }
+    auto setGoToStatus(std::string status) -> void { assetsState.goToStatus = std::move(status); }
+    auto setAssetDrawCount(std::function<size_t(const std::string&)> drawCount) -> void { assetsState.drawCount = std::move(drawCount); }
+    // Whether the view has a prim selected, for the Assets window's "Selected prim's assets"; and that button's press, once.
+    auto setHasPrimSelected(bool selected) -> void { assetsState.hasPrimSelected = selected; }
+    auto takeFindSelectedRequest() -> bool { return std::exchange(assetsState.findSelectedRequested, false); }
+    // Selects these rows in the Assets window, alone, and shows only them.
+    auto selectAssets(const std::vector<std::string>& ids) -> void {
+        assetsState.selected = {ids.begin(), ids.end()};
+        assetsState.anchor = ids.empty() ? std::string() : ids.front();
+        assetsState.showSelectedOnly = !ids.empty();
+    }
+    auto takeRepackRequest() -> RepackRequest {
+        RepackRequest request{.ids = std::exchange(assetsState.repackRequested, {}), .scene = std::exchange(assetsState.repackSceneRequested, false)};
+        return request;
+    }
     // What the status bar shows next frame; the application sets it each frame.
     auto setStatusBar(const StatusBarData& data) -> void { statusBarData = data; }
     auto cameraWindow() -> CameraWindowState& { return cameraState; }

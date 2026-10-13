@@ -66,7 +66,9 @@ by hand and runs until Ctrl-C or SIGTERM:
 the binaries are, except that the packers sit next to the server. It takes its variant (and so the rules' configuration) from the folder its binary
 is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own cache, its own job runner, and the RPC core.
 
-- **`asset.request`** `{ids: [...], have: {id: version}}` answers at once with `{request}`. Then each asset is answered on its own as it finishes:
+- **`asset.request`** `{ids: [...], have: {id: version}, force}` answers at once with `{request}`. With `force: true` the server packs the
+  assets even when its cache is up to date, each file's job once per request: the other ids of a file it forced (its meshes and materials)
+  come from what that job wrote, and still say `packed: true`. Then each asset is answered on its own as it finishes:
   - `asset.data` `{request, id, version, offset, total}` notifications, each with up to 1 MiB of the packed file as the frame's attachment, in order
   - then `asset.ready` `{request, id, version, size, sent, packed, ms}`; `ms` is the server's time for it (the cache check, and packing when it
     ran, waiting for its file's job included); `packed` is true when a packer ran for it, false when the cache was up to

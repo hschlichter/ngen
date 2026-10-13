@@ -116,6 +116,33 @@ auto parsePick(const std::string& args) -> std::expected<Json, std::string> {
     return Json{{"x", x}, {"y", y}};
 }
 
+auto parseRepack(const std::string& args) -> std::expected<Json, std::string> {
+    if (args == "scene") {
+        return Json{{"scene", true}};
+    }
+    std::istringstream in(args);
+    Json ids = Json::array();
+    std::string id;
+    while (in >> id) {
+        ids.push_back(id);
+    }
+    if (ids.empty()) {
+        return std::unexpected(std::format("expected 'scene' or asset ids, got '{}'", args));
+    }
+    return Json{{"ids", ids}};
+}
+
+auto parseGoToAsset(const std::string& args) -> std::expected<Json, std::string> {
+    std::istringstream in(args);
+    std::string id;
+    std::string mode;
+    in >> id >> mode;
+    if (id.empty() || (!mode.empty() && mode != "all")) {
+        return std::unexpected(std::format("expected '<asset id> [all]', got '{}'", args));
+    }
+    return Json{{"id", id}, {"all", mode == "all"}};
+}
+
 auto parsePurposes(const std::string& args) -> std::expected<Json, std::string> {
     Json params = Json::object();
     for (const auto& [key, value] : splitItems(args)) {
@@ -311,6 +338,9 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"translate", "view.translate", parseTranslate},
     ScriptVerb{"pick", "view.pick", parsePick},
     ScriptVerb{"purposes", "view.purposes", parsePurposes},
+    ScriptVerb{"repack", "view.repack", parseRepack},
+    ScriptVerb{"goto-asset", "view.gotoAsset", parseGoToAsset},
+    ScriptVerb{"assets-of", "view.assetsOf", parsePrim},
     ScriptVerb{"lod", "view.lod.set", parseLod},
     ScriptVerb{"view", "view.mode", parseViewMode},
     ScriptVerb{"window", "view.window", parseWindow},
@@ -482,6 +512,70 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
         [&view](const Json& p, RpcResponder responder) {
             view.scene.setLodLevel(p["root"].get<std::string>(), (uint32_t) std::max(0, p["level"].get<int>()));
             responder.respond(Json::object());
+        });
+    registry.add(
+        {
+            .name = "view.repack",
+            .summary = "Have the asset server repack assets even when its cache is up to date, and rebuild the scene from them; blocks until done.",
+            .params = {
+                optionalField("ids", RpcType::Array, "asset ids"),
+                optionalField("scene", RpcType::Bool, "every asset of the scene"),
+            },
+            .result = "{assets, sceneAssets}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            std::vector<std::string> ids;
+            if (p.value("scene", false)) {
+                ids = view.scene.assetIds();
+            } else if (p.contains("ids") && p["ids"].is_array()) {
+                for (const auto& id : p["ids"]) {
+                    ids.push_back(id.get<std::string>());
+                }
+            }
+            if (ids.empty()) {
+                responder.fail(rpc::invalidParams, "expected ids or scene");
+                return;
+            }
+            auto sceneAssets = view.scene.repack(ids);
+            responder.respond({{"assets", ids.size()}, {"sceneAssets", sceneAssets}});
+        });
+    registry.add(
+        {
+            .name = "view.gotoAsset",
+            .summary = "Move the camera to an asset's draws: the next of them (the nearest first), framed and selected, or all of them framed.",
+            .params = {
+                requiredField("id", RpcType::String, "asset id: a mesh, material, texture or USD file"),
+                optionalField("all", RpcType::Bool, "frame every draw together"),
+            },
+            .result = "{prim, index, count}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto result = goToAsset(view, p["id"].get<std::string>(), p.value("all", false));
+            if (!result.error.empty()) {
+                responder.fail(rpc::appError, result.error);
+                return;
+            }
+            responder.respond({{"prim", result.prim}, {"index", result.index}, {"count", result.count}});
+        });
+    registry.add(
+        {
+            .name = "view.assetsOf",
+            .summary = "The assets used by what is drawn at or under a prim: meshes, the USD files defining them, materials and their textures.",
+            .params = {optionalField("prim", RpcType::String, "prim path; the selection when left out")},
+            .result = "{prim, assets}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto path = p.value("prim", std::string());
+            if (path.empty()) {
+                path = view.selectedPath;
+            }
+            if (path.empty()) {
+                responder.fail(rpc::invalidParams, "no prim given and none selected");
+                return;
+            }
+            auto assets = view.scene.assetsUnder(path);
+            TRACE_EVENT("Engine", "AssetsOf", path).text(std::format("{} uses {} assets", path, assets.size())).field("assets", (int64_t) assets.size());
+            responder.respond({{"prim", path}, {"assets", assets}});
         });
     registry.add({.name = "view.quit", .summary = "Stop the view after this frame.", .result = "{}"}, [&view](const Json&, RpcResponder responder) {
         view.quit = true;
@@ -905,6 +999,52 @@ auto profileRecord() -> Json {
 }
 
 } // namespace
+
+auto goToAsset(ViewContext& view, const std::string& assetId, bool all) -> AssetGoToResult {
+    AssetGoToResult result;
+    auto prims = view.scene.drawsOf(assetId);
+    if (prims.empty()) {
+        result.error = std::format("nothing drawn uses {}", assetId);
+        return result;
+    }
+    result.count = prims.size();
+    if (all) {
+        AABB bounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
+        for (auto prim : prims) {
+            auto b = view.scene.primBounds(prim);
+            if (b.valid()) {
+                bounds.min = glm::min(bounds.min, b.min);
+                bounds.max = glm::max(bounds.max, b.max);
+            }
+        }
+        if (bounds.valid()) {
+            view.cam.frame(bounds, glm::radians(45.0f));
+        }
+        view.goTo = {};
+        return result;
+    }
+    auto& state = view.goTo;
+    if (state.assetId != assetId || state.revision != view.scene.revision() || state.order.size() != prims.size()) {
+        auto camera = view.cam.position;
+        auto distance = [&](uint32_t prim) {
+            auto b = view.scene.primBounds(prim);
+            return b.valid() ? glm::length((b.min + b.max) * 0.5f - camera) : 1e30f;
+        };
+        std::ranges::stable_sort(prims, [&](uint32_t a, uint32_t b) { return distance(a) < distance(b); });
+        state = {.assetId = assetId, .order = std::move(prims), .index = 0, .revision = view.scene.revision()};
+    } else {
+        state.index = (state.index + 1) % state.order.size();
+    }
+    auto prim = state.order[state.index];
+    auto bounds = view.scene.primBounds(prim);
+    if (bounds.valid()) {
+        view.cam.frame(bounds, glm::radians(45.0f));
+    }
+    view.selectedPath = view.scene.primPath(prim);
+    result.prim = view.selectedPath;
+    result.index = state.index;
+    return result;
+}
 
 auto registerViewMethods(RpcRegistry& registry, ViewContext& view) -> void {
     registerCamera(registry, view);

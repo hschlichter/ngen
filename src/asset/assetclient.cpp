@@ -159,7 +159,7 @@ auto AssetClient::connect(const std::string& variant) -> std::expected<RpcEndpoi
     return *server;
 }
 
-auto AssetClient::request(std::span<const std::string> ids) -> void {
+auto AssetClient::request(std::span<const std::string> ids, bool force) -> void {
     rpc::Json list = rpc::Json::array();
     for (const auto& id : ids) {
         list.push_back(id);
@@ -181,7 +181,11 @@ auto AssetClient::request(std::span<const std::string> ids) -> void {
         }
         state->stats.requested += ids.size();
     }
-    state->rpc.call(state->connection, "asset.request", {{"ids", list}}, [this, copy](const rpc::Json& response, std::vector<std::byte>) {
+    rpc::Json params = {{"ids", list}};
+    if (force) {
+        params["force"] = true;
+    }
+    state->rpc.call(state->connection, "asset.request", params, [this, copy](const rpc::Json& response, std::vector<std::byte>) {
         if (!response.contains("error")) {
             return;
         }
