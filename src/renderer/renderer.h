@@ -40,9 +40,6 @@ class RhiDevice;
 class RhiSwapchain;
 class RhiCommandBuffer;
 class ImGuiBackend;
-class MeshLibrary;
-class MaterialLibrary;
-struct MaterialDesc;
 struct RenderSnapshot;
 
 class Renderer {
@@ -63,9 +60,11 @@ public:
     auto createStartupPipelines() -> bool;
     // Thread-safe: every pipeline and its state, for the `pipelines` record.
     auto pipelineInfos() const -> std::vector<PipelineInfo> { return pipelineRegistry.infos(); }
-    // Uploads what changed since the last call: transforms only when draws keep their meshes and materials, else the geometry, materials
-    // and textures. `librariesReplaced`: the handles may name new content, so everything is uploaded again.
-    auto uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib, bool librariesReplaced = false) -> void;
+    // Applies what changed in the scene to the GPU scene: meshes, textures and materials added and removed, draw slots changed, lights.
+    // Uploads are queued and recorded a budget per frame; nothing waits.
+    auto applySceneChanges(const SceneChanges& changes) -> void;
+    // Records every queued upload and waits for it: start-up, so the first frame has the scene.
+    auto flushSceneUploads() -> void;
     auto render(RenderSnapshot& snapshot) -> void;
     auto destroy() -> void;
 
@@ -85,9 +84,9 @@ public:
     auto setTextureInspect(const TextureInspectRequest& request) -> void { textureInspectRequest = request; }
     // Asset ids whose sources changed: the ones that are shaders are requested again and their pipelines recreated when they arrive.
     auto reloadShaders(std::span<const std::string> ids) -> void { pipelineRegistry.reload(ids); }
-    // Writes one mip level of a material texture as PNG after this frame's fence.
-    auto requestTextureDump(uint32_t material, uint32_t level, std::string path) -> void {
-        textureDump = {.material = material, .level = level, .path = std::move(path)};
+    // Writes one mip level of a texture (TextureHandle::index) as PNG after this frame's fence.
+    auto requestTextureDump(uint32_t texture, uint32_t level, std::string path) -> void {
+        textureDump = {.texture = texture, .level = level, .path = std::move(path)};
     }
     auto initGizmos(Camera* camera) -> void;
     auto gizmoUpdate(const RenderSnapshot& snapshot, RhiExtent2D extent) -> std::vector<GizmoDrawRequest>;
@@ -112,6 +111,7 @@ private:
     // Shared resources
     RhiSampler* textureSampler = nullptr;
     RhiTexture* fallbackTexture = nullptr;
+    RhiTexture* pendingTexture = nullptr; // white 1x1: a material's texture while it uploads
 
     // Main depth buffer. Renderer-owned (the swapchain only provides color images);
     // recreated with the swapchain. Immediate destroy is safe there because recreate waits idle.
@@ -122,15 +122,10 @@ private:
     std::vector<void*> uniformBuffersMapped;
 
     // Scene GPU resources
-    std::unordered_map<uint32_t, CachedTexture> textureCache;
-    // Cutout materials' opacity; the textures of those with an opacity texture of their own are in opacityTextureCache.
-    std::unordered_map<uint32_t, CachedCutout> cutoutCache;
-    std::unordered_map<uint32_t, CachedTexture> opacityTextureCache;
-    // Uploads a cutout material's opacity texture, if it has one of its own; called between uploader begin and end.
-    auto uploadCutout(uint32_t materialIndex, const MaterialDesc& material) -> CachedCutout;
-    std::vector<GpuInstance> gpuInstances;
-    AABB sceneBounds;                  // union of instance world bounds, refreshed with gpuInstances
-    uint32_t debugCulledInstances = 0; // from the last snapshot, for the debug window
+    std::vector<GpuInstance> gpuInstances; // by draw slot
+    bool descriptorSetsDirty = false;      // a buffer they name was replaced; rewritten at the next frame
+    AABB sceneBounds;                      // union of instance world bounds, refreshed with gpuInstances
+    uint32_t debugCulledInstances = 0;     // from the last snapshot, for the debug window
     RhiSampler* materialSampler = nullptr;
     RhiSampler* shadowSampler = nullptr; // compare sampler for the cascade atlas
     SamplerSettings materialSamplerSettings;
@@ -233,7 +228,7 @@ private:
     auto releaseTexturePreview() -> void;
 
     struct TextureDumpRequest {
-        uint32_t material = 0;
+        uint32_t texture = 0;
         uint32_t level = 0;
         std::string path;
     };

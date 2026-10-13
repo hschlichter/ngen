@@ -31,7 +31,8 @@ server that packs, and an introspection tool. What has landed of it is under [La
    the first frame, the debug views' on first use); the view still loads the scene synchronously, and changes to what is drawn (LOD,
    purposes, repack) block and re-upload every texture.
    - Edits reach a running view since [plan_asset_change_notices.md](plan_asset_change_notices.md) (under Landed), but scene assets through
-     the blocking rebuild. Next: the async scene and incremental GPU updates, which take the same notices without the stall.
+     the blocking rebuild. Next: [plan_async_scene.md](plan_async_scene.md), in progress: the scene on its own thread and an incremental GPU scene,
+     so opening, LOD, purposes, Repack and notices never stall.
 
 ## Engine features
 

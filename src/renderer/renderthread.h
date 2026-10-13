@@ -22,16 +22,6 @@
 #include <vector>
 
 class Renderer;
-class MeshLibrary;
-class MaterialLibrary;
-
-struct RenderUpload {
-    RenderWorld world;
-    std::shared_ptr<const MeshLibrary> meshLib;
-    std::shared_ptr<const MaterialLibrary> matLib;
-    // The libraries are new ones: meshes and materials may have new content behind the same handles, so everything is uploaded again.
-    bool librariesReplaced = false;
-};
 
 class RenderThread {
 public:
@@ -39,7 +29,8 @@ public:
     auto stop() -> void;
 
     auto submitSnapshot(RenderSnapshot snapshot) -> void;
-    auto submitRenderUpload(RenderUpload upload) -> void;
+    // Scene changes are applied in the order submitted; several submitted between frames are applied together.
+    auto submitSceneChanges(SceneChanges changes) -> void;
 
     auto setFrameGraphDebugEnabled(bool enabled) -> void { fgDebugWanted.store(enabled, std::memory_order_relaxed); }
     auto latestFrameGraphDebug() -> std::optional<FrameGraphDebugSnapshot>;
@@ -101,7 +92,7 @@ private:
 
     // Scene upload slot (separate channel)
     std::mutex uploadMutex;
-    std::optional<RenderUpload> pendingUpload;
+    std::optional<SceneChanges> pendingChanges;
 
     // Frame graph debug slot (separate channel, latest-only, non-blocking)
     std::atomic<bool> fgDebugWanted{false};

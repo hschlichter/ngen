@@ -36,9 +36,13 @@ auto RenderThread::submitSnapshot(RenderSnapshot snapshot) -> void {
     snapshotReady.notify_one();
 }
 
-auto RenderThread::submitRenderUpload(RenderUpload upload) -> void {
+auto RenderThread::submitSceneChanges(SceneChanges changes) -> void {
     std::lock_guard lock(uploadMutex);
-    pendingUpload = std::move(upload);
+    if (pendingChanges) {
+        pendingChanges->append(std::move(changes));
+    } else {
+        pendingChanges = std::move(changes);
+    }
 }
 
 auto RenderThread::latestRenderDebug() -> std::optional<RenderDebugSnapshot> {
@@ -75,12 +79,12 @@ auto RenderThread::threadLoop() -> void {
         // Check for pending scene upload
         {
             std::lock_guard lock(uploadMutex);
-            if (pendingUpload) {
-                auto upload = std::move(*pendingUpload);
-                pendingUpload.reset();
-                PROFILE_ZONE("Upload");
-                PROFILE_ZONE_VALUE(upload.world.meshInstances.size());
-                renderer->uploadRenderWorld(upload.world, *upload.meshLib, *upload.matLib, upload.librariesReplaced);
+            if (pendingChanges) {
+                auto changes = std::move(*pendingChanges);
+                pendingChanges.reset();
+                PROFILE_ZONE("SceneChanges");
+                PROFILE_ZONE_VALUE(changes.instances.size());
+                renderer->applySceneChanges(changes);
             }
         }
 

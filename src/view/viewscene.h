@@ -24,8 +24,9 @@ struct PackedTextureView;
 // A local matrix as position, rotation and scale, as the gizmos take it (shear is dropped).
 auto decomposeTransform(const glm::mat4& local) -> Transform;
 
-// The scene ngen-view shows: its World, composed from the scene's packs, and the renderer's inputs built from it (RenderWorld,
-// MeshLibrary, MaterialLibrary). Everything comes from the asset server; nothing of USD. See src/view/README.md.
+// The scene ngen-view shows: its World, composed from the scene's packs, and the renderer's inputs built from it: the draws (RenderWorld,
+// one slot per prim submesh) and the meshes, materials and textures they use, each kept by asset across rebuilds. What changes is handed
+// to the renderer as SceneChanges (takeChanges). Everything comes from the asset server; nothing of USD. See src/view/README.md.
 //
 // Opening a scene blocks until it is composed and every mesh, material and texture it draws has arrived. So does changing what is
 // drawn (a LOD level, a purpose), which loads what the change needs; `revision()` then moves on, and the view uploads the new inputs.
@@ -53,15 +54,15 @@ public:
     auto sceneId() const -> const std::string& { return id; }
     auto world() const -> const World& { return composer->world(); }
     auto renderWorld() const -> const RenderWorld& { return drawn; }
-    auto meshes() const -> std::shared_ptr<const MeshLibrary> { return meshLibrary; }
-    auto materials() const -> std::shared_ptr<const MaterialLibrary> { return materialLibrary; }
+    // What changed in the renderer's inputs since the last call: the first call after open has everything.
+    auto takeChanges() -> SceneChanges;
     // Moves on each time the renderer's inputs change.
     auto revision() const -> uint64_t { return inputsRevision; }
     // The scene's up axis, as a vector.
     auto worldUp() const -> glm::vec3;
     // The full path of the entity a draw instance or light names (RenderWorld's prim index); empty for none.
     auto primPath(uint32_t prim) const -> std::string;
-    // The full path of the entity a draw instance (RenderWorld::meshInstances' index) draws; empty for none.
+    // The full path of the entity a draw instance (a slot of RenderWorld::meshInstances) draws; empty for none.
     auto instancePath(uint32_t instance) const -> std::string;
     // The world bounds of what is drawn at or under a path; invalid when nothing is.
     auto bounds(const std::string& path) const -> AABB;
@@ -94,6 +95,13 @@ private:
     auto rebuild() -> void;
     auto drawsPurpose(Purpose purpose) const -> bool;
     auto material(const std::string& materialAsset, const std::optional<std::array<float, 3>>& displayColor) -> MaterialHandle;
+    // The library entry for a texture asset, or for a constant colour's generated 1x1; added on first use.
+    auto texture(const std::string& textureAsset) -> TextureHandle;
+    auto constantTexture(const glm::vec4& color) -> TextureHandle;
+    // The library entry for a mesh asset, added on first use; null when its pack hasn't arrived.
+    auto mesh(const std::string& meshAsset) -> MeshHandle;
+    // Records what extract() used, against what the last one did, as changes for the renderer.
+    auto collectChanges(const std::set<uint32_t>& usedMeshes, const std::set<uint32_t>& usedMaterials, const std::set<uint32_t>& usedTextures) -> void;
 
     AssetClient& assets;
     std::string id;
@@ -104,14 +112,23 @@ private:
     // Packed assets as they arrived, by asset id; a failed one is absent and listed in `failedAssets`.
     std::unordered_map<std::string, MeshPack> meshPacks;
     std::unordered_map<std::string, MaterialPack> materialPacks;
-    std::unordered_map<std::string, std::vector<std::byte>> texturePacks;
+    std::unordered_map<std::string, std::shared_ptr<const TextureDesc>> texturePacks;
     std::set<std::string> failedAssets;
 
-    // The renderer's inputs, rebuilt by extract().
+    // The renderer's inputs. The libraries keep their entries across extracts; extract() assigns each draw a slot by its key (prim path and
+    // submesh), reusing a removed draw's slot, lowest first.
     RenderWorld drawn;
-    std::shared_ptr<const MeshLibrary> meshLibrary = std::make_shared<MeshLibrary>();
-    std::shared_ptr<const MaterialLibrary> materialLibrary = std::make_shared<MaterialLibrary>();
-    std::unordered_map<std::string, MaterialHandle> materialByAsset;     // by material asset id, or "displayColor r g b" for none
+    MeshLibrary meshLibrary;
+    MaterialLibrary materialLibrary;
+    TextureLibrary textureLibrary;
+    std::unordered_map<uint32_t, AABB> meshBoundsOf; // by mesh handle
+    std::set<uint32_t> usedMeshes;                   // what the last extract drew with, by handle
+    std::set<uint32_t> usedMaterials;
+    std::set<uint32_t> usedTextures;
+    std::unordered_map<std::string, MaterialHandle> materialByAsset; // this extract's, by material asset id or "displayColor r g b"
+    std::unordered_map<std::string, uint32_t> slotOfDraw;            // "<prim path>#<submesh>" to its slot
+    std::set<uint32_t> freeSlots;
+    SceneChanges pending;                                                // what changed since takeChanges() last ran
     std::vector<std::string> primPaths;                                  // by prim index - 1
     std::unordered_map<std::string, std::vector<uint32_t>> drawsByAsset; // asset id to the prims whose draws use it
     std::unordered_map<uint32_t, std::vector<std::string>> assetsByPrim; // a drawn prim to the assets its draws use

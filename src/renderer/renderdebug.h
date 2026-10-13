@@ -22,8 +22,9 @@ struct RenderDebugMesh {
 };
 
 struct RenderDebugTexture {
-    uint32_t materialIndex = 0;
-    bool opacity = false; // a cutout material's opacity texture, not its base colour
+    uint32_t textureIndex = 0;       // TextureHandle::index
+    uint32_t slot = 0;               // in the texture array; 0 while it uploads
+    std::vector<uint32_t> materials; // the materials naming it, by MaterialHandle::index
     uint32_t width = 0;
     uint32_t height = 0;
     uint32_t mipLevels = 1;
@@ -31,11 +32,10 @@ struct RenderDebugTexture {
     uint64_t bytes = 0;
 };
 
-// Texture inspector: which material texture and level the Render Debug window shows.
+// Texture inspector: which texture (TextureHandle::index) and level the Render Debug window shows.
 struct TextureInspectRequest {
     bool enabled = false;
-    uint32_t material = 0;
-    bool opacity = false; // the material's opacity texture instead of its base colour
+    uint32_t texture = 0;
     uint32_t level = 0;
 
     auto operator==(const TextureInspectRequest&) const -> bool = default;
@@ -44,7 +44,7 @@ struct TextureInspectRequest {
 // What the renderer captured for the inspector this frame.
 struct RenderDebugTextureInspect {
     bool valid = false;
-    uint32_t material = 0;
+    uint32_t texture = 0;
     uint32_t level = 0;
     uint32_t mipLevels = 1;
     uint32_t levelWidth = 0;

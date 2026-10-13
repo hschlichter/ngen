@@ -65,9 +65,9 @@ auto gpuSceneCaptures() -> const std::vector<std::pair<std::string, std::string>
 
 auto primOfEachInstance(const RenderWorld& renderWorld) -> std::vector<uint32_t> {
     std::vector<uint32_t> prims(renderWorld.meshInstances.size(), 0);
-    for (const auto& [prim, range] : renderWorld.primToInstance) {
-        for (uint32_t i = range.first; i < range.first + range.count && i < prims.size(); i++) {
-            prims[i] = prim;
+    for (size_t i = 0; i < prims.size(); i++) {
+        if (renderWorld.meshInstances[i].alive) {
+            prims[i] = renderWorld.meshInstances[i].prim;
         }
     }
     return prims;

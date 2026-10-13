@@ -31,7 +31,7 @@ auto drawTextureInspector(const RenderDebugSnapshot& s, const PrimPathOf& primPa
         return;
     }
     ImGui::Separator();
-    ImGui::Text("Texture inspector: material %u%s", req.material, req.opacity ? ", opacity" : "");
+    ImGui::Text("Texture inspector: texture %u", req.texture);
     ImGui::SameLine();
     if (ImGui::SmallButton("Close")) {
         req.enabled = false;
@@ -39,7 +39,7 @@ auto drawTextureInspector(const RenderDebugSnapshot& s, const PrimPathOf& primPa
         return;
     }
     const auto& insp = s.inspect;
-    if (!insp.valid || insp.material != req.material) {
+    if (!insp.valid || insp.texture != req.texture) {
         ImGui::TextDisabled("(waiting for the render thread)");
         return;
     }
@@ -58,11 +58,18 @@ auto drawTextureInspector(const RenderDebugSnapshot& s, const PrimPathOf& primPa
     if (insp.previewTextureId != 0) {
         ImGui::Image((ImTextureID) insp.previewTextureId, ImVec2((float) insp.previewWidth, (float) insp.previewHeight));
     }
-    // Who binds it: unique prims from the draw log.
+    // Who binds it: unique prims from the draw log, through the materials naming the texture.
     ImGui::TextUnformatted("Bound by");
+    std::vector<uint32_t> materials;
+    for (const auto& t : s.textures) {
+        if (t.textureIndex == req.texture) {
+            materials = t.materials;
+        }
+    }
     std::vector<uint32_t> prims;
     for (const auto& d : s.draws) {
-        if (d.material == req.material && d.prim != 0 && std::find(prims.begin(), prims.end(), d.prim) == prims.end()) {
+        bool binds = std::find(materials.begin(), materials.end(), d.material) != materials.end();
+        if (binds && d.prim != 0 && std::find(prims.begin(), prims.end(), d.prim) == prims.end()) {
             prims.push_back(d.prim);
         }
     }
@@ -159,7 +166,7 @@ auto drawSceneTab(const RenderDebugSnapshot& s, const PrimPathOf& primPath, Rend
 
     ImGui::TextUnformatted("Textures");
     if (ImGui::BeginTable("##textures", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp, ImVec2(0, 180.0f))) {
-        ImGui::TableSetupColumn("Material", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+        ImGui::TableSetupColumn("Texture", ImGuiTableColumnFlags_WidthFixed, 70.0f);
         ImGui::TableSetupColumn("Size");
         ImGui::TableSetupColumn("Format");
         ImGui::TableSetupColumn("Mips");
@@ -169,12 +176,12 @@ auto drawSceneTab(const RenderDebugSnapshot& s, const PrimPathOf& primPath, Rend
         for (const auto& t : s.textures) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            ImGui::PushID((int) ((t.materialIndex * 2) + (t.opacity ? 1 : 0)));
+            ImGui::PushID((int) t.textureIndex);
             char label[32];
-            std::snprintf(label, sizeof(label), t.opacity ? "%u opacity" : "%u", t.materialIndex);
-            bool selected = drawState.inspect.enabled && drawState.inspect.material == t.materialIndex && drawState.inspect.opacity == t.opacity;
+            std::snprintf(label, sizeof(label), "%u", t.textureIndex);
+            bool selected = drawState.inspect.enabled && drawState.inspect.texture == t.textureIndex;
             if (ImGui::Selectable(label, selected, ImGuiSelectableFlags_SpanAllColumns)) {
-                drawState.inspect = {.enabled = true, .material = t.materialIndex, .opacity = t.opacity, .level = 0};
+                drawState.inspect = {.enabled = true, .texture = t.textureIndex, .level = 0};
                 drawState.inspectChanged = true;
             }
             ImGui::PopID();

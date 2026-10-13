@@ -375,11 +375,9 @@ auto main(int argc, char* argv[]) -> int {
             .field("waited_ms", waitedMs);
     }
 
-    renderer.uploadRenderWorld(scene.renderWorld(), *scene.meshes(), *scene.materials());
-    uint64_t uploadedRevision = scene.revision();
-    // Kept alive while uploaded, so a rebuild's new libraries can't reuse their addresses.
-    auto uploadedMeshes = scene.meshes();
-    auto uploadedMaterials = scene.materials();
+    // The scene as it opened, uploaded before the first frame.
+    renderer.applySceneChanges(scene.takeChanges());
+    renderer.flushSceneUploads();
     ViewUI viewUI;
     if (positional.size() > 1) {
         viewUI.setBookmarkPath(std::string(positional[1]) + ".cameras.txt");
@@ -440,7 +438,7 @@ auto main(int argc, char* argv[]) -> int {
     auto frameSceneView = [&] -> void {
         AABB sceneBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
         for (const auto& inst : scene.renderWorld().meshInstances) {
-            if (inst.worldBounds.valid()) {
+            if (inst.alive && inst.worldBounds.valid()) {
                 sceneBounds.min = glm::min(sceneBounds.min, inst.worldBounds.min);
                 sceneBounds.max = glm::max(sceneBounds.max, inst.worldBounds.max);
             }
@@ -527,17 +525,9 @@ auto main(int argc, char* argv[]) -> int {
         if (scene.purposeShown(Purpose::Proxy) != viewUI.showProxies()) {
             scene.setPurposeShown(Purpose::Proxy, viewUI.showProxies());
         }
-        if (scene.revision() != uploadedRevision) {
-            uploadedRevision = scene.revision();
-            bool replaced = scene.meshes() != uploadedMeshes || scene.materials() != uploadedMaterials;
-            uploadedMeshes = scene.meshes();
-            uploadedMaterials = scene.materials();
-            renderThread.submitRenderUpload(RenderUpload{
-                .world = scene.renderWorld(),
-                .meshLib = scene.meshes(),
-                .matLib = scene.materials(),
-                .librariesReplaced = replaced,
-            });
+        // What changed in the scene since the last frame: the render thread applies it, uploads go out a budget per frame.
+        if (auto changes = scene.takeChanges(); !changes.empty()) {
+            renderThread.submitSceneChanges(std::move(changes));
         }
 
         static const uint32_t pollZoneId = profile::registerName("PollEvents");
@@ -815,7 +805,7 @@ auto main(int argc, char* argv[]) -> int {
             renderThread.setTextureInspect(*inspect);
         }
         if (auto dump = viewUI.takeTextureDumpRequest(); dump.has_value()) {
-            renderer.requestTextureDump(dump->material, dump->level, "texture_" + std::to_string(dump->material) + "_L" + std::to_string(dump->level) + ".png");
+            renderer.requestTextureDump(dump->texture, dump->level, "texture_" + std::to_string(dump->texture) + "_L" + std::to_string(dump->level) + ".png");
         }
         {
             auto& flags = viewUI.introspection();

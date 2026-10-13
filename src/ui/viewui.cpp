@@ -180,7 +180,7 @@ auto ViewUI::drawDebug(DebugDraw& debugDraw,
     }
     if (showAABBsFlag) {
         for (const auto& inst : renderWorld.meshInstances) {
-            if (inst.worldBounds.valid()) {
+            if (inst.alive && inst.worldBounds.valid()) {
                 debugDraw.box(inst.worldBounds, {0.0f, 1.0f, 0.0f, 1.0f});
             }
         }
@@ -190,7 +190,7 @@ auto ViewUI::drawDebug(DebugDraw& debugDraw,
     if (showCulledFlag && visible.size() == renderWorld.meshInstances.size()) {
         for (size_t i = 0; i < visible.size(); i++) {
             const auto& inst = renderWorld.meshInstances[i];
-            if (!inst.worldBounds.valid()) {
+            if (!inst.alive || !inst.worldBounds.valid()) {
                 continue;
             }
             glm::vec4 color = visible[i] != 0 ? glm::vec4{0.2f, 1.0f, 0.2f, 1.0f} : glm::vec4{1.0f, 0.2f, 0.2f, 1.0f};

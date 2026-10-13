@@ -7,9 +7,16 @@ ngen-view's library: the scene it shows (`viewscene.*`), picking (`viewpicking.*
 
 The view shows a scene composed from its packs, with nothing of USD in it (`src/world/README.md`). `ViewScene::open(id)` composes the
 scene's World from its layer packs, fetched from the asset server round by round, then fetches the meshes and materials of what is drawn
-and the textures those materials name, and builds the renderer's inputs: `RenderWorld` (a draw instance per submesh of every drawn mesh,
-and the distant lights), `MeshLibrary` and `MaterialLibrary`. It blocks until all of it has arrived; a pack that fails is a gap, with a
-warning.
+and the textures those materials name, and builds the renderer's inputs. It blocks until all of it has arrived; a pack that fails is a gap,
+with a warning.
+
+The inputs persist across rebuilds:
+- **Libraries.** `MeshLibrary`, `MaterialLibrary` and `TextureLibrary` keep one entry per mesh asset, per material (or display colour) and per
+  texture asset, shared by every draw using it. An entry whose asset arrives again with new content is a new entry with a new handle.
+- **Draws.** `RenderWorld` holds a slot per draw (a prim's submesh), kept by its key (path and submesh) across rebuilds. A gone draw's slot dies
+  and is reused, lowest first, so a fresh open fills slots in visit order.
+- **Changes.** Each rebuild compares what it draws with what it drew and records the difference as `SceneChanges`. The main loop takes them
+  (`takeChanges`) and hands them to the renderer, which changes only that on the GPU (`src/renderer/README.md`, "Scene data on the GPU").
 
 - **What is drawn**: entities that are active, defined and not abstract, visible (an invisible ancestor hides its subtree), not in a LOD
   level their root doesn't draw, with a mesh asset, and of a purpose that is shown: `default` and `render` always, `guide` and `proxy`
@@ -23,7 +30,7 @@ warning.
 - **The engine's light**: when the scene has no distant light, one is added, upper-front-right in the scene's frame (intensity 1, colour
   (1, 0.95, 0.88), angle 0.53).
 - **Changing what is drawn**: `setLodLevel` (the `lod` verb, `view.lod.set`) and `setPurposeShown` compose and fetch what the change
-  needs and rebuild the inputs; `revision()` moves on, and the main loop uploads them.
+  needs and rebuild the inputs; the changes go to the renderer, which uploads them over the next frames within its budget.
 - **Names**: draw instances and lights carry a prim index; `primPath` turns it into the entity's full path, for the render debugger, the
   frame debugger, the GPU scene window and the dumps.
 

@@ -7,6 +7,7 @@
 #include "instanceuploadpass.h"
 #include "mesh.h"
 #include "profile.h"
+#include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "trace.h"
 
@@ -15,28 +16,116 @@
 #include <cstring>
 #include <format>
 
-auto GpuScene::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* queue) -> void {
+namespace {
+
+constexpr uint64_t minimumBufferBytes = 64 * 1024;
+constexpr uint32_t deadMesh = 0xFFFFFFFFu; // a dead slot's mesh: past the mesh table, so the culling passes never draw it
+
+// The bytes of a mip level of an RGBA8 texture.
+auto levelBytes(uint32_t width, uint32_t height, uint32_t level) -> uint64_t {
+    uint64_t w = std::max(1u, width >> level);
+    uint64_t h = std::max(1u, height >> level);
+    return w * h * 4;
+}
+
+auto levelOffset(uint32_t width, uint32_t height, uint32_t level) -> uint64_t {
+    uint64_t offset = 0;
+    for (uint32_t l = 0; l < level; l++) {
+        offset += levelBytes(width, height, l);
+    }
+    return offset;
+}
+
+} // namespace
+
+auto PoolAllocator::allocate(uint64_t count) -> std::optional<uint64_t> {
+    if (count == 0) {
+        return 0;
+    }
+    for (auto it = freeRanges.begin(); it != freeRanges.end(); ++it) {
+        if (it->second < count) {
+            continue;
+        }
+        auto first = it->first;
+        auto rest = it->second - count;
+        freeRanges.erase(it);
+        if (rest > 0) {
+            freeRanges[first + count] = rest;
+        }
+        inUse += count;
+        return first;
+    }
+    return std::nullopt;
+}
+
+auto PoolAllocator::free(uint64_t first, uint64_t count) -> void {
+    if (count == 0) {
+        return;
+    }
+    inUse -= count;
+    auto next = freeRanges.lower_bound(first);
+    // Merge with the free range after, then with the one before.
+    if (next != freeRanges.end() && first + count == next->first) {
+        count += next->second;
+        next = freeRanges.erase(next);
+    }
+    if (next != freeRanges.begin()) {
+        auto before = std::prev(next);
+        if (before->first + before->second == first) {
+            before->second += count;
+            return;
+        }
+    }
+    freeRanges[first] = count;
+}
+
+auto PoolAllocator::grow(uint64_t capacity) -> void {
+    if (capacity <= total) {
+        return;
+    }
+    auto added = capacity - total;
+    auto first = total;
+    total = capacity;
+    inUse += added; // free() takes it back
+    free(first, added);
+}
+
+auto GpuScene::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* queue, RhiTexture* fallback, RhiTexture* pending) -> void {
     device = rhiDevice;
     deletionQueue = queue;
+    fallbackTexture = fallback;
+    pendingTexture = pending;
+    slots = {fallback, pending};
     staging.assign(frameSlots, nullptr);
     stagingMapped.assign(frameSlots, nullptr);
+    vertices = {.usage = RhiBufferUsage::Vertex, .readState = RhiBufferState::VertexRead, .name = "gpuscene.pool.vertices"};
+    positions = {.usage = RhiBufferUsage::Vertex, .readState = RhiBufferState::VertexRead, .name = "gpuscene.pool.positions"};
+    indices = {.usage = RhiBufferUsage::Index, .readState = RhiBufferState::IndexRead, .name = "gpuscene.pool.indices"};
+    meshTable = {.usage = RhiBufferUsage::Storage, .readState = RhiBufferState::StorageRead, .name = "gpuscene.meshtable", .zeroed = true};
+    materialTable = {.usage = RhiBufferUsage::Storage, .readState = RhiBufferState::StorageRead, .name = "gpuscene.materials", .zeroed = true};
+    // Never null, so every descriptor set has something to name.
+    ensureCapacity(meshTable, sizeof(GpuMeshEntry));
+    ensureCapacity(materialTable, sizeof(GpuMaterial));
     ensureInstanceCapacity(0, 0, 0);
 }
 
 auto GpuScene::destroy() -> void {
-    device->destroyBuffer(poolVertices);
-    device->destroyBuffer(poolPositions);
-    device->destroyBuffer(poolIndices);
-    poolVertices = nullptr;
-    poolPositions = nullptr;
-    poolIndices = nullptr;
+    for (auto* target : {&vertices, &positions, &indices, &meshTable, &materialTable}) {
+        device->destroyBuffer(target->buffer);
+        if (target->moveFrom != nullptr) {
+            device->destroyBuffer(target->moveFrom);
+        }
+        *target = {};
+    }
     meshes.clear();
-    device->destroyBuffer(meshTable);
-    meshTable = nullptr;
-
-    device->destroyBuffer(materialTable);
-    materialTable = nullptr;
+    meshData.clear();
+    for (auto& [index, info] : gpuTextures) {
+        device->destroyTexture(info.texture);
+    }
+    gpuTextures.clear();
+    textureData.clear();
     slots.clear();
+    queue.clear();
 
     device->destroyBuffer(instances);
     instances = nullptr;
@@ -46,132 +135,493 @@ auto GpuScene::destroy() -> void {
     }
 }
 
-auto GpuScene::rebuildGeometry(std::span<const GpuInstance> sceneInstances, const MeshLibrary& meshLib, GpuUploader& uploader, uint64_t frame) -> void {
-    PROFILE_ZONE("RebuildGeometryPool");
-
-    // Frames in flight may still draw from the old pool.
-    deletionQueue->deferBuffer(frame, poolVertices);
-    deletionQueue->deferBuffer(frame, poolPositions);
-    deletionQueue->deferBuffer(frame, poolIndices);
-    deletionQueue->deferBuffer(frame, meshTable);
-    meshTable = nullptr;
-    poolVertices = nullptr;
-    poolPositions = nullptr;
-    poolIndices = nullptr;
-    meshes.clear();
-
-    // Concatenate every referenced mesh, in instance order. Depth-only passes read the
-    // position stream alone: 12 bytes against the 44-byte Vertex.
-    std::vector<Vertex> vertices;
-    std::vector<std::array<float, 3>> positions;
-    std::vector<uint32_t> indices;
-    for (const auto& inst : sceneInstances) {
-        if (!inst.mesh || meshes.contains(inst.mesh.index)) {
-            continue;
-        }
-        const auto* meshData = meshLib.get(inst.mesh);
-        if (meshData == nullptr || meshData->vertices.empty()) {
-            continue;
-        }
-        GpuMeshRange range = {
-            .firstIndex = (uint32_t) indices.size(),
-            .vertexOffset = (int32_t) vertices.size(),
-            .indexCount = (uint32_t) meshData->indices.size(),
-            .vertexCount = (uint32_t) meshData->vertices.size(),
-            .vertexBytes = meshData->vertices.size() * (sizeof(Vertex) + sizeof(std::array<float, 3>)),
-            .indexBytes = meshData->indices.size() * sizeof(uint32_t),
-        };
-        vertices.insert(vertices.end(), meshData->vertices.begin(), meshData->vertices.end());
-        for (const auto& v : meshData->vertices) {
-            positions.push_back(v.position);
-        }
-        indices.insert(indices.end(), meshData->indices.begin(), meshData->indices.end());
-        meshes[inst.mesh.index] = range;
+auto GpuScene::ensureCapacity(GrowableBuffer& target, uint64_t bytes) -> bool {
+    if (target.buffer != nullptr && bytes <= target.capacity) {
+        return false;
     }
-
-    // Mesh table for the culling passes: dense by mesh index; entry 0 and meshes outside the
-    // pool stay empty. Always at least one entry so the binding is never null.
-    uint32_t tableSize = 1;
-    for (const auto& [index, range] : meshes) {
-        tableSize = std::max(tableSize, index + 1);
+    auto capacity = std::max({bytes, target.capacity * 2, minimumBufferBytes});
+    auto* grown = device->createBuffer({
+        .size = capacity,
+        // TransferSrc for the next growth's copy and for the capture service.
+        .usage = target.usage | RhiBufferUsage::TransferDst | RhiBufferUsage::TransferSrc,
+        .memory = RhiMemoryUsage::GpuOnly,
+        .debugName = target.name,
+    });
+    if (target.buffer != nullptr && target.fresh) {
+        // Nothing has written it since it was made (grown twice before a record, or made at init and never used): nothing to copy. A
+        // copy still pending comes from the buffer before it.
+        deletionQueue->deferBuffer(currentFrame, target.buffer);
+    } else if (target.buffer != nullptr) {
+        target.moveFrom = target.buffer;
+        target.moveBytes = target.capacity;
     }
-    std::vector<GpuMeshEntry> table(tableSize);
-    for (const auto& [index, range] : meshes) {
-        table[index] = {.firstIndex = range.firstIndex, .vertexOffset = range.vertexOffset, .indexCount = range.indexCount};
-    }
-
-    uploader.begin();
-    if (!vertices.empty()) {
-        poolVertices = uploader.uploadBuffer(std::as_bytes(std::span(vertices)), RhiBufferUsage::Vertex, "gpuscene.pool.vertices");
-        poolPositions = uploader.uploadBuffer(std::as_bytes(std::span(positions)), RhiBufferUsage::Vertex, "gpuscene.pool.positions");
-        poolIndices = uploader.uploadBuffer(std::as_bytes(std::span(indices)), RhiBufferUsage::Index, "gpuscene.pool.indices");
-    }
-    meshTable = uploader.uploadBuffer(std::as_bytes(std::span(table)), RhiBufferUsage::Storage, "gpuscene.meshtable");
-    meshTableSize = table.size() * sizeof(GpuMeshEntry);
-    uploader.end();
+    target.buffer = grown;
+    target.capacity = capacity;
+    target.fresh = true;
+    descriptorsDirty = true;
+    return true;
 }
 
-auto GpuScene::rebuildMaterials(std::span<const GpuInstance> sceneInstances,
-                                const std::unordered_map<uint32_t, CachedTexture>& textures,
-                                const std::unordered_map<uint32_t, CachedCutout>& cutouts,
-                                RhiTexture* fallback,
-                                GpuUploader& uploader,
-                                uint64_t frame) -> void {
-    deletionQueue->deferBuffer(frame, materialTable);
-    materialTable = nullptr;
-    slots.assign(1, fallback);
-    materialIndexOf.clear();
-    instanceMaterial.assign(sceneInstances.size(), 0);
+auto GpuScene::growPool(uint64_t vertexCount, uint64_t indexCount) -> void {
+    if (vertexCount > 0) {
+        auto capacity = std::max(vertexRanges.capacity() * 2, vertexRanges.capacity() + vertexCount);
+        ensureCapacity(vertices, capacity * sizeof(Vertex));
+        ensureCapacity(positions, capacity * sizeof(std::array<float, 3>));
+        vertexRanges.grow(std::min(vertices.capacity / sizeof(Vertex), positions.capacity / sizeof(std::array<float, 3>)));
+    }
+    if (indexCount > 0) {
+        auto capacity = std::max(indexRanges.capacity() * 2, indexRanges.capacity() + indexCount);
+        ensureCapacity(indices, capacity * sizeof(uint32_t));
+        indexRanges.grow(indices.capacity / sizeof(uint32_t));
+    }
+}
 
-    // Entry 0 is "no material": samples the fallback, like an instance without a texture.
-    std::vector<GpuMaterial> table(1);
-    uint32_t overflow = 0;
-    for (size_t m = 0; m < sceneInstances.size(); m++) {
-        const auto& inst = sceneInstances[m];
-        if (!inst.material) {
+auto GpuScene::addMesh(MeshHandle handle, std::shared_ptr<const MeshDesc> mesh) -> void {
+    if (!handle || mesh == nullptr || mesh->vertices.empty() || mesh->indices.empty()) {
+        return;
+    }
+    uint64_t vertexCount = mesh->vertices.size();
+    uint64_t indexCount = mesh->indices.size();
+    auto vertexFirst = vertexRanges.allocate(vertexCount);
+    if (!vertexFirst) {
+        growPool(vertexCount, 0);
+        vertexFirst = vertexRanges.allocate(vertexCount);
+    }
+    auto indexFirst = indexRanges.allocate(indexCount);
+    if (!indexFirst) {
+        growPool(0, indexCount);
+        indexFirst = indexRanges.allocate(indexCount);
+    }
+    meshes[handle.index] = {
+        .firstIndex = (uint32_t) *indexFirst,
+        .vertexOffset = (int32_t) *vertexFirst,
+        .indexCount = (uint32_t) indexCount,
+        .vertexCount = (uint32_t) vertexCount,
+        .vertexBytes = vertexCount * (sizeof(Vertex) + sizeof(std::array<float, 3>)),
+        .indexBytes = indexCount * sizeof(uint32_t),
+    };
+    meshData[handle.index] = std::move(mesh);
+    ensureCapacity(meshTable, ((uint64_t) handle.index + 1) * sizeof(GpuMeshEntry));
+    // The data before the entry: a mesh is drawn once its entry says so.
+    queue.push_back({.kind = Upload::Kind::MeshVertices, .handle = handle.index, .bytes = vertexCount * sizeof(Vertex)});
+    queue.push_back({.kind = Upload::Kind::MeshPositions, .handle = handle.index, .bytes = vertexCount * sizeof(std::array<float, 3>)});
+    queue.push_back({.kind = Upload::Kind::MeshIndices, .handle = handle.index, .bytes = indexCount * sizeof(uint32_t)});
+    queue.push_back({.kind = Upload::Kind::MeshEntry, .handle = handle.index, .bytes = sizeof(GpuMeshEntry)});
+}
+
+auto GpuScene::removeMesh(MeshHandle handle) -> void {
+    auto it = meshes.find(handle.index);
+    if (it == meshes.end()) {
+        return;
+    }
+    std::erase_if(queue, [&](const Upload& upload) {
+        return upload.handle == handle.index && upload.kind != Upload::Kind::MaterialEntry && upload.kind != Upload::Kind::TextureLevel;
+    });
+    // Its ranges can be written at once: the next copy's barrier orders it after every earlier frame's reads (one queue).
+    vertexRanges.free((uint64_t) it->second.vertexOffset, it->second.vertexCount);
+    indexRanges.free(it->second.firstIndex, it->second.indexCount);
+    meshes.erase(it);
+    meshData.erase(handle.index);
+    queue.push_back({.kind = Upload::Kind::MeshEntry, .handle = handle.index, .bytes = sizeof(GpuMeshEntry)});
+}
+
+auto GpuScene::addTexture(TextureHandle handle, std::shared_ptr<const TextureDesc> texture, uint64_t frame) -> void {
+    if (!handle || texture == nullptr || texture->width == 0 || texture->height == 0) {
+        return;
+    }
+    currentFrame = frame;
+    // The GPU texture is made when its first level is recorded, so making textures (slow for large ones) follows the upload budget.
+    auto mipLevels = std::max(1u, texture->mipLevels);
+    gpuTextures[handle.index] = {
+        .width = texture->width,
+        .height = texture->height,
+        .mipLevels = mipLevels,
+        .bytes = texture->levels.size(),
+        .format = RhiFormat::R8G8B8A8_SRGB,
+    };
+    textureData[handle.index] = std::move(texture);
+    levelsLeft[handle.index] = mipLevels;
+    for (uint32_t level = 0; level < mipLevels; level++) {
+        queue.push_back({.kind = Upload::Kind::TextureLevel, .handle = handle.index, .level = level, .bytes = levelBytes(gpuTextures[handle.index].width, gpuTextures[handle.index].height, level)});
+    }
+}
+
+auto GpuScene::removeTexture(TextureHandle handle, uint64_t frame) -> void {
+    auto it = gpuTextures.find(handle.index);
+    if (it == gpuTextures.end()) {
+        return;
+    }
+    std::erase_if(queue, [&](const Upload& upload) {
+        return upload.kind == Upload::Kind::TextureLevel && upload.handle == handle.index;
+    });
+    std::erase(texturesCopied, handle.index);
+    if (it->second.slot > pendingSlot) {
+        slots[it->second.slot] = fallbackTexture;
+        freeTextureSlots.insert(it->second.slot);
+        descriptorsDirty = true;
+    }
+    // Frames in flight may still sample it; one never recorded was never made.
+    if (it->second.texture != nullptr) {
+        deletionQueue->deferTexture(frame, it->second.texture);
+    }
+    gpuTextures.erase(it);
+    textureData.erase(handle.index);
+    levelsLeft.erase(handle.index);
+    materialsUsing.erase(handle.index);
+}
+
+auto GpuScene::setMaterial(MaterialHandle handle, const MaterialDesc& material) -> void {
+    if (!handle) {
+        return;
+    }
+    auto [it, added] = entryOf.try_emplace(handle.index, 0);
+    if (added) {
+        if (!freeEntries.empty()) {
+            it->second = *freeEntries.begin();
+            freeEntries.erase(freeEntries.begin());
+        } else {
+            it->second = entryCount++;
+        }
+        ensureCapacity(materialTable, (uint64_t) entryCount * sizeof(GpuMaterial));
+    }
+    materialEntries[handle.index] = material;
+    for (auto texture : {material.baseColorTexture, material.opacityTexture}) {
+        if (texture) {
+            materialsUsing[texture.index].insert(handle.index);
+        }
+    }
+    queueMaterialEntry(handle.index);
+}
+
+auto GpuScene::removeMaterial(MaterialHandle handle) -> void {
+    auto it = entryOf.find(handle.index);
+    if (it == entryOf.end()) {
+        return;
+    }
+    freeEntries.insert(it->second);
+    entryOf.erase(it);
+    if (auto material = materialEntries.find(handle.index); material != materialEntries.end()) {
+        for (auto texture : {material->second.baseColorTexture, material->second.opacityTexture}) {
+            if (auto using_ = materialsUsing.find(texture.index); using_ != materialsUsing.end()) {
+                using_->second.erase(handle.index);
+            }
+        }
+        materialEntries.erase(material);
+    }
+    std::erase_if(queue, [&](const Upload& upload) {
+        return upload.kind == Upload::Kind::MaterialEntry && upload.handle == handle.index;
+    });
+}
+
+auto GpuScene::queueMaterialEntry(uint32_t materialIndex) -> void {
+    queue.push_back({.kind = Upload::Kind::MaterialEntry, .handle = materialIndex, .bytes = sizeof(GpuMaterial)});
+}
+
+auto GpuScene::materialsUsingTexture(uint32_t textureIndex) const -> std::vector<uint32_t> {
+    auto it = materialsUsing.find(textureIndex);
+    if (it == materialsUsing.end()) {
+        return {};
+    }
+    return {it->second.begin(), it->second.end()};
+}
+
+auto GpuScene::texturedMaterialCount() const -> uint32_t {
+    uint32_t count = 0;
+    for (const auto& [index, material] : materialEntries) {
+        auto texture = gpuTextures.find(material.baseColorTexture.index);
+        if (texture != gpuTextures.end() && (texture->second.width > 1 || texture->second.height > 1)) {
+            count++;
+        }
+    }
+    return count;
+}
+
+auto GpuScene::cutoutMaterialCount() const -> uint32_t {
+    uint32_t count = 0;
+    for (const auto& [index, material] : materialEntries) {
+        if (material.cutout()) {
+            count++;
+        }
+    }
+    return count;
+}
+
+auto GpuScene::materialEntry(MaterialHandle handle) const -> uint32_t {
+    auto it = entryOf.find(handle.index);
+    if (it == entryOf.end()) {
+        return 0;
+    }
+    return it->second;
+}
+
+// The table entry for a material from what is on the GPU now: a texture still uploading samples the white pending texture, and an
+// opacity texture still uploading draws the material opaque.
+auto GpuScene::materialRecord(MaterialHandle handle) const -> GpuMaterial {
+    auto it = materialEntries.find(handle.index);
+    if (it == materialEntries.end()) {
+        return {};
+    }
+    const auto& material = it->second;
+    auto slotOf = [this](TextureHandle texture) -> std::optional<uint32_t> {
+        auto found = gpuTextures.find(texture.index);
+        if (!texture || found == gpuTextures.end()) {
+            return std::nullopt;
+        }
+        if (found->second.slot == fallbackSlot) {
+            return pendingSlot;
+        }
+        return found->second.slot;
+    };
+    GpuMaterial record;
+    record.baseColorTexture = slotOf(material.baseColorTexture).value_or(fallbackSlot);
+    if (!material.cutout()) {
+        return record;
+    }
+    record.opacityInfo = (material.opacityChannel & 3u) | (material.opacityRaw ? 4u : 0u);
+    if (material.opacityFromBaseColor) {
+        record.opacityTexture = record.baseColorTexture;
+        record.opacityThreshold = record.baseColorTexture == pendingSlot ? 0.0f : material.opacityThreshold;
+        return record;
+    }
+    if (material.opacityTexture) {
+        auto slot = slotOf(material.opacityTexture);
+        if (slot && *slot != pendingSlot) {
+            record.opacityTexture = *slot;
+            record.opacityThreshold = material.opacityThreshold;
+        }
+        return record;
+    }
+    // A constant: at the threshold or above draws everywhere (opaque); below it, cut away everywhere (opacity texture 0).
+    if (material.opacity < material.opacityThreshold) {
+        record.opacityThreshold = material.opacityThreshold;
+    }
+    return record;
+}
+
+auto GpuScene::beginFrame(uint64_t frame) -> bool {
+    currentFrame = frame;
+    for (auto index : texturesCopied) {
+        auto it = gpuTextures.find(index);
+        if (it == gpuTextures.end()) {
             continue;
         }
-        auto [it, inserted] = materialIndexOf.try_emplace(inst.material.index, (uint32_t) table.size());
-        if (inserted) {
-            GpuMaterial material;
-            auto tex = textures.find(inst.material.index);
-            if (tex != textures.end()) {
-                if (slots.size() < maxTextures) {
-                    material.baseColorTexture = (uint32_t) slots.size();
-                    slots.push_back(tex->second.texture);
-                } else {
-                    overflow++;
-                }
-            }
-            if (auto cutout = cutouts.find(inst.material.index); cutout != cutouts.end()) {
-                material.opacityThreshold = cutout->second.threshold;
-                material.opacityInfo = (cutout->second.channel & 3u) | (cutout->second.raw ? 4u : 0u);
-                if (cutout->second.fromBaseColor) {
-                    material.opacityTexture = material.baseColorTexture;
-                } else if (cutout->second.texture != nullptr) {
-                    if (slots.size() < maxTextures) {
-                        material.opacityTexture = (uint32_t) slots.size();
-                        slots.push_back(cutout->second.texture);
-                    } else {
-                        overflow++;
-                    }
-                }
-            }
-            table.push_back(material);
+        uint32_t slot = 0;
+        if (!freeTextureSlots.empty()) {
+            slot = *freeTextureSlots.begin();
+            freeTextureSlots.erase(freeTextureSlots.begin());
+        } else if (slots.size() < maxTextures) {
+            slot = (uint32_t) slots.size();
+            slots.push_back(fallbackTexture);
+        } else {
+            slotOverflow++;
+            TRACE_WARNING("Render", "TextureSlotsFull", "materials").text(std::format("texture {}: no slot left of {}; its materials use the fallback", index, maxTextures));
+            continue;
         }
-        instanceMaterial[m] = it->second;
+        slots[slot] = it->second.texture;
+        it->second.slot = slot;
+        descriptorsDirty = true;
+        if (auto using_ = materialsUsing.find(index); using_ != materialsUsing.end()) {
+            for (auto material : using_->second) {
+                queueMaterialEntry(material);
+            }
+        }
     }
-    if (overflow > 0) {
-        TRACE_WARNING("Render", "TextureSlotsFull", "materials").text(std::format("{} material textures past the {}-slot limit use the fallback", overflow, maxTextures)).field("overflow", (int64_t) overflow);
+    texturesCopied.clear();
+    return std::exchange(descriptorsDirty, false);
+}
+
+auto GpuScene::pendingBytes() const -> uint64_t {
+    uint64_t bytes = 0;
+    for (const auto& upload : queue) {
+        bytes += upload.bytes;
+    }
+    return bytes;
+}
+
+template <typename Retire>
+auto GpuScene::record(RhiCommandBuffer* cmd, uint64_t budget, const Retire& retire) -> void {
+    std::array<GrowableBuffer*, 5> targets = {&vertices, &positions, &indices, &meshTable, &materialTable};
+
+    // What this record takes: at most `budget` bytes, at least one upload.
+    size_t taken = 0;
+    uint64_t takenBytes = 0;
+    while (taken < queue.size() && (taken == 0 || takenBytes + queue[taken].bytes <= budget)) {
+        takenBytes += queue[taken].bytes;
+        taken++;
+    }
+    // One staging buffer for the batch, and the zeros a grown table's new part needs.
+    uint64_t zeroBytes = 0;
+    for (auto* target : targets) {
+        if (target->fresh && target->zeroed) {
+            zeroBytes = std::max(zeroBytes, target->capacity - target->moveBytes);
+        }
+    }
+    auto stagingBytes = takenBytes + zeroBytes;
+    RhiBuffer* batch = nullptr;
+    std::byte* mapped = nullptr;
+    if (stagingBytes > 0) {
+        batch = device->createBuffer({.size = stagingBytes, .usage = RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "gpuscene.upload.staging"});
+        mapped = static_cast<std::byte*>(device->mapBuffer(batch));
+        std::memset(mapped + takenBytes, 0, zeroBytes);
     }
 
+    // Into the transfer state: after every earlier read of the tables and the pool (on one queue, a barrier covers earlier submissions).
+    std::vector<RhiBufferBarrierDesc> before;
+    for (auto* target : targets) {
+        before.push_back({.buffer = target->buffer, .oldState = target->fresh ? RhiBufferState::Undefined : target->readState, .newState = RhiBufferState::TransferDst});
+        if (target->moveFrom != nullptr) {
+            before.push_back({.buffer = target->moveFrom, .oldState = target->readState, .newState = RhiBufferState::TransferSrc});
+        }
+    }
+    cmd->bufferBarrier(before);
+
+    // Grown buffers: the old contents first, then zeros past them for the tables.
+    for (auto* target : targets) {
+        if (target->moveFrom != nullptr) {
+            cmd->copyBuffer(target->moveFrom, target->buffer, {.size = target->moveBytes});
+            deletionQueue->deferBuffer(currentFrame, target->moveFrom);
+            target->moveFrom = nullptr;
+        }
+        if (target->fresh && target->zeroed && target->capacity > target->moveBytes) {
+            cmd->copyBuffer(batch, target->buffer, {.srcOffset = takenBytes, .dstOffset = target->moveBytes, .size = target->capacity - target->moveBytes});
+        }
+        target->moveBytes = 0;
+        target->fresh = false;
+    }
+    // Copies in one command buffer may run in any order: the moves and zeros finish before the uploads overwrite parts of them.
+    std::vector<RhiBufferBarrierDesc> afterMoves;
+    for (auto* target : targets) {
+        afterMoves.push_back({.buffer = target->buffer, .oldState = RhiBufferState::TransferDst, .newState = RhiBufferState::TransferDst});
+    }
+    cmd->bufferBarrier(afterMoves);
+
+    // The uploads, packed into the batch in order.
+    uint64_t offset = 0;
+    std::vector<RhiTextureBarrierDesc> toTransfer;
+    std::vector<RhiTextureBarrierDesc> toShader;
+    for (size_t i = 0; i < taken; i++) {
+        const auto& upload = queue[i];
+        if (upload.kind == Upload::Kind::TextureLevel && upload.level == 0) {
+            auto& info = gpuTextures.at(upload.handle);
+            auto name = std::format("texture.{}", upload.handle);
+            info.texture = device->createTexture({
+                .width = info.width,
+                .height = info.height,
+                .format = info.format,
+                // TransferSrc for the texture inspector's blits and level dumps.
+                .usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst | RhiTextureUsage::TransferSrc,
+                .mipLevels = info.mipLevels,
+                .debugName = name.c_str(),
+            });
+            toTransfer.push_back({.texture = info.texture, .oldState = RhiTextureState::Undefined, .newState = RhiTextureState::TransferDst});
+        }
+    }
+    if (!toTransfer.empty()) {
+        cmd->pipelineBarrier(toTransfer);
+    }
+    for (size_t i = 0; i < taken; i++) {
+        const auto& upload = queue[i];
+        auto* dst = mapped + offset;
+        switch (upload.kind) {
+            case Upload::Kind::MeshVertices: {
+                const auto& mesh = *meshData.at(upload.handle);
+                std::memcpy(dst, mesh.vertices.data(), upload.bytes);
+                cmd->copyBuffer(batch, vertices.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) meshes.at(upload.handle).vertexOffset * sizeof(Vertex), .size = upload.bytes});
+                break;
+            }
+            case Upload::Kind::MeshPositions: {
+                // Depth-only passes read the position stream alone: 12 bytes against the 44-byte Vertex.
+                const auto& mesh = *meshData.at(upload.handle);
+                auto* positionsOut = reinterpret_cast<std::array<float, 3>*>(dst);
+                for (size_t v = 0; v < mesh.vertices.size(); v++) {
+                    positionsOut[v] = mesh.vertices[v].position;
+                }
+                cmd->copyBuffer(batch, positions.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) meshes.at(upload.handle).vertexOffset * sizeof(std::array<float, 3>), .size = upload.bytes});
+                break;
+            }
+            case Upload::Kind::MeshIndices: {
+                const auto& mesh = *meshData.at(upload.handle);
+                std::memcpy(dst, mesh.indices.data(), upload.bytes);
+                cmd->copyBuffer(batch, indices.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) meshes.at(upload.handle).firstIndex * sizeof(uint32_t), .size = upload.bytes});
+                break;
+            }
+            case Upload::Kind::MeshEntry: {
+                GpuMeshEntry entry;
+                if (auto it = meshes.find(upload.handle); it != meshes.end()) {
+                    entry = {.firstIndex = it->second.firstIndex, .vertexOffset = it->second.vertexOffset, .indexCount = it->second.indexCount};
+                    // Every upload of the mesh is recorded by now: its data can go.
+                    meshData.erase(upload.handle);
+                }
+                std::memcpy(dst, &entry, sizeof(entry));
+                cmd->copyBuffer(batch, meshTable.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) upload.handle * sizeof(GpuMeshEntry), .size = sizeof(entry)});
+                break;
+            }
+            case Upload::Kind::MaterialEntry: {
+                auto record = materialRecord(MaterialHandle{upload.handle});
+                std::memcpy(dst, &record, sizeof(record));
+                cmd->copyBuffer(batch, materialTable.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) entryOf.at(upload.handle) * sizeof(GpuMaterial), .size = sizeof(record)});
+                break;
+            }
+            case Upload::Kind::TextureLevel: {
+                const auto& data = *textureData.at(upload.handle);
+                const auto& info = gpuTextures.at(upload.handle);
+                std::memcpy(dst, data.levels.data() + levelOffset(info.width, info.height, upload.level), upload.bytes);
+                cmd->copyBufferToTexture(batch, info.texture, {.bufferOffset = offset, .width = std::max(1u, info.width >> upload.level), .height = std::max(1u, info.height >> upload.level), .mipLevel = upload.level});
+                if (--levelsLeft.at(upload.handle) == 0) {
+                    toShader.push_back({.texture = info.texture, .oldState = RhiTextureState::TransferDst, .newState = RhiTextureState::ShaderReadOnly});
+                    texturesCopied.push_back(upload.handle);
+                    textureData.erase(upload.handle);
+                    levelsLeft.erase(upload.handle);
+                }
+                break;
+            }
+        }
+        offset += upload.bytes;
+    }
+    queue.erase(queue.begin(), queue.begin() + (std::ptrdiff_t) taken);
+    if (batch != nullptr) {
+        device->unmapBuffer(batch);
+        retire(batch);
+    }
+
+    // Back to what the frame reads them as.
+    if (!toShader.empty()) {
+        cmd->pipelineBarrier(toShader);
+    }
+    std::vector<RhiBufferBarrierDesc> after;
+    for (auto* target : targets) {
+        after.push_back({.buffer = target->buffer, .oldState = RhiBufferState::TransferDst, .newState = target->readState});
+    }
+    cmd->bufferBarrier(after);
+}
+
+auto GpuScene::addUploadPass(FrameGraph& fg, uint64_t frame) -> void {
+    currentFrame = frame;
+    bool moves = std::ranges::any_of(std::array{&vertices, &positions, &indices, &meshTable, &materialTable}, [](const GrowableBuffer* target) { return target->fresh; });
+    if (queue.empty() && !moves) {
+        return;
+    }
+    struct SceneUploadData {};
+    fg.addPass<SceneUploadData>(
+        "SceneUpload",
+        [](FrameGraphBuilder& builder, SceneUploadData&) { builder.setSideEffects(true); },
+        [this, frame](FrameGraphContext& ctx, const SceneUploadData&) {
+            PROFILE_ZONE("SceneUpload");
+            record(ctx.cmd(), uploadBudget, [this, frame](RhiBuffer* staging) { deletionQueue->deferBuffer(frame, staging); });
+        });
+}
+
+auto GpuScene::flushUploads(GpuUploader& uploader, uint64_t frame) -> void {
+    PROFILE_ZONE("SceneUploadFlush");
+    currentFrame = frame;
     uploader.begin();
-    materialTable = uploader.uploadBuffer(std::as_bytes(std::span(table)), RhiBufferUsage::Storage, "gpuscene.materials");
-    materialTableSize = table.size() * sizeof(GpuMaterial);
+    // Textures finished here take their slots, which queues their materials' entries: record again until nothing is left.
+    do {
+        record(uploader.commandBuffer(), UINT64_MAX, [&uploader](RhiBuffer* staging) { uploader.adoptStaging(staging); });
+        beginFrame(frame);
+        descriptorsDirty = true;
+    } while (!queue.empty());
     uploader.end();
-
-    // Instance records carry the material index; rewrite them all.
-    markDirty(0, (uint32_t) sceneInstances.size());
 }
 
 auto GpuScene::meshRange(uint32_t meshIndex) const -> const GpuMeshRange* {
@@ -182,10 +632,12 @@ auto GpuScene::meshRange(uint32_t meshIndex) const -> const GpuMeshRange* {
     return &it->second;
 }
 
-auto GpuScene::updateInstances(std::span<const GpuInstance> sceneInstances, uint32_t first, uint32_t end, uint64_t frame) -> void {
+auto GpuScene::updateInstances(std::span<const GpuInstance> sceneInstances, std::span<const uint32_t> changedSlots, uint64_t frame) -> void {
     auto count = (uint32_t) sceneInstances.size();
     ensureInstanceCapacity(count, count, frame);
-    markDirty(first, end);
+    for (auto slot : changedSlots) {
+        markDirty(slot, slot + 1);
+    }
 }
 
 auto GpuScene::ensureInstanceCapacity(uint32_t count, uint32_t liveCount, uint64_t frame) -> void {
@@ -236,7 +688,7 @@ auto GpuScene::markDirty(uint32_t first, uint32_t end) -> void {
     dirtyEnd = std::max(dirtyEnd, end);
 }
 
-auto GpuScene::addUploadPasses(FrameGraph& fg, std::span<const GpuInstance> sceneInstances, uint32_t frameSlot) -> FgBufferHandle {
+auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstance> sceneInstances, uint32_t frameSlot) -> FgBufferHandle {
     // Imported with the access the previous frame left it in, so this frame's upload waits
     // for last frame's reads. Only the dirty span is copied.
     FgBufferDesc desc = {
@@ -266,9 +718,13 @@ auto GpuScene::addUploadPasses(FrameGraph& fg, std::span<const GpuInstance> scen
             if (inst.primHasCutout) {
                 flags |= gpuInstancePrimHasCutout;
             }
+            if (!inst.alive) {
+                dst[m] = {.model = glm::mat4(1.0f), .mesh = deadMesh};
+                continue;
+            }
             dst[m] = {
                 .model = inst.transform,
-                .material = m < instanceMaterial.size() ? instanceMaterial[m] : 0,
+                .material = materialEntry(inst.material),
                 .mesh = inst.mesh.index,
                 .indexOffset = inst.indexOffset,
                 .indexCount = inst.indexCount,

@@ -9,7 +9,8 @@
 class RhiDevice;
 class RhiCommandBuffer;
 
-// Batches CPU-to-GPU uploads into one command buffer and one fence wait.
+// Batches CPU-to-GPU uploads into one command buffer and one fence wait: the blocking path, for start-up. The scene's uploads go through
+// GpuScene's queue, recorded into each frame's command buffer instead.
 //
 //   uploader.begin();
 //   auto* vb = uploader.uploadBuffer(bytes, RhiBufferUsage::Vertex, "mesh.vertices");
@@ -30,6 +31,10 @@ public:
     // (see packMipChain); 4 bytes per texel, so RGBA8 formats only.
     auto uploadTexture(const RhiTextureDesc& desc, std::span<const std::byte> pixels) -> RhiTexture*;
     auto end() -> void;
+
+    // The command buffer between begin() and end(), for a caller recording its own copies; a staging buffer it adopts is freed by end().
+    auto commandBuffer() -> RhiCommandBuffer* { return cmd; }
+    auto adoptStaging(RhiBuffer* buffer) -> void { staging.push_back(buffer); }
 
 private:
     auto createStaging(std::span<const std::byte> data) -> RhiBuffer*;

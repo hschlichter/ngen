@@ -96,8 +96,17 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, AssetClien
         .format = R8G8B8A8_SRGB,
         .debugName = "texture.fallback",
     };
+    // White, sampled by a material while its texture is still uploading.
+    std::array<uint8_t, 4> pendingPixels = {255, 255, 255, 255};
+    RhiTextureDesc pendingDesc = {
+        .width = 1,
+        .height = 1,
+        .format = R8G8B8A8_SRGB,
+        .debugName = "texture.pending",
+    };
     uploader.begin();
     fallbackTexture = uploader.uploadTexture(fallbackDesc, std::as_bytes(std::span(fallbackPixels)));
+    pendingTexture = uploader.uploadTexture(pendingDesc, std::as_bytes(std::span(pendingPixels)));
     uploader.end();
 
     // Passes
@@ -133,8 +142,8 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, AssetClien
         return std::unexpected(1);
     }
 
-    // Scene GPU tables; the instance buffer exists from here on, grown by uploadRenderWorld.
-    gpuScene.init(device, imgCount, &deletionQueue);
+    // Scene GPU tables; the instance buffer exists from here on, grown by applySceneChanges.
+    gpuScene.init(device, imgCount, &deletionQueue, fallbackTexture, pendingTexture);
     drawLists.init(device, imgCount, &deletionQueue);
     shadowPass.bindInstanceBuffer(device, gpuScene.instanceBuffer(), deletionQueue, m_frameIndex);
     boundInstanceGeneration = gpuScene.instanceGeneration();
@@ -242,7 +251,12 @@ auto Renderer::buildRenderDebugSnapshot() const -> RenderDebugSnapshot {
     snap.instanceCount = (uint32_t) gpuInstances.size();
     snap.culledInstances = debugCulledInstances;
     std::unordered_map<uint32_t, uint32_t> instancesPerMesh;
+    uint32_t live = 0;
     for (const auto& inst : gpuInstances) {
+        if (!inst.alive) {
+            continue;
+        }
+        live++;
         instancesPerMesh[inst.mesh.index]++;
         if (inst.primFirst) {
             snap.primFirstInstances++;
@@ -251,7 +265,8 @@ auto Renderer::buildRenderDebugSnapshot() const -> RenderDebugSnapshot {
             snap.cutoutInstances++;
         }
     }
-    snap.cutoutMaterials = (uint32_t) cutoutCache.size();
+    snap.instanceCount = live;
+    snap.cutoutMaterials = gpuScene.cutoutMaterialCount();
     snap.meshes.reserve(gpuScene.meshRanges().size());
     for (const auto& [index, cached] : gpuScene.meshRanges()) {
         snap.meshes.push_back({
@@ -263,32 +278,22 @@ auto Renderer::buildRenderDebugSnapshot() const -> RenderDebugSnapshot {
             .instances = instancesPerMesh[index],
         });
     }
-    std::unordered_map<uint32_t, bool> materials;
-    for (const auto& inst : gpuInstances) {
-        if (inst.material) {
-            materials[inst.material.index] = textureCache.contains(inst.material.index);
-        }
+    snap.materialCount = gpuScene.materialCount();
+    snap.materialsWithTexture = gpuScene.texturedMaterialCount();
+    snap.textures.reserve(gpuScene.textures().size());
+    for (const auto& [index, info] : gpuScene.textures()) {
+        snap.textures.push_back({
+            .textureIndex = index,
+            .slot = info.slot,
+            .materials = gpuScene.materialsUsingTexture(index),
+            .width = info.width,
+            .height = info.height,
+            .mipLevels = info.mipLevels,
+            .format = info.format,
+            .bytes = info.bytes,
+        });
     }
-    snap.materialCount = (uint32_t) materials.size();
-    for (const auto& [index, textured] : materials) {
-        if (textured) {
-            snap.materialsWithTexture++;
-        }
-    }
-    snap.textures.reserve(textureCache.size() + opacityTextureCache.size());
-    for (bool opacity : {false, true}) {
-        for (const auto& [index, cached] : opacity ? opacityTextureCache : textureCache) {
-            snap.textures.push_back({
-                .materialIndex = index,
-                .opacity = opacity,
-                .width = cached.width,
-                .height = cached.height,
-                .mipLevels = cached.mipLevels,
-                .format = cached.format,
-                .bytes = cached.bytes,
-            });
-        }
-    }
+    std::ranges::sort(snap.textures, [](const RenderDebugTexture& a, const RenderDebugTexture& b) { return a.textureIndex < b.textureIndex; });
     snap.inspect = textureInspectResult;
     snap.lightCount = (uint32_t) lights.size();
     snap.hasSun = debugHasSun;
@@ -404,239 +409,133 @@ auto Renderer::readGpuTimings(uint32_t slot) -> void {
     }
 }
 
-auto Renderer::uploadCutout(uint32_t materialIndex, const MaterialDesc& material) -> CachedCutout {
-    CachedCutout cutout = {
-        .fromBaseColor = material.opacityFromBaseColor,
-        .channel = material.opacityChannel,
-        .raw = material.opacityRaw,
-        .threshold = material.opacityThreshold,
-    };
-    if (material.opacityFromBaseColor) {
-        return cutout;
+// A byte count for the trace: "812 B", "10.2 MiB".
+static auto formatUploadBytes(uint64_t bytes) -> std::string {
+    if (bytes < 1024 * 1024) {
+        return std::format("{:.1f} KiB", (double) bytes / 1024.0);
     }
-    if (material.opacityPixels.empty()) {
-        if (material.opacity >= material.opacityThreshold) {
-            // A constant opacity at the threshold or above draws everywhere: opaque.
-            return {};
-        }
-        // Below it, cut away everywhere: no texture is opacity texture slot 0.
-        return cutout;
-    }
-    PROFILE_ZONE("UploadOpacityTexture");
-    RhiTextureDesc texDesc = {
-        .width = (uint32_t) material.opacityWidth,
-        .height = (uint32_t) material.opacityHeight,
-        .format = RhiFormat::R8G8B8A8_SRGB,
-        .usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst | RhiTextureUsage::TransferSrc,
-        .mipLevels = mipLevelCount((uint32_t) material.opacityWidth, (uint32_t) material.opacityHeight),
-    };
-    auto textureName = std::format("material.{}.opacity", materialIndex);
-    texDesc.debugName = textureName.c_str();
-    std::vector<std::byte> packed;
-    if (material.opacityMipLevels > 0) {
-        texDesc.mipLevels = material.opacityMipLevels;
-        const auto* levels = reinterpret_cast<const std::byte*>(material.opacityPixels.data());
-        packed.assign(levels, levels + material.opacityPixels.size());
-    } else {
-        auto pixelCount = (size_t) material.opacityWidth * (size_t) material.opacityHeight * 4;
-        auto level0 = std::span(material.opacityPixels).first(pixelCount);
-        auto chain = buildMipChain(texDesc.width, texDesc.height, level0, true);
-        packed = packMipChain(level0, chain);
-    }
-    cutout.texture = uploader.uploadTexture(texDesc, packed);
-    opacityTextureCache[materialIndex] = {
-        .texture = cutout.texture,
-        .width = texDesc.width,
-        .height = texDesc.height,
-        .mipLevels = texDesc.mipLevels,
-        .bytes = packed.size(),
-        .format = texDesc.format,
-    };
-    return cutout;
+    return std::format("{:.1f} MiB", (double) bytes / (1024.0 * 1024.0));
 }
 
-auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib, bool librariesReplaced) -> void {
-    using enum RhiDescriptorType;
+auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
     auto start = std::chrono::steady_clock::now();
-
-    lights = world.lights;
-
-    bool instancesChanged = librariesReplaced || gpuInstances.size() != world.meshInstances.size();
-    if (!instancesChanged) {
-        for (size_t m = 0; m < world.meshInstances.size(); m++) {
-            const auto& inst = world.meshInstances[m];
-            if (gpuInstances[m].mesh != inst.mesh || gpuInstances[m].material != inst.material || gpuInstances[m].transform != inst.worldTransform) {
-                instancesChanged = true;
-                break;
-            }
+    // Removals first: their pool ranges, table entries and slots are free for what is added (a repacked scene reuses them instead of
+    // growing the pool). Nothing draws between here and the draws below, which stop naming what was removed.
+    {
+        PROFILE_ZONE("RemoveEntries");
+        for (auto handle : changes.materialsRemoved) {
+            gpuScene.removeMaterial(handle);
+        }
+        for (auto handle : changes.meshesRemoved) {
+            gpuScene.removeMesh(handle);
+        }
+        for (auto handle : changes.texturesRemoved) {
+            gpuScene.removeTexture(handle, m_frameIndex);
         }
     }
-
-    if (!instancesChanged) {
-        return;
-    }
-
-    bool geometryChanged = librariesReplaced || gpuInstances.size() != world.meshInstances.size();
-    if (!geometryChanged) {
-        for (size_t m = 0; m < world.meshInstances.size(); m++) {
-            const auto& inst = world.meshInstances[m];
-            if (gpuInstances[m].mesh != inst.mesh || gpuInstances[m].material != inst.material || gpuInstances[m].indexOffset != inst.indexOffset || gpuInstances[m].indexCount != inst.indexCount) {
-                geometryChanged = true;
-                break;
-            }
+    // Textures and meshes before the materials and draws that name them.
+    {
+        PROFILE_ZONE("AddTextures");
+        for (const auto& [handle, texture] : changes.texturesAdded) {
+            gpuScene.addTexture(handle, texture, m_frameIndex);
         }
     }
-
-    std::vector<uint32_t> primOfInstance(world.meshInstances.size(), 0);
-    for (const auto& [prim, range] : world.primToInstance) {
-        for (uint32_t i = range.first; i < range.first + range.count && i < primOfInstance.size(); i++) {
-            primOfInstance[i] = prim;
+    {
+        PROFILE_ZONE("AddMeshes");
+        for (const auto& [handle, mesh] : changes.meshesAdded) {
+            gpuScene.addMesh(handle, mesh);
         }
     }
-    // A prim with any cutout submesh casts its shadows per submesh, so the cutout one is cut there too.
-    std::vector<bool> cutoutOfInstance(world.meshInstances.size(), false);
-    std::vector<bool> primHasCutout(world.meshInstances.size(), false);
-    for (size_t m = 0; m < world.meshInstances.size(); m++) {
-        const auto* matData = matLib.get(world.meshInstances[m].material);
-        cutoutOfInstance[m] = matData != nullptr && matData->cutout();
+    for (const auto& [handle, material] : changes.materialsChanged) {
+        gpuScene.setMaterial(handle, material);
     }
-    for (const auto& [prim, range] : world.primToInstance) {
-        bool any = false;
-        for (uint32_t i = range.first; i < range.first + range.count && i < cutoutOfInstance.size(); i++) {
-            if (cutoutOfInstance[i]) {
-                any = true;
-            }
+    gpuInstances.resize(changes.slotCount);
+    std::vector<uint32_t> changedSlots;
+    changedSlots.reserve(changes.instances.size());
+    for (const auto& [slot, inst] : changes.instances) {
+        if (slot >= gpuInstances.size()) {
+            continue;
         }
-        for (uint32_t i = range.first; i < range.first + range.count && i < primHasCutout.size(); i++) {
-            primHasCutout[i] = any;
-        }
-    }
-    sceneBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
-    for (const auto& inst : world.meshInstances) {
-        if (inst.worldBounds.valid()) {
-            sceneBounds.min = glm::min(sceneBounds.min, inst.worldBounds.min);
-            sceneBounds.max = glm::max(sceneBounds.max, inst.worldBounds.max);
-        }
-    }
-    bool sizeChanged = gpuInstances.size() != world.meshInstances.size();
-    auto instanceCount = (uint32_t) world.meshInstances.size();
-    uint32_t changedFirst = sizeChanged ? 0 : instanceCount;
-    uint32_t changedEnd = sizeChanged ? instanceCount : 0;
-    gpuInstances.resize(world.meshInstances.size());
-    for (size_t m = 0; m < world.meshInstances.size(); m++) {
-        const auto& inst = world.meshInstances[m];
-        bool flagsChanged = gpuInstances[m].cutout != cutoutOfInstance[m] || gpuInstances[m].primHasCutout != primHasCutout[m];
-        if (!sizeChanged && (gpuInstances[m].transform != inst.worldTransform || flagsChanged)) {
-            changedFirst = std::min(changedFirst, (uint32_t) m);
-            changedEnd = std::max(changedEnd, (uint32_t) m + 1);
-        }
-        gpuInstances[m] = {
+        gpuInstances[slot] = {
             .mesh = inst.mesh,
             .material = inst.material,
-            .prim = primOfInstance[m],
+            .prim = inst.prim,
             .transform = inst.worldTransform,
             .indexOffset = inst.indexOffset,
             .indexCount = inst.indexCount,
             .primFirst = inst.primFirst,
             .doubleSided = inst.doubleSided,
-            .cutout = cutoutOfInstance[m],
-            .primHasCutout = primHasCutout[m],
+            .cutout = inst.cutout,
+            .primHasCutout = inst.primHasCutout,
             .worldBounds = inst.worldBounds,
+            .alive = inst.alive,
         };
+        changedSlots.push_back(slot);
     }
-    // A grown instance buffer is a new buffer: every descriptor set naming it is rewritten.
-    gpuScene.updateInstances(gpuInstances, changedFirst, changedEnd, m_frameIndex);
-    bool listsReplaced = drawLists.ensureCapacity(instanceCount, m_frameIndex);
-    bool instanceBufferReplaced = gpuScene.instanceGeneration() != boundInstanceGeneration;
-    if (instanceBufferReplaced) {
+    if (changes.lightsChanged) {
+        lights = changes.lights;
+    }
+
+    sceneBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
+    for (const auto& inst : gpuInstances) {
+        if (inst.alive && inst.worldBounds.valid()) {
+            sceneBounds.min = glm::min(sceneBounds.min, inst.worldBounds.min);
+            sceneBounds.max = glm::max(sceneBounds.max, inst.worldBounds.max);
+        }
+    }
+
+    // A grown instance buffer or grown draw lists are new buffers: the descriptor sets naming them are rewritten at the next frame.
+    gpuScene.updateInstances(gpuInstances, changedSlots, m_frameIndex);
+    if (drawLists.ensureCapacity((uint32_t) gpuInstances.size(), m_frameIndex)) {
+        descriptorSetsDirty = true;
+    }
+    if (gpuScene.instanceGeneration() != boundInstanceGeneration) {
         shadowPass.bindInstanceBuffer(device, gpuScene.instanceBuffer(), deletionQueue, m_frameIndex);
         boundInstanceGeneration = gpuScene.instanceGeneration();
+        descriptorSetsDirty = true;
     }
 
-    if (!geometryChanged) {
-        if (instanceBufferReplaced || listsReplaced) {
-            rebuildGeometryDescriptorSets();
-        }
+    if (changes.meshesAdded.empty() && changes.texturesAdded.empty() && changes.materialsChanged.empty() && changes.meshesRemoved.empty() && changes.texturesRemoved.empty() &&
+        changes.materialsRemoved.empty()) {
         return;
     }
+    auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    TRACE_EVENT("Render", "SceneChangesApplied", "RenderWorld")
+        .text(std::format("scene changes: {} draws, {} meshes added and {} removed, {} textures added and {} removed, {} materials set and {} removed; {} uploads ({}) queued, in {:.0f} ms",
+                          changes.instances.size(),
+                          changes.meshesAdded.size(),
+                          changes.meshesRemoved.size(),
+                          changes.texturesAdded.size(),
+                          changes.texturesRemoved.size(),
+                          changes.materialsChanged.size(),
+                          changes.materialsRemoved.size(),
+                          gpuScene.pendingUploads(),
+                          formatUploadBytes(gpuScene.pendingBytes()),
+                          ms))
+        .field("draws", (int64_t) changes.instances.size())
+        .field("meshesAdded", (int64_t) changes.meshesAdded.size())
+        .field("meshesRemoved", (int64_t) changes.meshesRemoved.size())
+        .field("texturesAdded", (int64_t) changes.texturesAdded.size())
+        .field("texturesRemoved", (int64_t) changes.texturesRemoved.size())
+        .field("materialsSet", (int64_t) changes.materialsChanged.size())
+        .field("materialsRemoved", (int64_t) changes.materialsRemoved.size())
+        .field("pendingBytes", (int64_t) gpuScene.pendingBytes())
+        .field("ms", ms);
+}
 
-    gpuScene.rebuildGeometry(gpuInstances, meshLib, uploader, m_frameIndex);
-
-    // Old textures may still be referenced by frames in flight; destroy them once
-    // the frame that last used them has completed.
-    for (auto& [idx, cached] : textureCache) {
-        deletionQueue.deferTexture(m_frameIndex, cached.texture);
-    }
-    textureCache.clear();
-    for (auto& [idx, cached] : opacityTextureCache) {
-        deletionQueue.deferTexture(m_frameIndex, cached.texture);
-    }
-    opacityTextureCache.clear();
-    cutoutCache.clear();
-
-    uploader.begin();
-    for (const auto& inst : world.meshInstances) {
-        if (inst.material && !textureCache.contains(inst.material.index)) {
-            const auto* matData = matLib.get(inst.material);
-            if (matData && !matData->texPixels.empty()) {
-                PROFILE_ZONE("UploadTexture");
-                PROFILE_ZONE_VALUE((uint64_t) matData->texWidth * (uint64_t) matData->texHeight * 4);
-                RhiTextureDesc texDesc = {
-                    .width = (uint32_t) matData->texWidth,
-                    .height = (uint32_t) matData->texHeight,
-                    .format = RhiFormat::R8G8B8A8_SRGB,
-                    // TransferSrc for the texture inspector's blits and level dumps.
-                    .usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst | RhiTextureUsage::TransferSrc,
-                    .mipLevels = mipLevelCount((uint32_t) matData->texWidth, (uint32_t) matData->texHeight),
-                };
-                auto textureName = std::format("material.{}.basecolor", inst.material.index);
-                texDesc.debugName = textureName.c_str();
-                std::vector<std::byte> packed;
-                if (matData->texMipLevels > 0) {
-                    // Packed by the asset server with its full chain: upload it as it is.
-                    texDesc.mipLevels = matData->texMipLevels;
-                    const auto* levels = reinterpret_cast<const std::byte*>(matData->texPixels.data());
-                    packed.assign(levels, levels + matData->texPixels.size());
-                } else {
-                    PROFILE_ZONE("BuildMips");
-                    auto pixelCount = (size_t) matData->texWidth * (size_t) matData->texHeight * 4;
-                    auto level0 = std::span(matData->texPixels).first(pixelCount);
-                    auto chain = buildMipChain(texDesc.width, texDesc.height, level0, true);
-                    packed = packMipChain(level0, chain);
-                }
-                textureCache[inst.material.index] = {
-                    .texture = uploader.uploadTexture(texDesc, packed),
-                    .width = texDesc.width,
-                    .height = texDesc.height,
-                    .mipLevels = texDesc.mipLevels,
-                    .bytes = packed.size(),
-                    .format = texDesc.format,
-                };
-            }
-        }
-        if (inst.material && !cutoutCache.contains(inst.material.index)) {
-            const auto* matData = matLib.get(inst.material);
-            if (matData && matData->cutout()) {
-                cutoutCache[inst.material.index] = uploadCutout(inst.material.index, *matData);
-            }
-        }
-    }
-
-    {
-        PROFILE_ZONE("UploadSubmit");
-        uploader.end();
-    }
-
-    gpuScene.rebuildMaterials(gpuInstances, textureCache, cutoutCache, fallbackTexture, uploader, m_frameIndex);
+auto Renderer::flushSceneUploads() -> void {
+    auto start = std::chrono::steady_clock::now();
+    auto bytes = gpuScene.pendingBytes();
+    gpuScene.flushUploads(uploader, m_frameIndex);
     rebuildGeometryDescriptorSets();
-    // Only uploads that change geometry get here; a transform edit returns above.
+    descriptorSetsDirty = false;
     auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
     TRACE_EVENT("Render", "SceneUploaded", "RenderWorld")
-        .text(std::format("scene on the GPU: {} instances, {} meshes, {} textures in {:.0f} ms", gpuInstances.size(), gpuScene.meshRanges().size(), textureCache.size() + opacityTextureCache.size(), ms))
+        .text(std::format("scene on the GPU: {} draw slots, {} meshes, {} textures ({}) in {:.0f} ms", gpuInstances.size(), gpuScene.meshRanges().size(), gpuScene.textures().size(), formatUploadBytes(bytes), ms))
         .field("instances", (int64_t) gpuInstances.size())
         .field("meshes", (int64_t) gpuScene.meshRanges().size())
-        .field("textures", (int64_t) (textureCache.size() + opacityTextureCache.size()))
-        .field("cutoutMaterials", (int64_t) cutoutCache.size())
+        .field("textures", (int64_t) gpuScene.textures().size())
+        .field("bytes", (int64_t) bytes)
         .field("ms", ms);
 }
 
@@ -669,9 +568,9 @@ auto Renderer::recordTextureInspect(RhiCommandBuffer* cmd) -> void {
         }
         return;
     }
-    const auto& inspected = textureInspectRequest.opacity ? opacityTextureCache : textureCache;
-    auto texIt = inspected.find(textureInspectRequest.material);
-    if (texIt == inspected.end()) {
+    const auto& inspected = gpuScene.textures();
+    auto texIt = inspected.find(textureInspectRequest.texture);
+    if (texIt == inspected.end() || texIt->second.slot == GpuScene::fallbackSlot) {
         return;
     }
     const auto& cached = texIt->second;
@@ -718,7 +617,7 @@ auto Renderer::recordTextureInspect(RhiCommandBuffer* cmd) -> void {
 
     textureInspectResult = {
         .valid = true,
-        .material = textureInspectRequest.material,
+        .texture = textureInspectRequest.texture,
         .level = level,
         .mipLevels = cached.mipLevels,
         .levelWidth = levelW,
@@ -945,7 +844,13 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     auto colorHandle = frameGraph.importTexture("backbuffer", swapchain->image(*index), {ext.width, ext.height, swapchain->colorFormat()});
     auto depthHandle = frameGraph.importTexture("depth", depthTexture, {ext.width, ext.height, depthFormat, RhiTextureUsage::DepthAttachment | RhiTextureUsage::Sampled});
 
-    auto instanceHandle = gpuScene.addUploadPasses(frameGraph, gpuInstances, currentFrame);
+    // Textures uploaded in earlier frames take their slots; then this frame's scene uploads, before anything reads the tables.
+    if (gpuScene.beginFrame(m_frameIndex) || descriptorSetsDirty) {
+        rebuildGeometryDescriptorSets();
+        descriptorSetsDirty = false;
+    }
+    gpuScene.addUploadPass(frameGraph, m_frameIndex);
+    auto instanceHandle = gpuScene.addInstanceUploadPasses(frameGraph, gpuInstances, currentFrame);
 
     // Per-frame resources (UBOs, descriptor sets, dynamic vertex buffers) are owned by
     // the frame slot whose fence guards them, not by the swapchain image.
@@ -1127,8 +1032,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         captureService.recordStatic(cmd, currentFrame, frame);
         recordTextureInspect(cmd);
         if (dumpPending.has_value()) {
-            auto texIt = textureCache.find(dumpPending->material);
-            if (texIt != textureCache.end() && dumpPending->level < texIt->second.mipLevels) {
+            auto texIt = gpuScene.textures().find(dumpPending->texture);
+            if (texIt != gpuScene.textures().end() && texIt->second.slot != GpuScene::fallbackSlot && dumpPending->level < texIt->second.mipLevels) {
                 const auto& cached = texIt->second;
                 dumpWidth = std::max(1u, cached.width >> dumpPending->level);
                 dumpHeight = std::max(1u, cached.height >> dumpPending->level);
@@ -1145,7 +1050,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
                 std::array<RhiTextureBarrierDesc, 1> toShader = {{{.texture = cached.texture, .oldState = RhiTextureState::TransferSrc, .newState = RhiTextureState::ShaderReadOnly}}};
                 cmd->pipelineBarrier(toShader);
             } else {
-                TRACE_ERROR("Render", "TextureDumpFailed", dumpPending->path).text(std::format("dump-texture: material {} level {} not found", dumpPending->material, dumpPending->level));
+                TRACE_ERROR("Render", "TextureDumpFailed", dumpPending->path).text(std::format("dump-texture: texture {} level {} not found", dumpPending->texture, dumpPending->level));
             }
         }
         if (!screenshotPending.empty()) {
@@ -1190,8 +1095,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         bool ok = writeScreenshotPng(dumpPending->path.c_str(), rgba, dumpWidth, dumpHeight);
         if (ok) {
             TRACE_EVENT("Render", "TextureDump", dumpPending->path)
-                .text(std::format("texture dump written: {} material {} level {} ({}x{})", dumpPending->path, dumpPending->material, dumpPending->level, dumpWidth, dumpHeight))
-                .field("material", (int64_t) dumpPending->material)
+                .text(std::format("texture dump written: {} texture {} level {} ({}x{})", dumpPending->path, dumpPending->texture, dumpPending->level, dumpWidth, dumpHeight))
+                .field("texture", (int64_t) dumpPending->texture)
                 .field("level", (int64_t) dumpPending->level);
         } else {
             TRACE_ERROR("Render", "TextureDumpFailed", dumpPending->path).text(std::format("cannot write texture dump {}", dumpPending->path));
@@ -1273,16 +1178,6 @@ auto Renderer::destroy() -> void {
         device->destroyDescriptorPool(geometryDescriptorPool);
     }
 
-    for (auto& [idx, cached] : textureCache) {
-        device->destroyTexture(cached.texture);
-    }
-    textureCache.clear();
-    for (auto& [idx, cached] : opacityTextureCache) {
-        device->destroyTexture(cached.texture);
-    }
-    opacityTextureCache.clear();
-    cutoutCache.clear();
-
     gpuScene.destroy();
     drawLists.destroy();
 
@@ -1305,6 +1200,7 @@ auto Renderer::destroy() -> void {
     device->destroySampler(shadowSampler);
     device->destroySampler(materialSampler);
     device->destroyTexture(fallbackTexture);
+    device->destroyTexture(pendingTexture);
     device->destroyTexture(depthTexture);
     depthTexture = nullptr;
 

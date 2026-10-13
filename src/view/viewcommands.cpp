@@ -269,23 +269,23 @@ auto parseInspect(const std::string& args) -> std::expected<Json, std::string> {
         return Json{{"enabled", false}};
     }
     std::istringstream in(args);
-    int material = 0;
+    int texture = 0;
     int level = 0;
-    if (!(in >> material >> level)) {
-        return std::unexpected(std::format("expected '<material> <level>' or 'off', got '{}'", args));
+    if (!(in >> texture >> level)) {
+        return std::unexpected(std::format("expected '<texture> <level>' or 'off', got '{}'", args));
     }
-    return Json{{"enabled", true}, {"material", material}, {"level", level}};
+    return Json{{"enabled", true}, {"texture", texture}, {"level", level}};
 }
 
 auto parseDumpTexture(const std::string& args) -> std::expected<Json, std::string> {
     std::istringstream in(args);
-    int material = 0;
+    int texture = 0;
     int level = 0;
     std::string path;
-    if (!(in >> material >> level >> path)) {
-        return std::unexpected(std::format("expected '<material> <level> <path>', got '{}'", args));
+    if (!(in >> texture >> level >> path)) {
+        return std::unexpected(std::format("expected '<texture> <level> <path>', got '{}'", args));
     }
-    return Json{{"material", material}, {"level", level}, {"path", path}};
+    return Json{{"texture", texture}, {"level", level}, {"path", path}};
 }
 
 auto parsePath(const std::string& args) -> std::expected<Json, std::string> {
@@ -747,10 +747,10 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.inspect",
-            .summary = "The texture inspector's capture of one material texture level.",
+            .summary = "The texture inspector's capture of one texture level.",
             .params = {
                 requiredField("enabled", RpcType::Bool, "false turns it off"),
-                optionalField("material", RpcType::Int, "material index"),
+                optionalField("texture", RpcType::Int, "texture index, as the render record's textures list them"),
                 optionalField("level", RpcType::Int, "mip level"),
             },
             .result = "{}",
@@ -759,7 +759,7 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
             if (!p["enabled"].get<bool>()) {
                 view.renderThread.setTextureInspect({});
             } else {
-                view.renderThread.setTextureInspect({.enabled = true, .material = p.value("material", 0u), .level = p.value("level", 0u)});
+                view.renderThread.setTextureInspect({.enabled = true, .texture = p.value("texture", 0u), .level = p.value("level", 0u)});
             }
             responder.respond(Json::object());
         });
@@ -768,14 +768,14 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
             .name = "view.dumpTexture",
             .summary = "Write one mip level of a material texture as PNG.",
             .params = {
-                requiredField("material", RpcType::Int, "material index"),
+                requiredField("texture", RpcType::Int, "texture index, as the render record's textures list them"),
                 requiredField("level", RpcType::Int, "mip level"),
                 requiredField("path", RpcType::String, "PNG path"),
             },
             .result = "{} once requested; the file is written after the frame",
         },
         [&view](const Json& p, RpcResponder responder) {
-            view.renderer.requestTextureDump(p["material"].get<uint32_t>(), p["level"].get<uint32_t>(), p["path"].get<std::string>());
+            view.renderer.requestTextureDump(p["texture"].get<uint32_t>(), p["level"].get<uint32_t>(), p["path"].get<std::string>());
             responder.respond(Json::object());
         });
     registry.add(

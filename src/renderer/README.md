@@ -89,8 +89,8 @@ editor windows            <--latest-only----  FrameGraphDebugSnapshot, RenderDeb
   prepass switches, material sampler settings, the culling frustum (`cullViewProj`, live or frozen) and `cullEnabled`, shadow settings and the fitted
   cascades, gizmo vertices, debug line data and the cloned ImGui draw data. One slot with back-pressure: the main thread blocks if the render thread has
   not taken the previous snapshot.
-- **`RenderUpload`** (main to render, on scene changes): a `RenderWorld` copy plus shared mesh and material libraries, applied at the start of the next
-  render frame.
+- **`SceneChanges`** (main to render, on scene changes): what changed, with the added meshes' and textures' data shared, applied at the start of the
+  next render frame. Lists submitted between two frames are appended and applied together, in order.
 - **Back to the main thread**, each latest-only and non-blocking: `FrameGraphDebugSnapshot` (when the Frame Graph window is open),
   `RenderDebugSnapshot` (when the Render Debug window is open or a dump is requested) and `CullResult` (every new readback).
 - **Small requests** go straight to the `Renderer` or `RenderThread` under a lock: texture inspect, texture dump, screenshot.
@@ -146,30 +146,61 @@ image, because present consumes it per image.
 
 ## Scene data on the GPU
 
-`GpuScene` owns the scene's GPU tables. Two upload paths, chosen by the data:
+`GpuScene` owns the scene's GPU tables, and changes them piece by piece. The view hands the renderer `SceneChanges` (`renderworld.h`): meshes,
+textures and materials added and removed, draw slots changed, the lights. `Renderer::applySceneChanges` applies them in a fixed order:
+- **Removals first**, so what is added reuses their pool ranges, table entries and texture slots. A whole-scene repack then doesn't grow the pool.
+- **Then textures, meshes and materials**, before the draws that name them.
+- **Then the draw slots.**
 
-- **Bulk** (large, rare, blocking through `GpuUploader`): the geometry pool, the mesh table and the material table, rebuilt whenever `uploadRenderWorld`
-  sees a change other than transforms (mesh, material, submesh range, instance count).
-- **Delta** (small, per frame, through the graph): instance records. `uploadRenderWorld` tracks the lowest and highest changed instance; the next frame
-  writes that span into the slot's staging buffer and `InstanceUpload` copies it into the persistent instance buffer.
+Applying only queues uploads. Nothing waits.
 
 Tables:
 
-- **Geometry pool.** One interleaved `Vertex` buffer, one position-only buffer (12 bytes per vertex, for depth-only passes) and one 32-bit index buffer
-  for every mesh. Indices stay mesh-local; a mesh is addressed by `firstIndex` and `vertexOffset`, and the vertex and position pools share `vertexOffset`.
-- **Mesh table.** `GpuMeshEntry` per `MeshHandle::index`: `firstIndex`, `vertexOffset`, `indexCount`. A mesh outside the pool has `indexCount` 0.
-- **Material table and texture slots.** Slot 0 is the fallback texture; each textured material gets the next slot, in instance order, up to
-  `GpuScene::maxTextures` (1024). `GpuMaterial` holds the base colour texture slot and, for a cutout material, the opacity: its texture slot (the base
-  colour's when the opacity is that texture's channel, else a slot of its own), the channel and raw flag (`opacityInfo`), and the threshold.
-  Untextured materials carry their colour as a 1×1 texture.
-- **Instance buffer.** One `GpuInstanceRecord` (112 bytes, std430) per `GpuInstance`: model matrix, material entry, mesh index, submesh `indexOffset`
-  and `indexCount`, world bounds, and flags (`primFirst`, `doubleSided`, `boundsValid`, `cutout`, `primHasCutout`). Vertex shaders read it at
-  `gl_InstanceIndex`; every draw sets
-  `firstInstance` to the instance index. The buffer grows by recreation; the old one goes through the deletion queue.
+- **Geometry pool.** One interleaved `Vertex` buffer, one position-only buffer (12 bytes per vertex, for depth-only passes) and one 32-bit index buffer.
+  - **A range per mesh**, from a first-fit allocator (`PoolAllocator`) that merges neighbouring free ranges. A mesh is one mesh asset, shared by every
+    prim that places it.
+  - **Growth.** When a range doesn't fit, a buffer twice the size replaces the old one. The old contents are copied on the GPU before this frame's
+    uploads, and the old buffer is retired.
+  - **Addressing.** Indices stay mesh-local; a mesh is addressed by `firstIndex` and `vertexOffset`, and the vertex and position pools share
+    `vertexOffset`.
+  - **No compaction.**
+- **Mesh table.** `GpuMeshEntry` per `MeshHandle::index`: `firstIndex`, `vertexOffset`, `indexCount`. Handles are never reused. A mesh whose data
+  hasn't been copied yet, or was removed, has `indexCount` 0 and isn't drawn. The table grows like the pool, and the part past the old contents is
+  zeroed.
+- **Textures and slots.**
+  - **One GPU texture per `TextureHandle`**: a texture asset, or a generated 1×1 of a constant colour, shared by the materials naming it.
+  - **Created late.** It is created when its first level is copied, so creating large textures follows the upload budget.
+  - **A slot once complete.** It takes a slot in the texture array once every level is copied, at the start of the next frame (`beginFrame`). Slot 0
+    is the fallback texture and slot 1 a white 1×1, which a material samples while its texture uploads. Freed slots are reused, up to
+    `GpuScene::maxTextures` (1024).
+- **Material table.** A `GpuMaterial` entry per `MaterialHandle`; freed entries are reused.
+  - **Contents**: the base colour texture slot and, for a cutout material, the opacity: its texture slot (the base colour's when the opacity is that
+    texture's channel), the channel and raw flag (`opacityInfo`), and the threshold.
+  - **Rewritten when a texture it names takes its slot.** Until then it samples the white texture, and a cutout whose opacity texture is still
+    uploading draws opaque.
+- **Instance buffer.** One `GpuInstanceRecord` (112 bytes, std430) per draw slot.
+  - **Contents**: model matrix, material entry, mesh index, submesh `indexOffset` and `indexCount`, world bounds, and flags (`primFirst`,
+    `doubleSided`, `boundsValid`, `cutout`, `primHasCutout`).
+  - **Slots.** A draw keeps its slot while it exists. A removed one is dead (mesh index past the table, so culling never draws it) until a new draw
+    takes it.
+  - **Reading it.** Vertex shaders read it at `gl_InstanceIndex`, and every draw sets `firstInstance` to the slot.
+  - **Uploads.** Changed slots go through the slot's staging buffer and the `InstanceUpload` pass. The buffer grows by recreation.
 
-`GpuInstance` is the CPU mirror the renderer keeps (`Renderer::gpuInstances`): one per `RenderMeshInstance`, a prim's mesh expanded per material
-submesh. When a table or buffer is replaced, every descriptor set naming it is rewritten (`Renderer::rebuildGeometryDescriptorSets`, which also rebuilds
-the culling sets).
+**Uploads** (`GpuScene::addUploadPass`, the `SceneUpload` pass, before the culling passes):
+- **Per frame.** Each frame takes queued uploads in order, up to `uploadBudget` bytes (64 MiB; at least one upload, so a large texture level still
+  goes). A texture's levels are separate uploads.
+- **One staging buffer per frame's batch**, retired through the deletion queue.
+- **Barriers.** The copies are recorded in the frame's command buffer:
+  - before them, a barrier from the tables' and pool's read states to transfer;
+  - one between a grown buffer's move and the uploads, since copies in one command buffer may run in any order;
+  - one back after.
+
+  On one queue a barrier also orders against earlier submissions, so ranges freed this frame are written at once.
+- **Start-up.** `Renderer::flushSceneUploads` records everything on `GpuUploader`'s command buffer and waits, so the first frame has the scene.
+- **Descriptor sets.** When the texture slots change or a table or buffer is replaced, the descriptor sets naming them are rewritten at the next frame
+  (`Renderer::rebuildGeometryDescriptorSets`, which also rebuilds the culling sets; the old sets are retired).
+
+`GpuInstance` is the CPU mirror the renderer keeps (`Renderer::gpuInstances`), by draw slot.
 
 ## Culling and draw lists
 
@@ -254,12 +285,11 @@ is its own invocation group.
 
 - **`DeletionQueue`.** The RHI destroys immediately; the renderer defers. Each entry is tagged with the frame that last used the resource and destroyed
   once that frame's slot fence has passed. Replaced buffers, textures, descriptor pools and preview textures all go through it.
-- **`GpuUploader`.** One command buffer, a staging buffer per upload, one submit and a blocking fence wait in `end()`. Used for bulk uploads (geometry
-  pool, tables, textures), never per frame.
+- **`GpuUploader`.** One command buffer, a staging buffer per upload, one submit and a blocking fence wait in `end()`. Start-up only: the fallback
+  textures, and the scene's first upload (`flushSceneUploads`). The scene's uploads after that go through `GpuScene`'s per-frame queue.
 - **`ResourcePool`.** Transient textures for the frame graph, reused across frames by size, format and usage; flushed on swapchain recreation.
 - **Textures.** Material textures are RGBA8 sRGB with full mip chains. Textures from files arrive packed by the asset server with every level
-  (`src/asset/README.md`), and are uploaded as they are; only the generated 1×1 textures get their chain here, from the same filter
-  (`src/asset/pack/mipchain.h`, a 2×2 box filter averaging colour in linear space). The material sampler is
+  (`src/asset/README.md`), and are uploaded as they are; the generated 1×1 textures of constant colours have one level. The material sampler is
   trilinear with anisotropy and editable live (`SamplerSettings`, `sampler` session verb); changing it rebuilds the geometry descriptor sets.
 
 ## Shadows

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "assetlibrary.h"
 #include "scenehandles.h"
 #include "scenetypes.h"
 #include "types.h"
@@ -10,6 +11,8 @@
 // Meshes with USD materialBind GeomSubsets produce one SubMesh per subset;
 // meshes with a single (or no) binding produce a single SubMesh covering the
 // whole index buffer. Always at least one entry when the mesh has geometry.
+// The material is the draw's, not the mesh's: a mesh shared by several prims
+// is drawn with each prim's bindings.
 struct SubMesh {
     uint32_t indexOffset = 0;
     uint32_t indexCount = 0;
@@ -23,36 +26,19 @@ struct MeshDesc {
     bool doubleSided = false; // USD doubleSided: draw without back-face culling
 };
 
-class MeshLibrary {
-public:
-    MeshHandle add(MeshDesc data) {
-        m_meshes.push_back(std::move(data));
-        return {.index = (uint32_t) m_meshes.size()};
+// The bounds of a mesh's vertices; invalid for a mesh without any.
+inline auto meshBounds(const MeshDesc& mesh) -> AABB {
+    if (mesh.vertices.empty()) {
+        return {};
     }
-
-    const MeshDesc* get(MeshHandle h) const {
-        if (h.index == 0 || h.index > m_meshes.size()) {
-            return nullptr;
-        }
-        return &m_meshes[h.index - 1];
+    AABB b = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
+    for (const auto& v : mesh.vertices) {
+        auto p = glm::vec3(v.position[0], v.position[1], v.position[2]);
+        b.min = glm::min(b.min, p);
+        b.max = glm::max(b.max, p);
     }
+    return b;
+}
 
-    AABB bounds(MeshHandle h) const {
-        const auto* m = get(h);
-        if (!m || m->vertices.empty()) {
-            return {};
-        }
-        AABB b = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
-        for (const auto& v : m->vertices) {
-            auto p = glm::vec3(v.position[0], v.position[1], v.position[2]);
-            b.min = glm::min(b.min, p);
-            b.max = glm::max(b.max, p);
-        }
-        return b;
-    }
-
-    uint32_t count() const { return (uint32_t) m_meshes.size(); }
-
-private:
-    std::vector<MeshDesc> m_meshes;
-};
+// Meshes by mesh asset id: one per mesh pack, shared by every prim that places it.
+using MeshLibrary = AssetLibrary<MeshHandle, MeshDesc>;

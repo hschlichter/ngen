@@ -37,7 +37,7 @@ auto pickShadowLightDirection(std::span<const RenderLight> lights, glm::vec3 wor
 auto sceneBoundsOf(std::span<const RenderMeshInstance> instances) -> AABB {
     AABB bounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
     for (const auto& inst : instances) {
-        if (inst.worldBounds.valid()) {
+        if (inst.alive && inst.worldBounds.valid()) {
             bounds.min = glm::min(bounds.min, inst.worldBounds.min);
             bounds.max = glm::max(bounds.max, inst.worldBounds.max);
         }

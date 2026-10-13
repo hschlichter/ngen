@@ -29,3 +29,10 @@ struct MaterialHandle {
     explicit operator bool() const { return index != 0; }
     friend bool operator==(MaterialHandle a, MaterialHandle b) = default;
 };
+
+struct TextureHandle {
+    uint32_t index = 0;
+
+    explicit operator bool() const { return index != 0; }
+    friend bool operator==(TextureHandle a, TextureHandle b) = default;
+};
