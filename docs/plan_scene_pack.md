@@ -1,6 +1,6 @@
 # Scene pack
 
-**Status. In progress.** Phase A started 2026-10-12; phases A and B done 2026-10-12 (results under Verification).
+**Status. In progress.** Phase A started 2026-10-12; phases A, B and C done 2026-10-12 (results under Verification).
 
 Step 2 of [plan_tool_architecture.md](plan_tool_architecture.md), the scene half: ngen-view stops reading USD. A USD packer turns every USD file
 into a pack of engine-ready data, one pack job per file; a runtime scene library composes the packs into the scene the renderer draws; and the
@@ -150,6 +150,13 @@ Locked 2026-10-12, at the start of phase B:
 21. **Fingerprints can carry transforms.** `--transforms` on both check tools adds each prim's world matrix, so transform overrides and
     `xformOp` evaluation are checked on `assets/layered/` too, not only through screenshots of three_cubes and Sponza.
 
+22. **The renderer keeps its flat inputs** (2026-10-12, phase C). `ViewScene` flattens the World and the packed meshes, materials and
+    textures into `RenderWorld`, `MeshLibrary` and `MaterialLibrary`, as `USDRenderExtractor` did for the USD stage; the renderer is
+    unchanged. It owns instance expansion, LOD and purpose choice and visibility; streaming will patch the flat lists. Rejected: the
+    renderer taking the World (step 9 as first written), which changes the renderer in the same step as the scene source, and makes the
+    renderer walk entities. Unbound prims share one material per display colour (the USD view made one per prim, which overflows the
+    renderer's 1,024 texture slots on Caldera); the baselines' counts don't change.
+
 ## Steps
 
 ### Phase A: packs
@@ -231,7 +238,8 @@ Ships: a `World` composed from packs that matches USD's composition, checked out
 
 Ships: ngen-view renders the test scenes from packs, with no OpenUSD, and is looked at but not interacted with.
 
-9. **The renderer takes the `World`**: `Renderer::uploadRenderWorld` becomes `uploadWorld(const World&, const WorldAssets&)`, with meshes,
+9. *As built (decision 22):* the renderer is unchanged; `ViewScene` (`src/view/viewscene.*`) flattens the World into its inputs.
+   **The renderer takes the `World`**: `Renderer::uploadRenderWorld` becomes `uploadWorld(const World&, const WorldAssets&)`, with meshes,
    materials and textures from their packed assets (`WorldAssets`, in `src/world/`, keyed by asset id); `RenderWorld`, `MeshLibrary` and
    `MaterialLibrary` go once nothing uses them. The renderer draws by purpose (decision 16).
 10. **The view loads packs**: it requests the scene's id, feeds arriving packs to `WorldComposer` and requests what each names (decision 8),
@@ -240,6 +248,9 @@ Ships: ngen-view renders the test scenes from packs, with no OpenUSD, and is loo
 11. **What reads the scene reads the `World`**: the `scene` and `status` records (the layer stack from the root pack, entity counts),
     `camera-frame` by entity path, the scene bounds for the initial camera; a `purposes` overlay setting and script verb (decision 16); a
     `lod <root> <level>` script verb and `view.lod.set` method (decision 17).
+    *As built:* `select` and `translate` (verbs, methods, `--select`) leave with selection until phase D; `camera-frame` frames what is
+    drawn at and under an entity path. The view already links no OpenUSD (`ldd`, `nm`): nothing it uses reaches the USD code, so step 15's
+    link change happened here; the editor code still builds, in its libraries, unused.
 12. **The view's own UI host**: `EditorUI` hosts both the editor windows and the introspection windows today, and its `draw` takes `USDScene`.
     A `ViewUI` (`src/ui/viewui.*`) takes over what stays in the view (the introspection windows, overlays, camera window, status bar, the View
     menu); `EditorUI` goes with the editor code (decision 14).
@@ -284,13 +295,20 @@ Ships: the view is interactive again on entities, and nothing of the editor or O
   file, USD one prototype per identical composition).
 - **The same pictures**: three_cubes and Sponza screenshots from the packed view (end of phase C) are byte-identical to today's (baselines
   captured before phase C); the `render` record has the same meshes, textures and draw counts.
+  *Phase C, 2026-10-12:* byte-identical, headless, for both; the `render` record's scene, meshes, textures and draw log (534 draws for
+  Sponza, timings aside) are identical too. The layered scene draws 10 instances, 11 with `purposes guide=on`, 12 with
+  `lod /World/Tree/lod 0` (level 0 loaded and drawn in place of level 1). Caldera's default map: 4,427 draws, 19 materials, main loop
+  4.2 s after start.
 - **Levels**: setting a model root inside one instance of `map_capital` to its finest level changes that instance only (its draws in the
   `render` record), and the coarser level draws while the finer one loads.
 - **Purposes**: Caldera's default map draws no `guide` prim (the `render` record's draw log names none), and does with the `purposes` overlay on.
+  *Phase C, 2026-10-12:* 4,427 draws with guides off, 30,574 with `purposes guide=on`.
 - **No USD in the view** (end of phase D): `ldd` and `nm` on ngen-view show no `libusd_*` or `pxr` symbols; `build.cpp`'s link graph has none
   under the view.
 - **Start-up without USD**: Sponza's start-up trace has no USD stage events (`SceneOpened`, `AssetBindingsUpdated`, `SceneExtracted`) and, with a
   warm cache, no packer run; the time to first frame is recorded next to today's 5.4 s.
+  *Phase C, 2026-10-12:* none of them; `SceneRequested`, `PacksComposed`, `SceneAssetsReceived` and `WorldExtracted` instead. The main
+  loop starts 3.5 s after start (the baseline run: 7.0 s).
 - **Gizmos and picking** (end of phase D): a `pick` at a pixel selects the entity under it, read back from the GPU (its path in the
   `status` record), and a `translate` script verb moves it, visible in a screenshot.
 
@@ -305,6 +323,12 @@ None left; the decisions are locked (2026-10-12).
 - **Eager packing** of everything a scene names, as an explicit request. Trigger: warming a cache for a demo or CI.
 - **Remote packer machines.** Trigger: packing time on one machine is the bottleneck.
 - **Drawing `Points` and other prim types.** Trigger: a scene that needs them shown (Caldera's player data).
+- **Texture coordinates for the shape schemas.** `primshapemesh` gives cubes, spheres, cylinders and cones the coordinate (0, 0) everywhere, as
+  the USD view did, so a textured shape shows one texel (the layered scene's checker cubes). Trigger: a scene that textures a shape.
+- **A far plane and camera framing for scenes kilometres wide.** Framing Caldera's whole map puts the camera 60 km out, past the 3,000 m far
+  plane, and the frame is empty; `camera-frame` on a district works. Trigger: streaming work on Caldera.
+- **Sharing mesh data between instances in the view.** `ViewScene` builds a mesh per drawn prim, as the USD view did; Caldera's default map
+  with guides takes 6.6 GB at peak and 16 GB with every guide drawn. Trigger: the streaming plan's memory budgets.
 - **Splitting one large file into several jobs.** Not planned: a large file is the author's choice (decision 2).
 - **[plan_editor_split.md](plan_editor_split.md) needs revising** when the editor split is picked up: it assumes the editor still runs inside the
   view during its phase A, which this plan ends (decision 6).

@@ -408,6 +408,7 @@ auto main(int argc, char** argv) -> int {
                 "src/renderdoccapture.cpp",
                 "src/view/viewcommands.cpp",
                 "src/view/viewdumps.cpp",
+                "src/view/viewscene.cpp",
             })
             .include({
                 "src",
@@ -421,6 +422,8 @@ auto main(int argc, char** argv) -> int {
                 "src/ui",
                 "src/profile",
                 "src/session",
+                "src/world",
+                "src/asset/pack",
                 "external/glm",
                 "external/cgltf",
                 "external/stb",
@@ -434,37 +437,15 @@ auto main(int argc, char** argv) -> int {
             .link(session)
             .link(rhivulkan)
             .link(renderer)
-            .link(scene)
-            .link(sceneusd)
             .link(ui)
             .link(imgui)
             .link(rpc)
             .link(rpccore)
             .link(assetClient)
+            .link(worldLib)
             .link(packer)
             .link_flags(sdl3_libs)
-            .depend_on(assetServer)
-            .depend_on(usdPlugins)
-            .lib_search("external/openusd_build/lib")
-            .rpath((std::filesystem::current_path() / "external/openusd_build/lib").string())
-            .link_flag("-lusd_usd")
-            .link_flag("-lusd_usdGeom")
-            .link_flag("-lusd_usdShade")
-            .link_flag("-lusd_usdLux")
-            .link_flag("-lusd_sdf")
-            .link_flag("-lusd_pcp")
-            .link_flag("-lusd_tf")
-            .link_flag("-lusd_vt")
-            .link_flag("-lusd_gf")
-            .link_flag("-lusd_ar")
-            .link_flag("-lusd_arch")
-            .link_flag("-lusd_plug")
-            .link_flag("-lusd_js")
-            .link_flag("-lusd_work")
-            .link_flag("-lusd_trace")
-            .link_flag("-lusd_ts")
-            .link_flag("-lusd_pegtl")
-            .link_flag("-lusd_kind");
+            .depend_on(assetServer);
 
     // ngen-introspect (src/introspect/README.md): sees into and calls the running processes, as a window drawn with
     // SDL's renderer and Dear ImGui, or from the command line. An RPC client only; nothing of the engine.

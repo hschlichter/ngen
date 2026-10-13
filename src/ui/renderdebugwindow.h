@@ -5,6 +5,10 @@
 #include "renderdebug.h"
 #include "scenehandles.h"
 
+#include <cstdint>
+#include <functional>
+#include <string>
+
 #include <optional>
 
 // Editor flags the View tab edits in place; the menu edits the same flags.
@@ -22,8 +26,8 @@ struct RenderDebugViewFlags {
     bool& showLightGizmos;
 };
 
-class USDScene;
-struct PrimHandle;
+// The path of the prim a draw names (its prim index); empty when unknown.
+using PrimPathOf = std::function<std::string(uint32_t prim)>;
 
 // Persistent UI state for the draw list and the texture inspector.
 struct RenderDebugDrawState {
@@ -33,4 +37,4 @@ struct RenderDebugDrawState {
 };
 
 // Returns true when the Screenshot button was pressed this frame.
-auto drawRenderDebugWindow(bool& show, const std::optional<RenderDebugSnapshot>& snap, RenderDebugViewFlags& view, const USDScene& scene, PrimHandle& selectedPrim, RenderDebugDrawState& drawState) -> bool;
+auto drawRenderDebugWindow(bool& show, const std::optional<RenderDebugSnapshot>& snap, RenderDebugViewFlags& view, const PrimPathOf& primPath, uint32_t& selectedPrim, RenderDebugDrawState& drawState) -> bool;

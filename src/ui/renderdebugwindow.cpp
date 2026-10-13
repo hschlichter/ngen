@@ -2,7 +2,6 @@
 
 #include "framegraphdebug.h"
 #include "lightingpass.h"
-#include "usdscene.h"
 
 #include <imgui.h>
 
@@ -26,7 +25,7 @@ auto formatBytes(uint64_t bytes, char* out, size_t size) -> const char* {
     return out;
 }
 
-auto drawTextureInspector(const RenderDebugSnapshot& s, const USDScene& scene, RenderDebugDrawState& drawState) -> void {
+auto drawTextureInspector(const RenderDebugSnapshot& s, const PrimPathOf& primPath, RenderDebugDrawState& drawState) -> void {
     auto& req = drawState.inspect;
     if (!req.enabled) {
         return;
@@ -71,12 +70,12 @@ auto drawTextureInspector(const RenderDebugSnapshot& s, const USDScene& scene, R
         ImGui::TextDisabled("(no draws logged this frame)");
     }
     for (auto prim : prims) {
-        const auto* rec = scene.isOpen() ? scene.getPrimRecord(PrimHandle{prim}) : nullptr;
-        ImGui::BulletText("%s", rec != nullptr ? rec->path.c_str() : "(unknown prim)");
+        auto path = primPath(prim);
+        ImGui::BulletText("%s", !path.empty() ? path.c_str() : "(unknown prim)");
     }
 }
 
-auto drawSceneTab(const RenderDebugSnapshot& s, const USDScene& scene, RenderDebugDrawState& drawState) -> void {
+auto drawSceneTab(const RenderDebugSnapshot& s, const PrimPathOf& primPath, RenderDebugDrawState& drawState) -> void {
     uint64_t triangles = 0;
     uint64_t vertices = 0;
     uint64_t meshBytes = 0;
@@ -190,10 +189,10 @@ auto drawSceneTab(const RenderDebugSnapshot& s, const USDScene& scene, RenderDeb
         }
         ImGui::EndTable();
     }
-    drawTextureInspector(s, scene, drawState);
+    drawTextureInspector(s, primPath, drawState);
 }
 
-auto drawDrawList(const RenderDebugSnapshot& s, const USDScene& scene, PrimHandle& selectedPrim, RenderDebugDrawState& drawState) -> void {
+auto drawDrawList(const RenderDebugSnapshot& s, const PrimPathOf& primPath, uint32_t& selectedPrim, RenderDebugDrawState& drawState) -> void {
     ImGui::Separator();
     ImGui::Text("Draws (%zu logged)", s.draws.size());
 
@@ -239,10 +238,10 @@ auto drawDrawList(const RenderDebugSnapshot& s, const USDScene& scene, PrimHandl
         ImGui::TableSetColumnIndex(0);
         ImGui::Text("%u", d.drawIndex);
         ImGui::TableSetColumnIndex(1);
-        const auto* rec = scene.isOpen() ? scene.getPrimRecord(PrimHandle{d.prim}) : nullptr;
-        bool selected = selectedPrim.index == d.prim && d.prim != 0;
-        if (ImGui::Selectable(rec != nullptr ? rec->path.c_str() : "(unknown prim)", selected, ImGuiSelectableFlags_SpanAllColumns)) {
-            selectedPrim = PrimHandle{d.prim};
+        auto path = primPath(d.prim);
+        bool selected = selectedPrim == d.prim && d.prim != 0;
+        if (ImGui::Selectable(!path.empty() ? path.c_str() : "(unknown prim)", selected, ImGuiSelectableFlags_SpanAllColumns)) {
+            selectedPrim = d.prim;
         }
         ImGui::TableSetColumnIndex(2);
         ImGui::Text("%u", d.mesh);
@@ -415,7 +414,7 @@ auto drawDeviceTab(const RenderDebugSnapshot& s) -> void {
 
 } // namespace
 
-auto drawRenderDebugWindow(bool& show, const std::optional<RenderDebugSnapshot>& snap, RenderDebugViewFlags& view, const USDScene& scene, PrimHandle& selectedPrim, RenderDebugDrawState& drawState) -> bool {
+auto drawRenderDebugWindow(bool& show, const std::optional<RenderDebugSnapshot>& snap, RenderDebugViewFlags& view, const PrimPathOf& primPath, uint32_t& selectedPrim, RenderDebugDrawState& drawState) -> bool {
     bool screenshot = false;
     if (!show) {
         return false;
@@ -428,7 +427,7 @@ auto drawRenderDebugWindow(bool& show, const std::optional<RenderDebugSnapshot>&
     if (ImGui::BeginTabBar("##rd_tabs")) {
         if (ImGui::BeginTabItem("Scene")) {
             if (snap.has_value()) {
-                drawSceneTab(*snap, scene, drawState);
+                drawSceneTab(*snap, primPath, drawState);
             } else {
                 ImGui::TextDisabled("Waiting for render thread snapshot...");
             }
@@ -437,7 +436,7 @@ auto drawRenderDebugWindow(bool& show, const std::optional<RenderDebugSnapshot>&
         if (ImGui::BeginTabItem("Frame")) {
             if (snap.has_value()) {
                 drawFrameTab(*snap);
-                drawDrawList(*snap, scene, selectedPrim, drawState);
+                drawDrawList(*snap, primPath, selectedPrim, drawState);
             } else {
                 ImGui::TextDisabled("Waiting for render thread snapshot...");
             }

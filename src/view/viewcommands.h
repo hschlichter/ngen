@@ -9,32 +9,24 @@
 #include <string>
 
 class AssetClient;
-class EditorUI;
 class Renderer;
 class RenderThread;
 class RenderDocCapture;
-class SceneQuerySystem;
-class SceneUpdater;
-class USDScene;
 class ViewDumps;
+class ViewScene;
+class ViewUI;
 struct Camera;
 struct CullResult;
-struct PrimHandle;
-struct RenderWorld;
 
 // What ngen-view's commands act on. Owned by the view's main; the commands hold references.
 struct ViewContext {
     Camera& cam;
-    USDScene& usdScene;
-    SceneQuerySystem& sceneQuery;
-    SceneUpdater& sceneUpdater;
-    PrimHandle& selectedPrim;
-    EditorUI& editorUI;
+    ViewScene& scene;
+    ViewUI& ui;
     Renderer& renderer;
     RenderThread& renderThread;
     RenderDocCapture& renderDoc;
     ViewDumps& dumps;
-    const RenderWorld& renderWorld;
     const CullResult& latestCull;
     const AssetClient& assets;
     std::function<void()> frameSceneView;

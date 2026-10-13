@@ -3,10 +3,8 @@
 #include "camera.h"
 #include "culling.h"
 #include "debugdraw.h"
-#include "editorui.h"
 #include "imguibackendvulkan.h"
 #include "jobsystem.h"
-#include "mesh.h"
 #include "profile.h"
 #include "renderdebugjson.h"
 #include "renderdoccapture.h"
@@ -15,24 +13,17 @@
 #include "renderthread.h"
 #include "renderworld.h"
 #include "rhidevicevulkan.h"
-#include "rotategizmo.h"
 #include "rpcendpoint.h"
 #include "rpcregistry.h"
-#include "scalegizmo.h"
-#include "scenequery.h"
-#include "sceneupdater.h"
 #include "sessionscript.h"
 #include "shaderloader.h"
 #include "shadowcascades.h"
 #include "statusbar.h"
 #include "trace.h"
-#include "translategizmo.h"
-#include "usdassetresolver.h"
-#include "usddiagnostics.h"
-#include "usdrenderextractor.h"
-#include "usdscene.h"
 #include "viewcommands.h"
 #include "viewdumps.h"
+#include "viewscene.h"
+#include "viewui.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
@@ -181,8 +172,6 @@ auto main(int argc, char* argv[]) -> int {
             session.add(0, "camera", flagValue(arg, "--camera="));
         } else if (arg.starts_with("--camera-frame=")) {
             session.add(0, "camera-frame", flagValue(arg, "--camera-frame="));
-        } else if (arg.starts_with("--select=")) {
-            session.add(0, "select", flagValue(arg, "--select="));
         } else if (arg.starts_with("--view=")) {
             session.add(0, "view", flagValue(arg, "--view="));
         } else if (arg.starts_with("--overlay=")) {
@@ -229,8 +218,8 @@ auto main(int argc, char* argv[]) -> int {
     // Every asset comes streamed from this variant's asset server, running in the same working directory (asset ids are
     // relative to it); the view doesn't start without one. The variant is
     // the directory the binary lives in, _out/<platform>/<config>/. The shader request goes out now and is waited for
-    // just before the renderer needs the shaders, so packing overlaps loading the scene. USD reads the scene's layers
-    // and textures through the same client, by asset id.
+    // just before the renderer needs the shaders, so packing overlaps loading the scene. The scene's packs, meshes,
+    // materials and textures come through the same client, by asset id.
     AssetClient assetClient;
     std::error_code binError;
     auto binDirectory = std::filesystem::canonical("/proc/self/exe", binError).parent_path();
@@ -250,10 +239,6 @@ auto main(int argc, char* argv[]) -> int {
     TRACE_EVENT("Render", "ShadersRequested", "startup")
         .text(std::format("{} startup shaders requested", startupShaderIds().size()))
         .field("count", (int64_t) startupShaderIds().size());
-    installUsdDiagnostics();
-    if (!registerAssetResolver(&assetClient, binDirectory)) {
-        return 1;
-    }
     std::string sceneId;
     if (positional.size() >= 2) {
         sceneId = assetIdForPath(positional[1]);
@@ -263,31 +248,11 @@ auto main(int argc, char* argv[]) -> int {
         }
     }
 
-    USDScene usdScene;
-    USDRenderExtractor usdExtractor;
-    SceneQuerySystem sceneQuery;
-    MeshLibrary meshLib;
-    MaterialLibrary matLib;
-    RenderWorld renderWorld;
-    PrimHandle selectedPrim;
-    SceneUpdater sceneUpdater;
-
-    if (positional.size() >= 2) {
-        TRACE_EVENT("Scene", "SceneOpenRequested", sceneId).text(std::format("scene {} from the command line", sceneId)).field("source", "command line");
-        if (!usdScene.open(sceneId.c_str())) {
-            return 1;
-        }
-    } else {
-        // No scene argument — start with a blank in-memory stage so the editor has
-        // something to act on (default light, empty Scene tree, ready to create prims).
-        TRACE_EVENT("Scene", "SceneOpenRequested", "(new scene)").text("new scene: no scene on the command line").field("source", "command line");
-        if (!usdScene.newScene()) {
-            return 1;
-        }
+    // The scene, composed from its packs; no scene argument is an empty scene.
+    ViewScene scene(assetClient);
+    if (!scene.open(sceneId)) {
+        return 1;
     }
-    usdScene.updateAssetBindings(meshLib, matLib);
-    usdExtractor.extract(usdScene, meshLib, renderWorld);
-    sceneQuery.rebuild(usdScene, meshLib);
 
     // SDL init and window
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -402,15 +367,15 @@ auto main(int argc, char* argv[]) -> int {
     renderer.setValidationEnabled(enableValidation);
     renderer.setScreenshotsShowUi(screenshotsShowUi);
 
-    renderer.uploadRenderWorld(renderWorld, meshLib, matLib);
-    EditorUI editorUI;
-    // Asset browser root = current working directory (the "project" root), so the
-    // browser shows the same tree regardless of which scene is open. Captured once
-    // here; doesn't change per-scene.
-    editorUI.setAssetBrowserRoot(std::filesystem::current_path().string());
+    renderer.uploadRenderWorld(scene.renderWorld(), *scene.meshes(), *scene.materials());
+    uint64_t uploadedRevision = scene.revision();
+    ViewUI viewUI;
     if (positional.size() > 1) {
-        editorUI.setBookmarkPath(std::string(positional[1]) + ".cameras.txt");
+        viewUI.setBookmarkPath(std::string(positional[1]) + ".cameras.txt");
     }
+    auto primPathOf = [&scene](uint32_t prim) -> std::string {
+        return scene.primPath(prim);
+    };
 
     // Render thread
     RenderThread renderThread;
@@ -418,11 +383,11 @@ auto main(int argc, char* argv[]) -> int {
 
     DebugDraw debugDraw;
 
-    // Camera — worldUp tracks the stage's authored up-axis so the controls stay
+    // Camera — worldUp tracks the scene's up axis so the controls stay
     // consistent whether we're looking at a Y-up or Z-up asset.
     auto cam = Camera{
         .position = glm::vec3(2.0f, 1.5f, 2.0f),
-        .worldUp = usdScene.worldUp(),
+        .worldUp = scene.worldUp(),
         .yaw = -135.0f,
         .pitch = -20.0f,
         .speed = 5.0f,
@@ -431,26 +396,12 @@ auto main(int argc, char* argv[]) -> int {
     auto mouseCapture = false;
 
     renderer.initGizmos(&cam);
-    TranslateGizmo translateGizmo;
-    RotateGizmo rotateGizmo;
-    ScaleGizmo scaleGizmo;
-
-    // Cached shared_ptrs to the libraries — handed to the render thread via
-    // RenderUpload. Rebuilt only when the libs actually change (initial load,
-    // openScene, or async batch swap), NOT on the per-frame transform fast path.
-    auto cachedMeshLib = std::make_shared<const MeshLibrary>(meshLib);
-    auto cachedMatLib = std::make_shared<const MaterialLibrary>(matLib);
-    auto refreshCachedLibs = [&] -> void {
-        cachedMeshLib = std::make_shared<const MeshLibrary>(meshLib);
-        cachedMatLib = std::make_shared<const MaterialLibrary>(matLib);
-    };
 
     // Union the world bounds of all mesh instances and frame the camera on them.
-    // Used at startup and after openScene so the initial view works for any up-axis
-    // and asset scale.
+    // Used at startup so the initial view works for any up-axis and asset scale.
     auto frameSceneView = [&] -> void {
         AABB sceneBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
-        for (const auto& inst : renderWorld.meshInstances) {
+        for (const auto& inst : scene.renderWorld().meshInstances) {
             if (inst.worldBounds.valid()) {
                 sceneBounds.min = glm::min(sceneBounds.min, inst.worldBounds.min);
                 sceneBounds.max = glm::max(sceneBounds.max, inst.worldBounds.max);
@@ -472,23 +423,19 @@ auto main(int argc, char* argv[]) -> int {
     std::vector<SessionCommand> dueCommands;
 
     // Dumps and captures that finish frames later, for script verbs and RPC calls alike.
-    ViewDumps dumps(renderWorld, usdScene, latestCull, rhiDevice.limits().pipelineStatistics);
+    ViewDumps dumps(scene.renderWorld(), primPathOf, latestCull, rhiDevice.limits().pipelineStatistics);
 
     // Every command is an RPC method; script lines and live calls run the same code.
     RpcRegistry registry;
     registerRpcBuiltins(registry, "view");
     ViewContext viewContext = {
         .cam = cam,
-        .usdScene = usdScene,
-        .sceneQuery = sceneQuery,
-        .sceneUpdater = sceneUpdater,
-        .selectedPrim = selectedPrim,
-        .editorUI = editorUI,
+        .scene = scene,
+        .ui = viewUI,
         .renderer = renderer,
         .renderThread = renderThread,
         .renderDoc = renderDoc,
         .dumps = dumps,
-        .renderWorld = renderWorld,
         .latestCull = latestCull,
         .assets = assetClient,
         .frameSceneView = frameSceneView,
@@ -511,7 +458,7 @@ auto main(int argc, char* argv[]) -> int {
 #endif
 
     TRACE_EVENT("Engine", "MainLoopStarted", "view").text(std::format("main loop started, {:.0f} ms after start", trace::msSinceStart())).field("since_start_ms", trace::msSinceStart());
-    while (!quit && !editorUI.wantsQuit()) {
+    while (!quit && !viewUI.wantsQuit()) {
         PROFILE_FRAME_MARK();
         frameCounter++;
         session.takeDue(frameCounter, dueCommands);
@@ -533,52 +480,19 @@ auto main(int argc, char* argv[]) -> int {
         auto proj = glm::perspective(glm::radians(45.0f), (float) winW / (float) winH, 0.1f, 3000.0f);
         proj[1][1] *= -1.0f;
 
-        bool sceneChanged = false;
-
-        if (editorUI.hasPendingOpen()) {
-            auto path = editorUI.consumePendingOpenPath();
-            TRACE_EVENT("Scene", "SceneOpenRequested", path).text(std::format("scene {} from the editor", path)).field("source", "editor");
-            if (editorUI.openScene(path.c_str(), usdScene, usdExtractor, meshLib, matLib, renderWorld, sceneQuery, sceneUpdater, selectedPrim)) {
-                refreshCachedLibs();
-                cam.worldUp = usdScene.worldUp();
-                frameSceneView();
-                sceneChanged = true;
-            }
+        // The purposes the View menu or a script turned on or off: the scene loads and draws them, and moves its revision on.
+        if (scene.purposeShown(Purpose::Guide) != viewUI.showGuides()) {
+            scene.setPurposeShown(Purpose::Guide, viewUI.showGuides());
         }
-        if (editorUI.consumePendingNewScene()) {
-            TRACE_EVENT("Scene", "SceneOpenRequested", "(new scene)").text("new scene from the editor").field("source", "editor");
-            if (editorUI.newScene(usdScene, usdExtractor, meshLib, matLib, renderWorld, sceneQuery, sceneUpdater, selectedPrim)) {
-                refreshCachedLibs();
-                cam.worldUp = usdScene.worldUp();
-                // No bounds to frame on a blank stage; keep the current camera view.
-                sceneChanged = true;
-            }
+        if (scene.purposeShown(Purpose::Proxy) != viewUI.showProxies()) {
+            scene.setPurposeShown(Purpose::Proxy, viewUI.showProxies());
         }
-        if (editorUI.hasPendingSave()) {
-            auto path = editorUI.consumePendingSavePath();
-            if (!usdScene.exportRootLayerTo(path.c_str())) {
-                TRACE_ERROR("Scene", "SceneSaveFailed", path).text(std::format("cannot save the scene to {}", path));
-            } else {
-                TRACE_EVENT("Scene", "SceneSaved", path).text(std::format("scene saved to {}", path));
-            }
-        }
-
-        if (usdScene.isOpen()) {
-            PROFILE_ZONE("SceneUpdate");
-            auto r = sceneUpdater.update(usdScene, usdExtractor, renderWorld, meshLib, matLib, sceneQuery);
-            if (r == SceneUpdateResult::Full) {
-                refreshCachedLibs();
-            }
-            if (r != SceneUpdateResult::None) {
-                sceneChanged = true;
-            }
-        }
-
-        if (sceneChanged) {
+        if (scene.revision() != uploadedRevision) {
+            uploadedRevision = scene.revision();
             renderThread.submitRenderUpload(RenderUpload{
-                .world = renderWorld,
-                .meshLib = cachedMeshLib,
-                .matLib = cachedMatLib,
+                .world = scene.renderWorld(),
+                .meshLib = scene.meshes(),
+                .matLib = scene.materials(),
             });
         }
 
@@ -615,69 +529,7 @@ auto main(int argc, char* argv[]) -> int {
             }
 
             if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_F12 && !ev.key.repeat) {
-                editorUI.requestScreenshot();
-                continue;
-            }
-            if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_E && (ev.key.mod & SDL_KMOD_CTRL) != 0) {
-                editorUI.togglePanels();
-                continue;
-            }
-
-            if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_Z && (ev.key.mod & SDL_KMOD_CTRL) != 0) {
-                bool isRedo = (ev.key.mod & SDL_KMOD_SHIFT) != 0;
-                auto cmds = isRedo ? sceneUpdater.undoStack().redo() : sceneUpdater.undoStack().undo();
-                for (auto& c : cmds) {
-                    sceneUpdater.addEdit(std::move(c));
-                }
-                continue;
-            }
-
-            // Z (no modifier): deselect. Ctrl+Z / Ctrl+Shift+Z stay bound to undo/redo
-            // above, so we only act on the unmodified key.
-            if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_Z && (ev.key.mod & SDL_KMOD_CTRL) == 0 && !ev.key.repeat) {
-                selectedPrim = {};
-                continue;
-            }
-
-            // R: select parent of currently selected prim. Filter key-repeat so
-            // holding R doesn't walk straight up the hierarchy at 25Hz.
-            if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_R && (ev.key.mod & SDL_KMOD_CTRL) == 0 && !ev.key.repeat) {
-                if ((bool) selectedPrim) {
-                    if (const auto* rec = usdScene.getPrimRecord(selectedPrim); rec && rec->parent) {
-                        selectedPrim = rec->parent;
-                    }
-                }
-                continue;
-            }
-
-            // 1-4: switch the active editor tool.
-            if (ev.type == SDL_EVENT_KEY_DOWN && (ev.key.mod & SDL_KMOD_CTRL) == 0 && !ev.key.repeat) {
-                switch (ev.key.key) {
-                    case SDLK_1:
-                        editorUI.setActiveTool(EditorTool::Select);
-                        continue;
-                    case SDLK_2:
-                        editorUI.setActiveTool(EditorTool::Translate);
-                        continue;
-                    case SDLK_3:
-                        editorUI.setActiveTool(EditorTool::Rotate);
-                        continue;
-                    case SDLK_4:
-                        editorUI.setActiveTool(EditorTool::Scale);
-                        continue;
-                    default:
-                        break;
-                }
-            }
-
-            // F: frame the selected prim in the camera view.
-            if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_F && (ev.key.mod & SDL_KMOD_CTRL) == 0) {
-                if ((bool) selectedPrim) {
-                    auto bb = sceneQuery.anchorBounds(usdScene, selectedPrim);
-                    if (bb.valid()) {
-                        cam.frame(bb, glm::radians(45.0f));
-                    }
-                }
+                viewUI.requestScreenshot();
                 continue;
             }
 
@@ -691,96 +543,9 @@ auto main(int argc, char* argv[]) -> int {
                 cam.handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
             }
 
-            // Active gizmo drag (translate, rotate, or scale — whichever is in progress).
-            bool anyGizmoDragging = translateGizmo.isDragging() || rotateGizmo.isDragging() || scaleGizmo.isDragging();
-            if (ev.type == SDL_EVENT_MOUSE_MOTION && anyGizmoDragging) {
-                std::optional<Transform> newLocal;
-                if (translateGizmo.isDragging()) {
-                    newLocal = translateGizmo.dragUpdate(ev.motion.x, ev.motion.y, winExtent, cam.viewMatrix(), proj);
-                } else if (rotateGizmo.isDragging()) {
-                    newLocal = rotateGizmo.dragUpdate(ev.motion.x, ev.motion.y, winExtent, cam.viewMatrix(), proj);
-                } else {
-                    newLocal = scaleGizmo.dragUpdate(ev.motion.x, ev.motion.y, winExtent, cam.viewMatrix(), proj);
-                }
-                if (newLocal) {
-                    sceneUpdater.addEdit(
-                        {.type = SceneEditCommand::Type::SetTransform,
-                         .prim = selectedPrim,
-                         .transform = *newLocal,
-                         .purpose = SceneEditRequestContext::Purpose::Preview});
-                }
-                continue;
-            }
-
-            if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_LEFT && anyGizmoDragging) {
-                std::optional<Transform> finalLocal;
-                const Transform* inverseHint = nullptr;
-                if (translateGizmo.isDragging()) {
-                    finalLocal = translateGizmo.dragUpdate(ev.button.x, ev.button.y, winExtent, cam.viewMatrix(), proj);
-                    inverseHint = &translateGizmo.dragStartLocalTransform();
-                    translateGizmo.release();
-                } else if (rotateGizmo.isDragging()) {
-                    finalLocal = rotateGizmo.dragUpdate(ev.button.x, ev.button.y, winExtent, cam.viewMatrix(), proj);
-                    inverseHint = &rotateGizmo.dragStartLocalTransform();
-                    rotateGizmo.release();
-                } else {
-                    finalLocal = scaleGizmo.dragUpdate(ev.button.x, ev.button.y, winExtent, cam.viewMatrix(), proj);
-                    inverseHint = &scaleGizmo.dragStartLocalTransform();
-                    scaleGizmo.release();
-                }
-                if (finalLocal && (inverseHint != nullptr)) {
-                    sceneUpdater.addEdit(
-                        {.type = SceneEditCommand::Type::SetTransform, .prim = selectedPrim, .transform = *finalLocal, .inverseTransform = *inverseHint});
-                }
-                continue;
-            }
-
+            // A left click on the axis gizmo turns the camera to that axis.
             if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_LEFT) {
-                float mx = ev.button.x;
-                float my = ev.button.y;
-
-                if (renderer.gizmoHitTest(mx, my, winExtent)) {
-                    continue;
-                }
-
-                if ((bool) selectedPrim) {
-                    auto tool = editorUI.activeTool();
-                    if (const auto* xf = usdScene.getTransform(selectedPrim)) {
-                        auto pivot = sceneQuery.anchorPivot(usdScene, selectedPrim);
-                        auto anchor = pivot;
-                        auto bb = sceneQuery.anchorBounds(usdScene, selectedPrim);
-                        if (bb.valid() && !bb.contains(pivot)) {
-                            anchor = (bb.min + bb.max) * 0.5f;
-                        }
-                        bool grabbed = false;
-                        if (tool == EditorTool::Translate) {
-                            grabbed = translateGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, anchor, xf->local, xf->world);
-                        } else if (tool == EditorTool::Rotate) {
-                            grabbed = rotateGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, anchor, xf->local, xf->world);
-                        } else if (tool == EditorTool::Scale) {
-                            grabbed = scaleGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, anchor, xf->local, xf->world);
-                        }
-                        if (grabbed) {
-                            continue;
-                        }
-                    }
-                }
-
-                if (!usdScene.isOpen()) {
-                    continue;
-                }
-
-                float ndcX = (2.0f * mx / (float) winW) - 1.0f;
-                float ndcY = (2.0f * my / (float) winH) - 1.0f;
-                auto invVP = glm::inverse(proj * cam.viewMatrix());
-                auto nearPt = invVP * glm::vec4(ndcX, ndcY, 0.0f, 1.0f);
-                auto farPt = invVP * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
-                nearPt /= nearPt.w;
-                farPt /= farPt.w;
-
-                Ray ray = {.origin = glm::vec3(nearPt), .direction = glm::normalize(glm::vec3(farPt - nearPt))};
-                RaycastHit hit;
-                selectedPrim = sceneQuery.raycast(ray, 3000.0f, hit) ? hit.prim : PrimHandle{};
+                renderer.gizmoHitTest(ev.button.x, ev.button.y, winExtent);
             }
         }
 
@@ -793,24 +558,24 @@ auto main(int argc, char* argv[]) -> int {
         // Culling runs on the GPU: the snapshot carries the frustum
         // to cull against (live, or frozen so the culled set can be inspected from elsewhere),
         // and the results come back a few frames later for the Culling window and overlay.
-        cullState.enabled = editorUI.getCullEnabled();
-        cullState.frozen = editorUI.getCullFrozen();
+        cullState.enabled = viewUI.getCullEnabled();
+        cullState.frozen = viewUI.getCullFrozen();
         auto cullViewProj = cullState.update(proj * cam.viewMatrix());
         if (auto cull = renderThread.latestCullResult(); cull.has_value()) {
             latestCull = std::move(*cull);
         }
-        editorUI.setCullStats(latestCull.instances, latestCull.cameraCulled);
-        editorUI.setShadowCullStats(latestCull.cascadeCount, latestCull.cascadeCulled, latestCull.cascadeDrawn);
-        editorUI.setCullTriangles(latestCull.cameraTriangles, latestCull.sceneTriangles, latestCull.cascadeTriangles);
+        viewUI.setCullStats(latestCull.instances, latestCull.cameraCulled);
+        viewUI.setShadowCullStats(latestCull.cascadeCount, latestCull.cascadeCulled, latestCull.cascadeDrawn);
+        viewUI.setCullTriangles(latestCull.cameraTriangles, latestCull.sceneTriangles, latestCull.cascadeTriangles);
 
         // Shadow cascades: fitted to the live camera and the scene bounds.
         std::array<ShadowCascade, maxShadowCascades> cascades;
         uint32_t cascadeCount = 0;
         {
             PROFILE_ZONE("FitCascades");
-            auto sceneBounds = sceneBoundsOf(renderWorld.meshInstances);
-            auto lightDir = pickShadowLightDirection(renderWorld.lights, cam.worldUp);
-            cascadeCount = fitShadowCascades(editorUI.getShadowSettings(), cam.viewMatrix(), proj, 0.1f, 3000.0f, lightDir, cam.worldUp, sceneBounds, cascades);
+            auto sceneBounds = sceneBoundsOf(scene.renderWorld().meshInstances);
+            auto lightDir = pickShadowLightDirection(scene.renderWorld().lights, cam.worldUp);
+            cascadeCount = fitShadowCascades(viewUI.getShadowSettings(), cam.viewMatrix(), proj, 0.1f, 3000.0f, lightDir, cam.worldUp, sceneBounds, cascades);
         }
         std::array<glm::vec3, 8> frozenCorners;
         if (cullState.frozenActive) {
@@ -819,26 +584,26 @@ auto main(int argc, char* argv[]) -> int {
 
         // The AABB overlay shows one view's GPU culling result: the camera or a cascade.
         std::vector<uint8_t> overlayVisible(latestCull.viewBits.size());
-        auto overlayBit = (uint8_t) (1u << std::clamp(editorUI.cullOverlayView(), 0, (int) maxShadowCascades));
+        auto overlayBit = (uint8_t) (1u << std::clamp(viewUI.cullOverlayView(), 0, (int) maxShadowCascades));
         for (size_t i = 0; i < overlayVisible.size(); i++) {
             overlayVisible[i] = (latestCull.viewBits[i] & overlayBit) != 0 ? 1 : 0;
         }
-        editorUI.drawDebug(debugDraw, renderWorld, selectedPrim, sceneQuery, sceneUpdater, usdScene, cam.position, cam.worldUp, overlayVisible, cullState.frozenActive ? &frozenCorners : nullptr, std::span<const ShadowCascade>(cascades.data(), cascadeCount));
+        viewUI.drawDebug(debugDraw, scene.renderWorld(), cam.position, cam.worldUp, overlayVisible, cullState.frozenActive ? &frozenCorners : nullptr, std::span<const ShadowCascade>(cascades.data(), cascadeCount));
 
-        renderThread.setFrameGraphDebugEnabled(editorUI.wantsFrameGraphDebug() || dumps.wantsFrameGraphDebug());
+        renderThread.setFrameGraphDebugEnabled(viewUI.wantsFrameGraphDebug() || dumps.wantsFrameGraphDebug());
         auto fgDebugSnap = renderThread.latestFrameGraphDebug();
         dumps.onFrameGraph(fgDebugSnap);
         bool frameDebugPending = dumps.takeFrameDebugRequest();
-        if (editorUI.takeFrameDebugRequest()) {
+        if (viewUI.takeFrameDebugRequest()) {
             frameDebugPending = true;
         }
-        renderThread.setRenderDebugEnabled(editorUI.wantsRenderDebug() || forceRenderDebug || dumps.wantsRenderDebug());
+        renderThread.setRenderDebugEnabled(viewUI.wantsRenderDebug() || forceRenderDebug || dumps.wantsRenderDebug());
         auto renderDebugSnap = renderThread.latestRenderDebug();
         dumps.onRenderDebug(renderDebugSnap);
         {
             // Capture watches: the editor's windows plus pending dumps, sent when they change.
             static std::vector<CaptureWatch> sentWatches;
-            auto watches = editorUI.captureWatches();
+            auto watches = viewUI.captureWatches();
             dumps.appendWatches(watches);
             if (watches != sentWatches || frameDebugPending) {
                 sentWatches = watches;
@@ -846,34 +611,34 @@ auto main(int argc, char* argv[]) -> int {
             }
             if (auto frameDebug = renderThread.latestFrameDebug(); frameDebug.has_value()) {
                 dumps.onFrameDebug(*frameDebug);
-                editorUI.onFrameDebugCapture(std::move(*frameDebug));
+                viewUI.onFrameDebugCapture(std::move(*frameDebug));
             }
             for (auto& result : renderThread.takeCaptureResults()) {
                 if (!dumps.onCaptureResult(result)) {
-                    editorUI.onCaptureResult(std::move(result));
+                    viewUI.onCaptureResult(std::move(result));
                 }
             }
             dumps.onScreenshots(renderThread.takeScreenshotResults());
         }
-        renderThread.setCountersEnabled(editorUI.wantsCounters() || dumps.wantsCounters());
+        renderThread.setCountersEnabled(viewUI.wantsCounters() || dumps.wantsCounters());
         for (auto& counters : renderThread.takeCounters()) {
             dumps.onCounters(counters);
-            editorUI.onCounters(std::move(counters));
+            viewUI.onCounters(std::move(counters));
         }
 
         static const uint32_t uiZoneId = profile::registerName("EditorUI");
         profile::beginZone(uiZoneId);
         imguiBackend.beginFrame();
-        editorUI.setStatusBar(statusBar.gather(rhiDevice, assetClient, latestCull));
-        editorUI.draw(window, usdScene, sceneUpdater, renderWorld, selectedPrim, sceneQuery, matLib, cam, std::move(fgDebugSnap), std::move(renderDebugSnap));
-        if (auto inspect = editorUI.takeTextureInspectRequest(); inspect.has_value()) {
+        viewUI.setStatusBar(statusBar.gather(rhiDevice, assetClient, latestCull));
+        viewUI.draw(primPathOf, scene.renderWorld(), cam, std::move(fgDebugSnap), std::move(renderDebugSnap));
+        if (auto inspect = viewUI.takeTextureInspectRequest(); inspect.has_value()) {
             renderThread.setTextureInspect(*inspect);
         }
-        if (auto dump = editorUI.takeTextureDumpRequest(); dump.has_value()) {
+        if (auto dump = viewUI.takeTextureDumpRequest(); dump.has_value()) {
             renderer.requestTextureDump(dump->material, dump->level, "texture_" + std::to_string(dump->material) + "_L" + std::to_string(dump->level) + ".png");
         }
         {
-            auto& flags = editorUI.introspection();
+            auto& flags = viewUI.introspection();
             flags.renderDocAvailable = renderDoc.available();
             if (flags.renderDocCaptureRequested) {
                 flags.renderDocCaptureRequested = false;
@@ -889,24 +654,17 @@ auto main(int argc, char* argv[]) -> int {
                 TRACE_EVENT("Engine", "RenderDocCapture", path).text(std::format("RenderDoc capture written: {}", path)).field("frame", (int64_t) frameCounter);
             }
         }
-        if (editorUI.takeScreenshotRequest()) {
+        if (viewUI.takeScreenshotRequest()) {
             renderer.requestScreenshot("screenshot_" + std::to_string(frameCounter) + ".png");
         }
         {
-            auto& camWindow = editorUI.cameraWindow();
+            auto& camWindow = viewUI.cameraWindow();
             if (camWindow.requestFrameScene) {
                 camWindow.requestFrameScene = false;
                 frameSceneView();
             }
-            if (camWindow.requestFrameSelected) {
-                camWindow.requestFrameSelected = false;
-                if (selectedPrim && usdScene.isOpen()) {
-                    auto bb = sceneQuery.anchorBounds(usdScene, selectedPrim);
-                    if (bb.valid()) {
-                        cam.frame(bb, glm::radians(45.0f));
-                    }
-                }
-            }
+            // Nothing is selected in the view yet.
+            camWindow.requestFrameSelected = false;
         }
         ImGuiFrameSnapshot imguiSnapshot;
         {
@@ -922,23 +680,6 @@ auto main(int argc, char* argv[]) -> int {
         float mouseY = 0;
         SDL_GetMouseState(&mouseX, &mouseY);
 
-        const auto* selXf = ((bool) selectedPrim && usdScene.isOpen()) ? usdScene.getTransform(selectedPrim) : nullptr;
-        auto activeTool = editorUI.activeTool();
-        // Anchor at the prim's pivot when it falls within the anchor bounds;
-        // fall back to bounds center when the pivot is decoupled from the
-        // visible mesh. anchorPivot walks up reset-stack ancestors.
-        glm::vec3 gizmoAnchor(0.0f);
-        if (selXf != nullptr) {
-            gizmoAnchor = sceneQuery.anchorPivot(usdScene, selectedPrim);
-            auto bb = sceneQuery.anchorBounds(usdScene, selectedPrim);
-            if (bb.valid() && !bb.contains(gizmoAnchor)) {
-                gizmoAnchor = (bb.min + bb.max) * 0.5f;
-            }
-        }
-        translateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, selXf && activeTool == EditorTool::Translate, gizmoAnchor);
-        rotateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, selXf && activeTool == EditorTool::Rotate, gizmoAnchor);
-        scaleGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, selXf && activeTool == EditorTool::Scale, gizmoAnchor);
-
         RenderSnapshot snapshot = {
             .viewMatrix = cam.viewMatrix(),
             .projMatrix = proj,
@@ -947,22 +688,19 @@ auto main(int argc, char* argv[]) -> int {
             .windowHeight = winH,
             .mouseX = mouseX,
             .mouseY = mouseY,
-            .showGizmo = editorUI.getShowGizmo(),
-            .gbufferViewMode = static_cast<GBufferView>(editorUI.getGBufferViewMode()),
-            .debugView = static_cast<DebugView>(editorUI.getDebugView()),
-            .showBufferOverlay = editorUI.getShowBufferOverlay(),
-            .showShadowOverlay = editorUI.getShowShadowOverlay(),
-            .antiAliasing = editorUI.getAntiAliasing(),
-            .depthPrepass = editorUI.getDepthPrepass(),
-            .sampler = editorUI.getSamplerSettings(),
+            .showGizmo = viewUI.getShowGizmo(),
+            .gbufferViewMode = static_cast<GBufferView>(viewUI.getGBufferViewMode()),
+            .debugView = static_cast<DebugView>(viewUI.getDebugView()),
+            .showBufferOverlay = viewUI.getShowBufferOverlay(),
+            .showShadowOverlay = viewUI.getShowShadowOverlay(),
+            .antiAliasing = viewUI.getAntiAliasing(),
+            .depthPrepass = viewUI.getDepthPrepass(),
+            .sampler = viewUI.getSamplerSettings(),
             .cullEnabled = cullState.enabled,
             .cullViewProj = cullViewProj,
-            .shadowSettings = editorUI.getShadowSettings(),
+            .shadowSettings = viewUI.getShadowSettings(),
             .cascadeCount = cascadeCount,
             .cascades = cascades,
-            .translateGizmoVerts = {translateGizmo.vertices().begin(), translateGizmo.vertices().end()},
-            .rotateGizmoVerts = {rotateGizmo.vertices().begin(), rotateGizmo.vertices().end()},
-            .scaleGizmoVerts = {scaleGizmo.vertices().begin(), scaleGizmo.vertices().end()},
             .debugData = debugDraw.data(),
             .imguiSnapshot = std::move(imguiSnapshot),
         };

@@ -103,6 +103,7 @@ auto World::visit(const std::function<bool(const VisitedEntity&)>& visitor) cons
         visited.visible = state.visible;
         visited.purpose = state.purpose;
         visited.materialAsset = state.materialAsset;
+        visited.strongBinding = state.strongBinding;
         visited.insideInstance = state.insideInstance;
         visited.inUndrawnLevel = state.inUndrawnLevel;
         if (!visitor(visited)) {

@@ -4,7 +4,6 @@
 #include "renderdebugjson.h"
 #include "renderworld.h"
 #include "trace.h"
-#include "usdscene.h"
 
 #include <nlohmann/json.hpp>
 
@@ -86,13 +85,12 @@ auto base64(const std::vector<char>& bytes) -> std::string {
 
 } // namespace
 
-ViewDumps::ViewDumps(const RenderWorld& world, const USDScene& scene, const CullResult& cull, bool statistics)
-    : renderWorld(world), usdScene(scene), latestCull(cull), pipelineStatistics(statistics) {
+ViewDumps::ViewDumps(const RenderWorld& world, std::function<std::string(uint32_t)> primPathOf, const CullResult& cull, bool statistics)
+    : renderWorld(world), primPathOf(std::move(primPathOf)), latestCull(cull), pipelineStatistics(statistics) {
 }
 
 auto ViewDumps::primPath(uint32_t prim) const -> std::string {
-    const auto* rec = usdScene.isOpen() ? usdScene.getPrimRecord(PrimHandle{prim}) : nullptr;
-    return rec != nullptr ? rec->path : std::string{};
+    return primPathOf(prim);
 }
 
 auto ViewDumps::requestRenderDebug(RpcResponder responder) -> void {

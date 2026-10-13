@@ -54,7 +54,7 @@ struct Entity {
     std::optional<MaterialBinding> binding;
 };
 
-enum class LightKind : uint8_t {
+enum class LightShape : uint8_t {
     Distant,
     Sphere,
     Rect,
@@ -65,7 +65,7 @@ enum class LightKind : uint8_t {
 
 // UsdLux's inputs, with UsdLux's fallbacks.
 struct Light {
-    LightKind kind = LightKind::Distant;
+    LightShape shape = LightShape::Distant;
     glm::vec3 color = glm::vec3(1.0f);
     float intensity = 1.0f;
     float exposure = 0.0f;
@@ -113,7 +113,8 @@ struct VisitedEntity {
     glm::dmat4 worldTransform = glm::dmat4(1.0);
     bool visible = true;
     Purpose purpose = Purpose::Default;
-    std::string materialAsset; // the material bound to it, through its ancestors' bindings
+    std::string materialAsset;  // the material bound to it, through its ancestors' bindings
+    bool strongBinding = false; // that binding is an ancestor's strongerThanDescendants one, which a child's own binding doesn't override
     bool insideInstance = false;
     // A LOD level the instance doesn't draw: its drawn level is another of its root's levels.
     bool inUndrawnLevel = false;

@@ -140,9 +140,15 @@ auto EditorUI::draw(
             .showAABBs = showAABBsFlag,
             .showLightGizmos = showLightGizmosFlag,
         };
-        if (drawRenderDebugWindow(showRenderDebugWindow, renderDebugLast, viewFlags, usdScene, selectedPrim, renderDebugDraws)) {
+        auto primPath = [&usdScene](uint32_t prim) -> std::string {
+            const auto* rec = usdScene.isOpen() ? usdScene.getPrimRecord(PrimHandle{prim}) : nullptr;
+            return rec != nullptr ? rec->path : std::string{};
+        };
+        uint32_t selected = selectedPrim.index;
+        if (drawRenderDebugWindow(showRenderDebugWindow, renderDebugLast, viewFlags, primPath, selected, renderDebugDraws)) {
             screenshotRequested = true;
         }
+        selectedPrim = PrimHandle{selected};
     }
     if (introspectionFlags.frameDebugger) {
         PROFILE_ZONE("FrameDebuggerWindow");

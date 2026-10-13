@@ -110,14 +110,14 @@ const std::set<std::string> xformableTypes = {
 // Prim types whose `points` USD counts (UsdGeomPointBased and its subclasses).
 const std::set<std::string> pointBasedTypes = {"Mesh", "Points", "BasisCurves", "NurbsCurves", "HermiteCurves", "NurbsPatch", "TetMesh"};
 
-const std::map<std::string, LightKind> lightTypes = {
-    {"DistantLight", LightKind::Distant},
-    {"SphereLight", LightKind::Sphere},
-    {"RectLight", LightKind::Rect},
-    {"DiskLight", LightKind::Disk},
-    {"CylinderLight", LightKind::Cylinder},
-    {"DomeLight", LightKind::Dome},
-    {"DomeLight_1", LightKind::Dome},
+const std::map<std::string, LightShape> lightTypes = {
+    {"DistantLight", LightShape::Distant},
+    {"SphereLight", LightShape::Sphere},
+    {"RectLight", LightShape::Rect},
+    {"DiskLight", LightShape::Disk},
+    {"CylinderLight", LightShape::Cylinder},
+    {"DomeLight", LightShape::Dome},
+    {"DomeLight_1", LightShape::Dome},
 };
 
 struct LayerData {
@@ -747,7 +747,7 @@ struct WorldComposer::Impl {
         const auto& typeName = content.entities[id].typeName;
         if (auto light = lightTypes.find(typeName); light != lightTypes.end()) {
             Light l;
-            l.kind = light->second;
+            l.shape = light->second;
             l.color = color(attribute("inputs:color"), l.color);
             l.intensity = (float) number(attribute("inputs:intensity"), l.intensity);
             l.exposure = (float) number(attribute("inputs:exposure"), l.exposure);

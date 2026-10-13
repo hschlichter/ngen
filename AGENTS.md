@@ -110,7 +110,8 @@ items in an "Open questions" section instead of picking silently.
   (SDL renderer and Dear ImGui) and a command line. Records and the tool in `src/introspect/README.md`.
 - `src/trace/` — the trace: structured events (`TRACE_EVENT`) in an always-on ring per process, streamed over RPC. Conventions in
   `src/trace/README.md`.
-- `src/view/` — ngen-view's commands as RPC methods and script verbs (`viewcommands.*`), and its dumps (`viewdumps.*`).
+- `src/view/` — ngen-view's scene (`viewscene.*`: the World composed from packs, flattened into the renderer's inputs), its commands as RPC
+  methods and script verbs (`viewcommands.*`), and its dumps (`viewdumps.*`). Design in `src/view/README.md`.
 - `src/asset/` — the asset system: `ngen-asset-server` (`server/`), `AssetClient`, and packing (`pack/`: the rule type and what every packer
   shares). Assets are the system, packing is the process that makes an asset engine-ready. Asset ids, the server, its cache, the stream, `pack.cpp`
   rules and the packer contract in `src/asset/README.md`. Packers are programs in `src/apps/packer<type>.cpp`; their rules are in the root

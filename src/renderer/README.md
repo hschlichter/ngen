@@ -41,11 +41,11 @@ bytes (`shaderloader.*`, `src/asset/README.md`). A shader not on that list fails
 ```
 main thread                                   render thread (RenderThread)                       GPU
 -----------                                   ----------------------------                       ---
-USD scene -> RenderWorld  --RenderUpload-->   Renderer::uploadRenderWorld
+ViewScene -> RenderWorld  --RenderUpload-->   Renderer::uploadRenderWorld
                                                 GpuScene: geometry pool, mesh/material tables,
                                                           instance records (delta)
                                                 DrawLists / InstanceCullPass descriptor sets
-camera, editor, gizmos    --RenderSnapshot--> Renderer::render
+camera, view UI           --RenderSnapshot--> Renderer::render
   (cull frustum, cascades,                      wait slot fence, read back last use of the slot
    ImGui, debug lines)                          build FrameGraph (passes declare accesses)
                                                 compile (order, cull, lifetimes)

@@ -1,0 +1,474 @@
+#include "viewscene.h"
+
+#include "assetclient.h"
+#include "packedtexture.h"
+#include "scenepack.h"
+#include "trace.h"
+
+#include <glm/gtc/matrix_transform.hpp>
+
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <format>
+
+namespace {
+
+auto msSince(std::chrono::steady_clock::time_point start) -> double {
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+}
+
+// sRGB-encodes a linear colour channel for an R8G8B8A8_SRGB texel, so sampling decodes it back to the authored colour.
+auto encodeSrgb(float c) -> uint8_t {
+    c = std::clamp(c, 0.0f, 1.0f);
+    float s = (c <= 0.0031308f) ? (c * 12.92f) : (1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f);
+    return (uint8_t) std::lround(s * 255.0f);
+}
+
+auto pathDepth(const std::string& path) -> size_t {
+    return (size_t) std::ranges::count(path, '/');
+}
+
+auto toVertex(const PackVertex& vertex) -> Vertex {
+    return {.position = vertex.position, .normal = vertex.normal, .color = vertex.color, .texCoord = vertex.texCoord};
+}
+
+// Fetches ids from the asset server and hands each to `arrived`, or records it failed. Blocks.
+template <typename Arrived>
+auto fetch(AssetClient& assets, const std::vector<std::string>& ids, std::set<std::string>& failed, Arrived arrived) -> void {
+    if (ids.empty()) {
+        return;
+    }
+    assets.request(ids);
+    assets.wait(ids);
+    for (const auto& id : ids) {
+        auto asset = assets.take(id);
+        if (!asset) {
+            failed.insert(id);
+            std::string reason;
+            for (const auto& line : assets.errors(id)) {
+                reason += reason.empty() ? line : "; " + line;
+            }
+            TRACE_WARNING("Scene", "SceneAssetFailed", id).text(std::format("{} failed: {}", id, reason.empty() ? std::string("no reason given") : reason));
+            continue;
+        }
+        arrived(id, std::move(asset->bytes));
+    }
+}
+
+} // namespace
+
+ViewScene::ViewScene(AssetClient& client)
+    : assets(client) {
+}
+
+auto ViewScene::open(const std::string& sceneId) -> bool {
+    id = sceneId;
+    composer = std::make_unique<WorldComposer>(sceneId);
+    requestedPacks.clear();
+    meshPacks.clear();
+    materialPacks.clear();
+    texturePacks.clear();
+    failedAssets.clear();
+    TRACE_EVENT("Scene", "SceneRequested", sceneId.empty() ? "(empty scene)" : sceneId).text(sceneId.empty() ? std::string("an empty scene") : std::format("scene {} requested", sceneId));
+    if (!sceneId.empty()) {
+        compose();
+        if (composer->world().layerStack.empty()) {
+            TRACE_ERROR("Scene", "SceneFailed", sceneId).text(std::format("scene {}: its root layer can't be had", sceneId));
+            return false;
+        }
+    }
+    fetchAssets();
+    extract();
+    return true;
+}
+
+auto ViewScene::setLodLevel(const std::string& rootPath, uint32_t level) -> void {
+    composer->setLodLevel(rootPath, level);
+    rebuild();
+}
+
+auto ViewScene::setPurposeShown(Purpose purpose, bool shown) -> void {
+    if (purpose == Purpose::Default || purpose == Purpose::Render) {
+        return;
+    }
+    if (shown) {
+        shownPurposes.insert(purpose);
+    } else {
+        shownPurposes.erase(purpose);
+    }
+    rebuild();
+}
+
+auto ViewScene::purposeShown(Purpose purpose) const -> bool {
+    return shownPurposes.contains(purpose);
+}
+
+auto ViewScene::drawsPurpose(Purpose purpose) const -> bool {
+    return shownPurposes.contains(purpose);
+}
+
+auto ViewScene::rebuild() -> void {
+    if (!id.empty()) {
+        compose();
+    }
+    fetchAssets();
+    extract();
+}
+
+auto ViewScene::worldUp() const -> glm::vec3 {
+    if (world().upAxis == "Z") {
+        return {0.0f, 0.0f, 1.0f};
+    }
+    return {0.0f, 1.0f, 0.0f};
+}
+
+auto ViewScene::primPath(uint32_t prim) const -> std::string {
+    if (prim == 0 || prim > primPaths.size()) {
+        return {};
+    }
+    return primPaths[prim - 1];
+}
+
+auto ViewScene::bounds(const std::string& path) const -> AABB {
+    AABB out = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
+    auto under = [&path](const std::string& candidate) {
+        if (path == "/") {
+            return true;
+        }
+        return candidate == path || (candidate.size() > path.size() && candidate.starts_with(path) && candidate[path.size()] == '/');
+    };
+    for (const auto& [prim, range] : drawn.primToInstance) {
+        if (!under(primPath(prim))) {
+            continue;
+        }
+        for (uint32_t i = range.first; i < range.first + range.count; i++) {
+            const auto& bounds = drawn.meshInstances[i].worldBounds;
+            if (bounds.valid()) {
+                out.min = glm::min(out.min, bounds.min);
+                out.max = glm::max(out.max, bounds.max);
+            }
+        }
+    }
+    return out;
+}
+
+// Composes in rounds: each names the layer packs it needs next (sublayers, references, payloads), which are fetched for the next.
+auto ViewScene::compose() -> void {
+    auto start = std::chrono::steady_clock::now();
+    size_t rounds = 0;
+    for (;;) {
+        std::vector<std::string> fresh;
+        for (const auto& needed : composer->compose()) {
+            if (requestedPacks.insert(needed).second) {
+                fresh.push_back(needed);
+            }
+        }
+        if (fresh.empty()) {
+            break;
+        }
+        rounds++;
+        std::set<std::string> failed;
+        fetch(assets, fresh, failed, [this](const std::string& packId, std::vector<std::byte> bytes) {
+            if (auto error = composer->addPack(packId, bytes)) {
+                TRACE_WARNING("Scene", "SceneAssetFailed", packId).text(*error);
+            }
+        });
+        for (const auto& packId : failed) {
+            composer->markFailed(packId);
+        }
+    }
+    for (const auto& message : composer->messages()) {
+        TRACE_WARNING("Scene", "CompositionMessage", id).text(message);
+    }
+    size_t entities = 0;
+    world().visit([&entities](const VisitedEntity&) {
+        entities++;
+        return true;
+    });
+    auto ms = msSince(start);
+    TRACE_EVENT("Scene", "PacksComposed", id)
+        .text(std::format("{} composed: {} layer packs in {} rounds, {} prims, {} prototypes in {:.0f} ms", id, requestedPacks.size(), rounds, entities, world().prototypes.size(), ms))
+        .field("packs", (int64_t) requestedPacks.size())
+        .field("rounds", (int64_t) rounds)
+        .field("prims", (int64_t) entities)
+        .field("prototypes", (int64_t) world().prototypes.size())
+        .field("ms", ms);
+}
+
+// The meshes and materials of everything drawn, then the textures those materials name.
+auto ViewScene::fetchAssets() -> void {
+    auto start = std::chrono::steady_clock::now();
+    std::set<std::string> meshIds;
+    std::set<std::string> materialIds;
+    world().visit([&](const VisitedEntity& visited) {
+        const auto& entity = *visited.entity;
+        if (!entity.active || !entity.defined || entity.abstract || visited.inUndrawnLevel || !visited.visible) {
+            return false;
+        }
+        if (entity.meshAsset.empty() || !drawsPurpose(visited.purpose)) {
+            return true;
+        }
+        meshIds.insert(entity.meshAsset);
+        if (!visited.materialAsset.empty()) {
+            materialIds.insert(visited.materialAsset);
+        }
+        // A subset's own binding: the subset entities are the mesh's children.
+        for (EntityId child : entity.children) {
+            const auto& subset = visited.content->entities[child];
+            if (subset.binding && !subset.binding->materialAsset.empty()) {
+                materialIds.insert(subset.binding->materialAsset);
+            }
+        }
+        return true;
+    });
+    std::vector<std::string> wanted;
+    for (const auto& meshId : meshIds) {
+        if (!meshPacks.contains(meshId) && !failedAssets.contains(meshId)) {
+            wanted.push_back(meshId);
+        }
+    }
+    for (const auto& materialId : materialIds) {
+        if (!materialPacks.contains(materialId) && !failedAssets.contains(materialId)) {
+            wanted.push_back(materialId);
+        }
+    }
+    size_t received = wanted.size();
+    fetch(assets, wanted, failedAssets, [this](const std::string& assetId, std::vector<std::byte> bytes) {
+        auto kind = scenePackKind(bytes);
+        if (kind && *kind == ScenePackKind::Mesh) {
+            if (auto mesh = readMeshPack(bytes)) {
+                meshPacks[assetId] = std::move(*mesh);
+                return;
+            }
+        } else if (kind && *kind == ScenePackKind::Material) {
+            if (auto material = readMaterialPack(bytes)) {
+                materialPacks[assetId] = std::move(*material);
+                return;
+            }
+        }
+        failedAssets.insert(assetId);
+        TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(std::format("{} isn't a mesh or material pack", assetId));
+    });
+
+    std::vector<std::string> textures;
+    for (const auto& materialId : materialIds) {
+        auto it = materialPacks.find(materialId);
+        if (it == materialPacks.end()) {
+            continue;
+        }
+        const auto& texture = it->second.baseColorTexture;
+        if (!texture.empty() && !texturePacks.contains(texture) && !failedAssets.contains(texture) && std::ranges::find(textures, texture) == textures.end()) {
+            textures.push_back(texture);
+        }
+    }
+    received += textures.size();
+    fetch(assets, textures, failedAssets, [this](const std::string& assetId, std::vector<std::byte> bytes) {
+        texturePacks[assetId] = std::move(bytes);
+    });
+    auto ms = msSince(start);
+    TRACE_EVENT("Scene", "SceneAssetsReceived", id)
+        .text(std::format("{} meshes, {} materials and {} textures drawn; {} fetched in {:.0f} ms", meshIds.size(), materialIds.size(), textures.size(), received, ms))
+        .field("meshes", (int64_t) meshIds.size())
+        .field("materials", (int64_t) materialIds.size())
+        .field("textures", (int64_t) textures.size())
+        .field("fetched", (int64_t) received)
+        .field("ms", ms);
+}
+
+// A material: by its asset id, once; with no material bound, one per display colour, shared (a scene of many unbound prims would
+// otherwise fill the renderer's texture slots with 1x1 textures of the same few colours). A bound material that authors neither a
+// texture nor a colour takes the display colour of the first mesh that asks for it, as it always has.
+auto ViewScene::material(const std::string& materialAsset, const std::optional<std::array<float, 3>>& displayColor) -> MaterialHandle {
+    std::string key = materialAsset;
+    if (key.empty()) {
+        auto color = displayColor.value_or(std::array<float, 3>{1.0f, 1.0f, 1.0f});
+        key = std::format("displayColor {} {} {}", color[0], color[1], color[2]);
+    }
+    if (auto it = materialByAsset.find(key); it != materialByAsset.end()) {
+        return it->second;
+    }
+    MaterialDesc desc;
+    if (auto pack = materialPacks.find(materialAsset); pack != materialPacks.end()) {
+        bool textured = false;
+        if (auto bytes = texturePacks.find(pack->second.baseColorTexture); bytes != texturePacks.end()) {
+            if (auto texture = readPackedTexture(bytes->second)) {
+                desc.texWidth = (int) texture->width;
+                desc.texHeight = (int) texture->height;
+                desc.texMipLevels = texture->mipLevels;
+                const auto* levels = reinterpret_cast<const uint8_t*>(texture->levels.data());
+                desc.texPixels.assign(levels, levels + texture->levels.size());
+                textured = true;
+            }
+        }
+        if (!textured && pack->second.hasBaseColor) {
+            const auto& c = pack->second.baseColor;
+            desc.baseColorFactor = glm::vec4(c[0], c[1], c[2], 1.0f);
+        }
+    }
+    if (desc.texPixels.empty() && desc.baseColorFactor == glm::vec4(1.0f) && displayColor) {
+        desc.baseColorFactor = glm::vec4((*displayColor)[0], (*displayColor)[1], (*displayColor)[2], 1.0f);
+    }
+    // No texture: the constant colour as a 1x1 texel, so it takes the same sampling path as a texture.
+    if (desc.texPixels.empty()) {
+        desc.texWidth = 1;
+        desc.texHeight = 1;
+        desc.texPixels = {encodeSrgb(desc.baseColorFactor.r), encodeSrgb(desc.baseColorFactor.g), encodeSrgb(desc.baseColorFactor.b), 255};
+    }
+    auto materials = std::const_pointer_cast<MaterialLibrary>(materialLibrary);
+    auto handle = materials->add(std::move(desc));
+    materialByAsset[key] = handle;
+    return handle;
+}
+
+// The renderer's inputs from the World: a draw instance per submesh of every drawn mesh, and the distant lights. World transforms are
+// computed as the view always has: in float, parent times local, then scaled to metres by the scene's metersPerUnit.
+auto ViewScene::extract() -> void {
+    auto start = std::chrono::steady_clock::now();
+    drawn.clear();
+    primPaths.clear();
+    materialByAsset.clear();
+    auto meshes = std::make_shared<MeshLibrary>();
+    meshLibrary = meshes;
+    materialLibrary = std::make_shared<MaterialLibrary>();
+    const auto& w = world();
+    auto unitScale = glm::mat4(1.0f);
+    if (w.metersPerUnit != 1.0) {
+        unitScale = glm::scale(glm::mat4(1.0f), glm::vec3((float) w.metersPerUnit));
+    }
+
+    // World transforms by depth: an entity's parent is the last entity visited one level up.
+    std::vector<glm::mat4> worldByDepth = {glm::mat4(1.0f)};
+    bool hasDistantLight = false;
+    w.visit([&](const VisitedEntity& visited) {
+        const auto& entity = *visited.entity;
+        auto depth = pathDepth(visited.path);
+        if (worldByDepth.size() <= depth) {
+            worldByDepth.resize(depth + 1);
+        }
+        const auto& parentWorld = worldByDepth[depth - 1];
+        glm::mat4 local(visited.entity->localTransform);
+        if (!entity.xformable) {
+            worldByDepth[depth] = parentWorld;
+        } else if (entity.resetsXformStack) {
+            worldByDepth[depth] = local;
+        } else {
+            worldByDepth[depth] = parentWorld * local;
+        }
+        if (!entity.active || !entity.defined || entity.abstract || visited.inUndrawnLevel || !visited.visible) {
+            return false;
+        }
+        auto worldTransform = unitScale * worldByDepth[depth];
+
+        if (auto light = visited.content->lights.find(visited.id); light != visited.content->lights.end()) {
+            if (light->second.shape == LightShape::Distant) {
+                hasDistantLight = true;
+                primPaths.push_back(visited.path);
+                drawn.lights.push_back({
+                    .type = LightType::Directional,
+                    .color = light->second.color,
+                    .intensity = light->second.intensity,
+                    .exposure = light->second.exposure,
+                    .angle = light->second.angle,
+                    .shadowEnable = light->second.shadowEnable,
+                    .shadowColor = light->second.shadowColor,
+                    .worldTransform = worldTransform,
+                    .primHandle = PrimHandle{(uint32_t) primPaths.size()},
+                });
+            }
+        }
+
+        if (entity.meshAsset.empty() || !drawsPurpose(visited.purpose)) {
+            return true;
+        }
+        auto pack = meshPacks.find(entity.meshAsset);
+        if (pack == meshPacks.end() || pack->second.submeshes.empty()) {
+            return true;
+        }
+        const auto& meshPack = pack->second;
+        std::optional<std::array<float, 3>> displayColor;
+        if (meshPack.hasDisplayColor) {
+            displayColor = meshPack.displayColor;
+        }
+
+        MeshDesc desc;
+        desc.vertices.reserve(meshPack.vertices.size());
+        for (const auto& vertex : meshPack.vertices) {
+            desc.vertices.push_back(toVertex(vertex));
+        }
+        desc.indices = meshPack.indices;
+        desc.doubleSided = meshPack.doubleSided;
+        for (const auto& submesh : meshPack.submeshes) {
+            SubMesh out = {.indexOffset = submesh.indexOffset, .indexCount = submesh.indexCount};
+            if (submesh.subsetPath.empty()) {
+                out.material = material(visited.materialAsset, displayColor);
+            } else {
+                // The subset's own binding, unless an ancestor's is stronger; a subset has no display colour of its own.
+                auto name = submesh.subsetPath.substr(submesh.subsetPath.rfind('/') + 1);
+                std::string subsetMaterial = visited.materialAsset;
+                for (EntityId child : entity.children) {
+                    const auto& subset = visited.content->entities[child];
+                    if (subset.name == name && subset.binding && !visited.strongBinding) {
+                        subsetMaterial = subset.binding->materialAsset;
+                    }
+                }
+                out.material = material(subsetMaterial, std::nullopt);
+            }
+            desc.submeshes.push_back(out);
+        }
+        auto meshHandle = meshes->add(std::move(desc));
+        const auto* meshData = meshes->get(meshHandle);
+        auto worldBounds = meshes->bounds(meshHandle).transformed(worldTransform);
+
+        primPaths.push_back(visited.path);
+        auto prim = (uint32_t) primPaths.size();
+        auto first = (uint32_t) drawn.meshInstances.size();
+        for (size_t s = 0; s < meshData->submeshes.size(); s++) {
+            const auto& sub = meshData->submeshes[s];
+            drawn.meshInstances.push_back({
+                .mesh = meshHandle,
+                .material = sub.material,
+                .worldTransform = worldTransform,
+                .worldBounds = worldBounds,
+                .indexOffset = sub.indexOffset,
+                .indexCount = sub.indexCount,
+                .primFirst = (s == 0),
+                .doubleSided = meshData->doubleSided,
+            });
+        }
+        drawn.primToInstance[prim] = {.first = first, .count = (uint32_t) meshData->submeshes.size()};
+        return true;
+    });
+
+    // The engine's light when the scene has no distant light: upper-front-right in the scene's own frame, as it always was.
+    if (!hasDistantLight) {
+        bool zUp = w.upAxis == "Z";
+        auto dir = zUp ? glm::normalize(glm::vec3(1.0f, 1.0f, 2.0f)) : glm::normalize(glm::vec3(1.0f, 2.0f, 1.0f));
+        auto sceneUp = zUp ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+        auto xAxis = glm::normalize(glm::cross(sceneUp, dir));
+        auto yAxis = glm::cross(dir, xAxis);
+        // Through double, as the light's transform op once held it.
+        glm::dmat4 basis(glm::dvec4(xAxis, 0.0), glm::dvec4(yAxis, 0.0), glm::dvec4(dir, 0.0), glm::dvec4(0.0, 0.0, 0.0, 1.0));
+        primPaths.push_back("/__DefaultEngineLight");
+        drawn.lights.push_back({
+            .type = LightType::Directional,
+            .color = glm::vec3(1.0f, 0.95f, 0.88f),
+            .intensity = 1.0f,
+            .exposure = 0.0f,
+            .angle = 0.53f,
+            .shadowEnable = true,
+            .shadowColor = glm::vec3(0.0f),
+            .worldTransform = unitScale * glm::mat4(basis),
+            .primHandle = PrimHandle{(uint32_t) primPaths.size()},
+        });
+    }
+    inputsRevision++;
+    auto ms = msSince(start);
+    TRACE_EVENT("Scene", "WorldExtracted", id)
+        .text(std::format("draws built: {} instances of {} meshes, {} materials, {} lights in {:.0f} ms", drawn.meshInstances.size(), meshLibrary->count(), materialLibrary->count(), drawn.lights.size(), ms))
+        .field("instances", (int64_t) drawn.meshInstances.size())
+        .field("meshes", (int64_t) meshLibrary->count())
+        .field("materials", (int64_t) materialLibrary->count())
+        .field("lights", (int64_t) drawn.lights.size())
+        .field("ms", ms);
+}

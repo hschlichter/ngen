@@ -4,19 +4,17 @@
 #include "camera.h"
 #include "debugview.h"
 #include "drawlists.h"
-#include "editorui.h"
 #include "profile.h"
 #include "renderdoccapture.h"
 #include "renderer.h"
 #include "renderthread.h"
 #include "renderworld.h"
 #include "rpcdiscovery.h"
-#include "scenequery.h"
-#include "sceneupdater.h"
 #include "shadowcascades.h"
 #include "trace.h"
-#include "usdscene.h"
 #include "viewdumps.h"
+#include "viewscene.h"
+#include "viewui.h"
 
 #include <nlohmann/json.hpp>
 
@@ -93,18 +91,25 @@ auto parseTarget(const std::string& args) -> std::expected<Json, std::string> {
     return Json{{"target", args}};
 }
 
-auto parsePrim(const std::string& args) -> std::expected<Json, std::string> {
-    return Json{{"prim", args}};
+auto parsePurposes(const std::string& args) -> std::expected<Json, std::string> {
+    Json params = Json::object();
+    for (const auto& [key, value] : splitItems(args)) {
+        if ((key != "guide" && key != "proxy") || (value != "on" && value != "off")) {
+            return std::unexpected(std::format("expected guide=on|off,proxy=on|off, got '{}={}'", key, value));
+        }
+        params[key] = value == "on";
+    }
+    return params;
 }
 
-auto parseTranslate(const std::string& args) -> std::expected<Json, std::string> {
-    auto space = args.find(' ');
-    glm::vec3 offset(0.0f);
-    bool parsed = space != std::string::npos && std::sscanf(args.c_str() + space + 1, "%f,%f,%f", &offset.x, &offset.y, &offset.z) == 3;
-    if (!parsed) {
-        return std::unexpected(std::format("expected '/prim dx,dy,dz', got '{}'", args));
+auto parseLod(const std::string& args) -> std::expected<Json, std::string> {
+    std::istringstream in(args);
+    std::string root;
+    int level = -1;
+    if (!(in >> root >> level) || level < 0) {
+        return std::unexpected(std::format("expected '<LOD root path> <level>', got '{}'", args));
     }
-    return Json{{"prim", args.substr(0, space)}, {"offset", vec3Json(offset)}};
+    return Json{{"root", root}, {"level", level}};
 }
 
 auto parseViewMode(const std::string& args) -> std::expected<Json, std::string> {
@@ -277,8 +282,8 @@ auto parseCapture(const std::string& args) -> std::expected<Json, std::string> {
 constexpr std::array scriptVerbs = {
     ScriptVerb{"camera", "view.camera.set", parseCamera},
     ScriptVerb{"camera-frame", "view.camera.frame", parseTarget},
-    ScriptVerb{"select", "view.select", parsePrim},
-    ScriptVerb{"translate", "view.translate", parseTranslate},
+    ScriptVerb{"purposes", "view.purposes", parsePurposes},
+    ScriptVerb{"lod", "view.lod.set", parseLod},
     ScriptVerb{"view", "view.mode", parseViewMode},
     ScriptVerb{"window", "view.window", parseWindow},
     ScriptVerb{"debugview", "view.debugview", parseDebugView},
@@ -300,14 +305,6 @@ constexpr std::array scriptVerbs = {
 };
 
 // ---- Helpers for handlers.
-
-auto findPrimOrFail(ViewContext& view, const std::string& path, RpcResponder& responder) -> PrimHandle {
-    auto prim = view.usdScene.isOpen() ? view.usdScene.findPrim(path.c_str()) : PrimHandle{};
-    if (!prim) {
-        responder.fail(rpc::appError, std::format("prim '{}' not found", path));
-    }
-    return prim;
-}
 
 auto optionalField(const std::string& name, RpcType type, std::string description) -> RpcField {
     return {.name = name, .type = type, .required = false, .description = std::move(description)};
@@ -343,7 +340,7 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.camera.frame",
-            .summary = "Frame the whole scene, or one prim's bounds.",
+            .summary = "Frame the whole scene, or what is drawn at and under a prim.",
             .params = {requiredField("target", RpcType::String, "\"scene\" or a prim path")},
             .result = "{}",
         },
@@ -354,14 +351,12 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
                 responder.respond(Json::object());
                 return;
             }
-            auto prim = findPrimOrFail(view, target, responder);
-            if (!prim) {
+            auto bb = view.scene.bounds(target);
+            if (!bb.valid()) {
+                responder.fail(rpc::appError, std::format("nothing is drawn at or under '{}'", target));
                 return;
             }
-            auto bb = view.sceneQuery.anchorBounds(view.usdScene, prim);
-            if (bb.valid()) {
-                view.cam.frame(bb, glm::radians(45.0f));
-            }
+            view.cam.frame(bb, glm::radians(45.0f));
             responder.respond(Json::object());
         });
 }
@@ -369,40 +364,35 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
 auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
     registry.add(
         {
-            .name = "view.select",
-            .summary = "Select a prim, as clicking it does.",
-            .params = {requiredField("prim", RpcType::String, "prim path")},
-            .result = "{}",
-        },
-        [&view](const Json& p, RpcResponder responder) {
-            auto prim = findPrimOrFail(view, p["prim"].get<std::string>(), responder);
-            if (prim) {
-                view.selectedPrim = prim;
-                responder.respond(Json::object());
-            }
-        });
-    registry.add(
-        {
-            .name = "view.translate",
-            .summary = "Offset a prim's local position: a preview edit, as a gizmo drag submits.",
+            .name = "view.purposes",
+            .summary = "Draw the prims of the guide and proxy purposes, or not; default and render prims are always drawn.",
             .params = {
-                requiredField("prim", RpcType::String, "prim path"),
-                requiredField("offset", RpcType::Vec3, "added to the local position"),
+                optionalField("guide", RpcType::Bool, "guides drawn"),
+                optionalField("proxy", RpcType::Bool, "proxies drawn"),
             },
             .result = "{}",
         },
         [&view](const Json& p, RpcResponder responder) {
-            auto path = p["prim"].get<std::string>();
-            auto prim = view.usdScene.isOpen() ? view.usdScene.findPrim(path.c_str()) : PrimHandle{};
-            const auto* xf = prim ? view.usdScene.getTransform(prim) : nullptr;
-            if (xf == nullptr) {
-                responder.fail(rpc::appError, std::format("prim '{}' not found or has no transform", path));
-                return;
+            if (p.contains("guide")) {
+                view.ui.setShowGuides(p["guide"].get<bool>());
             }
-            const auto& o = p["offset"];
-            auto local = xf->local;
-            local.position += glm::vec3(o[0].get<float>(), o[1].get<float>(), o[2].get<float>());
-            view.sceneUpdater.addEdit({.type = SceneEditCommand::Type::SetTransform, .prim = prim, .transform = local, .purpose = SceneEditRequestContext::Purpose::Preview});
+            if (p.contains("proxy")) {
+                view.ui.setShowProxies(p["proxy"].get<bool>());
+            }
+            responder.respond(Json::object());
+        });
+    registry.add(
+        {
+            .name = "view.lod.set",
+            .summary = "The level a LOD root wants, by its full path (instances expanded); loads it, and the root draws it once it has.",
+            .params = {
+                requiredField("root", RpcType::String, "the path of the prim with LODRootAPI"),
+                requiredField("level", RpcType::Int, "0 is the finest"),
+            },
+            .result = "{}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            view.scene.setLodLevel(p["root"].get<std::string>(), (uint32_t) std::max(0, p["level"].get<int>()));
             responder.respond(Json::object());
         });
     registry.add({.name = "view.quit", .summary = "Stop the view after this frame.", .result = "{}"}, [&view](const Json&, RpcResponder responder) {
@@ -422,7 +412,7 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
         [&view](const Json& p, RpcResponder responder) {
             auto mode = p["mode"].get<std::string>();
             auto it = std::ranges::find(viewModeNames, std::string_view(mode));
-            view.editorUI.setGBufferViewMode((int) (it - viewModeNames.begin()));
+            view.ui.setGBufferViewMode((int) (it - viewModeNames.begin()));
             responder.respond(Json::object());
         });
     registry.add(
@@ -435,7 +425,7 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
         [&view](const Json& p, RpcResponder responder) {
             auto name = p["view"].get<std::string>();
             auto it = std::ranges::find(debugViewNames, std::string_view(name));
-            view.editorUI.setDebugView((int) (it - debugViewNames.begin()));
+            view.ui.setDebugView((int) (it - debugViewNames.begin()));
             responder.respond(Json::object());
         });
     registry.add(
@@ -450,7 +440,7 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
         },
         [&view](const Json& p, RpcResponder responder) {
             auto name = p["name"].get<std::string>();
-            if (!view.editorUI.setIntrospectionWindow(name, p.value("open", true))) {
+            if (!view.ui.setIntrospectionWindow(name, p.value("open", true))) {
                 responder.fail(rpc::appError, std::format("unknown window '{}'", name));
                 return;
             }
@@ -465,7 +455,7 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
         },
         [&view](const Json& p, RpcResponder responder) {
             for (const auto& [name, on] : p["settings"].items()) {
-                if (!on.is_boolean() || !view.editorUI.setOverlay(name, on.get<bool>())) {
+                if (!on.is_boolean() || !view.ui.setOverlay(name, on.get<bool>())) {
                     responder.fail(rpc::appError, std::format("expected name=on|off, got '{}={}'", name, on.is_boolean() && on.get<bool>() ? "on" : "off"));
                     return;
                 }
@@ -486,16 +476,16 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
         },
         [&view](const Json& p, RpcResponder responder) {
             if (p.contains("enabled")) {
-                view.editorUI.setCullEnabled(p["enabled"].get<bool>());
+                view.ui.setCullEnabled(p["enabled"].get<bool>());
             }
             if (p.contains("frozen")) {
-                view.editorUI.setCullFrozen(p["frozen"].get<bool>());
+                view.ui.setCullFrozen(p["frozen"].get<bool>());
             }
             if (p.contains("showCulled")) {
-                view.editorUI.setShowCulled(p["showCulled"].get<bool>());
+                view.ui.setShowCulled(p["showCulled"].get<bool>());
             }
             if (p.contains("overlayView")) {
-                view.editorUI.setCullOverlayView(p["overlayView"].get<int>());
+                view.ui.setCullOverlayView(p["overlayView"].get<int>());
             }
             responder.respond(Json::object());
         });
@@ -512,7 +502,7 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
             .result = "{}",
         },
         [&view](const Json& p, RpcResponder responder) {
-            auto& settings = view.editorUI.samplerSettingsMutable();
+            auto& settings = view.ui.samplerSettingsMutable();
             if (p.contains("aniso")) {
                 settings.maxAnisotropy = p["aniso"].get<float>();
             }
@@ -540,7 +530,7 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
             .result = "{}",
         },
         [&view](const Json& p, RpcResponder responder) {
-            auto& settings = view.editorUI.shadowSettingsMutable();
+            auto& settings = view.ui.shadowSettingsMutable();
             if (p.contains("cascades")) {
                 settings.count = (uint32_t) std::clamp(p["cascades"].get<int>(), 1, (int) maxShadowCascades);
             }
@@ -563,7 +553,7 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
             .result = "{}",
         },
         [&view](const Json& p, RpcResponder responder) {
-            view.editorUI.setDepthPrepass(p["enabled"].get<bool>());
+            view.ui.setDepthPrepass(p["enabled"].get<bool>());
             responder.respond(Json::object());
         });
     registry.add(
@@ -690,66 +680,40 @@ auto registerIntrospection(RpcRegistry& registry, ViewContext& view) -> void {
     });
 }
 
-auto layerRoleName(SceneLayerRole role) -> const char* {
-    switch (role) {
-        case SceneLayerRole::Root:
-            return "root";
-        case SceneLayerRole::Sublayer:
-            return "sublayer";
-        case SceneLayerRole::Referenced:
-            return "referenced";
-        case SceneLayerRole::Session:
-            return "session";
-        case SceneLayerRole::Unknown:
-            return "unknown";
-    }
-    return "unknown";
-}
-
 auto statusRecord(const ViewContext& view) -> Json {
-    std::string selected;
-    if (view.selectedPrim && view.usdScene.isOpen()) {
-        if (const auto* rec = view.usdScene.getPrimRecord(view.selectedPrim)) {
-            selected = rec->path;
-        }
-    }
-    const auto& sampler = view.editorUI.getSamplerSettings();
+    const auto& sampler = view.ui.getSamplerSettings();
     return {
         {"frame", view.frameCounter},
         {"scene", view.sceneLabel},
-        {"selected", selected},
         {"camera", {{"position", vec3Json(view.cam.position)}, {"yaw", view.cam.yaw}, {"pitch", view.cam.pitch}}},
-        {"antiAliasing", view.editorUI.getAntiAliasing()},
+        {"antiAliasing", view.ui.getAntiAliasing()},
         {"sampler", {{"anisotropy", sampler.maxAnisotropy}, {"lodBias", sampler.lodBias}, {"minLod", sampler.minLod}, {"nearestMip", sampler.nearestMip}}},
+        {"purposes", {{"guide", view.ui.showGuides()}, {"proxy", view.ui.showProxies()}}},
     };
 }
 
 auto sceneRecord(const ViewContext& view) -> Json {
-    auto layers = Json::array();
+    const auto& world = view.scene.world();
     size_t prims = 0;
-    Json up = nullptr;
-    if (view.usdScene.isOpen()) {
-        for (const auto& layer : view.usdScene.layers()) {
-            layers.push_back({
-                {"identifier", layer.identifier},
-                {"name", layer.displayName},
-                {"role", layerRoleName(layer.role)},
-                {"dirty", layer.dirty},
-                {"readOnly", layer.readOnly},
-                {"muted", layer.muted},
-            });
-        }
-        prims = view.usdScene.allPrims().size();
-        up = vec3Json(view.usdScene.worldUp());
+    world.visit([&prims](const VisitedEntity&) {
+        prims++;
+        return true;
+    });
+    auto lodLevels = Json::object();
+    for (const auto& [root, level] : world.lodLevels) {
+        lodLevels[root] = level;
     }
     return {
         {"scene", view.sceneLabel},
-        {"open", view.usdScene.isOpen()},
-        {"up", up},
+        {"layerStack", world.layerStack},
+        {"upAxis", world.upAxis},
+        {"metersPerUnit", world.metersPerUnit},
+        {"up", vec3Json(view.scene.worldUp())},
         {"prims", prims},
-        {"meshInstances", view.renderWorld.meshInstances.size()},
-        {"lights", view.renderWorld.lights.size()},
-        {"layers", layers},
+        {"prototypes", world.prototypes.size()},
+        {"meshInstances", view.scene.renderWorld().meshInstances.size()},
+        {"lights", view.scene.renderWorld().lights.size()},
+        {"lodLevels", lodLevels},
     };
 }
 
@@ -841,10 +805,10 @@ auto runViewScriptCommand(const RpcRegistry& registry, const SessionCommand& com
 }
 
 auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext& view) -> void {
-    records.add("status", "frame counter, scene, selection, camera, anti-aliasing and the material sampler", [&view](RpcResponder responder) {
+    records.add("status", "frame counter, scene, camera, anti-aliasing, the material sampler and the purposes drawn", [&view](RpcResponder responder) {
         responder.respond(statusRecord(view));
     });
-    records.add("scene", "the open scene: layers, prim count, up axis, mesh instances and lights", [&view](RpcResponder responder) {
+    records.add("scene", "the open scene: its layer stack, up axis and units, prims (instances expanded), prototypes, draws, lights and LOD levels set", [&view](RpcResponder responder) {
         responder.respond(sceneRecord(view));
     });
     records.add("assets", "what the view asked the asset server for and received", [&view](RpcResponder responder) {

@@ -69,15 +69,15 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   (the menu bar, windows and the status bar, whose numbers change every run), so they compare byte for byte; `--show-ui` keeps it in.
 - `--view=lit|albedo|normals|depth|shadowfactor|shadowmap|shadowuv|worldpos|miplevel|cascades` (miplevel: red level 0 to white
   level 7+; cascades: red, green, blue, yellow near to far; shadowmap shows the cascade atlas), `--overlay=grid=on,aabbs=off,...`
-  (grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa), `--camera=x,y,z,yaw,pitch`, `--camera-frame=scene|/prim`, `--select=/prim`.
+  (grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa), `--camera=x,y,z,yaw,pitch`, `--camera-frame=scene|/prim` (what is drawn at and under the prim).
 - Records at a frame go to a file: a script line `120 record render /tmp/records.jsonl` appends the render debug record (meshes, textures,
   passes with draw counters and GPU time, culled passes, draw log with prim paths) as one JSON line, `value` holding the record,
   `requested_frame` the frame asked for and `frame` the frame it was ready (GPU readbacks take a few). Any record works: `render`, `memory`,
   `counters`, `culling`, `scene`, `assets`, `profile`, `status` (`src/introspect/README.md`); several lines into one file are fine. Read it
   with `jq 'select(.record == "render") | .value.passes' /tmp/records.jsonl`.
 - `dump-profile PATH` (script verb): the profiler history as a Chrome trace file (`jq '.traceEvents'`, or open in Perfetto).
-- `--script=FILE`: `<frame> <verb> [args]` per line, same verbs as the flags plus `quit`, `translate /prim dx,dy,dz` (preview transform
-  edit, no layer write) and `cull on|off|freeze|unfreeze|show|hide`
+- `--script=FILE`: `<frame> <verb> [args]` per line, same verbs as the flags plus `quit`, `purposes guide=on|off,proxy=on|off` (draw guide and
+  proxy prims), `lod <LOD root path> <level>` (the level a LOD root wants; loads it) and `cull on|off|freeze|unfreeze|show|hide`
   (frustum culling toggle, frozen frustum, red/green AABB overlay), `prepass on|off` (depth prepass) and
   `sampler aniso=8,bias=0,minlod=0,mip=linear|nearest` (material sampler), `shadow cascades=3,tile=1024,lambda=0.5,pcf=on|off`
   (cascaded shadows), `inspect <material> <level>|off` (texture inspector
@@ -110,7 +110,7 @@ A running ngen-view answers RPC calls (`src/rpc/README.md`). Every script verb i
 ```sh
 SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> &          # keeps running; no --frames
 ./ngen-cli introspect list                                     # wait until it's listed; every process and its records
-./ngen-cli introspect get view status                          # frame, scene, selection, camera
+./ngen-cli introspect get view status                          # frame, scene, camera, purposes
 ./ngen-cli introspect get view culling                         # also scene, assets, profile, render, memory, counters
 ./ngen-cli introspect describe view                            # every method with its parameters
 ./ngen-cli introspect call view view.camera.set '{"x":5.3,"y":11.3,"z":1.2,"yaw":-169.8,"pitch":-0.2}'
@@ -142,9 +142,12 @@ in the code — there is no "remove when done" step.
 ## Test scenes
 
 - Minimal: `assets/three_cubes.usda` — cheap smoke test for extraction, lighting, frame graph.
+- Composition: `assets/layered/root.usda` — sublayers, references (one instanced, one internal), a payload, a UsdLod root, bindings on a
+  parent and a child, visibility, a guide, a texture. Default: 10 draws; `purposes guide=on` 11; `lod /World/Tree/lod 0` 12.
 - Materials/textures stress test: Intel NewSponza at `assets/main_sponza/NewSponza_Main_USD_Zup_003.usda` (git-ignored; scenes must be
   under the asset server's directory, since they are assets). Correct result: the `render` record's `textures` hold 25 at 4096×4096 plus 3 at
-  1×1 (materials without a diffuse map), 28 in all, and `SceneUploaded` says 28 textures. All-1×1 means texturing is broken. It exercises GeomSubset per-face materials, NodeGraph-wrapped textures, backslash
+  1×1 (materials without a diffuse map), 28 in all, and `SceneUploaded` says 28 textures. Byte-identical screenshots of three_cubes and
+  Sponza at the default camera (`--frames=80`, headless) are the check that the scene path draws what it always drew. All-1×1 means texturing is broken. It exercises GeomSubset per-face materials, NodeGraph-wrapped textures, backslash
   asset paths, and indexed faceVarying primvars.
 
 ## Machine constraints
