@@ -21,7 +21,7 @@ constexpr std::array<RhiDescriptorBinding, 1> instanceBindings = {{
 }};
 } // namespace
 
-auto ShadowPass::init(RhiDevice* device, PipelineRegistry& pipelines, RhiExtent2D extent, RhiFormat depthFormat) -> bool {
+auto ShadowPass::init(RhiDevice* device, PipelineRegistry& pipelines, RhiExtent2D extent, RhiFormat depthFormat, RhiDescriptorSetLayout* geometrySetLayout) -> bool {
     using enum RhiFormat;
     registry = &pipelines;
 
@@ -39,9 +39,23 @@ auto ShadowPass::init(RhiDevice* device, PipelineRegistry& pipelines, RhiExtent2
         .vertexAttributes = {{.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0}}, // position-only stream
         .raster = {.cullMode = RhiCullMode::Back},
     };
-    pipelineCullBack = pipelines.registerGraphics("shadow.pipeline.cullback", request, PipelineUse::Startup);
+    this->pipelines[DrawLists::bucket(false, false)] = pipelines.registerGraphics("shadow.pipeline.cullback", request, PipelineUse::Startup);
     request.raster.cullMode = RhiCullMode::None;
-    pipelineCullNone = pipelines.registerGraphics("shadow.pipeline.cullnone", request, PipelineUse::Startup);
+    this->pipelines[DrawLists::bucket(true, false)] = pipelines.registerGraphics("shadow.pipeline.cullnone", request, PipelineUse::Startup);
+
+    // Cutout: the texture coordinates too, from the full vertex stream, and the geometry set for the material's opacity.
+    request.vertex.id = "shaders/shadowcutout.vert";
+    request.fragment.id = "shaders/cutout.frag";
+    request.descriptorSetLayouts = {geometrySetLayout};
+    request.vertexStride = sizeof(Vertex);
+    request.vertexAttributes = {
+        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
+        {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
+    };
+    request.raster.cullMode = RhiCullMode::Back;
+    this->pipelines[DrawLists::bucket(false, true)] = pipelines.registerGraphics("shadow.pipeline.cullback.cutout", request, PipelineUse::Startup);
+    request.raster.cullMode = RhiCullMode::None;
+    this->pipelines[DrawLists::bucket(true, true)] = pipelines.registerGraphics("shadow.pipeline.cullnone.cutout", request, PipelineUse::Startup);
     return true;
 }
 
@@ -79,7 +93,8 @@ auto ShadowPass::addPass(
     FgBufferHandle instanceBuffer,
     const DrawLists& lists,
     DrawLists::Handles drawHandles,
-    const GpuScene& scene) -> const ShadowPassData& {
+    const GpuScene& scene,
+    RhiDescriptorSet* geometrySet) -> const ShadowPassData& {
     FgTextureDesc desc = {
         .width = atlasExtent.width,
         .height = atlasExtent.height,
@@ -87,8 +102,10 @@ auto ShadowPass::addPass(
         .usage = RhiTextureUsage::DepthAttachment | RhiTextureUsage::Sampled,
     };
 
-    auto* cullBack = registry->get(pipelineCullBack);
-    auto* cullNone = registry->get(pipelineCullNone);
+    std::array<RhiPipeline*, DrawLists::bucketCount> bucketPipelines = {};
+    for (uint32_t bucket = 0; bucket < DrawLists::bucketCount; bucket++) {
+        bucketPipelines[bucket] = registry->get(pipelines[bucket]);
+    }
     auto* instanceSet = descSet;
     // Copies: the execute lambda runs later in the frame, after the snapshot may be gone.
     std::array<ShadowCascade, maxShadowCascades> cascadeCopy;
@@ -105,7 +122,7 @@ auto ShadowPass::addPass(
             builder.read(drawHandles.commands, FgAccessFlags::IndirectRead);
             builder.read(drawHandles.counts, FgAccessFlags::IndirectRead);
         },
-        [cullBack, cullNone, instanceSet, atlasExtent, cascadeCopy, cascadeCount, instances, &lists, drawHandles, &scene](FrameGraphContext& ctx, const ShadowPassData& data) {
+        [bucketPipelines, instanceSet, geometrySet, atlasExtent, cascadeCopy, cascadeCount, instances, &lists, drawHandles, &scene](FrameGraphContext& ctx, const ShadowPassData& data) {
             auto* cmd = ctx.cmd();
 
             RhiRenderingAttachmentInfo depthAtt = {
@@ -130,18 +147,20 @@ auto ShadowPass::addPass(
                 cmd->setScissor(tileX, tileY, tile);
 
                 // One indirect call per bucket per cascade: single-sided meshes under back-face
-                // culling first, then double-sided ones without it. Commands draw whole meshes
-                // on each prim's first submesh instance.
-                for (bool doubleSided : {false, true}) {
-                    auto region = DrawLists::cascadeRegion(c, doubleSided);
+                // culling first, then double-sided ones without it, then the same two cutout.
+                // Commands draw whole meshes on each prim's first submesh instance, except for
+                // prims with a cutout submesh, which draw submesh by submesh.
+                for (uint32_t bucket = 0; bucket < DrawLists::bucketCount; bucket++) {
+                    bool cutout = bucket >= 2;
+                    auto region = DrawLists::cascadeRegion(c, bucket % 2 != 0, cutout);
                     // The GPU-written count decides how many commands draw; an empty region costs one call.
-                    if (scene.indexBuffer() == nullptr) {
+                    if (scene.indexBuffer() == nullptr || (cutout && geometrySet == nullptr)) {
                         continue;
                     }
-                    auto* pip = doubleSided ? cullNone : cullBack;
+                    auto* pip = bucketPipelines[bucket];
                     cmd->bindPipeline(pip);
-                    cmd->bindDescriptorSet(pip, 0, instanceSet);
-                    cmd->bindVertexBuffer(scene.positionBuffer());
+                    cmd->bindDescriptorSet(pip, 0, cutout ? geometrySet : instanceSet);
+                    cmd->bindVertexBuffer(cutout ? scene.vertexBuffer() : scene.positionBuffer());
                     cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
                     ShadowPush push{cascade.viewProj};
                     cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(push), &push);

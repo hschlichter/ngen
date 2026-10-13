@@ -31,7 +31,7 @@ auto drawTextureInspector(const RenderDebugSnapshot& s, const PrimPathOf& primPa
         return;
     }
     ImGui::Separator();
-    ImGui::Text("Texture inspector: material %u", req.material);
+    ImGui::Text("Texture inspector: material %u%s", req.material, req.opacity ? ", opacity" : "");
     ImGui::SameLine();
     if (ImGui::SmallButton("Close")) {
         req.enabled = false;
@@ -91,7 +91,7 @@ auto drawSceneTab(const RenderDebugSnapshot& s, const PrimPathOf& primPath, Rend
     char buf[32];
     char buf2[32];
     ImGui::Text("%u instances (%u culled, %u drawn by the shadow pass), %zu meshes, %llu triangles, %llu vertices, %s", s.instanceCount, s.culledInstances, s.primFirstInstances, s.meshes.size(), (unsigned long long) triangles, (unsigned long long) vertices, formatBytes(meshBytes, buf, sizeof(buf)));
-    ImGui::Text("%u materials, %u with a texture, %zu textures, %s", s.materialCount, s.materialsWithTexture, s.textures.size(), formatBytes(textureBytes, buf2, sizeof(buf2)));
+    ImGui::Text("%u materials, %u with a texture, %u cutout (%u instances), %zu textures, %s", s.materialCount, s.materialsWithTexture, s.cutoutMaterials, s.cutoutInstances, s.textures.size(), formatBytes(textureBytes, buf2, sizeof(buf2)));
     if (s.hasSun) {
         ImGui::Text("%u lights; sun direction (%.2f %.2f %.2f) radiance (%.2f %.2f %.2f) shadow colour (%.2f %.2f %.2f); shadow map %ux%u", s.lightCount, s.sunDirection.x, s.sunDirection.y, s.sunDirection.z, s.sunRadiance.x, s.sunRadiance.y, s.sunRadiance.z, s.sunShadowColor.x, s.sunShadowColor.y, s.sunShadowColor.z, s.shadowMapExtent.width, s.shadowMapExtent.height);
     } else {
@@ -169,12 +169,12 @@ auto drawSceneTab(const RenderDebugSnapshot& s, const PrimPathOf& primPath, Rend
         for (const auto& t : s.textures) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            ImGui::PushID((int) t.materialIndex);
+            ImGui::PushID((int) ((t.materialIndex * 2) + (t.opacity ? 1 : 0)));
             char label[32];
-            std::snprintf(label, sizeof(label), "%u", t.materialIndex);
-            bool selected = drawState.inspect.enabled && drawState.inspect.material == t.materialIndex;
+            std::snprintf(label, sizeof(label), t.opacity ? "%u opacity" : "%u", t.materialIndex);
+            bool selected = drawState.inspect.enabled && drawState.inspect.material == t.materialIndex && drawState.inspect.opacity == t.opacity;
             if (ImGui::Selectable(label, selected, ImGuiSelectableFlags_SpanAllColumns)) {
-                drawState.inspect = {.enabled = true, .material = t.materialIndex, .level = 0};
+                drawState.inspect = {.enabled = true, .material = t.materialIndex, .opacity = t.opacity, .level = 0};
                 drawState.inspectChanged = true;
             }
             ImGui::PopID();

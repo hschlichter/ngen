@@ -42,6 +42,7 @@ Current truth for the build framework is [`../src/build/README.md`](../src/build
 - [plan_bindless_materials.md](plan_bindless_materials.md) — stage 3: texture array, GPU material table, one geometry descriptor set per frame slot (landed)
 - [plan_indirect_draws.md](plan_indirect_draws.md) — stage 4: indirect draws from CPU-built command lists, one call per bucket per view (landed)
 - [plan_gpu_culling.md](plan_gpu_culling.md) — stage 5: compute culling with ordered compaction, visibility readback, CPU culling deleted (landed)
+- [plan_cutout_materials.md](plan_cutout_materials.md) — UsdPreviewSurface opacity cut against its threshold: packed opacity source, cutout buckets and pipelines in the geometry, prepass, shadow and debug passes; fixes Sponza's opaque decals and picking through them (landed)
 - [basic_lighting_pass_plan.md](basic_lighting_pass_plan.md) — (superseded by v2)
 - [basic_lighting_pass_plan_v2.md](basic_lighting_pass_plan_v2.md) — deferred G-buffer + lighting pass (landed)
 - [plan_threaded_rendering.md](plan_threaded_rendering.md) — dedicated render thread with snapshots (landed)

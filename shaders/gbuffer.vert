@@ -22,12 +22,12 @@ layout(std430, set = 0, binding = 2) readonly buffer Instances {
     Instance data[];
 } instances;
 
-// Material table (GpuMaterial): the texture slot the fragment shader samples.
+// Material table (GpuMaterial): the texture slot the fragment shader samples, and the cutout opacity (cutout.glsl).
 struct Material {
     uint baseColorTexture;
-    uint pad0;
-    uint pad1;
-    uint pad2;
+    uint opacityTexture;
+    uint opacityInfo;
+    float opacityThreshold;
 };
 layout(std430, set = 0, binding = 3) readonly buffer Materials {
     Material data[];

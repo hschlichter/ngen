@@ -27,14 +27,18 @@ struct GpuInstance {
     uint32_t indexOffset = 0;
     uint32_t indexCount = 0;
     bool primFirst = true;
-    bool doubleSided = false; // drawn with the cull-none pipeline
-    AABB worldBounds;         // culling input; invalid bounds are always visible
+    bool doubleSided = false;   // drawn with the cull-none pipeline
+    bool cutout = false;        // its material is cutout: drawn by the cutout pipelines
+    bool primHasCutout = false; // some submesh of its prim is cutout: the shadow pass draws the prim per submesh
+    AABB worldBounds;           // culling input; invalid bounds are always visible
 };
 
 // Flags in GpuInstanceRecord::flags.
-inline constexpr uint32_t gpuInstancePrimFirst = 1u << 0;   // drawn by the shadow pass (whole mesh)
-inline constexpr uint32_t gpuInstanceDoubleSided = 1u << 1; // cull-none pipeline bucket
-inline constexpr uint32_t gpuInstanceBoundsValid = 1u << 2; // otherwise never culled
+inline constexpr uint32_t gpuInstancePrimFirst = 1u << 0;     // drawn by the shadow pass (whole mesh)
+inline constexpr uint32_t gpuInstanceDoubleSided = 1u << 1;   // cull-none pipeline bucket
+inline constexpr uint32_t gpuInstanceBoundsValid = 1u << 2;   // otherwise never culled
+inline constexpr uint32_t gpuInstanceCutout = 1u << 3;        // cutout pipeline bucket
+inline constexpr uint32_t gpuInstancePrimHasCutout = 1u << 4; // shadows per submesh, not whole mesh
 
 // One entry of the GPU instance buffer (std430, stride 112), read by the vertex shaders at
 // gl_InstanceIndex and by the culling passes. material indexes
@@ -63,12 +67,27 @@ struct GpuMeshEntry {
 static_assert(sizeof(GpuMeshEntry) == 16);
 
 // One entry of the GPU material table (std430, stride 16). baseColorTexture is a slot in
-// the geometry descriptor set's texture array; slot 0 is the fallback texture.
+// the geometry descriptor set's texture array; slot 0 is the fallback texture. A cutout
+// material (opacityThreshold > 0) is drawn where its opacity reaches the threshold
+// (shaders/cutout.glsl): the opacity texture's channel (opacityInfo bits 0-1; bit 2 when the
+// texture is raw), or with opacity texture 0 cut away entirely.
 struct GpuMaterial {
     uint32_t baseColorTexture = 0;
-    uint32_t pad[3] = {};
+    uint32_t opacityTexture = 0;
+    uint32_t opacityInfo = 0;
+    float opacityThreshold = 0.0f;
 };
 static_assert(sizeof(GpuMaterial) == 16);
+
+// A cutout material's opacity as uploaded; keyed by MaterialHandle::index. texture is null when the opacity is the base colour texture's
+// channel (fromBaseColor) or a constant below the threshold (the surface is cut away entirely).
+struct CachedCutout {
+    RhiTexture* texture = nullptr;
+    bool fromBaseColor = false;
+    uint32_t channel = 0;
+    bool raw = false;
+    float threshold = 0.0f;
+};
 
 // A material's base colour texture as uploaded; keyed by MaterialHandle::index.
 struct CachedTexture {
@@ -119,6 +138,7 @@ public:
     static constexpr uint32_t maxTextures = 1024;
     auto rebuildMaterials(std::span<const GpuInstance> sceneInstances,
                           const std::unordered_map<uint32_t, CachedTexture>& textures,
+                          const std::unordered_map<uint32_t, CachedCutout>& cutouts,
                           RhiTexture* fallback,
                           GpuUploader& uploader,
                           uint64_t frame) -> void;

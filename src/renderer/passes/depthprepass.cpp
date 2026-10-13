@@ -22,9 +22,22 @@ auto DepthPrepass::init(PipelineRegistry& pipelines, RhiFormat depthFormat, RhiD
         .vertexAttributes = {{.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0}}, // position-only stream
         .raster = {.cullMode = RhiCullMode::Back},
     };
-    pipelineCullBack = pipelines.registerGraphics("prepass.pipeline.cullback", request, PipelineUse::Startup);
+    this->pipelines[DrawLists::bucket(false, false)] = pipelines.registerGraphics("prepass.pipeline.cullback", request, PipelineUse::Startup);
     request.raster.cullMode = RhiCullMode::None;
-    pipelineCullNone = pipelines.registerGraphics("prepass.pipeline.cullnone", request, PipelineUse::Startup);
+    this->pipelines[DrawLists::bucket(true, false)] = pipelines.registerGraphics("prepass.pipeline.cullnone", request, PipelineUse::Startup);
+
+    // Cutout: the texture coordinates too, from the full vertex stream.
+    request.vertex.id = "shaders/depthcutout.vert";
+    request.fragment.id = "shaders/cutout.frag";
+    request.vertexStride = sizeof(Vertex);
+    request.vertexAttributes = {
+        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
+        {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
+    };
+    request.raster.cullMode = RhiCullMode::Back;
+    this->pipelines[DrawLists::bucket(false, true)] = pipelines.registerGraphics("prepass.pipeline.cullback.cutout", request, PipelineUse::Startup);
+    request.raster.cullMode = RhiCullMode::None;
+    this->pipelines[DrawLists::bucket(true, true)] = pipelines.registerGraphics("prepass.pipeline.cullnone.cutout", request, PipelineUse::Startup);
     return true;
 }
 
@@ -38,8 +51,10 @@ auto DepthPrepass::addPass(
     DrawLists::Handles drawHandles,
     const GpuScene& scene,
     RhiDescriptorSet* descriptorSet) -> const DepthPrepassData& {
-    auto* cullBack = registry->get(pipelineCullBack);
-    auto* cullNone = registry->get(pipelineCullNone);
+    std::array<RhiPipeline*, DrawLists::bucketCount> bucketPipelines = {};
+    for (uint32_t bucket = 0; bucket < DrawLists::bucketCount; bucket++) {
+        bucketPipelines[bucket] = registry->get(pipelines[bucket]);
+    }
 
     return fg.addPass<DepthPrepassData>(
         "DepthPrepass",
@@ -50,7 +65,7 @@ auto DepthPrepass::addPass(
             builder.read(drawHandles.counts, FgAccessFlags::IndirectRead);
             builder.setSideEffects(true);
         },
-        [cullBack, cullNone, extent, instances, &lists, drawHandles, &scene, descriptorSet](FrameGraphContext& ctx, const DepthPrepassData& data) {
+        [bucketPipelines, extent, instances, &lists, drawHandles, &scene, descriptorSet](FrameGraphContext& ctx, const DepthPrepassData& data) {
             auto* cmd = ctx.cmd();
 
             RhiRenderingAttachmentInfo depthAtt = {
@@ -68,19 +83,20 @@ auto DepthPrepass::addPass(
             cmd->setScissor(extent);
 
             // The camera regions the geometry pass draws, one indirect call per bucket; the
-            // position pool shares the vertex pool's vertexOffset.
+            // position pool shares the vertex pool's vertexOffset. Cutout buckets read the vertex pool.
             auto* commands = ctx.buffer(drawHandles.commands);
             auto* counts = ctx.buffer(drawHandles.counts);
-            for (bool doubleSided : {false, true}) {
-                auto region = DrawLists::cameraRegion(doubleSided);
+            for (uint32_t bucket = 0; bucket < DrawLists::bucketCount; bucket++) {
+                bool cutout = bucket >= 2;
+                auto region = DrawLists::cameraRegion(bucket % 2 != 0, cutout);
                 // The GPU-written count decides how many commands draw; an empty region costs one call.
                 if (scene.indexBuffer() == nullptr) {
                     continue;
                 }
-                auto* pip = doubleSided ? cullNone : cullBack;
+                auto* pip = bucketPipelines[bucket];
                 cmd->bindPipeline(pip);
                 cmd->bindDescriptorSet(pip, 0, descriptorSet);
-                cmd->bindVertexBuffer(scene.positionBuffer());
+                cmd->bindVertexBuffer(cutout ? scene.vertexBuffer() : scene.positionBuffer());
                 cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
                 PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
                 cmd->drawIndexedIndirectCount(commands, lists.commandOffset(region), counts, DrawLists::countOffset(region), lists.regionCapacity());

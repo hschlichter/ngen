@@ -16,7 +16,8 @@ warning.
   when turned on (`purposes` verb, `view.purposes`, the View menu).
 - **Materials**: a mesh's bound material, and each `GeomSubset`'s own binding for its submesh, unless an ancestor's binding is
   `strongerThanDescendants`. A material's texture, else its base colour, else the mesh's display colour; a constant colour is a 1x1
-  texture. A mesh with no material bound gets one per display colour, shared.
+  texture. A mesh with no material bound gets one per display colour, shared. A cutout material's opacity texture is fetched with its base
+  colour texture and counts as used by its draws (`drawsOf`).
 - **Transforms**: in float, parent times local, then scaled to metres by the root layer's `metersPerUnit`, as the view always drew; the
   camera's up is the scene's up axis.
 - **The engine's light**: when the scene has no distant light, one is added, upper-front-right in the scene's frame (intensity 1, colour

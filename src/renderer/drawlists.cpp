@@ -195,14 +195,15 @@ auto DrawLists::commandCount() const -> uint32_t {
 }
 
 auto DrawLists::report(FrameGraphContext& ctx, uint32_t region, std::span<const GpuInstance> instances) const -> void {
-    // Camera regions draw a submesh range; cascade regions the whole mesh from index 0.
-    bool wholeMesh = region >= bucketCount;
+    // Camera regions draw a submesh range; cascade regions the whole mesh from index 0, except for prims with a cutout submesh.
+    bool cascade = region >= bucketCount;
     for (const auto& command : latest.commands[region]) {
         auto m = command.firstInstance;
         if (m >= instances.size()) {
             continue;
         }
         const auto& inst = instances[m];
+        bool wholeMesh = cascade && !inst.primHasCutout;
         ctx.logDraw({
             .instance = m,
             .mesh = inst.mesh.index,
@@ -216,17 +217,27 @@ auto DrawLists::report(FrameGraphContext& ctx, uint32_t region, std::span<const 
 }
 
 auto DrawLists::regionName(uint32_t region) -> const char* {
-    static constexpr std::array<const char*, 10> names = {
+    static constexpr std::array<const char*, 20> names = {
         "camera.single",
         "camera.double",
+        "camera.single.cutout",
+        "camera.double.cutout",
         "cascade0.single",
         "cascade0.double",
+        "cascade0.single.cutout",
+        "cascade0.double.cutout",
         "cascade1.single",
         "cascade1.double",
+        "cascade1.single.cutout",
+        "cascade1.double.cutout",
         "cascade2.single",
         "cascade2.double",
+        "cascade2.single.cutout",
+        "cascade2.double.cutout",
         "cascade3.single",
         "cascade3.double",
+        "cascade3.single.cutout",
+        "cascade3.double.cutout",
     };
     static_assert(names.size() == regionCount);
     return region < names.size() ? names[region] : "region.invalid";

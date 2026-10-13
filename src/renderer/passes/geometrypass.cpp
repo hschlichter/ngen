@@ -40,18 +40,22 @@ auto GeometryPass::init(RhiDevice* device, PipelineRegistry& pipelineRegistry, R
             {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
         },
     };
-    // Four variants: back-face culling or none (USD doubleSided), and Less-with-write
-    // when the pass owns the depth buffer or Equal-without after the depth prepass.
-    for (int doubleSided = 0; doubleSided < 2; doubleSided++) {
-        for (int prepassed = 0; prepassed < 2; prepassed++) {
-            request.raster.cullMode = doubleSided != 0 ? RhiCullMode::None : RhiCullMode::Back;
-            if (prepassed != 0) {
-                request.depth = {.testEnable = true, .writeEnable = false, .compareOp = RhiCompareOp::Equal};
-            } else {
-                request.depth = {.testEnable = true, .writeEnable = true, .compareOp = RhiCompareOp::Less};
+    // Eight variants: opaque or cutout (gbuffercutout.frag discards where the material's
+    // opacity is below its threshold), back-face culling or none (USD doubleSided), and
+    // Less-with-write when the pass owns the depth buffer or Equal-without after the depth prepass.
+    for (int cutout = 0; cutout < 2; cutout++) {
+        request.fragment.id = cutout != 0 ? "shaders/gbuffercutout.frag" : "shaders/gbuffer.frag";
+        for (int doubleSided = 0; doubleSided < 2; doubleSided++) {
+            for (int prepassed = 0; prepassed < 2; prepassed++) {
+                request.raster.cullMode = doubleSided != 0 ? RhiCullMode::None : RhiCullMode::Back;
+                if (prepassed != 0) {
+                    request.depth = {.testEnable = true, .writeEnable = false, .compareOp = RhiCompareOp::Equal};
+                } else {
+                    request.depth = {.testEnable = true, .writeEnable = true, .compareOp = RhiCompareOp::Less};
+                }
+                auto name = std::format("geometry.pipeline.{}.{}{}", doubleSided != 0 ? "cullnone" : "cullback", prepassed != 0 ? "equal" : "less", cutout != 0 ? ".cutout" : "");
+                pipelines[cutout][doubleSided][prepassed] = pipelineRegistry.registerGraphics(name, request, PipelineUse::Startup);
             }
-            auto name = std::format("geometry.pipeline.{}.{}", doubleSided != 0 ? "cullnone" : "cullback", prepassed != 0 ? "equal" : "less");
-            pipelines[doubleSided][prepassed] = pipelineRegistry.registerGraphics(name, request, PipelineUse::Startup);
         }
     }
     return true;
@@ -62,8 +66,9 @@ auto GeometryPass::descriptorBindings() -> std::array<RhiDescriptorBinding, 4> {
     return {{
         {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
         {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment, .count = GpuScene::maxTextures},
-        {.binding = 2, .type = StorageBuffer, .stage = RhiShaderStage::Vertex},
-        {.binding = 3, .type = StorageBuffer, .stage = RhiShaderStage::Vertex},
+        // The cutout fragment shaders read the instance's material and its opacity.
+        {.binding = 2, .type = StorageBuffer, .stage = RhiShaderStage::Vertex | RhiShaderStage::Fragment},
+        {.binding = 3, .type = StorageBuffer, .stage = RhiShaderStage::Vertex | RhiShaderStage::Fragment},
     }};
 }
 
@@ -101,8 +106,13 @@ auto GeometryPass::addPass(
         .usage = RhiTextureUsage::ColorAttachment | RhiTextureUsage::Sampled,
     };
 
-    auto* cullBack = registry->get(pipelines[0][depthPrepassed ? 1 : 0]);
-    auto* cullNone = registry->get(pipelines[1][depthPrepassed ? 1 : 0]);
+    // By bucket (DrawLists::bucket): single-sided, double-sided, then the same two cutout.
+    std::array<RhiPipeline*, DrawLists::bucketCount> bucketPipelines = {};
+    for (int cutout = 0; cutout < 2; cutout++) {
+        for (int doubleSided = 0; doubleSided < 2; doubleSided++) {
+            bucketPipelines[DrawLists::bucket(doubleSided != 0, cutout != 0)] = registry->get(pipelines[cutout][doubleSided][depthPrepassed ? 1 : 0]);
+        }
+    }
 
     return fg.addPass<GeometryPassData>(
         "GeometryPass",
@@ -116,7 +126,7 @@ auto GeometryPass::addPass(
             builder.read(drawHandles.counts, FgAccessFlags::IndirectRead);
             builder.setSideEffects(true);
         },
-        [cullBack, cullNone, depthPrepassed, extent, instances, &lists, drawHandles, &scene, descriptorSet](FrameGraphContext& ctx, const GeometryPassData& data) {
+        [bucketPipelines, depthPrepassed, extent, instances, &lists, drawHandles, &scene, descriptorSet](FrameGraphContext& ctx, const GeometryPassData& data) {
             auto* cmd = ctx.cmd();
 
             std::array<RhiRenderingAttachmentInfo, 3> colorAtts = {{
@@ -157,16 +167,16 @@ auto GeometryPass::addPass(
             cmd->setScissor(extent);
 
             // One indirect call per pipeline bucket: single-sided instances under back-face
-            // culling first, then double-sided ones without it.
+            // culling first, then double-sided ones without it, then the same two cutout.
             auto* commands = ctx.buffer(drawHandles.commands);
             auto* counts = ctx.buffer(drawHandles.counts);
-            for (bool doubleSided : {false, true}) {
-                auto region = DrawLists::cameraRegion(doubleSided);
+            for (uint32_t bucket = 0; bucket < DrawLists::bucketCount; bucket++) {
+                auto region = DrawLists::cameraRegion(bucket % 2 != 0, bucket >= 2);
                 // The GPU-written count decides how many commands draw; an empty region costs one call.
                 if (scene.indexBuffer() == nullptr) {
                     continue;
                 }
-                auto* pip = doubleSided ? cullNone : cullBack;
+                auto* pip = bucketPipelines[bucket];
                 cmd->bindPipeline(pip);
                 // One set for every draw: materials are indexed through the instance record.
                 cmd->bindDescriptorSet(pip, 0, descriptorSet);

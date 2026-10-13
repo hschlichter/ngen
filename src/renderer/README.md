@@ -153,9 +153,12 @@ Tables:
   for every mesh. Indices stay mesh-local; a mesh is addressed by `firstIndex` and `vertexOffset`, and the vertex and position pools share `vertexOffset`.
 - **Mesh table.** `GpuMeshEntry` per `MeshHandle::index`: `firstIndex`, `vertexOffset`, `indexCount`. A mesh outside the pool has `indexCount` 0.
 - **Material table and texture slots.** Slot 0 is the fallback texture; each textured material gets the next slot, in instance order, up to
-  `GpuScene::maxTextures` (1024). `GpuMaterial` holds the base colour texture slot. Untextured materials carry their colour as a 1×1 texture.
+  `GpuScene::maxTextures` (1024). `GpuMaterial` holds the base colour texture slot and, for a cutout material, the opacity: its texture slot (the base
+  colour's when the opacity is that texture's channel, else a slot of its own), the channel and raw flag (`opacityInfo`), and the threshold.
+  Untextured materials carry their colour as a 1×1 texture.
 - **Instance buffer.** One `GpuInstanceRecord` (112 bytes, std430) per `GpuInstance`: model matrix, material entry, mesh index, submesh `indexOffset`
-  and `indexCount`, world bounds, and flags (`primFirst`, `doubleSided`, `boundsValid`). Vertex shaders read it at `gl_InstanceIndex`; every draw sets
+  and `indexCount`, world bounds, and flags (`primFirst`, `doubleSided`, `boundsValid`, `cutout`, `primHasCutout`). Vertex shaders read it at
+  `gl_InstanceIndex`; every draw sets
   `firstInstance` to the instance index. The buffer grows by recreation; the old one goes through the deletion queue.
 
 `GpuInstance` is the CPU mirror the renderer keeps (`Renderer::gpuInstances`): one per `RenderMeshInstance`, a prim's mesh expanded per material
@@ -166,9 +169,10 @@ the culling sets).
 
 `DrawLists` defines the command layout and owns the per-slot culling buffers; `InstanceCullPass` runs `shaders/instancecull.comp` in three modes.
 
-- **Regions.** One region per (view, bucket). View 0 is the camera, views 1..4 the shadow cascades; bucket 0 is single-sided (back-face culling),
-  bucket 1 double-sided. Camera regions hold every visible instance with a mesh in the pool, drawing its submesh range. Cascade regions hold only
-  `primFirst` instances (one per prim), drawing the whole mesh: shadows are material-agnostic.
+- **Regions.** One region per (view, bucket), four buckets per view (`DrawLists::bucket`): single-sided (back-face culling), double-sided, and the
+  same two for cutout materials. View 0 is the camera, views 1..4 the shadow cascades. Camera regions hold every visible instance with a mesh in the
+  pool, drawing its submesh range. Cascade regions hold `primFirst` instances (one per prim), drawing the whole mesh, except for a prim with a cutout
+  submesh (`primHasCutout`): its instances draw one by one, each its submesh range, so the cutout one goes to a cutout bucket and is cut there too.
 - **Visibility.** Each instance's world bounds are tested against six normalized planes per view (`Frustum::fromViewProj`, computed on the CPU into the
   slot's parameter buffer) with the positive-corner test. Instances without valid bounds are always visible, and with culling off every instance is. A
   frozen frustum is only a different camera matrix in the snapshot (`CullState`).
@@ -188,15 +192,30 @@ the culling sets).
 The mesh passes bind the pipeline, descriptor set and pool once per bucket and issue one `drawIndexedIndirectCount` with the region's capacity as
 `maxDrawCount`. An empty region still costs one call; only the GPU knows the count.
 
+## Cutout materials
+
+A material with `opacityThreshold > 0` (`MaterialDesc::cutout`) draws only where its opacity reaches the threshold; there is no blending. Its
+instances go to the cutout buckets, whose pipelines `discard` below the threshold (`shaders/cutout.glsl`, `cutAway`): the geometry pass through
+`gbuffercutout.frag`, the depth prepass and the shadow pass through `cutout.frag` with `depthcutout.vert` and `shadowcutout.vert`, which read the full
+vertex stream for the texture coordinate instead of the position pool and bind the geometry set. The opaque buckets keep shaders without `discard`,
+so early depth testing holds for everything else. The debug views discard in `debugview.frag` itself, for every bucket.
+
+- **The opacity** is one channel of a texture, or a constant. A constant at or above the threshold is opaque; below it, the surface is cut away
+  entirely (opacity texture slot 0).
+- **Raw masks.** Textures are uploaded sRGB, so a mask authored `raw` is decoded as colour when sampled; the shader re-encodes the sampled value
+  (linear to sRGB, not for alpha) before the comparison, which gives back the stored value to 8-bit precision.
+- **Shadows** are cut as the camera's view is: a prim with any cutout submesh casts per submesh.
+- **Picking** reads `gbuffer.instance`, so it goes through what is cut away.
+
 ## Passes
 
 | Pass | What it does |
 |---|---|
 | `InstanceUploadPass` | Copies the dirty span of instance records from the slot's staging buffer into the instance buffer. Added only when something changed. |
 | `InstanceCullPass` | The three culling passes above. |
-| `ShadowPass` | Depth-only into the cascade atlas: per cascade, the tile's viewport and scissor, the cascade matrix as a push constant, one indirect call per bucket. Position pool only. |
+| `ShadowPass` | Depth-only into the cascade atlas: per cascade, the tile's viewport and scissor, the cascade matrix as a push constant, one indirect call per bucket. Position pool only, except the cutout buckets. |
 | `DepthPrepass` | Optional depth-only pass over the camera regions so the geometry pass can use an Equal depth test and shade each pixel once. `depthonly.vert` mirrors `gbuffer.vert`'s position expression with `invariant gl_Position`. |
-| `GeometryPass` | G-buffer: albedo (RGBA8, alpha carries the sampled mip level for the mip view), normals (RGBA16F), the instance id (`gbuffer.instance`, R32_UINT: instance index + 1, 0 where nothing is drawn), depth. Four pipelines: cull back or none, Less-with-write or Equal-without after the prepass. |
+| `GeometryPass` | G-buffer: albedo (RGBA8, alpha carries the sampled mip level for the mip view), normals (RGBA16F), the instance id (`gbuffer.instance`, R32_UINT: instance index + 1, 0 where nothing is drawn), depth. Eight pipelines: opaque or cutout, cull back or none, Less-with-write or Equal-without after the prepass. |
 | `DebugViewPass`, `DebugViewResolve` | Only while a debug view is on (`DebugView`): the camera regions drawn again through `debugview.vert/.geom/.frag` into an RGBA32F value target (`debugview.value`), then coloured by `debugview.comp` into `debugview.color`, which the blit takes instead of the AA result. |
 | `LightingPass` | Fullscreen deferred shading into a float scene-colour target: one directional light (the first shadow-enabled directional light, else the first directional), cascade selection by view depth, hardware-compare PCF, shadow tint, and the debug views (`GBufferView`) and overlays. |
 | `AAPass` | FXAA as a compute pass, scene colour to a float storage image; falls back to a blit when the format cannot be a storage image. |

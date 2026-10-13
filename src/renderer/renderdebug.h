@@ -23,6 +23,7 @@ struct RenderDebugMesh {
 
 struct RenderDebugTexture {
     uint32_t materialIndex = 0;
+    bool opacity = false; // a cutout material's opacity texture, not its base colour
     uint32_t width = 0;
     uint32_t height = 0;
     uint32_t mipLevels = 1;
@@ -34,6 +35,7 @@ struct RenderDebugTexture {
 struct TextureInspectRequest {
     bool enabled = false;
     uint32_t material = 0;
+    bool opacity = false; // the material's opacity texture instead of its base colour
     uint32_t level = 0;
 
     auto operator==(const TextureInspectRequest&) const -> bool = default;
@@ -79,6 +81,8 @@ struct RenderDebugSnapshot {
     uint32_t culledInstances = 0;    // skipped by the geometry pass this frame
     uint32_t materialCount = 0;
     uint32_t materialsWithTexture = 0;
+    uint32_t cutoutMaterials = 0; // drawn only where their opacity reaches the threshold
+    uint32_t cutoutInstances = 0; // in the cutout buckets
     std::vector<RenderDebugMesh> meshes;
     std::vector<RenderDebugTexture> textures;
     RenderDebugTextureInspect inspect;

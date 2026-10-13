@@ -15,12 +15,12 @@ struct CullResult {
     uint64_t frame = 0; // 0: nothing read back yet
     uint32_t instances = 0;
     uint32_t cameraCulled = 0;
-    uint64_t cameraTriangles = 0; // drawn by the camera after culling, both buckets
+    uint64_t cameraTriangles = 0; // drawn by the camera after culling, every bucket
     uint64_t sceneTriangles = 0;  // every instance's submesh, culled or not
     uint32_t cascadeCount = 0;
     std::array<uint32_t, maxShadowCascades> cascadeCulled = {};
     std::array<uint32_t, maxShadowCascades> cascadeDrawn = {};
-    std::array<uint64_t, maxShadowCascades> cascadeTriangles = {}; // drawn per cascade, both buckets
+    std::array<uint64_t, maxShadowCascades> cascadeTriangles = {}; // drawn per cascade, every bucket
     std::vector<uint8_t> cameraVisible;                            // per instance, 1 = visible
     std::vector<uint8_t> viewBits;                                 // per instance, bit v = visible in view v (0 camera, 1.. cascades)
 };
@@ -32,14 +32,15 @@ class RhiDevice;
 
 // Indirect draw commands per view and pipeline bucket, written on the GPU by the culling
 // passes (src/renderer/README.md, "GPU-driven frame"). One region per (view, bucket):
-// the camera, then each shadow cascade, each split into single-sided and double-sided.
+// the camera, then each shadow cascade, each split into single-sided and double-sided, opaque
+// and cutout. A cutout bucket's pipelines discard where the material's opacity is below its threshold.
 //
 // Owns the frame slot's buffers the culling passes read and write, and the readback that
 // brings counts, visibility and (while the render debugger is open) the commands back to
 // the CPU once the slot's fence has passed. Everything read back is one frame-slot cycle old.
 class DrawLists {
 public:
-    static constexpr uint32_t bucketCount = 2; // single-sided, double-sided
+    static constexpr uint32_t bucketCount = 4; // single-sided, double-sided, then the same two cutout
     static constexpr uint32_t viewCount = 1 + maxShadowCascades;
     static constexpr uint32_t regionCount = viewCount * bucketCount;
     // Counters the culling shader produces per workgroup and in total (instancecull.comp).
@@ -51,8 +52,9 @@ public:
     static constexpr uint32_t counterCount = counterCascadeDrawn + maxShadowCascades;
     static constexpr uint32_t groupSize = 256;
 
-    static constexpr auto cameraRegion(bool doubleSided) -> uint32_t { return doubleSided ? 1 : 0; }
-    static constexpr auto cascadeRegion(uint32_t cascade, bool doubleSided) -> uint32_t { return ((1 + cascade) * bucketCount) + (doubleSided ? 1 : 0); }
+    static constexpr auto bucket(bool doubleSided, bool cutout) -> uint32_t { return (cutout ? 2 : 0) + (doubleSided ? 1 : 0); }
+    static constexpr auto cameraRegion(bool doubleSided, bool cutout = false) -> uint32_t { return bucket(doubleSided, cutout); }
+    static constexpr auto cascadeRegion(uint32_t cascade, bool doubleSided, bool cutout = false) -> uint32_t { return ((1 + cascade) * bucketCount) + bucket(doubleSided, cutout); }
 
     // Matches Params in instancecull.comp (std430).
     struct CullParams {

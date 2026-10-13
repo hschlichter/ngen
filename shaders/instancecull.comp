@@ -12,14 +12,16 @@
 //
 // Commands keep instance order within a region, so output is deterministic.
 //
-// Regions: view * 2 + bucket; view 0 is the camera, views 1.. the shadow cascades; bucket 1
-// is double-sided. Camera regions hold every instance whose mesh is in the pool (submesh
-// range); cascade regions only primFirst instances (whole mesh).
+// Regions: view * 4 + bucket; view 0 is the camera, views 1.. the shadow cascades; bucket bit 0
+// is double-sided, bit 1 cutout. Camera regions hold every instance whose mesh is in the pool
+// (submesh range). Cascade regions hold primFirst instances (whole mesh), except for a prim with a
+// cutout submesh: its instances draw one by one (submesh range), so the cutout one is cut.
 
 layout(local_size_x = 256) in;
 
 const uint maxViews = 5;
-const uint regionCount = maxViews * 2;
+const uint bucketCount = 4;
+const uint regionCount = maxViews * bucketCount;
 // Counter layout per workgroup and in the totals.
 const uint counterDraws = 0;                              // regionCount: draws per region
 const uint counterPrimitives = regionCount;               // regionCount: primitives per region
@@ -31,6 +33,8 @@ const uint counterCount = counterCascadeDrawn + 4;
 const uint flagPrimFirst = 1u << 0;
 const uint flagDoubleSided = 1u << 1;
 const uint flagBoundsValid = 1u << 2;
+const uint flagCutout = 1u << 3;
+const uint flagPrimHasCutout = 1u << 4;
 
 layout(push_constant) uniform Push {
     uint mode;
@@ -138,17 +142,31 @@ MeshEntry meshOf(Instance inst) {
     return meshes.data[inst.mesh];
 }
 
+// Whether the instance draws its submesh range in view v; otherwise a cascade draws its whole mesh.
+bool perSubmesh(Instance inst, uint view) {
+    return view == 0 || (inst.flags & flagPrimHasCutout) != 0;
+}
+
+// The instance's bucket: cutout instances drawn per submesh go to the cutout buckets.
+uint bucketOf(Instance inst, uint view) {
+    uint bucket = (inst.flags & flagDoubleSided) != 0 ? 1u : 0u;
+    if ((inst.flags & flagCutout) != 0 && perSubmesh(inst, view)) {
+        bucket += 2u;
+    }
+    return bucket;
+}
+
 // Whether instance belongs to region r and is visible in its view.
 bool drawnIn(Instance inst, MeshEntry mesh, uint bits, uint region) {
-    uint view = region / 2;
-    uint bucket = region % 2;
+    uint view = region / bucketCount;
+    uint bucket = region % bucketCount;
     if (view >= params.viewCount || mesh.indexCount == 0) {
         return false;
     }
-    if (bucket != ((inst.flags & flagDoubleSided) != 0 ? 1u : 0u)) {
+    if (bucket != bucketOf(inst, view)) {
         return false;
     }
-    if (view > 0 && (inst.flags & flagPrimFirst) == 0) {
+    if (!perSubmesh(inst, view) && (inst.flags & flagPrimFirst) == 0) {
         return false;
     }
     return (bits & (1u << view)) != 0;
@@ -182,7 +200,7 @@ void cull() {
         MeshEntry mesh = meshOf(inst);
         for (uint r = 0; r < regionCount; r++) {
             if (drawnIn(inst, mesh, bits, r)) {
-                uint indexCount = r < 2 ? inst.indexCount : mesh.indexCount;
+                uint indexCount = perSubmesh(inst, r / bucketCount) ? inst.indexCount : mesh.indexCount;
                 atomicAdd(sharedCounters[counterDraws + r], 1u);
                 atomicAdd(sharedCounters[counterPrimitives + r], indexCount / 3);
             }
@@ -253,11 +271,11 @@ void scatter() {
         }
         if (member != 0) {
             uint slot = groupOffsets.data[gl_WorkGroupID.x * regionCount + r] + scanData[lid] - 1;
-            bool camera = r < 2;
+            bool submesh = perSubmesh(inst, r / bucketCount);
             DrawCommand command;
-            command.indexCount = camera ? inst.indexCount : mesh.indexCount;
+            command.indexCount = submesh ? inst.indexCount : mesh.indexCount;
             command.instanceCount = 1;
-            command.firstIndex = camera ? mesh.firstIndex + inst.indexOffset : mesh.firstIndex;
+            command.firstIndex = submesh ? mesh.firstIndex + inst.indexOffset : mesh.firstIndex;
             command.vertexOffset = mesh.vertexOffset;
             command.firstInstance = m;
             commands.data[r * params.regionCapacity + slot] = command;

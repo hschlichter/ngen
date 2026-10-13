@@ -98,6 +98,9 @@ Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's ma
 - **Shadows**: spot/point light shadows; cascade blending / softer techniques. Trigger: a seam PCF doesn't hide.
 - **Culling**: occlusion (two-phase HZB); meshlets and LOD — need a meshlet/LOD pack step.
 - **Frame graph**: transient buffers; cross-frame history resources (TAA); multi-queue/async compute; parallel recording.
+- **Cutout follow-ups** (from [plan_cutout_materials.md](plan_cutout_materials.md)): translucency (blended surfaces, sorting; trigger: glass or
+  smoke — Sponza's `glass` and `lamp_glass_01_usd` draw opaque, with a packer warning); coverage-preserving opacity mips (trigger: foliage vanishing
+  at a distance); a per-material "casts no shadow" for decals, which today cast mask-shaped shadows onto the wall they lie on (trigger: it bothers).
 - **Material model**: factors and more texture maps; per-material sampler state from USD.
 - **Incremental GPU updates** for non-transform changes (part of the editor split).
 - **Lighting at kilometre scale** — one sun and nothing else: surfaces facing away from it are flat black, with no sky or ambient term, and
@@ -149,6 +152,10 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
 
+- **Cutout materials** — [plan_cutout_materials.md](plan_cutout_materials.md). UsdPreviewSurface opacity with `opacityThreshold > 0` is packed
+  (constant or texture channel, raw flag, threshold) and drawn through four buckets per view, with cutout pipelines that discard in the geometry
+  pass, depth prepass, shadow pass and debug views; prims with a cutout submesh cast shadows per submesh. Sponza's decals draw as dirt, not quads,
+  and picks go through them.
 - **Async shaders** — [plan_async_shaders.md](plan_async_shaders.md). `PipelineRegistry` creates every pipeline from requests the passes
   register (descriptions with shader ids). Start-up shaders go out in one request derived from the registrations and pack while the scene
   loads; the debug views' shaders are requested the first time a view is turned on, and the lit image shows until they arrive. A `pipelines`

@@ -43,6 +43,7 @@
 #include <filesystem>
 #include <format>
 #include <functional>
+#include <optional>
 #include <set>
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -667,12 +668,11 @@ auto packMesh(const UsdPrim& prim, MeshPack& mesh) -> bool {
 
 // ---- Materials: the surface shader's diffuse colour, a texture or a constant, as USDScene's extractMaterial read it.
 
-// The shader a connection ends at, through UsdShade NodeGraphs (NewSponza routes diffuseColor through a per-texture node graph whose
-// output forwards the inner shader's).
-auto resolveConnectedShader(UsdShadeConnectableAPI source, TfToken sourceName) -> UsdShadeShader {
+// The shader a connection ends at, through node graphs, and the name of the output it reads.
+auto resolveConnectedOutput(UsdShadeConnectableAPI source, TfToken sourceName) -> std::pair<UsdShadeShader, TfToken> {
     for (int guard = 0; guard < 16 && source.GetPrim(); guard++) {
         if (source.GetPrim().IsA<UsdShadeShader>()) {
-            return UsdShadeShader(source.GetPrim());
+            return {UsdShadeShader(source.GetPrim()), sourceName};
         }
         auto output = source.GetOutput(sourceName);
         if (!output) {
@@ -687,7 +687,44 @@ auto resolveConnectedShader(UsdShadeConnectableAPI source, TfToken sourceName) -
         source = next;
         sourceName = nextName;
     }
-    return UsdShadeShader();
+    return {UsdShadeShader(), TfToken()};
+}
+
+// The texture an input is connected to, through node graphs: its asset id (empty when it doesn't resolve), the output it reads, and its
+// sourceColorSpace. Nullopt when the input isn't connected to a texture.
+struct ConnectedTexture {
+    std::string assetId;
+    std::string output;
+    std::string colorSpace;
+};
+
+auto connectedTexture(const UsdShadeInput& input, const UsdPrim& material, const std::string& fileId, LayerPack& layer) -> std::optional<ConnectedTexture> {
+    UsdShadeConnectableAPI source;
+    TfToken sourceName;
+    UsdShadeAttributeType sourceType;
+    if (!input.GetConnectedSource(&source, &sourceName, &sourceType)) {
+        return std::nullopt;
+    }
+    auto [textureShader, outputName] = resolveConnectedOutput(source, sourceName);
+    if (!textureShader) {
+        return std::nullopt;
+    }
+    auto file = textureShader.GetInput(TfToken("file"));
+    SdfAssetPath assetPath;
+    if (!file || !file.Get(&assetPath, UsdTimeCode::Default())) {
+        return std::nullopt;
+    }
+    ConnectedTexture texture;
+    texture.assetId = resolveAssetId(assetPath.GetAssetPath(), fileId);
+    if (texture.assetId.empty() && !assetPath.GetAssetPath().empty()) {
+        warn(layer, material.GetPath().GetString(), std::format("texture @{}@ doesn't resolve to a file below the asset server's directory", assetPath.GetAssetPath()));
+    }
+    texture.output = outputName.GetString();
+    TfToken colorSpace;
+    if (auto space = textureShader.GetInput(TfToken("sourceColorSpace")); space && space.Get(&colorSpace, UsdTimeCode::Default())) {
+        texture.colorSpace = colorSpace.GetString();
+    }
+    return texture;
 }
 
 auto packMaterial(const UsdPrim& prim, const std::string& fileId, MaterialPack& material, LayerPack& layer) -> bool {
@@ -706,30 +743,41 @@ auto packMaterial(const UsdPrim& prim, const std::string& fileId, MaterialPack& 
     if (!shader) {
         return true;
     }
-    auto input = shader.GetInput(TfToken("diffuseColor"));
-    if (!input) {
-        return true;
-    }
-    UsdShadeConnectableAPI textureSource;
-    TfToken textureSourceName;
-    UsdShadeAttributeType textureSourceType;
-    if (input.GetConnectedSource(&textureSource, &textureSourceName, &textureSourceType)) {
-        auto textureShader = resolveConnectedShader(textureSource, textureSourceName);
-        if (textureShader) {
-            auto file = textureShader.GetInput(TfToken("file"));
-            SdfAssetPath assetPath;
-            if (file && file.Get(&assetPath, UsdTimeCode::Default())) {
-                material.baseColorTexture = resolveAssetId(assetPath.GetAssetPath(), fileId);
-                if (material.baseColorTexture.empty() && !assetPath.GetAssetPath().empty()) {
-                    warn(layer, prim.GetPath().GetString(), std::format("texture @{}@ doesn't resolve to a file below the asset server's directory", assetPath.GetAssetPath()));
-                }
-            }
+
+    if (auto input = shader.GetInput(TfToken("diffuseColor"))) {
+        if (auto texture = connectedTexture(input, prim, fileId, layer)) {
+            material.baseColorTexture = texture->assetId;
+        }
+        GfVec3f color;
+        if (input.Get(&color, UsdTimeCode::Default())) {
+            material.hasBaseColor = true;
+            material.baseColor = {color[0], color[1], color[2], 1.0f};
         }
     }
-    GfVec3f color;
-    if (input.Get(&color, UsdTimeCode::Default())) {
-        material.hasBaseColor = true;
-        material.baseColor = {color[0], color[1], color[2], 1.0f};
+
+    // Cutout: the opacity, a constant or a texture's channel, cut against opacityThreshold. A threshold of 0 with an opacity below 1 is
+    // translucency, which the engine doesn't draw: reported, and drawn opaque.
+    float threshold = 0.0f;
+    if (auto input = shader.GetInput(TfToken("opacityThreshold"))) {
+        input.Get(&threshold, UsdTimeCode::Default());
+    }
+    std::optional<ConnectedTexture> opacityTexture;
+    float opacity = 1.0f;
+    if (auto input = shader.GetInput(TfToken("opacity"))) {
+        opacityTexture = connectedTexture(input, prim, fileId, layer);
+        input.Get(&opacity, UsdTimeCode::Default());
+    }
+    if (threshold > 0.0f) {
+        material.opacityThreshold = threshold;
+        material.opacity = opacity;
+        if (opacityTexture) {
+            material.opacityTexture = opacityTexture->assetId;
+            const auto& output = opacityTexture->output;
+            material.opacityChannel = output == "g" ? 1 : (output == "b" ? 2 : (output == "a" ? 3 : 0));
+            material.opacityRaw = opacityTexture->colorSpace == "raw";
+        }
+    } else if (opacityTexture || opacity < 1.0f) {
+        warn(layer, prim.GetPath().GetString(), "translucent (opacity below 1 with opacityThreshold 0), which the engine draws opaque");
     }
     return true;
 }

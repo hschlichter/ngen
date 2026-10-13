@@ -14,6 +14,19 @@ struct MaterialDesc {
     // otherwise only level 0, and the renderer builds the mip chain (the generated 1x1 textures).
     std::vector<uint8_t> texPixels;
     uint32_t texMipLevels = 0;
+    // Cutout: drawn only where the opacity reaches opacityThreshold; 0 is opaque. The opacity is a channel of the opacity texture (packed,
+    // with its levels as texPixels are), of the base colour texture when opacityFromBaseColor, or the constant when there is neither.
+    float opacityThreshold = 0.0f;
+    float opacity = 1.0f;
+    uint32_t opacityChannel = 0; // 0 r, 1 g, 2 b, 3 a
+    bool opacityRaw = false;     // authored raw: the sampler's sRGB decode is undone before the comparison
+    bool opacityFromBaseColor = false;
+    int opacityWidth = 0;
+    int opacityHeight = 0;
+    std::vector<uint8_t> opacityPixels;
+    uint32_t opacityMipLevels = 0;
+
+    auto cutout() const -> bool { return opacityThreshold > 0.0f; }
 };
 
 class MaterialLibrary {

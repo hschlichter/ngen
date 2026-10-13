@@ -113,6 +113,7 @@ auto GpuScene::rebuildGeometry(std::span<const GpuInstance> sceneInstances, cons
 
 auto GpuScene::rebuildMaterials(std::span<const GpuInstance> sceneInstances,
                                 const std::unordered_map<uint32_t, CachedTexture>& textures,
+                                const std::unordered_map<uint32_t, CachedCutout>& cutouts,
                                 RhiTexture* fallback,
                                 GpuUploader& uploader,
                                 uint64_t frame) -> void {
@@ -140,6 +141,20 @@ auto GpuScene::rebuildMaterials(std::span<const GpuInstance> sceneInstances,
                     slots.push_back(tex->second.texture);
                 } else {
                     overflow++;
+                }
+            }
+            if (auto cutout = cutouts.find(inst.material.index); cutout != cutouts.end()) {
+                material.opacityThreshold = cutout->second.threshold;
+                material.opacityInfo = (cutout->second.channel & 3u) | (cutout->second.raw ? 4u : 0u);
+                if (cutout->second.fromBaseColor) {
+                    material.opacityTexture = material.baseColorTexture;
+                } else if (cutout->second.texture != nullptr) {
+                    if (slots.size() < maxTextures) {
+                        material.opacityTexture = (uint32_t) slots.size();
+                        slots.push_back(cutout->second.texture);
+                    } else {
+                        overflow++;
+                    }
                 }
             }
             table.push_back(material);
@@ -244,6 +259,12 @@ auto GpuScene::addUploadPasses(FrameGraph& fg, std::span<const GpuInstance> scen
             }
             if (inst.worldBounds.valid()) {
                 flags |= gpuInstanceBoundsValid;
+            }
+            if (inst.cutout) {
+                flags |= gpuInstanceCutout;
+            }
+            if (inst.primHasCutout) {
+                flags |= gpuInstancePrimHasCutout;
             }
             dst[m] = {
                 .model = inst.transform,

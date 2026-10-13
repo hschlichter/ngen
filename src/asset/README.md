@@ -152,7 +152,10 @@ file alone, so editing one file of a scene repacks that file only. A file's outp
 - **A mesh pack per prim the file defines with geometry** (`def` of `Mesh`, `Cube`, `Sphere`, `Cylinder`, `Cone`): triangles with position,
   normal, display colour and texture coordinate (44-byte vertices), 32-bit indices, one submesh per `GeomSubset` (named by its path) and one for
   the faces no subset holds, the display colour, and the bounds.
-- **A material pack per `def Material`**: the `UsdPreviewSurface` diffuse colour, constant or from a `UsdUVTexture` file (an asset id).
+- **A material pack per `def Material`**: the `UsdPreviewSurface` diffuse colour, constant or from a `UsdUVTexture` file (an asset id), and, when
+  `opacityThreshold > 0`, the cutout opacity: a constant, or the texture file with the channel its output names (`r`, `g`, `b`, `a`; `rgb` reads
+  `r`) and whether it is authored `raw`, and the threshold. Opacity below 1 with threshold 0 is translucency, which the engine doesn't draw: the
+  material packs opaque, with a warning.
 
 Meshes and materials are read through a stage of the file alone: a copy of the layer with every sublayer and every reference and payload to
 another file removed, so composition inside the file (internal references, node graphs) still applies and nothing outside it is read.

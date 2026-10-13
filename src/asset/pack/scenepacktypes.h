@@ -9,7 +9,7 @@
 // The scene pack types, separate from their reader and writer (scenepack.h) so that code built as C++20, the USD packer among it, can
 // fill them: OpenUSD's headers don't compile as C++23, and the reader uses std::expected.
 
-inline constexpr uint32_t scenePackFormatVersion = 1;
+inline constexpr uint32_t scenePackFormatVersion = 2;
 inline constexpr size_t scenePackHeaderSize = 32;
 
 enum class ScenePackKind : uint32_t {
@@ -116,9 +116,15 @@ struct MeshPack {
     std::array<float, 3> boundsMax = {0.0f, 0.0f, 0.0f};
 };
 
-// What the engine takes from a material's surface shader: the base colour, as a texture or a constant.
+// What the engine takes from a material's surface shader: the base colour, as a texture or a constant, and its cutout: drawn only where
+// the opacity reaches opacityThreshold (0 is opaque; translucency isn't read).
 struct MaterialPack {
     bool hasBaseColor = false;
     std::array<float, 4> baseColor = {1.0f, 1.0f, 1.0f, 1.0f};
     std::string baseColorTexture; // a texture asset id, empty when none
+    float opacity = 1.0f;         // the constant, when there is no opacity texture
+    std::string opacityTexture;   // a texture asset id, empty for none
+    uint32_t opacityChannel = 0;  // 0 r, 1 g, 2 b, 3 a
+    bool opacityRaw = false;      // the texture is authored raw (sourceColorSpace): the sampler's sRGB decode is undone
+    float opacityThreshold = 0.0f;
 };

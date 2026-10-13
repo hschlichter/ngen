@@ -153,9 +153,7 @@ auto drawResources(const FrameDebugPass& pass, FrameDebuggerState& state, std::f
 }
 
 auto regionName(uint32_t region) -> std::string {
-    auto view = region / DrawLists::bucketCount;
-    auto bucket = region % DrawLists::bucketCount == 0 ? "single-sided" : "double-sided";
-    return view == 0 ? std::format("camera, {}", bucket) : std::format("cascade {}, {}", view - 1, bucket);
+    return DrawLists::regionName(region);
 }
 
 auto drawDraws(const FrameDebugPass& pass, FrameDebuggerState& state, const std::function<std::string(uint32_t)>& primPathOfInstance) -> void {

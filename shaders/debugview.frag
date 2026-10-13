@@ -1,4 +1,5 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 
 // One raw value per pixel per debug view; debugview.comp turns it into a colour and the
 // readout reads it back as is. Alpha 1 marks covered pixels (background stays 0), and
@@ -7,6 +8,21 @@ layout(push_constant) uniform Push {
     vec2 viewport;
     uint mode; // DebugView
 } push;
+
+// The geometry pass's set: textures and materials, for the cutout test, so the views show what the geometry pass drew.
+layout(set = 0, binding = 1) uniform sampler2D textures[1024];
+
+struct Material {
+    uint baseColorTexture;
+    uint opacityTexture;
+    uint opacityInfo;
+    float opacityThreshold;
+};
+layout(std430, set = 0, binding = 3) readonly buffer Materials {
+    Material data[];
+} materials;
+
+#include "cutout.glsl"
 
 layout(location = 0) in vec3 gNormal;
 layout(location = 1) in vec2 gTexCoord;
@@ -27,6 +43,9 @@ const uint viewPrimitive = 7;
 const uint viewUv = 8;
 
 void main() {
+    if (cutAway(gIds.z, gTexCoord)) {
+        discard;
+    }
     if (push.mode == viewWireframe) {
         float edge = min(gEdgeDistance.x, min(gEdgeDistance.y, gEdgeDistance.z));
         vec3 n = normalize(gNormal);

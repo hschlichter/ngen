@@ -322,7 +322,7 @@ auto drawGpuSceneWindow(bool& show,
             ImGui::SliderInt("Region", &state.compactionRegion, 0, (int) DrawLists::regionCount - 1);
             auto region = (uint32_t) state.compactionRegion;
             ImGui::SameLine();
-            ImGui::TextDisabled("view %u, %s", region / DrawLists::bucketCount, region % DrawLists::bucketCount == 0 ? "single-sided" : "double-sided");
+            ImGui::TextDisabled("%s", DrawLists::regionName(region));
             const auto* counters = find(state.results, "cullGroupCounters");
             const auto* offsets = find(state.results, "cullGroupOffsets");
             const auto* counts = find(state.results, "drawCounts");

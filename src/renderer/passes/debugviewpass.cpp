@@ -201,11 +201,14 @@ auto DebugViewPass::addPass(
             };
             auto* commands = ctx.buffer(drawHandles.commands);
             auto* counts = ctx.buffer(drawHandles.counts);
-            for (bool doubleSided : {false, true}) {
+            // Every camera bucket; debugview.frag discards cut-away texels itself, so the cutout
+            // buckets draw with the same pipelines.
+            for (uint32_t bucket = 0; bucket < DrawLists::bucketCount; bucket++) {
                 if (scene.indexBuffer() == nullptr) {
                     continue;
                 }
-                auto region = DrawLists::cameraRegion(doubleSided);
+                bool doubleSided = bucket % 2 != 0;
+                auto region = DrawLists::cameraRegion(doubleSided, bucket >= 2);
                 auto* pip = registry->get(overdraw ? overdrawPipelines[doubleSided ? 1 : 0] : pipelines[doubleSided ? 1 : 0]);
                 cmd->bindPipeline(pip);
                 cmd->bindDescriptorSet(pip, 0, geometrySet);

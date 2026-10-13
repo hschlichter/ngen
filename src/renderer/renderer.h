@@ -42,6 +42,7 @@ class RhiCommandBuffer;
 class ImGuiBackend;
 class MeshLibrary;
 class MaterialLibrary;
+struct MaterialDesc;
 struct RenderSnapshot;
 
 class Renderer {
@@ -118,6 +119,11 @@ private:
 
     // Scene GPU resources
     std::unordered_map<uint32_t, CachedTexture> textureCache;
+    // Cutout materials' opacity; the textures of those with an opacity texture of their own are in opacityTextureCache.
+    std::unordered_map<uint32_t, CachedCutout> cutoutCache;
+    std::unordered_map<uint32_t, CachedTexture> opacityTextureCache;
+    // Uploads a cutout material's opacity texture, if it has one of its own; called between uploader begin and end.
+    auto uploadCutout(uint32_t materialIndex, const MaterialDesc& material) -> CachedCutout;
     std::vector<GpuInstance> gpuInstances;
     AABB sceneBounds;                  // union of instance world bounds, refreshed with gpuInstances
     uint32_t debugCulledInstances = 0; // from the last snapshot, for the debug window

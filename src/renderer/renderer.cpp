@@ -102,10 +102,10 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, AssetClien
     // Passes
     RhiExtent2D shadowExtent{2048, 2048};
     debugShadowExtent = shadowExtent;
-    if (!shadowPass.init(device, pipelineRegistry, shadowExtent, depthFmt)) {
+    if (!geometryPass.init(device, pipelineRegistry, ext, depthFmt)) {
         return std::unexpected(1);
     }
-    if (!geometryPass.init(device, pipelineRegistry, ext, depthFmt)) {
+    if (!shadowPass.init(device, pipelineRegistry, shadowExtent, depthFmt, geometryPass.descriptorSetLayout())) {
         return std::unexpected(1);
     }
     if (!depthPrepass.init(pipelineRegistry, depthFmt, geometryPass.descriptorSetLayout())) {
@@ -246,7 +246,11 @@ auto Renderer::buildRenderDebugSnapshot() const -> RenderDebugSnapshot {
         if (inst.primFirst) {
             snap.primFirstInstances++;
         }
+        if (inst.cutout) {
+            snap.cutoutInstances++;
+        }
     }
+    snap.cutoutMaterials = (uint32_t) cutoutCache.size();
     snap.meshes.reserve(gpuScene.meshRanges().size());
     for (const auto& [index, cached] : gpuScene.meshRanges()) {
         snap.meshes.push_back({
@@ -270,16 +274,19 @@ auto Renderer::buildRenderDebugSnapshot() const -> RenderDebugSnapshot {
             snap.materialsWithTexture++;
         }
     }
-    snap.textures.reserve(textureCache.size());
-    for (const auto& [index, cached] : textureCache) {
-        snap.textures.push_back({
-            .materialIndex = index,
-            .width = cached.width,
-            .height = cached.height,
-            .mipLevels = cached.mipLevels,
-            .format = cached.format,
-            .bytes = cached.bytes,
-        });
+    snap.textures.reserve(textureCache.size() + opacityTextureCache.size());
+    for (bool opacity : {false, true}) {
+        for (const auto& [index, cached] : opacity ? opacityTextureCache : textureCache) {
+            snap.textures.push_back({
+                .materialIndex = index,
+                .opacity = opacity,
+                .width = cached.width,
+                .height = cached.height,
+                .mipLevels = cached.mipLevels,
+                .format = cached.format,
+                .bytes = cached.bytes,
+            });
+        }
     }
     snap.inspect = textureInspectResult;
     snap.lightCount = (uint32_t) lights.size();
@@ -396,6 +403,57 @@ auto Renderer::readGpuTimings(uint32_t slot) -> void {
     }
 }
 
+auto Renderer::uploadCutout(uint32_t materialIndex, const MaterialDesc& material) -> CachedCutout {
+    CachedCutout cutout = {
+        .fromBaseColor = material.opacityFromBaseColor,
+        .channel = material.opacityChannel,
+        .raw = material.opacityRaw,
+        .threshold = material.opacityThreshold,
+    };
+    if (material.opacityFromBaseColor) {
+        return cutout;
+    }
+    if (material.opacityPixels.empty()) {
+        if (material.opacity >= material.opacityThreshold) {
+            // A constant opacity at the threshold or above draws everywhere: opaque.
+            return {};
+        }
+        // Below it, cut away everywhere: no texture is opacity texture slot 0.
+        return cutout;
+    }
+    PROFILE_ZONE("UploadOpacityTexture");
+    RhiTextureDesc texDesc = {
+        .width = (uint32_t) material.opacityWidth,
+        .height = (uint32_t) material.opacityHeight,
+        .format = RhiFormat::R8G8B8A8_SRGB,
+        .usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst | RhiTextureUsage::TransferSrc,
+        .mipLevels = mipLevelCount((uint32_t) material.opacityWidth, (uint32_t) material.opacityHeight),
+    };
+    auto textureName = std::format("material.{}.opacity", materialIndex);
+    texDesc.debugName = textureName.c_str();
+    std::vector<std::byte> packed;
+    if (material.opacityMipLevels > 0) {
+        texDesc.mipLevels = material.opacityMipLevels;
+        const auto* levels = reinterpret_cast<const std::byte*>(material.opacityPixels.data());
+        packed.assign(levels, levels + material.opacityPixels.size());
+    } else {
+        auto pixelCount = (size_t) material.opacityWidth * (size_t) material.opacityHeight * 4;
+        auto level0 = std::span(material.opacityPixels).first(pixelCount);
+        auto chain = buildMipChain(texDesc.width, texDesc.height, level0, true);
+        packed = packMipChain(level0, chain);
+    }
+    cutout.texture = uploader.uploadTexture(texDesc, packed);
+    opacityTextureCache[materialIndex] = {
+        .texture = cutout.texture,
+        .width = texDesc.width,
+        .height = texDesc.height,
+        .mipLevels = texDesc.mipLevels,
+        .bytes = packed.size(),
+        .format = texDesc.format,
+    };
+    return cutout;
+}
+
 auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& meshLib, const MaterialLibrary& matLib) -> void {
     using enum RhiDescriptorType;
     auto start = std::chrono::steady_clock::now();
@@ -434,6 +492,24 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
             primOfInstance[i] = prim;
         }
     }
+    // A prim with any cutout submesh casts its shadows per submesh, so the cutout one is cut there too.
+    std::vector<bool> cutoutOfInstance(world.meshInstances.size(), false);
+    std::vector<bool> primHasCutout(world.meshInstances.size(), false);
+    for (size_t m = 0; m < world.meshInstances.size(); m++) {
+        const auto* matData = matLib.get(world.meshInstances[m].material);
+        cutoutOfInstance[m] = matData != nullptr && matData->cutout();
+    }
+    for (const auto& [prim, range] : world.primToInstance) {
+        bool any = false;
+        for (uint32_t i = range.first; i < range.first + range.count && i < cutoutOfInstance.size(); i++) {
+            if (cutoutOfInstance[i]) {
+                any = true;
+            }
+        }
+        for (uint32_t i = range.first; i < range.first + range.count && i < primHasCutout.size(); i++) {
+            primHasCutout[i] = any;
+        }
+    }
     sceneBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
     for (const auto& inst : world.meshInstances) {
         if (inst.worldBounds.valid()) {
@@ -448,7 +524,8 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
     gpuInstances.resize(world.meshInstances.size());
     for (size_t m = 0; m < world.meshInstances.size(); m++) {
         const auto& inst = world.meshInstances[m];
-        if (!sizeChanged && gpuInstances[m].transform != inst.worldTransform) {
+        bool flagsChanged = gpuInstances[m].cutout != cutoutOfInstance[m] || gpuInstances[m].primHasCutout != primHasCutout[m];
+        if (!sizeChanged && (gpuInstances[m].transform != inst.worldTransform || flagsChanged)) {
             changedFirst = std::min(changedFirst, (uint32_t) m);
             changedEnd = std::max(changedEnd, (uint32_t) m + 1);
         }
@@ -461,6 +538,8 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
             .indexCount = inst.indexCount,
             .primFirst = inst.primFirst,
             .doubleSided = inst.doubleSided,
+            .cutout = cutoutOfInstance[m],
+            .primHasCutout = primHasCutout[m],
             .worldBounds = inst.worldBounds,
         };
     }
@@ -488,6 +567,11 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         deletionQueue.deferTexture(m_frameIndex, cached.texture);
     }
     textureCache.clear();
+    for (auto& [idx, cached] : opacityTextureCache) {
+        deletionQueue.deferTexture(m_frameIndex, cached.texture);
+    }
+    opacityTextureCache.clear();
+    cutoutCache.clear();
 
     uploader.begin();
     for (const auto& inst : world.meshInstances) {
@@ -529,6 +613,12 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
                 };
             }
         }
+        if (inst.material && !cutoutCache.contains(inst.material.index)) {
+            const auto* matData = matLib.get(inst.material);
+            if (matData && matData->cutout()) {
+                cutoutCache[inst.material.index] = uploadCutout(inst.material.index, *matData);
+            }
+        }
     }
 
     {
@@ -536,15 +626,16 @@ auto Renderer::uploadRenderWorld(const RenderWorld& world, const MeshLibrary& me
         uploader.end();
     }
 
-    gpuScene.rebuildMaterials(gpuInstances, textureCache, fallbackTexture, uploader, m_frameIndex);
+    gpuScene.rebuildMaterials(gpuInstances, textureCache, cutoutCache, fallbackTexture, uploader, m_frameIndex);
     rebuildGeometryDescriptorSets();
     // Only uploads that change geometry get here; a transform edit returns above.
     auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
     TRACE_EVENT("Render", "SceneUploaded", "RenderWorld")
-        .text(std::format("scene on the GPU: {} instances, {} meshes, {} textures in {:.0f} ms", gpuInstances.size(), gpuScene.meshRanges().size(), textureCache.size(), ms))
+        .text(std::format("scene on the GPU: {} instances, {} meshes, {} textures in {:.0f} ms", gpuInstances.size(), gpuScene.meshRanges().size(), textureCache.size() + opacityTextureCache.size(), ms))
         .field("instances", (int64_t) gpuInstances.size())
         .field("meshes", (int64_t) gpuScene.meshRanges().size())
-        .field("textures", (int64_t) textureCache.size())
+        .field("textures", (int64_t) (textureCache.size() + opacityTextureCache.size()))
+        .field("cutoutMaterials", (int64_t) cutoutCache.size())
         .field("ms", ms);
 }
 
@@ -577,8 +668,9 @@ auto Renderer::recordTextureInspect(RhiCommandBuffer* cmd) -> void {
         }
         return;
     }
-    auto texIt = textureCache.find(textureInspectRequest.material);
-    if (texIt == textureCache.end()) {
+    const auto& inspected = textureInspectRequest.opacity ? opacityTextureCache : textureCache;
+    auto texIt = inspected.find(textureInspectRequest.material);
+    if (texIt == inspected.end()) {
         return;
     }
     const auto& cached = texIt->second;
@@ -722,12 +814,21 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
     }
 }
 
+// A view's triangles over its buckets; the camera is view 0, the cascades 1...
+static auto trianglesIn(const DrawLists& drawLists, uint32_t view) -> uint64_t {
+    uint64_t triangles = 0;
+    for (uint32_t b = 0; b < DrawLists::bucketCount; b++) {
+        triangles += drawLists.primitivesIn((view * DrawLists::bucketCount) + b);
+    }
+    return triangles;
+}
+
 auto Renderer::cullResult() const -> CullResult {
     CullResult result = {
         .frame = drawLists.readbackFrame(),
         .instances = drawLists.instanceCount(),
         .cameraCulled = drawLists.cameraCulled(),
-        .cameraTriangles = drawLists.primitivesIn(0) + drawLists.primitivesIn(1),
+        .cameraTriangles = trianglesIn(drawLists, 0),
         .cascadeCount = drawLists.cascadeCount(),
         .cameraVisible = drawLists.cameraVisible(),
         .viewBits = drawLists.viewBits(),
@@ -735,9 +836,7 @@ auto Renderer::cullResult() const -> CullResult {
     for (uint32_t c = 0; c < result.cascadeCount; c++) {
         result.cascadeCulled[c] = drawLists.cascadeCulled(c);
         result.cascadeDrawn[c] = drawLists.cascadeDrawn(c);
-        // Regions per view, single-sided then double-sided; the camera is view 0.
-        auto region = (1 + c) * DrawLists::bucketCount;
-        result.cascadeTriangles[c] = drawLists.primitivesIn(region) + drawLists.primitivesIn(region + 1);
+        result.cascadeTriangles[c] = trianglesIn(drawLists, 1 + c);
     }
     for (const auto& instance : gpuInstances) {
         result.sceneTriangles += instance.indexCount / 3;
@@ -910,13 +1009,13 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     auto cullGroups = drawLists.writeParams(currentFrame, instanceCount, snapshot.cullViewProj, cascades, snapshot.cullEnabled);
     auto drawHandles = drawLists.import(frameGraph, currentFrame);
     instanceCullPass.addPasses(frameGraph, drawHandles, instanceHandle, cullGroups, currentFrame);
-    const auto& shadowData = shadowPass.addPass(frameGraph, atlasExtent, depthFormat, cascades, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene);
-
-    debugCulledInstances = drawLists.cameraCulled();
     if (snapshot.sampler != materialSamplerSettings) {
         applySamplerSettings(snapshot.sampler);
     }
     auto* geometrySet = imageIdx < geometryDescriptorSets.size() ? geometryDescriptorSets[imageIdx] : nullptr;
+    const auto& shadowData = shadowPass.addPass(frameGraph, atlasExtent, depthFormat, cascades, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet);
+
+    debugCulledInstances = drawLists.cameraCulled();
     if (snapshot.depthPrepass) {
         depthPrepass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet);
     }
@@ -1163,6 +1262,11 @@ auto Renderer::destroy() -> void {
         device->destroyTexture(cached.texture);
     }
     textureCache.clear();
+    for (auto& [idx, cached] : opacityTextureCache) {
+        device->destroyTexture(cached.texture);
+    }
+    opacityTextureCache.clear();
+    cutoutCache.clear();
 
     gpuScene.destroy();
     drawLists.destroy();

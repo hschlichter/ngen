@@ -448,9 +448,10 @@ auto ViewScene::fetchAssets() -> void {
         if (it == materialPacks.end()) {
             continue;
         }
-        const auto& texture = it->second.baseColorTexture;
-        if (!texture.empty() && !texturePacks.contains(texture) && !failedAssets.contains(texture) && std::ranges::find(textures, texture) == textures.end()) {
-            textures.push_back(texture);
+        for (const auto& texture : {it->second.baseColorTexture, it->second.opacityTexture}) {
+            if (!texture.empty() && !texturePacks.contains(texture) && !failedAssets.contains(texture) && std::ranges::find(textures, texture) == textures.end()) {
+                textures.push_back(texture);
+            }
         }
     }
     received += textures.size();
@@ -495,6 +496,24 @@ auto ViewScene::material(const std::string& materialAsset, const std::optional<s
         if (!textured && pack->second.hasBaseColor) {
             const auto& c = pack->second.baseColor;
             desc.baseColorFactor = glm::vec4(c[0], c[1], c[2], 1.0f);
+        }
+        const auto& material = pack->second;
+        if (material.opacityThreshold > 0.0f) {
+            desc.opacityThreshold = material.opacityThreshold;
+            desc.opacity = material.opacity;
+            desc.opacityChannel = material.opacityChannel;
+            desc.opacityRaw = material.opacityRaw;
+            if (!material.opacityTexture.empty() && material.opacityTexture == material.baseColorTexture && textured) {
+                desc.opacityFromBaseColor = true;
+            } else if (auto bytes = texturePacks.find(material.opacityTexture); bytes != texturePacks.end()) {
+                if (auto texture = readPackedTexture(bytes->second)) {
+                    desc.opacityWidth = (int) texture->width;
+                    desc.opacityHeight = (int) texture->height;
+                    desc.opacityMipLevels = texture->mipLevels;
+                    const auto* levels = reinterpret_cast<const uint8_t*>(texture->levels.data());
+                    desc.opacityPixels.assign(levels, levels + texture->levels.size());
+                }
+            }
         }
     }
     if (desc.texPixels.empty() && desc.baseColorFactor == glm::vec4(1.0f) && displayColor) {
@@ -603,8 +622,12 @@ auto ViewScene::extract() -> void {
                 return;
             }
             uses.push_back(materialAsset);
-            if (auto pack = materialPacks.find(materialAsset); pack != materialPacks.end() && !pack->second.baseColorTexture.empty()) {
-                uses.push_back(pack->second.baseColorTexture);
+            if (auto pack = materialPacks.find(materialAsset); pack != materialPacks.end()) {
+                for (const auto& texture : {pack->second.baseColorTexture, pack->second.opacityTexture}) {
+                    if (!texture.empty()) {
+                        uses.push_back(texture);
+                    }
+                }
             }
         };
         for (const auto& submesh : meshPack.submeshes) {
