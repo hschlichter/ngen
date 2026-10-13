@@ -557,6 +557,7 @@ auto ViewScene::publish() -> void {
     snapshot->drawsByAsset = drawsByAsset;
     snapshot->assetsByPrim = assetsByPrim;
     snapshot->transforms = transforms;
+    snapshot->cameras = authoredCameras;
     snapshot->unitScale = unitScale;
     std::set<std::string> ids(requestedPacks.begin(), requestedPacks.end());
     for (const auto& [assetId, pack] : meshPacks) {
@@ -795,6 +796,7 @@ auto ViewScene::extract() -> void {
     primPaths.clear();
     materialByAsset.clear();
     transforms.clear();
+    authoredCameras.clear();
     drawsByAsset.clear();
     assetsByPrim.clear();
     static const World emptyWorld;
@@ -840,6 +842,9 @@ auto ViewScene::extract() -> void {
         }
         transforms[visited.path] = {.local = local, .world = worldByDepth[depth], .xformable = entity.xformable, .resetsXformStack = entity.resetsXformStack};
         auto worldTransform = unitScale * worldByDepth[depth];
+        if (entity.typeName == "Camera") {
+            authoredCameras.push_back({.path = visited.path, .worldTransform = worldTransform});
+        }
 
         if (auto light = visited.content->lights.find(visited.id); light != visited.content->lights.end()) {
             if (light->second.shape == LightShape::Distant) {

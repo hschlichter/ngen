@@ -99,6 +99,21 @@ auto Camera::viewMatrix() const -> glm::mat4 {
     return glm::lookAt(position, position + fwd, worldUp);
 }
 
+auto Camera::place(const glm::mat4& cameraTransform) -> void {
+    position = glm::vec3(cameraTransform[3]);
+    auto look = -glm::vec3(cameraTransform[2]);
+    if (glm::dot(look, look) < 1e-12f) {
+        return;
+    }
+    look = glm::normalize(look);
+    // The inverse of forward(): pitch from the up component, yaw from the two horizontal ones.
+    auto axisA = horizontalReference(worldUp);
+    auto axisB = glm::normalize(glm::cross(axisA, worldUp));
+    auto up = std::clamp(glm::dot(look, worldUp), -1.0f, 1.0f);
+    pitch = std::clamp(glm::degrees(std::asin(up)), -89.0f, 89.0f);
+    yaw = glm::degrees(std::atan2(glm::dot(look, axisB), glm::dot(look, axisA)));
+}
+
 auto Camera::frame(const AABB& bounds, float fovRadians) -> void {
     if (!bounds.valid()) {
         return;
@@ -109,5 +124,8 @@ auto Camera::frame(const AABB& bounds, float fovRadians) -> void {
     // small padding so the object isn't right against the screen edge.
     auto dist = std::max(radius / std::sin(fovRadians * 0.5f), 0.01f) * 1.2f;
     position = center - forward() * dist;
-    speed = std::clamp(dist * 0.1f, 1.0f, 500.0f);
+}
+
+auto Camera::scaleSpeed(float steps) -> void {
+    speed = std::clamp(speed * std::pow(1.25f, steps), 0.1f, 5000.0f);
 }

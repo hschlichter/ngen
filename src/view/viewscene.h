@@ -39,6 +39,13 @@ struct EntityTransform {
     bool resetsXformStack = false;
 };
 
+// A camera the scene authors (a UsdGeom Camera prim): its full path and its world transform in metres. It looks down its local -Z with
+// local +Y up, as USD's cameras do.
+struct SceneCamera {
+    std::string path;
+    glm::mat4 worldTransform = glm::mat4(1.0f);
+};
+
 // The scene as the scene thread last published it, for the main thread's queries. Immutable once published.
 struct SceneSnapshot {
     std::string id;
@@ -48,6 +55,7 @@ struct SceneSnapshot {
     std::unordered_map<std::string, std::vector<uint32_t>> drawsByAsset; // asset id to the prims whose draws use it
     std::unordered_map<uint32_t, std::vector<std::string>> assetsByPrim; // a drawn prim to the assets its draws use
     std::map<std::string, EntityTransform> transforms;                   // every prim reached while drawing, by full path
+    std::vector<SceneCamera> cameras;                                    // in visit order
     glm::mat4 unitScale = glm::mat4(1.0f);
     std::vector<std::string> assetIds; // every asset the scene uses: layer packs, meshes, materials, textures, failed ones
     // The World, summarised.
@@ -103,6 +111,8 @@ public:
     auto sceneId() const -> const std::string& { return current->id; }
     auto snapshot() const -> const SceneSnapshot& { return *current; }
     auto renderWorld() const -> const RenderWorld& { return current->drawn; }
+    // The cameras the scene authors, in visit order.
+    auto cameras() const -> const std::vector<SceneCamera>& { return current->cameras; }
     // Moves on each time the renderer's inputs change.
     auto revision() const -> uint64_t { return current->revision; }
     // Every asset the scene uses: its layer packs, meshes, materials and textures.
@@ -246,6 +256,7 @@ private:
     std::unordered_map<std::string, std::vector<uint32_t>> drawsByAsset;
     std::unordered_map<uint32_t, std::vector<std::string>> assetsByPrim;
     std::map<std::string, EntityTransform> transforms;
+    std::vector<SceneCamera> authoredCameras;
     std::map<std::string, glm::mat4> localOverrides; // setLocalTransform's, applied by every extract
     glm::mat4 unitScale = glm::mat4(1.0f);
     uint64_t inputsRevision = 0;

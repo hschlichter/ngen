@@ -176,7 +176,9 @@ auto main(int argc, char* argv[]) -> int {
         } else if (arg.starts_with("--frames=")) {
             maxFrames = std::stoull(flagValue(arg, "--frames="));
         } else if (arg.starts_with("--camera=")) {
-            session.add(0, "camera", flagValue(arg, "--camera="));
+            // A pose, or the path of a camera the scene authors.
+            auto value = flagValue(arg, "--camera=");
+            session.add(0, value.starts_with("/") ? "camera-use" : "camera", value);
         } else if (arg.starts_with("--camera-frame=")) {
             session.add(0, "camera-frame", flagValue(arg, "--camera-frame="));
         } else if (arg.starts_with("--select=")) {
@@ -498,6 +500,14 @@ auto main(int argc, char* argv[]) -> int {
             if (autoFrame) {
                 frameSceneView();
             }
+            // The cameras the scene authors, as poses for the Camera window.
+            auto& sceneCameras = viewUI.cameraWindow().sceneCameras;
+            sceneCameras.clear();
+            for (const auto& authored : scene.cameras()) {
+                Camera placed = cam;
+                placed.place(authored.worldTransform);
+                sceneCameras.push_back({.name = authored.path, .pose = {placed.position.x, placed.position.y, placed.position.z, placed.yaw, placed.pitch}});
+            }
         }
         bool holdScript = (waitForResident && !everResident) || !residentWaiters.empty();
         dueCommands.clear();
@@ -658,6 +668,11 @@ auto main(int argc, char* argv[]) -> int {
             if (ev.type == SDL_EVENT_MOUSE_MOTION && mouseCapture) {
                 cam.handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
                 autoFrame = false;
+            }
+            // Shift and the wheel change the fly speed.
+            if (ev.type == SDL_EVENT_MOUSE_WHEEL && (SDL_GetModState() & SDL_KMOD_SHIFT) != 0) {
+                cam.scaleSpeed(ev.wheel.y);
+                continue;
             }
 
             // A gizmo drag in progress: the new local transform is the view's own opinion on the prim, until the view closes.

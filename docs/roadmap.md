@@ -109,7 +109,10 @@ Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's ma
   sky or ambient term (a constant one until dome lights and IBL, under Multiple lights). Shadows end at a shadow distance since
   [plan_depth_range.md](plan_depth_range.md); a fade before it is deferred there. Trigger: Caldera in the view (it is, now).
 - **Framing Caldera** — framing the whole scene fits a large flat ground disc, so the map frames from about 60 km with the island small in the
-  middle; `--camera-frame=<district>` frames a district. Options: frame the island's prims by default, or author the default camera in the map.
+  middle. Authored cameras are read (the Camera window, `--camera=/cameras/<name>`; Caldera authors 13, per district, none of the whole
+  island). Open: a default camera, the one a `UsdRenderSettings` prim's `camera` names (stage metadata `renderSettingsPrimPath`), which needs
+  that metadata and the relationship in the scene pack; and an authored one for Caldera. Also open: a camera's field of view (focal length,
+  aperture) and roll.
 - **Swapchain format** — the backbuffer takes whatever format the driver lists first: headless runs get UNORM, a window sRGB, so headless
   screenshots don't match the window's brightness. Needs a decision (the imgui colours are corrected for sRGB targets).
 - Smaller items with triggers: octahedral normals, front-to-back sort, de-interleaved/16-bit vertex streams, 16-bit indices.

@@ -6,6 +6,7 @@
 //
 //   camera x,y,z,yaw,pitch        set the camera pose (degrees)
 //   camera-frame scene|/prim/path frame the whole scene or one prim
+//   camera-use /camera/path       place the camera where an authored camera is
 //   select /prim/path             select a prim
 //   translate /prim/path dx,dy,dz move a prim by an offset in its local space (preview edit, no layer write)
 //   view lit|albedo|normals|depth|shadowfactor|shadowmap|shadowuv|worldpos

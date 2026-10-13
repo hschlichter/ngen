@@ -92,6 +92,10 @@ auto parseTarget(const std::string& args) -> std::expected<Json, std::string> {
     return Json{{"target", args}};
 }
 
+auto parseCameraPath(const std::string& args) -> std::expected<Json, std::string> {
+    return Json{{"camera", args}};
+}
+
 auto parsePrim(const std::string& args) -> std::expected<Json, std::string> {
     return Json{{"prim", args}};
 }
@@ -336,6 +340,7 @@ auto parseCapture(const std::string& args) -> std::expected<Json, std::string> {
 constexpr std::array scriptVerbs = {
     ScriptVerb{"camera", "view.camera.set", parseCamera},
     ScriptVerb{"camera-frame", "view.camera.frame", parseTarget},
+    ScriptVerb{"camera-use", "view.camera.use", parseCameraPath},
     ScriptVerb{"select", "view.select", parsePrim},
     ScriptVerb{"translate", "view.translate", parseTranslate},
     ScriptVerb{"pick", "view.pick", parsePick},
@@ -398,6 +403,34 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
     registry.add({.name = "view.camera.get", .summary = "The camera's position and yaw/pitch.", .result = "{x, y, z, yaw, pitch}"}, [&view](const Json&, RpcResponder responder) {
         responder.respond({{"x", view.cam.position.x}, {"y", view.cam.position.y}, {"z", view.cam.position.z}, {"yaw", view.cam.yaw}, {"pitch", view.cam.pitch}});
     });
+    registry.add({.name = "view.camera.list", .summary = "The cameras the scene authors, in scene order.", .result = "{cameras: [{path, x, y, z, yaw, pitch}]}"},
+                 [&view](const Json&, RpcResponder responder) {
+                     auto list = Json::array();
+                     for (const auto& camera : view.scene.cameras()) {
+                         Camera placed = view.cam;
+                         placed.place(camera.worldTransform);
+                         list.push_back({{"path", camera.path}, {"x", placed.position.x}, {"y", placed.position.y}, {"z", placed.position.z}, {"yaw", placed.yaw}, {"pitch", placed.pitch}});
+                     }
+                     responder.respond({{"cameras", list}});
+                 });
+    registry.add(
+        {
+            .name = "view.camera.use",
+            .summary = "Place the camera where a camera the scene authors is, looking where it looks (its roll is dropped).",
+            .params = {requiredField("camera", RpcType::String, "the camera's prim path")},
+            .result = "{}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto path = p["camera"].get<std::string>();
+            for (const auto& camera : view.scene.cameras()) {
+                if (camera.path == path) {
+                    view.cam.place(camera.worldTransform);
+                    responder.respond(Json::object());
+                    return;
+                }
+            }
+            responder.fail(rpc::appError, std::format("the scene authors no camera at '{}'", path));
+        });
     registry.add(
         {
             .name = "view.camera.frame",

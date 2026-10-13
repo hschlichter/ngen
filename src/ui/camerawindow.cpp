@@ -5,6 +5,8 @@
 
 #include <imgui.h>
 
+#include <algorithm>
+#include <cfloat>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -73,6 +75,8 @@ void drawCameraWindow(bool& show, Camera& camera, CameraWindowState& state) {
         ImGui::SetClipboardText(("--camera=" + poseText).c_str());
     }
 
+    ImGui::Text("Fly speed: %.1f m/s (Shift + wheel to change)", camera.speed);
+
     ImGui::Separator();
     ImGui::SetNextItemWidth(-80.0f);
     bool jump = ImGui::InputText("##jump", state.jumpText, sizeof(state.jumpText), ImGuiInputTextFlags_EnterReturnsTrue);
@@ -90,6 +94,29 @@ void drawCameraWindow(bool& show, Camera& camera, CameraWindowState& state) {
     ImGui::SameLine();
     if (ImGui::Button("Frame selected")) {
         state.requestFrameSelected = true;
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Scene cameras (%zu)", state.sceneCameras.size());
+    if (state.sceneCameras.empty()) {
+        ImGui::TextDisabled("(the scene authors none)");
+    } else {
+        // Eight rows high, scrolling past that.
+        auto rows = (float) std::min<size_t>(state.sceneCameras.size(), 8);
+        auto height = (rows * ImGui::GetTextLineHeightWithSpacing()) + (ImGui::GetStyle().FramePadding.y * 2.0f);
+        if (ImGui::BeginListBox("##sceneCameras", ImVec2(-FLT_MIN, height))) {
+            for (const auto& c : state.sceneCameras) {
+                ImGui::PushID(c.name.c_str());
+                if (ImGui::Selectable(c.name.c_str())) {
+                    applyPose(camera, c.pose);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", formatCameraPose(c.pose).c_str());
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndListBox();
+        }
     }
 
     ImGui::Separator();

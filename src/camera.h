@@ -29,8 +29,12 @@ struct Camera {
     [[nodiscard]] auto viewMatrix() const -> glm::mat4;
     auto snapToAxis(int axis, bool negative) -> void;
 
-    // Move the camera so `bounds` fills the view, keeping current yaw/pitch.
+    // Move the camera so `bounds` fills the view, keeping current yaw/pitch and fly speed.
     // Distance is sized to the bounds' diagonal radius and the given vertical FOV.
-    // The fly speed follows: a tenth of the distance per second, 1 to 500 m/s.
     auto frame(const AABB& bounds, float fovRadians) -> void;
+    // Scale the fly speed by 1.25 per step (negative steps slow it down), 0.1 to 5000 m/s.
+    auto scaleSpeed(float steps) -> void;
+    // Move the camera to where a camera transform is, looking down its local -Z as USD's cameras do. Roll is dropped (the view's up stays
+    // worldUp), and pitch is clamped as mouse look clamps it.
+    auto place(const glm::mat4& cameraTransform) -> void;
 };
