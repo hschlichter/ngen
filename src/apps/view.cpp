@@ -669,8 +669,8 @@ auto main(int argc, char* argv[]) -> int {
                 cam.handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
                 autoFrame = false;
             }
-            // Shift and the wheel change the fly speed.
-            if (ev.type == SDL_EVENT_MOUSE_WHEEL && (SDL_GetModState() & SDL_KMOD_SHIFT) != 0) {
+            // The wheel changes the fly speed.
+            if (ev.type == SDL_EVENT_MOUSE_WHEEL) {
                 cam.scaleSpeed(ev.wheel.y);
                 continue;
             }

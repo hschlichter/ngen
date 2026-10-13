@@ -271,7 +271,7 @@ Or launch without arguments and use File > Open.
 | WASD | Move camera |
 | Q / E | Move down / up |
 | Shift | Sprint (5× speed) |
-| Shift + mouse wheel | Fly speed up / down (×1.25 per notch; 5 m/s at start) |
+| Mouse wheel | Fly speed up / down (×1.25 per notch; 5 m/s at start) |
 | Right mouse button | Hold to look around |
 | Left click | Pick object (Select tool) or grab gizmo handle (Translate / Rotate / Scale) |
 | **R** | Select parent of current selection |

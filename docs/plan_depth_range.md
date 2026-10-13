@@ -72,7 +72,7 @@ Locked 2026-10-13, all four as proposed.
    - Rejected: leaving it to the user's speed setting.
    - Pushback welcome: this one is taste, and it changes Sponza's speed when it is framed.
    - **Reverted 2026-10-13**: framed at Caldera's scale the speed was far too fast to control. The fly speed is a fixed 5 m/s again, and
-     Shift with the mouse wheel scales it (`Camera::scaleSpeed`).
+     the mouse wheel scales it (`Camera::scaleSpeed`).
 
 ## Steps
 

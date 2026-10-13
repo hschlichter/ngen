@@ -75,7 +75,7 @@ void drawCameraWindow(bool& show, Camera& camera, CameraWindowState& state) {
         ImGui::SetClipboardText(("--camera=" + poseText).c_str());
     }
 
-    ImGui::Text("Fly speed: %.1f m/s (Shift + wheel to change)", camera.speed);
+    ImGui::Text("Fly speed: %.1f m/s (mouse wheel to change)", camera.speed);
 
     ImGui::Separator();
     ImGui::SetNextItemWidth(-80.0f);
