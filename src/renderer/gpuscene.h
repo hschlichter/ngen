@@ -37,6 +37,7 @@ struct GpuInstance {
     bool doubleSided = false;   // drawn with the cull-none pipeline
     bool cutout = false;        // its material is cutout: drawn by the cutout pipelines
     bool primHasCutout = false; // some submesh of its prim is cutout: the shadow pass draws the prim per submesh
+    uint32_t lodLevel = 0;      // the drawn level + 1 of the LOD root above it, 0 under none (RenderMeshInstance::lodLevel)
     AABB worldBounds;           // culling input; invalid bounds are always visible
     bool alive = false;         // a dead slot is never drawn
 };
@@ -60,7 +61,7 @@ struct GpuInstanceRecord {
     glm::vec3 boundsMin = glm::vec3(0.0f);
     uint32_t flags = 0;
     glm::vec3 boundsMax = glm::vec3(0.0f);
-    uint32_t pad = 0;
+    uint32_t lodLevel = 0; // GpuInstance::lodLevel, for the LOD level view
 };
 static_assert(sizeof(GpuInstanceRecord) == 112);
 

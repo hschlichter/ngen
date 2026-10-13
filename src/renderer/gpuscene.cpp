@@ -753,6 +753,7 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
                 .boundsMin = inst.worldBounds.min,
                 .flags = flags,
                 .boundsMax = inst.worldBounds.max,
+                .lodLevel = inst.lodLevel,
             };
         }
         RhiBufferCopy region = {

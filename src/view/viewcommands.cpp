@@ -34,7 +34,7 @@ namespace {
 
 using rpc::Json;
 
-constexpr std::array<const char*, 10> viewModeNames = {"lit", "albedo", "normals", "depth", "shadowfactor", "shadowmap", "shadowuv", "worldpos", "miplevel", "cascades"};
+constexpr std::array<const char*, 11> viewModeNames = {"lit", "albedo", "normals", "depth", "shadowfactor", "shadowmap", "shadowuv", "worldpos", "miplevel", "cascades", "lodlevel"};
 
 auto enumValues(auto names) -> std::vector<std::string> {
     std::vector<std::string> out;
@@ -156,6 +156,10 @@ auto parsePurposes(const std::string& args) -> std::expected<Json, std::string> 
         params[key] = value == "on";
     }
     return params;
+}
+
+auto parseLodRoot(const std::string& args) -> std::expected<Json, std::string> {
+    return Json{{"root", args}};
 }
 
 auto parseLod(const std::string& args) -> std::expected<Json, std::string> {
@@ -349,6 +353,7 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"goto-asset", "view.gotoAsset", parseGoToAsset},
     ScriptVerb{"assets-of", "view.assetsOf", parsePrim},
     ScriptVerb{"lod", "view.lod.set", parseLod},
+    ScriptVerb{"lod-reset", "view.lod.reset", parseLodRoot},
     ScriptVerb{"wait-resident", "view.waitResident", parseNothing},
     ScriptVerb{"view", "view.mode", parseViewMode},
     ScriptVerb{"window", "view.window", parseWindow},
@@ -549,6 +554,17 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
         },
         [&view](const Json& p, RpcResponder responder) {
             view.scene.setLodLevel(p["root"].get<std::string>(), (uint32_t) std::max(0, p["level"].get<int>()));
+            view.residentWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
+        });
+    registry.add(
+        {
+            .name = "view.lod.reset",
+            .summary = "Puts a LOD root back to its default level (lod:default:index). Answers once the scene is resident with it drawn.",
+            .params = {requiredField("root", RpcType::String, "the path of the prim with LODRootAPI")},
+            .result = "{}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            view.scene.resetLodLevel(p["root"].get<std::string>());
             view.residentWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
         });
     registry.add(
@@ -949,6 +965,22 @@ auto sceneRecord(const ViewContext& view) -> Json {
     };
 }
 
+auto lodRecord(const ViewContext& view) -> Json {
+    auto roots = Json::array();
+    for (const auto& root : view.scene.lodRoots()) {
+        roots.push_back({
+            {"path", root.path},
+            {"levels", root.levels},
+            {"default", root.defaultIndex},
+            {"wanted", root.wanted},
+            {"drawn", root.drawn ? Json(*root.drawn) : Json(nullptr)},
+            {"loaded", root.loaded},
+            {"setByHand", root.setByHand},
+        });
+    }
+    return {{"roots", roots}};
+}
+
 auto assetsRecord(const ViewContext& view) -> Json {
     auto stats = view.assets.stats();
     auto assets = Json::array();
@@ -1130,6 +1162,9 @@ auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext
     });
     records.add("scene", "the open scene: its layer stack, up axis and units, prims (instances expanded), prototypes, draws, lights and LOD levels set", [&view](RpcResponder responder) {
         responder.respond(sceneRecord(view));
+    });
+    records.add("lod", "every LOD root drawn: its levels, the level it defaults to, wants and draws, the levels loaded, and whether set by hand", [&view](RpcResponder responder) {
+        responder.respond(lodRecord(view));
     });
     records.add("assets", "what the view asked the asset server for and received: totals, and every asset with its state, size and times", [&view](RpcResponder responder) {
         responder.respond(assetsRecord(view));

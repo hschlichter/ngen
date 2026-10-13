@@ -508,6 +508,20 @@ auto main(int argc, char* argv[]) -> int {
                 placed.place(authored.worldTransform);
                 sceneCameras.push_back({.name = authored.path, .pose = {placed.position.x, placed.position.y, placed.position.z, placed.yaw, placed.pitch}});
             }
+            // The LOD roots, for the LOD window.
+            auto& lodRows = viewUI.lodWindow().rows;
+            lodRows.clear();
+            for (const auto& root : scene.lodRoots()) {
+                lodRows.push_back({
+                    .path = root.path,
+                    .levels = root.levels,
+                    .defaultIndex = root.defaultIndex,
+                    .wanted = root.wanted,
+                    .drawn = root.drawn ? (int32_t) *root.drawn : -1,
+                    .loaded = root.loaded,
+                    .setByHand = root.setByHand,
+                });
+            }
         }
         bool holdScript = (waitForResident && !everResident) || !residentWaiters.empty();
         dueCommands.clear();
@@ -906,6 +920,35 @@ auto main(int argc, char* argv[]) -> int {
             if (camWindow.requestFrameSelected) {
                 camWindow.requestFrameSelected = false;
                 frameSelected();
+            }
+        }
+        {
+            // The LOD window: the levels it asked for, and the root it selects or frames; it highlights the root at or above the selection.
+            auto& lodWindow = viewUI.lodWindow();
+            for (const auto& request : std::exchange(lodWindow.levelRequests, {})) {
+                if (request.level) {
+                    scene.setLodLevel(request.root, *request.level);
+                } else {
+                    scene.resetLodLevel(request.root);
+                }
+            }
+            if (auto path = std::exchange(lodWindow.selectRequested, std::nullopt)) {
+                selectedPath = *path;
+            }
+            if (auto path = std::exchange(lodWindow.frameRequested, std::nullopt)) {
+                auto bb = scene.bounds(*path);
+                if (bb.valid()) {
+                    cam.frame(bb, glm::radians(45.0f));
+                }
+            }
+            lodWindow.selectedRoot.clear();
+            if (!selectedPath.empty()) {
+                for (const auto& row : lodWindow.rows) {
+                    bool atOrAbove = selectedPath == row.path || selectedPath.starts_with(row.path + "/");
+                    if (atOrAbove && row.path.size() > lodWindow.selectedRoot.size()) {
+                        lodWindow.selectedRoot = row.path;
+                    }
+                }
             }
         }
         ImGuiFrameSnapshot imguiSnapshot;

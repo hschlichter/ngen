@@ -10,6 +10,7 @@
 #include "framegraphdebug.h"
 #include "gpuscenewindow.h"
 #include "introspectionflags.h"
+#include "lodwindow.h"
 #include "memorywindow.h"
 #include "performancewindow.h"
 #include "renderdebugwindow.h"
@@ -136,7 +137,7 @@ public:
 
     // grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa, cascadefrusta; false if the name is unknown.
     auto setOverlay(std::string_view name, bool on) -> bool;
-    // Opens or closes an introspection window by name (memory, capture, framedebugger, gpuscene, counters, shaders, culling, assets).
+    // Opens or closes an introspection window by name (memory, capture, framedebugger, gpuscene, counters, shaders, culling, assets, lod).
     // Returns false for an unknown name.
     auto setIntrospectionWindow(std::string_view name, bool on) -> bool;
     // Screenshot requested from the UI (button or F12); main hands it to the renderer.
@@ -170,6 +171,7 @@ public:
     // What the status bar shows next frame; the application sets it each frame.
     auto setStatusBar(const StatusBarData& data) -> void { statusBarData = data; }
     auto cameraWindow() -> CameraWindowState& { return cameraState; }
+    auto lodWindow() -> LodWindowState& { return lodState; }
     auto setBookmarkPath(std::string path) -> void {
         cameraState.bookmarkPath = std::move(path);
         cameraState.loaded = false;
@@ -216,6 +218,8 @@ private:
     bool showCameraWindow = false;
     bool showCullingWindow = false;
     bool showAssetsWindow = false;
+    bool showLodWindow = false;
+    LodWindowState lodState;
     std::vector<AssetLogEntry> assetLog;
     AssetsWindowState assetsState;
     uint32_t cullStatInstances = 0;

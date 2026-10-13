@@ -16,7 +16,7 @@ struct Instance {
     vec3 boundsMin;
     uint flags;
     vec3 boundsMax;
-    uint pad;
+    uint lodLevel;
 };
 layout(std430, set = 0, binding = 2) readonly buffer Instances {
     Instance data[];
@@ -39,6 +39,7 @@ layout(location = 1) in vec3 fragColor;
 layout(location = 2) in vec2 fragTexCoord;
 layout(location = 3) flat in uint fragTexture;
 layout(location = 4) flat in uint fragInstance; // the instance index + 1
+layout(location = 5) flat in uint fragLodLevel;
 
 layout(location = 0) out vec4 outAlbedo;
 layout(location = 1) out vec4 outNormal;
@@ -57,6 +58,7 @@ void main() {
     if (dot(n, n) < 0.0001) {
         n = vec3(0.0, 1.0, 0.0);
     }
-    outNormal = vec4(normalize(n) * 0.5 + 0.5, 1.0);
+    // Alpha carries the drawn LOD level + 1 (0 under no LOD root), for the LOD level view.
+    outNormal = vec4(normalize(n) * 0.5 + 0.5, float(fragLodLevel));
     outInstance = fragInstance;
 }

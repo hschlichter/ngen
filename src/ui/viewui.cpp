@@ -45,6 +45,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         .showCamera = showCameraWindow,
         .showCulling = showCullingWindow,
         .showAssets = showAssetsWindow,
+        .showLod = showLodWindow,
         .introspection = introspectionFlags,
         .requestQuit = requestQuit,
     };
@@ -143,6 +144,10 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     {
         PROFILE_ZONE("AssetsWindow");
         drawAssetsWindow(showAssetsWindow, assetLog, assetsState);
+    }
+    {
+        PROFILE_ZONE("LodWindow");
+        drawLodWindow(showLodWindow, lodState);
     }
     {
         PROFILE_ZONE("CullingWindow");
@@ -301,6 +306,8 @@ auto ViewUI::setIntrospectionWindow(std::string_view name, bool on) -> bool {
         showCullingWindow = on;
     } else if (name == "assets") {
         showAssetsWindow = on;
+    } else if (name == "lod") {
+        showLodWindow = on;
     } else {
         return false;
     }

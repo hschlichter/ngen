@@ -184,8 +184,9 @@ Tables:
   - **Rewritten when a texture it names takes its slot.** Until then it samples the white texture, and a cutout whose opacity texture is still
     uploading draws opaque.
 - **Instance buffer.** One `GpuInstanceRecord` (112 bytes, std430) per draw slot.
-  - **Contents**: model matrix, material entry, mesh index, submesh `indexOffset` and `indexCount`, world bounds, and flags (`primFirst`,
-    `doubleSided`, `boundsValid`, `cutout`, `primHasCutout`).
+  - **Contents**: model matrix, material entry, mesh index, submesh `indexOffset` and `indexCount`, world bounds, flags (`primFirst`,
+    `doubleSided`, `boundsValid`, `cutout`, `primHasCutout`), and the drawn LOD level + 1 of the LOD root above it (0 under none), which the
+    geometry pass writes to the normal target's alpha for the LOD level view.
   - **Slots.** A draw keeps its slot while it exists. A removed one is dead (mesh index past the table, so culling never draws it) until a new draw
     takes it.
   - **Reading it.** Vertex shaders read it at `gl_InstanceIndex`, and every draw sets `firstInstance` to the slot.

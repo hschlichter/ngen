@@ -53,6 +53,7 @@ enum class GBufferView : int {
     WorldPos,
     MipLevel,
     Cascades,
+    LodLevel,
 };
 
 struct LightingPassData {

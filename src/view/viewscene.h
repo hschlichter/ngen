@@ -46,6 +46,18 @@ struct SceneCamera {
     glm::mat4 worldTransform = glm::mat4(1.0f);
 };
 
+// A LOD root as drawn: its full path (instances expanded), its levels' names finest first, the level it defaults to, wants and draws, and the
+// levels loaded. `drawn` is empty while no level is loaded.
+struct SceneLodRoot {
+    std::string path;
+    std::vector<std::string> levels;
+    uint32_t defaultIndex = 0;
+    uint32_t wanted = 0;
+    std::optional<uint32_t> drawn;
+    std::vector<uint32_t> loaded;
+    bool setByHand = false;
+};
+
 // The scene as the scene thread last published it, for the main thread's queries. Immutable once published.
 struct SceneSnapshot {
     std::string id;
@@ -56,6 +68,7 @@ struct SceneSnapshot {
     std::unordered_map<uint32_t, std::vector<std::string>> assetsByPrim; // a drawn prim to the assets its draws use
     std::map<std::string, EntityTransform> transforms;                   // every prim reached while drawing, by full path
     std::vector<SceneCamera> cameras;                                    // in visit order
+    std::vector<SceneLodRoot> lodRoots;                                  // every LOD root reached while drawing, in visit order
     glm::mat4 unitScale = glm::mat4(1.0f);
     std::vector<std::string> assetIds; // every asset the scene uses: layer packs, meshes, materials, textures, failed ones
     // The World, summarised.
@@ -88,6 +101,8 @@ public:
     auto open(const std::string& sceneId) -> void;
     // The level a LOD root wants, by its full path; loads it.
     auto setLodLevel(const std::string& rootPath, uint32_t level) -> void;
+    // Puts a LOD root back to its default level (lod:default:index).
+    auto resetLodLevel(const std::string& rootPath) -> void;
     // Whether prims of a purpose are drawn: default and render always are, guide and proxy when turned on.
     auto setPurposeShown(Purpose purpose, bool shown) -> void;
     auto purposeShown(Purpose purpose) const -> bool;
@@ -113,6 +128,8 @@ public:
     auto renderWorld() const -> const RenderWorld& { return current->drawn; }
     // The cameras the scene authors, in visit order.
     auto cameras() const -> const std::vector<SceneCamera>& { return current->cameras; }
+    // The LOD roots reached while drawing, in visit order.
+    auto lodRoots() const -> const std::vector<SceneLodRoot>& { return current->lodRoots; }
     // Moves on each time the renderer's inputs change.
     auto revision() const -> uint64_t { return current->revision; }
     // Every asset the scene uses: its layer packs, meshes, materials and textures.
@@ -150,7 +167,7 @@ private:
     };
     struct LodRequest {
         std::string root;
-        uint32_t level = 0;
+        std::optional<uint32_t> level; // none: back to the root's default
     };
     struct PurposeRequest {
         Purpose purpose = Purpose::Default;
@@ -257,6 +274,7 @@ private:
     std::unordered_map<uint32_t, std::vector<std::string>> assetsByPrim;
     std::map<std::string, EntityTransform> transforms;
     std::vector<SceneCamera> authoredCameras;
+    std::vector<SceneLodRoot> drawnLodRoots;
     std::map<std::string, glm::mat4> localOverrides; // setLocalTransform's, applied by every extract
     glm::mat4 unitScale = glm::mat4(1.0f);
     uint64_t inputsRevision = 0;

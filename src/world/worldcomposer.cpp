@@ -984,6 +984,10 @@ auto WorldComposer::setLodLevel(const std::string& rootPath, uint32_t level) -> 
     m_impl->lodLevels[rootPath] = level;
 }
 
+auto WorldComposer::resetLodLevel(const std::string& rootPath) -> void {
+    m_impl->lodLevels.erase(rootPath);
+}
+
 auto WorldComposer::world() const -> const World& {
     return m_impl->world;
 }

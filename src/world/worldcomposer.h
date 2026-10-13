@@ -41,6 +41,8 @@ public:
     // The level a LOD root wants, by its full path (instances expanded); lod:default:index until set. The root's coarsest level stays
     // loaded. Takes effect at the next compose, which says what the level needs.
     auto setLodLevel(const std::string& rootPath, uint32_t level) -> void;
+    // Forgets a level set by hand, so the root wants lod:default:index again. Takes effect at the next compose.
+    auto resetLodLevel(const std::string& rootPath) -> void;
 
     auto world() const -> const World&;
     // What the last compose couldn't compose, one line per arc or prim: a reference with no default prim to name, a target that isn't

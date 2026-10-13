@@ -31,6 +31,7 @@ struct ViewMenuBarState {
     bool& showCamera;
     bool& showCulling;
     bool& showAssets;
+    bool& showLod;
     IntrospectionFlags& introspection;
     bool& requestQuit;
 };

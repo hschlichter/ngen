@@ -147,8 +147,18 @@ vec3 sampleBuffer(int mode, vec2 uv) {
         int j = min(i + 1, 7);
         return mix(ramp[i], ramp[j], clamp(lod - float(i), 0.0, 1.0));
     }
-    vec3 normal = texture(gbufferNormal, uv).rgb * 2.0 - 1.0;
+    vec4 normalSample = texture(gbufferNormal, uv);
+    vec3 normal = normalSample.rgb * 2.0 - 1.0;
     if (mode == 2) return normalize(normal) * 0.5 + 0.5;
+    if (mode == 10) {
+        // The drawn LOD level, from the normal target's alpha (level + 1, 0 under no LOD root): level 0 red, 1 orange, 2 yellow, 3 green,
+        // 4 cyan, 5 blue, 6 magenta, 7 and up white; grey under no LOD root. Dimmed by the sun so shapes stay readable.
+        const vec3 ramp[8] = vec3[](vec3(1.0, 0.0, 0.0), vec3(1.0, 0.5, 0.0), vec3(1.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 1.0), vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 1.0), vec3(1.0, 1.0, 1.0));
+        int tag = int(normalSample.a + 0.5);
+        vec3 color = tag == 0 ? vec3(0.5) : ramp[min(tag - 1, 7)];
+        float diffuse = max(dot(normalize(normal), normalize(light.lightDirection.xyz)), 0.0);
+        return color * (0.35 + 0.65 * diffuse);
+    }
 
     float depth = texture(gbufferDepth, uv).r;
     vec3 worldPos = reconstructWorld(uv, depth);

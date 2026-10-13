@@ -28,6 +28,7 @@ struct RenderMeshInstance {
     bool doubleSided = false;
     bool cutout = false;        // its material is cutout: drawn by the cutout pipelines
     bool primHasCutout = false; // some submesh of its prim is cutout: the shadow pass draws the prim per submesh
+    uint32_t lodLevel = 0;      // the drawn level + 1 of the nearest LOD root above its prim, 0 under none; for the LOD level view
     bool alive = true;
 
     auto operator==(const RenderMeshInstance&) const -> bool = default;

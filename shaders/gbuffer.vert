@@ -16,7 +16,7 @@ struct Instance {
     vec3 boundsMin;
     uint flags;
     vec3 boundsMax;
-    uint pad;
+    uint lodLevel; // drawn LOD level + 1, 0 under no LOD root
 };
 layout(std430, set = 0, binding = 2) readonly buffer Instances {
     Instance data[];
@@ -45,6 +45,8 @@ layout(location = 2) out vec2 fragTexCoord;
 layout(location = 3) flat out uint fragTexture;
 // The instance index + 1, for the id target picking reads; 0 is nothing drawn.
 layout(location = 4) flat out uint fragInstance;
+// The drawn LOD level + 1 of the LOD root above it, 0 under none, for the LOD level view.
+layout(location = 5) flat out uint fragLodLevel;
 
 // Invariant so the depth prepass (depthonly.vert, same expression) produces identical depth.
 invariant gl_Position;
@@ -53,6 +55,7 @@ void main() {
     mat4 model = instances.data[gl_InstanceIndex].model;
     fragTexture = materials.data[instances.data[gl_InstanceIndex].material].baseColorTexture;
     fragInstance = uint(gl_InstanceIndex) + 1u;
+    fragLodLevel = instances.data[gl_InstanceIndex].lodLevel;
     gl_Position = ubo.proj * ubo.view * model * vec4(inPosition, 1.0);
     // Normalise here: the model matrix carries the scene's unit scale (Kitchen_set is
     // authored in cm under a 0.01 root scale), which would leave a near-zero normal for

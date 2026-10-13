@@ -95,6 +95,10 @@ auto ViewScene::setLodLevel(const std::string& rootPath, uint32_t level) -> void
     post(LodRequest{.root = rootPath, .level = level});
 }
 
+auto ViewScene::resetLodLevel(const std::string& rootPath) -> void {
+    post(LodRequest{.root = rootPath, .level = std::nullopt});
+}
+
 auto ViewScene::setPurposeShown(Purpose purpose, bool shown) -> void {
     if (purpose == Purpose::Default || purpose == Purpose::Render) {
         return;
@@ -202,7 +206,11 @@ auto ViewScene::apply(Request& request) -> void {
         applyOpen(open->id);
     } else if (auto* lod = std::get_if<LodRequest>(&request)) {
         if (composer) {
-            composer->setLodLevel(lod->root, lod->level);
+            if (lod->level) {
+                composer->setLodLevel(lod->root, *lod->level);
+            } else {
+                composer->resetLodLevel(lod->root);
+            }
             composeNeeded = true;
         }
     } else if (auto* purpose = std::get_if<PurposeRequest>(&request)) {
@@ -558,6 +566,7 @@ auto ViewScene::publish() -> void {
     snapshot->assetsByPrim = assetsByPrim;
     snapshot->transforms = transforms;
     snapshot->cameras = authoredCameras;
+    snapshot->lodRoots = drawnLodRoots;
     snapshot->unitScale = unitScale;
     std::set<std::string> ids(requestedPacks.begin(), requestedPacks.end());
     for (const auto& [assetId, pack] : meshPacks) {
@@ -797,6 +806,7 @@ auto ViewScene::extract() -> void {
     materialByAsset.clear();
     transforms.clear();
     authoredCameras.clear();
+    drawnLodRoots.clear();
     drawsByAsset.clear();
     assetsByPrim.clear();
     static const World emptyWorld;
@@ -818,13 +828,17 @@ auto ViewScene::extract() -> void {
 
     // World transforms by depth: an entity's parent is the last entity visited one level up.
     std::vector<glm::mat4> worldByDepth = {glm::mat4(1.0f)};
+    // The drawn level + 1 of the nearest LOD root at or above each depth, 0 under none (RenderMeshInstance::lodLevel).
+    std::vector<uint32_t> lodLevelByDepth = {0};
     bool hasDistantLight = false;
     w.visit([&](const VisitedEntity& visited) {
         const auto& entity = *visited.entity;
         auto depth = pathDepth(visited.path);
         if (worldByDepth.size() <= depth) {
             worldByDepth.resize(depth + 1);
+            lodLevelByDepth.resize(depth + 1);
         }
+        lodLevelByDepth[depth] = lodLevelByDepth[depth - 1];
         const auto& parentWorld = worldByDepth[depth - 1];
         glm::mat4 local(visited.entity->localTransform);
         if (auto authored = localOverrides.find(visited.path); authored != localOverrides.end() && entity.xformable) {
@@ -844,6 +858,21 @@ auto ViewScene::extract() -> void {
         auto worldTransform = unitScale * worldByDepth[depth];
         if (entity.typeName == "Camera") {
             authoredCameras.push_back({.path = visited.path, .worldTransform = worldTransform});
+        }
+        if (auto lod = visited.content->lodRoots.find(visited.id); lod != visited.content->lodRoots.end()) {
+            const auto& root = lod->second;
+            SceneLodRoot row;
+            row.path = visited.path;
+            for (EntityId level : root.levels) {
+                row.levels.push_back(visited.content->entities[level].name);
+            }
+            row.defaultIndex = root.defaultIndex;
+            row.wanted = w.wantedLevel(visited.path, root);
+            row.drawn = w.drawnLevel(visited.path, root);
+            row.loaded = root.loaded;
+            row.setByHand = w.lodLevels.contains(visited.path);
+            lodLevelByDepth[depth] = row.drawn ? *row.drawn + 1 : 0;
+            drawnLodRoots.push_back(std::move(row));
         }
 
         if (auto light = visited.content->lights.find(visited.id); light != visited.content->lights.end()) {
@@ -951,6 +980,7 @@ auto ViewScene::extract() -> void {
                     .doubleSided = meshData->doubleSided,
                     .cutout = materialData != nullptr && materialData->cutout(),
                     .primHasCutout = primHasCutout,
+                    .lodLevel = lodLevelByDepth[depth],
                 },
             });
         }

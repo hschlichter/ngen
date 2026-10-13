@@ -485,6 +485,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
             .doubleSided = inst.doubleSided,
             .cutout = inst.cutout,
             .primHasCutout = inst.primHasCutout,
+            .lodLevel = inst.lodLevel,
             .worldBounds = inst.worldBounds,
             .alive = inst.alive,
         };

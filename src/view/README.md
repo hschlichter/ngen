@@ -57,8 +57,14 @@ The inputs persist across rebuilds:
   aperture aren't read (the packer doesn't keep them), so the view's 45° field of view stays.
 - **The engine's light**: when the scene has no distant light, one is added, upper-front-right in the scene's frame (intensity 1, colour
   (1, 0.95, 0.88), angle 0.53).
-- **Changing what is drawn**: `setLodLevel` (the `lod` verb, `view.lod.set`) and `setPurposeShown` are requests: the scene thread
-  composes, fetches what the change needs and rebuilds, and the renderer uploads the changes over the next frames within its budget.
+- **Changing what is drawn**: `setLodLevel` (the `lod` verb, `view.lod.set`), `resetLodLevel` (`lod-reset`, `view.lod.reset`: back to the
+  root's default) and `setPurposeShown` are requests: the scene thread composes, fetches what the change needs and rebuilds, and the
+  renderer uploads the changes over the next frames within its budget.
+- **LOD roots**: every LOD root reached while drawing (`lodRoots()`, the `lod` record): its levels, the level it defaults to, wants and
+  draws, the levels loaded, and whether its level was set by hand. Each draw carries the drawn level of the nearest LOD root above it,
+  which the `lodlevel` view colours by. The LOD window lists the roots with a level picker per row, "Set shown" for every row its filter
+  shows (default, coarsest or one level), a click to select a root and a double-click to frame it; it highlights the root at or above the
+  selection, and marks a root still loading the level it wants.
 - **Names**: draw instances and lights carry a prim index; `primPath` turns it into the entity's full path, for the render debugger, the
   frame debugger, the GPU scene window and the dumps.
 

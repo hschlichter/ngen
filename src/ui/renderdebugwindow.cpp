@@ -336,7 +336,7 @@ auto drawFrameTab(const RenderDebugSnapshot& s) -> void {
 
 auto drawViewTab(RenderDebugViewFlags& view) -> void {
     ImGui::TextUnformatted("Buffer view");
-    static const char* modes[] = {"Lit", "Albedo", "Normals", "Depth", "Shadow factor", "Shadow map", "Shadow UV", "World position", "Mip level", "Cascades"};
+    static const char* modes[] = {"Lit", "Albedo", "Normals", "Depth", "Shadow factor", "Shadow map", "Shadow UV", "World position", "Mip level", "Cascades", "LOD level"};
     for (int i = 0; i < (int) (sizeof(modes) / sizeof(modes[0])); i++) {
         if (i % 4 != 0) {
             ImGui::SameLine();

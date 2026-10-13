@@ -71,13 +71,14 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
 
 - `--screenshot=PATH` writes the presented frame as PNG on the last frame of `--frames`; Read the PNG to see it. Screenshots leave the UI out
   (the menu bar, windows and the status bar, whose numbers change every run), so they compare byte for byte; `--show-ui` keeps it in.
-- `--view=lit|albedo|normals|depth|shadowfactor|shadowmap|shadowuv|worldpos|miplevel|cascades` (miplevel: red level 0 to white
-  level 7+; cascades: red, green, blue, yellow near to far; shadowmap shows the cascade atlas), `--overlay=grid=on,aabbs=off,...`
+- `--view=lit|albedo|normals|depth|shadowfactor|shadowmap|shadowuv|worldpos|miplevel|cascades|lodlevel` (miplevel: red level 0 to white
+  level 7+; cascades: red, green, blue, yellow near to far; lodlevel: the drawn level of the nearest LOD root, red level 0, orange 1,
+  yellow 2, green 3, … white 7+, grey under none; shadowmap shows the cascade atlas), `--overlay=grid=on,aabbs=off,...`
   (grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa), `--camera=x,y,z,yaw,pitch` or `--camera=/camera/prim` (a camera the scene authors; Caldera has 13 under `/cameras`), `--camera-frame=scene|/prim` (what is drawn at and under the prim), `--select=/prim` (full path, instances expanded).
 - Records at a frame go to a file: a script line `120 record render /tmp/records.jsonl` appends the render debug record (meshes, textures,
   passes with draw counters and GPU time, culled passes, draw log with prim paths) as one JSON line, `value` holding the record,
   `requested_frame` the frame asked for and `frame` the frame it was ready (GPU readbacks take a few). Any record works: `render`, `memory`,
-  `counters`, `culling`, `scene`, `assets` (per asset: state, size, times), `pipelines`, `profile`, `status` (`src/introspect/README.md`); several lines into one file are fine. Read it
+  `counters`, `culling`, `scene`, `assets` (per asset: state, size, times), `lod` (every LOD root: levels, default, wanted, drawn, loaded), `pipelines`, `profile`, `status` (`src/introspect/README.md`); several lines into one file are fine. Read it
   with `jq 'select(.record == "render") | .value.passes' /tmp/records.jsonl`.
 - `dump-profile PATH` (script verb): the profiler history as a Chrome trace file (`jq '.traceEvents'`, or open in Perfetto).
 - `--script=FILE`: `<frame> <verb> [args]` per line, same verbs as the flags plus `quit`, `pick <x> <y>` (select what is drawn at that framebuffer pixel,
@@ -86,7 +87,7 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   rebuild the scene; a live view takes a source edit by itself, from the asset server's change notice, so this is for repacking an unchanged source),
   `goto-asset <id> [all]` (move the camera to an asset's next draw, nearest first, and select it; `all` frames every draw),
   `assets-of [/prim]` (the assets drawn at or under a prim use, or the selection's; `view.assetsOf` answers with them),
-  `lod <LOD root path> <level>` (the level a LOD root wants; loads it) and `cull on|off|freeze|unfreeze|show|hide`
+  `lod <LOD root path> <level>` (the level a LOD root wants; loads it), `lod-reset <LOD root path>` (back to its default) and `cull on|off|freeze|unfreeze|show|hide`
   (frustum culling toggle, frozen frustum, red/green AABB overlay), `prepass on|off` (depth prepass) and
   `sampler aniso=8,bias=0,minlod=0,mip=linear|nearest` (material sampler), `shadow cascades=3,tile=1024,lambda=0.5,pcf=on|off,distance=200`
   (cascaded shadows), `inspect <texture> <level>|off` (texture inspector

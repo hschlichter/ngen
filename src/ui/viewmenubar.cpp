@@ -57,6 +57,7 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::RadioButton("World Pos", &state.gbufferView, 7);
         ImGui::RadioButton("Mip Level", &state.gbufferView, 8);
         ImGui::RadioButton("Cascades", &state.gbufferView, 9);
+        ImGui::RadioButton("LOD Level", &state.gbufferView, 10);
         ImGui::RadioButton("Lit", &state.gbufferView, 0);
         ImGui::Separator();
         ImGui::Text("Debug View");
@@ -73,6 +74,7 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::MenuItem("Camera", nullptr, &state.showCamera);
         ImGui::MenuItem("Culling", nullptr, &state.showCulling);
         ImGui::MenuItem("Assets", nullptr, &state.showAssets);
+        ImGui::MenuItem("LOD", nullptr, &state.showLod);
         if (ImGui::BeginMenu("Introspection")) {
             ImGui::MenuItem("Capture", nullptr, &state.introspection.capture);
             ImGui::MenuItem("Frame Debugger", nullptr, &state.introspection.frameDebugger);
