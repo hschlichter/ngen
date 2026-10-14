@@ -1,5 +1,7 @@
 #pragma once
 
+#include "enginemap.h"
+
 #include "rpcrecords.h"
 #include "rpcregistry.h"
 #include "sessionscript.h"
@@ -84,6 +86,9 @@ auto registerViewMethods(RpcRegistry& registry, ViewContext& view) -> void;
 // introspect.list and introspect.get, and introspect.trace (the `record` verb), which puts a record into the trace.
 // `records` must outlive the registry.
 auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext& view) -> void;
+
+// The Engine Map's live numbers, a few lines per node (the window and the `map` record show the same).
+auto engineMapStats(const ViewContext& view) -> EngineMapStats;
 
 // Moves the camera to an asset: the next of its draws (the first go-to picks the nearest), framed and its prim selected, or with `all`
 // every draw framed together. `index` and `count` say where in its draws it is; `error` is set when nothing draws it.

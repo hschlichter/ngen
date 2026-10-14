@@ -6,6 +6,7 @@
 #include "counterswindow.h"
 #include "cullingwindow.h"
 #include "debugviewwindow.h"
+#include "enginemapwindow.h"
 #include "framedebuggerwindow.h"
 #include "framegraphdebug.h"
 #include "gpuscenewindow.h"
@@ -140,7 +141,8 @@ public:
 
     // grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa, cascadefrusta; false if the name is unknown.
     auto setOverlay(std::string_view name, bool on) -> bool;
-    // Opens or closes an introspection window by name (memory, capture, framedebugger, gpuscene, counters, shaders, culling, assets, lod, sceneflow).
+    // Opens or closes an introspection window by name (memory, capture, framedebugger, gpuscene, counters, shaders, culling, assets, lod, sceneflow, enginemap, camera,
+    // renderdebug, framegraph, performance).
     // Returns false for an unknown name.
     auto setIntrospectionWindow(std::string_view name, bool on) -> bool;
     // Screenshot requested from the UI (button or F12); main hands it to the renderer.
@@ -178,6 +180,9 @@ public:
     // The Scene Flow window: the application sets its data each frame while it is open, and applies the settings it asks for.
     auto sceneFlowWindow() -> SceneFlowWindowState& { return sceneFlowState; }
     auto wantsSceneFlow() const -> bool { return showSceneFlowWindow; }
+    // The Engine Map: the application sets its live numbers each frame while it is open.
+    auto wantsEngineMap() const -> bool { return showEngineMapWindow; }
+    auto setEngineMapStats(EngineMapStats stats) -> void { engineMapState.stats = std::move(stats); }
     auto setBookmarkPath(std::string path) -> void {
         cameraState.bookmarkPath = std::move(path);
         cameraState.loaded = false;
@@ -229,6 +234,8 @@ private:
     LodWindowState lodState;
     bool showSceneFlowWindow = false;
     SceneFlowWindowState sceneFlowState;
+    bool showEngineMapWindow = false;
+    EngineMapWindowState engineMapState;
     std::vector<AssetLogEntry> assetLog;
     AssetsWindowState assetsState;
     uint32_t cullStatInstances = 0;

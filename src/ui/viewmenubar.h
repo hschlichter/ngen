@@ -33,6 +33,7 @@ struct ViewMenuBarState {
     bool& showAssets;
     bool& showLod;
     bool& showSceneFlow;
+    bool& showEngineMap;
     IntrospectionFlags& introspection;
     bool& requestQuit;
 };

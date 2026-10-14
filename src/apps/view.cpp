@@ -928,6 +928,9 @@ auto main(int argc, char* argv[]) -> int {
                 frameSelected();
             }
         }
+        if (viewUI.wantsEngineMap()) {
+            viewUI.setEngineMapStats(engineMapStats(viewContext));
+        }
         if (viewUI.wantsSceneFlow()) {
             // The Scene Flow window: the same numbers as the scenethread and gpuscene records.
             auto& flow = viewUI.sceneFlowWindow();

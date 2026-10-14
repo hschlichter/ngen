@@ -67,6 +67,8 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Windows")) {
+        ImGui::MenuItem("Engine Map", nullptr, &state.showEngineMap);
+        ImGui::Separator();
         ImGui::MenuItem("Frame Graph", nullptr, &state.showFrameGraph);
         ImGui::MenuItem("Performance", nullptr, &state.showPerformance);
         ImGui::MenuItem("Status Bar", nullptr, &state.showStatusBar);

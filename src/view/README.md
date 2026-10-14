@@ -77,6 +77,18 @@ The trace shows the steps:
 - `SceneResident`;
 - and `SceneAssetFailed` or `CompositionMessage` warnings.
 
+## Where everything sits: the Engine Map
+
+The Engine Map (Windows > Engine Map, `window enginemap`) is the engine drawn as lanes, one per process or thread (ngen-asset-server, the
+asset client's I/O thread, the scene thread, the main thread, the render thread), with its parts as nodes in the order data flows and arrows
+for what flows between them. Selecting a node labels its arrows and shows what it is, what it receives and hands on, its live numbers, its
+records (those of the process it runs in), the windows that show it (a button opens each) and its README. Windows about one part carry a
+"Map: <lane> > <part>" link that opens the map at it.
+
+The map is hand-written (`src/ui/enginemap.cpp`): it says what each part means, which a map derived from threads or profiler zones
+couldn't. A new part of the engine adds its node and edges there with its records and windows; its live numbers come from
+`engineMapStats` (`viewcommands.cpp`), which the `map` record serves too.
+
 ## How a scene reaches the screen: the Scene Flow window
 
 The Scene Flow window (Windows > Scene Flow) shows the path from the asset server to the screen, stage by stage in the order data flows, each

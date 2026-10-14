@@ -55,6 +55,8 @@ ngen is a learning and platform-building exercise as much as an engine. Two requ
    understood, learned and debugged, and says where in the engine's flow it sits.
 
 When proposing or finishing a change, say what records, RPC methods, verbs and windows it adds or changes. A gap is named, not left silent.
+A new part of the engine gets its node and edges in the Engine Map (`src/ui/enginemap.cpp`, described in `src/view/README.md`), so where it
+sits and what flows to and from it can be seen.
 Each vertical slice step on the roadmap ends with a visibility pass over what it touched.
 
 ## Plan documents

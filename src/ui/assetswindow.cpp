@@ -1,5 +1,6 @@
 #include "assetswindow.h"
 
+#include "enginemap.h"
 #include "uiformat.h"
 
 #include <imgui.h>
@@ -99,6 +100,7 @@ auto drawAssetsWindow(bool& show, const std::vector<AssetLogEntry>& log, AssetsW
         ImGui::End();
         return;
     }
+    drawEngineMapLink("view.assetclient");
 
     size_t inFlight = 0;
     size_t received = 0;

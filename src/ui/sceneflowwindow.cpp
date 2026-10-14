@@ -1,5 +1,7 @@
 #include "sceneflowwindow.h"
 
+#include "enginemap.h"
+
 #include <imgui.h>
 
 #include <algorithm>
@@ -154,6 +156,7 @@ auto drawSceneFlowWindow(bool& show, SceneFlowWindowState& state) -> void {
         ImGui::End();
         return;
     }
+    drawEngineMapLink("scene.compose");
     note("From the asset server to the screen, in the order data flows. Records: scenethread, gpuscene, assets.");
     drawAssets(state);
     arrow("packs arrive; the scene thread wakes");

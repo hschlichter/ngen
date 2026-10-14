@@ -3,6 +3,8 @@
 #include "camera.h"
 #include "sessionscript.h"
 
+#include "enginemap.h"
+
 #include <imgui.h>
 
 #include <algorithm>
@@ -62,6 +64,7 @@ void drawCameraWindow(bool& show, Camera& camera, CameraWindowState& state) {
         return;
     }
 
+    drawEngineMapLink("main.input");
     float pose[5] = {camera.position.x, camera.position.y, camera.position.z, camera.yaw, camera.pitch};
     auto poseText = formatCameraPose(pose);
     ImGui::TextUnformatted("Current pose (x,y,z,yaw,pitch):");
