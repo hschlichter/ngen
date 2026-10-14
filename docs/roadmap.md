@@ -28,23 +28,34 @@ the sections below.
    coarsest level stays resident as the floor. No budgets, priorities, eviction or texture streaming yet. Flying over Caldera, detail appears
    where the camera is. [plan_streaming_lod.md](plan_streaming_lod.md) step 3 (step 2, the proxy map through the scene pack, is likely mostly
    there already: checked first).
-2. **Editor, minimal.** `ngen-editor` as its own process: opens the USD stage (the code in `src/editor/`), selects, transforms and saves to a
+2. **Meshlets, with occlusion culling.** The packer splits meshes into meshlets (meshoptimizer, vendored), each with a bounding sphere and a
+   normal cone; the mesh pack and the GPU scene gain a meshlet table; mesh shaders draw them, culling per meshlet (frustum, backface by cone)
+   after the per-instance stage, and two-phase occlusion culling against a depth pyramid (HZB) culls instances and meshlets hidden behind
+   others. A meshlet debug view, meshlet and occlusion counts in the `culling` record, nodes in the Engine Map. Before the rest because it
+   changes the mesh format and the GPU scene everything after builds on; the airfield at level 0 drew 106 M of 136 M triangles with culling
+   per instance only. New plan. Decided 2026-10-15:
+   - **Mesh shaders, required** (`VK_EXT_mesh_shader`, approved beyond the Vulkan 1.3 baseline; RADV has it): a device without them fails
+     at start-up with a clear message, as for any required feature. Whether CI's lavapipe has them is checked first in the plan; if not,
+     CI needs another answer there. A fallback path (no mesh shaders) is a possible topic later, not part of this step.
+   - **Occlusion culling is part of this step**: without it the savings in dense scenes don't show.
+   - **Cluster LOD (Nanite-style) later**, not in this step: UsdLod stays the only LOD. Under Rendering below, with its trigger.
+3. **Editor, minimal.** `ngen-editor` as its own process: opens the USD stage (the code in `src/editor/`), selects, transforms and saves to a
    layer; the view takes the edit through the asset change notices that already exist. No deltas, live unsaved edits or cross-process undo yet.
    Every edit is an RPC call an AI can make too. [plan_editor_split.md](plan_editor_split.md), rewritten small.
-3. **Gameplay framework, minimal.** Entities and components on top of the World, a fixed-timestep game loop, input, and game code apart from the
+4. **Gameplay framework, minimal.** Entities and components on top of the World, a fixed-timestep game loop, input, and game code apart from the
    engine. How game code is hosted (a module the engine loads, or scripting) and what a component is are the plan's decisions; they shape
    everything after. New plan.
-4. **Physics, minimal.** Jolt vendored; the packer reads UsdPhysics colliders and rigid bodies; bodies simulate in the game loop and drive their
-   draws' transforms. New plan, on step 3's components.
-5. **Animation and skinning, minimal.** UsdSkel skeletons and skinned meshes, time-sampled playback, GPU skinning. New plan.
-6. **Rendering, minimal gaps.** HDR and tone mapping, point and spot lights, a dome light in place of the hemisphere ambient.
-7. **A first game**, the integration test: a small game (walk Sponza, push physics boxes) built only through the engine's APIs and tools,
+5. **Physics, minimal.** Jolt vendored; the packer reads UsdPhysics colliders and rigid bodies; bodies simulate in the game loop and drive their
+   draws' transforms. New plan, on step 4's components.
+6. **Animation and skinning, minimal.** UsdSkel skeletons and skinned meshes, time-sampled playback, GPU skinning. New plan.
+7. **Rendering, minimal gaps.** HDR and tone mapping, point and spot lights, a dome light in place of the hemisphere ambient.
+8. **A first game**, the integration test: a small game (walk Sponza, push physics boxes) built only through the engine's APIs and tools,
    ideally by an AI session over RPC and `ngen-cli` with a human steering in the editor. What it exposes is what the iterations after it work on.
 
 Each step ends with a **visibility pass** over what it touched: what is reachable as records, RPC and verbs, what a window shows, and where in
 the engine's flow it sits; gaps are fixed or listed before the next step.
 
-Networking, remote connections, shipping and the other parked items stay parked until step 7 shows a need.
+Networking, remote connections, shipping and the other parked items stay parked until step 8 shows a need.
 
 ## Direction: the tool architecture
 
@@ -129,7 +140,11 @@ Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's ma
   tiled light culling.
 - **HDR lighting + tone mapping** (in the AA pass).
 - **Shadows**: spot/point light shadows; cascade blending / softer techniques. Trigger: a seam PCF doesn't hide.
-- **Culling**: occlusion (two-phase HZB); meshlets and LOD — need a meshlet/LOD pack step.
+- **Culling**: meshlets, mesh shaders and occlusion (two-phase HZB) are vertical slice step 2 (above). Cluster LOD: the next item.
+- **Cluster LOD** (Nanite-style): a pack-time hierarchy of simplified meshlet groups, chosen per cluster on the GPU, streamed by cluster.
+  Deferred on purpose (2026-10-15). It would revisit [plan_streaming_lod.md](plan_streaming_lod.md) decisions 2 (UsdLod is the only LOD)
+  and 3 (the streaming structure is authored, not computed). Trigger: much more of the engine in place, with games and other use cases built
+  on it that show what LOD they need.
 - **Frame graph**: transient buffers; cross-frame history resources (TAA); multi-queue/async compute; parallel recording.
 - **Cutout follow-ups** (from [plan_cutout_materials.md](plan_cutout_materials.md)): translucency (blended surfaces, sorting; trigger: glass or
   smoke — Sponza's `glass` and `lamp_glass_01_usd` draw opaque, with a packer warning); coverage-preserving opacity mips (trigger: foliage vanishing
