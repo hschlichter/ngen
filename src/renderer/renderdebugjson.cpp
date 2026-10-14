@@ -87,7 +87,17 @@ auto writeMemoryJson(FILE* f, const RenderDebugSnapshot& s) -> void {
         categories[category].second++;
         total += a.bytes;
     }
-    std::fprintf(f, "  ],\n  \"totalBytes\": %llu,\n  \"categories\": [\n", (unsigned long long) total);
+    const auto& pool = s.geometryPool;
+    std::fprintf(f,
+                 "  ],\n  \"geometryPool\": {\"limitBytes\": %llu, \"vertexCapacity\": %llu, \"vertexUsed\": %llu, \"indexCapacity\": %llu, \"indexUsed\": %llu, \"waitingMeshes\": %u, \"waitingBytes\": %llu},\n  \"totalBytes\": %llu,\n  \"categories\": [\n",
+                 (unsigned long long) pool.limitBytes,
+                 (unsigned long long) pool.vertexCapacity,
+                 (unsigned long long) pool.vertexUsed,
+                 (unsigned long long) pool.indexCapacity,
+                 (unsigned long long) pool.indexUsed,
+                 pool.waitingMeshes,
+                 (unsigned long long) pool.waitingBytes,
+                 (unsigned long long) total);
     size_t index = 0;
     for (const auto& [name, value] : categories) {
         std::fprintf(f, "    {\"category\": \"%s\", \"allocations\": %u, \"bytes\": %llu}%s\n", escape(name).c_str(), value.second, (unsigned long long) value.first, ++index < categories.size() ? "," : "");

@@ -141,13 +141,16 @@ auto GpuScene::destroy() -> void {
     }
 }
 
-auto GpuScene::ensureCapacity(GrowableBuffer& target, uint64_t bytes) -> bool {
+auto GpuScene::ensureCapacity(GrowableBuffer& target, uint64_t bytes, uint64_t maxBytes) -> bool {
     if (target.buffer != nullptr && bytes <= target.capacity) {
+        return false;
+    }
+    if (bytes > maxBytes) {
         return false;
     }
     PROFILE_ZONE("GrowBuffer");
     PROFILE_ZONE_VALUE(bytes);
-    auto capacity = std::max({bytes, target.capacity * 2, minimumBufferBytes});
+    auto capacity = std::min(std::max({bytes, target.capacity * 2, minimumBufferBytes}), maxBytes);
     auto* grown = device->createBuffer({
         .size = capacity,
         // TransferSrc for the next growth's copy and for the capture service.
@@ -155,6 +158,9 @@ auto GpuScene::ensureCapacity(GrowableBuffer& target, uint64_t bytes) -> bool {
         .memory = RhiMemoryUsage::GpuOnly,
         .debugName = target.name,
     });
+    if (grown == nullptr) {
+        return false;
+    }
     if (target.buffer != nullptr && target.fresh) {
         // Nothing has written it since it was made (grown twice before a record, or made at init and never used): nothing to copy. A
         // copy still pending comes from the buffer before it.
@@ -170,16 +176,33 @@ auto GpuScene::ensureCapacity(GrowableBuffer& target, uint64_t bytes) -> bool {
     return true;
 }
 
+auto GpuScene::poolLimitBytes() const -> uint64_t {
+    // Whole MiBs, so the allocation the buffer needs (rounded up to its alignment) stays under the device's limit too.
+    constexpr uint64_t granule = 1024ull * 1024;
+    auto limit = device->limits().maxBufferBytes;
+    if (limit == 0) {
+        limit = UINT64_MAX;
+    }
+    if (geometryLimit > 0) {
+        limit = std::min(limit, geometryLimit);
+    }
+    return limit / granule * granule;
+}
+
 auto GpuScene::growPool(uint64_t vertexCount, uint64_t indexCount) -> void {
+    auto limit = poolLimitBytes();
     if (vertexCount > 0) {
-        auto capacity = std::max(vertexRanges.capacity() * 2, vertexRanges.capacity() + vertexCount);
-        ensureCapacity(vertices, capacity * sizeof(Vertex));
-        ensureCapacity(positions, capacity * sizeof(std::array<float, 3>));
+        // The vertex stream reaches the limit first (a Vertex is larger than a position): it sets the vertex capacity of both.
+        auto maxVertices = limit / sizeof(Vertex);
+        auto capacity = std::min(std::max(vertexRanges.capacity() * 2, vertexRanges.capacity() + vertexCount), maxVertices);
+        ensureCapacity(vertices, capacity * sizeof(Vertex), maxVertices * sizeof(Vertex));
+        ensureCapacity(positions, capacity * sizeof(std::array<float, 3>), maxVertices * sizeof(std::array<float, 3>));
         vertexRanges.grow(std::min(vertices.capacity / sizeof(Vertex), positions.capacity / sizeof(std::array<float, 3>)));
     }
     if (indexCount > 0) {
-        auto capacity = std::max(indexRanges.capacity() * 2, indexRanges.capacity() + indexCount);
-        ensureCapacity(indices, capacity * sizeof(uint32_t));
+        auto maxIndices = limit / sizeof(uint32_t);
+        auto capacity = std::min(std::max(indexRanges.capacity() * 2, indexRanges.capacity() + indexCount), maxIndices);
+        ensureCapacity(indices, capacity * sizeof(uint32_t), maxIndices * sizeof(uint32_t));
         indexRanges.grow(indices.capacity / sizeof(uint32_t));
     }
 }
@@ -188,6 +211,23 @@ auto GpuScene::addMesh(MeshHandle handle, std::shared_ptr<const MeshDesc> mesh) 
     if (!handle || mesh == nullptr || mesh->vertices.empty() || mesh->indices.empty()) {
         return;
     }
+    // The table entry exists either way: a mesh that waits has an empty one, and its draws draw nothing.
+    ensureCapacity(meshTable, ((uint64_t) handle.index + 1) * sizeof(GpuMeshEntry));
+    if (placeMesh(handle, mesh)) {
+        return;
+    }
+    if (waitingMeshes.empty()) {
+        auto limit = poolLimitBytes();
+        TRACE_WARNING("Render", "GeometryPoolFull", "gpuscene.pool")
+            .text(std::format("the geometry pool is full ({} MiB per buffer): meshes that don't fit wait, undrawn, until removed meshes make room", limit / (1024 * 1024)))
+            .field("limitBytes", (int64_t) limit)
+            .field("vertexUsed", (int64_t) vertexRanges.used())
+            .field("indexUsed", (int64_t) indexRanges.used());
+    }
+    waitingMeshes.push_back({.handle = handle, .mesh = std::move(mesh)});
+}
+
+auto GpuScene::placeMesh(MeshHandle handle, const std::shared_ptr<const MeshDesc>& mesh) -> bool {
     uint64_t vertexCount = mesh->vertices.size();
     uint64_t indexCount = mesh->indices.size();
     auto vertexFirst = vertexRanges.allocate(vertexCount);
@@ -195,10 +235,17 @@ auto GpuScene::addMesh(MeshHandle handle, std::shared_ptr<const MeshDesc> mesh) 
         growPool(vertexCount, 0);
         vertexFirst = vertexRanges.allocate(vertexCount);
     }
+    if (!vertexFirst) {
+        return false;
+    }
     auto indexFirst = indexRanges.allocate(indexCount);
     if (!indexFirst) {
         growPool(0, indexCount);
         indexFirst = indexRanges.allocate(indexCount);
+    }
+    if (!indexFirst) {
+        vertexRanges.free(*vertexFirst, vertexCount);
+        return false;
     }
     meshes[handle.index] = {
         .firstIndex = (uint32_t) *indexFirst,
@@ -208,16 +255,51 @@ auto GpuScene::addMesh(MeshHandle handle, std::shared_ptr<const MeshDesc> mesh) 
         .vertexBytes = vertexCount * (sizeof(Vertex) + sizeof(std::array<float, 3>)),
         .indexBytes = indexCount * sizeof(uint32_t),
     };
-    meshData[handle.index] = std::move(mesh);
-    ensureCapacity(meshTable, ((uint64_t) handle.index + 1) * sizeof(GpuMeshEntry));
+    meshData[handle.index] = mesh;
     // The data before the entry: a mesh is drawn once its entry says so.
     queue.push_back({.kind = Upload::Kind::MeshVertices, .handle = handle.index, .bytes = vertexCount * sizeof(Vertex)});
     queue.push_back({.kind = Upload::Kind::MeshPositions, .handle = handle.index, .bytes = vertexCount * sizeof(std::array<float, 3>)});
     queue.push_back({.kind = Upload::Kind::MeshIndices, .handle = handle.index, .bytes = indexCount * sizeof(uint32_t)});
     queue.push_back({.kind = Upload::Kind::MeshEntry, .handle = handle.index, .bytes = sizeof(GpuMeshEntry)});
+    return true;
+}
+
+auto GpuScene::placeWaitingMeshes() -> void {
+    if (waitingMeshes.empty()) {
+        return;
+    }
+    std::vector<WaitingMesh> stillWaiting;
+    for (auto& waiting : waitingMeshes) {
+        if (!placeMesh(waiting.handle, waiting.mesh)) {
+            stillWaiting.push_back(std::move(waiting));
+        }
+    }
+    bool emptied = stillWaiting.empty();
+    waitingMeshes = std::move(stillWaiting);
+    if (emptied) {
+        TRACE_EVENT("Render", "GeometryPoolFits", "gpuscene.pool").text("every mesh that waited for room in the geometry pool is in it");
+    }
+}
+
+auto GpuScene::geometryPoolStats() const -> GeometryPoolStats {
+    GeometryPoolStats stats = {
+        .limitBytes = poolLimitBytes(),
+        .vertexCapacity = vertexRanges.capacity(),
+        .vertexUsed = vertexRanges.used(),
+        .indexCapacity = indexRanges.capacity(),
+        .indexUsed = indexRanges.used(),
+        .waitingMeshes = (uint32_t) waitingMeshes.size(),
+    };
+    for (const auto& waiting : waitingMeshes) {
+        stats.waitingBytes += waiting.mesh->vertices.size() * (sizeof(Vertex) + sizeof(std::array<float, 3>)) + waiting.mesh->indices.size() * sizeof(uint32_t);
+    }
+    return stats;
 }
 
 auto GpuScene::removeMesh(MeshHandle handle) -> void {
+    if (std::erase_if(waitingMeshes, [&](const WaitingMesh& waiting) { return waiting.handle.index == handle.index; }) > 0) {
+        return;
+    }
     auto it = meshes.find(handle.index);
     if (it == meshes.end()) {
         return;
@@ -228,6 +310,7 @@ auto GpuScene::removeMesh(MeshHandle handle) -> void {
     // Its ranges can be written at once: the next copy's barrier orders it after every earlier frame's reads (one queue).
     vertexRanges.free((uint64_t) it->second.vertexOffset, it->second.vertexCount);
     indexRanges.free(it->second.firstIndex, it->second.indexCount);
+    poolRoomFreed = true;
     meshes.erase(it);
     meshData.erase(handle.index);
     queue.push_back({.kind = Upload::Kind::MeshEntry, .handle = handle.index, .bytes = sizeof(GpuMeshEntry)});
@@ -408,6 +491,10 @@ auto GpuScene::materialRecord(MaterialHandle handle) const -> GpuMaterial {
 
 auto GpuScene::beginFrame(uint64_t frame) -> bool {
     currentFrame = frame;
+    // Meshes that waited for room, once a frame after removals freed some.
+    if (std::exchange(poolRoomFreed, false)) {
+        placeWaitingMeshes();
+    }
     for (auto index : texturesCopied) {
         auto it = gpuTextures.find(index);
         if (it == gpuTextures.end()) {

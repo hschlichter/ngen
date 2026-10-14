@@ -243,6 +243,16 @@ auto Renderer::buildRenderDebugSnapshot() const -> RenderDebugSnapshot {
     snap.currentSlot = currentFrame;
     device->allocations(snap.allocations);
     device->memoryHeaps(snap.heaps);
+    auto pool = gpuScene.geometryPoolStats();
+    snap.geometryPool = {
+        .limitBytes = pool.limitBytes,
+        .vertexCapacity = pool.vertexCapacity,
+        .vertexUsed = pool.vertexUsed,
+        .indexCapacity = pool.indexCapacity,
+        .indexUsed = pool.indexUsed,
+        .waitingMeshes = pool.waitingMeshes,
+        .waitingBytes = pool.waitingBytes,
+    };
 
     snap.instanceCount = (uint32_t) gpuInstances.size();
     snap.culledInstances = debugCulledInstances;

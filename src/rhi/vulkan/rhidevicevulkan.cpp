@@ -522,7 +522,10 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
         report(RhiMessageSeverity::Error, std::format("Vulkan device reports API {}.{}; 1.3 is required", VK_API_VERSION_MAJOR(properties.apiVersion), VK_API_VERSION_MINOR(properties.apiVersion)));
         return std::unexpected(RhiError::Failed);
     }
-    VkPhysicalDeviceDriverProperties driverProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+    // The largest buffer: one allocation (maxMemoryAllocationSize, 1.1) and one buffer (maxBufferSize, 1.3).
+    VkPhysicalDeviceVulkan13Properties vulkan13Properties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES};
+    VkPhysicalDeviceVulkan11Properties vulkan11Properties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES, .pNext = &vulkan13Properties};
+    VkPhysicalDeviceDriverProperties driverProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES, .pNext = &vulkan11Properties};
     VkPhysicalDeviceProperties2 properties2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &driverProperties};
     vkGetPhysicalDeviceProperties2(physicalDevice, &properties2);
     deviceLimits = {
@@ -536,6 +539,7 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
         .pipelineStatistics = supportedFeatures.pipelineStatisticsQuery == VK_TRUE,
         .geometryShaders = supportedFeatures.geometryShader == VK_TRUE,
         .maxPerStageSampledImages = properties.limits.maxPerStageDescriptorSampledImages,
+        .maxBufferBytes = std::min<uint64_t>(vulkan11Properties.maxMemoryAllocationSize, vulkan13Properties.maxBufferSize),
     };
     std::snprintf(deviceLimits.deviceName, sizeof(deviceLimits.deviceName), "%s", properties.deviceName);
     std::snprintf(deviceLimits.driverName, sizeof(deviceLimits.driverName), "%s %s", driverProperties.driverName, driverProperties.driverInfo);

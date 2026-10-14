@@ -110,7 +110,8 @@ present) after logging the native error.
 - **Buffers.** `RhiBufferDesc { size, usage, memory }`. Usage flags: `TransferSrc`, `TransferDst`, `Vertex`, `Index`,
   `Uniform`, `Storage`, `Indirect`. Memory is `GpuOnly` (device-local, filled by copies) or `CpuToGpu` (host-visible and
   coherent; `mapBuffer` returns a pointer that stays valid until `unmapBuffer` or destroy). Readback buffers use
-  `CpuToGpu` as well.
+  `CpuToGpu` as well. `limits().maxBufferBytes` is the largest size `createBuffer` makes (one allocation and one buffer; in Vulkan the
+  smaller of `maxMemoryAllocationSize` and `maxBufferSize`); a larger one is invalid (a validation error) and may fail, or work on one driver and not another.
 - **Textures.** `RhiTextureDesc { width, height, format, usage, mipLevels, arrayLayers, sampleCount, dimension }`;
   dimensions `Texture2D`, `Texture2DArray`, `TextureCube`. Usage flags: `Sampled`, `ColorAttachment`, `DepthAttachment`,
   `Storage`, `TransferSrc`, `TransferDst`. Optional formats are checked with `supportsTextureFormat(format, usage)`.

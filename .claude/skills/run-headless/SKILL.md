@@ -92,7 +92,8 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   `sampler aniso=8,bias=0,minlod=0,mip=linear|nearest` (material sampler), `shadow cascades=3,tile=1024,lambda=0.5,pcf=on|off,distance=200`
   (cascaded shadows), `inspect <texture> <level>|off` (texture inspector
   capture) and `dump-texture <texture> <level> <path>` (one mip level as PNG; the texture index as the `render` record's `textures` list it); several screenshots in one run.
-- `--fail-on-validation`: exit code 2 if the validation layer reported anything. `--render-debug`: draw log on without the window.
+- `--fail-on-validation`: exit code 2 if the validation layer reported anything. `--geometry-limit=<MiB>`: cap each geometry pool buffer
+  below the device's limit, to exercise a full pool on a small scene (the `GeometryPoolFull` warning, the `memory` record's `geometryPool`). `--render-debug`: draw log on without the window.
 - Introspection verbs (debug and release builds; each writes when its data arrives, a few frames after the verb):
   - `capture <pass|-> <resource> <path> [x y w h]`: any frame-graph resource right after `<pass>` (`-` = end of frame, also `gpuscene.meshtable`,
     `gpuscene.materials`). Buffers as JSON rows decoded with their schema; textures as PNG plus `<path>.json` (format, size, channel ranges, and the

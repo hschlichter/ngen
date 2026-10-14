@@ -153,8 +153,8 @@ public:
     auto setMaterial(MaterialHandle handle, const MaterialDesc& material) -> void;
     auto removeMaterial(MaterialHandle handle) -> void;
 
-    // Once per frame, before the frame graph is built: textures whose last level the previous frames copied take their slots, and the
-    // materials using them are patched. True when the texture slots or any table buffer changed, so the descriptor sets naming them are
+    // Once per frame, before the frame graph is built: meshes waiting for room in the pool are placed if removals freed some, textures
+    // whose last level the previous frames copied take their slots, and the materials using them are patched. True when the texture slots or any table buffer changed, so the descriptor sets naming them are
     // rewritten.
     auto beginFrame(uint64_t frame) -> bool;
     // Adds the SceneUpload pass when uploads are queued.
@@ -166,6 +166,19 @@ public:
     auto idle() const -> bool;
     auto pendingBytes() const -> uint64_t;
     auto setUploadBudget(uint64_t bytes) -> void { uploadBudget = bytes; }
+    // The most each geometry pool buffer may take, in bytes; 0 for the device's largest buffer. A mesh that doesn't fit waits, undrawn,
+    // until meshes removed make room for it.
+    auto setGeometryLimit(uint64_t bytes) -> void { geometryLimit = bytes; }
+    struct GeometryPoolStats {
+        uint64_t limitBytes = 0; // per pool buffer
+        uint64_t vertexCapacity = 0;
+        uint64_t vertexUsed = 0;
+        uint64_t indexCapacity = 0;
+        uint64_t indexUsed = 0;
+        uint32_t waitingMeshes = 0; // didn't fit, not drawn
+        uint64_t waitingBytes = 0;
+    };
+    auto geometryPoolStats() const -> GeometryPoolStats;
 
     auto meshRange(uint32_t meshIndex) const -> const GpuMeshRange*;
     auto meshRanges() const -> const std::unordered_map<uint32_t, GpuMeshRange>& { return meshes; }
@@ -231,8 +244,15 @@ private:
         uint64_t bytes = 0;
     };
 
-    auto ensureCapacity(GrowableBuffer& target, uint64_t bytes) -> bool;
+    // Grows `target` to at least `bytes`, doubling, never past `maxBytes`. False when it didn't grow: it was big enough, or the bigger
+    // buffer couldn't be made.
+    auto ensureCapacity(GrowableBuffer& target, uint64_t bytes, uint64_t maxBytes = UINT64_MAX) -> bool;
     auto growPool(uint64_t vertexCount, uint64_t indexCount) -> void;
+    // Ranges for a mesh in the pool, growing it within the limit, and its uploads queued; false when it doesn't fit.
+    auto placeMesh(MeshHandle handle, const std::shared_ptr<const MeshDesc>& mesh) -> bool;
+    // The waiting meshes that fit now, in arrival order.
+    auto placeWaitingMeshes() -> void;
+    auto poolLimitBytes() const -> uint64_t;
     auto materialRecord(MaterialHandle handle) const -> GpuMaterial;
     auto queueMaterialEntry(uint32_t materialIndex) -> void;
     // Records queued uploads, at most `budget` bytes (and at least one upload); staging goes to `retire`.
@@ -254,6 +274,14 @@ private:
     GrowableBuffer meshTable;
     PoolAllocator vertexRanges;
     PoolAllocator indexRanges;
+    uint64_t geometryLimit = 0;
+    // Meshes that didn't fit in the pool, in arrival order; placed when removals make room.
+    struct WaitingMesh {
+        MeshHandle handle;
+        std::shared_ptr<const MeshDesc> mesh;
+    };
+    std::vector<WaitingMesh> waitingMeshes;
+    bool poolRoomFreed = false; // a removal freed ranges since beginFrame last tried the waiting meshes
     std::unordered_map<uint32_t, GpuMeshRange> meshes;
     std::unordered_map<uint32_t, std::shared_ptr<const MeshDesc>> meshData; // kept while its uploads are queued
 

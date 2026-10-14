@@ -10,6 +10,17 @@
 #include <string>
 #include <vector>
 
+// The geometry pool's buffers against their limit, and the meshes that didn't fit (GpuScene::geometryPoolStats).
+struct RenderDebugGeometryPool {
+    uint64_t limitBytes = 0; // per pool buffer
+    uint64_t vertexCapacity = 0;
+    uint64_t vertexUsed = 0;
+    uint64_t indexCapacity = 0;
+    uint64_t indexUsed = 0;
+    uint32_t waitingMeshes = 0;
+    uint64_t waitingBytes = 0;
+};
+
 // Everything the Render Debug window shows, copied on the render thread once per frame
 // while the window is open. Same delivery as FrameGraphDebugSnapshot.
 struct RenderDebugMesh {
@@ -105,6 +116,7 @@ struct RenderDebugSnapshot {
     // GPU memory: every live buffer and texture, and the device heaps (RhiDevice).
     std::vector<RhiAllocationInfo> allocations;
     std::vector<RhiMemoryHeapInfo> heaps;
+    RenderDebugGeometryPool geometryPool;
 
     // Draw log of the most recent frame whose readback has arrived: the indirect commands the GPU
     // culling wrote, one entry per draw.

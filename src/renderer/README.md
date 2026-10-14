@@ -166,6 +166,11 @@ Tables:
     prim that places it.
   - **Growth.** When a range doesn't fit, a buffer twice the size replaces the old one. The old contents are copied on the GPU before this frame's
     uploads, and the old buffer is retired.
+  - **Limit.** No pool buffer grows past the device's largest buffer (`RhiDeviceLimits::maxBufferBytes`, whole MiBs), or a smaller limit
+    (`setGeometryLimit`, ngen-view's `--geometry-limit=<MiB>`). The vertex stream reaches it first and sets the vertex capacity of both vertex
+    buffers. A mesh that doesn't fit waits, with an empty mesh table entry, so its draws draw nothing while the rest of the scene draws; the
+    first one traces `GeometryPoolFull` (a warning). Once a frame after removals freed ranges, the waiting meshes that fit are placed, in
+    arrival order (`GeometryPoolFits` when none is left). The `memory` record's `geometryPool` has the limit, capacities, use and what waits.
   - **Addressing.** Indices stay mesh-local; a mesh is addressed by `firstIndex` and `vertexOffset`, and the vertex and position pools share
     `vertexOffset`.
   - **No compaction.**

@@ -74,6 +74,9 @@ public:
     auto buildFrameGraphDebugSnapshot() const -> FrameGraphDebugSnapshot;
     auto buildRenderDebugSnapshot() const -> RenderDebugSnapshot;
     auto setValidationEnabled(bool enabled) -> void { validationEnabled = enabled; }
+    // The most each geometry pool buffer may take, in bytes; 0 for the device's largest buffer (GpuScene::setGeometryLimit). Before the
+    // render thread starts.
+    auto setGeometryLimit(uint64_t bytes) -> void { gpuScene.setGeometryLimit(bytes); }
     // Next presented frame is read back and written as PNG. Waits on that frame's fence once. The UI is left out of
     // that frame (it skips the editor UI pass) unless setScreenshotsShowUi(true).
     auto requestScreenshot(std::string path) -> void { screenshotPath = std::move(path); }

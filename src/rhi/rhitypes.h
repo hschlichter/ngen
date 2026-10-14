@@ -379,6 +379,7 @@ struct RhiDeviceLimits {
     bool pipelineStatistics = false;       // beginPipelineStats/endPipelineStats count work
     bool geometryShaders = false;          // RhiGraphicsPipelineDesc::geometryShader allowed
     uint32_t maxPerStageSampledImages = 0; // upper bound for sampled-image array bindings, per shader stage
+    uint64_t maxBufferBytes = 0;           // the largest buffer createBuffer can make: one allocation, one buffer
 };
 
 // Compiled shader bytecode in the backend's native format (SPIR-V for Vulkan,

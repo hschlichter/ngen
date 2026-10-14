@@ -147,6 +147,8 @@ auto main(int argc, char* argv[]) -> int {
     bool failOnValidation = false;
     bool screenshotsShowUi = false;
     uint64_t maxFrames = 0;
+    // --geometry-limit=<MiB>: the most each geometry pool buffer takes, below the device's limit; meshes past it wait, undrawn.
+    uint64_t geometryLimitBytes = 0;
     bool rpcEnabled = true; // --no-rpc: no endpoint, no discovery file
     // --no-wait-resident: script frames (and --frames, --screenshot) count from start-up instead of from the scene first being resident.
     bool waitForResident = true;
@@ -173,6 +175,8 @@ auto main(int argc, char* argv[]) -> int {
         } else if (arg == "--fail-on-validation") {
             failOnValidation = true;
             enableValidation = true;
+        } else if (arg.starts_with("--geometry-limit=")) {
+            geometryLimitBytes = std::stoull(flagValue(arg, "--geometry-limit=")) * 1024 * 1024;
         } else if (arg.starts_with("--frames=")) {
             maxFrames = std::stoull(flagValue(arg, "--frames="));
         } else if (arg.starts_with("--camera=")) {
@@ -350,6 +354,7 @@ auto main(int argc, char* argv[]) -> int {
         auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - rendererInitStart).count();
         TRACE_EVENT("Render", "RendererInitialized", "renderer").text(std::format("renderer initialized in {:.0f} ms", ms)).field("ms", ms);
     }
+    renderer.setGeometryLimit(geometryLimitBytes);
     renderer.setValidationEnabled(enableValidation);
     renderer.setScreenshotsShowUi(screenshotsShowUi);
 
