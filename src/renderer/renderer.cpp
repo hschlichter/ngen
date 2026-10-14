@@ -246,6 +246,8 @@ auto Renderer::buildRenderDebugSnapshot() const -> RenderDebugSnapshot {
     auto pool = gpuScene.geometryPoolStats();
     snap.geometryPool = {
         .limitBytes = pool.limitBytes,
+        .vertexLimit = pool.vertexLimit,
+        .indexLimit = pool.indexLimit,
         .vertexCapacity = pool.vertexCapacity,
         .vertexUsed = pool.vertexUsed,
         .indexCapacity = pool.indexCapacity,
@@ -550,6 +552,41 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
         .field("materialsRemoved", (int64_t) changes.materialsRemoved.size())
         .field("pendingBytes", (int64_t) gpuScene.pendingBytes())
         .field("ms", ms);
+}
+
+auto Renderer::sceneGpuStats() const -> SceneGpuStats {
+    auto uploads = gpuScene.uploadStats();
+    auto pool = gpuScene.geometryPoolStats();
+    return {
+        .frame = m_frameIndex,
+        .drawSlots = (uint32_t) gpuInstances.size(),
+        .meshes = (uint32_t) gpuScene.meshRanges().size(),
+        .textures = (uint32_t) gpuScene.textures().size(),
+        .materials = gpuScene.materialCount(),
+        .uploads = {
+            .queued = uploads.queued,
+            .queuedBytes = uploads.queuedBytes,
+            .budget = uploads.budget,
+            .lastUploads = uploads.lastUploads,
+            .lastBytes = uploads.lastBytes,
+            .lastFrame = uploads.lastFrame,
+            .totalBytes = uploads.totalBytes,
+            .texturesWaitingSlot = uploads.texturesWaitingSlot,
+        },
+        .geometryPool = {
+            .limitBytes = pool.limitBytes,
+            .vertexLimit = pool.vertexLimit,
+            .indexLimit = pool.indexLimit,
+            .vertexLimit = pool.vertexLimit,
+            .indexLimit = pool.indexLimit,
+            .vertexCapacity = pool.vertexCapacity,
+            .vertexUsed = pool.vertexUsed,
+            .indexCapacity = pool.indexCapacity,
+            .indexUsed = pool.indexUsed,
+            .waitingMeshes = pool.waitingMeshes,
+            .waitingBytes = pool.waitingBytes,
+        },
+    };
 }
 
 auto Renderer::flushSceneUploads() -> void {
@@ -918,6 +955,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         // straight up the scene's up axis with unit radiance.
         LightingInputs lighting;
         lighting.up = snapshot.worldUp;
+        lighting.ambient = snapshot.ambient;
         if (picked != nullptr) {
             auto raw = glm::vec3(picked->worldTransform[2]);
             lighting.direction = glm::dot(raw, raw) > 1e-6f ? glm::normalize(raw) : snapshot.worldUp;

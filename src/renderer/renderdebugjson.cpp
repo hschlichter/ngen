@@ -89,8 +89,10 @@ auto writeMemoryJson(FILE* f, const RenderDebugSnapshot& s) -> void {
     }
     const auto& pool = s.geometryPool;
     std::fprintf(f,
-                 "  ],\n  \"geometryPool\": {\"limitBytes\": %llu, \"vertexCapacity\": %llu, \"vertexUsed\": %llu, \"indexCapacity\": %llu, \"indexUsed\": %llu, \"waitingMeshes\": %u, \"waitingBytes\": %llu},\n  \"totalBytes\": %llu,\n  \"categories\": [\n",
+                 "  ],\n  \"geometryPool\": {\"limitBytes\": %llu, \"vertexLimit\": %llu, \"indexLimit\": %llu, \"vertexCapacity\": %llu, \"vertexUsed\": %llu, \"indexCapacity\": %llu, \"indexUsed\": %llu, \"waitingMeshes\": %u, \"waitingBytes\": %llu},\n  \"totalBytes\": %llu,\n  \"categories\": [\n",
                  (unsigned long long) pool.limitBytes,
+                 (unsigned long long) pool.vertexLimit,
+                 (unsigned long long) pool.indexLimit,
                  (unsigned long long) pool.vertexCapacity,
                  (unsigned long long) pool.vertexUsed,
                  (unsigned long long) pool.indexCapacity,

@@ -77,6 +77,25 @@ The trace shows the steps:
 - `SceneResident`;
 - and `SceneAssetFailed` or `CompositionMessage` warnings.
 
+## How a scene reaches the screen: the Scene Flow window
+
+The Scene Flow window (Windows > Scene Flow) shows the path from the asset server to the screen, stage by stage in the order data flows, each
+saying what it is and where its data goes next:
+1. **Asset client**: requested, received (packed or from the server's cache), failed, in flight.
+2. **Scene thread**: requests posted and applied, batches, composes and extracts (count, last time, whether one is needed), assets in flight by
+   kind, packs held, library entries, idle.
+3. **Change lists**: what an extract changed, which the main thread takes each frame and hands to the render thread.
+4. **GPU scene** (render thread): change lists submitted and drawn, the tables, the upload queue (queued, budget, the last SceneUpload pass)
+   and the geometry pool (use against capacity and limit, meshes waiting for room). The upload budget and the pool limit are set here.
+5. **Residency**: resident or loading, the script's hold, and the last load's frames and longest frame.
+
+The same numbers are the `scenethread` record (stages 2 and 5) and the `gpuscene` record (stage 4), which the render thread publishes after
+every frame whatever window is open. `view.gpuscene.set {uploadBudgetMiB, geometryLimitMiB}` (the `gpuscene budget=…,limit=…` verb) sets the
+budget and the limit from the next frame; lowering the limit stops growth, it doesn't shrink the pool.
+
+The hemisphere ambient is a setting too: `view.ambient {sky, ground, reset}` (the `ambient sky=r,g,b ground=r,g,b` verb), the Render Debug
+window's Ambient section, and the `status` record's `ambient`. `view.camera.set` takes an optional `speed`.
+
 ## What arrived: the Assets window
 
 Windows → Assets (or `window assets`) lists every asset the view requested from `AssetClient::log()`: its state, whether the server packed it

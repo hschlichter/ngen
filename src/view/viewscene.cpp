@@ -181,6 +181,7 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
             answered = false;
         }
         PROFILE_ZONE("SceneBatch");
+        stats.batches++;
         for (auto& request : batch) {
             apply(request);
         }
@@ -228,6 +229,8 @@ auto ViewScene::apply(Request& request) -> void {
 }
 
 auto ViewScene::applyOpen(const std::string& sceneId) -> void {
+    // The counters are per scene.
+    stats = {};
     // Every draw of the scene before goes: its slots die and are reused, lowest first, so a scene opened draws in visit order.
     SceneChanges changes;
     for (auto& [key, slot] : slotOfDraw) {
@@ -321,6 +324,7 @@ auto ViewScene::receive(const std::string& assetId) -> void {
     }
     auto kind = it->second;
     inFlight.erase(it);
+    stats.assetsReceived++;
     bool refreshed = refreshing.erase(assetId) > 0;
     assetsSinceReport++;
     auto asset = kind == AssetKind::Other && !refreshed ? std::optional<PackedAsset>{} : assets.take(assetId);
@@ -409,6 +413,7 @@ auto ViewScene::compose() -> void {
     if (!composer) {
         return;
     }
+    stats.composes++;
     auto start = std::chrono::steady_clock::now();
     std::vector<std::pair<std::string, AssetKind>> fresh;
     for (const auto& needed : composer->compose()) {
@@ -436,6 +441,7 @@ auto ViewScene::compose() -> void {
         return true;
     });
     auto ms = msSince(start);
+    stats.lastComposeMs = ms;
     TRACE_EVENT("Scene", "PacksComposed", id)
         .text(std::format("{} composed: {} layer packs, {} prims, {} prototypes, {:.0f} ms after it was requested", id, requestedPacks.size(), entities, world.prototypes.size(), msSince(openedAt)))
         .field("packs", (int64_t) requestedPacks.size())
@@ -567,6 +573,31 @@ auto ViewScene::publish() -> void {
     snapshot->transforms = transforms;
     snapshot->cameras = authoredCameras;
     snapshot->lodRoots = drawnLodRoots;
+    snapshot->thread = stats;
+    for (const auto& [assetId, kind] : inFlight) {
+        if (kind == AssetKind::Layer) {
+            snapshot->thread.inFlightLayers++;
+        } else if (kind == AssetKind::Mesh) {
+            snapshot->thread.inFlightMeshes++;
+        } else if (kind == AssetKind::Material) {
+            snapshot->thread.inFlightMaterials++;
+        } else if (kind == AssetKind::Texture) {
+            snapshot->thread.inFlightTextures++;
+        } else {
+            snapshot->thread.inFlightOther++;
+        }
+    }
+    snapshot->thread.layerPacks = (uint32_t) requestedPacks.size();
+    snapshot->thread.meshPacks = (uint32_t) meshPacks.size();
+    snapshot->thread.materialPacks = (uint32_t) materialPacks.size();
+    snapshot->thread.texturePacks = (uint32_t) texturePacks.size();
+    snapshot->thread.failedAssets = (uint32_t) failedAssets.size();
+    snapshot->thread.meshEntries = meshLibrary.count();
+    snapshot->thread.materialEntries = materialLibrary.count();
+    snapshot->thread.textureEntries = textureLibrary.count();
+    snapshot->thread.composeNeeded = composeNeeded;
+    snapshot->thread.extractNeeded = extractNeeded;
+    snapshot->thread.sinceOpenMs = id.empty() ? 0.0 : msSince(openedAt);
     snapshot->unitScale = unitScale;
     std::set<std::string> ids(requestedPacks.begin(), requestedPacks.end());
     for (const auto& [assetId, pack] : meshPacks) {
@@ -1066,6 +1097,8 @@ auto ViewScene::extract() -> void {
 
     inputsRevision++;
     auto ms = msSince(start);
+    stats.extracts++;
+    stats.lastExtractMs = ms;
     TRACE_EVENT("Scene", "WorldExtracted", id)
         .text(std::format("draws built: {} instances of {} meshes, {} materials, {} textures, {} lights in {:.0f} ms", draws.size(), meshesUsed.size(), materialsUsed.size(), texturesUsed.size(), drawn.lights.size(), ms))
         .field("instances", (int64_t) draws.size())

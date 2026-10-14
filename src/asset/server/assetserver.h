@@ -105,6 +105,7 @@ private:
     auto onMessage(RpcServer::ConnectionId connection, const rpc::Json& message) -> void;
     auto onAssetRequest(RpcServer::ConnectionId connection, const rpc::Json& id, const rpc::Json& params) -> void;
     auto addRecords() -> void;
+    auto delaysJson() -> rpc::Json;
     auto status() -> rpc::Json;
     auto clientsRecord() -> rpc::Json;
     auto requestsRecord() -> rpc::Json;
@@ -189,6 +190,9 @@ private:
     std::atomic<uint64_t> noticesSent{0};
 
     std::mutex streamMutex;
+    // The test aid's delays: options.delays at start, changed by asset.delay.set while running.
+    std::mutex delayMutex;
+    std::vector<Options::Delay> delays;
     std::unordered_set<RpcServer::ConnectionId> connections;
     std::unordered_map<RpcServer::ConnectionId, Stream> streams;
 };

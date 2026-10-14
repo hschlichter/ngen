@@ -38,6 +38,23 @@ struct ResidentWaiter {
 };
 
 // What ngen-view's commands act on. Owned by the view's main; the commands hold references.
+// Where the view is in loading its scene, kept by the main loop and read by the `scenethread` record and the Scene window. Resident: the scene
+// thread has nothing left to do and the render thread has drawn every change with nothing left to upload.
+struct ViewResidency {
+    bool resident = false;
+    bool everResident = false;
+    bool scriptHeld = false; // script frames don't count: waiting for the first residency or for a method that answers on it
+    uint64_t scriptFrame = 0;
+    // The load in progress: main-loop frames while not resident, and the longest of them.
+    uint64_t loadingFrames = 0;
+    double longestLoadingFrameMs = 0.0;
+    // The last time it became resident: the frame, the time since start, and that load's frames and longest frame.
+    uint64_t lastResidentFrame = 0;
+    double lastResidentMs = 0.0;
+    uint64_t lastLoadFrames = 0;
+    double lastLoadLongestMs = 0.0;
+};
+
 struct ViewContext {
     Camera& cam;
     ViewScene& scene;
@@ -55,6 +72,7 @@ struct ViewContext {
     bool& quit;
     const uint64_t& frameCounter;
     std::vector<ResidentWaiter>& residentWaiters;
+    const ViewResidency& residency;
     std::string sceneLabel;
 };
 

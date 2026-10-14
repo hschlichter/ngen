@@ -386,6 +386,17 @@ auto drawViewTab(RenderDebugViewFlags& view) -> void {
     ImGui::Checkbox("PCF (hardware compare, 3x3)", &view.shadow.pcf);
 
     ImGui::Separator();
+    ImGui::TextUnformatted("Ambient (hemisphere)");
+    ImGui::TextDisabled("Faces out of the sun: sky colour facing up, ground colour facing down, as fractions of the sun's radiance.");
+    ImGui::SetNextItemWidth(220.0f);
+    ImGui::ColorEdit3("Sky", &view.ambient.sky.x, ImGuiColorEditFlags_Float);
+    ImGui::SetNextItemWidth(220.0f);
+    ImGui::ColorEdit3("Ground", &view.ambient.ground.x, ImGuiColorEditFlags_Float);
+    if (ImGui::SmallButton("Reset ambient")) {
+        view.ambient = AmbientSettings{};
+    }
+
+    ImGui::Separator();
     ImGui::TextUnformatted("Texture sampling");
     static const float anisoSteps[] = {0.0f, 2.0f, 4.0f, 8.0f, 16.0f};
     int anisoIndex = 0;

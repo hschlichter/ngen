@@ -437,15 +437,11 @@ auto main(int argc, char* argv[]) -> int {
     };
     // Until the scene is first resident the camera follows it, framing what has arrived, unless it is moved by hand.
     bool autoFrame = true;
-    bool everResident = false;
-    bool wasResident = false;
     // Answers waiting for the scene to be resident (view.waitResident, view.lod.set, view.repack, view.purposes).
     std::vector<ResidentWaiter> residentWaiters;
-    // Script frames: counted only while nothing waits for residency, so a script sees the scene as it is once loaded.
-    uint64_t scriptFrame = 0;
-    // The longest main-loop frame while the scene wasn't resident: how responsive the view stayed while it loaded.
-    double longestLoadingFrameMs = 0.0;
-    uint64_t loadingFrames = 0;
+    // Script frames count only while nothing waits for residency, so a script sees the scene as it is once loaded; the longest main-loop
+    // frame while the scene isn't resident says how responsive the view stayed while it loaded.
+    ViewResidency residency;
 
     // Main loop
     profile::registerThread("Main");
@@ -479,6 +475,7 @@ auto main(int argc, char* argv[]) -> int {
         .quit = quit,
         .frameCounter = frameCounter,
         .residentWaiters = residentWaiters,
+        .residency = residency,
         .sceneLabel = positional.size() >= 2 ? std::string(positional[1]) : std::string("(new scene)"),
     };
     registerViewMethods(registry, viewContext);
@@ -528,11 +525,11 @@ auto main(int argc, char* argv[]) -> int {
                 });
             }
         }
-        bool holdScript = (waitForResident && !everResident) || !residentWaiters.empty();
+        residency.scriptHeld = (waitForResident && !residency.everResident) || !residentWaiters.empty();
         dueCommands.clear();
-        if (!holdScript) {
-            scriptFrame++;
-            session.takeDue(scriptFrame, dueCommands);
+        if (!residency.scriptHeld) {
+            residency.scriptFrame++;
+            session.takeDue(residency.scriptFrame, dueCommands);
         }
         // A script or an RPC call that moves the camera ends the following, as a hand on the controls does.
         auto camPositionBefore = cam.position;
@@ -545,15 +542,15 @@ auto main(int argc, char* argv[]) -> int {
         if (cam.position != camPositionBefore || cam.yaw != camYawBefore || cam.pitch != camPitchBefore) {
             autoFrame = false;
         }
-        if (maxFrames > 0 && scriptFrame > maxFrames) {
+        if (maxFrames > 0 && residency.scriptFrame > maxFrames) {
             quit = true;
         }
         auto nowTicks = SDL_GetTicksNS();
         auto dt = (float) (nowTicks - lastTicks) / 1.0e9f;
         lastTicks = nowTicks;
-        if (!wasResident && frameCounter > 1) {
-            longestLoadingFrameMs = std::max(longestLoadingFrameMs, (double) dt * 1000.0);
-            loadingFrames++;
+        if (!residency.resident && frameCounter > 1) {
+            residency.longestLoadingFrameMs = std::max(residency.longestLoadingFrameMs, (double) dt * 1000.0);
+            residency.loadingFrames++;
         }
 
         int winW = 0;
@@ -575,9 +572,9 @@ auto main(int argc, char* argv[]) -> int {
         }
         // Resident: the scene thread has nothing left to do, and the render thread has drawn every change with nothing left to upload.
         bool resident = scene.idle() && renderThread.sceneDrawn();
-        if (resident && !wasResident) {
-            if (!everResident) {
-                everResident = true;
+        if (resident && !residency.resident) {
+            if (!residency.everResident) {
+                residency.everResident = true;
                 if (autoFrame) {
                     frameSceneView();
                 }
@@ -591,17 +588,21 @@ auto main(int argc, char* argv[]) -> int {
                                       trace::msSinceStart(),
                                       scene.renderWorld().meshInstances.size(),
                                       stats.received,
-                                      loadingFrames,
-                                      longestLoadingFrameMs))
+                                      residency.loadingFrames,
+                                      residency.longestLoadingFrameMs))
                     .field("frame", (int64_t) frameCounter)
                     .field("since_start_ms", trace::msSinceStart())
                     .field("assets", (int64_t) stats.received)
-                    .field("longest_frame_ms", longestLoadingFrameMs);
-                longestLoadingFrameMs = 0.0;
-                loadingFrames = 0;
+                    .field("longest_frame_ms", residency.longestLoadingFrameMs);
             }
+            residency.lastResidentFrame = frameCounter;
+            residency.lastResidentMs = trace::msSinceStart();
+            residency.lastLoadFrames = residency.loadingFrames;
+            residency.lastLoadLongestMs = residency.longestLoadingFrameMs;
+            residency.longestLoadingFrameMs = 0.0;
+            residency.loadingFrames = 0;
         }
-        wasResident = resident;
+        residency.resident = resident;
         if (resident) {
             for (auto& waiter : residentWaiters) {
                 waiter.responder.respond(waiter.result);
@@ -927,6 +928,60 @@ auto main(int argc, char* argv[]) -> int {
                 frameSelected();
             }
         }
+        if (viewUI.wantsSceneFlow()) {
+            // The Scene Flow window: the same numbers as the scenethread and gpuscene records.
+            auto& flow = viewUI.sceneFlowWindow();
+            const auto& t = scene.threadStats();
+            auto [posted, applied] = scene.requestCounts();
+            flow.assets = assetClient.stats();
+            flow.thread = {
+                .requestsPosted = posted,
+                .requestsApplied = applied,
+                .batches = t.batches,
+                .composes = t.composes,
+                .lastComposeMs = t.lastComposeMs,
+                .composeNeeded = t.composeNeeded,
+                .extracts = t.extracts,
+                .lastExtractMs = t.lastExtractMs,
+                .extractNeeded = t.extractNeeded,
+                .assetsReceived = t.assetsReceived,
+                .inFlightLayers = t.inFlightLayers,
+                .inFlightMeshes = t.inFlightMeshes,
+                .inFlightMaterials = t.inFlightMaterials,
+                .inFlightTextures = t.inFlightTextures,
+                .inFlightOther = t.inFlightOther,
+                .layerPacks = t.layerPacks,
+                .meshPacks = t.meshPacks,
+                .materialPacks = t.materialPacks,
+                .texturePacks = t.texturePacks,
+                .failedAssets = t.failedAssets,
+                .meshEntries = t.meshEntries,
+                .materialEntries = t.materialEntries,
+                .textureEntries = t.textureEntries,
+                .sinceOpenMs = t.sinceOpenMs,
+                .idle = scene.idle(),
+            };
+            flow.gpu = renderThread.latestSceneGpuStats();
+            flow.residency = {
+                .resident = residency.resident,
+                .everResident = residency.everResident,
+                .renderThreadDrawn = renderThread.sceneDrawn(),
+                .scriptHeld = residency.scriptHeld,
+                .scriptFrame = residency.scriptFrame,
+                .loadingFrames = residency.loadingFrames,
+                .longestLoadingFrameMs = residency.longestLoadingFrameMs,
+                .lastResidentFrame = residency.lastResidentFrame,
+                .lastResidentMs = residency.lastResidentMs,
+                .lastLoadFrames = residency.lastLoadFrames,
+                .lastLoadLongestMs = residency.lastLoadLongestMs,
+            };
+            if (auto bytes = std::exchange(flow.uploadBudgetRequested, std::nullopt)) {
+                renderThread.setUploadBudget(*bytes);
+            }
+            if (auto bytes = std::exchange(flow.geometryLimitRequested, std::nullopt)) {
+                renderThread.setGeometryLimit(*bytes);
+            }
+        }
         {
             // The LOD window: the levels it asked for, and the root it selects or frames; it highlights the root at or above the selection.
             auto& lodWindow = viewUI.lodWindow();
@@ -998,6 +1053,7 @@ auto main(int argc, char* argv[]) -> int {
             .cullEnabled = cullState.enabled,
             .cullViewProj = cullViewProj,
             .shadowSettings = viewUI.getShadowSettings(),
+            .ambient = viewUI.ambientSettings(),
             .cascadeCount = cascadeCount,
             .cascades = cascades,
             .translateGizmoVerts = {translateGizmo.vertices().begin(), translateGizmo.vertices().end()},

@@ -170,7 +170,9 @@ public:
     // until meshes removed make room for it.
     auto setGeometryLimit(uint64_t bytes) -> void { geometryLimit = bytes; }
     struct GeometryPoolStats {
-        uint64_t limitBytes = 0; // per pool buffer
+        uint64_t limitBytes = 0;  // per pool buffer
+        uint64_t vertexLimit = 0; // the vertices and indices the limit holds
+        uint64_t indexLimit = 0;
         uint64_t vertexCapacity = 0;
         uint64_t vertexUsed = 0;
         uint64_t indexCapacity = 0;
@@ -179,6 +181,19 @@ public:
         uint64_t waitingBytes = 0;
     };
     auto geometryPoolStats() const -> GeometryPoolStats;
+    // The upload queue: what waits to be copied to the GPU, the per-frame budget, and the last SceneUpload pass's share.
+    struct UploadStats {
+        uint32_t queued = 0;
+        uint64_t queuedBytes = 0;
+        uint64_t budget = 0;
+        uint32_t lastUploads = 0; // in the last record
+        uint64_t lastBytes = 0;
+        uint64_t lastFrame = 0;           // the frame of that record
+        uint64_t totalBytes = 0;          // every upload so far
+        uint32_t texturesWaitingSlot = 0; // every level copied, slot assigned at the next beginFrame
+    };
+    auto uploadStats() const -> UploadStats;
+    auto uploadBudgetBytes() const -> uint64_t { return uploadBudget; }
 
     auto meshRange(uint32_t meshIndex) const -> const GpuMeshRange*;
     auto meshRanges() const -> const std::unordered_map<uint32_t, GpuMeshRange>& { return meshes; }
@@ -265,6 +280,10 @@ private:
     DeletionQueue* deletionQueue = nullptr;
     uint64_t currentFrame = 0;
     uint64_t uploadBudget = defaultUploadBudget;
+    uint32_t lastUploads = 0;
+    uint64_t lastUploadBytes = 0;
+    uint64_t lastUploadFrame = 0;
+    uint64_t totalUploadBytes = 0;
     bool descriptorsDirty = true;
 
     // Geometry pool and mesh table

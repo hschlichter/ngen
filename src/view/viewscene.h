@@ -58,6 +58,33 @@ struct SceneLodRoot {
     bool setByHand = false;
 };
 
+// The scene thread's work as of a snapshot: batches of requests and answers taken, composes (each composes with the packs held and asks for
+// those it names and lacks) and extracts (the renderer's inputs built from the World), the assets in flight by kind, and what it holds.
+struct SceneThreadStats {
+    uint64_t batches = 0;
+    uint64_t composes = 0;
+    double lastComposeMs = 0.0; // the last compose that had every layer pack it named
+    uint64_t extracts = 0;
+    double lastExtractMs = 0.0;
+    uint64_t assetsReceived = 0;
+    uint32_t inFlightLayers = 0;
+    uint32_t inFlightMeshes = 0;
+    uint32_t inFlightMaterials = 0;
+    uint32_t inFlightTextures = 0;
+    uint32_t inFlightOther = 0;
+    uint32_t layerPacks = 0; // requested since the scene opened
+    uint32_t meshPacks = 0;
+    uint32_t materialPacks = 0;
+    uint32_t texturePacks = 0;
+    uint32_t failedAssets = 0;
+    uint32_t meshEntries = 0; // library entries the renderer has been told about
+    uint32_t materialEntries = 0;
+    uint32_t textureEntries = 0;
+    bool composeNeeded = false;
+    bool extractNeeded = false;
+    double sinceOpenMs = 0.0;
+};
+
 // The scene as the scene thread last published it, for the main thread's queries. Immutable once published.
 struct SceneSnapshot {
     std::string id;
@@ -80,6 +107,7 @@ struct SceneSnapshot {
     std::unordered_map<std::string, uint32_t> lodLevels;
     // Nothing queued, requested or waiting to be extracted when it was published.
     bool idle = true;
+    SceneThreadStats thread;
 };
 
 // The scene ngen-view shows: its World, composed from the scene's packs, and the renderer's inputs built from it: the draws (RenderWorld,
@@ -128,6 +156,9 @@ public:
     auto renderWorld() const -> const RenderWorld& { return current->drawn; }
     // The cameras the scene authors, in visit order.
     auto cameras() const -> const std::vector<SceneCamera>& { return current->cameras; }
+    // The scene thread's work as of the snapshot update() took, and the requests posted and applied now.
+    auto threadStats() const -> const SceneThreadStats& { return current->thread; }
+    auto requestCounts() const -> std::pair<uint64_t, uint64_t> { return {requestsPosted.load(), requestsApplied.load()}; }
     // The LOD roots reached while drawing, in visit order.
     auto lodRoots() const -> const std::vector<SceneLodRoot>& { return current->lodRoots; }
     // Moves on each time the renderer's inputs change.
@@ -275,6 +306,7 @@ private:
     std::map<std::string, EntityTransform> transforms;
     std::vector<SceneCamera> authoredCameras;
     std::vector<SceneLodRoot> drawnLodRoots;
+    SceneThreadStats stats;                          // the counters; publish() fills in the rest
     std::map<std::string, glm::mat4> localOverrides; // setLocalTransform's, applied by every extract
     glm::mat4 unitScale = glm::mat4(1.0f);
     uint64_t inputsRevision = 0;

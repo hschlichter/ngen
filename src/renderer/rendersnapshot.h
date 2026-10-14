@@ -51,6 +51,7 @@ struct RenderSnapshot {
     // Shadow cascades fitted on the main thread, culled on the GPU.
     // cascadeCount 0 means the renderer fits a single cascade itself.
     ShadowCascadeSettings shadowSettings;
+    AmbientSettings ambient;
     uint32_t cascadeCount = 0;
     std::array<ShadowCascade, maxShadowCascades> cascades;
 

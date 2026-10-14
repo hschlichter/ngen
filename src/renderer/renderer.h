@@ -77,6 +77,9 @@ public:
     // The most each geometry pool buffer may take, in bytes; 0 for the device's largest buffer (GpuScene::setGeometryLimit). Before the
     // render thread starts.
     auto setGeometryLimit(uint64_t bytes) -> void { gpuScene.setGeometryLimit(bytes); }
+    auto setUploadBudget(uint64_t bytes) -> void { gpuScene.setUploadBudget(bytes); }
+    // The GPU scene's draw slots, tables, upload queue and pool, after a frame (the change list counts are the render thread's).
+    auto sceneGpuStats() const -> SceneGpuStats;
     // Next presented frame is read back and written as PNG. Waits on that frame's fence once. The UI is left out of
     // that frame (it skips the editor UI pass) unless setScreenshotsShowUi(true).
     auto requestScreenshot(std::string path) -> void { screenshotPath = std::move(path); }

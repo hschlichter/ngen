@@ -1,6 +1,6 @@
 # Roadmap
 
-What is planned, open or parked, as of 2026-10-08. One line per item; the linked plans hold the detail. Items marked *parked* were discussed and
+What is planned, open or parked, as of 2026-10-14. One line per item; the linked plans hold the detail. Items marked *parked* were discussed and
 set aside on purpose; *trigger* says what would bring an item back. When an item lands it moves to [Landed](#landed) at the end, with its
 follow-ups left behind as open items.
 
@@ -12,8 +12,39 @@ An engine for developer and AI collaboration.
 - **Humans and AI edit together in the editor, interactively.** The AI does the broad and bulk work; the human tweaks, steers and decides. Every
   AI edit is an ordinary, undoable editor edit that the human can see, adjust or reject.
 - **Everything is async.** A scene opens instantly and its data pops in as it arrives: geometry, textures, shaders, sub-scenes and LODs.
+- **Everything is reachable and visible.** ngen is a learning and platform-building exercise too: every part of the engine is reachable at
+  runtime by an agent (records, RPC, verbs) and visible to a human in UI tools, including where it sits in the engine's flow. See `AGENTS.md`,
+  "Runtime access and visibility".
 
 Items below that follow from the objective rather than from an existing plan are marked *from the objective*.
+
+## Vertical slice
+
+Decided 2026-10-14: the thinnest working version of every piece of the objective first, end to end, then iterate on all of them. Depth before
+breadth left two of the objective's three goals with nothing yet. In order; each step is the smallest version that works, and its depth stays in
+the sections below.
+
+1. **Streaming, minimal.** The screen-size heuristic picks each LOD root's level every frame from the camera, and levels load and unload; the
+   coarsest level stays resident as the floor. No budgets, priorities, eviction or texture streaming yet. Flying over Caldera, detail appears
+   where the camera is. [plan_streaming_lod.md](plan_streaming_lod.md) step 3 (step 2, the proxy map through the scene pack, is likely mostly
+   there already: checked first).
+2. **Editor, minimal.** `ngen-editor` as its own process: opens the USD stage (the code in `src/editor/`), selects, transforms and saves to a
+   layer; the view takes the edit through the asset change notices that already exist. No deltas, live unsaved edits or cross-process undo yet.
+   Every edit is an RPC call an AI can make too. [plan_editor_split.md](plan_editor_split.md), rewritten small.
+3. **Gameplay framework, minimal.** Entities and components on top of the World, a fixed-timestep game loop, input, and game code apart from the
+   engine. How game code is hosted (a module the engine loads, or scripting) and what a component is are the plan's decisions; they shape
+   everything after. New plan.
+4. **Physics, minimal.** Jolt vendored; the packer reads UsdPhysics colliders and rigid bodies; bodies simulate in the game loop and drive their
+   draws' transforms. New plan, on step 3's components.
+5. **Animation and skinning, minimal.** UsdSkel skeletons and skinned meshes, time-sampled playback, GPU skinning. New plan.
+6. **Rendering, minimal gaps.** HDR and tone mapping, point and spot lights, a dome light in place of the hemisphere ambient.
+7. **A first game**, the integration test: a small game (walk Sponza, push physics boxes) built only through the engine's APIs and tools,
+   ideally by an AI session over RPC and `ngen-cli` with a human steering in the editor. What it exposes is what the iterations after it work on.
+
+Each step ends with a **visibility pass** over what it touched: what is reachable as records, RPC and verbs, what a window shows, and where in
+the engine's flow it sits; gaps are fixed or listed before the next step.
+
+Networking, remote connections, shipping and the other parked items stay parked until step 7 shows a need.
 
 ## Direction: the tool architecture
 

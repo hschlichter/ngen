@@ -78,7 +78,8 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
 - Records at a frame go to a file: a script line `120 record render /tmp/records.jsonl` appends the render debug record (meshes, textures,
   passes with draw counters and GPU time, culled passes, draw log with prim paths) as one JSON line, `value` holding the record,
   `requested_frame` the frame asked for and `frame` the frame it was ready (GPU readbacks take a few). Any record works: `render`, `memory`,
-  `counters`, `culling`, `scene`, `assets` (per asset: state, size, times), `lod` (every LOD root: levels, default, wanted, drawn, loaded), `pipelines`, `profile`, `status` (`src/introspect/README.md`); several lines into one file are fine. Read it
+  `counters`, `culling`, `scene`, `assets` (per asset: state, size, times), `lod` (every LOD root: levels, default, wanted, drawn, loaded), `scenethread` (requests, composes, extracts, assets in flight and held,
+  residency), `gpuscene` (change lists, upload queue and budget, geometry pool), `pipelines`, `profile`, `status` (`src/introspect/README.md`); several lines into one file are fine. Read it
   with `jq 'select(.record == "render") | .value.passes' /tmp/records.jsonl`.
 - `dump-profile PATH` (script verb): the profiler history as a Chrome trace file (`jq '.traceEvents'`, or open in Perfetto).
 - `--script=FILE`: `<frame> <verb> [args]` per line, same verbs as the flags plus `quit`, `pick <x> <y>` (select what is drawn at that framebuffer pixel,
@@ -89,6 +90,7 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   `assets-of [/prim]` (the assets drawn at or under a prim use, or the selection's; `view.assetsOf` answers with them),
   `lod <LOD root path> <level>` (the level a LOD root wants; loads it), `lod-reset <LOD root path>` (back to its default) and `cull on|off|freeze|unfreeze|show|hide`
   (frustum culling toggle, frozen frustum, red/green AABB overlay), `prepass on|off` (depth prepass) and
+  `ambient sky=r,g,b ground=r,g,b|reset` (hemisphere ambient), `gpuscene budget=<MiB>,limit=<MiB>` (upload budget, geometry pool limit),
   `sampler aniso=8,bias=0,minlod=0,mip=linear|nearest` (material sampler), `shadow cascades=3,tile=1024,lambda=0.5,pcf=on|off,distance=200`
   (cascaded shadows), `inspect <texture> <level>|off` (texture inspector
   capture) and `dump-texture <texture> <level> <path>` (one mip level as PNG; the texture index as the `render` record's `textures` list it); several screenshots in one run.

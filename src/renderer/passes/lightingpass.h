@@ -35,11 +35,22 @@ struct LightingUBO {
 // Pre-resolved per-frame lighting inputs. The renderer picks one active light and flattens
 // it into this small struct so LightingPass doesn't have to re-run the selection logic or
 // deal with RenderLight's worldTransform.
+// The engine's ambient until scenes light it themselves (dome lights): a sky colour on faces turned up and a ground colour on faces turned
+// down, blended by how much a face turns up, as fractions of the sun's radiance. The defaults are a slightly blue sky and a darker, warm
+// ground; a vertical face gets their average, about the constant 0.15 the view had before.
+struct AmbientSettings {
+    glm::vec3 sky = glm::vec3(0.20f, 0.21f, 0.24f);
+    glm::vec3 ground = glm::vec3(0.10f, 0.09f, 0.08f);
+
+    auto operator==(const AmbientSettings&) const -> bool = default;
+};
+
 struct LightingInputs {
     glm::vec3 direction = glm::vec3(0.0f, 1.0f, 0.0f); // unit vector pointing toward the light
     glm::vec3 radiance = glm::vec3(1.0f);              // color × intensity × 2^exposure, pre-scaled
     glm::vec3 shadowColor = glm::vec3(0.0f);           // attenuation tint from UsdLuxShadowAPI::shadow:color
     glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);        // the scene's up axis, for the hemisphere ambient
+    AmbientSettings ambient;
 };
 
 enum class GBufferView : int {

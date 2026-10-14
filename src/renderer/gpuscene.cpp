@@ -281,9 +281,24 @@ auto GpuScene::placeWaitingMeshes() -> void {
     }
 }
 
+auto GpuScene::uploadStats() const -> UploadStats {
+    return {
+        .queued = (uint32_t) queue.size(),
+        .queuedBytes = pendingBytes(),
+        .budget = uploadBudget,
+        .lastUploads = lastUploads,
+        .lastBytes = lastUploadBytes,
+        .lastFrame = lastUploadFrame,
+        .totalBytes = totalUploadBytes,
+        .texturesWaitingSlot = (uint32_t) texturesCopied.size(),
+    };
+}
+
 auto GpuScene::geometryPoolStats() const -> GeometryPoolStats {
     GeometryPoolStats stats = {
         .limitBytes = poolLimitBytes(),
+        .vertexLimit = poolLimitBytes() / sizeof(Vertex),
+        .indexLimit = poolLimitBytes() / sizeof(uint32_t),
         .vertexCapacity = vertexRanges.capacity(),
         .vertexUsed = vertexRanges.used(),
         .indexCapacity = indexRanges.capacity(),
@@ -555,6 +570,10 @@ auto GpuScene::record(RhiCommandBuffer* cmd, uint64_t budget, const Retire& reti
         takenBytes += queue[taken].bytes;
         taken++;
     }
+    lastUploads = (uint32_t) taken;
+    lastUploadBytes = takenBytes;
+    lastUploadFrame = currentFrame;
+    totalUploadBytes += takenBytes;
     // One staging buffer for the batch, and the zeros a grown table's new part needs.
     uint64_t zeroBytes = 0;
     for (auto* target : targets) {

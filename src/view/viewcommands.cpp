@@ -265,6 +265,42 @@ auto parseShadow(const std::string& args) -> std::expected<Json, std::string> {
     return params;
 }
 
+// "sky=r,g,b ground=r,g,b", either or both, or "reset".
+auto parseAmbient(const std::string& args) -> std::expected<Json, std::string> {
+    Json params = Json::object();
+    std::istringstream in(args);
+    std::string item;
+    while (in >> item) {
+        if (item == "reset") {
+            params["reset"] = true;
+            continue;
+        }
+        auto equals = item.find('=');
+        glm::vec3 colour(0.0f);
+        bool parsed = equals != std::string::npos && std::sscanf(item.c_str() + equals + 1, "%f,%f,%f", &colour.x, &colour.y, &colour.z) == 3;
+        auto key = item.substr(0, equals);
+        if (!parsed || (key != "sky" && key != "ground")) {
+            return std::unexpected(std::format("expected 'sky=r,g,b', 'ground=r,g,b' or 'reset', got '{}'", item));
+        }
+        params[key] = vec3Json(colour);
+    }
+    return params;
+}
+
+auto parseGpuScene(const std::string& args) -> std::expected<Json, std::string> {
+    Json params = Json::object();
+    for (const auto& [key, value] : splitItems(args)) {
+        if (key == "budget") {
+            params["uploadBudgetMiB"] = std::atoi(value.c_str());
+        } else if (key == "limit") {
+            params["geometryLimitMiB"] = std::atoi(value.c_str());
+        } else {
+            return std::unexpected(std::format("unknown key '{}'", key));
+        }
+    }
+    return params;
+}
+
 auto parsePrepass(const std::string& args) -> std::expected<Json, std::string> {
     if (args != "on" && args != "off") {
         return std::unexpected(std::format("unknown argument '{}'", args));
@@ -365,6 +401,8 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"dump-texture", "view.dumpTexture", parseDumpTexture},
     ScriptVerb{"shadow", "view.shadow", parseShadow},
     ScriptVerb{"prepass", "view.prepass", parsePrepass},
+    ScriptVerb{"ambient", "view.ambient", parseAmbient},
+    ScriptVerb{"gpuscene", "view.gpuscene.set", parseGpuScene},
     ScriptVerb{"screenshot", "view.screenshot", parsePath},
     ScriptVerb{"renderdoc-capture", "renderdoc.capture", parseNothing},
     ScriptVerb{"capture", "capture.request", parseCapture},
@@ -396,6 +434,7 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
                 requiredField("z", RpcType::Float, "position z"),
                 requiredField("yaw", RpcType::Float, "degrees"),
                 requiredField("pitch", RpcType::Float, "degrees"),
+                optionalField("speed", RpcType::Float, "fly speed, m/s"),
             },
             .result = "{}",
         },
@@ -403,6 +442,9 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
             view.cam.position = glm::vec3(p["x"].get<float>(), p["y"].get<float>(), p["z"].get<float>());
             view.cam.yaw = p["yaw"].get<float>();
             view.cam.pitch = p["pitch"].get<float>();
+            if (p.contains("speed")) {
+                view.cam.speed = std::clamp(p["speed"].get<float>(), 0.1f, 5000.0f);
+            }
             responder.respond(Json::object());
         });
     registry.add({.name = "view.camera.get", .summary = "The camera's position and yaw/pitch.", .result = "{x, y, z, yaw, pitch}"}, [&view](const Json&, RpcResponder responder) {
@@ -797,6 +839,49 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
         });
     registry.add(
         {
+            .name = "view.ambient",
+            .summary = "The hemisphere ambient: sky and ground colours, as fractions of the sun's radiance; reset for the defaults.",
+            .params = {
+                optionalField("sky", RpcType::Vec3, "[r, g, b]"),
+                optionalField("ground", RpcType::Vec3, "[r, g, b]"),
+                optionalField("reset", RpcType::Bool, "back to the defaults first"),
+            },
+            .result = "{}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto& ambient = view.ui.ambientSettingsMutable();
+            if (p.contains("reset") && p["reset"].get<bool>()) {
+                ambient = AmbientSettings{};
+            }
+            if (p.contains("sky")) {
+                ambient.sky = glm::vec3(p["sky"][0].get<float>(), p["sky"][1].get<float>(), p["sky"][2].get<float>());
+            }
+            if (p.contains("ground")) {
+                ambient.ground = glm::vec3(p["ground"][0].get<float>(), p["ground"][1].get<float>(), p["ground"][2].get<float>());
+            }
+            responder.respond(Json::object());
+        });
+    registry.add(
+        {
+            .name = "view.gpuscene.set",
+            .summary = "GPU scene settings, from the next frame: bytes uploaded per frame, and the most each geometry pool buffer may take (0 for the device's limit; lowering it stops growth, it doesn't shrink the pool).",
+            .params = {
+                optionalField("uploadBudgetMiB", RpcType::Int, "MiB per SceneUpload pass, at least 1"),
+                optionalField("geometryLimitMiB", RpcType::Int, "MiB per pool buffer, 0 for the device's limit"),
+            },
+            .result = "{}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            if (p.contains("uploadBudgetMiB")) {
+                view.renderThread.setUploadBudget((uint64_t) std::max(1, p["uploadBudgetMiB"].get<int>()) * 1024 * 1024);
+            }
+            if (p.contains("geometryLimitMiB")) {
+                view.renderThread.setGeometryLimit((uint64_t) std::max(0, p["geometryLimitMiB"].get<int>()) * 1024 * 1024);
+            }
+            responder.respond(Json::object());
+        });
+    registry.add(
+        {
             .name = "view.prepass",
             .summary = "The depth prepass.",
             .params = {requiredField("enabled", RpcType::Bool, "prepass on")},
@@ -942,6 +1027,61 @@ auto statusRecord(const ViewContext& view) -> Json {
         {"antiAliasing", view.ui.getAntiAliasing()},
         {"sampler", {{"anisotropy", sampler.maxAnisotropy}, {"lodBias", sampler.lodBias}, {"minLod", sampler.minLod}, {"nearestMip", sampler.nearestMip}}},
         {"purposes", {{"guide", view.ui.showGuides()}, {"proxy", view.ui.showProxies()}}},
+        {"ambient", {{"sky", vec3Json(view.ui.ambientSettings().sky)}, {"ground", vec3Json(view.ui.ambientSettings().ground)}}},
+    };
+}
+
+auto sceneThreadRecord(const ViewContext& view) -> Json {
+    const auto& t = view.scene.threadStats();
+    const auto& r = view.residency;
+    auto [posted, applied] = view.scene.requestCounts();
+    return {
+        {"requests", {{"posted", posted}, {"applied", applied}}},
+        {"batches", t.batches},
+        {"compose", {{"count", t.composes}, {"lastMs", t.lastComposeMs}, {"needed", t.composeNeeded}}},
+        {"extract", {{"count", t.extracts}, {"lastMs", t.lastExtractMs}, {"needed", t.extractNeeded}}},
+        {"assetsReceived", t.assetsReceived},
+        {"inFlight", {{"layers", t.inFlightLayers}, {"meshes", t.inFlightMeshes}, {"materials", t.inFlightMaterials}, {"textures", t.inFlightTextures}, {"other", t.inFlightOther}}},
+        {"held", {{"layerPacks", t.layerPacks}, {"meshPacks", t.meshPacks}, {"materialPacks", t.materialPacks}, {"texturePacks", t.texturePacks}, {"failed", t.failedAssets}}},
+        {"library", {{"meshes", t.meshEntries}, {"materials", t.materialEntries}, {"textures", t.textureEntries}}},
+        {"sinceOpenMs", t.sinceOpenMs},
+        {"idle", view.scene.idle()},
+        {"renderThreadDrawn", view.renderThread.sceneDrawn()},
+        {"resident", r.resident},
+        {"everResident", r.everResident},
+        {"scriptHeld", r.scriptHeld},
+        {"scriptFrame", r.scriptFrame},
+        {"loading", {{"frames", r.loadingFrames}, {"longestFrameMs", r.longestLoadingFrameMs}}},
+        {"lastResident", {{"frame", r.lastResidentFrame}, {"ms", r.lastResidentMs}, {"loadFrames", r.lastLoadFrames}, {"longestFrameMs", r.lastLoadLongestMs}}},
+    };
+}
+
+auto gpuSceneRecord(const ViewContext& view) -> Json {
+    auto s = view.renderThread.latestSceneGpuStats();
+    const auto& u = s.uploads;
+    const auto& p = s.geometryPool;
+    return {
+        {"frame", s.frame},
+        {"changeLists", {{"submitted", s.changeListsSubmitted}, {"drawn", s.changeListsDrawn}}},
+        {"gpuIdle", s.gpuIdle},
+        {"tables", {{"drawSlots", s.drawSlots}, {"meshes", s.meshes}, {"materials", s.materials}, {"textures", s.textures}}},
+        {"uploads",
+         {{"queued", u.queued},
+          {"queuedBytes", u.queuedBytes},
+          {"budget", u.budget},
+          {"last", {{"uploads", u.lastUploads}, {"bytes", u.lastBytes}, {"frame", u.lastFrame}}},
+          {"totalBytes", u.totalBytes},
+          {"texturesWaitingSlot", u.texturesWaitingSlot}}},
+        {"geometryPool",
+         {{"limitBytes", p.limitBytes},
+          {"vertexLimit", p.vertexLimit},
+          {"indexLimit", p.indexLimit},
+          {"vertexCapacity", p.vertexCapacity},
+          {"vertexUsed", p.vertexUsed},
+          {"indexCapacity", p.indexCapacity},
+          {"indexUsed", p.indexUsed},
+          {"waitingMeshes", p.waitingMeshes},
+          {"waitingBytes", p.waitingBytes}}},
     };
 }
 
@@ -1162,6 +1302,12 @@ auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext
     });
     records.add("scene", "the open scene: its layer stack, up axis and units, prims (instances expanded), prototypes, draws, lights and LOD levels set", [&view](RpcResponder responder) {
         responder.respond(sceneRecord(view));
+    });
+    records.add("scenethread", "the scene thread: requests, composes and extracts, assets in flight and held, and residency (the script's hold, the load's longest frame)", [&view](RpcResponder responder) {
+        responder.respond(sceneThreadRecord(view));
+    });
+    records.add("gpuscene", "the GPU scene's flow: change lists taken and drawn, the upload queue and its budget, the geometry pool and what waits for room", [&view](RpcResponder responder) {
+        responder.respond(gpuSceneRecord(view));
     });
     records.add("lod", "every LOD root drawn: its levels, the level it defaults to, wants and draws, the levels loaded, and whether set by hand", [&view](RpcResponder responder) {
         responder.respond(lodRecord(view));

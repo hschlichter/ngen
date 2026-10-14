@@ -14,6 +14,7 @@
 #include "memorywindow.h"
 #include "performancewindow.h"
 #include "renderdebugwindow.h"
+#include "sceneflowwindow.h"
 #include "statusbar.h"
 
 #include <glm/glm.hpp>
@@ -99,6 +100,8 @@ public:
     auto samplerSettingsMutable() -> SamplerSettings& { return samplerSettings; }
     auto getShadowSettings() const -> const ShadowCascadeSettings& { return shadowSettings; }
     auto shadowSettingsMutable() -> ShadowCascadeSettings& { return shadowSettings; }
+    auto ambientSettings() const -> const AmbientSettings& { return ambient; }
+    auto ambientSettingsMutable() -> AmbientSettings& { return ambient; }
     auto setShadowCullStats(uint32_t cascades, const std::array<uint32_t, maxShadowCascades>& culled, const std::array<uint32_t, maxShadowCascades>& drawn) -> void {
         shadowCascadeCount = cascades;
         shadowCulledStats = culled;
@@ -137,7 +140,7 @@ public:
 
     // grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa, cascadefrusta; false if the name is unknown.
     auto setOverlay(std::string_view name, bool on) -> bool;
-    // Opens or closes an introspection window by name (memory, capture, framedebugger, gpuscene, counters, shaders, culling, assets, lod).
+    // Opens or closes an introspection window by name (memory, capture, framedebugger, gpuscene, counters, shaders, culling, assets, lod, sceneflow).
     // Returns false for an unknown name.
     auto setIntrospectionWindow(std::string_view name, bool on) -> bool;
     // Screenshot requested from the UI (button or F12); main hands it to the renderer.
@@ -172,6 +175,9 @@ public:
     auto setStatusBar(const StatusBarData& data) -> void { statusBarData = data; }
     auto cameraWindow() -> CameraWindowState& { return cameraState; }
     auto lodWindow() -> LodWindowState& { return lodState; }
+    // The Scene Flow window: the application sets its data each frame while it is open, and applies the settings it asks for.
+    auto sceneFlowWindow() -> SceneFlowWindowState& { return sceneFlowState; }
+    auto wantsSceneFlow() const -> bool { return showSceneFlowWindow; }
     auto setBookmarkPath(std::string path) -> void {
         cameraState.bookmarkPath = std::move(path);
         cameraState.loaded = false;
@@ -202,6 +208,7 @@ private:
     bool depthPrepassFlag = false;
     SamplerSettings samplerSettings;
     ShadowCascadeSettings shadowSettings;
+    AmbientSettings ambient;
     uint32_t shadowCascadeCount = 0;
     std::array<uint32_t, maxShadowCascades> shadowCulledStats = {};
     std::array<uint32_t, maxShadowCascades> shadowDrawnStats = {};
@@ -220,6 +227,8 @@ private:
     bool showAssetsWindow = false;
     bool showLodWindow = false;
     LodWindowState lodState;
+    bool showSceneFlowWindow = false;
+    SceneFlowWindowState sceneFlowState;
     std::vector<AssetLogEntry> assetLog;
     AssetsWindowState assetsState;
     uint32_t cullStatInstances = 0;

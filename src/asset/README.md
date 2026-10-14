@@ -65,7 +65,8 @@ by hand and runs until Ctrl-C or SIGTERM:
 
 `--delay=<id pattern>:<ms>` (repeatable; `*` matches any run of characters) holds the answer for matching ids that long after packing, so a test
 can see what a client does while an asset is missing. The server traces each pattern as a warning at start-up and each held answer, so a run
-with it can't be mistaken for a normal one.
+with it can't be mistaken for a normal one. `asset.delay.set {pattern, ms}` changes them while the server runs (0 ms removes a pattern), and
+the `status` record lists them under `delays`.
 
 **Its working directory is the root.** Asset ids are relative to it, packers run in it, the cache is `.ngen-assets/` in it, and it registers in
 `.ngen-discovery/` in it, as kind `asset` with its variant as the label; a view running in the same directory finds it. Nothing depends on where

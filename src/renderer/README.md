@@ -200,6 +200,10 @@ Tables:
 **Uploads** (`GpuScene::addUploadPass`, the `SceneUpload` pass, before the culling passes):
 - **Per frame.** Each frame takes queued uploads in order, up to `uploadBudget` bytes (64 MiB; at least one upload, so a large texture level still
   goes). A texture's levels are separate uploads.
+- **Seen from outside.** After every frame the render thread publishes `SceneGpuStats` (`RenderThread::latestSceneGpuStats`): change lists
+  submitted and drawn, the tables' sizes, the upload queue (`GpuScene::uploadStats`: queued, budget, the last pass, textures waiting for their
+  slot) and the geometry pool. The budget and the pool limit are runtime settings (`RenderThread::setUploadBudget`, `setGeometryLimit`), applied
+  before the next frame.
 - **One staging buffer per frame's batch**, retired through the deletion queue.
 - **Barriers.** The copies are recorded in the frame's command buffer:
   - before them, a barrier from the tables' and pool's read states to transfer;

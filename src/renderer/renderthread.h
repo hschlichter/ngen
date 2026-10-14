@@ -39,6 +39,16 @@ public:
         return drawnSoFar == submittedSoFar && gpuIdle.load(std::memory_order_acquire);
     }
 
+    // The GPU scene's flow after the last finished frame: change lists, upload queue, geometry pool. Always published.
+    auto latestSceneGpuStats() -> SceneGpuStats {
+        std::lock_guard lock(statsMutex);
+        return sceneStats;
+    }
+    // Runtime settings, applied before the next frame: bytes per SceneUpload pass, and the most each geometry pool buffer may take (0 for
+    // the device's limit; lowering it stops growth, it doesn't shrink the pool).
+    auto setUploadBudget(uint64_t bytes) -> void { uploadBudgetWanted.store(bytes, std::memory_order_relaxed); }
+    auto setGeometryLimit(uint64_t bytes) -> void { geometryLimitWanted.store(bytes, std::memory_order_relaxed); }
+
     auto setFrameGraphDebugEnabled(bool enabled) -> void { fgDebugWanted.store(enabled, std::memory_order_relaxed); }
     auto latestFrameGraphDebug() -> std::optional<FrameGraphDebugSnapshot>;
     auto setRenderDebugEnabled(bool enabled) -> void { renderDebugWanted.store(enabled, std::memory_order_relaxed); }
@@ -103,6 +113,10 @@ private:
     std::atomic<uint64_t> submitted{0}; // change lists submitted
     std::atomic<uint64_t> drawnUpTo{0}; // change lists applied by a frame the render thread finished
     std::atomic<bool> gpuIdle{true};    // that frame left nothing to upload
+    std::mutex statsMutex;
+    SceneGpuStats sceneStats;
+    std::atomic<uint64_t> uploadBudgetWanted{0};           // 0: unchanged
+    std::atomic<uint64_t> geometryLimitWanted{UINT64_MAX}; // UINT64_MAX: unchanged
 
     // Frame graph debug slot (separate channel, latest-only, non-blocking)
     std::atomic<bool> fgDebugWanted{false};

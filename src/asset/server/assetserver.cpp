@@ -130,7 +130,8 @@ auto AssetServer::start(const Options& startOptions) -> std::expected<void, std:
         traceLine("rule {}: {} -> {}", rule.name, extensions, rule.packer);
     }
     traceLine("cache {}: {} assets recorded", cacheDirectory.string(), cache.size());
-    for (const auto& delay : options.delays) {
+    delays = options.delays;
+    for (const auto& delay : delays) {
         traceWarning("test aid: answers for {} are held {} ms (--delay)", delay.pattern, delay.ms);
     }
     auto workers = std::max(1u, std::thread::hardware_concurrency());
@@ -215,6 +216,27 @@ auto AssetServer::onMessage(RpcServer::ConnectionId connection, const rpc::Json&
     });
     if (method == "asset.request") {
         onAssetRequest(connection, id, params);
+    } else if (method == "asset.delay.set") {
+        // The test aid at runtime: answers for ids matching `pattern` are held `ms` after packing; 0 ms removes the pattern.
+        if (!params.contains("pattern") || !params["pattern"].is_string() || !params.contains("ms") || !params["ms"].is_number_integer()) {
+            responder.fail(rpc::invalidParams, "asset.delay.set needs \"pattern\" (a string, '*' matches any run) and \"ms\" (an integer, 0 removes)");
+            return;
+        }
+        auto pattern = params["pattern"].get<std::string>();
+        auto ms = std::max(0, params["ms"].get<int>());
+        {
+            std::lock_guard lock(delayMutex);
+            std::erase_if(delays, [&](const Options::Delay& delay) { return delay.pattern == pattern; });
+            if (ms > 0) {
+                delays.push_back({.pattern = pattern, .ms = ms});
+            }
+        }
+        if (ms > 0) {
+            traceWarning("test aid: answers for {} are held {} ms (asset.delay.set)", pattern, ms);
+        } else {
+            traceLine("test aid: answers for {} are no longer held", pattern);
+        }
+        responder.respond(rpc::Json::object());
     } else if (serveRecordsCall(records, method, params, responder)) {
         return;
     } else {
@@ -281,6 +303,15 @@ auto AssetServer::addRecords() -> void {
     });
 }
 
+auto AssetServer::delaysJson() -> rpc::Json {
+    std::lock_guard lock(delayMutex);
+    auto list = rpc::Json::array();
+    for (const auto& delay : delays) {
+        list.push_back({{"pattern", delay.pattern}, {"ms", delay.ms}});
+    }
+    return list;
+}
+
 auto AssetServer::status() -> rpc::Json {
     size_t clients = 0;
     {
@@ -298,6 +329,7 @@ auto AssetServer::status() -> rpc::Json {
         {"watchedDirectories", watcher.watchedDirectories()},
         {"polledDirectories", watcher.polledDirectories()},
         {"changeNotices", noticesSent.load()},
+        {"delays", delaysJson()},
     };
 }
 
@@ -424,12 +456,19 @@ auto AssetServer::subscribe(const std::string& id, Subscriber subscriber, int64_
         auto started = std::chrono::steady_clock::now();
         auto outcome = pack(id, forceRequest);
         outcome.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
-        for (const auto& delay : options.delays) {
-            if (globMatch(delay.pattern, id)) {
-                traceLine("  {}  answer held {} ms (--delay)", id, delay.ms);
-                std::this_thread::sleep_for(std::chrono::milliseconds(delay.ms));
-                break;
+        int heldMs = 0;
+        {
+            std::lock_guard lock(delayMutex);
+            for (const auto& delay : delays) {
+                if (globMatch(delay.pattern, id)) {
+                    heldMs = delay.ms;
+                    break;
+                }
             }
+        }
+        if (heldMs > 0) {
+            traceLine("  {}  answer held {} ms (--delay)", id, heldMs);
+            std::this_thread::sleep_for(std::chrono::milliseconds(heldMs));
         }
         deliver(id, outcome);
     });

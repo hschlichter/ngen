@@ -96,6 +96,12 @@ auto RenderThread::threadLoop() -> void {
         bool wantRenderDebug = renderDebugWanted.load(std::memory_order_relaxed);
         renderer->setRenderDebugEnabled(wantRenderDebug);
         renderer->setCountersEnabled(countersWanted.load(std::memory_order_relaxed));
+        if (auto budget = uploadBudgetWanted.exchange(0, std::memory_order_relaxed); budget > 0) {
+            renderer->setUploadBudget(budget);
+        }
+        if (auto limit = geometryLimitWanted.exchange(UINT64_MAX, std::memory_order_relaxed); limit != UINT64_MAX) {
+            renderer->setGeometryLimit(limit);
+        }
         {
             std::lock_guard lock(textureInspectMutex);
             renderer->setTextureInspect(textureInspectRequest);
@@ -123,6 +129,14 @@ auto RenderThread::threadLoop() -> void {
         // What this frame drew: published after it, so the main thread sees residency only once it is on screen.
         gpuIdle.store(renderer->sceneGpuIdle(), std::memory_order_release);
         drawnUpTo.store(appliedUpTo, std::memory_order_release);
+        {
+            auto stats = renderer->sceneGpuStats();
+            stats.changeListsSubmitted = submitted.load(std::memory_order_acquire);
+            stats.changeListsDrawn = appliedUpTo;
+            stats.gpuIdle = renderer->sceneGpuIdle();
+            std::lock_guard lock(statsMutex);
+            sceneStats = stats;
+        }
 
         {
             auto results = renderer->takeCaptureResults();

@@ -45,6 +45,18 @@ explanations), hard-wrap lines at ~160 columns rather than one long line per
 paragraph. Keep code blocks, tables, and link-heavy lines unwrapped — those
 break if wrapped.     
 
+## Runtime access and visibility
+
+ngen is a learning and platform-building exercise as much as an engine. Two requirements hold for every change, planned or not:
+
+1. **Everything is reachable at runtime by an agent.** State is readable as records, and behaviour is drivable through RPC methods and script
+   verbs. A setting that only a launch flag or a constant in code reaches is a gap.
+2. **Everything is visible to a human in the UI.** A window, view or overlay shows what a part of the engine does and holds, so it can be
+   understood, learned and debugged, and says where in the engine's flow it sits.
+
+When proposing or finishing a change, say what records, RPC methods, verbs and windows it adds or changes. A gap is named, not left silent.
+Each vertical slice step on the roadmap ends with a visibility pass over what it touched.
+
 ## Plan documents
 
 Feature work starts with a plan in `docs/plan_<topic>.md` (snake_case). One plan per feature; cross-reference
@@ -62,8 +74,11 @@ Every plan has, in order:
    ideally with the condition that would trigger them.
 4. **Steps** — concrete: name the files, sketch the real structs/signatures. Prefer a short sequential step
    list sized to one iteration; use phases only when each phase ships something observable on its own.
-5. **Verification** — observable, binary criteria: trace events to check, byte-identical outputs, what a
-   test scene should show. "Compiles" is not a criterion.
+5. **Visibility** — what the change adds or changes for runtime access and for the UI ("Runtime access and visibility" above):
+   records, RPC methods and script verbs, and the window, view or overlay that shows it. "None" is stated with its reason, never
+   left out.
+6. **Verification** — observable, binary criteria: trace events to check, byte-identical outputs, what a
+   test scene should show, and the records and windows from Visibility. "Compiles" is not a criterion.
 
 Decisions in plans: when there are meaningful alternatives, list them with trade-offs and a recommendation
 ("I lean X because …; pushback welcome"). Lock decisions explicitly with the why; put genuinely unresolved

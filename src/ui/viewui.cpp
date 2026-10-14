@@ -46,6 +46,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         .showCulling = showCullingWindow,
         .showAssets = showAssetsWindow,
         .showLod = showLodWindow,
+        .showSceneFlow = showSceneFlowWindow,
         .introspection = introspectionFlags,
         .requestQuit = requestQuit,
     };
@@ -78,6 +79,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
             .gbufferView = gbufferViewMode,
             .sampler = samplerSettings,
             .shadow = shadowSettings,
+            .ambient = ambient,
             .showBufferOverlay = showBufferOverlayFlag,
             .showShadowOverlay = showShadowOverlayFlag,
             .antiAliasing = antiAliasingFlag,
@@ -148,6 +150,10 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     {
         PROFILE_ZONE("LodWindow");
         drawLodWindow(showLodWindow, lodState);
+    }
+    {
+        PROFILE_ZONE("SceneFlowWindow");
+        drawSceneFlowWindow(showSceneFlowWindow, sceneFlowState);
     }
     {
         PROFILE_ZONE("CullingWindow");
@@ -308,6 +314,8 @@ auto ViewUI::setIntrospectionWindow(std::string_view name, bool on) -> bool {
         showAssetsWindow = on;
     } else if (name == "lod") {
         showLodWindow = on;
+    } else if (name == "sceneflow") {
+        showSceneFlowWindow = on;
     } else {
         return false;
     }
