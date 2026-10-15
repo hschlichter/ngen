@@ -1,6 +1,6 @@
 # Streaming districts
 
-**Status. In progress.** Decisions 1 to 8 locked 2026-10-15, each as recommended; steps 1 to 4b done 2026-10-15.
+**Status. In progress.** Decisions 1 to 8 locked 2026-10-15, each as recommended; steps 1 to 5 done 2026-10-15, the heuristic capped (default 2 roots finer) until budgets come.
 
 Step 3 of [plan_streaming_lod.md](plan_streaming_lod.md) ("districts stream") and step 1 of the roadmap's vertical slice ("Streaming,
 minimal"): every LOD root's wanted level comes from the camera each frame through its UsdLod heuristic, levels load and unload by it, and
@@ -229,6 +229,44 @@ from USD's reference query, which the `streaming` record states per root (`scree
   (58 s before). What remains is extract: every batch of arriving assets is followed by a full extract (12 during this load, about 2 s each,
   so about 24 s), step 4's cost per draw times how often it runs.
 
+### Paced extracts (2026-10-15, after 4b)
+
+- While assets arrive, an extract waits at least as long after the last as that one took (250 ms at least); the drawn scene's assets are
+  requested from the kept walks, and only after a compose, a material's arrival or a purpose change (it walked the whole World before
+  every extract). Baselines byte-identical; the layered checks as before.
+- First switch of `map_tile_p` to level 0: 9 extracts during the load instead of 12 (586 batches held back); request to resident about
+  34 s (40 s before, 58 s before 4b). Composition ends about 29 s after the request, 11 rounds of about 2.6 s, most of it waiting for
+  layer packs: as far as the timeline shows, each round's layer packs queue at the asset server behind the tens of thousands of mesh
+  requests sent between rounds (not measured on the server). That is request priorities ([plan_streaming_lod.md](plan_streaming_lod.md)
+  decision 7), the budgets and priorities step.
+
+### Step 5 results (2026-10-15)
+
+- **The heuristic** (decisions 1, 5, 7, 8): `ViewScene::setCamera` (latest only), evaluated on the scene thread after the camera moved, an
+  extract or a level change, over the roots the last extract reached: UsdLod's projected-sphere screen size without the frustum, a 20% band
+  before going coarser, hand-set levels winning, a global toggle. Changed levels go to the composer, which links again without composing the
+  stage (`WorldComposer::relink`). The view posts the camera only once it is placed, not while it follows the scene loading (it flipped
+  the layered scene's tree five times while auto-framing before that).
+- **Visibility**: the `streaming` record (per root screen size, wanted and why, drawn, loaded; the evaluation's counts), `lod-heuristic` and
+  `view.lod.heuristic`, the LOD window's toggle and its Screen and Why columns, a "LOD selection" node in the Engine Map, `LevelsWanted`.
+- **Layered scene**: the tree wants level 0 up close (screen size 3.25 against 0.25) and loads and draws it, level 1 from far, its default
+  when off; a hand-set level wins. Baselines byte-identical.
+- **Caldera from `map_capital_square`: out of memory.** The first evaluation set 35 of the 182 roots finer at once, every district and
+  terrain section near the camera: a district's extent is kilometres across, so from inside the island its sphere is several times the
+  view at the converter's threshold of 0.25, and without the frustum the ones behind count too. `ngen-view` reached 10.8 GB resident and the
+  kernel killed it. One extract during that load took 33 s (not looked into yet). Needs a decision before the heuristic can stay on for
+  Caldera: see Open questions.
+
+### Step 5's cap (2026-10-15, decision for the open question above: a cap until budgets come)
+
+- At most N roots finer than their coarsest by the heuristic (default 2; `lod-cap`, `view.lod.heuristic {cap}`, the LOD window's Cap): the
+  roots the camera is inside first, smallest first, then the largest on screen; the others "capped". A root whose heuristic extent is empty
+  keeps its default: Caldera's 14 terrain sections (`st_*`) author the empty box (`FLT_MAX` to `-FLT_MAX`), a converter issue in the fork.
+- Caldera from `map_capital_square` (peak resident memory, a watcher stopping the view at 10 GB): cap 3 before the ranking rule picked the
+  vista ring (its sphere around the camera measured 3,280) and two districts and passed 10 GB; cap 1 and 2 peak at about 4.2 GB (cap 2:
+  `map_tile_o` and `mv_intel`). The capital itself stays capped at the square: the camera isn't inside its heuristic extent, and the
+  others outrank it. A count is a stand-in: a district at level 0 ranges from a few thousand draws to over 200 thousand.
+
 ## Visibility
 
 - **`streaming` record**: per root its screen size, in frustum, wanted level and why (heuristic, hand-set, heuristic off), drawn level,
@@ -261,6 +299,10 @@ from USD's reference query, which the `streaming` record states per root (`scree
 
 ## Open questions
 
+- **What keeps the heuristic from asking for more than fits** (step 5's out-of-memory on Caldera): Caldera's district thresholds (authored
+  by the converter), USD's frustum test (decision 8 A instead of B), a cap on how many roots are finer than their floor until budgets come,
+  or the budgets step itself first.
+
 - Is a level's content key (its prim index nodes) enough to share it safely when the stage's layers have opinions under it? Caldera has
   none; `assets/layered/` should get one to test it.
 - Caldera's thresholds: the converter's `[0.25]` for districts and halvings for models are a starting point; the flight will show whether
@@ -274,6 +316,9 @@ from USD's reference query, which the `streaming` record states per root (`scree
   streaming step.
 - **Off-thread allocation** ([plan_async_scene.md](plan_async_scene.md), Deferred): GPU buffers and textures made on the render thread.
   Trigger: hitches during the flight above, measured by the loading frame records.
+- **Layer packs ahead of meshes at the asset server** (part of [plan_streaming_lod.md](plan_streaming_lod.md) decision 7's priorities): a
+  compose round's layer packs not queued behind the meshes of the round before. Trigger: the budgets and priorities step, or the flight test
+  showing composition rounds waiting.
 - **Each use's draws kept across rebuilds** (step 4's remaining cost: a rebuild still produces every draw, 1 to 2 microseconds each): a
   rebuild touches only the uses that changed, so a level switch removes one content's draws and adds another's. Needs prim ids and slots
   stable across rebuilds (draws, prim paths and the asset lists stored per use). Trigger: the flight test shows rebuild time is what makes

@@ -14,6 +14,8 @@ enum Column : int {
     ColumnLevel,
     ColumnDrawn,
     ColumnLoaded,
+    ColumnScreen,
+    ColumnWhy,
 };
 
 auto levelName(const LodWindowRow& row, uint32_t level) -> std::string {
@@ -98,6 +100,17 @@ auto drawRow(const LodWindowRow& row, LodWindowState& state) -> void {
     ImGui::TableSetColumnIndex(ColumnLoaded);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(loadedText(row).c_str());
+
+    ImGui::TableSetColumnIndex(ColumnScreen);
+    ImGui::AlignTextToFramePadding();
+    if (row.screenSize >= 0.0f) {
+        ImGui::Text("%.3f", row.screenSize);
+    } else {
+        ImGui::TextDisabled("-");
+    }
+    ImGui::TableSetColumnIndex(ColumnWhy);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(row.why.c_str());
     ImGui::PopID();
 }
 
@@ -168,6 +181,22 @@ auto drawLodWindow(bool& show, LodWindowState& state) -> void {
     ImGui::InputTextWithHint("##filter", "filter by path", state.filter, sizeof(state.filter));
     ImGui::SameLine();
     ImGui::Text("%zu of %zu roots shown, %zu loading", rows.size(), state.rows.size(), loading);
+    bool heuristic = state.heuristic;
+    if (ImGui::Checkbox("Heuristic", &heuristic)) {
+        state.heuristicRequested = heuristic;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("On: every root not set by hand wants the level its screen size from the camera picks (with a 20%% band before going coarser).\nOff: every root wants its default. Screen size: the fraction of the view its heuristic extent's bounding sphere covers.");
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(90.0f);
+    int cap = state.cap;
+    if (ImGui::InputInt("Cap", &cap) && cap >= 0) {
+        state.capRequested = cap;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("At most this many roots finer than their coarsest level by the heuristic, the largest on screen first; the others keep their coarsest (\"capped\"). A stand-in for memory budgets.");
+    }
 
     drawSetShown(rows, mostLevels, state);
     ImGui::SameLine();
@@ -185,11 +214,13 @@ auto drawLodWindow(bool& show, LodWindowState& state) -> void {
     }
 
     auto flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp;
-    if (ImGui::BeginTable("##lod", 4, flags)) {
+    if (ImGui::BeginTable("##lod", 6, flags)) {
         ImGui::TableSetupColumn("Root", ImGuiTableColumnFlags_WidthStretch, 0.0f, ColumnRoot);
         ImGui::TableSetupColumn("Wants", ImGuiTableColumnFlags_WidthFixed, 150.0f, ColumnLevel);
         ImGui::TableSetupColumn("Draws", ImGuiTableColumnFlags_WidthFixed, 110.0f, ColumnDrawn);
         ImGui::TableSetupColumn("Loaded", ImGuiTableColumnFlags_WidthFixed, 70.0f, ColumnLoaded);
+        ImGui::TableSetupColumn("Screen", ImGuiTableColumnFlags_WidthFixed, 60.0f, ColumnScreen);
+        ImGui::TableSetupColumn("Why", ImGuiTableColumnFlags_WidthFixed, 110.0f, ColumnWhy);
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableHeadersRow();
 

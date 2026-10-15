@@ -1375,6 +1375,20 @@ auto WorldComposer::compose() -> std::vector<std::string> {
     return {m_impl->missing.begin(), m_impl->missing.end()};
 }
 
+auto WorldComposer::relink() -> std::vector<std::string> {
+    m_impl->stats = {};
+    m_impl->missing.clear();
+    m_impl->world.lodLevels = m_impl->lodLevels;
+    auto start = std::chrono::steady_clock::now();
+    m_impl->resolve();
+    for (int pass = 0; pass < 8 && m_impl->updatePrototypeLevels(); pass++) {
+        m_impl->resolve();
+    }
+    m_impl->stats.resolveMs = msSince(start);
+    m_impl->finishCompose();
+    return {m_impl->missing.begin(), m_impl->missing.end()};
+}
+
 auto WorldComposer::setLodLevel(const std::string& rootPath, uint32_t level) -> void {
     m_impl->lodLevels[rootPath] = level;
 }

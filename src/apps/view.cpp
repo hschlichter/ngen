@@ -39,6 +39,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <print>
 #include <sstream>
@@ -442,6 +443,10 @@ auto main(int argc, char* argv[]) -> int {
     // Script frames count only while nothing waits for residency, so a script sees the scene as it is once loaded; the longest main-loop
     // frame while the scene isn't resident says how responsive the view stayed while it loaded.
     ViewResidency residency;
+    // The camera last posted to the scene thread for the LOD heuristic.
+    glm::vec3 postedCameraPosition(std::numeric_limits<float>::quiet_NaN());
+    int postedCameraWidth = 0;
+    int postedCameraHeight = 0;
 
     // Main loop
     profile::registerThread("Main");
@@ -522,6 +527,8 @@ auto main(int argc, char* argv[]) -> int {
                     }
                     heuristic = std::format("{} [{}]", root.heuristicType, thresholds);
                 }
+                const auto& choices = scene.lodChoices();
+                auto choice = choices.find(root.path);
                 lodRows.push_back({
                     .path = root.path,
                     .levels = root.levels,
@@ -532,6 +539,8 @@ auto main(int argc, char* argv[]) -> int {
                     .drawn = root.drawn ? (int32_t) *root.drawn : -1,
                     .loaded = root.loaded,
                     .setByHand = root.setByHand,
+                    .screenSize = choice != choices.end() ? choice->second.screenSize : -1.0f,
+                    .why = choice != choices.end() ? choice->second.reason : std::string("not evaluated yet"),
                 });
             }
         }
@@ -568,6 +577,15 @@ auto main(int argc, char* argv[]) -> int {
         SDL_GetWindowSizeInPixels(window, &winW, &winH);
         RhiExtent2D winExtent = {.width = (uint32_t) winW, .height = (uint32_t) winH};
         auto proj = cameraProjection((float) winW / (float) winH);
+        // The camera for the LOD heuristic, when it moved: once it has been placed (by hand, a script, or the framing when the scene was
+        // first resident), not while it follows what has arrived.
+        bool cameraPlaced = residency.everResident || !autoFrame;
+        if (cameraPlaced && (cam.position != postedCameraPosition || winW != postedCameraWidth || winH != postedCameraHeight)) {
+            postedCameraPosition = cam.position;
+            postedCameraWidth = winW;
+            postedCameraHeight = winH;
+            scene.setCamera(cam.position, glm::radians(cameraFovDegrees), (float) winW / (float) std::max(1, winH));
+        }
 
         // The purposes the View menu or a script turned on or off: the scene loads and draws them, and moves its revision on.
         if (scene.purposeShown(Purpose::Guide) != viewUI.showGuides()) {
@@ -1014,6 +1032,14 @@ auto main(int argc, char* argv[]) -> int {
                 } else {
                     scene.resetLodLevel(request.root);
                 }
+            }
+            lodWindow.heuristic = scene.lodHeuristic();
+            lodWindow.cap = (int) scene.lodCap();
+            if (auto on = std::exchange(lodWindow.heuristicRequested, std::nullopt)) {
+                scene.setLodHeuristic(*on);
+            }
+            if (auto cap = std::exchange(lodWindow.capRequested, std::nullopt)) {
+                scene.setLodCap((uint32_t) *cap);
             }
             if (auto path = std::exchange(lodWindow.selectRequested, std::nullopt)) {
                 selectedPath = *path;

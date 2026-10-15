@@ -48,6 +48,10 @@ The inputs persist across rebuilds:
   come out in the same order as a full walk. Meshes and materials are resolved once per rebuild for each mesh and binding. A content
   holding a prim the gizmo moved is walked afresh, with the move. The `scenethread` record's `extract` says how many walks were reused
   and walked, and how long the walk and the slots took.
+- **Paced while assets arrive.** An extract waits at least as long after the last one as that one took (250 ms at least) while assets
+  are in flight or a compose is due, so the scene thread keeps composing and requesting in between; once nothing is in flight it runs at
+  once. The drawn scene's assets are requested from the kept walks when something could name new ones (a compose, a material's
+  arrival, a purpose shown), not before every extract. The `scenethread` record's `extract.held` counts the batches an extract waited.
 - **Shared with the main thread.** What a rebuild builds (the draws, prim paths, the asset lists, cameras, LOD roots, payloads) is one
   immutable `SceneDraws` the snapshots share until the next rebuild; a gizmo move publishes a copy with the moved draws.
 
@@ -74,6 +78,20 @@ The inputs persist across rebuilds:
 - **LOD roots**: every LOD root reached while drawing (`lodRoots()`, the `lod` record): its levels and each level's payloads, its
   heuristic (type, thresholds, extent, projection), the level it defaults to, wants and draws, the levels loaded, and whether its level was
   set by hand.
+- **The LOD heuristic**: every LOD root reached wants the level its screen size picks: UsdLod's `LODScreenSizeHeuristic`, its extent's
+  bounding sphere placed by the root's transform, as a fraction of the view window at depth 1, against its `thresholds`. Unlike USD's
+  reference query it ignores the frustum, so what is near stays loaded whichever way the camera looks. Going coarser waits until the
+  size is 20% below the threshold, so a camera at a threshold doesn't flip a root. A level set by hand (`lod`, the LOD window) wins until
+  `lod-reset`; with the heuristic off (`lod-heuristic off`, `view.lod.heuristic`, the LOD window's toggle) every other root wants its
+  default; a root whose heuristic isn't screen size wants its default. The main thread posts the camera (`setCamera`) once it has been
+  placed, not while it follows the scene loading; the scene thread evaluates when it moved, after an extract and when levels changed, and
+  gives the composer only what changed, which links the levels again without composing the stage (`WorldComposer::relink`). The
+  `streaming` record has per root its screen size, the level wanted and why, drawn and loaded; `LevelsWanted` traces each change.
+- **The cap**: until memory budgets exist, at most N roots (2 by default; `lod-cap N`, `view.lod.heuristic {cap}`, the LOD window) are
+  finer than their coarsest level by the heuristic; the others keep their coarsest ("capped"). Who keeps a finer level: the roots whose
+  extent the camera is inside, the smallest first (a bounding sphere around the camera measures larger than anything, so it can't rank
+  them), then the others, the largest on screen first. A root whose heuristic extent is empty or not finite keeps its default ("empty
+  extent", a `LodExtentEmpty` warning once).
 - **Payload placements**: every prim with payloads reached while drawing (`payloads()`, the `payloads` record): its asset ids, whether
   they are loaded, and its `extentsHint` in world metres. A level not loaded isn't reached, so what is under it isn't listed; its root's
   `levelPayloads` name the level's own payloads. Each draw carries the drawn level of the nearest LOD root above it,

@@ -17,6 +17,8 @@ struct LodWindowRow {
     int32_t drawn = -1;
     std::vector<uint32_t> loaded;
     bool setByHand = false;
+    float screenSize = -1.0f; // the heuristic's measure, -1 when not computed
+    std::string why;          // why it wants its level: "heuristic", "hand-set", "heuristic off", ...
 };
 
 // Persistent UI state of the LOD window.
@@ -34,10 +36,15 @@ struct LodWindowState {
     std::vector<LevelRequest> levelRequests;
     std::optional<std::string> frameRequested;
     std::optional<std::string> selectRequested;
+    bool heuristic = true;                  // the LOD heuristic's state; set by the application
+    std::optional<bool> heuristicRequested; // the toggle was clicked
+    int cap = 2;                            // the heuristic's cap; set by the application
+    std::optional<int> capRequested;
 };
 
-// The scene's LOD roots: each with its levels, the level it wants (a choice per row: its default or a level) and the level it draws, and the
-// levels loaded. A row whose drawn level isn't the one it wants is loading it. Clicking a row selects the root; a double-click frames it. "Set
-// shown" sets every row the filter shows to its default, its coarsest level or one level (clamped to each root's levels). The row of the root
-// at or above the view's selection is highlighted.
+// The scene's LOD roots: each with its levels, the level it wants (a choice per row: its default or a level) and the level it draws, the
+// levels loaded, and the heuristic's screen size and why the root wants its level. A row whose drawn level isn't the one it wants is
+// loading it. Clicking a row selects the root; a double-click frames it. "Set shown" sets every row the filter shows to its default, its
+// coarsest level or one level (clamped to each root's levels). The row of the root at or above the view's selection is highlighted. The
+// Heuristic toggle turns the LOD heuristic on or off.
 auto drawLodWindow(bool& show, LodWindowState& state) -> void;

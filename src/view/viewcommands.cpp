@@ -158,6 +158,22 @@ auto parsePurposes(const std::string& args) -> std::expected<Json, std::string> 
     return params;
 }
 
+auto parseOnOff(const std::string& args) -> std::expected<Json, std::string> {
+    if (args != "on" && args != "off") {
+        return std::unexpected(std::format("expected on or off, got '{}'", args));
+    }
+    return Json{{"on", args == "on"}};
+}
+
+auto parseLodCap(const std::string& args) -> std::expected<Json, std::string> {
+    char* end = nullptr;
+    auto roots = std::strtol(args.c_str(), &end, 10);
+    if (args.empty() || *end != '\0' || roots < 0) {
+        return std::unexpected(std::format("expected a count of roots, got '{}'", args));
+    }
+    return Json{{"cap", roots}};
+}
+
 auto parseLodRoot(const std::string& args) -> std::expected<Json, std::string> {
     return Json{{"root", args}};
 }
@@ -390,6 +406,8 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"assets-of", "view.assetsOf", parsePrim},
     ScriptVerb{"lod", "view.lod.set", parseLod},
     ScriptVerb{"lod-reset", "view.lod.reset", parseLodRoot},
+    ScriptVerb{"lod-heuristic", "view.lod.heuristic", parseOnOff},
+    ScriptVerb{"lod-cap", "view.lod.heuristic", parseLodCap},
     ScriptVerb{"wait-resident", "view.waitResident", parseNothing},
     ScriptVerb{"view", "view.mode", parseViewMode},
     ScriptVerb{"window", "view.window", parseWindow},
@@ -608,6 +626,22 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
         [&view](const Json& p, RpcResponder responder) {
             view.scene.resetLodLevel(p["root"].get<std::string>());
             view.residentWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
+        });
+    registry.add(
+        {
+            .name = "view.lod.heuristic",
+            .summary = "The LOD heuristic on (every root not set by hand wants the level its screen size from the camera picks) or off (its default), and its cap: at most this many roots finer than their coarsest, the largest on screen first.",
+            .params = {optionalField("on", RpcType::Bool, "on or off"), optionalField("cap", RpcType::Int, "roots finer than their coarsest, at most")},
+            .result = "{}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            if (p.contains("on")) {
+                view.scene.setLodHeuristic(p["on"].get<bool>());
+            }
+            if (p.contains("cap")) {
+                view.scene.setLodCap((uint32_t) std::max(0, p["cap"].get<int>()));
+            }
+            responder.respond(Json::object());
         });
     registry.add(
         {
@@ -1051,7 +1085,7 @@ auto sceneThreadRecord(const ViewContext& view) -> Json {
             {"levelsComposed", t.levelsComposed},
             {"contentsReached", t.contentsReached}}},
           {"held", {{"prototypes", t.prototypesHeld}, {"levels", t.levelsHeld}}}}},
-        {"extract", {{"count", t.extracts}, {"lastMs", t.lastExtractMs}, {"visitMs", t.extractVisitMs}, {"slotsMs", t.extractSlotsMs}, {"reused", t.extractReused}, {"walked", t.extractWalked}, {"kept", t.extractKept}, {"needed", t.extractNeeded}}},
+        {"extract", {{"count", t.extracts}, {"lastMs", t.lastExtractMs}, {"visitMs", t.extractVisitMs}, {"slotsMs", t.extractSlotsMs}, {"reused", t.extractReused}, {"walked", t.extractWalked}, {"kept", t.extractKept}, {"held", t.extractsHeld}, {"needed", t.extractNeeded}}},
         {"publishMs", t.publishMs},
         {"assetsReceived", t.assetsReceived},
         {"inFlight", {{"layers", t.inFlightLayers}, {"meshes", t.inFlightMeshes}, {"materials", t.inFlightMaterials}, {"textures", t.inFlightTextures}, {"other", t.inFlightOther}}},
@@ -1150,6 +1184,30 @@ auto sceneRecord(const ViewContext& view) -> Json {
         {"meshInstances", view.scene.renderWorld().meshInstances.size()},
         {"lights", view.scene.renderWorld().lights.size()},
         {"lodLevels", lodLevels},
+    };
+}
+
+auto streamingRecord(const ViewContext& view) -> Json {
+    const auto& choices = view.scene.lodChoices();
+    const auto& t = view.scene.threadStats();
+    auto roots = Json::array();
+    for (const auto& root : view.scene.lodRoots()) {
+        auto choice = choices.find(root.path);
+        roots.push_back({
+            {"path", root.path},
+            {"screenSize", choice != choices.end() ? Json(choice->second.screenSize) : Json(nullptr)},
+            {"wanted", choice != choices.end() ? Json(choice->second.level) : Json(nullptr)},
+            {"why", choice != choices.end() ? Json(choice->second.reason) : Json("not evaluated yet")},
+            {"thresholds", root.thresholds},
+            {"drawn", root.drawn ? Json(*root.drawn) : Json(nullptr)},
+            {"loaded", root.loaded},
+        });
+    }
+    return {
+        {"heuristic", view.scene.lodHeuristic()},
+        {"cap", view.scene.lodCap()},
+        {"evaluation", {{"count", t.lodEvaluations}, {"roots", t.lodRootsEvaluated}, {"finer", t.lodFiner}, {"coarser", t.lodCoarser}, {"capped", t.lodCapped}, {"ms", t.lodEvaluateMs}, {"relinks", t.relinks}}},
+        {"roots", roots},
     };
 }
 
@@ -1315,6 +1373,8 @@ auto engineMapStats(const ViewContext& view) -> EngineMapStats {
     stats["assets.cache"] = {std::format("{} answered from the cache", assets.cached)};
     stats["assets.delivery"] = {std::format("{:.1f} MiB to this view", mib(assets.bytes))};
     stats["view.assetclient"] = {std::format("{} in flight, {} received", assets.inFlight(), assets.received), std::format("{} failed", assets.failed)};
+    stats["scene.lod"] = {std::format("{} roots, heuristic {}, cap {}", t.lodRootsEvaluated, view.scene.lodHeuristic() ? "on" : "off", view.scene.lodCap()),
+                          std::format("last: {} finer, {} coarser, {} capped", t.lodFiner, t.lodCoarser, t.lodCapped)};
     stats["scene.compose"] = {std::format("{} composes, last {:.1f} ms", t.composes, t.lastComposeMs), std::format("{} layer packs, {} in flight", t.layerPacks, t.inFlightLayers)};
     stats["scene.extract"] = {std::format("{} extracts, last {:.1f} ms", t.extracts, t.lastExtractMs),
                               std::format("{} meshes, {} materials, {} textures", t.meshEntries, t.materialEntries, t.textureEntries)};
@@ -1430,6 +1490,9 @@ auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext
     });
     records.add("gpuscene", "the GPU scene's flow: change lists taken and drawn, the upload queue and its budget, the geometry pool and what waits for room", [&view](RpcResponder responder) {
         responder.respond(gpuSceneRecord(view));
+    });
+    records.add("streaming", "the LOD heuristic: on or off, its last evaluation, and per root its screen size, the level wanted and why, drawn and loaded", [&view](RpcResponder responder) {
+        responder.respond(streamingRecord(view));
     });
     records.add("payloads", "every payload placement reached while drawing: its prim, asset ids, whether loaded, and its extentsHint in world metres", [&view](RpcResponder responder) {
         responder.respond(payloadsRecord(view));

@@ -150,6 +150,22 @@ auto ViewScene::resetLodLevel(const std::string& rootPath) -> void {
     post(LodRequest{.root = rootPath, .level = std::nullopt});
 }
 
+auto ViewScene::setCamera(const glm::vec3& position, float fovY, float aspect) -> void {
+    {
+        std::lock_guard lock(mutex);
+        postedCamera = CameraInput{.position = position, .fovY = fovY, .aspect = aspect};
+    }
+    wake.notify_one();
+}
+
+auto ViewScene::setLodHeuristic(bool on) -> void {
+    post(HeuristicRequest{.on = on, .cap = std::nullopt});
+}
+
+auto ViewScene::setLodCap(uint32_t roots) -> void {
+    post(HeuristicRequest{.on = std::nullopt, .cap = roots});
+}
+
 auto ViewScene::setPurposeShown(Purpose purpose, bool shown) -> void {
     if (purpose == Purpose::Default || purpose == Purpose::Render) {
         return;
@@ -222,7 +238,15 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
         bool answers = false;
         {
             std::unique_lock lock(mutex);
-            wake.wait(lock, stop, [this] { return !requests.empty() || answered; });
+            auto woken = [this] {
+                return !requests.empty() || answered || postedCamera.has_value();
+            };
+            if (extractNeeded) {
+                // An extract held back while assets arrive: wake for it at its time, or sooner for a request or an answer.
+                wake.wait_until(lock, stop, extractDue, woken);
+            } else {
+                wake.wait(lock, stop, woken);
+            }
             if (stop.stop_requested()) {
                 return;
             }
@@ -230,6 +254,11 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
             requests.clear();
             answers = answered;
             answered = false;
+            if (postedCamera) {
+                camera = postedCamera;
+                postedCamera.reset();
+                evaluateNeeded = true;
+            }
         }
         PROFILE_ZONE("SceneBatch");
         stats.batches++;
@@ -244,10 +273,33 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
         if (composeNeeded) {
             compose();
         }
-        if (extractNeeded) {
+        if (requestNeeded) {
+            requestNeeded = false;
             requestDrawnAssets();
-            extract();
         }
+        if (extractNeeded) {
+            // While assets arrive, an extract waits at least as long after the last as the last took (250 ms at least), so the scene
+            // thread keeps composing and requesting between them; once nothing is in flight it runs at once.
+            bool arriving = !inFlight.empty() || composeNeeded;
+            auto pause = std::chrono::milliseconds((int64_t) std::max(250.0, stats.lastExtractMs));
+            auto now = std::chrono::steady_clock::now();
+            if (!arriving || now >= lastExtractEnd + pause) {
+                extract();
+                lastExtractEnd = std::chrono::steady_clock::now();
+                // Roots reached for the first time are evaluated now.
+                evaluateNeeded = true;
+            } else {
+                extractDue = lastExtractEnd + pause;
+                stats.extractsHeld++;
+            }
+        }
+        if (evaluateNeeded) {
+            evaluateNeeded = false;
+            if (evaluateLevels()) {
+                relink();
+            }
+        }
+        reportAssets();
         publish();
         requestsApplied += batch.size();
     }
@@ -257,14 +309,21 @@ auto ViewScene::apply(Request& request) -> void {
     if (auto* open = std::get_if<OpenRequest>(&request)) {
         applyOpen(open->id);
     } else if (auto* lod = std::get_if<LodRequest>(&request)) {
-        if (composer) {
-            if (lod->level) {
-                composer->setLodLevel(lod->root, *lod->level);
-            } else {
-                composer->resetLodLevel(lod->root);
-            }
-            composeNeeded = true;
+        // A level set by hand holds until reset; the heuristic's evaluation gives the composer what changed.
+        if (lod->level) {
+            handLevels[lod->root] = *lod->level;
+        } else {
+            handLevels.erase(lod->root);
         }
+        evaluateNeeded = true;
+    } else if (auto* heuristic = std::get_if<HeuristicRequest>(&request)) {
+        if (heuristic->on) {
+            heuristicOn = *heuristic->on;
+        }
+        if (heuristic->cap) {
+            heuristicCap = *heuristic->cap;
+        }
+        evaluateNeeded = true;
     } else if (auto* purpose = std::get_if<PurposeRequest>(&request)) {
         if (purpose->shown) {
             drawnPurposes.insert(purpose->purpose);
@@ -272,6 +331,7 @@ auto ViewScene::apply(Request& request) -> void {
             drawnPurposes.erase(purpose->purpose);
         }
         extractNeeded = true;
+        requestNeeded = true;
     } else if (auto* refresh = std::get_if<RefreshRequest>(&request)) {
         applyRefresh(refresh->ids, refresh->force);
     } else if (auto* transform = std::get_if<TransformRequest>(&request)) {
@@ -442,6 +502,7 @@ auto ViewScene::receive(const std::string& assetId) -> void {
     } else if (packKind && *packKind == ScenePackKind::Material) {
         if (auto material = readMaterialPack(asset->bytes)) {
             materialPacks[assetId] = std::move(*material);
+            requestNeeded = true; // its textures
         } else {
             failedAssets.insert(assetId);
         }
@@ -461,6 +522,7 @@ auto ViewScene::receive(const std::string& assetId) -> void {
 auto ViewScene::compose() -> void {
     composeNeeded = false;
     extractNeeded = true;
+    requestNeeded = true;
     if (!composer) {
         return;
     }
@@ -469,7 +531,7 @@ auto ViewScene::compose() -> void {
     std::vector<std::pair<std::string, AssetKind>> fresh;
     auto needs = composer->compose();
     stats.lastComposeCallMs = msSince(start);
-    worldPrims = countPrims(composer->world(), composer->world().stage, false);
+    countWorld();
     const auto& composed = composer->stats();
     stats.composeStageMs = composed.stageMs;
     stats.composeResolveMs = composed.resolveMs;
@@ -518,29 +580,29 @@ auto ViewScene::requestDrawnAssets() -> void {
     if (!composer) {
         return;
     }
+    // What is drawn, from the kept walks: each drawn mesh, its material and its subsets' own.
     std::set<std::string> meshIds;
     std::set<std::string> materialIds;
-    composer->world().visit([&](const VisitedEntity& visited) {
-        const auto& entity = *visited.entity;
-        if (!entity.active || !entity.defined || entity.abstract || visited.inUndrawnLevel || !visited.visible) {
-            return false;
-        }
-        if (entity.meshAsset.empty() || !drawsPurpose(visited.purpose)) {
-            return true;
-        }
-        meshIds.insert(entity.meshAsset);
-        if (!visited.materialAsset.empty()) {
-            materialIds.insert(visited.materialAsset);
-        }
-        // A subset's own binding: the subset entities are the mesh's children.
-        for (EntityId child : entity.children) {
-            const auto& subset = visited.content->entities[child];
-            if (subset.binding && !subset.binding->materialAsset.empty()) {
-                materialIds.insert(subset.binding->materialAsset);
+    replay(
+        composer->world(),
+        [&](const WorldContent& content, const ExtractItem& item, const std::string&, const glm::mat4&, uint32_t) {
+            const auto& entity = *item.entity;
+            if (entity.meshAsset.empty() || !drawsPurpose(item.purpose)) {
+                return;
             }
-        }
-        return true;
-    });
+            meshIds.insert(entity.meshAsset);
+            if (!item.material.empty()) {
+                materialIds.insert(item.material);
+            }
+            // A subset's own binding: the subset entities are the mesh's children.
+            for (EntityId child : entity.children) {
+                const auto& subset = content.entities[child];
+                if (subset.binding && !subset.binding->materialAsset.empty()) {
+                    materialIds.insert(subset.binding->materialAsset);
+                }
+            }
+        },
+        nullptr);
     std::vector<std::pair<std::string, AssetKind>> wanted;
     auto want = [&](const std::string& assetId, AssetKind kind, bool held) {
         if (!held && !failedAssets.contains(assetId) && !inFlight.contains(assetId)) {
@@ -561,6 +623,10 @@ auto ViewScene::requestDrawnAssets() -> void {
         }
     }
     requestAssets(wanted, false);
+}
+
+// Once every asset the drawn scene asked for has been answered, after it composed: SceneAssetsReceived.
+auto ViewScene::reportAssets() -> void {
     bool assetsInFlight = std::ranges::any_of(inFlight, [](const auto& entry) { return entry.second != AssetKind::Layer; });
     if (assetsInFlight || assetsReported || !composeReported) {
         return;
@@ -626,8 +692,218 @@ auto ViewScene::applyTransform(const std::string& path, const glm::mat4& local) 
     inputsRevision++;
 }
 
+namespace {
+
+// UsdLod's projectedSphere screen size (UsdLodScreenSizeHeuristicQuery), without its frustum test: the extent's bounding sphere (its
+// corners placed by the root's transform) over the view window at depth 1, as a fraction of the window's area. Off-screen roots are
+// measured like on-screen ones, so what is near stays loaded whichever way the camera looks.
+auto screenSize(const SceneLodRoot& root, const glm::vec3& eye, float fovY, float aspect) -> float {
+    auto worldMin = glm::vec3(root.worldTransform * glm::vec4(root.extent[0], 1.0f));
+    auto worldMax = glm::vec3(root.worldTransform * glm::vec4(root.extent[1], 1.0f));
+    auto radius = glm::length(worldMax - worldMin) * 0.5f;
+    auto center = glm::vec3(root.worldTransform * glm::vec4((root.extent[0] + root.extent[1]) * 0.5f, 1.0f));
+    auto distance = glm::length(eye - center);
+    if (distance <= 1e-6f) {
+        return 1e30f;
+    }
+    float r = radius / distance;
+    float windowHeight = 2.0f * std::tan(fovY * 0.5f);
+    float windowWidth = windowHeight * aspect;
+    return glm::pi<float>() * r * r / (windowWidth * windowHeight);
+}
+
+auto validExtent(const std::array<glm::vec3, 2>& extent) -> bool {
+    for (int axis = 0; axis < 3; axis++) {
+        if (!std::isfinite(extent[0][axis]) || !std::isfinite(extent[1][axis]) || extent[0][axis] > extent[1][axis] || std::abs(extent[1][axis] - extent[0][axis]) > 1e30f) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// When the camera is inside a root's heuristic extent (placed by the root's transform, as an axis-aligned box of its corners): the box's
+// volume in cubic metres; none when it is outside.
+auto aroundCamera(const SceneLodRoot& root, const glm::vec3& eye) -> std::optional<float> {
+    glm::vec3 low(1e30f);
+    glm::vec3 high(-1e30f);
+    for (int corner = 0; corner < 8; corner++) {
+        glm::vec3 local((corner & 1) != 0 ? root.extent[1].x : root.extent[0].x, (corner & 2) != 0 ? root.extent[1].y : root.extent[0].y, (corner & 4) != 0 ? root.extent[1].z : root.extent[0].z);
+        auto world = glm::vec3(root.worldTransform * glm::vec4(local, 1.0f));
+        low = glm::min(low, world);
+        high = glm::max(high, world);
+    }
+    if (glm::any(glm::lessThan(eye, low)) || glm::any(glm::greaterThan(eye, high))) {
+        return std::nullopt;
+    }
+    auto size = high - low;
+    return size.x * size.y * size.z;
+}
+
+// The level the thresholds pick for a screen size (UsdLod: the number of thresholds at or above it), with a band below each threshold
+// before switching coarser: finer as soon as the size passes a threshold, coarser only once it is 20% below it.
+auto levelFor(float size, const std::vector<float>& thresholds, uint32_t previous) -> uint32_t {
+    auto count = [&](float scale) {
+        uint32_t level = 0;
+        while (level < thresholds.size() && size <= thresholds[level] * scale) {
+            level++;
+        }
+        return level;
+    };
+    auto finer = count(1.0f);
+    if (finer < previous) {
+        return finer;
+    }
+    auto coarser = count(0.8f);
+    if (coarser > previous) {
+        return coarser;
+    }
+    return previous;
+}
+
+} // namespace
+
+auto ViewScene::evaluateLevels() -> bool {
+    if (!composer) {
+        return false;
+    }
+    auto start = std::chrono::steady_clock::now();
+    auto next = std::make_shared<SceneLodChoices>();
+    // Every reached root's choice first; the heuristic's finer ones are capped below, the largest on screen kept.
+    struct Chosen {
+        const SceneLodRoot* root = nullptr;
+        SceneLodChoice choice;
+    };
+    std::vector<Chosen> chosen;
+    chosen.reserve(draws->lodRoots.size());
+    for (const auto& root : draws->lodRoots) {
+        auto levelCount = (uint32_t) root.levels.size();
+        if (levelCount == 0) {
+            continue;
+        }
+        SceneLodChoice choice;
+        if (auto hand = handLevels.find(root.path); hand != handLevels.end()) {
+            choice.level = std::min(hand->second, levelCount - 1);
+            choice.reason = "hand-set";
+        } else if (!heuristicOn) {
+            choice.level = root.defaultIndex;
+            choice.reason = "heuristic off";
+        } else if (root.heuristicType != "LODScreenSizeHeuristic" || root.thresholds.empty()) {
+            choice.level = root.defaultIndex;
+            choice.reason = "no screen-size heuristic";
+        } else if (!camera) {
+            choice.level = root.defaultIndex;
+            choice.reason = "no camera";
+        } else if (!validExtent(root.extent)) {
+            // An empty box (min above max) or one not finite measures nothing: the root keeps its default, reported once.
+            choice.level = root.defaultIndex;
+            choice.reason = "empty extent";
+            if (warnedExtents.insert(root.path).second) {
+                TRACE_WARNING("Scene", "LodExtentEmpty", root.path).text(std::format("{}: its LOD heuristic's extent is empty or not finite; it keeps its default level", root.path));
+            }
+        } else {
+            choice.screenSize = screenSize(root, camera->position, camera->fovY, camera->aspect);
+            auto previous = heuristicLevels.contains(root.path) ? heuristicLevels[root.path] : root.defaultIndex;
+            choice.level = std::min(levelFor(choice.screenSize, root.thresholds, previous), levelCount - 1);
+            heuristicLevels[root.path] = choice.level;
+            choice.reason = "heuristic";
+        }
+        chosen.push_back({.root = &root, .choice = std::move(choice)});
+    }
+    // Who keeps a finer level under the cap: the roots the camera is inside first, the smallest first (where the camera is; a bounding
+    // sphere around the camera measures larger than anything and can't rank them), then the others, the largest on screen first.
+    struct Ranked {
+        Chosen* entry = nullptr;
+        bool around = false;
+        float volume = 0.0f;
+    };
+    std::vector<Ranked> finerByHeuristic;
+    for (auto& entry : chosen) {
+        if (entry.choice.reason == "heuristic" && entry.choice.level + 1 < entry.root->levels.size()) {
+            auto inside = aroundCamera(*entry.root, camera->position);
+            finerByHeuristic.push_back({.entry = &entry, .around = inside.has_value(), .volume = inside.value_or(0.0f)});
+        }
+    }
+    std::ranges::sort(finerByHeuristic, [](const Ranked& a, const Ranked& b) {
+        if (a.around != b.around) {
+            return a.around;
+        }
+        if (a.around && a.volume != b.volume) {
+            return a.volume < b.volume;
+        }
+        if (a.entry->choice.screenSize != b.entry->choice.screenSize) {
+            return a.entry->choice.screenSize > b.entry->choice.screenSize;
+        }
+        return a.entry->root->path < b.entry->root->path;
+    });
+    uint32_t capped = 0;
+    for (size_t i = heuristicCap; i < finerByHeuristic.size(); i++) {
+        auto& entry = *finerByHeuristic[i].entry;
+        entry.choice.level = (uint32_t) entry.root->levels.size() - 1;
+        entry.choice.reason = "capped";
+        capped++;
+    }
+
+    uint32_t finer = 0;
+    uint32_t coarser = 0;
+    for (auto& [root, choice] : chosen) {
+        // The composer holds a level only where it isn't the root's default.
+        bool held = choice.level != root->defaultIndex || handLevels.contains(root->path);
+        auto pushed = composerLevels.find(root->path);
+        uint32_t before = pushed != composerLevels.end() ? pushed->second : root->defaultIndex;
+        if (held && (pushed == composerLevels.end() || pushed->second != choice.level)) {
+            composer->setLodLevel(root->path, choice.level);
+            composerLevels[root->path] = choice.level;
+        } else if (!held && pushed != composerLevels.end()) {
+            composer->resetLodLevel(root->path);
+            composerLevels.erase(pushed);
+        }
+        if (choice.level < before) {
+            finer++;
+        } else if (choice.level > before) {
+            coarser++;
+        }
+        (*next)[root->path] = std::move(choice);
+    }
+    stats.lodRootsEvaluated = (uint32_t) chosen.size();
+    stats.lodFiner = finer;
+    stats.lodCoarser = coarser;
+    stats.lodCapped = capped;
+    stats.lodEvaluations++;
+    stats.lodEvaluateMs = msSince(start);
+    choices = std::move(next);
+    if (finer + coarser == 0) {
+        return false;
+    }
+    TRACE_EVENT("Scene", "LevelsWanted", id)
+        .text(std::format("LOD levels wanted: {} roots finer, {} coarser of {} evaluated; {} capped at their coarsest (cap {})", finer, coarser, stats.lodRootsEvaluated, capped, heuristicCap))
+        .field("finer", (int64_t) finer)
+        .field("coarser", (int64_t) coarser)
+        .field("roots", (int64_t) stats.lodRootsEvaluated)
+        .field("capped", (int64_t) capped);
+    return true;
+}
+
+// Levels changed and nothing else: the composer links them again, composing level contents it doesn't keep yet, and asks for their packs.
+auto ViewScene::relink() -> void {
+    std::vector<std::pair<std::string, AssetKind>> fresh;
+    for (const auto& needed : composer->relink()) {
+        if (requestedPacks.insert(needed).second) {
+            fresh.emplace_back(needed, AssetKind::Layer);
+        }
+    }
+    requestAssets(fresh, false);
+    stats.relinks++;
+    countWorld();
+    extractNeeded = true;
+    requestNeeded = true;
+}
+
 // The prims World::visit reaches in a content: its entities (a level content's root among them, the stage's and a prototype's not), an
 // instance's prototype in place of the instance's children, and a LOD level's linked content in place of its stand-in.
+auto ViewScene::countWorld() -> void {
+    worldPrims = composer ? countPrims(composer->world(), composer->world().stage, false) : 0;
+}
+
 auto ViewScene::countPrims(const World& world, const WorldContent& content, bool rootIsPrim) -> size_t {
     if (auto it = primCounts.find(&content); it != primCounts.end() && it->second.first == content.version && &content != &world.stage) {
         return it->second.second;
@@ -665,6 +941,9 @@ auto ViewScene::publish() -> void {
     snapshot->revision = inputsRevision;
     snapshot->draws = draws;
     snapshot->transforms = transforms;
+    snapshot->lodChoices = choices;
+    snapshot->lodHeuristic = heuristicOn;
+    snapshot->lodCap = heuristicCap;
     snapshot->thread = stats;
     for (const auto& [assetId, kind] : inFlight) {
         if (kind == AssetKind::Layer) {
@@ -924,6 +1203,197 @@ auto ViewScene::material(const std::string& materialAsset, const std::optional<s
     return handle;
 }
 
+// A use with a gizmo's local opinion under it is walked afresh, not taken from the cache.
+auto ViewScene::overridesUnder(const std::string& usePath) const -> bool {
+    if (localOverrides.empty()) {
+        return false;
+    }
+    if (usePath == "/") {
+        return true;
+    }
+    auto prefix = usePath + "/";
+    return std::ranges::any_of(localOverrides, [&](const auto& entry) { return entry.first.starts_with(prefix); });
+}
+
+// One content's walk from its root down: its prims that matter to extract, with transforms relative to the root, and where its
+// instances and levels sit. overrideBase, when set, is the content's use path, to apply the gizmo's local opinions.
+auto ViewScene::buildExtract(const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& overrideBase) -> std::shared_ptr<const ContentExtract> {
+    auto out = std::make_shared<ContentExtract>();
+    out->version = content.version;
+    auto prims = std::make_shared<ContentTransforms>();
+    struct State {
+        std::string path;
+        glm::mat4 world = glm::mat4(1.0f);
+        bool absolute = false;
+        Purpose purpose = Purpose::Default;
+        std::string material;
+        bool strong = false;
+    };
+    std::function<void(EntityId, const State&)> walk = [&](EntityId id, const State& parent) {
+        const auto& entity = content.entities[id];
+        State state;
+        state.path = rootIsPrim && id == 0 ? std::string("/") : childPathOf(parent.path, entity.name);
+        // A prim with payloads stands in for its linked content, used where it sits (read at use: resolution may link another).
+        if (entity.linkedContent >= 0 && !(rootIsPrim && id == 0)) {
+            out->items.push_back({.kind = ExtractItem::Kind::Level,
+                                  .path = state.path,
+                                  .world = parent.world,
+                                  .absolute = parent.absolute,
+                                  .id = id,
+                                  .purpose = parent.purpose,
+                                  .material = parent.material,
+                                  .strongBinding = parent.strong});
+            return;
+        }
+        glm::mat4 local(entity.localTransform);
+        if (!overrideBase.empty() && entity.xformable) {
+            if (auto authored = localOverrides.find(joinPathOf(overrideBase, state.path)); authored != localOverrides.end()) {
+                local = authored->second;
+            }
+        }
+        state.absolute = parent.absolute;
+        if (!entity.xformable) {
+            state.world = parent.world;
+        } else if (entity.resetsXformStack) {
+            state.world = local;
+            state.absolute = true;
+        } else {
+            state.world = parent.world * local;
+        }
+        if (!entity.active || !entity.defined || entity.abstract || entity.invisible) {
+            return;
+        }
+        state.purpose = entity.purpose.value_or(parent.purpose);
+        state.material = parent.material;
+        state.strong = parent.strong;
+        if (!parent.strong && entity.binding) {
+            state.material = entity.binding->materialAsset;
+            state.strong = entity.binding->strongerThanDescendants;
+        }
+        (*prims)[state.path] = {.local = local, .world = state.world, .xformable = entity.xformable, .resetsXformStack = entity.resetsXformStack, .absolute = state.absolute};
+        ExtractItem prim{.kind = ExtractItem::Kind::Prim,
+                         .path = state.path,
+                         .world = state.world,
+                         .absolute = state.absolute,
+                         .entity = &entity,
+                         .id = id,
+                         .purpose = state.purpose,
+                         .material = state.material,
+                         .strongBinding = state.strong,
+                         .camera = entity.typeName == "Camera",
+                         .payload = content.payloads.contains(id),
+                         .lodRoot = content.lodRoots.contains(id),
+                         .light = content.lights.contains(id)};
+        if (!entity.meshAsset.empty()) {
+            auto [it, added] = meshIds.try_emplace(entity.meshAsset, (uint32_t) meshIds.size());
+            prim.meshId = it->second;
+            auto [material, materialAdded] = materialIds.try_emplace(state.material, (uint32_t) materialIds.size());
+            prim.materialId = material->second;
+            prim.subsets = std::ranges::any_of(entity.children, [&](EntityId child) { return content.entities[child].binding.has_value(); });
+        }
+        if (prim.meshId != UINT32_MAX || prim.camera || prim.payload || prim.lodRoot || prim.light) {
+            out->items.push_back(std::move(prim));
+        }
+        if (entity.prototype >= 0) {
+            out->items.push_back({.kind = ExtractItem::Kind::Instance,
+                                  .path = state.path,
+                                  .world = state.world,
+                                  .absolute = state.absolute,
+                                  .purpose = state.purpose,
+                                  .material = state.material,
+                                  .strongBinding = state.strong,
+                                  .content = entity.prototype});
+            return;
+        }
+        if (auto lod = content.lodRoots.find(id); lod != content.lodRoots.end()) {
+            // A level's link to its content changes at resolution without the content changing: it is read where the content is used.
+            for (uint32_t i = 0; i < lod->second.levels.size(); i++) {
+                auto standIn = lod->second.levels[i];
+                out->items.push_back({.kind = ExtractItem::Kind::Level,
+                                      .path = childPathOf(state.path, content.entities[standIn].name),
+                                      .world = state.world,
+                                      .absolute = state.absolute,
+                                      .id = standIn,
+                                      .purpose = state.purpose,
+                                      .material = state.material,
+                                      .strongBinding = state.strong,
+                                      .root = id,
+                                      .level = i});
+            }
+            return;
+        }
+        for (EntityId child : entity.children) {
+            walk(child, state);
+        }
+    };
+    State top{.path = "/", .world = glm::mat4(1.0f), .absolute = false, .purpose = purpose, .material = material, .strong = strong};
+    if (rootIsPrim) {
+        walk(0, top);
+    } else {
+        for (EntityId child : content.entities[0].children) {
+            walk(child, top);
+        }
+    }
+    out->transforms = std::move(prims);
+    return out;
+}
+
+// A content's walk, kept by its version and the state it inherits; afresh when the gizmo has moved something in it.
+auto ViewScene::extractOf(char kind, int32_t index, const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& usePath) -> std::shared_ptr<const ContentExtract> {
+    if (overridesUnder(usePath)) {
+        return buildExtract(content, rootIsPrim, purpose, material, strong, usePath);
+    }
+    auto key = std::format("{}{} {} {} {} {}", kind, index, content.version, (int) purpose, strong ? 1 : 0, material);
+    if (auto it = extractCache.find(key); it != extractCache.end()) {
+        extractCacheHits++;
+        return it->second;
+    }
+    extractCacheBuilds++;
+    auto built = buildExtract(content, rootIsPrim, purpose, material, strong, {});
+    extractCache[key] = built;
+    return built;
+}
+
+// The World's kept walks replayed from the stage down, in walk order: each prim that matters at its full path and world transform (before
+// the unit scale), with the drawn LOD level + 1 of the nearest root above it. With `transformsOut`, every use of a content is registered there.
+auto ViewScene::replay(const World& w, const PrimVisitor& onPrim, TransformIndex* transformsOut) -> void {
+    std::function<void(char, int32_t, const WorldContent&, bool, const std::string&, const glm::mat4&, Purpose, const std::string&, bool, uint32_t)> useContent =
+        [&](char kind, int32_t index, const WorldContent& content, bool rootIsPrim, const std::string& usePath, const glm::mat4& useWorld, Purpose purpose, const std::string& material, bool strong, uint32_t lodTag) {
+            auto walked = extractOf(kind, index, content, rootIsPrim, purpose, material, strong, usePath);
+            if (transformsOut != nullptr) {
+                transformsOut->uses[usePath] = {.prims = walked->transforms, .world = useWorld};
+            }
+            for (const auto& item : walked->items) {
+                auto world = item.absolute ? item.world : useWorld * item.world;
+                auto path = joinPathOf(usePath, item.path);
+                if (item.kind == ExtractItem::Kind::Instance) {
+                    useContent('P', item.content, w.prototypes[(size_t) item.content], false, path, world, item.purpose, item.material, item.strongBinding, lodTag);
+                    continue;
+                }
+                if (item.kind == ExtractItem::Kind::Level) {
+                    auto linked = content.entities[item.id].linkedContent;
+                    if (linked < 0) {
+                        continue;
+                    }
+                    // A prim with payloads (no root) is always used; a level only when the root draws it: the finest loaded one not finer
+                    // than the one it wants, per use of the root.
+                    auto tag = lodTag;
+                    if (item.root != noEntity) {
+                        auto drawnLevel = w.drawnLevel(parentPathOf(path), content.lodRoots.at(item.root));
+                        if (!drawnLevel || *drawnLevel != item.level) {
+                            continue;
+                        }
+                        tag = *drawnLevel + 1;
+                    }
+                    useContent('L', linked, w.linkedContents[(size_t) linked], true, path, world, item.purpose, item.material, item.strongBinding, tag);
+                    continue;
+                }
+                onPrim(content, item, path, world, lodTag);
+            }
+        };
+    useContent('S', 0, w.stage, false, "/", glm::mat4(1.0f), Purpose::Default, {}, false, 0);
+}
+
 // The renderer's inputs from the World: a draw instance per submesh of every drawn mesh, and the distant lights. World transforms are
 // computed as the view always has: in float, parent times local, then scaled to metres by the scene's metersPerUnit.
 auto ViewScene::extract() -> void {
@@ -963,157 +1433,6 @@ auto ViewScene::extract() -> void {
 
     auto transformIndex = std::make_shared<TransformIndex>();
     bool hasDistantLight = false;
-
-    // A use with a gizmo's local opinion under it is walked afresh, not taken from the cache.
-    auto overridesUnder = [&](const std::string& usePath) -> bool {
-        if (localOverrides.empty()) {
-            return false;
-        }
-        if (usePath == "/") {
-            return true;
-        }
-        auto prefix = usePath + "/";
-        return std::ranges::any_of(localOverrides, [&](const auto& entry) { return entry.first.starts_with(prefix); });
-    };
-
-    // One content's walk from its root down: its prims that matter to extract, with transforms relative to the root, and where its
-    // instances and levels sit. overrideBase, when set, is the content's use path, to apply the gizmo's local opinions.
-    auto build = [&](const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& overrideBase) -> std::shared_ptr<ContentExtract> {
-        auto out = std::make_shared<ContentExtract>();
-        out->version = content.version;
-        auto prims = std::make_shared<ContentTransforms>();
-        struct State {
-            std::string path;
-            glm::mat4 world = glm::mat4(1.0f);
-            bool absolute = false;
-            Purpose purpose = Purpose::Default;
-            std::string material;
-            bool strong = false;
-        };
-        std::function<void(EntityId, const State&)> walk = [&](EntityId id, const State& parent) {
-            const auto& entity = content.entities[id];
-            State state;
-            state.path = rootIsPrim && id == 0 ? std::string("/") : childPathOf(parent.path, entity.name);
-            // A prim with payloads stands in for its linked content, used where it sits (read at use: resolution may link another).
-            if (entity.linkedContent >= 0 && !(rootIsPrim && id == 0)) {
-                out->items.push_back({.kind = ExtractItem::Kind::Level,
-                                      .path = state.path,
-                                      .world = parent.world,
-                                      .absolute = parent.absolute,
-                                      .id = id,
-                                      .purpose = parent.purpose,
-                                      .material = parent.material,
-                                      .strongBinding = parent.strong});
-                return;
-            }
-            glm::mat4 local(entity.localTransform);
-            if (!overrideBase.empty() && entity.xformable) {
-                if (auto authored = localOverrides.find(joinPathOf(overrideBase, state.path)); authored != localOverrides.end()) {
-                    local = authored->second;
-                }
-            }
-            state.absolute = parent.absolute;
-            if (!entity.xformable) {
-                state.world = parent.world;
-            } else if (entity.resetsXformStack) {
-                state.world = local;
-                state.absolute = true;
-            } else {
-                state.world = parent.world * local;
-            }
-            if (!entity.active || !entity.defined || entity.abstract || entity.invisible) {
-                return;
-            }
-            state.purpose = entity.purpose.value_or(parent.purpose);
-            state.material = parent.material;
-            state.strong = parent.strong;
-            if (!parent.strong && entity.binding) {
-                state.material = entity.binding->materialAsset;
-                state.strong = entity.binding->strongerThanDescendants;
-            }
-            (*prims)[state.path] = {.local = local, .world = state.world, .xformable = entity.xformable, .resetsXformStack = entity.resetsXformStack, .absolute = state.absolute};
-            ExtractItem prim{.kind = ExtractItem::Kind::Prim,
-                             .path = state.path,
-                             .world = state.world,
-                             .absolute = state.absolute,
-                             .entity = &entity,
-                             .id = id,
-                             .purpose = state.purpose,
-                             .material = state.material,
-                             .strongBinding = state.strong,
-                             .camera = entity.typeName == "Camera",
-                             .payload = content.payloads.contains(id),
-                             .lodRoot = content.lodRoots.contains(id),
-                             .light = content.lights.contains(id)};
-            if (!entity.meshAsset.empty()) {
-                auto [it, added] = meshIds.try_emplace(entity.meshAsset, (uint32_t) meshIds.size());
-                prim.meshId = it->second;
-                auto [material, materialAdded] = materialIds.try_emplace(state.material, (uint32_t) materialIds.size());
-                prim.materialId = material->second;
-                prim.subsets = std::ranges::any_of(entity.children, [&](EntityId child) { return content.entities[child].binding.has_value(); });
-            }
-            if (prim.meshId != UINT32_MAX || prim.camera || prim.payload || prim.lodRoot || prim.light) {
-                out->items.push_back(std::move(prim));
-            }
-            if (entity.prototype >= 0) {
-                out->items.push_back({.kind = ExtractItem::Kind::Instance,
-                                      .path = state.path,
-                                      .world = state.world,
-                                      .absolute = state.absolute,
-                                      .purpose = state.purpose,
-                                      .material = state.material,
-                                      .strongBinding = state.strong,
-                                      .content = entity.prototype});
-                return;
-            }
-            if (auto lod = content.lodRoots.find(id); lod != content.lodRoots.end()) {
-                // A level's link to its content changes at resolution without the content changing: it is read where the content is used.
-                for (uint32_t i = 0; i < lod->second.levels.size(); i++) {
-                    auto standIn = lod->second.levels[i];
-                    out->items.push_back({.kind = ExtractItem::Kind::Level,
-                                          .path = childPathOf(state.path, content.entities[standIn].name),
-                                          .world = state.world,
-                                          .absolute = state.absolute,
-                                          .id = standIn,
-                                          .purpose = state.purpose,
-                                          .material = state.material,
-                                          .strongBinding = state.strong,
-                                          .root = id,
-                                          .level = i});
-                }
-                return;
-            }
-            for (EntityId child : entity.children) {
-                walk(child, state);
-            }
-        };
-        State top{.path = "/", .world = glm::mat4(1.0f), .absolute = false, .purpose = purpose, .material = material, .strong = strong};
-        if (rootIsPrim) {
-            walk(0, top);
-        } else {
-            for (EntityId child : content.entities[0].children) {
-                walk(child, top);
-            }
-        }
-        out->transforms = std::move(prims);
-        return out;
-    };
-
-    // A content's walk, kept by its version and the state it inherits; afresh when the gizmo has moved something in it.
-    auto extractOf = [&](char kind, int32_t index, const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& usePath) -> std::shared_ptr<const ContentExtract> {
-        if (overridesUnder(usePath)) {
-            return build(content, rootIsPrim, purpose, material, strong, usePath);
-        }
-        auto key = std::format("{}{} {} {} {} {}", kind, index, content.version, (int) purpose, strong ? 1 : 0, material);
-        if (auto it = extractCache.find(key); it != extractCache.end()) {
-            extractCacheHits++;
-            return it->second;
-        }
-        extractCacheBuilds++;
-        auto built = build(content, rootIsPrim, purpose, material, strong, {});
-        extractCache[key] = built;
-        return built;
-    };
 
     // A mesh and the material bound where it is drawn, resolved once per extract: the materials of its submeshes, whether any cuts, and the
     // assets its draws use (the mesh, the file defining it, each material and its textures), with the lists that name its prims.
@@ -1229,7 +1548,8 @@ auto ViewScene::extract() -> void {
             row.wanted = w.wantedLevel(path, root);
             row.drawn = w.drawnLevel(path, root);
             row.loaded = root.loaded;
-            row.setByHand = w.lodLevels.contains(path);
+            row.setByHand = handLevels.contains(path);
+            row.worldTransform = worldTransform;
             drawnLodRoots.push_back(std::move(row));
         }
 
@@ -1316,41 +1636,7 @@ auto ViewScene::extract() -> void {
         assetsByPrim[prim - 1] = resolved->uses;
     };
 
-    // A content used at a path with a world transform (before the unit scale): its kept walk replayed, in walk order, into the draws.
-    std::function<void(char, int32_t, const WorldContent&, bool, const std::string&, const glm::mat4&, Purpose, const std::string&, bool, uint32_t)> useContent =
-        [&](char kind, int32_t index, const WorldContent& content, bool rootIsPrim, const std::string& usePath, const glm::mat4& useWorld, Purpose purpose, const std::string& material, bool strong, uint32_t lodTag) {
-            auto walked = extractOf(kind, index, content, rootIsPrim, purpose, material, strong, usePath);
-            transformIndex->uses[usePath] = {.prims = walked->transforms, .world = useWorld};
-            for (const auto& item : walked->items) {
-                auto world = item.absolute ? item.world : useWorld * item.world;
-                auto path = joinPathOf(usePath, item.path);
-                if (item.kind == ExtractItem::Kind::Instance) {
-                    useContent('P', item.content, w.prototypes[(size_t) item.content], false, path, world, item.purpose, item.material, item.strongBinding, lodTag);
-                    continue;
-                }
-                if (item.kind == ExtractItem::Kind::Level) {
-                    auto linked = content.entities[item.id].linkedContent;
-                    if (linked < 0) {
-                        continue;
-                    }
-                    // A prim with payloads (no root) is always used; a level only when the root draws it: the finest loaded one not finer
-                    // than the one it wants, per use of the root.
-                    auto tag = lodTag;
-                    if (item.root != noEntity) {
-                        auto drawnLevel = w.drawnLevel(parentPathOf(path), content.lodRoots.at(item.root));
-                        if (!drawnLevel || *drawnLevel != item.level) {
-                            continue;
-                        }
-                        tag = *drawnLevel + 1;
-                    }
-                    useContent('L', linked, w.linkedContents[(size_t) linked], true, path, world, item.purpose, item.material, item.strongBinding, tag);
-                    continue;
-                }
-                primAt(content, item, path, unitScale * world, lodTag);
-            }
-        };
-    useContent('S', 0, w.stage, false, "/", glm::mat4(1.0f), Purpose::Default, {}, false, 0);
-
+    replay(w, [&](const WorldContent& content, const ExtractItem& item, const std::string& path, const glm::mat4& world, uint32_t lodTag) { primAt(content, item, path, unitScale * world, lodTag); }, transformIndex.get());
     // Kept walks of contents composed again since are dropped.
     std::erase_if(extractCache, [&](const auto& entry) {
         const auto& key = entry.first;

@@ -75,6 +75,18 @@ const std::vector<EngineMapNode> nodes = {
     },
     // The scene thread.
     {
+        .id = "scene.lod",
+        .label = "LOD selection",
+        .lane = 2,
+        .row = 3,
+        .description = "The LOD heuristic: each LOD root reached gets the level its screen size from the camera picks (UsdLod's screen-size "
+                       "heuristic, without the frustum, with a 20% band before going coarser), unless set by hand or the heuristic is off. "
+                       "Changed levels are linked again without composing the stage.",
+        .records = {"streaming", "lod"},
+        .windows = {"lod"},
+        .readme = "src/view/README.md",
+    },
+    {
         .id = "scene.compose",
         .label = "Compose",
         .lane = 2,
@@ -244,7 +256,11 @@ const std::vector<EngineMapEdge> edges = {
     {.from = "scene.compose", .to = "view.assetclient", .what = "asset.request for the packs it names"},
     {.from = "scene.compose", .to = "scene.extract", .what = "the World"},
     {.from = "scene.extract", .to = "scene.changes", .what = "draws, library entries, lights"},
-    {.from = "main.rpc", .to = "scene.compose", .what = "requests: open, LOD levels, purposes, repack"},
+    {.from = "main.rpc", .to = "scene.compose", .what = "requests: open, purposes, repack"},
+    {.from = "main.rpc", .to = "scene.lod", .what = "levels set by hand, heuristic on or off"},
+    {.from = "main.input", .to = "scene.lod", .what = "camera (once placed)"},
+    {.from = "scene.lod", .to = "scene.compose", .what = "levels wanted: linked again"},
+    {.from = "scene.extract", .to = "scene.lod", .what = "the LOD roots reached"},
     {.from = "scene.changes", .to = "main.scene", .what = "snapshot and change lists"},
     {.from = "main.scene", .to = "render.gpuscene", .what = "change lists (submitSceneChanges)"},
     {.from = "render.gpuscene", .to = "main.scene", .what = "drawn and idle: residency"},

@@ -79,7 +79,7 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   passes with draw counters and GPU time, culled passes, draw log with prim paths) as one JSON line, `value` holding the record,
   `requested_frame` the frame asked for and `frame` the frame it was ready (GPU readbacks take a few). Any record works: `render`, `memory`,
   `counters`, `culling`, `scene`, `assets` (per asset: state, size, times), `lod` (every LOD root: levels and their payloads, heuristic, default, wanted, drawn, loaded), `payloads` (every payload placement
-  reached: assets, loaded, extentsHint in world metres), `scenethread` (requests, composes, extracts, assets in flight and held,
+  reached: assets, loaded, extentsHint in world metres), `streaming` (the LOD heuristic: per root screen size, wanted and why, drawn), `scenethread` (requests, composes, extracts, assets in flight and held,
   residency), `gpuscene` (change lists, upload queue and budget, geometry pool), `map` (the Engine Map: lanes, nodes with their records, windows,
   READMEs and live numbers, and edges), `pipelines`, `profile`, `status` (`src/introspect/README.md`); several lines into one file are fine. Read it
   with `jq 'select(.record == "render") | .value.passes' /tmp/records.jsonl`.
@@ -90,7 +90,7 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   rebuild the scene; a live view takes a source edit by itself, from the asset server's change notice, so this is for repacking an unchanged source),
   `goto-asset <id> [all]` (move the camera to an asset's next draw, nearest first, and select it; `all` frames every draw),
   `assets-of [/prim]` (the assets drawn at or under a prim use, or the selection's; `view.assetsOf` answers with them),
-  `lod <LOD root path> <level>` (the level a LOD root wants; loads it), `lod-reset <LOD root path>` (back to its default) and `cull on|off|freeze|unfreeze|show|hide`
+  `lod <LOD root path> <level>` (the level a LOD root wants; loads it), `lod-reset <LOD root path>` (back to its default), `lod-heuristic on|off` (the LOD heuristic; on by default) and `cull on|off|freeze|unfreeze|show|hide`
   (frustum culling toggle, frozen frustum, red/green AABB overlay), `prepass on|off` (depth prepass) and
   `ambient sky=r,g,b ground=r,g,b|reset` (hemisphere ambient), `gpuscene budget=<MiB>,limit=<MiB>` (upload budget, geometry pool limit),
   `sampler aniso=8,bias=0,minlod=0,mip=linear|nearest` (material sampler), `shadow cascades=3,tile=1024,lambda=0.5,pcf=on|off,distance=200`

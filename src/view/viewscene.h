@@ -14,6 +14,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -76,7 +77,18 @@ struct SceneLodRoot {
     std::optional<uint32_t> drawn;
     std::vector<uint32_t> loaded;
     bool setByHand = false;
+    glm::mat4 worldTransform = glm::mat4(1.0f); // the root's, in metres: places the heuristic's extent
 };
+
+// What the LOD heuristic chose for a root at the last evaluation: its screen size (the fraction of the view its extent's bounding sphere
+// covers, -1 when not computed) and the level it wants, with why: "heuristic", "hand-set", "heuristic off", "no screen-size heuristic",
+// "no camera".
+struct SceneLodChoice {
+    float screenSize = -1.0f;
+    uint32_t level = 0;
+    std::string reason;
+};
+using SceneLodChoices = std::unordered_map<std::string, SceneLodChoice>; // by the root's full path
 
 // The scene thread's work as of a snapshot: batches of requests and answers taken, composes (each composes with the packs held and asks for
 // those it names and lacks) and extracts (the renderer's inputs built from the World), the assets in flight by kind, and what it holds.
@@ -101,7 +113,16 @@ struct SceneThreadStats {
     uint64_t extractReused = 0;  // of the last extract: content walks taken from the kept ones
     uint64_t extractWalked = 0;  // and walked (new, composed again, or with a gizmo's opinion in them)
     uint64_t extractKept = 0;    // kept walks after it
-    double publishMs = 0.0;      // the last snapshot's
+    uint64_t extractsHeld = 0;   // batches whose extract waited while assets arrived
+    // The LOD heuristic's last evaluation: roots evaluated, levels it changed (finer, coarser), and its time.
+    uint32_t lodRootsEvaluated = 0;
+    uint32_t lodFiner = 0;
+    uint32_t lodCoarser = 0;
+    uint32_t lodCapped = 0; // roots the cap kept at their coarsest
+    double lodEvaluateMs = 0.0;
+    uint64_t lodEvaluations = 0;
+    uint64_t relinks = 0;
+    double publishMs = 0.0; // the last snapshot's
     uint64_t assetsReceived = 0;
     uint32_t inFlightLayers = 0;
     uint32_t inFlightMeshes = 0;
@@ -148,6 +169,9 @@ struct SceneSnapshot {
     uint64_t revision = 0;
     std::shared_ptr<const SceneDraws> draws = std::make_shared<SceneDraws>();
     std::shared_ptr<const TransformIndex> transforms = std::make_shared<TransformIndex>(); // every prim reached while drawing
+    std::shared_ptr<const SceneLodChoices> lodChoices = std::make_shared<SceneLodChoices>();
+    bool lodHeuristic = true;
+    uint32_t lodCap = 2;
     glm::mat4 unitScale = glm::mat4(1.0f);
     std::vector<std::string> assetIds; // every asset the scene uses: layer packs, meshes, materials, textures, failed ones
     // The World, summarised.
@@ -181,8 +205,21 @@ public:
     auto open(const std::string& sceneId) -> void;
     // The level a LOD root wants, by its full path; loads it.
     auto setLodLevel(const std::string& rootPath, uint32_t level) -> void;
-    // Puts a LOD root back to its default level (lod:default:index).
+    // Puts a LOD root back to its default level (lod:default:index), or to the heuristic's choice while the heuristic is on.
     auto resetLodLevel(const std::string& rootPath) -> void;
+    // The view's camera, for the LOD heuristic: position in metres, vertical field of view in radians, aspect (width over height). Only
+    // the latest posted counts; the scene thread evaluates the heuristic when it moved.
+    auto setCamera(const glm::vec3& position, float fovY, float aspect) -> void;
+    // The LOD heuristic on (every root not set by hand wants the level its screen size picks) or off (its default).
+    auto setLodHeuristic(bool on) -> void;
+    // At most this many roots finer than their coarsest level by the heuristic, the largest on screen first; the others keep their
+    // coarsest ("capped"). A stand-in for memory budgets.
+    auto setLodCap(uint32_t roots) -> void;
+    auto lodCap() const -> uint32_t { return current->lodCap; }
+    static constexpr uint32_t defaultLodCap = 2;
+    auto lodHeuristic() const -> bool { return current->lodHeuristic; }
+    // What the heuristic chose at its last evaluation, by root path.
+    auto lodChoices() const -> const SceneLodChoices& { return *current->lodChoices; }
     // Whether prims of a purpose are drawn: default and render always are, guide and proxy when turned on.
     auto setPurposeShown(Purpose purpose, bool shown) -> void;
     auto purposeShown(Purpose purpose) const -> bool;
@@ -266,7 +303,20 @@ private:
         std::string path;
         glm::mat4 local = glm::mat4(1.0f);
     };
-    using Request = std::variant<OpenRequest, LodRequest, PurposeRequest, RefreshRequest, TransformRequest>;
+    struct HeuristicRequest {
+        std::optional<bool> on;
+        std::optional<uint32_t> cap;
+    };
+    using Request = std::variant<OpenRequest, LodRequest, PurposeRequest, RefreshRequest, TransformRequest, HeuristicRequest>;
+    struct CameraInput {
+        glm::vec3 position = glm::vec3(0.0f);
+        float fovY = 0.785f;
+        float aspect = 1.0f;
+    };
+    // The LOD heuristic over the roots the last extract reached: each one's level from its screen size, with hysteresis, unless set by
+    // hand; the composer gets what changed. True when something did.
+    auto evaluateLevels() -> bool;
+    auto relink() -> void;
     // What an asset the scene thread asked for is, so its arrival goes to the right place.
     enum class AssetKind : uint8_t {
         Layer,
@@ -290,6 +340,7 @@ private:
     auto compose() -> void;
     // Requests the meshes and materials of what is drawn and the textures of the materials held.
     auto requestDrawnAssets() -> void;
+    auto reportAssets() -> void;
     auto extract() -> void;
     auto publish() -> void;
     auto drawsPurpose(Purpose purpose) const -> bool;
@@ -328,8 +379,23 @@ private:
     std::set<std::string> refreshing;                    // asked to be fetched again: their arrival replaces what the scene holds
     bool composeNeeded = false;
     bool extractNeeded = false;
-    bool composeReported = false; // PacksComposed traced since the scene opened or a pack last arrived
-    bool assetsReported = false;  // SceneAssetsReceived traced since the last asset was requested
+    bool requestNeeded = false; // what is drawn may name assets not asked for yet: a compose, a material's arrival, a purpose shown
+    // The LOD heuristic: the camera the main thread posted (between the threads) and the scene thread's, the levels set by hand, what the
+    // heuristic chose last per root (its hysteresis), what the composer was given, and whether to evaluate again.
+    std::optional<CameraInput> postedCamera;
+    std::optional<CameraInput> camera;
+    bool heuristicOn = true;
+    uint32_t heuristicCap = defaultLodCap;
+    bool evaluateNeeded = false;
+    std::unordered_map<std::string, uint32_t> handLevels;
+    std::unordered_map<std::string, uint32_t> heuristicLevels;
+    std::unordered_map<std::string, uint32_t> composerLevels;
+    std::set<std::string> warnedExtents; // roots whose empty heuristic extent was reported
+    std::shared_ptr<const SceneLodChoices> choices = std::make_shared<SceneLodChoices>();
+    std::chrono::steady_clock::time_point lastExtractEnd;
+    std::chrono::steady_clock::time_point extractDue; // a held-back extract's time
+    bool composeReported = false;                     // PacksComposed traced since the scene opened or a pack last arrived
+    bool assetsReported = false;                      // SceneAssetsReceived traced since the last asset was requested
     size_t assetsSinceReport = 0;
     std::chrono::steady_clock::time_point openedAt;
 
@@ -365,6 +431,7 @@ private:
     size_t worldPrims = 0;
     std::unordered_map<const WorldContent*, std::pair<uint64_t, size_t>> primCounts;
     auto countPrims(const World& world, const WorldContent& content, bool rootIsPrim) -> size_t;
+    auto countWorld() -> void;
     // Every asset id the scene uses, rebuilt when the sets of packs change size.
     std::vector<std::string> assetIdList;
     size_t assetIdKey = SIZE_MAX;
@@ -404,6 +471,12 @@ private:
         std::shared_ptr<const ContentTransforms> transforms;
     };
     std::unordered_map<std::string, std::shared_ptr<const ContentExtract>> extractCache; // by content, version and inherited state
+    // A content's walk afresh; its walk kept by version and inherited state (afresh when a gizmo's opinion is under its use).
+    auto buildExtract(const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& overrideBase) -> std::shared_ptr<const ContentExtract>;
+    auto extractOf(char kind, int32_t index, const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& usePath) -> std::shared_ptr<const ContentExtract>;
+    auto overridesUnder(const std::string& usePath) const -> bool;
+    using PrimVisitor = std::function<void(const WorldContent& content, const ExtractItem& item, const std::string& path, const glm::mat4& world, uint32_t lodTag)>;
+    auto replay(const World& world, const PrimVisitor& onPrim, TransformIndex* transformsOut) -> void;
     uint64_t extractCacheHits = 0;
     uint64_t extractCacheBuilds = 0;
     std::vector<SceneCamera> authoredCameras;

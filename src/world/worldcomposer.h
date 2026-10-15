@@ -41,6 +41,9 @@ public:
     // The level a LOD root wants, by its full path (instances expanded); lod:default:index until set. The root's coarsest level stays
     // loaded. Takes effect at the next compose, which says what the level needs.
     auto setLodLevel(const std::string& rootPath, uint32_t level) -> void;
+    // After levels changed (setLodLevel, resetLodLevel) and nothing else: links the levels again without composing the stage, composing
+    // the level contents not kept yet. Returns the packs those need, as compose() does.
+    auto relink() -> std::vector<std::string>;
     // Forgets a level set by hand, so the root wants lod:default:index again. Takes effect at the next compose.
     auto resetLodLevel(const std::string& rootPath) -> void;
 
