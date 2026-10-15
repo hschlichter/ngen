@@ -128,6 +128,11 @@ auto World::visit(const std::function<bool(const VisitedEntity&)>& visitor) cons
         }
         for (EntityId child : entity.children) {
             if (lodRoot == nullptr) {
+                // A prim with payloads is its linked content's entity 0, with everything under it.
+                if (auto linked = content.entities[child].linkedContent; linked >= 0) {
+                    visitEntity(linkedContents[(size_t) linked], 0, state);
+                    continue;
+                }
                 visitEntity(content, child, state);
                 continue;
             }
@@ -137,8 +142,8 @@ auto World::visit(const std::function<bool(const VisitedEntity&)>& visitor) cons
                 childState.inUndrawnLevel = true;
             }
             // A level is its content's entity 0, the level prim as composed (loaded or not), with everything under it.
-            if (auto linked = content.entities[child].levelContent; linked >= 0) {
-                visitEntity(levelContents[(size_t) linked], 0, childState);
+            if (auto linked = content.entities[child].linkedContent; linked >= 0) {
+                visitEntity(linkedContents[(size_t) linked], 0, childState);
                 continue;
             }
             visitEntity(content, child, childState);

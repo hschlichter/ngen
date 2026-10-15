@@ -315,13 +315,15 @@ struct ContentContext {
     ContentInfo* info = nullptr; // the composer's bookkeeping for it
 };
 
-// A LOD level of a root in a content, composed at resolution: its root's index and its name, to compute the level's index loaded or not.
+// A prim composed as a content of its own at resolution, a LOD level or a prim with payloads: its parent's index and its name, to compute
+// its index (a level's loaded or not).
 struct LevelSlot {
     std::shared_ptr<const Node> rootIndex;
     std::string name;
     std::string composedPath;
-    bool parentLoads = true;                  // the root's own content loads payloads: a level can't load more than its root
-    std::array<int32_t, 2> linked = {-1, -1}; // the level content resolved unloaded [0] and loaded [1], once it was complete
+    bool parentLoads = true;                  // the parent's content loads payloads: the prim can't load more than its parent
+    bool payload = false;                     // a prim with payloads, linked loaded whenever its parent loads; else a LOD level
+    std::array<int32_t, 2> linked = {-1, -1}; // the content resolved unloaded [0] and loaded [1], once it was complete
 };
 
 // What the composer keeps for a content across composes.
@@ -396,7 +398,7 @@ struct WorldComposer::Impl {
     // every level any of its instances wants.
     std::map<std::string, std::map<std::string, std::set<uint32_t>>> prototypeLevels;
 
-    // Kept across composes: the World's prototypes and level contents (World::prototypes, World::levelContents), by key, with what the
+    // Kept across composes: the World's prototypes and level contents (World::prototypes, World::linkedContents), by key, with what the
     // composer knows of each. A refreshed pack drops them all.
     std::unordered_map<std::string, int32_t> prototypeByKey;
     std::unordered_map<std::string, int32_t> levelByKey;
@@ -742,9 +744,33 @@ struct WorldComposer::Impl {
     auto composeChildren(ContentContext& context, EntityId parent, const Node& parentRoot, const std::string& composedPath, bool loadPayloads) -> void {
         auto names = childNames(parentRoot);
         if (!context.content->lodRoots.contains(parent)) {
+            std::shared_ptr<const Node> parentIndex;
             for (const auto& name : names) {
                 auto path = childPath(composedPath, name);
+                // Its index in a window of its own: if it has payloads, what they miss is its own content's gap, not this one's.
+                windows.emplace_back();
                 auto index = childIndex(parentRoot, name, path, loadPayloads);
+                auto probe = std::move(windows.back());
+                windows.pop_back();
+                if (loadPayloads && !index.payloadIds.empty()) {
+                    // A prim with payloads is a content of its own, linked at resolution: arriving packs recompose it, not its parent.
+                    if (!parentIndex) {
+                        parentIndex = std::make_shared<const Node>(parentRoot);
+                    }
+                    auto& content = *context.content;
+                    auto id = (EntityId) content.entities.size();
+                    Entity standIn;
+                    standIn.name = name;
+                    standIn.parent = parent;
+                    standIn.defined = true;
+                    content.entities.push_back(std::move(standIn));
+                    content.entities[parent].children.push_back(id);
+                    content.byPath[relativePath(context, path)] = id;
+                    context.info->slots[id] = LevelSlot{.rootIndex = parentIndex, .name = name, .composedPath = path, .parentLoads = true, .payload = true};
+                    continue;
+                }
+                window().gaps += probe.gaps;
+                window().messages.insert(window().messages.end(), probe.messages.begin(), probe.messages.end());
                 composePrim(context, parent, name, std::move(index), path, loadPayloads);
             }
             return;
@@ -1032,7 +1058,7 @@ struct WorldComposer::Impl {
 
     // The content of a LOD level, loaded or not: the level prim (its entity 0) and everything under it. Reused by its key, composed now
     // (again, in place, when the last time missed packs).
-    auto levelContent(LevelSlot& slot, bool loads, const Reach& at, const std::string& ownerPath) -> int32_t {
+    auto linkedContent(LevelSlot& slot, bool loads, const Reach& at, const std::string& ownerPath) -> int32_t {
         auto& linked = slot.linked[loads ? 1 : 0];
         if (linked >= 0) {
             return linked;
@@ -1053,12 +1079,12 @@ struct WorldComposer::Impl {
                 return id;
             }
         } else {
-            id = (int32_t) world.levelContents.size();
+            id = (int32_t) world.linkedContents.size();
             levelByKey[key] = id;
-            world.levelContents.emplace_back();
+            world.linkedContents.emplace_back();
             levelInfo.emplace_back();
         }
-        auto& content = world.levelContents[(size_t) id];
+        auto& content = world.linkedContents[(size_t) id];
         auto& info = levelInfo[(size_t) id];
         content = WorldContent();
         info = ContentInfo{.key = key, .base = slot.composedPath, .sharedKey = at.sharedKey, .ownerPath = ownerPath, .generation = generation, .loads = loads};
@@ -1108,9 +1134,9 @@ struct WorldComposer::Impl {
                     bool loads = slot->second.parentLoads && levels.contains(i);
                     auto levelRelative = at.content->path(standIn);
                     auto ownerPath = joinPath(at.ownerPath, levelRelative);
-                    auto linked = levelContent(slot->second, loads, at, ownerPath);
-                    at.content->entities[standIn].levelContent = linked;
-                    auto& level = world.levelContents[(size_t) linked];
+                    auto linked = linkedContent(slot->second, loads, at, ownerPath);
+                    at.content->entities[standIn].linkedContent = linked;
+                    auto& level = world.linkedContents[(size_t) linked];
                     if (auto payload = level.payloads.find(0); payload != level.payloads.end()) {
                         at.content->payloads[standIn] = payload->second;
                     } else {
@@ -1118,6 +1144,22 @@ struct WorldComposer::Impl {
                     }
                     pending.push_back(Reach{.content = &level, .info = &levelInfo[(size_t) linked], .base = joinPath(at.base, levelRelative), .sharedKey = at.sharedKey, .ownerPath = ownerPath});
                 }
+            }
+            // Prims with payloads, in entity order so what is reached (and its messages) comes in the same order every time.
+            std::vector<EntityId> payloadPrims;
+            for (const auto& [id, slot] : at.info->slots) {
+                if (slot.payload) {
+                    payloadPrims.push_back(id);
+                }
+            }
+            std::ranges::sort(payloadPrims);
+            for (auto standIn : payloadPrims) {
+                auto& slot = at.info->slots.at(standIn);
+                auto relative = at.content->path(standIn);
+                auto ownerPath = joinPath(at.ownerPath, relative);
+                auto linked = linkedContent(slot, slot.parentLoads, at, ownerPath);
+                at.content->entities[standIn].linkedContent = linked;
+                pending.push_back(Reach{.content = &world.linkedContents[(size_t) linked], .info = &levelInfo[(size_t) linked], .base = joinPath(at.base, relative), .sharedKey = at.sharedKey, .ownerPath = ownerPath});
             }
         }
     }
@@ -1155,7 +1197,7 @@ struct WorldComposer::Impl {
             }
         }
         stats.prototypesHeld = (uint32_t) world.prototypes.size();
-        stats.levelsHeld = (uint32_t) world.levelContents.size();
+        stats.levelsHeld = (uint32_t) world.linkedContents.size();
         stats.contentsReached = (uint32_t) reached.size();
     }
 
@@ -1189,8 +1231,8 @@ struct WorldComposer::Impl {
             }
             at.id = *child;
             at.pathInOwner = childPath(at.pathInOwner, name);
-            if (auto level = at.content->entities[at.id].levelContent; level >= 0) {
-                at.content = &world.levelContents[(size_t) level];
+            if (auto level = at.content->entities[at.id].linkedContent; level >= 0) {
+                at.content = &world.linkedContents[(size_t) level];
                 at.id = 0;
             }
             if (end == std::string::npos) {
@@ -1238,10 +1280,10 @@ struct WorldComposer::Impl {
         stageMessages.clear();
         // The stage is composed again every time; prototypes and level contents are kept, and their indices with them.
         auto keptPrototypes = std::move(world.prototypes);
-        auto keptLevels = std::move(world.levelContents);
+        auto keptLevels = std::move(world.linkedContents);
         world = World();
         world.prototypes = std::move(keptPrototypes);
-        world.levelContents = std::move(keptLevels);
+        world.linkedContents = std::move(keptLevels);
         world.lodLevels = lodLevels;
         world.stage.sourcePath = "/";
         world.stage.version = ++versions;
@@ -1311,7 +1353,7 @@ auto WorldComposer::addPack(const std::string& assetId, std::span<const std::byt
         m_impl->prototypeInfo.clear();
         m_impl->levelInfo.clear();
         m_impl->world.prototypes.clear();
-        m_impl->world.levelContents.clear();
+        m_impl->world.linkedContents.clear();
         m_impl->stacksDirty = true;
     }
     m_impl->layers.insert_or_assign(assetId, layerData(assetId, std::move(*pack)));

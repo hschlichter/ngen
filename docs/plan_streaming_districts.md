@@ -1,6 +1,6 @@
 # Streaming districts
 
-**Status. In progress.** Decisions 1 to 8 locked 2026-10-15, each as recommended; steps 1 to 4 done 2026-10-15.
+**Status. In progress.** Decisions 1 to 8 locked 2026-10-15, each as recommended; steps 1 to 4b done 2026-10-15.
 
 Step 3 of [plan_streaming_lod.md](plan_streaming_lod.md) ("districts stream") and step 1 of the roadmap's vertical slice ("Streaming,
 minimal"): every LOD root's wanted level comes from the camera each frame through its UsdLod heuristic, levels load and unload by it, and
@@ -214,6 +214,20 @@ from USD's reference query, which the `streaming` record states per root (`scree
   produces 266 k draws one by one (about 1 to 2 microseconds each: path, key, bounds, slot): the cost is now the number of draws, not of
   prims. The plan's "within a second" isn't reached: compose 0.3 to 0.4 s plus this extract, plus the uploads step 6 will keep (560 MiB of
   meshes the reset dropped from the GPU).
+- **Decided 2026-10-15: accept it for now** and go on with 4b and 5. Keeping each use's draws across rebuilds, so a rebuild touches only the
+  uses that changed, is under Deferred, triggered by the flight test.
+
+### Step 4b results (2026-10-15)
+
+- Every prim with payloads (in a content that loads them) is a stand-in linked to a content of its own, composed at resolution in its own
+  window, so what its payloads miss is its own gap; `Entity::levelContent` and `World::levelContents` are renamed `linkedContent` and
+  `linkedContents` (a LOD level or a prim with payloads).
+- **Unchanged composition**: `ngen-worldcheck` against `ngen-usdcheck` identical on `assets/layered/` (the known inherit line) at both
+  levels, Caldera's default, and Caldera with `map_tile_p` at level 0 (934,429 prims); baselines byte-identical; the layered checks as before.
+- **Measured**, first switch of `map_tile_p` to level 0: the last compose round composed 10 contents and 2 prototypes in 0.5 s (4.9 s
+  before); `ngen-worldcheck` composes the district in 9.7 s (14.3 s after step 3, 48 s before); in the view, request to resident about 40 s
+  (58 s before). What remains is extract: every batch of arriving assets is followed by a full extract (12 during this load, about 2 s each,
+  so about 24 s), step 4's cost per draw times how often it runs.
 
 ## Visibility
 
@@ -260,6 +274,10 @@ from USD's reference query, which the `streaming` record states per root (`scree
   streaming step.
 - **Off-thread allocation** ([plan_async_scene.md](plan_async_scene.md), Deferred): GPU buffers and textures made on the render thread.
   Trigger: hitches during the flight above, measured by the loading frame records.
+- **Each use's draws kept across rebuilds** (step 4's remaining cost: a rebuild still produces every draw, 1 to 2 microseconds each): a
+  rebuild touches only the uses that changed, so a level switch removes one content's draws and adds another's. Needs prim ids and slots
+  stable across rebuilds (draws, prim paths and the asset lists stored per use). Trigger: the flight test shows rebuild time is what makes
+  a switch late, with many draws changing at once.
 - **Distance heuristic.** Trigger: a scene that authors `LODDistanceHeuristic`.
 - **Level blending.** Trigger: visible pops at switches once decision 4 B is in.
 - **Cluster LOD**: under the roadmap's Rendering, deferred on purpose.

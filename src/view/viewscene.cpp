@@ -643,8 +643,8 @@ auto ViewScene::countPrims(const World& world, const WorldContent& content, bool
         auto id = pending.back();
         pending.pop_back();
         const auto& entity = content.entities[id];
-        if (entity.levelContent >= 0) {
-            count += countPrims(world, world.levelContents[(size_t) entity.levelContent], true);
+        if (entity.linkedContent >= 0) {
+            count += countPrims(world, world.linkedContents[(size_t) entity.linkedContent], true);
             continue;
         }
         count++;
@@ -994,6 +994,18 @@ auto ViewScene::extract() -> void {
             const auto& entity = content.entities[id];
             State state;
             state.path = rootIsPrim && id == 0 ? std::string("/") : childPathOf(parent.path, entity.name);
+            // A prim with payloads stands in for its linked content, used where it sits (read at use: resolution may link another).
+            if (entity.linkedContent >= 0 && !(rootIsPrim && id == 0)) {
+                out->items.push_back({.kind = ExtractItem::Kind::Level,
+                                      .path = state.path,
+                                      .world = parent.world,
+                                      .absolute = parent.absolute,
+                                      .id = id,
+                                      .purpose = parent.purpose,
+                                      .material = parent.material,
+                                      .strongBinding = parent.strong});
+                return;
+            }
             glm::mat4 local(entity.localTransform);
             if (!overrideBase.empty() && entity.xformable) {
                 if (auto authored = localOverrides.find(joinPathOf(overrideBase, state.path)); authored != localOverrides.end()) {
@@ -1317,13 +1329,21 @@ auto ViewScene::extract() -> void {
                     continue;
                 }
                 if (item.kind == ExtractItem::Kind::Level) {
-                    // Only the level the root draws: the finest loaded one not finer than the one it wants, per use of the root.
-                    auto drawnLevel = w.drawnLevel(parentPathOf(path), content.lodRoots.at(item.root));
-                    auto linked = content.entities[item.id].levelContent;
-                    if (!drawnLevel || *drawnLevel != item.level || linked < 0) {
+                    auto linked = content.entities[item.id].linkedContent;
+                    if (linked < 0) {
                         continue;
                     }
-                    useContent('L', linked, w.levelContents[(size_t) linked], true, path, world, item.purpose, item.material, item.strongBinding, *drawnLevel + 1);
+                    // A prim with payloads (no root) is always used; a level only when the root draws it: the finest loaded one not finer
+                    // than the one it wants, per use of the root.
+                    auto tag = lodTag;
+                    if (item.root != noEntity) {
+                        auto drawnLevel = w.drawnLevel(parentPathOf(path), content.lodRoots.at(item.root));
+                        if (!drawnLevel || *drawnLevel != item.level) {
+                            continue;
+                        }
+                        tag = *drawnLevel + 1;
+                    }
+                    useContent('L', linked, w.linkedContents[(size_t) linked], true, path, world, item.purpose, item.material, item.strongBinding, tag);
                     continue;
                 }
                 primAt(content, item, path, unitScale * world, lodTag);
@@ -1340,8 +1360,8 @@ auto ViewScene::extract() -> void {
             content = &w.stage;
         } else if (key[0] == 'P' && index < (int) w.prototypes.size()) {
             content = &w.prototypes[(size_t) index];
-        } else if (key[0] == 'L' && index < (int) w.levelContents.size()) {
-            content = &w.levelContents[(size_t) index];
+        } else if (key[0] == 'L' && index < (int) w.linkedContents.size()) {
+            content = &w.linkedContents[(size_t) index];
         }
         return content == nullptr || content->version != entry.second->version;
     });

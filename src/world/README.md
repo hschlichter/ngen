@@ -67,14 +67,18 @@ A LOD root inside a prototype loads, in the prototype, every level any of its in
 is state of the instance (`World::lodLevels`, by the root's full path), outside the prototype. USD instead gives instances with different
 loaded levels different prototypes.
 
-**A level is a content of its own.** A LOD root's children are stand-in entities, one per level; each is linked (`Entity::levelContent`) to
-a content in `World::levelContents` whose entity 0 is the level prim itself, composed loaded or not (a loaded level's payload brings opinions
+**A level is a content of its own.** A LOD root's children are stand-in entities, one per level; each is linked (`Entity::linkedContent`) to
+a content in `World::linkedContents` whose entity 0 is the level prim itself, composed loaded or not (a loaded level's payload brings opinions
 for the level prim too), with everything under it. `visit` walks a level as that content. Which levels load is decided after composing, by
 linking (resolution): so changing a level never changes the content its root is in, only which level content its stand-in links to.
 
+**A prim with payloads is a content of its own too**, linked the same way (to `World::linkedContents`) whenever its parent's content loads
+payloads: its entity 0 is the prim with its payloads' opinions, everything under it below. So a pack arriving for a payload recomposes that
+payload's content, not the content it sits in; a district's layout, thousands of payloads, is composed piece by piece as its packs arrive.
+
 ## Composed content is kept across composes
 
-The stage is composed again every compose; prototypes and level contents are kept (`World::prototypes`, `World::levelContents`, at stable
+The stage is composed again every compose; prototypes and level contents are kept (`World::prototypes`, `World::linkedContents`, at stable
 indices) and reused by key: a prototype by its kept nodes, a level by its prim index (every node's site, arc and namespace mapping) and
 whether it loads. A content composed while a pack it named wasn't held (a gap) is composed again, in place, the next time it is reached;
 one that had every pack is reused as it is, since a pack arriving later is one it didn't name. Layer stacks are kept too, as the kept

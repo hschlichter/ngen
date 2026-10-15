@@ -49,8 +49,8 @@ auto countInstances(const World& world) -> size_t {
         }
         for (EntityId child : entity.children) {
             // A LOD level is its content's root, the level prim with everything under it.
-            if (auto level = content->entities[child].levelContent; level >= 0) {
-                pending.emplace_back(&world.levelContents[(size_t) level], 0);
+            if (auto level = content->entities[child].linkedContent; level >= 0) {
+                pending.emplace_back(&world.linkedContents[(size_t) level], 0);
                 continue;
             }
             pending.emplace_back(content, child);

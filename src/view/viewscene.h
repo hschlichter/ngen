@@ -376,7 +376,7 @@ private:
         enum class Kind : uint8_t {
             Prim,     // a prim that draws, lights, frames (a camera), places payloads or roots LOD
             Instance, // an instance: its prototype is used here
-            Level,    // a LOD level: its content is used here when it is the level drawn
+            Level,    // a linked content: a LOD level (used when it is the level drawn) or a prim with payloads (always)
         };
         Kind kind = Kind::Prim;
         std::string path;                  // relative to the content's root ("/" for a level content's root, the level prim)
