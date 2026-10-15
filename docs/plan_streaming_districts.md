@@ -1,6 +1,6 @@
 # Streaming districts
 
-**Status. In progress.** Decisions 1 to 8 locked 2026-10-15, each as recommended; steps 1 and 2 done 2026-10-15.
+**Status. In progress.** Decisions 1 to 8 locked 2026-10-15, each as recommended; steps 1 to 3 done 2026-10-15.
 
 Step 3 of [plan_streaming_lod.md](plan_streaming_lod.md) ("districts stream") and step 1 of the roadmap's vertical slice ("Streaming,
 minimal"): every LOD root's wanted level comes from the camera each frame through its UsdLod heuristic, levels load and unload by it, and
@@ -172,6 +172,28 @@ from USD's reference query, which the `streaming` record states per root (`scree
   are `LODScreenSizeHeuristic`, and `map_airfield`'s extent and thresholds in the `lod` record match `usdcat`'s.
 - `ngen-worldcheck` against `ngen-usdcheck` on `assets/layered/root.usda`, default and `--lod /World/Tree/lod=0`: the one line that
   differed before (`/World/Inherited`, an inherit, which the World doesn't compose) and nothing else. Baselines byte-identical.
+
+### Step 3 results (2026-10-15)
+
+- **Levels as contents, linked at resolution**: a LOD root's levels are stand-ins linked to level contents (the level prim, loaded or not,
+  and everything under it); prototypes and level contents are kept across composes by key, a content with a gap composed again in place;
+  layer stacks kept and rebuilt in place. A changed pack drops everything kept.
+- **Unchanged composition**: `ngen-worldcheck` against `ngen-usdcheck`, transforms and instancing: `assets/layered/root.usda` at the default
+  and at both levels of `/World/Tree/lod` (only the known `/World/Inherited` line); Caldera's default open (54,124 prims) and with
+  `map_tile_p` at level 0 (934,429 prims, 1,404 prototypes): identical. A repack on the layered scene before and after a level change gives
+  the same World; the eight baselines are byte-identical; no warnings.
+- **Measured on Caldera** (`scenethread` record's `compose.last`):
+
+  | | compose | of it: stage, resolution | contents composed | extract |
+  |---|---|---|---|---|
+  | default open | 143 ms | 113 ms, 2 ms | | 164 ms |
+  | `map_tile_p` to level 0, first time | ~4.9 s a round, 11 rounds | 304 ms, 4.6 s | 4 levels, 2 prototypes in the last | 4.0 s |
+  | back to the default | 338 ms | 284 ms, 5 ms | none | 1.3 s |
+  | to level 0 again | 271 ms | 190 ms, 38 ms | none (9,662 reached, all kept) | 1.8 s |
+
+  Switching back to kept content composes nothing; the extract (step 4) is what's left. The first switch is still slow: a level content
+  with a gap is composed again whole each round, and a district's level is its whole layout (its non-instanced prims), so each of the 11
+  rounds recomposes it.
 
 ## Visibility
 

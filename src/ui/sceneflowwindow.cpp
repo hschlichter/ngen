@@ -65,6 +65,12 @@ auto drawThread(const SceneFlowWindowState& state) -> void {
     }
     ImGui::Text("requests: %llu posted, %llu applied; %llu batches", (unsigned long long) t.requestsPosted, (unsigned long long) t.requestsApplied, (unsigned long long) t.batches);
     ImGui::Text("compose: %llu, last %.1f ms%s", (unsigned long long) t.composes, t.lastComposeMs, t.composeNeeded ? " (needed)" : "");
+    ImGui::Text("  last compose composed %u prototypes and %u levels, reached %u contents; kept: %u prototypes, %u levels",
+                t.prototypesComposed,
+                t.levelsComposed,
+                t.contentsReached,
+                t.prototypesHeld,
+                t.levelsHeld);
     ImGui::Text("extract: %llu, last %.1f ms%s", (unsigned long long) t.extracts, t.lastExtractMs, t.extractNeeded ? " (needed)" : "");
     ImGui::Text("in flight: %u layers, %u meshes, %u materials, %u textures, %u other", t.inFlightLayers, t.inFlightMeshes, t.inFlightMaterials, t.inFlightTextures, t.inFlightOther);
     ImGui::Text("held: %u layer packs, %u mesh packs, %u material packs, %u texture packs; %u failed", t.layerPacks, t.meshPacks, t.materialPacks, t.texturePacks, t.failedAssets);

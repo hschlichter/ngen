@@ -69,6 +69,16 @@ struct SceneThreadStats {
     uint64_t batches = 0;
     uint64_t composes = 0;
     double lastComposeMs = 0.0; // the last compose that had every layer pack it named
+    // The last compose: contents composed and those kept from before (prototypes and LOD level contents), and how many it reached.
+    uint32_t prototypesComposed = 0;
+    uint32_t levelsComposed = 0;
+    uint32_t prototypesHeld = 0;
+    uint32_t levelsHeld = 0;
+    uint32_t contentsReached = 0;
+    double composeStageMs = 0.0;
+    double composeResolveMs = 0.0;
+    double composeFinishMs = 0.0;
+    double lastComposeCallMs = 0.0; // every compose, whether or not it had every pack
     uint64_t extracts = 0;
     double lastExtractMs = 0.0;
     uint64_t assetsReceived = 0;

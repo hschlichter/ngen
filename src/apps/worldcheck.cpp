@@ -30,16 +30,16 @@ auto usage() -> int {
 // Instances as USD's default traversal finds them on the stage: active, defined, concrete and loaded prims, not inside other instances.
 auto countInstances(const World& world) -> size_t {
     size_t count = 0;
-    std::vector<EntityId> pending = {0};
+    std::vector<std::pair<const WorldContent*, EntityId>> pending = {{&world.stage, 0}};
     while (!pending.empty()) {
-        EntityId id = pending.back();
+        auto [content, id] = pending.back();
         pending.pop_back();
-        const auto& entity = world.stage.entities[id];
-        if (id != 0) {
+        const auto& entity = content->entities[id];
+        if (id != 0 || content != &world.stage) {
             if (!entity.active || !entity.defined || entity.abstract) {
                 continue;
             }
-            if (auto payload = world.stage.payloads.find(id); payload != world.stage.payloads.end() && !payload->second.loaded) {
+            if (auto payload = content->payloads.find(id); payload != content->payloads.end() && !payload->second.loaded) {
                 continue;
             }
             if (entity.prototype >= 0) {
@@ -48,7 +48,12 @@ auto countInstances(const World& world) -> size_t {
             }
         }
         for (EntityId child : entity.children) {
-            pending.push_back(child);
+            // A LOD level is its content's root, the level prim with everything under it.
+            if (auto level = content->entities[child].levelContent; level >= 0) {
+                pending.emplace_back(&world.levelContents[(size_t) level], 0);
+                continue;
+            }
+            pending.emplace_back(content, child);
         }
     }
     return count;

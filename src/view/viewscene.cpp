@@ -416,7 +416,18 @@ auto ViewScene::compose() -> void {
     stats.composes++;
     auto start = std::chrono::steady_clock::now();
     std::vector<std::pair<std::string, AssetKind>> fresh;
-    for (const auto& needed : composer->compose()) {
+    auto needs = composer->compose();
+    stats.lastComposeCallMs = msSince(start);
+    const auto& composed = composer->stats();
+    stats.composeStageMs = composed.stageMs;
+    stats.composeResolveMs = composed.resolveMs;
+    stats.composeFinishMs = composed.finishMs;
+    stats.prototypesComposed = composed.prototypesComposed;
+    stats.levelsComposed = composed.levelsComposed;
+    stats.prototypesHeld = composed.prototypesHeld;
+    stats.levelsHeld = composed.levelsHeld;
+    stats.contentsReached = composed.contentsReached;
+    for (const auto& needed : needs) {
         if (requestedPacks.insert(needed).second) {
             fresh.emplace_back(needed, AssetKind::Layer);
         }

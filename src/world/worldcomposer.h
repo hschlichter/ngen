@@ -49,6 +49,20 @@ public:
     // there, a cycle.
     auto messages() const -> const std::vector<std::string>&;
 
+    // The last compose(): contents composed (prototypes and LOD level contents; one complete from before is reused, not composed), held
+    // (kept across composes) and reached (what the World draws from).
+    struct Stats {
+        uint32_t prototypesComposed = 0;
+        uint32_t levelsComposed = 0;
+        uint32_t prototypesHeld = 0;
+        uint32_t levelsHeld = 0;
+        uint32_t contentsReached = 0;
+        double stageMs = 0.0;   // composing the stage itself
+        double resolveMs = 0.0; // linking levels, composing what wasn't kept
+        double finishMs = 0.0;  // bindings and messages
+    };
+    auto stats() const -> const Stats&;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

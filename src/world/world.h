@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <optional>
 #include <string>
@@ -43,6 +44,8 @@ struct Entity {
     bool abstract = false; // its strongest specifier is class
     bool active = true;
     int32_t prototype = -1;         // an instance: the index of its prototype in World::prototypes
+    int32_t levelContent = -1;      // a LOD level: the index of the level's content in World::levelContents, which holds the level prim
+                                    // itself (its entity 0) and everything under it
     int64_t pointCount = -1;        // the composed `points` count of a point-based prim, -1 for other prims
     std::optional<Purpose> purpose; // authored; inherited from the nearest ancestor that authors one
     bool invisible = false;         // authored visibility "invisible"; hides the subtree
@@ -132,7 +135,10 @@ struct VisitedEntity {
 
 struct World {
     WorldContent stage;
-    std::vector<WorldContent> prototypes;
+    // Kept across composes, so an index stays the same content: prototypes, and LOD levels' contents (a level as loaded or not, linked to
+    // its root's level entity by levelContent).
+    std::deque<WorldContent> prototypes;
+    std::deque<WorldContent> levelContents;
     std::string upAxis = "Y";            // the root layer's, USD's fallback Y when it authors none
     double metersPerUnit = 0.01;         // the root layer's, USD's fallback 0.01 when it authors none
     std::vector<std::string> layerStack; // the root layer stack's asset ids, strongest first

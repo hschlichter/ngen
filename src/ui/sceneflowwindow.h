@@ -14,6 +14,11 @@ struct SceneFlowThread {
     uint64_t composes = 0;
     double lastComposeMs = 0.0;
     bool composeNeeded = false;
+    uint32_t prototypesComposed = 0;
+    uint32_t levelsComposed = 0;
+    uint32_t prototypesHeld = 0;
+    uint32_t levelsHeld = 0;
+    uint32_t contentsReached = 0;
     uint64_t extracts = 0;
     double lastExtractMs = 0.0;
     bool extractNeeded = false;

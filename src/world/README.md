@@ -67,6 +67,24 @@ A LOD root inside a prototype loads, in the prototype, every level any of its in
 is state of the instance (`World::lodLevels`, by the root's full path), outside the prototype. USD instead gives instances with different
 loaded levels different prototypes.
 
+**A level is a content of its own.** A LOD root's children are stand-in entities, one per level; each is linked (`Entity::levelContent`) to
+a content in `World::levelContents` whose entity 0 is the level prim itself, composed loaded or not (a loaded level's payload brings opinions
+for the level prim too), with everything under it. `visit` walks a level as that content. Which levels load is decided after composing, by
+linking (resolution): so changing a level never changes the content its root is in, only which level content its stand-in links to.
+
+## Composed content is kept across composes
+
+The stage is composed again every compose; prototypes and level contents are kept (`World::prototypes`, `World::levelContents`, at stable
+indices) and reused by key: a prototype by its kept nodes, a level by its prim index (every node's site, arc and namespace mapping) and
+whether it loads. A content composed while a pack it named wasn't held (a gap) is composed again, in place, the next time it is reached;
+one that had every pack is reused as it is, since a pack arriving later is one it didn't name. Layer stacks are kept too, as the kept
+contents' indexes point at them, and rebuilt in place when one missed a sublayer. A pack that changes (`addPack` of an id already held: a
+repack or an edit) drops every kept content and rebuilds every stack: contents don't record which packs they read. `stats()` says what the
+last compose composed, kept and reached, and how long the stage, the resolution and the bindings took.
+
+Material bindings are resolved every compose, in their own content first and then anywhere in the World by full path, as a target may be in
+another content (a level's material outside the level).
+
 ## Composing in rounds
 
 `compose()` composes from the packs held and returns the layer packs it names and doesn't hold: sublayers, references, and the payloads it
