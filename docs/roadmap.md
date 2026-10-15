@@ -26,8 +26,8 @@ the sections below.
 
 1. **Streaming, minimal.** The screen-size heuristic picks each LOD root's level every frame from the camera, and levels load and unload; the
    coarsest level stays resident as the floor. No budgets, priorities, eviction or texture streaming yet. Flying over Caldera, detail appears
-   where the camera is. [plan_streaming_lod.md](plan_streaming_lod.md) step 3 (step 2, the proxy map through the scene pack, is likely mostly
-   there already: checked first).
+   where the camera is. [plan_streaming_districts.md](plan_streaming_districts.md), draft
+   ([plan_streaming_lod.md](plan_streaming_lod.md) step 3; its step 2 is in place but for payload placements in a record).
 2. **Meshlets, with occlusion culling.** The packer splits meshes into meshlets (meshoptimizer, vendored), each with a bounding sphere and a
    normal cone; the mesh pack and the GPU scene gain a meshlet table; mesh shaders draw them, culling per meshlet (frustum, backface by cone)
    after the per-instance stage, and two-phase occlusion culling against a depth pyramid (HZB) culls instances and meshlets hidden behind

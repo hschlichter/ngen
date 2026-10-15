@@ -573,6 +573,7 @@ auto ViewScene::publish() -> void {
     snapshot->transforms = transforms;
     snapshot->cameras = authoredCameras;
     snapshot->lodRoots = drawnLodRoots;
+    snapshot->payloads = reachedPayloads;
     snapshot->thread = stats;
     for (const auto& [assetId, kind] : inFlight) {
         if (kind == AssetKind::Layer) {
@@ -838,6 +839,7 @@ auto ViewScene::extract() -> void {
     transforms.clear();
     authoredCameras.clear();
     drawnLodRoots.clear();
+    reachedPayloads.clear();
     drawsByAsset.clear();
     assetsByPrim.clear();
     static const World emptyWorld;
@@ -890,13 +892,26 @@ auto ViewScene::extract() -> void {
         if (entity.typeName == "Camera") {
             authoredCameras.push_back({.path = visited.path, .worldTransform = worldTransform});
         }
+        if (auto payload = visited.content->payloads.find(visited.id); payload != visited.content->payloads.end()) {
+            ScenePayload placement = {.path = visited.path, .assetIds = payload->second.assetIds, .loaded = payload->second.loaded};
+            if (const auto& hint = payload->second.extentsHint) {
+                placement.worldBounds = AABB{.min = (*hint)[0], .max = (*hint)[1]}.transformed(worldTransform);
+            }
+            reachedPayloads.push_back(std::move(placement));
+        }
         if (auto lod = visited.content->lodRoots.find(visited.id); lod != visited.content->lodRoots.end()) {
             const auto& root = lod->second;
             SceneLodRoot row;
             row.path = visited.path;
             for (EntityId level : root.levels) {
                 row.levels.push_back(visited.content->entities[level].name);
+                auto payload = visited.content->payloads.find(level);
+                row.levelPayloads.push_back(payload != visited.content->payloads.end() ? payload->second.assetIds : std::vector<std::string>{});
             }
+            row.heuristicType = root.heuristicType;
+            row.thresholds = root.thresholds;
+            row.extent = root.extent;
+            row.projectedExtent = root.projection == LodProjection::Extent;
             row.defaultIndex = root.defaultIndex;
             row.wanted = w.wantedLevel(visited.path, root);
             row.drawn = w.drawnLevel(visited.path, root);

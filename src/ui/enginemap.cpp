@@ -92,7 +92,7 @@ const std::vector<EngineMapNode> nodes = {
         .row = 5,
         .description = "Walks the World and builds the renderer's inputs: a draw per prim submesh, lights, cameras and LOD roots. Meshes, "
                        "materials and textures are kept per asset in libraries across rebuilds.",
-        .records = {"scenethread", "lod"},
+        .records = {"scenethread", "lod", "payloads"},
         .windows = {"sceneflow", "lod"},
         .readme = "src/view/README.md",
     },

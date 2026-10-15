@@ -76,12 +76,22 @@ struct Light {
 
 // A prim with LODRootAPI: its children are its levels, finest first. `loaded` holds the levels whose payloads are loaded in this content;
 // which level an instance wants and draws is state of the instance (World::wantedLevel, World::drawnLevel).
+// How a LOD heuristic measures a root's screen size (UsdLod's projectionMethod).
+enum class LodProjection : uint8_t {
+    Sphere, // projectedSphere, UsdLod's fallback: the extent's bounding sphere
+    Extent, // projectedExtent: the extent's box
+};
+
 struct LodRoot {
     std::vector<EntityId> levels;
     uint32_t defaultIndex = 0; // lod:default:index, clamped to the levels
     std::vector<uint32_t> loaded;
     EntityId heuristic = noEntity; // the first lod:heuristics target in this content
+    std::string heuristicType;     // its prim type: LODScreenSizeHeuristic, LODDistanceHeuristic, or another
     std::vector<float> thresholds; // the heuristic's
+    // The screen-size heuristic's extent, in the root's local space; UsdLod's fallback (-1..1) when it authors none.
+    std::array<glm::vec3, 2> extent = {glm::vec3(-1.0f), glm::vec3(1.0f)};
+    LodProjection projection = LodProjection::Sphere;
 };
 
 // A prim with payloads: what they are, whether they are loaded, and the bounds authored for them (extentsHint).

@@ -60,8 +60,12 @@ The inputs persist across rebuilds:
 - **Changing what is drawn**: `setLodLevel` (the `lod` verb, `view.lod.set`), `resetLodLevel` (`lod-reset`, `view.lod.reset`: back to the
   root's default) and `setPurposeShown` are requests: the scene thread composes, fetches what the change needs and rebuilds, and the
   renderer uploads the changes over the next frames within its budget.
-- **LOD roots**: every LOD root reached while drawing (`lodRoots()`, the `lod` record): its levels, the level it defaults to, wants and
-  draws, the levels loaded, and whether its level was set by hand. Each draw carries the drawn level of the nearest LOD root above it,
+- **LOD roots**: every LOD root reached while drawing (`lodRoots()`, the `lod` record): its levels and each level's payloads, its
+  heuristic (type, thresholds, extent, projection), the level it defaults to, wants and draws, the levels loaded, and whether its level was
+  set by hand.
+- **Payload placements**: every prim with payloads reached while drawing (`payloads()`, the `payloads` record): its asset ids, whether
+  they are loaded, and its `extentsHint` in world metres. A level not loaded isn't reached, so what is under it isn't listed; its root's
+  `levelPayloads` name the level's own payloads. Each draw carries the drawn level of the nearest LOD root above it,
   which the `lodlevel` view colours by. The LOD window lists the roots with a level picker per row, "Set shown" for every row its filter
   shows (default, coarsest or one level), a click to select a root and a double-click to frame it; it highlights the root at or above the
   selection, and marks a root still loading the level it wants.

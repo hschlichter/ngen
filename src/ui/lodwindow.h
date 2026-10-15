@@ -10,6 +10,8 @@
 struct LodWindowRow {
     std::string path;
     std::vector<std::string> levels;
+    std::vector<std::vector<std::string>> levelPayloads; // per level, its payloads' asset ids
+    std::string heuristic;                               // "LODScreenSizeHeuristic [0.25, 0.125]", empty for none
     uint32_t defaultIndex = 0;
     uint32_t wanted = 0;
     int32_t drawn = -1;

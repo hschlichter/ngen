@@ -1143,9 +1143,20 @@ auto sceneRecord(const ViewContext& view) -> Json {
 auto lodRecord(const ViewContext& view) -> Json {
     auto roots = Json::array();
     for (const auto& root : view.scene.lodRoots()) {
+        auto heuristic = Json(nullptr);
+        if (!root.heuristicType.empty()) {
+            heuristic = {
+                {"type", root.heuristicType},
+                {"thresholds", root.thresholds},
+                {"extent", {vec3Json(root.extent[0]), vec3Json(root.extent[1])}},
+                {"projection", root.projectedExtent ? "projectedExtent" : "projectedSphere"},
+            };
+        }
         roots.push_back({
             {"path", root.path},
             {"levels", root.levels},
+            {"levelPayloads", root.levelPayloads},
+            {"heuristic", heuristic},
             {"default", root.defaultIndex},
             {"wanted", root.wanted},
             {"drawn", root.drawn ? Json(*root.drawn) : Json(nullptr)},
@@ -1154,6 +1165,25 @@ auto lodRecord(const ViewContext& view) -> Json {
         });
     }
     return {{"roots", roots}};
+}
+
+auto payloadsRecord(const ViewContext& view) -> Json {
+    auto placements = Json::array();
+    size_t loaded = 0;
+    size_t withoutBounds = 0;
+    for (const auto& payload : view.scene.payloads()) {
+        auto bounds = Json(nullptr);
+        if (payload.worldBounds) {
+            bounds = {{"min", vec3Json(payload.worldBounds->min)}, {"max", vec3Json(payload.worldBounds->max)}};
+        } else {
+            withoutBounds++;
+        }
+        if (payload.loaded) {
+            loaded++;
+        }
+        placements.push_back({{"path", payload.path}, {"assets", payload.assetIds}, {"loaded", payload.loaded}, {"worldBounds", bounds}});
+    }
+    return {{"count", placements.size()}, {"loaded", loaded}, {"withoutBounds", withoutBounds}, {"placements", placements}};
 }
 
 auto assetsRecord(const ViewContext& view) -> Json {
@@ -1387,6 +1417,9 @@ auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext
     });
     records.add("gpuscene", "the GPU scene's flow: change lists taken and drawn, the upload queue and its budget, the geometry pool and what waits for room", [&view](RpcResponder responder) {
         responder.respond(gpuSceneRecord(view));
+    });
+    records.add("payloads", "every payload placement reached while drawing: its prim, asset ids, whether loaded, and its extentsHint in world metres", [&view](RpcResponder responder) {
+        responder.respond(payloadsRecord(view));
     });
     records.add("lod", "every LOD root drawn: its levels, the level it defaults to, wants and draws, the levels loaded, and whether set by hand", [&view](RpcResponder responder) {
         responder.respond(lodRecord(view));

@@ -514,9 +514,19 @@ auto main(int argc, char* argv[]) -> int {
             auto& lodRows = viewUI.lodWindow().rows;
             lodRows.clear();
             for (const auto& root : scene.lodRoots()) {
+                std::string heuristic;
+                if (!root.heuristicType.empty()) {
+                    std::string thresholds;
+                    for (float threshold : root.thresholds) {
+                        thresholds += std::format("{}{:g}", thresholds.empty() ? "" : ", ", threshold);
+                    }
+                    heuristic = std::format("{} [{}]", root.heuristicType, thresholds);
+                }
                 lodRows.push_back({
                     .path = root.path,
                     .levels = root.levels,
+                    .levelPayloads = root.levelPayloads,
+                    .heuristic = heuristic,
                     .defaultIndex = root.defaultIndex,
                     .wanted = root.wanted,
                     .drawn = root.drawn ? (int32_t) *root.drawn : -1,

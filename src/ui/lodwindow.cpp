@@ -70,9 +70,16 @@ auto drawRow(const LodWindowRow& row, LodWindowState& state) -> void {
     if (ImGui::IsItemHovered()) {
         std::string levels;
         for (size_t level = 0; level < row.levels.size(); level++) {
-            levels += std::format("\n  {}", levelName(row, (uint32_t) level));
+            bool loaded = std::ranges::find(row.loaded, (uint32_t) level) != row.loaded.end();
+            levels += std::format("\n  {}{}", levelName(row, (uint32_t) level), loaded ? ", loaded" : "");
+            if (level < row.levelPayloads.size()) {
+                for (const auto& asset : row.levelPayloads[level]) {
+                    levels += std::format("\n      payload {}", asset);
+                }
+            }
         }
-        ImGui::SetTooltip("%s\nlevels, finest first:%s", row.path.c_str(), levels.c_str());
+        auto heuristic = row.heuristic.empty() ? std::string("none (default level only)") : row.heuristic;
+        ImGui::SetTooltip("%s\nheuristic: %s\nlevels, finest first:%s", row.path.c_str(), heuristic.c_str(), levels.c_str());
     }
 
     ImGui::TableSetColumnIndex(ColumnLevel);

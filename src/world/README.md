@@ -23,7 +23,7 @@ the caller feeds the composer packs from the asset server.
   prims), its authored purpose and visibility, its local transform (types that are `UsdGeomXformable`), the mesh asset its geometry is and the
   material asset it is, and its material binding (the bound material's asset id, and `strongerThanDescendants`).
 - **Components** beside the entities, per content: lights (UsdLux's inputs, with UsdLux's fallbacks), LOD roots (levels, default index,
-  loaded levels, the heuristic's thresholds) and payload placements (asset ids, loaded, `extentsHint`).
+  loaded levels, and the heuristic: its type, thresholds, `extent` with UsdLod's fallback, `projectionMethod`) and payload placements (asset ids, loaded, `extentsHint`).
 - **Scene metadata**: the root layer's up axis and meters per unit, with USD's fallbacks (Y, 0.01) when it authors none; the root layer
   stack's asset ids.
 - **`visit`** resolves down the hierarchy: world transforms (`!resetXformStack!` included), visibility (an invisible prim hides its

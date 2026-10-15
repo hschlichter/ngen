@@ -173,6 +173,10 @@ and content under it appears payload by payload as it becomes resident, never he
 Districts are Caldera's concept, not USD's or ngen's: to the engine a converted district is a LOD root and its levels are payloads like any
 other.
 
+**Revised 2026-10-15** by [plan_streaming_districts.md](plan_streaming_districts.md) decision 4: a root keeps drawing its coarser level until
+its finer level is complete (everything it wants resident), then switches in one frame; the rest of this decision stands. The consequence
+below is what the revision removes.
+
 Accepted consequence: when a LOD root switches to a finer level, the coarser level stops drawing once the finer level's own payload is
 resident, and the payloads under it arrive one by one. A district switching to `full` stops drawing its proxy when its prefab is in; its
 models then appear as they arrive, with gaps where they haven't yet.

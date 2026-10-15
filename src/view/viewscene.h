@@ -51,6 +51,11 @@ struct SceneCamera {
 struct SceneLodRoot {
     std::string path;
     std::vector<std::string> levels;
+    std::vector<std::vector<std::string>> levelPayloads; // per level, the asset ids of its payloads; empty for a level without
+    std::string heuristicType;                           // empty when the root names none
+    std::vector<float> thresholds;
+    std::array<glm::vec3, 2> extent = {glm::vec3(-1.0f), glm::vec3(1.0f)}; // the heuristic's, in the root's local space
+    bool projectedExtent = false;                                          // projectionMethod: the box, else its bounding sphere
     uint32_t defaultIndex = 0;
     uint32_t wanted = 0;
     std::optional<uint32_t> drawn;
@@ -85,6 +90,15 @@ struct SceneThreadStats {
     double sinceOpenMs = 0.0;
 };
 
+// A payload placement reached while drawing: the prim with payloads, the asset ids, whether they are loaded, and the bounds authored for it
+// (extentsHint) in world metres; none when it authors none.
+struct ScenePayload {
+    std::string path;
+    std::vector<std::string> assetIds;
+    bool loaded = false;
+    std::optional<AABB> worldBounds;
+};
+
 // The scene as the scene thread last published it, for the main thread's queries. Immutable once published.
 struct SceneSnapshot {
     std::string id;
@@ -96,6 +110,7 @@ struct SceneSnapshot {
     std::map<std::string, EntityTransform> transforms;                   // every prim reached while drawing, by full path
     std::vector<SceneCamera> cameras;                                    // in visit order
     std::vector<SceneLodRoot> lodRoots;                                  // every LOD root reached while drawing, in visit order
+    std::vector<ScenePayload> payloads;                                  // every payload placement reached while drawing, in visit order
     glm::mat4 unitScale = glm::mat4(1.0f);
     std::vector<std::string> assetIds; // every asset the scene uses: layer packs, meshes, materials, textures, failed ones
     // The World, summarised.
@@ -159,6 +174,8 @@ public:
     // The scene thread's work as of the snapshot update() took, and the requests posted and applied now.
     auto threadStats() const -> const SceneThreadStats& { return current->thread; }
     auto requestCounts() const -> std::pair<uint64_t, uint64_t> { return {requestsPosted.load(), requestsApplied.load()}; }
+    // The payload placements reached while drawing, in visit order.
+    auto payloads() const -> const std::vector<ScenePayload>& { return current->payloads; }
     // The LOD roots reached while drawing, in visit order.
     auto lodRoots() const -> const std::vector<SceneLodRoot>& { return current->lodRoots; }
     // Moves on each time the renderer's inputs change.
@@ -306,6 +323,7 @@ private:
     std::map<std::string, EntityTransform> transforms;
     std::vector<SceneCamera> authoredCameras;
     std::vector<SceneLodRoot> drawnLodRoots;
+    std::vector<ScenePayload> reachedPayloads;
     SceneThreadStats stats;                          // the counters; publish() fills in the rest
     std::map<std::string, glm::mat4> localOverrides; // setLocalTransform's, applied by every extract
     glm::mat4 unitScale = glm::mat4(1.0f);

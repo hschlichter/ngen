@@ -351,7 +351,14 @@ struct WorldComposer::Impl {
     std::vector<std::string> prototypeKeys;
     std::vector<PendingTarget> pendingBindings;
     std::vector<PendingTarget> pendingHeuristics;
-    std::map<std::pair<const WorldContent*, EntityId>, std::vector<float>> thresholds;
+    // What a LOD heuristic prim authors, by its content and entity, for the roots that name it.
+    struct HeuristicData {
+        std::string type;
+        std::vector<float> thresholds;
+        std::optional<std::array<glm::vec3, 2>> extent;
+        LodProjection projection = LodProjection::Sphere;
+    };
+    std::map<std::pair<const WorldContent*, EntityId>, HeuristicData> heuristics;
 
     World world;
 
@@ -767,11 +774,18 @@ struct WorldComposer::Impl {
             content.payloads[id] = std::move(placement);
         }
         if (const PackValue* values = attribute("thresholds")) {
-            std::vector<float> list;
+            auto& heuristic = heuristics[{&content, id}];
+            heuristic.type = content.entities[id].typeName;
             for (double v : values->numbers) {
-                list.push_back((float) v);
+                heuristic.thresholds.push_back((float) v);
             }
-            thresholds[{&content, id}] = std::move(list);
+            if (const PackValue* box = attribute("extent"); box != nullptr && box->numbers.size() >= 6) {
+                const auto& n = box->numbers;
+                heuristic.extent = std::array<glm::vec3, 2>{glm::vec3((float) n[0], (float) n[1], (float) n[2]), glm::vec3((float) n[3], (float) n[4], (float) n[5])};
+            }
+            if (token(attribute("projectionMethod")) == "projectedExtent") {
+                heuristic.projection = LodProjection::Extent;
+            }
         }
         bool isLodRoot = std::ranges::find(apiSchemas, "LODRootAPI") != apiSchemas.end();
         if (isLodRoot) {
@@ -849,8 +863,13 @@ struct WorldComposer::Impl {
             }
             auto& root = pending.content->lodRoots.at(pending.entity);
             root.heuristic = it->second;
-            if (auto values = thresholds.find({pending.content, it->second}); values != thresholds.end()) {
-                root.thresholds = values->second;
+            if (auto found = heuristics.find({pending.content, it->second}); found != heuristics.end()) {
+                root.heuristicType = found->second.type;
+                root.thresholds = found->second.thresholds;
+                if (found->second.extent) {
+                    root.extent = *found->second.extent;
+                }
+                root.projection = found->second.projection;
             }
         }
     }
@@ -912,7 +931,7 @@ struct WorldComposer::Impl {
         prototypeKeys.clear();
         pendingBindings.clear();
         pendingHeuristics.clear();
-        thresholds.clear();
+        heuristics.clear();
         world = World();
         world.lodLevels = lodLevels;
         world.stage.sourcePath = "/";
