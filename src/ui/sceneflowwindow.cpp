@@ -72,6 +72,12 @@ auto drawThread(const SceneFlowWindowState& state) -> void {
                 t.prototypesHeld,
                 t.levelsHeld);
     ImGui::Text("extract: %llu, last %.1f ms%s", (unsigned long long) t.extracts, t.lastExtractMs, t.extractNeeded ? " (needed)" : "");
+    ImGui::Text("  walk %.1f ms (%llu content walks reused, %llu walked, %llu kept), slots %.1f ms",
+                t.extractVisitMs,
+                (unsigned long long) t.extractReused,
+                (unsigned long long) t.extractWalked,
+                (unsigned long long) t.extractKept,
+                t.extractSlotsMs);
     ImGui::Text("in flight: %u layers, %u meshes, %u materials, %u textures, %u other", t.inFlightLayers, t.inFlightMeshes, t.inFlightMaterials, t.inFlightTextures, t.inFlightOther);
     ImGui::Text("held: %u layer packs, %u mesh packs, %u material packs, %u texture packs; %u failed", t.layerPacks, t.meshPacks, t.materialPacks, t.texturePacks, t.failedAssets);
     ImGui::Text("libraries (told to the renderer): %u meshes, %u materials, %u textures", t.meshEntries, t.materialEntries, t.textureEntries);

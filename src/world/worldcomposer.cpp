@@ -404,6 +404,7 @@ struct WorldComposer::Impl {
     std::deque<ContentInfo> levelInfo;
     ContentInfo stageInfo;
     uint64_t generation = 0;
+    uint64_t versions = 0;      // the last WorldContent::version given
     WorldComposer::Stats stats; // the last compose's
 
     // Layer stacks by their root layer, kept across composes (the kept contents' prim indexes point at them): rebuilt in place, at the same
@@ -1003,6 +1004,7 @@ struct WorldComposer::Impl {
         content = WorldContent();
         info = ContentInfo{.key = key, .base = composedPath, .sharedKey = key, .ownerPath = "/", .generation = generation, .index = kept, .loads = loadPayloads};
         content.sourcePath = composedPath;
+        content.version = ++versions;
         Entity root;
         root.defined = true;
         content.entities.push_back(root);
@@ -1061,6 +1063,7 @@ struct WorldComposer::Impl {
         content = WorldContent();
         info = ContentInfo{.key = key, .base = slot.composedPath, .sharedKey = at.sharedKey, .ownerPath = ownerPath, .generation = generation, .loads = loads};
         content.sourcePath = slot.composedPath;
+        content.version = ++versions;
         ContentContext context{.content = &content, .base = slot.composedPath, .key = key, .info = &info};
         composePrim(context, noEntity, slot.name, std::move(index), slot.composedPath, loads);
         finishContent(context);
@@ -1241,6 +1244,7 @@ struct WorldComposer::Impl {
         world.levelContents = std::move(keptLevels);
         world.lodLevels = lodLevels;
         world.stage.sourcePath = "/";
+        world.stage.version = ++versions;
         Entity root;
         root.defined = true;
         world.stage.entities.push_back(root);

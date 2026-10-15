@@ -1,6 +1,6 @@
 # Streaming districts
 
-**Status. In progress.** Decisions 1 to 8 locked 2026-10-15, each as recommended; steps 1 to 3 done 2026-10-15.
+**Status. In progress.** Decisions 1 to 8 locked 2026-10-15, each as recommended; steps 1 to 4 done 2026-10-15.
 
 Step 3 of [plan_streaming_lod.md](plan_streaming_lod.md) ("districts stream") and step 1 of the roadmap's vertical slice ("Streaming,
 minimal"): every LOD root's wanted level comes from the camera each frame through its UsdLod heuristic, levels load and unload by it, and
@@ -155,6 +155,10 @@ from USD's reference query, which the `streaming` record states per root (`scree
    against `ngen-usdcheck` on `assets/layered/` and Caldera with `--lod` levels.
 4. **Extract per content** (decision 3) in `ViewScene::extract`: a content's draws built once, placed per use; a level switch adds and
    removes one content's draws.
+4b. **Payloads as contents** (added 2026-10-15, after step 3's results): every payload, not only a LOD level, composes as a content of its
+   own, kept and linked as levels are, so a compose round recomposes only the contents that are still missing packs instead of a whole
+   district's layout ([plan_streaming_lod.md](plan_streaming_lod.md) decision 3: payloads are what streams). Verified by the first switch
+   of `map_tile_p` to level 0: each round's `levelsComposed` holds only what is new, and the time to composed falls well below 48 s.
 5. **The heuristic** (decision 1): `ViewScene::setCamera(frustum, position)`, latest only; after each batch and when the camera moved, the
    scene thread computes each reached root's screen size and wanted level (decisions 5, 7, 8) and sets the composer's levels. The view posts
    the camera each frame.
@@ -194,6 +198,22 @@ from USD's reference query, which the `streaming` record states per root (`scree
   Switching back to kept content composes nothing; the extract (step 4) is what's left. The first switch is still slow: a level content
   with a gap is composed again whole each round, and a district's level is its whole layout (its non-instanced prims), so each of the 11
   rounds recomposes it.
+
+### Step 4 results (2026-10-15)
+
+- **Kept walks per content** (decision 3 A): each content's walk is kept by version and inherited state (purpose, binding) and replayed per
+  use, in the order a full walk gives; level links are read at use (resolution changes them without changing the content). Meshes and
+  materials are resolved once per rebuild per mesh and binding. Prim transforms come from a `TransformIndex` (per content, plus every use),
+  not a map of every prim; what a rebuild builds is one shared `SceneDraws`, so a snapshot no longer copies it; the prim count is kept per
+  content version instead of a walk per publish.
+- **Unchanged output**: the eight baselines byte-identical; on `assets/layered/`, select inside an instance and in a drawn level, the
+  undrawn level refused, `translate` of an instance and of a prim inside it move the framing as before; Caldera's draws 4,427 and 266,330
+  as before; no warnings.
+- **Measured** (Caldera, `map_tile_p` back to level 0 from kept content; runs vary by up to 40%): extract 0.9 to 1.6 s (from 1.8 to 3 s),
+  of it slots 0.35 to 0.6 s; publish about 10 ms (from up to 0.9 s); 51,163 content walks reused, 1 walked (the stage). The replay still
+  produces 266 k draws one by one (about 1 to 2 microseconds each: path, key, bounds, slot): the cost is now the number of draws, not of
+  prims. The plan's "within a second" isn't reached: compose 0.3 to 0.4 s plus this extract, plus the uploads step 6 will keep (560 MiB of
+  meshes the reset dropped from the GPU).
 
 ## Visibility
 

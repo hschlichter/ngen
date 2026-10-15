@@ -27,8 +27,30 @@ auto encodeSrgb(float c) -> uint8_t {
     return (uint8_t) std::lround(s * 255.0f);
 }
 
-auto pathDepth(const std::string& path) -> size_t {
-    return (size_t) std::ranges::count(path, '/');
+auto childPathOf(const std::string& parent, const std::string& name) -> std::string {
+    if (parent == "/") {
+        return "/" + name;
+    }
+    return parent + "/" + name;
+}
+
+auto parentPathOf(const std::string& path) -> std::string {
+    auto slash = path.rfind('/');
+    if (slash == 0 || slash == std::string::npos) {
+        return "/";
+    }
+    return path.substr(0, slash);
+}
+
+// A path relative to a content's root ("/" for the root itself), made full at the content's use.
+auto joinPathOf(const std::string& base, const std::string& relative) -> std::string {
+    if (relative == "/") {
+        return base;
+    }
+    if (base == "/") {
+        return relative;
+    }
+    return base + relative;
 }
 
 auto toVertex(const PackVertex& vertex) -> Vertex {
@@ -50,6 +72,35 @@ auto textureDesc(std::span<const std::byte> bytes) -> std::shared_ptr<const Text
 }
 
 } // namespace
+
+auto TransformIndex::find(const std::string& path) const -> std::optional<EntityTransform> {
+    if (auto moved = overrides.find(path); moved != overrides.end()) {
+        return moved->second;
+    }
+    // The deepest use at or above the path that holds it: a prim is in the content used nearest above it.
+    std::string at = path;
+    while (true) {
+        if (auto use = uses.find(at); use != uses.end()) {
+            std::string relative = "/";
+            if (at == "/") {
+                relative = path;
+            } else if (path != at) {
+                relative = path.substr(at.size());
+            }
+            if (auto prim = use->second.prims->find(relative); prim != use->second.prims->end()) {
+                auto out = prim->second;
+                if (!out.absolute) {
+                    out.world = use->second.world * out.world;
+                }
+                return out;
+            }
+        }
+        if (at == "/") {
+            return std::nullopt;
+        }
+        at = parentPathOf(at);
+    }
+}
 
 auto decomposeTransform(const glm::mat4& local) -> Transform {
     Transform out;
@@ -123,8 +174,8 @@ auto ViewScene::refresh(const std::vector<std::string>& ids, bool force) -> void
 }
 
 auto ViewScene::setLocalTransform(const std::string& path, const glm::mat4& local) -> bool {
-    auto it = current->transforms.find(path);
-    if (it == current->transforms.end() || !it->second.xformable) {
+    auto found = current->transforms->find(path);
+    if (!found || !found->xformable) {
         return false;
     }
     post(TransformRequest{.path = path, .local = local});
@@ -418,6 +469,7 @@ auto ViewScene::compose() -> void {
     std::vector<std::pair<std::string, AssetKind>> fresh;
     auto needs = composer->compose();
     stats.lastComposeCallMs = msSince(start);
+    worldPrims = countPrims(composer->world(), composer->world().stage, false);
     const auto& composed = composer->stats();
     stats.composeStageMs = composed.stageMs;
     stats.composeResolveMs = composed.resolveMs;
@@ -523,68 +575,96 @@ auto ViewScene::requestDrawnAssets() -> void {
     assetsSinceReport = 0;
 }
 
-// The prim's new world transform, and the change of it applied to every prim under it, so a drag doesn't rebuild the draws: each draw
-// instance and light under the prim gets its new world transform and bounds.
+// The prim's new world transform, and the change of it applied to what is drawn under it, so a drag doesn't rebuild the draws: each draw
+// instance and light under the prim gets its new world transform and bounds. The prim's own transform is published as an override until
+// the next extract, which takes the view's local opinion (localOverrides) by walking what holds it afresh.
 auto ViewScene::applyTransform(const std::string& path, const glm::mat4& local) -> void {
-    auto it = transforms.find(path);
-    if (it == transforms.end() || !it->second.xformable) {
+    auto found = transforms->find(path);
+    if (!found || !found->xformable) {
         return;
     }
     localOverrides[path] = local;
-    auto& entry = it->second;
-    glm::mat4 parentWorld = entry.world * glm::inverse(entry.local);
-    glm::mat4 newWorld = entry.resetsXformStack ? local : parentWorld * local;
-    glm::mat4 change = newWorld * glm::inverse(entry.world);
-    entry.local = local;
-    entry.world = newWorld;
+    glm::mat4 parentWorld = found->world * glm::inverse(found->local);
+    glm::mat4 newWorld = found->resetsXformStack ? local : parentWorld * local;
+    glm::mat4 change = newWorld * glm::inverse(found->world);
+    // The index is shared with published snapshots: the moved prim goes into a new one.
+    auto moved = std::make_shared<TransformIndex>(*transforms);
+    moved->overrides[path] = {.local = local, .world = newWorld, .xformable = true, .resetsXformStack = found->resetsXformStack, .absolute = true};
+    transforms = std::move(moved);
+    // Instance and light transforms are in metres: the change applies before the unit scale.
+    glm::mat4 changeInMetres = unitScale * change * glm::inverse(unitScale);
     auto prefix = path + "/";
-    for (auto under = transforms.lower_bound(prefix); under != transforms.end() && under->first.starts_with(prefix); ++under) {
-        under->second.world = change * under->second.world;
-    }
     auto isUnder = [&](const std::string& candidate) {
         return candidate == path || candidate.starts_with(prefix);
     };
     SceneChanges changes;
+    const auto& paths = draws->primPaths;
     for (const auto& [prim, slots] : drawn.primInstances) {
-        const auto& primPathOf = primPaths[prim - 1];
-        if (!isUnder(primPathOf)) {
+        if (!isUnder(paths[prim - 1])) {
             continue;
         }
-        auto world = unitScale * transforms.at(primPathOf).world;
         for (auto i : slots) {
             auto& instance = drawn.meshInstances[i];
-            instance.worldTransform = world;
-            instance.worldBounds = meshBoundsOf[instance.mesh.index].transformed(world);
+            instance.worldTransform = changeInMetres * instance.worldTransform;
+            instance.worldBounds = meshBoundsOf[instance.mesh.index].transformed(instance.worldTransform);
             changes.instances.emplace_back(i, instance);
         }
     }
     for (auto& light : drawn.lights) {
-        const auto& lightPath = primPaths[light.primHandle.index - 1];
-        if (isUnder(lightPath)) {
-            if (auto lit = transforms.find(lightPath); lit != transforms.end()) {
-                light.worldTransform = unitScale * lit->second.world;
-                changes.lightsChanged = true;
-                changes.lights = drawn.lights;
-            }
+        if (isUnder(paths[light.primHandle.index - 1])) {
+            light.worldTransform = changeInMetres * light.worldTransform;
+            changes.lightsChanged = true;
+            changes.lights = drawn.lights;
         }
     }
     changes.slotCount = (uint32_t) drawn.meshInstances.size();
     addChanges(std::move(changes));
+    // Published snapshots keep the draws they had: the moved ones go into a copy.
+    auto movedDraws = std::make_shared<SceneDraws>(*draws);
+    movedDraws->drawn = drawn;
+    draws = std::move(movedDraws);
     inputsRevision++;
 }
 
+// The prims World::visit reaches in a content: its entities (a level content's root among them, the stage's and a prototype's not), an
+// instance's prototype in place of the instance's children, and a LOD level's linked content in place of its stand-in.
+auto ViewScene::countPrims(const World& world, const WorldContent& content, bool rootIsPrim) -> size_t {
+    if (auto it = primCounts.find(&content); it != primCounts.end() && it->second.first == content.version && &content != &world.stage) {
+        return it->second.second;
+    }
+    size_t count = 0;
+    std::vector<EntityId> pending;
+    if (rootIsPrim) {
+        pending.push_back(0);
+    } else {
+        pending.assign(content.entities[0].children.begin(), content.entities[0].children.end());
+    }
+    while (!pending.empty()) {
+        auto id = pending.back();
+        pending.pop_back();
+        const auto& entity = content.entities[id];
+        if (entity.levelContent >= 0) {
+            count += countPrims(world, world.levelContents[(size_t) entity.levelContent], true);
+            continue;
+        }
+        count++;
+        if (entity.prototype >= 0) {
+            count += countPrims(world, world.prototypes[(size_t) entity.prototype], false);
+            continue;
+        }
+        pending.insert(pending.end(), entity.children.begin(), entity.children.end());
+    }
+    primCounts[&content] = {content.version, count};
+    return count;
+}
+
 auto ViewScene::publish() -> void {
+    auto publishStart = std::chrono::steady_clock::now();
     auto snapshot = std::make_shared<SceneSnapshot>();
     snapshot->id = id;
     snapshot->revision = inputsRevision;
-    snapshot->drawn = drawn;
-    snapshot->primPaths = primPaths;
-    snapshot->drawsByAsset = drawsByAsset;
-    snapshot->assetsByPrim = assetsByPrim;
+    snapshot->draws = draws;
     snapshot->transforms = transforms;
-    snapshot->cameras = authoredCameras;
-    snapshot->lodRoots = drawnLodRoots;
-    snapshot->payloads = reachedPayloads;
     snapshot->thread = stats;
     for (const auto& [assetId, kind] : inFlight) {
         if (kind == AssetKind::Layer) {
@@ -611,33 +691,36 @@ auto ViewScene::publish() -> void {
     snapshot->thread.extractNeeded = extractNeeded;
     snapshot->thread.sinceOpenMs = id.empty() ? 0.0 : msSince(openedAt);
     snapshot->unitScale = unitScale;
-    std::set<std::string> ids(requestedPacks.begin(), requestedPacks.end());
-    for (const auto& [assetId, pack] : meshPacks) {
-        ids.insert(assetId);
+    auto idKey = requestedPacks.size() + (meshPacks.size() << 16) + (materialPacks.size() << 32) + (texturePacks.size() << 40) + (failedAssets.size() << 48);
+    if (idKey != assetIdKey) {
+        assetIdKey = idKey;
+        std::set<std::string> ids(requestedPacks.begin(), requestedPacks.end());
+        for (const auto& [assetId, pack] : meshPacks) {
+            ids.insert(assetId);
+        }
+        for (const auto& [assetId, pack] : materialPacks) {
+            ids.insert(assetId);
+        }
+        for (const auto& [assetId, pack] : texturePacks) {
+            ids.insert(assetId);
+        }
+        ids.insert(failedAssets.begin(), failedAssets.end());
+        assetIdList.assign(ids.begin(), ids.end());
     }
-    for (const auto& [assetId, pack] : materialPacks) {
-        ids.insert(assetId);
-    }
-    for (const auto& [assetId, pack] : texturePacks) {
-        ids.insert(assetId);
-    }
-    ids.insert(failedAssets.begin(), failedAssets.end());
-    snapshot->assetIds.assign(ids.begin(), ids.end());
+    snapshot->assetIds = assetIdList;
     if (composer) {
         const auto& world = composer->world();
         snapshot->layerStack = world.layerStack;
         snapshot->upAxis = world.upAxis;
         snapshot->metersPerUnit = world.metersPerUnit;
-        world.visit([&snapshot](const VisitedEntity&) {
-            snapshot->prims++;
-            return true;
-        });
+        snapshot->prims = worldPrims;
         snapshot->prototypes = world.prototypes.size();
         snapshot->lodLevels = world.lodLevels;
     }
     snapshot->idle = inFlight.empty() && !composeNeeded && !extractNeeded;
     std::lock_guard lock(mutex);
     published = std::move(snapshot);
+    stats.publishMs = msSince(publishStart);
 }
 
 auto ViewScene::drawsPurpose(Purpose purpose) const -> bool {
@@ -652,14 +735,14 @@ auto ViewScene::worldUp() const -> glm::vec3 {
 }
 
 auto ViewScene::primPath(uint32_t prim) const -> std::string {
-    if (prim == 0 || prim > current->primPaths.size()) {
+    if (prim == 0 || prim > current->draws->primPaths.size()) {
         return {};
     }
-    return current->primPaths[prim - 1];
+    return current->draws->primPaths[prim - 1];
 }
 
 auto ViewScene::instancePath(uint32_t instance) const -> std::string {
-    const auto& instances = current->drawn.meshInstances;
+    const auto& instances = current->draws->drawn.meshInstances;
     if (instance >= instances.size() || !instances[instance].alive) {
         return {};
     }
@@ -667,14 +750,14 @@ auto ViewScene::instancePath(uint32_t instance) const -> std::string {
 }
 
 auto ViewScene::drawsOf(const std::string& assetId) const -> std::vector<uint32_t> {
-    if (auto it = current->drawsByAsset.find(assetId); it != current->drawsByAsset.end()) {
+    if (auto it = current->draws->drawsByAsset.find(assetId); it != current->draws->drawsByAsset.end()) {
         return it->second;
     }
     return {};
 }
 
 auto ViewScene::drawCount(const std::string& assetId) const -> size_t {
-    if (auto it = current->drawsByAsset.find(assetId); it != current->drawsByAsset.end()) {
+    if (auto it = current->draws->drawsByAsset.find(assetId); it != current->draws->drawsByAsset.end()) {
         return it->second.size();
     }
     return 0;
@@ -682,11 +765,16 @@ auto ViewScene::drawCount(const std::string& assetId) const -> size_t {
 
 auto ViewScene::assetsUnder(const std::string& path) const -> std::vector<std::string> {
     std::set<std::string> out;
-    for (const auto& [prim, uses] : current->assetsByPrim) {
-        const auto& candidate = current->primPaths[prim - 1];
+    const auto& byPrim = current->draws->assetsByPrim;
+    for (size_t i = 0; i < byPrim.size(); i++) {
+        const auto& uses = byPrim[i];
+        if (!uses) {
+            continue;
+        }
+        const auto& candidate = current->draws->primPaths[i];
         bool under = path == "/" || candidate == path || (candidate.size() > path.size() && candidate.starts_with(path) && candidate[path.size()] == '/');
         if (under) {
-            out.insert(uses.begin(), uses.end());
+            out.insert(uses->begin(), uses->end());
         }
     }
     return {out.begin(), out.end()};
@@ -694,9 +782,9 @@ auto ViewScene::assetsUnder(const std::string& path) const -> std::vector<std::s
 
 auto ViewScene::primBounds(uint32_t prim) const -> AABB {
     AABB out = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
-    if (auto it = current->drawn.primInstances.find(prim); it != current->drawn.primInstances.end()) {
+    if (auto it = current->draws->drawn.primInstances.find(prim); it != current->draws->drawn.primInstances.end()) {
         for (auto i : it->second) {
-            const auto& bounds = current->drawn.meshInstances[i].worldBounds;
+            const auto& bounds = current->draws->drawn.meshInstances[i].worldBounds;
             if (bounds.valid()) {
                 out.min = glm::min(out.min, bounds.min);
                 out.max = glm::max(out.max, bounds.max);
@@ -714,12 +802,12 @@ auto ViewScene::bounds(const std::string& path) const -> AABB {
         }
         return candidate == path || (candidate.size() > path.size() && candidate.starts_with(path) && candidate[path.size()] == '/');
     };
-    for (const auto& [prim, slots] : current->drawn.primInstances) {
+    for (const auto& [prim, slots] : current->draws->drawn.primInstances) {
         if (!under(primPath(prim))) {
             continue;
         }
         for (auto i : slots) {
-            const auto& bounds = current->drawn.meshInstances[i].worldBounds;
+            const auto& bounds = current->draws->drawn.meshInstances[i].worldBounds;
             if (bounds.valid()) {
                 out.min = glm::min(out.min, bounds.min);
                 out.max = glm::max(out.max, bounds.max);
@@ -730,11 +818,11 @@ auto ViewScene::bounds(const std::string& path) const -> AABB {
 }
 
 auto ViewScene::transform(const std::string& path) const -> std::optional<PrimTransform> {
-    auto it = current->transforms.find(path);
-    if (it == current->transforms.end()) {
+    auto found = current->transforms->find(path);
+    if (!found) {
         return std::nullopt;
     }
-    return PrimTransform{.local = it->second.local, .world = current->unitScale * it->second.world, .xformable = it->second.xformable};
+    return PrimTransform{.local = found->local, .world = current->unitScale * found->world, .xformable = found->xformable};
 }
 
 auto ViewScene::texture(const std::string& textureAsset) -> TextureHandle {
@@ -847,12 +935,14 @@ auto ViewScene::extract() -> void {
     drawn.primInstances.clear();
     primPaths.clear();
     materialByAsset.clear();
-    transforms.clear();
     authoredCameras.clear();
     drawnLodRoots.clear();
     reachedPayloads.clear();
     drawsByAsset.clear();
     assetsByPrim.clear();
+    // The last extract's sizes: what this one will most likely build again.
+    primPaths.reserve(draws->primPaths.size());
+    assetsByPrim.reserve(draws->primPaths.size());
     static const World emptyWorld;
     const auto& w = composer ? composer->world() : emptyWorld;
     unitScale = glm::mat4(1.0f);
@@ -866,76 +956,276 @@ auto ViewScene::extract() -> void {
         RenderMeshInstance instance;
     };
     std::vector<Draw> draws;
+    draws.reserve(this->draws->drawn.meshInstances.size());
     std::set<uint32_t> meshesUsed;
     std::set<uint32_t> materialsUsed;
     std::set<uint32_t> texturesUsed;
 
-    // World transforms by depth: an entity's parent is the last entity visited one level up.
-    std::vector<glm::mat4> worldByDepth = {glm::mat4(1.0f)};
-    // The drawn level + 1 of the nearest LOD root at or above each depth, 0 under none (RenderMeshInstance::lodLevel).
-    std::vector<uint32_t> lodLevelByDepth = {0};
+    auto transformIndex = std::make_shared<TransformIndex>();
     bool hasDistantLight = false;
-    w.visit([&](const VisitedEntity& visited) {
-        const auto& entity = *visited.entity;
-        auto depth = pathDepth(visited.path);
-        if (worldByDepth.size() <= depth) {
-            worldByDepth.resize(depth + 1);
-            lodLevelByDepth.resize(depth + 1);
-        }
-        lodLevelByDepth[depth] = lodLevelByDepth[depth - 1];
-        const auto& parentWorld = worldByDepth[depth - 1];
-        glm::mat4 local(visited.entity->localTransform);
-        if (auto authored = localOverrides.find(visited.path); authored != localOverrides.end() && entity.xformable) {
-            local = authored->second;
-        }
-        if (!entity.xformable) {
-            worldByDepth[depth] = parentWorld;
-        } else if (entity.resetsXformStack) {
-            worldByDepth[depth] = local;
-        } else {
-            worldByDepth[depth] = parentWorld * local;
-        }
-        if (!entity.active || !entity.defined || entity.abstract || visited.inUndrawnLevel || !visited.visible) {
+
+    // A use with a gizmo's local opinion under it is walked afresh, not taken from the cache.
+    auto overridesUnder = [&](const std::string& usePath) -> bool {
+        if (localOverrides.empty()) {
             return false;
         }
-        transforms[visited.path] = {.local = local, .world = worldByDepth[depth], .xformable = entity.xformable, .resetsXformStack = entity.resetsXformStack};
-        auto worldTransform = unitScale * worldByDepth[depth];
-        if (entity.typeName == "Camera") {
-            authoredCameras.push_back({.path = visited.path, .worldTransform = worldTransform});
+        if (usePath == "/") {
+            return true;
         }
-        if (auto payload = visited.content->payloads.find(visited.id); payload != visited.content->payloads.end()) {
-            ScenePayload placement = {.path = visited.path, .assetIds = payload->second.assetIds, .loaded = payload->second.loaded};
+        auto prefix = usePath + "/";
+        return std::ranges::any_of(localOverrides, [&](const auto& entry) { return entry.first.starts_with(prefix); });
+    };
+
+    // One content's walk from its root down: its prims that matter to extract, with transforms relative to the root, and where its
+    // instances and levels sit. overrideBase, when set, is the content's use path, to apply the gizmo's local opinions.
+    auto build = [&](const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& overrideBase) -> std::shared_ptr<ContentExtract> {
+        auto out = std::make_shared<ContentExtract>();
+        out->version = content.version;
+        auto prims = std::make_shared<ContentTransforms>();
+        struct State {
+            std::string path;
+            glm::mat4 world = glm::mat4(1.0f);
+            bool absolute = false;
+            Purpose purpose = Purpose::Default;
+            std::string material;
+            bool strong = false;
+        };
+        std::function<void(EntityId, const State&)> walk = [&](EntityId id, const State& parent) {
+            const auto& entity = content.entities[id];
+            State state;
+            state.path = rootIsPrim && id == 0 ? std::string("/") : childPathOf(parent.path, entity.name);
+            glm::mat4 local(entity.localTransform);
+            if (!overrideBase.empty() && entity.xformable) {
+                if (auto authored = localOverrides.find(joinPathOf(overrideBase, state.path)); authored != localOverrides.end()) {
+                    local = authored->second;
+                }
+            }
+            state.absolute = parent.absolute;
+            if (!entity.xformable) {
+                state.world = parent.world;
+            } else if (entity.resetsXformStack) {
+                state.world = local;
+                state.absolute = true;
+            } else {
+                state.world = parent.world * local;
+            }
+            if (!entity.active || !entity.defined || entity.abstract || entity.invisible) {
+                return;
+            }
+            state.purpose = entity.purpose.value_or(parent.purpose);
+            state.material = parent.material;
+            state.strong = parent.strong;
+            if (!parent.strong && entity.binding) {
+                state.material = entity.binding->materialAsset;
+                state.strong = entity.binding->strongerThanDescendants;
+            }
+            (*prims)[state.path] = {.local = local, .world = state.world, .xformable = entity.xformable, .resetsXformStack = entity.resetsXformStack, .absolute = state.absolute};
+            ExtractItem prim{.kind = ExtractItem::Kind::Prim,
+                             .path = state.path,
+                             .world = state.world,
+                             .absolute = state.absolute,
+                             .entity = &entity,
+                             .id = id,
+                             .purpose = state.purpose,
+                             .material = state.material,
+                             .strongBinding = state.strong,
+                             .camera = entity.typeName == "Camera",
+                             .payload = content.payloads.contains(id),
+                             .lodRoot = content.lodRoots.contains(id),
+                             .light = content.lights.contains(id)};
+            if (!entity.meshAsset.empty()) {
+                auto [it, added] = meshIds.try_emplace(entity.meshAsset, (uint32_t) meshIds.size());
+                prim.meshId = it->second;
+                auto [material, materialAdded] = materialIds.try_emplace(state.material, (uint32_t) materialIds.size());
+                prim.materialId = material->second;
+                prim.subsets = std::ranges::any_of(entity.children, [&](EntityId child) { return content.entities[child].binding.has_value(); });
+            }
+            if (prim.meshId != UINT32_MAX || prim.camera || prim.payload || prim.lodRoot || prim.light) {
+                out->items.push_back(std::move(prim));
+            }
+            if (entity.prototype >= 0) {
+                out->items.push_back({.kind = ExtractItem::Kind::Instance,
+                                      .path = state.path,
+                                      .world = state.world,
+                                      .absolute = state.absolute,
+                                      .purpose = state.purpose,
+                                      .material = state.material,
+                                      .strongBinding = state.strong,
+                                      .content = entity.prototype});
+                return;
+            }
+            if (auto lod = content.lodRoots.find(id); lod != content.lodRoots.end()) {
+                // A level's link to its content changes at resolution without the content changing: it is read where the content is used.
+                for (uint32_t i = 0; i < lod->second.levels.size(); i++) {
+                    auto standIn = lod->second.levels[i];
+                    out->items.push_back({.kind = ExtractItem::Kind::Level,
+                                          .path = childPathOf(state.path, content.entities[standIn].name),
+                                          .world = state.world,
+                                          .absolute = state.absolute,
+                                          .id = standIn,
+                                          .purpose = state.purpose,
+                                          .material = state.material,
+                                          .strongBinding = state.strong,
+                                          .root = id,
+                                          .level = i});
+                }
+                return;
+            }
+            for (EntityId child : entity.children) {
+                walk(child, state);
+            }
+        };
+        State top{.path = "/", .world = glm::mat4(1.0f), .absolute = false, .purpose = purpose, .material = material, .strong = strong};
+        if (rootIsPrim) {
+            walk(0, top);
+        } else {
+            for (EntityId child : content.entities[0].children) {
+                walk(child, top);
+            }
+        }
+        out->transforms = std::move(prims);
+        return out;
+    };
+
+    // A content's walk, kept by its version and the state it inherits; afresh when the gizmo has moved something in it.
+    auto extractOf = [&](char kind, int32_t index, const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& usePath) -> std::shared_ptr<const ContentExtract> {
+        if (overridesUnder(usePath)) {
+            return build(content, rootIsPrim, purpose, material, strong, usePath);
+        }
+        auto key = std::format("{}{} {} {} {} {}", kind, index, content.version, (int) purpose, strong ? 1 : 0, material);
+        if (auto it = extractCache.find(key); it != extractCache.end()) {
+            extractCacheHits++;
+            return it->second;
+        }
+        extractCacheBuilds++;
+        auto built = build(content, rootIsPrim, purpose, material, strong, {});
+        extractCache[key] = built;
+        return built;
+    };
+
+    // A mesh and the material bound where it is drawn, resolved once per extract: the materials of its submeshes, whether any cuts, and the
+    // assets its draws use (the mesh, the file defining it, each material and its textures), with the lists that name its prims.
+    struct Resolved {
+        MeshHandle mesh;
+        const MeshDesc* meshData = nullptr;
+        std::vector<MaterialHandle> materials;
+        std::vector<bool> cutout;
+        bool primHasCutout = false;
+        std::shared_ptr<const std::vector<std::string>> uses;
+        std::vector<std::vector<uint32_t>*> useLists;
+    };
+    std::unordered_map<uint64_t, Resolved> resolvedByKey; // by mesh id, material id and the binding's strength
+    // A mesh's handle by its id, looked up once per extract; checked marks the ids looked up (a null handle: its pack isn't held).
+    std::vector<MeshHandle> meshMemo(meshIds.size() + 1024);
+    std::vector<bool> meshChecked(meshIds.size() + 1024, false);
+    // The submesh materials and uses of a mesh where bound to `boundMaterial`, with the subsets' own bindings when `subsetsOf` is set.
+    auto resolve = [&](const std::string& meshAsset, const std::string& boundMaterial, bool strongBinding, const Entity* subsetsOf, const WorldContent& content, MeshHandle meshHandle) -> Resolved {
+        Resolved out;
+        out.mesh = meshHandle;
+        out.meshData = meshLibrary.get(meshHandle);
+        const auto& meshPack = meshPacks.at(meshAsset);
+        std::optional<std::array<float, 3>> displayColor;
+        if (meshPack.hasDisplayColor) {
+            displayColor = meshPack.displayColor;
+        }
+        auto uses = std::make_shared<std::vector<std::string>>(std::vector<std::string>{meshAsset, meshAsset.substr(0, meshAsset.find('#'))});
+        auto useMaterial = [&](const std::string& materialAsset) {
+            if (materialAsset.empty()) {
+                return;
+            }
+            uses->push_back(materialAsset);
+            if (auto pack = materialPacks.find(materialAsset); pack != materialPacks.end()) {
+                for (const auto& texture : {pack->second.baseColorTexture, pack->second.opacityTexture}) {
+                    if (!texture.empty()) {
+                        uses->push_back(texture);
+                    }
+                }
+            }
+        };
+        for (const auto& submesh : meshPack.submeshes) {
+            if (submesh.subsetPath.empty() || subsetsOf == nullptr) {
+                out.materials.push_back(material(boundMaterial, submesh.subsetPath.empty() ? displayColor : std::nullopt));
+                useMaterial(boundMaterial);
+            } else {
+                // The subset's own binding, unless an ancestor's is stronger; a subset has no display colour of its own.
+                auto name = submesh.subsetPath.substr(submesh.subsetPath.rfind('/') + 1);
+                std::string subsetMaterial = boundMaterial;
+                for (EntityId child : subsetsOf->children) {
+                    const auto& subset = content.entities[child];
+                    if (subset.name == name && subset.binding && !strongBinding) {
+                        subsetMaterial = subset.binding->materialAsset;
+                    }
+                }
+                out.materials.push_back(material(subsetMaterial, std::nullopt));
+                useMaterial(subsetMaterial);
+            }
+        }
+        for (auto handle : out.materials) {
+            const auto* materialData = materialLibrary.get(handle);
+            bool cuts = materialData != nullptr && materialData->cutout();
+            out.cutout.push_back(cuts);
+            out.primHasCutout = out.primHasCutout || cuts;
+            materialsUsed.insert(handle.index);
+            if (materialData != nullptr) {
+                for (auto texture : {materialData->baseColorTexture, materialData->opacityTexture}) {
+                    if (texture) {
+                        texturesUsed.insert(texture.index);
+                    }
+                }
+            }
+        }
+        std::ranges::sort(*uses);
+        auto [last, end] = std::ranges::unique(*uses);
+        uses->erase(last, end);
+        for (const auto& used : *uses) {
+            out.useLists.push_back(&drawsByAsset[used]);
+        }
+        out.uses = std::move(uses);
+        meshesUsed.insert(meshHandle.index);
+        return out;
+    };
+
+    // What a prim gives the renderer and the queries, at its full path and world transform (in metres) where its content is used.
+    auto primAt = [&](const WorldContent& content, const ExtractItem& item, const std::string& path, const glm::mat4& worldTransform, uint32_t lodTag) -> void {
+        const auto& entity = *item.entity;
+        if (item.camera) {
+            authoredCameras.push_back({.path = path, .worldTransform = worldTransform});
+        }
+        if (!item.payload) {
+        } else if (auto payload = content.payloads.find(item.id); payload != content.payloads.end()) {
+            ScenePayload placement = {.path = path, .assetIds = payload->second.assetIds, .loaded = payload->second.loaded};
             if (const auto& hint = payload->second.extentsHint) {
                 placement.worldBounds = AABB{.min = (*hint)[0], .max = (*hint)[1]}.transformed(worldTransform);
             }
             reachedPayloads.push_back(std::move(placement));
         }
-        if (auto lod = visited.content->lodRoots.find(visited.id); lod != visited.content->lodRoots.end()) {
+        if (!item.lodRoot) {
+        } else if (auto lod = content.lodRoots.find(item.id); lod != content.lodRoots.end()) {
             const auto& root = lod->second;
             SceneLodRoot row;
-            row.path = visited.path;
+            row.path = path;
             for (EntityId level : root.levels) {
-                row.levels.push_back(visited.content->entities[level].name);
-                auto payload = visited.content->payloads.find(level);
-                row.levelPayloads.push_back(payload != visited.content->payloads.end() ? payload->second.assetIds : std::vector<std::string>{});
+                row.levels.push_back(content.entities[level].name);
+                auto payload = content.payloads.find(level);
+                row.levelPayloads.push_back(payload != content.payloads.end() ? payload->second.assetIds : std::vector<std::string>{});
             }
             row.heuristicType = root.heuristicType;
             row.thresholds = root.thresholds;
             row.extent = root.extent;
             row.projectedExtent = root.projection == LodProjection::Extent;
             row.defaultIndex = root.defaultIndex;
-            row.wanted = w.wantedLevel(visited.path, root);
-            row.drawn = w.drawnLevel(visited.path, root);
+            row.wanted = w.wantedLevel(path, root);
+            row.drawn = w.drawnLevel(path, root);
             row.loaded = root.loaded;
-            row.setByHand = w.lodLevels.contains(visited.path);
-            lodLevelByDepth[depth] = row.drawn ? *row.drawn + 1 : 0;
+            row.setByHand = w.lodLevels.contains(path);
             drawnLodRoots.push_back(std::move(row));
         }
 
-        if (auto light = visited.content->lights.find(visited.id); light != visited.content->lights.end()) {
+        if (!item.light) {
+        } else if (auto light = content.lights.find(item.id); light != content.lights.end()) {
             if (light->second.shape == LightShape::Distant) {
                 hasDistantLight = true;
-                primPaths.push_back(visited.path);
+                primPaths.push_back(path);
                 drawn.lights.push_back({
                     .type = LightType::Directional,
                     .color = light->second.color,
@@ -950,84 +1240,50 @@ auto ViewScene::extract() -> void {
             }
         }
 
-        if (entity.meshAsset.empty() || !drawsPurpose(visited.purpose)) {
-            return true;
+        if (item.meshId == UINT32_MAX || !drawsPurpose(item.purpose)) {
+            return;
         }
-        auto meshHandle = mesh(entity.meshAsset);
+        if (item.meshId >= meshMemo.size()) {
+            meshMemo.resize(item.meshId + 1024);
+            meshChecked.resize(item.meshId + 1024, false);
+        }
+        if (!meshChecked[item.meshId]) {
+            meshChecked[item.meshId] = true;
+            meshMemo[item.meshId] = mesh(entity.meshAsset);
+        }
+        auto meshHandle = meshMemo[item.meshId];
         if (!meshHandle) {
-            return true;
+            return;
         }
-        const auto& meshPack = meshPacks.at(entity.meshAsset);
-        const auto* meshData = meshLibrary.get(meshHandle);
-        std::optional<std::array<float, 3>> displayColor;
-        if (meshPack.hasDisplayColor) {
-            displayColor = meshPack.displayColor;
+        // Prims of the same mesh bound to the same material share what they resolve to; a mesh with subset bindings resolves per prim.
+        const Resolved* resolved = nullptr;
+        Resolved own;
+        if (item.subsets) {
+            own = resolve(entity.meshAsset, item.material, item.strongBinding, &entity, content, meshHandle);
+            resolved = &own;
+        } else {
+            auto key = ((uint64_t) item.meshId << 32) | ((uint64_t) item.materialId << 1) | (item.strongBinding ? 1u : 0u);
+            auto it = resolvedByKey.find(key);
+            if (it == resolvedByKey.end()) {
+                it = resolvedByKey.emplace(key, resolve(entity.meshAsset, item.material, item.strongBinding, nullptr, content, meshHandle)).first;
+            }
+            resolved = &it->second;
         }
-
-        // The assets this draw uses, for drawsOf: its mesh, the file defining it, and each submesh's material and that material's texture.
-        std::vector<std::string> uses = {entity.meshAsset, entity.meshAsset.substr(0, entity.meshAsset.find('#'))};
-        auto useMaterial = [&](const std::string& materialAsset) {
-            if (materialAsset.empty()) {
-                return;
-            }
-            uses.push_back(materialAsset);
-            if (auto pack = materialPacks.find(materialAsset); pack != materialPacks.end()) {
-                for (const auto& texture : {pack->second.baseColorTexture, pack->second.opacityTexture}) {
-                    if (!texture.empty()) {
-                        uses.push_back(texture);
-                    }
-                }
-            }
-        };
-        std::vector<MaterialHandle> submeshMaterials;
-        for (const auto& submesh : meshPack.submeshes) {
-            if (submesh.subsetPath.empty()) {
-                submeshMaterials.push_back(material(visited.materialAsset, displayColor));
-                useMaterial(visited.materialAsset);
-            } else {
-                // The subset's own binding, unless an ancestor's is stronger; a subset has no display colour of its own.
-                auto name = submesh.subsetPath.substr(submesh.subsetPath.rfind('/') + 1);
-                std::string subsetMaterial = visited.materialAsset;
-                for (EntityId child : entity.children) {
-                    const auto& subset = visited.content->entities[child];
-                    if (subset.name == name && subset.binding && !visited.strongBinding) {
-                        subsetMaterial = subset.binding->materialAsset;
-                    }
-                }
-                submeshMaterials.push_back(material(subsetMaterial, std::nullopt));
-                useMaterial(subsetMaterial);
-            }
-        }
+        const auto* meshData = resolved->meshData;
         auto worldBounds = meshBoundsOf[meshHandle.index].transformed(worldTransform);
 
-        primPaths.push_back(visited.path);
+        primPaths.push_back(path);
         auto prim = (uint32_t) primPaths.size();
-        meshesUsed.insert(meshHandle.index);
-        // A prim with any cutout submesh casts its shadows per submesh, so the cutout one is cut there too.
-        bool primHasCutout = false;
-        for (auto handle : submeshMaterials) {
-            const auto* materialData = materialLibrary.get(handle);
-            if (materialData != nullptr && materialData->cutout()) {
-                primHasCutout = true;
-            }
-        }
         for (size_t s = 0; s < meshData->submeshes.size(); s++) {
             const auto& sub = meshData->submeshes[s];
-            auto materialHandle = submeshMaterials[s];
-            const auto* materialData = materialLibrary.get(materialHandle);
-            materialsUsed.insert(materialHandle.index);
-            if (materialData != nullptr) {
-                for (auto texture : {materialData->baseColorTexture, materialData->opacityTexture}) {
-                    if (texture) {
-                        texturesUsed.insert(texture.index);
-                    }
-                }
-            }
+            auto key = path;
+            key += '#';
+            key += std::to_string(s);
             draws.push_back({
-                .key = std::format("{}#{}", visited.path, s),
+                .key = std::move(key),
                 .instance = {
                     .mesh = meshHandle,
-                    .material = materialHandle,
+                    .material = resolved->materials[s],
                     .prim = prim,
                     .worldTransform = worldTransform,
                     .worldBounds = worldBounds,
@@ -1035,22 +1291,69 @@ auto ViewScene::extract() -> void {
                     .indexCount = sub.indexCount,
                     .primFirst = (s == 0),
                     .doubleSided = meshData->doubleSided,
-                    .cutout = materialData != nullptr && materialData->cutout(),
-                    .primHasCutout = primHasCutout,
-                    .lodLevel = lodLevelByDepth[depth],
+                    .cutout = resolved->cutout[s],
+                    .primHasCutout = resolved->primHasCutout,
+                    .lodLevel = lodTag,
                 },
             });
         }
-        std::ranges::sort(uses);
-        auto [last, end] = std::ranges::unique(uses);
-        uses.erase(last, end);
-        for (const auto& used : uses) {
-            drawsByAsset[used].push_back(prim);
+        for (auto* list : resolved->useLists) {
+            list->push_back(prim);
         }
-        assetsByPrim[prim] = std::move(uses);
-        return true;
-    });
+        assetsByPrim.resize(prim);
+        assetsByPrim[prim - 1] = resolved->uses;
+    };
 
+    // A content used at a path with a world transform (before the unit scale): its kept walk replayed, in walk order, into the draws.
+    std::function<void(char, int32_t, const WorldContent&, bool, const std::string&, const glm::mat4&, Purpose, const std::string&, bool, uint32_t)> useContent =
+        [&](char kind, int32_t index, const WorldContent& content, bool rootIsPrim, const std::string& usePath, const glm::mat4& useWorld, Purpose purpose, const std::string& material, bool strong, uint32_t lodTag) {
+            auto walked = extractOf(kind, index, content, rootIsPrim, purpose, material, strong, usePath);
+            transformIndex->uses[usePath] = {.prims = walked->transforms, .world = useWorld};
+            for (const auto& item : walked->items) {
+                auto world = item.absolute ? item.world : useWorld * item.world;
+                auto path = joinPathOf(usePath, item.path);
+                if (item.kind == ExtractItem::Kind::Instance) {
+                    useContent('P', item.content, w.prototypes[(size_t) item.content], false, path, world, item.purpose, item.material, item.strongBinding, lodTag);
+                    continue;
+                }
+                if (item.kind == ExtractItem::Kind::Level) {
+                    // Only the level the root draws: the finest loaded one not finer than the one it wants, per use of the root.
+                    auto drawnLevel = w.drawnLevel(parentPathOf(path), content.lodRoots.at(item.root));
+                    auto linked = content.entities[item.id].levelContent;
+                    if (!drawnLevel || *drawnLevel != item.level || linked < 0) {
+                        continue;
+                    }
+                    useContent('L', linked, w.levelContents[(size_t) linked], true, path, world, item.purpose, item.material, item.strongBinding, *drawnLevel + 1);
+                    continue;
+                }
+                primAt(content, item, path, unitScale * world, lodTag);
+            }
+        };
+    useContent('S', 0, w.stage, false, "/", glm::mat4(1.0f), Purpose::Default, {}, false, 0);
+
+    // Kept walks of contents composed again since are dropped.
+    std::erase_if(extractCache, [&](const auto& entry) {
+        const auto& key = entry.first;
+        auto index = std::atoi(key.c_str() + 1);
+        const WorldContent* content = nullptr;
+        if (key[0] == 'S') {
+            content = &w.stage;
+        } else if (key[0] == 'P' && index < (int) w.prototypes.size()) {
+            content = &w.prototypes[(size_t) index];
+        } else if (key[0] == 'L' && index < (int) w.levelContents.size()) {
+            content = &w.levelContents[(size_t) index];
+        }
+        return content == nullptr || content->version != entry.second->version;
+    });
+    transforms = std::move(transformIndex);
+    stats.extractReused = extractCacheHits;
+    stats.extractWalked = extractCacheBuilds;
+    stats.extractKept = extractCache.size();
+    extractCacheHits = 0;
+    extractCacheBuilds = 0;
+
+    stats.extractVisitMs = msSince(start);
+    auto slotsStart = std::chrono::steady_clock::now();
     // The engine's light when the scene has no distant light: upper-front-right in the scene's own frame, as it always was.
     if (!hasDistantLight) {
         bool zUp = w.upAxis == "Z";
@@ -1115,6 +1418,17 @@ auto ViewScene::extract() -> void {
         drawn.primInstances[draw.instance.prim].push_back(slot);
     }
     changes.slotCount = (uint32_t) drawn.meshInstances.size();
+    stats.extractSlotsMs = msSince(slotsStart);
+    // What this extract built, shared by every snapshot until the next one.
+    auto built = std::make_shared<SceneDraws>();
+    built->drawn = drawn;
+    built->primPaths = std::move(primPaths);
+    built->drawsByAsset = std::move(drawsByAsset);
+    built->assetsByPrim = std::move(assetsByPrim);
+    built->cameras = std::move(authoredCameras);
+    built->lodRoots = std::move(drawnLodRoots);
+    built->payloads = std::move(reachedPayloads);
+    this->draws = std::move(built);
     if (drawn.lights != previousLights) {
         changes.lightsChanged = true;
         changes.lights = drawn.lights;

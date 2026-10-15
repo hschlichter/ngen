@@ -108,6 +108,7 @@ struct PayloadPlacement {
 // prototype (its children are every instance's children). Paths are relative to the content: a prototype's children are "/<name>".
 struct WorldContent {
     std::string sourcePath; // the stage's "/"; for a prototype, the first instance's path (for messages)
+    uint64_t version = 0;   // which composition this is: a content composed again (or the stage, every compose) gets a new one
     std::vector<Entity> entities;
     std::unordered_map<std::string, EntityId> byPath;
     std::unordered_map<EntityId, Light> lights;

@@ -41,6 +41,15 @@ The inputs persist across rebuilds:
   and is reused, lowest first, so a fresh open fills slots in visit order.
 - **Changes.** Each rebuild compares what it draws with what it drew and records the difference as `SceneChanges`. The main loop takes them
   (`takeChanges`) and hands them to the renderer, which changes only that on the GPU (`src/renderer/README.md`, "Scene data on the GPU").
+- **Kept walks.** A rebuild doesn't walk every prim. Each content of the World (the stage, a prototype, a LOD level's content; see
+  `src/world/README.md`) is walked once per version and per state it inherits where it is used (purpose, the material binding in force):
+  the walk keeps, in walk order, the prims that draw, light, frame, place payloads or root LOD, with transforms relative to the content's
+  root, and where its instances and levels sit. A rebuild replays the kept walks of the contents used, from the stage down, so the draws
+  come out in the same order as a full walk. Meshes and materials are resolved once per rebuild for each mesh and binding. A content
+  holding a prim the gizmo moved is walked afresh, with the move. The `scenethread` record's `extract` says how many walks were reused
+  and walked, and how long the walk and the slots took.
+- **Shared with the main thread.** What a rebuild builds (the draws, prim paths, the asset lists, cameras, LOD roots, payloads) is one
+  immutable `SceneDraws` the snapshots share until the next rebuild; a gizmo move publishes a copy with the moved draws.
 
 - **What is drawn**: entities that are active, defined and not abstract, visible (an invisible ancestor hides its subtree), not in a LOD
   level their root doesn't draw, with a mesh asset, and of a purpose that is shown: `default` and `render` always, `guide` and `proxy`
@@ -50,7 +59,9 @@ The inputs persist across rebuilds:
   texture. A mesh with no material bound gets one per display colour, shared. A cutout material's opacity texture is fetched with its base
   colour texture and counts as used by its draws (`drawsOf`).
 - **Transforms**: in float, parent times local, then scaled to metres by the root layer's `metersPerUnit`, as the view always drew; the
-  camera's up is the scene's up axis.
+  camera's up is the scene's up axis. A prim's transform for the queries (`transform`, selection, the gizmo) comes from a `TransformIndex`:
+  each content's prims relative to its root, kept with the walk, and every place a content is used with its world transform; a query
+  finds the deepest use above the path. A gizmo's move is an override in the index until the next rebuild.
 - **Cameras**: every `Camera` prim reached while drawing, by full path with its world transform (`cameras()`). The Camera window lists them
   and moves the view to one on a click; `--camera=/path`, the `camera-use` verb and `view.camera.use` do the same, and `view.camera.list`
   lists them with their poses. The view takes a camera's position and the direction it looks (its local -Z); roll, focal length and

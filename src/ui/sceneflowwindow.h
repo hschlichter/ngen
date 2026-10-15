@@ -21,6 +21,11 @@ struct SceneFlowThread {
     uint32_t contentsReached = 0;
     uint64_t extracts = 0;
     double lastExtractMs = 0.0;
+    double extractVisitMs = 0.0;
+    double extractSlotsMs = 0.0;
+    uint64_t extractReused = 0;
+    uint64_t extractWalked = 0;
+    uint64_t extractKept = 0;
     bool extractNeeded = false;
     uint64_t assetsReceived = 0;
     uint32_t inFlightLayers = 0;

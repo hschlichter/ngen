@@ -37,6 +37,21 @@ struct EntityTransform {
     glm::mat4 world = glm::mat4(1.0f);
     bool xformable = false;
     bool resetsXformStack = false;
+    bool absolute = false; // kept relative to a content: a !resetXformStack! in it, so the content's placement doesn't apply
+};
+
+// The prims' transforms, without a map of every prim: each content's prims relative to the content's root, kept with the content, and
+// every place a content is used (the stage, each instance, each drawn level) with its world transform. Immutable once published.
+using ContentTransforms = std::unordered_map<std::string, EntityTransform>; // by path relative to the content's root
+struct TransformIndex {
+    struct Use {
+        std::shared_ptr<const ContentTransforms> prims;
+        glm::mat4 world = glm::mat4(1.0f);
+    };
+    std::unordered_map<std::string, Use> uses;                  // by the use's full path
+    std::unordered_map<std::string, EntityTransform> overrides; // moved by a gizmo since the last extract, world absolute
+    // A prim's transform, world before the unit scale; none when it isn't reached (inactive, invisible, in a level not drawn).
+    auto find(const std::string& path) const -> std::optional<EntityTransform>;
 };
 
 // A camera the scene authors (a UsdGeom Camera prim): its full path and its world transform in metres. It looks down its local -Z with
@@ -81,6 +96,12 @@ struct SceneThreadStats {
     double lastComposeCallMs = 0.0; // every compose, whether or not it had every pack
     uint64_t extracts = 0;
     double lastExtractMs = 0.0;
+    double extractVisitMs = 0.0; // of the last extract: walking the World
+    double extractSlotsMs = 0.0; // the library changes and the slots
+    uint64_t extractReused = 0;  // of the last extract: content walks taken from the kept ones
+    uint64_t extractWalked = 0;  // and walked (new, composed again, or with a gizmo's opinion in them)
+    uint64_t extractKept = 0;    // kept walks after it
+    double publishMs = 0.0;      // the last snapshot's
     uint64_t assetsReceived = 0;
     uint32_t inFlightLayers = 0;
     uint32_t inFlightMeshes = 0;
@@ -109,18 +130,24 @@ struct ScenePayload {
     std::optional<AABB> worldBounds;
 };
 
+// What an extract built for the renderer and the main thread's queries, shared by every snapshot published until the next extract (or a
+// gizmo's move, which publishes a copy with the moved draws). Immutable once published.
+struct SceneDraws {
+    RenderWorld drawn;
+    std::vector<std::string> primPaths;                                        // by prim index - 1
+    std::unordered_map<std::string, std::vector<uint32_t>> drawsByAsset;       // asset id to the prims whose draws use it
+    std::vector<std::shared_ptr<const std::vector<std::string>>> assetsByPrim; // by prim index - 1: the assets a drawn prim's draws use
+    std::vector<SceneCamera> cameras;                                          // in visit order
+    std::vector<SceneLodRoot> lodRoots;                                        // every LOD root reached while drawing, in visit order
+    std::vector<ScenePayload> payloads;                                        // every payload placement reached while drawing, in visit order
+};
+
 // The scene as the scene thread last published it, for the main thread's queries. Immutable once published.
 struct SceneSnapshot {
     std::string id;
     uint64_t revision = 0;
-    RenderWorld drawn;
-    std::vector<std::string> primPaths;                                  // by prim index - 1
-    std::unordered_map<std::string, std::vector<uint32_t>> drawsByAsset; // asset id to the prims whose draws use it
-    std::unordered_map<uint32_t, std::vector<std::string>> assetsByPrim; // a drawn prim to the assets its draws use
-    std::map<std::string, EntityTransform> transforms;                   // every prim reached while drawing, by full path
-    std::vector<SceneCamera> cameras;                                    // in visit order
-    std::vector<SceneLodRoot> lodRoots;                                  // every LOD root reached while drawing, in visit order
-    std::vector<ScenePayload> payloads;                                  // every payload placement reached while drawing, in visit order
+    std::shared_ptr<const SceneDraws> draws = std::make_shared<SceneDraws>();
+    std::shared_ptr<const TransformIndex> transforms = std::make_shared<TransformIndex>(); // every prim reached while drawing
     glm::mat4 unitScale = glm::mat4(1.0f);
     std::vector<std::string> assetIds; // every asset the scene uses: layer packs, meshes, materials, textures, failed ones
     // The World, summarised.
@@ -178,16 +205,16 @@ public:
     // Queries over the snapshot update() took.
     auto sceneId() const -> const std::string& { return current->id; }
     auto snapshot() const -> const SceneSnapshot& { return *current; }
-    auto renderWorld() const -> const RenderWorld& { return current->drawn; }
+    auto renderWorld() const -> const RenderWorld& { return current->draws->drawn; }
     // The cameras the scene authors, in visit order.
-    auto cameras() const -> const std::vector<SceneCamera>& { return current->cameras; }
+    auto cameras() const -> const std::vector<SceneCamera>& { return current->draws->cameras; }
     // The scene thread's work as of the snapshot update() took, and the requests posted and applied now.
     auto threadStats() const -> const SceneThreadStats& { return current->thread; }
     auto requestCounts() const -> std::pair<uint64_t, uint64_t> { return {requestsPosted.load(), requestsApplied.load()}; }
     // The payload placements reached while drawing, in visit order.
-    auto payloads() const -> const std::vector<ScenePayload>& { return current->payloads; }
+    auto payloads() const -> const std::vector<ScenePayload>& { return current->draws->payloads; }
     // The LOD roots reached while drawing, in visit order.
-    auto lodRoots() const -> const std::vector<SceneLodRoot>& { return current->lodRoots; }
+    auto lodRoots() const -> const std::vector<SceneLodRoot>& { return current->draws->lodRoots; }
     // Moves on each time the renderer's inputs change.
     auto revision() const -> uint64_t { return current->revision; }
     // Every asset the scene uses: its layer packs, meshes, materials and textures.
@@ -329,8 +356,56 @@ private:
     std::set<uint32_t> freeSlots;
     std::vector<std::string> primPaths;
     std::unordered_map<std::string, std::vector<uint32_t>> drawsByAsset;
-    std::unordered_map<uint32_t, std::vector<std::string>> assetsByPrim;
-    std::map<std::string, EntityTransform> transforms;
+    std::vector<std::shared_ptr<const std::vector<std::string>>> assetsByPrim;
+    std::shared_ptr<const SceneDraws> draws = std::make_shared<SceneDraws>(); // the last extract's, as published
+    // Mesh assets and bound materials by a small id, given when a content's walk is kept, so a use looks them up by index.
+    std::unordered_map<std::string, uint32_t> meshIds;
+    std::unordered_map<std::string, uint32_t> materialIds;
+    // Counted when the World is composed, not at every publish: a content's prims (as World::visit reaches them) kept by its version.
+    size_t worldPrims = 0;
+    std::unordered_map<const WorldContent*, std::pair<uint64_t, size_t>> primCounts;
+    auto countPrims(const World& world, const WorldContent& content, bool rootIsPrim) -> size_t;
+    // Every asset id the scene uses, rebuilt when the sets of packs change size.
+    std::vector<std::string> assetIdList;
+    size_t assetIdKey = SIZE_MAX;
+    std::shared_ptr<TransformIndex> transforms = std::make_shared<TransformIndex>();
+    // What extract takes from a content, kept per content version and the state the content inherits where it is used (purpose and
+    // material binding): its prims in walk order, with transforms relative to the content's root, and where instances and levels in it
+    // sit. A use replays it instead of walking the content's entities.
+    struct ExtractItem {
+        enum class Kind : uint8_t {
+            Prim,     // a prim that draws, lights, frames (a camera), places payloads or roots LOD
+            Instance, // an instance: its prototype is used here
+            Level,    // a LOD level: its content is used here when it is the level drawn
+        };
+        Kind kind = Kind::Prim;
+        std::string path;                  // relative to the content's root ("/" for a level content's root, the level prim)
+        glm::mat4 world = glm::mat4(1.0f); // relative to the content's root
+        bool absolute = false;
+        const Entity* entity = nullptr; // a Prim's, in the content
+        EntityId id = noEntity;
+        Purpose purpose = Purpose::Default;
+        std::string material; // the binding in force here
+        bool strongBinding = false;
+        int32_t content = -1;         // an Instance's prototype (a Level's content is its stand-in's link, read at use)
+        uint32_t meshId = UINT32_MAX; // a Prim's mesh asset (meshIds), when it has one
+        uint32_t materialId = 0;      // its bound material (materialIds)
+        bool camera = false;
+        bool payload = false;
+        bool lodRoot = false;
+        bool light = false;
+        bool subsets = false;     // its mesh's GeomSubsets may bind their own materials: resolved per prim
+        EntityId root = noEntity; // a Level's LOD root, in the content
+        uint32_t level = 0;
+    };
+    struct ContentExtract {
+        uint64_t version = 0;
+        std::vector<ExtractItem> items;
+        std::shared_ptr<const ContentTransforms> transforms;
+    };
+    std::unordered_map<std::string, std::shared_ptr<const ContentExtract>> extractCache; // by content, version and inherited state
+    uint64_t extractCacheHits = 0;
+    uint64_t extractCacheBuilds = 0;
     std::vector<SceneCamera> authoredCameras;
     std::vector<SceneLodRoot> drawnLodRoots;
     std::vector<ScenePayload> reachedPayloads;
