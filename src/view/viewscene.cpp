@@ -158,6 +158,11 @@ auto ViewScene::setCamera(const glm::vec3& position, float fovY, float aspect) -
     wake.notify_one();
 }
 
+auto ViewScene::cameraAspect() const -> float {
+    std::lock_guard lock(mutex);
+    return postedCamera ? postedCamera->aspect : 1.0f;
+}
+
 auto ViewScene::setLodHeuristic(bool on) -> void {
     post(HeuristicRequest{.on = on, .cap = std::nullopt, .unloadDelay = std::nullopt});
 }
@@ -1455,6 +1460,57 @@ auto ViewScene::contentReady(const World& w, char kind, int32_t index, Purpose p
     return ready;
 }
 
+auto ViewScene::countWaiting(const World& w, char kind, int32_t index, Purpose purpose, std::set<int64_t>& seenContents, std::set<std::string>& seenMeshes, SceneLodRoot::Waiting& waiting) -> void {
+    auto key = ((int64_t) kind << 40) | ((int64_t) purpose << 36) | (int64_t) index;
+    if (!seenContents.insert(key).second) {
+        return;
+    }
+    const WorldContent& content = kind == 'P' ? w.prototypes[(size_t) index] : w.linkedContents[(size_t) index];
+    if (!content.complete) {
+        waiting.contentsIncomplete++;
+    }
+    auto walked = extractOf(kind, index, content, kind == 'L', purpose, {}, false, content.sourcePath);
+    for (const auto& item : walked->items) {
+        if (item.kind == ExtractItem::Kind::Prim) {
+            const auto& meshAsset = item.entity->meshAsset;
+            if (meshAsset.empty() || !drawsPurpose(item.purpose) || meshPacks.contains(meshAsset) || failedAssets.contains(meshAsset)) {
+                continue;
+            }
+            if (seenMeshes.insert(meshAsset).second) {
+                waiting.meshesMissing++;
+                if (inFlight.contains(meshAsset)) {
+                    waiting.meshesInFlight++;
+                }
+            }
+        } else if (item.kind == ExtractItem::Kind::Instance) {
+            countWaiting(w, 'P', item.content, item.purpose, seenContents, seenMeshes, waiting);
+        } else if (item.root == noEntity || item.level + 1 == content.lodRoots.at(item.root).levels.size()) {
+            auto linked = content.entities[item.id].linkedContent;
+            if (linked >= 0) {
+                countWaiting(w, 'L', linked, item.purpose, seenContents, seenMeshes, waiting);
+            }
+        }
+    }
+}
+
+auto lodRootInFrustum(const SceneLodRoot& root, const glm::vec3& eye, const glm::vec3& forward, const glm::vec3& right, float fovY, float aspect) -> bool {
+    auto worldMin = glm::vec3(root.worldTransform * glm::vec4(root.extent[0], 1.0f));
+    auto worldMax = glm::vec3(root.worldTransform * glm::vec4(root.extent[1], 1.0f));
+    auto radius = glm::length(worldMax - worldMin) * 0.5f;
+    auto center = glm::vec3(root.worldTransform * glm::vec4((root.extent[0] + root.extent[1]) * 0.5f, 1.0f));
+    auto toCenter = center - eye;
+    auto up = glm::cross(right, forward);
+    float depth = glm::dot(toCenter, forward);
+    float x = glm::dot(toCenter, right);
+    float y = glm::dot(toCenter, up);
+    float tanY = std::tan(fovY * 0.5f);
+    float tanX = tanY * aspect;
+    // A side plane's distance to the centre, against the radius: |x| - depth * tan is along the view, scaled by the plane's normal.
+    bool insideX = std::abs(x) - depth * tanX <= radius * std::sqrt(1.0f + tanX * tanX);
+    bool insideY = std::abs(y) - depth * tanY <= radius * std::sqrt(1.0f + tanY * tanY);
+    return depth >= -radius && insideX && insideY;
+}
+
 auto ViewScene::drawnLevelOf(const World& w, const std::string& rootPath, const LodRoot& root, const WorldContent& content, Purpose purpose) -> std::optional<uint32_t> {
     if (root.loaded.empty()) {
         return std::nullopt;
@@ -1681,6 +1737,16 @@ auto ViewScene::extract() -> void {
             row.loaded = root.loaded;
             row.setByHand = handLevels.contains(path);
             row.worldTransform = worldTransform;
+            if (row.drawn && *row.drawn != row.wanted && std::ranges::contains(root.loaded, row.wanted) && row.wanted < root.levels.size()) {
+                auto linked = content.entities[root.levels[row.wanted]].linkedContent;
+                if (linked >= 0) {
+                    SceneLodRoot::Waiting waiting;
+                    std::set<int64_t> seenContents;
+                    std::set<std::string> seenMeshes;
+                    countWaiting(w, 'L', linked, item.purpose, seenContents, seenMeshes, waiting);
+                    row.waiting = waiting;
+                }
+            }
             drawnLodRoots.push_back(std::move(row));
         }
 
@@ -1863,6 +1929,36 @@ auto ViewScene::extract() -> void {
     built->drawsByAsset = std::move(drawsByAsset);
     built->assetsByPrim = std::move(assetsByPrim);
     built->cameras = std::move(authoredCameras);
+    // Roots whose drawn level changed since the last extract: one event for all of them.
+    uint32_t switchedFiner = 0;
+    uint32_t switchedCoarser = 0;
+    std::string firstSwitched;
+    std::unordered_map<std::string, uint32_t> drawnLevelsNow;
+    for (const auto& root : drawnLodRoots) {
+        if (!root.drawn) {
+            continue;
+        }
+        drawnLevelsNow[root.path] = *root.drawn;
+        auto before = previousDrawnLevels.find(root.path);
+        if (before == previousDrawnLevels.end() || before->second == *root.drawn) {
+            continue;
+        }
+        if (*root.drawn < before->second) {
+            switchedFiner++;
+        } else {
+            switchedCoarser++;
+        }
+        if (firstSwitched.empty()) {
+            firstSwitched = std::format("{} {} -> {}", root.path, before->second, *root.drawn);
+        }
+    }
+    previousDrawnLevels = std::move(drawnLevelsNow);
+    if (switchedFiner + switchedCoarser > 0) {
+        TRACE_EVENT("Scene", "LevelsSwitched", id)
+            .text(std::format("{} roots draw another level: {} finer, {} coarser (first: {})", switchedFiner + switchedCoarser, switchedFiner, switchedCoarser, firstSwitched))
+            .field("finer", (int64_t) switchedFiner)
+            .field("coarser", (int64_t) switchedCoarser);
+    }
     built->lodRoots = std::move(drawnLodRoots);
     built->payloads = std::move(reachedPayloads);
     this->draws = std::move(built);

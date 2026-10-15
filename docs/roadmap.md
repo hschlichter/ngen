@@ -24,10 +24,7 @@ Decided 2026-10-14: the thinnest working version of every piece of the objective
 breadth left two of the objective's three goals with nothing yet. In order; each step is the smallest version that works, and its depth stays in
 the sections below.
 
-1. **Streaming, minimal.** The screen-size heuristic picks each LOD root's level every frame from the camera, and levels load and unload; the
-   coarsest level stays resident as the floor. No budgets, priorities, eviction or texture streaming yet. Flying over Caldera, detail appears
-   where the camera is. [plan_streaming_districts.md](plan_streaming_districts.md), draft
-   ([plan_streaming_lod.md](plan_streaming_lod.md) step 3; its step 2 is in place but for payload placements in a record).
+1. **Streaming, minimal.** Landed (see Landed). Its follow-ups are under Engine features, Streaming.
 2. **Meshlets, with occlusion culling.** The packer splits meshes into meshlets (meshoptimizer, vendored), each with a bounding sphere and a
    normal cone; the mesh pack and the GPU scene gain a meshlet table; mesh shaders draw them, culling per meshlet (frustum, backface by cone)
    after the per-instance stage, and two-phase occlusion culling against a depth pyramid (HZB) culls instances and meshlets hidden behind
@@ -87,8 +84,11 @@ server that packs, and an introspection tool. What has landed of it is under [La
   - Also decided: no grouping beyond payloads; draw whatever is resident as soon as it is (gaps while content arrives are accepted); a payload
     without `extentsHint` is always wanted and reported; every wanted payload is requested with a priority, nearest first, and never cancelled.
   - Open: tuned thresholds, the far-field floor's cost.
-  - Next: Caldera's proxy map through the scene pack (it opens as its default map since the scene pack landed), districts streaming, models
-    streaming, textures streaming, each a plan of its own.
+  - Next: budgets and priorities in place of the cap of 2 roots finer (which ranks other districts above the capital from the capital
+    itself), models streaming, textures streaming, each a plan of its own.
+  - Follow-ups from districts streaming ([plan_streaming_districts.md](plan_streaming_districts.md), Deferred): each use's draws kept
+    across rebuilds (a switch from cached content takes 1.85 s, 1.3 s of it the extract, against "under a second"); contents orphaned
+    during a first load (about 56,000 on Caldera); off-thread allocation; layer packs ahead of meshes.
 - **Physics** — UsdPhysics schemas (rigid bodies, colliders, joints, scenes; already in the vendored OpenUSD) mapped to physics components by
   the packer, simulated with **Jolt**. Physics is a UsdLod domain of its own.
 - **Skinning** — UsdSkel skeletons and skinned meshes; GPU skinning.
@@ -201,6 +201,13 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 ## Landed
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
+
+- **Districts streaming** — [plan_streaming_districts.md](plan_streaming_districts.md). The vertical slice's first step: UsdLod's
+  screen-size heuristic picks each LOD root's level from the camera (no frustum, a 20% band, hand-set levels win, a cap of 2 roots finer
+  until budgets), levels load as contents of their own and switch whole once complete, and what isn't drawn or reached unloads after 10 s,
+  the coarsest level never. Composition and extract keep their contents across rebuilds, so a switch relinks instead of composing again. A
+  flight over Caldera is repeatable, never shows a root without a level, and releases memory behind it. The `streaming` record, the LOD
+  window's heuristic, cap and unload delay, `LevelsWanted`/`LevelsSwitched`/`LevelsUnloaded`.
 
 - **Async scene** — [plan_async_scene.md](plan_async_scene.md). ngen-view never waits for its scene. A scene thread composes, extracts and
   diffs as assets arrive, and publishes snapshots and change lists. Meshes, materials and textures are kept per asset across rebuilds, and the

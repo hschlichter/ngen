@@ -1,6 +1,8 @@
 # Streaming districts
 
-**Status. In progress.** Decisions 1 to 8 locked 2026-10-15, each as recommended; steps 1 to 6 done 2026-10-15, the heuristic capped (default 2 roots finer) until budgets come.
+**Status. Landed.** Decisions 1 to 8 locked 2026-10-15, each as recommended; steps 1 to 7 done and landed 2026-10-15 with two
+verification misses accepted (a switch from cached content takes 1.85 s, not under a second; at the capital the cap keeps other districts
+finer than the capital), both follow-ups below; the heuristic capped (default 2 roots finer) until budgets come.
 
 Step 3 of [plan_streaming_lod.md](plan_streaming_lod.md) ("districts stream") and step 1 of the roadmap's vertical slice ("Streaming,
 minimal"): every LOD root's wanted level comes from the camera each frame through its UsdLod heuristic, levels load and unload by it, and
@@ -293,6 +295,31 @@ from USD's reference query, which the `streaming` record states per root (`scree
 - Baselines byte-identical; `ngen-worldcheck` against `ngen-usdcheck` unchanged (layered: `/World/Inherited` only); the layered tree holds
   level 1 while level 0 loads.
 
+### Step 7 results (2026-10-15): the visibility pass and the verification
+
+- **Visibility gaps closed** against the list below: the `streaming` record's `inFrustum` per root (computed on the main thread from the
+  view's camera, as the heuristic ignores it), `waiting` per root whose wanted level is loaded and not drawn (meshes not held, those asked
+  for, contents composed without every pack), and `totals` (roots, in frustum, loading, meshes missing); `LevelsSwitched` once per extract
+  with roots switched finer and coarser; the LOD window's tooltip on a loading row says what the level waits for. Not done: per level
+  payloads and packs "resident" as separate counts (the waiting counts cover what is missing), and `inFrustum` in the LOD window (its rows
+  are rebuilt per extract, not per frame).
+- **Composition unchanged**: `ngen-worldcheck` and `ngen-usdcheck` identical on Caldera (54,124 prims; with `map_tile_p` at level 0,
+  934,429), transforms and instancing; `assets/layered/` as before (`/World/Inherited` only).
+- **Cache**: `map_tile_p` to 0, back, to 0 again (heuristic off, unload delay 100,000 s): the compose count stays 22 across the three, every
+  switch relinks kept contents. **The switch from cached content takes 1.85 s** (`LevelsWanted` to `LevelsSwitched`; the extract 1.3 s of
+  it, 266,330 draws), not the plan's "within a second"; back to level 1 takes 0.66 s. This is the trigger of the deferred "each use's draws
+  kept across rebuilds".
+- **Flight** (`camera-use` through the capital overview, the square, back out, the airfield, the beachhead, the arsenal and `tile_p_beach`,
+  `wait-resident` at each, records on arrival and 900 frames later; heuristic on, cap 2): no root without a drawn level and none loading
+  at any checkpoint; packs fall after leaving (57,314 mesh packs at the beachhead, 21,105 at the arsenal); peak resident memory 6.8 GB.
+  Two runs give the same wanted, drawn and loaded level for every root and the same pack counts at all 14 checkpoints. Trace: 11
+  `LevelsSwitched` (each district switching whole, one event), 34 `LevelsUnloaded`; warnings only the 14 `LodExtentEmpty` of the terrain
+  sections (the converter's empty extents).
+- **Near districts at level 0: not the capital.** At the capital overview and square the cap keeps `map_tile_o` and `mv_intel` finer, not
+  `map_capital`: the camera isn't inside the capital's heuristic extent, and those two rank above it on screen size. The step 5 cap's
+  ranking, now seen on the flight.
+- Hand-set and off: the layered tree holds a hand-set level and its default with the heuristic off. Baselines byte-identical.
+
 ## Visibility
 
 - **`streaming` record**: per root its screen size, in frustum, wanted level and why (heuristic, hand-set, heuristic off), drawn level,
@@ -349,7 +376,10 @@ from USD's reference query, which the `streaming` record states per root (`scree
 - **Layer packs ahead of meshes at the asset server** (part of [plan_streaming_lod.md](plan_streaming_lod.md) decision 7's priorities): a
   compose round's layer packs not queued behind the meshes of the round before. Trigger: the budgets and priorities step, or the flight test
   showing composition rounds waiting.
-- **Each use's draws kept across rebuilds** (step 4's remaining cost: a rebuild still produces every draw, 1 to 2 microseconds each): a
+- **The cap's ranking at the capital** (step 7): from the capital overview and square the cap keeps `map_tile_o` and `mv_intel` finer, not
+  `map_capital`. Trigger: budgets replace the cap; if the cap stays longer, rank by distance to the camera instead of screen size.
+- **Contents orphaned during a first load** (step 6, Open questions). Trigger: compose time or memory during first loads becomes the problem.
+- **Each use's draws kept across rebuilds** (triggered by step 7: a switch from cached content takes 1.85 s, 1.3 s of it the extract; step 4's remaining cost: a rebuild still produces every draw, 1 to 2 microseconds each): a
   rebuild touches only the uses that changed, so a level switch removes one content's draws and adds another's. Needs prim ids and slots
   stable across rebuilds (draws, prim paths and the asset lists stored per use). Trigger: the flight test shows rebuild time is what makes
   a switch late, with many draws changing at once.

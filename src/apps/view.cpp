@@ -529,6 +529,13 @@ auto main(int argc, char* argv[]) -> int {
                 }
                 const auto& choices = scene.lodChoices();
                 auto choice = choices.find(root.path);
+                std::string waiting;
+                if (root.waiting) {
+                    waiting = std::format("Waits for {} meshes ({} asked for) and {} contents composed without every pack.",
+                                          root.waiting->meshesMissing,
+                                          root.waiting->meshesInFlight,
+                                          root.waiting->contentsIncomplete);
+                }
                 lodRows.push_back({
                     .path = root.path,
                     .levels = root.levels,
@@ -541,6 +548,7 @@ auto main(int argc, char* argv[]) -> int {
                     .setByHand = root.setByHand,
                     .screenSize = choice != choices.end() ? choice->second.screenSize : -1.0f,
                     .why = choice != choices.end() ? choice->second.reason : std::string("not evaluated yet"),
+                    .waiting = waiting,
                 });
             }
         }

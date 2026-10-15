@@ -19,6 +19,7 @@ struct LodWindowRow {
     bool setByHand = false;
     float screenSize = -1.0f; // the heuristic's measure, -1 when not computed
     std::string why;          // why it wants its level: "heuristic", "hand-set", "heuristic off", ...
+    std::string waiting;      // while its wanted level is loaded and not drawn: what that level waits for
 };
 
 // Persistent UI state of the LOD window.

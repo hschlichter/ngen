@@ -93,6 +93,12 @@ auto drawRow(const LodWindowRow& row, LodWindowState& state) -> void {
         ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "loading");
     } else if (row.drawn != (int32_t) row.wanted) {
         ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s, loading", levelName(row, (uint32_t) row.drawn).c_str());
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Draws %s until %s is complete.\n%s",
+                              levelName(row, (uint32_t) row.drawn).c_str(),
+                              levelName(row, row.wanted).c_str(),
+                              row.waiting.empty() ? "Its level isn't loaded yet." : row.waiting.c_str());
+        }
     } else {
         ImGui::TextUnformatted(levelName(row, (uint32_t) row.drawn).c_str());
     }

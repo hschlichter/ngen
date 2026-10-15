@@ -1207,19 +1207,38 @@ auto streamingRecord(const ViewContext& view) -> Json {
     const auto& choices = view.scene.lodChoices();
     const auto& t = view.scene.threadStats();
     auto roots = Json::array();
+    auto aspect = view.scene.cameraAspect();
+    uint32_t loading = 0;
+    uint32_t inFrustum = 0;
+    uint64_t meshesMissing = 0;
     for (const auto& root : view.scene.lodRoots()) {
         auto choice = choices.find(root.path);
+        bool visible = lodRootInFrustum(root, view.cam.position, view.cam.forward(), view.cam.right(), glm::radians(cameraFovDegrees), aspect);
+        if (visible) {
+            inFrustum++;
+        }
+        auto waiting = Json(nullptr);
+        if (root.drawn && *root.drawn != root.wanted) {
+            loading++;
+        }
+        if (root.waiting) {
+            waiting = {{"contentsIncomplete", root.waiting->contentsIncomplete}, {"meshesMissing", root.waiting->meshesMissing}, {"meshesInFlight", root.waiting->meshesInFlight}};
+            meshesMissing += root.waiting->meshesMissing;
+        }
         roots.push_back({
             {"path", root.path},
             {"screenSize", choice != choices.end() ? Json(choice->second.screenSize) : Json(nullptr)},
+            {"inFrustum", visible},
             {"wanted", choice != choices.end() ? Json(choice->second.level) : Json(nullptr)},
             {"why", choice != choices.end() ? Json(choice->second.reason) : Json("not evaluated yet")},
             {"thresholds", root.thresholds},
             {"drawn", root.drawn ? Json(*root.drawn) : Json(nullptr)},
             {"loaded", root.loaded},
+            {"waiting", waiting},
         });
     }
     return {
+        {"totals", {{"roots", roots.size()}, {"inFrustum", inFrustum}, {"loading", loading}, {"meshesMissing", meshesMissing}}},
         {"heuristic", view.scene.lodHeuristic()},
         {"cap", view.scene.lodCap()},
         {"unloadDelay", view.scene.unloadDelay()},

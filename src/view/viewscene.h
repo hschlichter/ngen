@@ -78,7 +78,19 @@ struct SceneLodRoot {
     std::vector<uint32_t> loaded;
     bool setByHand = false;
     glm::mat4 worldTransform = glm::mat4(1.0f); // the root's, in metres: places the heuristic's extent
+    // While it wants a loaded level it doesn't draw yet: what that level waits for, counted through its payloads and instances (each
+    // content and mesh once): contents not composed with every pack they named, and meshes not held, of them those asked for.
+    struct Waiting {
+        uint32_t contentsIncomplete = 0;
+        uint32_t meshesMissing = 0;
+        uint32_t meshesInFlight = 0;
+    };
+    std::optional<Waiting> waiting;
 };
+
+// Whether a LOD root's heuristic extent (its bounding sphere, placed by the root's transform) is inside a view's frustum, as UsdLod's
+// reference query sees it: a root outside measures 0 there. The view's heuristic ignores the frustum; the `streaming` record reports it.
+auto lodRootInFrustum(const SceneLodRoot& root, const glm::vec3& eye, const glm::vec3& forward, const glm::vec3& right, float fovY, float aspect) -> bool;
 
 // What the LOD heuristic chose for a root at the last evaluation: its screen size (the fraction of the view its extent's bounding sphere
 // covers, -1 when not computed) and the level it wants, with why: "heuristic", "hand-set", "heuristic off", "no screen-size heuristic",
@@ -215,6 +227,8 @@ public:
     // The view's camera, for the LOD heuristic: position in metres, vertical field of view in radians, aspect (width over height). Only
     // the latest posted counts; the scene thread evaluates the heuristic when it moved.
     auto setCamera(const glm::vec3& position, float fovY, float aspect) -> void;
+    // The aspect of the camera last posted (1 before one is).
+    auto cameraAspect() const -> float;
     // The LOD heuristic on (every root not set by hand wants the level its screen size picks) or off (its default).
     auto setLodHeuristic(bool on) -> void;
     // At most this many roots finer than their coarsest level by the heuristic, the largest on screen first; the others keep their
@@ -510,6 +524,9 @@ private:
     // purpose not drawn there isn't asked for, so it isn't waited for.
     auto contentReady(const World& world, char kind, int32_t index, Purpose purpose) -> bool;
     std::unordered_map<int64_t, bool> readiness; // by content (kind and index), this extract's
+    // Counts what a content waits for into `waiting`, as contentReady judges it, each content and mesh once (`seen`).
+    auto countWaiting(const World& world, char kind, int32_t index, Purpose purpose, std::set<int64_t>& seenContents, std::set<std::string>& seenMeshes, SceneLodRoot::Waiting& waiting) -> void;
+    std::unordered_map<std::string, uint32_t> previousDrawnLevels; // by root path, as the last extract drew them: LevelsSwitched
     uint64_t extractCacheHits = 0;
     uint64_t extractCacheBuilds = 0;
     std::vector<SceneCamera> authoredCameras;

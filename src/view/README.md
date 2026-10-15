@@ -86,7 +86,9 @@ The inputs persist across rebuilds:
   default; a root whose heuristic isn't screen size wants its default. The main thread posts the camera (`setCamera`) once it has been
   placed, not while it follows the scene loading; the scene thread evaluates when it moved, after an extract and when levels changed, and
   gives the composer only what changed, which links the levels again without composing the stage (`WorldComposer::relink`). The
-  `streaming` record has per root its screen size, the level wanted and why, drawn and loaded; `LevelsWanted` traces each change.
+  `streaming` record has per root its screen size, whether its extent is in the view's frustum (what USD's query would go by), the level
+  wanted and why, drawn and loaded, and for a level waited for what it waits for; totals over the roots. `LevelsWanted` traces each change
+  of wanted levels.
 - **The cap**: until memory budgets exist, at most N roots (2 by default; `lod-cap N`, `view.lod.heuristic {cap}`, the LOD window) are
   finer than their coarsest level by the heuristic; the others keep their coarsest ("capped"). Who keeps a finer level: the roots whose
   extent the camera is inside, the smallest first (a bounding sphere around the camera measures larger than anything, so it can't rank
@@ -95,7 +97,9 @@ The inputs persist across rebuilds:
 - **Switching levels**: a root draws the finest loaded level, not finer than the one it wants, that is ready (`contentReady`): composed with
   every pack it named, and every mesh it draws (under its own purpose) held or failed, through the payloads and instances in it; a LOD root
   inside it counts by its coarsest level. Until then the root keeps drawing the coarser level, and switches in the extract after the last
-  piece arrives, so a district appears whole instead of model by model. GPU uploads aren't part of it: a switched level's meshes are
+  piece arrives, so a district appears whole instead of model by model. `LevelsSwitched` traces the roots whose drawn level changed, once
+  per extract; the `streaming` record's `waiting` and the LOD window's tooltip on a loading row count what the wanted level waits for
+  (meshes not held, those asked for, contents composed without every pack). GPU uploads aren't part of it: a switched level's meshes are
   uploaded over the next frames within the upload budget.
 - **Unloading**: what stops being drawn (a mesh, material or texture: its library entry and its GPU entry) is kept for the unload delay
   (10 s by default; `lod-unload-delay S`, `view.lod.heuristic {unloadDelay}`, the LOD window), so turning back draws it without loading;
