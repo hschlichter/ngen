@@ -2,6 +2,7 @@
 
 #include "world.h"
 
+#include <chrono>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -44,6 +45,9 @@ public:
     // After levels changed (setLodLevel, resetLodLevel) and nothing else: links the levels again without composing the stage, composing
     // the level contents not kept yet. Returns the packs those need, as compose() does.
     auto relink() -> std::vector<std::string>;
+    // Lets go of kept contents (prototypes, linked contents) that no compose or relink has reached for this long: emptied, composed again
+    // if reached later. Returns how many.
+    auto evict(std::chrono::milliseconds unusedFor) -> uint32_t;
     // Forgets a level set by hand, so the root wants lod:default:index again. Takes effect at the next compose.
     auto resetLodLevel(const std::string& rootPath) -> void;
 
@@ -60,6 +64,7 @@ public:
         uint32_t prototypesHeld = 0;
         uint32_t levelsHeld = 0;
         uint32_t contentsReached = 0;
+        uint64_t evicted = 0;   // since the composer was made
         double stageMs = 0.0;   // composing the stage itself
         double resolveMs = 0.0; // linking levels, composing what wasn't kept
         double finishMs = 0.0;  // bindings and messages

@@ -330,10 +330,12 @@ struct LevelSlot {
 struct ContentInfo {
     std::string key;
     std::string base;
-    std::string sharedKey;   // the prototype it belongs to (a prototype's own key, or the one a level in it is in); empty for the stage's own
-    std::string ownerPath;   // its root's path in that prototype ("/" for the prototype itself)
-    bool complete = false;   // composed with every pack it named held (or failed): reused as it is
-    uint64_t generation = 0; // the compose that last composed it
+    std::string sharedKey;                             // the prototype it belongs to (a prototype's own key, or the one a level in it is in); empty for the stage's own
+    std::string ownerPath;                             // its root's path in that prototype ("/" for the prototype itself)
+    bool complete = false;                             // composed with every pack it named held (or failed): reused as it is
+    bool evicted = false;                              // let go (evict): composed again when reached
+    std::chrono::steady_clock::time_point lastReached; // the last resolution that reached it
+    uint64_t generation = 0;                           // the compose that last composed it
     std::vector<std::string> messages;
     std::vector<PendingTarget> bindings; // its material bindings, resolved every compose (a target may be in another content)
     std::shared_ptr<const Node> index;   // a prototype's kept nodes, to compose it again
@@ -425,6 +427,7 @@ struct WorldComposer::Impl {
     std::vector<std::string> messages;
     std::vector<Window> windows;       // the contents being composed, innermost last
     std::vector<ContentInfo*> reached; // what the last resolution reached, stage first
+    std::chrono::steady_clock::time_point lastResolveAt;
     std::vector<std::string> stageMessages;
     uint64_t gapEvents = 0; // every gap hit, for the prim index memo
     // What a LOD heuristic prim authors, by its content and entity, for the roots that name it.
@@ -977,6 +980,7 @@ struct WorldComposer::Impl {
         auto done = std::move(windows.back());
         windows.pop_back();
         context.info->complete = done.gaps == 0;
+        context.content->complete = context.info->complete;
         context.info->messages = std::move(done.messages);
         resolveHeuristics(done.heuristics);
     }
@@ -1029,6 +1033,7 @@ struct WorldComposer::Impl {
         auto& info = prototypeInfo[(size_t) id];
         content = WorldContent();
         info = ContentInfo{.key = key, .base = composedPath, .sharedKey = key, .ownerPath = "/", .generation = generation, .index = kept, .loads = loadPayloads};
+        info.lastReached = std::chrono::steady_clock::now();
         content.sourcePath = composedPath;
         content.version = ++versions;
         Entity root;
@@ -1060,7 +1065,7 @@ struct WorldComposer::Impl {
     // (again, in place, when the last time missed packs).
     auto linkedContent(LevelSlot& slot, bool loads, const Reach& at, const std::string& ownerPath) -> int32_t {
         auto& linked = slot.linked[loads ? 1 : 0];
-        if (linked >= 0) {
+        if (linked >= 0 && !levelInfo[(size_t) linked].evicted) {
             return linked;
         }
         // The level's own window: what its index misses is the level's gap, not its root's.
@@ -1088,6 +1093,7 @@ struct WorldComposer::Impl {
         auto& info = levelInfo[(size_t) id];
         content = WorldContent();
         info = ContentInfo{.key = key, .base = slot.composedPath, .sharedKey = at.sharedKey, .ownerPath = ownerPath, .generation = generation, .loads = loads};
+        info.lastReached = std::chrono::steady_clock::now();
         content.sourcePath = slot.composedPath;
         content.version = ++versions;
         ContentContext context{.content = &content, .base = slot.composedPath, .key = key, .info = &info};
@@ -1104,6 +1110,8 @@ struct WorldComposer::Impl {
     // complete. What a compose draws is what this reaches.
     auto resolve() -> void {
         reached.clear();
+        auto reachedAt = std::chrono::steady_clock::now();
+        lastResolveAt = reachedAt;
         std::vector<Reach> pending = {Reach{.content = &world.stage, .info = &stageInfo, .base = "/", .sharedKey = {}, .ownerPath = "/"}};
         std::unordered_set<const WorldContent*> seen;
         while (!pending.empty()) {
@@ -1113,6 +1121,7 @@ struct WorldComposer::Impl {
                 continue;
             }
             reached.push_back(at.info);
+            at.info->lastReached = reachedAt;
             auto used = at.info->prototypesUsed;
             for (int32_t id : used) {
                 auto& info = prototypeInfo[(size_t) id];
@@ -1258,6 +1267,37 @@ struct WorldComposer::Impl {
         return changed;
     }
 
+    // Kept contents no resolution has reached for `unusedFor` are let go: emptied in place (their index stays theirs, a new version), to be
+    // composed again if reached. The stage's are never kept, so never let go.
+    // In use: reached by the latest resolution, however long ago that was (assets can arrive for a long time without one). The rest age from
+    // the last resolution that reached them.
+    auto evict(std::chrono::milliseconds unusedFor) -> uint32_t {
+        auto cutoff = std::chrono::steady_clock::now() - unusedFor;
+        uint32_t count = 0;
+        auto letGo = [&](std::deque<WorldContent>& contents, std::deque<ContentInfo>& infos) {
+            for (size_t i = 0; i < infos.size(); i++) {
+                auto& info = infos[i];
+                if (info.evicted || info.lastReached == lastResolveAt || info.lastReached >= cutoff || info.generation == generation) {
+                    continue;
+                }
+                auto& content = contents[i];
+                content = WorldContent();
+                content.version = ++versions;
+                info.complete = false;
+                info.evicted = true;
+                info.slots.clear();
+                info.prototypesUsed.clear();
+                info.bindings.clear();
+                info.messages.clear();
+                count++;
+            }
+        };
+        letGo(world.prototypes, prototypeInfo);
+        letGo(world.linkedContents, levelInfo);
+        stats.evicted += count;
+        return count;
+    }
+
     auto composeOnce() -> void {
         generation++;
         missing.clear();
@@ -1387,6 +1427,10 @@ auto WorldComposer::relink() -> std::vector<std::string> {
     m_impl->stats.resolveMs = msSince(start);
     m_impl->finishCompose();
     return {m_impl->missing.begin(), m_impl->missing.end()};
+}
+
+auto WorldComposer::evict(std::chrono::milliseconds unusedFor) -> uint32_t {
+    return m_impl->evict(unusedFor);
 }
 
 auto WorldComposer::setLodLevel(const std::string& rootPath, uint32_t level) -> void {

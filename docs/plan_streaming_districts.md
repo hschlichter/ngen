@@ -1,6 +1,6 @@
 # Streaming districts
 
-**Status. In progress.** Decisions 1 to 8 locked 2026-10-15, each as recommended; steps 1 to 5 done 2026-10-15, the heuristic capped (default 2 roots finer) until budgets come.
+**Status. In progress.** Decisions 1 to 8 locked 2026-10-15, each as recommended; steps 1 to 6 done 2026-10-15, the heuristic capped (default 2 roots finer) until budgets come.
 
 Step 3 of [plan_streaming_lod.md](plan_streaming_lod.md) ("districts stream") and step 1 of the roadmap's vertical slice ("Streaming,
 minimal"): every LOD root's wanted level comes from the camera each frame through its UsdLod heuristic, levels load and unload by it, and
@@ -267,6 +267,32 @@ from USD's reference query, which the `streaming` record states per root (`scree
   `map_tile_o` and `mv_intel`). The capital itself stays capped at the square: the camera isn't inside its heuristic extent, and the
   others outrank it. A count is a stand-in: a district at level 0 ranges from a few thousand draws to over 200 thousand.
 
+### Step 6 results (2026-10-15)
+
+- **The switch rule** (decision 4 B): `ViewScene::contentReady` — a level is ready when its content is complete (`WorldContent::complete`:
+  composed with every pack it named) and every mesh it draws is held or failed, through its payload contents and instances; a LOD root
+  inside it counts by its coarsest level. The drawn level is the finest loaded, not finer than the wanted, that is ready. GPU uploads are
+  not part of it: the scene thread doesn't see them, and the upload budget spreads a switched level over frames. A first version checked a nested level's meshes under the default purpose, so
+  `map_tile_p` waited forever for vehicles' physics meshes, under a purpose not drawn and never asked for; a level is now checked under the
+  purpose it inherits where it is used.
+- **Unloading** (decision 6 A): library and GPU entries kept for the delay (10 s; `lod-unload-delay`, `view.lod.heuristic {unloadDelay}`,
+  the LOD window), then removed; a mesh pack is released once no loaded level names it, so the floor keeps its packs (a first version
+  released `map_tile_p`'s 84 MiB coarsest terrain 10 s after level 0 was drawn, then fetched it again); composed contents not reached for
+  the delay are evicted by `WorldComposer::evict`, except those the latest resolution reached (a first version evicted contents in use
+  while only mesh packs arrived for more than 10 s). Layer packs stay held.
+- **Caldera, `map_tile_p`** (heuristic off; level 0 by hand, then `lod-reset`): level 1 drawn until level 0 is ready, then 266,330 draws
+  in one switch; after the reset, 4,427 draws at once (level 1 was held), and 10 s later 43,549 mesh packs (447 MiB) released, GPU meshes
+  47,869 → 4,321, the vertex pool 48.3 M → 40.3 M, nested roots 14,738 → 182, about 89,000 contents evicted. Assets received stays 52,983:
+  nothing fetched twice. Peak resident memory 6.2 GB.
+- **Seen, not looked into**: during Caldera's first load the composer evicts about 56,000 contents it composed and stopped reaching before
+  the scene was resident — contents composed with a gap whose key changed when the pack arrived, likely. Memory and compose time spent on
+  them; see Open questions.
+- **Visibility**: `unloaded` in the `scenethread` and `streaming` records, a line in the Scene Flow window, Unload delay in the LOD window,
+  the Engine Map's LOD selection node (its description and an unloaded line), `LevelsUnloaded`. The resident message counts live draws
+  (it counted slots, dead ones included, so it read 266,330 after the switch back).
+- Baselines byte-identical; `ngen-worldcheck` against `ngen-usdcheck` unchanged (layered: `/World/Inherited` only); the layered tree holds
+  level 1 while level 0 loads.
+
 ## Visibility
 
 - **`streaming` record**: per root its screen size, in frustum, wanted level and why (heuristic, hand-set, heuristic off), drawn level,
@@ -298,6 +324,10 @@ from USD's reference query, which the `streaming` record states per root (`scree
 - **Trace**: one `LevelsWanted`/`LevelsSwitched`/`LevelsUnloaded` per batch, no warnings on a clean run.
 
 ## Open questions
+
+- **Contents orphaned during a first load** (step 6): are the ~56,000 contents Caldera evicts before it is resident ones composed with a
+  gap and keyed again once the pack arrived? If so, composing a content in place when its key changes, rather than as a new one, would
+  save their memory and compose time.
 
 - **What keeps the heuristic from asking for more than fits** (step 5's out-of-memory on Caldera): Caldera's district thresholds (authored
   by the converter), USD's frustum test (decision 8 A instead of B), a cap on how many roots are finer than their floor until budgets come,

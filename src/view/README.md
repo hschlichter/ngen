@@ -92,6 +92,17 @@ The inputs persist across rebuilds:
   extent the camera is inside, the smallest first (a bounding sphere around the camera measures larger than anything, so it can't rank
   them), then the others, the largest on screen first. A root whose heuristic extent is empty or not finite keeps its default ("empty
   extent", a `LodExtentEmpty` warning once).
+- **Switching levels**: a root draws the finest loaded level, not finer than the one it wants, that is ready (`contentReady`): composed with
+  every pack it named, and every mesh it draws (under its own purpose) held or failed, through the payloads and instances in it; a LOD root
+  inside it counts by its coarsest level. Until then the root keeps drawing the coarser level, and switches in the extract after the last
+  piece arrives, so a district appears whole instead of model by model. GPU uploads aren't part of it: a switched level's meshes are
+  uploaded over the next frames within the upload budget.
+- **Unloading**: what stops being drawn (a mesh, material or texture: its library entry and its GPU entry) is kept for the unload delay
+  (10 s by default; `lod-unload-delay S`, `view.lod.heuristic {unloadDelay}`, the LOD window), so turning back draws it without loading;
+  after that it leaves the libraries and the renderer. A mesh's pack is released once no loaded level names it, so a root's coarsest level
+  (always loaded) keeps its packs while a finer level is drawn. Composed contents not reached for the delay leave the composer
+  (`WorldComposer::evict`). Layer packs stay held. `LevelsUnloaded` traces each release, and the `streaming` and `scenethread` records,
+  the Scene Flow window and the Engine Map count what was unloaded.
 - **Payload placements**: every prim with payloads reached while drawing (`payloads()`, the `payloads` record): its asset ids, whether
   they are loaded, and its `extentsHint` in world metres. A level not loaded isn't reached, so what is under it isn't listed; its root's
   `levelPayloads` name the level's own payloads. Each draw carries the drawn level of the nearest LOD root above it,

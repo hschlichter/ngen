@@ -165,6 +165,15 @@ auto parseOnOff(const std::string& args) -> std::expected<Json, std::string> {
     return Json{{"on", args == "on"}};
 }
 
+auto parseUnloadDelay(const std::string& args) -> std::expected<Json, std::string> {
+    char* end = nullptr;
+    auto seconds = std::strtod(args.c_str(), &end);
+    if (args.empty() || *end != '\0' || seconds < 0.0) {
+        return std::unexpected(std::format("expected seconds, got '{}'", args));
+    }
+    return Json{{"unloadDelay", seconds}};
+}
+
 auto parseLodCap(const std::string& args) -> std::expected<Json, std::string> {
     char* end = nullptr;
     auto roots = std::strtol(args.c_str(), &end, 10);
@@ -408,6 +417,7 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"lod-reset", "view.lod.reset", parseLodRoot},
     ScriptVerb{"lod-heuristic", "view.lod.heuristic", parseOnOff},
     ScriptVerb{"lod-cap", "view.lod.heuristic", parseLodCap},
+    ScriptVerb{"lod-unload-delay", "view.lod.heuristic", parseUnloadDelay},
     ScriptVerb{"wait-resident", "view.waitResident", parseNothing},
     ScriptVerb{"view", "view.mode", parseViewMode},
     ScriptVerb{"window", "view.window", parseWindow},
@@ -631,7 +641,9 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
         {
             .name = "view.lod.heuristic",
             .summary = "The LOD heuristic on (every root not set by hand wants the level its screen size from the camera picks) or off (its default), and its cap: at most this many roots finer than their coarsest, the largest on screen first.",
-            .params = {optionalField("on", RpcType::Bool, "on or off"), optionalField("cap", RpcType::Int, "roots finer than their coarsest, at most")},
+            .params = {optionalField("on", RpcType::Bool, "on or off"),
+                       optionalField("cap", RpcType::Int, "roots finer than their coarsest, at most"),
+                       optionalField("unloadDelay", RpcType::Float, "seconds what stopped being drawn or reached is kept before it is unloaded")},
             .result = "{}",
         },
         [&view](const Json& p, RpcResponder responder) {
@@ -640,6 +652,9 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
             }
             if (p.contains("cap")) {
                 view.scene.setLodCap((uint32_t) std::max(0, p["cap"].get<int>()));
+            }
+            if (p.contains("unloadDelay")) {
+                view.scene.setUnloadDelay(p["unloadDelay"].get<double>());
             }
             responder.respond(Json::object());
         });
@@ -1091,6 +1106,7 @@ auto sceneThreadRecord(const ViewContext& view) -> Json {
         {"inFlight", {{"layers", t.inFlightLayers}, {"meshes", t.inFlightMeshes}, {"materials", t.inFlightMaterials}, {"textures", t.inFlightTextures}, {"other", t.inFlightOther}}},
         {"held", {{"layerPacks", t.layerPacks}, {"meshPacks", t.meshPacks}, {"materialPacks", t.materialPacks}, {"texturePacks", t.texturePacks}, {"failed", t.failedAssets}}},
         {"library", {{"meshes", t.meshEntries}, {"materials", t.materialEntries}, {"textures", t.textureEntries}}},
+        {"unloaded", {{"delay", view.scene.unloadDelay()}, {"meshPacks", t.releasedMeshes}, {"meshBytes", t.releasedMeshBytes}, {"contents", t.contentsEvicted}}},
         {"sinceOpenMs", t.sinceOpenMs},
         {"idle", view.scene.idle()},
         {"renderThreadDrawn", view.renderThread.sceneDrawn()},
@@ -1206,6 +1222,8 @@ auto streamingRecord(const ViewContext& view) -> Json {
     return {
         {"heuristic", view.scene.lodHeuristic()},
         {"cap", view.scene.lodCap()},
+        {"unloadDelay", view.scene.unloadDelay()},
+        {"unloaded", {{"meshPacks", t.releasedMeshes}, {"meshBytes", t.releasedMeshBytes}, {"contents", t.contentsEvicted}}},
         {"evaluation", {{"count", t.lodEvaluations}, {"roots", t.lodRootsEvaluated}, {"finer", t.lodFiner}, {"coarser", t.lodCoarser}, {"capped", t.lodCapped}, {"ms", t.lodEvaluateMs}, {"relinks", t.relinks}}},
         {"roots", roots},
     };
@@ -1374,7 +1392,8 @@ auto engineMapStats(const ViewContext& view) -> EngineMapStats {
     stats["assets.delivery"] = {std::format("{:.1f} MiB to this view", mib(assets.bytes))};
     stats["view.assetclient"] = {std::format("{} in flight, {} received", assets.inFlight(), assets.received), std::format("{} failed", assets.failed)};
     stats["scene.lod"] = {std::format("{} roots, heuristic {}, cap {}", t.lodRootsEvaluated, view.scene.lodHeuristic() ? "on" : "off", view.scene.lodCap()),
-                          std::format("last: {} finer, {} coarser, {} capped", t.lodFiner, t.lodCoarser, t.lodCapped)};
+                          std::format("last: {} finer, {} coarser, {} capped", t.lodFiner, t.lodCoarser, t.lodCapped),
+                          std::format("unloaded: {} contents, {} mesh packs ({:.1f} MiB)", t.contentsEvicted, t.releasedMeshes, mib(t.releasedMeshBytes))};
     stats["scene.compose"] = {std::format("{} composes, last {:.1f} ms", t.composes, t.lastComposeMs), std::format("{} layer packs, {} in flight", t.layerPacks, t.inFlightLayers)};
     stats["scene.extract"] = {std::format("{} extracts, last {:.1f} ms", t.extracts, t.lastExtractMs),
                               std::format("{} meshes, {} materials, {} textures", t.meshEntries, t.materialEntries, t.textureEntries)};

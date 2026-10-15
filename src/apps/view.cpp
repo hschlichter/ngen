@@ -614,7 +614,9 @@ auto main(int argc, char* argv[]) -> int {
                     .text(std::format("scene resident at frame {}, {:.0f} ms after start: {} draws, {} assets received; longest of the {} frames before, {:.1f} ms",
                                       frameCounter,
                                       trace::msSinceStart(),
-                                      scene.renderWorld().meshInstances.size(),
+                                      std::ranges::count_if(scene.renderWorld().meshInstances, [](const RenderMeshInstance& instance) {
+                                          return instance.alive;
+                                      }),
                                       stats.received,
                                       residency.loadingFrames,
                                       residency.longestLoadingFrameMs))
@@ -999,6 +1001,10 @@ auto main(int argc, char* argv[]) -> int {
                 .meshEntries = t.meshEntries,
                 .materialEntries = t.materialEntries,
                 .textureEntries = t.textureEntries,
+                .releasedMeshes = t.releasedMeshes,
+                .releasedMeshBytes = t.releasedMeshBytes,
+                .contentsEvicted = t.contentsEvicted,
+                .unloadDelaySeconds = scene.unloadDelay(),
                 .sinceOpenMs = t.sinceOpenMs,
                 .idle = scene.idle(),
             };
@@ -1035,11 +1041,15 @@ auto main(int argc, char* argv[]) -> int {
             }
             lodWindow.heuristic = scene.lodHeuristic();
             lodWindow.cap = (int) scene.lodCap();
+            lodWindow.unloadDelay = (float) scene.unloadDelay();
             if (auto on = std::exchange(lodWindow.heuristicRequested, std::nullopt)) {
                 scene.setLodHeuristic(*on);
             }
             if (auto cap = std::exchange(lodWindow.capRequested, std::nullopt)) {
                 scene.setLodCap((uint32_t) *cap);
+            }
+            if (auto delay = std::exchange(lodWindow.unloadDelayRequested, std::nullopt)) {
+                scene.setUnloadDelay(*delay);
             }
             if (auto path = std::exchange(lodWindow.selectRequested, std::nullopt)) {
                 selectedPath = *path;

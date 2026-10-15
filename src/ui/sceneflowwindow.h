@@ -41,6 +41,10 @@ struct SceneFlowThread {
     uint32_t meshEntries = 0;
     uint32_t materialEntries = 0;
     uint32_t textureEntries = 0;
+    uint64_t releasedMeshes = 0;
+    uint64_t releasedMeshBytes = 0;
+    uint64_t contentsEvicted = 0;
+    double unloadDelaySeconds = 0.0;
     double sinceOpenMs = 0.0;
     bool idle = true;
 };

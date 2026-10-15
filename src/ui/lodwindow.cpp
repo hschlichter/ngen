@@ -197,6 +197,15 @@ auto drawLodWindow(bool& show, LodWindowState& state) -> void {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("At most this many roots finer than their coarsest level by the heuristic, the largest on screen first; the others keep their coarsest (\"capped\"). A stand-in for memory budgets.");
     }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(90.0f);
+    float unloadDelay = state.unloadDelay;
+    if (ImGui::InputFloat("Unload delay (s)", &unloadDelay, 0.0f, 0.0f, "%.0f", ImGuiInputTextFlags_EnterReturnsTrue) && unloadDelay >= 0.0f) {
+        state.unloadDelayRequested = unloadDelay;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("How long a level, mesh, material or texture that stopped being drawn is kept before it is unloaded, so turning back doesn't load it again. A root's coarsest level stays loaded.");
+    }
 
     drawSetShown(rows, mostLevels, state);
     ImGui::SameLine();

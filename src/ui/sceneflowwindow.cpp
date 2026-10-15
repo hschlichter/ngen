@@ -81,6 +81,11 @@ auto drawThread(const SceneFlowWindowState& state) -> void {
     ImGui::Text("in flight: %u layers, %u meshes, %u materials, %u textures, %u other", t.inFlightLayers, t.inFlightMeshes, t.inFlightMaterials, t.inFlightTextures, t.inFlightOther);
     ImGui::Text("held: %u layer packs, %u mesh packs, %u material packs, %u texture packs; %u failed", t.layerPacks, t.meshPacks, t.materialPacks, t.texturePacks, t.failedAssets);
     ImGui::Text("libraries (told to the renderer): %u meshes, %u materials, %u textures", t.meshEntries, t.materialEntries, t.textureEntries);
+    ImGui::Text("unloaded since opened (unused for %.0f s): %llu composed contents, %llu mesh packs (%.1f MiB)",
+                t.unloadDelaySeconds,
+                (unsigned long long) t.contentsEvicted,
+                (unsigned long long) t.releasedMeshes,
+                mib(t.releasedMeshBytes));
     ImGui::Text("%s, %.0f ms since the scene was opened", t.idle ? "idle" : "working", t.sinceOpenMs);
 }
 

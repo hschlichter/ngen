@@ -159,11 +159,15 @@ auto ViewScene::setCamera(const glm::vec3& position, float fovY, float aspect) -
 }
 
 auto ViewScene::setLodHeuristic(bool on) -> void {
-    post(HeuristicRequest{.on = on, .cap = std::nullopt});
+    post(HeuristicRequest{.on = on, .cap = std::nullopt, .unloadDelay = std::nullopt});
 }
 
 auto ViewScene::setLodCap(uint32_t roots) -> void {
-    post(HeuristicRequest{.on = std::nullopt, .cap = roots});
+    post(HeuristicRequest{.on = std::nullopt, .cap = roots, .unloadDelay = std::nullopt});
+}
+
+auto ViewScene::setUnloadDelay(double seconds) -> void {
+    post(HeuristicRequest{.on = std::nullopt, .cap = std::nullopt, .unloadDelay = seconds});
 }
 
 auto ViewScene::setPurposeShown(Purpose purpose, bool shown) -> void {
@@ -241,9 +245,16 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
             auto woken = [this] {
                 return !requests.empty() || answered || postedCamera.has_value();
             };
+            // A held-back extract, or something kept past its unload delay: wake for it at its time, or sooner for a request or an answer.
+            std::optional<std::chrono::steady_clock::time_point> due;
             if (extractNeeded) {
-                // An extract held back while assets arrive: wake for it at its time, or sooner for a request or an answer.
-                wake.wait_until(lock, stop, extractDue, woken);
+                due = extractDue;
+            }
+            if (releaseDue && (!due || *releaseDue < *due)) {
+                due = releaseDue;
+            }
+            if (due) {
+                wake.wait_until(lock, stop, *due, woken);
             } else {
                 wake.wait(lock, stop, woken);
             }
@@ -269,6 +280,11 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
             for (const auto& assetId : assets.takeAnswered()) {
                 receive(assetId);
             }
+        }
+        if (releaseDue && std::chrono::steady_clock::now() >= *releaseDue) {
+            // Something kept past its unload delay: an extract lets it go.
+            releaseDue.reset();
+            extractNeeded = true;
         }
         if (composeNeeded) {
             compose();
@@ -299,6 +315,7 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
                 relink();
             }
         }
+        unload();
         reportAssets();
         publish();
         requestsApplied += batch.size();
@@ -322,6 +339,10 @@ auto ViewScene::apply(Request& request) -> void {
         }
         if (heuristic->cap) {
             heuristicCap = *heuristic->cap;
+        }
+        if (heuristic->unloadDelay) {
+            unloadDelaySeconds = std::max(0.0, *heuristic->unloadDelay);
+            extractNeeded = true; // what is kept is weighed against the new delay
         }
         evaluateNeeded = true;
     } else if (auto* purpose = std::get_if<PurposeRequest>(&request)) {
@@ -576,10 +597,16 @@ auto ViewScene::compose() -> void {
 }
 
 // The meshes and materials of everything drawn, and the textures of the materials held; each asked for once.
+auto ViewScene::releaseMeshPack(const MeshPack& pack) -> void {
+    stats.releasedMeshBytes += pack.vertices.size() * sizeof(PackVertex) + pack.indices.size() * sizeof(uint32_t);
+    stats.releasedMeshes++;
+}
+
 auto ViewScene::requestDrawnAssets() -> void {
     if (!composer) {
         return;
     }
+    readiness.clear();
     // What is drawn, from the kept walks: each drawn mesh, its material and its subsets' own.
     std::set<std::string> meshIds;
     std::set<std::string> materialIds;
@@ -602,7 +629,18 @@ auto ViewScene::requestDrawnAssets() -> void {
                 }
             }
         },
-        nullptr);
+        nullptr,
+        true);
+    // A pack no loaded level names and no library entry holds any more (its level unloaded after its entry went) is released here.
+    meshesLoaded = meshIds;
+    for (auto pack = meshPacks.begin(); pack != meshPacks.end();) {
+        if (meshesLoaded.contains(pack->first) || meshLibrary.find(pack->first)) {
+            ++pack;
+            continue;
+        }
+        releaseMeshPack(pack->second);
+        pack = meshPacks.erase(pack);
+    }
     std::vector<std::pair<std::string, AssetKind>> wanted;
     auto want = [&](const std::string& assetId, AssetKind kind, bool held) {
         if (!held && !failedAssets.contains(assetId) && !inFlight.contains(assetId)) {
@@ -883,6 +921,31 @@ auto ViewScene::evaluateLevels() -> bool {
     return true;
 }
 
+// What no resolution has reached for the unload delay leaves the composer (at most once a second, or once per delay when it is shorter); what an extract released since the
+// last time (mesh packs) is reported with it, one event per batch that let something go.
+auto ViewScene::unload() -> void {
+    auto now = std::chrono::steady_clock::now();
+    uint32_t evicted = 0;
+    auto delay = std::chrono::milliseconds((int64_t) (unloadDelaySeconds * 1000.0));
+    if (composer && now - lastEvict >= std::min<std::chrono::steady_clock::duration>(std::chrono::seconds(1), delay)) {
+        lastEvict = now;
+        evicted = composer->evict(delay);
+        stats.contentsEvicted += evicted;
+    }
+    auto meshes = stats.releasedMeshes - reportedReleasedMeshes;
+    auto bytes = stats.releasedMeshBytes - reportedReleasedBytes;
+    if (evicted == 0 && meshes == 0) {
+        return;
+    }
+    reportedReleasedMeshes = stats.releasedMeshes;
+    reportedReleasedBytes = stats.releasedMeshBytes;
+    TRACE_EVENT("Scene", "LevelsUnloaded", id)
+        .text(std::format("unloaded what wasn't used for {:g} s: {} composed contents, {} mesh packs ({:.1f} MiB)", unloadDelaySeconds, evicted, meshes, (double) bytes / (1024.0 * 1024.0)))
+        .field("contents", (int64_t) evicted)
+        .field("meshes", (int64_t) meshes)
+        .field("bytes", (int64_t) bytes);
+}
+
 // Levels changed and nothing else: the composer links them again, composing level contents it doesn't keep yet, and asks for their packs.
 auto ViewScene::relink() -> void {
     std::vector<std::pair<std::string, AssetKind>> fresh;
@@ -944,6 +1007,7 @@ auto ViewScene::publish() -> void {
     snapshot->lodChoices = choices;
     snapshot->lodHeuristic = heuristicOn;
     snapshot->lodCap = heuristicCap;
+    snapshot->unloadDelay = unloadDelaySeconds;
     snapshot->thread = stats;
     for (const auto& [assetId, kind] : inFlight) {
         if (kind == AssetKind::Layer) {
@@ -1356,7 +1420,66 @@ auto ViewScene::extractOf(char kind, int32_t index, const WorldContent& content,
 
 // The World's kept walks replayed from the stage down, in walk order: each prim that matters at its full path and world transform (before
 // the unit scale), with the drawn LOD level + 1 of the nearest root above it. With `transformsOut`, every use of a content is registered there.
-auto ViewScene::replay(const World& w, const PrimVisitor& onPrim, TransformIndex* transformsOut) -> void {
+auto ViewScene::contentReady(const World& w, char kind, int32_t index, Purpose purpose) -> bool {
+    auto key = ((int64_t) kind << 40) | ((int64_t) purpose << 36) | (int64_t) index;
+    if (auto it = readiness.find(key); it != readiness.end()) {
+        return it->second;
+    }
+    readiness[key] = false; // a cycle can't make it ready
+    const WorldContent& content = kind == 'P' ? w.prototypes[(size_t) index] : w.linkedContents[(size_t) index];
+    bool ready = content.complete;
+    if (ready) {
+        auto walked = extractOf(kind, index, content, kind == 'L', purpose, {}, false, content.sourcePath);
+        for (const auto& item : walked->items) {
+            if (item.kind == ExtractItem::Kind::Prim) {
+                const auto& meshAsset = item.entity->meshAsset;
+                if (!meshAsset.empty() && drawsPurpose(item.purpose) && !meshPacks.contains(meshAsset) && !failedAssets.contains(meshAsset)) {
+                    ready = false;
+                }
+            } else if (item.kind == ExtractItem::Kind::Instance) {
+                ready = contentReady(w, 'P', item.content, item.purpose);
+            } else if (item.root == noEntity) {
+                auto linked = content.entities[item.id].linkedContent;
+                ready = linked >= 0 && contentReady(w, 'L', linked, item.purpose);
+            } else if (item.level + 1 == content.lodRoots.at(item.root).levels.size()) {
+                // A LOD root in it counts by its coarsest level, the floor it draws while a finer one loads.
+                auto linked = content.entities[item.id].linkedContent;
+                ready = linked >= 0 && contentReady(w, 'L', linked, item.purpose);
+            }
+            if (!ready) {
+                break;
+            }
+        }
+    }
+    readiness[key] = ready;
+    return ready;
+}
+
+auto ViewScene::drawnLevelOf(const World& w, const std::string& rootPath, const LodRoot& root, const WorldContent& content, Purpose purpose) -> std::optional<uint32_t> {
+    if (root.loaded.empty()) {
+        return std::nullopt;
+    }
+    auto wanted = w.wantedLevel(rootPath, root);
+    // Loaded levels are finest first (set order): the first at or coarser than the wanted one that is complete.
+    std::optional<uint32_t> drawn;
+    for (uint32_t level : root.loaded) {
+        if (level < wanted) {
+            continue;
+        }
+        auto linked = level < root.levels.size() ? content.entities[root.levels[level]].linkedContent : -1;
+        if (linked >= 0 && contentReady(w, 'L', linked, purpose)) {
+            drawn = level;
+            break;
+        }
+    }
+    if (!drawn) {
+        // Nothing complete yet: the coarsest loaded level, as it arrives (the scene opening).
+        drawn = *std::ranges::max_element(root.loaded);
+    }
+    return drawn;
+}
+
+auto ViewScene::replay(const World& w, const PrimVisitor& onPrim, TransformIndex* transformsOut, bool allLoaded) -> void {
     std::function<void(char, int32_t, const WorldContent&, bool, const std::string&, const glm::mat4&, Purpose, const std::string&, bool, uint32_t)> useContent =
         [&](char kind, int32_t index, const WorldContent& content, bool rootIsPrim, const std::string& usePath, const glm::mat4& useWorld, Purpose purpose, const std::string& material, bool strong, uint32_t lodTag) {
             auto walked = extractOf(kind, index, content, rootIsPrim, purpose, material, strong, usePath);
@@ -1379,11 +1502,18 @@ auto ViewScene::replay(const World& w, const PrimVisitor& onPrim, TransformIndex
                     // than the one it wants, per use of the root.
                     auto tag = lodTag;
                     if (item.root != noEntity) {
-                        auto drawnLevel = w.drawnLevel(parentPathOf(path), content.lodRoots.at(item.root));
-                        if (!drawnLevel || *drawnLevel != item.level) {
-                            continue;
+                        const auto& root = content.lodRoots.at(item.root);
+                        if (allLoaded) {
+                            if (std::ranges::find(root.loaded, item.level) == root.loaded.end()) {
+                                continue;
+                            }
+                        } else {
+                            auto drawnLevel = drawnLevelOf(w, parentPathOf(path), root, content, item.purpose);
+                            if (!drawnLevel || *drawnLevel != item.level) {
+                                continue;
+                            }
+                            tag = *drawnLevel + 1;
                         }
-                        tag = *drawnLevel + 1;
                     }
                     useContent('L', linked, w.linkedContents[(size_t) linked], true, path, world, item.purpose, item.material, item.strongBinding, tag);
                     continue;
@@ -1398,6 +1528,7 @@ auto ViewScene::replay(const World& w, const PrimVisitor& onPrim, TransformIndex
 // computed as the view always has: in float, parent times local, then scaled to metres by the scene's metersPerUnit.
 auto ViewScene::extract() -> void {
     extractNeeded = false;
+    readiness.clear();
     auto start = std::chrono::steady_clock::now();
     SceneChanges changes;
     auto previousLights = std::move(drawn.lights);
@@ -1546,7 +1677,7 @@ auto ViewScene::extract() -> void {
             row.projectedExtent = root.projection == LodProjection::Extent;
             row.defaultIndex = root.defaultIndex;
             row.wanted = w.wantedLevel(path, root);
-            row.drawn = w.drawnLevel(path, root);
+            row.drawn = drawnLevelOf(w, path, root, content, item.purpose);
             row.loaded = root.loaded;
             row.setByHand = handLevels.contains(path);
             row.worldTransform = worldTransform;
@@ -1756,51 +1887,93 @@ auto ViewScene::extract() -> void {
 }
 
 auto ViewScene::collectChanges(const std::set<uint32_t>& meshesNow, const std::set<uint32_t>& materialsNow, const std::set<uint32_t>& texturesNow, SceneChanges& changes) -> void {
-    for (auto index : texturesNow) {
+    // What stopped being drawn is kept (in the libraries and on the GPU) for the unload delay, so turning back doesn't upload it again;
+    // after it, it leaves the libraries and the renderer, and a mesh's pack is released (asked for again if wanted later).
+    auto delay = std::chrono::milliseconds((int64_t) (unloadDelaySeconds * 1000.0));
+    auto keep = [&](const std::set<uint32_t>& used, const std::set<uint32_t>& drawnNow, std::unordered_map<uint32_t, std::chrono::steady_clock::time_point>& unusedSince) {
+        std::set<uint32_t> kept = drawnNow;
+        for (auto index : used) {
+            if (drawnNow.contains(index)) {
+                unusedSince.erase(index);
+                continue;
+            }
+            auto [since, added] = unusedSince.try_emplace(index, std::chrono::steady_clock::now());
+            if (std::chrono::steady_clock::now() - since->second < delay) {
+                kept.insert(index);
+            } else {
+                unusedSince.erase(since);
+            }
+        }
+        for (auto index : drawnNow) {
+            unusedSince.erase(index);
+        }
+        return kept;
+    };
+    auto meshesKept = keep(usedMeshes, meshesNow, meshUnusedSince);
+    auto materialsKept = keep(usedMaterials, materialsNow, materialUnusedSince);
+    auto texturesKept = keep(usedTextures, texturesNow, textureUnusedSince);
+    // The earliest moment something kept is due to go, so the scene thread wakes for it.
+    releaseDue.reset();
+    for (const auto* waiting : {&meshUnusedSince, &materialUnusedSince, &textureUnusedSince}) {
+        for (const auto& [index, since] : *waiting) {
+            if (!releaseDue || since + delay < *releaseDue) {
+                releaseDue = since + delay;
+            }
+        }
+    }
+
+    for (auto index : texturesKept) {
         if (!usedTextures.contains(index)) {
             changes.texturesAdded.emplace_back(TextureHandle{index}, textureLibrary.shared(TextureHandle{index}));
         }
     }
-    for (auto index : meshesNow) {
+    for (auto index : meshesKept) {
         if (!usedMeshes.contains(index)) {
             changes.meshesAdded.emplace_back(MeshHandle{index}, meshLibrary.shared(MeshHandle{index}));
         }
     }
-    for (auto index : materialsNow) {
+    for (auto index : materialsKept) {
         if (!usedMaterials.contains(index)) {
             changes.materialsChanged.emplace_back(MaterialHandle{index}, *materialLibrary.get(MaterialHandle{index}));
         }
     }
-    // What isn't used any more leaves the libraries; a handle is never reused, so the renderer can't confuse it with a later entry.
+    // What isn't kept any more leaves the libraries; a handle is never reused, so the renderer can't confuse it with a later entry.
     for (auto index : usedMaterials) {
-        if (!materialsNow.contains(index)) {
+        if (!materialsKept.contains(index)) {
             changes.materialsRemoved.push_back(MaterialHandle{index});
         }
     }
     for (auto index : usedMeshes) {
-        if (!meshesNow.contains(index)) {
+        if (!meshesKept.contains(index)) {
             changes.meshesRemoved.push_back(MeshHandle{index});
         }
     }
     for (auto index : usedTextures) {
-        if (!texturesNow.contains(index)) {
+        if (!texturesKept.contains(index)) {
             changes.texturesRemoved.push_back(TextureHandle{index});
         }
     }
-    // Entries made this extract but not used (a material replaced within it) and entries no longer used are dropped.
+    // Entries made this extract but not used (a material replaced within it) and entries not kept are dropped; a dropped mesh's pack too.
     std::vector<MeshHandle> dropMeshes;
     meshLibrary.each([&](MeshHandle handle, const MeshDesc&) {
-        if (!meshesNow.contains(handle.index)) {
+        if (!meshesKept.contains(handle.index)) {
             dropMeshes.push_back(handle);
         }
     });
     for (auto handle : dropMeshes) {
+        auto asset = meshLibrary.key(handle);
         meshLibrary.remove(handle);
         meshBoundsOf.erase(handle.index);
+        if (!meshLibrary.find(asset) && !meshesLoaded.contains(asset)) {
+            if (auto pack = meshPacks.find(asset); pack != meshPacks.end()) {
+                releaseMeshPack(pack->second);
+                meshPacks.erase(pack);
+            }
+        }
     }
     std::vector<MaterialHandle> dropMaterials;
     materialLibrary.each([&](MaterialHandle handle, const MaterialDesc&) {
-        if (!materialsNow.contains(handle.index)) {
+        if (!materialsKept.contains(handle.index)) {
             dropMaterials.push_back(handle);
         }
     });
@@ -1809,14 +1982,14 @@ auto ViewScene::collectChanges(const std::set<uint32_t>& meshesNow, const std::s
     }
     std::vector<TextureHandle> dropTextures;
     textureLibrary.each([&](TextureHandle handle, const TextureDesc&) {
-        if (!texturesNow.contains(handle.index)) {
+        if (!texturesKept.contains(handle.index)) {
             dropTextures.push_back(handle);
         }
     });
     for (auto handle : dropTextures) {
         textureLibrary.remove(handle);
     }
-    usedMeshes = meshesNow;
-    usedMaterials = materialsNow;
-    usedTextures = texturesNow;
+    usedMeshes = meshesKept;
+    usedMaterials = materialsKept;
+    usedTextures = texturesKept;
 }

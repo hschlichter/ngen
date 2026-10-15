@@ -81,7 +81,9 @@ const std::vector<EngineMapNode> nodes = {
         .row = 3,
         .description = "The LOD heuristic: each LOD root reached gets the level its screen size from the camera picks (UsdLod's screen-size "
                        "heuristic, without the frustum, with a 20% band before going coarser), unless set by hand or the heuristic is off. "
-                       "Changed levels are linked again without composing the stage.",
+                       "Changed levels are linked again without composing the stage. A root draws a finer level only once it is complete "
+                       "(composed, its meshes held), the coarser one until then; what stopped being drawn or reached is unloaded after a "
+                       "delay, a root's coarsest level never.",
         .records = {"streaming", "lod"},
         .windows = {"lod"},
         .readme = "src/view/README.md",
@@ -103,7 +105,7 @@ const std::vector<EngineMapNode> nodes = {
         .lane = 2,
         .row = 5,
         .description = "Walks the World and builds the renderer's inputs: a draw per prim submesh, lights, cameras and LOD roots. Meshes, "
-                       "materials and textures are kept per asset in libraries across rebuilds.",
+                       "materials and textures are kept per asset in libraries across rebuilds, and for the unload delay after they stop being drawn.",
         .records = {"scenethread", "lod", "payloads"},
         .windows = {"sceneflow", "lod"},
         .readme = "src/view/README.md",

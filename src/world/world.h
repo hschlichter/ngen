@@ -110,6 +110,7 @@ struct PayloadPlacement {
 struct WorldContent {
     std::string sourcePath; // the stage's "/"; for a prototype, the first instance's path (for messages)
     uint64_t version = 0;   // which composition this is: a content composed again (or the stage, every compose) gets a new one
+    bool complete = false;  // composed with every pack it named held (or failed)
     std::vector<Entity> entities;
     std::unordered_map<std::string, EntityId> byPath;
     std::unordered_map<EntityId, Light> lights;

@@ -119,6 +119,10 @@ struct SceneThreadStats {
     uint32_t lodFiner = 0;
     uint32_t lodCoarser = 0;
     uint32_t lodCapped = 0; // roots the cap kept at their coarsest
+    // Unloading, since the scene opened: mesh packs released, and composed contents the composer let go.
+    uint64_t releasedMeshes = 0;
+    uint64_t releasedMeshBytes = 0;
+    uint64_t contentsEvicted = 0;
     double lodEvaluateMs = 0.0;
     uint64_t lodEvaluations = 0;
     uint64_t relinks = 0;
@@ -172,6 +176,7 @@ struct SceneSnapshot {
     std::shared_ptr<const SceneLodChoices> lodChoices = std::make_shared<SceneLodChoices>();
     bool lodHeuristic = true;
     uint32_t lodCap = 2;
+    double unloadDelay = 10.0;
     glm::mat4 unitScale = glm::mat4(1.0f);
     std::vector<std::string> assetIds; // every asset the scene uses: layer packs, meshes, materials, textures, failed ones
     // The World, summarised.
@@ -216,6 +221,9 @@ public:
     // coarsest ("capped"). A stand-in for memory budgets.
     auto setLodCap(uint32_t roots) -> void;
     auto lodCap() const -> uint32_t { return current->lodCap; }
+    // How long what stopped being drawn or reached is kept before it is unloaded (packs, library entries, GPU copies, composed contents).
+    auto setUnloadDelay(double seconds) -> void;
+    auto unloadDelay() const -> double { return current->unloadDelay; }
     static constexpr uint32_t defaultLodCap = 2;
     auto lodHeuristic() const -> bool { return current->lodHeuristic; }
     // What the heuristic chose at its last evaluation, by root path.
@@ -306,6 +314,7 @@ private:
     struct HeuristicRequest {
         std::optional<bool> on;
         std::optional<uint32_t> cap;
+        std::optional<double> unloadDelay;
     };
     using Request = std::variant<OpenRequest, LodRequest, PurposeRequest, RefreshRequest, TransformRequest, HeuristicRequest>;
     struct CameraInput {
@@ -340,6 +349,7 @@ private:
     auto compose() -> void;
     // Requests the meshes and materials of what is drawn and the textures of the materials held.
     auto requestDrawnAssets() -> void;
+    auto releaseMeshPack(const MeshPack& pack) -> void; // counts it in the stats; the caller erases it
     auto reportAssets() -> void;
     auto extract() -> void;
     auto publish() -> void;
@@ -391,6 +401,17 @@ private:
     std::unordered_map<std::string, uint32_t> heuristicLevels;
     std::unordered_map<std::string, uint32_t> composerLevels;
     std::set<std::string> warnedExtents; // roots whose empty heuristic extent was reported
+    // Unloading: what stopped being drawn (library entries, on the GPU) or reached (composed contents) goes after this long; when the
+    // next goes, for the scene thread to wake.
+    double unloadDelaySeconds = 10.0;
+    std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> meshUnusedSince;
+    std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> materialUnusedSince;
+    std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> textureUnusedSince;
+    std::optional<std::chrono::steady_clock::time_point> releaseDue;
+    std::chrono::steady_clock::time_point lastEvict;
+    uint64_t reportedReleasedMeshes = 0;
+    uint64_t reportedReleasedBytes = 0;
+    auto unload() -> void;
     std::shared_ptr<const SceneLodChoices> choices = std::make_shared<SceneLodChoices>();
     std::chrono::steady_clock::time_point lastExtractEnd;
     std::chrono::steady_clock::time_point extractDue; // a held-back extract's time
@@ -402,6 +423,9 @@ private:
     // Packed assets as they arrived, by asset id; a failed one is absent and listed in `failedAssets`. Versions, to keep a library entry
     // whose asset arrives again unchanged.
     std::unordered_map<std::string, MeshPack> meshPacks;
+    // The meshes of every loaded level, as the last request listed them: their packs are held while drawn or not (a root's floor while a
+    // finer level is drawn), so a switch back needs no fetch.
+    std::set<std::string> meshesLoaded;
     std::unordered_map<std::string, MaterialPack> materialPacks;
     std::unordered_map<std::string, std::shared_ptr<const TextureDesc>> texturePacks;
     std::unordered_map<std::string, std::string> packVersions;
@@ -476,7 +500,16 @@ private:
     auto extractOf(char kind, int32_t index, const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& usePath) -> std::shared_ptr<const ContentExtract>;
     auto overridesUnder(const std::string& usePath) const -> bool;
     using PrimVisitor = std::function<void(const WorldContent& content, const ExtractItem& item, const std::string& path, const glm::mat4& world, uint32_t lodTag)>;
-    auto replay(const World& world, const PrimVisitor& onPrim, TransformIndex* transformsOut) -> void;
+    // allLoaded: every loaded level of a root is replayed, not only the one it draws (to ask for what a level still loading needs).
+    auto replay(const World& world, const PrimVisitor& onPrim, TransformIndex* transformsOut, bool allLoaded = false) -> void;
+    // The level a root draws (the switch rule): the finest loaded level not finer than the one it wants that is complete; while none is,
+    // its coarsest loaded. Completeness is memoised per extract (readiness).
+    auto drawnLevelOf(const World& world, const std::string& rootPath, const LodRoot& root, const WorldContent& content, Purpose purpose) -> std::optional<uint32_t>;
+    // A content complete enough to draw: composed with every pack it named, every mesh it draws held (or failed), and the same for what is
+    // linked or instanced in it; a LOD root in it by its coarsest level. `purpose` is the one it inherits where it is used: a mesh of a
+    // purpose not drawn there isn't asked for, so it isn't waited for.
+    auto contentReady(const World& world, char kind, int32_t index, Purpose purpose) -> bool;
+    std::unordered_map<int64_t, bool> readiness; // by content (kind and index), this extract's
     uint64_t extractCacheHits = 0;
     uint64_t extractCacheBuilds = 0;
     std::vector<SceneCamera> authoredCameras;

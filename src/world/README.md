@@ -86,6 +86,11 @@ contents' indexes point at them, and rebuilt in place when one missed a sublayer
 repack or an edit) drops every kept content and rebuilds every stack: contents don't record which packs they read. `stats()` says what the
 last compose composed, kept and reached, and how long the stage, the resolution and the bindings took.
 
+Every content has a `version`, new each time it is composed, and `complete` once it was composed with every pack it named held (or
+failed): a reader can keep what it derived from a content by version, and wait for a complete one. `evict(unusedFor)` lets go of the kept
+contents no resolution has reached for that long, and not by the latest one: each is emptied in place (its index stays, a new version) and
+composed again if it is reached later. The caller decides the delay; ngen-view uses its unload delay.
+
 Material bindings are resolved every compose, in their own content first and then anywhere in the World by full path, as a target may be in
 another content (a level's material outside the level).
 
