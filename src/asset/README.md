@@ -166,7 +166,9 @@ file alone, so editing one file of a scene repacks that file only. A file's outp
   `blendThresholds`, `projectionMethod`, and `inputs:*` outside materials), the relationships (`material:binding*`, `lod:heuristics`, `boundingVolume`), its
   references and payloads (asset id and prim path; an empty id is a reference inside the file), the number of `points` it authors, and the
   mesh and material assets it defines.
-  Asset paths are resolved to asset ids, against the file's folder. Variants aren't read.
+  Asset paths are resolved to asset ids, against the file's folder. Each prim's `variantSetNames` and `variants` selections are kept, and a
+  spec inside a variant is a prim spec of its own at its variant path (`/asset{shape=a}`, `/asset{shape=a}Geom`), nested variants
+  included.
 - **A mesh pack per prim the file defines with geometry** (`def` of `Mesh`, `Cube`, `Sphere`, `Cylinder`, `Cone`): triangles with position,
   normal, display colour and texture coordinate (44-byte vertices), 32-bit indices, one submesh per `GeomSubset` (named by its path) and one for
   the faces no subset holds, the display colour, and the bounds.
@@ -176,10 +178,12 @@ file alone, so editing one file of a scene repacks that file only. A file's outp
   material packs opaque, with a warning.
 
 Meshes and materials are read through a stage of the file alone: a copy of the layer with every sublayer and every reference and payload to
-another file removed, so composition inside the file (internal references, node graphs) still applies and nothing outside it is read.
+another file removed, so composition inside the file (internal references, node graphs) still applies and nothing outside it is read. One
+defined inside a variant is read from such a stage with that variant selected (a session layer selects it), and its asset id is its variant
+path (`<file>#/asset{shape=a}Geom`).
 
 What the engine doesn't support is reported, not packed: a warning per prim in the layer pack, and on stdout, so in the server's trace. Inherits,
-specializes, variants, relocates, layer offsets, collection-based bindings, time samples without a default value, value types the format has no
+specializes, relocates, layer offsets, collection-based bindings, time samples without a default value, value types the format has no
 form for, asset paths that don't resolve, and an `over` that authors geometry (a mesh is packed from the file that defines it).
 
 The format (`pack/scenepack.h`) is binary and little-endian: a 32-byte header (`NGPK`, the kind, the format version, the section count, and the

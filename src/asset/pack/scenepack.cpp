@@ -343,6 +343,15 @@ auto writeLayerPack(const LayerPack& pack) -> std::vector<std::byte> {
             prims.str(placement.assetId);
             prims.str(placement.primPath);
         }
+        prims.strings(prim.variantSetNames);
+        std::vector<std::string> selectionSets;
+        std::vector<std::string> selectionVariants;
+        for (const auto& [set, variant] : prim.variantSelections) {
+            selectionSets.push_back(set);
+            selectionVariants.push_back(variant);
+        }
+        prims.strings(selectionSets);
+        prims.strings(selectionVariants);
         prims.i64(prim.pointCount);
         prims.str(prim.meshAsset);
         prims.str(prim.materialAsset);
@@ -465,6 +474,15 @@ auto readLayerPack(std::span<const std::byte> bytes) -> std::expected<LayerPack,
             placement.assetId = prims.str();
             placement.primPath = prims.str();
             prim.placements.push_back(std::move(placement));
+        }
+        prim.variantSetNames = prims.strings();
+        auto selectionSets = prims.strings();
+        auto selectionVariants = prims.strings();
+        if (selectionSets.size() != selectionVariants.size()) {
+            return std::unexpected(std::format("prim {}: {} variant selection sets for {} variants", prim.path, selectionSets.size(), selectionVariants.size()));
+        }
+        for (size_t s = 0; s < selectionSets.size(); s++) {
+            prim.variantSelections.emplace_back(selectionSets[s], selectionVariants[s]);
         }
         prim.pointCount = prims.i64();
         prim.meshAsset = prims.str();

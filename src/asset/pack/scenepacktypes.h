@@ -9,7 +9,7 @@
 // The scene pack types, separate from their reader and writer (scenepack.h) so that code built as C++20, the USD packer among it, can
 // fill them: OpenUSD's headers don't compile as C++23, and the reader uses std::expected.
 
-inline constexpr uint32_t scenePackFormatVersion = 2;
+inline constexpr uint32_t scenePackFormatVersion = 3;
 inline constexpr size_t scenePackHeaderSize = 32;
 
 enum class ScenePackKind : uint32_t {
@@ -58,7 +58,8 @@ enum class PrimSpecifier : uint32_t {
     Class = 3,
 };
 
-// One prim spec of the file and the opinions on it the engine uses (src/asset/README.md lists them).
+// One prim spec of the file and the opinions on it the engine uses (src/asset/README.md lists them). A spec inside a variant is a prim spec
+// of its own at its variant path ("/asset{shape=a}", "/asset{shape=a}Geom"), after the prim that authors the variant set.
 struct PackPrim {
     std::string path;
     PrimSpecifier specifier = PrimSpecifier::Over;
@@ -70,9 +71,11 @@ struct PackPrim {
     std::vector<PackAttribute> attributes;
     std::vector<PackRelationship> relationships;
     std::vector<PackPlacement> placements;
-    int64_t pointCount = -1;   // the number of `points` the spec authors (a mesh's, a point cloud's), -1 when it authors none
-    std::string meshAsset;     // set when this spec defines geometry: "<file>#<path>"
-    std::string materialAsset; // set when this spec defines a material
+    std::vector<std::string> variantSetNames;                           // the variant sets the spec adds (variantSetNames), as authored
+    std::vector<std::pair<std::string, std::string>> variantSelections; // `variants`: a set's name and the variant selected, by name
+    int64_t pointCount = -1;                                            // the number of `points` the spec authors (a mesh's, a point cloud's), -1 when it authors none
+    std::string meshAsset;                                              // set when this spec defines geometry: "<file>#<path>"
+    std::string materialAsset;                                          // set when this spec defines a material
 };
 
 struct PackWarning {

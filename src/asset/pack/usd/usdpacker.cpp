@@ -19,6 +19,7 @@
 #include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/sdf/attributeSpec.h>
 #include <pxr/usd/sdf/layer.h>
+#include <pxr/usd/sdf/path.h>
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/sdf/relationshipSpec.h>
 #include <pxr/usd/sdf/variantSetSpec.h>
@@ -43,6 +44,7 @@
 #include <filesystem>
 #include <format>
 #include <functional>
+#include <map>
 #include <optional>
 #include <set>
 
@@ -250,7 +252,8 @@ auto toPlacement(PlacementKind kind, const std::string& assetPath, const SdfPath
     return placement;
 }
 
-// One prim spec's opinions into the layer pack, then its children's. Variant contents are not walked (variant sets are reported).
+// One prim spec's opinions into the layer pack, then its children's, then its variants' (each variant's prim spec and what is under it, at
+// their variant paths).
 auto packSpec(const SdfPrimSpecHandle& spec, const std::string& fileId, LayerPack& layer) -> void {
     PackPrim prim;
     prim.path = spec->GetPath().GetString();
@@ -365,11 +368,11 @@ auto packSpec(const SdfPrimSpecHandle& spec, const std::string& fileId, LayerPac
     if (!spec->GetSpecializesList().GetAppliedItems().empty()) {
         warn(layer, prim.path, "specializes, which the engine doesn't compose");
     }
-    if (!spec->GetVariantSetNameList().GetAppliedItems().empty() || !spec->GetVariantSets().empty()) {
-        warn(layer, prim.path, "variant sets, which the engine doesn't compose yet");
+    for (const auto& name : spec->GetVariantSetNameList().GetAppliedItems()) {
+        prim.variantSetNames.push_back(name);
     }
-    if (!spec->GetVariantSelections().empty()) {
-        warn(layer, prim.path, "variant selections, which the engine doesn't compose yet");
+    for (const auto& [set, variant] : spec->GetVariantSelections()) {
+        prim.variantSelections.emplace_back(set, variant);
     }
     if (spec->HasField(TfToken("relocates"))) {
         warn(layer, prim.path, "relocates, which the engine doesn't compose");
@@ -386,7 +389,46 @@ auto packSpec(const SdfPrimSpecHandle& spec, const std::string& fileId, LayerPac
     for (const auto& child : spec->GetNameChildren()) {
         packSpec(child, fileId, layer);
     }
+    for (const auto& entry : spec->GetVariantSets()) {
+        SdfVariantSetSpecHandle set = entry.second;
+        for (const auto& variant : set->GetVariantList()) {
+            if (variant->GetPrimSpec()) {
+                packSpec(variant->GetPrimSpec(), fileId, layer);
+            }
+        }
+    }
 }
+
+// The file-local stage a prim spec's mesh or material is read from: for a spec inside variants, one with those variants selected (a session
+// layer selects them on the prims that own the sets), by the selections; the spec's path on it has the selections stripped.
+struct LocalStages {
+    SdfLayerRefPtr local;
+    std::map<std::string, UsdStageRefPtr> bySelections;
+
+    auto stageFor(const SdfPath& specPath) -> UsdStageRefPtr {
+        std::vector<std::pair<SdfPath, std::pair<std::string, std::string>>> selections;
+        for (SdfPath at = specPath; !at.IsEmpty() && at != SdfPath::AbsoluteRootPath(); at = at.GetParentPath()) {
+            if (at.IsPrimVariantSelectionPath()) {
+                selections.emplace_back(at.GetParentPath().StripAllVariantSelections(), at.GetVariantSelection());
+            }
+        }
+        std::string key;
+        for (const auto& [owner, selection] : selections) {
+            key += std::format("{}{{{}={}}};", owner.GetString(), selection.first, selection.second);
+        }
+        if (auto it = bySelections.find(key); it != bySelections.end()) {
+            return it->second;
+        }
+        auto session = SdfLayer::CreateAnonymous("selections.usda");
+        for (const auto& [owner, selection] : selections) {
+            auto over = SdfCreatePrimInLayer(session, owner);
+            over->SetVariantSelection(selection.first, selection.second);
+        }
+        auto stage = selections.empty() ? UsdStage::Open(local, UsdStage::LoadAll) : UsdStage::Open(local, session, UsdStage::LoadAll);
+        bySelections[key] = stage;
+        return stage;
+    }
+};
 
 // Every prim spec of a layer, variant contents included.
 auto forEachSpec(const SdfPrimSpecHandle& spec, const std::function<void(const SdfPrimSpecHandle&)>& visit) -> void {
@@ -845,15 +887,18 @@ auto packUsdFile(const std::string& assetId, const std::string& sourcePath) -> U
     if (!definesAssets) {
         return result;
     }
-    auto stage = UsdStage::Open(fileLocalLayer(layer), UsdStage::LoadAll);
-    if (!stage) {
+    LocalStages stages{.local = fileLocalLayer(layer), .bySelections = {}};
+    if (!stages.stageFor(SdfPath::AbsoluteRootPath())) {
         result.error = std::format("cannot compose {} on its own", sourcePath);
         return result;
     }
     for (const auto& prim : pack.prims) {
+        auto specPath = SdfPath(prim.path);
+        auto stage = stages.stageFor(specPath);
+        auto composedPath = specPath.StripAllVariantSelections();
         if (!prim.meshAsset.empty()) {
             MeshPack mesh;
-            auto usdPrim = stage->GetPrimAtPath(SdfPath(prim.path));
+            auto usdPrim = stage ? stage->GetPrimAtPath(composedPath) : UsdPrim();
             if (usdPrim && packMesh(usdPrim, mesh)) {
                 result.meshes.emplace_back(prim.path, std::move(mesh));
             } else {
@@ -862,7 +907,7 @@ auto packUsdFile(const std::string& assetId, const std::string& sourcePath) -> U
         }
         if (!prim.materialAsset.empty()) {
             MaterialPack material;
-            auto usdPrim = stage->GetPrimAtPath(SdfPath(prim.path));
+            auto usdPrim = stage ? stage->GetPrimAtPath(composedPath) : UsdPrim();
             if (usdPrim && packMaterial(usdPrim, assetId, material, pack)) {
                 result.materials.emplace_back(prim.path, std::move(material));
             }

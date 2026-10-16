@@ -1,6 +1,6 @@
 # Variant sets and PointInstancer
 
-**Status. Draft.** Decisions 1 to 6 locked 2026-10-16, each as recommended. Lands before
+**Status. In progress.** Decisions 1 to 6 locked 2026-10-16, each as recommended; step 1 done 2026-10-16. Lands before
 [plan_streaming_v2.md](plan_streaming_v2.md) step 4 (placements), so the placement tree is built with both.
 
 ## Current state
@@ -115,6 +115,22 @@ Compared as files, as the fingerprints are.
    instancer's prim for picking. Prototype LOD roots at their default (decision 4).
 7. **Visibility pass and docs**: `src/world/README.md` (variants and instancers composed; "Not composed" shrinks), `src/asset/README.md`
    (what a layer pack holds), `src/view/README.md`.
+
+### Step 1 results (2026-10-16)
+
+- The layer pack keeps each prim's `variantSetNames` and `variants`, and every spec inside a variant at its variant path, nested variants
+  included (scene pack format 3, usd rule version 5); the two variant warnings are gone. `ngen-packdump` prints both fields.
+- A mesh or material defined inside a variant packs from the file-local stage with that variant selected (a session layer selecting it on
+  the prims owning the sets), its asset id its variant path. Checked on a file with a nested set: the cube in `shape=a` and the sphere in
+  `shape=b` pack as themselves, the sphere with the display colour its nested `color=red` variant authors. The test world defines nothing
+  inside its variants (its variants hold overs and references), so this is for scenes that do.
+- Until step 2 composes them, the composer finds variant specs by path but doesn't list them as children (their string parent would
+  otherwise make `/asset{shape=a}Geom` a root prim): composition is exactly as before, the test world's tile at `full` still differing in
+  the same 91,516 lines.
+- The test world packs with no warnings; `assets/layered/` with its two known ones. Baselines byte-identical; `ngen-worldcheck` against
+  `ngen-usdcheck` unchanged on the layered scene, `three_cubes` and the test world.
+- Seen, not changed: "an over authors geometry" warns on an over in the same file as the definition, which the file-local stage does apply
+  (the nested `color=red` over above). An old imprecision of the rule, more visible with variants.
 
 ## Visibility
 

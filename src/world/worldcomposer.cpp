@@ -385,7 +385,10 @@ auto layerData(const std::string& assetId, LayerPack pack) -> LayerData {
     for (uint32_t i = 0; i < data.pack.prims.size(); i++) {
         const auto& path = data.pack.prims[i].path;
         data.primByPath[path] = i;
-        data.childNames[parentPath(path)].push_back(lastElement(path));
+        // A spec inside a variant ("/asset{shape=a}Geom") is found by its variant path, not as a child of the path's string parent.
+        if (path.find('{') == std::string::npos) {
+            data.childNames[parentPath(path)].push_back(lastElement(path));
+        }
     }
     return data;
 }

@@ -102,6 +102,16 @@ auto layerJson(const LayerPack& pack) -> Json {
             }
             p["placements"] = placements;
         }
+        if (!prim.variantSetNames.empty()) {
+            p["variantSets"] = prim.variantSetNames;
+        }
+        if (!prim.variantSelections.empty()) {
+            auto selections = Json::object();
+            for (const auto& [set, variant] : prim.variantSelections) {
+                selections[set] = variant;
+            }
+            p["variants"] = selections;
+        }
         if (prim.pointCount >= 0) {
             p["points"] = prim.pointCount;
         }
