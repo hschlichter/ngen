@@ -204,9 +204,9 @@ Locked (2026-10-15). Stays: screen size of the extent's bounding sphere, the 20%
    (`LodWindowState::cap`, `capRequested`) and its wiring in `view.cpp`, "capped" in the Engine Map's LOD selection node, and the view
    README's "The cap". Verified: `rg -w -i "cap|capped|lodCap|aroundCamera|validExtent|LodExtentEmpty"` over `src/` finds none of them; the
    test world at its viewpoints with no `lod-cap` line; baselines byte-identical.
-3. **One content store, complete contents only** (decisions 2, 3): `World::contents`; `WorldComposer` keeps a content only when complete,
-   drops gaps, payload contents and in-place rebuilds; `evict` goes. `ngen-worldcheck` against `ngen-usdcheck` identical on the layered scene,
-   the test area and Caldera.
+3. **One content store, complete contents only** (decisions 2, 3): `World::contents`; `WorldComposer` links a content only when complete and
+   drops payload contents. `evict` stays until step 5, whose reference counts replace it (unloading needs either one). `ngen-worldcheck`
+   against `ngen-usdcheck` identical on the layered scene, the test area and Caldera.
 4. **Placements** (decisions 1, 6): `src/view/placement.*`; a content's draws built once on completion; the scene thread keeps the placement
    tree and turns its edits into change lists; queries walk it. `replay`, `ExtractItem`, kept walks, the diff, extract pacing and
    `TransformIndex` are removed.
@@ -262,6 +262,30 @@ Locked (2026-10-15). Stays: screen size of the extent's bounding sphere, the 20%
   Draws are few (209 slots at `dense_forest`) because the asset roots' levels are empty until variants compose.
 - Baselines byte-identical; the layered tree follows the camera, holds a hand-set level and its default with the heuristic off; World
   against USD unchanged.
+
+### Step 3 results (2026-10-16)
+
+- **One store**: `World::prototypes` and `World::linkedContents` are `World::contents`, each content with a `kind` (`Prototype`, `Level`);
+  the composer keeps one `ContentInfo` beside each. `WorldContent::complete` is gone.
+- **Complete contents only, at the links**: an instance's `prototype` and a level stand-in's `linkedContent` are set only once the content
+  is complete, -1 until then. An instance whose prototype isn't complete is a gap in the content holding it, so that content isn't linked
+  either. The view's readiness (`contentReady`) no longer checks completeness: what is linked is complete. A wanted level not linked yet
+  counts as one content waiting (`waiting.contentsIncomplete`, the LOD window's tooltip).
+- **Kept from decision 2 B, as a deviation**: composing a content in place while it has gaps, and rebuilding a layer stack in place. Both are
+  internal to the composer now (`ContentInfo::complete`, the gap windows), and nothing reads a partial content; discarding a partial result
+  and recomposing it would cost the same rounds. Revisit if step 4's placements want contents immutable once stored.
+- **No payload contents**: a prim with payloads that isn't a LOD level composes in its parent's content (`LevelSlot::payload`, the payload
+  branch in `composeChildren`, the payload loop in resolution, and the view's payload stand-in items are gone).
+- **A binding exposed by linking late**: a level inside a prototype names its prototype's `Materials` at the path of the instance the
+  prototype was composed for, which the composer found through the stage. With that instance's tile not linked until complete, a level
+  reached through another tile's instance warned "material binding … isn't there" (6 warnings at the test world's viewpoints). Such
+  targets are now looked up in the prototype (`locateOutside`).
+- **Verified**: World against USD identical on the layered scene (but `/World/Inherited`, an inherit, which the packer reports), the test
+  world at `proxy` (70 lines) and with `T_1_1` at `full` (183,301 lines, instancing counts, 82,266 instancer points), and Caldera (54,124
+  lines, 57 prototypes); the composer's messages unchanged on all three. Baselines byte-identical. Test world at overlook, dense_forest,
+  valley and four_tiles: every root draws the level it wants, nothing waits, no warnings. The layered LOD script gives the same levels as
+  before.
+- `viewscene.cpp` 2,135 to 2,116 lines, `worldcomposer.cpp` 1,875 to 1,860.
 
 ## Visibility
 

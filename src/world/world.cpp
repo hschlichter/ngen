@@ -131,6 +131,10 @@ auto World::drawnLevel(const std::string& rootPath, const LodRoot& root) const -
     return *std::ranges::max_element(root.loaded);
 }
 
+auto World::prototypeCount() const -> size_t {
+    return (size_t) std::ranges::count_if(contents, [](const WorldContent& content) { return content.kind == ContentKind::Prototype; });
+}
+
 auto World::visit(const std::function<bool(const VisitedEntity&)>& visitor) const -> void {
     std::function<void(const WorldContent&, EntityId, const VisitState&)> visitChildren;
 
@@ -177,7 +181,7 @@ auto World::visit(const std::function<bool(const VisitedEntity&)>& visitor) cons
         if (entity.prototype >= 0) {
             VisitState inside = state;
             inside.insideInstance = true;
-            visitChildren(prototypes[(size_t) entity.prototype], 0, inside);
+            visitChildren(contents[(size_t) entity.prototype], 0, inside);
             return;
         }
         visitChildren(content, id, state);
@@ -193,11 +197,6 @@ auto World::visit(const std::function<bool(const VisitedEntity&)>& visitor) cons
         }
         for (EntityId child : entity.children) {
             if (lodRoot == nullptr) {
-                // A prim with payloads is its linked content's entity 0, with everything under it.
-                if (auto linked = content.entities[child].linkedContent; linked >= 0) {
-                    visitEntity(linkedContents[(size_t) linked], 0, state);
-                    continue;
-                }
                 visitEntity(content, child, state);
                 continue;
             }
@@ -206,9 +205,10 @@ auto World::visit(const std::function<bool(const VisitedEntity&)>& visitor) cons
             if (level != lodRoot->levels.end() && (!drawn || (uint32_t) (level - lodRoot->levels.begin()) != *drawn)) {
                 childState.inUndrawnLevel = true;
             }
-            // A level is its content's entity 0, the level prim as composed (loaded or not), with everything under it.
+            // A level is its content's entity 0, the level prim as composed (loaded or not), with everything under it; one still composing
+            // is its stand-in alone.
             if (auto linked = content.entities[child].linkedContent; linked >= 0) {
-                visitEntity(linkedContents[(size_t) linked], 0, childState);
+                visitEntity(contents[(size_t) linked], 0, childState);
                 continue;
             }
             visitEntity(content, child, childState);

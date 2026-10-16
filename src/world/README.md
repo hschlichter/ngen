@@ -16,7 +16,7 @@ the caller feeds the composer packs from the asset server.
 - **Every composed prim is an entity**, whatever its type or purpose: scopes, shaders, guides, classes, `over`-only prims, inactive prims
   (without children, as in USD). What is drawn is decided when the World is read (purpose, visibility, LOD levels), not by leaving entities
   out.
-- **Instanced content is kept once.** An instance (an instanceable prim with arcs) names a prototype in `World::prototypes` and has no
+- **Instanced content is kept once.** An instance (an instanceable prim with arcs) names a prototype in `World::contents` and has no
   children of its own; instances with the same arcs share one prototype. A prototype's paths are relative to it (`/Top`); `visit` expands
   instances and gives every entity its full path.
 - **An entity** has its name, type, parent and children, whether it is defined, abstract (a class) and active, its point count (point-based
@@ -91,31 +91,34 @@ is state of the instance (`World::lodLevels`, by the root's full path), outside 
 loaded levels different prototypes.
 
 **A level is a content of its own.** A LOD root's children are stand-in entities, one per level; each is linked (`Entity::linkedContent`) to
-a content in `World::linkedContents` whose entity 0 is the level prim itself, composed loaded or not (a loaded level's payload brings opinions
+a content in `World::contents` whose entity 0 is the level prim itself, composed loaded or not (a loaded level's payload brings opinions
 for the level prim too), with everything under it. `visit` walks a level as that content. Which levels load is decided after composing, by
 linking (resolution): so changing a level never changes the content its root is in, only which level content its stand-in links to.
 
-**A prim with payloads is a content of its own too**, linked the same way (to `World::linkedContents`) whenever its parent's content loads
-payloads: its entity 0 is the prim with its payloads' opinions, everything under it below. So a pack arriving for a payload recomposes that
-payload's content, not the content it sits in; a district's layout, thousands of payloads, is composed piece by piece as its packs arrive.
+**Only LOD levels and prototypes are contents** (`WorldContent::kind`), besides the stage. A prim with payloads that isn't a level is part of
+the content it sits in, loaded with it, as USD loads it: a pack arriving for it recomposes that content. A world that puts thousands of
+payloads in one level pays for it in that level's composition rounds.
 
 ## Composed content is kept across composes
 
-The stage is composed again every compose; prototypes and level contents are kept (`World::prototypes`, `World::linkedContents`, at stable
-indices) and reused by key: a prototype by its kept nodes, a level by its prim index (every node's site, arc and namespace mapping) and
-whether it loads. A content composed while a pack it named wasn't held (a gap) is composed again, in place, the next time it is reached;
+The stage is composed again every compose; prototypes and level contents are kept in one store (`World::contents`, at stable indices) and
+reused by key: a prototype by its kept nodes, a level by its prim index (every node's site, arc and namespace mapping) and whether it loads.
+**A content is linked only once it is complete**, composed with every pack it named held (or failed): until then an instance's `prototype`
+and a level stand-in's `linkedContent` are -1, so nothing that reads the World sees a partial content. An instance whose prototype isn't
+complete yet leaves the content it is in incomplete too, so that one isn't linked either; a LOD root whose levels are all still composing
+draws nothing. A content composed while a pack it named wasn't held (a gap) is composed again, in place, the next time it is reached;
 one that had every pack is reused as it is, since a pack arriving later is one it didn't name. Layer stacks are kept too, as the kept
 contents' indexes point at them, and rebuilt in place when one missed a sublayer. A pack that changes (`addPack` of an id already held: a
 repack or an edit) drops every kept content and rebuilds every stack: contents don't record which packs they read. `stats()` says what the
 last compose composed, kept and reached, and how long the stage, the resolution and the bindings took.
 
-Every content has a `version`, new each time it is composed, and `complete` once it was composed with every pack it named held (or
-failed): a reader can keep what it derived from a content by version, and wait for a complete one. `evict(unusedFor)` lets go of the kept
+Every content has a `version`, new each time it is composed: a reader can keep what it derived from a content by version. `evict(unusedFor)` lets go of the kept
 contents no resolution has reached for that long, and not by the latest one: each is emptied in place (its index stays, a new version) and
 composed again if it is reached later. The caller decides the delay; ngen-view uses its unload delay.
 
 Material bindings are resolved every compose, in their own content first and then anywhere in the World by full path, as a target may be in
-another content (a level's material outside the level).
+another content (a level's material outside the level). A level in a prototype names its prototype's prims at the path of the instance the
+prototype was composed for; those are looked up in the prototype, as that instance's own content may not be linked yet.
 
 ## Composing in rounds
 

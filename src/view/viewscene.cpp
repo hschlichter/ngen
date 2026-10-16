@@ -589,10 +589,10 @@ auto ViewScene::compose() -> void {
     auto ms = msSince(start);
     stats.lastComposeMs = ms;
     TRACE_EVENT("Scene", "PacksComposed", id)
-        .text(std::format("{} composed: {} layer packs, {} prims, {} prototypes, {:.0f} ms after it was requested", id, requestedPacks.size(), entities, world.prototypes.size(), msSince(openedAt)))
+        .text(std::format("{} composed: {} layer packs, {} prims, {} prototypes, {:.0f} ms after it was requested", id, requestedPacks.size(), entities, world.prototypeCount(), msSince(openedAt)))
         .field("packs", (int64_t) requestedPacks.size())
         .field("prims", (int64_t) entities)
-        .field("prototypes", (int64_t) world.prototypes.size())
+        .field("prototypes", (int64_t) world.prototypeCount())
         .field("ms", ms);
 }
 
@@ -904,12 +904,12 @@ auto ViewScene::countPrims(const World& world, const WorldContent& content, bool
         pending.pop_back();
         const auto& entity = content.entities[id];
         if (entity.linkedContent >= 0) {
-            count += countPrims(world, world.linkedContents[(size_t) entity.linkedContent], true);
+            count += countPrims(world, world.contents[(size_t) entity.linkedContent], true);
             continue;
         }
         count++;
         if (entity.prototype >= 0) {
-            count += countPrims(world, world.prototypes[(size_t) entity.prototype], false);
+            count += countPrims(world, world.contents[(size_t) entity.prototype], false);
             continue;
         }
         pending.insert(pending.end(), entity.children.begin(), entity.children.end());
@@ -977,7 +977,7 @@ auto ViewScene::publish() -> void {
         snapshot->upAxis = world.upAxis;
         snapshot->metersPerUnit = world.metersPerUnit;
         snapshot->prims = worldPrims;
-        snapshot->prototypes = world.prototypes.size();
+        snapshot->prototypes = world.prototypeCount();
         snapshot->lodLevels = world.lodLevels;
     }
     snapshot->idle = inFlight.empty() && !composeNeeded && !extractNeeded;
@@ -1242,18 +1242,6 @@ auto ViewScene::buildExtract(const WorldContent& content, bool rootIsPrim, Purpo
         const auto& entity = content.entities[id];
         State state;
         state.path = id == walkRoot ? std::string("/") : childPathOf(parent.path, entity.name);
-        // A prim with payloads stands in for its linked content, used where it sits (read at use: resolution may link another).
-        if (entity.linkedContent >= 0 && id != walkRoot) {
-            out->items.push_back({.kind = ExtractItem::Kind::Level,
-                                  .path = state.path,
-                                  .world = parent.world,
-                                  .absolute = parent.absolute,
-                                  .id = id,
-                                  .purpose = parent.purpose,
-                                  .material = parent.material,
-                                  .strongBinding = parent.strong});
-            return;
-        }
         glm::mat4 local(entity.localTransform);
         if (!overrideBase.empty() && entity.xformable) {
             if (auto authored = localOverrides.find(joinPathOf(overrideBase, state.path)); authored != localOverrides.end()) {
@@ -1388,12 +1376,10 @@ auto ViewScene::contentReady(const World& w, char kind, int32_t index, Purpose p
         return it->second;
     }
     readiness[key] = false; // a cycle can't make it ready
-    const WorldContent& content = kind == 'P' ? w.prototypes[(size_t) index] : w.linkedContents[(size_t) index];
-    bool ready = content.complete;
-    if (ready) {
-        auto walked = extractOf(kind, index, content, kind == 'L', purpose, {}, false, content.sourcePath);
-        ready = itemsReady(w, kind, index, content, *walked);
-    }
+    const WorldContent& content = w.contents[(size_t) index];
+    // A linked content is complete: what it waits for is its meshes and the contents it uses.
+    auto walked = extractOf(kind, index, content, kind == 'L', purpose, {}, false, content.sourcePath);
+    bool ready = itemsReady(w, kind, index, content, *walked);
     readiness[key] = ready;
     return ready;
 }
@@ -1419,9 +1405,6 @@ auto ViewScene::itemsReady(const World& w, char kind, int32_t index, const World
             }
         } else if (item.kind == ExtractItem::Kind::Instance) {
             ready = contentReady(w, 'P', item.content, item.purpose);
-        } else if (item.root == noEntity) {
-            auto linked = content.entities[item.id].linkedContent;
-            ready = linked >= 0 && contentReady(w, 'L', linked, item.purpose);
         } else if (item.level + 1 == content.lodRoots.at(item.root).levels.size()) {
             // A LOD root in it counts by its coarsest level, the floor it draws while a finer one loads.
             auto linked = content.entities[item.id].linkedContent;
@@ -1439,10 +1422,7 @@ auto ViewScene::countWaiting(const World& w, char kind, int32_t index, Purpose p
     if (!seenContents.insert(key).second) {
         return;
     }
-    const WorldContent& content = kind == 'P' ? w.prototypes[(size_t) index] : w.linkedContents[(size_t) index];
-    if (!content.complete) {
-        waiting.contentsIncomplete++;
-    }
+    const WorldContent& content = w.contents[(size_t) index];
     auto walked = extractOf(kind, index, content, kind == 'L', purpose, {}, false, content.sourcePath);
     std::vector<const ContentExtract*> walks = {walked.get()};
     std::vector<std::shared_ptr<const ContentExtract>> prototypeWalks;
@@ -1468,10 +1448,13 @@ auto ViewScene::countWaiting(const World& w, char kind, int32_t index, Purpose p
                 }
             } else if (item.kind == ExtractItem::Kind::Instance) {
                 countWaiting(w, 'P', item.content, item.purpose, seenContents, seenMeshes, waiting);
-            } else if (item.root == noEntity || item.level + 1 == content.lodRoots.at(item.root).levels.size()) {
+            } else if (item.level + 1 == content.lodRoots.at(item.root).levels.size()) {
+                // A floor not linked yet is still composing.
                 auto linked = content.entities[item.id].linkedContent;
                 if (linked >= 0) {
                     countWaiting(w, 'L', linked, item.purpose, seenContents, seenMeshes, waiting);
+                } else {
+                    waiting.contentsIncomplete++;
                 }
             }
         }
@@ -1578,7 +1561,7 @@ auto ViewScene::replay(const World& w, const PrimVisitor& onPrim, TransformIndex
                 continue;
             }
             if (item.kind == ExtractItem::Kind::Instance) {
-                useContent('P', item.content, w.prototypes[(size_t) item.content], false, path, world, item.purpose, item.material, item.strongBinding, lodTag);
+                useContent('P', item.content, w.contents[(size_t) item.content], false, path, world, item.purpose, item.material, item.strongBinding, lodTag);
                 continue;
             }
             if (item.kind == ExtractItem::Kind::Level) {
@@ -1586,24 +1569,21 @@ auto ViewScene::replay(const World& w, const PrimVisitor& onPrim, TransformIndex
                 if (linked < 0) {
                     continue;
                 }
-                // A prim with payloads (no root) is always used; a level only when the root draws it: the finest loaded one not finer
-                // than the one it wants, per use of the root.
+                // A level is used only when the root draws it: the finest loaded one not finer than the one it wants, per use of the root.
                 auto tag = lodTag;
-                if (item.root != noEntity) {
-                    const auto& root = content.lodRoots.at(item.root);
-                    if (allLoaded) {
-                        if (std::ranges::find(root.loaded, item.level) == root.loaded.end()) {
-                            continue;
-                        }
-                    } else {
-                        auto drawnLevel = drawnLevelOf(w, parentPathOf(path), root, content, item.purpose);
-                        if (!drawnLevel || *drawnLevel != item.level) {
-                            continue;
-                        }
-                        tag = *drawnLevel + 1;
+                const auto& root = content.lodRoots.at(item.root);
+                if (allLoaded) {
+                    if (std::ranges::find(root.loaded, item.level) == root.loaded.end()) {
+                        continue;
                     }
+                } else {
+                    auto drawnLevel = drawnLevelOf(w, parentPathOf(path), root, content, item.purpose);
+                    if (!drawnLevel || *drawnLevel != item.level) {
+                        continue;
+                    }
+                    tag = *drawnLevel + 1;
                 }
-                useContent('L', linked, w.linkedContents[(size_t) linked], true, path, world, item.purpose, item.material, item.strongBinding, tag);
+                useContent('L', linked, w.contents[(size_t) linked], true, path, world, item.purpose, item.material, item.strongBinding, tag);
                 continue;
             }
             onPrim(content, item, path, world, lodTag);
@@ -1777,13 +1757,16 @@ auto ViewScene::extract() -> void {
             row.worldTransform = worldTransform;
             if (row.drawn && *row.drawn != row.wanted && std::ranges::contains(root.loaded, row.wanted) && row.wanted < root.levels.size()) {
                 auto linked = content.entities[root.levels[row.wanted]].linkedContent;
+                SceneLodRoot::Waiting waiting;
                 if (linked >= 0) {
-                    SceneLodRoot::Waiting waiting;
                     std::set<int64_t> seenContents;
                     std::set<std::string> seenMeshes;
                     countWaiting(w, 'L', linked, item.purpose, seenContents, seenMeshes, waiting);
-                    row.waiting = waiting;
+                } else {
+                    // The wanted level is still composing: it is linked once complete.
+                    waiting.contentsIncomplete = 1;
                 }
+                row.waiting = waiting;
             }
             drawnLodRoots.push_back(std::move(row));
         }
@@ -1883,10 +1866,8 @@ auto ViewScene::extract() -> void {
         const WorldContent* content = nullptr;
         if (key[0] == 'S') {
             content = &w.stage;
-        } else if (key[0] == 'P' && index < (int) w.prototypes.size()) {
-            content = &w.prototypes[(size_t) index];
-        } else if (key[0] == 'L' && index < (int) w.linkedContents.size()) {
-            content = &w.linkedContents[(size_t) index];
+        } else if ((key[0] == 'P' || key[0] == 'L') && index < (int) w.contents.size()) {
+            content = &w.contents[(size_t) index];
         }
         return content == nullptr || content->version != entry.second->version;
     });

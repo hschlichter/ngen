@@ -51,7 +51,7 @@ auto countInstances(const World& world) -> size_t {
         for (EntityId child : entity.children) {
             // A LOD level is its content's root, the level prim with everything under it.
             if (auto level = content->entities[child].linkedContent; level >= 0) {
-                pending.emplace_back(&world.linkedContents[(size_t) level], 0);
+                pending.emplace_back(&world.contents[(size_t) level], 0);
                 continue;
             }
             pending.emplace_back(content, child);
@@ -156,7 +156,7 @@ auto main(int argc, char** argv) -> int {
     std::vector<std::string> lines;
     if (instancing) {
         lines.push_back(std::format("instances\t{}", countInstances(world)));
-        lines.push_back(std::format("prototypes\t{}", world.prototypes.size()));
+        lines.push_back(std::format("prototypes\t{}", world.prototypeCount()));
     } else if (instancers) {
         world.visit([&](const VisitedEntity& visited) {
             auto found = visited.content->pointInstancers.find(visited.id);
@@ -221,7 +221,7 @@ auto main(int argc, char** argv) -> int {
                  scene,
                  packs,
                  failed,
-                 world.prototypes.size(),
+                 world.prototypeCount(),
                  meshes,
                  totalPoints,
                  ms(started, composed));

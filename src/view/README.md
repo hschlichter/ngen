@@ -44,7 +44,7 @@ The inputs persist across rebuilds:
   (`takeChanges`) and hands them to the renderer, which changes only that on the GPU (`src/renderer/README.md`, "Scene data on the GPU").
 - **Kept walks.** A rebuild doesn't walk every prim. Each content of the World (the stage, a prototype, a LOD level's content; see
   `src/world/README.md`) is walked once per version and per state it inherits where it is used (purpose, the material binding in force):
-  the walk keeps, in walk order, the prims that draw, light, frame, place payloads or root LOD, with transforms relative to the content's
+  the walk keeps, in walk order, the prims that draw, light, frame or root LOD, with transforms relative to the content's
   root, and where its instances and levels sit. A rebuild replays the kept walks of the contents used, from the stage down, so the draws
   come out in the same order as a full walk. Meshes and materials are resolved once per rebuild for each mesh and binding. A content
   holding a prim the gizmo moved is walked afresh, with the move. The `scenethread` record's `extract` says how many walks were reused
@@ -95,12 +95,12 @@ The inputs persist across rebuilds:
   the levels again without composing the stage (`WorldComposer::relink`). The `streaming` record has per root its screen size, whether its extent is
   in the view's frustum (what USD's query would go by), the level wanted and why, drawn and loaded, and for a level waited for what it waits for;
   totals over the roots. `LevelsWanted` traces each change of wanted levels.
-- **Switching levels**: a root draws the finest loaded level, not finer than the one it wants, that is ready (`contentReady`): composed with
-  every pack it named, and every mesh it draws (under its own purpose) held or failed, through the payloads and instances in it; a LOD root
-  inside it counts by its coarsest level. Until then the root keeps drawing the coarser level, and switches in the extract after the last
+- **Switching levels**: a root draws the finest loaded level, not finer than the one it wants, that is ready (`contentReady`): linked, which the
+  composer does only once it is complete, and every mesh it draws (under its own purpose) held or failed, through the instances in it; a LOD
+  root inside it counts by its coarsest level. Until then the root keeps drawing the coarser level, and switches in the extract after the last
   piece arrives, so a district appears whole instead of model by model. `LevelsSwitched` traces the roots whose drawn level changed, once
   per extract; the `streaming` record's `waiting` and the LOD window's tooltip on a loading row count what the wanted level waits for
-  (meshes not held, those asked for, contents composed without every pack). GPU uploads aren't part of it: a switched level's meshes are
+  (meshes not held, those asked for, levels still composing and so not linked). GPU uploads aren't part of it: a switched level's meshes are
   uploaded over the next frames within the upload budget.
 - **Unloading**: what stops being drawn (a mesh, material or texture: its library entry and its GPU entry) is kept for the unload delay
   (10 s by default; `lod-unload-delay S`, `view.lod.heuristic {unloadDelay}`, the LOD window), so turning back draws it without loading;

@@ -43,9 +43,9 @@ struct Entity {
     bool defined = false;  // some layer defines it (def or class), not only overs
     bool abstract = false; // its strongest specifier is class
     bool active = true;
-    int32_t prototype = -1; // an instance: the index of its prototype in World::prototypes
-    // A LOD level, or a prim with payloads: a stand-in for a content of its own, the index in World::linkedContents of the content that
-    // holds the prim itself (its entity 0) and everything under it.
+    int32_t prototype = -1; // an instance: the index of its prototype in World::contents, once the prototype is complete
+    // A LOD level: a stand-in for a content of its own, the index in World::contents of the content that holds the level prim (its entity
+    // 0) and everything under it, once that content is complete.
     int32_t linkedContent = -1;
     // A LOD item, a LOD root's child (its stand-in, and its content's entity 0): its authored visibility is what a reader that doesn't
     // select LOD sees; a LOD-aware reader shows the item it selects whatever it authors, as UsdLod says.
@@ -139,12 +139,21 @@ struct PayloadPlacement {
     std::optional<std::array<glm::vec3, 2>> extentsHint;
 };
 
-// One composed namespace: the stage, or a prototype. Entity 0 is its root: the pseudo-root "/" for the stage, the instance prim for a
-// prototype (its children are every instance's children). Paths are relative to the content: a prototype's children are "/<name>".
+// What a content is: the stage; a prototype, whose entity 0 stands for every instance (its children are every instance's children); or a
+// LOD level, whose entity 0 is the level prim.
+enum class ContentKind : uint8_t {
+    Stage,
+    Prototype,
+    Level,
+};
+
+// One composed namespace: the stage, a prototype or a LOD level. Entity 0 is its root: the pseudo-root "/" for the stage, the instance
+// prim for a prototype, the level prim for a level. Paths are relative to the content: a prototype's children are "/<name>". Every content
+// other than the stage is complete (composed with every pack it named held, or failed) once anything links to it.
 struct WorldContent {
+    ContentKind kind = ContentKind::Stage;
     std::string sourcePath; // the stage's "/"; for a prototype, the first instance's path (for messages)
     uint64_t version = 0;   // which composition this is: a content composed again (or the stage, every compose) gets a new one
-    bool complete = false;  // composed with every pack it named held (or failed)
     std::vector<Entity> entities;
     std::unordered_map<std::string, EntityId> byPath;
     std::unordered_map<EntityId, Light> lights;
@@ -178,10 +187,8 @@ struct VisitedEntity {
 
 struct World {
     WorldContent stage;
-    // Kept across composes, so an index stays the same content: prototypes, and linked contents (a LOD level as loaded or not, a prim with
-    // payloads), linked to their stand-in entity by linkedContent.
-    std::deque<WorldContent> prototypes;
-    std::deque<WorldContent> linkedContents;
+    // Prototypes and LOD levels, kept across composes at stable indices (an instance's prototype, a level stand-in's linkedContent).
+    std::deque<WorldContent> contents;
     std::string upAxis = "Y";            // the root layer's, USD's fallback Y when it authors none
     double metersPerUnit = 0.01;         // the root layer's, USD's fallback 0.01 when it authors none
     std::vector<std::string> layerStack; // the root layer stack's asset ids, strongest first
@@ -193,6 +200,8 @@ struct World {
     // The level it draws: the finest loaded level not finer than the wanted one, else the finest loaded one.
     auto drawnLevel(const std::string& rootPath, const LodRoot& root) const -> std::optional<uint32_t>;
 
+    // The prototypes held in contents.
+    auto prototypeCount() const -> size_t;
     // Every entity, depth first, parents before children, instances expanded; the stage's root is not visited. Returning false from
     // `visitor` skips the entity's children.
     auto visit(const std::function<bool(const VisitedEntity&)>& visitor) const -> void;
