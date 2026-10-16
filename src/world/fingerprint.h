@@ -33,3 +33,18 @@ inline auto fingerprintLine(std::string_view path, std::string_view type, int64_
     }
     return line;
 }
+
+// One point of a PointInstancer, as --instancers prints them: the instancer's path and the point's id (its authored id, or its index),
+// the prototype it places (empty when the prototype isn't there), whether it is shown (0 when invisibleIds hides it), and its world matrix
+// (the instancer's world transform times the point's translate * rotate * scale, the prototype's own transform not included), as
+// fingerprintLine prints a matrix.
+inline auto fingerprintPointLine(std::string_view instancer, int64_t id, std::string_view prototype, bool visible, const double* matrix) -> std::string {
+    auto line = std::format("{}#{}\t{}\t{}\t", instancer, id, prototype, visible ? 1 : 0);
+    for (int i = 0; i < 16; i++) {
+        if (i > 0) {
+            line += " ";
+        }
+        line += fingerprintNumber(matrix[i]);
+    }
+    return line;
+}

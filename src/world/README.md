@@ -138,5 +138,7 @@ cmp /tmp/usd.txt /tmp/world.txt
 
 A fingerprint (`fingerprint.h`) is one line per prim, instances expanded, sorted: its path, its type and its point count (0 unless it is
 point-based), and with `--transforms` its world matrix. `--lod <root path>=<level>` sets a LOD root's level before composing, in both tools;
-`--instancing` prints instance and prototype counts instead. Both run in the asset server's directory; `ngen-usdcheck` reads the files from
+`--instancing` prints instance and prototype counts instead; `--instancers` prints every PointInstancer's points instead, a line each: the
+instancer and the point's id, its prototype, whether it is shown, and its world matrix (USD's from `ComputeInstanceTransformsAtTime`, as
+authored: a half-precision quaternion isn't normalized, in either). Both run in the asset server's directory; `ngen-usdcheck` reads the files from
 disk there. A prim the packer warned about (an inherit, an `over` authoring geometry) differs where the warning says it does.

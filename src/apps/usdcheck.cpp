@@ -2,7 +2,10 @@
 // is compared with. It loads what the World loads: every payload, except those under a LOD root's levels other than the one it wants
 // (lod:default:index, or --lod) and its coarsest.
 //
-//   ngen-usdcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--output <file>] <scene file>
+//   ngen-usdcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--instancers] [--output <file>] <scene file>
+//
+// --instancers prints every PointInstancer's points (fingerprintPointLine) instead of the fingerprint, from
+// UsdGeomPointInstancer::ComputeInstanceTransformsAtTime without the prototypes' own transforms.
 //
 // The scene file is read from disk, relative to the working directory: the asset server's, where an asset id is the path. Exit codes: 0
 // printed, 1 the stage didn't open, 3 usage.
@@ -19,6 +22,7 @@
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/usdGeom/imageable.h>
 #include <pxr/usd/usdGeom/pointBased.h>
+#include <pxr/usd/usdGeom/pointInstancer.h>
 #include <pxr/usd/usdLod/rootAPI.h>
 
 #include <algorithm>
@@ -45,7 +49,7 @@ namespace {
 }
 
 auto usage() -> int {
-    std::fputs("usage: ngen-usdcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--output <file>] <scene file>\n", stderr);
+    std::fputs("usage: ngen-usdcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--instancers] [--output <file>] <scene file>\n", stderr);
     return 3;
 }
 
@@ -121,6 +125,7 @@ auto collectLoads(const UsdPrim& prim, bool allowed, const std::map<std::string,
 auto main(int argc, char** argv) -> int {
     bool transforms = false;
     bool instancing = false;
+    bool instancers = false;
     std::string output;
     std::string scene;
     std::map<std::string, unsigned> levels;
@@ -130,6 +135,8 @@ auto main(int argc, char** argv) -> int {
             transforms = true;
         } else if (arg == "--instancing") {
             instancing = true;
+        } else if (arg == "--instancers") {
+            instancers = true;
         } else if (arg == "--output" && i + 1 < argc) {
             output = argv[++i];
         } else if (arg == "--lod" && i + 1 < argc) {
@@ -202,7 +209,44 @@ auto main(int argc, char** argv) -> int {
     };
     visit(stage->GetPseudoRoot());
 
-    if (instancing) {
+    if (instancers) {
+        lines.clear();
+        for (const auto& prim : stage->Traverse(everyPrim())) {
+            if (!prim.IsA<UsdGeomPointInstancer>()) {
+                continue;
+            }
+            UsdGeomPointInstancer instancer(prim);
+            VtArray<GfMatrix4d> transforms;
+            if (!instancer.ComputeInstanceTransformsAtTime(&transforms, UsdTimeCode::Default(), UsdTimeCode::Default(), UsdGeomPointInstancer::ExcludeProtoXform, UsdGeomPointInstancer::IgnoreMask)) {
+                continue;
+            }
+            VtArray<int> protoIndices;
+            instancer.GetProtoIndicesAttr().Get(&protoIndices);
+            VtArray<int64_t> ids;
+            instancer.GetIdsAttr().Get(&ids);
+            SdfPathVector prototypes;
+            instancer.GetPrototypesRel().GetForwardedTargets(&prototypes);
+            auto mask = instancer.ComputeMaskAtTime(UsdTimeCode::Default());
+            GfMatrix4d instancerWorld = worldTransform(prim);
+            for (size_t i = 0; i < transforms.size(); i++) {
+                std::string prototype;
+                if (i < protoIndices.size() && protoIndices[i] >= 0 && (size_t) protoIndices[i] < prototypes.size() && stage->GetPrimAtPath(prototypes[(size_t) protoIndices[i]])) {
+                    prototype = prototypes[(size_t) protoIndices[i]].GetString();
+                }
+                GfMatrix4d m = transforms[i] * instancerWorld;
+                double matrix[16];
+                for (int row = 0; row < 4; row++) {
+                    for (int column = 0; column < 4; column++) {
+                        matrix[(row * 4) + column] = m[row][column];
+                    }
+                }
+                auto id = i < ids.size() ? ids[i] : (int64_t) i;
+                bool visible = mask.empty() || mask[i];
+                lines.push_back(fingerprintPointLine(prim.GetPath().GetString(), id, prototype, visible, matrix));
+            }
+        }
+        std::ranges::sort(lines);
+    } else if (instancing) {
         size_t instances = 0;
         for (const auto& prim : stage->Traverse()) {
             if (prim.IsInstance()) {

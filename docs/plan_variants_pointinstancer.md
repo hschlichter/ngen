@@ -1,6 +1,6 @@
 # Variant sets and PointInstancer
 
-**Status. In progress.** Decisions 1 to 6 locked 2026-10-16, each as recommended; steps 1 to 4 done 2026-10-16. Lands before
+**Status. In progress.** Decisions 1 to 6 locked 2026-10-16, each as recommended; steps 1 to 5 done 2026-10-16. Lands before
 [plan_streaming_v2.md](plan_streaming_v2.md) step 4 (placements), so the placement tree is built with both.
 
 ## Current state
@@ -203,6 +203,17 @@ Compared as files, as the fingerprints are.
   in both); nothing drawn under it yet (`camera-frame` finds nothing). The test world draws 59,997 instead of 60,150: the ground cover's
   prototypes, which drew once in their `Prototypes` scope, no longer do.
 - Baselines byte-identical.
+
+### Step 5 results (2026-10-16)
+
+- `--instancers` in `ngen-usdcheck` (from `UsdGeomPointInstancer::ComputeInstanceTransformsAtTime` without the prototypes' transforms,
+  `ComputeMaskAtTime` for visibility) and `ngen-worldcheck` (from `PointInstancerData`); `fingerprintPointLine` in `fingerprint.h`.
+- Two differences it found, both fixed: the World normalized each quaternion and USD doesn't (`GfMatrix4d::SetRotate` takes it as
+  authored; a half-precision one isn't quite unit), and the World computed and kept the point matrices in float, which put 96 of 82,266
+  values on the other side of the fingerprint's fourth decimal. `PointInstancerData::transforms` is now `glm::dmat4`, as entity transforms
+  are (about 9 MB for a tile at `full`'s 70,000 points).
+- Identical: the layered scene's 5 points, the test world's 82,266 with a tile at `full`; Caldera has none. `--transforms` and
+  `--instancing` unchanged; baselines byte-identical.
 
 ## Visibility
 

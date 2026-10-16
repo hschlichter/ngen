@@ -1358,15 +1358,16 @@ struct WorldComposer::Impl {
         for (size_t i = 0; i < count; i++) {
             data.protoIndices.push_back((uint32_t) std::max(0.0, indices->numbers[i]));
             const auto& p = positions->numbers;
-            glm::mat4 transform = glm::translate(glm::mat4(1.0f), glm::vec3((float) p[i * 3], (float) p[i * 3 + 1], (float) p[i * 3 + 2]));
+            glm::dmat4 transform = glm::translate(glm::dmat4(1.0), glm::dvec3(p[i * 3], p[i * 3 + 1], p[i * 3 + 2]));
             if (orientations != nullptr) {
                 const auto& q = orientations->numbers;
-                auto rotation = glm::normalize(glm::quat((float) q[i * 4], (float) q[i * 4 + 1], (float) q[i * 4 + 2], (float) q[i * 4 + 3]));
+                // As USD's GfMatrix4d::SetRotate: the quaternion as authored, not normalized (a half-precision one isn't quite unit).
+                auto rotation = glm::dquat(q[i * 4], q[i * 4 + 1], q[i * 4 + 2], q[i * 4 + 3]);
                 transform = transform * glm::mat4_cast(rotation);
             }
             if (scales != nullptr) {
                 const auto& s = scales->numbers;
-                transform = glm::scale(transform, glm::vec3((float) s[i * 3], (float) s[i * 3 + 1], (float) s[i * 3 + 2]));
+                transform = glm::scale(transform, glm::dvec3(s[i * 3], s[i * 3 + 1], s[i * 3 + 2]));
             }
             data.transforms.push_back(transform);
         }

@@ -1,10 +1,11 @@
 // ngen-worldcheck: composes a scene's World from its packs, fetched from this variant's asset server, and prints its fingerprint
 // (src/world/fingerprint.h), to compare with ngen-usdcheck's for the same scene.
 //
-//   ngen-worldcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--output <file>] <scene id>
+//   ngen-worldcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--instancers] [--output <file>] <scene id>
 //
 // --lod sets a LOD root's wanted level before composing (the path with instances expanded); --transforms adds world matrices;
-// --instancing prints instance and prototype counts instead of the fingerprint. A summary and what couldn't compose go to stderr.
+// --instancing prints instance and prototype counts instead of the fingerprint; --instancers prints every PointInstancer's points instead
+// (fingerprintPointLine). A summary and what couldn't compose go to stderr.
 // Exit codes: 0 composed, 1 the server or the scene's root failed, 3 usage.
 
 #include "assetclient.h"
@@ -23,7 +24,7 @@
 namespace {
 
 auto usage() -> int {
-    std::println(stderr, "usage: ngen-worldcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--output <file>] <scene id>");
+    std::println(stderr, "usage: ngen-worldcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--instancers] [--output <file>] <scene id>");
     return 3;
 }
 
@@ -64,6 +65,7 @@ auto countInstances(const World& world) -> size_t {
 auto main(int argc, char** argv) -> int {
     bool transforms = false;
     bool instancing = false;
+    bool instancers = false;
     std::string output;
     std::string scene;
     std::vector<std::pair<std::string, uint32_t>> levels;
@@ -73,6 +75,8 @@ auto main(int argc, char** argv) -> int {
             transforms = true;
         } else if (arg == "--instancing") {
             instancing = true;
+        } else if (arg == "--instancers") {
+            instancers = true;
         } else if (arg == "--output" && i + 1 < argc) {
             output = argv[++i];
         } else if (arg == "--lod" && i + 1 < argc) {
@@ -153,6 +157,34 @@ auto main(int argc, char** argv) -> int {
     if (instancing) {
         lines.push_back(std::format("instances\t{}", countInstances(world)));
         lines.push_back(std::format("prototypes\t{}", world.prototypes.size()));
+    } else if (instancers) {
+        world.visit([&](const VisitedEntity& visited) {
+            auto found = visited.content->pointInstancers.find(visited.id);
+            if (found == visited.content->pointInstancers.end()) {
+                return true;
+            }
+            const auto& data = found->second;
+            auto instancerPath = visited.content->path(visited.id);
+            for (size_t i = 0; i < data.protoIndices.size(); i++) {
+                std::string prototype;
+                if (data.protoIndices[i] < data.prototypes.size() && data.prototypes[data.protoIndices[i]] != noEntity) {
+                    // The prototype's full path: the instancer's, then the prototype's below it in their content.
+                    auto inContent = visited.content->path(data.prototypes[data.protoIndices[i]]);
+                    prototype = inContent.starts_with(instancerPath) ? visited.path + inContent.substr(instancerPath.size()) : inContent;
+                }
+                glm::dmat4 world = visited.worldTransform * data.transforms[i];
+                double matrix[16];
+                for (int column = 0; column < 4; column++) {
+                    for (int row = 0; row < 4; row++) {
+                        matrix[(column * 4) + row] = world[column][row];
+                    }
+                }
+                auto id = data.ids.empty() ? (int64_t) i : data.ids[i];
+                lines.push_back(fingerprintPointLine(visited.path, id, prototype, data.visible[i] != 0, matrix));
+            }
+            return true;
+        });
+        std::ranges::sort(lines);
     } else {
         world.visit([&](const VisitedEntity& visited) {
             int64_t points = std::max<int64_t>(visited.entity->pointCount, 0);

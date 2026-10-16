@@ -125,7 +125,7 @@ struct LodRoot {
 struct PointInstancerData {
     std::vector<EntityId> prototypes;
     std::vector<uint32_t> protoIndices;
-    std::vector<glm::mat4> transforms;
+    std::vector<glm::dmat4> transforms; // in double, as entity transforms and USD's are
     std::vector<int64_t> ids; // the authored ids; empty when none are, a point's id then being its index
     std::vector<uint8_t> visible;
 };
