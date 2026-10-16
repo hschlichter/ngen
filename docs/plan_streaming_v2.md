@@ -237,7 +237,16 @@ Locked (2026-10-15). Stays: screen size of the extent's bounding sphere, the 20%
 - **What the engine doesn't read yet**, for the variants and `PointInstancer` plan: variant sets (a packer warning per placement that selects
   one, so per asset placement in a tile), `PointInstancer` (not drawn), and LOD items that are `over`s (the assets' levels outside the variant):
   UsdLod counts only defined children as items, the engine counts every child.
-- **Not done yet**: the baseline flight along `flight_NN`. It runs once the cap is gone (step 2), so the baseline isn't a capped one.
+- **The baseline flight** (after step 2, so not a capped one): the 27 `flight_NN` cameras, `wait-resident` at each, records on arrival
+  and 1,500 frames later, `lod-unload-delay 1` (the view runs at about 470 frames a second here, so a frame count says little about time:
+  the first try, with the default 10 s delay and 700 frames, ended before anything was due). The path crosses `R_2_2` from cp08 to cp20,
+  the only region generated. Every root draws a level at all 54 records; up to 7 of 16 tiles `full` and 57,224 roots (cp15); mesh packs
+  rise to 99 inside the region and fall back to the region proxy's 4 a second after leaving it (107 released by cp21); peak resident
+  memory 1.2 GB; no view warnings. Two runs give the same levels for every root at every record; the held packs differ at 2 arrivals (99
+  against 91, 91 against 97), as releases follow the clock, and match once settled.
+- **`wait-resident` answered before a moved camera's levels**, so each arrival recorded the previous checkpoint: `ViewScene::idle()` didn't
+  count a camera posted and not yet evaluated, nor a batch taken and not yet published. Both count now (`src/view/README.md`, "Resident"):
+  arrivals match their settled records. While the camera moves the scene isn't resident, and `SceneResident` follows each stop.
 
 ### Step 2 results (2026-10-16)
 

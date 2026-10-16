@@ -21,7 +21,8 @@ The view shows a scene composed from its packs, with nothing of USD in it (`src/
 cutout whose opacity texture is still uploading draws opaque. A material that hasn't arrived uses the display colour.
 
 **Resident.** The scene is resident when everything it wants is loaded, uploaded and drawn:
-- the scene thread has nothing queued, requested or unextracted;
+- the scene thread has nothing queued, requested or unextracted, no camera posted it hasn't evaluated, and no batch it took and hasn't
+  published (so a moved camera's levels count: while the camera moves, the scene isn't resident);
 - the render thread has applied every change list in a frame it finished, with no upload or pipeline pending.
 
 The main loop checks once a frame, and traces `SceneResident` when it becomes true, with the time since start and the longest frame while

@@ -217,8 +217,9 @@ auto ViewScene::idle() const -> bool {
         return false;
     }
     std::lock_guard lock(mutex);
-    // The snapshot taken is the latest, and it was published with nothing left to do.
-    return published == current && current->idle && requests.empty() && !answered;
+    // The snapshot taken is the latest, and it was published with nothing left to do: no request, answer or camera the scene thread hasn't
+    // taken (a camera moved may want other levels), and none it took and is still working on.
+    return published == current && current->idle && requests.empty() && !answered && !postedCamera.has_value() && !working;
 }
 
 auto ViewScene::takeChanges() -> SceneChanges {
@@ -266,6 +267,7 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
             requests.clear();
             answers = answered;
             answered = false;
+            working = true;
             if (postedCamera) {
                 camera = postedCamera;
                 postedCamera.reset();
@@ -982,6 +984,7 @@ auto ViewScene::publish() -> void {
     snapshot->idle = inFlight.empty() && !composeNeeded && !extractNeeded;
     std::lock_guard lock(mutex);
     published = std::move(snapshot);
+    working = false;
     stats.publishMs = msSince(publishStart);
 }
 

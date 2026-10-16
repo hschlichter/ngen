@@ -378,6 +378,7 @@ private:
     std::condition_variable_any wake;
     std::deque<Request> requests;
     bool answered = false;                          // the asset client answered something since the scene thread last looked
+    bool working = false;                           // the scene thread took a batch and hasn't published its result yet
     std::shared_ptr<const SceneSnapshot> published; // the latest, for update()
     SceneChanges pending;                           // what changed since takeChanges() last ran
     std::atomic<uint64_t> requestsPosted{0};
