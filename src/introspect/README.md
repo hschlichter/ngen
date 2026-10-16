@@ -21,7 +21,9 @@ records with `registerRpcRecords` (engine layer); the asset server answers the t
 | Process | Record | What it holds |
 |---|---|---|
 | view | `status` | frame counter, scene, selection, camera, anti-aliasing, material sampler, purposes drawn |
-| view | `scene` | layer stack, up axis and units, prims (instances expanded), prototypes, draws, lights, LOD levels set |
+| view | `scene` | layer stack, up axis and units, prims (instances expanded), prototypes, draws, lights, LOD levels set, point instancers and their points, prims with variant sets |
+| view | `instancers` | every PointInstancer reached while drawing: its points and those shown, its prototypes, the prims its points draw |
+| view | `variants` | every prim with variant sets reached while drawing: each set and the variant it composed to; per set, how many prims chose each variant |
 | view | `assets` | what the view asked the asset server for and received: totals, and per asset its state, packed or cached, size, request and arrival times and the server's time |
 | view | `culling` | GPU culling's latest readback: instances and triangles drawn and culled, camera and per cascade |
 | view | `profile` | the profiler's frame history, CPU and GPU time per frame |

@@ -1297,7 +1297,8 @@ auto ViewScene::buildExtract(const WorldContent& content, bool rootIsPrim, Purpo
                          .camera = entity.typeName == "Camera",
                          .payload = content.payloads.contains(id),
                          .lodRoot = content.lodRoots.contains(id),
-                         .light = content.lights.contains(id)};
+                         .light = content.lights.contains(id),
+                         .variants = !entity.variantSelections.empty()};
         if (!entity.meshAsset.empty()) {
             auto [it, added] = meshIds.try_emplace(entity.meshAsset, (uint32_t) meshIds.size());
             prim.meshId = it->second;
@@ -1305,7 +1306,7 @@ auto ViewScene::buildExtract(const WorldContent& content, bool rootIsPrim, Purpo
             prim.materialId = material->second;
             prim.subsets = std::ranges::any_of(entity.children, [&](EntityId child) { return content.entities[child].binding.has_value(); });
         }
-        if (prim.meshId != UINT32_MAX || prim.camera || prim.payload || prim.lodRoot || prim.light) {
+        if (prim.meshId != UINT32_MAX || prim.camera || prim.payload || prim.lodRoot || prim.light || prim.variants) {
             out->items.push_back(std::move(prim));
         }
         if (content.pointInstancers.contains(id)) {
@@ -1552,14 +1553,27 @@ auto ViewScene::replay(const World& w, const PrimVisitor& onPrim, TransformIndex
                     prototypePaths.push_back(path + inContent.substr(std::min(inContent.size(), instancerInContent.size())));
                     prototypeWalks.push_back(extractOf(kind, index, content, true, item.purpose, item.material, item.strongBinding, prototypePaths.back(), prototype));
                 }
+                size_t reachedIndex = 0;
+                auto drawnBefore = primsDrawnSoFar;
+                if (reachedInstancers != nullptr) {
+                    reachedIndex = reachedInstancers->size();
+                    reachedInstancers->push_back({.path = path, .points = (uint32_t) data.protoIndices.size(), .prototypes = prototypePaths});
+                }
                 for (size_t point = 0; point < data.protoIndices.size(); point++) {
                     auto which = data.protoIndices[point];
                     if (data.visible[point] == 0 || which >= prototypeWalks.size() || !prototypeWalks[which]) {
                         continue;
                     }
+                    if (reachedInstancers != nullptr) {
+                        (*reachedInstancers)[reachedIndex].visiblePoints++;
+                    }
                     auto id = data.ids.empty() ? (int64_t) point : data.ids[point];
                     auto pointPath = std::format("{}#{}", prototypePaths[which], id);
                     useItems(kind, index, content, *prototypeWalks[which], pointPath, world * glm::mat4(data.transforms[point]), lodTag);
+                }
+                if (reachedInstancers != nullptr) {
+                    // Nested instancers append to the list: this one is found by its index, its count the draws its points made.
+                    (*reachedInstancers)[reachedIndex].primsDrawn = primsDrawnSoFar - drawnBefore;
                 }
                 continue;
             }
@@ -1613,6 +1627,8 @@ auto ViewScene::extract() -> void {
     authoredCameras.clear();
     drawnLodRoots.clear();
     reachedPayloads.clear();
+    reachedVariantPrims.clear();
+    std::vector<SceneInstancer> instancersReached;
     drawsByAsset.clear();
     assetsByPrim.clear();
     // The last extract's sizes: what this one will most likely build again.
@@ -1726,6 +1742,9 @@ auto ViewScene::extract() -> void {
         if (item.camera) {
             authoredCameras.push_back({.path = path, .worldTransform = worldTransform});
         }
+        if (item.variants) {
+            reachedVariantPrims.push_back({.path = path, .selections = entity.variantSelections});
+        }
         if (!item.payload) {
         } else if (auto payload = content.payloads.find(item.id); payload != content.payloads.end()) {
             ScenePayload placement = {.path = path, .assetIds = payload->second.assetIds, .loaded = payload->second.loaded};
@@ -1734,7 +1753,8 @@ auto ViewScene::extract() -> void {
             }
             reachedPayloads.push_back(std::move(placement));
         }
-        if (!item.lodRoot) {
+        // A LOD root in a point's prototype ("<prototype>#<id>/…") draws its default level and isn't the heuristic's to choose.
+        if (!item.lodRoot || path.find('#') != std::string::npos) {
         } else if (auto lod = content.lodRoots.find(item.id); lod != content.lodRoots.end()) {
             const auto& root = lod->second;
             SceneLodRoot row;
@@ -1790,6 +1810,7 @@ auto ViewScene::extract() -> void {
         if (item.meshId == UINT32_MAX || !drawsPurpose(item.purpose)) {
             return;
         }
+        primsDrawnSoFar++;
         if (item.meshId >= meshMemo.size()) {
             meshMemo.resize(item.meshId + 1024);
             meshChecked.resize(item.meshId + 1024, false);
@@ -1851,7 +1872,10 @@ auto ViewScene::extract() -> void {
         assetsByPrim[prim - 1] = resolved->uses;
     };
 
+    reachedInstancers = &instancersReached;
+    primsDrawnSoFar = 0;
     replay(w, [&](const WorldContent& content, const ExtractItem& item, const std::string& path, const glm::mat4& world, uint32_t lodTag) { primAt(content, item, path, unitScale * world, lodTag); }, transformIndex.get());
+    reachedInstancers = nullptr;
     // Kept walks of contents composed again since are dropped.
     std::erase_if(extractCache, [&](const auto& entry) {
         const auto& key = entry.first;
@@ -1979,6 +2003,8 @@ auto ViewScene::extract() -> void {
     }
     built->lodRoots = std::move(drawnLodRoots);
     built->payloads = std::move(reachedPayloads);
+    built->instancers = std::move(instancersReached);
+    built->variantPrims = std::move(reachedVariantPrims);
     this->draws = std::move(built);
     if (drawn.lights != previousLights) {
         changes.lightsChanged = true;

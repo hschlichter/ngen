@@ -184,13 +184,13 @@ def Xform "World" (
         uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 
-    # A PointInstancer: two prototypes beneath it (a referenced model and a cube), five points with orientations (half quaternions),
-    # scales and ids, one hidden by invisibleIds. The prototypes draw only through it.
+    # A PointInstancer: three prototypes beneath it (a referenced model, a cube, and the LOD tree), five points with orientations (half
+    # quaternions), scales and ids, one hidden by invisibleIds. The prototypes draw only through it.
     def PointInstancer "Scatter"
     {
         double3 xformOp:translate = (-8, 0, 0)
         uniform token[] xformOpOrder = ["xformOp:translate"]
-        int[] protoIndices = [0, 1, 0, 1, 0]
+        int[] protoIndices = [0, 1, 0, 1, 2]
         point3f[] positions = [(0, 0, 0), (2, 0, 0), (4, 0, 0), (0, 0, 2), (2, 0, 2)]
         quath[] orientations = [(1, 0, 0, 0), (0.7071, 0, 0.7071, 0), (1, 0, 0, 0), (0.9239, 0, 0.3827, 0), (1, 0, 0, 0)]
         float3[] scales = [(1, 1, 1), (0.5, 0.5, 0.5), (1.5, 1.5, 1.5), (0.8, 0.8, 0.8), (1, 2, 1)]
@@ -199,6 +199,7 @@ def Xform "World" (
         rel prototypes = [
             </World/Scatter/Prototypes/Tree>,
             </World/Scatter/Prototypes/Block>,
+            </World/Scatter/Prototypes/LodTree>,
         ]
 
         def Scope "Prototypes"
@@ -207,6 +208,14 @@ def Xform "World" (
                 prepend references = @./model.usda@
             )
             {
+            }
+
+            # A prototype with a LOD root in it: every point draws its default level, and the composer says so.
+            def Xform "LodTree" (
+                prepend references = </World/Tree>
+            )
+            {
+                double3 xformOp:translate = (0, 0, 0)
             }
 
             def Cube "Block"

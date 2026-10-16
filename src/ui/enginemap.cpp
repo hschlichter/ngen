@@ -94,8 +94,9 @@ const std::vector<EngineMapNode> nodes = {
         .lane = 2,
         .row = 4,
         .description = "WorldComposer composes the World from the layer packs held, as USD composes a stage (sublayers, references, payloads, "
-                       "instancing, LOD levels), and asks for the packs it names and lacks: one level of arcs deeper each round.",
-        .records = {"scenethread", "scene", "lod"},
+                       "variant sets, instancing, point instancers, LOD levels, material inputs), and asks for the packs it names and lacks: one "
+                       "level of arcs deeper each round.",
+        .records = {"scenethread", "scene", "lod", "variants"},
         .windows = {"sceneflow", "lod"},
         .readme = "src/world/README.md",
     },
@@ -104,9 +105,10 @@ const std::vector<EngineMapNode> nodes = {
         .label = "Extract",
         .lane = 2,
         .row = 5,
-        .description = "Walks the World and builds the renderer's inputs: a draw per prim submesh, lights, cameras and LOD roots. Meshes, "
-                       "materials and textures are kept per asset in libraries across rebuilds, and for the unload delay after they stop being drawn.",
-        .records = {"scenethread", "lod", "payloads"},
+        .description = "Walks the World and builds the renderer's inputs: a draw per prim submesh (and per point of a point instancer, its "
+                       "prototype's walk used once per point), lights, cameras and LOD roots. Meshes, materials and textures are kept per asset in "
+                       "libraries across rebuilds, and for the unload delay after they stop being drawn.",
+        .records = {"scenethread", "lod", "payloads", "instancers", "variants"},
         .windows = {"sceneflow", "lod"},
         .readme = "src/view/README.md",
     },

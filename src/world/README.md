@@ -21,7 +21,8 @@ the caller feeds the composer packs from the asset server.
   instances and gives every entity its full path.
 - **An entity** has its name, type, parent and children, whether it is defined, abstract (a class) and active, its point count (point-based
   prims), its authored purpose and visibility, its local transform (types that are `UsdGeomXformable`), the mesh asset its geometry is and the
-  material asset it is and, for a material, its own inputs as composed (`materialInputs`, its interface), and its material binding (the
+  material asset it is, its variant sets as composed (`variantSelections`: each set and the variant selected), and, for a material, its
+  own inputs as composed (`materialInputs`, its interface), and its material binding (the
   bound material as a key, `materialKey`: its pack's asset id and its inputs' values, `<asset>?<input>=<value>&…`, and
   `strongerThanDescendants`). A material that references another file's network and sets its inputs (a tile setting a library
   material's texture) is that file's pack with this one's values.

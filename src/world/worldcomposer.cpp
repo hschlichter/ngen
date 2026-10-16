@@ -1120,6 +1120,13 @@ struct WorldComposer::Impl {
                 entity.materialAsset = spec.materialAsset;
             }
         }
+        for (const auto& contribution : contributing) {
+            for (const auto& set : authoredVariantSets(*contribution.node->stack, contribution.node->path)) {
+                if (std::ranges::none_of(entity.variantSelections, [&set](const auto& selection) { return selection.first == set; })) {
+                    entity.variantSelections.emplace_back(set, variantSelection(index.root, set));
+                }
+            }
+        }
         entity.active = active != 0;
         if (entity.typeName != "Material") {
             // inputs:* on anything else (a light's) aren't a material's interface.
@@ -1259,7 +1266,7 @@ struct WorldComposer::Impl {
         context.content->complete = context.info->complete;
         context.info->messages = std::move(done.messages);
         resolveHeuristics(done.heuristics);
-        resolvePrototypes(done.prototypes);
+        resolvePrototypes(done.prototypes, context.info->messages);
     }
 
     // A root's heuristic, as UsdLod has a renderer choose it: the first of its lod:heuristics targets of a type and domain it understands
@@ -1317,16 +1324,30 @@ struct WorldComposer::Impl {
     }
 
     // An instancer's prototypes, once its content is composed: each target in order, noEntity for one not in the content.
-    auto resolvePrototypes(const std::vector<PendingTarget>& pending) -> void {
+    auto resolvePrototypes(const std::vector<PendingTarget>& pending, std::vector<std::string>& messagesOut) -> void {
         for (const auto& target : pending) {
             auto& data = target.content->pointInstancers.at(target.entity);
             auto found = target.outside ? target.content->byPath.end() : target.content->byPath.find(target.path);
             if (found == target.content->byPath.end()) {
-                message(std::format("{}: a PointInstancer's prototype {} isn't in its content; its points aren't drawn", target.content->path(target.entity), target.path));
+                messagesOut.push_back(std::format("{}: a PointInstancer's prototype {} isn't in its content; its points aren't drawn", target.content->path(target.entity), target.path));
                 data.prototypes.push_back(noEntity);
                 continue;
             }
             data.prototypes.push_back(found->second);
+            // Every point draws a prototype's LOD roots at their default level (a level per point isn't selected): said once per instancer.
+            for (const auto& [rootId, root] : target.content->lodRoots) {
+                bool under = false;
+                for (EntityId at = rootId; at != noEntity && !under; at = target.content->entities[at].parent) {
+                    under = at == found->second;
+                }
+                if (under) {
+                    messagesOut.push_back(std::format("{}: a PointInstancer's prototype {} has a LOD root ({}); every point draws its default level",
+                                                      target.content->path(target.entity),
+                                                      target.path,
+                                                      target.content->path(rootId)));
+                    break;
+                }
+            }
         }
     }
 
@@ -1758,7 +1779,7 @@ struct WorldComposer::Impl {
         windows.pop_back();
         stageMessages = std::move(stageWindow.messages);
         resolveHeuristics(stageWindow.heuristics);
-        resolvePrototypes(stageWindow.prototypes);
+        resolvePrototypes(stageWindow.prototypes, stageMessages);
         if (rootStack == nullptr) {
             reached.clear();
             finishCompose();

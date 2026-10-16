@@ -1,6 +1,6 @@
 # Variant sets and PointInstancer
 
-**Status. In progress.** Decisions 1 to 6 locked 2026-10-16, each as recommended; steps 1 to 6 done 2026-10-16. Lands before
+**Status. Landed.** Decisions 1 to 6 locked 2026-10-16, each as recommended; steps 1 to 7 done 2026-10-16. Landed before
 [plan_streaming_v2.md](plan_streaming_v2.md) step 4 (placements), so the placement tree is built with both.
 
 ## Current state
@@ -234,6 +234,23 @@ Compared as files, as the fingerprints are.
   placements and a look at the snapshot's lifetime are where they go. The RHI examples pass `--check --validation`; baselines
   byte-identical.
 - Baselines byte-identical; the layered tree's LOD as before.
+
+### Step 7 results (2026-10-16): the visibility pass
+
+- **Records**: `instancers` (per instancer its points, shown points, prototypes and the prims its points drew), `variants` (per prim its
+  sets and the variant each composed to, `Entity::variantSelections`; per set how many prims chose each variant), and in `scene`
+  `instancers`, `instancerPoints` and `primsWithVariants`. `view.inspect` in the Visibility list below is the texture inspector, not a prim
+  inspector, and ngen-view has none: a prim's variant selections are in the `variants` record, not shown for the selection in a window.
+  That window is the editor's.
+- **Decision 4 done**: a LOD root in a point's prototype draws its default level and has no heuristic row (one would have been made per
+  point); the composer says so once per instancer. `assets/layered/`'s `/World/Scatter` has a third prototype, `LodTree` (an internal
+  reference to the LOD tree), for it. Writing that message found a crash: an instancer's messages went to the composition window, which for
+  the stage is gone by then; they now go to the content's messages.
+- **Engine Map**: Compose names variant sets, point instancers and material inputs, and lists `variants`; Extract names point instancing
+  and lists `instancers` and `variants`.
+- **The test world at `grassland`**: 28 instancers, 593,549 points, all shown: 89% of the 663,974 draws. 52,210 prims with variant sets
+  (`shape` for trees, bushes and rocks, `form` for logs, `state` for ruins). No warnings. `ngen-worldcheck` against `ngen-usdcheck`
+  identical (`--transforms`, `--instancing`, `--instancers`); baselines byte-identical.
 
 ## Visibility
 

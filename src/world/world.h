@@ -61,6 +61,8 @@ struct Entity {
     // A material's own inputs (its interface, inputs:*) as composed, the strongest opinion each, by name without "inputs:": the values
     // that set its network where it is used. A value is text (an asset input's asset id; numbers comma-separated).
     std::vector<std::pair<std::string, std::string>> materialInputs;
+    // Its variant sets as composed: each set authored on any node of its index, and the variant selected (empty when none is).
+    std::vector<std::pair<std::string, std::string>> variantSelections;
     std::optional<MaterialBinding> binding;
 };
 

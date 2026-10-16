@@ -1185,6 +1185,9 @@ auto sceneRecord(const ViewContext& view) -> Json {
         {"prims", snapshot.prims},
         {"prototypes", snapshot.prototypes},
         {"meshInstances", view.scene.renderWorld().meshInstances.size()},
+        {"instancers", view.scene.instancers().size()},
+        {"instancerPoints", std::ranges::fold_left(view.scene.instancers(), (uint64_t) 0, [](uint64_t sum, const SceneInstancer& instancer) { return sum + instancer.points; })},
+        {"primsWithVariants", view.scene.variantPrims().size()},
         {"lights", view.scene.renderWorld().lights.size()},
         {"lodLevels", lodLevels},
     };
@@ -1279,6 +1282,42 @@ auto payloadsRecord(const ViewContext& view) -> Json {
         placements.push_back({{"path", payload.path}, {"assets", payload.assetIds}, {"loaded", payload.loaded}, {"worldBounds", bounds}});
     }
     return {{"count", placements.size()}, {"loaded", loaded}, {"withoutBounds", withoutBounds}, {"placements", placements}};
+}
+
+auto instancersRecord(const ViewContext& view) -> Json {
+    auto instancers = Json::array();
+    uint64_t points = 0;
+    uint64_t visible = 0;
+    uint64_t primsDrawn = 0;
+    for (const auto& instancer : view.scene.instancers()) {
+        points += instancer.points;
+        visible += instancer.visiblePoints;
+        primsDrawn += instancer.primsDrawn;
+        instancers.push_back({{"path", instancer.path}, {"points", instancer.points}, {"visiblePoints", instancer.visiblePoints}, {"prototypes", instancer.prototypes}, {"primsDrawn", instancer.primsDrawn}});
+    }
+    return {{"count", instancers.size()}, {"points", points}, {"visiblePoints", visible}, {"primsDrawn", primsDrawn}, {"instancers", instancers}};
+}
+
+auto variantsRecord(const ViewContext& view) -> Json {
+    auto prims = Json::array();
+    std::map<std::string, std::map<std::string, uint64_t>> bySet;
+    for (const auto& prim : view.scene.variantPrims()) {
+        auto selections = Json::object();
+        for (const auto& [set, variant] : prim.selections) {
+            selections[set] = variant;
+            bySet[set][variant]++;
+        }
+        prims.push_back({{"path", prim.path}, {"selections", selections}});
+    }
+    auto sets = Json::object();
+    for (const auto& [set, variants] : bySet) {
+        auto counts = Json::object();
+        for (const auto& [variant, count] : variants) {
+            counts[variant.empty() ? "(none)" : variant] = count;
+        }
+        sets[set] = counts;
+    }
+    return {{"count", prims.size()}, {"sets", sets}, {"prims", prims}};
 }
 
 auto assetsRecord(const ViewContext& view) -> Json {
@@ -1592,6 +1631,12 @@ auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext
     });
     records.add("streaming", "the LOD heuristic: on or off, its last evaluation, and per root its screen size, the level wanted and why, drawn and loaded", [&view](RpcResponder responder) {
         responder.respond(streamingRecord(view));
+    });
+    records.add("instancers", "every PointInstancer reached while drawing: its points and those shown, its prototypes, and the prims its points draw", [&view](RpcResponder responder) {
+        responder.respond(instancersRecord(view));
+    });
+    records.add("variants", "every prim with variant sets reached while drawing: each set and the variant it composed to, and per set how many prims chose each variant", [&view](RpcResponder responder) {
+        responder.respond(variantsRecord(view));
     });
     records.add("payloads", "every payload placement reached while drawing: its prim, asset ids, whether loaded, and its extentsHint in world metres", [&view](RpcResponder responder) {
         responder.respond(payloadsRecord(view));

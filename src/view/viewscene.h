@@ -167,6 +167,22 @@ struct ScenePayload {
     std::optional<AABB> worldBounds;
 };
 
+// A PointInstancer reached while drawing: its full path, its points and those shown, its prototypes' full paths, and the prims its shown
+// points draw (each point draws its prototype's drawn prims).
+struct SceneInstancer {
+    std::string path;
+    uint32_t points = 0;
+    uint32_t visiblePoints = 0;
+    std::vector<std::string> prototypes;
+    uint64_t primsDrawn = 0;
+};
+
+// A prim reached while drawing that has variant sets: its full path, and each set with the variant it composed to (empty for none).
+struct SceneVariantPrim {
+    std::string path;
+    std::vector<std::pair<std::string, std::string>> selections;
+};
+
 // What an extract built for the renderer and the main thread's queries, shared by every snapshot published until the next extract (or a
 // gizmo's move, which publishes a copy with the moved draws). Immutable once published.
 struct SceneDraws {
@@ -177,6 +193,8 @@ struct SceneDraws {
     std::vector<SceneCamera> cameras;                                          // in visit order
     std::vector<SceneLodRoot> lodRoots;                                        // every LOD root reached while drawing, in visit order
     std::vector<ScenePayload> payloads;                                        // every payload placement reached while drawing, in visit order
+    std::vector<SceneInstancer> instancers;                                    // every PointInstancer reached while drawing, in visit order
+    std::vector<SceneVariantPrim> variantPrims;                                // every prim with variant sets reached while drawing
 };
 
 // The scene as the scene thread last published it, for the main thread's queries. Immutable once published.
@@ -268,6 +286,8 @@ public:
     auto payloads() const -> const std::vector<ScenePayload>& { return current->draws->payloads; }
     // The LOD roots reached while drawing, in visit order.
     auto lodRoots() const -> const std::vector<SceneLodRoot>& { return current->draws->lodRoots; }
+    auto instancers() const -> const std::vector<SceneInstancer>& { return current->draws->instancers; }
+    auto variantPrims() const -> const std::vector<SceneVariantPrim>& { return current->draws->variantPrims; }
     // Moves on each time the renderer's inputs change.
     auto revision() const -> uint64_t { return current->revision; }
     // Every asset the scene uses: its layer packs, meshes, materials and textures.
@@ -503,6 +523,7 @@ private:
         bool payload = false;
         bool lodRoot = false;
         bool light = false;
+        bool variants = false;    // it has variant sets (the `variants` record)
         bool subsets = false;     // its mesh's GeomSubsets may bind their own materials: resolved per prim
         EntityId root = noEntity; // a Level's LOD root, in the content
         uint32_t level = 0;
@@ -541,8 +562,11 @@ private:
     std::vector<SceneCamera> authoredCameras;
     std::vector<SceneLodRoot> drawnLodRoots;
     std::vector<ScenePayload> reachedPayloads;
-    SceneThreadStats stats;                          // the counters; publish() fills in the rest
-    std::map<std::string, glm::mat4> localOverrides; // setLocalTransform's, applied by every extract
+    std::vector<SceneVariantPrim> reachedVariantPrims;
+    std::vector<SceneInstancer>* reachedInstancers = nullptr; // set while the extract replays: what the replay reaches
+    uint64_t primsDrawnSoFar = 0;                             // mesh prims the extract's replay has drawn, for an instancer's count
+    SceneThreadStats stats;                                   // the counters; publish() fills in the rest
+    std::map<std::string, glm::mat4> localOverrides;          // setLocalTransform's, applied by every extract
     glm::mat4 unitScale = glm::mat4(1.0f);
     uint64_t inputsRevision = 0;
 

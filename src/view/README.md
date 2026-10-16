@@ -108,6 +108,10 @@ The inputs persist across rebuilds:
   (always loaded) keeps its packs while a finer level is drawn. Composed contents not reached for the delay leave the composer
   (`WorldComposer::evict`). Layer packs stay held. `LevelsUnloaded` traces each release, and the `streaming` and `scenethread` records,
   the Scene Flow window and the Engine Map count what was unloaded.
+- **Point instancers and variants reached**: every PointInstancer reached while drawing (`instancers()`, the `instancers` record): its
+  points and those shown, its prototypes, and the prims its points drew; every prim with variant sets (`variantPrims()`, the `variants`
+  record): each set and the variant it composed to (`Entity::variantSelections`). A LOD root in a point's prototype draws its default
+  level and has no row in `lodRoots()`: the heuristic doesn't choose per point (the composer says so once per instancer).
 - **Payload placements**: every prim with payloads reached while drawing (`payloads()`, the `payloads` record): its asset ids, whether
   they are loaded, and its `extentsHint` in world metres. A level not loaded isn't reached, so what is under it isn't listed; its root's
   `levelPayloads` name the level's own payloads. Each draw carries the drawn level of the nearest LOD root above it,
