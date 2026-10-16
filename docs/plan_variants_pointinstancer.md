@@ -1,6 +1,6 @@
 # Variant sets and PointInstancer
 
-**Status. In progress.** Decisions 1 to 6 locked 2026-10-16, each as recommended; steps 1 to 5 done 2026-10-16. Lands before
+**Status. In progress.** Decisions 1 to 6 locked 2026-10-16, each as recommended; steps 1 to 6 done 2026-10-16. Lands before
 [plan_streaming_v2.md](plan_streaming_v2.md) step 4 (placements), so the placement tree is built with both.
 
 ## Current state
@@ -214,6 +214,19 @@ Compared as files, as the fingerprints are.
   are (about 9 MB for a tile at `full`'s 70,000 points).
 - Identical: the layered scene's 5 points, the test world's 82,266 with a tile at `full`; Caldera has none. `--transforms` and
   `--instancing` unchanged; baselines byte-identical.
+
+### Step 6 results (2026-10-16)
+
+- `ExtractItem::Kind::PointInstancer`; `buildExtract` / `extractOf` take a walk root (a prototype, kept by content, version, root and
+  inherited state); `replay` uses a prototype's walk per visible point at `<prototype>#<id>` (draws keyed per point; no transform-index entry
+  per point); `itemsReady` and `countWaiting` look into the prototypes, so a tile waits for its ground cover's meshes.
+- **Layered**: four of `/World/Scatter`'s five points draw (two trees, two blocks turned 90° and 45°, one tree stretched), id 12 hidden.
+- **Test world**: the ground cover draws (grass, flowers, ferns at `grassland`). At `four_tiles` 389,080 draws, at `grassland` 663,975
+  (159 meshes, 3.9 M vertices); the extract takes 2.3 s there (0.8 s walking, 1.4 s on slots); peak resident memory 2.5 GB.
+- **Seen, not looked into**: the main thread's frame interval is about 200 ms at `grassland` (median of 200 frames once resident), the GPU
+  20 ms: something costs CPU per draw every frame. And the profiler's CPU zones aren't in any record (the profile window shows them), so
+  an agent can't see where. Both are for v2's placements and a look at the per-frame work, with the zones made a record first.
+- Baselines byte-identical; the layered tree's LOD as before.
 
 ## Visibility
 

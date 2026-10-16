@@ -483,6 +483,9 @@ private:
             Prim,     // a prim that draws, lights, frames (a camera), places payloads or roots LOD
             Instance, // an instance: its prototype is used here
             Level,    // a linked content: a LOD level (used when it is the level drawn) or a prim with payloads (always)
+            // A PointInstancer: each visible point uses its prototype's walk (a walk rooted at the prototype, in the same content) at the
+            // instancer's world transform times the point's.
+            PointInstancer,
         };
         Kind kind = Kind::Prim;
         std::string path;                  // relative to the content's root ("/" for a level content's root, the level prim)
@@ -511,8 +514,13 @@ private:
     };
     std::unordered_map<std::string, std::shared_ptr<const ContentExtract>> extractCache; // by content, version and inherited state
     // A content's walk afresh; its walk kept by version and inherited state (afresh when a gizmo's opinion is under its use).
-    auto buildExtract(const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& overrideBase) -> std::shared_ptr<const ContentExtract>;
-    auto extractOf(char kind, int32_t index, const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& usePath) -> std::shared_ptr<const ContentExtract>;
+    // `root`, when given, walks that entity's subtree instead (a PointInstancer's prototype), the entity's path "/".
+    auto buildExtract(const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& overrideBase, EntityId root = noEntity)
+        -> std::shared_ptr<const ContentExtract>;
+    auto extractOf(char kind, int32_t index, const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& usePath, EntityId root = noEntity)
+        -> std::shared_ptr<const ContentExtract>;
+    // Whether a content's walk is ready (contentReady's test) item by item, prototypes of point instancers included.
+    auto itemsReady(const World& world, char kind, int32_t index, const WorldContent& content, const ContentExtract& walked) -> bool;
     auto overridesUnder(const std::string& usePath) const -> bool;
     using PrimVisitor = std::function<void(const WorldContent& content, const ExtractItem& item, const std::string& path, const glm::mat4& world, uint32_t lodTag)>;
     // allLoaded: every loaded level of a root is replayed, not only the one it draws (to ask for what a level still loading needs).

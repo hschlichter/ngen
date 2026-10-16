@@ -1224,7 +1224,9 @@ auto ViewScene::overridesUnder(const std::string& usePath) const -> bool {
 
 // One content's walk from its root down: its prims that matter to extract, with transforms relative to the root, and where its
 // instances and levels sit. overrideBase, when set, is the content's use path, to apply the gizmo's local opinions.
-auto ViewScene::buildExtract(const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& overrideBase) -> std::shared_ptr<const ContentExtract> {
+auto ViewScene::buildExtract(const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& overrideBase, EntityId root)
+    -> std::shared_ptr<const ContentExtract> {
+    auto walkRoot = root != noEntity ? root : (rootIsPrim ? (EntityId) 0 : noEntity);
     auto out = std::make_shared<ContentExtract>();
     out->version = content.version;
     auto prims = std::make_shared<ContentTransforms>();
@@ -1239,9 +1241,9 @@ auto ViewScene::buildExtract(const WorldContent& content, bool rootIsPrim, Purpo
     std::function<void(EntityId, const State&)> walk = [&](EntityId id, const State& parent) {
         const auto& entity = content.entities[id];
         State state;
-        state.path = rootIsPrim && id == 0 ? std::string("/") : childPathOf(parent.path, entity.name);
+        state.path = id == walkRoot ? std::string("/") : childPathOf(parent.path, entity.name);
         // A prim with payloads stands in for its linked content, used where it sits (read at use: resolution may link another).
-        if (entity.linkedContent >= 0 && !(rootIsPrim && id == 0)) {
+        if (entity.linkedContent >= 0 && id != walkRoot) {
             out->items.push_back({.kind = ExtractItem::Kind::Level,
                                   .path = state.path,
                                   .world = parent.world,
@@ -1279,7 +1281,7 @@ auto ViewScene::buildExtract(const WorldContent& content, bool rootIsPrim, Purpo
             state.strong = entity.binding->strongerThanDescendants;
         }
         (*prims)[state.path] = {.local = local, .world = state.world, .xformable = entity.xformable, .resetsXformStack = entity.resetsXformStack, .absolute = state.absolute};
-        if (!content.pointInstancers.empty() && content.isInstancerPrototype(id)) {
+        if (id != walkRoot && !content.pointInstancers.empty() && content.isInstancerPrototype(id)) {
             // A PointInstancer's prototype beneath it is drawn per point, not where it is.
             return;
         }
@@ -1305,6 +1307,16 @@ auto ViewScene::buildExtract(const WorldContent& content, bool rootIsPrim, Purpo
         }
         if (prim.meshId != UINT32_MAX || prim.camera || prim.payload || prim.lodRoot || prim.light) {
             out->items.push_back(std::move(prim));
+        }
+        if (content.pointInstancers.contains(id)) {
+            out->items.push_back({.kind = ExtractItem::Kind::PointInstancer,
+                                  .path = state.path,
+                                  .world = state.world,
+                                  .absolute = state.absolute,
+                                  .id = id,
+                                  .purpose = state.purpose,
+                                  .material = state.material,
+                                  .strongBinding = state.strong});
         }
         if (entity.prototype >= 0) {
             out->items.push_back({.kind = ExtractItem::Kind::Instance,
@@ -1339,8 +1351,8 @@ auto ViewScene::buildExtract(const WorldContent& content, bool rootIsPrim, Purpo
         }
     };
     State top{.path = "/", .world = glm::mat4(1.0f), .absolute = false, .purpose = purpose, .material = material, .strong = strong};
-    if (rootIsPrim) {
-        walk(0, top);
+    if (walkRoot != noEntity) {
+        walk(walkRoot, top);
     } else {
         for (EntityId child : content.entities[0].children) {
             walk(child, top);
@@ -1351,17 +1363,18 @@ auto ViewScene::buildExtract(const WorldContent& content, bool rootIsPrim, Purpo
 }
 
 // A content's walk, kept by its version and the state it inherits; afresh when the gizmo has moved something in it.
-auto ViewScene::extractOf(char kind, int32_t index, const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& usePath) -> std::shared_ptr<const ContentExtract> {
+auto ViewScene::extractOf(char kind, int32_t index, const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& usePath, EntityId root)
+    -> std::shared_ptr<const ContentExtract> {
     if (overridesUnder(usePath)) {
-        return buildExtract(content, rootIsPrim, purpose, material, strong, usePath);
+        return buildExtract(content, rootIsPrim, purpose, material, strong, usePath, root);
     }
-    auto key = std::format("{}{} {} {} {} {}", kind, index, content.version, (int) purpose, strong ? 1 : 0, material);
+    auto key = std::format("{}{} {} {} {} {} {}", kind, index, root, content.version, (int) purpose, strong ? 1 : 0, material);
     if (auto it = extractCache.find(key); it != extractCache.end()) {
         extractCacheHits++;
         return it->second;
     }
     extractCacheBuilds++;
-    auto built = buildExtract(content, rootIsPrim, purpose, material, strong, {});
+    auto built = buildExtract(content, rootIsPrim, purpose, material, strong, {}, root);
     extractCache[key] = built;
     return built;
 }
@@ -1378,28 +1391,45 @@ auto ViewScene::contentReady(const World& w, char kind, int32_t index, Purpose p
     bool ready = content.complete;
     if (ready) {
         auto walked = extractOf(kind, index, content, kind == 'L', purpose, {}, false, content.sourcePath);
-        for (const auto& item : walked->items) {
-            if (item.kind == ExtractItem::Kind::Prim) {
-                const auto& meshAsset = item.entity->meshAsset;
-                if (!meshAsset.empty() && drawsPurpose(item.purpose) && !meshPacks.contains(meshAsset) && !failedAssets.contains(meshAsset)) {
-                    ready = false;
-                }
-            } else if (item.kind == ExtractItem::Kind::Instance) {
-                ready = contentReady(w, 'P', item.content, item.purpose);
-            } else if (item.root == noEntity) {
-                auto linked = content.entities[item.id].linkedContent;
-                ready = linked >= 0 && contentReady(w, 'L', linked, item.purpose);
-            } else if (item.level + 1 == content.lodRoots.at(item.root).levels.size()) {
-                // A LOD root in it counts by its coarsest level, the floor it draws while a finer one loads.
-                auto linked = content.entities[item.id].linkedContent;
-                ready = linked >= 0 && contentReady(w, 'L', linked, item.purpose);
-            }
-            if (!ready) {
-                break;
-            }
-        }
+        ready = itemsReady(w, kind, index, content, *walked);
     }
     readiness[key] = ready;
+    return ready;
+}
+
+auto ViewScene::itemsReady(const World& w, char kind, int32_t index, const WorldContent& content, const ContentExtract& walked) -> bool {
+    bool ready = true;
+    for (const auto& item : walked.items) {
+        if (item.kind == ExtractItem::Kind::PointInstancer) {
+            // Its prototypes' walks, as the points draw them.
+            for (EntityId prototype : content.pointInstancers.at(item.id).prototypes) {
+                if (prototype != noEntity) {
+                    auto prototypeWalk = extractOf(kind, index, content, true, item.purpose, item.material, item.strongBinding, content.sourcePath, prototype);
+                    ready = itemsReady(w, kind, index, content, *prototypeWalk);
+                }
+                if (!ready) {
+                    break;
+                }
+            }
+        } else if (item.kind == ExtractItem::Kind::Prim) {
+            const auto& meshAsset = item.entity->meshAsset;
+            if (!meshAsset.empty() && drawsPurpose(item.purpose) && !meshPacks.contains(meshAsset) && !failedAssets.contains(meshAsset)) {
+                ready = false;
+            }
+        } else if (item.kind == ExtractItem::Kind::Instance) {
+            ready = contentReady(w, 'P', item.content, item.purpose);
+        } else if (item.root == noEntity) {
+            auto linked = content.entities[item.id].linkedContent;
+            ready = linked >= 0 && contentReady(w, 'L', linked, item.purpose);
+        } else if (item.level + 1 == content.lodRoots.at(item.root).levels.size()) {
+            // A LOD root in it counts by its coarsest level, the floor it draws while a finer one loads.
+            auto linked = content.entities[item.id].linkedContent;
+            ready = linked >= 0 && contentReady(w, 'L', linked, item.purpose);
+        }
+        if (!ready) {
+            break;
+        }
+    }
     return ready;
 }
 
@@ -1413,24 +1443,35 @@ auto ViewScene::countWaiting(const World& w, char kind, int32_t index, Purpose p
         waiting.contentsIncomplete++;
     }
     auto walked = extractOf(kind, index, content, kind == 'L', purpose, {}, false, content.sourcePath);
-    for (const auto& item : walked->items) {
-        if (item.kind == ExtractItem::Kind::Prim) {
-            const auto& meshAsset = item.entity->meshAsset;
-            if (meshAsset.empty() || !drawsPurpose(item.purpose) || meshPacks.contains(meshAsset) || failedAssets.contains(meshAsset)) {
-                continue;
-            }
-            if (seenMeshes.insert(meshAsset).second) {
-                waiting.meshesMissing++;
-                if (inFlight.contains(meshAsset)) {
-                    waiting.meshesInFlight++;
+    std::vector<const ContentExtract*> walks = {walked.get()};
+    std::vector<std::shared_ptr<const ContentExtract>> prototypeWalks;
+    for (size_t at = 0; at < walks.size(); at++) {
+        for (const auto& item : walks[at]->items) {
+            if (item.kind == ExtractItem::Kind::PointInstancer) {
+                for (EntityId prototype : content.pointInstancers.at(item.id).prototypes) {
+                    if (prototype != noEntity) {
+                        prototypeWalks.push_back(extractOf(kind, index, content, true, item.purpose, item.material, item.strongBinding, content.sourcePath, prototype));
+                        walks.push_back(prototypeWalks.back().get());
+                    }
                 }
-            }
-        } else if (item.kind == ExtractItem::Kind::Instance) {
-            countWaiting(w, 'P', item.content, item.purpose, seenContents, seenMeshes, waiting);
-        } else if (item.root == noEntity || item.level + 1 == content.lodRoots.at(item.root).levels.size()) {
-            auto linked = content.entities[item.id].linkedContent;
-            if (linked >= 0) {
-                countWaiting(w, 'L', linked, item.purpose, seenContents, seenMeshes, waiting);
+            } else if (item.kind == ExtractItem::Kind::Prim) {
+                const auto& meshAsset = item.entity->meshAsset;
+                if (meshAsset.empty() || !drawsPurpose(item.purpose) || meshPacks.contains(meshAsset) || failedAssets.contains(meshAsset)) {
+                    continue;
+                }
+                if (seenMeshes.insert(meshAsset).second) {
+                    waiting.meshesMissing++;
+                    if (inFlight.contains(meshAsset)) {
+                        waiting.meshesInFlight++;
+                    }
+                }
+            } else if (item.kind == ExtractItem::Kind::Instance) {
+                countWaiting(w, 'P', item.content, item.purpose, seenContents, seenMeshes, waiting);
+            } else if (item.root == noEntity || item.level + 1 == content.lodRoots.at(item.root).levels.size()) {
+                auto linked = content.entities[item.id].linkedContent;
+                if (linked >= 0) {
+                    countWaiting(w, 'L', linked, item.purpose, seenContents, seenMeshes, waiting);
+                }
             }
         }
     }
@@ -1479,47 +1520,81 @@ auto ViewScene::drawnLevelOf(const World& w, const std::string& rootPath, const 
 }
 
 auto ViewScene::replay(const World& w, const PrimVisitor& onPrim, TransformIndex* transformsOut, bool allLoaded) -> void {
+    // A walk's items where it is used; a content's use, which walks it (kept) and uses its items.
+    std::function<void(char, int32_t, const WorldContent&, const ContentExtract&, const std::string&, const glm::mat4&, uint32_t)> useItems;
     std::function<void(char, int32_t, const WorldContent&, bool, const std::string&, const glm::mat4&, Purpose, const std::string&, bool, uint32_t)> useContent =
         [&](char kind, int32_t index, const WorldContent& content, bool rootIsPrim, const std::string& usePath, const glm::mat4& useWorld, Purpose purpose, const std::string& material, bool strong, uint32_t lodTag) {
             auto walked = extractOf(kind, index, content, rootIsPrim, purpose, material, strong, usePath);
             if (transformsOut != nullptr) {
                 transformsOut->uses[usePath] = {.prims = walked->transforms, .world = useWorld};
             }
-            for (const auto& item : walked->items) {
-                auto world = item.absolute ? item.world : useWorld * item.world;
-                auto path = joinPathOf(usePath, item.path);
-                if (item.kind == ExtractItem::Kind::Instance) {
-                    useContent('P', item.content, w.prototypes[(size_t) item.content], false, path, world, item.purpose, item.material, item.strongBinding, lodTag);
-                    continue;
-                }
-                if (item.kind == ExtractItem::Kind::Level) {
-                    auto linked = content.entities[item.id].linkedContent;
-                    if (linked < 0) {
+            useItems(kind, index, content, *walked, usePath, useWorld, lodTag);
+        };
+    useItems = [&](char kind, int32_t index, const WorldContent& content, const ContentExtract& walked, const std::string& usePath, const glm::mat4& useWorld, uint32_t lodTag) {
+        for (const auto& item : walked.items) {
+            auto world = item.absolute ? item.world : useWorld * item.world;
+            auto path = joinPathOf(usePath, item.path);
+            if (item.kind == ExtractItem::Kind::PointInstancer) {
+                // Each visible point uses its prototype's walk, at a path of its own (the prototype's, then "#" and the point's id),
+                // so its draws are its own. Points have no entry in the transform index.
+                const auto& data = content.pointInstancers.at(item.id);
+                std::vector<std::shared_ptr<const ContentExtract>> prototypeWalks;
+                std::vector<std::string> prototypePaths;
+                for (EntityId prototype : data.prototypes) {
+                    if (prototype == noEntity) {
+                        prototypeWalks.push_back(nullptr);
+                        prototypePaths.emplace_back();
                         continue;
                     }
-                    // A prim with payloads (no root) is always used; a level only when the root draws it: the finest loaded one not finer
-                    // than the one it wants, per use of the root.
-                    auto tag = lodTag;
-                    if (item.root != noEntity) {
-                        const auto& root = content.lodRoots.at(item.root);
-                        if (allLoaded) {
-                            if (std::ranges::find(root.loaded, item.level) == root.loaded.end()) {
-                                continue;
-                            }
-                        } else {
-                            auto drawnLevel = drawnLevelOf(w, parentPathOf(path), root, content, item.purpose);
-                            if (!drawnLevel || *drawnLevel != item.level) {
-                                continue;
-                            }
-                            tag = *drawnLevel + 1;
-                        }
+                    // The prototype's path below the instancer, in their content.
+                    auto inContent = content.path(prototype);
+                    auto instancerInContent = content.path(item.id);
+                    prototypePaths.push_back(path + inContent.substr(std::min(inContent.size(), instancerInContent.size())));
+                    prototypeWalks.push_back(extractOf(kind, index, content, true, item.purpose, item.material, item.strongBinding, prototypePaths.back(), prototype));
+                }
+                for (size_t point = 0; point < data.protoIndices.size(); point++) {
+                    auto which = data.protoIndices[point];
+                    if (data.visible[point] == 0 || which >= prototypeWalks.size() || !prototypeWalks[which]) {
+                        continue;
                     }
-                    useContent('L', linked, w.linkedContents[(size_t) linked], true, path, world, item.purpose, item.material, item.strongBinding, tag);
+                    auto id = data.ids.empty() ? (int64_t) point : data.ids[point];
+                    auto pointPath = std::format("{}#{}", prototypePaths[which], id);
+                    useItems(kind, index, content, *prototypeWalks[which], pointPath, world * glm::mat4(data.transforms[point]), lodTag);
+                }
+                continue;
+            }
+            if (item.kind == ExtractItem::Kind::Instance) {
+                useContent('P', item.content, w.prototypes[(size_t) item.content], false, path, world, item.purpose, item.material, item.strongBinding, lodTag);
+                continue;
+            }
+            if (item.kind == ExtractItem::Kind::Level) {
+                auto linked = content.entities[item.id].linkedContent;
+                if (linked < 0) {
                     continue;
                 }
-                onPrim(content, item, path, world, lodTag);
+                // A prim with payloads (no root) is always used; a level only when the root draws it: the finest loaded one not finer
+                // than the one it wants, per use of the root.
+                auto tag = lodTag;
+                if (item.root != noEntity) {
+                    const auto& root = content.lodRoots.at(item.root);
+                    if (allLoaded) {
+                        if (std::ranges::find(root.loaded, item.level) == root.loaded.end()) {
+                            continue;
+                        }
+                    } else {
+                        auto drawnLevel = drawnLevelOf(w, parentPathOf(path), root, content, item.purpose);
+                        if (!drawnLevel || *drawnLevel != item.level) {
+                            continue;
+                        }
+                        tag = *drawnLevel + 1;
+                    }
+                }
+                useContent('L', linked, w.linkedContents[(size_t) linked], true, path, world, item.purpose, item.material, item.strongBinding, tag);
+                continue;
             }
-        };
+            onPrim(content, item, path, world, lodTag);
+        }
+    };
     useContent('S', 0, w.stage, false, "/", glm::mat4(1.0f), Purpose::Default, {}, false, 0);
 }
 

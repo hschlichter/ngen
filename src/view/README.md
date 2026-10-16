@@ -59,6 +59,10 @@ The inputs persist across rebuilds:
 - **What is drawn**: entities that are active, defined and not abstract, visible (an invisible ancestor hides its subtree), not in a LOD
   level their root doesn't draw, with a mesh asset, and of a purpose that is shown: `default` and `render` always, `guide` and `proxy`
   when turned on (`purposes` verb, `view.purposes`, the View menu).
+- **Point instancers**: each visible point of a `PointInstancer` draws its prototype at the instancer's world transform times the point's.
+  The prototype's walk (rooted at the prototype, in the instancer's content) is kept once and used per point; a point's draws have a path
+  of their own, `<prototype>#<id>`, and no entry in the transform index. A prototype beneath its instancer draws only through it. A level
+  waits for its prototypes' meshes as for its own (`itemsReady`).
 - **Materials**: a material is its binding's key (`parseMaterialKey`): the pack, and the values of the inputs its textures take their files from
   (`resolveMaterial`), so one pack used with different inputs is one material per set of values. A mesh's bound material, and each `GeomSubset`'s own
   binding for its submesh, unless an ancestor's binding is `strongerThanDescendants`. A material's texture, else its base colour, else the mesh's
