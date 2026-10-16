@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <deque>
 #include <format>
 #include <functional>
@@ -1016,7 +1017,8 @@ struct WorldComposer::Impl {
     }
 
     // A root's heuristic, as UsdLod has a renderer choose it: the first of its lod:heuristics targets of a type and domain it understands
-    // (LODScreenSizeHeuristic, "imaging"). A root naming none it understands reports its first target's type and keeps its default level.
+    // (LODScreenSizeHeuristic, "imaging") that gives a usable result, here valid bounds. A root naming none reports its first target and
+    // keeps its default level.
     auto resolveHeuristics(const std::vector<PendingTarget>& pending) -> void {
         std::set<std::pair<const WorldContent*, EntityId>> seen;
         std::set<std::pair<const WorldContent*, EntityId>> chosen;
@@ -1033,25 +1035,9 @@ struct WorldComposer::Impl {
                 continue;
             }
             const auto& data = found->second;
-            bool understood = data.type == "LODScreenSizeHeuristic" && data.domain == "imaging";
-            if (!understood && !seen.insert({target.content, target.entity}).second) {
-                continue;
-            }
-            auto& root = target.content->lodRoots.at(target.entity);
-            root = LodRoot{.levels = root.levels, .defaultIndex = root.defaultIndex, .loaded = root.loaded};
-            root.heuristic = it->second;
-            root.heuristicType = data.type;
-            root.thresholds = data.thresholds;
-            root.projection = data.projection;
-            if (data.extent) {
-                root.extent = *data.extent;
-            }
-            if (!understood) {
-                continue;
-            }
-            chosen.insert({target.content, target.entity});
-            // A boundingVolume naming a boundable with a valid extent bounds the root instead, in the root's space as UsdLod's query
-            // reads it.
+            // A boundingVolume naming a boundable with a valid extent bounds the root instead of the heuristic's own extent, in the root's
+            // space as UsdLod's query reads it.
+            auto bounds = data.extent.value_or(LodRoot{}.extent);
             for (const auto& volume : data.boundingVolumes) {
                 if (volume.outside) {
                     continue;
@@ -1061,12 +1047,37 @@ struct WorldComposer::Impl {
                     continue;
                 }
                 auto extent = extents.find({volume.content, entity->second});
-                if (extent != extents.end() && glm::all(glm::lessThanEqual(extent->second[0], extent->second[1]))) {
-                    root.extent = extent->second;
+                if (extent != extents.end() && validBox(extent->second)) {
+                    bounds = extent->second;
                     break;
                 }
             }
+            bool usable = data.type == "LODScreenSizeHeuristic" && data.domain == "imaging" && validBox(bounds);
+            if (!usable && !seen.insert({target.content, target.entity}).second) {
+                continue;
+            }
+            auto& root = target.content->lodRoots.at(target.entity);
+            root = LodRoot{.levels = root.levels, .defaultIndex = root.defaultIndex, .loaded = root.loaded};
+            root.heuristic = it->second;
+            root.heuristicChosen = usable;
+            root.heuristicType = data.type;
+            root.thresholds = data.thresholds;
+            root.projection = data.projection;
+            root.extent = bounds;
+            if (usable) {
+                chosen.insert({target.content, target.entity});
+            }
         }
+    }
+
+    // Finite, not empty (min at most max on every axis), and not the "empty" box some tools author (FLT_MAX to -FLT_MAX, or near it).
+    static auto validBox(const std::array<glm::vec3, 2>& box) -> bool {
+        for (int axis = 0; axis < 3; axis++) {
+            if (!std::isfinite(box[0][axis]) || !std::isfinite(box[1][axis]) || box[0][axis] > box[1][axis] || box[1][axis] - box[0][axis] > 1e30f) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // The prototype of an instance's kept nodes: found by their key and reused, or composed now (again, in place, when the last time

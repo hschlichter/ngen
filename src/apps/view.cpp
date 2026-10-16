@@ -1048,13 +1048,9 @@ auto main(int argc, char* argv[]) -> int {
                 }
             }
             lodWindow.heuristic = scene.lodHeuristic();
-            lodWindow.cap = (int) scene.lodCap();
             lodWindow.unloadDelay = (float) scene.unloadDelay();
             if (auto on = std::exchange(lodWindow.heuristicRequested, std::nullopt)) {
                 scene.setLodHeuristic(*on);
-            }
-            if (auto cap = std::exchange(lodWindow.capRequested, std::nullopt)) {
-                scene.setLodCap((uint32_t) *cap);
             }
             if (auto delay = std::exchange(lodWindow.unloadDelayRequested, std::nullopt)) {
                 scene.setUnloadDelay(*delay);

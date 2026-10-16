@@ -164,15 +164,11 @@ auto ViewScene::cameraAspect() const -> float {
 }
 
 auto ViewScene::setLodHeuristic(bool on) -> void {
-    post(HeuristicRequest{.on = on, .cap = std::nullopt, .unloadDelay = std::nullopt});
-}
-
-auto ViewScene::setLodCap(uint32_t roots) -> void {
-    post(HeuristicRequest{.on = std::nullopt, .cap = roots, .unloadDelay = std::nullopt});
+    post(HeuristicRequest{.on = on, .unloadDelay = std::nullopt});
 }
 
 auto ViewScene::setUnloadDelay(double seconds) -> void {
-    post(HeuristicRequest{.on = std::nullopt, .cap = std::nullopt, .unloadDelay = seconds});
+    post(HeuristicRequest{.on = std::nullopt, .unloadDelay = seconds});
 }
 
 auto ViewScene::setPurposeShown(Purpose purpose, bool shown) -> void {
@@ -341,9 +337,6 @@ auto ViewScene::apply(Request& request) -> void {
     } else if (auto* heuristic = std::get_if<HeuristicRequest>(&request)) {
         if (heuristic->on) {
             heuristicOn = *heuristic->on;
-        }
-        if (heuristic->cap) {
-            heuristicCap = *heuristic->cap;
         }
         if (heuristic->unloadDelay) {
             unloadDelaySeconds = std::max(0.0, *heuristic->unloadDelay);
@@ -755,33 +748,6 @@ auto screenSize(const SceneLodRoot& root, const glm::vec3& eye, float fovY, floa
     return glm::pi<float>() * r * r / (windowWidth * windowHeight);
 }
 
-auto validExtent(const std::array<glm::vec3, 2>& extent) -> bool {
-    for (int axis = 0; axis < 3; axis++) {
-        if (!std::isfinite(extent[0][axis]) || !std::isfinite(extent[1][axis]) || extent[0][axis] > extent[1][axis] || std::abs(extent[1][axis] - extent[0][axis]) > 1e30f) {
-            return false;
-        }
-    }
-    return true;
-}
-
-// When the camera is inside a root's heuristic extent (placed by the root's transform, as an axis-aligned box of its corners): the box's
-// volume in cubic metres; none when it is outside.
-auto aroundCamera(const SceneLodRoot& root, const glm::vec3& eye) -> std::optional<float> {
-    glm::vec3 low(1e30f);
-    glm::vec3 high(-1e30f);
-    for (int corner = 0; corner < 8; corner++) {
-        glm::vec3 local((corner & 1) != 0 ? root.extent[1].x : root.extent[0].x, (corner & 2) != 0 ? root.extent[1].y : root.extent[0].y, (corner & 4) != 0 ? root.extent[1].z : root.extent[0].z);
-        auto world = glm::vec3(root.worldTransform * glm::vec4(local, 1.0f));
-        low = glm::min(low, world);
-        high = glm::max(high, world);
-    }
-    if (glm::any(glm::lessThan(eye, low)) || glm::any(glm::greaterThan(eye, high))) {
-        return std::nullopt;
-    }
-    auto size = high - low;
-    return size.x * size.y * size.z;
-}
-
 // The level the thresholds pick for a screen size (UsdLod: the number of thresholds at or above it), with a band below each threshold
 // before switching coarser: finer as soon as the size passes a threshold, coarser only once it is 20% below it.
 auto levelFor(float size, const std::vector<float>& thresholds, uint32_t previous) -> uint32_t {
@@ -811,13 +777,9 @@ auto ViewScene::evaluateLevels() -> bool {
     }
     auto start = std::chrono::steady_clock::now();
     auto next = std::make_shared<SceneLodChoices>();
-    // Every reached root's choice first; the heuristic's finer ones are capped below, the largest on screen kept.
-    struct Chosen {
-        const SceneLodRoot* root = nullptr;
-        SceneLodChoice choice;
-    };
-    std::vector<Chosen> chosen;
-    chosen.reserve(draws->lodRoots.size());
+    uint32_t evaluated = 0;
+    uint32_t finer = 0;
+    uint32_t coarser = 0;
     for (const auto& root : draws->lodRoots) {
         auto levelCount = (uint32_t) root.levels.size();
         if (levelCount == 0) {
@@ -830,19 +792,12 @@ auto ViewScene::evaluateLevels() -> bool {
         } else if (!heuristicOn) {
             choice.level = root.defaultIndex;
             choice.reason = "heuristic off";
-        } else if (root.heuristicType != "LODScreenSizeHeuristic" || root.thresholds.empty()) {
+        } else if (!root.heuristicChosen || root.thresholds.empty()) {
             choice.level = root.defaultIndex;
-            choice.reason = "no screen-size heuristic";
+            choice.reason = "no usable heuristic";
         } else if (!camera) {
             choice.level = root.defaultIndex;
             choice.reason = "no camera";
-        } else if (!validExtent(root.extent)) {
-            // An empty box (min above max) or one not finite measures nothing: the root keeps its default, reported once.
-            choice.level = root.defaultIndex;
-            choice.reason = "empty extent";
-            if (warnedExtents.insert(root.path).second) {
-                TRACE_WARNING("Scene", "LodExtentEmpty", root.path).text(std::format("{}: its LOD heuristic's extent is empty or not finite; it keeps its default level", root.path));
-            }
         } else {
             choice.screenSize = screenSize(root, camera->position, camera->fovY, camera->aspect);
             auto previous = heuristicLevels.contains(root.path) ? heuristicLevels[root.path] : root.defaultIndex;
@@ -850,54 +805,16 @@ auto ViewScene::evaluateLevels() -> bool {
             heuristicLevels[root.path] = choice.level;
             choice.reason = "heuristic";
         }
-        chosen.push_back({.root = &root, .choice = std::move(choice)});
-    }
-    // Who keeps a finer level under the cap: the roots the camera is inside first, the smallest first (where the camera is; a bounding
-    // sphere around the camera measures larger than anything and can't rank them), then the others, the largest on screen first.
-    struct Ranked {
-        Chosen* entry = nullptr;
-        bool around = false;
-        float volume = 0.0f;
-    };
-    std::vector<Ranked> finerByHeuristic;
-    for (auto& entry : chosen) {
-        if (entry.choice.reason == "heuristic" && entry.choice.level + 1 < entry.root->levels.size()) {
-            auto inside = aroundCamera(*entry.root, camera->position);
-            finerByHeuristic.push_back({.entry = &entry, .around = inside.has_value(), .volume = inside.value_or(0.0f)});
-        }
-    }
-    std::ranges::sort(finerByHeuristic, [](const Ranked& a, const Ranked& b) {
-        if (a.around != b.around) {
-            return a.around;
-        }
-        if (a.around && a.volume != b.volume) {
-            return a.volume < b.volume;
-        }
-        if (a.entry->choice.screenSize != b.entry->choice.screenSize) {
-            return a.entry->choice.screenSize > b.entry->choice.screenSize;
-        }
-        return a.entry->root->path < b.entry->root->path;
-    });
-    uint32_t capped = 0;
-    for (size_t i = heuristicCap; i < finerByHeuristic.size(); i++) {
-        auto& entry = *finerByHeuristic[i].entry;
-        entry.choice.level = (uint32_t) entry.root->levels.size() - 1;
-        entry.choice.reason = "capped";
-        capped++;
-    }
-
-    uint32_t finer = 0;
-    uint32_t coarser = 0;
-    for (auto& [root, choice] : chosen) {
+        evaluated++;
         // The composer holds a level only where it isn't the root's default.
-        bool held = choice.level != root->defaultIndex || handLevels.contains(root->path);
-        auto pushed = composerLevels.find(root->path);
-        uint32_t before = pushed != composerLevels.end() ? pushed->second : root->defaultIndex;
+        bool held = choice.level != root.defaultIndex || handLevels.contains(root.path);
+        auto pushed = composerLevels.find(root.path);
+        uint32_t before = pushed != composerLevels.end() ? pushed->second : root.defaultIndex;
         if (held && (pushed == composerLevels.end() || pushed->second != choice.level)) {
-            composer->setLodLevel(root->path, choice.level);
-            composerLevels[root->path] = choice.level;
+            composer->setLodLevel(root.path, choice.level);
+            composerLevels[root.path] = choice.level;
         } else if (!held && pushed != composerLevels.end()) {
-            composer->resetLodLevel(root->path);
+            composer->resetLodLevel(root.path);
             composerLevels.erase(pushed);
         }
         if (choice.level < before) {
@@ -905,12 +822,11 @@ auto ViewScene::evaluateLevels() -> bool {
         } else if (choice.level > before) {
             coarser++;
         }
-        (*next)[root->path] = std::move(choice);
+        (*next)[root.path] = std::move(choice);
     }
-    stats.lodRootsEvaluated = (uint32_t) chosen.size();
+    stats.lodRootsEvaluated = evaluated;
     stats.lodFiner = finer;
     stats.lodCoarser = coarser;
-    stats.lodCapped = capped;
     stats.lodEvaluations++;
     stats.lodEvaluateMs = msSince(start);
     choices = std::move(next);
@@ -918,11 +834,10 @@ auto ViewScene::evaluateLevels() -> bool {
         return false;
     }
     TRACE_EVENT("Scene", "LevelsWanted", id)
-        .text(std::format("LOD levels wanted: {} roots finer, {} coarser of {} evaluated; {} capped at their coarsest (cap {})", finer, coarser, stats.lodRootsEvaluated, capped, heuristicCap))
+        .text(std::format("LOD levels wanted: {} roots finer, {} coarser of {} evaluated", finer, coarser, stats.lodRootsEvaluated))
         .field("finer", (int64_t) finer)
         .field("coarser", (int64_t) coarser)
-        .field("roots", (int64_t) stats.lodRootsEvaluated)
-        .field("capped", (int64_t) capped);
+        .field("roots", (int64_t) stats.lodRootsEvaluated);
     return true;
 }
 
@@ -1011,7 +926,6 @@ auto ViewScene::publish() -> void {
     snapshot->transforms = transforms;
     snapshot->lodChoices = choices;
     snapshot->lodHeuristic = heuristicOn;
-    snapshot->lodCap = heuristicCap;
     snapshot->unloadDelay = unloadDelaySeconds;
     snapshot->thread = stats;
     for (const auto& [assetId, kind] : inFlight) {
@@ -1729,6 +1643,7 @@ auto ViewScene::extract() -> void {
                 row.levelPayloads.push_back(payload != content.payloads.end() ? payload->second.assetIds : std::vector<std::string>{});
             }
             row.heuristicType = root.heuristicType;
+            row.heuristicChosen = root.heuristicChosen;
             row.thresholds = root.thresholds;
             row.extent = root.extent;
             row.projectedExtent = root.projection == LodProjection::Extent;

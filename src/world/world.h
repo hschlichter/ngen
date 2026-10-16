@@ -93,9 +93,10 @@ struct LodRoot {
     std::vector<EntityId> levels;
     uint32_t defaultIndex = 0; // lod:default:index, clamped to the levels
     std::vector<uint32_t> loaded;
-    // The heuristic chosen from its lod:heuristics targets in this content: the first screen-size heuristic in the imaging domain, else
-    // the first target (heuristicType says which; a root without an understood one keeps its default).
+    // The heuristic chosen from its lod:heuristics targets in this content: the first screen-size heuristic in the imaging domain with
+    // valid bounds (heuristicChosen), else the first target, reported (heuristicType says which) while the root keeps its default.
     EntityId heuristic = noEntity;
+    bool heuristicChosen = false;
     std::string heuristicType;     // its prim type: LODScreenSizeHeuristic, LODDistanceHeuristic, or another
     std::vector<float> thresholds; // the heuristic's
     // The screen-size heuristic's extent, in the root's local space: its boundingVolume's when that names a boundable with a valid

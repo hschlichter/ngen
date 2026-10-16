@@ -174,15 +174,6 @@ auto parseUnloadDelay(const std::string& args) -> std::expected<Json, std::strin
     return Json{{"unloadDelay", seconds}};
 }
 
-auto parseLodCap(const std::string& args) -> std::expected<Json, std::string> {
-    char* end = nullptr;
-    auto roots = std::strtol(args.c_str(), &end, 10);
-    if (args.empty() || *end != '\0' || roots < 0) {
-        return std::unexpected(std::format("expected a count of roots, got '{}'", args));
-    }
-    return Json{{"cap", roots}};
-}
-
 auto parseLodRoot(const std::string& args) -> std::expected<Json, std::string> {
     return Json{{"root", args}};
 }
@@ -416,7 +407,6 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"lod", "view.lod.set", parseLod},
     ScriptVerb{"lod-reset", "view.lod.reset", parseLodRoot},
     ScriptVerb{"lod-heuristic", "view.lod.heuristic", parseOnOff},
-    ScriptVerb{"lod-cap", "view.lod.heuristic", parseLodCap},
     ScriptVerb{"lod-unload-delay", "view.lod.heuristic", parseUnloadDelay},
     ScriptVerb{"wait-resident", "view.waitResident", parseNothing},
     ScriptVerb{"view", "view.mode", parseViewMode},
@@ -640,18 +630,14 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.lod.heuristic",
-            .summary = "The LOD heuristic on (every root not set by hand wants the level its screen size from the camera picks) or off (its default), and its cap: at most this many roots finer than their coarsest, the largest on screen first.",
+            .summary = "The LOD heuristic on (every root not set by hand wants the level its screen size from the camera picks) or off (its default), and how long what stopped being drawn is kept.",
             .params = {optionalField("on", RpcType::Bool, "on or off"),
-                       optionalField("cap", RpcType::Int, "roots finer than their coarsest, at most"),
                        optionalField("unloadDelay", RpcType::Float, "seconds what stopped being drawn or reached is kept before it is unloaded")},
             .result = "{}",
         },
         [&view](const Json& p, RpcResponder responder) {
             if (p.contains("on")) {
                 view.scene.setLodHeuristic(p["on"].get<bool>());
-            }
-            if (p.contains("cap")) {
-                view.scene.setLodCap((uint32_t) std::max(0, p["cap"].get<int>()));
             }
             if (p.contains("unloadDelay")) {
                 view.scene.setUnloadDelay(p["unloadDelay"].get<double>());
@@ -1240,10 +1226,9 @@ auto streamingRecord(const ViewContext& view) -> Json {
     return {
         {"totals", {{"roots", roots.size()}, {"inFrustum", inFrustum}, {"loading", loading}, {"meshesMissing", meshesMissing}}},
         {"heuristic", view.scene.lodHeuristic()},
-        {"cap", view.scene.lodCap()},
         {"unloadDelay", view.scene.unloadDelay()},
         {"unloaded", {{"meshPacks", t.releasedMeshes}, {"meshBytes", t.releasedMeshBytes}, {"contents", t.contentsEvicted}}},
-        {"evaluation", {{"count", t.lodEvaluations}, {"roots", t.lodRootsEvaluated}, {"finer", t.lodFiner}, {"coarser", t.lodCoarser}, {"capped", t.lodCapped}, {"ms", t.lodEvaluateMs}, {"relinks", t.relinks}}},
+        {"evaluation", {{"count", t.lodEvaluations}, {"roots", t.lodRootsEvaluated}, {"finer", t.lodFiner}, {"coarser", t.lodCoarser}, {"ms", t.lodEvaluateMs}, {"relinks", t.relinks}}},
         {"roots", roots},
     };
 }
@@ -1255,6 +1240,7 @@ auto lodRecord(const ViewContext& view) -> Json {
         if (!root.heuristicType.empty()) {
             heuristic = {
                 {"type", root.heuristicType},
+                {"chosen", root.heuristicChosen},
                 {"thresholds", root.thresholds},
                 {"extent", {vec3Json(root.extent[0]), vec3Json(root.extent[1])}},
                 {"projection", root.projectedExtent ? "projectedExtent" : "projectedSphere"},
@@ -1410,8 +1396,8 @@ auto engineMapStats(const ViewContext& view) -> EngineMapStats {
     stats["assets.cache"] = {std::format("{} answered from the cache", assets.cached)};
     stats["assets.delivery"] = {std::format("{:.1f} MiB to this view", mib(assets.bytes))};
     stats["view.assetclient"] = {std::format("{} in flight, {} received", assets.inFlight(), assets.received), std::format("{} failed", assets.failed)};
-    stats["scene.lod"] = {std::format("{} roots, heuristic {}, cap {}", t.lodRootsEvaluated, view.scene.lodHeuristic() ? "on" : "off", view.scene.lodCap()),
-                          std::format("last: {} finer, {} coarser, {} capped", t.lodFiner, t.lodCoarser, t.lodCapped),
+    stats["scene.lod"] = {std::format("{} roots, heuristic {}", t.lodRootsEvaluated, view.scene.lodHeuristic() ? "on" : "off"),
+                          std::format("last: {} finer, {} coarser", t.lodFiner, t.lodCoarser),
                           std::format("unloaded: {} contents, {} mesh packs ({:.1f} MiB)", t.contentsEvicted, t.releasedMeshes, mib(t.releasedMeshBytes))};
     stats["scene.compose"] = {std::format("{} composes, last {:.1f} ms", t.composes, t.lastComposeMs), std::format("{} layer packs, {} in flight", t.layerPacks, t.inFlightLayers)};
     stats["scene.extract"] = {std::format("{} extracts, last {:.1f} ms", t.extracts, t.lastExtractMs),

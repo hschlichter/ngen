@@ -39,9 +39,7 @@ struct LodWindowState {
     std::optional<std::string> selectRequested;
     bool heuristic = true;                  // the LOD heuristic's state; set by the application
     std::optional<bool> heuristicRequested; // the toggle was clicked
-    int cap = 2;                            // the heuristic's cap; set by the application
-    std::optional<int> capRequested;
-    float unloadDelay = 10.0f; // seconds; set by the application
+    float unloadDelay = 10.0f;              // seconds; set by the application
     std::optional<float> unloadDelayRequested;
 };
 
@@ -49,6 +47,5 @@ struct LodWindowState {
 // levels loaded, and the heuristic's screen size and why the root wants its level. A row whose drawn level isn't the one it wants is
 // loading it. Clicking a row selects the root; a double-click frames it. "Set shown" sets every row the filter shows to its default, its
 // coarsest level or one level (clamped to each root's levels). The row of the root at or above the view's selection is highlighted. The
-// Heuristic toggle turns the LOD heuristic on or off; Cap and Unload delay set the heuristic's cap and how long what stopped being drawn is
-// kept.
+// Heuristic toggle turns the LOD heuristic on or off; Unload delay sets how long what stopped being drawn is kept.
 auto drawLodWindow(bool& show, LodWindowState& state) -> void;

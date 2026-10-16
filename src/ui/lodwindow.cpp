@@ -196,15 +196,6 @@ auto drawLodWindow(bool& show, LodWindowState& state) -> void {
     }
     ImGui::SameLine();
     ImGui::SetNextItemWidth(90.0f);
-    int cap = state.cap;
-    if (ImGui::InputInt("Cap", &cap) && cap >= 0) {
-        state.capRequested = cap;
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("At most this many roots finer than their coarsest level by the heuristic, the largest on screen first; the others keep their coarsest (\"capped\"). A stand-in for memory budgets.");
-    }
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(90.0f);
     float unloadDelay = state.unloadDelay;
     if (ImGui::InputFloat("Unload delay (s)", &unloadDelay, 0.0f, 0.0f, "%.0f", ImGuiInputTextFlags_EnterReturnsTrue) && unloadDelay >= 0.0f) {
         state.unloadDelayRequested = unloadDelay;

@@ -78,22 +78,17 @@ The inputs persist across rebuilds:
 - **LOD roots**: every LOD root reached while drawing (`lodRoots()`, the `lod` record): its levels and each level's payloads, its
   heuristic (type, thresholds, extent, projection), the level it defaults to, wants and draws, the levels loaded, and whether its level was
   set by hand.
-- **The LOD heuristic**: every LOD root reached wants the level its screen size picks: UsdLod's `LODScreenSizeHeuristic`, its extent's
-  bounding sphere placed by the root's transform, as a fraction of the view window at depth 1, against its `thresholds`. Unlike USD's
-  reference query it ignores the frustum, so what is near stays loaded whichever way the camera looks. Going coarser waits until the
-  size is 20% below the threshold, so a camera at a threshold doesn't flip a root. A level set by hand (`lod`, the LOD window) wins until
-  `lod-reset`; with the heuristic off (`lod-heuristic off`, `view.lod.heuristic`, the LOD window's toggle) every other root wants its
-  default; a root whose heuristic isn't screen size wants its default. The main thread posts the camera (`setCamera`) once it has been
-  placed, not while it follows the scene loading; the scene thread evaluates when it moved, after an extract and when levels changed, and
-  gives the composer only what changed, which links the levels again without composing the stage (`WorldComposer::relink`). The
-  `streaming` record has per root its screen size, whether its extent is in the view's frustum (what USD's query would go by), the level
-  wanted and why, drawn and loaded, and for a level waited for what it waits for; totals over the roots. `LevelsWanted` traces each change
-  of wanted levels.
-- **The cap**: until memory budgets exist, at most N roots (2 by default; `lod-cap N`, `view.lod.heuristic {cap}`, the LOD window) are
-  finer than their coarsest level by the heuristic; the others keep their coarsest ("capped"). Who keeps a finer level: the roots whose
-  extent the camera is inside, the smallest first (a bounding sphere around the camera measures larger than anything, so it can't rank
-  them), then the others, the largest on screen first. A root whose heuristic extent is empty or not finite keeps its default ("empty
-  extent", a `LodExtentEmpty` warning once).
+- **The LOD heuristic**: every LOD root reached wants the level its screen size picks: UsdLod's `LODScreenSizeHeuristic`, its extent's bounding sphere
+  placed by the root's transform, as a fraction of the view window at depth 1, against its `thresholds`. Unlike USD's reference query it ignores the
+  frustum, so what is near stays loaded whichever way the camera looks. Going coarser waits until the size is 20% below the threshold, so a camera at
+  a threshold doesn't flip a root. A level set by hand (`lod`, the LOD window) wins until `lod-reset`; with the heuristic off (`lod-heuristic off`,
+  `view.lod.heuristic`, the LOD window's toggle) every other root wants its default; a root without a usable heuristic (`heuristicChosen`,
+  src/world/README.md "Loading") wants its default ("no usable heuristic"). Every root the heuristic picks finer goes finer: what fits in memory is
+  the budgets' to decide, not a count of roots. The main thread posts the camera (`setCamera`) once it has been placed, not while it follows the scene
+  loading; the scene thread evaluates when it moved, after an extract and when levels changed, and gives the composer only what changed, which links
+  the levels again without composing the stage (`WorldComposer::relink`). The `streaming` record has per root its screen size, whether its extent is
+  in the view's frustum (what USD's query would go by), the level wanted and why, drawn and loaded, and for a level waited for what it waits for;
+  totals over the roots. `LevelsWanted` traces each change of wanted levels.
 - **Switching levels**: a root draws the finest loaded level, not finer than the one it wants, that is ready (`contentReady`): composed with
   every pack it named, and every mesh it draws (under its own purpose) held or failed, through the payloads and instances in it; a LOD root
   inside it counts by its coarsest level. Until then the root keeps drawing the coarser level, and switches in the extract after the last

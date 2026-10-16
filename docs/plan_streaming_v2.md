@@ -1,7 +1,8 @@
 # Streaming v2: simpler, for a world authored to stream
 
-**Status. Draft.** A review of the streaming and LOD system as built by [plan_streaming_districts.md](plan_streaming_districts.md), with what
-to remove and what to replace. Decisions 1 to 8 locked 2026-10-15, each as recommended; the test world without `PointInstancer` for now.
+**Status. In progress.** A review of the streaming and LOD system as built by [plan_streaming_districts.md](plan_streaming_districts.md), with what
+to remove and what to replace. Decisions 1 to 8 locked 2026-10-15, each as recommended; the test world is best-practice USD with variant
+sets and `PointInstancer` (2026-10-16). Steps 1 and 2 done 2026-10-16.
 
 ## Current state
 
@@ -25,15 +26,18 @@ What exists, and why it is shaped that way. Most of the complexity answers somet
 
 How Caldera shaped it:
 
-| Mechanism | The Caldera problem it answers |
-|---|---|
-| Gaps and in-place recompose | Draw as packs arrive (plan_streaming_lod decision 6), since revised: levels now switch only when complete |
-| A prim with payloads as its own content (step 4b) | 159,393 payload prims in one district level; recomposing the level per arrival was too slow |
-| Paced extracts | A full extract takes 1–3 s with 266,000 draws |
-| The cap and its ranking | Districts kilometres across switching to 200,000+ draws each; out of memory at 35 roots finer |
-| Camera-inside ranking, empty-extent skip | Screen size is meaningless inside a kilometre-wide extent; the terrain sections author an empty box |
-| `TransformIndex` | A map of every prim's transform cost too much at Caldera's prim count |
-| Composer eviction special cases | Contents unreached for seconds while 50,000 mesh packs arrive |
+| Mechanism | The Caldera problem it answers | Goes in step |
+|---|---|---|
+| Gaps and in-place recompose | Draw as packs arrive (plan_streaming_lod decision 6), since revised: levels now switch only when complete | 3 |
+| A prim with payloads as its own content (districts step 4b) | 159,393 payload prims in one district level; recomposing the level per arrival was too slow | 3 |
+| Paced extracts | A full extract takes 1–3 s with 266,000 draws | 4 |
+| The cap and its ranking | Districts kilometres across switching to 200,000+ draws each; out of memory at 35 roots finer | 2 |
+| Camera-inside ranking, empty-extent skip | Screen size is meaningless inside a kilometre-wide extent; the terrain sections author an empty box | 2 |
+| `TransformIndex` | A map of every prim's transform cost too much at Caldera's prim count | 4 |
+| Composer eviction special cases | Contents unreached for seconds while 50,000 mesh packs arrive | 5 |
+
+Each row is removed outright in its step, its records, verbs, RPC parameters, window controls and README sections with it; nothing is kept
+behind a flag "for Caldera". Caldera is revisited afterwards against what remains (Deferred).
 
 [test_streaming_world.md](test_streaming_world.md) describes a world authored for streaming: 1 km regions, 250 m tiles and asset roots, each
 level one file, every switch bounded (a tile `full` level under 20,000 instances). With that world as the target, most of the table goes away.
@@ -172,7 +176,8 @@ composer's `evict`, the `unusedSince` maps, `meshesLoaded` and the "reached by t
 
 **Locked: B** (2026-10-15). The cap exists because Caldera districts switch 200,000 draws at once; the ranking exists because screen size from inside a
 kilometre-wide extent means nothing. On the test world neither holds. Caldera without a cap runs out of memory at its first evaluation near
-the island: accepted until it is revisited, with the heuristic off for it in the meantime.
+the island: accepted until it is revisited, with the heuristic off for it in the meantime. It goes first, in step 2, with everything around
+it.
 
 ### 8. The heuristic
 
@@ -183,24 +188,71 @@ Locked (2026-10-15). Stays: screen size of the extent's bounding sphere, the 20%
 ## Steps
 
 1. **The test world's representative area.** Run test_streaming_world.md (its run copy in `~/Code/streamtest-world/`, a project of its own
-   that knows nothing of ngen) through its section 8 step 4 (one region, at the full hierarchy depth), and bring its `world/` in as
-   `assets/streamtest/`. Then see what today's engine makes of it: the packer's warnings (variant sets and `PointInstancer` are authored, and
-   neither is read today), `ngen-worldcheck` against `ngen-usdcheck` where the engine reads the scene, and a flight as the baseline. What the
-   engine doesn't read is engine work, never a change to the world.
+   that knows nothing of ngen) through its section 8 step 4 (one region, at the full hierarchy depth); its `world/` is served as
+   `assets/streamtest-world/world/` (a link to the project). Then see what today's engine makes of it: the packer's warnings (variant sets
+   and `PointInstancer` are authored, and neither is read today), `ngen-worldcheck` against `ngen-usdcheck` where the engine reads the scene,
+   and a flight as the baseline. What the engine doesn't read is engine work, never a change to the world.
    **Variant sets and `PointInstancer`** (decided 2026-10-16: the test world is best-practice USD and uses both; the engine adapts) are a plan
-   of their own, landed between this step and step 3, so the placement tree is built with them: variant selection is composition (the
+   of their own, landed before step 4, so the placement tree is built with them: variant selection is composition (the
    composer, `ngen-usdcheck` parity), point instancing is placements of a prototype by the thousand (one placement per instancer, its slots per
    point). Today the packer warns about variants and point instances aren't drawn.
-2. **One content store, complete contents only** (decisions 2, 3): `World::contents`; `WorldComposer` keeps a content only when complete,
+2. **Remove the cap** (decision 7), first, because it depends on nothing else and the test world needs it gone (it runs with
+   `lod-cap 64` until then, and still caps 741 roots at one viewpoint). Removed: the cap and `heuristicCap` in `evaluateLevels`, the ranking
+   (`aroundCamera`, the camera-inside order), the runtime extent check (`validExtent`, `warnedExtents`, `LodExtentEmpty`; the packer warns
+   about an empty or non-finite heuristic extent instead, and the root keeps its default), `lodCapped` and the "capped" reason, `setLodCap` and
+   `lodCap`, the `lod-cap` verb and `view.lod.heuristic {cap}`, `cap` and `capped` in the `streaming` record, the LOD window's Cap field
+   (`LodWindowState::cap`, `capRequested`) and its wiring in `view.cpp`, "capped" in the Engine Map's LOD selection node, and the view
+   README's "The cap". Verified: `rg -w -i "cap|capped|lodCap|aroundCamera|validExtent|LodExtentEmpty"` over `src/` finds none of them; the
+   test world at its viewpoints with no `lod-cap` line; baselines byte-identical.
+3. **One content store, complete contents only** (decisions 2, 3): `World::contents`; `WorldComposer` keeps a content only when complete,
    drops gaps, payload contents and in-place rebuilds; `evict` goes. `ngen-worldcheck` against `ngen-usdcheck` identical on the layered scene,
    the test area and Caldera.
-3. **Placements** (decisions 1, 6): `src/view/placement.*`; a content's draws built once on completion; the scene thread keeps the placement
+4. **Placements** (decisions 1, 6): `src/view/placement.*`; a content's draws built once on completion; the scene thread keeps the placement
    tree and turns its edits into change lists; queries walk it. `replay`, `ExtractItem`, kept walks, the diff, extract pacing and
    `TransformIndex` are removed.
-4. **Counting** (decisions 4, 5): pending counts per placed level for the switch rule; reference counts for contents and assets; the unload
+5. **Counting** (decisions 4, 5): pending counts per placed level for the switch rule; reference counts for contents and assets; the unload
    delay on the level only.
-5. **The heuristic over placed roots, no cap** (decisions 7, 8); the empty-extent warning moves to the packer.
-6. **Visibility pass and docs**: `src/world/README.md`, `src/view/README.md`, the Engine Map.
+6. **The heuristic over placed roots** (decision 8).
+7. **Visibility pass and docs**: `src/world/README.md`, `src/view/README.md`, the Engine Map.
+
+### Step 1 results (2026-10-16)
+
+- **The world**: Eldermark, seed 1337, region `R_2_2` generated (1 km, 16 tiles, each tile `full` and `simplified` a `.usdc` of its own, the
+  region `full` a `.usda` and `proxy` a `.usdc`), with 8 named viewpoints and a flight path. A tile `full` holds 12,310 instanceable asset
+  placements and 4 `PointInstancer`s. The assets put their geometry in a `shape` variant set (`juniper`, `shrub`, `deadfall` and others), with a
+  UsdLod root on `Geom`.
+- **LOD didn't switch at first**: three places where the engine read UsdLod differently from the spec, fixed (not part of this plan's
+  steps): a root's heuristic is now the first of a type and domain the engine reads (it took the first target, here a distance heuristic, and
+  kept every region at `proxy`); a heuristic's `boundingVolume` bounds the root; a LOD level's own authored visibility is ignored for the
+  level drawn (the world marks every non-default level invisible, as UsdLod recommends for readers without LOD). `src/world/README.md` has
+  the rules.
+- **After the fixes**, at `dense_forest`: `R_2_2` measures 9.4 against its threshold of 1.107 and goes `full`; its tiles go `full` or stay
+  `simplified` by their own size; nothing waits. Terrain, rocks and trees draw; the terrain draws white (its material isn't read; not looked
+  into yet).
+- **42,387 LOD roots** at that viewpoint, 39,891 of them asset roots at their coarsest level, one per placement in the tiles at `full`. With
+  `lod-cap 64` the cap held 741 back (step 2). Every evaluation walks them all: step 6's cost is per placed root, and this is its measure.
+- **Composition**: `ngen-worldcheck` against `ngen-usdcheck` identical with the region at `proxy` (70 prims) and at `full` (567; its tiles at
+  `simplified`). With a tile at `full`, 91,516 of 140,789 lines differ, all under the variant assets' `Geom/lod*` (the geometry the variant
+  brings), and USD has 25 prototypes to the engine's 9 (variant selections make prototypes of their own).
+- **What the engine doesn't read yet**, for the variants and `PointInstancer` plan: variant sets (a packer warning per placement that selects
+  one, so per asset placement in a tile), `PointInstancer` (not drawn), and LOD items that are `over`s (the assets' levels outside the variant):
+  UsdLod counts only defined children as items, the engine counts every child.
+- **Not done yet**: the baseline flight along `flight_NN`. It runs once the cap is gone (step 2), so the baseline isn't a capped one.
+
+### Step 2 results (2026-10-16)
+
+- **Removed**: the cap, its ranking and the runtime extent check, with every verb, RPC parameter, record field, window control, Engine Map
+  line and README section listed in the step. `rg` over `src/` finds none of the names (the remaining matches are a cone's base cap and the
+  build scheduler's).
+- **A heuristic without usable bounds**, which the view's runtime check used to catch, is now the composer's: it doesn't choose a screen-size
+  heuristic whose bounds are empty or not finite and tries the next target, as UsdLod has a renderer ignore a heuristic with no usable result;
+  a root with none keeps its default (`LodRoot::heuristicChosen`, "no usable heuristic" in the records, `chosen` in the `lod` record). The
+  packer warns about the authored extent (usd rule version 4): on Caldera's default levels, 5 vehicle assets' heuristics.
+- **Test world, no `lod-cap`**: at the overlook the region stays at `proxy`; at `dense_forest` and `valley` it is `full` with 4 of 16 tiles
+  `full`, at `four_tiles` 6; every root's level is the heuristic's (42,387 and 46,006 roots), no view warnings, peak resident memory 1.0 GB.
+  Draws are few (209 slots at `dense_forest`) because the asset roots' levels are empty until variants compose.
+- Baselines byte-identical; the layered tree follows the camera, holds a hand-set level and its default with the heuristic off; World
+  against USD unchanged.
 
 ## Visibility
 

@@ -93,6 +93,25 @@ auto resolveAssetId(const std::string& assetPath, const std::string& fileId) -> 
     return assetIdForPath(std::filesystem::path(normalized), std::filesystem::path(fileId).parent_path());
 }
 
+auto warn(LayerPack& layer, const std::string& path, std::string text) -> void;
+
+// A screen-size heuristic's authored extent that is empty or not finite measures nothing: the engine doesn't choose the heuristic (the root
+// keeps its default level), so the author hears of it here.
+auto warnEmptyHeuristicExtent(LayerPack& layer, const std::string& path, const SdfPrimSpecHandle& spec) -> void {
+    auto attribute = spec->GetAttributeAtPath(spec->GetPath().AppendProperty(TfToken("extent")));
+    if (!attribute || !attribute->HasDefaultValue() || !attribute->GetDefaultValue().IsHolding<VtArray<GfVec3f>>()) {
+        return;
+    }
+    const auto& box = attribute->GetDefaultValue().UncheckedGet<VtArray<GfVec3f>>();
+    bool valid = box.size() == 2;
+    for (int axis = 0; valid && axis < 3; axis++) {
+        valid = std::isfinite(box[0][axis]) && std::isfinite(box[1][axis]) && box[0][axis] <= box[1][axis] && box[1][axis] - box[0][axis] <= 1e30f;
+    }
+    if (!valid) {
+        warn(layer, path, "a LOD screen-size heuristic's extent is empty or not finite; the engine keeps its root at its default level");
+    }
+}
+
 auto warn(LayerPack& layer, const std::string& path, std::string text) -> void {
     layer.warnings.push_back({.path = path, .text = std::move(text)});
 }
@@ -300,6 +319,9 @@ auto packSpec(const SdfPrimSpecHandle& spec, const std::string& fileId, LayerPac
     }
     if (timeSampled > 0) {
         warn(layer, prim.path, std::format("{} attributes have time samples only; the engine reads default values", timeSampled));
+    }
+    if (prim.typeName == "LODScreenSizeHeuristic") {
+        warnEmptyHeuristicExtent(layer, prim.path, spec);
     }
 
     for (const auto& relationship : spec->GetRelationships()) {

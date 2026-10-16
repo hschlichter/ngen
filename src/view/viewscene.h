@@ -69,6 +69,7 @@ struct SceneLodRoot {
     std::vector<std::string> levels;
     std::vector<std::vector<std::string>> levelPayloads; // per level, the asset ids of its payloads; empty for a level without
     std::string heuristicType;                           // empty when the root names none
+    bool heuristicChosen = false;                        // a heuristic the engine reads, with valid bounds; else the root keeps its default
     std::vector<float> thresholds;
     std::array<glm::vec3, 2> extent = {glm::vec3(-1.0f), glm::vec3(1.0f)}; // the heuristic's, in the root's local space
     bool projectedExtent = false;                                          // projectionMethod: the box, else its bounding sphere
@@ -130,7 +131,6 @@ struct SceneThreadStats {
     uint32_t lodRootsEvaluated = 0;
     uint32_t lodFiner = 0;
     uint32_t lodCoarser = 0;
-    uint32_t lodCapped = 0; // roots the cap kept at their coarsest
     // Unloading, since the scene opened: mesh packs released, and composed contents the composer let go.
     uint64_t releasedMeshes = 0;
     uint64_t releasedMeshBytes = 0;
@@ -187,7 +187,6 @@ struct SceneSnapshot {
     std::shared_ptr<const TransformIndex> transforms = std::make_shared<TransformIndex>(); // every prim reached while drawing
     std::shared_ptr<const SceneLodChoices> lodChoices = std::make_shared<SceneLodChoices>();
     bool lodHeuristic = true;
-    uint32_t lodCap = 2;
     double unloadDelay = 10.0;
     glm::mat4 unitScale = glm::mat4(1.0f);
     std::vector<std::string> assetIds; // every asset the scene uses: layer packs, meshes, materials, textures, failed ones
@@ -231,14 +230,9 @@ public:
     auto cameraAspect() const -> float;
     // The LOD heuristic on (every root not set by hand wants the level its screen size picks) or off (its default).
     auto setLodHeuristic(bool on) -> void;
-    // At most this many roots finer than their coarsest level by the heuristic, the largest on screen first; the others keep their
-    // coarsest ("capped"). A stand-in for memory budgets.
-    auto setLodCap(uint32_t roots) -> void;
-    auto lodCap() const -> uint32_t { return current->lodCap; }
     // How long what stopped being drawn or reached is kept before it is unloaded (packs, library entries, GPU copies, composed contents).
     auto setUnloadDelay(double seconds) -> void;
     auto unloadDelay() const -> double { return current->unloadDelay; }
-    static constexpr uint32_t defaultLodCap = 2;
     auto lodHeuristic() const -> bool { return current->lodHeuristic; }
     // What the heuristic chose at its last evaluation, by root path.
     auto lodChoices() const -> const SceneLodChoices& { return *current->lodChoices; }
@@ -327,7 +321,6 @@ private:
     };
     struct HeuristicRequest {
         std::optional<bool> on;
-        std::optional<uint32_t> cap;
         std::optional<double> unloadDelay;
     };
     using Request = std::variant<OpenRequest, LodRequest, PurposeRequest, RefreshRequest, TransformRequest, HeuristicRequest>;
@@ -409,12 +402,10 @@ private:
     std::optional<CameraInput> postedCamera;
     std::optional<CameraInput> camera;
     bool heuristicOn = true;
-    uint32_t heuristicCap = defaultLodCap;
     bool evaluateNeeded = false;
     std::unordered_map<std::string, uint32_t> handLevels;
     std::unordered_map<std::string, uint32_t> heuristicLevels;
     std::unordered_map<std::string, uint32_t> composerLevels;
-    std::set<std::string> warnedExtents; // roots whose empty heuristic extent was reported
     // Unloading: what stopped being drawn (library entries, on the GPU) or reached (composed contents) goes after this long; when the
     // next goes, for the scene thread to wake.
     double unloadDelaySeconds = 10.0;
