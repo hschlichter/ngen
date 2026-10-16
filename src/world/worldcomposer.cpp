@@ -434,10 +434,14 @@ struct WorldComposer::Impl {
     struct HeuristicData {
         std::string type;
         std::vector<float> thresholds;
+        std::string domain; // lod:domain
         std::optional<std::array<glm::vec3, 2>> extent;
+        std::vector<PendingTarget> boundingVolumes;
         LodProjection projection = LodProjection::Sphere;
     };
     std::map<std::pair<const WorldContent*, EntityId>, HeuristicData> heuristics;
+    // Every other prim's authored extent, by its content and entity: the boundables a heuristic's boundingVolume may name.
+    std::map<std::pair<const WorldContent*, EntityId>, std::array<glm::vec3, 2>> extents;
 
     World world;
 
@@ -789,6 +793,7 @@ struct WorldComposer::Impl {
             standIn.name = name;
             standIn.parent = parent;
             standIn.defined = true;
+            standIn.lodItem = true;
             content.entities.push_back(std::move(standIn));
             content.entities[parent].children.push_back(id);
             content.byPath[relativePath(context, path)] = id;
@@ -805,7 +810,25 @@ struct WorldComposer::Impl {
         if (opinion.relationship == nullptr || opinion.relationship->targets.empty()) {
             return std::nullopt;
         }
-        auto mapped = mapToComposed(opinion.relationship->targets[0], *opinion.contribution);
+        return pendingTargetAt(context, id, opinion.relationship->targets[0], *opinion.contribution);
+    }
+
+    // Every target of a relationship, in authored order.
+    auto pendingTargets(const ContentContext& context, EntityId id, const RelationshipOpinion& opinion) -> std::vector<PendingTarget> {
+        std::vector<PendingTarget> targets;
+        if (opinion.relationship == nullptr) {
+            return targets;
+        }
+        for (const auto& path : opinion.relationship->targets) {
+            if (auto target = pendingTargetAt(context, id, path, *opinion.contribution)) {
+                targets.push_back(*target);
+            }
+        }
+        return targets;
+    }
+
+    auto pendingTargetAt(const ContentContext& context, EntityId id, const std::string& authored, const Contribution& contribution) -> std::optional<PendingTarget> {
+        auto mapped = mapToComposed(authored, contribution);
         if (!mapped) {
             return std::nullopt;
         }
@@ -924,9 +947,12 @@ struct WorldComposer::Impl {
             }
             content.payloads[id] = std::move(placement);
         }
+        const PackValue* authoredExtent = attribute("extent");
         if (const PackValue* values = attribute("thresholds")) {
             auto& heuristic = heuristics[{&content, id}];
             heuristic.type = content.entities[id].typeName;
+            heuristic.domain = token(attribute("lod:domain"));
+            heuristic.boundingVolumes = pendingTargets(context, id, findRelationship(specs, "boundingVolume"));
             for (double v : values->numbers) {
                 heuristic.thresholds.push_back((float) v);
             }
@@ -937,14 +963,18 @@ struct WorldComposer::Impl {
             if (token(attribute("projectionMethod")) == "projectedExtent") {
                 heuristic.projection = LodProjection::Extent;
             }
+        } else if (authoredExtent != nullptr && authoredExtent->numbers.size() >= 6) {
+            // A boundable's extent, for a heuristic whose boundingVolume names it.
+            const auto& n = authoredExtent->numbers;
+            extents[{&content, id}] = std::array<glm::vec3, 2>{glm::vec3((float) n[0], (float) n[1], (float) n[2]), glm::vec3((float) n[3], (float) n[4], (float) n[5])};
         }
         bool isLodRoot = std::ranges::find(apiSchemas, "LODRootAPI") != apiSchemas.end();
         if (isLodRoot) {
             LodRoot root;
             root.defaultIndex = (uint32_t) std::max(0.0, number(attribute("lod:default:index"), 0.0));
             content.lodRoots[id] = std::move(root);
-            if (auto heuristic = pendingTarget(context, id, findRelationship(specs, "lod:heuristics"))) {
-                window().heuristics.push_back(*heuristic);
+            for (const auto& heuristic : pendingTargets(context, id, findRelationship(specs, "lod:heuristics"))) {
+                window().heuristics.push_back(heuristic);
             }
         }
 
@@ -985,24 +1015,56 @@ struct WorldComposer::Impl {
         resolveHeuristics(done.heuristics);
     }
 
+    // A root's heuristic, as UsdLod has a renderer choose it: the first of its lod:heuristics targets of a type and domain it understands
+    // (LODScreenSizeHeuristic, "imaging"). A root naming none it understands reports its first target's type and keeps its default level.
     auto resolveHeuristics(const std::vector<PendingTarget>& pending) -> void {
+        std::set<std::pair<const WorldContent*, EntityId>> seen;
+        std::set<std::pair<const WorldContent*, EntityId>> chosen;
         for (const auto& target : pending) {
-            if (target.outside) {
+            if (target.outside || chosen.contains({target.content, target.entity})) {
                 continue;
             }
             auto it = target.content->byPath.find(target.path);
             if (it == target.content->byPath.end()) {
                 continue;
             }
+            auto found = heuristics.find({target.content, it->second});
+            if (found == heuristics.end()) {
+                continue;
+            }
+            const auto& data = found->second;
+            bool understood = data.type == "LODScreenSizeHeuristic" && data.domain == "imaging";
+            if (!understood && !seen.insert({target.content, target.entity}).second) {
+                continue;
+            }
             auto& root = target.content->lodRoots.at(target.entity);
+            root = LodRoot{.levels = root.levels, .defaultIndex = root.defaultIndex, .loaded = root.loaded};
             root.heuristic = it->second;
-            if (auto found = heuristics.find({target.content, it->second}); found != heuristics.end()) {
-                root.heuristicType = found->second.type;
-                root.thresholds = found->second.thresholds;
-                if (found->second.extent) {
-                    root.extent = *found->second.extent;
+            root.heuristicType = data.type;
+            root.thresholds = data.thresholds;
+            root.projection = data.projection;
+            if (data.extent) {
+                root.extent = *data.extent;
+            }
+            if (!understood) {
+                continue;
+            }
+            chosen.insert({target.content, target.entity});
+            // A boundingVolume naming a boundable with a valid extent bounds the root instead, in the root's space as UsdLod's query
+            // reads it.
+            for (const auto& volume : data.boundingVolumes) {
+                if (volume.outside) {
+                    continue;
                 }
-                root.projection = found->second.projection;
+                auto entity = volume.content->byPath.find(volume.path);
+                if (entity == volume.content->byPath.end()) {
+                    continue;
+                }
+                auto extent = extents.find({volume.content, entity->second});
+                if (extent != extents.end() && glm::all(glm::lessThanEqual(extent->second[0], extent->second[1]))) {
+                    root.extent = extent->second;
+                    break;
+                }
             }
         }
     }
@@ -1098,6 +1160,9 @@ struct WorldComposer::Impl {
         content.version = ++versions;
         ContentContext context{.content = &content, .base = slot.composedPath, .key = key, .info = &info};
         composePrim(context, noEntity, slot.name, std::move(index), slot.composedPath, loads);
+        if (!slot.payload && !content.entities.empty()) {
+            content.entities[0].lodItem = true;
+        }
         finishContent(context);
         stats.levelsComposed++;
         if (info.complete) {
@@ -1316,6 +1381,7 @@ struct WorldComposer::Impl {
         indexMemo.clear();
         computing.clear();
         heuristics.clear();
+        extents.clear();
         windows.clear();
         stageMessages.clear();
         // The stage is composed again every time; prototypes and level contents are kept, and their indices with them.

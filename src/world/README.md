@@ -63,6 +63,12 @@ Every payload loads, except those under a LOD root's levels that aren't loaded. 
 levels, finest first; it loads the level it wants, `lod:default:index` until `setLodLevel` sets one for its path, and its coarsest level.
 It draws the finest loaded level not finer than the wanted one, so a level still loading falls back to a coarser one.
 
+As UsdLod has a renderer do it, a root's heuristic is the first of its `lod:heuristics` targets of a type and domain the engine reads
+(`LODScreenSizeHeuristic`, `imaging`); a root with none keeps its default. The heuristic's bounds are its `boundingVolume`'s extent when that
+names a boundable with a valid one, else its own `extent`, in the root's space as UsdLod's query reads them. A level's own authored
+visibility is for readers that don't select LOD (UsdLod's recommendation is the default level visible, the others invisible): the level the
+engine draws is shown whatever it authors, and visibility below it applies as usual (`Entity::lodItem`).
+
 A LOD root inside a prototype loads, in the prototype, every level any of its instances wants; which level each instance wants and draws
 is state of the instance (`World::lodLevels`, by the root's full path), outside the prototype. USD instead gives instances with different
 loaded levels different prototypes.

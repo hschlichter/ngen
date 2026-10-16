@@ -47,6 +47,9 @@ struct Entity {
     // A LOD level, or a prim with payloads: a stand-in for a content of its own, the index in World::linkedContents of the content that
     // holds the prim itself (its entity 0) and everything under it.
     int32_t linkedContent = -1;
+    // A LOD item, a LOD root's child (its stand-in, and its content's entity 0): its authored visibility is what a reader that doesn't
+    // select LOD sees; a LOD-aware reader shows the item it selects whatever it authors, as UsdLod says.
+    bool lodItem = false;
     int64_t pointCount = -1;        // the composed `points` count of a point-based prim, -1 for other prims
     std::optional<Purpose> purpose; // authored; inherited from the nearest ancestor that authors one
     bool invisible = false;         // authored visibility "invisible"; hides the subtree
@@ -90,10 +93,13 @@ struct LodRoot {
     std::vector<EntityId> levels;
     uint32_t defaultIndex = 0; // lod:default:index, clamped to the levels
     std::vector<uint32_t> loaded;
-    EntityId heuristic = noEntity; // the first lod:heuristics target in this content
+    // The heuristic chosen from its lod:heuristics targets in this content: the first screen-size heuristic in the imaging domain, else
+    // the first target (heuristicType says which; a root without an understood one keeps its default).
+    EntityId heuristic = noEntity;
     std::string heuristicType;     // its prim type: LODScreenSizeHeuristic, LODDistanceHeuristic, or another
     std::vector<float> thresholds; // the heuristic's
-    // The screen-size heuristic's extent, in the root's local space; UsdLod's fallback (-1..1) when it authors none.
+    // The screen-size heuristic's extent, in the root's local space: its boundingVolume's when that names a boundable with a valid
+    // extent, else its own extent attribute, else UsdLod's fallback (-1..1).
     std::array<glm::vec3, 2> extent = {glm::vec3(-1.0f), glm::vec3(1.0f)};
     LodProjection projection = LodProjection::Sphere;
 };

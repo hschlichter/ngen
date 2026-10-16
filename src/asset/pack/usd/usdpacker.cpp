@@ -80,7 +80,7 @@ auto isEngineAttribute(const std::string& name) -> bool {
 }
 
 auto isEngineRelationship(const std::string& name) -> bool {
-    return name == "material:binding" || name.starts_with("material:binding:") || name == "lod:heuristics";
+    return name == "material:binding" || name.starts_with("material:binding:") || name == "lod:heuristics" || name == "boundingVolume";
 }
 
 // An asset path as the file authors it, to an asset id: anchored to the file's folder, '\' read as a separator (assets authored on

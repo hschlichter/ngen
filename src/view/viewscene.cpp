@@ -1329,7 +1329,8 @@ auto ViewScene::buildExtract(const WorldContent& content, bool rootIsPrim, Purpo
         } else {
             state.world = parent.world * local;
         }
-        if (!entity.active || !entity.defined || entity.abstract || entity.invisible) {
+        // A LOD item's own visibility is for readers that don't select LOD; the drawn level is shown whatever it authors.
+        if (!entity.active || !entity.defined || entity.abstract || (entity.invisible && !entity.lodItem)) {
             return;
         }
         state.purpose = entity.purpose.value_or(parent.purpose);

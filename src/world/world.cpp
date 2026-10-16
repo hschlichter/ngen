@@ -83,7 +83,7 @@ auto World::visit(const std::function<bool(const VisitedEntity&)>& visitor) cons
                 state.worldTransform = parent.worldTransform * entity.localTransform;
             }
         }
-        state.visible = parent.visible && !entity.invisible;
+        state.visible = parent.visible && (!entity.invisible || entity.lodItem);
         state.purpose = entity.purpose.value_or(parent.purpose);
         state.materialAsset = parent.materialAsset;
         state.strongBinding = parent.strongBinding;
