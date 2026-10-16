@@ -651,12 +651,11 @@ auto ViewScene::requestDrawnAssets() -> void {
         want(meshId, AssetKind::Mesh, meshPacks.contains(meshId));
     }
     for (const auto& materialId : materialIds) {
-        want(materialId, AssetKind::Material, materialPacks.contains(materialId));
-        if (auto it = materialPacks.find(materialId); it != materialPacks.end()) {
-            for (const auto& texture : {it->second.baseColorTexture, it->second.opacityTexture}) {
-                if (!texture.empty()) {
-                    want(texture, AssetKind::Texture, texturePacks.contains(texture));
-                }
+        auto resolved = resolveMaterial(materialId);
+        want(resolved.packId, AssetKind::Material, resolved.pack != nullptr);
+        for (const auto& texture : {resolved.baseColorTexture, resolved.opacityTexture}) {
+            if (!texture.empty()) {
+                want(texture, AssetKind::Texture, texturePacks.contains(texture));
             }
         }
     }
@@ -1146,6 +1145,28 @@ auto ViewScene::mesh(const std::string& meshAsset) -> MeshHandle {
 // fill the renderer's texture slots with 1x1 textures of the same few colours). A bound material that authors neither a texture nor a
 // colour takes the display colour of the first mesh that asks for it in an extract, as it always has. The entry is kept while its
 // content is the same; content that changed (a repacked material or texture) makes a new entry.
+auto ViewScene::resolveMaterial(const std::string& key) const -> ResolvedMaterial {
+    ResolvedMaterial resolved;
+    auto use = parseMaterialKey(key);
+    resolved.packId = use.asset;
+    auto pack = materialPacks.find(use.asset);
+    if (pack == materialPacks.end()) {
+        return resolved;
+    }
+    resolved.pack = &pack->second;
+    auto textureOf = [&use](const std::string& fallback, const std::string& input) {
+        if (!input.empty()) {
+            if (auto value = use.input(input)) {
+                return *value;
+            }
+        }
+        return fallback;
+    };
+    resolved.baseColorTexture = textureOf(pack->second.baseColorTexture, pack->second.baseColorTextureInput);
+    resolved.opacityTexture = textureOf(pack->second.opacityTexture, pack->second.opacityTextureInput);
+    return resolved;
+}
+
 auto ViewScene::material(const std::string& materialAsset, const std::optional<std::array<float, 3>>& displayColor) -> MaterialHandle {
     std::string key = materialAsset;
     if (key.empty()) {
@@ -1156,9 +1177,9 @@ auto ViewScene::material(const std::string& materialAsset, const std::optional<s
         return it->second;
     }
     MaterialDesc desc;
-    if (auto pack = materialPacks.find(materialAsset); pack != materialPacks.end()) {
-        const auto& material = pack->second;
-        desc.baseColorTexture = material.baseColorTexture.empty() ? TextureHandle{} : texture(material.baseColorTexture);
+    if (auto resolved = resolveMaterial(materialAsset); resolved.pack != nullptr) {
+        const auto& material = *resolved.pack;
+        desc.baseColorTexture = resolved.baseColorTexture.empty() ? TextureHandle{} : texture(resolved.baseColorTexture);
         if (!desc.baseColorTexture && material.hasBaseColor) {
             const auto& c = material.baseColor;
             desc.baseColorFactor = glm::vec4(c[0], c[1], c[2], 1.0f);
@@ -1168,10 +1189,10 @@ auto ViewScene::material(const std::string& materialAsset, const std::optional<s
             desc.opacity = material.opacity;
             desc.opacityChannel = material.opacityChannel;
             desc.opacityRaw = material.opacityRaw;
-            if (!material.opacityTexture.empty() && material.opacityTexture == material.baseColorTexture && desc.baseColorTexture) {
+            if (!resolved.opacityTexture.empty() && resolved.opacityTexture == resolved.baseColorTexture && desc.baseColorTexture) {
                 desc.opacityFromBaseColor = true;
-            } else if (!material.opacityTexture.empty()) {
-                desc.opacityTexture = texture(material.opacityTexture);
+            } else if (!resolved.opacityTexture.empty()) {
+                desc.opacityTexture = texture(resolved.opacityTexture);
             }
         }
     }
@@ -1569,12 +1590,11 @@ auto ViewScene::extract() -> void {
             if (materialAsset.empty()) {
                 return;
             }
-            uses->push_back(materialAsset);
-            if (auto pack = materialPacks.find(materialAsset); pack != materialPacks.end()) {
-                for (const auto& texture : {pack->second.baseColorTexture, pack->second.opacityTexture}) {
-                    if (!texture.empty()) {
-                        uses->push_back(texture);
-                    }
+            auto resolved = resolveMaterial(materialAsset);
+            uses->push_back(resolved.packId);
+            for (const auto& texture : {resolved.baseColorTexture, resolved.opacityTexture}) {
+                if (!texture.empty()) {
+                    uses->push_back(texture);
                 }
             }
         };

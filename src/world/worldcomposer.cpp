@@ -335,6 +335,21 @@ auto token(const PackValue* value) -> std::string {
     return value->strings[0];
 }
 
+// An attribute's value as text, for a material input's value in its key: an asset id, tokens and strings joined, numbers comma-separated.
+auto valueText(const PackValue& value) -> std::string {
+    std::string text;
+    if (!value.strings.empty()) {
+        for (const auto& string : value.strings) {
+            text += text.empty() ? string : "," + string;
+        }
+        return text;
+    }
+    for (double number : value.numbers) {
+        text += std::format("{}{:g}", text.empty() ? "" : ",", number);
+    }
+    return text;
+}
+
 auto number(const PackValue* value, double fallback) -> double {
     if (value == nullptr || value->numbers.empty()) {
         return fallback;
@@ -1022,6 +1037,15 @@ struct WorldComposer::Impl {
         int32_t instanceable = -1;
         for (const auto& opinion : specs) {
             const PackPrim& spec = *opinion.spec;
+            for (const auto& attribute : spec.attributes) {
+                if (!attribute.name.starts_with("inputs:")) {
+                    continue;
+                }
+                auto name = attribute.name.substr(7);
+                if (std::ranges::none_of(entity.materialInputs, [&name](const auto& input) { return input.first == name; })) {
+                    entity.materialInputs.emplace_back(name, valueText(attribute.value));
+                }
+            }
             if (!entity.defined && spec.specifier != PrimSpecifier::Over) {
                 entity.defined = true;
                 entity.abstract = spec.specifier == PrimSpecifier::Class;
@@ -1051,6 +1075,10 @@ struct WorldComposer::Impl {
             }
         }
         entity.active = active != 0;
+        if (entity.typeName != "Material") {
+            // inputs:* on anything else (a light's) aren't a material's interface.
+            entity.materialInputs.clear();
+        }
         if (!pointBasedTypes.contains(entity.typeName)) {
             entity.pointCount = -1;
         } else if (entity.pointCount < 0) {
@@ -1443,7 +1471,7 @@ struct WorldComposer::Impl {
                     messages.push_back(std::format("{}{}: material binding names {}, which isn't there", pending.content->sourcePath == "/" ? "" : pending.content->sourcePath + " ", pending.content->path(pending.entity), pending.path));
                     continue;
                 }
-                pending.content->entities[pending.entity].binding->materialAsset = lookIn->entities[*found].materialAsset;
+                pending.content->entities[pending.entity].binding->materialAsset = materialKey(lookIn->entities[*found]);
             }
         }
         stats.prototypesHeld = (uint32_t) world.prototypes.size();

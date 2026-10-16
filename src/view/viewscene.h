@@ -361,6 +361,15 @@ private:
     auto extract() -> void;
     auto publish() -> void;
     auto drawsPurpose(Purpose purpose) const -> bool;
+    // A bound material (its key, World's materialKey): its pack, when held, and its textures with its inputs' values applied (a texture
+    // whose file comes from an input takes the input's value where the material is used).
+    struct ResolvedMaterial {
+        const MaterialPack* pack = nullptr;
+        std::string packId;
+        std::string baseColorTexture;
+        std::string opacityTexture;
+    };
+    auto resolveMaterial(const std::string& key) const -> ResolvedMaterial;
     auto material(const std::string& materialAsset, const std::optional<std::array<float, 3>>& displayColor) -> MaterialHandle;
     // The library entry for a texture asset, or for a constant colour's generated 1x1; added on first use.
     auto texture(const std::string& textureAsset) -> TextureHandle;

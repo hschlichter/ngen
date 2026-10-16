@@ -166,7 +166,13 @@ auto materialJson(const MaterialPack& pack) -> Json {
         out["baseColor"] = pack.baseColor;
     }
     out["baseColorTexture"] = pack.baseColorTexture;
+    if (!pack.baseColorTextureInput.empty()) {
+        out["baseColorTextureInput"] = pack.baseColorTextureInput;
+    }
     if (pack.opacityThreshold > 0.0f) {
+        if (!pack.opacityTextureInput.empty()) {
+            out["opacityTextureInput"] = pack.opacityTextureInput;
+        }
         out["opacity"] = pack.opacity;
         out["opacityTexture"] = pack.opacityTexture;
         out["opacityChannel"] = pack.opacityChannel;

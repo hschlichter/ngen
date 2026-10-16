@@ -33,7 +33,7 @@ auto packRules(const std::string& config) -> std::vector<PackRule> {
         .extensions = {".usda", ".usdc", ".usd"},
         .packer = "ngen-packer-usd",
         .params = {},
-        .version = 5,
+        .version = 7,
     });
     // Assets the engine still reads in their source format, until a packer for their engine-ready format exists: the packed
     // asset is the source's bytes.

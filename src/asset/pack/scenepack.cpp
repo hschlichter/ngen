@@ -416,8 +416,10 @@ auto writeMaterialPack(const MaterialPack& pack) -> std::vector<std::byte> {
         info.f32(c);
     }
     info.str(pack.baseColorTexture);
+    info.str(pack.baseColorTextureInput);
     info.f32(pack.opacity);
     info.str(pack.opacityTexture);
+    info.str(pack.opacityTextureInput);
     info.u32(pack.opacityChannel);
     info.u32(pack.opacityRaw ? 1 : 0);
     info.f32(pack.opacityThreshold);
@@ -573,8 +575,10 @@ auto readMaterialPack(std::span<const std::byte> bytes) -> std::expected<Materia
         c = info.f32();
     }
     pack.baseColorTexture = info.str();
+    pack.baseColorTextureInput = info.str();
     pack.opacity = info.f32();
     pack.opacityTexture = info.str();
+    pack.opacityTextureInput = info.str();
     pack.opacityChannel = info.u32();
     pack.opacityRaw = info.u32() != 0;
     pack.opacityThreshold = info.f32();

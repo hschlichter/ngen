@@ -1,6 +1,7 @@
 #include "world.h"
 
 #include <algorithm>
+#include <format>
 
 namespace {
 
@@ -23,6 +24,53 @@ struct VisitState {
 };
 
 } // namespace
+
+auto materialKey(const Entity& material) -> std::string {
+    if (material.materialInputs.empty() || material.materialAsset.empty()) {
+        return material.materialAsset;
+    }
+    auto inputs = material.materialInputs;
+    std::ranges::sort(inputs);
+    std::string key = material.materialAsset;
+    char separator = '?';
+    for (const auto& [name, value] : inputs) {
+        key += std::format("{}{}={}", separator, name, value);
+        separator = '&';
+    }
+    return key;
+}
+
+auto parseMaterialKey(const std::string& key) -> MaterialUse {
+    MaterialUse use;
+    auto query = key.find('?');
+    use.asset = key.substr(0, query);
+    if (query == std::string::npos) {
+        return use;
+    }
+    size_t at = query + 1;
+    while (at < key.size()) {
+        auto end = key.find('&', at);
+        if (end == std::string::npos) {
+            end = key.size();
+        }
+        auto pair = key.substr(at, end - at);
+        auto equals = pair.find('=');
+        if (equals != std::string::npos) {
+            use.inputs.emplace_back(pair.substr(0, equals), pair.substr(equals + 1));
+        }
+        at = end + 1;
+    }
+    return use;
+}
+
+auto MaterialUse::input(const std::string& name) const -> std::optional<std::string> {
+    for (const auto& [inputName, value] : inputs) {
+        if (inputName == name) {
+            return value;
+        }
+    }
+    return std::nullopt;
+}
 
 auto WorldContent::path(EntityId id) const -> std::string {
     if (id == 0) {

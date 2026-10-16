@@ -1,6 +1,6 @@
 # Variant sets and PointInstancer
 
-**Status. In progress.** Decisions 1 to 6 locked 2026-10-16, each as recommended; steps 1 and 2 done 2026-10-16. Lands before
+**Status. In progress.** Decisions 1 to 6 locked 2026-10-16, each as recommended; steps 1, 2 and 2b done 2026-10-16. Lands before
 [plan_streaming_v2.md](plan_streaming_v2.md) step 4 (placements), so the placement tree is built with both.
 
 ## Current state
@@ -105,6 +105,13 @@ Compared as files, as the fingerprints are.
 2. **Composer: variant arcs** (decision 2): `src/world/worldcomposer.cpp` adds variant nodes when building a prim index, with selections
    from the whole index and LIVRPS order; prototype keys include them. `assets/layered/` gets an asset with a variant set selected by the
    layer that references it, and a nested set.
+2b. **Material interface inputs** (added 2026-10-16, option B of three: packing materials from the composed stage, composing their inputs,
+   or leaving the terrain white): a material that references another file's network and sets its inputs (the test world's terrain: the
+   tiles reference `library.usda`'s `terrain` and set `inputs:color_texture`) is composed, not packed: the material pack names the input
+   a texture's file comes from, the layer pack keeps a material's own `inputs:*`, the composer composes them on the material entity and a
+   binding names the material as a key (pack and input values), and the view applies the values to the pack's textures. Packing stays per
+   file; composition stays in the composer. Also: a `Material` whose file doesn't author its network packs no material (it used to pack an
+   empty one, which outranked the referenced library's and drew white).
 3. **LOD items from defined children**: a LOD root's levels are its children that are defined (and active, not abstract), as UsdLod counts
    them.
 4. **Packer and World: PointInstancer** (decision 3): the packer keeps `positions`, `orientations`, `scales`, `protoIndices`, `ids`,
@@ -153,6 +160,22 @@ Compared as files, as the fingerprints are.
     once; a plan of its own if the test world relies on it (it doesn't author display colours in variants).
   - The test world's assets draw white, foliage cards opaque: their materials (bound inside the asset, referencing
     `materials/library.usda`) aren't read. The terrain's white is likely the same. Next to look into.
+
+### Step 2b results (2026-10-16)
+
+- **No network, no material**: `packMaterial` gives no material for a `Material` whose file-local stage has no connected surface; the
+  assets' materials (`def Material` referencing `materials/library.usda`) now draw the library's: bark textures and alpha-tested foliage
+  at `dense_forest` (they drew white, foliage opaque). usd rule version 6.
+- **Interface inputs**: `MaterialPack::baseColorTextureInput` / `opacityTextureInput` (scene pack format 4, usd rule version 7); the layer
+  pack keeps a material's `inputs:*`; `Entity::materialInputs` composed strongest-first; `materialKey` / `parseMaterialKey` in `world.h`;
+  `ViewScene::resolveMaterial`. The test world's terrain draws its tiles' `regions/R_2_2/terrain_color.jpg` and, as the region proxy,
+  `terrain_color_far.jpg` (the library's own default, `terrain_grass.jpg`, isn't used); the world reads as a world at `four_tiles`.
+- **Test case**: `assets/layered/looks.usda`, a library material whose texture file is its input with no default; `base.usda`'s
+  `TexturedUse` references it and sets `inputs:tex`, bound to `InterfaceCube`. In a scene of that cube alone the checker texture is
+  requested (the only name for it is the input). Generated shapes (`Cube`) have no texture coordinates, so the cube shows one texel.
+- Baselines byte-identical; `ngen-worldcheck` against `ngen-usdcheck` unchanged (the layered scene, the test world with a tile at `full`).
+- Not covered: constants set through an input (a `diffuseColor` connected to the interface), and interface inputs on node graphs. The test
+  world uses neither.
 
 ## Visibility
 

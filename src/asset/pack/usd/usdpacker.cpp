@@ -300,7 +300,10 @@ auto packSpec(const SdfPrimSpecHandle& spec, const std::string& fileId, LayerPac
         if (name == "points" && attribute->HasDefaultValue()) {
             prim.pointCount = (int64_t) attribute->GetDefaultValue().GetArraySize();
         }
-        if (shading || !isEngineAttribute(name)) {
+        // A shading prim's attributes are its network, packed into the material; a material's own inputs (its interface) stay, as they
+        // compose like any attribute and set the network where the material is used.
+        bool interfaceInput = prim.typeName == "Material" && name.starts_with("inputs:");
+        if ((shading && !interfaceInput) || !isEngineAttribute(name)) {
             continue;
         }
         if (!attribute->HasDefaultValue()) {
@@ -758,6 +761,7 @@ auto resolveConnectedOutput(UsdShadeConnectableAPI source, TfToken sourceName) -
 // sourceColorSpace. Nullopt when the input isn't connected to a texture.
 struct ConnectedTexture {
     std::string assetId;
+    std::string input; // the material input its file is connected to, empty when the file is authored on the texture
     std::string output;
     std::string colorSpace;
 };
@@ -774,11 +778,24 @@ auto connectedTexture(const UsdShadeInput& input, const UsdPrim& material, const
         return std::nullopt;
     }
     auto file = textureShader.GetInput(TfToken("file"));
-    SdfAssetPath assetPath;
-    if (!file || !file.Get(&assetPath, UsdTimeCode::Default())) {
+    if (!file) {
         return std::nullopt;
     }
     ConnectedTexture texture;
+    SdfAssetPath assetPath;
+    // A file connected to an input of the material (its interface) is set where the material is used: the texture names the input, and
+    // the input's own value here, if any, is the default.
+    UsdShadeConnectableAPI fileSource;
+    TfToken fileSourceName;
+    UsdShadeAttributeType fileSourceType;
+    if (file.GetConnectedSource(&fileSource, &fileSourceName, &fileSourceType) && fileSourceType == UsdShadeAttributeType::Input && fileSource.GetPrim() == material) {
+        texture.input = fileSourceName.GetString();
+        if (auto interfaceInput = fileSource.GetInput(fileSourceName)) {
+            interfaceInput.Get(&assetPath, UsdTimeCode::Default());
+        }
+    } else if (!file.Get(&assetPath, UsdTimeCode::Default())) {
+        return std::nullopt;
+    }
     texture.assetId = resolveAssetId(assetPath.GetAssetPath(), fileId);
     if (texture.assetId.empty() && !assetPath.GetAssetPath().empty()) {
         warn(layer, material.GetPath().GetString(), std::format("texture @{}@ doesn't resolve to a file below the asset server's directory", assetPath.GetAssetPath()));
@@ -800,17 +817,20 @@ auto packMaterial(const UsdPrim& prim, const std::string& fileId, MaterialPack& 
     UsdShadeConnectableAPI source;
     TfToken sourceName;
     UsdShadeAttributeType sourceType;
+    // A material whose surface network this file doesn't author (it references one, or authors none) defines no material here: the
+    // material is the file's that defines the network, as a mesh is the file's that defines its geometry.
     if (!surface || !surface.GetConnectedSource(&source, &sourceName, &sourceType)) {
-        return true;
+        return false;
     }
     UsdShadeShader shader(source.GetPrim());
     if (!shader) {
-        return true;
+        return false;
     }
 
     if (auto input = shader.GetInput(TfToken("diffuseColor"))) {
         if (auto texture = connectedTexture(input, prim, fileId, layer)) {
             material.baseColorTexture = texture->assetId;
+            material.baseColorTextureInput = texture->input;
         }
         GfVec3f color;
         if (input.Get(&color, UsdTimeCode::Default())) {
@@ -836,6 +856,7 @@ auto packMaterial(const UsdPrim& prim, const std::string& fileId, MaterialPack& 
         material.opacity = opacity;
         if (opacityTexture) {
             material.opacityTexture = opacityTexture->assetId;
+            material.opacityTextureInput = opacityTexture->input;
             const auto& output = opacityTexture->output;
             material.opacityChannel = output == "g" ? 1 : (output == "b" ? 2 : (output == "a" ? 3 : 0));
             material.opacityRaw = opacityTexture->colorSpace == "raw";

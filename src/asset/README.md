@@ -161,21 +161,22 @@ A packer with secondary outputs writes each to `secondaryOutputFile(out, fragmen
 file alone, so editing one file of a scene repacks that file only. A file's outputs are:
 
 - **The layer pack**, the file's own asset: the opinions the file authors, read as written (Sdf, no composition). Its up axis, meters per unit,
-  default prim and sublayers (asset ids), and per prim spec: its path, specifier, type, API schemas, `active`, `instanceable`, kind, the
-  attributes the engine reads (`xformOp:*` and `xformOpOrder`, `visibility`, `purpose`, `extent`, `extentsHint`, `lod:*`, `thresholds`,
-  `blendThresholds`, `projectionMethod`, and `inputs:*` outside materials), the relationships (`material:binding*`, `lod:heuristics`, `boundingVolume`), its
-  references and payloads (asset id and prim path; an empty id is a reference inside the file), the number of `points` it authors, and the
-  mesh and material assets it defines.
-  Asset paths are resolved to asset ids, against the file's folder. Each prim's `variantSetNames` and `variants` selections are kept, and a
-  spec inside a variant is a prim spec of its own at its variant path (`/asset{shape=a}`, `/asset{shape=a}Geom`), nested variants
-  included.
+  default prim and sublayers (asset ids), and per prim spec: its path, specifier, type, API schemas, `active`, `instanceable`, kind, the attributes
+  the engine reads (`xformOp:*` and `xformOpOrder`, `visibility`, `purpose`, `extent`, `extentsHint`, `lod:*`, `thresholds`, `blendThresholds`,
+  `projectionMethod`, `inputs:*` outside shading prims, and a material's own `inputs:*`, its interface), the relationships (`material:binding*`,
+  `lod:heuristics`, `boundingVolume`), its references and payloads (asset id and prim path; an empty id is a reference inside the file), the number of
+  `points` it authors, and the mesh and material assets it defines. Asset paths are resolved to asset ids, against the file's folder. Each prim's
+  `variantSetNames` and `variants` selections are kept, and a spec inside a variant is a prim spec of its own at its variant path (`/asset{shape=a}`,
+  `/asset{shape=a}Geom`), nested variants included.
 - **A mesh pack per prim the file defines with geometry** (`def` of `Mesh`, `Cube`, `Sphere`, `Cylinder`, `Cone`): triangles with position,
   normal, display colour and texture coordinate (44-byte vertices), 32-bit indices, one submesh per `GeomSubset` (named by its path) and one for
   the faces no subset holds, the display colour, and the bounds.
-- **A material pack per `def Material`**: the `UsdPreviewSurface` diffuse colour, constant or from a `UsdUVTexture` file (an asset id), and, when
-  `opacityThreshold > 0`, the cutout opacity: a constant, or the texture file with the channel its output names (`r`, `g`, `b`, `a`; `rgb` reads
-  `r`) and whether it is authored `raw`, and the threshold. Opacity below 1 with threshold 0 is translucency, which the engine doesn't draw: the
-  material packs opaque, with a warning.
+- **A material pack per `def Material` that authors its surface network** (one whose network comes through a reference to another file is that file's
+  material, as a mesh is the file's that defines it): the `UsdPreviewSurface` diffuse colour, constant or from a `UsdUVTexture` file (an asset id),
+  and, when `opacityThreshold > 0`, the cutout opacity: a constant, or the texture file with the channel its output names (`r`, `g`, `b`, `a`; `rgb`
+  reads `r`) and whether it is authored `raw`, and the threshold. Opacity below 1 with threshold 0 is translucency, which the engine doesn't draw: the
+  material packs opaque, with a warning. A texture whose `file` is connected to one of the material's own inputs names that input
+  (`baseColorTextureInput`, `opacityTextureInput`), its file the input's default here: the value where the material is used sets it.
 
 Meshes and materials are read through a stage of the file alone: a copy of the layer with every sublayer and every reference and payload to
 another file removed, so composition inside the file (internal references, node graphs) still applies and nothing outside it is read. One

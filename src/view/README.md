@@ -59,10 +59,11 @@ The inputs persist across rebuilds:
 - **What is drawn**: entities that are active, defined and not abstract, visible (an invisible ancestor hides its subtree), not in a LOD
   level their root doesn't draw, with a mesh asset, and of a purpose that is shown: `default` and `render` always, `guide` and `proxy`
   when turned on (`purposes` verb, `view.purposes`, the View menu).
-- **Materials**: a mesh's bound material, and each `GeomSubset`'s own binding for its submesh, unless an ancestor's binding is
-  `strongerThanDescendants`. A material's texture, else its base colour, else the mesh's display colour; a constant colour is a 1x1
-  texture. A mesh with no material bound gets one per display colour, shared. A cutout material's opacity texture is fetched with its base
-  colour texture and counts as used by its draws (`drawsOf`).
+- **Materials**: a material is its binding's key (`parseMaterialKey`): the pack, and the values of the inputs its textures take their files from
+  (`resolveMaterial`), so one pack used with different inputs is one material per set of values. A mesh's bound material, and each `GeomSubset`'s own
+  binding for its submesh, unless an ancestor's binding is `strongerThanDescendants`. A material's texture, else its base colour, else the mesh's
+  display colour; a constant colour is a 1x1 texture. A mesh with no material bound gets one per display colour, shared. A cutout material's opacity
+  texture is fetched with its base colour texture and counts as used by its draws (`drawsOf`).
 - **Transforms**: in float, parent times local, then scaled to metres by the root layer's `metersPerUnit`, as the view always drew; the
   camera's up is the scene's up axis. A prim's transform for the queries (`transform`, selection, the gizmo) comes from a `TransformIndex`:
   each content's prims relative to its root, kept with the walk, and every place a content is used with its world transform; a query

@@ -166,6 +166,24 @@ def Xform "World" (
         }
     }
 
+    # A material from another file whose texture is its input: the referencing material sets it (looks.usda).
+    def Material "TexturedUse" (
+        prepend references = @./looks.usda@</Looks/Textured>
+    )
+    {
+        asset inputs:tex = @./textures/checker.png@
+    }
+
+    def Cube "InterfaceCube" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double size = 1
+        rel material:binding = </World/TexturedUse>
+        double3 xformOp:translate = (0, 0.5, -4)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
     # Variant sets (variants.usda): the asset's own selections, selections where it is referenced (which win), a nested set selected from
     # here, instances sharing a prototype per selection, a selection override.usda makes stronger, and one naming a variant that isn't there.
     def Xform "Variants"

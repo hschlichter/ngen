@@ -58,8 +58,21 @@ struct Entity {
     glm::dmat4 localTransform = glm::dmat4(1.0);
     std::string meshAsset;     // the mesh asset its geometry is, when it is geometry the engine draws
     std::string materialAsset; // the material asset it is, when it is a material
+    // A material's own inputs (its interface, inputs:*) as composed, the strongest opinion each, by name without "inputs:": the values
+    // that set its network where it is used. A value is text (an asset input's asset id; numbers comma-separated).
+    std::vector<std::pair<std::string, std::string>> materialInputs;
     std::optional<MaterialBinding> binding;
 };
+
+// A material as a binding names it: its pack's asset id and, when it has inputs, their values, as "<asset>?<input>=<value>&<input>=<value>"
+// (inputs by name). Materials with the same pack and the same values are the same material.
+auto materialKey(const Entity& material) -> std::string;
+struct MaterialUse {
+    std::string asset;                                       // the material pack
+    std::vector<std::pair<std::string, std::string>> inputs; // its inputs' values where it is used
+    auto input(const std::string& name) const -> std::optional<std::string>;
+};
+auto parseMaterialKey(const std::string& key) -> MaterialUse;
 
 enum class LightShape : uint8_t {
     Distant,
