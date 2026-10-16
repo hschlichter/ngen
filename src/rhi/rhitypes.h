@@ -69,10 +69,25 @@ template <>
 struct RhiFlagEnum<RhiBufferUsage> : std::true_type {};
 using RhiBufferUsageFlags = RhiFlags<RhiBufferUsage>;
 
+// GpuOnly: device-local, filled by copies. CpuToGpu: host-visible and coherent, for the CPU to write (uploads): reading it is slow
+// (write-combined). GpuToCpu: host-visible, coherent and cached, for the CPU to read (readback).
 enum class RhiMemoryUsage {
     GpuOnly,
     CpuToGpu,
+    GpuToCpu,
 };
+
+inline auto rhiMemoryUsageName(RhiMemoryUsage memory) -> const char* {
+    switch (memory) {
+        case RhiMemoryUsage::GpuOnly:
+            return "GpuOnly";
+        case RhiMemoryUsage::CpuToGpu:
+            return "CpuToGpu";
+        case RhiMemoryUsage::GpuToCpu:
+            return "GpuToCpu";
+    }
+    return "?";
+}
 
 enum class RhiShaderStage : uint32_t {
     Vertex = 1 << 0,

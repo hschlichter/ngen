@@ -109,7 +109,7 @@ private:
     auto registerAllocation(const void* object, RhiAllocationInfo info) -> void;
     auto unregisterAllocation(const void* object) -> void;
 
-    auto findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t;
+    auto findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties, bool reportMissing = true) -> uint32_t;
     auto createPipelineLayout(std::span<RhiDescriptorSetLayout* const> setLayouts, const RhiPushConstantRange& pushConstant) -> VkPipelineLayout;
 
     static auto toVkBufferUsage(RhiBufferUsageFlags usage) -> VkBufferUsageFlags;

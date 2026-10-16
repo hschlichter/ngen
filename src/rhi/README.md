@@ -107,11 +107,12 @@ present) after logging the native error.
 
 ### Resources
 
-- **Buffers.** `RhiBufferDesc { size, usage, memory }`. Usage flags: `TransferSrc`, `TransferDst`, `Vertex`, `Index`,
-  `Uniform`, `Storage`, `Indirect`. Memory is `GpuOnly` (device-local, filled by copies) or `CpuToGpu` (host-visible and
-  coherent; `mapBuffer` returns a pointer that stays valid until `unmapBuffer` or destroy). Readback buffers use
-  `CpuToGpu` as well. `limits().maxBufferBytes` is the largest size `createBuffer` makes (one allocation and one buffer; in Vulkan the
-  smaller of `maxMemoryAllocationSize` and `maxBufferSize`); a larger one is invalid (a validation error) and may fail, or work on one driver and not another.
+- **Buffers.** `RhiBufferDesc { size, usage, memory }`. Usage flags: `TransferSrc`, `TransferDst`, `Vertex`, `Index`, `Uniform`, `Storage`,
+  `Indirect`. Memory is `GpuOnly` (device-local, filled by copies), `CpuToGpu` (host-visible and coherent, for the CPU to write: uploads; usually
+  write-combined, so reading it is slow) or `GpuToCpu` (host-visible, coherent and cached, for the CPU to read: readback). `mapBuffer` returns a
+  pointer that stays valid until `unmapBuffer` or destroy. Readback buffers use `GpuToCpu`: reading 664,000 words a frame from `CpuToGpu` memory took
+  200 ms. `limits().maxBufferBytes` is the largest size `createBuffer` makes (one allocation and one buffer; in Vulkan the smaller of
+  `maxMemoryAllocationSize` and `maxBufferSize`); a larger one is invalid (a validation error) and may fail, or work on one driver and not another.
 - **Textures.** `RhiTextureDesc { width, height, format, usage, mipLevels, arrayLayers, sampleCount, dimension }`;
   dimensions `Texture2D`, `Texture2DArray`, `TextureCube`. Usage flags: `Sampled`, `ColorAttachment`, `DepthAttachment`,
   `Storage`, `TransferSrc`, `TransferDst`. Optional formats are checked with `supportsTextureFormat(format, usage)`.
@@ -220,7 +221,8 @@ program can check.
   missing. `wideLines`, `samplerAnisotropy`, `pipelineStatisticsQuery`, `geometryShader`, `VK_EXT_memory_budget` and
   `VK_EXT_calibrated_timestamps` are enabled when present and reported in `limits()`.
 - **Memory.** One `vkAllocateMemory` per buffer and texture, device-local for `GpuOnly` and textures, host-visible and
-  coherent for `CpuToGpu`. There is no suballocator.
+  coherent for `CpuToGpu`, host-visible, coherent and cached for `GpuToCpu` (falling back to `CpuToGpu`'s type, with a
+  warning, on a device without one). There is no suballocator.
 - **Barriers.** `pipelineBarrier` maps each state to a layout (textures), stage mask and access mask and records one
   `vkCmdPipelineBarrier2` for all texture and buffer barriers.
 - **Command buffers.** Each `RhiCommandBufferVulkan` owns a timestamp query pool for up to 128 GPU zones, reset at

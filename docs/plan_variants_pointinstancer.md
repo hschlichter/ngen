@@ -223,9 +223,16 @@ Compared as files, as the fingerprints are.
 - **Layered**: four of `/World/Scatter`'s five points draw (two trees, two blocks turned 90° and 45°, one tree stretched), id 12 hidden.
 - **Test world**: the ground cover draws (grass, flowers, ferns at `grassland`). At `four_tiles` 389,080 draws, at `grassland` 663,975
   (159 meshes, 3.9 M vertices); the extract takes 2.3 s there (0.8 s walking, 1.4 s on slots); peak resident memory 2.5 GB.
-- **Seen, not looked into**: the main thread's frame interval is about 200 ms at `grassland` (median of 200 frames once resident), the GPU
-  20 ms: something costs CPU per draw every frame. And the profiler's CPU zones aren't in any record (the profile window shows them), so
-  an agent can't see where. Both are for v2's placements and a look at the per-frame work, with the zones made a record first.
+- **The 200 ms frame, found and fixed** (2026-10-16, after this step): the main thread's frame interval was about 200 ms at `grassland`,
+  the GPU 20 ms. A `zones` record (every profiler zone over the last 60 frames per lane, with medians; the CPU zones had no record) found
+  two causes: the cull readback buffer was `CpuToGpu` memory, uncached, and reading 664,000 visibility words from it every frame took
+  about 200 ms on the render thread, which the main thread waited for (the RHI now has `GpuToCpu`, host-cached, for every readback); and
+  the main loop computed the selection's bounds every frame by walking every draw's path, about 40 ms, even with nothing selected (now
+  once per selection and snapshot). The main thread's frame is 14.4 ms median there now, the GPU's 20.6 ms. Left per frame: the shadow
+  cascades fitted to bounds over every instance (`FitCascades`, 3 ms) and the cull result copied per frame (`CullResult`, 3.5 ms); and
+  freeing a replaced snapshot on the main thread (`SceneUpdate`, up to 600 ms once per extract). All three scale with draws; v2's
+  placements and a look at the snapshot's lifetime are where they go. The RHI examples pass `--check --validation`; baselines
+  byte-identical.
 - Baselines byte-identical; the layered tree's LOD as before.
 
 ## Visibility

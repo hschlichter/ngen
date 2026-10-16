@@ -45,6 +45,8 @@ auto RhiDeviceVulkan::toVkMemoryProps(RhiMemoryUsage usage) -> VkMemoryPropertyF
             return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
         case CpuToGpu:
             return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        case GpuToCpu:
+            return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
     }
     return 0;
 }
@@ -233,7 +235,7 @@ auto RhiDeviceVulkan::toVkImageUsage(RhiTextureUsageFlags usage) -> VkImageUsage
     return flags;
 }
 
-auto RhiDeviceVulkan::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) -> uint32_t {
+auto RhiDeviceVulkan::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties, bool reportMissing) -> uint32_t {
     VkPhysicalDeviceMemoryProperties memProps;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
     for (uint32_t i = 0; i < memProps.memoryTypeCount; i++) {
@@ -241,7 +243,9 @@ auto RhiDeviceVulkan::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags 
             return i;
         }
     }
-    report(RhiMessageSeverity::Error, "Failed to find suitable memory type");
+    if (reportMissing) {
+        report(RhiMessageSeverity::Error, "Failed to find suitable memory type");
+    }
     return UINT32_MAX;
 }
 
@@ -647,7 +651,12 @@ auto RhiDeviceVulkan::createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* {
     VkMemoryRequirements memReqs;
     vkGetBufferMemoryRequirements(device, buf->buffer, &memReqs);
 
-    auto memTypeIndex = findMemoryType(memReqs.memoryTypeBits, toVkMemoryProps(desc.memory));
+    auto memTypeIndex = findMemoryType(memReqs.memoryTypeBits, toVkMemoryProps(desc.memory), desc.memory != RhiMemoryUsage::GpuToCpu);
+    if (memTypeIndex == UINT32_MAX && desc.memory == RhiMemoryUsage::GpuToCpu) {
+        // No cached host-visible type: readback works from uncached memory too, only slowly.
+        report(RhiMessageSeverity::Warning, std::format("no host-cached memory for readback buffer '{}'; reading it will be slow", desc.debugName ? desc.debugName : ""));
+        memTypeIndex = findMemoryType(memReqs.memoryTypeBits, toVkMemoryProps(RhiMemoryUsage::CpuToGpu));
+    }
     if (memTypeIndex == UINT32_MAX) {
         vkDestroyBuffer(device, buf->buffer, nullptr);
         delete buf;

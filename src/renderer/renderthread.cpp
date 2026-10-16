@@ -125,11 +125,15 @@ auto RenderThread::threadLoop() -> void {
             }
         }
 
-        renderer->render(snapshot);
+        {
+            PROFILE_ZONE("RenderFrame");
+            renderer->render(snapshot);
+        }
         // What this frame drew: published after it, so the main thread sees residency only once it is on screen.
         gpuIdle.store(renderer->sceneGpuIdle(), std::memory_order_release);
         drawnUpTo.store(appliedUpTo, std::memory_order_release);
         {
+            PROFILE_ZONE("SceneGpuStats");
             auto stats = renderer->sceneGpuStats();
             stats.changeListsSubmitted = submitted.load(std::memory_order_acquire);
             stats.changeListsDrawn = appliedUpTo;
@@ -139,6 +143,7 @@ auto RenderThread::threadLoop() -> void {
         }
 
         {
+            PROFILE_ZONE("TakeResults");
             auto results = renderer->takeCaptureResults();
             auto frameDebug = renderer->takeFrameDebugCapture();
             auto screenshots = renderer->takeScreenshotResults();
@@ -167,6 +172,7 @@ auto RenderThread::threadLoop() -> void {
         }
 
         {
+            PROFILE_ZONE("CullResult");
             auto cull = renderer->cullResult();
             if (cull.frame != 0 && cull.frame != lastCullResultFrame) {
                 lastCullResultFrame = cull.frame;

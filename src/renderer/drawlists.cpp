@@ -62,7 +62,7 @@ auto DrawLists::ensureCapacity(uint32_t instanceCount, uint64_t frame) -> bool {
         slot.readback = device->createBuffer({
             .size = readbackCommandsOffset() + ((uint64_t) regionCount * capacity * sizeof(RhiDrawIndexedIndirectCommand)),
             .usage = RhiBufferUsage::TransferDst | RhiBufferUsage::TransferSrc,
-            .memory = RhiMemoryUsage::CpuToGpu,
+            .memory = RhiMemoryUsage::GpuToCpu,
             .debugName = "cull.readback",
         });
         slot.readbackMapped = device->mapBuffer(slot.readback);

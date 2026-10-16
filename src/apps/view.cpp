@@ -498,11 +498,20 @@ auto main(int argc, char* argv[]) -> int {
 #endif
 
     TRACE_EVENT("Engine", "MainLoopStarted", "view").text(std::format("main loop started, {:.0f} ms after start", trace::msSinceStart())).field("since_start_ms", trace::msSinceStart());
+    std::string selectedBoundsPath;
+    const SceneSnapshot* selectedBoundsSnapshot = nullptr;
+    AABB selectedBounds;
     while (!quit && !viewUI.wantsQuit()) {
         PROFILE_FRAME_MARK();
+        PROFILE_ZONE("MainFrame");
         frameCounter++;
         // The scene as the scene thread last published it. Until it is first resident the camera follows it.
-        if (scene.update()) {
+        static const uint32_t sceneUpdateZoneId = profile::registerName("SceneUpdate");
+        profile::beginZone(sceneUpdateZoneId);
+        bool sceneUpdated = scene.update();
+        profile::endZone();
+        if (sceneUpdated) {
+            PROFILE_ZONE("SceneInputs");
             cam.worldUp = scene.worldUp();
             if (autoFrame) {
                 frameSceneView();
@@ -562,10 +571,13 @@ auto main(int argc, char* argv[]) -> int {
         auto camPositionBefore = cam.position;
         auto camYawBefore = cam.yaw;
         auto camPitchBefore = cam.pitch;
-        for (const auto& c : dueCommands) {
-            runViewScriptCommand(registry, c);
+        {
+            PROFILE_ZONE("Commands");
+            for (const auto& c : dueCommands) {
+                runViewScriptCommand(registry, c);
+            }
+            endpoint.drain();
         }
-        endpoint.drain();
         if (cam.position != camPositionBefore || cam.yaw != camYawBefore || cam.pitch != camPitchBefore) {
             autoFrame = false;
         }
@@ -603,10 +615,15 @@ auto main(int argc, char* argv[]) -> int {
             scene.setPurposeShown(Purpose::Proxy, viewUI.showProxies());
         }
         // What changed in the scene since the last frame: the render thread applies it, uploads go out a budget per frame.
-        if (auto changes = scene.takeChanges(); !changes.empty()) {
-            renderThread.submitSceneChanges(std::move(changes));
+        {
+            PROFILE_ZONE("TakeChanges");
+            if (auto changes = scene.takeChanges(); !changes.empty()) {
+                renderThread.submitSceneChanges(std::move(changes));
+            }
         }
         // Resident: the scene thread has nothing left to do, and the render thread has drawn every change with nothing left to upload.
+        static const uint32_t residencyZoneId = profile::registerName("Residency");
+        profile::beginZone(residencyZoneId);
         bool resident = scene.idle() && renderThread.sceneDrawn();
         if (resident && !residency.resident) {
             if (!residency.everResident) {
@@ -648,6 +665,7 @@ auto main(int argc, char* argv[]) -> int {
             residentWaiters.clear();
         }
 
+        profile::endZone(); // Residency
         static const uint32_t pollZoneId = profile::registerName("PollEvents");
         profile::beginZone(pollZoneId);
         uint64_t polledEvents = 0;
@@ -798,6 +816,8 @@ auto main(int argc, char* argv[]) -> int {
         profile::zoneValue(polledEvents);
         profile::endZone(); // PollEvents
 
+        static const uint32_t cameraCullZoneId = profile::registerName("CameraAndCull");
+        profile::beginZone(cameraCullZoneId);
         const auto* keys = SDL_GetKeyboardState(nullptr);
         auto camBefore = cam.position;
         cam.update(keys, dt);
@@ -818,6 +838,7 @@ auto main(int argc, char* argv[]) -> int {
         viewUI.setShadowCullStats(latestCull.cascadeCount, latestCull.cascadeCulled, latestCull.cascadeDrawn);
         viewUI.setCullTriangles(latestCull.cameraTriangles, latestCull.sceneTriangles, latestCull.cascadeTriangles);
 
+        profile::endZone(); // CameraAndCull
         // Shadow cascades: fitted to the live camera and the scene bounds.
         std::array<ShadowCascade, maxShadowCascades> cascades;
         uint32_t cascadeCount = 0;
@@ -834,12 +855,21 @@ auto main(int argc, char* argv[]) -> int {
         }
 
         // The AABB overlay shows one view's GPU culling result: the camera or a cascade.
+        static const uint32_t overlayZoneId = profile::registerName("CullOverlay");
+        profile::beginZone(overlayZoneId);
         std::vector<uint8_t> overlayVisible(latestCull.viewBits.size());
         auto overlayBit = (uint8_t) (1u << std::clamp(viewUI.cullOverlayView(), 0, (int) maxShadowCascades));
         for (size_t i = 0; i < overlayVisible.size(); i++) {
             overlayVisible[i] = (latestCull.viewBits[i] & overlayBit) != 0 ? 1 : 0;
         }
-        auto selectedBounds = scene.bounds(selectedPath);
+        profile::endZone();
+        // The selection's bounds, for its box: once per selection and scene snapshot, as bounds() walks every draw.
+        if (selectedPath != selectedBoundsPath || &scene.snapshot() != selectedBoundsSnapshot) {
+            selectedBoundsPath = selectedPath;
+            selectedBoundsSnapshot = &scene.snapshot();
+            selectedBounds = selectedPath.empty() ? AABB{} : scene.bounds(selectedPath);
+        }
+        PROFILE_ZONE("DrawDebug");
         viewUI.drawDebug(debugDraw, scene.renderWorld(), cam.position, cam.worldUp, overlayVisible, cullState.frozenActive ? &frozenCorners : nullptr, std::span<const ShadowCascade>(cascades.data(), cascadeCount), selectedPath.empty() ? nullptr : &selectedBounds);
 
         renderThread.setFrameGraphDebugEnabled(viewUI.wantsFrameGraphDebug() || dumps.wantsFrameGraphDebug());

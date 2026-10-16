@@ -223,7 +223,7 @@ auto CaptureService::recordTexture(RhiCommandBuffer* cmd, const FgCaptureSource&
         return;
     }
     p.size = (uint64_t) p.width * p.height * texel;
-    p.readback = device->createBuffer({.size = p.size, .usage = RhiBufferUsage::TransferDst, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "capture.readback"});
+    p.readback = device->createBuffer({.size = p.size, .usage = RhiBufferUsage::TransferDst, .memory = RhiMemoryUsage::GpuToCpu, .debugName = "capture.readback"});
     // Leave the texture in the state the graph tracks, so later barriers stay right.
     bool transition = source.textureState != RhiTextureState::TransferSrc;
     if (transition) {
@@ -244,7 +244,7 @@ auto CaptureService::recordBuffer(RhiCommandBuffer* cmd, RhiBuffer* buffer, uint
         p.error = "empty buffer";
         return;
     }
-    p.readback = device->createBuffer({.size = size, .usage = RhiBufferUsage::TransferDst, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "capture.readback"});
+    p.readback = device->createBuffer({.size = size, .usage = RhiBufferUsage::TransferDst, .memory = RhiMemoryUsage::GpuToCpu, .debugName = "capture.readback"});
     bool transition = state != RhiBufferState::Undefined && state != RhiBufferState::TransferSrc;
     if (transition) {
         std::array<RhiBufferBarrierDesc, 1> toSrc = {{{.buffer = buffer, .oldState = state, .newState = RhiBufferState::TransferSrc}}};

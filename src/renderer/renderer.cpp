@@ -859,8 +859,14 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     }
     // This slot's previous frame is done, and so is everything submitted before it.
     deletionQueue.flush(slotFrame[currentFrame]);
-    readGpuTimings(currentFrame);
-    drawLists.parseReadback(currentFrame, slotFrame[currentFrame]);
+    {
+        PROFILE_ZONE("ReadGpuTimings");
+        readGpuTimings(currentFrame);
+    }
+    {
+        PROFILE_ZONE("ParseReadback");
+        drawLists.parseReadback(currentFrame, slotFrame[currentFrame]);
+    }
     captureService.afterFence(currentFrame);
     fgPreviews.setFrame(frame);
 
@@ -911,11 +917,14 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     auto depthHandle = frameGraph.importTexture("depth", depthTexture, {ext.width, ext.height, depthFormat, RhiTextureUsage::DepthAttachment | RhiTextureUsage::Sampled});
 
     // Textures uploaded in earlier frames take their slots; then this frame's scene uploads, before anything reads the tables.
+    static const uint32_t sceneFrameZoneId = profile::registerName("GpuSceneBeginFrame");
+    profile::beginZone(sceneFrameZoneId);
     if (gpuScene.beginFrame(m_frameIndex) || descriptorSetsDirty) {
         rebuildGeometryDescriptorSets();
         descriptorSetsDirty = false;
     }
     gpuScene.addUploadPass(frameGraph, m_frameIndex);
+    profile::endZone();
     // Per-frame resources (UBOs, descriptor sets, dynamic vertex buffers) are owned by
     // the frame slot whose fence guards them, not by the swapchain image.
     auto imageIdx = currentFrame;
@@ -928,7 +937,10 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     if (!litReady) {
         addClearPass(frameGraph, colorHandle, ext);
     } else {
+        static const uint32_t instanceUploadZoneId = profile::registerName("InstanceUpload");
+        profile::beginZone(instanceUploadZoneId);
         auto instanceHandle = gpuScene.addInstanceUploadPasses(frameGraph, gpuInstances, currentFrame);
+        profile::endZone();
 
         static const uint32_t shadowSetupZoneId = profile::registerName("ShadowSetup");
         profile::beginZone(shadowSetupZoneId);

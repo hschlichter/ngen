@@ -20,7 +20,7 @@ inline auto createReadbackBuffer(RhiDevice& device, RhiExtent2D extent) -> RhiBu
     RhiBufferDesc desc = {
         .size = (uint64_t) extent.width * extent.height * 4,
         .usage = RhiBufferUsage::TransferDst,
-        .memory = RhiMemoryUsage::CpuToGpu,
+        .memory = RhiMemoryUsage::GpuToCpu,
     };
     return device.createBuffer(desc);
 }

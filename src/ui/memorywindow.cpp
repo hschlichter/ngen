@@ -19,7 +19,7 @@ auto allocationCategory(const std::string& name) -> std::string {
 namespace {
 
 auto memoryUsageName(RhiMemoryUsage memory) -> const char* {
-    return memory == RhiMemoryUsage::GpuOnly ? "GpuOnly" : "CpuToGpu";
+    return rhiMemoryUsageName(memory);
 }
 
 auto drawHeaps(const RenderDebugSnapshot& s) -> void {

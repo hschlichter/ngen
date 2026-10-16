@@ -145,7 +145,7 @@ private:
         RhiBuffer* groupOffsets = nullptr;
         RhiBuffer* commands = nullptr;
         RhiBuffer* counts = nullptr;
-        RhiBuffer* readback = nullptr; // CpuToGpu, mapped: totals, visibility, commands
+        RhiBuffer* readback = nullptr; // GpuToCpu, mapped: totals, visibility, commands
         void* readbackMapped = nullptr;
         // What the slot's last recorded frame copied into the readback.
         bool pending = false;

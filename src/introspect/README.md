@@ -25,6 +25,7 @@ records with `registerRpcRecords` (engine layer); the asset server answers the t
 | view | `assets` | what the view asked the asset server for and received: totals, and per asset its state, packed or cached, size, request and arrival times and the server's time |
 | view | `culling` | GPU culling's latest readback: instances and triangles drawn and culled, camera and per cascade |
 | view | `profile` | the profiler's frame history, CPU and GPU time per frame |
+| view | `zones` | where the time goes over the last 60 frames: every profiler zone per thread lane and on the GPU, its count, total, per frame, median and longest time |
 | view | `pipelines` | every pipeline the renderer registered: start-up or first use, state, shaders and versions, the last error |
 | view | `render` | the render debug snapshot (next frames) |
 | view | `memory` | every allocation and heap (next frames) |
@@ -95,4 +96,5 @@ For a look without a display: `SDL_VIDEODRIVER=offscreen ./ngen-cli introspect -
 - Table cells that hold objects or arrays show compact JSON; they can't be expanded in place.
 - The asset server has no `rpc.describe`, so `describe asset` fails; its methods are listed in `src/asset/README.md`.
 - A process is connected to once; if the tool's connection to it drops, it isn't reconnected (a restarted process has a new pid and is).
-- Profiler zones aren't on the trace stream; the `profile` record has frame times and `dump-profile` writes the full Chrome trace.
+- Profiler zones aren't on the trace stream; the `profile` record has frame times, the `zones` record each zone's times over the last
+  60 frames, and `dump-profile` writes the full Chrome trace.

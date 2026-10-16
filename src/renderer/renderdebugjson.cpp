@@ -107,7 +107,7 @@ auto writeMemoryJson(FILE* f, const RenderDebugSnapshot& s) -> void {
     std::fprintf(f, "  ],\n  \"allocations\": [\n");
     for (size_t i = 0; i < s.allocations.size(); i++) {
         const auto& a = s.allocations[i];
-        std::fprintf(f, "    {\"sequence\": %llu, \"name\": \"%s\", \"kind\": \"%s\", \"memory\": \"%s\", \"bytes\": %llu, \"requested\": %llu, \"heap\": %u, \"usageBits\": %u", (unsigned long long) a.sequence, escape(a.name).c_str(), a.kind == RhiAllocationInfo::Kind::Buffer ? "buffer" : "texture", a.memory == RhiMemoryUsage::GpuOnly ? "GpuOnly" : "CpuToGpu", (unsigned long long) a.bytes, (unsigned long long) a.requested, a.heap, a.usageBits);
+        std::fprintf(f, "    {\"sequence\": %llu, \"name\": \"%s\", \"kind\": \"%s\", \"memory\": \"%s\", \"bytes\": %llu, \"requested\": %llu, \"heap\": %u, \"usageBits\": %u", (unsigned long long) a.sequence, escape(a.name).c_str(), a.kind == RhiAllocationInfo::Kind::Buffer ? "buffer" : "texture", rhiMemoryUsageName(a.memory), (unsigned long long) a.bytes, (unsigned long long) a.requested, a.heap, a.usageBits);
         if (a.kind == RhiAllocationInfo::Kind::Texture) {
             std::fprintf(f, ", \"width\": %u, \"height\": %u, \"mips\": %u, \"layers\": %u, \"format\": \"%s\"", a.width, a.height, a.mipLevels, a.arrayLayers, toString(a.format));
         }
