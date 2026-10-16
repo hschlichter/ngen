@@ -40,19 +40,26 @@ has:
   layer stack at the prim's path; a reference or payload adds the index of its target, in the target file's layer stack, under the node
   whose spec authors it. Opinions are read from the nodes in strength order (the tree depth first, a node before its children; in a node,
   its layers strongest first), per attribute: the first opinion wins.
-- **Siblings are ordered as USD orders them**: references before payloads, an arc authored deeper in namespace before one coming from an
-  ancestor, then in authored order. Arcs authored on several layers of a stack are taken strongest layer first, each once.
+- **Siblings are ordered as USD orders them**: variants before references, references before payloads, an arc authored deeper in namespace before one
+  coming from an ancestor, then in authored order. Arcs authored on several layers of a stack are taken strongest layer first, each once.
 - **A child's index** is its parent's with every node's path extended by the child's name, plus the arcs authored at the child's path. A
   reference to a prim that isn't a root prim brings its ancestors' arcs too.
 - **Namespace mapping**: a node maps its target's path to the authoring prim's; relationship targets (material bindings, LOD heuristics)
   are mapped through the nodes above the spec that authors them. An internal reference maps paths outside its target unchanged, as in USD,
   so a binding to a material outside the referenced prim still resolves.
 - **The default prim**: a reference or payload naming no prim targets the target file's `defaultPrim`.
+- **Variant sets**, as Pcp composes them: a prim's sets are those any node of its index authors (`variantSetNames`); each set's selection is
+  the strongest `variants` opinion for it anywhere in the index, so a referencing layer's selection beats the asset's own, and a stronger
+  sublayer's beats a weaker one's. The selected variant is a node under the one that authors the set, at its variant path
+  (`/asset{shape=a}`), and its own arcs and sets compose with it (nested sets, a reference inside a variant). A reference's target leaves
+  its own sets to the prim composed; the target's ancestors choose theirs where they are. A set with no selection composes no variant (no
+  fallbacks), and a selection naming a variant that isn't authored is a message. The variant nodes are kept nodes of an instance, so
+  instances with different selections have different prototypes.
 - **Instancing**, as USD's `Pcp_ChildNodeIsInstanceable`: an instanceable prim is an instance when an arc authored on it brings specs. Its
   prototype keeps only those nodes (with specs, in the subtree of an arc authored on the instance) and composes once for every instance with
   the same ones; every other node is inert below the instance: the local layer stack, and arcs from the instance's ancestors (a model file's
   own children of a prim it references in). The instance itself keeps all its opinions.
-- **Not composed**, as the packer reports: variant sets, inherits, specializes, relocates, layer offsets. A prim inheriting from a class
+- **Not composed**, as the packer reports: inherits, specializes, relocates, layer offsets. A prim inheriting from a class
   has the class's children and opinions in USD and not here.
 
 Children are ordered by the strongest spec that names them, then the weaker ones'. USD orders a prim's children the same way when one spec

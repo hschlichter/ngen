@@ -1,0 +1,11 @@
+#usda 1.0
+(
+    doc = """The layered test scene of the scene pack: what three_cubes and Sponza don't exercise. override.usda is stronger than base.usda."""
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Y"
+    subLayers = [
+        @./override.usda@,
+        @./base.usda@
+    ]
+)

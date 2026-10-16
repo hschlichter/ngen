@@ -1,0 +1,42 @@
+#usda 1.0
+
+over "World"
+{
+    # A transform override (the op order stays base.usda's) and a visibility override.
+    over "ModelA"
+    {
+        double3 xformOp:translate = (-2, 0, 5)
+    }
+
+    over "Shown"
+    {
+        token visibility = "inherited"
+    }
+
+    # A variant selection stronger than base.usda's.
+    over "Variants"
+    {
+        over "Overridden" (
+            variants = {
+                string shape = "sphere"
+            }
+        )
+        {
+        }
+    }
+
+    # A geometry override, which the engine doesn't support: the packer reports it.
+    over "Group"
+    {
+        over "Own"
+        {
+            double size = 1.5
+        }
+    }
+}
+
+class "_SharedClass"
+{
+    double3 xformOp:translate = (0, 1, -2)
+    uniform token[] xformOpOrder = ["xformOp:translate"]
+}

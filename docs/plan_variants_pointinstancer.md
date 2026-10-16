@@ -1,6 +1,6 @@
 # Variant sets and PointInstancer
 
-**Status. In progress.** Decisions 1 to 6 locked 2026-10-16, each as recommended; step 1 done 2026-10-16. Lands before
+**Status. In progress.** Decisions 1 to 6 locked 2026-10-16, each as recommended; steps 1 and 2 done 2026-10-16. Lands before
 [plan_streaming_v2.md](plan_streaming_v2.md) step 4 (placements), so the placement tree is built with both.
 
 ## Current state
@@ -131,6 +131,28 @@ Compared as files, as the fingerprints are.
   `ngen-usdcheck` unchanged on the layered scene, `three_cubes` and the test world.
 - Seen, not changed: "an over authors geometry" warns on an over in the same file as the definition, which the file-local stage does apply
   (the nested `color=red` over above). An old imprecision of the rule, more visible with variants.
+
+### Step 2 results (2026-10-16)
+
+- **Variant arcs** in `WorldComposer`: the sets authored on any node, each selection the strongest in the whole index, the variant node under
+  its set's author before references (`ArcKind::Variant`), its arcs added with it and the index scanned again until no variant is added. An
+  arc's target leaves its own sets to the prim composed (`indexAt(..., resolveVariants = false)`); its ancestors resolve theirs. The path
+  helpers read variant paths (`/asset{shape=a}Geom`'s parent is `/asset{shape=a}`), and an arc authored inside a variant maps to the path
+  without selections. Step 1's guard became that.
+- **`assets/layered/variants.usda`** and its placements: the asset's own selections, the referencing layer's (which win), a nested set
+  selected from outside, geometry defined inside a variant, references inside a variant (to `model.usda`, `building.usda`), instances
+  splitting into prototypes by selection, `override.usda`'s selection beating `base.usda`'s, and one naming a variant that isn't there (a
+  `CompositionMessage`). `ngen-worldcheck` against `ngen-usdcheck` identical on all of it (only `/World/Inherited` differs, as before).
+- **The test world**: with a tile at `full`, 183,301 lines and none differing (91,516 before), 25 prototypes in both. At `dense_forest`
+  60,150 draws (209 before): trees, bushes and logs draw; peak resident memory 829 MB.
+- Caldera at its default levels identical as before (54,124 prims, 57 prototypes); baselines byte-identical.
+- **Seen, not fixed**:
+  - A mesh's own attributes come from its mesh pack, packed once from the file that defines it with that file's selections: an `over` in a
+    variant selected elsewhere (the nested `color = "blue"` above) doesn't reach it, so `Selected`'s sphere draws red where USD has it blue.
+    The fingerprint doesn't compare display colours. Primvars set per variant need the mesh's attributes read where composed, not packed
+    once; a plan of its own if the test world relies on it (it doesn't author display colours in variants).
+  - The test world's assets draw white, foliage cards opaque: their materials (bound inside the asset, referencing
+    `materials/library.usda`) aren't read. The terrain's white is likely the same. Next to look into.
 
 ## Visibility
 

@@ -1,0 +1,259 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+)
+
+def Xform "World" (
+    kind = "assembly"
+)
+{
+    def Scope "Looks"
+    {
+        def Material "Red"
+        {
+            token outputs:surface.connect = </World/Looks/Red/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.1, 0.1)
+                token outputs:surface
+            }
+        }
+
+        def Material "Checker"
+        {
+            token outputs:surface.connect = </World/Looks/Checker/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </World/Looks/Checker/Texture.outputs:rgb>
+                token outputs:surface
+            }
+
+            def Shader "Texture"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/checker.png@
+                float3 outputs:rgb
+            }
+        }
+    }
+
+    # A binding on a parent, inherited by the first cube and overridden by the second's own.
+    def Xform "Group" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </World/Looks/Red>
+
+        def Cube "Inherits"
+        {
+            double size = 1
+            double3 xformOp:translate = (-3, 0.5, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def Cube "Own" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </World/Looks/Checker>
+            double size = 1
+            double3 xformOp:translate = (3, 0.5, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+    }
+
+    # The same file referenced twice, once instanced.
+    def Xform "ModelA" (
+        prepend references = @./model.usda@
+    )
+    {
+        double3 xformOp:translate = (-2, 0, 4)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Xform "ModelB" (
+        instanceable = true
+        prepend references = @./model.usda@
+    )
+    {
+        double3 xformOp:translate = (2, 0, 4)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    # A payload, with its bounds.
+    def Xform "Building" (
+        prepend payload = @./building.usda@
+    )
+    {
+        float3[] extentsHint = [(-1, 0, -1), (1, 2, 1)]
+        double3 xformOp:translate = (0, 0, -4)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    # An internal reference: a prim of this file, placed again.
+    def "Copy" (
+        prepend references = </World/Group/Own>
+    )
+    {
+        double3 xformOp:translate = (0, 3, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    # An invisible parent hides its child; override.usda shows the second one.
+    def Xform "Hidden"
+    {
+        token visibility = "invisible"
+
+        def Sphere "Child"
+        {
+            double radius = 0.5
+        }
+    }
+
+    def Xform "Shown"
+    {
+        token visibility = "invisible"
+        double3 xformOp:translate = (0, 0.5, 2)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+
+        def Sphere "Child"
+        {
+            double radius = 0.5
+        }
+    }
+
+    def Cube "Guide"
+    {
+        uniform token purpose = "guide"
+        double size = 0.2
+    }
+
+    # A UsdLod root with two payload levels; the coarsest is the default.
+    def Xform "Tree"
+    {
+        double3 xformOp:translate = (5, 0, 4)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+
+        def "lod" (
+            prepend apiSchemas = ["LODRootAPI"]
+        )
+        {
+            int lod:default:index = 1
+            rel lod:heuristics = </World/Tree/lodHeuristic>
+
+            def "lod0" (
+                prepend payload = @./tree_lod0.usda@
+            )
+            {
+            }
+
+            def "lod1" (
+                prepend payload = @./tree_lod1.usda@
+            )
+            {
+            }
+        }
+
+        def LODScreenSizeHeuristic "lodHeuristic"
+        {
+            float3[] extent = [(-1, 0, -1), (1, 3, 1)]
+            uniform token lod:domain = "imaging"
+            uniform float[] thresholds = [0.25]
+        }
+    }
+
+    # Variant sets (variants.usda): the asset's own selections, selections where it is referenced (which win), a nested set selected from
+    # here, instances sharing a prototype per selection, a selection override.usda makes stronger, and one naming a variant that isn't there.
+    def Xform "Variants"
+    {
+        double3 xformOp:translate = (8, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+
+        def "Default" (
+            prepend references = @./variants.usda@
+        )
+        {
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def "Selected" (
+            prepend references = @./variants.usda@
+            variants = {
+                string base = "house"
+                string color = "blue"
+                string shape = "sphere"
+            }
+        )
+        {
+            double3 xformOp:translate = (3, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def "InstanceA" (
+            instanceable = true
+            prepend references = @./variants.usda@
+            variants = {
+                string shape = "sphere"
+            }
+        )
+        {
+            double3 xformOp:translate = (0, 0, 3)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def "InstanceB" (
+            instanceable = true
+            prepend references = @./variants.usda@
+            variants = {
+                string shape = "sphere"
+            }
+        )
+        {
+            double3 xformOp:translate = (3, 0, 3)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def "InstanceC" (
+            instanceable = true
+            prepend references = @./variants.usda@
+        )
+        {
+            double3 xformOp:translate = (6, 0, 3)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def "Overridden" (
+            prepend references = @./variants.usda@
+            variants = {
+                string shape = "cube"
+            }
+        )
+        {
+            double3 xformOp:translate = (6, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def "Missing" (
+            prepend references = @./variants.usda@
+            variants = {
+                string shape = "cone"
+            }
+        )
+        {
+            double3 xformOp:translate = (9, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+    }
+
+    # Inherits from a class defined in override.usda: the packer reports it.
+    def Xform "Inherited" (
+        prepend inherits = </_SharedClass>
+    )
+    {
+    }
+}

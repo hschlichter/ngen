@@ -36,23 +36,72 @@
 
 namespace {
 
+// Paths are composed paths ("/World/Tree") or node sites, which may hold variant selections as Sdf writes them: a variant's prim is
+// "/asset{shape=a}", and its children follow without a slash ("/asset{shape=a}Geom").
+
 auto childPath(const std::string& parent, const std::string& name) -> std::string {
     if (parent == "/") {
         return "/" + name;
     }
+    if (parent.ends_with('}')) {
+        return parent + name;
+    }
     return parent + "/" + name;
 }
 
-auto parentPath(const std::string& path) -> std::string {
+// Where a path's last element starts: after its last slash, or after the variant selection before it.
+auto lastElementStart(const std::string& path) -> size_t {
     auto slash = path.rfind('/');
-    if (slash == 0 || slash == std::string::npos) {
+    auto brace = path.rfind('}');
+    if (brace != std::string::npos && (slash == std::string::npos || brace > slash) && brace + 1 < path.size()) {
+        return brace + 1;
+    }
+    return slash + 1;
+}
+
+auto parentPath(const std::string& path) -> std::string {
+    if (path.ends_with('}')) {
+        // A variant's prim: its parent is the prim that owns the set.
+        return path.substr(0, path.rfind('{'));
+    }
+    auto start = lastElementStart(path);
+    if (start <= 1) {
         return "/";
     }
-    return path.substr(0, slash);
+    if (path[start - 1] == '}') {
+        return path.substr(0, start);
+    }
+    return path.substr(0, start - 1);
 }
 
 auto lastElement(const std::string& path) -> std::string {
-    return path.substr(path.rfind('/') + 1);
+    return path.substr(lastElementStart(path));
+}
+
+// A site's path with its variant selections taken out: the prim it is a site for.
+auto withoutVariants(const std::string& path) -> std::string {
+    std::string out;
+    int depth = 0;
+    for (char c : path) {
+        if (c == '{') {
+            depth++;
+            continue;
+        }
+        if (c == '}') {
+            depth--;
+            if (depth == 0 && !out.empty() && out.back() != '/') {
+                out += '/';
+            }
+            continue;
+        }
+        if (depth == 0) {
+            out += c;
+        }
+    }
+    if (out.size() > 1 && out.back() == '/') {
+        out.pop_back();
+    }
+    return out;
 }
 
 auto elementCount(const std::string& path) -> int {
@@ -146,10 +195,12 @@ struct LayerStack {
     bool complete = true;                 // every sublayer was held when it was built
 };
 
+// In strength order among a node's arcs (LIVRPS, of what is composed): variants, then references, then payloads.
 enum class ArcKind : uint8_t {
     Root = 0,
-    Reference = 1,
-    Payload = 2,
+    Variant = 1,
+    Reference = 2,
+    Payload = 3,
 };
 
 struct Node {
@@ -385,8 +436,8 @@ auto layerData(const std::string& assetId, LayerPack pack) -> LayerData {
     for (uint32_t i = 0; i < data.pack.prims.size(); i++) {
         const auto& path = data.pack.prims[i].path;
         data.primByPath[path] = i;
-        // A spec inside a variant ("/asset{shape=a}Geom") is found by its variant path, not as a child of the path's string parent.
-        if (path.find('{') == std::string::npos) {
+        // A variant's own prim spec ("/asset{shape=a}") is a site, not a child; what is under it is its children ("/asset{shape=a}Geom").
+        if (!path.ends_with('}')) {
             data.childNames[parentPath(path)].push_back(lastElement(path));
         }
     }
@@ -581,68 +632,178 @@ struct WorldComposer::Impl {
             if (!node->hasSpecs || node->inert) {
                 continue;
             }
-            int arcNumber = 0;
-            for (const auto& placement : authoredArcs(*node->stack, node->path)) {
-                arcNumber++;
-                bool internal = placement.assetId.empty();
-                ArcKind kind = placement.kind == PlacementKind::Payload ? ArcKind::Payload : ArcKind::Reference;
-                if (kind == ArcKind::Payload) {
-                    index.payloadIds.push_back(internal ? node->stack->id : placement.assetId);
-                    if (!loadPayloads) {
+            addArcsAt(*node, index, composedPath, loadPayloads);
+        }
+    }
+
+    // The references and payloads one node's layer stack authors at its path, as its children in strength order.
+    auto addArcsAt(Node& at, PrimIndex& index, const std::string& composedPath, bool loadPayloads) -> void {
+        Node* node = &at;
+        int arcNumber = 0;
+        for (const auto& placement : authoredArcs(*node->stack, node->path)) {
+            arcNumber++;
+            bool internal = placement.assetId.empty();
+            ArcKind kind = placement.kind == PlacementKind::Payload ? ArcKind::Payload : ArcKind::Reference;
+            if (kind == ArcKind::Payload) {
+                index.payloadIds.push_back(internal ? node->stack->id : placement.assetId);
+                if (!loadPayloads) {
+                    continue;
+                }
+                index.payloadsLoaded = true;
+            }
+            const LayerStack* target = internal ? node->stack : stack(placement.assetId);
+            if (target == nullptr || target->layers.empty()) {
+                continue;
+            }
+            std::string targetPath = placement.primPath;
+            if (targetPath.empty()) {
+                const auto& defaultPrim = target->layers.front()->pack.defaultPrim;
+                if (defaultPrim.empty()) {
+                    message(std::format("{}: {} @{}@ names no prim, and the file has no default prim", composedPath, kind == ArcKind::Payload ? "payload" : "reference", target->id));
+                    continue;
+                }
+                targetPath = "/" + defaultPrim;
+            }
+            if (!hasSpecsAt(*target, targetPath)) {
+                message(std::format("{}: {} target {} isn't in @{}@", composedPath, kind == ArcKind::Payload ? "payload" : "reference", targetPath, target->id));
+                continue;
+            }
+            auto key = memoKey(*target, targetPath, loadPayloads);
+            if (computing.contains(key)) {
+                message(std::format("{}: arc cycle through @{}@<{}>", composedPath, target->id, targetPath));
+                continue;
+            }
+            // The target's own variant sets are chosen over the whole index of the prim composed, as Pcp does: a selection where it
+            // is referenced beats the target's own.
+            Node arc = indexAt(*target, targetPath, loadPayloads, false);
+            arc.arc = kind;
+            arc.namespaceDepth = elementCount(node->path);
+            arc.arcNumber = arcNumber;
+            arc.mapSource = targetPath;
+            arc.mapTarget = withoutVariants(node->path);
+            arc.rootIdentity = internal;
+            arc.direct = true;
+            auto position = std::ranges::find_if(node->children, [&arc](const Node& sibling) { return strongerSibling(arc, sibling); });
+            node->children.insert(position, std::move(arc));
+        }
+    }
+
+    static auto
+    memoKey(const LayerStack& stack, const std::string& path, bool loadPayloads) -> std::string {
+        return std::format("{}\n{}\n{}", stack.id, path, loadPayloads ? 1 : 0);
+    }
+
+    auto childIndex(const Node& parent, const std::string& name, const std::string& composedPath, bool loadPayloads, bool resolveVariants = true) -> PrimIndex {
+        PrimIndex index;
+        index.root = *extend(parent, name);
+        addDirectArcs(index, composedPath, loadPayloads);
+        if (resolveVariants) {
+            addVariantArcs(index, composedPath, loadPayloads);
+        }
+        return index;
+    }
+
+    // The variant sets a node's layer stack authors at its path (variantSetNames), strongest layer first, each once.
+    static auto authoredVariantSets(const LayerStack& stack, const std::string& path) -> std::vector<std::string> {
+        std::vector<std::string> out;
+        for (const LayerData* layer : stack.layers) {
+            const PackPrim* spec = layer->prim(path);
+            if (spec == nullptr) {
+                continue;
+            }
+            for (const auto& name : spec->variantSetNames) {
+                if (std::ranges::find(out, name) == out.end()) {
+                    out.push_back(name);
+                }
+            }
+        }
+        return out;
+    }
+
+    // A variant set's selection: the strongest `variants` opinion for it anywhere in the prim's index, as Pcp chooses it; empty for none.
+    static auto variantSelection(const Node& root, const std::string& set) -> std::string {
+        for (const auto& contribution : contributions(root)) {
+            for (const LayerData* layer : contribution.node->stack->layers) {
+                const PackPrim* spec = layer->prim(contribution.node->path);
+                if (spec == nullptr) {
+                    continue;
+                }
+                for (const auto& [name, variant] : spec->variantSelections) {
+                    if (name == set) {
+                        return variant;
+                    }
+                }
+            }
+        }
+        return {};
+    }
+
+    static auto hasVariantArc(const Node& node, const std::string& set) -> bool {
+        auto prefix = std::format("{}{{{}=", node.path, set);
+        return std::ranges::any_of(node.children, [&prefix](const Node& child) { return child.arc == ArcKind::Variant && child.path.starts_with(prefix); });
+    }
+
+    // Every variant set authored at the prim, on any node of its index: its selected variant as a child of the node that authors the set,
+    // before its references and payloads. A variant's own arcs come with it and may author more sets (nested, or in what a variant
+    // references), so the index is scanned again until no variant is added.
+    auto addVariantArcs(PrimIndex& index, const std::string& composedPath, bool loadPayloads) -> void {
+        std::set<std::string> reported;
+        bool added = true;
+        while (added) {
+            added = false;
+            std::vector<Node*> nodes;
+            preorder(index.root, nodes);
+            for (Node* node : nodes) {
+                if (!node->hasSpecs || node->inert) {
+                    continue;
+                }
+                int setNumber = 0;
+                for (const auto& set : authoredVariantSets(*node->stack, node->path)) {
+                    setNumber++;
+                    if (hasVariantArc(*node, set)) {
                         continue;
                     }
-                    index.payloadsLoaded = true;
-                }
-                const LayerStack* target = internal ? node->stack : stack(placement.assetId);
-                if (target == nullptr || target->layers.empty()) {
-                    continue;
-                }
-                std::string targetPath = placement.primPath;
-                if (targetPath.empty()) {
-                    const auto& defaultPrim = target->layers.front()->pack.defaultPrim;
-                    if (defaultPrim.empty()) {
-                        message(std::format("{}: {} @{}@ names no prim, and the file has no default prim", composedPath, kind == ArcKind::Payload ? "payload" : "reference", target->id));
+                    auto selection = variantSelection(index.root, set);
+                    if (selection.empty()) {
                         continue;
                     }
-                    targetPath = "/" + defaultPrim;
+                    auto path = std::format("{}{{{}={}}}", node->path, set, selection);
+                    if (!hasSpecsAt(*node->stack, path)) {
+                        if (reported.insert(path).second) {
+                            message(std::format("{}: variant set {} selects {}, which @{}@ doesn't author", composedPath, set, selection, node->stack->id));
+                        }
+                        continue;
+                    }
+                    Node variant;
+                    variant.stack = node->stack;
+                    variant.path = path;
+                    variant.arc = ArcKind::Variant;
+                    variant.namespaceDepth = elementCount(node->path);
+                    variant.arcNumber = setNumber;
+                    variant.mapSource = withoutVariants(node->path);
+                    variant.mapTarget = variant.mapSource;
+                    variant.rootIdentity = true;
+                    variant.direct = true;
+                    variant.hasSpecs = true;
+                    addArcsAt(variant, index, composedPath, loadPayloads);
+                    auto position = std::ranges::find_if(node->children, [&variant](const Node& sibling) { return strongerSibling(variant, sibling); });
+                    node->children.insert(position, std::move(variant));
+                    added = true;
+                    break;
                 }
-                if (!hasSpecsAt(*target, targetPath)) {
-                    message(std::format("{}: {} target {} isn't in @{}@", composedPath, kind == ArcKind::Payload ? "payload" : "reference", targetPath, target->id));
-                    continue;
+                if (added) {
+                    // Inserting moved nodes in that subtree: collect them again.
+                    break;
                 }
-                auto key = memoKey(*target, targetPath, loadPayloads);
-                if (computing.contains(key)) {
-                    message(std::format("{}: arc cycle through @{}@<{}>", composedPath, target->id, targetPath));
-                    continue;
-                }
-                Node arc = indexAt(*target, targetPath, loadPayloads);
-                arc.arc = kind;
-                arc.namespaceDepth = elementCount(node->path);
-                arc.arcNumber = arcNumber;
-                arc.mapSource = targetPath;
-                arc.mapTarget = node->path;
-                arc.rootIdentity = internal;
-                arc.direct = true;
-                auto position = std::ranges::find_if(node->children, [&arc](const Node& sibling) { return strongerSibling(arc, sibling); });
-                node->children.insert(position, std::move(arc));
             }
         }
     }
 
-    static auto memoKey(const LayerStack& stack, const std::string& path, bool loadPayloads) -> std::string {
-        return std::format("{}\n{}\n{}", stack.id, path, loadPayloads ? 1 : 0);
-    }
-
-    auto childIndex(const Node& parent, const std::string& name, const std::string& composedPath, bool loadPayloads) -> PrimIndex {
-        PrimIndex index;
-        index.root = *extend(parent, name);
-        addDirectArcs(index, composedPath, loadPayloads);
-        return index;
-    }
-
-    // A prim's index in a layer stack, as that stack composes it on its own: what an arc to it brings.
-    auto indexAt(const LayerStack& stack, const std::string& path, bool loadPayloads) -> Node {
-        auto key = memoKey(stack, path, loadPayloads);
+    // A prim's index in a layer stack, as that stack composes it on its own: what an arc to it brings. Its ancestors' variants are
+    // chosen there (the site above an arc's target isn't the referencing prim's); its own are left to the prim composed when
+    // resolveVariants is false.
+    auto indexAt(const LayerStack& stack, const std::string& path, bool loadPayloads, bool resolveVariants) -> Node {
+        auto key = memoKey(stack, path, loadPayloads) + (resolveVariants ? "\nv" : "");
         if (auto it = indexMemo.find(key); it != indexMemo.end()) {
             if (it->second.gap) {
                 markGap();
@@ -650,17 +811,18 @@ struct WorldComposer::Impl {
             return it->second.node;
         }
         auto gapsBefore = gapEvents;
-        computing.insert(key);
+        auto computingKey = memoKey(stack, path, loadPayloads);
+        computing.insert(computingKey);
         Node result;
         if (path == "/") {
             result.stack = &stack;
             result.path = "/";
             result.hasSpecs = true;
         } else {
-            Node parent = indexAt(stack, parentPath(path), loadPayloads);
-            result = std::move(childIndex(parent, lastElement(path), std::format("@{}@<{}>", stack.id, path), loadPayloads).root);
+            Node parent = indexAt(stack, parentPath(path), loadPayloads, true);
+            result = std::move(childIndex(parent, lastElement(path), std::format("@{}@<{}>", stack.id, path), loadPayloads, resolveVariants).root);
         }
-        computing.erase(key);
+        computing.erase(computingKey);
         indexMemo[key] = Memo{.node = result, .gap = gapEvents != gapsBefore};
         return result;
     }
