@@ -26,13 +26,15 @@ the caller feeds the composer packs from the asset server.
   `strongerThanDescendants`). A material that references another file's network and sets its inputs (a tile setting a library
   material's texture) is that file's pack with this one's values.
 - **Components** beside the entities, per content: lights (UsdLux's inputs, with UsdLux's fallbacks), LOD roots (levels, default index, loaded levels,
-  and the heuristic: its type, thresholds, `extent` with UsdLod's fallback, `projectionMethod`) and payload placements (asset ids, loaded,
-  `extentsHint`).
+  and the heuristic: its type, thresholds, `extent` with UsdLod's fallback, `projectionMethod`) point instancers (`PointInstancerData`: prototypes,
+  and per point its prototype, its transform from `positions`, `orientations` and `scales` as UsdGeomPointInstancer composes them, and whether
+  `invisibleIds` hides it; arrays not matching `protoIndices` make no points, as in USD) and payload placements (asset ids, loaded, `extentsHint`).
 - **Scene metadata**: the root layer's up axis and meters per unit, with USD's fallbacks (Y, 0.01) when it authors none; the root layer
   stack's asset ids.
 - **`visit`** resolves down the hierarchy: world transforms (`!resetXformStack!` included), visibility (an invisible prim hides its
   subtree), purpose (inherited from the nearest ancestor that authors one), the bound material (the nearest binding, unless an ancestor's is
-  `strongerThanDescendants`), and whether the entity is in a LOD level its root doesn't draw.
+  `strongerThanDescendants`), and whether the entity is in a LOD level its root doesn't draw, and whether it is under a PointInstancer's prototype beneath the
+  instancer (drawn per point, not where it is; it is still visited, as it is a prim of the stage).
 
 ## Composition
 

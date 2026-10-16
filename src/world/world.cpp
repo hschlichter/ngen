@@ -21,6 +21,7 @@ struct VisitState {
     bool strongBinding = false;
     bool insideInstance = false;
     bool inUndrawnLevel = false;
+    bool inInstancerPrototype = false;
 };
 
 } // namespace
@@ -70,6 +71,20 @@ auto MaterialUse::input(const std::string& name) const -> std::optional<std::str
         }
     }
     return std::nullopt;
+}
+
+auto WorldContent::isInstancerPrototype(EntityId id) const -> bool {
+    for (const auto& [instancer, data] : pointInstancers) {
+        if (std::ranges::find(data.prototypes, id) == data.prototypes.end()) {
+            continue;
+        }
+        for (EntityId at = entities[id].parent; at != noEntity; at = entities[at].parent) {
+            if (at == instancer) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 auto WorldContent::path(EntityId id) const -> std::string {
@@ -141,6 +156,7 @@ auto World::visit(const std::function<bool(const VisitedEntity&)>& visitor) cons
         }
         state.insideInstance = parent.insideInstance;
         state.inUndrawnLevel = parent.inUndrawnLevel;
+        state.inInstancerPrototype = parent.inInstancerPrototype || (!content.pointInstancers.empty() && content.isInstancerPrototype(id));
 
         VisitedEntity visited;
         visited.content = &content;
@@ -154,6 +170,7 @@ auto World::visit(const std::function<bool(const VisitedEntity&)>& visitor) cons
         visited.strongBinding = state.strongBinding;
         visited.insideInstance = state.insideInstance;
         visited.inUndrawnLevel = state.inUndrawnLevel;
+        visited.inInstancerPrototype = state.inInstancerPrototype;
         if (!visitor(visited)) {
             return;
         }

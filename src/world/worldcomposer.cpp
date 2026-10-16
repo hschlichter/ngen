@@ -3,6 +3,9 @@
 #include "scenepack.h"
 #include "xformops.h"
 
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -418,6 +421,7 @@ struct Window {
     std::vector<std::string> messages;
     std::vector<PendingTarget> bindings;
     std::vector<PendingTarget> heuristics;
+    std::vector<PendingTarget> prototypes; // PointInstancers' prototypes, each instancer's in authored order
 };
 
 auto relativePath(const ContentContext& context, const std::string& composedPath) -> std::string {
@@ -1173,6 +1177,12 @@ struct WorldComposer::Impl {
             l.shadowColor = color(attribute("inputs:shadow:color"), l.shadowColor);
             content.lights[id] = l;
         }
+        if (typeName == "PointInstancer") {
+            content.pointInstancers[id] = pointInstancer(composedPath, attribute);
+            for (const auto& prototype : pendingTargets(context, id, findRelationship(specs, "prototypes"))) {
+                window().prototypes.push_back(prototype);
+            }
+        }
         if (!index.payloadIds.empty()) {
             PayloadPlacement placement;
             placement.assetIds = index.payloadIds;
@@ -1249,6 +1259,7 @@ struct WorldComposer::Impl {
         context.content->complete = context.info->complete;
         context.info->messages = std::move(done.messages);
         resolveHeuristics(done.heuristics);
+        resolvePrototypes(done.prototypes);
     }
 
     // A root's heuristic, as UsdLod has a renderer choose it: the first of its lod:heuristics targets of a type and domain it understands
@@ -1303,6 +1314,81 @@ struct WorldComposer::Impl {
                 chosen.insert({target.content, target.entity});
             }
         }
+    }
+
+    // An instancer's prototypes, once its content is composed: each target in order, noEntity for one not in the content.
+    auto resolvePrototypes(const std::vector<PendingTarget>& pending) -> void {
+        for (const auto& target : pending) {
+            auto& data = target.content->pointInstancers.at(target.entity);
+            auto found = target.outside ? target.content->byPath.end() : target.content->byPath.find(target.path);
+            if (found == target.content->byPath.end()) {
+                message(std::format("{}: a PointInstancer's prototype {} isn't in its content; its points aren't drawn", target.content->path(target.entity), target.path));
+                data.prototypes.push_back(noEntity);
+                continue;
+            }
+            data.prototypes.push_back(found->second);
+        }
+    }
+
+    // A PointInstancer's points from its composed arrays, as UsdGeomPointInstancer::ComputeInstanceTransformsAtTime computes them without
+    // the prototype's own transform: translate * rotate * scale. Arrays whose length isn't protoIndices' make no points, with a message.
+    auto pointInstancer(const std::string& composedPath, const std::function<const PackValue*(const std::string&)>& attribute) -> PointInstancerData {
+        PointInstancerData data;
+        const PackValue* indices = attribute("protoIndices");
+        if (indices == nullptr || indices->numbers.empty()) {
+            return data;
+        }
+        auto count = indices->numbers.size();
+        const PackValue* positions = attribute("positions");
+        const PackValue* orientations = attribute("orientations");
+        if (orientations == nullptr) {
+            orientations = attribute("orientationsf");
+        }
+        const PackValue* scales = attribute("scales");
+        const PackValue* ids = attribute("ids");
+        auto matches = [count](const PackValue* value, size_t components) {
+            return value == nullptr || value->numbers.size() == count * components;
+        };
+        if (positions == nullptr || !matches(positions, 3) || !matches(orientations, 4) || !matches(scales, 3) || !matches(ids, 1)) {
+            message(std::format("{}: a PointInstancer whose positions, orientations, scales or ids don't match its {} protoIndices; it has no points", composedPath, count));
+            return data;
+        }
+        data.protoIndices.reserve(count);
+        data.transforms.reserve(count);
+        for (size_t i = 0; i < count; i++) {
+            data.protoIndices.push_back((uint32_t) std::max(0.0, indices->numbers[i]));
+            const auto& p = positions->numbers;
+            glm::mat4 transform = glm::translate(glm::mat4(1.0f), glm::vec3((float) p[i * 3], (float) p[i * 3 + 1], (float) p[i * 3 + 2]));
+            if (orientations != nullptr) {
+                const auto& q = orientations->numbers;
+                auto rotation = glm::normalize(glm::quat((float) q[i * 4], (float) q[i * 4 + 1], (float) q[i * 4 + 2], (float) q[i * 4 + 3]));
+                transform = transform * glm::mat4_cast(rotation);
+            }
+            if (scales != nullptr) {
+                const auto& s = scales->numbers;
+                transform = glm::scale(transform, glm::vec3((float) s[i * 3], (float) s[i * 3 + 1], (float) s[i * 3 + 2]));
+            }
+            data.transforms.push_back(transform);
+        }
+        if (ids != nullptr) {
+            for (double id : ids->numbers) {
+                data.ids.push_back((int64_t) id);
+            }
+        }
+        data.visible.assign(count, 1);
+        if (const PackValue* invisible = attribute("invisibleIds"); invisible != nullptr && !invisible->numbers.empty()) {
+            std::unordered_set<int64_t> hidden;
+            for (double id : invisible->numbers) {
+                hidden.insert((int64_t) id);
+            }
+            for (size_t i = 0; i < count; i++) {
+                auto id = data.ids.empty() ? (int64_t) i : data.ids[i];
+                if (hidden.contains(id)) {
+                    data.visible[i] = 0;
+                }
+            }
+        }
+        return data;
     }
 
     // Finite, not empty (min at most max on every axis), and not the "empty" box some tools author (FLT_MAX to -FLT_MAX, or near it).
@@ -1671,6 +1757,7 @@ struct WorldComposer::Impl {
         windows.pop_back();
         stageMessages = std::move(stageWindow.messages);
         resolveHeuristics(stageWindow.heuristics);
+        resolvePrototypes(stageWindow.prototypes);
         if (rootStack == nullptr) {
             reached.clear();
             finishCompose();

@@ -1279,6 +1279,10 @@ auto ViewScene::buildExtract(const WorldContent& content, bool rootIsPrim, Purpo
             state.strong = entity.binding->strongerThanDescendants;
         }
         (*prims)[state.path] = {.local = local, .world = state.world, .xformable = entity.xformable, .resetsXformStack = entity.resetsXformStack, .absolute = state.absolute};
+        if (!content.pointInstancers.empty() && content.isInstancerPrototype(id)) {
+            // A PointInstancer's prototype beneath it is drawn per point, not where it is.
+            return;
+        }
         ExtractItem prim{.kind = ExtractItem::Kind::Prim,
                          .path = state.path,
                          .world = state.world,

@@ -118,6 +118,18 @@ struct LodRoot {
     LodProjection projection = LodProjection::Sphere;
 };
 
+// A UsdGeomPointInstancer: its prototypes (the prims its `prototypes` relationship names, in this content; noEntity for one that isn't
+// here) and per point which prototype, where in the instancer's space (translate * rotate * scale from positions, orientations and
+// scales, as UsdGeomPointInstancer composes them, the prototype's own transform not included) and whether it is shown (invisibleIds).
+// Arrays whose lengths don't match protoIndices make no points, as in USD.
+struct PointInstancerData {
+    std::vector<EntityId> prototypes;
+    std::vector<uint32_t> protoIndices;
+    std::vector<glm::mat4> transforms;
+    std::vector<int64_t> ids; // the authored ids; empty when none are, a point's id then being its index
+    std::vector<uint8_t> visible;
+};
+
 // A prim with payloads: what they are, whether they are loaded, and the bounds authored for them (extentsHint).
 struct PayloadPlacement {
     std::vector<std::string> assetIds;
@@ -136,8 +148,12 @@ struct WorldContent {
     std::unordered_map<EntityId, Light> lights;
     std::unordered_map<EntityId, LodRoot> lodRoots;
     std::unordered_map<EntityId, PayloadPlacement> payloads;
+    std::unordered_map<EntityId, PointInstancerData> pointInstancers;
 
     auto path(EntityId id) const -> std::string;
+    // A prim a PointInstancer in this content names as a prototype and has under it: drawn only through the instancer, as UsdImaging
+    // draws prototypes beneath their instancer; the prim and what is under it are still entities.
+    auto isInstancerPrototype(EntityId id) const -> bool;
 };
 
 // An entity as `visit` reaches it: its full path with instances expanded, and what it inherits.
@@ -154,6 +170,8 @@ struct VisitedEntity {
     bool insideInstance = false;
     // A LOD level the instance doesn't draw: its drawn level is another of its root's levels.
     bool inUndrawnLevel = false;
+    // Under a PointInstancer's prototype beneath the instancer: drawn per point, not where it is.
+    bool inInstancerPrototype = false;
 };
 
 struct World {

@@ -1,6 +1,6 @@
 # Variant sets and PointInstancer
 
-**Status. In progress.** Decisions 1 to 6 locked 2026-10-16, each as recommended; steps 1, 2, 2b and 3 done 2026-10-16. Lands before
+**Status. In progress.** Decisions 1 to 6 locked 2026-10-16, each as recommended; steps 1 to 4 done 2026-10-16. Lands before
 [plan_streaming_v2.md](plan_streaming_v2.md) step 4 (placements), so the placement tree is built with both.
 
 ## Current state
@@ -187,6 +187,22 @@ Compared as files, as the fingerprints are.
 - **Test case**: `override.usda` names an `over "Annotation"` under the tree's LOD root, first among its children: not a level, the levels
   stay `[lod0, lod1]` (the `lod` record), and `--lod /World/Tree/lod=0` and `=1` compose identically in both tools.
 - The test world with a tile at `full` and Caldera identical as before; baselines byte-identical.
+
+### Step 4 results (2026-10-16)
+
+- **Packer**: the instancer's arrays and its `prototypes` relationship are in the layer pack; `quath[]`/`quatf[]` (as real, i, j, k),
+  `int64[]` and `half3[]` values pack. usd rule version 8. Numbers pack as doubles: a 17,000-point chunk is about 1.5 MB of layer pack, a
+  compact array form a follow-up if pack size matters.
+- **World**: `WorldContent::pointInstancers`, `PointInstancerData` per instancer (prototypes resolved once the content is composed; per
+  point its prototype, `translate * rotate * scale`, id and visibility; mismatched arrays make no points, with a message, as in USD).
+  `World::visit` still visits the prototypes (they are prims of the stage, so the fingerprint lists them) and marks them
+  `inInstancerPrototype`; the view's walk doesn't draw them where they are (`WorldContent::isInstancerPrototype`), as UsdImaging doesn't.
+  Until step 6 draws points, the prototypes draw nowhere.
+- **Test case**: `/World/Scatter` in `base.usda`: a referenced tree and a cube as prototypes beneath it, five points with half-quaternion
+  orientations, scales and ids, `invisibleIds` hiding one. `ngen-worldcheck` against `ngen-usdcheck` identical (its prototype prims listed
+  in both); nothing drawn under it yet (`camera-frame` finds nothing). The test world draws 59,997 instead of 60,150: the ground cover's
+  prototypes, which drew once in their `Prototypes` scope, no longer do.
+- Baselines byte-identical.
 
 ## Visibility
 

@@ -184,6 +184,41 @@ def Xform "World" (
         uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 
+    # A PointInstancer: two prototypes beneath it (a referenced model and a cube), five points with orientations (half quaternions),
+    # scales and ids, one hidden by invisibleIds. The prototypes draw only through it.
+    def PointInstancer "Scatter"
+    {
+        double3 xformOp:translate = (-8, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        int[] protoIndices = [0, 1, 0, 1, 0]
+        point3f[] positions = [(0, 0, 0), (2, 0, 0), (4, 0, 0), (0, 0, 2), (2, 0, 2)]
+        quath[] orientations = [(1, 0, 0, 0), (0.7071, 0, 0.7071, 0), (1, 0, 0, 0), (0.9239, 0, 0.3827, 0), (1, 0, 0, 0)]
+        float3[] scales = [(1, 1, 1), (0.5, 0.5, 0.5), (1.5, 1.5, 1.5), (0.8, 0.8, 0.8), (1, 2, 1)]
+        int64[] ids = [10, 11, 12, 13, 14]
+        int64[] invisibleIds = [12]
+        rel prototypes = [
+            </World/Scatter/Prototypes/Tree>,
+            </World/Scatter/Prototypes/Block>,
+        ]
+
+        def Scope "Prototypes"
+        {
+            def Xform "Tree" (
+                prepend references = @./model.usda@
+            )
+            {
+            }
+
+            def Cube "Block"
+            {
+                double size = 0.5
+                color3f[] primvars:displayColor = [(0.8, 0.5, 0.2)]
+                double3 xformOp:translate = (0, 0.25, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+            }
+        }
+    }
+
     # Variant sets (variants.usda): the asset's own selections, selections where it is referenced (which win), a nested set selected from
     # here, instances sharing a prototype per selection, a selection override.usda makes stronger, and one naming a variant that isn't there.
     def Xform "Variants"

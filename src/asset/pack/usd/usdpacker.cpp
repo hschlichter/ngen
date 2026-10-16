@@ -6,10 +6,12 @@
 #include <pxr/base/gf/matrix4d.h>
 #include <pxr/base/gf/quatd.h>
 #include <pxr/base/gf/quatf.h>
+#include <pxr/base/gf/quath.h>
 #include <pxr/base/gf/vec2d.h>
 #include <pxr/base/gf/vec2f.h>
 #include <pxr/base/gf/vec3d.h>
 #include <pxr/base/gf/vec3f.h>
+#include <pxr/base/gf/vec3h.h>
 #include <pxr/base/gf/vec4d.h>
 #include <pxr/base/gf/vec4f.h>
 #include <pxr/base/tf/stringUtils.h>
@@ -77,12 +79,29 @@ auto isGeometryAttribute(const std::string& name) -> bool {
 
 // The attributes the layer pack keeps (src/asset/README.md, "The USD packer").
 auto isEngineAttribute(const std::string& name) -> bool {
-    static const std::set<std::string> names = {"xformOpOrder", "visibility", "purpose", "extentsHint", "extent", "thresholds", "blendThresholds", "projectionMethod"};
+    static const std::set<std::string> names = {
+        "xformOpOrder",
+        "visibility",
+        "purpose",
+        "extentsHint",
+        "extent",
+        "thresholds",
+        "blendThresholds",
+        "projectionMethod",
+        // UsdGeomPointInstancer's per-point arrays.
+        "positions",
+        "orientations",
+        "orientationsf",
+        "scales",
+        "protoIndices",
+        "ids",
+        "invisibleIds",
+    };
     return names.contains(name) || name.starts_with("xformOp:") || name.starts_with("lod:") || name.starts_with("inputs:");
 }
 
 auto isEngineRelationship(const std::string& name) -> bool {
-    return name == "material:binding" || name.starts_with("material:binding:") || name == "lod:heuristics" || name == "boundingVolume";
+    return name == "material:binding" || name.starts_with("material:binding:") || name == "lod:heuristics" || name == "boundingVolume" || name == "prototypes";
 }
 
 // An asset path as the file authors it, to an asset id: anchored to the file's folder, '\' read as a separator (assets authored on
@@ -226,6 +245,39 @@ auto toPackValue(const VtValue& value, const std::string& typeName, const std::s
             out.numbers.push_back((double) v[0]);
             out.numbers.push_back((double) v[1]);
             out.numbers.push_back((double) v[2]);
+        }
+        return true;
+    }
+    if (value.IsHolding<VtArray<int64_t>>()) {
+        for (int64_t i : value.UncheckedGet<VtArray<int64_t>>()) {
+            out.numbers.push_back((double) i);
+        }
+        return true;
+    }
+    if (value.IsHolding<VtArray<GfVec3h>>()) {
+        for (const auto& v : value.UncheckedGet<VtArray<GfVec3h>>()) {
+            out.numbers.push_back((double) v[0]);
+            out.numbers.push_back((double) v[1]);
+            out.numbers.push_back((double) v[2]);
+        }
+        return true;
+    }
+    // Quaternion arrays as (real, i, j, k) each, as the single ones.
+    if (value.IsHolding<VtArray<GfQuath>>()) {
+        for (const auto& q : value.UncheckedGet<VtArray<GfQuath>>()) {
+            out.numbers.push_back((double) q.GetReal());
+            out.numbers.push_back((double) q.GetImaginary()[0]);
+            out.numbers.push_back((double) q.GetImaginary()[1]);
+            out.numbers.push_back((double) q.GetImaginary()[2]);
+        }
+        return true;
+    }
+    if (value.IsHolding<VtArray<GfQuatf>>()) {
+        for (const auto& q : value.UncheckedGet<VtArray<GfQuatf>>()) {
+            out.numbers.push_back((double) q.GetReal());
+            out.numbers.push_back((double) q.GetImaginary()[0]);
+            out.numbers.push_back((double) q.GetImaginary()[1]);
+            out.numbers.push_back((double) q.GetImaginary()[2]);
         }
         return true;
     }
