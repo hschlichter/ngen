@@ -70,9 +70,11 @@ names them all, which is where order matters (a LOD root's levels).
 
 ## Loading: payloads and LOD levels
 
-Every payload loads, except those under a LOD root's levels that aren't loaded. A LOD root (a prim with `LODRootAPI`) has its children as
-levels, finest first; it loads the level it wants, `lod:default:index` until `setLodLevel` sets one for its path, and its coarsest level.
-It draws the finest loaded level not finer than the wanted one, so a level still loading falls back to a coarser one.
+Every payload loads, except those under a LOD root's levels that aren't loaded. A LOD root (a prim with `LODRootAPI`) has as levels, finest first, the
+children UsdLod counts as LOD items: defined, active and not abstract (an `over` naming a child isn't a level, and doesn't shift the indices). UsdLod
+also asks them to be loaded; here loading a level is the engine's, so a level counts loaded or not, and a child defined only by its payload counts.
+`ngen-usdcheck` counts them the same way. A root loads the level it wants, `lod:default:index` until `setLodLevel` sets one for its path, and its
+coarsest level. It draws the finest loaded level not finer than the wanted one, so a level still loading falls back to a coarser one.
 
 As UsdLod has a renderer do it, a root's heuristic is the first of its `lod:heuristics` targets of a type and domain the engine reads
 (`LODScreenSizeHeuristic`, `imaging`) with valid bounds (finite, not empty), as UsdLod has a renderer ignore a heuristic that gives no usable result;

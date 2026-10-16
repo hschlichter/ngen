@@ -95,9 +95,19 @@ auto collectLoads(const UsdPrim& prim, bool allowed, const std::map<std::string,
         children.push_back(child);
     }
     if (!prim.IsPseudoRoot() && prim.HasAPI<UsdLodRootAPI>()) {
-        auto loaded = loadedLevels(prim, children.size(), levels);
-        for (size_t i = 0; i < children.size(); i++) {
-            collectLoads(children[i], loaded.contains(i), levels, out);
+        // The levels are the children UsdLod counts as LOD items: active, defined and not abstract; one not loaded yet whose payload may
+        // define it counts too, as the engine counts it. Any other child loads as the root does.
+        std::vector<UsdPrim> items;
+        for (const auto& child : children) {
+            if (child.IsActive() && !child.IsAbstract() && (child.IsDefined() || child.HasAuthoredPayloads())) {
+                items.push_back(child);
+            } else {
+                collectLoads(child, true, levels, out);
+            }
+        }
+        auto loaded = loadedLevels(prim, items.size(), levels);
+        for (size_t i = 0; i < items.size(); i++) {
+            collectLoads(items[i], loaded.contains(i), levels, out);
         }
         return;
     }

@@ -1,6 +1,6 @@
 # Variant sets and PointInstancer
 
-**Status. In progress.** Decisions 1 to 6 locked 2026-10-16, each as recommended; steps 1, 2 and 2b done 2026-10-16. Lands before
+**Status. In progress.** Decisions 1 to 6 locked 2026-10-16, each as recommended; steps 1, 2, 2b and 3 done 2026-10-16. Lands before
 [plan_streaming_v2.md](plan_streaming_v2.md) step 4 (placements), so the placement tree is built with both.
 
 ## Current state
@@ -176,6 +176,17 @@ Compared as files, as the fingerprints are.
 - Baselines byte-identical; `ngen-worldcheck` against `ngen-usdcheck` unchanged (the layered scene, the test world with a tile at `full`).
 - Not covered: constants set through an input (a `diffuseColor` connected to the interface), and interface inputs on node graphs. The test
   world uses neither.
+
+### Step 3 results (2026-10-16)
+
+- A LOD root's levels are its children that are defined, active and not abstract (`isLodItem`, on the child's index probed with payloads
+  not loaded, so deciding never requests a level's payload); a child defined only by its payload counts, as its payload may define it.
+  UsdLod's "loaded" doesn't apply: loading levels is the engine's. Any other child composes as a prim of the root's content.
+- `ngen-usdcheck` counted every child as a level (the engine's old rule); it now counts as the engine does, so `--lod` picks the same
+  level in both.
+- **Test case**: `override.usda` names an `over "Annotation"` under the tree's LOD root, first among its children: not a level, the levels
+  stay `[lod0, lod1]` (the `lod` record), and `--lod /World/Tree/lod=0` and `=1` compose identically in both tools.
+- The test world with a tile at `full` and Caldera identical as before; baselines byte-identical.
 
 ## Visibility
 

@@ -13,6 +13,18 @@ over "World"
         token visibility = "inherited"
     }
 
+    # An over under a LOD root, named first (this layer is the stronger): not a LOD item, as UsdLod counts only defined children, so the
+    # levels stay lod0 and lod1 at their indices.
+    over "Tree"
+    {
+        over "lod"
+        {
+            over "Annotation"
+            {
+            }
+        }
+    }
+
     # A variant selection stronger than base.usda's.
     over "Variants"
     {

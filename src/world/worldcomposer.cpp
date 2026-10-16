@@ -929,6 +929,29 @@ struct WorldComposer::Impl {
         return names;
     }
 
+    // A child of a LOD root that UsdLod counts as an item: its strongest specifier defines it (def, not over or class) and it is active;
+    // with neither said here but payloads authored, its payload may define it, so it counts.
+    static auto isLodItem(const PrimIndex& index) -> bool {
+        auto contributing = contributions(index.root);
+        auto specs = opinions(contributing);
+        bool defined = false;
+        bool abstract = false;
+        int32_t active = -1;
+        for (const auto& opinion : specs) {
+            if (!defined && opinion.spec->specifier != PrimSpecifier::Over) {
+                defined = true;
+                abstract = opinion.spec->specifier == PrimSpecifier::Class;
+            }
+            if (active < 0) {
+                active = opinion.spec->active;
+            }
+        }
+        if (active == 0 || abstract) {
+            return false;
+        }
+        return defined || !index.payloadIds.empty();
+    }
+
     auto composeChildren(ContentContext& context, EntityId parent, const Node& parentRoot, const std::string& composedPath, bool loadPayloads) -> void {
         auto names = childNames(parentRoot);
         if (!context.content->lodRoots.contains(parent)) {
@@ -963,13 +986,32 @@ struct WorldComposer::Impl {
             }
             return;
         }
-        // A LOD root's children are its levels: a stand-in entity each, linked at resolution to the level's own content (the level prim and
-        // everything under it, loaded or not), so which level loads never changes the content the root is in.
+        // A LOD root's levels are its children UsdLod counts as LOD items: defined, active and not abstract. (UsdLod also asks them to be
+        // loaded; here loading a level is the engine's, so a level counts loaded or not, and one defined only by its payload counts.) A
+        // level is a stand-in entity, linked at resolution to the level's own content (the level prim and everything under it, loaded or
+        // not), so which level loads never changes the content the root is in; any other child is a prim of the root's content.
         auto rootIndex = std::make_shared<const Node>(parentRoot);
         auto& content = *context.content;
+        std::vector<EntityId> levels;
         for (const auto& name : names) {
             auto path = childPath(composedPath, name);
+            windows.emplace_back();
+            auto probe = childIndex(parentRoot, name, path, false);
+            auto probed = std::move(windows.back());
+            windows.pop_back();
+            window().gaps += probed.gaps;
+            if (!isLodItem(probe)) {
+                windows.emplace_back();
+                auto index = childIndex(parentRoot, name, path, loadPayloads);
+                auto composed = std::move(windows.back());
+                windows.pop_back();
+                window().gaps += composed.gaps;
+                window().messages.insert(window().messages.end(), composed.messages.begin(), composed.messages.end());
+                composePrim(context, parent, name, std::move(index), path, loadPayloads);
+                continue;
+            }
             auto id = (EntityId) content.entities.size();
+            levels.push_back(id);
             Entity standIn;
             standIn.name = name;
             standIn.parent = parent;
@@ -981,7 +1023,7 @@ struct WorldComposer::Impl {
             context.info->slots[id] = LevelSlot{.rootIndex = rootIndex, .name = name, .composedPath = path, .parentLoads = loadPayloads};
         }
         auto& root = content.lodRoots.at(parent);
-        root.levels = content.entities[parent].children;
+        root.levels = std::move(levels);
         if (!root.levels.empty()) {
             root.defaultIndex = std::min(root.defaultIndex, (uint32_t) root.levels.size() - 1);
         }
