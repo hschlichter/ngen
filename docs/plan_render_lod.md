@@ -199,6 +199,26 @@ and some engines allow 8.
 - **Not yet exercised**: nothing makes groups until step 3, so the pick, the fallback and the level test have run on no data. Step 3's
   verification (the layered rock framed near and far, `renderlod {check: true}` on the test world, the fallback flight) covers them.
 
+### Step 3 results (2026-10-19)
+
+- **Built**: the walk tags what is under a render-LOD root's level with the root's item and level (`WalkItem::renderLodRoot`, `lodRootItem`,
+  `lodLevel`); `buildPlacement` takes a group slot per render-LOD root where the placement draws (reused in order when it is built again, so
+  an unchanged group sends nothing and keeps its serial), and tags every level's draws (`lodGroup`, `lodLevel` = level + 1); an instance or
+  point instancer under a level carries the tag to its own placement (`Placement::lodGroup`, `lodGroupLevel`). Forced levels by path
+  (`lodGroupByPath`): `lod`/`lod-reset` change one group, `lod-heuristic` every group, without placing anything. The composer's "every point
+  draws its default level" message is for streaming roots only. The interim default-level walk is gone.
+- **Layered**: the rock framed close draws its sphere (`lod0`), from far its cube (`lod1`), never both; `lod /World/RenderLod/RockFar/lod 0`
+  from far draws that rock's sphere alone; `lod-heuristic off` framed close draws the cubes (the default). The `Tree` (payload levels) gives
+  the same levels as before. Validation on, no messages.
+- **Test world, four viewpoints**: 17 roots evaluated, every streaming root draws the level it wants, no warnings with validation on; camera
+  moves trace no placement pass but for tile switches. Draw slots at dense_forest 493,412 with every prop level placed (332,784 with the
+  default level only: about 1.5×, the coarse levels being small, against decision 2's estimate of 3×). Resident after start: dense_forest 3.8 s,
+  valley 5.0 s, four_tiles 7.1 s (3.4, 4.1, 5.5 with the default level only; 5.2, 6.7, 9.1 after streaming v2 step 4): every level's meshes
+  load with a tile. GPU at four_tiles (706,237 slots): `LodSelect` 0.08 ms, the three cull passes 3.8 ms, geometry 4.0 ms, shadows 2.2 ms.
+- Baselines byte-identical; World against USD unchanged.
+- **Left for step 4**: the levels the GPU picks are seen only in screenshots so far; `renderlod {check: true}` against the CPU's formula and
+  the fallback flight need the record.
+
 ## Visibility
 
 - **`renderlod` record** (new): groups alive, groups forced (hand-set, heuristic off), instances per level placed, and from the latest readback the

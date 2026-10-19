@@ -1332,8 +1332,12 @@ struct WorldComposer::Impl {
                 continue;
             }
             data.prototypes.push_back(found->second);
-            // Every point draws a prototype's LOD roots at their default level (a level per point isn't selected): said once per instancer.
+            // Every point draws a prototype's streaming LOD roots at their default level (a level per point isn't loaded): said once per
+            // instancer. A render-LOD root's level is the renderer's, per point.
             for (const auto& [rootId, root] : target.content->lodRoots) {
+                if (!root.streams) {
+                    continue;
+                }
                 bool under = false;
                 for (EntityId at = rootId; at != noEntity && !under; at = target.content->entities[at].parent) {
                     under = at == found->second;

@@ -115,6 +115,11 @@ struct WalkItem {
     bool subsets = false;     // its mesh's GeomSubsets may bind their own materials
     EntityId root = noEntity; // a Level's LOD root, in the content
     uint32_t level = 0;
+    // Render LOD: the item is a render-LOD root (a group where it is placed), or is under one of its levels: the root's item in this
+    // walk and the level (the nearest root's, for one inside another's level).
+    bool renderLodRoot = false;
+    int32_t lodRootItem = -1;
+    uint32_t lodLevel = 0;
 };
 
 struct ContentWalk {
@@ -173,8 +178,13 @@ struct Placement {
     uint32_t lodTag = 0; // the drawn level + 1 of the nearest LOD root above, for the draws
     bool drawn = true;   // false: a loaded level not drawn (the floor under a finer one, a finer one loading), and everything in it
     std::vector<PlacementSegment> segments;
-    std::vector<uint32_t> slots;      // its draws
-    std::vector<uint32_t> prims;      // prim indices of its drawn prims and lights
+    std::vector<uint32_t> slots;     // its draws
+    std::vector<uint32_t> prims;     // prim indices of its drawn prims and lights
+    std::vector<uint32_t> lodGroups; // the render-LOD groups of the render-LOD roots in it, by group slot
+    // Under a level of a render-LOD root of the placement above (an instance in an asset's level): that group slot + 1 and the level, which
+    // its draws are tagged with; 0 for none.
+    uint32_t lodGroup = 0;
+    uint32_t lodGroupLevel = 0;
     std::vector<RenderLight> lights;  // its distant lights
     std::vector<std::string> waiting; // assets its prims want that aren't held: meshes, material packs, textures
     uint32_t pending = 0;             // waiting assets and pending roots, in it and below: a pass looks into it while not 0

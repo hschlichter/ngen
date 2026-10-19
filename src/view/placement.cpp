@@ -203,6 +203,8 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
         Purpose purpose = Purpose::Default;
         std::string material;
         bool strong = false;
+        int32_t lodRootItem = -1; // under a level of a render-LOD root: the root's item and the level
+        uint32_t lodLevel = 0;
     };
     std::function<void(EntityId, const State&)> walk = [&](EntityId id, const State& parent) {
         const auto& entity = content.entities[id];
@@ -215,6 +217,8 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
             }
         }
         state.absolute = parent.absolute;
+        state.lodRootItem = parent.lodRootItem;
+        state.lodLevel = parent.lodLevel;
         if (!entity.xformable) {
             state.world = parent.world;
         } else if (entity.resetsXformStack) {
@@ -252,13 +256,18 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
                       .payload = content.payloads.contains(id),
                       .lodRoot = content.lodRoots.contains(id) && content.lodRoots.at(id).streams,
                       .light = content.lights.contains(id),
-                      .variants = !entity.variantSelections.empty()};
+                      .variants = !entity.variantSelections.empty(),
+                      .renderLodRoot = content.lodRoots.contains(id) && !content.lodRoots.at(id).streams,
+                      .lodRootItem = state.lodRootItem,
+                      .lodLevel = state.lodLevel};
         bool drawsMesh = !entity.meshAsset.empty();
         if (drawsMesh) {
             prim.subsets = std::ranges::any_of(entity.children, [&](EntityId child) { return content.entities[child].binding.has_value(); });
         }
-        if (drawsMesh || prim.camera || prim.payload || prim.lodRoot || prim.light || prim.variants) {
+        int32_t primItem = -1;
+        if (drawsMesh || prim.camera || prim.payload || prim.lodRoot || prim.light || prim.variants || prim.renderLodRoot) {
             auto index = (uint32_t) out->items.size();
+            primItem = (int32_t) index;
             if (drawsMesh) {
                 out->meshItems.push_back(index);
                 if (!std::ranges::contains(out->meshAssets, entity.meshAsset)) {
@@ -278,7 +287,9 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
                                   .id = id,
                                   .purpose = state.purpose,
                                   .material = state.material,
-                                  .strongBinding = state.strong});
+                                  .strongBinding = state.strong,
+                                  .lodRootItem = state.lodRootItem,
+                                  .lodLevel = state.lodLevel});
         }
         if (entity.prototype >= 0) {
             out->items.push_back({.kind = WalkItem::Kind::Instance,
@@ -288,17 +299,24 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
                                   .purpose = state.purpose,
                                   .material = state.material,
                                   .strongBinding = state.strong,
-                                  .content = entity.prototype});
+                                  .content = entity.prototype,
+                                  .lodRootItem = state.lodRootItem,
+                                  .lodLevel = state.lodLevel});
             return;
         }
         if (auto lod = content.lodRoots.find(id); lod != content.lodRoots.end() && !lod->second.streams) {
-            // A render-LOD root draws its default level, its other levels skipped.
+            // A render-LOD root's levels are walked like its other children, what is under a level tagged with the root's item and the
+            // level: the renderer draws the level the root's group picks.
             for (EntityId child : entity.children) {
                 auto level = std::ranges::find(lod->second.levels, child);
-                if (level != lod->second.levels.end() && (uint32_t) (level - lod->second.levels.begin()) != lod->second.defaultIndex) {
+                if (level == lod->second.levels.end()) {
+                    walk(child, state);
                     continue;
                 }
-                walk(child, state);
+                State levelState = state;
+                levelState.lodRootItem = primItem;
+                levelState.lodLevel = (uint32_t) (level - lod->second.levels.begin());
+                walk(child, levelState);
             }
             return;
         }
@@ -587,6 +605,9 @@ auto ViewScene::releasePlacement(const Placement& node) -> void {
     for (auto prim : node.prims) {
         freePrim(prim);
     }
+    for (auto group : node.lodGroups) {
+        freeLodGroup(group);
+    }
     useNode(node, -1);
     for (const auto& child : node.children) {
         releasePlacement(*child);
@@ -597,6 +618,70 @@ auto ViewScene::releasePlacement(const Placement& node) -> void {
                 releasePlacement(*level);
             }
         }
+    }
+}
+
+auto ViewScene::allocLodGroup() -> uint32_t {
+    if (!freeLodGroups.empty()) {
+        auto group = *freeLodGroups.begin();
+        freeLodGroups.erase(freeLodGroups.begin());
+        return group;
+    }
+    drawn.lodGroups.push_back(RenderLodGroup{});
+    lodGroupInfo.emplace_back();
+    return (uint32_t) drawn.lodGroups.size() - 1;
+}
+
+auto ViewScene::setLodGroup(uint32_t group, const RenderLodGroup& value) -> void {
+    if (group < lodGroupCountBefore) {
+        lodGroupsBefore.try_emplace(group, drawn.lodGroups[group]);
+    }
+    drawn.lodGroups.edit(group) = value;
+}
+
+auto ViewScene::freeLodGroup(uint32_t group) -> void {
+    setLodGroup(group, RenderLodGroup{});
+    if (auto it = lodGroupByPath.find(lodGroupInfo[group].path); it != lodGroupByPath.end() && it->second == group) {
+        lodGroupByPath.erase(it);
+    }
+    lodGroupInfo[group] = {};
+    freeLodGroups.insert(group);
+}
+
+auto ViewScene::forcedLevelOf(const LodGroupInfo& info) const -> int32_t {
+    if (info.levelCount == 0) {
+        return -1;
+    }
+    if (auto hand = handLevels.find(info.path); hand != handLevels.end()) {
+        return (int32_t) std::min(hand->second, info.levelCount - 1);
+    }
+    if (!heuristicOn || !info.usable) {
+        return (int32_t) info.defaultLevel;
+    }
+    return -1;
+}
+
+auto ViewScene::refreshForcedLevels(const std::string& path) -> void {
+    auto refresh = [this](uint32_t group) {
+        const auto& current = drawn.lodGroups[group];
+        if (!current.alive) {
+            return;
+        }
+        auto forced = forcedLevelOf(lodGroupInfo[group]);
+        if (forced != current.forcedLevel) {
+            auto changed = current;
+            changed.forcedLevel = forced;
+            setLodGroup(group, changed);
+        }
+    };
+    if (!path.empty()) {
+        if (auto it = lodGroupByPath.find(path); it != lodGroupByPath.end()) {
+            refresh(it->second);
+        }
+        return;
+    }
+    for (uint32_t group = 0; group < drawn.lodGroups.size(); group++) {
+        refresh(group);
     }
 }
 
@@ -733,7 +818,8 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
     if (!rebuild) {
         const auto& n = *node;
         rebuild = n.kind != spec.kind || n.content != spec.content || n.contentKind != spec.contentKind || n.instancer != spec.instancer || n.version != version || n.path != spec.path ||
-                  n.world != spec.world || n.purpose != spec.purpose || n.material != spec.material || n.strong != spec.strong || n.lodTag != spec.lodTag || n.drawn != spec.drawn;
+                  n.world != spec.world || n.purpose != spec.purpose || n.material != spec.material || n.strong != spec.strong || n.lodTag != spec.lodTag || n.drawn != spec.drawn ||
+                  n.lodGroup != spec.lodGroup || n.lodGroupLevel != spec.lodGroupLevel;
     }
     if (!rebuild) {
         rebuild = std::ranges::any_of(overridesMoved, [&](const std::string& moved) { return isUnder(moved, spec.path); });
@@ -768,7 +854,9 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
                                 .material = child->material,
                                 .strong = child->strong,
                                 .lodTag = child->lodTag,
-                                .drawn = child->drawn};
+                                .drawn = child->drawn,
+                                .lodGroup = child->lodGroup,
+                                .lodGroupLevel = child->lodGroupLevel};
         auto next = syncPlacement(child, childSpec, mine);
         if (next != child) {
             edit().children[i] = next;
@@ -790,12 +878,14 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
     // renderer; what it has left over is freed, what it lacks is taken from the free lists.
     std::vector<uint32_t> oldSlots;
     std::vector<uint32_t> oldPrims;
+    std::vector<uint32_t> oldGroups;
     std::vector<std::shared_ptr<Placement>> previousChildren;
     std::vector<PlacedRoot> previousRoots;
     bool wasDrawn = old && old->drawn;
     if (old) {
         oldSlots = old->slots;
         oldPrims = old->prims;
+        oldGroups = old->lodGroups;
         useNode(*old, -1);
     }
     std::shared_ptr<Placement> node;
@@ -822,6 +912,9 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
     node->strong = spec.strong;
     node->lodTag = spec.lodTag;
     node->drawn = spec.drawn;
+    node->lodGroup = spec.lodGroup;
+    node->lodGroupLevel = spec.lodGroupLevel;
+    node->lodGroups.clear();
     node->segments.clear();
     node->slots.clear();
     node->prims.clear();
@@ -835,6 +928,13 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
     node->instancerRow.reset();
     size_t slotCursor = 0;
     size_t primCursor = 0;
+    size_t groupCursor = 0;
+    auto takeGroup = [&]() -> uint32_t {
+        if (groupCursor < oldGroups.size()) {
+            return oldGroups[groupCursor++];
+        }
+        return allocLodGroup();
+    };
     auto takeSlot = [&]() -> uint32_t {
         if (slotCursor < oldSlots.size()) {
             return oldSlots[slotCursor++];
@@ -912,6 +1012,8 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
     for (uint32_t s = 0; s < node->segments.size(); s++) {
         const auto& segment = node->segments[s];
         const auto& items = segment.walk->items;
+        // The group slot + 1 of each render-LOD root item in this segment, as its item is reached (before its levels' items).
+        std::unordered_map<int32_t, uint32_t> groupOfItem;
         if (spec.drawn) {
             for (auto index : segment.walk->rowItems) {
                 const auto& item = items[index];
@@ -937,6 +1039,18 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
             const auto& item = items[i];
             auto world = item.absolute ? item.world : segment.world * item.world;
             auto path = joinPathOf(segment.path, item.path);
+            // The render-LOD group and level its draws are tagged with: its root's in this segment, else the one this placement is under.
+            uint32_t tagGroup = spec.lodGroup;
+            uint32_t tagLevel = spec.lodGroupLevel;
+            if (item.lodRootItem >= 0) {
+                auto group = groupOfItem.find(item.lodRootItem);
+                tagGroup = group != groupOfItem.end() ? group->second : 0;
+                tagLevel = item.lodLevel;
+                if (tagLevel >= RenderLodGroup::maxLevels) {
+                    // A level past the group's: not drawn (the composer says so).
+                    continue;
+                }
+            }
             if (item.kind == WalkItem::Kind::Instance) {
                 adopt({.kind = Placement::Kind::Prototype,
                        .content = item.content,
@@ -947,7 +1061,9 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                        .material = item.material,
                        .strong = item.strongBinding,
                        .lodTag = spec.lodTag,
-                       .drawn = spec.drawn});
+                       .drawn = spec.drawn,
+                       .lodGroup = tagGroup,
+                       .lodGroupLevel = tagLevel});
                 continue;
             }
             if (item.kind == WalkItem::Kind::PointInstancer) {
@@ -961,8 +1077,49 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                        .material = item.material,
                        .strong = item.strongBinding,
                        .lodTag = spec.lodTag,
-                       .drawn = spec.drawn});
+                       .drawn = spec.drawn,
+                       .lodGroup = tagGroup,
+                       .lodGroupLevel = tagLevel});
                 continue;
+            }
+            if (item.renderLodRoot && spec.drawn) {
+                // A group where the root is placed: its heuristic's extent's bounding sphere (as the view's screenSize measures it), its
+                // thresholds, default and forced level.
+                const auto& lod = content.lodRoots.at(item.id);
+                LodGroupInfo info{
+                    .path = path,
+                    .defaultLevel = 0,
+                    .levelCount = (uint32_t) std::min<size_t>(lod.levels.size(), RenderLodGroup::maxLevels),
+                    .usable = lod.heuristicChosen && !lod.thresholds.empty(),
+                };
+                if (info.levelCount > 0) {
+                    info.defaultLevel = std::min(lod.defaultIndex, info.levelCount - 1);
+                    auto placed = unitScale * world;
+                    auto worldMin = glm::vec3(placed * glm::vec4(lod.extent[0], 1.0f));
+                    auto worldMax = glm::vec3(placed * glm::vec4(lod.extent[1], 1.0f));
+                    RenderLodGroup group{
+                        .center = glm::vec3(placed * glm::vec4((lod.extent[0] + lod.extent[1]) * 0.5f, 1.0f)),
+                        .radius = glm::length(worldMax - worldMin) * 0.5f,
+                        .levelCount = info.levelCount,
+                        .defaultLevel = info.defaultLevel,
+                        .forcedLevel = forcedLevelOf(info),
+                        .alive = true,
+                    };
+                    for (size_t t = 0; t < group.thresholds.size() && t < lod.thresholds.size() && t + 1 < info.levelCount; t++) {
+                        group.thresholds[t] = lod.thresholds[t];
+                    }
+                    auto slot = takeGroup();
+                    node->lodGroups.push_back(slot);
+                    if (auto stale = lodGroupByPath.find(lodGroupInfo[slot].path); stale != lodGroupByPath.end() && stale->second == slot && lodGroupInfo[slot].path != path) {
+                        lodGroupByPath.erase(stale);
+                    }
+                    lodGroupInfo[slot] = info;
+                    lodGroupByPath[path] = slot;
+                    if (!(drawn.lodGroups[slot] == group)) {
+                        setLodGroup(slot, group);
+                    }
+                    groupOfItem[(int32_t) i] = slot + 1;
+                }
             }
             if (item.kind == WalkItem::Kind::Level) {
                 continue;
@@ -1073,7 +1230,8 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                     .doubleSided = meshData->doubleSided,
                     .cutout = resolved->cutout[sub],
                     .primHasCutout = resolved->primHasCutout,
-                    .lodLevel = spec.lodTag,
+                    .lodLevel = tagGroup != 0 ? tagLevel + 1 : spec.lodTag,
+                    .lodGroup = tagGroup,
                 };
                 if (!(drawn.meshInstances[slot] == instance)) {
                     setSlot(slot, instance);
@@ -1087,6 +1245,9 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
     }
     for (; primCursor < oldPrims.size(); primCursor++) {
         freePrim(oldPrims[primCursor]);
+    }
+    for (; groupCursor < oldGroups.size(); groupCursor++) {
+        freeLodGroup(oldGroups[groupCursor]);
     }
     for (size_t i = 0; i < previousChildren.size(); i++) {
         if (!kept[i] && previousChildren[i]) {
@@ -1262,7 +1423,8 @@ auto ViewScene::place() -> void {
         PROFILE_ZONE("PlaceSync");
         next = syncPlacement(tree, stage, true);
     }
-    bool changed = next != tree || passBuilt > 0 || passEdited || !slotsBefore.empty() || drawn.meshInstances.size() != slotCountBefore || lightsChanged;
+    bool changed = next != tree || passBuilt > 0 || passEdited || !slotsBefore.empty() || drawn.meshInstances.size() != slotCountBefore || lightsChanged ||
+                   !lodGroupsBefore.empty() || drawn.lodGroups.size() != lodGroupCountBefore;
     tree = std::move(next);
     overridesMoved.clear();
     rootsToCheck.clear();
@@ -1354,6 +1516,18 @@ auto ViewScene::place() -> void {
     slotsBefore.clear();
     slotCountBefore = (uint32_t) drawn.meshInstances.size();
     changes.slotCount = slotCountBefore;
+    // The groups touched, against what they held, and the new ones.
+    for (const auto& [group, before] : lodGroupsBefore) {
+        if (!(drawn.lodGroups[group] == before)) {
+            changes.lodGroups.emplace_back(group, drawn.lodGroups[group]);
+        }
+    }
+    for (auto group = lodGroupCountBefore; group < drawn.lodGroups.size(); group++) {
+        changes.lodGroups.emplace_back(group, drawn.lodGroups[group]);
+    }
+    lodGroupsBefore.clear();
+    lodGroupCountBefore = (uint32_t) drawn.lodGroups.size();
+    changes.lodGroupCount = lodGroupCountBefore;
     addChanges(std::move(changes));
     if (!changed) {
         return;

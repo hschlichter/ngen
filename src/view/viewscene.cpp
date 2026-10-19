@@ -263,10 +263,15 @@ auto ViewScene::apply(Request& request) -> void {
             handLevels.erase(lod->root);
         }
         rootsToCheck.insert(lod->root);
+        // A render-LOD root's group takes the level as its forced one.
+        refreshForcedLevels(lod->root);
+        placeNeeded = true;
         evaluateNeeded = true;
     } else if (auto* heuristic = std::get_if<HeuristicRequest>(&request)) {
         if (heuristic->on) {
             heuristicOn = *heuristic->on;
+            refreshForcedLevels({});
+            placeNeeded = true;
         }
         if (heuristic->unloadDelay) {
             unloadDelaySeconds = std::max(0.0, *heuristic->unloadDelay);

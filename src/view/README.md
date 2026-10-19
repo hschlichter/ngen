@@ -43,8 +43,14 @@ or a `PointInstancer`'s points. It owns the draws of its own prims and its child
 placement per loaded level of each LOD root in it, of which only the drawn level draws. A content never changes once linked, so neither
 do its draws: only where it is placed.
 - **LOD roots.** A streaming root (its levels are payloads; `src/world/README.md` "Loading") is a placed root with a placement per loaded
-  level, as below. A render-LOD root (levels in place) draws its default level for now; its levels picked per placement on the GPU are the
-  next step. It has no row in the `lod` and `streaming` records and the heuristic doesn't evaluate it.
+  level, as below. A render-LOD root (levels in place) is a *group* where it is placed (`RenderLodGroup`, slots in `RenderWorld::lodGroups`
+  taken and freed with its placement, as draw slots): the bounding sphere of its heuristic's extent placed by the root's transform, as the
+  heuristic measures it, its thresholds (up to 8 levels; levels past them aren't drawn), its default, and a forced level (hand-set by its full
+  path, else its default while the heuristic is off or it has no usable heuristic). Every level is walked and placed, its draws tagged with
+  the group and their level, and an instance or point instancer under a level passes the tag to its draws; the renderer draws the level the
+  group picks each frame (`src/renderer/README.md`, "Render LOD"). A camera move changes nothing here. A render-LOD root has no placed root,
+  no row in the `lod` and `streaming` records and no CPU evaluation; `lod` and `lod-reset` on its path and `lod-heuristic` change its group's
+  forced level. A level holding it is ready once every level's meshes are held, as all of them are placed.
 - **Walks.** A content is walked once per version and inherited state: the walk keeps, in walk order, the prims that draw, light, frame,
   root LOD or have variant sets, with transforms relative to the content's root, and where its instances and levels sit (`ContentWalk`).
   Every placement of the content uses the kept walk; one with a gizmo's move under it is walked afresh, with the move.

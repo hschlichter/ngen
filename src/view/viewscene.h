@@ -472,6 +472,8 @@ private:
         bool strong = false;
         uint32_t lodTag = 0;
         bool drawn = true;
+        uint32_t lodGroup = 0; // Placement::lodGroup
+        uint32_t lodGroupLevel = 0;
     };
     // One pass over the tree after a compose, a relink, a level evaluation, arrivals or a gizmo's move: placements whose content changed,
     // that moved, or that waited for an asset that arrived are built again; LOD roots switch levels; the rest is kept as it is.
@@ -490,6 +492,26 @@ private:
     auto allocPrim(const std::string& path) -> uint32_t;
     auto freePrim(uint32_t prim) -> void;
     auto touchSlot(uint32_t slot) -> void;
+    // Render-LOD group slots (RenderWorld::lodGroups), taken and freed like draw slots, with what the view knows of each: the root's full
+    // path, its default level, whether its heuristic is usable, and its level count; and by path.
+    struct LodGroupInfo {
+        std::string path;
+        uint32_t defaultLevel = 0;
+        uint32_t levelCount = 0;
+        bool usable = false;
+    };
+    std::vector<LodGroupInfo> lodGroupInfo;
+    std::unordered_map<std::string, uint32_t> lodGroupByPath;
+    std::set<uint32_t> freeLodGroups;
+    std::map<uint32_t, RenderLodGroup> lodGroupsBefore;
+    uint32_t lodGroupCountBefore = 0;
+    auto allocLodGroup() -> uint32_t;
+    auto freeLodGroup(uint32_t group) -> void;
+    auto setLodGroup(uint32_t group, const RenderLodGroup& value) -> void;
+    // A group's forced level: hand-set, else its default while the heuristic is off or unusable, else none (-1).
+    auto forcedLevelOf(const LodGroupInfo& info) const -> int32_t;
+    // Applies the forced levels again to the group at a path, or with an empty path to every group (the heuristic turned on or off).
+    auto refreshForcedLevels(const std::string& path) -> void;
     // The pass's: assets that arrived or failed since the last (a placement waiting for one is built again), the slots it touched with what
     // they held before, the assets its placements want and lack, and its counts.
     std::set<std::string> arrived;
