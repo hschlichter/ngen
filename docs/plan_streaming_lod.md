@@ -112,7 +112,9 @@ payloads is drawn as soon as its own payload is resident (decision 6).
 ### 2. What loads
 
 **UsdLod is the only LOD the engine reads.** Locked (2026-10-11). A LOD root's children are the levels, finest first, each a separately
-loadable payload with its own bounds; its heuristics are the selection rule. Data that expresses LOD any other way is converted to UsdLod
+loadable payload with its own bounds; its heuristics are the selection rule. *Superseded in part (2026-10-19) by
+[plan_render_lod.md](plan_render_lod.md): a root whose levels aren't payloads is render LOD, every level held and picked per instance on the GPU;
+only roots with payload levels stream as described here.* Data that expresses LOD any other way is converted to UsdLod
 before it is packed, outside the engine: Caldera's `districtLod` and `modelLod` variant sets were rewritten into UsdLod roots by a converter in
 a Caldera fork ([plan_caldera_usdlod.md](plan_caldera_usdlod.md)).
 

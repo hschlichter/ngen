@@ -1,0 +1,37 @@
+#usda 1.0
+(
+    defaultPrim = "Rock"
+)
+
+# A render-LOD asset: a UsdLod root whose levels are references into one geometry file, not payloads, so every level is held with the
+# asset and the renderer picks one per placement. The level not drawn by default is invisible, as UsdLod recommends for readers without LOD.
+def Xform "Rock"
+{
+    def "lod" (
+        prepend apiSchemas = ["LODRootAPI"]
+    )
+    {
+        int lod:default:index = 1
+        rel lod:heuristics = </Rock/lodHeuristic>
+
+        def Xform "lod0" (
+            prepend references = @./rock_geom.usda@</RockGeom/fine>
+        )
+        {
+            token visibility = "invisible"
+        }
+
+        def Xform "lod1" (
+            prepend references = @./rock_geom.usda@</RockGeom/coarse>
+        )
+        {
+        }
+    }
+
+    def LODScreenSizeHeuristic "lodHeuristic"
+    {
+        float3[] extent = [(-0.6, 0, -0.6), (0.6, 1.2, 0.6)]
+        uniform token lod:domain = "imaging"
+        uniform float[] thresholds = [0.2]
+    }
+}

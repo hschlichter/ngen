@@ -191,7 +191,8 @@ auto World::visit(const std::function<bool(const VisitedEntity&)>& visitor) cons
         const auto& entity = content.entities[id];
         std::optional<uint32_t> drawn;
         const LodRoot* lodRoot = nullptr;
-        if (auto it = content.lodRoots.find(id); it != content.lodRoots.end()) {
+        if (auto it = content.lodRoots.find(id); it != content.lodRoots.end() && it->second.streams) {
+            // A render-LOD root's levels are children like any other: which one draws is the renderer's, per placement.
             lodRoot = &it->second;
             drawn = drawnLevel(state.path, *lodRoot);
         }

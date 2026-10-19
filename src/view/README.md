@@ -42,6 +42,9 @@ level at its root; `src/world/README.md`) at a world transform, with the state i
 or a `PointInstancer`'s points. It owns the draws of its own prims and its children: the instances and point instancers in it, and a
 placement per loaded level of each LOD root in it, of which only the drawn level draws. A content never changes once linked, so neither
 do its draws: only where it is placed.
+- **LOD roots.** A streaming root (its levels are payloads; `src/world/README.md` "Loading") is a placed root with a placement per loaded
+  level, as below. A render-LOD root (levels in place) draws its default level for now; its levels picked per placement on the GPU are the
+  next step. It has no row in the `lod` and `streaming` records and the heuristic doesn't evaluate it.
 - **Walks.** A content is walked once per version and inherited state: the walk keeps, in walk order, the prims that draw, light, frame,
   root LOD or have variant sets, with transforms relative to the content's root, and where its instances and levels sit (`ContentWalk`).
   Every placement of the content uses the kept walk; one with a gizmo's move under it is walked afresh, with the move.

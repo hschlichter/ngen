@@ -963,12 +963,14 @@ struct WorldComposer::Impl {
             return;
         }
         // A LOD root's levels are its children UsdLod counts as LOD items: defined, active and not abstract. (UsdLod also asks them to be
-        // loaded; here loading a level is the engine's, so a level counts loaded or not, and one defined only by its payload counts.) A
-        // level is a stand-in entity, linked at resolution to the level's own content (the level prim and everything under it, loaded or
-        // not), so which level loads never changes the content the root is in; any other child is a prim of the root's content.
+        // loaded; here loading a level is the engine's, so a level counts loaded or not, and one defined only by its payload counts.) The
+        // root streams when a level has payloads: a level is then a stand-in entity, linked at resolution to the level's own content (the
+        // level prim and everything under it, loaded or not), so which level loads never changes the content the root is in. Without
+        // payloads its levels are render LOD, composed in place. Any other child is a prim of the root's content.
         auto rootIndex = std::make_shared<const Node>(parentRoot);
         auto& content = *context.content;
-        std::vector<EntityId> levels;
+        std::vector<bool> items;
+        bool streams = false;
         for (const auto& name : names) {
             auto path = childPath(composedPath, name);
             windows.emplace_back();
@@ -976,14 +978,29 @@ struct WorldComposer::Impl {
             auto probed = std::move(windows.back());
             windows.pop_back();
             window().gaps += probed.gaps;
-            if (!isLodItem(probe)) {
+            bool item = isLodItem(probe);
+            items.push_back(item);
+            if (item && !probe.payloadIds.empty()) {
+                streams = true;
+            }
+        }
+        std::vector<EntityId> levels;
+        for (size_t i = 0; i < names.size(); i++) {
+            const auto& name = names[i];
+            auto path = childPath(composedPath, name);
+            if (!items[i] || !streams) {
                 windows.emplace_back();
                 auto index = childIndex(parentRoot, name, path, loadPayloads);
                 auto composed = std::move(windows.back());
                 windows.pop_back();
                 window().gaps += composed.gaps;
                 window().messages.insert(window().messages.end(), composed.messages.begin(), composed.messages.end());
+                auto id = (EntityId) content.entities.size();
                 composePrim(context, parent, name, std::move(index), path, loadPayloads);
+                if (items[i] && id < content.entities.size()) {
+                    content.entities[id].lodItem = true;
+                    levels.push_back(id);
+                }
                 continue;
             }
             auto id = (EntityId) content.entities.size();
@@ -1000,8 +1017,15 @@ struct WorldComposer::Impl {
         }
         auto& root = content.lodRoots.at(parent);
         root.levels = std::move(levels);
+        root.streams = streams;
         if (!root.levels.empty()) {
             root.defaultIndex = std::min(root.defaultIndex, (uint32_t) root.levels.size() - 1);
+        }
+        if (!streams) {
+            root.loaded.clear();
+            for (uint32_t level = 0; level < root.levels.size(); level++) {
+                root.loaded.push_back(level);
+            }
         }
     }
 
@@ -1284,7 +1308,7 @@ struct WorldComposer::Impl {
                 continue;
             }
             auto& root = target.content->lodRoots.at(target.entity);
-            root = LodRoot{.levels = root.levels, .defaultIndex = root.defaultIndex, .loaded = root.loaded};
+            root = LodRoot{.levels = root.levels, .streams = root.streams, .defaultIndex = root.defaultIndex, .loaded = root.loaded};
             root.heuristic = it->second;
             root.heuristicChosen = usable;
             root.heuristicType = data.type;
@@ -1534,6 +1558,10 @@ struct WorldComposer::Impl {
                 pending.push_back(Reach{.content = &world.contents[(size_t) id], .info = &info, .base = info.base, .sharedKey = info.key, .ownerPath = "/"});
             }
             for (auto& [id, root] : at.content->lodRoots) {
+                if (!root.streams) {
+                    // Every render-LOD level is in the content already.
+                    continue;
+                }
                 auto relative = at.content->path(id);
                 auto levels = loadedLevels(at, relative, (uint32_t) root.levels.size(), root.defaultIndex);
                 root.loaded.assign(levels.begin(), levels.end());

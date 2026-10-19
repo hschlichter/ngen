@@ -250,7 +250,7 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
                       .strongBinding = state.strong,
                       .camera = entity.typeName == "Camera",
                       .payload = content.payloads.contains(id),
-                      .lodRoot = content.lodRoots.contains(id),
+                      .lodRoot = content.lodRoots.contains(id) && content.lodRoots.at(id).streams,
                       .light = content.lights.contains(id),
                       .variants = !entity.variantSelections.empty()};
         bool drawsMesh = !entity.meshAsset.empty();
@@ -289,6 +289,17 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
                                   .material = state.material,
                                   .strongBinding = state.strong,
                                   .content = entity.prototype});
+            return;
+        }
+        if (auto lod = content.lodRoots.find(id); lod != content.lodRoots.end() && !lod->second.streams) {
+            // A render-LOD root draws its default level, its other levels skipped.
+            for (EntityId child : entity.children) {
+                auto level = std::ranges::find(lod->second.levels, child);
+                if (level != lod->second.levels.end() && (uint32_t) (level - lod->second.levels.begin()) != lod->second.defaultIndex) {
+                    continue;
+                }
+                walk(child, state);
+            }
             return;
         }
         if (auto lod = content.lodRoots.find(id); lod != content.lodRoots.end()) {

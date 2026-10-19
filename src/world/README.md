@@ -76,8 +76,16 @@ names them all, which is where order matters (a LOD root's levels).
 Every payload loads, except those under a LOD root's levels that aren't loaded. A LOD root (a prim with `LODRootAPI`) has as levels, finest first, the
 children UsdLod counts as LOD items: defined, active and not abstract (an `over` naming a child isn't a level, and doesn't shift the indices). UsdLod
 also asks them to be loaded; here loading a level is the engine's, so a level counts loaded or not, and a child defined only by its payload counts.
-`ngen-usdcheck` counts them the same way. A root loads the level it wants, `lod:default:index` until `setLodLevel` sets one for its path, and its
-coarsest level. It draws the finest loaded level not finer than the wanted one, so a level still loading falls back to a coarser one.
+`ngen-usdcheck` counts them the same way.
+
+**Two kinds of root, from what is authored** (`LodRoot::streams`):
+- **Streaming**: a level has a payload. A root loads the level it wants, `lod:default:index` until `setLodLevel` sets one for its path, and its
+  coarsest level. It draws the finest loaded level not finer than the wanted one, so a level still loading falls back to a coarser one. Each
+  level is a content of its own (below).
+- **Render LOD**: no level has a payload (levels that are references or inline, as an asset's `lod0`… into its one geometry file). Every
+  level is composed in place with the root's content, as USD composes it, and is loaded (`LodRoot::loaded` holds them all); which one draws
+  is the renderer's, per placement, and `visit` walks them as children. Loading, linking, `setLodLevel` and the sections below concern
+  streaming roots.
 
 As UsdLod has a renderer do it, a root's heuristic is the first of its `lod:heuristics` targets of a type and domain the engine reads
 (`LODScreenSizeHeuristic`, `imaging`) with valid bounds (finite, not empty), as UsdLod has a renderer ignore a heuristic that gives no usable result;

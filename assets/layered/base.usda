@@ -166,6 +166,35 @@ def Xform "World" (
         }
     }
 
+    # Render LOD (rock.usda): a LOD root whose levels aren't payloads, placed twice by reference and once as an instance.
+    def Scope "RenderLod"
+    {
+        def Xform "RockNear" (
+            prepend references = @./rock.usda@
+        )
+        {
+            double3 xformOp:translate = (-4, 0, 6)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def Xform "RockFar" (
+            prepend references = @./rock.usda@
+        )
+        {
+            double3 xformOp:translate = (-2, 0, 6)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def Xform "RockInstance" (
+            instanceable = true
+            prepend references = @./rock.usda@
+        )
+        {
+            double3 xformOp:translate = (0, 0, 6)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+    }
+
     # A material from another file whose texture is its input: the referencing material sets it (looks.usda).
     def Material "TexturedUse" (
         prepend references = @./looks.usda@</Looks/Textured>

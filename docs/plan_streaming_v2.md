@@ -227,6 +227,9 @@ Locked (2026-10-15). Stays: screen size of the extent's bounding sphere, the 20%
    the slots added and removed per edit); **4b** queries and records read the tree, `TransformIndex` goes; **4c** requests per content,
    `requestDrawnAssets` and `meshesLoaded` from the placements; **4d** visibility (`scenethread` record, Scene Flow, the Engine Map's
    "Extract" becomes "Placement").
+   **Before step 5: [plan_render_lod.md](plan_render_lod.md)** (2026-10-19). Step 4's measurements showed the volume is per-prop LOD: of 42,387
+   roots at dense_forest, 17 have payload levels; the rest are assets whose levels are inline references. Those become render LOD, picked per
+   instance on the GPU, and steps 5 and 6 below apply to streaming roots (payload levels) only.
 5. **Counting** (decisions 4, 5): pending counts per placed level for the switch rule; reference counts for contents and assets; the unload
    delay on the level only.
 6. **The heuristic over placed roots** (decision 8).
