@@ -47,6 +47,8 @@ struct RenderSnapshot {
     // or frozen from the editor) and whether culling is on.
     bool cullEnabled = true;
     glm::mat4 cullViewProj = glm::mat4(1.0f);
+    // Read every render-LOD group's level drawn and wanted back with the culling readback (for the `renderlod` record).
+    bool readLodStates = false;
 
     // Shadow cascades fitted on the main thread, culled on the GPU.
     // cascadeCount 0 means the renderer fits a single cascade itself.

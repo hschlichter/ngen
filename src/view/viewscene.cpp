@@ -175,6 +175,7 @@ auto ViewScene::takeChanges() -> SceneChanges {
     auto changes = std::move(pending);
     pending = {};
     pending.slotCount = changes.slotCount;
+    pending.lodGroupCount = changes.lodGroupCount;
     return changes;
 }
 

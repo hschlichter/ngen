@@ -188,10 +188,10 @@ Tables:
     texture's channel), the channel and raw flag (`opacityInfo`), and the threshold.
   - **Rewritten when a texture it names takes its slot.** Until then it samples the white texture, and a cutout whose opacity texture is still
     uploading draws opaque.
-- **Instance buffer.** One `GpuInstanceRecord` (112 bytes, std430) per draw slot.
+- **Instance buffer.** One `GpuInstanceRecord` (128 bytes, std430) per draw slot.
   - **Contents**: model matrix, material entry, mesh index, submesh `indexOffset` and `indexCount`, world bounds, flags (`primFirst`,
-    `doubleSided`, `boundsValid`, `cutout`, `primHasCutout`), and the drawn LOD level + 1 of the LOD root above it (0 under none), which the
-    geometry pass writes to the normal target's alpha for the LOD level view.
+    `doubleSided`, `boundsValid`, `cutout`, `primHasCutout`), the drawn LOD level + 1 of the LOD root above it (0 under none), which the
+    geometry pass writes to the normal target's alpha for the LOD level view, and its render-LOD group + 1 (0 for none; "Render LOD").
   - **Slots.** A draw keeps its slot while it exists. A removed one is dead (mesh index past the table, so culling never draws it) until a new draw
     takes it.
   - **Reading it.** Vertex shaders read it at `gl_InstanceIndex`, and every draw sets `firstInstance` to the slot.
@@ -244,6 +244,29 @@ Tables:
 The mesh passes bind the pipeline, descriptor set and pool once per bucket and issue one `drawIndexedIndirectCount` with the region's capacity as
 `maxDrawCount`. An empty region still costs one call; only the GPU knows the count.
 
+## Render LOD
+
+A render-LOD root (a UsdLod root whose levels aren't payloads; `src/world/README.md` "Loading") where the view places it is a *group*
+(`RenderLodGroup`, slots in `SceneChanges::lodGroups` beside the draw slots): the bounding sphere of its heuristic's extent in world metres,
+its thresholds (up to 8 levels), its default and a forced level (hand-set, or the default while the heuristic is off). Every level's draws are
+slots tagged with the group (`lodGroup`) and their level (`lodLevel`). Each frame the GPU picks the level a group draws, and culling draws only
+that level's slots. `LodGroups` (`lodgroups.*`) holds the buffers; `LodSelectPass` (`passes/lodselectpass.*`, `shaders/lodselect.comp`) runs
+before the culling passes.
+- **The table** (`gpuscene.lodgroups`, `GpuLodGroup`, 64 bytes): uploaded as groups change (`LodGroupUpload`, the changed span through the
+  slot's staging, as the instance records). A slot taking a new group gets a new serial.
+- **The pick** (`LodSelect`, one thread per group): the forced level, else the level the view's screen-size heuristic wants (the sphere over the
+  view window at depth 1 from the live camera, finer as soon as the size passes a threshold, coarser once 20% below it, against the level the
+  group wanted last frame); then the level drawn: the wanted one when its meshes are in the pool, else the one drawn last frame when they are,
+  else the nearest resident level, coarser first. Written to the state buffer (`gpuscene.lodstate`: the serial, the level wanted and drawn).
+- **Residency** (`gpuscene.lodresidency`, a bit per level): the cull pass, which visits every alive slot, sets its level's bit when its mesh
+  isn't in the pool (its mesh table entry is empty: not copied yet, or waiting for room); the next frame's pick reads and clears it.
+- **Persistence.** The table, the state and the residency mask persist across frames, imported with the access the last frame left them in. A
+  grown one is new and its contents undefined: the state is written by the pick before culling reads it, and stale residency bits only make a
+  group draw another resident level for a frame.
+- **Counts** (`LodSelectSum`, per-workgroup counters summed in order, as the culling scan): groups alive, drawing each level, falling back, at a
+  forced level; read back with the culling readback (`LodReadback`), with every group's state when asked (`RenderSnapshot::readLodStates`),
+  into `CullResult`. The cull pass counts the slots of levels not drawn (`counterLodDropped`), in no view and not as culled.
+
 ## Cutout materials
 
 A material with `opacityThreshold > 0` (`MaterialDesc::cutout`) draws only where its opacity reaches the threshold; there is no blending. Its
@@ -264,7 +287,8 @@ so early depth testing holds for everything else. The debug views discard in `de
 | Pass | What it does |
 |---|---|
 | `InstanceUploadPass` | Copies the dirty span of instance records from the slot's staging buffer into the instance buffer. Added only when something changed. |
-| `InstanceCullPass` | The three culling passes above. |
+| `LodSelectPass` | `LodSelect` and `LodSelectSum`, the render-LOD pick above; left out when there are no groups. `LodGroups` adds `LodGroupUpload` when groups changed and `LodReadback`. |
+| `InstanceCullPass` | The three culling passes above; the cull pass also drops the slots of render-LOD levels not drawn and marks levels not resident. |
 | `ShadowPass` | Depth-only into the cascade atlas: per cascade, the tile's viewport and scissor, the cascade matrix as a push constant, one indirect call per bucket. Position pool only, except the cutout buckets. |
 | `DepthPrepass` | Optional depth-only pass over the camera regions so the geometry pass can use an Equal depth test and shade each pixel once. `depthonly.vert` mirrors `gbuffer.vert`'s position expression with `invariant gl_Position`. |
 | `GeometryPass` | G-buffer: albedo (RGBA8, alpha carries the sampled mip level for the mip view), normals (RGBA16F), the instance id (`gbuffer.instance`, R32_UINT: instance index + 1, 0 where nothing is drawn), depth. Eight pipelines: opaque or cutout, cull back or none, Greater-with-write or Equal-without after the prepass. |
@@ -359,7 +383,7 @@ falling to 0 at infinity, so nothing is clipped at a distance and the 32-bit flo
   named by its region (`DrawLists::regionName`). The zones of a slot are read after its fence and handed to the profiler's GPU lane on the CPU clock. While counters are enabled (`setCountersEnabled`), the frame graph also wraps each pass in a pipeline statistics query, and
   `GpuCounters` (zones plus statistics per pass) is queued per frame for the Counters window and the view's `counters` record.
 - **Culling introspection.** `instancecull.comp` writes, next to the visibility bits, the frustum plane that rejected each instance in each view
-  (`cullPlanes`, 4 bits per view: plane 0–5, `E` visible, `F` not tested). The readback keeps every view's visibility bit (`CullResult::viewBits`).
+  (`cullPlanes`, 4 bits per view: plane 0–5, `D` a render-LOD level its group doesn't draw, `E` visible, `F` not tested). The readback keeps every view's visibility bit (`CullResult::viewBits`).
 - **Trace events** (Render category, conventions in `src/trace/README.md`). The renderer traces flow and problems, never per-frame data:
   `ShaderLoaded` per startup shader, `FirstFramePresented` once (ms since the process started), `SceneUploaded` when an upload changes geometry (instances, meshes, textures, ms; a transform edit is silent), `SwapchainRecreate` and
   `SwapchainRecreateFailed`, `Screenshot` and `TextureDump` per file written (`ScreenshotFailed`, `TextureDumpFailed`), `ShaderLoadFailed`,

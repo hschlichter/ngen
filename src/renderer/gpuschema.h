@@ -18,7 +18,7 @@ enum class GpuFieldType : uint8_t {
     Vec3,
     Vec4,
     Mat4,
-    CullPlane, // 4-bit cull reason `nibble` of a u32: plane name, "visible" or "-"
+    CullPlane, // 4-bit cull reason `nibble` of a u32: plane name, "LOD level not drawn", "visible" or "-"
 };
 
 struct GpuField {

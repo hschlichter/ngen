@@ -5,6 +5,7 @@
 #include "scenehandles.h"
 #include "scenetypes.h"
 
+#include <array>
 #include <cstddef>
 #include <iterator>
 #include <memory>
@@ -105,6 +106,8 @@ struct RenderMeshInstance {
     bool cutout = false;        // its material is cutout: drawn by the cutout pipelines
     bool primHasCutout = false; // some submesh of its prim is cutout: the shadow pass draws the prim per submesh
     uint32_t lodLevel = 0;      // the drawn level + 1 of the nearest LOD root above its prim, 0 under none; for the LOD level view
+    // Its render-LOD group + 1, 0 for none: drawn only while the group picks its level (lodLevel - 1).
+    uint32_t lodGroup = 0;
     bool alive = true;
 
     auto operator==(const RenderMeshInstance&) const -> bool = default;
@@ -130,8 +133,24 @@ struct RenderLight {
     auto operator==(const RenderLight&) const -> bool = default;
 };
 
+// A render-LOD root where it is placed: the renderer picks its level each frame from the camera (shaders/lodselect.comp), with the
+// view's screen-size heuristic, and draws the slots tagged with it and that level. Slots in RenderWorld::lodGroups, like draw slots.
+struct RenderLodGroup {
+    static constexpr uint32_t maxLevels = 8;
+    glm::vec3 center = glm::vec3(0.0f); // the heuristic extent's bounding sphere, world metres
+    float radius = 0.0f;
+    std::array<float, maxLevels - 1> thresholds = {}; // finest first; levelCount - 1 of them used
+    uint32_t levelCount = 0;
+    uint32_t defaultLevel = 0;
+    int32_t forcedLevel = -1; // hand-set, or the default while the heuristic is off; -1 for the heuristic's
+    bool alive = false;
+
+    auto operator==(const RenderLodGroup&) const -> bool = default;
+};
+
 struct RenderWorld {
     ChunkedList<RenderMeshInstance> meshInstances; // by slot
+    ChunkedList<RenderLodGroup> lodGroups;         // by group slot
     std::vector<RenderLight> lights;
 };
 
@@ -147,12 +166,15 @@ struct SceneChanges {
     // Draws whose slot changed: added, updated or removed (alive false). slotCount is the slot list's length afterwards.
     std::vector<std::pair<uint32_t, RenderMeshInstance>> instances;
     uint32_t slotCount = 0;
+    // Render-LOD groups whose slot changed, applied with the draws; lodGroupCount is the group list's length afterwards.
+    std::vector<std::pair<uint32_t, RenderLodGroup>> lodGroups;
+    uint32_t lodGroupCount = 0;
     bool lightsChanged = false;
     std::vector<RenderLight> lights;
 
     auto empty() const -> bool {
         return meshesAdded.empty() && meshesRemoved.empty() && texturesAdded.empty() && texturesRemoved.empty() && materialsChanged.empty() && materialsRemoved.empty() &&
-               instances.empty() && !lightsChanged;
+               instances.empty() && lodGroups.empty() && !lightsChanged;
     }
     // Appends `later`, which applies after this.
     auto append(SceneChanges later) -> void {
@@ -172,6 +194,10 @@ struct SceneChanges {
             instances.push_back(std::move(entry));
         }
         slotCount = later.slotCount;
+        for (auto& entry : later.lodGroups) {
+            lodGroups.push_back(entry);
+        }
+        lodGroupCount = later.lodGroupCount;
         if (later.lightsChanged) {
             lightsChanged = true;
             lights = std::move(later.lights);

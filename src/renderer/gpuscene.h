@@ -38,6 +38,7 @@ struct GpuInstance {
     bool cutout = false;        // its material is cutout: drawn by the cutout pipelines
     bool primHasCutout = false; // some submesh of its prim is cutout: the shadow pass draws the prim per submesh
     uint32_t lodLevel = 0;      // the drawn level + 1 of the LOD root above it, 0 under none (RenderMeshInstance::lodLevel)
+    uint32_t lodGroup = 0;      // its render-LOD group + 1, 0 for none: drawn while the group picks lodLevel - 1
     AABB worldBounds;           // culling input; invalid bounds are always visible
     bool alive = false;         // a dead slot is never drawn
 };
@@ -49,7 +50,7 @@ inline constexpr uint32_t gpuInstanceBoundsValid = 1u << 2;   // otherwise never
 inline constexpr uint32_t gpuInstanceCutout = 1u << 3;        // cutout pipeline bucket
 inline constexpr uint32_t gpuInstancePrimHasCutout = 1u << 4; // shadows per submesh, not whole mesh
 
-// One entry of the GPU instance buffer (std430, stride 112), read by the vertex shaders at
+// One entry of the GPU instance buffer (std430, stride 128), read by the vertex shaders at
 // gl_InstanceIndex and by the culling passes. material indexes
 // the material table, mesh the mesh table; indexOffset/indexCount are the submesh range.
 struct GpuInstanceRecord {
@@ -61,9 +62,11 @@ struct GpuInstanceRecord {
     glm::vec3 boundsMin = glm::vec3(0.0f);
     uint32_t flags = 0;
     glm::vec3 boundsMax = glm::vec3(0.0f);
-    uint32_t lodLevel = 0; // GpuInstance::lodLevel, for the LOD level view
+    uint32_t lodLevel = 0; // GpuInstance::lodLevel, for the LOD level view and the level test
+    uint32_t lodGroup = 0; // GpuInstance::lodGroup
+    uint32_t pad[3] = {};
 };
-static_assert(sizeof(GpuInstanceRecord) == 112);
+static_assert(sizeof(GpuInstanceRecord) == 128);
 
 // One entry of the GPU mesh table (std430, stride 16), indexed by MeshHandle::index. A mesh
 // outside the pool has indexCount 0 and is never drawn.

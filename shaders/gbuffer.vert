@@ -17,6 +17,10 @@ struct Instance {
     uint flags;
     vec3 boundsMax;
     uint lodLevel; // drawn LOD level + 1, 0 under no LOD root
+    uint lodGroup; // its render-LOD group + 1, 0 for none
+    uint pad1;
+    uint pad2;
+    uint pad3;
 };
 layout(std430, set = 0, binding = 2) readonly buffer Instances {
     Instance data[];

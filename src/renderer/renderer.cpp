@@ -124,6 +124,9 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, AssetClien
     if (!instanceCullPass.init(device, pipelineRegistry)) {
         return std::unexpected(1);
     }
+    if (!lodSelectPass.init(device, pipelineRegistry)) {
+        return std::unexpected(1);
+    }
     if (!lightingPass.init(device, pipelineRegistry, imgCount, ext, colorFmt)) {
         return std::unexpected(1);
     }
@@ -145,6 +148,7 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, AssetClien
     // Scene GPU tables; the instance buffer exists from here on, grown by applySceneChanges.
     gpuScene.init(device, imgCount, &deletionQueue, fallbackTexture, pendingTexture);
     drawLists.init(device, imgCount, &deletionQueue);
+    lodGroups.init(device, imgCount, &deletionQueue);
     shadowPass.bindInstanceBuffer(device, gpuScene.instanceBuffer(), deletionQueue, m_frameIndex);
     boundInstanceGeneration = gpuScene.instanceGeneration();
 
@@ -498,6 +502,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
             .cutout = inst.cutout,
             .primHasCutout = inst.primHasCutout,
             .lodLevel = inst.lodLevel,
+            .lodGroup = inst.lodGroup,
             .worldBounds = inst.worldBounds,
             .alive = inst.alive,
         };
@@ -518,6 +523,9 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
     // A grown instance buffer or grown draw lists are new buffers: the descriptor sets naming them are rewritten at the next frame.
     gpuScene.updateInstances(gpuInstances, changedSlots, m_frameIndex);
     if (drawLists.ensureCapacity((uint32_t) gpuInstances.size(), m_frameIndex)) {
+        descriptorSetsDirty = true;
+    }
+    if (lodGroups.apply(changes.lodGroups, changes.lodGroupCount, m_frameIndex)) {
         descriptorSetsDirty = true;
     }
     if (gpuScene.instanceGeneration() != boundInstanceGeneration) {
@@ -726,8 +734,9 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
     }
     geometryDescriptorSets.clear();
 
-    // The culling passes name the same instance buffer and mesh table, plus the draw-list buffers.
-    instanceCullPass.rebuildDescriptors(device, drawLists, gpuScene, deletionQueue, m_frameIndex);
+    // The culling passes name the same instance buffer and mesh table, plus the draw-list and render-LOD buffers.
+    instanceCullPass.rebuildDescriptors(device, drawLists, gpuScene, lodGroups, deletionQueue, m_frameIndex);
+    lodSelectPass.rebuildDescriptors(device, lodGroups, deletionQueue, m_frameIndex);
 
     // Tables come from uploadRenderWorld; nothing to point at before the first one.
     if (gpuInstances.empty() || gpuScene.materialBuffer() == nullptr) {
@@ -798,7 +807,16 @@ auto Renderer::cullResult() const -> CullResult {
         .cascadeCount = drawLists.cascadeCount(),
         .cameraVisible = drawLists.cameraVisible(),
         .viewBits = drawLists.viewBits(),
+        .lodDropped = drawLists.lodDropped(),
     };
+    const auto& lod = lodGroups.latest();
+    result.lodFrame = lod.frame;
+    result.lodGroups = lod.totals.groups;
+    result.lodPicked = lod.totals.picked;
+    result.lodFallbacks = lod.totals.fallbacks;
+    result.lodForced = lod.totals.forced;
+    result.lodDrawn = lod.drawn;
+    result.lodWanted = lod.wanted;
     for (uint32_t c = 0; c < result.cascadeCount; c++) {
         result.cascadeCulled[c] = drawLists.cascadeCulled(c);
         result.cascadeDrawn[c] = drawLists.cascadeDrawn(c);
@@ -866,6 +884,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     {
         PROFILE_ZONE("ParseReadback");
         drawLists.parseReadback(currentFrame, slotFrame[currentFrame]);
+        lodGroups.parseReadback(currentFrame, slotFrame[currentFrame]);
     }
     captureService.afterFence(currentFrame);
     fgPreviews.setFrame(frame);
@@ -932,7 +951,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
 
     // The lit path needs its pipelines, which come as their shaders arrive: until then the frame is the clear colour and the UI. The
     // instance records wait too, so their upload isn't lost to a frame that doesn't draw them.
-    bool litReady = instanceCullPass.ready() && shadowPass.ready() && geometryPass.ready() && (!snapshot.depthPrepass || depthPrepass.ready()) && lightingPass.ready() &&
+    bool litReady = instanceCullPass.ready() && lodSelectPass.ready() && shadowPass.ready() && geometryPass.ready() && (!snapshot.depthPrepass || depthPrepass.ready()) && lightingPass.ready() &&
                     aaPass.ready();
     if (!litReady) {
         addClearPass(frameGraph, colorHandle, ext);
@@ -998,10 +1017,18 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         auto invViewProj = glm::inverse(snapshot.projMatrix * snapshot.viewMatrix);
 
         profile::endZone(); // ShadowSetup
+        // Render LOD picks each group's level from the live camera (not a frozen culling frustum): its position, and the view window's
+        // area at depth 1 from the projection (2 / |proj[0][0]| wide, 2 / |proj[1][1]| high), as the view's heuristic measures.
+        auto lodHandles = lodGroups.import(frameGraph, currentFrame);
+        LodSelectPass::Camera lodCamera{
+            .eye = glm::vec3(glm::inverse(snapshot.viewMatrix)[3]),
+            .windowArea = 4.0f / std::max(1e-12f, std::abs(snapshot.projMatrix[0][0] * snapshot.projMatrix[1][1])),
+        };
+        lodSelectPass.addPasses(frameGraph, lodHandles, lodCamera, lodGroups.groupCount(), currentFrame);
         // GPU culling writes the indirect commands for every view; the passes below read them.
         auto cullGroups = drawLists.writeParams(currentFrame, instanceCount, snapshot.cullViewProj, cascades, snapshot.cullEnabled);
         auto drawHandles = drawLists.import(frameGraph, currentFrame);
-        instanceCullPass.addPasses(frameGraph, drawHandles, instanceHandle, cullGroups, currentFrame);
+        instanceCullPass.addPasses(frameGraph, drawHandles, lodHandles, instanceHandle, cullGroups, currentFrame);
         if (snapshot.sampler != materialSamplerSettings) {
             applySamplerSettings(snapshot.sampler);
         }
@@ -1015,6 +1042,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, snapshot.depthPrepass);
 
         drawLists.addReadbackPass(frameGraph, drawHandles, currentFrame, renderDebugEnabled);
+        lodGroups.addReadbackPass(frameGraph, lodHandles, currentFrame, snapshot.readLodStates);
 
         // The depth preview's far end: the camera has no far plane, so the farthest corner of the scene.
         float previewFar = cameraNear * 10.0f;
@@ -1121,6 +1149,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
             frameGraph.setCommandLogEnabled(false);
         }
         gpuScene.afterExecute(frameGraph);
+        lodGroups.afterExecute(frameGraph);
         captureService.recordStatic(cmd, currentFrame, frame);
         recordTextureInspect(cmd);
         if (dumpPending.has_value()) {
@@ -1272,9 +1301,11 @@ auto Renderer::destroy() -> void {
 
     gpuScene.destroy();
     drawLists.destroy();
+    lodGroups.destroy();
 
     pipelineRegistry.destroy();
     instanceCullPass.destroy(device);
+    lodSelectPass.destroy(device);
     shadowPass.destroy(device);
     geometryPass.destroy(device);
     lightingPass.destroy(device);

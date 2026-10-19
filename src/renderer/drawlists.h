@@ -23,6 +23,17 @@ struct CullResult {
     std::array<uint64_t, maxShadowCascades> cascadeTriangles = {}; // drawn per cascade, every bucket
     std::vector<uint8_t> cameraVisible;                            // per instance, 1 = visible
     std::vector<uint8_t> viewBits;                                 // per instance, bit v = visible in view v (0 camera, 1.. cascades)
+    // Render LOD: instances of a level their group doesn't draw (in no view), and from the selection's readback the groups, those drawing
+    // each level, those falling back while the wanted level isn't resident, those at a forced level; per group the level drawn and
+    // wanted (0xFF none) when the states were read.
+    uint32_t lodDropped = 0;
+    uint64_t lodFrame = 0;
+    uint32_t lodGroups = 0;
+    std::array<uint32_t, 8> lodPicked = {};
+    uint32_t lodFallbacks = 0;
+    uint32_t lodForced = 0;
+    std::vector<uint8_t> lodDrawn;
+    std::vector<uint8_t> lodWanted;
 };
 
 class DeletionQueue;
@@ -49,7 +60,8 @@ public:
     static constexpr uint32_t counterCameraCulled = regionCount * 2;
     static constexpr uint32_t counterCascadeCulled = counterCameraCulled + 1;
     static constexpr uint32_t counterCascadeDrawn = counterCascadeCulled + maxShadowCascades;
-    static constexpr uint32_t counterCount = counterCascadeDrawn + maxShadowCascades;
+    static constexpr uint32_t counterLodDropped = counterCascadeDrawn + maxShadowCascades;
+    static constexpr uint32_t counterCount = counterLodDropped + 1;
     static constexpr uint32_t groupSize = 256;
 
     static constexpr auto bucket(bool doubleSided, bool cutout) -> uint32_t { return (cutout ? 2 : 0) + (doubleSided ? 1 : 0); }
@@ -123,6 +135,7 @@ public:
     auto cameraCulled() const -> uint32_t { return latest.totals[counterCameraCulled]; }
     auto cascadeCulled(uint32_t cascade) const -> uint32_t { return latest.totals[counterCascadeCulled + cascade]; }
     auto cascadeDrawn(uint32_t cascade) const -> uint32_t { return latest.totals[counterCascadeDrawn + cascade]; }
+    auto lodDropped() const -> uint32_t { return latest.totals[counterLodDropped]; }
     auto cascadeCount() const -> uint32_t { return latest.viewCount > 0 ? latest.viewCount - 1 : 0; }
     auto instanceCount() const -> uint32_t { return latest.instanceCount; }
     auto commandCount() const -> uint32_t;

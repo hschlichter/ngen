@@ -2,6 +2,7 @@
 
 #include "drawlists.h"
 #include "framegraph.h"
+#include "lodgroups.h"
 #include "pipelineregistry.h"
 #include "rhitypes.h"
 
@@ -22,12 +23,13 @@ public:
     auto destroy(RhiDevice* device) -> void;
 
     // Rewrites every frame slot's descriptor set. Call whenever the instance buffer, the
-    // mesh table or the draw-list buffers are replaced; the old sets go through the deletion
-    // queue at `frame`.
-    auto rebuildDescriptors(RhiDevice* device, const DrawLists& lists, const GpuScene& scene, DeletionQueue& deletionQueue, uint64_t frame) -> void;
+    // mesh table, the draw-list buffers or the render-LOD buffers are replaced; the old sets go
+    // through the deletion queue at `frame`.
+    auto rebuildDescriptors(RhiDevice* device, const DrawLists& lists, const GpuScene& scene, const LodGroups& lodGroups, DeletionQueue& deletionQueue, uint64_t frame) -> void;
 
-    // Adds InstanceCull, InstanceCullScan and InstanceCullScatter for the frame slot.
-    auto addPasses(FrameGraph& fg, const DrawLists::Handles& handles, FgBufferHandle instanceBuffer, uint32_t groupCount, uint32_t frameSlot) -> void;
+    // Adds InstanceCull, InstanceCullScan and InstanceCullScatter for the frame slot; the cull pass reads the levels LodSelect picked
+    // and marks levels whose meshes aren't in the pool.
+    auto addPasses(FrameGraph& fg, const DrawLists::Handles& handles, const LodGroups::Handles& lodHandles, FgBufferHandle instanceBuffer, uint32_t groupCount, uint32_t frameSlot) -> void;
 
     // Whether its pipelines have been created; until then the frame leaves the pass out.
     auto ready() -> bool;

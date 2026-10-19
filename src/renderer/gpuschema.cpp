@@ -25,6 +25,8 @@ auto makeInstanceSchema() -> GpuSchema {
             {"boundsMin", offsetof(R, boundsMin), GpuFieldType::Vec3},
             {"flags", offsetof(R, flags), GpuFieldType::Bits},
             {"boundsMax", offsetof(R, boundsMax), GpuFieldType::Vec3},
+            {"lodLevel", offsetof(R, lodLevel), GpuFieldType::U32},
+            {"lodGroup", offsetof(R, lodGroup), GpuFieldType::U32},
         },
     };
 }
@@ -310,6 +312,8 @@ auto cullPlaneName(uint32_t code) -> const char* {
             return "near";
         case 5:
             return "far";
+        case 0xD:
+            return "LOD level not drawn";
         case 0xE:
             return "visible";
         default:

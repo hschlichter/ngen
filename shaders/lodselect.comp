@@ -1,0 +1,175 @@
+#version 450
+
+// Render LOD (src/renderer/README.md, "Render LOD"): the level each render-LOD group draws this frame, in two dispatches selected by
+// push.mode:
+//
+//   0 select   one thread per group: the level the screen-size heuristic wants (with the band against the level it wanted last frame),
+//              else the group's forced level; the level drawn, which is the wanted one when resident, else the one drawn last frame
+//              when resident, else the nearest resident level, coarser first; the state written and the residency mask cleared;
+//              per-workgroup counters
+//   1 sum      one workgroup: the counters summed over the workgroups, in order, into the totals
+//
+// The heuristic is the view's (screenSize and levelFor in src/view/viewscene.cpp): the extent's bounding sphere over the view window at
+// depth 1 as a fraction of the window's area, finer as soon as the size passes a threshold, coarser only once it is 20% below it.
+
+layout(local_size_x = 256) in;
+
+const uint maxLevels = 8;
+const uint noLevel = 0xFFu;
+// Counter layout per workgroup and in the totals (LodSelectTotals).
+const uint counterPicked = 0;                    // maxLevels: groups drawing each level
+const uint counterFallbacks = maxLevels;         // groups drawing another level while the wanted one isn't resident
+const uint counterForced = counterFallbacks + 1; // groups at a forced level
+const uint counterGroups = counterForced + 1;    // alive groups
+const uint counterCount = counterGroups + 2;     // and a pad
+
+layout(push_constant) uniform Push {
+    vec3 eye;         // the camera's position, world metres
+    float windowArea; // the view window's area at depth 1: 2 tan(fovY / 2) squared times the aspect
+    uint groupCount;
+    uint mode;
+    uint workgroupCount;
+} push;
+
+struct Group {
+    vec3 center;
+    float radius;
+    float thresholds[maxLevels - 1];
+    uint levelCount;
+    uint defaultLevel;
+    int forcedLevel;
+    uint serial;
+    uint alive;
+};
+layout(std430, set = 0, binding = 0) readonly buffer Groups {
+    Group data[];
+} groups;
+
+// Per group: x the serial of the group it was written for, y the level wanted (bits 0-7) and drawn (bits 8-15).
+layout(std430, set = 0, binding = 1) buffer States {
+    uvec2 data[];
+} states;
+
+// Per group, a bit per level with an instance whose mesh isn't in the pool, set by the cull pass last frame.
+layout(std430, set = 0, binding = 2) buffer Residency {
+    uint bits[];
+} residency;
+
+layout(std430, set = 0, binding = 3) buffer GroupCounters {
+    uint data[]; // workgroupCount * counterCount
+} groupCounters;
+
+layout(std430, set = 0, binding = 4) buffer Totals {
+    uint data[]; // counterCount
+} totals;
+
+shared uint sharedCounters[counterCount];
+
+uint levelFor(float size, Group group, uint previous) {
+    uint thresholdCount = min(group.levelCount, maxLevels) - 1;
+    uint finer = 0;
+    while (finer < thresholdCount && size <= group.thresholds[finer]) {
+        finer++;
+    }
+    if (finer < previous) {
+        return finer;
+    }
+    uint coarser = 0;
+    while (coarser < thresholdCount && size <= group.thresholds[coarser] * 0.8) {
+        coarser++;
+    }
+    if (coarser > previous) {
+        return coarser;
+    }
+    return previous;
+}
+
+bool resident(uint missing, uint level) {
+    return (missing & (1u << level)) == 0;
+}
+
+void select() {
+    uint lid = gl_LocalInvocationID.x;
+    uint g = gl_GlobalInvocationID.x;
+    if (lid < counterCount) {
+        sharedCounters[lid] = 0;
+    }
+    barrier();
+
+    if (g < push.groupCount) {
+        Group group = groups.data[g];
+        uint missing = residency.bits[g];
+        residency.bits[g] = 0;
+        if (group.alive == 0 || group.levelCount == 0) {
+            states.data[g] = uvec2(group.serial, noLevel | (noLevel << 8));
+        } else {
+            uint last = min(group.levelCount, maxLevels) - 1;
+            uvec2 state = states.data[g];
+            bool known = state.x == group.serial;
+            uint previousWanted = known ? min(state.y & 0xFFu, last) : min(group.defaultLevel, last);
+            uint previousDrawn = known ? ((state.y >> 8) & 0xFFu) : noLevel;
+            uint wanted;
+            if (group.forcedLevel >= 0) {
+                wanted = min(uint(group.forcedLevel), last);
+                atomicAdd(sharedCounters[counterForced], 1u);
+            } else {
+                vec3 toCenter = push.eye - group.center;
+                float distance = length(toCenter);
+                float size = 1e30;
+                if (distance > 1e-6) {
+                    float r = group.radius / distance;
+                    size = 3.14159265358979 * r * r / push.windowArea;
+                }
+                wanted = min(levelFor(size, group, previousWanted), last);
+            }
+            uint drawn = wanted;
+            if (!resident(missing, wanted)) {
+                if (previousDrawn <= last && resident(missing, previousDrawn)) {
+                    drawn = previousDrawn;
+                } else {
+                    for (uint step = 1; step <= last; step++) {
+                        if (wanted + step <= last && resident(missing, wanted + step)) {
+                            drawn = wanted + step;
+                            break;
+                        }
+                        if (step <= wanted && resident(missing, wanted - step)) {
+                            drawn = wanted - step;
+                            break;
+                        }
+                    }
+                }
+                if (drawn != wanted) {
+                    atomicAdd(sharedCounters[counterFallbacks], 1u);
+                }
+            }
+            states.data[g] = uvec2(group.serial, wanted | (drawn << 8));
+            atomicAdd(sharedCounters[counterPicked + drawn], 1u);
+            atomicAdd(sharedCounters[counterGroups], 1u);
+        }
+    }
+    barrier();
+
+    if (lid < counterCount) {
+        groupCounters.data[gl_WorkGroupID.x * counterCount + lid] = sharedCounters[lid];
+    }
+}
+
+void sum() {
+    uint t = gl_LocalInvocationID.x;
+    if (t >= counterCount) {
+        return;
+    }
+    uint running = 0;
+    for (uint w = 0; w < push.workgroupCount; w++) {
+        running += groupCounters.data[w * counterCount + t];
+    }
+    totals.data[t] = running;
+}
+
+void main() {
+    if (push.mode == 0) {
+        select();
+    } else {
+        sum();
+    }
+}

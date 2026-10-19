@@ -2,6 +2,7 @@
 
 #include "deletionqueue.h"
 #include "gpuscene.h"
+#include "lodgroups.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 
@@ -16,19 +17,22 @@ enum class CullMode : uint32_t {
     Scatter = 2,
 };
 
-constexpr std::array<RhiDescriptorBinding, 9> cullBindings = {{
-    {.binding = 0, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // params
-    {.binding = 1, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // instances
-    {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // mesh table
-    {.binding = 3, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // visibility
-    {.binding = 4, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // group counters
-    {.binding = 5, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // group offsets
-    {.binding = 6, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // commands
-    {.binding = 7, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // totals / counts
-    {.binding = 8, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // cull reason per view
+constexpr std::array<RhiDescriptorBinding, 11> cullBindings = {{
+    {.binding = 0, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // params
+    {.binding = 1, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // instances
+    {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // mesh table
+    {.binding = 3, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // visibility
+    {.binding = 4, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // group counters
+    {.binding = 5, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // group offsets
+    {.binding = 6, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // commands
+    {.binding = 7, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // totals / counts
+    {.binding = 8, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // cull reason per view
+    {.binding = 9, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // render-LOD states
+    {.binding = 10, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // render-LOD residency
 }};
 
 struct CullPassData {
+    FgBufferHandle residency;
     FgBufferHandle visibility;
     FgBufferHandle cullPlanes;
     FgBufferHandle groupCounters;
@@ -66,7 +70,7 @@ auto InstanceCullPass::destroy(RhiDevice* device) -> void {
     device->destroyDescriptorSetLayout(setLayout);
 }
 
-auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& lists, const GpuScene& scene, DeletionQueue& deletionQueue, uint64_t frame) -> void {
+auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& lists, const GpuScene& scene, const LodGroups& lodGroups, DeletionQueue& deletionQueue, uint64_t frame) -> void {
     if (pool != nullptr) {
         deletionQueue.defer(frame, [device, oldPool = pool, oldSets = sets] {
             device->freeDescriptorSets(oldPool, oldSets);
@@ -88,7 +92,7 @@ auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& li
     }
     for (uint32_t i = 0; i < slotCount; i++) {
         auto buffers = lists.slotBuffers(i);
-        std::array<RhiDescriptorWrite, 9> writes = {{
+        std::array<RhiDescriptorWrite, 11> writes = {{
             {.binding = 0, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.params},
             {.binding = 1, .type = RhiDescriptorType::StorageBuffer, .buffer = scene.instanceBuffer()},
             {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .buffer = scene.meshTableBuffer()},
@@ -98,12 +102,14 @@ auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& li
             {.binding = 6, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.commands},
             {.binding = 7, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.counts},
             {.binding = 8, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.cullPlanes},
+            {.binding = 9, .type = RhiDescriptorType::StorageBuffer, .buffer = lodGroups.stateBuffer()},
+            {.binding = 10, .type = RhiDescriptorType::StorageBuffer, .buffer = lodGroups.residencyBuffer()},
         }};
         device->updateDescriptorSet(sets[i], writes);
     }
 }
 
-auto InstanceCullPass::addPasses(FrameGraph& fg, const DrawLists::Handles& handles, FgBufferHandle instanceBuffer, uint32_t groupCount, uint32_t frameSlot) -> void {
+auto InstanceCullPass::addPasses(FrameGraph& fg, const DrawLists::Handles& handles, const LodGroups::Handles& lodHandles, FgBufferHandle instanceBuffer, uint32_t groupCount, uint32_t frameSlot) -> void {
     auto* pip = registry->get(pipelineHandle);
     auto* set = frameSlot < sets.size() ? sets[frameSlot] : nullptr;
     auto dispatchMode = [pip, set](FrameGraphContext& ctx, CullMode mode, uint32_t groups) {
@@ -115,12 +121,14 @@ auto InstanceCullPass::addPasses(FrameGraph& fg, const DrawLists::Handles& handl
         cmd->dispatch(groups, 1, 1);
     };
 
-    // 1. Frustum test per instance and view; per-workgroup counters.
+    // 1. The render-LOD level test and frustum test per instance and view; per-workgroup counters.
     fg.addPass<CullPassData>(
         "InstanceCull",
         [&](FrameGraphBuilder& builder, CullPassData& data) {
             builder.read(handles.params, FgAccessFlags::StorageRead);
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
+            builder.read(lodHandles.states, FgAccessFlags::StorageRead);
+            data.residency = builder.write(lodHandles.residency, FgAccessFlags::StorageWrite);
             data.visibility = builder.write(handles.visibility, FgAccessFlags::StorageWrite);
             data.cullPlanes = builder.write(handles.cullPlanes, FgAccessFlags::StorageWrite);
             data.groupCounters = builder.write(handles.groupCounters, FgAccessFlags::StorageWrite);

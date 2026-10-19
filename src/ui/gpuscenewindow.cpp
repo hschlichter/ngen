@@ -302,6 +302,7 @@ auto drawGpuSceneWindow(bool& show,
                 ImGui::BulletText("culled by the %s plane: %u", cullPlaneName(code), byReason[code]);
             }
             ImGui::BulletText("not tested (culling off or no bounds): %u", byReason[0xF]);
+            ImGui::BulletText("a LOD level its group doesn't draw: %u", byReason[0xD]);
             ImGui::SeparatorText("Culled instances");
             ImGui::BeginChild("##culled");
             for (const auto& r : rows) {

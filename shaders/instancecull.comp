@@ -16,6 +16,9 @@
 // is double-sided, bit 1 cutout. Camera regions hold every instance whose mesh is in the pool
 // (submesh range). Cascade regions hold primFirst instances (whole mesh), except for a prim with a
 // cutout submesh: its instances draw one by one (submesh range), so the cutout one is cut.
+//
+// Render LOD: an instance of a render-LOD group is drawn only when the group draws its level (lodselect.comp ran before); one whose mesh
+// isn't in the pool marks its level in the group's residency mask, which the next frame's selection reads.
 
 layout(local_size_x = 256) in;
 
@@ -28,7 +31,8 @@ const uint counterPrimitives = regionCount;               // regionCount: primit
 const uint counterCameraCulled = regionCount * 2;         // 1: camera-culled instances (all)
 const uint counterCascadeCulled = counterCameraCulled + 1; // 4: culled primFirst instances per cascade
 const uint counterCascadeDrawn = counterCascadeCulled + 4; // 4: visible primFirst instances per cascade
-const uint counterCount = counterCascadeDrawn + 4;
+const uint counterLodDropped = counterCascadeDrawn + 4;    // 1: instances of a level their group doesn't draw
+const uint counterCount = counterLodDropped + 1;
 
 const uint flagPrimFirst = 1u << 0;
 const uint flagDoubleSided = 1u << 1;
@@ -61,7 +65,11 @@ struct Instance {
     vec3 boundsMin;
     uint flags;
     vec3 boundsMax;
-    uint pad;
+    uint lodLevel; // the instance's level + 1 in its group
+    uint lodGroup; // its render-LOD group + 1, 0 for none
+    uint pad1;
+    uint pad2;
+    uint pad3;
 };
 layout(std430, set = 0, binding = 1) readonly buffer Instances {
     Instance data[];
@@ -105,12 +113,24 @@ layout(std430, set = 0, binding = 7) buffer Totals {
 } totals;
 
 // Why each instance was culled, 4 bits per view: 0..5 the frustum plane that rejected it
-// (left, right, bottom, top, near, far), 0xE visible, 0xF not tested (culling off or no bounds).
+// (left, right, bottom, top, near, far), 0xD a LOD level its group doesn't draw, 0xE visible, 0xF not tested (culling off or no
+// bounds).
 const uint planeVisible = 0xEu;
 const uint planeNotTested = 0xFu;
+const uint planeLevelNotDrawn = 0xDu; // a render-LOD level its group doesn't draw, in every view
 layout(std430, set = 0, binding = 8) writeonly buffer CullPlanes {
     uint codes[];
 } cullPlanes;
+
+// Per render-LOD group (lodselect.comp): x its serial, y the level wanted (bits 0-7) and drawn (bits 8-15).
+layout(std430, set = 0, binding = 9) readonly buffer LodStates {
+    uvec2 data[];
+} lodStates;
+
+// Per render-LOD group, a bit per level with an instance whose mesh isn't in the pool.
+layout(std430, set = 0, binding = 10) buffer LodResidency {
+    uint bits[];
+} lodResidency;
 
 shared uint sharedCounters[counterCount];
 shared uint scanData[256];
@@ -184,7 +204,17 @@ void cull() {
         Instance inst = instances.data[m];
         uint bits = 0;
         uint planes = 0;
-        for (uint v = 0; v < params.viewCount; v++) {
+        // An instance of a level its group doesn't draw is in no view; its mesh's residency is noted for the next selection.
+        bool dropped = false;
+        if (inst.lodGroup != 0 && inst.lodGroup <= uint(lodStates.data.length()) && inst.lodLevel != 0) {
+            uint group = inst.lodGroup - 1;
+            uint level = inst.lodLevel - 1;
+            if (meshOf(inst).indexCount == 0) {
+                atomicOr(lodResidency.bits[group], 1u << level);
+            }
+            dropped = ((lodStates.data[group].y >> 8) & 0xFFu) != level;
+        }
+        for (uint v = 0; v < params.viewCount && !dropped; v++) {
             uint code = planeNotTested;
             if (params.cullEnabled != 0 && (inst.flags & flagBoundsValid) != 0) {
                 code = rejectingPlane(inst, v);
@@ -193,6 +223,12 @@ void cull() {
                 bits |= 1u << v;
             }
             planes |= code << (4 * v);
+        }
+        if (dropped) {
+            for (uint v = 0; v < params.viewCount; v++) {
+                planes |= planeLevelNotDrawn << (4 * v);
+            }
+            atomicAdd(sharedCounters[counterLodDropped], 1u);
         }
         visibility.bits[m] = bits;
         cullPlanes.codes[m] = planes;
@@ -206,11 +242,11 @@ void cull() {
             }
         }
         // Statistics: camera culling over every instance, cascade culling over primFirst
-        // instances (the ones the shadow pass draws).
-        if ((bits & 1u) == 0) {
+        // instances (the ones the shadow pass draws); a level not drawn counts as neither.
+        if ((bits & 1u) == 0 && !dropped) {
             atomicAdd(sharedCounters[counterCameraCulled], 1u);
         }
-        if ((inst.flags & flagPrimFirst) != 0) {
+        if ((inst.flags & flagPrimFirst) != 0 && !dropped) {
             for (uint c = 0; c + 1 < params.viewCount; c++) {
                 if ((bits & (1u << (c + 1))) != 0) {
                     atomicAdd(sharedCounters[counterCascadeDrawn + c], 1u);

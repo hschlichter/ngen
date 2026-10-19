@@ -145,14 +145,15 @@ and some engines allow 8.
      ```
      `RenderWorld::lodGroups` (`ChunkedList<RenderLodGroup>`), `RenderMeshInstance::lodGroup` (group slot + 1, 0 for none; `lodLevel` is then the
      slot's own level + 1), `SceneChanges::lodGroups` and `lodGroupCount`, applied with the draw slots.
-   - `gpuscene.*`: a group table (`GpuLodGroup`, std430, 64 bytes), a persistent state buffer (one `uint` per group: the level picked last frame)
+   - `lodgroups.*` (built as its own class beside `GpuScene`): a group table (`GpuLodGroup`, std430, 64 bytes), a persistent state buffer (one `uint` per group: the level picked last frame)
      and a residency mask (one `uint` per group: a bit per level not resident), grown like the instance buffer; `GpuInstanceRecord` gains
      `lodGroup` (112 → 128 bytes).
    - `passes/lodselectpass.*`, `shaders/lodselect.comp`: one thread per group; forced level, else the screen-size level with the band against the
      state; then decision 7's fallback against the mask, which it clears; writes the state and counts groups per level, and groups drawing a level
      other than the one they want, into the totals.
    - `shaders/instancecull.comp`: an instance with a group is visible only when the group's state is its level; an instance whose mesh entry is
-     empty sets its level's bit in its group's mask; the totals count the instances dropped by level per view.
+     empty sets its level's bit in its group's mask; the totals count the instances dropped by level (one count: a level not drawn is in
+     no view), and their cull code is `D`.
    - `CullReadback`: the per-level counts always; the whole state buffer only while asked (the LOD window open or a `renderlod` record pending), as
      the commands are read only while the render debugger is open.
    - `src/renderer/README.md`: "Scene data on the GPU" (the group table and state), "Culling and draw lists" (the level test), Passes.
@@ -185,6 +186,18 @@ and some engines allow 8.
   frame while loading 71–120 ms (300–500). A tile switch still builds its 10,000–42,000 placements in 160–450 ms (the deferred per-prototype
   placement).
 - Baselines byte-identical against step 4's commit; the layered LOD script gives the same levels.
+
+### Step 2 results (2026-10-19)
+
+- **Built**: `RenderLodGroup`, `RenderMeshInstance::lodGroup`, `RenderWorld::lodGroups` and `SceneChanges::lodGroups`/`lodGroupCount`;
+  `GpuInstanceRecord` 128 bytes in the C++ and the seven shaders declaring it (and the capture schema); `LodGroups` (`lodgroups.*`: the
+  table with its staging and serials, the state and residency buffers, per-slot counters, totals and readback); `LodSelectPass` with
+  `shaders/lodselect.comp` (select and sum modes, as the culling's cull and scan); the cull shader's level test, residency marking,
+  `counterLodDropped` and cull code `D` (the GPU Scene window counts it); `CullResult`'s render-LOD fields; `RenderSnapshot::readLodStates`.
+- **Verified**: the eight baselines byte-identical against step 4's commit with validation on, no validation messages; `lodselect.pipeline`
+  is created at start-up and the lit path waits for it. With no groups the frame leaves `LodSelect`, `LodSelectSum` and `LodReadback` out.
+- **Not yet exercised**: nothing makes groups until step 3, so the pick, the fallback and the level test have run on no data. Step 3's
+  verification (the layered rock framed near and far, `renderlod {check: true}` on the test world, the fallback flight) covers them.
 
 ## Visibility
 
