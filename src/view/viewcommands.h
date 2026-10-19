@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -57,6 +58,14 @@ struct ViewResidency {
     double lastLoadLongestMs = 0.0;
 };
 
+// A `renderlod` record or `view.renderlod` call waiting for a culling readback with every render-LOD group's state (frames later): the
+// readback frame it was asked at, and for the call the path whose groups it lists.
+struct RenderLodRequest {
+    RpcResponder responder;
+    uint64_t askedAt = 0;
+    std::optional<std::string> path;
+};
+
 struct ViewContext {
     Camera& cam;
     ViewScene& scene;
@@ -75,6 +84,8 @@ struct ViewContext {
     const uint64_t& frameCounter;
     std::vector<ResidentWaiter>& residentWaiters;
     const ViewResidency& residency;
+    std::vector<RenderLodRequest>& renderLodRequests;
+    const float& viewAspect; // the view's width over height, as the LOD heuristic and the GPU's pick measure it
     std::string sceneLabel;
 };
 
@@ -86,6 +97,10 @@ auto registerViewMethods(RpcRegistry& registry, ViewContext& view) -> void;
 // introspect.list and introspect.get, and introspect.trace (the `record` verb), which puts a record into the trace.
 // `records` must outlive the registry.
 auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext& view) -> void;
+
+// Answers the render-LOD requests whose readback has arrived; once a frame, after the culling readback is taken. True while some still
+// wait, so the next frames read the states back.
+auto serviceRenderLodRequests(ViewContext& view) -> bool;
 
 // The Engine Map's live numbers, a few lines per node (the window and the `map` record show the same).
 auto engineMapStats(const ViewContext& view) -> EngineMapStats;

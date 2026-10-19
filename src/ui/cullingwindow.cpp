@@ -38,7 +38,7 @@ void drawCullingWindow(bool& show, CullingWindowInputs in) {
     ImGui::Checkbox("Cascade frusta", &in.showCascadeFrusta);
 
     ImGui::Separator();
-    uint32_t drawn = in.instances - in.culled;
+    uint32_t drawn = in.instances - in.culled - std::min(in.lodLevelNotDrawn, in.instances - in.culled);
     float percent = in.instances > 0 ? 100.0f * (float) in.culled / (float) in.instances : 0.0f;
     auto culledTriangles = in.trianglesScene > in.trianglesDrawn ? in.trianglesScene - in.trianglesDrawn : 0;
     float trianglePercent = in.trianglesScene > 0 ? 100.0f * (float) culledTriangles / (float) in.trianglesScene : 0.0f;
@@ -68,6 +68,16 @@ void drawCullingWindow(bool& show, CullingWindowInputs in) {
         ImGui::Text("%u (%.0f%%)", in.culled, percent);
         ImGui::TableNextColumn();
         ImGui::Text("%llu (%.0f%%)", (unsigned long long) culledTriangles, trianglePercent);
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted("LOD level not drawn");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Slots of render-LOD levels their group doesn't draw this frame: the GPU picked another level.");
+        }
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", in.lodLevelNotDrawn);
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted("-");
         ImGui::EndTable();
     }
     if (!in.enabled) {

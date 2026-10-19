@@ -32,6 +32,9 @@ struct CullResult {
     std::array<uint32_t, 8> lodPicked = {};
     uint32_t lodFallbacks = 0;
     uint32_t lodForced = 0;
+    bool lodHasStates = false;
+    glm::vec3 lodEye = glm::vec3(0.0f); // the camera the pick measured from: its position and the view window's area at depth 1
+    float lodWindowArea = 1.0f;
     std::vector<uint8_t> lodDrawn;
     std::vector<uint8_t> lodWanted;
 };

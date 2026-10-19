@@ -129,9 +129,10 @@ public:
     auto wantsCounters() const -> bool { return introspectionFlags.counters; }
     auto onCounters(GpuCounters counters) -> void { addCountersFrame(countersState, std::move(counters)); }
     // This frame's cull result, for the Culling window.
-    auto setCullStats(uint32_t instances, uint32_t culled) -> void {
+    auto setCullStats(uint32_t instances, uint32_t culled, uint32_t lodLevelNotDrawn) -> void {
         cullStatInstances = instances;
         cullStatCulled = culled;
+        cullStatLodNotDrawn = lodLevelNotDrawn;
     }
     auto setCullTriangles(uint64_t drawn, uint64_t scene, const std::array<uint64_t, maxShadowCascades>& cascades) -> void {
         cullTrianglesDrawn = drawn;
@@ -240,6 +241,7 @@ private:
     AssetsWindowState assetsState;
     uint32_t cullStatInstances = 0;
     uint32_t cullStatCulled = 0;
+    uint32_t cullStatLodNotDrawn = 0;
     uint64_t cullTrianglesDrawn = 0;
     uint64_t cullTrianglesScene = 0;
     std::array<uint64_t, maxShadowCascades> cullTrianglesCascades = {};

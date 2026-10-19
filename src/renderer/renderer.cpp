@@ -815,6 +815,9 @@ auto Renderer::cullResult() const -> CullResult {
     result.lodPicked = lod.totals.picked;
     result.lodFallbacks = lod.totals.fallbacks;
     result.lodForced = lod.totals.forced;
+    result.lodHasStates = lod.hasStates || lod.groupCount == 0;
+    result.lodEye = lod.eye;
+    result.lodWindowArea = lod.windowArea;
     result.lodDrawn = lod.drawn;
     result.lodWanted = lod.wanted;
     for (uint32_t c = 0; c < result.cascadeCount; c++) {
@@ -1042,7 +1045,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, snapshot.depthPrepass);
 
         drawLists.addReadbackPass(frameGraph, drawHandles, currentFrame, renderDebugEnabled);
-        lodGroups.addReadbackPass(frameGraph, lodHandles, currentFrame, snapshot.readLodStates);
+        lodGroups.addReadbackPass(frameGraph, lodHandles, currentFrame, snapshot.readLodStates, lodCamera.eye, lodCamera.windowArea);
 
         // The depth preview's far end: the camera has no far plane, so the farthest corner of the scene.
         float previewFar = cameraNear * 10.0f;

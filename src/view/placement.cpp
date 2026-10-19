@@ -629,6 +629,7 @@ auto ViewScene::allocLodGroup() -> uint32_t {
     }
     drawn.lodGroups.push_back(RenderLodGroup{});
     lodGroupInfo.emplace_back();
+    lodGroupPaths.push_back({});
     return (uint32_t) drawn.lodGroups.size() - 1;
 }
 
@@ -645,6 +646,9 @@ auto ViewScene::freeLodGroup(uint32_t group) -> void {
         lodGroupByPath.erase(it);
     }
     lodGroupInfo[group] = {};
+    if (!lodGroupPaths[group].empty()) {
+        lodGroupPaths.edit(group).clear();
+    }
     freeLodGroups.insert(group);
 }
 
@@ -1115,6 +1119,9 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                     }
                     lodGroupInfo[slot] = info;
                     lodGroupByPath[path] = slot;
+                    if (lodGroupPaths[slot] != path) {
+                        lodGroupPaths.edit(slot) = path;
+                    }
                     if (!(drawn.lodGroups[slot] == group)) {
                         setLodGroup(slot, group);
                     }
@@ -1517,6 +1524,7 @@ auto ViewScene::place() -> void {
     slotCountBefore = (uint32_t) drawn.meshInstances.size();
     changes.slotCount = slotCountBefore;
     // The groups touched, against what they held, and the new ones.
+    auto groupChanges = changes.lodGroups.size();
     for (const auto& [group, before] : lodGroupsBefore) {
         if (!(drawn.lodGroups[group] == before)) {
             changes.lodGroups.emplace_back(group, drawn.lodGroups[group]);
@@ -1528,6 +1536,7 @@ auto ViewScene::place() -> void {
     lodGroupsBefore.clear();
     lodGroupCountBefore = (uint32_t) drawn.lodGroups.size();
     changes.lodGroupCount = lodGroupCountBefore;
+    auto groupsChanged = (uint32_t) (changes.lodGroups.size() - groupChanges);
     addChanges(std::move(changes));
     if (!changed) {
         return;
@@ -1539,6 +1548,7 @@ auto ViewScene::place() -> void {
     built->placements = tree;
     built->primPaths = primPaths;
     built->assetsByPrim = assetsByPrim;
+    built->lodGroupPaths = lodGroupPaths;
     draws = std::move(built);
     inputsRevision++;
     if (passSwitchedFiner + passSwitchedCoarser > 0) {
@@ -1556,8 +1566,10 @@ auto ViewScene::place() -> void {
     stats.placements = placementCount;
     stats.placementsDrawn = drawnPlacementCount;
     stats.walksKept = walks.size();
+    stats.lodGroups = (uint32_t) (drawn.lodGroups.size() - freeLodGroups.size());
+    stats.lodGroupsChanged = groupsChanged;
     TRACE_EVENT("Scene", "PlacementsChanged", id)
-        .text(std::format("{} placements built of {} ({} drawn){}: {} slots added, {} removed, {} updated in {:.1f} ms",
+        .text(std::format("{} placements built of {} ({} drawn){}: {} slots added, {} removed, {} updated, {} LOD groups changed of {}, in {:.1f} ms",
                           passBuilt,
                           placementCount,
                           drawnPlacementCount,
@@ -1565,7 +1577,11 @@ auto ViewScene::place() -> void {
                           added,
                           removed,
                           updated,
+                          groupsChanged,
+                          stats.lodGroups,
                           ms))
+        .field("lodGroups", (int64_t) stats.lodGroups)
+        .field("lodGroupsChanged", (int64_t) groupsChanged)
         .field("built", (int64_t) passBuilt)
         .field("placements", (int64_t) placementCount)
         .field("drawn", (int64_t) drawnPlacementCount)

@@ -1,6 +1,6 @@
 # Render LOD: inline UsdLod levels picked per instance on the GPU
 
-**Status. In progress.** Decisions locked 2026-10-19, each as recommended.
+**Status. Landed.** Decisions locked 2026-10-19, each as recommended; steps 1–4 landed 2026-10-19.
 
 A UsdLod root whose levels are payloads is *streaming LOD*: which level loads is the scene thread's decision, as built by
 [plan_streaming_v2.md](plan_streaming_v2.md). A root whose levels are not payloads is *render LOD*: every level is composed and held with its
@@ -218,6 +218,25 @@ and some engines allow 8.
 - Baselines byte-identical; World against USD unchanged.
 - **Left for step 4**: the levels the GPU picks are seen only in screenshots so far; `renderlod {check: true}` against the CPU's formula and
   the fallback flight need the record.
+
+### Step 4 results (2026-10-19)
+
+- **Built**: the `renderlod` record (deferred: a waiting request sets `RenderSnapshot::readLodStates`, and it answers from the first readback
+  with the states) and `view.renderlod {path}`; the check compares each group's wanted level with the range the view's `levelFor` allows
+  (its band makes it a range), at the camera the pick measured from, which the readback now carries (`CullResult::lodEye`, `lodWindowArea`):
+  checking at the view's camera when answered compared a pick with the next viewpoint's camera. `culling` gains `lodLevelNotDrawn` and its
+  drawn count leaves those out; `streaming`'s totals gain `renderLodGroups` (its rows are streaming roots only, so no `kind`); `scenethread`
+  gains the groups placed and changed, `PlacementsChanged` the same. LOD window: a Render LOD section (the GPU's counts, a level for the groups
+  under the selection); Culling window: "LOD level not drawn"; Engine Map: "LOD select" on the render thread, its live numbers, edges from
+  the GPU scene and the camera to it and from it to the frame graph; "LOD selection" says it covers streaming roots.
+- **The check**: 0 differences at the four viewpoints (42,370, 41,015 and 37,736 groups compared, 3 on a threshold's edge), the GPU's
+  window area and the view's equal to 1e-7. Straight to four_tiles: 24,557 groups, 0 differences.
+- **The fallback**, verified with the geometry pool limited (`gpuscene limit=48`, 163 meshes waiting for room): 432 groups draw another
+  resident level, counted alike by the GPU and from the states read back; wanted levels still match the heuristic. With a small upload budget
+  instead (`gpuscene budget=1`), no group falls back: a tile's assets' levels all go to the upload queue at once when the tile switches, so a
+  group seldom has one level resident and not another. The fallback guards the pool's limit and levels uploaded out of order.
+- **Layered**: `view.renderlod {"path": "/World/RenderLod"}` lists the three rocks' groups with their screen sizes and levels.
+- Baselines byte-identical; validation clean.
 
 ## Visibility
 

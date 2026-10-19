@@ -180,9 +180,11 @@ auto LodGroups::import(FrameGraph& fg, uint32_t frameSlot) -> Handles {
     return handles;
 }
 
-auto LodGroups::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool readStates) -> void {
+auto LodGroups::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool readStates, const glm::vec3& eye, float windowArea) -> void {
     auto& slot = slots[frameSlot];
     slot.pending = true;
+    slot.eye = eye;
+    slot.windowArea = windowArea;
     slot.readStates = readStates && !groups.empty();
     slot.groupCount = (uint32_t) groups.size();
     if (groups.empty()) {
@@ -220,6 +222,8 @@ auto LodGroups::parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void {
     const auto* bytes = static_cast<const std::byte*>(slot.readbackMapped);
     read.frame = slotFrame;
     read.groupCount = slot.groupCount;
+    read.eye = slot.eye;
+    read.windowArea = slot.windowArea;
     read.totals = {};
     if (slot.groupCount > 0) {
         std::memcpy(&read.totals, bytes, sizeof(LodSelectTotals));

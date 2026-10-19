@@ -264,8 +264,8 @@ before the culling passes.
   grown one is new and its contents undefined: the state is written by the pick before culling reads it, and stale residency bits only make a
   group draw another resident level for a frame.
 - **Counts** (`LodSelectSum`, per-workgroup counters summed in order, as the culling scan): groups alive, drawing each level, falling back, at a
-  forced level; read back with the culling readback (`LodReadback`), with every group's state when asked (`RenderSnapshot::readLodStates`),
-  into `CullResult`. The cull pass counts the slots of levels not drawn (`counterLodDropped`), in no view and not as culled.
+  forced level; read back with the culling readback (`LodReadback`), with every group's state when asked (`RenderSnapshot::readLodStates`)
+  and the camera the pick measured from, into `CullResult`. The cull pass counts the slots of levels not drawn (`counterLodDropped`), in no view and not as culled.
 
 ## Cutout materials
 

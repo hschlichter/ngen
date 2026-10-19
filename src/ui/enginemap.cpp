@@ -79,7 +79,8 @@ const std::vector<EngineMapNode> nodes = {
         .label = "LOD selection",
         .lane = 2,
         .row = 3,
-        .description = "The LOD heuristic: each LOD root reached gets the level its screen size from the camera picks (UsdLod's screen-size "
+        .description = "The LOD heuristic for streaming roots (LOD roots whose levels are payloads; render-LOD roots are picked on the GPU, "
+                       "see LOD select): each one reached gets the level its screen size from the camera picks (UsdLod's screen-size "
                        "heuristic, without the frustum, with a 20% band before going coarser), unless set by hand or the heuristic is off. "
                        "Changed levels are linked again without composing the stage. A root draws a finer level only once it is complete "
                        "(composed, its meshes held), the coarser one until then; what stopped being drawn or reached is unloaded after a "
@@ -227,10 +228,22 @@ const std::vector<EngineMapNode> nodes = {
         .readme = "src/renderer/README.md",
     },
     {
+        .id = "render.lodselect",
+        .label = "LOD select",
+        .lane = 4,
+        .row = 9,
+        .description = "Render LOD: per group (a render-LOD root where it is placed) the level the screen-size heuristic wants from the live "
+                       "camera, with its band, or the level set by hand; drawn when its meshes are in the pool, else the level drawn last "
+                       "frame, else the nearest resident one. A compute pass before culling, which draws only each group's level.",
+        .records = {"renderlod", "culling"},
+        .windows = {"lod", "culling"},
+        .readme = "src/renderer/README.md",
+    },
+    {
         .id = "render.framegraph",
         .label = "Frame graph",
         .lane = 4,
-        .row = 9,
+        .row = 10,
         .description = "The frame's passes, ordered by what they read and write: SceneUpload, GPU culling per view, shadow cascades, the "
                        "G-buffer, lighting, anti-aliasing, debug lines and UI. Barriers come from the graph.",
         .records = {"render", "culling", "counters", "profile"},
@@ -241,7 +254,7 @@ const std::vector<EngineMapNode> nodes = {
         .id = "render.present",
         .label = "Present",
         .lane = 4,
-        .row = 10,
+        .row = 11,
         .description = "The frame goes to the swapchain (a window, or offscreen for headless runs and screenshots).",
         .records = {"profile"},
         .windows = {"performance"},
@@ -260,7 +273,7 @@ const std::vector<EngineMapEdge> edges = {
     {.from = "view.assetclient", .to = "render.pipelines", .what = "shaders (SPIR-V); changed ones reload"},
     {.from = "scene.compose", .to = "view.assetclient", .what = "asset.request for the packs it names"},
     {.from = "scene.compose", .to = "scene.placement", .what = "the World"},
-    {.from = "scene.placement", .to = "scene.changes", .what = "slots, library entries, lights"},
+    {.from = "scene.placement", .to = "scene.changes", .what = "slots, LOD groups, library entries, lights"},
     {.from = "main.rpc", .to = "scene.compose", .what = "requests: open, purposes, repack"},
     {.from = "main.rpc", .to = "scene.lod", .what = "levels set by hand, heuristic on or off"},
     {.from = "main.input", .to = "scene.lod", .what = "camera (once placed)"},
@@ -276,6 +289,9 @@ const std::vector<EngineMapEdge> edges = {
     {.from = "render.uploads", .to = "render.pool", .what = "vertices and indices"},
     {.from = "render.pool", .to = "render.framegraph", .what = "geometry and tables, read by culling and the passes"},
     {.from = "render.pipelines", .to = "render.framegraph", .what = "pipelines"},
+    {.from = "render.gpuscene", .to = "render.lodselect", .what = "the LOD group table"},
+    {.from = "main.frame", .to = "render.lodselect", .what = "live camera"},
+    {.from = "render.lodselect", .to = "render.framegraph", .what = "the level each group draws, read by culling"},
     {.from = "render.framegraph", .to = "render.present", .what = "the frame"},
 };
 

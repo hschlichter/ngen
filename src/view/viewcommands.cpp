@@ -17,6 +17,7 @@
 #include "viewscene.h"
 #include "viewui.h"
 
+#include <glm/gtc/constants.hpp>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -537,6 +538,16 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
             }
             view.selectedPath = path;
             responder.respond(Json::object());
+        });
+    registry.add(
+        {
+            .name = "view.renderlod",
+            .summary = "The render-LOD groups under a path (each render-LOD root where it is placed): sphere, thresholds, default and forced level, the screen size, and the level the GPU wants and draws; with the `renderlod` record's totals and check. Answers frames later, once the states are read back.",
+            .params = {requiredField("path", RpcType::String, "prim path; / for every group")},
+            .result = "the renderlod record, with groupsUnder",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            view.renderLodRequests.push_back({.responder = std::move(responder), .askedAt = view.latestCull.lodFrame, .path = p["path"].get<std::string>()});
         });
     registry.add(
         {
@@ -1094,7 +1105,8 @@ auto sceneThreadRecord(const ViewContext& view) -> Json {
           {"drawn", t.placementsDrawn},
           {"walksBuilt", t.walksBuilt},
           {"walksKept", t.walksKept},
-          {"last", {{"ms", t.lastPlaceMs}, {"built", t.placementsBuilt}, {"slotsAdded", t.slotsAdded}, {"slotsRemoved", t.slotsRemoved}, {"slotsUpdated", t.slotsUpdated}}}}},
+          {"lodGroups", t.lodGroups},
+          {"last", {{"ms", t.lastPlaceMs}, {"built", t.placementsBuilt}, {"slotsAdded", t.slotsAdded}, {"slotsRemoved", t.slotsRemoved}, {"slotsUpdated", t.slotsUpdated}, {"lodGroupsChanged", t.lodGroupsChanged}}}}},
         {"publishMs", t.publishMs},
         {"assetsReceived", t.assetsReceived},
         {"inFlight", {{"layers", t.inFlightLayers}, {"meshes", t.inFlightMeshes}, {"materials", t.inFlightMaterials}, {"textures", t.inFlightTextures}, {"other", t.inFlightOther}}},
@@ -1235,7 +1247,7 @@ auto streamingRecord(const ViewContext& view) -> Json {
         });
     }
     return {
-        {"totals", {{"roots", roots.size()}, {"inFrustum", inFrustum}, {"loading", loading}, {"meshesMissing", meshesMissing}}},
+        {"totals", {{"roots", roots.size()}, {"inFrustum", inFrustum}, {"loading", loading}, {"meshesMissing", meshesMissing}, {"renderLodGroups", view.scene.threadStats().lodGroups}}},
         {"heuristic", view.scene.lodHeuristic()},
         {"unloadDelay", view.scene.unloadDelay()},
         {"unloaded", {{"meshPacks", t.releasedMeshes}, {"meshBytes", t.releasedMeshBytes}, {"contents", t.contentsEvicted}}},
@@ -1376,10 +1388,172 @@ auto cullingRecord(const ViewContext& view) -> Json {
     return {
         {"frame", cull.frame},
         {"instances", cull.instances},
-        {"camera", {{"drawn", cull.instances - cull.cameraCulled}, {"culled", cull.cameraCulled}, {"triangles", cull.cameraTriangles}}},
+        {"camera", {{"drawn", cull.instances - cull.cameraCulled - cull.lodDropped}, {"culled", cull.cameraCulled}, {"triangles", cull.cameraTriangles}}},
+        {"lodLevelNotDrawn", cull.lodDropped},
         {"sceneTriangles", cull.sceneTriangles},
         {"cascades", cascades},
     };
+}
+
+// The levels the view's heuristic may want for a group at a camera, as levelFor picks them with its band (src/view/viewscene.cpp): from
+// the level it goes coarser to (thresholds at 80%) to the level it goes finer to, which it keeps depends on the level it wanted before.
+// onEdge when the size is within 1e-4 of a threshold or of its band, where float order may differ between the CPU and the GPU.
+struct ExpectedLevels {
+    float size = 0.0f;
+    uint32_t low = 0;
+    uint32_t high = 0;
+    bool onEdge = false;
+};
+
+auto expectedLevels(const RenderLodGroup& group, const glm::vec3& eye, float windowArea) -> ExpectedLevels {
+    ExpectedLevels out;
+    auto distance = glm::length(eye - group.center);
+    out.size = 1e30f;
+    if (distance > 1e-6f) {
+        float r = group.radius / distance;
+        out.size = glm::pi<float>() * r * r / windowArea;
+    }
+    auto thresholdCount = group.levelCount > 0 ? std::min<uint32_t>(group.levelCount, RenderLodGroup::maxLevels) - 1 : 0;
+    auto count = [&](float scale) {
+        uint32_t level = 0;
+        while (level < thresholdCount && out.size <= group.thresholds[level] * scale) {
+            level++;
+        }
+        return level;
+    };
+    auto last = group.levelCount > 0 ? group.levelCount - 1 : 0;
+    out.low = std::min(count(0.8f), last);
+    out.high = std::min(count(1.0f), last);
+    for (uint32_t t = 0; t < thresholdCount; t++) {
+        for (float scale : {1.0f, 0.8f}) {
+            float edge = group.thresholds[t] * scale;
+            if (std::abs(out.size - edge) <= 1e-4f * edge) {
+                out.onEdge = true;
+            }
+        }
+    }
+    return out;
+}
+
+// The render-LOD groups (src/renderer/README.md, "Render LOD"): what is placed, what the GPU picked at the latest readback with states,
+// and that pick checked against the view's heuristic at the camera the pick measured from; with `path`, every group under it. The view's
+// own heuristic measures the same window (2 tan(fovY / 2) high, times the aspect wide).
+auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& path) -> Json {
+    const auto& draws = *view.scene.snapshot().draws;
+    const auto& groups = draws.drawn.lodGroups;
+    const auto& cull = view.latestCull;
+    std::array<uint64_t, RenderLodGroup::maxLevels> placedSlots = {};
+    for (const auto& instance : draws.drawn.meshInstances) {
+        if (instance.alive && instance.lodGroup != 0 && instance.lodLevel >= 1 && instance.lodLevel <= RenderLodGroup::maxLevels) {
+            placedSlots[instance.lodLevel - 1]++;
+        }
+    }
+    uint32_t alive = 0;
+    uint32_t forced = 0;
+    auto eye = cull.lodEye;
+    auto windowArea = cull.lodWindowArea;
+    auto fovY = glm::radians(cameraFovDegrees);
+    auto viewWindowHeight = 2.0f * std::tan(fovY * 0.5f);
+    auto viewWindowArea = viewWindowHeight * viewWindowHeight * view.viewAspect;
+    uint32_t compared = 0;
+    uint32_t differ = 0;
+    uint32_t onEdge = 0;
+    uint32_t fallbacks = 0;
+    auto examples = Json::array();
+    auto listed = Json::array();
+    for (uint32_t g = 0; g < groups.size(); g++) {
+        const auto& group = groups[g];
+        if (!group.alive) {
+            continue;
+        }
+        alive++;
+        if (group.forcedLevel >= 0) {
+            forced++;
+        }
+        auto expected = expectedLevels(group, eye, windowArea);
+        if (group.forcedLevel >= 0) {
+            expected.low = std::min<uint32_t>((uint32_t) group.forcedLevel, group.levelCount - 1);
+            expected.high = expected.low;
+            expected.onEdge = false;
+        }
+        bool read = cull.lodHasStates && g < cull.lodWanted.size();
+        uint32_t wanted = read ? cull.lodWanted[g] : 0xFFu;
+        uint32_t drawn = read ? cull.lodDrawn[g] : 0xFFu;
+        const auto& groupPath = g < draws.lodGroupPaths.size() ? draws.lodGroupPaths[g] : std::string();
+        if (read) {
+            compared++;
+            if (drawn != wanted) {
+                fallbacks++;
+            }
+            if (expected.onEdge) {
+                onEdge++;
+            } else if (wanted < expected.low || wanted > expected.high) {
+                differ++;
+                if (examples.size() < 10) {
+                    examples.push_back({{"path", groupPath}, {"size", expected.size}, {"wanted", wanted}, {"expected", {expected.low, expected.high}}, {"forced", group.forcedLevel}});
+                }
+            }
+        }
+        bool under = path && !groupPath.empty() && (*path == "/" || groupPath == *path || (groupPath.size() > path->size() && groupPath.starts_with(*path) && groupPath[path->size()] == '/'));
+        if (under) {
+            auto thresholds = Json::array();
+            for (uint32_t t = 0; t + 1 < group.levelCount && t < group.thresholds.size(); t++) {
+                thresholds.push_back(group.thresholds[t]);
+            }
+            listed.push_back({
+                {"group", g},
+                {"path", groupPath},
+                {"center", {group.center.x, group.center.y, group.center.z}},
+                {"radius", group.radius},
+                {"levels", group.levelCount},
+                {"thresholds", thresholds},
+                {"default", group.defaultLevel},
+                {"forced", group.forcedLevel},
+                {"screenSize", expected.size},
+                {"wanted", read ? Json(wanted) : Json(nullptr)},
+                {"drawn", read ? Json(drawn) : Json(nullptr)},
+            });
+        }
+    }
+    auto picked = Json::array();
+    for (auto count : cull.lodPicked) {
+        picked.push_back(count);
+    }
+    auto placed = Json::array();
+    for (auto count : placedSlots) {
+        placed.push_back(count);
+    }
+    Json out = {
+        {"frame", cull.lodFrame},
+        {"groups", {{"alive", alive}, {"forced", forced}}},
+        {"slotsPerLevel", placed},
+        {"gpu", {{"groups", cull.lodGroups}, {"drawingLevel", picked}, {"fallbacks", cull.lodFallbacks}, {"forced", cull.lodForced}, {"slotsOfLevelsNotDrawn", cull.lodDropped}}},
+        {"check",
+         {{"camera", {{"position", {eye.x, eye.y, eye.z}}, {"windowArea", windowArea}, {"viewWindowArea", viewWindowArea}}},
+          {"compared", compared},
+          {"differ", differ},
+          {"onEdge", onEdge},
+          {"fallbacks", fallbacks},
+          {"examples", examples}}},
+    };
+    if (path) {
+        out["path"] = *path;
+        out["groupsUnder"] = listed;
+    }
+    return out;
+}
+
+auto answerRenderLodRequests(ViewContext& view) -> bool {
+    auto& requests = view.renderLodRequests;
+    for (auto it = requests.begin(); it != requests.end();) {
+        if (view.latestCull.lodFrame > it->askedAt && view.latestCull.lodHasStates) {
+            it->responder.respond(renderLodRecord(view, it->path));
+            it = requests.erase(it);
+            continue;
+        }
+        ++it;
+    }
+    return !requests.empty();
 }
 
 auto pipelinesRecord(const ViewContext& view) -> Json {
@@ -1503,6 +1677,10 @@ auto zonesRecord() -> Json {
 
 } // namespace
 
+auto serviceRenderLodRequests(ViewContext& view) -> bool {
+    return answerRenderLodRequests(view);
+}
+
 auto engineMapStats(const ViewContext& view) -> EngineMapStats {
     EngineMapStats stats;
     auto assets = view.assets.stats();
@@ -1539,6 +1717,17 @@ auto engineMapStats(const ViewContext& view) -> EngineMapStats {
     }
     stats["render.pipelines"] = {std::format("{} pipelines, {} pending, {} failed", pipelines.size(), pending, failed)};
     stats["render.gpuscene"] = {std::format("{} draw slots, {} meshes", gpu.drawSlots, gpu.meshes), std::format("{} materials, {} textures", gpu.materials, gpu.textures)};
+    {
+        const auto& cull = view.latestCull;
+        std::string drawing;
+        for (size_t level = 0; level < cull.lodPicked.size(); level++) {
+            if (cull.lodPicked[level] > 0) {
+                drawing += std::format("{}L{} {}", drawing.empty() ? "" : ", ", level, cull.lodPicked[level]);
+            }
+        }
+        stats["render.lodselect"] = {std::format("{} groups: {}", cull.lodGroups, drawing.empty() ? std::string("none drawing") : drawing),
+                                     std::format("{} falling back, {} forced; {} slots of levels not drawn", cull.lodFallbacks, cull.lodForced, cull.lodDropped)};
+    }
     stats["render.uploads"] = {std::format("{} queued, {:.1f} MiB", gpu.uploads.queued, mib(gpu.uploads.queuedBytes)), std::format("budget {:.0f} MiB per frame", mib(gpu.uploads.budget))};
     const auto& pool = gpu.geometryPool;
     stats["render.pool"] = {std::format("{:.1f}M of {:.1f}M vertices", (double) pool.vertexUsed / 1e6, (double) pool.vertexLimit / 1e6),
@@ -1657,6 +1846,9 @@ auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext
     records.add("culling", "GPU culling's latest readback: instances and triangles drawn and culled, per view", [&view](RpcResponder responder) {
         responder.respond(cullingRecord(view));
     });
+    records.add("renderlod",
+                "render LOD: the groups placed and their slots per level, what the GPU picked (levels drawn, fallbacks, forced), and that pick checked against the view's heuristic at the view's camera (next frames)",
+                [&view](RpcResponder responder) { view.renderLodRequests.push_back({.responder = std::move(responder), .askedAt = view.latestCull.lodFrame, .path = std::nullopt}); });
     records.add("pipelines", "every pipeline the renderer registered: start-up or first use, state, shaders and their versions, the last error", [&view](RpcResponder responder) {
         responder.respond(pipelinesRecord(view));
     });

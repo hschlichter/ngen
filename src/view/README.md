@@ -50,7 +50,11 @@ do its draws: only where it is placed.
   the group and their level, and an instance or point instancer under a level passes the tag to its draws; the renderer draws the level the
   group picks each frame (`src/renderer/README.md`, "Render LOD"). A camera move changes nothing here. A render-LOD root has no placed root,
   no row in the `lod` and `streaming` records and no CPU evaluation; `lod` and `lod-reset` on its path and `lod-heuristic` change its group's
-  forced level. A level holding it is ready once every level's meshes are held, as all of them are placed.
+  forced level. A level holding it is ready once every level's meshes are held, as all of them are placed. The `renderlod` record (next
+  frames: it asks the renderer for every group's state) has the groups and their slots per level, what the GPU picked, and a check of every
+  pick against this heuristic at the camera the GPU measured from (`check.differ` 0 but on a threshold's edge); `view.renderlod {path}`
+  lists the groups under a path. The LOD window's Render LOD section shows the GPU's counts and sets a level for the groups under the
+  selection; the Culling window counts the slots of levels not drawn; the Engine Map's "LOD select" is the GPU's pick.
 - **Walks.** A content is walked once per version and inherited state: the walk keeps, in walk order, the prims that draw, light, frame,
   root LOD or have variant sets, with transforms relative to the content's root, and where its instances and levels sit (`ContentWalk`).
   Every placement of the content uses the kept walk; one with a gizmo's move under it is walked afresh, with the move.

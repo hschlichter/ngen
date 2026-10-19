@@ -457,6 +457,12 @@ auto main(int argc, char* argv[]) -> int {
     CullResult latestCull; // GPU culling readback, a few frames old
     std::vector<SessionCommand> dueCommands;
 
+    // render-LOD records waiting for the groups' states to be read back, and the aspect the LOD heuristic measures with.
+    std::vector<RenderLodRequest> renderLodRequests;
+    float viewAspect = 1.0f;
+    bool lodStatesWanted = false;
+    std::string renderLodCountedPath;
+    uint64_t renderLodCountedRevision = UINT64_MAX;
     // Dumps and captures that finish frames later, for script verbs and RPC calls alike.
     ViewDumps dumps(scene.renderWorld(), primPathOf, latestCull, rhiDevice.limits().pipelineStatistics);
 
@@ -481,6 +487,8 @@ auto main(int argc, char* argv[]) -> int {
         .frameCounter = frameCounter,
         .residentWaiters = residentWaiters,
         .residency = residency,
+        .renderLodRequests = renderLodRequests,
+        .viewAspect = viewAspect,
         .sceneLabel = positional.size() >= 2 ? std::string(positional[1]) : std::string("(new scene)"),
     };
     registerViewMethods(registry, viewContext);
@@ -597,6 +605,7 @@ auto main(int argc, char* argv[]) -> int {
         SDL_GetWindowSizeInPixels(window, &winW, &winH);
         RhiExtent2D winExtent = {.width = (uint32_t) winW, .height = (uint32_t) winH};
         auto proj = cameraProjection((float) winW / (float) winH);
+        viewAspect = (float) winW / (float) std::max(1, winH);
         // The camera for the LOD heuristic, when it moved: once it has been placed (by hand, a script, or the framing when the scene was
         // first resident), not while it follows what has arrived.
         bool cameraPlaced = residency.everResident || !autoFrame;
@@ -834,7 +843,9 @@ auto main(int argc, char* argv[]) -> int {
         if (auto cull = renderThread.latestCullResult(); cull.has_value()) {
             latestCull = std::move(*cull);
         }
-        viewUI.setCullStats(latestCull.instances, latestCull.cameraCulled);
+        viewUI.setCullStats(latestCull.instances, latestCull.cameraCulled, latestCull.lodDropped);
+        // Render-LOD records answer once a readback carries every group's state; while one waits, the frames read them back.
+        lodStatesWanted = serviceRenderLodRequests(viewContext);
         viewUI.setShadowCullStats(latestCull.cascadeCount, latestCull.cascadeCulled, latestCull.cascadeDrawn);
         viewUI.setCullTriangles(latestCull.cameraTriangles, latestCull.sceneTriangles, latestCull.cascadeTriangles);
 
@@ -1088,6 +1099,39 @@ auto main(int argc, char* argv[]) -> int {
                     scene.resetLodLevel(request.root);
                 }
             }
+            // Render LOD: the GPU's counts, and the groups under the selection, counted again when the selection or the draws change.
+            lodWindow.renderLod.groups = scene.threadStats().lodGroups;
+            lodWindow.renderLod.drawing = latestCull.lodPicked;
+            lodWindow.renderLod.fallbacks = latestCull.lodFallbacks;
+            lodWindow.renderLod.forced = latestCull.lodForced;
+            lodWindow.renderLod.slotsNotDrawn = latestCull.lodDropped;
+            const auto& groupPaths = scene.snapshot().draws->lodGroupPaths;
+            auto groupsUnder = [&](const std::string& base) {
+                std::vector<std::string> paths;
+                if (base.empty()) {
+                    return paths;
+                }
+                for (const auto& path : groupPaths) {
+                    if (!path.empty() && (base == "/" || path == base || (path.size() > base.size() && path.starts_with(base) && path[base.size()] == '/'))) {
+                        paths.push_back(path);
+                    }
+                }
+                return paths;
+            };
+            if (selectedPath != renderLodCountedPath || scene.revision() != renderLodCountedRevision) {
+                renderLodCountedPath = selectedPath;
+                renderLodCountedRevision = scene.revision();
+                lodWindow.renderLod.underSelection = (uint32_t) groupsUnder(selectedPath).size();
+            }
+            if (auto request = std::exchange(lodWindow.renderLodRequested, std::nullopt)) {
+                for (const auto& path : groupsUnder(selectedPath)) {
+                    if (*request) {
+                        scene.setLodLevel(path, **request);
+                    } else {
+                        scene.resetLodLevel(path);
+                    }
+                }
+            }
             lodWindow.heuristic = scene.lodHeuristic();
             lodWindow.unloadDelay = (float) scene.unloadDelay();
             if (auto on = std::exchange(lodWindow.heuristicRequested, std::nullopt)) {
@@ -1156,6 +1200,7 @@ auto main(int argc, char* argv[]) -> int {
             .sampler = viewUI.getSamplerSettings(),
             .cullEnabled = cullState.enabled,
             .cullViewProj = cullViewProj,
+            .readLodStates = lodStatesWanted,
             .shadowSettings = viewUI.getShadowSettings(),
             .ambient = viewUI.ambientSettings(),
             .cascadeCount = cascadeCount,

@@ -168,6 +168,35 @@ auto drawLodWindow(bool& show, LodWindowState& state) -> void {
     }
 
     drawEngineMapLink("scene.compose");
+    if (ImGui::CollapsingHeader("Render LOD")) {
+        // Roots whose levels aren't payloads: every level is held, and the GPU picks one per placement each frame.
+        const auto& lod = state.renderLod;
+        ImGui::Text("%u groups (render-LOD roots placed); %u at a forced level, %u falling back while a level uploads", lod.groups, lod.forced, lod.fallbacks);
+        std::string drawing;
+        for (size_t level = 0; level < lod.drawing.size(); level++) {
+            if (lod.drawing[level] > 0) {
+                drawing += std::format("{}level {}: {}", drawing.empty() ? "" : ", ", level, lod.drawing[level]);
+            }
+        }
+        ImGui::Text("drawing %s; %u slots of levels not drawn", drawing.empty() ? "nothing" : drawing.c_str(), lod.slotsNotDrawn);
+        if (lod.underSelection > 0) {
+            ImGui::Text("%u groups under the selection:", lod.underSelection);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(90.0f);
+            ImGui::Combo("##renderlodlevel", &state.renderLodChoice, "level 0\0level 1\0level 2\0level 3\0level 4\0level 5\0level 6\0level 7\0");
+            ImGui::SameLine();
+            if (ImGui::Button("Set##renderlod")) {
+                state.renderLodRequested = std::optional<uint32_t>((uint32_t) state.renderLodChoice);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Reset##renderlod")) {
+                state.renderLodRequested = std::optional<uint32_t>();
+            }
+        } else {
+            ImGui::TextDisabled("Select a prim to set the level of the groups under it.");
+        }
+        ImGui::Separator();
+    }
     std::vector<const LodWindowRow*> rows;
     rows.reserve(state.rows.size());
     size_t mostLevels = 0;

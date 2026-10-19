@@ -69,8 +69,9 @@ public:
     };
     // Imports the persistent buffers with the access the last frame left them in and the slot's; adds LodGroupUpload when groups changed.
     auto import(FrameGraph& fg, uint32_t frameSlot) -> Handles;
-    // Copies the totals, and with `states` every group's state, into the slot's readback.
-    auto addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool states) -> void;
+    // Copies the totals, and with `states` every group's state, into the slot's readback; `eye` and `windowArea` are the camera the pick
+    // measured from, kept with it.
+    auto addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool states, const glm::vec3& eye, float windowArea) -> void;
     // Once the slot's fence has passed: what that slot's frame read back.
     auto parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void;
     // Stores the access the persistent buffers are left in, for the next frame's import.
@@ -91,6 +92,8 @@ public:
         uint32_t groupCount = 0;
         LodSelectTotals totals;
         bool hasStates = false;
+        glm::vec3 eye = glm::vec3(0.0f); // the camera the pick measured from
+        float windowArea = 1.0f;
         std::vector<uint8_t> drawn;
         std::vector<uint8_t> wanted;
     };
@@ -107,6 +110,8 @@ private:
         bool pending = false;
         bool readStates = false;
         uint32_t groupCount = 0;
+        glm::vec3 eye = glm::vec3(0.0f);
+        float windowArea = 1.0f;
     };
     auto ensureCapacity(uint32_t count, uint64_t frame) -> bool;
     auto record(uint32_t slot) const -> GpuLodGroup;

@@ -71,10 +71,12 @@ struct SceneThreadStats {
     uint32_t slotsAdded = 0;
     uint32_t slotsRemoved = 0;
     uint32_t slotsUpdated = 0;
-    uint32_t placements = 0;      // in the tree, drawn or not
-    uint32_t placementsDrawn = 0; // of them, drawn
-    uint64_t walksBuilt = 0;      // content walks built (new, composed again, or with a gizmo's opinion in them), since the scene opened
-    uint64_t walksKept = 0;       // kept now
+    uint32_t placements = 0;       // in the tree, drawn or not
+    uint32_t placementsDrawn = 0;  // of them, drawn
+    uint64_t walksBuilt = 0;       // content walks built (new, composed again, or with a gizmo's opinion in them), since the scene opened
+    uint64_t walksKept = 0;        // kept now
+    uint32_t lodGroups = 0;        // render-LOD groups placed (drawn placements' render-LOD roots)
+    uint32_t lodGroupsChanged = 0; // of the last pass that changed something: groups added, changed or freed
     // The LOD heuristic's last evaluation: roots evaluated, levels it changed (finer, coarser), and its time.
     uint32_t lodRootsEvaluated = 0;
     uint32_t lodFiner = 0;
@@ -113,6 +115,7 @@ struct SceneDraws {
     std::shared_ptr<const Placement> placements;                               // the tree; queries walk it
     ChunkedList<std::string> primPaths;                                        // by prim index - 1; empty for an index not in use
     ChunkedList<std::shared_ptr<const std::vector<std::string>>> assetsByPrim; // by prim index - 1: the assets a drawn prim's draws use
+    ChunkedList<std::string> lodGroupPaths;                                    // by render-LOD group slot (RenderWorld::lodGroups): the root's full path; empty when free
     // Asset id to the prims whose draws use it, built from assetsByPrim on the first query.
     auto drawsByAsset() const -> const std::unordered_map<std::string, std::vector<uint32_t>>&;
     // The drawn placements' cameras, LOD roots, payload placements, point instancers and prims with variant sets, in tree order, gathered
@@ -501,6 +504,7 @@ private:
         bool usable = false;
     };
     std::vector<LodGroupInfo> lodGroupInfo;
+    ChunkedList<std::string> lodGroupPaths; // published with the draws
     std::unordered_map<std::string, uint32_t> lodGroupByPath;
     std::set<uint32_t> freeLodGroups;
     std::map<uint32_t, RenderLodGroup> lodGroupsBefore;

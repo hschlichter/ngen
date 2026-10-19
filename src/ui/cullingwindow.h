@@ -16,7 +16,8 @@ struct CullingWindowInputs {
     bool& showCascadeFrusta;
     uint32_t instances = 0;
     uint32_t culled = 0;
-    uint32_t cascades = 0; // shadow cascades this frame
+    uint32_t lodLevelNotDrawn = 0; // slots of render-LOD levels their group doesn't draw: in no view, not culled
+    uint32_t cascades = 0;         // shadow cascades this frame
     std::array<uint32_t, maxShadowCascades> shadowCulled = {};
     std::array<uint32_t, maxShadowCascades> shadowDrawn = {};
     uint64_t trianglesDrawn = 0; // camera, after culling
