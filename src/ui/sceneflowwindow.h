@@ -19,14 +19,17 @@ struct SceneFlowThread {
     uint32_t prototypesHeld = 0;
     uint32_t levelsHeld = 0;
     uint32_t contentsReached = 0;
-    uint64_t extracts = 0;
-    double lastExtractMs = 0.0;
-    double extractVisitMs = 0.0;
-    double extractSlotsMs = 0.0;
-    uint64_t extractReused = 0;
-    uint64_t extractWalked = 0;
-    uint64_t extractKept = 0;
-    bool extractNeeded = false;
+    uint64_t places = 0;
+    double lastPlaceMs = 0.0;
+    uint32_t placementsBuilt = 0;
+    uint32_t slotsAdded = 0;
+    uint32_t slotsRemoved = 0;
+    uint32_t slotsUpdated = 0;
+    uint32_t placements = 0;
+    uint32_t placementsDrawn = 0;
+    uint64_t walksBuilt = 0;
+    uint64_t walksKept = 0;
+    bool placeNeeded = false;
     uint64_t assetsReceived = 0;
     uint32_t inFlightLayers = 0;
     uint32_t inFlightMeshes = 0;
@@ -81,6 +84,6 @@ struct SceneFlowWindowState {
 };
 
 // How a scene gets from the asset server onto the screen, stage by stage in the order data flows through them: the asset client's requests,
-// the scene thread (compose, extract, what it holds), the change lists to the render thread, the GPU scene (tables, upload queue, geometry
+// the scene thread (compose, placement, what it holds), the change lists to the render thread, the GPU scene (tables, upload queue, geometry
 // pool) and residency. Each stage says what it is and where its data goes next. The upload budget and the geometry limit are set here.
 auto drawSceneFlowWindow(bool& show, SceneFlowWindowState& state) -> void;

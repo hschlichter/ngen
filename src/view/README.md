@@ -1,6 +1,6 @@
 # View
 
-ngen-view's library: the scene it shows (`viewscene.*`), picking (`viewpicking.*`), its commands as RPC methods and script verbs
+ngen-view's library: the scene it shows (`viewscene.*`, its placement tree in `placement.*`), picking (`viewpicking.*`), its commands as RPC methods and script verbs
 (`viewcommands.*`), and its dumps (`viewdumps.*`). The program's `main` is `src/apps/view.cpp`; its UI is `ViewUI` (`src/ui/viewui.*`).
 
 ## The scene: `ViewScene`
@@ -12,7 +12,7 @@ The view shows a scene composed from its packs, with nothing of USD in it (`src/
   `setLocalTransform` (gizmo drags and `translate`). Each returns at once.
 - **Arrivals.** It takes what the asset server answered (`AssetClient::takeAnswered`, woken by the client).
 - **Per batch** of requests and arrivals it composes with the layer packs held (one that hasn't arrived is a gap), requests the packs it names
-  and lacks, requests the meshes and materials of what is drawn and the textures of the materials held, and extracts.
+  and lacks, and runs a placement pass, which requests the meshes, materials and textures the placements want and lack.
 - **Publishing.** It publishes a `SceneSnapshot`, which the main thread takes once a frame (`update`) and all queries read, and the changes for
   the renderer.
 - **Unchanged arrivals.** An asset fetched again that arrives with the same version keeps its library entry, so nothing is uploaded again.
@@ -21,7 +21,7 @@ The view shows a scene composed from its packs, with nothing of USD in it (`src/
 cutout whose opacity texture is still uploading draws opaque. A material that hasn't arrived uses the display colour.
 
 **Resident.** The scene is resident when everything it wants is loaded, uploaded and drawn:
-- the scene thread has nothing queued, requested or unextracted, no camera posted it hasn't evaluated, and no batch it took and hasn't
+- the scene thread has nothing queued, requested or unplaced, no camera posted it hasn't evaluated, and no batch it took and hasn't
   published (so a moved camera's levels count: while the camera moves, the scene isn't resident);
 - the render thread has applied every change list in a frame it finished, with no upload or pipeline pending.
 
@@ -35,43 +35,56 @@ count only while nothing waits for residency, so a script sees the scene loaded:
   holds its count until they have.
 - **`wait-resident`** (`view.waitResident`) waits the same way.
 
-The inputs persist across rebuilds:
+### The placement tree
+
+What is drawn is a tree of placements (`placement.h`): a placement is a content of the World (the stage, a prototype at an instance, a LOD
+level at its root; `src/world/README.md`) at a world transform, with the state it inherits there (purpose, the material binding in force),
+or a `PointInstancer`'s points. It owns the draws of its own prims and its children: the instances and point instancers in it, and a
+placement per loaded level of each LOD root in it, of which only the drawn level draws. A content never changes once linked, so neither
+do its draws: only where it is placed.
+- **Walks.** A content is walked once per version and inherited state: the walk keeps, in walk order, the prims that draw, light, frame,
+  root LOD or have variant sets, with transforms relative to the content's root, and where its instances and levels sit (`ContentWalk`).
+  Every placement of the content uses the kept walk; one with a gizmo's move under it is walked afresh, with the move.
+- **Passes.** After a compose, a relink, a level evaluation, arrivals or a gizmo's move, a pass places the stage as the World is now. A
+  placement is built again only when its content was composed again, it moved, its inherited state changed, a gizmo moved something in it, or
+  an asset it waited for arrived; else it is kept as it is. A LOD root switching levels removes one level's draws and adds the other's. A
+  pass looks only where something can change: a placement counts what it and everything below it wait for (`pending`: assets not held, and
+  roots not drawing the level they want or whose loaded levels aren't linked yet), and a pass goes into a placement only when that count
+  isn't 0, a root under it changed its wanted level, or a gizmo moved something under it; a placed content composed again makes it look
+  everywhere. A purpose shown or hidden, or a mesh, material or texture repacked, places the tree afresh.
+- **Draws.** `RenderWorld` holds a slot per draw (a prim's submesh). A placement built again puts its draws back in the slots and prim indices
+  it had, in order, so a draw that didn't change sends nothing; others take the lowest free slot. A placement draws what is held and is
+  built again as the assets it waits for arrive, so a scene opens progressively; a material not held yet draws with the display colour
+  until it arrives.
+- **Changes.** The slots a pass touched, against what they held, are its `SceneChanges`; the main loop takes them (`takeChanges`) and hands
+  them to the renderer, which changes only that on the GPU (`src/renderer/README.md`, "Scene data on the GPU"). `PlacementsChanged`
+  traces each pass that changed something: placements built, slots added, removed and updated, its time.
+- **Requests.** A placement asks for the meshes, materials and textures its prims want and lack when it is built, drawn or not (a level
+  loading is placed undrawn), so what a level needs is requested as soon as the level is linked.
 - **Libraries.** `MeshLibrary`, `MaterialLibrary` and `TextureLibrary` keep one entry per mesh asset, per material (or display colour) and per
-  texture asset, shared by every draw using it. An entry whose asset arrives again with new content is a new entry with a new handle.
-- **Draws.** `RenderWorld` holds a slot per draw (a prim's submesh), kept by its key (path and submesh) across rebuilds. A gone draw's slot dies
-  and is reused, lowest first, so a fresh open fills slots in visit order.
-- **Changes.** Each rebuild compares what it draws with what it drew and records the difference as `SceneChanges`. The main loop takes them
-  (`takeChanges`) and hands them to the renderer, which changes only that on the GPU (`src/renderer/README.md`, "Scene data on the GPU").
-- **Kept walks.** A rebuild doesn't walk every prim. Each content of the World (the stage, a prototype, a LOD level's content; see
-  `src/world/README.md`) is walked once per version and per state it inherits where it is used (purpose, the material binding in force):
-  the walk keeps, in walk order, the prims that draw, light, frame or root LOD, with transforms relative to the content's
-  root, and where its instances and levels sit. A rebuild replays the kept walks of the contents used, from the stage down, so the draws
-  come out in the same order as a full walk. Meshes and materials are resolved once per rebuild for each mesh and binding. A content
-  holding a prim the gizmo moved is walked afresh, with the move. The `scenethread` record's `extract` says how many walks were reused
-  and walked, and how long the walk and the slots took.
-- **Paced while assets arrive.** An extract waits at least as long after the last one as that one took (250 ms at least) while assets
-  are in flight or a compose is due, so the scene thread keeps composing and requesting in between; once nothing is in flight it runs at
-  once. The drawn scene's assets are requested from the kept walks when something could name new ones (a compose, a material's
-  arrival, a purpose shown), not before every extract. The `scenethread` record's `extract.held` counts the batches an extract waited.
-- **Shared with the main thread.** What a rebuild builds (the draws, prim paths, the asset lists, cameras, LOD roots, payloads) is one
-  immutable `SceneDraws` the snapshots share until the next rebuild; a gizmo move publishes a copy with the moved draws.
+  texture asset, shared by every draw using it. An entry whose asset arrives again with new content is a new entry with a new handle. The
+  slots using each mesh and material are counted as they change, so no pass looks at every slot.
+- **Shared with the main thread.** The scene thread's tree and lists are shared with what it published: a placement or a chunk of slots
+  (`ChunkedList`) a published snapshot holds is copied before it changes, so publishing copies no slots. `SceneDraws` holds the slots, the
+  tree, the prim paths and the assets per prim; what the queries derive from them (the records, the prims per asset, the slots per prim) is
+  gathered from it on the first query.
 
 - **What is drawn**: entities that are active, defined and not abstract, visible (an invisible ancestor hides its subtree), not in a LOD
   level their root doesn't draw, with a mesh asset, and of a purpose that is shown: `default` and `render` always, `guide` and `proxy`
   when turned on (`purposes` verb, `view.purposes`, the View menu).
 - **Point instancers**: each visible point of a `PointInstancer` draws its prototype at the instancer's world transform times the point's.
   The prototype's walk (rooted at the prototype, in the instancer's content) is kept once and used per point; a point's draws have a path
-  of their own, `<prototype>#<id>`, and no entry in the transform index. A prototype beneath its instancer draws only through it. A level
-  waits for its prototypes' meshes as for its own (`itemsReady`).
+  of their own, `<prototype>#<id>`, and no transform for the queries. A prototype beneath its instancer draws only through it. A level
+  waits for its prototypes' meshes as for its own (`itemsReady`). An instancer is one placement, its points' draws its own.
 - **Materials**: a material is its binding's key (`parseMaterialKey`): the pack, and the values of the inputs its textures take their files from
   (`resolveMaterial`), so one pack used with different inputs is one material per set of values. A mesh's bound material, and each `GeomSubset`'s own
   binding for its submesh, unless an ancestor's binding is `strongerThanDescendants`. A material's texture, else its base colour, else the mesh's
   display colour; a constant colour is a 1x1 texture. A mesh with no material bound gets one per display colour, shared. A cutout material's opacity
   texture is fetched with its base colour texture and counts as used by its draws (`drawsOf`).
 - **Transforms**: in float, parent times local, then scaled to metres by the root layer's `metersPerUnit`, as the view always drew; the
-  camera's up is the scene's up axis. A prim's transform for the queries (`transform`, selection, the gizmo) comes from a `TransformIndex`:
-  each content's prims relative to its root, kept with the walk, and every place a content is used with its world transform; a query
-  finds the deepest use above the path. A gizmo's move is an override in the index until the next rebuild.
+  camera's up is the scene's up axis. A prim's transform for the queries (`transform`, selection, the gizmo) is found in the published tree
+  (`findTransform`): the deepest drawn placement at or above the path that holds it, the prim's transform in its walk, placed. A gizmo's
+  move is the view's local opinion of the prim; the placements holding it are built again in the same batch, and what is under it moves.
 - **Cameras**: every `Camera` prim reached while drawing, by full path with its world transform (`cameras()`). The Camera window lists them
   and moves the view to one on a click; `--camera=/path`, the `camera-use` verb and `view.camera.use` do the same, and `view.camera.list`
   lists them with their poses. The view takes a camera's position and the direction it looks (its local -Z); roll, focal length and
@@ -91,20 +104,20 @@ The inputs persist across rebuilds:
   `view.lod.heuristic`, the LOD window's toggle) every other root wants its default; a root without a usable heuristic (`heuristicChosen`,
   src/world/README.md "Loading") wants its default ("no usable heuristic"). Every root the heuristic picks finer goes finer: what fits in memory is
   the budgets' to decide, not a count of roots. The main thread posts the camera (`setCamera`) once it has been placed, not while it follows the scene
-  loading; the scene thread evaluates when it moved, after an extract and when levels changed, and gives the composer only what changed, which links
+  loading; the scene thread evaluates when it moved, after a pass that drew roots not drawn before and when levels changed, and gives the composer only what changed, which links
   the levels again without composing the stage (`WorldComposer::relink`). The `streaming` record has per root its screen size, whether its extent is
   in the view's frustum (what USD's query would go by), the level wanted and why, drawn and loaded, and for a level waited for what it waits for;
   totals over the roots. `LevelsWanted` traces each change of wanted levels.
 - **Switching levels**: a root draws the finest loaded level, not finer than the one it wants, that is ready (`contentReady`): linked, which the
   composer does only once it is complete, and every mesh it draws (under its own purpose) held or failed, through the instances in it; a LOD
-  root inside it counts by its coarsest level. Until then the root keeps drawing the coarser level, and switches in the extract after the last
+  root inside it counts by its coarsest level. Until then the root keeps drawing the coarser level, and switches in the pass after the last
   piece arrives, so a district appears whole instead of model by model. `LevelsSwitched` traces the roots whose drawn level changed, once
-  per extract; the `streaming` record's `waiting` and the LOD window's tooltip on a loading row count what the wanted level waits for
+  per pass; the `streaming` record's `waiting` and the LOD window's tooltip on a loading row count what the wanted level waits for
   (meshes not held, those asked for, levels still composing and so not linked). GPU uploads aren't part of it: a switched level's meshes are
   uploaded over the next frames within the upload budget.
 - **Unloading**: what stops being drawn (a mesh, material or texture: its library entry and its GPU entry) is kept for the unload delay
   (10 s by default; `lod-unload-delay S`, `view.lod.heuristic {unloadDelay}`, the LOD window), so turning back draws it without loading;
-  after that it leaves the libraries and the renderer. A mesh's pack is released once no loaded level names it, so a root's coarsest level
+  after that it leaves the libraries and the renderer. A mesh's pack is released once no placement names it (drawn or not), so a root's coarsest level
   (always loaded) keeps its packs while a finer level is drawn. Composed contents not reached for the delay leave the composer
   (`WorldComposer::evict`). Layer packs stay held. `LevelsUnloaded` traces each release, and the `streaming` and `scenethread` records,
   the Scene Flow window and the Engine Map count what was unloaded.
@@ -125,7 +138,7 @@ The trace shows the steps:
 - `SceneRequested`;
 - `PacksComposed`, once every layer pack named has been answered (packs, prims, prototypes);
 - `SceneAssetsReceived`, once the meshes, materials and textures wanted have been answered;
-- `WorldExtracted`, per batch (instances, meshes, materials, textures, lights, time);
+- `PlacementsChanged`, per pass that changed something (placements built, slots added, removed and updated, time);
 - `AssetsRefreshRequested`;
 - `SceneResident`;
 - and `SceneAssetFailed` or `CompositionMessage` warnings.
@@ -147,9 +160,10 @@ couldn't. A new part of the engine adds its node and edges there with its record
 The Scene Flow window (Windows > Scene Flow) shows the path from the asset server to the screen, stage by stage in the order data flows, each
 saying what it is and where its data goes next:
 1. **Asset client**: requested, received (packed or from the server's cache), failed, in flight.
-2. **Scene thread**: requests posted and applied, batches, composes and extracts (count, last time, whether one is needed), assets in flight by
-   kind, packs held, library entries, idle.
-3. **Change lists**: what an extract changed, which the main thread takes each frame and hands to the render thread.
+2. **Scene thread**: requests posted and applied, batches, composes and placement passes (count, whether one is needed, the placements and
+   those drawn, the last changing pass's time, placements built and slots added, removed and updated, walks built and kept), assets in flight
+   by kind, packs held, library entries, idle.
+3. **Change lists**: what a placement pass changed, which the main thread takes each frame and hands to the render thread.
 4. **GPU scene** (render thread): change lists submitted and drawn, the tables, the upload queue (queued, budget, the last SceneUpload pass)
    and the geometry pool (use against capacity and limit, meshes waiting for room). The upload budget and the pool limit are set here.
 5. **Residency**: resident or loading, the script's hold, and the last load's frames and longest frame.

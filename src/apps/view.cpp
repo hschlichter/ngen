@@ -844,7 +844,15 @@ auto main(int argc, char* argv[]) -> int {
         uint32_t cascadeCount = 0;
         {
             PROFILE_ZONE("FitCascades");
-            auto sceneBounds = sceneBoundsOf(scene.renderWorld().meshInstances);
+            AABB sceneBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
+            const auto& slots = scene.renderWorld().meshInstances;
+            for (size_t chunk = 0; chunk < slots.chunkCount(); chunk++) {
+                auto bounds = sceneBoundsOf(slots.chunk(chunk));
+                if (bounds.valid()) {
+                    sceneBounds.min = glm::min(sceneBounds.min, bounds.min);
+                    sceneBounds.max = glm::max(sceneBounds.max, bounds.max);
+                }
+            }
             auto lightDir = pickShadowLightDirection(scene.renderWorld().lights, cam.worldUp);
             cascadeCount = fitShadowCascades(viewUI.getShadowSettings(), cam.viewMatrix(), proj, cameraNear, lightDir, cam.worldUp, sceneBounds, cascades);
         }
@@ -1017,14 +1025,17 @@ auto main(int argc, char* argv[]) -> int {
                 .prototypesHeld = t.prototypesHeld,
                 .levelsHeld = t.levelsHeld,
                 .contentsReached = t.contentsReached,
-                .extracts = t.extracts,
-                .lastExtractMs = t.lastExtractMs,
-                .extractVisitMs = t.extractVisitMs,
-                .extractSlotsMs = t.extractSlotsMs,
-                .extractReused = t.extractReused,
-                .extractWalked = t.extractWalked,
-                .extractKept = t.extractKept,
-                .extractNeeded = t.extractNeeded,
+                .places = t.places,
+                .lastPlaceMs = t.lastPlaceMs,
+                .placementsBuilt = t.placementsBuilt,
+                .slotsAdded = t.slotsAdded,
+                .slotsRemoved = t.slotsRemoved,
+                .slotsUpdated = t.slotsUpdated,
+                .placements = t.placements,
+                .placementsDrawn = t.placementsDrawn,
+                .walksBuilt = t.walksBuilt,
+                .walksKept = t.walksKept,
+                .placeNeeded = t.placeNeeded,
                 .assetsReceived = t.assetsReceived,
                 .inFlightLayers = t.inFlightLayers,
                 .inFlightMeshes = t.inFlightMeshes,

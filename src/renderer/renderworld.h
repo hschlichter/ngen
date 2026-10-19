@@ -5,10 +5,86 @@
 #include "scenehandles.h"
 #include "scenetypes.h"
 
+#include <cstddef>
+#include <iterator>
 #include <memory>
-#include <unordered_map>
+#include <span>
 #include <utility>
 #include <vector>
+
+// A list kept in shared chunks, for a producer that publishes copies of a large list it keeps changing: a copy shares every chunk, and a
+// write copies only the chunk it changes, and only while a copy still shares it. One thread writes; copies are read anywhere.
+template <typename T>
+class ChunkedList {
+public:
+    static constexpr size_t chunkSize = 4096;
+
+    class Iterator {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = T;
+        using difference_type = std::ptrdiff_t;
+        using pointer = const T*;
+        using reference = const T&;
+
+        Iterator() = default;
+        Iterator(const ChunkedList* list, size_t index) : list(list), index(index) {}
+        auto operator*() const -> const T& { return (*list)[index]; }
+        auto operator->() const -> const T* { return &(*list)[index]; }
+        auto operator++() -> Iterator& {
+            index++;
+            return *this;
+        }
+        auto operator++(int) -> Iterator {
+            auto before = *this;
+            index++;
+            return before;
+        }
+        auto operator==(const Iterator& other) const -> bool { return index == other.index; }
+
+    private:
+        const ChunkedList* list = nullptr;
+        size_t index = 0;
+    };
+
+    auto size() const -> size_t { return count; }
+    auto empty() const -> bool { return count == 0; }
+    auto begin() const -> Iterator { return Iterator(this, 0); }
+    auto end() const -> Iterator { return Iterator(this, count); }
+    auto operator[](size_t index) const -> const T& { return (*chunks[index / chunkSize])[index % chunkSize]; }
+    // The element to change: its chunk is copied first while another list shares it.
+    auto edit(size_t index) -> T& { return (*own(index / chunkSize))[index % chunkSize]; }
+    auto push_back(T value) -> void {
+        if (count % chunkSize == 0) {
+            chunks.push_back(std::make_shared<std::vector<T>>());
+            chunks.back()->reserve(chunkSize);
+        }
+        own(chunks.size() - 1)->push_back(std::move(value));
+        count++;
+    }
+    auto clear() -> void {
+        chunks.clear();
+        count = 0;
+    }
+    // Each chunk as a contiguous span, in order.
+    auto chunkCount() const -> size_t { return chunks.size(); }
+    auto chunk(size_t index) const -> std::span<const T> { return *chunks[index]; }
+
+private:
+    auto own(size_t chunkIndex) -> std::vector<T>* {
+        auto& chunk = chunks[chunkIndex];
+        if (chunk.use_count() > 1) {
+            auto copy = std::make_shared<std::vector<T>>();
+            copy->reserve(chunkSize);
+            copy->assign(chunk->begin(), chunk->end());
+            chunk = std::move(copy);
+        }
+        return chunk.get();
+    }
+
+    std::vector<std::shared_ptr<std::vector<T>>> chunks;
+    size_t count = 0;
+};
 
 // One draw: a submesh of a placed mesh. Draws live in slots that keep their index while they exist; a removed draw's slot is dead (alive
 // false) until a new draw reuses it.
@@ -55,10 +131,8 @@ struct RenderLight {
 };
 
 struct RenderWorld {
-    std::vector<RenderMeshInstance> meshInstances; // by slot
+    ChunkedList<RenderMeshInstance> meshInstances; // by slot
     std::vector<RenderLight> lights;
-    // Each drawn prim's slots, one per submesh.
-    std::unordered_map<uint32_t, std::vector<uint32_t>> primInstances;
 };
 
 // What changed in the renderer's inputs, in order. The view builds it by comparing what it draws with what it drew; the renderer applies

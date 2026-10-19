@@ -101,13 +101,14 @@ const std::vector<EngineMapNode> nodes = {
         .readme = "src/world/README.md",
     },
     {
-        .id = "scene.extract",
-        .label = "Extract",
+        .id = "scene.placement",
+        .label = "Placement",
         .lane = 2,
         .row = 5,
-        .description = "Walks the World and builds the renderer's inputs: a draw per prim submesh (and per point of a point instancer, its "
-                       "prototype's walk used once per point), lights, cameras and LOD roots. Meshes, materials and textures are kept per asset in "
-                       "libraries across rebuilds, and for the unload delay after they stop being drawn.",
+        .description = "A tree of placements of the World's contents (the stage, a prototype at each instance, each loaded LOD level at its root, "
+                       "a point instancer's points), each owning the draws of its own prims; a pass builds again only what changed and looks only "
+                       "where something waits or changed, and its slot changes are the change lists. Meshes, materials and textures are kept per "
+                       "asset in libraries, and for the unload delay after they stop being drawn.",
         .records = {"scenethread", "lod", "payloads", "instancers", "variants"},
         .windows = {"sceneflow", "lod"},
         .readme = "src/view/README.md",
@@ -117,8 +118,8 @@ const std::vector<EngineMapNode> nodes = {
         .label = "Change lists",
         .lane = 2,
         .row = 6,
-        .description = "What an extract changed against the last one (draws, library entries, lights), published with a snapshot of the "
-                       "scene for the main thread's queries.",
+        .description = "What a placement pass changed (draws, library entries, lights), published with a snapshot of the scene for the "
+                       "main thread's queries, which shares the tree and the slots with the scene thread.",
         .records = {"scenethread"},
         .windows = {"sceneflow"},
         .readme = "src/view/README.md",
@@ -255,16 +256,16 @@ const std::vector<EngineMapEdge> edges = {
     {.from = "assets.delivery", .to = "view.assetclient", .what = "asset.data, asset.ready (TCP)"},
     {.from = "assets.watcher", .to = "view.assetclient", .what = "asset.changed"},
     {.from = "view.assetclient", .to = "scene.compose", .what = "layer packs; answers wake the scene thread"},
-    {.from = "view.assetclient", .to = "scene.extract", .what = "mesh, material and texture packs"},
+    {.from = "view.assetclient", .to = "scene.placement", .what = "mesh, material and texture packs"},
     {.from = "view.assetclient", .to = "render.pipelines", .what = "shaders (SPIR-V); changed ones reload"},
     {.from = "scene.compose", .to = "view.assetclient", .what = "asset.request for the packs it names"},
-    {.from = "scene.compose", .to = "scene.extract", .what = "the World"},
-    {.from = "scene.extract", .to = "scene.changes", .what = "draws, library entries, lights"},
+    {.from = "scene.compose", .to = "scene.placement", .what = "the World"},
+    {.from = "scene.placement", .to = "scene.changes", .what = "slots, library entries, lights"},
     {.from = "main.rpc", .to = "scene.compose", .what = "requests: open, purposes, repack"},
     {.from = "main.rpc", .to = "scene.lod", .what = "levels set by hand, heuristic on or off"},
     {.from = "main.input", .to = "scene.lod", .what = "camera (once placed)"},
     {.from = "scene.lod", .to = "scene.compose", .what = "levels wanted: linked again"},
-    {.from = "scene.extract", .to = "scene.lod", .what = "the LOD roots reached"},
+    {.from = "scene.placement", .to = "scene.lod", .what = "the LOD roots drawn"},
     {.from = "scene.changes", .to = "main.scene", .what = "snapshot and change lists"},
     {.from = "main.scene", .to = "render.gpuscene", .what = "change lists (submitSceneChanges)"},
     {.from = "render.gpuscene", .to = "main.scene", .what = "drawn and idle: residency"},

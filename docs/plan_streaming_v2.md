@@ -2,7 +2,7 @@
 
 **Status. In progress.** A review of the streaming and LOD system as built by [plan_streaming_districts.md](plan_streaming_districts.md), with what
 to remove and what to replace. Decisions 1 to 8 locked 2026-10-15, each as recommended; the test world is best-practice USD with variant
-sets and `PointInstancer` (2026-10-16). Steps 1 and 2 done 2026-10-16.
+sets and `PointInstancer` (2026-10-16). Steps 1 to 3 done 2026-10-16, step 4 2026-10-18.
 
 ## Current state
 
@@ -207,9 +207,26 @@ Locked (2026-10-15). Stays: screen size of the extent's bounding sphere, the 20%
 3. **One content store, complete contents only** (decisions 2, 3): `World::contents`; `WorldComposer` links a content only when complete and
    drops payload contents. `evict` stays until step 5, whose reference counts replace it (unloading needs either one). `ngen-worldcheck`
    against `ngen-usdcheck` identical on the layered scene, the test area and Caldera.
-4. **Placements** (decisions 1, 6): `src/view/placement.*`; a content's draws built once on completion; the scene thread keeps the placement
-   tree and turns its edits into change lists; queries walk it. `replay`, `ExtractItem`, kept walks, the diff, extract pacing and
-   `TransformIndex` are removed.
+4. **Placements** (decisions 1, 6): `src/view/placement.*`; the scene thread keeps the placement tree and turns its edits into change lists;
+   queries walk it. A content's walk stays, as its draws' template, built once per content version and inherited state (purpose, material
+   binding); what goes is the whole-World replay, the slot diff (`slotOfDraw`), extract pacing, `TransformIndex` and the per-extract
+   `readiness`. Locked 2026-10-16:
+   - **What the main thread reads (A1)**: the snapshot keeps a flat `RenderWorld` and its tables, copied when the tree changed (building is
+     proportional to the change, the copy isn't: about 6 MB on the test world). The placement tree is published as immutable shared nodes,
+     path-copied when edited, and `transform`, `bounds` and the records walk it. Copy-on-write slot chunks (A2) if the copy shows in the
+     `zones` record.
+   - **Drawing while meshes arrive (C1)**: a placement draws what is held and is filled in as assets arrive, through an index from asset to
+     the placements waiting for it, so a scene opens progressively as today; the same lists are decision 6's requests.
+   - **Edits**: a compose re-places contents whose version changed, reusing child placements whose path, content, transform and state are
+     unchanged; a level switch removes one level's slots and adds another's; an arrival updates the placements waiting for it; a gizmo
+     opinion gives its placement a private template; a purpose toggle or a repack rebuilds the tree.
+   - Until step 5, the library's used sets come from the live slots (`collectChanges` and its timers stay), and the switch rule's readiness
+     from the templates.
+
+   In four parts, each observable: **4a** the tree replaces replay and diff for drawing (`WorldExtracted` becomes `PlacementsChanged`, with
+   the slots added and removed per edit); **4b** queries and records read the tree, `TransformIndex` goes; **4c** requests per content,
+   `requestDrawnAssets` and `meshesLoaded` from the placements; **4d** visibility (`scenethread` record, Scene Flow, the Engine Map's
+   "Extract" becomes "Placement").
 5. **Counting** (decisions 4, 5): pending counts per placed level for the switch rule; reference counts for contents and assets; the unload
    delay on the level only.
 6. **The heuristic over placed roots** (decision 8).
@@ -287,6 +304,44 @@ Locked (2026-10-15). Stays: screen size of the extent's bounding sphere, the 20%
   before.
 - `viewscene.cpp` 2,135 to 2,116 lines, `worldcomposer.cpp` 1,875 to 1,860.
 
+### Step 4 results (2026-10-18)
+
+4a to 4d landed together: the tree is what the requests, queries and records read, so none of them could keep the replay.
+
+- **The tree** (`src/view/placement.*`): `Placement` nodes (the stage, a prototype at an instance, each loaded level at its root, a
+  `PointInstancer` as one placement with a segment per shown point), shared with the published snapshots and copied before a change while a
+  snapshot holds them. Gone: `replay`, `ExtractItem` (now `WalkItem`, the content walk kept as the draws' template), the slot diff, extract
+  pacing, `TransformIndex`, `requestDrawnAssets`, `meshesLoaded`, `RenderWorld::primInstances`, `WorldExtracted` (now `PlacementsChanged`).
+- **A1 became A2**, as the plan's trigger said: on the test world's tile switch, copying the slots, prim paths and per-prim assets for the
+  snapshot took about 220 ms a pass. The three lists are `ChunkedList`s (`src/renderer/renderworld.h`): a copy shares chunks, a write copies
+  the chunk a copy still holds. Readers of `meshInstances` are unchanged but `sceneBoundsOf`, which now runs per chunk.
+- **Passes look only where something waits or changed.** The first version walked every placement each pass (about 300 ms for one root
+  switching, 160,000 placements). A placement now counts what it and its subtree wait for (`pending`: assets not held, roots not drawing the
+  level they want or with a loaded level not linked yet); a pass goes into a subtree only when that count isn't 0, a root under it changed
+  its wanted level (`rootsToCheck`), a gizmo moved something under it, or a placed content was composed again (then everywhere). A placement
+  built again puts its draws back in its own slots in order, so an unchanged draw sends nothing; the first version freed and re-took them
+  from the shared free list, shuffling slots between placements (166,390 "updated" for 2,191 small switches). Library use, mesh pack names,
+  lights and placement counts are kept as counts; the records are gathered from the published tree on their first query.
+- **Measured, test world, the four viewpoints**: every root draws the level it wants, the same levels, tiles and frustum counts as step 3,
+  no warnings. One root switching: 1.6–5.6 ms a pass (300 ms before the pruning). A tile switching: the change list is the two levels'
+  draws (`T_2_3` 1 → 0: 69,421 slots added, 4 removed). Resident at four_tiles 9.1 s after start against 20.0 s in step 3 (valley 6.7 s
+  against 8.4 s, dense_forest 5.2 s against 4.5 s). Passes that build 60,000+ placements still take 200–1,000 ms: a tile's 12,000 instances
+  each built when it is drawn, and every drawn instance built again when a material it draws with arrives (C1).
+- **Baselines** byte-identical. The render record's slot numbers and library handles now follow arrival order (a prim takes its slot when its
+  mesh arrives); its counts and mesh list are the same, but for 2 fewer stand-in materials kept for the unload delay (55 against 57).
+- **Layered**: the LOD script gives the same levels; its record taken in the frame a level was wanted now shows the finer level already
+  loading (a pass runs in the batch that relinks). Gizmo moves checked by framing: a prim (+5 y), an instance (+3 y), a prim inside an
+  instance (+1 x) move; the other instance of the same prototype doesn't.
+- **Caldera** with the heuristic off: resident in 4.9 s (4,427 draws, 268 placements), no warnings. Its stage is large and composed again
+  every round, so each pass rebuilds the stage's own draws (14 placements built in 534 ms): open question 2.
+- **Visibility**: `scenethread`'s `extract` is now `placement` (passes, needed, placements and drawn, walks built and kept, the last
+  changing pass's time, built, slots added, removed, updated); Scene Flow shows the same; the Engine Map's "Extract" is "Placement";
+  `PlacementsChanged` per pass. Gap: no record or RPC method answers a prim's transform (`ViewScene::transform`); the check above went
+  through `camera-frame`.
+- **Lines**: `viewscene.cpp` 2,116 → 1,164, `placement.*` 1,632 new; with `worldcomposer.cpp` (1,860) 4,656 against 3,976.
+- **Follow-ups seen**: the main thread rebuilds the LOD window's 42,000 rows on every snapshot (`SceneUpdate`, up to 120 ms), before this
+  step too; a material arriving rebuilds every drawn instance using it, where updating its slots' material handle would do.
+
 ## Visibility
 
 - **`streaming` record**: per placed root its screen size, in frustum, wanted, drawn, loaded levels and, per loaded level, its pending count;
@@ -308,12 +363,11 @@ Locked (2026-10-15). Stays: screen size of the extent's bounding sphere, the 20%
   same levels and counts; memory falls behind the camera; a tile switch takes under 0.25 s from `LevelsWanted` to `LevelsSwitched`.
 - **Switch cost is proportional to the switch**: a tile switching levels changes only that tile's slots (the change list's instance count equals
   the two levels' draws), whatever else is loaded.
-- **Simpler, measured**: `viewscene.cpp` plus `worldcomposer.cpp` smaller than today's 3,550 lines, with `placement.*` counted in.
+- **Simpler, measured**: the line count of `viewscene.cpp`, `worldcomposer.cpp` and `placement.*` (3,976 before step 4) is reported per step,
+  not a bar (2026-10-16); why the two files grew is investigated separately, Caldera's share in particular.
 
 ## Open questions
 
-- Draws of a content depend on what it inherits (purpose, a strong material binding from outside). Most contents are placed with one
-  inherited state; is building per (content, inherited state), as `extractOf` keys today, enough, or does a content need its draws per placement?
 - Should the composer still compose the whole stage per round, or only the contents a round touches? On the test world the stage is 16
   region prims; on Caldera it is not small.
 - Prefetch (plan_streaming_lod decision 1's margin: load the next finer level within the band) fits decision 1 as an undrawn held level. Here,

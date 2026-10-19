@@ -1087,7 +1087,14 @@ auto sceneThreadRecord(const ViewContext& view) -> Json {
             {"levelsComposed", t.levelsComposed},
             {"contentsReached", t.contentsReached}}},
           {"held", {{"prototypes", t.prototypesHeld}, {"levels", t.levelsHeld}}}}},
-        {"extract", {{"count", t.extracts}, {"lastMs", t.lastExtractMs}, {"visitMs", t.extractVisitMs}, {"slotsMs", t.extractSlotsMs}, {"reused", t.extractReused}, {"walked", t.extractWalked}, {"kept", t.extractKept}, {"held", t.extractsHeld}, {"needed", t.extractNeeded}}},
+        {"placement",
+         {{"passes", t.places},
+          {"needed", t.placeNeeded},
+          {"placements", t.placements},
+          {"drawn", t.placementsDrawn},
+          {"walksBuilt", t.walksBuilt},
+          {"walksKept", t.walksKept},
+          {"last", {{"ms", t.lastPlaceMs}, {"built", t.placementsBuilt}, {"slotsAdded", t.slotsAdded}, {"slotsRemoved", t.slotsRemoved}, {"slotsUpdated", t.slotsUpdated}}}}},
         {"publishMs", t.publishMs},
         {"assetsReceived", t.assetsReceived},
         {"inFlight", {{"layers", t.inFlightLayers}, {"meshes", t.inFlightMeshes}, {"materials", t.inFlightMaterials}, {"textures", t.inFlightTextures}, {"other", t.inFlightOther}}},
@@ -1514,8 +1521,8 @@ auto engineMapStats(const ViewContext& view) -> EngineMapStats {
                           std::format("last: {} finer, {} coarser", t.lodFiner, t.lodCoarser),
                           std::format("unloaded: {} contents, {} mesh packs ({:.1f} MiB)", t.contentsEvicted, t.releasedMeshes, mib(t.releasedMeshBytes))};
     stats["scene.compose"] = {std::format("{} composes, last {:.1f} ms", t.composes, t.lastComposeMs), std::format("{} layer packs, {} in flight", t.layerPacks, t.inFlightLayers)};
-    stats["scene.extract"] = {std::format("{} extracts, last {:.1f} ms", t.extracts, t.lastExtractMs),
-                              std::format("{} meshes, {} materials, {} textures", t.meshEntries, t.materialEntries, t.textureEntries)};
+    stats["scene.placement"] = {std::format("{} placements ({} drawn), last change {:.1f} ms", t.placements, t.placementsDrawn, t.lastPlaceMs),
+                                std::format("{} meshes, {} materials, {} textures", t.meshEntries, t.materialEntries, t.textureEntries)};
     stats["scene.changes"] = {std::format("{} change lists sent", gpu.changeListsSubmitted), view.scene.idle() ? std::string("scene thread idle") : std::string("scene thread working")};
     stats["main.scene"] = {r.resident ? std::string("resident") : std::format("loading, {} frames", r.loadingFrames), std::format("script frame {}{}", r.scriptFrame, r.scriptHeld ? ", held" : "")};
     stats["main.input"] = {std::format("{:.1f} m/s", view.cam.speed)};
@@ -1623,7 +1630,7 @@ auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext
     records.add("map", "the engine as a map: lanes (processes, threads), nodes (what each part is, its records, windows and README, its live numbers) and edges (what flows between them)", [&view](RpcResponder responder) {
         responder.respond(mapRecord(view));
     });
-    records.add("scenethread", "the scene thread: requests, composes and extracts, assets in flight and held, and residency (the script's hold, the load's longest frame)", [&view](RpcResponder responder) {
+    records.add("scenethread", "the scene thread: requests, composes and placement passes, assets in flight and held, and residency (the script's hold, the load's longest frame)", [&view](RpcResponder responder) {
         responder.respond(sceneThreadRecord(view));
     });
     records.add("gpuscene", "the GPU scene's flow: change lists taken and drawn, the upload queue and its budget, the geometry pool and what waits for room", [&view](RpcResponder responder) {

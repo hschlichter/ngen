@@ -60,7 +60,7 @@ auto drawAssets(const SceneFlowWindowState& state) -> void {
 
 auto drawThread(const SceneFlowWindowState& state) -> void {
     const auto& t = state.thread;
-    if (!stage("2. Scene thread", "Composes the World from the layer packs (as USD composes a stage), extracts the draws, and keeps meshes, materials and textures by asset.")) {
+    if (!stage("2. Scene thread", "Composes the World from the layer packs (as USD composes a stage), places its contents (a tree whose edits are the draws' changes), and keeps meshes, materials and textures by asset.")) {
         return;
     }
     ImGui::Text("requests: %llu posted, %llu applied; %llu batches", (unsigned long long) t.requestsPosted, (unsigned long long) t.requestsApplied, (unsigned long long) t.batches);
@@ -71,13 +71,14 @@ auto drawThread(const SceneFlowWindowState& state) -> void {
                 t.contentsReached,
                 t.prototypesHeld,
                 t.levelsHeld);
-    ImGui::Text("extract: %llu, last %.1f ms%s", (unsigned long long) t.extracts, t.lastExtractMs, t.extractNeeded ? " (needed)" : "");
-    ImGui::Text("  walk %.1f ms (%llu content walks reused, %llu walked, %llu kept), slots %.1f ms",
-                t.extractVisitMs,
-                (unsigned long long) t.extractReused,
-                (unsigned long long) t.extractWalked,
-                (unsigned long long) t.extractKept,
-                t.extractSlotsMs);
+    ImGui::Text("placement passes: %llu%s; placements: %u, %u of them drawn", (unsigned long long) t.places, t.placeNeeded ? " (needed)" : "", t.placements, t.placementsDrawn);
+    ImGui::Text("  last that changed: %.1f ms, %u placements built; slots %u added, %u removed, %u updated",
+                t.lastPlaceMs,
+                t.placementsBuilt,
+                t.slotsAdded,
+                t.slotsRemoved,
+                t.slotsUpdated);
+    ImGui::Text("  content walks: %llu built since opened, %llu kept", (unsigned long long) t.walksBuilt, (unsigned long long) t.walksKept);
     ImGui::Text("in flight: %u layers, %u meshes, %u materials, %u textures, %u other", t.inFlightLayers, t.inFlightMeshes, t.inFlightMaterials, t.inFlightTextures, t.inFlightOther);
     ImGui::Text("held: %u layer packs, %u mesh packs, %u material packs, %u texture packs; %u failed", t.layerPacks, t.meshPacks, t.materialPacks, t.texturePacks, t.failedAssets);
     ImGui::Text("libraries (told to the renderer): %u meshes, %u materials, %u textures", t.meshEntries, t.materialEntries, t.textureEntries);
@@ -178,7 +179,7 @@ auto drawSceneFlowWindow(bool& show, SceneFlowWindowState& state) -> void {
     drawAssets(state);
     arrow("packs arrive; the scene thread wakes");
     drawThread(state);
-    arrow("3. change lists: what extract changed, taken by the main thread each frame and handed to the render thread");
+    arrow("3. change lists: what a placement pass changed, taken by the main thread each frame and handed to the render thread");
     drawGpu(state);
     arrow("drawn by the frame graph's passes (Frame Graph window)");
     drawResidency(state);
