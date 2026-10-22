@@ -437,6 +437,14 @@ private:
     std::unordered_map<const ContentWalk*, uint32_t> walkUses;
     std::unordered_map<std::string, uint32_t> meshNames;
     std::unordered_map<int64_t, uint32_t> contentPlacements;
+    // The streaming roots in drawn placements, by path, with their rows as the placements have them: what the heuristic evaluates, kept
+    // as placements change so an evaluation doesn't walk the tree. `uses` counts the placements holding the root (two while one replaces
+    // the other).
+    struct PlacedLodRoot {
+        SceneLodRoot row;
+        uint32_t uses = 0;
+    };
+    std::map<std::string, PlacedLodRoot> placedRoots;
     std::unordered_map<int64_t, uint64_t> placedVersions; // the version each placed content had at the last pass
     uint32_t placementCount = 0;
     uint32_t drawnPlacementCount = 0;

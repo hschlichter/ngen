@@ -123,7 +123,8 @@ do its draws: only where it is placed.
   a threshold doesn't flip a root. A level set by hand (`lod`, the LOD window) wins until `lod-reset`; with the heuristic off (`lod-heuristic off`,
   `view.lod.heuristic`, the LOD window's toggle) every other root wants its default; a root without a usable heuristic (`heuristicChosen`,
   src/world/README.md "Loading") wants its default ("no usable heuristic"). Every root the heuristic picks finer goes finer: what fits in memory is
-  the budgets' to decide, not a count of roots. The main thread posts the camera (`setCamera`) once it has been placed, not while it follows the scene
+  the budgets' to decide, not a count of roots. The roots evaluated are the streaming roots of drawn placements, kept as placements are built
+  and released (`placedRoots`), so an evaluation costs per placed root and walks no tree. The main thread posts the camera (`setCamera`) once it has been placed, not while it follows the scene
   loading; the scene thread evaluates when it moved, after a pass that drew roots not drawn before and when levels changed, and gives the composer only what changed, which links
   the levels again without composing the stage (`WorldComposer::relink`). The `streaming` record has per root its screen size, whether its extent is
   in the view's frustum (what USD's query would go by), the level wanted and why, drawn and loaded, for a level waited for what it waits for,

@@ -453,6 +453,18 @@ auto ViewScene::useNode(const Placement& node, int delta) -> void {
     }
     if (node.drawn) {
         drawnPlacementCount += delta;
+        for (const auto& root : node.roots) {
+            if (!root.listed) {
+                continue;
+            }
+            if (delta > 0) {
+                auto& placed = placedRoots[root.path];
+                placed.row = root.row;
+                placed.uses++;
+            } else if (auto it = placedRoots.find(root.path); it != placedRoots.end() && --it->second.uses == 0) {
+                placedRoots.erase(it);
+            }
+        }
     }
     if (node.kind == Placement::Kind::Prototype || node.kind == Placement::Kind::Level) {
         auto key = ((int64_t) node.kind << 32) | (int64_t) (uint32_t) node.content;
@@ -1411,6 +1423,11 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
                 changed.loaded = lod.loaded;
                 changed.setByHand = setByHand;
                 changed.waiting = waiting;
+                if (node.drawn) {
+                    if (auto placed = placedRoots.find(root.path); placed != placedRoots.end()) {
+                        placed->second.row = changed;
+                    }
+                }
             }
         }
     }

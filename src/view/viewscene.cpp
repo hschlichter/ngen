@@ -641,7 +641,8 @@ auto ViewScene::evaluateLevels() -> bool {
     uint32_t evaluated = 0;
     uint32_t finer = 0;
     uint32_t coarser = 0;
-    for (const auto& root : draws->records().lodRoots) {
+    for (const auto& [path, placed] : placedRoots) {
+        const auto& root = placed.row;
         auto levelCount = (uint32_t) root.levels.size();
         if (levelCount == 0) {
             continue;
@@ -743,20 +744,14 @@ auto ViewScene::keepLevel(const std::string& rootPath, uint32_t level, bool keep
 auto ViewScene::releaseLevels() -> bool {
     auto now = std::chrono::steady_clock::now();
     auto delay = std::chrono::milliseconds((int64_t) (unloadDelaySeconds * 1000.0));
-    std::unordered_map<std::string, std::optional<uint32_t>> drawnOf;
-    for (const auto& root : draws->records().lodRoots) {
-        if (levelsKept.contains(root.path)) {
-            drawnOf[root.path] = root.drawn;
-        }
-    }
     std::vector<std::pair<std::string, uint32_t>> due;
     for (auto& [path, levels] : levelsKept) {
         for (auto& [level, since] : levels) {
             if (now < since + delay) {
                 continue;
             }
-            auto drawn = drawnOf.find(path);
-            if (drawn != drawnOf.end() && drawn->second == level) {
+            auto placed = placedRoots.find(path);
+            if (placed != placedRoots.end() && placed->second.row.drawn == level) {
                 since = now;
                 keptLevelsChanged = true;
                 continue;

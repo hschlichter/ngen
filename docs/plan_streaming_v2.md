@@ -2,7 +2,7 @@
 
 **Status. In progress.** A review of the streaming and LOD system as built by [plan_streaming_districts.md](plan_streaming_districts.md), with what
 to remove and what to replace. Decisions 1 to 8 locked 2026-10-15, each as recommended; the test world is best-practice USD with variant
-sets and `PointInstancer` (2026-10-16). Steps 1 to 3 done 2026-10-16, step 4 2026-10-18, step 5 2026-10-23.
+sets and `PointInstancer` (2026-10-16). Steps 1 to 3 done 2026-10-16, step 4 2026-10-18, step 5 2026-10-23, step 6 2026-10-23.
 
 ## Current state
 
@@ -393,6 +393,18 @@ Locked (2026-10-15). Stays: screen size of the extent's bounding sphere, the 20%
 - **Lines**: `viewscene.cpp` 1,195 → 1,267, `placement.*` 1,916 → 1,968, `worldcomposer.cpp` 1,892 → 1,917.
 - **Unchanged**: levels set inside prototypes still never unload (`prototypeLevels` only grows); the test world has no streaming roots in
   prototypes. Material and texture packs are never released, as before.
+
+### Step 6 results (2026-10-23)
+
+- Step 4 had already moved the evaluation onto the placed roots: it read the streaming roots of drawn placements from the records (32 to
+  112 on the 27-camera flight, against 42,387 roots when step 1 measured). What was left was how it got them: the records are gathered by
+  walking the whole tree, 26 ms at the median and 40 ms at most per evaluation, against 0.1 ms for the roots themselves.
+- **The placed roots are kept as placements change** (`ViewScene::placedRoots`): a drawn placement's listed roots are added and removed with
+  its uses (`useNode`), and a row the pass changes is updated with it. The evaluation and the unload delay's drawn check read that.
+- **Measured**: evaluation 0.18 ms at the median, 0.62 ms at most, on the same flight; every root's levels the same as step 5 at all 54
+  records, the same levels, contents and mesh packs unloaded, no warnings. The layered LOD script gives the same levels; baselines
+  byte-identical.
+- **Visibility**: none added; the `streaming` record's `evaluation.ms` shows the change.
 
 ## Visibility
 
