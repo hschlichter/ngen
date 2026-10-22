@@ -462,9 +462,13 @@ auto main(int argc, char* argv[]) -> int {
     float viewAspect = 1.0f;
     bool lodStatesWanted = false;
     std::string renderLodCountedPath;
+    // Snapshots taken, and the one the Camera and LOD windows' lists were last built from (UINT64_MAX: not yet).
+    uint64_t snapshotsTaken = 0;
+    uint64_t cameraListSnapshot = UINT64_MAX;
+    uint64_t lodRowsSnapshot = UINT64_MAX;
     uint64_t renderLodCountedRevision = UINT64_MAX;
     // Dumps and captures that finish frames later, for script verbs and RPC calls alike.
-    ViewDumps dumps(scene.renderWorld(), primPathOf, latestCull, rhiDevice.limits().pipelineStatistics);
+    ViewDumps dumps([&scene]() -> const RenderWorld& { return scene.renderWorld(); }, primPathOf, latestCull, rhiDevice.limits().pipelineStatistics);
 
     // Every command is an RPC method; script lines and live calls run the same code.
     RpcRegistry registry;
@@ -520,10 +524,17 @@ auto main(int argc, char* argv[]) -> int {
         profile::endZone();
         if (sceneUpdated) {
             PROFILE_ZONE("SceneInputs");
+            snapshotsTaken++;
             cam.worldUp = scene.worldUp();
             if (autoFrame) {
                 frameSceneView();
             }
+        }
+        // The Camera and LOD windows' lists, built from a snapshot's records (gathered from the placement tree on first use) only while the
+        // window is open, once per snapshot.
+        if (viewUI.wantsCameraWindow() && cameraListSnapshot != snapshotsTaken) {
+            cameraListSnapshot = snapshotsTaken;
+            PROFILE_ZONE("SceneWindowLists");
             // The cameras the scene authors, as poses for the Camera window.
             auto& sceneCameras = viewUI.cameraWindow().sceneCameras;
             sceneCameras.clear();
@@ -532,6 +543,10 @@ auto main(int argc, char* argv[]) -> int {
                 placed.place(authored.worldTransform);
                 sceneCameras.push_back({.name = authored.path, .pose = {placed.position.x, placed.position.y, placed.position.z, placed.yaw, placed.pitch}});
             }
+        }
+        if (viewUI.wantsLodWindow() && lodRowsSnapshot != snapshotsTaken) {
+            lodRowsSnapshot = snapshotsTaken;
+            PROFILE_ZONE("SceneWindowLists");
             // The LOD roots, for the LOD window.
             auto& lodRows = viewUI.lodWindow().rows;
             lodRows.clear();

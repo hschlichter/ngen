@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cmath>
 #include <format>
+#include <utility>
 
 namespace {
 
@@ -152,11 +153,15 @@ auto ViewScene::setLocalTransform(const std::string& path, const glm::mat4& loca
 }
 
 auto ViewScene::update() -> bool {
-    std::lock_guard lock(mutex);
-    if (published == current) {
-        return false;
+    {
+        std::lock_guard lock(mutex);
+        if (published == current) {
+            return false;
+        }
+        retired.push_back(std::move(current));
+        current = published;
     }
-    current = published;
+    wake.notify_one();
     return true;
 }
 
@@ -191,10 +196,11 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
     while (!stop.stop_requested()) {
         std::deque<Request> batch;
         bool answers = false;
+        std::vector<std::shared_ptr<const SceneSnapshot>> toFree;
         {
             std::unique_lock lock(mutex);
             auto woken = [this] {
-                return !requests.empty() || answered || postedCamera.has_value();
+                return !requests.empty() || answered || postedCamera.has_value() || !retired.empty();
             };
             // Something kept past its unload delay: wake for it at its time, or sooner for a request or an answer.
             if (releaseDue) {
@@ -204,6 +210,16 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
             }
             if (stop.stop_requested()) {
                 return;
+            }
+            toFree = std::move(retired);
+            retired.clear();
+            // Woken only to free what the main thread let go of: no batch, so nothing is published (which would hand back another).
+            bool due = releaseDue && std::chrono::steady_clock::now() >= *releaseDue;
+            if (requests.empty() && !answered && !postedCamera.has_value() && !due) {
+                lock.unlock();
+                PROFILE_ZONE("SceneRetire");
+                toFree.clear();
+                continue;
             }
             batch = std::move(requests);
             requests.clear();
@@ -215,6 +231,10 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
                 postedCamera.reset();
                 evaluateNeeded = true;
             }
+        }
+        {
+            PROFILE_ZONE("SceneRetire");
+            toFree.clear();
         }
         PROFILE_ZONE("SceneBatch");
         stats.batches++;
@@ -812,9 +832,14 @@ auto ViewScene::publish() -> void {
         snapshot->lodLevels = world.lodLevels;
     }
     snapshot->idle = inFlight.empty() && !composeNeeded && !placeNeeded;
-    std::lock_guard lock(mutex);
-    published = std::move(snapshot);
-    working = false;
+    // The snapshot this replaces, when the main thread never took it, is freed here after the lock, not under it: update() waits on it.
+    std::shared_ptr<const SceneSnapshot> replaced;
+    {
+        std::lock_guard lock(mutex);
+        replaced = std::exchange(published, std::move(snapshot));
+        working = false;
+    }
+    replaced.reset();
     stats.publishMs = msSince(publishStart);
 }
 

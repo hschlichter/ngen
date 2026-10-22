@@ -31,8 +31,9 @@ struct DumpTarget {
 // when its data arrives. File output and console messages are the same as the old verbs'.
 class ViewDumps {
 public:
-    // `primPathOf` names the prim of a draw (RenderWorld's prim index); empty when unknown.
-    ViewDumps(const RenderWorld& renderWorld, std::function<std::string(uint32_t)> primPathOf, const CullResult& latestCull, bool pipelineStatistics);
+    // `renderWorldOf` gives the draws of the snapshot the view holds now (each snapshot has its own, freed with it); `primPathOf` names the
+    // prim of a draw (RenderWorld's prim index), empty when unknown.
+    ViewDumps(std::function<const RenderWorld&()> renderWorldOf, std::function<std::string(uint32_t)> primPathOf, const CullResult& latestCull, bool pipelineStatistics);
 
     // Render debug, memory and counters answer a responder only; they are records (introspect.get), not files.
     auto requestRenderDebug(RpcResponder responder) -> void;
@@ -87,7 +88,7 @@ private:
     auto writeRenderDebug(const RenderDebugSnapshot& snapshot) -> void;
     auto finishGpuScene(int group) -> void;
 
-    const RenderWorld& renderWorld;
+    std::function<const RenderWorld&()> renderWorldOf;
     std::function<std::string(uint32_t)> primPathOf;
     const CullResult& latestCull;
     bool pipelineStatistics = false;

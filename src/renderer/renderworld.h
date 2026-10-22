@@ -178,25 +178,23 @@ struct SceneChanges {
     }
     // Appends `later`, which applies after this.
     auto append(SceneChanges later) -> void {
-        for (auto& entry : later.meshesAdded) {
-            meshesAdded.push_back(std::move(entry));
-        }
-        meshesRemoved.insert(meshesRemoved.end(), later.meshesRemoved.begin(), later.meshesRemoved.end());
-        for (auto& entry : later.texturesAdded) {
-            texturesAdded.push_back(std::move(entry));
-        }
-        texturesRemoved.insert(texturesRemoved.end(), later.texturesRemoved.begin(), later.texturesRemoved.end());
-        for (auto& entry : later.materialsChanged) {
-            materialsChanged.push_back(std::move(entry));
-        }
-        materialsRemoved.insert(materialsRemoved.end(), later.materialsRemoved.begin(), later.materialsRemoved.end());
-        for (auto& entry : later.instances) {
-            instances.push_back(std::move(entry));
-        }
+        // Each list taken whole while this one is empty (the usual case: the consumer takes the changes every frame), else added to.
+        auto join = [](auto& into, auto& from) {
+            if (into.empty()) {
+                into = std::move(from);
+                return;
+            }
+            into.insert(into.end(), std::make_move_iterator(from.begin()), std::make_move_iterator(from.end()));
+        };
+        join(meshesAdded, later.meshesAdded);
+        join(meshesRemoved, later.meshesRemoved);
+        join(texturesAdded, later.texturesAdded);
+        join(texturesRemoved, later.texturesRemoved);
+        join(materialsChanged, later.materialsChanged);
+        join(materialsRemoved, later.materialsRemoved);
+        join(instances, later.instances);
         slotCount = later.slotCount;
-        for (auto& entry : later.lodGroups) {
-            lodGroups.push_back(entry);
-        }
+        join(lodGroups, later.lodGroups);
         lodGroupCount = later.lodGroupCount;
         if (later.lightsChanged) {
             lightsChanged = true;

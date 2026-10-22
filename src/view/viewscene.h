@@ -341,7 +341,10 @@ private:
     bool answered = false;                          // the asset client answered something since the scene thread last looked
     bool working = false;                           // the scene thread took a batch and hasn't published its result yet
     std::shared_ptr<const SceneSnapshot> published; // the latest, for update()
-    SceneChanges pending;                           // what changed since takeChanges() last ran
+    // Snapshots update() let go of: the scene thread frees them (their placements and lists only they held can take a while), so the main
+    // thread only swaps a pointer.
+    std::vector<std::shared_ptr<const SceneSnapshot>> retired;
+    SceneChanges pending; // what changed since takeChanges() last ran
     std::atomic<uint64_t> requestsPosted{0};
     std::atomic<uint64_t> requestsApplied{0};
 

@@ -81,6 +81,9 @@ do its draws: only where it is placed.
   (`ChunkedList`) a published snapshot holds is copied before it changes, so publishing copies no slots. `SceneDraws` holds the slots, the
   tree, the prim paths and the assets per prim; what the queries derive from them (the records, the prims per asset, the slots per prim) is
   gathered from it on the first query.
+- **Freed off the main thread.** A snapshot the main thread lets go of (`update` takes the next) goes back to the scene thread, which frees
+  it on its next wake without publishing; one the main thread never took is freed after the lock, and a change list joins the pending
+  one by moving its lists when that is empty. So `update` and `takeChanges` swap pointers under the lock and wait on nothing large.
 
 - **What is drawn**: entities that are active, defined and not abstract, visible (an invisible ancestor hides its subtree), not in a LOD
   level their root doesn't draw, with a mesh asset, and of a purpose that is shown: `default` and `render` always, `guide` and `proxy`

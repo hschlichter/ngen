@@ -85,8 +85,8 @@ auto base64(const std::vector<char>& bytes) -> std::string {
 
 } // namespace
 
-ViewDumps::ViewDumps(const RenderWorld& world, std::function<std::string(uint32_t)> primPathOf, const CullResult& cull, bool statistics)
-    : renderWorld(world), primPathOf(std::move(primPathOf)), latestCull(cull), pipelineStatistics(statistics) {
+ViewDumps::ViewDumps(std::function<const RenderWorld&()> renderWorldOf, std::function<std::string(uint32_t)> primPathOf, const CullResult& cull, bool statistics)
+    : renderWorldOf(std::move(renderWorldOf)), primPathOf(std::move(primPathOf)), latestCull(cull), pipelineStatistics(statistics) {
 }
 
 auto ViewDumps::primPath(uint32_t prim) const -> std::string {
@@ -257,7 +257,7 @@ auto ViewDumps::onCaptureResult(CaptureResult& result) -> bool {
 
 auto ViewDumps::finishGpuScene(int group) -> void {
     auto& g = gpuSceneGroups[group];
-    auto primOfInstance = primOfEachInstance(renderWorld);
+    auto primOfInstance = primOfEachInstance(renderWorldOf());
     auto path = [&](uint32_t prim) -> std::string {
         auto p = primPath(prim);
         return p.empty() ? std::string("(unknown prim)") : p;

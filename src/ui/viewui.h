@@ -183,6 +183,9 @@ public:
     auto wantsSceneFlow() const -> bool { return showSceneFlowWindow; }
     // The Engine Map: the application sets its live numbers each frame while it is open.
     auto wantsEngineMap() const -> bool { return showEngineMapWindow; }
+    // Whether the LOD and Camera windows are open: their lists are built from the scene only then.
+    auto wantsLodWindow() const -> bool { return showLodWindow; }
+    auto wantsCameraWindow() const -> bool { return showCameraWindow; }
     auto setEngineMapStats(EngineMapStats stats) -> void { engineMapState.stats = std::move(stats); }
     auto setBookmarkPath(std::string path) -> void {
         cameraState.bookmarkPath = std::move(path);
