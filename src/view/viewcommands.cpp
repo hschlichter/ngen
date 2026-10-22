@@ -1391,6 +1391,7 @@ auto cullingRecord(const ViewContext& view) -> Json {
         {"instances", cull.instances},
         {"camera", {{"drawn", cull.instances - cull.cameraCulled - cull.lodDropped}, {"culled", cull.cameraCulled}, {"triangles", cull.cameraTriangles}}},
         {"lodLevelNotDrawn", cull.lodDropped},
+        {"regionOverflow", cull.regionOverflow},
         {"sceneTriangles", cull.sceneTriangles},
         {"cascades", cascades},
     };

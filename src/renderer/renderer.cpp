@@ -831,6 +831,7 @@ auto Renderer::cullResult() const -> CullResult {
         .cascadeCount = drawLists.cascadeCount(),
         .cameraVisible = drawLists.cameraVisible(),
         .viewBits = drawLists.viewBits(),
+        .regionOverflow = drawLists.regionOverflow(),
         .lodDropped = drawLists.lodDropped(),
     };
     const auto& lod = lodGroups.latest();
@@ -911,6 +912,15 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     {
         PROFILE_ZONE("ParseReadback");
         drawLists.parseReadback(currentFrame, slotFrame[currentFrame]);
+        // Commands dropped past their region's end mean the CPU's bucket counts disagree with the cull shader's rule: draws are missing.
+        if (auto overflow = drawLists.regionOverflow(); overflow != reportedRegionOverflow) {
+            if (overflow > 0) {
+                TRACE_WARNING("Render", "CullRegionOverflow", "DrawLists")
+                    .text(std::format("{} draw commands dropped past their region's end: the CPU's bucket counts are short of the cull shader's buckets, so those draws are missing", overflow))
+                    .field("dropped", (int64_t) overflow);
+            }
+            reportedRegionOverflow = overflow;
+        }
         lodGroups.parseReadback(currentFrame, slotFrame[currentFrame]);
     }
     captureService.afterFence(currentFrame);
@@ -1068,7 +1078,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         }
         const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, snapshot.depthPrepass);
 
-        drawLists.addReadbackPass(frameGraph, drawHandles, currentFrame, renderDebugEnabled);
+        drawLists.addReadbackPass(frameGraph, drawHandles, currentFrame, renderDebugEnabled, m_frameIndex);
         lodGroups.addReadbackPass(frameGraph, lodHandles, currentFrame, snapshot.readLodStates, lodCamera.eye, lodCamera.windowArea);
 
         // The depth preview's far end: the camera has no far plane, so the farthest corner of the scene.

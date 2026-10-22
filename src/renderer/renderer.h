@@ -149,11 +149,12 @@ private:
 
     // Scene GPU tables and the GPU-driven draw path (src/renderer/README.md).
     GpuScene gpuScene;
-    DrawLists drawLists;               // indirect commands per view and bucket, written by instanceCullPass
-    InstanceCullPass instanceCullPass; // GPU culling
-    LodGroups lodGroups;               // render-LOD groups: their table, the levels picked, the residency of their levels
-    LodSelectPass lodSelectPass;       // the level each group draws, before culling
-    CaptureService captureService;     // resource captures at pass boundaries
+    DrawLists drawLists;                 // indirect commands per view and bucket, written by instanceCullPass
+    InstanceCullPass instanceCullPass;   // GPU culling
+    LodGroups lodGroups;                 // render-LOD groups: their table, the levels picked, the residency of their levels
+    LodSelectPass lodSelectPass;         // the level each group draws, before culling
+    uint32_t reportedRegionOverflow = 0; // the region overflow last traced (CullRegionOverflow), so a steady one is said once
+    CaptureService captureService;       // resource captures at pass boundaries
     bool frameDebugRequested = false;
     std::optional<FrameDebugCapture> frameDebugResult;
     bool countersEnabled = false;

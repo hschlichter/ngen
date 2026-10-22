@@ -32,7 +32,8 @@ const uint counterCameraCulled = regionCount * 2;         // 1: camera-culled in
 const uint counterCascadeCulled = counterCameraCulled + 1; // 4: culled primFirst instances per cascade
 const uint counterCascadeDrawn = counterCascadeCulled + 4; // 4: visible primFirst instances per cascade
 const uint counterLodDropped = counterCascadeDrawn + 4;    // 1: instances of a level their group doesn't draw
-const uint counterCount = counterLodDropped + 1;
+const uint counterRegionOverflow = counterLodDropped + 1;  // 1: commands dropped past their region's end (the scatter adds them)
+const uint counterCount = counterRegionOverflow + 1;
 
 const uint flagPrimFirst = 1u << 0;
 const uint flagDoubleSided = 1u << 1;
@@ -318,9 +319,12 @@ void scatter() {
             command.firstIndex = submesh ? mesh.firstIndex + inst.indexOffset : mesh.firstIndex;
             command.vertexOffset = mesh.vertexOffset;
             command.firstInstance = m;
-            // A command past the region's counted size would land in the next region (or past the buffer): never written.
+            // A command past the region's counted size would land in the next region (or past the buffer): never written, and counted, so
+            // a CPU count that disagrees with this shader's bucket rule shows (the scan zeroed the counter this frame).
             if (params.regionOffsets[r] + slot < regionEnd) {
                 commands.data[params.regionOffsets[r] + slot] = command;
+            } else {
+                atomicAdd(totals.data[counterRegionOverflow], 1u);
             }
         }
         barrier();

@@ -45,6 +45,7 @@ struct ScanPassData {
 
 struct ScatterPassData {
     FgBufferHandle commands;
+    FgBufferHandle counts;
 };
 
 } // namespace
@@ -155,6 +156,8 @@ auto InstanceCullPass::addPasses(FrameGraph& fg, const DrawLists::Handles& handl
             builder.read(handles.visibility, FgAccessFlags::StorageRead);
             builder.read(handles.groupOffsets, FgAccessFlags::StorageRead);
             data.commands = builder.write(handles.commands, FgAccessFlags::StorageWrite);
+            // The scan's totals, to which it adds the commands it dropped past their region's end.
+            data.counts = builder.write(handles.counts, FgAccessFlags::StorageWrite);
         },
         [dispatchMode, groupCount](FrameGraphContext& ctx, const ScatterPassData&) { dispatchMode(ctx, CullMode::Scatter, groupCount); });
 }

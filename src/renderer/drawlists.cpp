@@ -178,8 +178,14 @@ struct CullReadbackPassData {
 };
 } // namespace
 
-auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool captureCommands) -> void {
+auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool captureCommands, uint64_t frame) -> void {
     auto& slot = slots[frameSlot];
+    if (!captureCommands && slot.commandsReadback != nullptr) {
+        // The render debugger closed: the slot's last commands readback was parsed before this frame (after the slot's fence), so it goes.
+        deletionQueue->deferBuffer(frame, slot.commandsReadback);
+        slot.commandsReadback = nullptr;
+        slot.commandsReadbackMapped = nullptr;
+    }
     if (captureCommands && slot.commandsReadback == nullptr) {
         slot.commandsReadback = device->createBuffer({.size = commandBytes(), .usage = RhiBufferUsage::TransferDst, .memory = RhiMemoryUsage::GpuToCpu, .debugName = "cull.readback.commands"});
         slot.commandsReadbackMapped = device->mapBuffer(slot.commandsReadback);

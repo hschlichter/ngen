@@ -23,6 +23,7 @@ struct CullResult {
     std::array<uint64_t, maxShadowCascades> cascadeTriangles = {}; // drawn per cascade, every bucket
     std::vector<uint8_t> cameraVisible;                            // per instance, 1 = visible
     std::vector<uint8_t> viewBits;                                 // per instance, bit v = visible in view v (0 camera, 1.. cascades)
+    uint32_t regionOverflow = 0;                                   // commands dropped past their region's end: the CPU's bucket counts disagree with the shader's (a bug)
     // Render LOD: instances of a level their group doesn't draw (in no view), and from the selection's readback the groups, those drawing
     // each level, those falling back while the wanted level isn't resident, those at a forced level; per group the level drawn and
     // wanted (0xFF none) when the states were read.
@@ -68,7 +69,10 @@ public:
     static constexpr uint32_t counterCascadeCulled = counterCameraCulled + 1;
     static constexpr uint32_t counterCascadeDrawn = counterCascadeCulled + maxShadowCascades;
     static constexpr uint32_t counterLodDropped = counterCascadeDrawn + maxShadowCascades;
-    static constexpr uint32_t counterCount = counterLodDropped + 1;
+    // Commands the scatter dropped past their region's end: the CPU's bucket counts (countInstance) undercounted a region. 0 unless the
+    // CPU's bucket rule and the shader's disagree.
+    static constexpr uint32_t counterRegionOverflow = counterLodDropped + 1;
+    static constexpr uint32_t counterCount = counterRegionOverflow + 1;
     static constexpr uint32_t groupSize = 256;
     static constexpr uint32_t noBucket = UINT32_MAX;
 
@@ -124,8 +128,8 @@ public:
     // Imports the slot's buffers; the slot's fence guards them, so no earlier access carries over.
     auto import(FrameGraph& fg, uint32_t frameSlot) -> Handles;
     // Copies counts and visibility into the slot's readback buffer, and with captureCommands the commands into the slot's commands
-    // readback, made the first time it is asked for.
-    auto addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool captureCommands) -> void;
+    // readback, made when it is asked for and let go (at `frame`, through the deletion queue) the first frame it isn't.
+    auto addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool captureCommands, uint64_t frame) -> void;
     // Once the slot's fence has passed: parses what that slot's frame read back.
     auto parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void;
 
@@ -158,6 +162,7 @@ public:
     auto cascadeCulled(uint32_t cascade) const -> uint32_t { return latest.totals[counterCascadeCulled + cascade]; }
     auto cascadeDrawn(uint32_t cascade) const -> uint32_t { return latest.totals[counterCascadeDrawn + cascade]; }
     auto lodDropped() const -> uint32_t { return latest.totals[counterLodDropped]; }
+    auto regionOverflow() const -> uint32_t { return latest.totals[counterRegionOverflow]; }
     auto cascadeCount() const -> uint32_t { return latest.viewCount > 0 ? latest.viewCount - 1 : 0; }
     auto instanceCount() const -> uint32_t { return latest.instanceCount; }
     auto commandCount() const -> uint32_t;
@@ -182,7 +187,7 @@ private:
         RhiBuffer* counts = nullptr;
         RhiBuffer* readback = nullptr; // GpuToCpu, mapped: totals, visibility
         void* readbackMapped = nullptr;
-        RhiBuffer* commandsReadback = nullptr; // GpuToCpu, mapped: the commands; made when the render debugger first asks
+        RhiBuffer* commandsReadback = nullptr; // GpuToCpu, mapped: the commands; only while the render debugger asks
         void* commandsReadbackMapped = nullptr;
         // What the slot's last recorded frame copied into the readback, and how it laid out the regions.
         bool pending = false;

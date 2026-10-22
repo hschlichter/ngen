@@ -231,7 +231,9 @@ Tables:
 - **Region sizes.** An instance's bucket follows from its flags, so it can land in one camera region and one region per cascade. The renderer
   keeps the live instances per bucket as slots change (`DrawLists::countInstance`, the shader's bucket rule on the CPU), and each frame
   `writeParams` packs the regions one after another, each as large as its bucket's count (`CullParams::regionOffsets`): the command buffer holds
-  the camera's instances plus four cascades' at most, not every instance in every region. The scatter never writes past a region's end. Each instance's world bounds are tested against six normalized planes per view (`Frustum::fromViewProj`, computed on the CPU into the
+  the camera's instances plus four cascades' at most, not every instance in every region. The scatter never writes past a region's end; a
+  command it drops there is counted (`counterRegionOverflow`, the `culling` record's `regionOverflow`) and traced (`CullRegionOverflow`, a
+  warning, once per change): the CPU's bucket rule and the shader's disagree, and those draws are missing. It is 0 otherwise. Each instance's world bounds are tested against six normalized planes per view (`Frustum::fromViewProj`, computed on the CPU into the
   slot's parameter buffer) with the positive-corner test. Instances without valid bounds are always visible, and with culling off every instance is. A
   frozen frustum is only a different camera matrix in the snapshot (`CullState`).
 - **Ordered compaction (reduce-then-scan).** `InstanceCull` counts, per workgroup of 256 instances, how many commands each region gets.
@@ -245,7 +247,7 @@ Tables:
   per-instance ones grow with the instance count, the command buffer with the instances counted in the buckets. The graph has no
   transient buffers yet: a pooled buffer reused next frame would need synchronisation against the previous frame's reads.
 - **Readback.** `CullReadback` copies the totals and the visibility bits into the slot's host-visible readback buffer, and while the render debugger
-  is open the commands into the slot's commands readback, made when it is first asked for; `DrawLists::parseReadback` reads them after the slot's
+  is open the commands into the slot's commands readback, made when it is asked for and let go the first frame the slot's frame isn't; `DrawLists::parseReadback` reads them after the slot's
   fence, each region at the offset that frame laid it out at. `CullResult` (the view's `culling` record, Culling window, AABB
   overlay), the per-pass `draws`/`primitives` (through `addIndirectStats`) and the draw log all come from there.
 
