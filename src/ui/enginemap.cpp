@@ -82,9 +82,9 @@ const std::vector<EngineMapNode> nodes = {
         .description = "The LOD heuristic for streaming roots (LOD roots whose levels are payloads; render-LOD roots are picked on the GPU, "
                        "see LOD select): each one reached gets the level its screen size from the camera picks (UsdLod's screen-size "
                        "heuristic, without the frustum, with a 20% band before going coarser), unless set by hand or the heuristic is off. "
-                       "Changed levels are linked again without composing the stage. A root draws a finer level only once it is complete "
-                       "(composed, its meshes held), the coarser one until then; what stopped being drawn or reached is unloaded after a "
-                       "delay, a root's coarsest level never.",
+                       "Changed levels are linked again without composing the stage. A root draws a finer level only once its placement waits "
+                       "for nothing (composed, its meshes, materials and textures held), the coarser one until then. A level no longer wanted "
+                       "stays loaded for the unload delay, then its placement, contents and assets go; a root's coarsest level never.",
         .records = {"streaming", "lod"},
         .windows = {"lod"},
         .readme = "src/view/README.md",
@@ -109,7 +109,8 @@ const std::vector<EngineMapNode> nodes = {
         .description = "A tree of placements of the World's contents (the stage, a prototype at each instance, each loaded LOD level at its root, "
                        "a point instancer's points), each owning the draws of its own prims; a pass builds again only what changed and looks only "
                        "where something waits or changed, and its slot changes are the change lists. Meshes, materials and textures are kept per "
-                       "asset in libraries, and for the unload delay after they stop being drawn.",
+                       "asset in libraries while a placement uses them, drawn or not (a level loading, the floor under a finer one, a level "
+                       "in its unload delay), so switching levels uploads nothing.",
         .records = {"scenethread", "lod", "payloads", "instancers", "variants"},
         .windows = {"sceneflow", "lod"},
         .readme = "src/view/README.md",

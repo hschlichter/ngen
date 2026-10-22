@@ -81,10 +81,13 @@ struct SceneThreadStats {
     uint32_t lodRootsEvaluated = 0;
     uint32_t lodFiner = 0;
     uint32_t lodCoarser = 0;
-    // Unloading, since the scene opened: mesh packs released, and composed contents the composer let go.
+    // Unloading, since the scene opened: levels let go after the unload delay, the composed contents no level reached any more, and mesh
+    // packs no placement named any more; and the levels kept now, not wanted, for the delay.
+    uint64_t releasedLevels = 0;
+    uint64_t releasedContents = 0;
     uint64_t releasedMeshes = 0;
     uint64_t releasedMeshBytes = 0;
-    uint64_t contentsEvicted = 0;
+    uint32_t keptLevels = 0;
     double lodEvaluateMs = 0.0;
     uint64_t lodEvaluations = 0;
     uint64_t relinks = 0;
@@ -141,6 +144,9 @@ struct SceneSnapshot {
     std::shared_ptr<const SceneLodChoices> lodChoices = std::make_shared<SceneLodChoices>();
     bool lodHeuristic = true;
     double unloadDelay = 10.0;
+    // The levels kept for the unload delay, by root path: each with when the delay runs out.
+    std::shared_ptr<const std::map<std::string, std::map<uint32_t, std::chrono::steady_clock::time_point>>> keptLevels =
+        std::make_shared<std::map<std::string, std::map<uint32_t, std::chrono::steady_clock::time_point>>>();
     glm::mat4 unitScale = glm::mat4(1.0f);
     std::vector<std::string> assetIds; // every asset the scene uses: layer packs, meshes, materials, textures, failed ones
     // The World, summarised.
@@ -183,9 +189,11 @@ public:
     auto cameraAspect() const -> float;
     // The LOD heuristic on (every root not set by hand wants the level its screen size picks) or off (its default).
     auto setLodHeuristic(bool on) -> void;
-    // How long what stopped being drawn or reached is kept before it is unloaded (packs, library entries, GPU copies, composed contents).
+    // How long a LOD level that stopped being wanted stays loaded (its placement, contents, packs, library entries and GPU copies).
     auto setUnloadDelay(double seconds) -> void;
     auto unloadDelay() const -> double { return current->unloadDelay; }
+    // The levels kept for the unload delay, by root path: each with when its delay runs out.
+    auto keptLevels() const -> const std::map<std::string, std::map<uint32_t, std::chrono::steady_clock::time_point>>& { return *current->keptLevels; }
     auto lodHeuristic() const -> bool { return current->lodHeuristic; }
     // What the heuristic chose at its last evaluation, by root path.
     auto lodChoices() const -> const SceneLodChoices& { return *current->lodChoices; }
@@ -328,7 +336,8 @@ private:
     auto constantTexture(const glm::vec4& color) -> TextureHandle;
     // The library entry for a mesh asset, added on first use; null when its pack hasn't arrived.
     auto mesh(const std::string& meshAsset) -> MeshHandle;
-    // Records what the slots use, against what they used, as changes for the renderer; what stopped being used is kept for the unload delay.
+    // Records what the placements use (the slots' entries and those undrawn placements hold), against what they used, as changes for the
+    // renderer; what isn't used any more leaves the libraries at once.
     auto collectChanges(const std::set<uint32_t>& meshesNow, const std::set<uint32_t>& materialsNow, const std::set<uint32_t>& texturesNow, SceneChanges& changes) -> void;
     auto addChanges(SceneChanges changes) -> void;
 
@@ -361,7 +370,6 @@ private:
     std::set<std::string> refreshing;                    // asked to be fetched again: their arrival replaces what the scene holds
     bool composeNeeded = false;
     bool placeNeeded = false;
-    bool libraryNeeded = false; // what the slots use is weighed again: something kept may be past its unload delay
     // The LOD heuristic: the camera the main thread posted (between the threads) and the scene thread's, the levels set by hand, what the
     // heuristic chose last per root (its hysteresis), what the composer was given, and whether to evaluate again.
     std::optional<CameraInput> postedCamera;
@@ -371,17 +379,24 @@ private:
     std::unordered_map<std::string, uint32_t> handLevels;
     std::unordered_map<std::string, uint32_t> heuristicLevels;
     std::unordered_map<std::string, uint32_t> composerLevels;
-    // Unloading: what stopped being drawn (library entries, on the GPU) or reached (composed contents) goes after this long; when the
-    // next goes, for the scene thread to wake.
+    // Unloading: a level that stopped being wanted stays loaded for the delay, by root path and level from when it stopped (or was last
+    // found still drawn); the composer keeps them loaded (keepLodLevels). When the next delay runs out, for the scene thread to wake.
     double unloadDelaySeconds = 10.0;
-    std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> meshUnusedSince;
-    std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> materialUnusedSince;
-    std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> textureUnusedSince;
-    std::optional<std::chrono::steady_clock::time_point> releaseDue;
-    std::chrono::steady_clock::time_point lastEvict;
+    std::map<std::string, std::map<uint32_t, std::chrono::steady_clock::time_point>> levelsKept;
+    bool keptLevelsChanged = false;
+    std::shared_ptr<const std::map<std::string, std::map<uint32_t, std::chrono::steady_clock::time_point>>> keptPublished =
+        std::make_shared<std::map<std::string, std::map<uint32_t, std::chrono::steady_clock::time_point>>>();
+    std::optional<std::chrono::steady_clock::time_point> levelsDue;
+    auto keepLevel(const std::string& rootPath, uint32_t level, bool keep) -> void;
+    // Lets go of the levels past their delay that aren't drawn; true when it let one go (the composer links again).
+    auto releaseLevels() -> bool;
+    auto updateLevelsDue() -> void;
+    uint64_t reportedReleasedLevels = 0;
+    uint64_t reportedReleasedContents = 0;
     uint64_t reportedReleasedMeshes = 0;
     uint64_t reportedReleasedBytes = 0;
-    auto unload() -> void;
+    // One LevelsUnloaded per batch that let something go.
+    auto reportReleases() -> void;
     std::shared_ptr<const SceneLodChoices> choices = std::make_shared<SceneLodChoices>();
     bool composeReported = false; // PacksComposed traced since the scene opened or a pack last arrived
     bool assetsReported = false;  // SceneAssetsReceived traced since the last asset was requested
@@ -416,8 +431,9 @@ private:
     // held; the placements of each content (a placed content composed again makes the pass look at every placement); and the placements.
     std::map<uint32_t, RenderLight> lightsByPrim;
     bool lightsChanged = false;
-    std::vector<uint32_t> meshUses; // by handle index
+    std::vector<uint32_t> meshUses; // by handle index: slots drawing it and undrawn placements holding it
     std::vector<uint32_t> materialUses;
+    static auto countUse(std::vector<uint32_t>& uses, uint32_t index, int delta) -> void;
     std::unordered_map<const ContentWalk*, uint32_t> walkUses;
     std::unordered_map<std::string, uint32_t> meshNames;
     std::unordered_map<int64_t, uint32_t> contentPlacements;
@@ -450,18 +466,6 @@ private:
     auto walkOf(Placement::Kind kind, int32_t index, const WorldContent& content, Purpose purpose, const std::string& material, bool strong, const std::string& usePath, EntityId root = noEntity)
         -> std::shared_ptr<const ContentWalk>;
     auto overridesUnder(const std::string& usePath) const -> bool;
-    // Whether a content's walk is ready (contentReady's test) item by item, prototypes of point instancers included.
-    auto itemsReady(const World& world, Placement::Kind kind, int32_t index, const WorldContent& content, const ContentWalk& walked) -> bool;
-    // The level a root draws (the switch rule): the finest loaded level not finer than the one it wants that is ready; while none is,
-    // its coarsest loaded. Readiness is memoised per pass.
-    auto drawnLevelOf(const World& world, const std::string& rootPath, const LodRoot& root, const WorldContent& content, Purpose purpose) -> std::optional<uint32_t>;
-    // A content ready to draw: every mesh it draws held (or failed), and the same for what is instanced in it; a LOD root in it by its
-    // coarsest level. `purpose` is the one it inherits where it is placed: a mesh of a purpose not drawn there isn't asked for, so it isn't
-    // waited for.
-    auto contentReady(const World& world, Placement::Kind kind, int32_t index, Purpose purpose) -> bool;
-    std::unordered_map<int64_t, bool> readiness; // by content (kind and index) and purpose, this pass's
-    // Counts what a content waits for into `waiting`, as contentReady judges it, each content and mesh once (`seen`).
-    auto countWaiting(const World& world, Placement::Kind kind, int32_t index, Purpose purpose, std::set<int64_t>& seenContents, std::set<std::string>& seenMeshes, SceneLodRoot::Waiting& waiting) -> void;
 
     // The placement tree (placement.h), the scene thread's, its nodes shared with the snapshots published.
     std::shared_ptr<Placement> tree;
@@ -488,6 +492,7 @@ private:
     // node itself when `mine`, the scene thread's alone, else a copy).
     auto syncPlacement(const std::shared_ptr<Placement>& node, const PlacementSpec& spec, bool mine) -> std::shared_ptr<Placement>;
     auto buildPlacement(const std::shared_ptr<Placement>& node, const PlacementSpec& spec, uint64_t version, bool mine) -> std::shared_ptr<Placement>;
+    auto undrawPlacement(const std::shared_ptr<Placement>& node, bool mine) -> std::shared_ptr<Placement>;
     // A placement's LOD roots' levels: a placement per loaded, linked level, the drawn one drawn. `edit` gives the node to change.
     // `all`: every root (a placement just built), else those pending, changed or under a gizmo's move.
     auto syncRoots(const Placement& node, const std::function<Placement&()>& edit, bool mine, bool all) -> void;
@@ -542,8 +547,10 @@ private:
     };
     std::unordered_map<std::string, std::shared_ptr<const ResolvedDraw>> resolvedDraws;
     auto resolveDraw(const std::string& meshAsset, const std::string& boundMaterial, bool strongBinding, const Entity* subsetsOf, const WorldContent& content) -> std::shared_ptr<const ResolvedDraw>;
-    // The assets a material binding wants and lacks (its pack, or its textures once the pack is held), into `waiting` and the pass's requests.
-    auto wantMaterial(const std::string& key, std::vector<std::string>& waiting) -> void;
+    // An asset a placement's prims want and lack, into its `waiting` and the pass's requests (once each; a failed one isn't waited for).
+    auto wantAsset(Placement& node, const std::string& assetId, AssetKind kind) -> void;
+    // The assets a material binding wants and lacks: its pack, or its textures once the pack is held.
+    auto wantMaterial(const std::string& key, Placement& node) -> void;
     // The distant lights, or the engine's light when there is none, after a pass that changed them.
     auto collectLights() -> void;
     // Whether a pass looks into a placement at this path that isn't pending: a gizmo moved, or a root changed its wanted level, under it.

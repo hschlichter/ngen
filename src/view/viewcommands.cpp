@@ -644,7 +644,7 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
             .name = "view.lod.heuristic",
             .summary = "The LOD heuristic on (every root not set by hand wants the level its screen size from the camera picks) or off (its default), and how long what stopped being drawn is kept.",
             .params = {optionalField("on", RpcType::Bool, "on or off"),
-                       optionalField("unloadDelay", RpcType::Float, "seconds what stopped being drawn or reached is kept before it is unloaded")},
+                       optionalField("unloadDelay", RpcType::Float, "seconds a level that stopped being wanted stays loaded")},
             .result = "{}",
         },
         [&view](const Json& p, RpcResponder responder) {
@@ -1112,7 +1112,13 @@ auto sceneThreadRecord(const ViewContext& view) -> Json {
         {"inFlight", {{"layers", t.inFlightLayers}, {"meshes", t.inFlightMeshes}, {"materials", t.inFlightMaterials}, {"textures", t.inFlightTextures}, {"other", t.inFlightOther}}},
         {"held", {{"layerPacks", t.layerPacks}, {"meshPacks", t.meshPacks}, {"materialPacks", t.materialPacks}, {"texturePacks", t.texturePacks}, {"failed", t.failedAssets}}},
         {"library", {{"meshes", t.meshEntries}, {"materials", t.materialEntries}, {"textures", t.textureEntries}}},
-        {"unloaded", {{"delay", view.scene.unloadDelay()}, {"meshPacks", t.releasedMeshes}, {"meshBytes", t.releasedMeshBytes}, {"contents", t.contentsEvicted}}},
+        {"unloaded",
+         {{"delay", view.scene.unloadDelay()},
+          {"keptLevels", t.keptLevels},
+          {"levels", t.releasedLevels},
+          {"contents", t.releasedContents},
+          {"meshPacks", t.releasedMeshes},
+          {"meshBytes", t.releasedMeshBytes}}},
         {"sinceOpenMs", t.sinceOpenMs},
         {"idle", view.scene.idle()},
         {"renderThreadDrawn", view.renderThread.sceneDrawn()},
@@ -1220,7 +1226,9 @@ auto streamingRecord(const ViewContext& view) -> Json {
     auto aspect = view.scene.cameraAspect();
     uint32_t loading = 0;
     uint32_t inFrustum = 0;
-    uint64_t meshesMissing = 0;
+    PlacementWait waitingTotal;
+    auto now = std::chrono::steady_clock::now();
+    const auto& keptLevels = view.scene.keptLevels();
     for (const auto& root : view.scene.lodRoots()) {
         auto choice = choices.find(root.path);
         bool visible = lodRootInFrustum(root, view.cam.position, view.cam.forward(), view.cam.right(), glm::radians(cameraFovDegrees), aspect);
@@ -1232,8 +1240,15 @@ auto streamingRecord(const ViewContext& view) -> Json {
             loading++;
         }
         if (root.waiting) {
-            waiting = {{"contentsIncomplete", root.waiting->contentsIncomplete}, {"meshesMissing", root.waiting->meshesMissing}, {"meshesInFlight", root.waiting->meshesInFlight}};
-            meshesMissing += root.waiting->meshesMissing;
+            waiting = {{"meshes", root.waiting->meshes}, {"materials", root.waiting->materials}, {"textures", root.waiting->textures}, {"composing", root.waiting->composing}};
+            waitingTotal += *root.waiting;
+        }
+        // The loaded levels it doesn't want, kept for the unload delay, with the seconds left.
+        auto kept = Json::array();
+        if (auto levels = keptLevels.find(root.path); levels != keptLevels.end()) {
+            for (const auto& [level, until] : levels->second) {
+                kept.push_back({{"level", level}, {"secondsLeft", std::max(0.0, std::chrono::duration<double>(until - now).count())}});
+            }
         }
         roots.push_back({
             {"path", root.path},
@@ -1245,13 +1260,14 @@ auto streamingRecord(const ViewContext& view) -> Json {
             {"drawn", root.drawn ? Json(*root.drawn) : Json(nullptr)},
             {"loaded", root.loaded},
             {"waiting", waiting},
+            {"kept", kept},
         });
     }
     return {
-        {"totals", {{"roots", roots.size()}, {"inFrustum", inFrustum}, {"loading", loading}, {"meshesMissing", meshesMissing}, {"renderLodGroups", view.scene.threadStats().lodGroups}}},
+        {"totals", {{"roots", roots.size()}, {"inFrustum", inFrustum}, {"loading", loading}, {"waiting", {{"meshes", waitingTotal.meshes}, {"materials", waitingTotal.materials}, {"textures", waitingTotal.textures}, {"composing", waitingTotal.composing}}}, {"renderLodGroups", view.scene.threadStats().lodGroups}}},
         {"heuristic", view.scene.lodHeuristic()},
         {"unloadDelay", view.scene.unloadDelay()},
-        {"unloaded", {{"meshPacks", t.releasedMeshes}, {"meshBytes", t.releasedMeshBytes}, {"contents", t.contentsEvicted}}},
+        {"unloaded", {{"keptLevels", t.keptLevels}, {"levels", t.releasedLevels}, {"contents", t.releasedContents}, {"meshPacks", t.releasedMeshes}, {"meshBytes", t.releasedMeshBytes}}},
         {"evaluation", {{"count", t.lodEvaluations}, {"roots", t.lodRootsEvaluated}, {"finer", t.lodFiner}, {"coarser", t.lodCoarser}, {"ms", t.lodEvaluateMs}, {"relinks", t.relinks}}},
         {"roots", roots},
     };
@@ -1699,7 +1715,7 @@ auto engineMapStats(const ViewContext& view) -> EngineMapStats {
     stats["view.assetclient"] = {std::format("{} in flight, {} received", assets.inFlight(), assets.received), std::format("{} failed", assets.failed)};
     stats["scene.lod"] = {std::format("{} roots, heuristic {}", t.lodRootsEvaluated, view.scene.lodHeuristic() ? "on" : "off"),
                           std::format("last: {} finer, {} coarser", t.lodFiner, t.lodCoarser),
-                          std::format("unloaded: {} contents, {} mesh packs ({:.1f} MiB)", t.contentsEvicted, t.releasedMeshes, mib(t.releasedMeshBytes))};
+                          std::format("unloaded: {} levels, {} contents, {} mesh packs ({:.1f} MiB); {} levels kept", t.releasedLevels, t.releasedContents, t.releasedMeshes, mib(t.releasedMeshBytes), t.keptLevels)};
     stats["scene.compose"] = {std::format("{} composes, last {:.1f} ms", t.composes, t.lastComposeMs), std::format("{} layer packs, {} in flight", t.layerPacks, t.inFlightLayers)};
     stats["scene.placement"] = {std::format("{} placements ({} drawn), last change {:.1f} ms", t.placements, t.placementsDrawn, t.lastPlaceMs),
                                 std::format("{} meshes, {} materials, {} textures", t.meshEntries, t.materialEntries, t.textureEntries)};

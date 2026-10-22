@@ -106,6 +106,15 @@ auto drawRow(const LodWindowRow& row, LodWindowState& state) -> void {
     ImGui::TableSetColumnIndex(ColumnLoaded);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(loadedText(row).c_str());
+    if (!row.kept.empty() && ImGui::IsItemHovered()) {
+        std::string kept;
+        auto now = std::chrono::steady_clock::now();
+        for (const auto& [level, until] : row.kept) {
+            auto left = std::max(0.0, std::chrono::duration<double>(until - now).count());
+            kept += std::format("\n{}: {:.0f} s left", levelName(row, level), left);
+        }
+        ImGui::SetTooltip("Not wanted, kept loaded for the unload delay:%s", kept.c_str());
+    }
 
     ImGui::TableSetColumnIndex(ColumnScreen);
     ImGui::AlignTextToFramePadding();
@@ -230,7 +239,7 @@ auto drawLodWindow(bool& show, LodWindowState& state) -> void {
         state.unloadDelayRequested = unloadDelay;
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("How long a level, mesh, material or texture that stopped being drawn is kept before it is unloaded, so turning back doesn't load it again. A root's coarsest level stays loaded.");
+        ImGui::SetTooltip("How long a level that stopped being wanted stays loaded (with its meshes, materials and textures, on the GPU too), so turning back draws it at once. A level still drawn then is kept for another delay; a root's coarsest level stays loaded.");
     }
 
     drawSetShown(rows, mostLevels, state);

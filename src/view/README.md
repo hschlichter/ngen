@@ -75,8 +75,12 @@ do its draws: only where it is placed.
 - **Requests.** A placement asks for the meshes, materials and textures its prims want and lack when it is built, drawn or not (a level
   loading is placed undrawn), so what a level needs is requested as soon as the level is linked.
 - **Libraries.** `MeshLibrary`, `MaterialLibrary` and `TextureLibrary` keep one entry per mesh asset, per material (or display colour) and per
-  texture asset, shared by every draw using it. An entry whose asset arrives again with new content is a new entry with a new handle. The
-  slots using each mesh and material are counted as they change, so no pass looks at every slot.
+  texture asset, shared by every draw using it. An entry whose asset arrives again with new content is a new entry with a new handle. An
+  entry is held while a placement uses it: the slots drawing it, and an undrawn placement (a level loading, the floor under a finer level, a
+  level in its unload delay) holding the entries its prims would draw with (`heldMeshes`, `heldMaterials`), so a root switching to a loaded
+  level, finer or coarser, uploads nothing. The uses are counted as they change, so no pass looks at every slot; what no placement uses
+  leaves the libraries and the renderer at once. A placement no longer drawn gives up its slots and holds their entries without being built
+  again.
 - **Shared with the main thread.** The scene thread's tree and lists are shared with what it published: a placement or a chunk of slots
   (`ChunkedList`) a published snapshot holds is copied before it changes, so publishing copies no slots. `SceneDraws` holds the slots, the
   tree, the prim paths and the assets per prim; what the queries derive from them (the records, the prims per asset, the slots per prim) is
@@ -91,7 +95,7 @@ do its draws: only where it is placed.
 - **Point instancers**: each visible point of a `PointInstancer` draws its prototype at the instancer's world transform times the point's.
   The prototype's walk (rooted at the prototype, in the instancer's content) is kept once and used per point; a point's draws have a path
   of their own, `<prototype>#<id>`, and no transform for the queries. A prototype beneath its instancer draws only through it. A level
-  waits for its prototypes' meshes as for its own (`itemsReady`). An instancer is one placement, its points' draws its own.
+  waits for its prototypes' meshes as for its own. An instancer is one placement, its points' draws its own.
 - **Materials**: a material is its binding's key (`parseMaterialKey`): the pack, and the values of the inputs its textures take their files from
   (`resolveMaterial`), so one pack used with different inputs is one material per set of values. A mesh's bound material, and each `GeomSubset`'s own
   binding for its submesh, unless an ancestor's binding is `strongerThanDescendants`. A material's texture, else its base colour, else the mesh's
@@ -122,21 +126,27 @@ do its draws: only where it is placed.
   the budgets' to decide, not a count of roots. The main thread posts the camera (`setCamera`) once it has been placed, not while it follows the scene
   loading; the scene thread evaluates when it moved, after a pass that drew roots not drawn before and when levels changed, and gives the composer only what changed, which links
   the levels again without composing the stage (`WorldComposer::relink`). The `streaming` record has per root its screen size, whether its extent is
-  in the view's frustum (what USD's query would go by), the level wanted and why, drawn and loaded, and for a level waited for what it waits for;
-  totals over the roots. `LevelsWanted` traces each change of wanted levels.
-- **Switching levels**: a root draws the finest loaded level, not finer than the one it wants, that is ready (`contentReady`): linked, which the
-  composer does only once it is complete, and every mesh it draws (under its own purpose) held or failed, through the instances in it; a LOD
-  root inside it counts by its coarsest level. Until then the root keeps drawing the coarser level, and switches in the pass after the last
-  piece arrives, so a district appears whole instead of model by model. `LevelsSwitched` traces the roots whose drawn level changed, once
-  per pass; the `streaming` record's `waiting` and the LOD window's tooltip on a loading row count what the wanted level waits for
-  (meshes not held, those asked for, levels still composing and so not linked). GPU uploads aren't part of it: a switched level's meshes are
-  uploaded over the next frames within the upload budget.
-- **Unloading**: what stops being drawn (a mesh, material or texture: its library entry and its GPU entry) is kept for the unload delay
-  (10 s by default; `lod-unload-delay S`, `view.lod.heuristic {unloadDelay}`, the LOD window), so turning back draws it without loading;
-  after that it leaves the libraries and the renderer. A mesh's pack is released once no placement names it (drawn or not), so a root's coarsest level
-  (always loaded) keeps its packs while a finer level is drawn. Composed contents not reached for the delay leave the composer
-  (`WorldComposer::evict`). Layer packs stay held. `LevelsUnloaded` traces each release, and the `streaming` and `scenethread` records,
-  the Scene Flow window and the Engine Map count what was unloaded.
+  in the view's frustum (what USD's query would go by), the level wanted and why, drawn and loaded, for a level waited for what it waits for,
+  and the levels kept for the unload delay with the seconds left; totals over the roots. `LevelsWanted` traces each change of wanted levels.
+- **Switching levels**: a root draws the finest loaded level, not finer than the one it wants, whose placement waits for nothing: linked,
+  which the composer does only once it is complete, and every mesh, material pack and texture its prims want (under their own purpose)
+  held or failed, through the instances and point instancers in it; a LOD root inside it counts by its coarsest level. Each placement
+  counts what it waits for by kind (`PlacementWait`) as it is built, summed up the tree, so nothing walks a level to judge it. Until then
+  the root keeps drawing the coarser level. A root's level placements are synced before it picks, so it switches in the pass the last
+  piece arrives, and a district appears whole, with its materials, instead of model by model. `LevelsSwitched` traces the roots whose drawn
+  level changed, once per pass; the `streaming` record's `waiting` and the LOD window's tooltip on a loading row count what the wanted level
+  waits for (meshes, materials and textures not held, levels still composing and so not linked). GPU uploads aren't part of it: a switched
+  level's new meshes are uploaded over the next frames within the upload budget.
+- **Unloading**: the delay is a level's. A level that stops being wanted stays loaded for the unload delay (10 s by default;
+  `lod-unload-delay S`, `view.lod.heuristic {unloadDelay}`, the LOD window), placed undrawn and holding its library and GPU entries, so
+  turning back draws it at once; one still drawn when the delay runs out (its root waits for the level it wants) is kept for another. The
+  view keeps the time per root and level and tells the composer which levels to keep (`WorldComposer::keepLodLevels`); the scene thread
+  wakes when the next delay runs out. Then the level is let go and everything follows at once: its placement is released, the composer
+  releases the contents no level reaches any more, the library entries no placement uses leave the libraries and the renderer, and a
+  mesh's pack goes once no placement names it. A root's coarsest level is never let go. Layer packs and material and texture packs stay
+  held. `LevelsUnloaded` traces each batch that let something go (levels, contents, mesh packs), and the `streaming` and `scenethread`
+  records, the LOD window (a loaded level's tooltip: the seconds left), the Scene Flow window and the Engine Map show what is kept and what
+  was unloaded.
 - **Point instancers and variants reached**: every PointInstancer reached while drawing (`instancers()`, the `instancers` record): its
   points and those shown, its prototypes, and the prims its points drew; every prim with variant sets (`variantPrims()`, the `variants`
   record): each set and the variant it composed to (`Entity::variantSelections`). A LOD root in a point's prototype draws its default

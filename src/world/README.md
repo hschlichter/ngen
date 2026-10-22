@@ -79,9 +79,9 @@ also asks them to be loaded; here loading a level is the engine's, so a level co
 `ngen-usdcheck` counts them the same way.
 
 **Two kinds of root, from what is authored** (`LodRoot::streams`):
-- **Streaming**: a level has a payload. A root loads the level it wants, `lod:default:index` until `setLodLevel` sets one for its path, and its
-  coarsest level. It draws the finest loaded level not finer than the wanted one, so a level still loading falls back to a coarser one. Each
-  level is a content of its own (below).
+- **Streaming**: a level has a payload. A root loads the level it wants, `lod:default:index` until `setLodLevel` sets one for its path, the
+  levels the caller keeps (`keepLodLevels`: ngen-view's unload delay) and its coarsest level. It draws the finest loaded level not finer than
+  the wanted one, so a level still loading falls back to a coarser one. Each level is a content of its own (below).
 - **Render LOD**: no level has a payload (levels that are references or inline, as an asset's `lod0`… into its one geometry file). Every
   level is composed in place with the root's content, as USD composes it, and is loaded (`LodRoot::loaded` holds them all); which one draws
   is the renderer's, per placement, and `visit` walks them as children. Loading, linking, `setLodLevel` and the sections below concern
@@ -120,9 +120,11 @@ contents' indexes point at them, and rebuilt in place when one missed a sublayer
 repack or an edit) drops every kept content and rebuilds every stack: contents don't record which packs they read. `stats()` says what the
 last compose composed, kept and reached, and how long the stage, the resolution and the bindings took.
 
-Every content has a `version`, new each time it is composed: a reader can keep what it derived from a content by version. `evict(unusedFor)` lets go of the kept
-contents no resolution has reached for that long, and not by the latest one: each is emptied in place (its index stays, a new version) and
-composed again if it is reached later. The caller decides the delay; ngen-view uses its unload delay.
+Every content has a `version`, new each time it is composed: a reader can keep what it derived from a content by version. After each compose
+and relink, a kept content the resolution didn't reach is let go at once (`stats().released`): emptied in place (its index stays, a new
+version, no entities) and composed again if it is reached later. A content being composed (incomplete, composed this round) and the
+prototypes it uses yet are held, so a level waiting for packs doesn't compose its prototypes again every round. The composer has no clock:
+how long a level stays loaded is the caller's (`keepLodLevels`).
 
 Material bindings are resolved every compose, in their own content first and then anywhere in the World by full path, as a target may be in
 another content (a level's material outside the level). A level in a prototype names its prototype's prims at the path of the instance the

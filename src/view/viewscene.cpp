@@ -202,9 +202,9 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
             auto woken = [this] {
                 return !requests.empty() || answered || postedCamera.has_value() || !retired.empty();
             };
-            // Something kept past its unload delay: wake for it at its time, or sooner for a request or an answer.
-            if (releaseDue) {
-                wake.wait_until(lock, stop, *releaseDue, woken);
+            // A level kept for the unload delay: wake when its delay runs out, or sooner for a request or an answer.
+            if (levelsDue) {
+                wake.wait_until(lock, stop, *levelsDue, woken);
             } else {
                 wake.wait(lock, stop, woken);
             }
@@ -214,7 +214,7 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
             toFree = std::move(retired);
             retired.clear();
             // Woken only to free what the main thread let go of: no batch, so nothing is published (which would hand back another).
-            bool due = releaseDue && std::chrono::steady_clock::now() >= *releaseDue;
+            bool due = levelsDue && std::chrono::steady_clock::now() >= *levelsDue;
             if (requests.empty() && !answered && !postedCamera.has_value() && !due) {
                 lock.unlock();
                 PROFILE_ZONE("SceneRetire");
@@ -246,15 +246,14 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
                 receive(assetId);
             }
         }
-        if (releaseDue && std::chrono::steady_clock::now() >= *releaseDue) {
-            // Something kept past its unload delay: the library check lets it go.
-            releaseDue.reset();
-            libraryNeeded = true;
+        // Levels past their unload delay go: the composer links again without them (a compose does too) and their placements are released.
+        if (levelsDue && std::chrono::steady_clock::now() >= *levelsDue && releaseLevels() && !composeNeeded) {
+            relink();
         }
         if (composeNeeded) {
             compose();
         }
-        if (placeNeeded || libraryNeeded) {
+        if (placeNeeded) {
             place();
         }
         // Roots placed for the first time are evaluated; levels it changes are linked and placed, which may place new roots.
@@ -265,7 +264,8 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
                 place();
             }
         }
-        unload();
+        updateLevelsDue();
+        reportReleases();
         reportAssets();
         publish();
         requestsApplied += batch.size();
@@ -294,8 +294,9 @@ auto ViewScene::apply(Request& request) -> void {
             placeNeeded = true;
         }
         if (heuristic->unloadDelay) {
+            // Applies to the levels kept now too: their delays run from when they stopped being wanted.
             unloadDelaySeconds = std::max(0.0, *heuristic->unloadDelay);
-            libraryNeeded = true; // what is kept is weighed against the new delay
+            keptLevelsChanged = true;
         }
         evaluateNeeded = true;
     } else if (auto* purpose = std::get_if<PurposeRequest>(&request)) {
@@ -329,6 +330,13 @@ auto ViewScene::applyOpen(const std::string& sceneId) -> void {
     failedAssets.clear();
     refreshing.clear();
     composeReported = false;
+    levelsKept.clear();
+    keptLevelsChanged = true;
+    levelsDue.reset();
+    reportedReleasedLevels = 0;
+    reportedReleasedContents = 0;
+    reportedReleasedMeshes = 0;
+    reportedReleasedBytes = 0;
     openedAt = std::chrono::steady_clock::now();
     TRACE_EVENT("Scene", "SceneRequested", sceneId.empty() ? "(empty scene)" : sceneId).text(sceneId.empty() ? std::string("an empty scene") : std::format("scene {} requested", sceneId));
     composeNeeded = !sceneId.empty();
@@ -512,6 +520,7 @@ auto ViewScene::compose() -> void {
     stats.prototypesHeld = composed.prototypesHeld;
     stats.levelsHeld = composed.levelsHeld;
     stats.contentsReached = composed.contentsReached;
+    stats.releasedContents += composed.released;
     for (const auto& needed : needs) {
         if (requestedPacks.insert(needed).second) {
             fresh.emplace_back(needed, AssetKind::Layer);
@@ -662,6 +671,13 @@ auto ViewScene::evaluateLevels() -> bool {
         bool held = choice.level != root.defaultIndex || handLevels.contains(root.path);
         auto pushed = composerLevels.find(root.path);
         uint32_t before = pushed != composerLevels.end() ? pushed->second : root.defaultIndex;
+        // The level it wanted before stays loaded for the unload delay (the coarsest always is); the one it wants now isn't kept, it is wanted.
+        if (choice.level != before) {
+            if (before + 1 < levelCount) {
+                keepLevel(root.path, before, true);
+            }
+            keepLevel(root.path, choice.level, false);
+        }
         if (held && (pushed == composerLevels.end() || pushed->second != choice.level)) {
             composer->setLodLevel(root.path, choice.level);
             composerLevels[root.path] = choice.level;
@@ -695,27 +711,98 @@ auto ViewScene::evaluateLevels() -> bool {
     return true;
 }
 
-// What no resolution has reached for the unload delay leaves the composer (at most once a second, or once per delay when it is shorter); what a pass released since the
-// last time (mesh packs) is reported with it, one event per batch that let something go.
-auto ViewScene::unload() -> void {
-    auto now = std::chrono::steady_clock::now();
-    uint32_t evicted = 0;
-    auto delay = std::chrono::milliseconds((int64_t) (unloadDelaySeconds * 1000.0));
-    if (composer && now - lastEvict >= std::min<std::chrono::steady_clock::duration>(std::chrono::seconds(1), delay)) {
-        lastEvict = now;
-        evicted = composer->evict(delay);
-        stats.contentsEvicted += evicted;
+// A level kept loaded for the unload delay from now, or no longer kept (wanted again, or let go); the composer is told at once.
+auto ViewScene::keepLevel(const std::string& rootPath, uint32_t level, bool keep) -> void {
+    auto& levels = levelsKept[rootPath];
+    bool changed = false;
+    if (keep) {
+        changed = levels.insert_or_assign(level, std::chrono::steady_clock::now()).second;
+    } else {
+        changed = levels.erase(level) > 0;
     }
-    auto meshes = stats.releasedMeshes - reportedReleasedMeshes;
-    auto bytes = stats.releasedMeshBytes - reportedReleasedBytes;
-    if (evicted == 0 && meshes == 0) {
+    if (!changed) {
+        if (levels.empty()) {
+            levelsKept.erase(rootPath);
+        }
         return;
     }
+    std::set<uint32_t> kept;
+    for (const auto& [keptLevel, since] : levels) {
+        kept.insert(keptLevel);
+    }
+    if (levels.empty()) {
+        levelsKept.erase(rootPath);
+    }
+    if (composer) {
+        composer->keepLodLevels(rootPath, kept);
+    }
+    keptLevelsChanged = true;
+}
+
+// The levels whose delay ran out go, but a level its root still draws (the level it wants isn't ready yet) is kept for another delay.
+auto ViewScene::releaseLevels() -> bool {
+    auto now = std::chrono::steady_clock::now();
+    auto delay = std::chrono::milliseconds((int64_t) (unloadDelaySeconds * 1000.0));
+    std::unordered_map<std::string, std::optional<uint32_t>> drawnOf;
+    for (const auto& root : draws->records().lodRoots) {
+        if (levelsKept.contains(root.path)) {
+            drawnOf[root.path] = root.drawn;
+        }
+    }
+    std::vector<std::pair<std::string, uint32_t>> due;
+    for (auto& [path, levels] : levelsKept) {
+        for (auto& [level, since] : levels) {
+            if (now < since + delay) {
+                continue;
+            }
+            auto drawn = drawnOf.find(path);
+            if (drawn != drawnOf.end() && drawn->second == level) {
+                since = now;
+                keptLevelsChanged = true;
+                continue;
+            }
+            due.emplace_back(path, level);
+        }
+    }
+    for (const auto& [path, level] : due) {
+        keepLevel(path, level, false);
+        rootsToCheck.insert(path);
+        stats.releasedLevels++;
+    }
+    return !due.empty();
+}
+
+auto ViewScene::updateLevelsDue() -> void {
+    auto delay = std::chrono::milliseconds((int64_t) (unloadDelaySeconds * 1000.0));
+    levelsDue.reset();
+    uint32_t count = 0;
+    for (const auto& [path, levels] : levelsKept) {
+        for (const auto& [level, since] : levels) {
+            count++;
+            if (!levelsDue || since + delay < *levelsDue) {
+                levelsDue = since + delay;
+            }
+        }
+    }
+    stats.keptLevels = count;
+}
+
+auto ViewScene::reportReleases() -> void {
+    auto levels = stats.releasedLevels - reportedReleasedLevels;
+    auto contents = stats.releasedContents - reportedReleasedContents;
+    auto meshes = stats.releasedMeshes - reportedReleasedMeshes;
+    auto bytes = stats.releasedMeshBytes - reportedReleasedBytes;
+    if (levels == 0 && contents == 0 && meshes == 0) {
+        return;
+    }
+    reportedReleasedLevels = stats.releasedLevels;
+    reportedReleasedContents = stats.releasedContents;
     reportedReleasedMeshes = stats.releasedMeshes;
     reportedReleasedBytes = stats.releasedMeshBytes;
     TRACE_EVENT("Scene", "LevelsUnloaded", id)
-        .text(std::format("unloaded what wasn't used for {:g} s: {} composed contents, {} mesh packs ({:.1f} MiB)", unloadDelaySeconds, evicted, meshes, (double) bytes / (1024.0 * 1024.0)))
-        .field("contents", (int64_t) evicted)
+        .text(std::format("unloaded {} levels not wanted for {:g} s: {} composed contents, {} mesh packs ({:.1f} MiB)", levels, unloadDelaySeconds, contents, meshes, (double) bytes / (1024.0 * 1024.0)))
+        .field("levels", (int64_t) levels)
+        .field("contents", (int64_t) contents)
         .field("meshes", (int64_t) meshes)
         .field("bytes", (int64_t) bytes);
 }
@@ -728,6 +815,7 @@ auto ViewScene::relink() -> void {
             fresh.emplace_back(needed, AssetKind::Layer);
         }
     }
+    stats.releasedContents += composer->stats().released;
     requestAssets(fresh, false);
     stats.relinks++;
     countWorld();
@@ -779,6 +867,19 @@ auto ViewScene::publish() -> void {
     snapshot->lodChoices = choices;
     snapshot->lodHeuristic = heuristicOn;
     snapshot->unloadDelay = unloadDelaySeconds;
+    if (keptLevelsChanged) {
+        keptLevelsChanged = false;
+        auto delay = std::chrono::milliseconds((int64_t) (unloadDelaySeconds * 1000.0));
+        auto kept = std::make_shared<std::map<std::string, std::map<uint32_t, std::chrono::steady_clock::time_point>>>();
+        for (const auto& [path, levels] : levelsKept) {
+            auto& out = (*kept)[path];
+            for (const auto& [level, since] : levels) {
+                out[level] = since + delay;
+            }
+        }
+        keptPublished = std::move(kept);
+    }
+    snapshot->keptLevels = keptPublished;
     snapshot->thread = stats;
     for (const auto& [assetId, kind] : inFlight) {
         if (kind == AssetKind::Layer) {
@@ -1087,40 +1188,11 @@ auto lodRootInFrustum(const SceneLodRoot& root, const glm::vec3& eye, const glm:
 }
 
 auto ViewScene::collectChanges(const std::set<uint32_t>& meshesNow, const std::set<uint32_t>& materialsNow, const std::set<uint32_t>& texturesNow, SceneChanges& changes) -> void {
-    // What stopped being drawn is kept (in the libraries and on the GPU) for the unload delay, so turning back doesn't upload it again;
-    // after it, it leaves the libraries and the renderer, and a mesh's pack is released (asked for again if wanted later).
-    auto delay = std::chrono::milliseconds((int64_t) (unloadDelaySeconds * 1000.0));
-    auto keep = [&](const std::set<uint32_t>& used, const std::set<uint32_t>& drawnNow, std::unordered_map<uint32_t, std::chrono::steady_clock::time_point>& unusedSince) {
-        std::set<uint32_t> kept = drawnNow;
-        for (auto index : used) {
-            if (drawnNow.contains(index)) {
-                unusedSince.erase(index);
-                continue;
-            }
-            auto [since, added] = unusedSince.try_emplace(index, std::chrono::steady_clock::now());
-            if (std::chrono::steady_clock::now() - since->second < delay) {
-                kept.insert(index);
-            } else {
-                unusedSince.erase(since);
-            }
-        }
-        for (auto index : drawnNow) {
-            unusedSince.erase(index);
-        }
-        return kept;
-    };
-    auto meshesKept = keep(usedMeshes, meshesNow, meshUnusedSince);
-    auto materialsKept = keep(usedMaterials, materialsNow, materialUnusedSince);
-    auto texturesKept = keep(usedTextures, texturesNow, textureUnusedSince);
-    // The earliest moment something kept is due to go, so the scene thread wakes for it.
-    releaseDue.reset();
-    for (const auto* waiting : {&meshUnusedSince, &materialUnusedSince, &textureUnusedSince}) {
-        for (const auto& [index, since] : *waiting) {
-            if (!releaseDue || since + delay < *releaseDue) {
-                releaseDue = since + delay;
-            }
-        }
-    }
+    // What no placement uses any more leaves the libraries and the renderer at once (a level not wanted waited for the unload delay as a
+    // level, its placement holding its entries), and a mesh's pack is released (asked for again if wanted later).
+    const auto& meshesKept = meshesNow;
+    const auto& materialsKept = materialsNow;
+    const auto& texturesKept = texturesNow;
 
     for (auto index : texturesKept) {
         if (!usedTextures.contains(index)) {

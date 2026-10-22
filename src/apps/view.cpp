@@ -563,10 +563,15 @@ auto main(int argc, char* argv[]) -> int {
                 auto choice = choices.find(root.path);
                 std::string waiting;
                 if (root.waiting) {
-                    waiting = std::format("Waits for {} meshes ({} asked for) and {} contents composed without every pack.",
-                                          root.waiting->meshesMissing,
-                                          root.waiting->meshesInFlight,
-                                          root.waiting->contentsIncomplete);
+                    waiting = std::format("Waits for {} meshes, {} materials, {} textures and {} levels still composing.",
+                                          root.waiting->meshes,
+                                          root.waiting->materials,
+                                          root.waiting->textures,
+                                          root.waiting->composing);
+                }
+                std::vector<std::pair<uint32_t, std::chrono::steady_clock::time_point>> kept;
+                if (auto levels = scene.keptLevels().find(root.path); levels != scene.keptLevels().end()) {
+                    kept.assign(levels->second.begin(), levels->second.end());
                 }
                 lodRows.push_back({
                     .path = root.path,
@@ -581,6 +586,7 @@ auto main(int argc, char* argv[]) -> int {
                     .screenSize = choice != choices.end() ? choice->second.screenSize : -1.0f,
                     .why = choice != choices.end() ? choice->second.reason : std::string("not evaluated yet"),
                     .waiting = waiting,
+                    .kept = std::move(kept),
                 });
             }
         }
@@ -1078,7 +1084,9 @@ auto main(int argc, char* argv[]) -> int {
                 .textureEntries = t.textureEntries,
                 .releasedMeshes = t.releasedMeshes,
                 .releasedMeshBytes = t.releasedMeshBytes,
-                .contentsEvicted = t.contentsEvicted,
+                .releasedLevels = t.releasedLevels,
+                .releasedContents = t.releasedContents,
+                .keptLevels = t.keptLevels,
                 .unloadDelaySeconds = scene.unloadDelay(),
                 .sinceOpenMs = t.sinceOpenMs,
                 .idle = scene.idle(),

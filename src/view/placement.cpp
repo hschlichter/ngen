@@ -375,117 +375,6 @@ auto ViewScene::contentOf(const World& w, Placement::Kind kind, int32_t index) c
     return w.contents[(size_t) index];
 }
 
-auto ViewScene::contentReady(const World& w, Placement::Kind kind, int32_t index, Purpose purpose) -> bool {
-    auto key = ((int64_t) kind << 40) | ((int64_t) purpose << 36) | (int64_t) index;
-    if (auto it = readiness.find(key); it != readiness.end()) {
-        return it->second;
-    }
-    readiness[key] = false; // a cycle can't make it ready
-    const auto& content = contentOf(w, kind, index);
-    // A linked content is complete: what it waits for is its meshes and the contents it uses.
-    auto walked = walkOf(kind, index, content, purpose, {}, false, content.sourcePath);
-    bool ready = itemsReady(w, kind, index, content, *walked);
-    readiness[key] = ready;
-    return ready;
-}
-
-auto ViewScene::itemsReady(const World& w, Placement::Kind kind, int32_t index, const WorldContent& content, const ContentWalk& walked) -> bool {
-    bool ready = true;
-    for (const auto& item : walked.items) {
-        if (item.kind == WalkItem::Kind::PointInstancer) {
-            // Its prototypes' walks, as the points draw them.
-            for (EntityId prototype : content.pointInstancers.at(item.id).prototypes) {
-                if (prototype != noEntity) {
-                    auto prototypeWalk = walkOf(kind, index, content, item.purpose, item.material, item.strongBinding, content.sourcePath, prototype);
-                    ready = itemsReady(w, kind, index, content, *prototypeWalk);
-                }
-                if (!ready) {
-                    break;
-                }
-            }
-        } else if (item.kind == WalkItem::Kind::Prim) {
-            const auto& meshAsset = item.entity->meshAsset;
-            if (!meshAsset.empty() && drawsPurpose(item.purpose) && !meshPacks.contains(meshAsset) && !failedAssets.contains(meshAsset)) {
-                ready = false;
-            }
-        } else if (item.kind == WalkItem::Kind::Instance) {
-            ready = contentReady(w, Placement::Kind::Prototype, item.content, item.purpose);
-        } else if (item.level + 1 == content.lodRoots.at(item.root).levels.size()) {
-            // A LOD root in it counts by its coarsest level, the floor it draws while a finer one loads.
-            auto linked = content.entities[item.id].linkedContent;
-            ready = linked >= 0 && contentReady(w, Placement::Kind::Level, linked, item.purpose);
-        }
-        if (!ready) {
-            break;
-        }
-    }
-    return ready;
-}
-
-auto ViewScene::countWaiting(const World& w, Placement::Kind kind, int32_t index, Purpose purpose, std::set<int64_t>& seenContents, std::set<std::string>& seenMeshes, SceneLodRoot::Waiting& waiting)
-    -> void {
-    auto key = ((int64_t) kind << 40) | ((int64_t) purpose << 36) | (int64_t) index;
-    if (!seenContents.insert(key).second) {
-        return;
-    }
-    const auto& content = contentOf(w, kind, index);
-    auto walked = walkOf(kind, index, content, purpose, {}, false, content.sourcePath);
-    std::vector<const ContentWalk*> pending = {walked.get()};
-    std::vector<std::shared_ptr<const ContentWalk>> prototypeWalks;
-    for (size_t at = 0; at < pending.size(); at++) {
-        for (const auto& item : pending[at]->items) {
-            if (item.kind == WalkItem::Kind::PointInstancer) {
-                for (EntityId prototype : content.pointInstancers.at(item.id).prototypes) {
-                    if (prototype != noEntity) {
-                        prototypeWalks.push_back(walkOf(kind, index, content, item.purpose, item.material, item.strongBinding, content.sourcePath, prototype));
-                        pending.push_back(prototypeWalks.back().get());
-                    }
-                }
-            } else if (item.kind == WalkItem::Kind::Prim) {
-                const auto& meshAsset = item.entity->meshAsset;
-                if (meshAsset.empty() || !drawsPurpose(item.purpose) || meshPacks.contains(meshAsset) || failedAssets.contains(meshAsset)) {
-                    continue;
-                }
-                if (seenMeshes.insert(meshAsset).second) {
-                    waiting.meshesMissing++;
-                    if (inFlight.contains(meshAsset)) {
-                        waiting.meshesInFlight++;
-                    }
-                }
-            } else if (item.kind == WalkItem::Kind::Instance) {
-                countWaiting(w, Placement::Kind::Prototype, item.content, item.purpose, seenContents, seenMeshes, waiting);
-            } else if (item.level + 1 == content.lodRoots.at(item.root).levels.size()) {
-                // A floor not linked yet is still composing.
-                auto linked = content.entities[item.id].linkedContent;
-                if (linked >= 0) {
-                    countWaiting(w, Placement::Kind::Level, linked, item.purpose, seenContents, seenMeshes, waiting);
-                } else {
-                    waiting.contentsIncomplete++;
-                }
-            }
-        }
-    }
-}
-
-auto ViewScene::drawnLevelOf(const World& w, const std::string& rootPath, const LodRoot& root, const WorldContent& content, Purpose purpose) -> std::optional<uint32_t> {
-    if (root.loaded.empty()) {
-        return std::nullopt;
-    }
-    auto wanted = w.wantedLevel(rootPath, root);
-    // Loaded levels are finest first (set order): the first at or coarser than the wanted one that is ready.
-    for (uint32_t level : root.loaded) {
-        if (level < wanted) {
-            continue;
-        }
-        auto linked = level < root.levels.size() ? content.entities[root.levels[level]].linkedContent : -1;
-        if (linked >= 0 && contentReady(w, Placement::Kind::Level, linked, purpose)) {
-            return level;
-        }
-    }
-    // Nothing ready yet: the coarsest loaded level, as it arrives (the scene opening).
-    return *std::ranges::max_element(root.loaded);
-}
-
 auto ViewScene::touchSlot(uint32_t slot) -> void {
     if (slot < slotCountBefore) {
         slotsBefore.touch(slot, drawn.meshInstances[slot]);
@@ -496,24 +385,22 @@ auto ViewScene::touchSlot(uint32_t slot) -> void {
 auto ViewScene::setSlot(uint32_t slot, const RenderMeshInstance& instance) -> void {
     touchSlot(slot);
     const auto& before = drawn.meshInstances[slot];
-    auto release = [](std::vector<uint32_t>& uses, uint32_t index) {
-        uses[index]--;
-    };
-    auto use = [](std::vector<uint32_t>& uses, uint32_t index) {
-        if (index >= uses.size()) {
-            uses.resize(std::max<size_t>(index + 1, uses.size() * 2), 0);
-        }
-        uses[index]++;
-    };
     if (before.alive) {
-        release(meshUses, before.mesh.index);
-        release(materialUses, before.material.index);
+        countUse(meshUses, before.mesh.index, -1);
+        countUse(materialUses, before.material.index, -1);
     }
     drawn.meshInstances.edit(slot) = instance;
     if (instance.alive) {
-        use(meshUses, instance.mesh.index);
-        use(materialUses, instance.material.index);
+        countUse(meshUses, instance.mesh.index, 1);
+        countUse(materialUses, instance.material.index, 1);
     }
+}
+
+auto ViewScene::countUse(std::vector<uint32_t>& uses, uint32_t index, int delta) -> void {
+    if (index >= uses.size()) {
+        uses.resize(std::max<size_t>(index + 1, uses.size() * 2), 0);
+    }
+    uses[index] += delta;
 }
 
 auto ViewScene::allocSlot() -> uint32_t {
@@ -555,9 +442,15 @@ auto ViewScene::freePrim(uint32_t prim) -> void {
 }
 
 // What a placement counts for while it is in the tree: the placements and drawn ones, its content's placements (and the version placed),
-// and its walks' uses, through which the mesh assets it names keep their packs.
+// the library entries it holds while not drawn, and its walks' uses, through which the mesh assets it names keep their packs.
 auto ViewScene::useNode(const Placement& node, int delta) -> void {
     placementCount += delta;
+    for (auto index : node.heldMeshes) {
+        countUse(meshUses, index, delta);
+    }
+    for (auto index : node.heldMaterials) {
+        countUse(materialUses, index, delta);
+    }
     if (node.drawn) {
         drawnPlacementCount += delta;
     }
@@ -703,25 +596,33 @@ auto ViewScene::touched(const std::string& path) const -> bool {
     return it != rootsToCheck.end() && it->starts_with(prefix);
 }
 
-auto ViewScene::wantMaterial(const std::string& key, std::vector<std::string>& waiting) -> void {
+auto ViewScene::wantAsset(Placement& node, const std::string& assetId, AssetKind kind) -> void {
+    if (failedAssets.contains(assetId) || std::ranges::contains(node.waiting, assetId)) {
+        return;
+    }
+    node.waiting.push_back(assetId);
+    if (kind == AssetKind::Mesh) {
+        node.ownWait.meshes++;
+    } else if (kind == AssetKind::Material) {
+        node.ownWait.materials++;
+    } else {
+        node.ownWait.textures++;
+    }
+    passWanted.emplace_back(assetId, kind);
+}
+
+auto ViewScene::wantMaterial(const std::string& key, Placement& node) -> void {
     if (key.empty()) {
         return;
     }
-    auto want = [&](const std::string& assetId, AssetKind kind) {
-        if (failedAssets.contains(assetId) || std::ranges::contains(waiting, assetId)) {
-            return;
-        }
-        waiting.push_back(assetId);
-        passWanted.emplace_back(assetId, kind);
-    };
     auto resolved = resolveMaterial(key);
     if (resolved.pack == nullptr) {
-        want(resolved.packId, AssetKind::Material);
+        wantAsset(node, resolved.packId, AssetKind::Material);
         return;
     }
     for (const auto& texture : {resolved.baseColorTexture, resolved.opacityTexture}) {
         if (!texture.empty() && !texturePacks.contains(texture)) {
-            want(texture, AssetKind::Texture);
+            wantAsset(node, texture, AssetKind::Texture);
         }
     }
 }
@@ -810,6 +711,44 @@ auto pendingOf(const Placement& node) -> uint32_t {
     return pending;
 }
 
+// What a placement and what is placed in it wait for (PlacementWait): a LOD root counts by its coarsest level's placement, or as one level
+// composing while that isn't linked yet.
+auto waitOf(const Placement& node) -> PlacementWait {
+    auto wait = node.ownWait;
+    for (const auto& child : node.children) {
+        wait += child->wait;
+    }
+    for (const auto& root : node.roots) {
+        if (root.levels.empty()) {
+            continue;
+        }
+        if (const auto& floor = root.levels.back()) {
+            wait += floor->wait;
+        } else {
+            wait.composing++;
+        }
+    }
+    return wait;
+}
+
+// The level a root draws (the switch rule): the finest loaded level, not finer than the one it wants, whose placement waits for nothing;
+// while none does, its coarsest loaded. None while no level is loaded.
+auto drawnLevelOf(const LodRoot& lod, uint32_t wanted, const std::vector<const Placement*>& levels) -> std::optional<uint32_t> {
+    if (lod.loaded.empty()) {
+        return std::nullopt;
+    }
+    // Loaded levels are finest first.
+    for (uint32_t level : lod.loaded) {
+        if (level < wanted || level >= levels.size()) {
+            continue;
+        }
+        if (levels[level] != nullptr && levels[level]->wait.total() == 0) {
+            return level;
+        }
+    }
+    return *std::ranges::max_element(lod.loaded);
+}
+
 } // namespace
 
 auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const PlacementSpec& spec, bool mine) -> std::shared_ptr<Placement> {
@@ -829,6 +768,21 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
     }
     if (!rebuild) {
         rebuild = std::ranges::any_of(node->waiting, [this](const std::string& asset) { return arrived.contains(asset); });
+    }
+    // Drawn before and not now, and nothing else changed: its draws go, their entries held, without building it again.
+    bool undraw = rebuild && node && node->drawn && !spec.drawn;
+    if (undraw) {
+        auto drawnSpec = spec;
+        drawnSpec.drawn = true;
+        const auto& n = *node;
+        undraw = n.kind == drawnSpec.kind && n.content == drawnSpec.content && n.contentKind == drawnSpec.contentKind && n.instancer == drawnSpec.instancer && n.version == version &&
+                 n.path == drawnSpec.path && n.world == drawnSpec.world && n.purpose == drawnSpec.purpose && n.material == drawnSpec.material && n.strong == drawnSpec.strong &&
+                 n.lodTag == drawnSpec.lodTag && n.lodGroup == drawnSpec.lodGroup && n.lodGroupLevel == drawnSpec.lodGroupLevel &&
+                 !std::ranges::any_of(overridesMoved, [&](const std::string& moved) { return isUnder(moved, spec.path); }) &&
+                 !std::ranges::any_of(node->waiting, [this](const std::string& asset) { return arrived.contains(asset); });
+    }
+    if (undraw) {
+        return undrawPlacement(node, mine);
     }
     if (rebuild) {
         return buildPlacement(node, spec, version, mine);
@@ -871,7 +825,66 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
     if (pending != now.pending) {
         edit().pending = pending;
     }
+    auto wait = waitOf(now);
+    if (!(wait == now.wait)) {
+        edit().wait = wait;
+    }
     return out ? out : node;
+}
+
+// A drawn placement no longer drawn (a level its root switched away from, kept for the unload delay): its slots, prim indices and groups are
+// freed, the mesh and material entries its slots drew with held instead, and what is placed in it is undrawn the same way.
+auto ViewScene::undrawPlacement(const std::shared_ptr<Placement>& node, bool mine) -> std::shared_ptr<Placement> {
+    passEdited = true;
+    auto out = mine ? node : std::make_shared<Placement>(*node);
+    useNode(*out, -1);
+    for (auto slot : out->slots) {
+        const auto& instance = drawn.meshInstances[slot];
+        if (instance.alive) {
+            out->heldMeshes.push_back(instance.mesh.index);
+            out->heldMaterials.push_back(instance.material.index);
+        }
+        freeSlot(slot);
+    }
+    for (auto prim : out->prims) {
+        freePrim(prim);
+    }
+    for (auto group : out->lodGroups) {
+        freeLodGroup(group);
+    }
+    out->slots.clear();
+    out->prims.clear();
+    out->lodGroups.clear();
+    out->lights.clear();
+    out->cameras.clear();
+    out->payloads.clear();
+    out->variantPrims.clear();
+    out->instancerRow.reset();
+    out->drawn = false;
+    useNode(*out, 1);
+    for (auto& child : out->children) {
+        PlacementSpec childSpec{.kind = child->kind,
+                                .content = child->content,
+                                .contentKind = child->contentKind,
+                                .instancer = child->instancer,
+                                .path = child->path,
+                                .world = child->world,
+                                .purpose = child->purpose,
+                                .material = child->material,
+                                .strong = child->strong,
+                                .lodTag = child->lodTag,
+                                .drawn = false,
+                                .lodGroup = child->lodGroup,
+                                .lodGroupLevel = child->lodGroupLevel};
+        child = syncPlacement(child, childSpec, mine);
+    }
+    auto edit = [&]() -> Placement& {
+        return *out;
+    };
+    syncRoots(*out, edit, mine, true);
+    out->pending = pendingOf(*out);
+    out->wait = waitOf(*out);
+    return out;
 }
 
 auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const PlacementSpec& spec, uint64_t version, bool mine) -> std::shared_ptr<Placement> {
@@ -923,6 +936,9 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
     node->prims.clear();
     node->lights.clear();
     node->waiting.clear();
+    node->ownWait = {};
+    node->heldMeshes.clear();
+    node->heldMaterials.clear();
     node->children.clear();
     node->roots.clear();
     node->cameras.clear();
@@ -1003,13 +1019,6 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
             previous = std::move(previousChildren[it->second]);
         }
         node->children.push_back(syncPlacement(previous, childSpec, mine));
-    };
-    auto want = [&](const std::string& assetId, AssetKind kind) {
-        if (failedAssets.contains(assetId) || std::ranges::contains(node->waiting, assetId)) {
-            return;
-        }
-        node->waiting.push_back(assetId);
-        passWanted.emplace_back(assetId, kind);
     };
 
     for (uint32_t s = 0; s < node->segments.size(); s++) {
@@ -1192,20 +1201,17 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                 continue;
             }
             // What it draws with: the mesh, its binding's material and the subsets' own, each asked for while it isn't held.
-            wantMaterial(item.material, node->waiting);
+            wantMaterial(item.material, *node);
             if (item.subsets && !item.strongBinding) {
                 for (EntityId child : entity.children) {
                     const auto& subset = content.entities[child];
                     if (subset.binding) {
-                        wantMaterial(subset.binding->materialAsset, node->waiting);
+                        wantMaterial(subset.binding->materialAsset, *node);
                     }
                 }
             }
             if (!meshPacks.contains(entity.meshAsset)) {
-                want(entity.meshAsset, AssetKind::Mesh);
-                continue;
-            }
-            if (!spec.drawn) {
+                wantAsset(*node, entity.meshAsset, AssetKind::Mesh);
                 continue;
             }
             auto meshHandle = mesh(entity.meshAsset);
@@ -1213,6 +1219,14 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                 continue;
             }
             auto resolved = resolveDraw(entity.meshAsset, item.material, item.strongBinding, item.subsets ? &entity : nullptr, content);
+            if (!spec.drawn) {
+                // Not drawn: it holds the entries it would draw with, so drawing it (the root switching to it) uploads nothing.
+                node->heldMeshes.push_back(meshHandle.index);
+                for (auto material : resolved->materials) {
+                    node->heldMaterials.push_back(material.index);
+                }
+                continue;
+            }
             const auto* meshData = meshLibrary.get(meshHandle);
             auto worldTransform = unitScale * world;
             auto worldBounds = meshBoundsOf[meshHandle.index].transformed(worldTransform);
@@ -1276,6 +1290,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
     };
     syncRoots(*node, edit, mine, true);
     node->pending = pendingOf(*node);
+    node->wait = waitOf(*node);
     return node;
 }
 
@@ -1294,7 +1309,65 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
         const auto& lod = content.lodRoots.at(rootItem.id);
         auto rootWorld = rootItem.absolute ? rootItem.world : segment.world * rootItem.world;
         auto wanted = w.wantedLevel(root.path, lod);
-        auto drawnLevel = drawnLevelOf(w, root.path, lod, content, rootItem.purpose);
+        auto isLoaded = [&](uint32_t i) {
+            return i < lod.levels.size() && content.entities[lod.levels[i]].linkedContent >= 0 && std::ranges::contains(lod.loaded, i);
+        };
+        // A level's placement as the spec says, drawn when it is `drawnLevel`; released when it isn't loaded. Read through the node, which
+        // edit() may replace with a copy holding the same pointers.
+        std::vector<const Placement*> levelsNow(lod.levels.size(), nullptr);
+        auto syncLevel = [&](uint32_t i, std::optional<uint32_t> drawnLevel, bool replace) {
+            // Replacing one synced already: taken out of the node being edited, so a node only the tree holds changes in place.
+            std::shared_ptr<Placement> taken;
+            if (replace) {
+                taken = std::move(edit().roots[r].levels[i]);
+            }
+            const auto& current = replace ? taken : node.roots[r].levels[i];
+            levelsNow[i] = nullptr;
+            if (!isLoaded(i)) {
+                if (current) {
+                    releasePlacement(*current);
+                }
+                if (replace || current) {
+                    edit().roots[r].levels[i] = nullptr;
+                }
+                return;
+            }
+            auto standIn = lod.levels[i];
+            PlacementSpec spec{.kind = Placement::Kind::Level,
+                               .content = content.entities[standIn].linkedContent,
+                               .contentKind = Placement::Kind::Level,
+                               .path = childPathOf(root.path, content.entities[standIn].name),
+                               .world = rootWorld,
+                               .purpose = rootItem.purpose,
+                               .material = rootItem.material,
+                               .strong = rootItem.strongBinding,
+                               .lodTag = i + 1,
+                               .drawn = node.drawn && drawnLevel == i};
+            auto next = syncPlacement(current, spec, mine);
+            levelsNow[i] = next.get();
+            if (replace || next != current) {
+                edit().roots[r].levels[i] = std::move(next);
+            }
+        };
+        // The level placements first, the level drawn before still drawn (the coarsest loaded at first, which is what a root draws while
+        // nothing is ready): the root then picks from what they wait for, so it switches in the pass the last piece arrives.
+        std::optional<uint32_t> before = root.drawn;
+        if (!before || !std::ranges::contains(lod.loaded, *before)) {
+            before = lod.loaded.empty() ? std::nullopt : std::optional<uint32_t>(*std::ranges::max_element(lod.loaded));
+        }
+        for (uint32_t i = 0; i < lod.levels.size(); i++) {
+            syncLevel(i, before, false);
+        }
+        auto drawnLevel = drawnLevelOf(lod, wanted, levelsNow);
+        if (drawnLevel != before && node.drawn) {
+            // The level drawn now is built drawn, the one before undrawn.
+            if (before && *before < lod.levels.size()) {
+                syncLevel(*before, drawnLevel, true);
+            }
+            if (drawnLevel && *drawnLevel < lod.levels.size()) {
+                syncLevel(*drawnLevel, drawnLevel, true);
+            }
+        }
         if (drawnLevel != root.drawn) {
             if (node.drawn && root.drawn && drawnLevel) {
                 if (*drawnLevel < *root.drawn) {
@@ -1315,68 +1388,29 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
                 pending = true;
             }
         }
-        if (pending != root.pending) {
+        if (pending != node.roots[r].pending) {
             edit().roots[r].pending = pending;
         }
         if (root.listed) {
-            // The row's state: what it wants, draws and holds, set by hand or not, and while it wants a loaded level it doesn't draw yet, what
-            // that level waits for.
-            std::optional<SceneLodRoot::Waiting> waiting;
+            // The row's state: what it wants, draws and holds, set by hand or not, and while it wants a level it doesn't draw yet, what that
+            // level waits for (its placement's count, or one level composing while it isn't linked).
+            std::optional<PlacementWait> waiting;
             if (drawnLevel && *drawnLevel != wanted && std::ranges::contains(lod.loaded, wanted) && wanted < lod.levels.size()) {
-                auto linked = content.entities[lod.levels[wanted]].linkedContent;
-                SceneLodRoot::Waiting counted;
-                if (linked >= 0) {
-                    std::set<int64_t> seenContents;
-                    std::set<std::string> seenMeshes;
-                    countWaiting(w, Placement::Kind::Level, linked, rootItem.purpose, seenContents, seenMeshes, counted);
+                if (levelsNow[wanted] != nullptr) {
+                    waiting = levelsNow[wanted]->wait;
                 } else {
-                    // The wanted level is still composing: it is linked once complete.
-                    counted.contentsIncomplete = 1;
+                    waiting = PlacementWait{.composing = 1};
                 }
-                waiting = counted;
             }
             const auto& row = node.roots[r].row;
-            bool sameWaiting = row.waiting.has_value() == waiting.has_value();
-            if (sameWaiting && waiting) {
-                sameWaiting = row.waiting->contentsIncomplete == waiting->contentsIncomplete && row.waiting->meshesMissing == waiting->meshesMissing &&
-                              row.waiting->meshesInFlight == waiting->meshesInFlight;
-            }
             bool setByHand = handLevels.contains(root.path);
-            if (row.wanted != wanted || row.drawn != drawnLevel || row.loaded != lod.loaded || row.setByHand != setByHand || !sameWaiting) {
+            if (row.wanted != wanted || row.drawn != drawnLevel || row.loaded != lod.loaded || row.setByHand != setByHand || row.waiting != waiting) {
                 auto& changed = edit().roots[r].row;
                 changed.wanted = wanted;
                 changed.drawn = drawnLevel;
                 changed.loaded = lod.loaded;
                 changed.setByHand = setByHand;
                 changed.waiting = waiting;
-            }
-        }
-        for (uint32_t i = 0; i < lod.levels.size(); i++) {
-            auto standIn = lod.levels[i];
-            auto linked = content.entities[standIn].linkedContent;
-            bool loaded = linked >= 0 && std::ranges::contains(lod.loaded, i);
-            // Read through the node, which edit() may replace with a copy holding the same pointers.
-            const auto& current = node.roots[r].levels[i];
-            if (!loaded) {
-                if (current) {
-                    releasePlacement(*current);
-                    edit().roots[r].levels[i] = nullptr;
-                }
-                continue;
-            }
-            PlacementSpec spec{.kind = Placement::Kind::Level,
-                               .content = linked,
-                               .contentKind = Placement::Kind::Level,
-                               .path = childPathOf(root.path, content.entities[standIn].name),
-                               .world = rootWorld,
-                               .purpose = rootItem.purpose,
-                               .material = rootItem.material,
-                               .strong = rootItem.strongBinding,
-                               .lodTag = i + 1,
-                               .drawn = node.drawn && drawnLevel == i};
-            auto next = syncPlacement(current, spec, mine);
-            if (next != current) {
-                edit().roots[r].levels[i] = next;
             }
         }
     }
@@ -1388,7 +1422,6 @@ auto ViewScene::place() -> void {
     PROFILE_ZONE("Place");
     placeNeeded = false;
     auto start = std::chrono::steady_clock::now();
-    readiness.clear();
     materialByAsset.clear();
     resolvedDraws.clear();
     passWanted.clear();
@@ -1421,7 +1454,9 @@ auto ViewScene::place() -> void {
         if (index < 0 || (size_t) index >= w.contents.size()) {
             return true;
         }
-        return contentOf(w, kind, index).version != entry.second;
+        // A content released (emptied: no level reaches it any more) goes with the placement of the level that held it, not everywhere.
+        const auto& content = contentOf(w, kind, index);
+        return content.version != entry.second && !content.entities.empty();
     });
     PlacementSpec stage{.kind = Placement::Kind::Stage, .content = -1, .contentKind = Placement::Kind::Stage, .path = "/"};
     std::shared_ptr<Placement> next;
@@ -1439,10 +1474,9 @@ auto ViewScene::place() -> void {
     passWanted.clear();
     stats.places++;
     evaluateNeeded = evaluateNeeded || passNewRoots;
-    if (!changed && !libraryNeeded) {
+    if (!changed) {
         return;
     }
-    libraryNeeded = false;
 
     PROFILE_ZONE("PlaceChanges");
     SceneChanges changes;

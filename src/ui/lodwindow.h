@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -21,6 +22,8 @@ struct LodWindowRow {
     float screenSize = -1.0f; // the heuristic's measure, -1 when not computed
     std::string why;          // why it wants its level: "heuristic", "hand-set", "heuristic off", ...
     std::string waiting;      // while its wanted level is loaded and not drawn: what that level waits for
+    // The loaded levels it doesn't want, kept for the unload delay: each with when the delay runs out.
+    std::vector<std::pair<uint32_t, std::chrono::steady_clock::time_point>> kept;
 };
 
 // Persistent UI state of the LOD window.

@@ -2,7 +2,7 @@
 
 **Status. In progress.** A review of the streaming and LOD system as built by [plan_streaming_districts.md](plan_streaming_districts.md), with what
 to remove and what to replace. Decisions 1 to 8 locked 2026-10-15, each as recommended; the test world is best-practice USD with variant
-sets and `PointInstancer` (2026-10-16). Steps 1 to 3 done 2026-10-16, step 4 2026-10-18.
+sets and `PointInstancer` (2026-10-16). Steps 1 to 3 done 2026-10-16, step 4 2026-10-18, step 5 2026-10-23.
 
 ## Current state
 
@@ -231,7 +231,20 @@ Locked (2026-10-15). Stays: screen size of the extent's bounding sphere, the 20%
    roots at dense_forest, 17 have payload levels; the rest are assets whose levels are inline references. Those become render LOD, picked per
    instance on the GPU, and steps 5 and 6 below apply to streaming roots (payload levels) only.
 5. **Counting** (decisions 4, 5): pending counts per placed level for the switch rule; reference counts for contents and assets; the unload
-   delay on the level only.
+   delay on the level only. Locked 2026-10-22, each as recommended:
+   - **The delay is the view's (F1).** A level that stops being wanted stays loaded for the unload delay, then goes; one still drawn when
+     its delay runs out (the root waits for the level it wants) is kept for another. The view keeps a time per root and level and gives the
+     composer the levels to keep besides the one wanted (`WorldComposer::keepLodLevels`); the composer has no clock.
+   - **Contents are released when no resolve reaches them (F2)**: after each compose and relink, a kept content the resolve didn't reach,
+     and that isn't being composed (or used by one that is), is emptied at once. Resolve already walks every held content, so this is the
+     reference count without counts to keep in step. `evict`, `lastReached` and the "reached by the latest resolve" rule go.
+   - **Library and GPU entries are held while a placement uses them, drawn or not (F3 a)**: a loaded level not drawn (the floor under a
+     finer one, a level in its delay) holds its meshes' and materials' entries, so switching to it, finer or coarser, draws at once. The
+     unused-since timers go.
+   - **A level is ready when its placement waits for nothing (F4)**: its meshes, material packs and textures, the instances in it, and the
+     floors of the LOD roots in it, counted per placement as `waiting` already is and summed up the tree. A finer level now switches in
+     with its materials. The level placements are synced before the root picks its level, so it switches in the pass the last piece
+     arrives. `contentReady`, `itemsReady`, `countWaiting` and the per-pass `readiness` go.
 6. **The heuristic over placed roots** (decision 8).
 7. **Visibility pass and docs**: `src/world/README.md`, `src/view/README.md`, the Engine Map.
 
@@ -344,6 +357,42 @@ Locked (2026-10-15). Stays: screen size of the extent's bounding sphere, the 20%
 - **Lines**: `viewscene.cpp` 2,116 → 1,164, `placement.*` 1,632 new; with `worldcomposer.cpp` (1,860) 4,656 against 3,976.
 - **Follow-ups seen**: the main thread rebuilds the LOD window's 42,000 rows on every snapshot (`SceneUpdate`, up to 120 ms), before this
   step too; a material arriving rebuilds every drawn instance using it, where updating its slots' material handle would do.
+
+### Step 5 results (2026-10-23)
+
+- **Counts**: each placement counts what it waits for by kind (`PlacementWait`: meshes, material packs, textures, levels composing) as it
+  is built, summed up the tree with each LOD root by its coarsest level; a root draws the finest loaded level not finer than the one it
+  wants whose placement counts 0. The level placements are synced before the root picks, so it switches in the pass the last piece arrives.
+  Gone: `contentReady`, `itemsReady`, `countWaiting`, the per-pass `readiness`. The record's and the LOD window's `waiting` is the wanted
+  level's count (`meshes`, `materials`, `textures`, `composing`; `meshesInFlight` went with `countWaiting`).
+- **The delay on the level**: the view keeps a time per root and level not wanted (`levelsKept`), gives the composer the set to keep
+  (`WorldComposer::keepLodLevels`, beside `setLodLevel`), and wakes when the next runs out; a level its root still draws then gets another
+  delay. Gone: the three unused-since timers, `releaseDue`, `libraryNeeded`, `lastEvict`, `unload()`.
+- **Contents**: `releaseUnreached` after each compose and relink empties what the resolve didn't reach, holding what is being composed and
+  the prototypes it uses (without that, a level waiting for packs would compose its prototypes again every round). A released content has
+  no entities, so it doesn't make the next pass look at every placement. Gone: `evict`, `lastReached`, `lastResolveAt`, `Stats::evicted`.
+  On the test world the composer releases the unloaded variant of a level as its loaded one replaces it (a level is linked loaded or not).
+- **Library entries held by undrawn placements**: `heldMeshes`, `heldMaterials`, counted with the slots' uses; a placement switched away
+  from gives up its slots and holds their entries without being built again (`undrawPlacement`). Without that fast path, the pass switching
+  four tiles coarser built 70,811 placements again (890 ms); with it, 11 (425 ms).
+- **Measured, the four viewpoints** (against step 4 with the flat bookkeeping): the same draws resident at each (59, 82,053, 826,719,
+  286,626, 509,482), no warnings. Placement passes 5.59 s in all against 5.15 s, placements built 255,565 against 253,615; slots updated
+  238 against 82,349, as no level switches in with stand-in materials now. The pass removing 826,660 slots takes 425 ms against 315 ms (it
+  now keeps the finer levels for the delay, holding their entries). An undrawn level's placement resolves its draws (to hold their entries),
+  which is where the rest of the difference goes.
+- **The 27-camera flight, delay 1 s**: every root draws the level it wants at all 54 records, and the levels per root match the commit
+  before at every record; levels, contents and mesh packs are released behind the camera (by `flight_26`: 129 levels, 1,288 contents, 1,552
+  mesh packs), held mesh packs follow it (266 at the end), library entries equal the packs held. No warnings.
+- **Layered**: the LOD script gives the same wanted and drawn levels; after going coarser the finer level stays loaded for the delay (the
+  `streaming` record's `kept`, 10 s left). Composition unchanged: World against USD identical on the test world (at `proxy`, with `T_1_1`
+  at `full`, its instancers) and Caldera; the layered scene but `/World/Inherited`, as before. Baselines byte-identical.
+- **Visibility**: `streaming` (`waiting` by kind per root and in the totals, `kept` with seconds left, `unloaded` levels, contents, mesh
+  packs, `keptLevels`), `scenethread` (`unloaded` the same), the LOD window (the loaded column's tooltip: kept levels and seconds left; the
+  loading tooltip by kind), Scene Flow (kept and unloaded), `LevelsUnloaded` (levels, contents, meshes), the Engine Map's LOD selection and
+  Placement text. `lod-unload-delay` and `view.lod.heuristic {unloadDelay}` now set the level's delay.
+- **Lines**: `viewscene.cpp` 1,195 → 1,267, `placement.*` 1,916 → 1,968, `worldcomposer.cpp` 1,892 → 1,917.
+- **Unchanged**: levels set inside prototypes still never unload (`prototypeLevels` only grows); the test world has no streaming roots in
+  prototypes. Material and texture packs are never released, as before.
 
 ## Visibility
 

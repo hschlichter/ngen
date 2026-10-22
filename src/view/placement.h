@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <array>
 #include <bit>
-
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -35,6 +34,26 @@ struct SceneCamera {
     glm::mat4 worldTransform = glm::mat4(1.0f);
 };
 
+// What a placement waits for before it can be drawn whole: the meshes, material packs and textures its prims want and the asset server
+// hasn't answered, and the LOD roots in it whose coarsest level is still composing (not linked yet). Summed over what is placed in it: its
+// instances and point instancers, and each LOD root in it by its coarsest level, the level it draws while a finer one loads.
+struct PlacementWait {
+    uint32_t meshes = 0;
+    uint32_t materials = 0;
+    uint32_t textures = 0;
+    uint32_t composing = 0;
+
+    auto total() const -> uint32_t { return meshes + materials + textures + composing; }
+    auto operator+=(const PlacementWait& other) -> PlacementWait& {
+        meshes += other.meshes;
+        materials += other.materials;
+        textures += other.textures;
+        composing += other.composing;
+        return *this;
+    }
+    auto operator==(const PlacementWait&) const -> bool = default;
+};
+
 // A LOD root as drawn: its full path (instances expanded), its levels' names finest first, the level it defaults to, wants and draws, and the
 // levels loaded. `drawn` is empty while no level is loaded.
 struct SceneLodRoot {
@@ -52,14 +71,8 @@ struct SceneLodRoot {
     std::vector<uint32_t> loaded;
     bool setByHand = false;
     glm::mat4 worldTransform = glm::mat4(1.0f); // the root's, in metres: places the heuristic's extent
-    // While it wants a loaded level it doesn't draw yet: what that level waits for, counted through its payloads and instances (each
-    // content and mesh once): contents not composed with every pack they named, and meshes not held, of them those asked for.
-    struct Waiting {
-        uint32_t contentsIncomplete = 0;
-        uint32_t meshesMissing = 0;
-        uint32_t meshesInFlight = 0;
-    };
-    std::optional<Waiting> waiting;
+    // While it wants a level it doesn't draw yet: what that level's placement waits for, or one level composing while it isn't linked yet.
+    std::optional<PlacementWait> waiting;
 };
 
 // A payload placement reached while drawing: the prim with payloads, the asset ids, whether they are loaded, and the bounds authored for it
@@ -189,7 +202,12 @@ struct Placement {
     uint32_t lodGroupLevel = 0;
     std::vector<RenderLight> lights;  // its distant lights
     std::vector<std::string> waiting; // assets its prims want that aren't held: meshes, material packs, textures
+    PlacementWait ownWait;            // `waiting` by kind
+    PlacementWait wait;               // it and what is placed in it (PlacementWait): a level is ready to draw when this is 0
     uint32_t pending = 0;             // waiting assets and pending roots, in it and below: a pass looks into it while not 0
+    // Not drawn: the library entries its prims would draw with (mesh and material handle indices), held so drawing it uploads nothing.
+    std::vector<uint32_t> heldMeshes;
+    std::vector<uint32_t> heldMaterials;
     std::vector<std::shared_ptr<Placement>> children;
     std::vector<PlacedRoot> roots;
     // What the records list of it while drawn.
