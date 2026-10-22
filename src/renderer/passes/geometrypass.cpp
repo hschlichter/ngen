@@ -185,7 +185,7 @@ auto GeometryPass::addPass(
                 cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
                 // Each command's firstInstance is its instance index: instances[gl_InstanceIndex].
                 PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
-                cmd->drawIndexedIndirectCount(commands, lists.commandOffset(region), counts, DrawLists::countOffset(region), lists.regionCapacity());
+                cmd->drawIndexedIndirectCount(commands, lists.commandOffset(region), counts, DrawLists::countOffset(region), lists.regionCapacity(region));
                 lists.report(ctx, region, instances);
             }
 

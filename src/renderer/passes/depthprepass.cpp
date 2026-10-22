@@ -100,7 +100,7 @@ auto DepthPrepass::addPass(
                 cmd->bindVertexBuffer(cutout ? scene.vertexBuffer() : scene.positionBuffer());
                 cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
                 PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
-                cmd->drawIndexedIndirectCount(commands, lists.commandOffset(region), counts, DrawLists::countOffset(region), lists.regionCapacity());
+                cmd->drawIndexedIndirectCount(commands, lists.commandOffset(region), counts, DrawLists::countOffset(region), lists.regionCapacity(region));
                 lists.report(ctx, region, instances);
             }
 

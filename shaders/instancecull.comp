@@ -48,11 +48,14 @@ layout(std430, set = 0, binding = 0) readonly buffer Params {
     uint instanceCount;
     uint viewCount;
     uint cullEnabled;
-    uint regionCapacity;
+    uint commandCapacity;
     uint groupCount;
+    uint commandsUsed; // the end of the last region
     uint pad0;
     uint pad1;
-    uint pad2;
+    // Each region's first command: the regions are packed one after another, each as large as the instances the CPU counted in its
+    // bucket (DrawLists::countInstance), so a region's end is the next one's start.
+    uint regionOffsets[regionCount];
     vec4 planes[maxViews * 6]; // normalized, from Frustum::fromViewProj on the CPU
 } params;
 
@@ -105,7 +108,7 @@ struct DrawCommand {
     uint firstInstance;
 };
 layout(std430, set = 0, binding = 6) writeonly buffer Commands {
-    DrawCommand data[]; // regionCount * regionCapacity
+    DrawCommand data[]; // the regions, packed at params.regionOffsets
 } commands;
 
 layout(std430, set = 0, binding = 7) buffer Totals {
@@ -305,6 +308,7 @@ void scatter() {
             scanData[lid] += add;
             barrier();
         }
+        uint regionEnd = r + 1 < regionCount ? params.regionOffsets[r + 1] : params.commandsUsed;
         if (member != 0) {
             uint slot = groupOffsets.data[gl_WorkGroupID.x * regionCount + r] + scanData[lid] - 1;
             bool submesh = perSubmesh(inst, r / bucketCount);
@@ -314,7 +318,10 @@ void scatter() {
             command.firstIndex = submesh ? mesh.firstIndex + inst.indexOffset : mesh.firstIndex;
             command.vertexOffset = mesh.vertexOffset;
             command.firstInstance = m;
-            commands.data[r * params.regionCapacity + slot] = command;
+            // A command past the region's counted size would land in the next region (or past the buffer): never written.
+            if (params.regionOffsets[r] + slot < regionEnd) {
+                commands.data[params.regionOffsets[r] + slot] = command;
+            }
         }
         barrier();
     }

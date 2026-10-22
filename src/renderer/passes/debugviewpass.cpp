@@ -216,7 +216,7 @@ auto DebugViewPass::addPass(
                 cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
                 cmd->pushConstants(pip, RhiShaderStage::Geometry | RhiShaderStage::Fragment, 0, sizeof(push), &push);
                 PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
-                cmd->drawIndexedIndirectCount(commands, lists.commandOffset(region), counts, DrawLists::countOffset(region), lists.regionCapacity());
+                cmd->drawIndexedIndirectCount(commands, lists.commandOffset(region), counts, DrawLists::countOffset(region), lists.regionCapacity(region));
             }
             cmd->endRendering();
         });

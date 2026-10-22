@@ -28,6 +28,9 @@ public:
         blitTexture(src, dst, {.mipLevel = 0, .extent = srcExtent}, {.mipLevel = 0, .extent = dstExtent}, RhiFilter::Linear);
     }
     virtual auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void = 0;
+    // Several regions between the same two buffers in one command (scattered updates packed in a staging buffer). Regions must not
+    // overlap in dst.
+    virtual auto copyBufferRegions(RhiBuffer* src, RhiBuffer* dst, std::span<const RhiBufferCopy> regions) -> void = 0;
     // dst must be in RhiTextureState::TransferDst.
     virtual auto copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void = 0;
     // src must be in RhiTextureState::TransferSrc. Readback path: dst is normally host-visible.

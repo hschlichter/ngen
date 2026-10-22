@@ -98,6 +98,7 @@ auto GpuScene::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* qu
     slots = {fallback, pending};
     staging.assign(frameSlots, nullptr);
     stagingMapped.assign(frameSlots, nullptr);
+    stagingBytes.assign(frameSlots, 0);
     vertices = {.usage = RhiBufferUsage::Vertex, .readState = RhiBufferState::VertexRead, .name = "gpuscene.pool.vertices"};
     positions = {.usage = RhiBufferUsage::Vertex, .readState = RhiBufferState::VertexRead, .name = "gpuscene.pool.positions"};
     indices = {.usage = RhiBufferUsage::Index, .readState = RhiBufferState::IndexRead, .name = "gpuscene.pool.indices"};
@@ -136,7 +137,9 @@ auto GpuScene::destroy() -> void {
     device->destroyBuffer(instances);
     instances = nullptr;
     for (auto*& buffer : staging) {
-        device->destroyBuffer(buffer);
+        if (buffer != nullptr) {
+            device->destroyBuffer(buffer);
+        }
         buffer = nullptr;
     }
 }
@@ -291,6 +294,8 @@ auto GpuScene::uploadStats() const -> UploadStats {
         .lastFrame = lastUploadFrame,
         .totalBytes = totalUploadBytes,
         .texturesWaitingSlot = (uint32_t) texturesCopied.size(),
+        .instanceRecords = lastInstanceUploads,
+        .instanceRegions = lastInstanceRegions,
     };
 }
 
@@ -762,8 +767,8 @@ auto GpuScene::meshRange(uint32_t meshIndex) const -> const GpuMeshRange* {
 auto GpuScene::updateInstances(std::span<const GpuInstance> sceneInstances, std::span<const uint32_t> changedSlots, uint64_t frame) -> void {
     auto count = (uint32_t) sceneInstances.size();
     ensureInstanceCapacity(count, count, frame);
-    for (auto slot : changedSlots) {
-        markDirty(slot, slot + 1);
+    if (!allDirty) {
+        dirtySlots.insert(dirtySlots.end(), changedSlots.begin(), changedSlots.end());
     }
 }
 
@@ -771,53 +776,26 @@ auto GpuScene::ensureInstanceCapacity(uint32_t count, uint32_t liveCount, uint64
     if (instances != nullptr && count <= instanceCapacity) {
         return;
     }
-    // Frames in flight may still read the old buffers.
+    // Frames in flight may still read the old buffer.
     deletionQueue->deferBuffer(frame, instances);
-    for (auto*& buffer : staging) {
-        deletionQueue->deferBuffer(frame, buffer);
-        buffer = nullptr;
-    }
 
     constexpr uint32_t minCapacity = 256;
     instanceCapacity = std::max({count, instanceCapacity * 2, minCapacity});
-    auto bytes = instanceBufferBytes();
     instances = device->createBuffer({
-        .size = bytes,
+        .size = instanceBufferBytes(),
         .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferDst | RhiBufferUsage::TransferSrc,
         .memory = RhiMemoryUsage::GpuOnly,
         .debugName = "gpuscene.instances",
     });
-    for (size_t i = 0; i < staging.size(); i++) {
-        staging[i] = device->createBuffer({
-            .size = bytes,
-            .usage = RhiBufferUsage::TransferSrc,
-            .memory = RhiMemoryUsage::CpuToGpu,
-            .debugName = "gpuscene.instances.staging",
-        });
-        stagingMapped[i] = device->mapBuffer(staging[i]);
-    }
     // New contents: no earlier access to sync with, and every instance needs uploading.
     instanceAccess = FgAccessFlags::None;
     generation++;
-    markDirty(0, liveCount);
-}
-
-auto GpuScene::markDirty(uint32_t first, uint32_t end) -> void {
-    if (end <= first) {
-        return;
-    }
-    if (dirtyEnd <= dirtyFirst) {
-        dirtyFirst = first;
-        dirtyEnd = end;
-        return;
-    }
-    dirtyFirst = std::min(dirtyFirst, first);
-    dirtyEnd = std::max(dirtyEnd, end);
+    allDirty = liveCount > 0;
+    dirtySlots.clear();
 }
 
 auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstance> sceneInstances, uint32_t frameSlot) -> FgBufferHandle {
-    // Imported with the access the previous frame left it in, so this frame's upload waits
-    // for last frame's reads. Only the dirty span is copied.
+    // Imported with the access the previous frame left it in, so this frame's upload waits for last frame's reads.
     FgBufferDesc desc = {
         .size = instanceBufferBytes(),
         .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferDst,
@@ -825,32 +803,77 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
     instanceImport = fg.importBuffer("instances", instances, desc, instanceAccess);
     instanceImported = true;
     auto handle = instanceImport;
-    dirtyEnd = std::min(dirtyEnd, (uint32_t) sceneInstances.size());
-    if (dirtyEnd > dirtyFirst) {
-        auto* dst = static_cast<GpuInstanceRecord*>(stagingMapped[frameSlot]);
-        for (uint32_t m = dirtyFirst; m < dirtyEnd; m++) {
-            const auto& inst = sceneInstances[m];
-            uint32_t flags = 0;
-            if (inst.primFirst) {
-                flags |= gpuInstancePrimFirst;
-            }
-            if (inst.doubleSided) {
-                flags |= gpuInstanceDoubleSided;
-            }
-            if (inst.worldBounds.valid()) {
-                flags |= gpuInstanceBoundsValid;
-            }
-            if (inst.cutout) {
-                flags |= gpuInstanceCutout;
-            }
-            if (inst.primHasCutout) {
-                flags |= gpuInstancePrimHasCutout;
-            }
-            if (!inst.alive) {
-                dst[m] = {.model = glm::mat4(1.0f), .mesh = deadMesh};
-                continue;
-            }
-            dst[m] = {
+    // The slots to upload, in order, each once.
+    std::vector<uint32_t> upload;
+    auto count = (uint32_t) sceneInstances.size();
+    if (allDirty) {
+        upload.resize(count);
+        for (uint32_t m = 0; m < count; m++) {
+            upload[m] = m;
+        }
+    } else {
+        upload = std::move(dirtySlots);
+        std::ranges::sort(upload);
+        auto [last, end] = std::ranges::unique(upload);
+        upload.erase(last, end);
+        while (!upload.empty() && upload.back() >= count) {
+            upload.pop_back();
+        }
+    }
+    allDirty = false;
+    dirtySlots.clear();
+    if (upload.empty()) {
+        return handle;
+    }
+    // Only the changed records, packed: the slot's staging when they fit in it (grown up to stagingLimit), else a buffer of their own
+    // for this frame, freed once the frame is done.
+    auto bytes = (uint64_t) upload.size() * sizeof(GpuInstanceRecord);
+    RhiBuffer* buffer = nullptr;
+    void* mapped = nullptr;
+    if (bytes <= stagingLimit) {
+        if (stagingBytes[frameSlot] < bytes) {
+            deletionQueue->deferBuffer(currentFrame, staging[frameSlot]);
+            stagingBytes[frameSlot] = std::min(stagingLimit, std::max(bytes, stagingBytes[frameSlot] * 2));
+            staging[frameSlot] = device->createBuffer({
+                .size = stagingBytes[frameSlot],
+                .usage = RhiBufferUsage::TransferSrc,
+                .memory = RhiMemoryUsage::CpuToGpu,
+                .debugName = "gpuscene.instances.staging",
+            });
+            stagingMapped[frameSlot] = device->mapBuffer(staging[frameSlot]);
+        }
+        buffer = staging[frameSlot];
+        mapped = stagingMapped[frameSlot];
+    } else {
+        buffer = device->createBuffer({.size = bytes, .usage = RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "gpuscene.instances.staging.large"});
+        mapped = device->mapBuffer(buffer);
+        deletionQueue->deferBuffer(currentFrame, buffer);
+    }
+    auto* dst = static_cast<GpuInstanceRecord*>(mapped);
+    std::vector<RhiBufferCopy> regions;
+    for (size_t i = 0; i < upload.size(); i++) {
+        auto m = upload[i];
+        const auto& inst = sceneInstances[m];
+        uint32_t flags = 0;
+        if (inst.primFirst) {
+            flags |= gpuInstancePrimFirst;
+        }
+        if (inst.doubleSided) {
+            flags |= gpuInstanceDoubleSided;
+        }
+        if (inst.worldBounds.valid()) {
+            flags |= gpuInstanceBoundsValid;
+        }
+        if (inst.cutout) {
+            flags |= gpuInstanceCutout;
+        }
+        if (inst.primHasCutout) {
+            flags |= gpuInstancePrimHasCutout;
+        }
+        if (!inst.alive) {
+            dst[i] = {.model = glm::mat4(1.0f), .mesh = deadMesh};
+        } else {
+            dst[i] = {
                 .model = inst.transform,
                 .material = materialEntry(inst.material),
                 .mesh = inst.mesh.index,
@@ -863,17 +886,19 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
                 .lodGroup = inst.lodGroup,
             };
         }
-        RhiBufferCopy region = {
-            .srcOffset = (uint64_t) dirtyFirst * sizeof(GpuInstanceRecord),
-            .dstOffset = (uint64_t) dirtyFirst * sizeof(GpuInstanceRecord),
-            .size = (uint64_t) (dirtyEnd - dirtyFirst) * sizeof(GpuInstanceRecord),
-        };
-        auto stagingHandle = fg.importBuffer("instanceStaging", staging[frameSlot], {.size = desc.size, .usage = RhiBufferUsage::TransferSrc});
-        handle = addInstanceUploadPass(fg, stagingHandle, instanceImport, region);
+        // A run of consecutive slots is one region.
+        auto srcOffset = (uint64_t) i * sizeof(GpuInstanceRecord);
+        auto dstOffset = (uint64_t) m * sizeof(GpuInstanceRecord);
+        if (!regions.empty() && regions.back().srcOffset + regions.back().size == srcOffset && regions.back().dstOffset + regions.back().size == dstOffset) {
+            regions.back().size += sizeof(GpuInstanceRecord);
+        } else {
+            regions.push_back({.srcOffset = srcOffset, .dstOffset = dstOffset, .size = sizeof(GpuInstanceRecord)});
+        }
     }
-    dirtyFirst = 0;
-    dirtyEnd = 0;
-    return handle;
+    auto stagingHandle = fg.importBuffer("instanceStaging", buffer, {.size = bytes, .usage = RhiBufferUsage::TransferSrc});
+    lastInstanceUploads = (uint32_t) upload.size();
+    lastInstanceRegions = (uint32_t) regions.size();
+    return addInstanceUploadPass(fg, stagingHandle, instanceImport, std::move(regions));
 }
 
 auto GpuScene::afterExecute(const FrameGraph& fg) -> void {

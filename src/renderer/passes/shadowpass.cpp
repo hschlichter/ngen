@@ -165,7 +165,7 @@ auto ShadowPass::addPass(
                     ShadowPush push{cascade.viewProj};
                     cmd->pushConstants(pip, RhiShaderStage::Vertex, 0, sizeof(push), &push);
                     PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
-                    cmd->drawIndexedIndirectCount(ctx.buffer(drawHandles.commands), lists.commandOffset(region), ctx.buffer(drawHandles.counts), DrawLists::countOffset(region), lists.regionCapacity());
+                    cmd->drawIndexedIndirectCount(ctx.buffer(drawHandles.commands), lists.commandOffset(region), ctx.buffer(drawHandles.counts), DrawLists::countOffset(region), lists.regionCapacity(region));
                     lists.report(ctx, region, instances);
                 }
             }

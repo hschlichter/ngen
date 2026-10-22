@@ -103,10 +103,14 @@ auto makeParamsSchema() -> GpuSchema {
             {"instanceCount", offsetof(P, instanceCount), GpuFieldType::U32},
             {"viewCount", offsetof(P, viewCount), GpuFieldType::U32},
             {"cullEnabled", offsetof(P, cullEnabled), GpuFieldType::U32},
-            {"regionCapacity", offsetof(P, regionCapacity), GpuFieldType::U32},
+            {"commandCapacity", offsetof(P, commandCapacity), GpuFieldType::U32},
             {"groupCount", offsetof(P, groupCount), GpuFieldType::U32},
+            {"commandsUsed", offsetof(P, commandsUsed), GpuFieldType::U32},
         },
     };
+    for (uint32_t r = 0; r < DrawLists::regionCount; r++) {
+        schema.fields.push_back({std::format("regionOffset.{}", DrawLists::regionName(r)), (uint32_t) (offsetof(P, regionOffsets) + (r * sizeof(uint32_t))), GpuFieldType::U32});
+    }
     for (uint32_t v = 0; v < DrawLists::viewCount; v++) {
         for (uint32_t p = 0; p < 6; p++) {
             auto offset = (uint32_t) (offsetof(P, planes) + (((v * 6) + p) * sizeof(glm::vec4)));

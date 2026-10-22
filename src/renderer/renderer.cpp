@@ -483,6 +483,12 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
     for (const auto& [handle, material] : changes.materialsChanged) {
         gpuScene.setMaterial(handle, material);
     }
+    static const uint32_t copyZoneId = profile::registerName("CopyInstances");
+    profile::beginZone(copyZoneId);
+    // Slots past the new count leave the bucket counts with them (the slot list doesn't shrink today).
+    for (size_t slot = changes.slotCount; slot < gpuInstances.size(); slot++) {
+        drawLists.countInstance(gpuInstances[slot], -1);
+    }
     gpuInstances.resize(changes.slotCount);
     std::vector<uint32_t> changedSlots;
     changedSlots.reserve(changes.instances.size());
@@ -490,6 +496,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
         if (slot >= gpuInstances.size()) {
             continue;
         }
+        drawLists.countInstance(gpuInstances[slot], -1);
         gpuInstances[slot] = {
             .mesh = inst.mesh,
             .material = inst.material,
@@ -506,12 +513,16 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
             .worldBounds = inst.worldBounds,
             .alive = inst.alive,
         };
+        drawLists.countInstance(gpuInstances[slot], 1);
         changedSlots.push_back(slot);
     }
+    profile::endZone();
     if (changes.lightsChanged) {
         lights = changes.lights;
     }
 
+    static const uint32_t boundsZoneId = profile::registerName("SceneBounds");
+    profile::beginZone(boundsZoneId);
     sceneBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
     for (const auto& inst : gpuInstances) {
         if (inst.alive && inst.worldBounds.valid()) {
@@ -520,13 +531,24 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
         }
     }
 
+    profile::endZone();
+
     // A grown instance buffer or grown draw lists are new buffers: the descriptor sets naming them are rewritten at the next frame.
-    gpuScene.updateInstances(gpuInstances, changedSlots, m_frameIndex);
-    if (drawLists.ensureCapacity((uint32_t) gpuInstances.size(), m_frameIndex)) {
-        descriptorSetsDirty = true;
+    {
+        PROFILE_ZONE("UpdateInstances");
+        gpuScene.updateInstances(gpuInstances, changedSlots, m_frameIndex);
     }
-    if (lodGroups.apply(changes.lodGroups, changes.lodGroupCount, m_frameIndex)) {
-        descriptorSetsDirty = true;
+    {
+        PROFILE_ZONE("GrowDrawLists");
+        if (drawLists.ensureCapacity((uint32_t) gpuInstances.size(), drawLists.commandsNeeded(), m_frameIndex)) {
+            descriptorSetsDirty = true;
+        }
+    }
+    {
+        PROFILE_ZONE("ApplyLodGroups");
+        if (lodGroups.apply(changes.lodGroups, changes.lodGroupCount, m_frameIndex)) {
+            descriptorSetsDirty = true;
+        }
     }
     if (gpuScene.instanceGeneration() != boundInstanceGeneration) {
         shadowPass.bindInstanceBuffer(device, gpuScene.instanceBuffer(), deletionQueue, m_frameIndex);
@@ -580,6 +602,8 @@ auto Renderer::sceneGpuStats() const -> SceneGpuStats {
             .lastFrame = uploads.lastFrame,
             .totalBytes = uploads.totalBytes,
             .texturesWaitingSlot = uploads.texturesWaitingSlot,
+            .instanceRecords = uploads.instanceRecords,
+            .instanceRegions = uploads.instanceRegions,
         },
         .geometryPool = {
             .limitBytes = pool.limitBytes,

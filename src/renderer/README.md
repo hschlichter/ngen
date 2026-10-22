@@ -195,7 +195,10 @@ Tables:
   - **Slots.** A draw keeps its slot while it exists. A removed one is dead (mesh index past the table, so culling never draws it) until a new draw
     takes it.
   - **Reading it.** Vertex shaders read it at `gl_InstanceIndex`, and every draw sets `firstInstance` to the slot.
-  - **Uploads.** Changed slots go through the slot's staging buffer and the `InstanceUpload` pass. The buffer grows by recreation.
+  - **Uploads.** Only the changed records go up: packed in the slot's staging buffer (grown up to 4 MiB; a larger upload, as a tile switch's or
+    after the buffer grew, takes a staging buffer of its own for its frame), and copied by the `InstanceUpload` pass in one copy with a region per
+    run of consecutive slots (`RhiCommandBuffer::copyBufferRegions`). The `gpuscene` record has the last upload's records and regions. The buffer
+    grows by recreation.
 
 **Uploads** (`GpuScene::addUploadPass`, the `SceneUpload` pass, before the culling passes):
 - **Per frame.** Each frame takes queued uploads in order, up to `uploadBudget` bytes (64 MiB; at least one upload, so a large texture level still
@@ -225,7 +228,10 @@ Tables:
   same two for cutout materials. View 0 is the camera, views 1..4 the shadow cascades. Camera regions hold every visible instance with a mesh in the
   pool, drawing its submesh range. Cascade regions hold `primFirst` instances (one per prim), drawing the whole mesh, except for a prim with a cutout
   submesh (`primHasCutout`): its instances draw one by one, each its submesh range, so the cutout one goes to a cutout bucket and is cut there too.
-- **Visibility.** Each instance's world bounds are tested against six normalized planes per view (`Frustum::fromViewProj`, computed on the CPU into the
+- **Region sizes.** An instance's bucket follows from its flags, so it can land in one camera region and one region per cascade. The renderer
+  keeps the live instances per bucket as slots change (`DrawLists::countInstance`, the shader's bucket rule on the CPU), and each frame
+  `writeParams` packs the regions one after another, each as large as its bucket's count (`CullParams::regionOffsets`): the command buffer holds
+  the camera's instances plus four cascades' at most, not every instance in every region. The scatter never writes past a region's end. Each instance's world bounds are tested against six normalized planes per view (`Frustum::fromViewProj`, computed on the CPU into the
   slot's parameter buffer) with the positive-corner test. Instances without valid bounds are always visible, and with culling off every instance is. A
   frozen frustum is only a different camera matrix in the snapshot (`CullState`).
 - **Ordered compaction (reduce-then-scan).** `InstanceCull` counts, per workgroup of 256 instances, how many commands each region gets.
@@ -235,14 +241,16 @@ Tables:
   millions of instances.
 - **Counts and statistics.** The totals buffer holds the draw count per region (read by `drawIndexedIndirectCount`), primitives per region,
   camera-culled instances, and culled and drawn `primFirst` instances per cascade.
-- **Per-slot buffers.** Parameters, visibility, counters, offsets, commands and counts are per frame slot and imported every frame. The graph has no
+- **Per-slot buffers.** Parameters, visibility, counters, offsets, commands and counts are per frame slot and imported every frame. The
+  per-instance ones grow with the instance count, the command buffer with the instances counted in the buckets. The graph has no
   transient buffers yet: a pooled buffer reused next frame would need synchronisation against the previous frame's reads.
-- **Readback.** `CullReadback` copies the totals, the visibility bits and, while the render debugger is open, the commands into the slot's host-visible
-  readback buffer; `DrawLists::parseReadback` reads it after the slot's fence. `CullResult` (the view's `culling` record, Culling window, AABB
+- **Readback.** `CullReadback` copies the totals and the visibility bits into the slot's host-visible readback buffer, and while the render debugger
+  is open the commands into the slot's commands readback, made when it is first asked for; `DrawLists::parseReadback` reads them after the slot's
+  fence, each region at the offset that frame laid it out at. `CullResult` (the view's `culling` record, Culling window, AABB
   overlay), the per-pass `draws`/`primitives` (through `addIndirectStats`) and the draw log all come from there.
 
-The mesh passes bind the pipeline, descriptor set and pool once per bucket and issue one `drawIndexedIndirectCount` with the region's capacity as
-`maxDrawCount`. An empty region still costs one call; only the GPU knows the count.
+The mesh passes bind the pipeline, descriptor set and pool once per bucket and issue one `drawIndexedIndirectCount` at the region's offset with
+its size as `maxDrawCount`. An empty region still costs one call; only the GPU knows the count.
 
 ## Render LOD
 

@@ -506,6 +506,28 @@ auto RhiCommandBufferVulkan::copyBuffer(RhiBuffer* src, RhiBuffer* dst, const Rh
     vkCmdCopyBuffer(cmd, srcBuf->buffer, dstBuf->buffer, 1, &vkRegion);
 }
 
+auto RhiCommandBufferVulkan::copyBufferRegions(RhiBuffer* src, RhiBuffer* dst, std::span<const RhiBufferCopy> regions) -> void {
+    if (regions.empty()) {
+        return;
+    }
+    if (logging) {
+        uint64_t bytes = 0;
+        for (const auto& region : regions) {
+            bytes += region.size;
+        }
+        record(std::format("copyBufferRegions {} -> {} ({} regions, {} bytes)", nameOf(src), nameOf(dst), regions.size(), bytes));
+    }
+    commandStats.copies++;
+    auto* srcBuf = static_cast<RhiBufferVulkan*>(src);
+    auto* dstBuf = static_cast<RhiBufferVulkan*>(dst);
+    std::vector<VkBufferCopy> vkRegions;
+    vkRegions.reserve(regions.size());
+    for (const auto& region : regions) {
+        vkRegions.push_back({.srcOffset = region.srcOffset, .dstOffset = region.dstOffset, .size = region.size});
+    }
+    vkCmdCopyBuffer(cmd, srcBuf->buffer, dstBuf->buffer, (uint32_t) vkRegions.size(), vkRegions.data());
+}
+
 auto RhiCommandBufferVulkan::copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void {
     if (logging) {
         record(std::format("copyBufferToTexture {} +{} -> {} mip {} layer {} {}x{}", nameOf(src), region.bufferOffset, nameOf(dst), region.mipLevel, region.arrayLayer, region.width, region.height));

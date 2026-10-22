@@ -35,7 +35,8 @@ Concretely:
 - `destroyX()` destroys now. If a frame in flight still references the resource, that is the caller's bug. The engine
   knows its frame pacing; the RHI does not. ngen keeps a `DeletionQueue` in `src/renderer/` that tags each pending
   destroy with a frame number and drains it once that frame's fence has signaled.
-- Uploads are commands. `RhiCommandBuffer::copyBuffer` and `copyBufferToTexture` record into a command buffer the
+- Uploads are commands. `RhiCommandBuffer::copyBuffer` (one region, or `copyBufferRegions` for many between the same two buffers, one
+  backend call) and `copyBufferToTexture` record into a command buffer the
   caller owns. Staging buffers, layout barriers, submission and the fence wait are the caller's. `RhiTextureDesc` has
   no `initialData`; `RhiDevice` has no `copyBuffer`. ngen's `GpuUploader` in `src/renderer/` shows the expected shape:
   one command buffer, N copies, one submit, one fence wait, then free staging.

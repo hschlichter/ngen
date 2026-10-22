@@ -13,12 +13,12 @@ auto DrawLists::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* q
     device = rhiDevice;
     deletionQueue = queue;
     slots.assign(frameSlots, {});
-    ensureCapacity(0, 0);
+    ensureCapacity(0, 0, 0);
 }
 
 auto DrawLists::destroy() -> void {
     for (auto& slot : slots) {
-        for (auto* buffer : {slot.params, slot.visibility, slot.cullPlanes, slot.groupCounters, slot.groupOffsets, slot.commands, slot.counts, slot.readback}) {
+        for (auto* buffer : {slot.params, slot.visibility, slot.cullPlanes, slot.groupCounters, slot.groupOffsets, slot.commands, slot.counts, slot.readback, slot.commandsReadback}) {
             if (buffer != nullptr) {
                 device->destroyBuffer(buffer);
             }
@@ -31,41 +31,90 @@ auto DrawLists::groupCountFor(uint32_t instanceCount) -> uint32_t {
     return std::max(1u, (instanceCount + groupSize - 1) / groupSize);
 }
 
-auto DrawLists::ensureCapacity(uint32_t instanceCount, uint64_t frame) -> bool {
-    if (slots[0].commands != nullptr && instanceCount <= capacity) {
+auto DrawLists::cameraBucketOf(const GpuInstance& instance) -> uint32_t {
+    if (!instance.alive) {
+        return noBucket;
+    }
+    return bucket(instance.doubleSided, instance.cutout);
+}
+
+auto DrawLists::cascadeBucketOf(const GpuInstance& instance) -> uint32_t {
+    if (!instance.alive) {
+        return noBucket;
+    }
+    if (instance.primHasCutout) {
+        return bucket(instance.doubleSided, instance.cutout);
+    }
+    if (instance.primFirst) {
+        return bucket(instance.doubleSided, false);
+    }
+    return noBucket;
+}
+
+auto DrawLists::countInstance(const GpuInstance& instance, int delta) -> void {
+    if (auto b = cameraBucketOf(instance); b != noBucket) {
+        cameraBuckets[b] += delta;
+    }
+    if (auto b = cascadeBucketOf(instance); b != noBucket) {
+        cascadeBuckets[b] += delta;
+    }
+}
+
+auto DrawLists::commandsNeeded() const -> uint64_t {
+    uint64_t camera = 0;
+    uint64_t cascade = 0;
+    for (uint32_t b = 0; b < bucketCount; b++) {
+        camera += cameraBuckets[b];
+        cascade += cascadeBuckets[b];
+    }
+    return camera + (cascade * maxShadowCascades);
+}
+
+auto DrawLists::ensureCapacity(uint32_t instanceCount, uint64_t commandCount, uint64_t frame) -> bool {
+    bool instancesFit = slots[0].visibility != nullptr && instanceCount <= capacity;
+    bool commandsFit = slots[0].commands != nullptr && commandCount <= commandCapacity;
+    if (instancesFit && commandsFit) {
         return false;
     }
-    // Frames in flight may still use the old buffers.
-    for (auto& slot : slots) {
-        for (auto* buffer : {slot.params, slot.visibility, slot.cullPlanes, slot.groupCounters, slot.groupOffsets, slot.commands, slot.counts, slot.readback}) {
-            deletionQueue->deferBuffer(frame, buffer);
-        }
-        slot = {};
-    }
-
     constexpr uint32_t minCapacity = 256;
-    capacity = std::max({instanceCount, capacity * 2, minCapacity});
-    auto groups = groupCountFor(capacity);
+    // Frames in flight may still use the old buffers.
+    auto retire = [&](RhiBuffer*& buffer) {
+        deletionQueue->deferBuffer(frame, buffer);
+        buffer = nullptr;
+    };
     auto storage = [&](uint64_t size, RhiBufferUsageFlags extra, const char* name) {
         // TransferSrc on all of them: the capture service reads any of them back.
         return device->createBuffer({.size = size, .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc | extra, .memory = RhiMemoryUsage::GpuOnly, .debugName = name});
     };
-    for (auto& slot : slots) {
-        slot.params = device->createBuffer({.size = sizeof(CullParams), .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "cull.params"});
-        slot.paramsMapped = device->mapBuffer(slot.params);
-        slot.visibility = storage((uint64_t) capacity * sizeof(uint32_t), RhiBufferUsage::TransferSrc, "cull.visibility");
-        slot.cullPlanes = storage((uint64_t) capacity * sizeof(uint32_t), {}, "cull.planes");
-        slot.groupCounters = storage((uint64_t) groups * counterCount * sizeof(uint32_t), {}, "cull.groupcounters");
-        slot.groupOffsets = storage((uint64_t) groups * regionCount * sizeof(uint32_t), {}, "cull.groupoffsets");
-        slot.commands = storage((uint64_t) regionCount * capacity * sizeof(RhiDrawIndexedIndirectCommand), RhiBufferUsage::Indirect | RhiBufferUsage::TransferSrc, "cull.commands");
-        slot.counts = storage(counterCount * sizeof(uint32_t), RhiBufferUsage::Indirect | RhiBufferUsage::TransferSrc, "cull.counts");
-        slot.readback = device->createBuffer({
-            .size = readbackCommandsOffset() + ((uint64_t) regionCount * capacity * sizeof(RhiDrawIndexedIndirectCommand)),
-            .usage = RhiBufferUsage::TransferDst | RhiBufferUsage::TransferSrc,
-            .memory = RhiMemoryUsage::GpuToCpu,
-            .debugName = "cull.readback",
-        });
-        slot.readbackMapped = device->mapBuffer(slot.readback);
+    if (!instancesFit) {
+        capacity = std::max({instanceCount, capacity * 2, minCapacity});
+        auto groups = groupCountFor(capacity);
+        for (auto& slot : slots) {
+            for (auto* buffer : {&slot.params, &slot.visibility, &slot.cullPlanes, &slot.groupCounters, &slot.groupOffsets, &slot.counts, &slot.readback}) {
+                retire(*buffer);
+            }
+            slot.params = device->createBuffer({.size = sizeof(CullParams), .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "cull.params"});
+            slot.paramsMapped = device->mapBuffer(slot.params);
+            slot.visibility = storage((uint64_t) capacity * sizeof(uint32_t), RhiBufferUsage::TransferSrc, "cull.visibility");
+            slot.cullPlanes = storage((uint64_t) capacity * sizeof(uint32_t), {}, "cull.planes");
+            slot.groupCounters = storage((uint64_t) groups * counterCount * sizeof(uint32_t), {}, "cull.groupcounters");
+            slot.groupOffsets = storage((uint64_t) groups * regionCount * sizeof(uint32_t), {}, "cull.groupoffsets");
+            slot.counts = storage(counterCount * sizeof(uint32_t), RhiBufferUsage::Indirect | RhiBufferUsage::TransferSrc, "cull.counts");
+            slot.readback = device->createBuffer({.size = readbackBytes(), .usage = RhiBufferUsage::TransferDst | RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::GpuToCpu, .debugName = "cull.readback"});
+            slot.readbackMapped = device->mapBuffer(slot.readback);
+            slot.pending = false;
+        }
+    }
+    if (!commandsFit) {
+        commandCapacity = std::max({commandCount, commandCapacity * 2, (uint64_t) minCapacity});
+        for (auto& slot : slots) {
+            retire(slot.commands);
+            // The commands readback is made again at the new size when the render debugger next asks.
+            retire(slot.commandsReadback);
+            slot.commandsReadbackMapped = nullptr;
+            slot.commands = storage(commandBytes(), RhiBufferUsage::Indirect | RhiBufferUsage::TransferSrc, "cull.commands");
+            slot.pending = false;
+        }
     }
     return true;
 }
@@ -75,8 +124,20 @@ auto DrawLists::writeParams(uint32_t frameSlot, uint32_t instanceCount, const gl
     params.instanceCount = instanceCount;
     params.viewCount = 1 + (uint32_t) std::min(cascades.size(), (size_t) maxShadowCascades);
     params.cullEnabled = cullEnabled ? 1 : 0;
-    params.regionCapacity = capacity;
+    params.commandCapacity = (uint32_t) commandCapacity;
     params.groupCount = groupCountFor(instanceCount);
+    // The regions one after another, each as large as the instances that can land in it.
+    uint32_t next = 0;
+    for (uint32_t r = 0; r < regionCount; r++) {
+        auto view = r / bucketCount;
+        auto b = r % bucketCount;
+        auto size = (uint32_t) (view == 0 ? cameraBuckets[b] : cascadeBuckets[b]);
+        frameOffsets[r] = next;
+        frameCapacities[r] = size;
+        params.regionOffsets[r] = next;
+        next += size;
+    }
+    params.commandsUsed = next;
     // Normalized planes from Frustum::fromViewProj, tested per instance in instancecull.comp.
     for (uint32_t v = 0; v < params.viewCount; v++) {
         // The camera's projection is reversed-Z with no far plane; the cascades' are standard.
@@ -88,6 +149,7 @@ auto DrawLists::writeParams(uint32_t frameSlot, uint32_t instanceCount, const gl
     std::memcpy(slots[frameSlot].paramsMapped, &params, sizeof(params));
     slots[frameSlot].instanceCount = instanceCount;
     slots[frameSlot].viewCount = params.viewCount;
+    slots[frameSlot].offsets = frameOffsets;
     return params.groupCount;
 }
 
@@ -100,9 +162,9 @@ auto DrawLists::import(FrameGraph& fg, uint32_t frameSlot) -> Handles {
         .cullPlanes = fg.importBuffer("cullPlanes", slot.cullPlanes, {.size = (uint64_t) capacity * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}),
         .groupCounters = fg.importBuffer("cullGroupCounters", slot.groupCounters, {.size = (uint64_t) groups * counterCount * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}),
         .groupOffsets = fg.importBuffer("cullGroupOffsets", slot.groupOffsets, {.size = (uint64_t) groups * regionCount * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}),
-        .commands = fg.importBuffer("drawCommands", slot.commands, {.size = (uint64_t) regionCount * capacity * sizeof(RhiDrawIndexedIndirectCommand), .usage = RhiBufferUsage::Storage | RhiBufferUsage::Indirect}),
+        .commands = fg.importBuffer("drawCommands", slot.commands, {.size = commandBytes(), .usage = RhiBufferUsage::Storage | RhiBufferUsage::Indirect}),
         .counts = fg.importBuffer("drawCounts", slot.counts, {.size = counterCount * sizeof(uint32_t), .usage = RhiBufferUsage::Storage | RhiBufferUsage::Indirect}),
-        .readback = fg.importBuffer("cullReadback", slot.readback, {.size = readbackCommandsOffset() + ((uint64_t) regionCount * capacity * sizeof(RhiDrawIndexedIndirectCommand)), .usage = RhiBufferUsage::TransferDst}),
+        .readback = fg.importBuffer("cullReadback", slot.readback, {.size = readbackBytes(), .usage = RhiBufferUsage::TransferDst}),
     };
 }
 
@@ -112,16 +174,25 @@ struct CullReadbackPassData {
     FgBufferHandle visibility;
     FgBufferHandle commands;
     FgBufferHandle readback;
+    FgBufferHandle commandsReadback;
 };
 } // namespace
 
 auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool captureCommands) -> void {
     auto& slot = slots[frameSlot];
+    if (captureCommands && slot.commandsReadback == nullptr) {
+        slot.commandsReadback = device->createBuffer({.size = commandBytes(), .usage = RhiBufferUsage::TransferDst, .memory = RhiMemoryUsage::GpuToCpu, .debugName = "cull.readback.commands"});
+        slot.commandsReadbackMapped = device->mapBuffer(slot.commandsReadback);
+    }
     slot.pending = true;
     slot.capturedCommands = captureCommands;
     RhiBufferCopy countsRegion = {.srcOffset = 0, .dstOffset = 0, .size = counterCount * sizeof(uint32_t)};
     RhiBufferCopy visibilityRegion = {.srcOffset = 0, .dstOffset = readbackVisibilityOffset(), .size = std::max<uint64_t>(1, slot.instanceCount) * sizeof(uint32_t)};
-    RhiBufferCopy commandsRegion = {.srcOffset = 0, .dstOffset = readbackCommandsOffset(), .size = (uint64_t) regionCount * capacity * sizeof(RhiDrawIndexedIndirectCommand)};
+    RhiBufferCopy commandsRegion = {.srcOffset = 0, .dstOffset = 0, .size = commandBytes()};
+    FgBufferHandle commandsReadback;
+    if (captureCommands) {
+        commandsReadback = fg.importBuffer("cullReadbackCommands", slot.commandsReadback, {.size = commandBytes(), .usage = RhiBufferUsage::TransferDst});
+    }
     fg.addPass<CullReadbackPassData>(
         "CullReadback",
         [&](FrameGraphBuilder& builder, CullReadbackPassData& data) {
@@ -129,6 +200,7 @@ auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t
             data.visibility = builder.read(handles.visibility, FgAccessFlags::TransferSrc);
             if (captureCommands) {
                 data.commands = builder.read(handles.commands, FgAccessFlags::TransferSrc);
+                data.commandsReadback = builder.write(commandsReadback, FgAccessFlags::TransferDst);
             }
             data.readback = builder.write(handles.readback, FgAccessFlags::TransferDst);
             builder.setSideEffects(true);
@@ -138,7 +210,7 @@ auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t
             cmd->copyBuffer(ctx.buffer(data.counts), ctx.buffer(data.readback), countsRegion);
             cmd->copyBuffer(ctx.buffer(data.visibility), ctx.buffer(data.readback), visibilityRegion);
             if (captureCommands) {
-                cmd->copyBuffer(ctx.buffer(data.commands), ctx.buffer(data.readback), commandsRegion);
+                cmd->copyBuffer(ctx.buffer(data.commands), ctx.buffer(data.commandsReadback), commandsRegion);
             }
         });
 }
@@ -163,13 +235,14 @@ auto DrawLists::parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void {
         latest.viewBits[m] = (uint8_t) bits[m];
     }
 
-    latest.hasCommands = slot.capturedCommands;
-    const auto* commands = reinterpret_cast<const RhiDrawIndexedIndirectCommand*>(bytes + readbackCommandsOffset());
+    latest.hasCommands = slot.capturedCommands && slot.commandsReadbackMapped != nullptr;
+    const auto* commands = static_cast<const RhiDrawIndexedIndirectCommand*>(slot.commandsReadbackMapped);
     for (uint32_t r = 0; r < regionCount; r++) {
         latest.commands[r].clear();
-        if (slot.capturedCommands) {
-            auto count = std::min(latest.totals[counterDraws + r], capacity);
-            latest.commands[r].assign(commands + ((size_t) r * capacity), commands + ((size_t) r * capacity) + count);
+        if (latest.hasCommands) {
+            // Each region at the offset the slot's frame laid it out at.
+            auto count = latest.totals[counterDraws + r];
+            latest.commands[r].assign(commands + slot.offsets[r], commands + slot.offsets[r] + count);
         }
     }
 }

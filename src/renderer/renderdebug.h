@@ -33,6 +33,8 @@ struct RenderUploadStats {
     uint64_t lastFrame = 0;
     uint64_t totalBytes = 0;
     uint32_t texturesWaitingSlot = 0;
+    uint32_t instanceRecords = 0; // the last instance upload: records copied, and the copy regions (runs of consecutive slots)
+    uint32_t instanceRegions = 0;
 };
 
 // The GPU scene's flow, published by the render thread after every frame, whatever window is open: the change lists it took from the main

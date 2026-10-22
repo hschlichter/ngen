@@ -47,6 +47,7 @@ public:
     using RhiCommandBuffer::pipelineBarrier;
     auto blitTexture(RhiTexture* src, RhiTexture* dst, const RhiBlitRegion& srcRegion, const RhiBlitRegion& dstRegion, RhiFilter filter) -> void override;
     auto copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void override;
+    auto copyBufferRegions(RhiBuffer* src, RhiBuffer* dst, std::span<const RhiBufferCopy> regions) -> void override;
     auto copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void override;
     auto copyTextureToBuffer(RhiTexture* src, RhiBuffer* dst, const RhiBufferTextureCopy& region) -> void override;
     [[nodiscard]] auto stats() const -> const RhiCommandStats& override { return commandStats; }

@@ -194,6 +194,8 @@ public:
         uint64_t lastFrame = 0;           // the frame of that record
         uint64_t totalBytes = 0;          // every upload so far
         uint32_t texturesWaitingSlot = 0; // every level copied, slot assigned at the next beginFrame
+        uint32_t instanceRecords = 0;     // the last instance upload: records and copy regions
+        uint32_t instanceRegions = 0;
     };
     auto uploadStats() const -> UploadStats;
     auto uploadBudgetBytes() const -> uint64_t { return uploadBudget; }
@@ -277,7 +279,6 @@ private:
     template <typename Retire>
     auto record(RhiCommandBuffer* cmd, uint64_t budget, const Retire& retire) -> void;
     auto ensureInstanceCapacity(uint32_t count, uint32_t liveCount, uint64_t frame) -> void;
-    auto markDirty(uint32_t first, uint32_t end) -> void;
 
     RhiDevice* device = nullptr;
     DeletionQueue* deletionQueue = nullptr;
@@ -332,13 +333,20 @@ private:
     // frame's graph so the upload syncs with the previous frame's reads.
     RhiBuffer* instances = nullptr;
     FgAccessFlags instanceAccess = FgAccessFlags::None;
-    std::vector<RhiBuffer*> staging; // per frame slot, CpuToGpu, mapped
+    // Per frame slot, CpuToGpu, mapped: the changed records of the slot's frame, packed; made on first use, grown up to stagingLimit. An
+    // upload larger than that takes a buffer of its own for its frame.
+    static constexpr uint64_t stagingLimit = 4ull * 1024 * 1024;
+    std::vector<RhiBuffer*> staging;
     std::vector<void*> stagingMapped;
+    std::vector<uint64_t> stagingBytes;
     uint32_t instanceCapacity = 0;
     uint32_t generation = 0;
-    // Dirty span [dirtyFirst, dirtyEnd); empty when equal. Accumulates until a frame uploads it.
-    uint32_t dirtyFirst = 0;
-    uint32_t dirtyEnd = 0;
+    // The slots changed since the last upload (unsorted, maybe repeated), or every live slot after the buffer was replaced. They wait for
+    // a frame that uploads them.
+    std::vector<uint32_t> dirtySlots;
+    bool allDirty = false;
+    uint32_t lastInstanceUploads = 0; // records and copy regions of the last instance upload
+    uint32_t lastInstanceRegions = 0;
 
     // This frame's import of the instance buffer, whose final access afterExecute keeps; none in a frame without the lit path.
     FgBufferHandle instanceImport;

@@ -48,10 +48,14 @@ class RhiDevice;
 // passes (src/renderer/README.md, "GPU-driven frame"). One region per (view, bucket):
 // the camera, then each shadow cascade, each split into single-sided and double-sided, opaque
 // and cutout. A cutout bucket's pipelines discard where the material's opacity is below its threshold.
+// A region holds as many commands as instances can land in it: each live instance is in one camera
+// bucket and at most one cascade bucket, known from its flags, so the regions are sized from counts
+// kept as instances change (countInstance) and packed one after another (writeParams).
 //
 // Owns the frame slot's buffers the culling passes read and write, and the readback that
-// brings counts, visibility and (while the render debugger is open) the commands back to
-// the CPU once the slot's fence has passed. Everything read back is one frame-slot cycle old.
+// brings counts and visibility back to the CPU once the slot's fence has passed, with the
+// commands too, into a buffer of their own, while the render debugger is open. Everything
+// read back is one frame-slot cycle old.
 class DrawLists {
 public:
     static constexpr uint32_t bucketCount = 4; // single-sided, double-sided, then the same two cutout
@@ -66,6 +70,7 @@ public:
     static constexpr uint32_t counterLodDropped = counterCascadeDrawn + maxShadowCascades;
     static constexpr uint32_t counterCount = counterLodDropped + 1;
     static constexpr uint32_t groupSize = 256;
+    static constexpr uint32_t noBucket = UINT32_MAX;
 
     static constexpr auto bucket(bool doubleSided, bool cutout) -> uint32_t { return (cutout ? 2 : 0) + (doubleSided ? 1 : 0); }
     static constexpr auto cameraRegion(bool doubleSided, bool cutout = false) -> uint32_t { return bucket(doubleSided, cutout); }
@@ -76,18 +81,30 @@ public:
         uint32_t instanceCount = 0;
         uint32_t viewCount = 0;
         uint32_t cullEnabled = 1;
-        uint32_t regionCapacity = 0;
+        uint32_t commandCapacity = 0; // commands the buffer holds, every region
         uint32_t groupCount = 0;
-        uint32_t pad[3] = {};
+        uint32_t commandsUsed = 0; // the end of the last region
+        uint32_t pad[2] = {};
+        std::array<uint32_t, regionCount> regionOffsets = {}; // each region's first command
         std::array<glm::vec4, (1 + maxShadowCascades) * 6> planes = {};
     };
+
+    // The bucket an instance's commands land in for the camera and for the cascades (the shader's bucketOf and drawnIn): every live
+    // instance draws its submesh for the camera; a cascade draws a prim's whole mesh once, from its primFirst instance, unless a submesh
+    // of the prim is cutout, when it draws each submesh. noBucket where it draws nothing.
+    static auto cameraBucketOf(const GpuInstance& instance) -> uint32_t;
+    static auto cascadeBucketOf(const GpuInstance& instance) -> uint32_t;
+    // Counts an instance in its buckets (delta +1) or takes it out (-1); a dead instance counts nowhere.
+    auto countInstance(const GpuInstance& instance, int delta) -> void;
+    // The commands the buffer must hold for the instances counted: the camera's buckets and every cascade's.
+    auto commandsNeeded() const -> uint64_t;
 
     auto init(RhiDevice* device, uint32_t frameSlots, DeletionQueue* deletionQueue) -> void;
     auto destroy() -> void;
 
-    // Grows every slot's buffers to hold `instanceCount` instances. Returns true when the
-    // buffers were replaced, so descriptor sets naming them must be rewritten.
-    auto ensureCapacity(uint32_t instanceCount, uint64_t frame) -> bool;
+    // Grows every slot's buffers to hold `instanceCount` instances and `commandCount` commands. Returns
+    // true when buffers were replaced, so descriptor sets naming them must be rewritten.
+    auto ensureCapacity(uint32_t instanceCount, uint64_t commandCount, uint64_t frame) -> bool;
 
     // Fills the slot's parameter buffer: view 0 from cameraViewProj, views 1.. from the
     // cascades. Returns the workgroup count for the cull and scatter dispatches.
@@ -106,7 +123,8 @@ public:
     };
     // Imports the slot's buffers; the slot's fence guards them, so no earlier access carries over.
     auto import(FrameGraph& fg, uint32_t frameSlot) -> Handles;
-    // Copies counts, visibility and optionally the commands into the slot's readback buffer.
+    // Copies counts and visibility into the slot's readback buffer, and with captureCommands the commands into the slot's commands
+    // readback, made the first time it is asked for.
     auto addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool captureCommands) -> void;
     // Once the slot's fence has passed: parses what that slot's frame read back.
     auto parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void;
@@ -124,10 +142,11 @@ public:
     auto slotBuffers(uint32_t frameSlot) const -> SlotBuffers;
     auto frameSlots() const -> uint32_t { return (uint32_t) slots.size(); }
 
-    // Byte offsets for drawIndexedIndirectCount, and the region's capacity (maxDrawCount).
-    auto commandOffset(uint32_t region) const -> uint64_t { return (uint64_t) region * capacity * sizeof(RhiDrawIndexedIndirectCommand); }
+    // Byte offsets for drawIndexedIndirectCount, and the region's capacity (maxDrawCount), as the frame's writeParams laid them out.
+    auto commandOffset(uint32_t region) const -> uint64_t { return (uint64_t) frameOffsets[region] * sizeof(RhiDrawIndexedIndirectCommand); }
     static auto countOffset(uint32_t region) -> uint64_t { return (uint64_t) region * sizeof(uint32_t); }
-    auto regionCapacity() const -> uint32_t { return capacity; }
+    auto regionCapacity(uint32_t region) const -> uint32_t { return frameCapacities[region]; }
+    auto commandCapacityTotal() const -> uint64_t { return commandCapacity; }
     // A region as text ("camera.single", "cascade0.double", ...); a literal, so it can name GPU zones.
     static auto regionName(uint32_t region) -> const char*;
 
@@ -161,13 +180,16 @@ private:
         RhiBuffer* groupOffsets = nullptr;
         RhiBuffer* commands = nullptr;
         RhiBuffer* counts = nullptr;
-        RhiBuffer* readback = nullptr; // GpuToCpu, mapped: totals, visibility, commands
+        RhiBuffer* readback = nullptr; // GpuToCpu, mapped: totals, visibility
         void* readbackMapped = nullptr;
-        // What the slot's last recorded frame copied into the readback.
+        RhiBuffer* commandsReadback = nullptr; // GpuToCpu, mapped: the commands; made when the render debugger first asks
+        void* commandsReadbackMapped = nullptr;
+        // What the slot's last recorded frame copied into the readback, and how it laid out the regions.
         bool pending = false;
         bool capturedCommands = false;
         uint32_t instanceCount = 0;
         uint32_t viewCount = 0;
+        std::array<uint32_t, regionCount> offsets = {};
     };
     struct Readback {
         uint64_t frame = 0;
@@ -181,11 +203,18 @@ private:
     };
 
     auto readbackVisibilityOffset() const -> uint64_t { return counterCount * sizeof(uint32_t); }
-    auto readbackCommandsOffset() const -> uint64_t { return readbackVisibilityOffset() + ((uint64_t) capacity * sizeof(uint32_t)); }
+    auto readbackBytes() const -> uint64_t { return readbackVisibilityOffset() + ((uint64_t) capacity * sizeof(uint32_t)); }
+    auto commandBytes() const -> uint64_t { return commandCapacity * sizeof(RhiDrawIndexedIndirectCommand); }
 
     RhiDevice* device = nullptr;
     DeletionQueue* deletionQueue = nullptr;
-    uint32_t capacity = 0; // instances, and commands per region
+    uint32_t capacity = 0;        // instances
+    uint64_t commandCapacity = 0; // commands, every region
+    // Live instances per bucket, for the camera and for each cascade; and this frame's region layout (writeParams).
+    std::array<uint64_t, bucketCount> cameraBuckets = {};
+    std::array<uint64_t, bucketCount> cascadeBuckets = {};
+    std::array<uint32_t, regionCount> frameOffsets = {};
+    std::array<uint32_t, regionCount> frameCapacities = {};
     std::vector<Slot> slots;
     Readback latest;
 };
