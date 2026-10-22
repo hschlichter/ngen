@@ -113,7 +113,7 @@ struct SceneThreadStats {
 struct SceneDraws {
     RenderWorld drawn;
     std::shared_ptr<const Placement> placements;                               // the tree; queries walk it
-    ChunkedList<std::string> primPaths;                                        // by prim index - 1; empty for an index not in use
+    ChunkedList<std::string> primPaths;                                        // by prim index - 1; an index not in use keeps its last path
     ChunkedList<std::shared_ptr<const std::vector<std::string>>> assetsByPrim; // by prim index - 1: the assets a drawn prim's draws use
     ChunkedList<std::string> lodGroupPaths;                                    // by render-LOD group slot (RenderWorld::lodGroups): the root's full path; empty when free
     // Asset id to the prims whose draws use it, built from assetsByPrim on the first query.
@@ -407,8 +407,8 @@ private:
     std::set<uint32_t> usedMaterials;
     std::set<uint32_t> usedTextures;
     std::unordered_map<std::string, MaterialHandle> materialByAsset; // this pass's, by material asset id or "displayColor r g b"
-    std::set<uint32_t> freeSlots;
-    std::set<uint32_t> freePrims;
+    LowestFreeList freeSlots;
+    LowestFreeList freePrims;
     ChunkedList<std::string> primPaths;
     ChunkedList<std::shared_ptr<const std::vector<std::string>>> assetsByPrim;
     // Kept as placements change, so no pass walks every slot or placement: the distant lights by prim index; the slots drawing each mesh
@@ -416,8 +416,8 @@ private:
     // held; the placements of each content (a placed content composed again makes the pass look at every placement); and the placements.
     std::map<uint32_t, RenderLight> lightsByPrim;
     bool lightsChanged = false;
-    std::unordered_map<uint32_t, uint32_t> meshUses;
-    std::unordered_map<uint32_t, uint32_t> materialUses;
+    std::vector<uint32_t> meshUses; // by handle index
+    std::vector<uint32_t> materialUses;
     std::unordered_map<const ContentWalk*, uint32_t> walkUses;
     std::unordered_map<std::string, uint32_t> meshNames;
     std::unordered_map<int64_t, uint32_t> contentPlacements;
@@ -509,8 +509,8 @@ private:
     std::vector<LodGroupInfo> lodGroupInfo;
     ChunkedList<std::string> lodGroupPaths; // published with the draws
     std::unordered_map<std::string, uint32_t> lodGroupByPath;
-    std::set<uint32_t> freeLodGroups;
-    std::map<uint32_t, RenderLodGroup> lodGroupsBefore;
+    LowestFreeList freeLodGroups;
+    TouchedList<RenderLodGroup> lodGroupsBefore;
     uint32_t lodGroupCountBefore = 0;
     auto allocLodGroup() -> uint32_t;
     auto freeLodGroup(uint32_t group) -> void;
@@ -522,7 +522,7 @@ private:
     // The pass's: assets that arrived or failed since the last (a placement waiting for one is built again), the slots it touched with what
     // they held before, the assets its placements want and lack, and its counts.
     std::set<std::string> arrived;
-    std::map<uint32_t, RenderMeshInstance> slotsBefore;
+    TouchedList<RenderMeshInstance> slotsBefore;
     uint32_t slotCountBefore = 0;
     std::vector<std::pair<std::string, AssetKind>> passWanted;
     uint32_t passBuilt = 0;

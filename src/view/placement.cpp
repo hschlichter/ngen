@@ -488,7 +488,7 @@ auto ViewScene::drawnLevelOf(const World& w, const std::string& rootPath, const 
 
 auto ViewScene::touchSlot(uint32_t slot) -> void {
     if (slot < slotCountBefore) {
-        slotsBefore.try_emplace(slot, drawn.meshInstances[slot]);
+        slotsBefore.touch(slot, drawn.meshInstances[slot]);
     }
 }
 
@@ -496,11 +496,14 @@ auto ViewScene::touchSlot(uint32_t slot) -> void {
 auto ViewScene::setSlot(uint32_t slot, const RenderMeshInstance& instance) -> void {
     touchSlot(slot);
     const auto& before = drawn.meshInstances[slot];
-    auto release = [](std::unordered_map<uint32_t, uint32_t>& uses, uint32_t index) {
-        auto it = uses.find(index);
-        if (it != uses.end() && --it->second == 0) {
-            uses.erase(it);
+    auto release = [](std::vector<uint32_t>& uses, uint32_t index) {
+        uses[index]--;
+    };
+    auto use = [](std::vector<uint32_t>& uses, uint32_t index) {
+        if (index >= uses.size()) {
+            uses.resize(std::max<size_t>(index + 1, uses.size() * 2), 0);
         }
+        uses[index]++;
     };
     if (before.alive) {
         release(meshUses, before.mesh.index);
@@ -508,16 +511,14 @@ auto ViewScene::setSlot(uint32_t slot, const RenderMeshInstance& instance) -> vo
     }
     drawn.meshInstances.edit(slot) = instance;
     if (instance.alive) {
-        meshUses[instance.mesh.index]++;
-        materialUses[instance.material.index]++;
+        use(meshUses, instance.mesh.index);
+        use(materialUses, instance.material.index);
     }
 }
 
 auto ViewScene::allocSlot() -> uint32_t {
-    if (!freeSlots.empty()) {
-        auto slot = *freeSlots.begin();
-        freeSlots.erase(freeSlots.begin());
-        return slot;
+    if (auto slot = freeSlots.takeLowest()) {
+        return *slot;
     }
     drawn.meshInstances.push_back(RenderMeshInstance{.primFirst = false, .alive = false});
     return (uint32_t) drawn.meshInstances.size() - 1;
@@ -530,9 +531,8 @@ auto ViewScene::freeSlot(uint32_t slot) -> void {
 
 auto ViewScene::allocPrim(const std::string& path) -> uint32_t {
     uint32_t prim = 0;
-    if (!freePrims.empty()) {
-        prim = *freePrims.begin();
-        freePrims.erase(freePrims.begin());
+    if (auto free = freePrims.takeLowest()) {
+        prim = *free;
         primPaths.edit(prim - 1) = path;
     } else {
         primPaths.push_back(path);
@@ -542,8 +542,9 @@ auto ViewScene::allocPrim(const std::string& path) -> uint32_t {
     return prim;
 }
 
+// Its path stays until the index is taken again: clearing it would copy the path chunk a published snapshot shares, and only a live draw's
+// prim is named. Its assets go, as what a drawn prim uses.
 auto ViewScene::freePrim(uint32_t prim) -> void {
-    primPaths.edit(prim - 1).clear();
     if (assetsByPrim[prim - 1]) {
         assetsByPrim.edit(prim - 1).reset();
     }
@@ -622,10 +623,8 @@ auto ViewScene::releasePlacement(const Placement& node) -> void {
 }
 
 auto ViewScene::allocLodGroup() -> uint32_t {
-    if (!freeLodGroups.empty()) {
-        auto group = *freeLodGroups.begin();
-        freeLodGroups.erase(freeLodGroups.begin());
-        return group;
+    if (auto group = freeLodGroups.takeLowest()) {
+        return *group;
     }
     drawn.lodGroups.push_back(RenderLodGroup{});
     lodGroupInfo.emplace_back();
@@ -635,7 +634,7 @@ auto ViewScene::allocLodGroup() -> uint32_t {
 
 auto ViewScene::setLodGroup(uint32_t group, const RenderLodGroup& value) -> void {
     if (group < lodGroupCountBefore) {
-        lodGroupsBefore.try_emplace(group, drawn.lodGroups[group]);
+        lodGroupsBefore.touch(group, drawn.lodGroups[group]);
     }
     drawn.lodGroups.edit(group) = value;
 }
@@ -1473,10 +1472,15 @@ auto ViewScene::place() -> void {
     std::set<uint32_t> meshesNow;
     std::set<uint32_t> materialsNow;
     std::set<uint32_t> texturesNow;
-    for (const auto& [index, count] : meshUses) {
-        meshesNow.insert(index);
+    for (uint32_t index = 0; index < meshUses.size(); index++) {
+        if (meshUses[index] > 0) {
+            meshesNow.insert(index);
+        }
     }
-    for (const auto& [index, count] : materialUses) {
+    for (uint32_t index = 0; index < materialUses.size(); index++) {
+        if (materialUses[index] == 0) {
+            continue;
+        }
         materialsNow.insert(index);
         if (const auto* material = materialLibrary.get(MaterialHandle{index})) {
             for (auto texture : {material->baseColorTexture, material->opacityTexture}) {
@@ -1500,7 +1504,7 @@ auto ViewScene::place() -> void {
     uint32_t added = 0;
     uint32_t removed = 0;
     uint32_t updated = 0;
-    for (const auto& [slot, before] : slotsBefore) {
+    for (const auto& [slot, before] : slotsBefore.entries()) {
         const auto& now = drawn.meshInstances[slot];
         if (now == before) {
             continue;
@@ -1525,7 +1529,7 @@ auto ViewScene::place() -> void {
     changes.slotCount = slotCountBefore;
     // The groups touched, against what they held, and the new ones.
     auto groupChanges = changes.lodGroups.size();
-    for (const auto& [group, before] : lodGroupsBefore) {
+    for (const auto& [group, before] : lodGroupsBefore.entries()) {
         if (!(drawn.lodGroups[group] == before)) {
             changes.lodGroups.emplace_back(group, drawn.lodGroups[group]);
         }

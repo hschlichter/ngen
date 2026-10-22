@@ -5,7 +5,9 @@
 
 #include <glm/glm.hpp>
 
+#include <algorithm>
 #include <array>
+#include <bit>
 
 #include <cstdint>
 #include <memory>
@@ -206,6 +208,73 @@ struct PlacementRecords {
     std::vector<SceneVariantPrim> variantPrims;
 };
 auto gatherRecords(const Placement& tree) -> PlacementRecords;
+
+// Free indices (draw slots, prim indices, LOD group slots), taken lowest first so a scene placed afresh fills them in tree order: a bit per
+// index and the lowest word that may hold one. Freeing and taking allocate nothing.
+class LowestFreeList {
+public:
+    auto insert(uint32_t index) -> void {
+        auto word = index / 64;
+        if (word >= bits.size()) {
+            bits.resize(word + 1, 0);
+        }
+        auto bit = uint64_t{1} << (index % 64);
+        if ((bits[word] & bit) != 0) {
+            return;
+        }
+        bits[word] |= bit;
+        count++;
+        hint = std::min<size_t>(hint, word);
+    }
+    auto takeLowest() -> std::optional<uint32_t> {
+        for (auto word = hint; word < bits.size(); word++) {
+            if (bits[word] != 0) {
+                auto bit = (uint32_t) std::countr_zero(bits[word]);
+                bits[word] &= ~(uint64_t{1} << bit);
+                count--;
+                hint = word;
+                return (uint32_t) ((word * 64) + bit);
+            }
+        }
+        hint = bits.size();
+        return std::nullopt;
+    }
+    auto size() const -> size_t { return count; }
+    auto empty() const -> bool { return count == 0; }
+
+private:
+    std::vector<uint64_t> bits;
+    size_t hint = 0;
+    size_t count = 0;
+};
+
+// What indices held before a pass changed them, each once: a mark per index and the entries in the order touched.
+template <typename T>
+class TouchedList {
+public:
+    auto touch(uint32_t index, const T& before) -> void {
+        if (index >= marked.size()) {
+            marked.resize(std::max<size_t>(index + 1, marked.size() * 2), 0);
+        }
+        if (marked[index] != 0) {
+            return;
+        }
+        marked[index] = 1;
+        list.emplace_back(index, before);
+    }
+    auto entries() const -> const std::vector<std::pair<uint32_t, T>>& { return list; }
+    auto empty() const -> bool { return list.empty(); }
+    auto clear() -> void {
+        for (const auto& [index, before] : list) {
+            marked[index] = 0;
+        }
+        list.clear();
+    }
+
+private:
+    std::vector<uint8_t> marked;
+    std::vector<std::pair<uint32_t, T>> list;
+};
 
 // A prim's transform in a published tree, world before the unit scale; none when no drawn placement holds it (inactive, invisible, in a
 // level not drawn).
