@@ -84,11 +84,11 @@ server that packs, and an introspection tool. What has landed of it is under [La
   - Also decided: no grouping beyond payloads; draw whatever is resident as soon as it is (gaps while content arrives are accepted); a payload
     without `extentsHint` is always wanted and reported; every wanted payload is requested with a priority, nearest first, and never cancelled.
   - Open: tuned thresholds, the far-field floor's cost.
-  - Next: budgets and priorities in place of the cap of 2 roots finer (which ranks other districts above the capital from the capital
-    itself), models streaming, textures streaming, each a plan of its own.
-  - Follow-ups from districts streaming ([plan_streaming_districts.md](plan_streaming_districts.md), Deferred): each use's draws kept
-    across rebuilds (a switch from cached content takes 1.85 s, 1.3 s of it the extract, against "under a second"); contents orphaned
-    during a first load (about 56,000 on Caldera); off-thread allocation; layer packs ahead of meshes.
+  - Next: budgets and priorities (streaming v2 removed the cap; nothing bounds memory until budgets), models streaming, textures streaming,
+    each a plan of its own; the follow-ups in [plan_streaming_v2.md](plan_streaming_v2.md)'s Deferred.
+  - Follow-ups from districts streaming ([plan_streaming_districts.md](plan_streaming_districts.md), Deferred): off-thread allocation;
+    layer packs ahead of meshes. Draws kept across rebuilds and contents orphaned during a first load went with streaming v2's placements
+    and releases.
 - **Physics** — UsdPhysics schemas (rigid bodies, colliders, joints, scenes; already in the vendored OpenUSD) mapped to physics components by
   the packer, simulated with **Jolt**. Physics is a UsdLod domain of its own.
 - **Skinning** — UsdSkel skeletons and skinned meshes; GPU skinning.
@@ -201,6 +201,13 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 ## Landed
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
+
+- **Streaming v2** — [plan_streaming_v2.md](plan_streaming_v2.md), on the streaming test world ([test_streaming_world.md](test_streaming_world.md)).
+  Streaming simplified for a world authored to stream: a tree of placements of complete contents replaces whole-world extract and diff, so a
+  switch costs what it changes; one content store, linked only when complete; no cap; a level is ready when its placement waits for nothing
+  (counts by kind, summed up the tree); the unload delay is the level's, and what no level reaches or no placement uses is released at once;
+  the heuristic evaluates the placed streaming roots only. Per-asset LOD went to the GPU on the way ([plan_render_lod.md](plan_render_lod.md)).
+  The `streaming` record's waits per level and kept levels, `ContentComposed`, `view.transform`, the Engine Map's Placement.
 
 - **Districts streaming** — [plan_streaming_districts.md](plan_streaming_districts.md). The vertical slice's first step: UsdLod's
   screen-size heuristic picks each LOD root's level from the camera (no frustum, a 20% band, hand-set levels win, a cap of 2 roots finer

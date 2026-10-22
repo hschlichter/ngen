@@ -73,6 +73,8 @@ struct SceneLodRoot {
     glm::mat4 worldTransform = glm::mat4(1.0f); // the root's, in metres: places the heuristic's extent
     // While it wants a level it doesn't draw yet: what that level's placement waits for, or one level composing while it isn't linked yet.
     std::optional<PlacementWait> waiting;
+    // Per level, what its placement waits for while it is loaded and linked; none for a level not loaded or still composing.
+    std::vector<std::optional<PlacementWait>> levelWaits;
 };
 
 // A payload placement reached while drawing: the prim with payloads, the asset ids, whether they are loaded, and the bounds authored for it

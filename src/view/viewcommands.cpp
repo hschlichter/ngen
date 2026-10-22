@@ -551,6 +551,26 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
         });
     registry.add(
         {
+            .name = "view.transform",
+            .summary = "A drawn prim's transforms: local, and world in metres (position, rotation as a quaternion x y z w, scale), and whether it takes a transform (view.translate).",
+            .params = {requiredField("prim", RpcType::String, "prim path")},
+            .result = "{local, world, xformable}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto path = p["prim"].get<std::string>();
+            auto xf = view.scene.transform(path);
+            if (!xf) {
+                responder.fail(rpc::appError, std::format("no drawn prim at '{}'", path));
+                return;
+            }
+            auto json = [](const glm::mat4& m) {
+                auto t = decomposeTransform(m);
+                return Json{{"position", vec3Json(t.position)}, {"rotation", {t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w}}, {"scale", vec3Json(t.scale)}};
+            };
+            responder.respond({{"local", json(xf->local)}, {"world", json(xf->world)}, {"xformable", xf->xformable}});
+        });
+    registry.add(
+        {
             .name = "view.translate",
             .summary = "Offset a prim's local position, as a gizmo drag does: the view's own opinion until it closes, never saved.",
             .params = {
@@ -1243,6 +1263,16 @@ auto streamingRecord(const ViewContext& view) -> Json {
             waiting = {{"meshes", root.waiting->meshes}, {"materials", root.waiting->materials}, {"textures", root.waiting->textures}, {"composing", root.waiting->composing}};
             waitingTotal += *root.waiting;
         }
+        // Per loaded level, what its placement waits for (null while it is composing, not linked yet).
+        auto loadedWaits = Json::array();
+        for (auto level : root.loaded) {
+            auto wait = Json(nullptr);
+            if (level < root.levelWaits.size() && root.levelWaits[level]) {
+                const auto& w = *root.levelWaits[level];
+                wait = {{"meshes", w.meshes}, {"materials", w.materials}, {"textures", w.textures}, {"composing", w.composing}};
+            }
+            loadedWaits.push_back({{"level", level}, {"waiting", wait}});
+        }
         // The loaded levels it doesn't want, kept for the unload delay, with the seconds left.
         auto kept = Json::array();
         if (auto levels = keptLevels.find(root.path); levels != keptLevels.end()) {
@@ -1260,11 +1290,12 @@ auto streamingRecord(const ViewContext& view) -> Json {
             {"drawn", root.drawn ? Json(*root.drawn) : Json(nullptr)},
             {"loaded", root.loaded},
             {"waiting", waiting},
+            {"levels", loadedWaits},
             {"kept", kept},
         });
     }
     return {
-        {"totals", {{"roots", roots.size()}, {"inFrustum", inFrustum}, {"loading", loading}, {"waiting", {{"meshes", waitingTotal.meshes}, {"materials", waitingTotal.materials}, {"textures", waitingTotal.textures}, {"composing", waitingTotal.composing}}}, {"renderLodGroups", view.scene.threadStats().lodGroups}}},
+        {"totals", {{"roots", roots.size()}, {"placements", t.placements}, {"contentsHeld", t.prototypesHeld + t.levelsHeld}, {"assetsHeld", t.meshPacks + t.materialPacks + t.texturePacks}, {"inFrustum", inFrustum}, {"loading", loading}, {"waiting", {{"meshes", waitingTotal.meshes}, {"materials", waitingTotal.materials}, {"textures", waitingTotal.textures}, {"composing", waitingTotal.composing}}}, {"renderLodGroups", view.scene.threadStats().lodGroups}}},
         {"heuristic", view.scene.lodHeuristic()},
         {"unloadDelay", view.scene.unloadDelay()},
         {"unloaded", {{"keptLevels", t.keptLevels}, {"levels", t.releasedLevels}, {"contents", t.releasedContents}, {"meshPacks", t.releasedMeshes}, {"meshBytes", t.releasedMeshBytes}}},
@@ -1716,7 +1747,9 @@ auto engineMapStats(const ViewContext& view) -> EngineMapStats {
     stats["scene.lod"] = {std::format("{} roots, heuristic {}", t.lodRootsEvaluated, view.scene.lodHeuristic() ? "on" : "off"),
                           std::format("last: {} finer, {} coarser", t.lodFiner, t.lodCoarser),
                           std::format("unloaded: {} levels, {} contents, {} mesh packs ({:.1f} MiB); {} levels kept", t.releasedLevels, t.releasedContents, t.releasedMeshes, mib(t.releasedMeshBytes), t.keptLevels)};
-    stats["scene.compose"] = {std::format("{} composes, last {:.1f} ms", t.composes, t.lastComposeMs), std::format("{} layer packs, {} in flight", t.layerPacks, t.inFlightLayers)};
+    stats["scene.compose"] = {std::format("{} composes, last {:.1f} ms", t.composes, t.lastComposeMs),
+                              std::format("{} layer packs, {} in flight", t.layerPacks, t.inFlightLayers),
+                              std::format("{} contents held, {} released", t.prototypesHeld + t.levelsHeld, t.releasedContents)};
     stats["scene.placement"] = {std::format("{} placements ({} drawn), last change {:.1f} ms", t.placements, t.placementsDrawn, t.lastPlaceMs),
                                 std::format("{} meshes, {} materials, {} textures", t.meshEntries, t.materialEntries, t.textureEntries)};
     stats["scene.changes"] = {std::format("{} change lists sent", gpu.changeListsSubmitted), view.scene.idle() ? std::string("scene thread idle") : std::string("scene thread working")};

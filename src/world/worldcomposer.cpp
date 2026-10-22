@@ -398,11 +398,12 @@ struct LevelSlot {
 struct ContentInfo {
     std::string key;
     std::string base;
-    std::string sharedKey;   // the prototype it belongs to (a prototype's own key, or the one a level in it is in); empty for the stage's own
-    std::string ownerPath;   // its root's path in that prototype ("/" for the prototype itself)
-    bool complete = false;   // composed with every pack it named held (or failed): reused as it is
-    bool released = false;   // reached no more and emptied: composed again when reached
-    uint64_t generation = 0; // the compose that last composed it
+    std::string sharedKey;        // the prototype it belongs to (a prototype's own key, or the one a level in it is in); empty for the stage's own
+    std::string ownerPath;        // its root's path in that prototype ("/" for the prototype itself)
+    bool complete = false;        // composed with every pack it named held (or failed): reused as it is
+    bool released = false;        // reached no more and emptied: composed again when reached
+    uint64_t generation = 0;      // the compose that last composed it
+    uint64_t firstGeneration = 0; // the compose that first composed it (since it was last complete or released)
     std::vector<std::string> messages;
     std::vector<PendingTarget> bindings; // its material bindings, resolved every compose (a target may be in another content)
     std::shared_ptr<const Node> index;   // a prototype's kept nodes, to compose it again
@@ -1269,6 +1270,9 @@ struct WorldComposer::Impl {
         windows.pop_back();
         context.info->complete = done.gaps == 0;
         context.info->messages = std::move(done.messages);
+        if (context.info->complete) {
+            stats.completed.push_back({.kind = context.content->kind, .path = context.base, .rounds = (uint32_t) (generation - context.info->firstGeneration + 1)});
+        }
         resolveHeuristics(done.heuristics);
         resolvePrototypes(done.prototypes, context.info->messages);
     }
@@ -1462,12 +1466,21 @@ struct WorldComposer::Impl {
         return id;
     }
 
+    // When a content composed now was first composed: an incomplete one composed again keeps its first compose; a new or released one starts now.
+    auto firstGenerationOf(const ContentInfo& info) const -> uint64_t {
+        if (info.generation == 0 || info.complete || info.released) {
+            return generation;
+        }
+        return info.firstGeneration;
+    }
+
     auto composePrototype(int32_t id, std::shared_ptr<const Node> kept, const std::string& key, const std::string& composedPath, bool loadPayloads) -> void {
         auto& content = world.contents[(size_t) id];
         auto& info = contentInfo[(size_t) id];
+        auto first = firstGenerationOf(info);
         content = WorldContent();
         content.kind = ContentKind::Prototype;
-        info = ContentInfo{.key = key, .base = composedPath, .sharedKey = key, .ownerPath = "/", .generation = generation, .index = kept, .loads = loadPayloads};
+        info = ContentInfo{.key = key, .base = composedPath, .sharedKey = key, .ownerPath = "/", .generation = generation, .firstGeneration = first, .index = kept, .loads = loadPayloads};
         content.sourcePath = composedPath;
         content.version = ++versions;
         Entity root;
@@ -1526,9 +1539,10 @@ struct WorldComposer::Impl {
         }
         auto& content = world.contents[(size_t) id];
         auto& info = contentInfo[(size_t) id];
+        auto first = firstGenerationOf(info);
         content = WorldContent();
         content.kind = ContentKind::Level;
-        info = ContentInfo{.key = key, .base = slot.composedPath, .sharedKey = at.sharedKey, .ownerPath = ownerPath, .generation = generation, .loads = loads};
+        info = ContentInfo{.key = key, .base = slot.composedPath, .sharedKey = at.sharedKey, .ownerPath = ownerPath, .generation = generation, .firstGeneration = first, .loads = loads};
         content.sourcePath = slot.composedPath;
         content.version = ++versions;
         ContentContext context{.content = &content, .base = slot.composedPath, .key = key, .info = &info};
@@ -1629,8 +1643,18 @@ struct WorldComposer::Impl {
                 pending.content->entities[pending.entity].binding->materialAsset = materialKey(lookIn->entities[*found]);
             }
         }
-        stats.prototypesHeld = (uint32_t) std::ranges::count_if(world.contents, [](const WorldContent& content) { return content.kind == ContentKind::Prototype; });
-        stats.levelsHeld = (uint32_t) std::ranges::count_if(world.contents, [](const WorldContent& content) { return content.kind == ContentKind::Level; });
+        // Held: composed and not released (a released content keeps its index, empty).
+        auto held = [this](ContentKind kind) {
+            uint32_t count = 0;
+            for (size_t i = 0; i < world.contents.size(); i++) {
+                if (world.contents[i].kind == kind && !contentInfo[i].released) {
+                    count++;
+                }
+            }
+            return count;
+        };
+        stats.prototypesHeld = held(ContentKind::Prototype);
+        stats.levelsHeld = held(ContentKind::Level);
         stats.contentsReached = (uint32_t) reached.size();
     }
 

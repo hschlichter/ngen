@@ -96,7 +96,7 @@ const std::vector<EngineMapNode> nodes = {
         .row = 4,
         .description = "WorldComposer composes the World from the layer packs held, as USD composes a stage (sublayers, references, payloads, "
                        "variant sets, instancing, point instancers, LOD levels, material inputs), and asks for the packs it names and lacks: one "
-                       "level of arcs deeper each round.",
+                       "level of arcs deeper each round. A content is linked once complete; one no level reaches any more is released at once.",
         .records = {"scenethread", "scene", "lod", "variants"},
         .windows = {"sceneflow", "lod"},
         .readme = "src/world/README.md",

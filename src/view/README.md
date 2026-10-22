@@ -165,7 +165,9 @@ The trace shows the steps:
 - `SceneRequested`;
 - `PacksComposed`, once every layer pack named has been answered (packs, prims, prototypes);
 - `SceneAssetsReceived`, once the meshes, materials and textures wanted have been answered;
+- `ContentComposed`, per prototype or level content the composer completes (the composes it took);
 - `PlacementsChanged`, per pass that changed something (placements built, slots added, removed and updated, time);
+- `LevelsWanted`, `LevelsSwitched` and `LevelsUnloaded`, as streaming roots change the level they want, the level they draw, and let levels go;
 - `AssetsRefreshRequested`;
 - `SceneResident`;
 - and `SceneAssetFailed` or `CompositionMessage` warnings.
@@ -242,6 +244,7 @@ pass, and a few frames later the instance under the cursor maps to its prim (`in
 verb and `view.pick` do the same at a framebuffer pixel and answer with the path; `select` and `view.select` select by path. Keys: Z
 deselects, R selects the parent, F frames the selection, 1 to 4 pick the tool (select, translate, rotate, scale); the Edit menu has the same.
 
-A gizmo drag is the view's own opinion on the prim's local transform (`setLocalTransform`), kept until the view closes and never saved: it
-moves the draw instances and lights under the prim at once, without rebuilding the draws, and every later rebuild applies it too. The
-`translate` verb and `view.translate` offset a local position the same way. Editing the scene for real is the editor's (`src/editor/`).
+A gizmo drag is the view's own opinion on the prim's local transform (`setLocalTransform`), kept until the view closes and never saved: the
+placements holding the prim are built again in the next pass, walking it afresh with the opinion, and what is drawn under it moves with them;
+every later pass applies it too. The `translate` verb and `view.translate` offset a local position the same way; `view.transform` answers a
+drawn prim's local and world transforms. Editing the scene for real is the editor's (`src/editor/`).

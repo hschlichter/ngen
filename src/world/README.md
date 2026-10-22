@@ -118,7 +118,8 @@ draws nothing. A content composed while a pack it named wasn't held (a gap) is c
 one that had every pack is reused as it is, since a pack arriving later is one it didn't name. Layer stacks are kept too, as the kept
 contents' indexes point at them, and rebuilt in place when one missed a sublayer. A pack that changes (`addPack` of an id already held: a
 repack or an edit) drops every kept content and rebuilds every stack: contents don't record which packs they read. `stats()` says what the
-last compose composed, kept and reached, and how long the stage, the resolution and the bindings took.
+last compose composed, kept, reached, released and completed (each content with the composes it took), and how long the stage, the
+resolution and the bindings took.
 
 Every content has a `version`, new each time it is composed: a reader can keep what it derived from a content by version. After each compose
 and relink, a kept content the resolution didn't reach is let go at once (`stats().released`): emptied in place (its index stays, a new

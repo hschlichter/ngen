@@ -340,6 +340,8 @@ private:
     // renderer; what isn't used any more leaves the libraries at once.
     auto collectChanges(const std::set<uint32_t>& meshesNow, const std::set<uint32_t>& materialsNow, const std::set<uint32_t>& texturesNow, SceneChanges& changes) -> void;
     auto addChanges(SceneChanges changes) -> void;
+    // ContentComposed per content the last compose or relink completed.
+    auto traceCompleted() -> void;
 
     AssetClient& assets;
 

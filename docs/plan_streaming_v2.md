@@ -1,8 +1,8 @@
 # Streaming v2: simpler, for a world authored to stream
 
-**Status. In progress.** A review of the streaming and LOD system as built by [plan_streaming_districts.md](plan_streaming_districts.md), with what
+**Status. Landed.** A review of the streaming and LOD system as built by [plan_streaming_districts.md](plan_streaming_districts.md), with what
 to remove and what to replace. Decisions 1 to 8 locked 2026-10-15, each as recommended; the test world is best-practice USD with variant
-sets and `PointInstancer` (2026-10-16). Steps 1 to 3 done 2026-10-16, step 4 2026-10-18, step 5 2026-10-23, step 6 2026-10-23.
+sets and `PointInstancer` (2026-10-16). Steps 1 to 3 done 2026-10-16, step 4 2026-10-18, steps 5 to 7 2026-10-23.
 
 ## Current state
 
@@ -405,6 +405,30 @@ Locked (2026-10-15). Stays: screen size of the extent's bounding sphere, the 20%
   records, the same levels, contents and mesh packs unloaded, no warnings. The layered LOD script gives the same levels; baselines
   byte-identical.
 - **Visibility**: none added; the `streaming` record's `evaluation.ms` shows the change.
+
+### Step 7 results (2026-10-23)
+
+The Visibility section below, item by item against what the steps built:
+- **`streaming` record**: per root its screen size, in frustum, wanted, drawn, loaded, and now per loaded level what its placement waits for
+  (`levels`: meshes, materials, textures, composing; null while the level is composing), the wanted level's `waiting`, the levels `kept`
+  for the delay; totals now with `placements`, `contentsHeld`, `assetsHeld` and `waiting` by kind. Cap fields gone (step 2).
+- **`scenethread` record and Scene Flow**: contents composed and held in one store; the held counts no longer count released contents (a
+  step 5 slip: on the 27-camera flight they now fall behind the camera, 299 held at `flight_13` to 123 at the end), placements, slots,
+  releases by kind. Placement timings are the pass's time and placements built (`PlacementsChanged`) and the `Place`, `PlaceSync` and
+  `PlaceChanges` zones; a split by build, place and release isn't kept, as the zones show it.
+- **LOD window**: unchanged rows; the loading tooltip counts by kind, the loaded column's tooltip shows kept levels; the Cap field went in step 2.
+- **Engine Map**: "Placement" (step 4), LOD selection without the cap and with the level's delay (step 5), Compose with linking when
+  complete and releasing what no level reaches, and its contents held and released as live numbers.
+- **Trace**: `LevelsWanted`, `LevelsSwitched`, `LevelsUnloaded` (levels, contents, mesh packs); `ContentComposed` per prototype or level
+  content completed, with the composes it took (`WorldComposer::Stats::completed`): 998 on the 27-camera flight, 955 levels and 43
+  prototypes, at most 5 composes. `WorldExtracted` went in step 4.
+- **Step 4's gap**: `view.transform {prim}` answers a drawn prim's local and world transforms and whether it takes one; checked on the
+  layered scene before and after `view.translate` (+5 y).
+- **Docs**: `src/view/README.md` (the gizmo's moves, which rebuild their placements since step 4, the trace list, `view.transform`),
+  `src/world/README.md` (what `stats()` reports).
+- **Verified**: the 27-camera flight gives every root the same levels as step 6 at all 54 records, no warnings; baselines byte-identical.
+- **Not changed, named**: the root README's Architecture section describes the editor-era layout (`USDScene`, `USDRenderExtractor`, the
+  editor windows), not ngen-view's; it isn't this plan's and wants a pass of its own.
 
 ## Visibility
 

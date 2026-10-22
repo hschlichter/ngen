@@ -65,6 +65,13 @@ public:
         uint32_t levelsHeld = 0;
         uint32_t contentsReached = 0;
         uint32_t released = 0;
+        // The contents it completed (composed with every pack they named), each with the composes it took since it was first composed.
+        struct Completed {
+            ContentKind kind = ContentKind::Prototype;
+            std::string path; // its root's composed path
+            uint32_t rounds = 1;
+        };
+        std::vector<Completed> completed;
         double stageMs = 0.0;   // composing the stage itself
         double resolveMs = 0.0; // linking levels, composing what wasn't kept
         double finishMs = 0.0;  // bindings and messages

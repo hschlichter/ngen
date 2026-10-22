@@ -521,6 +521,7 @@ auto ViewScene::compose() -> void {
     stats.levelsHeld = composed.levelsHeld;
     stats.contentsReached = composed.contentsReached;
     stats.releasedContents += composed.released;
+    traceCompleted();
     for (const auto& needed : needs) {
         if (requestedPacks.insert(needed).second) {
             fresh.emplace_back(needed, AssetKind::Layer);
@@ -811,10 +812,21 @@ auto ViewScene::relink() -> void {
         }
     }
     stats.releasedContents += composer->stats().released;
+    traceCompleted();
     requestAssets(fresh, false);
     stats.relinks++;
     countWorld();
     placeNeeded = true;
+}
+
+auto ViewScene::traceCompleted() -> void {
+    for (const auto& completed : composer->stats().completed) {
+        auto kind = completed.kind == ContentKind::Prototype ? "prototype" : "level";
+        TRACE_EVENT("Scene", "ContentComposed", completed.path)
+            .text(std::format("{} {} composed with every pack it names, in {} composes", kind, completed.path, completed.rounds))
+            .field("kind", std::string(kind))
+            .field("rounds", (int64_t) completed.rounds);
+    }
 }
 
 // The prims World::visit reaches in a content: its entities (a level content's root among them, the stage's and a prototype's not), an

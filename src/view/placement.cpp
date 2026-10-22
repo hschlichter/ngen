@@ -1414,15 +1414,22 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
                     waiting = PlacementWait{.composing = 1};
                 }
             }
+            std::vector<std::optional<PlacementWait>> levelWaits(lod.levels.size());
+            for (size_t i = 0; i < levelsNow.size(); i++) {
+                if (levelsNow[i] != nullptr) {
+                    levelWaits[i] = levelsNow[i]->wait;
+                }
+            }
             const auto& row = node.roots[r].row;
             bool setByHand = handLevels.contains(root.path);
-            if (row.wanted != wanted || row.drawn != drawnLevel || row.loaded != lod.loaded || row.setByHand != setByHand || row.waiting != waiting) {
+            if (row.wanted != wanted || row.drawn != drawnLevel || row.loaded != lod.loaded || row.setByHand != setByHand || row.waiting != waiting || row.levelWaits != levelWaits) {
                 auto& changed = edit().roots[r].row;
                 changed.wanted = wanted;
                 changed.drawn = drawnLevel;
                 changed.loaded = lod.loaded;
                 changed.setByHand = setByHand;
                 changed.waiting = waiting;
+                changed.levelWaits = std::move(levelWaits);
                 if (node.drawn) {
                     if (auto placed = placedRoots.find(root.path); placed != placedRoots.end()) {
                         placed->second.row = changed;
