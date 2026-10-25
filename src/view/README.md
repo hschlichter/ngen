@@ -53,8 +53,8 @@ do its draws: only where it is placed.
   forced level. A level holding it is ready once every level's meshes are held, as all of them are placed. The `renderlod` record (next
   frames: it asks the renderer for every group's state) has the groups and their slots per level, what the GPU picked, and a check of every
   pick against this heuristic at the camera the GPU measured from (`check.differ` 0 but on a threshold's edge); `view.renderlod {path}`
-  lists the groups under a path. The LOD window's Render LOD section shows the GPU's counts and sets a level for the groups under the
-  selection; the Culling window counts the slots of levels not drawn; the Engine Map's "LOD select" is the GPU's pick.
+  lists the groups under a path. The LOD window lists every group beside the streaming roots ("The LOD tool" below); the Culling window
+  counts the slots of levels not drawn; the Engine Map's "LOD select" is the GPU's pick.
 - **Walks.** A content is walked once per version and inherited state: the walk keeps, in walk order, the prims that draw, light, frame,
   root LOD or have variant sets, with transforms relative to the content's root, and where its instances and levels sit (`ContentWalk`).
   Every placement of the content uses the kept walk; one with a gizmo's move under it is walked afresh, with the move.
@@ -123,8 +123,8 @@ do its draws: only where it is placed.
   thresholds; a screen size is its extent's bounding sphere over the view window at depth 1, as a fraction of the window, which unlike USD's
   reference query ignores the frustum, so what is near stays loaded whichever way the camera looks. Inside an authored blend band
   (`blendThresholds`) a streaming root wants the finer level (render-LOD groups fade, src/renderer/README.md); at a boundary without one,
-  going coarser waits for a 20% margin (`lodHysteresis`; for a distance the same margin, as a size falls with its square), so a camera at a
-  threshold doesn't flip a root. A level set by hand (`lod`, the LOD window) wins until `lod-reset`; with the heuristic off (`lod-heuristic off`,
+  going coarser waits for a margin (`lodHysteresis`, 20% until the tuning changes it; for a distance the same margin, as a size falls with
+  its square), so a camera at a threshold doesn't flip a root. The view's LOD tuning applies here and to the groups ("The LOD tool"). A level set by hand (`lod`, the LOD window) wins until `lod-reset`; with the heuristic off (`lod-heuristic off`,
   `view.lod.heuristic`, the LOD window's toggle) every other root wants its default; a root without a usable heuristic (`heuristicChosen`,
   src/world/README.md "Loading") wants its default ("no usable heuristic"). Every root the heuristic picks finer goes finer: what fits in memory is
   the budgets' to decide, not a count of roots. The roots evaluated are the streaming roots of drawn placements, kept as placements are built
@@ -152,6 +152,31 @@ do its draws: only where it is placed.
   held. `LevelsUnloaded` traces each batch that let something go (levels, contents, mesh packs), and the `streaming` and `scenethread`
   records, the LOD window (a loaded level's tooltip: the seconds left), the Scene Flow window and the Engine Map show what is kept and what
   was unloaded.
+- **The LOD tool** (`lodtool.*`, the LOD window `src/ui/lodwindow.*`): one place for LOD inspection, switching and tuning, both kinds.
+  - *The list*: every streaming root drawn and every render-LOD group placed (`buildLodRows` per snapshot; a group's wanted, drawn, fade
+    and measure from the readback each frame while the window or a layer is shown, so the frames read every group's state back then: 16
+    bytes a group). Filters by path, kind, under the selection, not drawing what it wants, fading. A level picker per row (`lod`,
+    `lod-reset` on a group's path force its level), "Set shown", click selects, double-click frames.
+  - *The inspector* (`inspectLodRoot`, `view.lod.inspect {root}`, the `lodtool` record for the root at or above the selection): kind,
+    authored root, state and why; every heuristic it authors, used or why not, its thresholds authored and in force, its measure from the
+    camera now and the level it would pick under the tuning; every level's triangles and draws (a group's from its slots; a streaming
+    root's drawn level only).
+  - *Tuning*, view-local opinions kept until the view closes, never saved (`LodTuning`, a `TuningRequest`): thresholds and blend thresholds
+    per heuristic of an authored root (`view.lod.override`, `lod-thresholds <root> [h=<i>] <t>…`, `lod-blend-thresholds`; reset with
+    `view.lod.override.reset`, `lod-override-reset [<root>]`), keyed by `lodRootKey` (the content the root is authored in and its path
+    there: every instance of an instanceable asset shares one; a root reached through a plain reference is its own); a bias (`lod-bias`:
+    every root picks as if that many times closer, applied to the thresholds, a distance's times it, a screen size's over its square); the
+    hysteresis (`lod-hysteresis`, the GPU pick's push constant); blending (`lod-blending on|off`, off drops every band). All in
+    `view.lod.tuning`, the window's header and fields. `tunedLodHeuristic` is what the CPU pick, the groups' records (`lodGroupOf`) and the
+    records use. `LodTuningChanged` traces a change; `LodTuningRefused` a path with no root, a heuristic not there, thresholds out of order.
+    The `lod`, `streaming`, `renderlod` and `lodtool` records carry the tuning; rows say `tuned`.
+  - *Layers* (`view.lod.visualize`, `lod-show labels|gizmo|gizmo-all|flash on|off`, the window): the LOD Level view (`view lodlevel`: a
+    colour per drawn level; a render-LOD group at a forced level striped, one drawing another level than it wants checkered); labels over
+    the roots (name, drawn level, fade, measure; a click selects); the heuristic gizmo of the selected or every shown root (`DebugDraw`: the
+    distance's center or box, a ring per threshold at the distance it is reached, a screen size's from the view's window, in the colour of
+    the level beyond it, a faint ring where a band ends); the pop flash (a group whose drawn level changed without a fade flashes white
+    for half a second, over any view: `src/renderer/README.md`, "Render LOD"; the `renderlod` record's `popped`, `flashing`, `popsSeen`).
+    A streaming root shows its level, label and gizmo; its flags and flash are render LOD's only, as its state is the CPU's.
 - **Point instancers and variants reached**: every PointInstancer reached while drawing (`instancers()`, the `instancers` record): its
   points and those shown, its prototypes, and the prims its points drew; every prim with variant sets (`variantPrims()`, the `variants`
   record): each set and the variant it composed to (`Entity::variantSelections`). A LOD root in a point's prototype draws its default

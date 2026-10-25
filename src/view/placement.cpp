@@ -527,6 +527,10 @@ auto ViewScene::releasePlacement(const Placement& node) -> void {
     }
 }
 
+auto lodRootKey(int32_t content, const std::string& pathInContent) -> std::string {
+    return std::format("{}:{}", content, pathInContent);
+}
+
 auto ViewScene::allocLodGroup() -> uint32_t {
     if (auto group = freeLodGroups.takeLowest()) {
         return *group;
@@ -534,6 +538,7 @@ auto ViewScene::allocLodGroup() -> uint32_t {
     drawn.lodGroups.push_back(RenderLodGroup{});
     lodGroupInfo.emplace_back();
     lodGroupPaths.push_back({});
+    lodGroupSources.push_back(nullptr);
     return (uint32_t) drawn.lodGroups.size() - 1;
 }
 
@@ -553,6 +558,9 @@ auto ViewScene::freeLodGroup(uint32_t group) -> void {
     if (!lodGroupPaths[group].empty()) {
         lodGroupPaths.edit(group).clear();
     }
+    if (lodGroupSources[group] != nullptr) {
+        lodGroupSources.edit(group) = nullptr;
+    }
     freeLodGroups.insert(group);
 }
 
@@ -571,6 +579,8 @@ auto ViewScene::forcedLevelOf(const LodGroupInfo& info) const -> int32_t {
 
 auto ViewScene::lodGroupOf(const LodGroupInfo& info) const -> RenderLodGroup {
     RenderLodGroup group{
+        .toWorld = info.toWorld,
+        .toRoot = glm::inverse(info.toWorld),
         .levelCount = info.levelCount,
         .defaultLevel = info.defaultLevel,
         .forcedLevel = forcedLevelOf(info),
@@ -580,14 +590,13 @@ auto ViewScene::lodGroupOf(const LodGroupInfo& info) const -> RenderLodGroup {
     if (chosen < 0) {
         return group;
     }
-    const auto& heuristic = info.heuristics[(size_t) chosen];
+    // The thresholds as the view's tuning has them: an override of the authored root's, the bias, the bands dropped with blending off.
+    auto heuristic = tunedLodHeuristic(info.heuristics[(size_t) chosen], lodOverrideOf(*tuning, info.key, (uint32_t) chosen), *tuning);
     // A distance is measured in metres on the GPU: its thresholds and bands too.
     float scale = 1.0f;
     if (heuristic.kind == LodHeuristicKind::Distance) {
         scale = (float) composer->world().metersPerUnit;
         group.kind = RenderLodKind::Distance;
-        group.toWorld = info.toWorld;
-        group.toRoot = glm::inverse(info.toWorld);
         group.point = heuristic.center;
         if (heuristic.box) {
             group.hasBox = true;
@@ -1157,6 +1166,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                     .levelCount = (uint32_t) std::min<size_t>(lod.levels.size(), RenderLodGroup::maxLevels),
                     .heuristics = lod.heuristics,
                     .toWorld = unitScale * world,
+                    .key = lodRootKey(spec.content, content.path(item.id)),
                 };
                 if (info.levelCount > 0) {
                     info.defaultLevel = std::min(lod.defaultIndex, info.levelCount - 1);
@@ -1170,6 +1180,16 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                     lodGroupByPath[path] = slot;
                     if (lodGroupPaths[slot] != path) {
                         lodGroupPaths.edit(slot) = path;
+                    }
+                    const auto& source = lodGroupSources[slot];
+                    if (source == nullptr || source->key != lodGroupInfo[slot].key || source->heuristics != lod.heuristics || source->levels.size() != lod.levels.size()) {
+                        auto made = std::make_shared<LodGroupSource>();
+                        made->key = lodGroupInfo[slot].key;
+                        made->heuristics = lod.heuristics;
+                        for (EntityId level : lod.levels) {
+                            made->levels.push_back(content.entities[level].name);
+                        }
+                        lodGroupSources.edit(slot) = std::move(made);
                     }
                     if (!(drawn.lodGroups[slot] == group)) {
                         setLodGroup(slot, group);
@@ -1194,6 +1214,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                     row.levelPayloads.push_back(payload != content.payloads.end() ? payload->second.assetIds : std::vector<std::string>{});
                 }
                 row.heuristics = lod.heuristics;
+                row.key = lodRootKey(spec.content, content.path(item.id));
                 row.defaultIndex = lod.defaultIndex;
                 row.worldTransform = unitScale * world;
                 auto previous = std::ranges::find(previousRoots, path, &PlacedRoot::path);
@@ -1636,6 +1657,7 @@ auto ViewScene::place() -> void {
     built->primPaths = primPaths;
     built->assetsByPrim = assetsByPrim;
     built->lodGroupPaths = lodGroupPaths;
+    built->lodGroupSources = lodGroupSources;
     draws = std::move(built);
     inputsRevision++;
     if (passSwitchedFiner + passSwitchedCoarser > 0) {

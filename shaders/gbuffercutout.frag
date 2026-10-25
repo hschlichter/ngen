@@ -45,15 +45,14 @@ layout(location = 1) in vec3 fragColor;
 layout(location = 2) in vec2 fragTexCoord;
 layout(location = 3) flat in uint fragTexture;
 layout(location = 4) flat in uint fragInstance; // the instance index + 1
-layout(location = 5) flat in uint fragLodLevel;
-layout(location = 6) flat in float fragLodCoverage;
+layout(location = 5) flat in uvec2 fragLod; // x the LOD tag (lodTag), y the fade coverage as float bits
 
 layout(location = 0) out vec4 outAlbedo;
 layout(location = 1) out vec4 outNormal;
 layout(location = 2) out uint outInstance;
 
 void main() {
-    if (lodFadedAway(fragLodCoverage) || cutAway(instances.data[fragInstance - 1u].material, fragTexCoord)) {
+    if (lodFadedAway(uintBitsToFloat(fragLod.y)) || cutAway(instances.data[fragInstance - 1u].material, fragTexCoord)) {
         discard;
     }
     vec4 texColor = texture(textures[fragTexture], fragTexCoord);
@@ -66,6 +65,6 @@ void main() {
         n = vec3(0.0, 1.0, 0.0);
     }
     // Alpha carries the drawn LOD level + 1 (0 under no LOD root), for the LOD level view.
-    outNormal = vec4(normalize(n) * 0.5 + 0.5, float(fragLodLevel));
+    outNormal = vec4(normalize(n) * 0.5 + 0.5, float(fragLod.x));
     outInstance = fragInstance;
 }

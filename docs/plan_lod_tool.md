@@ -1,6 +1,6 @@
 # The LOD tool: every LOD root inspected, switched and tuned in one window
 
-**Status. Draft.** Lands after [plan_lod_blending.md](plan_lod_blending.md), whose heuristics (both kinds, distance first) and fades it shows.
+**Status. Landed.** Lands after [plan_lod_blending.md](plan_lod_blending.md), whose heuristics (both kinds, distance first) and fades it shows.
 The tool is built up in use: this plan is its base, and what using it shows to be missing or not working well is added as it comes up
 ("Added in use", at the end), not planned ahead here.
 
@@ -46,7 +46,7 @@ Out:
   header. The root follows the view's selection (the root at or above it, as the highlight does now) and a click in the list.
 - **B. The list in the LOD window, the inspector a window of its own.**
 
-I lean **A**: one place for LOD, as asked; the list and the inspector change together.
+**Locked A** (2026-10-25): one place for LOD; the list and the inspector change together.
 
 ### 2. What a threshold edit applies to
 
@@ -55,8 +55,8 @@ I lean **A**: one place for LOD, as asked; the list and the inspector change tog
   the root's content and entity, which each placement knows.
 - **C. Both**, B by default and A as a checkbox.
 
-I lean **B**: it is what tuning content means, and it is one key. A single-placement override is a debugging case the forced level already
-covers. Pushback welcome.
+**Locked B** (2026-10-25): it is what tuning content means, and it is one key: the content the root is authored in (the stage, or the
+prototype every instance shares) and the root's path in it. A single-placement override is a debugging case the forced level already covers.
 
 ### 3. The LOD bias
 
@@ -65,7 +65,8 @@ covers. Pushback welcome.
   pick's push constants.
 - **B. A level offset** (+1 coarser everywhere).
 
-I lean **A**.
+**Locked A** (2026-10-25). Applied to the thresholds rather than the measure (a distance threshold times the bias, a screen size's divided by
+its square), the same pick, so the GPU needs no new constant for it and the measures shown stay what the camera sees.
 
 ### 4. The GPU's per-group state while the window is open
 
@@ -74,7 +75,28 @@ The list shows wanted and drawn per group; for render-LOD groups those are on th
   after the blending plan, about 740 KB a frame on the test world.
 - **B. Only the selected group's**, and the list shows the CPU heuristic's answer for the rest.
 
-I lean **A**, measured in step 5; throttled to every few frames if it shows in the frame time.
+**Locked A** (2026-10-25), measured in step 5; throttled to every few frames if it shows in the frame time.
+
+### 5. Visualization layers
+
+Asked for (2026-10-25): see which LOD levels are active for a mesh, and other useful layers. Locked: V1 to V5.
+
+- **V1. The LOD Level view, with state** (`view lodlevel`): as before a colour per drawn level; on a render-LOD root's meshes, diagonal
+  stripes for a forced level and a checker while it draws another level than it wants (the wanted one not resident). The flags ride in the
+  G-buffer normal target's alpha beside the level tag (level + 1, plus 16 forced, 32 falling back, 64 flashing), exact in 16-bit float.
+  A legend in the LOD window.
+- **V2. Labels**: over each LOD root on screen, its name, drawn level (→ fading-to level and share) and measure; a click selects. ImGui
+  text at the root's projected center; the list's filter applies.
+- **V3. The heuristic gizmo**: for the selected root (or every one the filter shows), the distance's center or box with a ring per
+  threshold at that distance (the box's rings rounded rectangles in its plane), each band's far edge a fainter ring; the screen size's sphere;
+  coloured as V1's levels. `DebugDraw`.
+- **V4. Pop flash**: a render-LOD group whose drawn level changes without a fade (no band, a forced level, a fallback) flashes for half a
+  second, over any view, the lit one too. `lodselect.comp` sets a countdown in the group's state; the G-buffer tag carries it; the lighting
+  pass tints. The `renderlod` record counts pops.
+- **V5. Triangle Size shortcut**: a button in the LOD window turning the Triangle Size debug view on.
+
+Streaming roots (levels that are payloads) show V1's level, V2 and V3; V1's flags and V4 are render-LOD only: a streaming root's state is
+the CPU's, its draws would be touched on each change. A gap, named.
 
 ## Steps
 
@@ -103,6 +125,10 @@ I lean **A**, measured in step 5; throttled to every few frames if it shows in t
    applied on Enter, with the authored values beside them and a reset; the header: heuristic on/off, the preference, bias, hysteresis,
    blending, unload delay. The selected root's heuristic drawn in the viewport (`debugdraw`): the distance's center or box with a ring per
    threshold, the screen size's sphere, coloured by its drawn level as the `lodlevel` view colours.
+4b. **Visualization layers** (decision 5): V1 and V4 in `lodselect.comp` (forced bit and flash countdown in the state's level word, a
+   pop counter in the totals), `gbuffer.vert` (the tag), `lighting.frag` (patterns, the flash tint as a push constant); V2 and V3 in
+   `src/apps/view.cpp` from the published groups and the readback; `DebugDraw::circle`, `roundedRect`. Method `view.lod.visualize
+   {labels?, gizmo?, gizmoAll?, flash?}`, verb `lod-show labels|gizmo|gizmo-all|flash on|off`.
 5. **Measure.** With the window open on the oak: the window's frame time and the readback's cost (decision 4); at scale once the test world
    returns (Deferred).
 6. **Visibility and docs.** Below; `src/view/README.md` (LOD section: the tool, the opinions), `src/world/README.md` (every heuristic kept),
@@ -134,6 +160,33 @@ I lean **A**, measured in step 5; throttled to every few frames if it shows in t
 - **`view.lod.inspect`** answers the same measure, wanted and drawn as `renderlod` for the oak, and the same as `streaming` for the layered
   scene's streaming root.
 - **Unchanged without tuning**: baselines byte-identical; the layered LOD script gives the same levels as the commit before.
+
+## Results
+
+Landed 2026-10-25, on the oak (`oak_lod8.usda` opened alone; distances in metres, the stage's unit), checked over RPC and in a script:
+
+| Check | Result |
+|---|---|
+| Inspector | Two heuristics: distance used, screen size not ("the preference (distance first) chose heuristic 1"); the other way round after `lod-prefer screen`. 8 levels with 15998, 6085, 2739, 1638, 473, 323, 162 and 48 triangles, the asset's. At 60 m it measures 60.0 m and wants and draws level 1, as UsdLod picks. |
+| Switching | `view.lod.set` level 3: the GPU draws 3 and reports it forced; `view.lod.reset` back to level 1. |
+| Override | Distance thresholds and bands halved: at 60 m it wants level 3, the halved thresholds' level; the inspector shows authored 49.3 beside 24.65 in force. Descending distance thresholds are refused with a warning. The reset returns to level 1. |
+| Bias | Bias 2 at 150 m picks as at 75 m: level 1 fading into 2 at 71.2%, the share UsdLod gives at 75 m; the measure stays 150 m. |
+| Blending off, hysteresis 0 | At 75 m level 2, no fade, no bands in the record. |
+| Pops | A walk from 40 m to 130 m in 1 m steps: 0 pops with the bands; 3 pops (one per boundary) and the flash seen with blending off. |
+| Verbs and trace | Every verb in a script; one `LodTuningChanged` per change; the `lodtool` record has the tuning, layers and inspection. |
+| Unchanged without tuning | three_cubes and Sponza baselines byte-identical (8 images), culling numbers equal, no warnings or errors. |
+| Cost | With the window open on the oak: 0.04 ms a frame on the main thread for the window, 0.02 ms more for ImGui; the states readback is not measurable on the GPU for one group. At scale: deferred with the test world. |
+
+Changes from the plan, and a fix:
+- **Decision 2's key** is the content the root is authored in and its path there: every instance of an *instanceable* asset shares it; a
+  root reached through a plain (non-instanceable) reference is the stage's and its own.
+- **Bias on the thresholds**, not the measure (decision 3): the same pick, no new GPU constant, and measures show what the camera sees.
+- **The old "groups under the selection" control** is gone: the list's "under selection" filter with "Set shown" does it, for both kinds.
+- **The pop flash** lasts half a second at the view's frame rate (a push constant, at most 127 frames), not a fixed frame count: offscreen
+  runs far above 60 fps.
+- **Fix to the blending change**: `gbuffer.vert`'s fade coverage at location 6 was unread by the opaque `gbuffer.frag`, a validation
+  warning per opaque pipeline in every run since. Tag and coverage now share one `uvec2` varying.
+- **Not checked headless**: the labels (ImGui is not in screenshots) and clicking one, the window's fields: hand checks.
 
 ## Open questions
 

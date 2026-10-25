@@ -19,6 +19,10 @@ public:
     auto line(glm::vec3 a, glm::vec3 b, glm::vec4 color) -> void;
     auto box(const AABB& box, glm::vec4 color) -> void;
     auto sphere(glm::vec3 center, float radius, glm::vec4 color, int segments = 24) -> void;
+    // A box in a space `toWorld` places (rotated, scaled), drawn by its twelve edges.
+    auto orientedBox(const glm::mat4& toWorld, glm::vec3 min, glm::vec3 max, glm::vec4 color) -> void;
+    // A circle around `center` in the plane of the unit axes `a` and `b`.
+    auto circle(glm::vec3 center, glm::vec3 a, glm::vec3 b, float radius, glm::vec4 color, int segments = 48) -> void;
     auto grid(glm::vec3 cameraPos, glm::vec3 worldUp, float spacing, int halfCount, glm::vec4 color) -> void;
     // Sun-style gizmo for a directional light: disc perpendicular to `outgoingDir`, a short
     // ring of rays radiating outward, and a longer shaft along `outgoingDir` showing where

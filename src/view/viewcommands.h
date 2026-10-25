@@ -61,9 +61,15 @@ struct ViewResidency {
 // A `renderlod` record or `view.renderlod` call waiting for a culling readback with every render-LOD group's state (frames later): the
 // readback frame it was asked at, and for the call the path whose groups it lists.
 struct RenderLodRequest {
+    enum class Kind : uint8_t {
+        Record,  // the renderlod record (with `path`, the groups under it)
+        Inspect, // view.lod.inspect of the root at `path`
+        Tool,    // the lodtool record
+    };
     RpcResponder responder;
     uint64_t askedAt = 0;
     std::optional<std::string> path;
+    Kind kind = Kind::Record;
 };
 
 struct ViewContext {
@@ -86,6 +92,7 @@ struct ViewContext {
     const ViewResidency& residency;
     std::vector<RenderLodRequest>& renderLodRequests;
     const float& viewAspect; // the view's width over height, as the LOD heuristic and the GPU's pick measure it
+    const uint64_t& lodPops; // render-LOD pops (a drawn level changed without a fade) counted over the readbacks seen
     std::string sceneLabel;
 };
 

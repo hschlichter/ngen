@@ -26,8 +26,9 @@ struct CullResult {
     uint32_t regionOverflow = 0;                                   // commands dropped past their region's end: the CPU's bucket counts disagree with the shader's (a bug)
     // Render LOD: instances of a level their group doesn't draw (in no view), instances drawn in a fading group (both levels, in the cutout
     // buckets), and from the selection's readback the groups, those drawing each level, those falling back while the wanted level isn't
-    // resident, those at a forced level, those fading; per group the level drawn and wanted (0xFF none), the level fading in (0xFF none)
-    // and its share, and the measure, when the states were read.
+    // resident, those at a forced level, those fading, those whose drawn level changed this frame without a fade (a pop); per group the
+    // level drawn and wanted (0xFF none), the level fading in (0xFF none) and its share, the measure, and its flags (LodStateFlags), when
+    // the states were read.
     uint32_t lodDropped = 0;
     uint32_t lodFadingInstances = 0;
     uint64_t lodFrame = 0;
@@ -36,6 +37,7 @@ struct CullResult {
     uint32_t lodFallbacks = 0;
     uint32_t lodForced = 0;
     uint32_t lodFading = 0;
+    uint32_t lodPopped = 0;
     bool lodHasStates = false;
     glm::vec3 lodEye = glm::vec3(0.0f); // the camera the pick measured from: its position and the view window's area at depth 1
     float lodWindowArea = 1.0f;
@@ -44,6 +46,7 @@ struct CullResult {
     std::vector<uint8_t> lodFadeLevel;
     std::vector<float> lodFade;
     std::vector<float> lodMeasure;
+    std::vector<uint8_t> lodFlags;
 };
 
 class DeletionQueue;

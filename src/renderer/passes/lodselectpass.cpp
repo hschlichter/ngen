@@ -25,6 +25,8 @@ struct SelectPush {
     uint32_t groupCount = 0;
     uint32_t mode = 0;
     uint32_t workgroupCount = 0;
+    float hysteresis = 0.2f;
+    uint32_t flashFrames = 30;
 };
 
 struct SelectPassData {
@@ -87,13 +89,13 @@ auto LodSelectPass::rebuildDescriptors(RhiDevice* device, const LodGroups& group
     }
 }
 
-auto LodSelectPass::addPasses(FrameGraph& fg, const LodGroups::Handles& handles, const Camera& camera, uint32_t groupCount, uint32_t frameSlot) -> void {
+auto LodSelectPass::addPasses(FrameGraph& fg, const LodGroups::Handles& handles, const Camera& camera, float hysteresis, uint32_t flashFrames, uint32_t groupCount, uint32_t frameSlot) -> void {
     if (groupCount == 0) {
         return;
     }
     auto* pip = registry->get(pipelineHandle);
     auto* set = frameSlot < sets.size() ? sets[frameSlot] : nullptr;
-    SelectPush push{.eye = camera.eye, .windowArea = camera.windowArea, .groupCount = groupCount, .mode = 0, .workgroupCount = LodGroups::workgroupsFor(groupCount)};
+    SelectPush push{.eye = camera.eye, .windowArea = camera.windowArea, .groupCount = groupCount, .mode = 0, .workgroupCount = LodGroups::workgroupsFor(groupCount), .hysteresis = hysteresis, .flashFrames = flashFrames};
     auto dispatchMode = [pip, set, push](FrameGraphContext& ctx, uint32_t mode, uint32_t workgroups) {
         auto* cmd = ctx.cmd();
         cmd->bindPipeline(pip);

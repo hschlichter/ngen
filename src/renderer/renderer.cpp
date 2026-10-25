@@ -847,6 +847,8 @@ auto Renderer::cullResult() const -> CullResult {
     result.lodFallbacks = lod.totals.fallbacks;
     result.lodForced = lod.totals.forced;
     result.lodFading = lod.totals.fading;
+    result.lodPopped = lod.totals.popped;
+    result.lodFlags = lod.flags;
     result.lodHasStates = lod.hasStates || lod.groupCount == 0;
     result.lodEye = lod.eye;
     result.lodWindowArea = lod.windowArea;
@@ -1071,7 +1073,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
             .eye = glm::vec3(glm::inverse(snapshot.viewMatrix)[3]),
             .windowArea = 4.0f / std::max(1e-12f, std::abs(snapshot.projMatrix[0][0] * snapshot.projMatrix[1][1])),
         };
-        lodSelectPass.addPasses(frameGraph, lodHandles, lodCamera, lodGroups.groupCount(), currentFrame);
+        lodSelectPass.addPasses(frameGraph, lodHandles, lodCamera, snapshot.lodHysteresis, snapshot.lodFlashFrames, lodGroups.groupCount(), currentFrame);
         // GPU culling writes the indirect commands for every view; the passes below read them.
         auto cullGroups = drawLists.writeParams(currentFrame, instanceCount, snapshot.cullViewProj, cascades, snapshot.cullEnabled);
         auto drawHandles = drawLists.import(frameGraph, currentFrame);
@@ -1117,6 +1119,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
             snapshot.gbufferViewMode,
             snapshot.showBufferOverlay,
             snapshot.showShadowOverlay,
+            snapshot.lodPopFlash,
             invViewProj,
             shadowSampler,
             cascades,

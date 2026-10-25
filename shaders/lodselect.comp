@@ -7,8 +7,9 @@
 //              level it wants, as pickLodLevel (src/world/world.cpp) picks it: UsdLod's levels with their blend bands, and hysteresis at a
 //              boundary without a band, against the level it wanted last frame; else the group's forced level. The level drawn is the
 //              wanted one when resident, else the one drawn last frame when resident, else the nearest resident level, coarser first. Inside
-//              a band the next level fades in when it is resident too. The state written and the residency mask cleared; per-workgroup
-//              counters
+//              a band the next level fades in when it is resident too. A drawn level that changes without a fade (no band, a forced
+//              level, a fallback) is a pop: the group flashes for push.flashFrames. The state written and the residency mask cleared;
+//              per-workgroup counters
 //   1 sum      one workgroup: the counters summed over the workgroups, in order, into the totals
 
 layout(local_size_x = 256) in;
@@ -17,16 +18,14 @@ const uint maxLevels = 8;
 const uint noLevel = 0xFFu;
 const uint kindScreenSize = 0u;
 const uint kindDistance = 1u;
-// The hysteresis at a boundary without a band, as the view's (ViewScene::lodHysteresis): coarser once a screen size is 20% below the
-// threshold, a distance the same margin beyond it (a size falls with the square of the distance).
-const float hysteresis = 0.2;
 // Counter layout per workgroup and in the totals (LodSelectTotals).
 const uint counterPicked = 0;                    // maxLevels: groups drawing each level
 const uint counterFallbacks = maxLevels;         // groups drawing another level while the wanted one isn't resident
 const uint counterForced = counterFallbacks + 1; // groups at a forced level
 const uint counterGroups = counterForced + 1;    // alive groups
 const uint counterFading = counterGroups + 1;    // groups drawing two levels, cross-faded
-const uint counterCount = counterFading + 1;
+const uint counterPopped = counterFading + 1;    // groups whose drawn level changed without a fade this frame
+const uint counterCount = counterPopped + 1;
 
 layout(push_constant) uniform Push {
     vec3 eye;         // the camera's position, world metres
@@ -34,6 +33,11 @@ layout(push_constant) uniform Push {
     uint groupCount;
     uint mode;
     uint workgroupCount;
+    // The hysteresis at a boundary without a band, the view's tuning (20% by default): coarser once a screen size is that fraction below
+    // the threshold, a distance the same margin beyond it (a size falls with the square of the distance).
+    float hysteresis;
+    // How many frames a pop flashes: half a second at the view's frame rate, at most 127 (the state's bits 25-31 count it down).
+    uint flashFrames;
 } push;
 
 struct Group {
@@ -61,7 +65,8 @@ layout(std430, set = 0, binding = 0) readonly buffer Groups {
 } groups;
 
 // Per group: x the serial of the group it was written for, y the level wanted (bits 0-7), drawn (bits 8-15) and fading in (bits 16-23, 0xFF
-// for none), z the fading level's share as float bits, w the measure as float bits.
+// for none), at a forced level (bit 24) and the pop flash's frames left (bits 25-31), z the fading level's share as float bits, w the
+// measure as float bits.
 layout(std430, set = 0, binding = 1) buffer States {
     uvec4 data[];
 } states;
@@ -129,7 +134,7 @@ bool bandOf(Group group, uint k, out float edge) {
 vec2 pickLevel(Group group, float measure, uint previous) {
     uint last = min(group.levelCount, maxLevels) - 1;
     uint boundaries = min(group.thresholdCount, last);
-    float coarserScale = group.kind == kindDistance ? 1.0 / sqrt(1.0 - hysteresis) : 1.0 - hysteresis;
+    float coarserScale = group.kind == kindDistance ? 1.0 / sqrt(1.0 - push.hysteresis) : 1.0 - push.hysteresis;
     uint finer = 0;
     while (finer < boundaries) {
         float edge;
@@ -194,6 +199,8 @@ void select() {
             bool known = state.x == group.serial;
             uint previousWanted = known ? min(state.y & 0xFFu, last) : min(group.defaultLevel, last);
             uint previousDrawn = known ? ((state.y >> 8) & 0xFFu) : noLevel;
+            uint previousFade = known ? ((state.y >> 16) & 0xFFu) : noLevel;
+            uint flash = known ? (state.y >> 25) : 0u;
             float measure = group.kind == kindDistance ? distanceOf(group) : screenSizeOf(group);
             uint wanted;
             float blend = 0.0;
@@ -233,7 +240,18 @@ void select() {
             } else {
                 blend = 0.0;
             }
-            states.data[g] = uvec4(group.serial, wanted | (drawn << 8) | (fadeLevel << 16), floatBitsToUint(blend), floatBitsToUint(measure));
+            // A change of the drawn level is smooth when a fade led into it (the level was fading in) or leads out of it (the level it
+            // left fades out); else it pops.
+            bool faded = previousFade == drawn || fadeLevel == previousDrawn;
+            if (previousDrawn <= last && drawn != previousDrawn && !faded) {
+                flash = min(push.flashFrames, 127u);
+                atomicAdd(sharedCounters[counterPopped], 1u);
+            } else if (flash > 0u) {
+                flash--;
+            }
+            uint forced = group.forcedLevel >= 0 ? 1u : 0u;
+            uint levels = wanted | (drawn << 8) | (fadeLevel << 16) | (forced << 24) | (flash << 25);
+            states.data[g] = uvec4(group.serial, levels, floatBitsToUint(blend), floatBitsToUint(measure));
             atomicAdd(sharedCounters[counterPicked + drawn], 1u);
             atomicAdd(sharedCounters[counterGroups], 1u);
         }

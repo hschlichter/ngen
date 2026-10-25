@@ -1,5 +1,8 @@
 #include "viewcommands.h"
 
+#include "lodgroups.h"
+#include "lodtool.h"
+
 #include "assetclient.h"
 #include "camera.h"
 #include "debugview.h"
@@ -334,6 +337,93 @@ auto parsePrepass(const std::string& args) -> std::expected<Json, std::string> {
     return Json{{"enabled", args == "on"}};
 }
 
+// One LOD root's inspection as the view.lod.inspect method and the lodtool record answer it; distances in the stage's units.
+auto lodInspectionJson(const LodInspection& in, double metersPerUnit) -> Json;
+
+// "<root> [h=<heuristic>] <t> <t> …": one heuristic's thresholds (or blend thresholds) for a LOD root's authored root, the heuristic in use
+// when none is named; no values clears the list.
+auto parseLodThresholds(const std::string& args, const char* field) -> std::expected<Json, std::string> {
+    std::istringstream in(args);
+    std::string root;
+    if (!(in >> root)) {
+        return std::unexpected("expected '<root> [h=<heuristic>] <threshold> …'");
+    }
+    Json params = {{"root", root}};
+    auto values = Json::array();
+    std::string item;
+    while (in >> item) {
+        if (item.starts_with("h=")) {
+            params["heuristic"] = std::atoi(item.c_str() + 2);
+            continue;
+        }
+        char* end = nullptr;
+        float value = std::strtof(item.c_str(), &end);
+        if (end == item.c_str() || *end != '\0') {
+            return std::unexpected(std::format("'{}' isn't a number", item));
+        }
+        values.push_back(value);
+    }
+    params[field] = values;
+    return params;
+}
+
+auto parseLodThresholdList(const std::string& args) -> std::expected<Json, std::string> {
+    return parseLodThresholds(args, "thresholds");
+}
+
+auto parseLodBlendList(const std::string& args) -> std::expected<Json, std::string> {
+    return parseLodThresholds(args, "blendThresholds");
+}
+
+// "[<root>]": every override when empty.
+auto parseLodOverrideReset(const std::string& args) -> std::expected<Json, std::string> {
+    if (args.empty()) {
+        return Json::object();
+    }
+    return Json{{"root", args}};
+}
+
+auto parseLodNumber(const std::string& args, const char* field) -> std::expected<Json, std::string> {
+    char* end = nullptr;
+    float value = std::strtof(args.c_str(), &end);
+    if (args.empty() || *end != '\0') {
+        return std::unexpected(std::format("expected a number, got '{}'", args));
+    }
+    return Json{{field, value}};
+}
+
+auto parseLodBias(const std::string& args) -> std::expected<Json, std::string> {
+    return parseLodNumber(args, "bias");
+}
+
+auto parseLodHysteresis(const std::string& args) -> std::expected<Json, std::string> {
+    return parseLodNumber(args, "hysteresis");
+}
+
+auto parseLodBlending(const std::string& args) -> std::expected<Json, std::string> {
+    if (args != "on" && args != "off") {
+        return std::unexpected(std::format("expected 'on' or 'off', got '{}'", args));
+    }
+    return Json{{"blending", args == "on"}};
+}
+
+// "labels|gizmo|gizmo-all|flash on|off".
+auto parseLodShow(const std::string& args) -> std::expected<Json, std::string> {
+    std::istringstream in(args);
+    std::string layer;
+    std::string state;
+    if (!(in >> layer >> state) || (state != "on" && state != "off")) {
+        return std::unexpected(std::format("expected 'labels|gizmo|gizmo-all|flash on|off', got '{}'", args));
+    }
+    if (layer == "gizmo-all") {
+        layer = "gizmoAll";
+    }
+    if (layer != "labels" && layer != "gizmo" && layer != "gizmoAll" && layer != "flash") {
+        return std::unexpected(std::format("unknown layer '{}': labels, gizmo, gizmo-all or flash", layer));
+    }
+    return Json{{layer, state == "on"}};
+}
+
 auto parseInspect(const std::string& args) -> std::expected<Json, std::string> {
     if (args == "off") {
         return Json{{"enabled", false}};
@@ -419,6 +509,13 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"lod-heuristic", "view.lod.heuristic", parseOnOff},
     ScriptVerb{"lod-unload-delay", "view.lod.heuristic", parseUnloadDelay},
     ScriptVerb{"lod-prefer", "view.lod.heuristic", parseLodPreference},
+    ScriptVerb{"lod-thresholds", "view.lod.override", parseLodThresholdList},
+    ScriptVerb{"lod-blend-thresholds", "view.lod.override", parseLodBlendList},
+    ScriptVerb{"lod-override-reset", "view.lod.override.reset", parseLodOverrideReset},
+    ScriptVerb{"lod-bias", "view.lod.tuning", parseLodBias},
+    ScriptVerb{"lod-hysteresis", "view.lod.tuning", parseLodHysteresis},
+    ScriptVerb{"lod-blending", "view.lod.tuning", parseLodBlending},
+    ScriptVerb{"lod-show", "view.lod.visualize", parseLodShow},
     ScriptVerb{"wait-resident", "view.waitResident", parseNothing},
     ScriptVerb{"view", "view.mode", parseViewMode},
     ScriptVerb{"window", "view.window", parseWindow},
@@ -694,6 +791,104 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
                 view.scene.setLodPreference(*prefer);
             }
             responder.respond(Json::object());
+        });
+    registry.add(
+        {
+            .name = "view.lod.override",
+            .summary = "One heuristic's thresholds and blend thresholds in place of the authored ones, for the authored root of the LOD root at a path: every placement of it (every instance of an instanceable asset). A view-local opinion, never saved. Thresholds in the heuristic's unit (a distance in the stage's units, ascending; a screen size as a fraction of the view, descending). The LodTuningChanged trace event says what changed; LodTuningRefused why nothing did.",
+            .params = {requiredField("root", RpcType::String, "a LOD root's full path (a streaming root or a render-LOD group)"),
+                       optionalField("heuristic", RpcType::Int, "which of its heuristics (an index in authored order); the one the preference uses when absent"),
+                       optionalField("thresholds", RpcType::Array, "finest first"),
+                       optionalField("blendThresholds", RpcType::Array, "where each band ends, finest first; [] for none")},
+            .result = "{}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            LodOverride thresholds;
+            if (p.contains("thresholds")) {
+                thresholds.thresholds = p["thresholds"].get<std::vector<float>>();
+            }
+            if (p.contains("blendThresholds")) {
+                thresholds.blendThresholds = p["blendThresholds"].get<std::vector<float>>();
+            }
+            std::optional<uint32_t> heuristic;
+            if (p.contains("heuristic")) {
+                heuristic = (uint32_t) std::max(0, p["heuristic"].get<int>());
+            }
+            view.scene.overrideLodThresholds(p["root"].get<std::string>(), heuristic, std::move(thresholds));
+            responder.respond(Json::object());
+        });
+    registry.add(
+        {
+            .name = "view.lod.override.reset",
+            .summary = "Drops the threshold overrides of the authored root of the LOD root at a path, or every override when no root is given.",
+            .params = {optionalField("root", RpcType::String, "a LOD root's full path")},
+            .result = "{}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            view.scene.resetLodOverrides(p.contains("root") ? p["root"].get<std::string>() : std::string());
+            responder.respond(Json::object());
+        });
+    registry.add(
+        {
+            .name = "view.lod.tuning",
+            .summary = "The view's LOD tuning, local and never saved: a bias (every root picks as if it were this many times closer), the hysteresis at a boundary without a blend band (a fraction of a screen size; a distance the same margin in size), and blending (off drops every band).",
+            .params = {optionalField("bias", RpcType::Float, "1 as authored; 2 finer everywhere"),
+                       optionalField("hysteresis", RpcType::Float, "0 to 0.9; 0.2 by default"),
+                       optionalField("blending", RpcType::Bool, "blend bands on")},
+            .result = "{}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            std::optional<float> bias;
+            std::optional<float> hysteresis;
+            std::optional<bool> blending;
+            if (p.contains("bias")) {
+                bias = p["bias"].get<float>();
+            }
+            if (p.contains("hysteresis")) {
+                hysteresis = p["hysteresis"].get<float>();
+            }
+            if (p.contains("blending")) {
+                blending = p["blending"].get<bool>();
+            }
+            view.scene.setLodTuning(bias, hysteresis, blending);
+            responder.respond(Json::object());
+        });
+    registry.add(
+        {
+            .name = "view.lod.visualize",
+            .summary = "The LOD tool's viewport layers: labels over the LOD roots, the heuristic gizmo of the selected root (gizmo) or of every root the LOD window's list shows (gizmoAll), and the pop flash (a render-LOD root's meshes flash white when its level changes without a fade). The LOD Level view is `view.mode lodlevel`.",
+            .params = {optionalField("labels", RpcType::Bool, "labels on"),
+                       optionalField("gizmo", RpcType::Bool, "the selected root's gizmo on"),
+                       optionalField("gizmoAll", RpcType::Bool, "every shown root's gizmo on"),
+                       optionalField("flash", RpcType::Bool, "the pop flash on")},
+            .result = "{}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto& window = view.ui.lodWindow();
+            if (p.contains("labels")) {
+                window.labels = p["labels"].get<bool>();
+            }
+            if (p.contains("gizmo")) {
+                window.gizmo = p["gizmo"].get<bool>();
+            }
+            if (p.contains("gizmoAll")) {
+                window.gizmoAll = p["gizmoAll"].get<bool>();
+            }
+            if (p.contains("flash")) {
+                window.flash = p["flash"].get<bool>();
+            }
+            responder.respond(Json::object());
+        });
+    registry.add(
+        {
+            .name = "view.lod.inspect",
+            .summary = "One LOD root as the LOD window's inspector shows it: kind, authored root, state (wanted, drawn, fade, why), every heuristic (used or why not, thresholds authored and in force, its measure from the camera now and the level it would pick) and every level (triangles, draws).",
+            .params = {requiredField("root", RpcType::String, "a LOD root's full path")},
+            .result = "the inspection",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            // Answered once a readback carries every group's state, as the renderlod record is.
+            view.renderLodRequests.push_back({.responder = std::move(responder), .askedAt = view.latestCull.lodFrame, .path = p["root"].get<std::string>(), .kind = RenderLodRequest::Kind::Inspect});
         });
     registry.add(
         {
@@ -1304,6 +1499,103 @@ auto heuristicsJson(const std::vector<LodHeuristic>& heuristics, LodPreference p
     return out;
 }
 
+// The view's LOD tuning: bias, hysteresis, blending, and every override by authored root and heuristic.
+auto lodTuningJson(const LodTuning& tuning) -> Json {
+    auto overrides = Json::array();
+    for (const auto& [key, heuristics] : tuning.overrides) {
+        for (const auto& [index, override] : heuristics) {
+            overrides.push_back({
+                {"root", key},
+                {"heuristic", index},
+                {"thresholds", override.thresholds ? Json(*override.thresholds) : Json(nullptr)},
+                {"blendThresholds", override.blendThresholds ? Json(*override.blendThresholds) : Json(nullptr)},
+            });
+        }
+    }
+    return {{"bias", tuning.bias}, {"hysteresis", tuning.hysteresis}, {"blending", tuning.blending}, {"overrides", overrides}};
+}
+
+auto lodInspectionJson(const LodInspection& in, double metersPerUnit) -> Json {
+    auto heuristics = Json::array();
+    for (const auto& heuristic : in.heuristics) {
+        heuristics.push_back({
+            {"kind", heuristic.kind},
+            {"path", heuristic.path},
+            {"used", heuristic.used},
+            {"why", heuristic.why},
+            {"authored", {{"thresholds", heuristic.authored}, {"blendThresholds", heuristic.authoredBlends}}},
+            {"thresholds", heuristic.thresholds},
+            {"blendThresholds", heuristic.blendThresholds},
+            {"overridden", heuristic.overridden},
+            {"measure", heuristic.measure >= 0.0f ? Json(heuristic.measure) : Json(nullptr)},
+            {"picks", heuristic.picks >= 0 ? Json(heuristic.picks) : Json(nullptr)},
+            {"blend", heuristic.blend},
+        });
+    }
+    auto levels = Json::array();
+    for (size_t level = 0; level < in.levels.size(); level++) {
+        const auto& info = in.levels[level];
+        levels.push_back({
+            {"level", level},
+            {"name", info.name},
+            {"triangles", info.known ? Json(info.triangles) : Json(nullptr)},
+            {"draws", info.known ? Json(info.draws) : Json(nullptr)},
+            {"loaded", info.loaded},
+        });
+    }
+    return {
+        {"path", in.path},
+        {"kind", in.renderLod ? "render" : "streaming"},
+        {"group", in.group >= 0 ? Json(in.group) : Json(nullptr)},
+        {"key", in.key},
+        {"default", in.defaultIndex},
+        {"wanted", in.wanted >= 0 ? Json(in.wanted) : Json(nullptr)},
+        {"drawn", in.drawn >= 0 ? Json(in.drawn) : Json(nullptr)},
+        {"fadeLevel", in.fadeLevel >= 0 ? Json(in.fadeLevel) : Json(nullptr)},
+        {"fade", in.fade},
+        {"setByHand", in.setByHand},
+        {"forced", in.forced},
+        {"why", in.why},
+        {"distanceUnit", lodUnitName(metersPerUnit)},
+        {"heuristics", heuristics},
+        {"levels", levels},
+    };
+}
+
+// The LOD tool: the selected root's inspection, the tuning, the viewport's layers and the pops seen.
+auto lodToolRecord(const ViewContext& view) -> Json {
+    const auto& window = view.ui.lodWindow();
+    auto inspection = Json(nullptr);
+    std::string root;
+    if (!view.selectedPath.empty()) {
+        // The LOD root at or above the selection, as the window takes it.
+        for (const auto& candidate : view.scene.lodRoots()) {
+            if ((view.selectedPath == candidate.path || view.selectedPath.starts_with(candidate.path + "/")) && candidate.path.size() > root.size()) {
+                root = candidate.path;
+            }
+        }
+        const auto& draws = *view.scene.snapshot().draws;
+        for (const auto& candidate : draws.lodGroupPaths) {
+            if (!candidate.empty() && (view.selectedPath == candidate || view.selectedPath.starts_with(candidate + "/")) && candidate.size() > root.size()) {
+                root = candidate;
+            }
+        }
+    }
+    if (!root.empty()) {
+        if (auto found = inspectLodRoot(view.scene, view.latestCull, root, {.eye = view.cam.position, .fovY = glm::radians(cameraFovDegrees), .aspect = view.viewAspect})) {
+            inspection = lodInspectionJson(*found, view.scene.lodMetersPerUnit());
+        }
+    }
+    return {
+        {"selectedRoot", root.empty() ? Json(nullptr) : Json(root)},
+        {"inspection", inspection},
+        {"tuning", lodTuningJson(view.scene.lodTuning())},
+        {"layers", {{"levelView", view.ui.getGBufferViewMode() == 10}, {"labels", window.labels}, {"gizmo", window.gizmo}, {"gizmoAll", window.gizmoAll}, {"flash", window.flash}}},
+        {"pops", view.lodPops},
+        {"windowRows", window.rows.size()},
+    };
+}
+
 auto streamingRecord(const ViewContext& view) -> Json {
     const auto& choices = view.scene.lodChoices();
     const auto& t = view.scene.threadStats();
@@ -1347,6 +1639,11 @@ auto streamingRecord(const ViewContext& view) -> Json {
         }
         auto used = chooseLodHeuristic(root.heuristics, view.scene.lodPreference());
         bool measured = choice != choices.end() && choice->second.measure >= 0.0f;
+        // The thresholds the pick uses: the override's, the bias applied, no bands with blending off.
+        LodHeuristic tuned;
+        if (used >= 0) {
+            tuned = tunedLodHeuristic(root.heuristics[(size_t) used], lodOverrideOf(view.scene.lodTuning(), root.key, (uint32_t) used), view.scene.lodTuning());
+        }
         roots.push_back({
             {"path", root.path},
             {"heuristic", used},
@@ -1355,8 +1652,10 @@ auto streamingRecord(const ViewContext& view) -> Json {
             {"inFrustum", visible},
             {"wanted", choice != choices.end() ? Json(choice->second.level) : Json(nullptr)},
             {"why", choice != choices.end() ? Json(choice->second.reason) : Json("not evaluated yet")},
-            {"thresholds", used >= 0 ? Json(root.heuristics[(size_t) used].thresholds) : Json::array()},
-            {"blendThresholds", used >= 0 ? Json(root.heuristics[(size_t) used].blendThresholds) : Json::array()},
+            {"thresholds", tuned.thresholds},
+            {"blendThresholds", tuned.blendThresholds},
+            {"key", root.key},
+            {"tuned", view.scene.lodTuning().overrides.contains(root.key)},
             {"drawn", root.drawn ? Json(*root.drawn) : Json(nullptr)},
             {"loaded", root.loaded},
             {"waiting", waiting},
@@ -1368,6 +1667,7 @@ auto streamingRecord(const ViewContext& view) -> Json {
         {"totals", {{"roots", roots.size()}, {"placements", t.placements}, {"contentsHeld", t.prototypesHeld + t.levelsHeld}, {"assetsHeld", t.meshPacks + t.materialPacks + t.texturePacks}, {"inFrustum", inFrustum}, {"loading", loading}, {"waiting", {{"meshes", waitingTotal.meshes}, {"materials", waitingTotal.materials}, {"textures", waitingTotal.textures}, {"composing", waitingTotal.composing}}}, {"renderLodGroups", view.scene.threadStats().lodGroups}}},
         {"heuristic", view.scene.lodHeuristic()},
         {"preference", lodPreferenceName(view.scene.lodPreference())},
+        {"tuning", lodTuningJson(view.scene.lodTuning())},
         {"unloadDelay", view.scene.unloadDelay()},
         {"unloaded", {{"keptLevels", t.keptLevels}, {"levels", t.releasedLevels}, {"contents", t.releasedContents}, {"meshPacks", t.releasedMeshes}, {"meshBytes", t.releasedMeshBytes}}},
         {"evaluation", {{"count", t.lodEvaluations}, {"roots", t.lodRootsEvaluated}, {"finer", t.lodFiner}, {"coarser", t.lodCoarser}, {"ms", t.lodEvaluateMs}, {"relinks", t.relinks}}},
@@ -1388,9 +1688,11 @@ auto lodRecord(const ViewContext& view) -> Json {
             {"drawn", root.drawn ? Json(*root.drawn) : Json(nullptr)},
             {"loaded", root.loaded},
             {"setByHand", root.setByHand},
+            {"key", root.key},
+            {"tuned", view.scene.lodTuning().overrides.contains(root.key)},
         });
     }
-    return {{"preference", lodPreferenceName(view.scene.lodPreference())}, {"roots", roots}};
+    return {{"preference", lodPreferenceName(view.scene.lodPreference())}, {"tuning", lodTuningJson(view.scene.lodTuning())}, {"roots", roots}};
 }
 
 auto payloadsRecord(const ViewContext& view) -> Json {
@@ -1518,7 +1820,7 @@ struct ExpectedLevels {
     bool onEdge = false;
 };
 
-auto expectedLevels(const RenderLodGroup& group, const glm::vec3& eye, float windowArea) -> ExpectedLevels {
+auto expectedLevels(const RenderLodGroup& group, const glm::vec3& eye, float windowArea, float hysteresis) -> ExpectedLevels {
     ExpectedLevels out;
     bool distance = group.kind == RenderLodKind::Distance;
     if (distance) {
@@ -1541,7 +1843,6 @@ auto expectedLevels(const RenderLodGroup& group, const glm::vec3& eye, float win
     std::vector<float> blends(group.blendThresholds.begin(), group.blendThresholds.begin() + group.blendCount);
     auto kind = distance ? LodHeuristicKind::Distance : LodHeuristicKind::ScreenSize;
     auto last = group.levelCount > 0 ? group.levelCount - 1 : 0;
-    float hysteresis = lodHysteresis;
     auto fromFinest = pickLodLevel(kind, thresholds, blends, out.measure, group.levelCount, 0, hysteresis);
     auto fromCoarsest = pickLodLevel(kind, thresholds, blends, out.measure, group.levelCount, last, hysteresis);
     out.low = fromFinest.level;
@@ -1583,6 +1884,7 @@ auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& 
     uint32_t differ = 0;
     uint32_t onEdge = 0;
     uint32_t fallbacks = 0;
+    uint32_t flashing = 0;
     auto examples = Json::array();
     auto listed = Json::array();
     for (uint32_t g = 0; g < groups.size(); g++) {
@@ -1594,7 +1896,7 @@ auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& 
         if (group.forcedLevel >= 0) {
             forced++;
         }
-        auto expected = expectedLevels(group, eye, windowArea);
+        auto expected = expectedLevels(group, eye, windowArea, view.scene.lodTuning().hysteresis);
         if (group.forcedLevel >= 0) {
             expected.low = std::min<uint32_t>((uint32_t) group.forcedLevel, group.levelCount - 1);
             expected.high = expected.low;
@@ -1607,6 +1909,10 @@ auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& 
         uint32_t fadeLevel = read && g < cull.lodFadeLevel.size() ? cull.lodFadeLevel[g] : 0xFFu;
         float fade = read && g < cull.lodFade.size() ? cull.lodFade[g] : 0.0f;
         float gpuMeasure = read && g < cull.lodMeasure.size() ? cull.lodMeasure[g] : 0.0f;
+        uint8_t flags = read && g < cull.lodFlags.size() ? cull.lodFlags[g] : 0;
+        if ((flags & LodStateFlags::flashing) != 0) {
+            flashing++;
+        }
         // The stage's units for a distance, as its thresholds are authored.
         float unit = group.kind == RenderLodKind::Distance ? (float) view.scene.lodMetersPerUnit() : 1.0f;
         const auto& groupPath = g < draws.lodGroupPaths.size() ? draws.lodGroupPaths[g] : std::string();
@@ -1658,6 +1964,9 @@ auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& 
                 {"fadeLevel", read && fadeLevel != 0xFFu ? Json(fadeLevel) : Json(nullptr)},
                 {"fade", read ? Json(fade) : Json(nullptr)},
                 {"expectedFade", expected.blend},
+                {"forcedFlag", read ? Json((flags & LodStateFlags::forced) != 0) : Json(nullptr)},
+                {"flashing", read ? Json((flags & LodStateFlags::flashing) != 0) : Json(nullptr)},
+                {"key", g < draws.lodGroupSources.size() && draws.lodGroupSources[g] != nullptr ? Json(draws.lodGroupSources[g]->key) : Json(nullptr)},
             };
             if (group.kind == RenderLodKind::Distance) {
                 entry["center"] = vec3Json(group.point);
@@ -1683,6 +1992,7 @@ auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& 
         {"groups", {{"alive", alive}, {"forced", forced}}},
         {"slotsPerLevel", placed},
         {"preference", lodPreferenceName(view.scene.lodPreference())},
+        {"tuning", lodTuningJson(view.scene.lodTuning())},
         {"gpu",
          {{"groups", cull.lodGroups},
           {"drawingLevel", picked},
@@ -1690,6 +2000,9 @@ auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& 
           {"forced", cull.lodForced},
           {"fading", cull.lodFading},
           {"fadingInstances", cull.lodFadingInstances},
+          {"popped", cull.lodPopped},
+          {"flashing", flashing},
+          {"popsSeen", view.lodPops},
           {"slotsOfLevelsNotDrawn", cull.lodDropped}}},
         {"check",
          {{"camera", {{"position", {eye.x, eye.y, eye.z}}, {"windowArea", windowArea}, {"viewWindowArea", viewWindowArea}}},
@@ -1710,7 +2023,18 @@ auto answerRenderLodRequests(ViewContext& view) -> bool {
     auto& requests = view.renderLodRequests;
     for (auto it = requests.begin(); it != requests.end();) {
         if (view.latestCull.lodFrame > it->askedAt && view.latestCull.lodHasStates) {
-            it->responder.respond(renderLodRecord(view, it->path));
+            if (it->kind == RenderLodRequest::Kind::Inspect) {
+                auto inspection = inspectLodRoot(view.scene, view.latestCull, *it->path, {.eye = view.cam.position, .fovY = glm::radians(cameraFovDegrees), .aspect = view.viewAspect});
+                if (inspection) {
+                    it->responder.respond(lodInspectionJson(*inspection, view.scene.lodMetersPerUnit()));
+                } else {
+                    it->responder.fail(rpc::invalidParams, std::format("no LOD root placed at {}", *it->path));
+                }
+            } else if (it->kind == RenderLodRequest::Kind::Tool) {
+                it->responder.respond(lodToolRecord(view));
+            } else {
+                it->responder.respond(renderLodRecord(view, it->path));
+            }
             it = requests.erase(it);
             continue;
         }
@@ -2005,6 +2329,9 @@ auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext
     records.add("lod", "every LOD root drawn: its levels, the level it defaults to, wants and draws, the levels loaded, and whether set by hand", [&view](RpcResponder responder) {
         responder.respond(lodRecord(view));
     });
+    records.add("lodtool",
+                "the LOD tool: the inspection of the LOD root at or above the selection (heuristics with their measures and picks, levels with triangles), the LOD tuning, the viewport's layers and the pops seen (next frames)",
+                [&view](RpcResponder responder) { view.renderLodRequests.push_back({.responder = std::move(responder), .askedAt = view.latestCull.lodFrame, .kind = RenderLodRequest::Kind::Tool}); });
     records.add("assets", "what the view asked the asset server for and received: totals, and every asset with its state, size and times", [&view](RpcResponder responder) {
         responder.respond(assetsRecord(view));
     });

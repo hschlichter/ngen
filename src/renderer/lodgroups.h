@@ -45,8 +45,15 @@ struct LodSelectTotals {
     uint32_t forced = 0;                                         // groups at a hand-set level or the default, the heuristic off
     uint32_t groups = 0;                                         // alive
     uint32_t fading = 0;                                         // groups drawing two levels, cross-faded, inside a blend band
+    uint32_t popped = 0;                                         // groups whose drawn level changed this frame without a fade
 };
-static_assert(sizeof(LodSelectTotals) == 48);
+static_assert(sizeof(LodSelectTotals) == 52);
+
+// A group's flags in its state (bits 24-31 of the level word), as lodselect.comp writes them and the G-buffer's LOD tag carries them.
+namespace LodStateFlags {
+inline constexpr uint8_t forced = 1;   // at a forced level: hand-set, or the default with the heuristic off
+inline constexpr uint8_t flashing = 2; // its drawn level changed without a fade within the last half second (the pop flash)
+} // namespace LodStateFlags
 
 // The render-LOD groups on the GPU (src/renderer/README.md, "Render LOD"): the group table, a record per group slot uploaded as groups
 // change; the state, per group the serial it was picked for, the level the heuristic wants, the level drawn, the level fading in and its
@@ -97,7 +104,7 @@ public:
     auto capacityBytes() const -> uint64_t { return (uint64_t) capacity * (sizeof(GpuLodGroup) + (5 * sizeof(uint32_t))); }
 
     // The latest readback (one frame-slot cycle old): the totals, and per group the level drawn and wanted (0xFF for none), the level
-    // fading in (0xFF for none) and its share, and the measure, when the states were read.
+    // fading in (0xFF for none) and its share, the measure and its flags (LodStateFlags), when the states were read.
     struct Readback {
         uint64_t frame = 0;
         uint32_t groupCount = 0;
@@ -110,6 +117,7 @@ public:
         std::vector<uint8_t> fadeLevel;
         std::vector<float> fade;
         std::vector<float> measure;
+        std::vector<uint8_t> flags;
     };
     auto latest() const -> const Readback& { return read; }
 

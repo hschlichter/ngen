@@ -1,5 +1,8 @@
 #include "debugdraw.h"
 
+#include <array>
+#include <cmath>
+
 auto DebugDraw::line(glm::vec3 a, glm::vec3 b, glm::vec4 color) -> void {
     frameData.lines.push_back({a, color});
     frameData.lines.push_back({b, color});
@@ -139,4 +142,30 @@ auto DebugDraw::sunLight(glm::vec3 origin, glm::vec3 outgoingDir, float radius, 
 
 auto DebugDraw::newFrame() -> void {
     frameData.lines.clear();
+}
+
+auto DebugDraw::orientedBox(const glm::mat4& toWorld, glm::vec3 min, glm::vec3 max, glm::vec4 color) -> void {
+    std::array<glm::vec3, 8> corners;
+    for (int i = 0; i < 8; i++) {
+        glm::vec3 local((i & 1) != 0 ? max.x : min.x, (i & 2) != 0 ? max.y : min.y, (i & 4) != 0 ? max.z : min.z);
+        corners[(size_t) i] = glm::vec3(toWorld * glm::vec4(local, 1.0f));
+    }
+    // Corners differing in one bit share an edge.
+    for (int i = 0; i < 8; i++) {
+        for (int bit = 1; bit < 8; bit <<= 1) {
+            if ((i & bit) == 0) {
+                line(corners[(size_t) i], corners[(size_t) (i | bit)], color);
+            }
+        }
+    }
+}
+
+auto DebugDraw::circle(glm::vec3 center, glm::vec3 a, glm::vec3 b, float radius, glm::vec4 color, int segments) -> void {
+    auto previous = center + (a * radius);
+    for (int i = 1; i <= segments; i++) {
+        float angle = (float) i / (float) segments * glm::two_pi<float>();
+        auto next = center + (a * (std::cos(angle) * radius)) + (b * (std::sin(angle) * radius));
+        line(previous, next, color);
+        previous = next;
+    }
 }

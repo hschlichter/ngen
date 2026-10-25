@@ -26,6 +26,7 @@ layout(push_constant) uniform Push {
     int viewMode;
     int showOverlay;
     int showShadowOverlay;
+    int lodFlash; // 1: tint the meshes of a render-LOD group flashing for a pop (the LOD tag's 64), over any view
 } push;
 
 layout(location = 0) in vec2 fragTexCoord;
@@ -151,13 +152,23 @@ vec3 sampleBuffer(int mode, vec2 uv) {
     vec3 normal = normalSample.rgb * 2.0 - 1.0;
     if (mode == 2) return normalize(normal) * 0.5 + 0.5;
     if (mode == 10) {
-        // The drawn LOD level, from the normal target's alpha (level + 1, 0 under no LOD root): level 0 red, 1 orange, 2 yellow, 3 green,
-        // 4 cyan, 5 blue, 6 magenta, 7 and up white; grey under no LOD root. Dimmed by the sun so shapes stay readable.
+        // The drawn LOD level, from the normal target's tag (lodTag in lodfade.glsl: level + 1, 0 under no LOD root): level 0 red, 1
+        // orange, 2 yellow, 3 green, 4 cyan, 5 blue, 6 magenta, 7 and up white; grey under no LOD root. Dimmed by the sun so shapes stay
+        // readable. A render-LOD group at a forced level is striped diagonally, one drawing another level than it wants checkered.
         const vec3 ramp[8] = vec3[](vec3(1.0, 0.0, 0.0), vec3(1.0, 0.5, 0.0), vec3(1.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 1.0), vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 1.0), vec3(1.0, 1.0, 1.0));
         int tag = int(normalSample.a + 0.5);
-        vec3 color = tag == 0 ? vec3(0.5) : ramp[min(tag - 1, 7)];
+        int level = tag & 15;
+        vec3 color = level == 0 ? vec3(0.5) : ramp[min(level - 1, 7)];
         float diffuse = max(dot(normalize(normal), normalize(light.lightDirection.xyz)), 0.0);
-        return color * (0.35 + 0.65 * diffuse);
+        color *= 0.35 + 0.65 * diffuse;
+        ivec2 pixel = ivec2(gl_FragCoord.xy);
+        if ((tag & 16) != 0 && ((pixel.x + pixel.y) / 6) % 2 == 0) {
+            color *= 0.35;
+        }
+        if ((tag & 32) != 0 && ((pixel.x / 8) + (pixel.y / 8)) % 2 == 0) {
+            color = mix(color, vec3(0.0), 0.6);
+        }
+        return color;
     }
 
     float depth = texture(gbufferDepth, uv).r;
@@ -253,4 +264,8 @@ void main() {
     }
 
     outColor = vec4(sampleBuffer(push.viewMode, uv), 1.0);
+    // The pop flash: a render-LOD group whose level changed without a fade, for half a second.
+    if (push.lodFlash == 1 && !isBackground(uv) && (int(texture(gbufferNormal, uv).a + 0.5) & 64) != 0) {
+        outColor.rgb = mix(outColor.rgb, vec3(1.0), 0.7);
+    }
 }

@@ -8,7 +8,8 @@ layout(location = 1) in vec3 fragColor;
 layout(location = 2) in vec2 fragTexCoord;
 layout(location = 3) flat in uint fragTexture;
 layout(location = 4) flat in uint fragInstance;
-layout(location = 5) flat in uint fragLodLevel;
+// x the LOD tag (lodTag); y the fade coverage, for the cutout variants: an opaque draw never fades (lodfade.glsl).
+layout(location = 5) flat in uvec2 fragLod;
 
 layout(location = 0) out vec4 outAlbedo;
 layout(location = 1) out vec4 outNormal;
@@ -25,6 +26,6 @@ void main() {
         n = vec3(0.0, 1.0, 0.0);
     }
     // Alpha carries the drawn LOD level + 1 (0 under no LOD root), for the LOD level view.
-    outNormal = vec4(normalize(n) * 0.5 + 0.5, float(fragLodLevel));
+    outNormal = vec4(normalize(n) * 0.5 + 0.5, float(fragLod.x));
     outInstance = fragInstance;
 }

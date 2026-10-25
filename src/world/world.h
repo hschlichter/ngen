@@ -133,6 +133,7 @@ struct LodHeuristic {
     std::string unusable;
 
     auto usable() const -> bool { return unusable.empty(); }
+    auto operator==(const LodHeuristic&) const -> bool = default;
 };
 
 // Which kind a root measures by when it authors both (the view's preference), and UsdLod's order otherwise.

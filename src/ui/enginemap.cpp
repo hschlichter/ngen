@@ -81,12 +81,13 @@ const std::vector<EngineMapNode> nodes = {
         .row = 3,
         .description = "The LOD heuristic for streaming roots (LOD roots whose levels are payloads; render-LOD roots are picked on the GPU, "
                        "see LOD select): each one reached gets the level its heuristic picks from the camera (UsdLod's distance or screen size, "
-                       "by the preference: distance first by default; inside an authored blend band the finer level, without one a 20% "
-                       "margin before going coarser), unless set by hand or the heuristic is off. "
+                       "by the preference: distance first by default; inside an authored blend band the finer level, without one the "
+                       "hysteresis margin before going coarser), unless set by hand or the heuristic is off. The view's LOD tuning (bias, "
+                       "hysteresis, blending, thresholds per authored root; never saved) applies here and to the render-LOD groups. "
                        "Changed levels are linked again without composing the stage. A root draws a finer level only once its placement waits "
                        "for nothing (composed, its meshes, materials and textures held), the coarser one until then. A level no longer wanted "
                        "stays loaded for the unload delay, then its placement, contents and assets go; a root's coarsest level never.",
-        .records = {"streaming", "lod"},
+        .records = {"streaming", "lod", "lodtool"},
         .windows = {"lod"},
         .readme = "src/view/README.md",
     },
@@ -238,8 +239,9 @@ const std::vector<EngineMapNode> nodes = {
                        "size, as the view's preference chose) wants from the live camera, or the level set by hand; drawn when its meshes are "
                        "in the pool, else the level drawn last frame, else the nearest resident one. Inside an authored blend band the next "
                        "level fades in: culling draws both levels in the cutout buckets, whose pipelines dither them by the band's share. A "
-                       "compute pass before culling.",
-        .records = {"renderlod", "culling"},
+                       "drawn level changed without a fade is a pop: the group flashes (the LOD window's pop flash) and is counted. The "
+                       "hysteresis is the view's tuning, a push constant. A compute pass before culling.",
+        .records = {"renderlod", "lodtool", "culling"},
         .windows = {"lod", "culling"},
         .readme = "src/renderer/README.md",
     },
@@ -279,7 +281,7 @@ const std::vector<EngineMapEdge> edges = {
     {.from = "scene.compose", .to = "scene.placement", .what = "the World"},
     {.from = "scene.placement", .to = "scene.changes", .what = "slots, LOD groups, library entries, lights"},
     {.from = "main.rpc", .to = "scene.compose", .what = "requests: open, purposes, repack"},
-    {.from = "main.rpc", .to = "scene.lod", .what = "levels set by hand, heuristic on or off"},
+    {.from = "main.rpc", .to = "scene.lod", .what = "levels set by hand, heuristic on or off, tuning and threshold overrides"},
     {.from = "main.input", .to = "scene.lod", .what = "camera (once placed)"},
     {.from = "scene.lod", .to = "scene.compose", .what = "levels wanted: linked again"},
     {.from = "scene.placement", .to = "scene.lod", .what = "the LOD roots drawn"},

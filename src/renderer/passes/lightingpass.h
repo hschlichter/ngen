@@ -92,6 +92,7 @@ public:
         GBufferView viewMode,
         bool showOverlay,
         bool showShadowOverlay,
+        bool lodFlash,
         const glm::mat4& invViewProj,
         RhiSampler* shadowSampler,
         std::span<const ShadowCascade> cascades,

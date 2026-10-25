@@ -147,7 +147,7 @@ struct RenderLodGroup {
     RenderLodKind kind = RenderLodKind::ScreenSize;
     glm::vec3 center = glm::vec3(0.0f); // screen size: the heuristic extent's bounding sphere, world metres
     float radius = 0.0f;
-    glm::mat4 toWorld = glm::mat4(1.0f); // distance: the root's space to world metres, and back
+    glm::mat4 toWorld = glm::mat4(1.0f); // the root's space to world metres, and back (a distance measures in it; kept for both kinds)
     glm::mat4 toRoot = glm::mat4(1.0f);
     glm::vec3 point = glm::vec3(0.0f); // distance: the heuristic's center, in the root's space
     bool hasBox = false;               // distance: measured to this box (the root's space) instead

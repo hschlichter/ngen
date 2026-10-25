@@ -5,6 +5,7 @@
 #include "debugdraw.h"
 #include "imguibackendvulkan.h"
 #include "jobsystem.h"
+#include "lodtool.h"
 #include "profile.h"
 #include "renderdebugjson.h"
 #include "renderdoccapture.h"
@@ -30,6 +31,7 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
+#include <imgui.h>
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -461,12 +463,15 @@ auto main(int argc, char* argv[]) -> int {
     std::vector<RenderLodRequest> renderLodRequests;
     float viewAspect = 1.0f;
     bool lodStatesWanted = false;
-    std::string renderLodCountedPath;
+    uint64_t lodPops = 0;
+    uint64_t lodPopsFrame = 0;
+    std::string lodInspected;
+    auto lodInspectedAt = std::chrono::steady_clock::time_point();
+    uint64_t lodInspectedSnapshot = UINT64_MAX;
     // Snapshots taken, and the one the Camera and LOD windows' lists were last built from (UINT64_MAX: not yet).
     uint64_t snapshotsTaken = 0;
     uint64_t cameraListSnapshot = UINT64_MAX;
     uint64_t lodRowsSnapshot = UINT64_MAX;
-    uint64_t renderLodCountedRevision = UINT64_MAX;
     // Dumps and captures that finish frames later, for script verbs and RPC calls alike.
     ViewDumps dumps([&scene]() -> const RenderWorld& { return scene.renderWorld(); }, primPathOf, latestCull, rhiDevice.limits().pipelineStatistics);
 
@@ -493,6 +498,7 @@ auto main(int argc, char* argv[]) -> int {
         .residency = residency,
         .renderLodRequests = renderLodRequests,
         .viewAspect = viewAspect,
+        .lodPops = lodPops,
         .sceneLabel = positional.size() >= 2 ? std::string(positional[1]) : std::string("(new scene)"),
     };
     registerViewMethods(registry, viewContext);
@@ -544,55 +550,13 @@ auto main(int argc, char* argv[]) -> int {
                 sceneCameras.push_back({.name = authored.path, .pose = {placed.position.x, placed.position.y, placed.position.z, placed.yaw, placed.pitch}});
             }
         }
-        if (viewUI.wantsLodWindow() && lodRowsSnapshot != snapshotsTaken) {
+        // The LOD tool's rows (the LOD window and its viewport layers), once per snapshot while either is shown.
+        auto& lodWindow = viewUI.lodWindow();
+        bool lodToolShown = viewUI.wantsLodWindow() || lodWindow.labels || lodWindow.gizmo || lodWindow.gizmoAll;
+        if (lodToolShown && lodRowsSnapshot != snapshotsTaken) {
             lodRowsSnapshot = snapshotsTaken;
             PROFILE_ZONE("SceneWindowLists");
-            // The LOD roots, for the LOD window.
-            auto& lodRows = viewUI.lodWindow().rows;
-            lodRows.clear();
-            for (const auto& root : scene.lodRoots()) {
-                std::string heuristic;
-                auto used = chooseLodHeuristic(root.heuristics, scene.lodPreference());
-                for (size_t h = 0; h < root.heuristics.size(); h++) {
-                    const auto& named = root.heuristics[h];
-                    std::string thresholds;
-                    for (float threshold : named.thresholds) {
-                        thresholds += std::format("{}{:g}", thresholds.empty() ? "" : ", ", threshold);
-                    }
-                    auto kind = named.kind == LodHeuristicKind::Distance ? "distance" : (named.kind == LodHeuristicKind::ScreenSize ? "screen" : named.type.c_str());
-                    heuristic += std::format("{}{} [{}]{}", heuristic.empty() ? "" : " | ", kind, thresholds, (int32_t) h == used ? "*" : "");
-                }
-                const auto& choices = scene.lodChoices();
-                auto choice = choices.find(root.path);
-                std::string waiting;
-                if (root.waiting) {
-                    waiting = std::format("Waits for {} meshes, {} materials, {} textures and {} levels still composing.",
-                                          root.waiting->meshes,
-                                          root.waiting->materials,
-                                          root.waiting->textures,
-                                          root.waiting->composing);
-                }
-                std::vector<std::pair<uint32_t, std::chrono::steady_clock::time_point>> kept;
-                if (auto levels = scene.keptLevels().find(root.path); levels != scene.keptLevels().end()) {
-                    kept.assign(levels->second.begin(), levels->second.end());
-                }
-                lodRows.push_back({
-                    .path = root.path,
-                    .levels = root.levels,
-                    .levelPayloads = root.levelPayloads,
-                    .heuristic = heuristic,
-                    .defaultIndex = root.defaultIndex,
-                    .wanted = root.wanted,
-                    .drawn = root.drawn ? (int32_t) *root.drawn : -1,
-                    .loaded = root.loaded,
-                    .setByHand = root.setByHand,
-                    .measure = choice != choices.end() ? choice->second.measure : -1.0f,
-                    .measureUnit = choice != choices.end() && choice->second.kind == LodHeuristicKind::Distance ? "m" : "",
-                    .why = choice != choices.end() ? choice->second.reason : std::string("not evaluated yet"),
-                    .waiting = waiting,
-                    .kept = std::move(kept),
-                });
-            }
+            buildLodRows(scene, lodWindow);
         }
         residency.scriptHeld = (waitForResident && !residency.everResident) || !residentWaiters.empty();
         dueCommands.clear();
@@ -869,8 +833,16 @@ auto main(int argc, char* argv[]) -> int {
             latestCull = std::move(*cull);
         }
         viewUI.setCullStats(latestCull.instances, latestCull.cameraCulled, latestCull.lodDropped);
-        // Render-LOD records answer once a readback carries every group's state; while one waits, the frames read them back.
-        lodStatesWanted = serviceRenderLodRequests(viewContext);
+        // Render-LOD records answer once a readback carries every group's state; while one waits, or the LOD tool is shown, the frames read
+        // them back. The pops counted over the readbacks seen.
+        lodStatesWanted = serviceRenderLodRequests(viewContext) || lodToolShown;
+        if (latestCull.lodFrame != lodPopsFrame) {
+            lodPopsFrame = latestCull.lodFrame;
+            lodPops += latestCull.lodPopped;
+        }
+        if (lodToolShown) {
+            updateLodRows(scene, latestCull, lodWindow);
+        }
         viewUI.setShadowCullStats(latestCull.cascadeCount, latestCull.cascadeCulled, latestCull.cascadeDrawn);
         viewUI.setCullTriangles(latestCull.cameraTriangles, latestCull.sceneTriangles, latestCull.cascadeTriangles);
 
@@ -915,6 +887,7 @@ auto main(int argc, char* argv[]) -> int {
         }
         PROFILE_ZONE("DrawDebug");
         viewUI.drawDebug(debugDraw, scene.renderWorld(), cam.position, cam.worldUp, overlayVisible, cullState.frozenActive ? &frozenCorners : nullptr, std::span<const ShadowCascade>(cascades.data(), cascadeCount), selectedPath.empty() ? nullptr : &selectedBounds);
+        drawLodGizmos(lodWindow, debugDraw, cam.worldUp, lodWindowArea(glm::radians(cameraFovDegrees), viewAspect));
 
         renderThread.setFrameGraphDebugEnabled(viewUI.wantsFrameGraphDebug() || dumps.wantsFrameGraphDebug());
         auto fgDebugSnap = renderThread.latestFrameGraphDebug();
@@ -990,6 +963,10 @@ auto main(int argc, char* argv[]) -> int {
             scene.refresh(changed, false);
         }
         viewUI.draw(primPathOf, !selectedPath.empty(), scene.renderWorld(), cam, std::move(fgDebugSnap), std::move(renderDebugSnap));
+        {
+            const auto& io = ImGui::GetIO();
+            drawLodLabels(viewUI.lodWindow(), proj * cam.viewMatrix(), glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
+        }
         switch (viewUI.takeEditRequest()) {
             case ViewEditRequest::Deselect:
                 selectedPath.clear();
@@ -1118,7 +1095,6 @@ auto main(int argc, char* argv[]) -> int {
         }
         {
             // The LOD window: the levels it asked for, and the root it selects or frames; it highlights the root at or above the selection.
-            auto& lodWindow = viewUI.lodWindow();
             for (const auto& request : std::exchange(lodWindow.levelRequests, {})) {
                 if (request.level) {
                     scene.setLodLevel(request.root, *request.level);
@@ -1126,39 +1102,44 @@ auto main(int argc, char* argv[]) -> int {
                     scene.resetLodLevel(request.root);
                 }
             }
-            // Render LOD: the GPU's counts, and the groups under the selection, counted again when the selection or the draws change.
+            // Render LOD: the GPU's counts.
             lodWindow.renderLod.groups = scene.threadStats().lodGroups;
             lodWindow.renderLod.drawing = latestCull.lodPicked;
             lodWindow.renderLod.fallbacks = latestCull.lodFallbacks;
             lodWindow.renderLod.forced = latestCull.lodForced;
             lodWindow.renderLod.fading = latestCull.lodFading;
+            lodWindow.renderLod.popped = latestCull.lodPopped;
+            lodWindow.renderLod.pops = lodPops;
             lodWindow.renderLod.slotsNotDrawn = latestCull.lodDropped;
-            const auto& groupPaths = scene.snapshot().draws->lodGroupPaths;
-            auto groupsUnder = [&](const std::string& base) {
-                std::vector<std::string> paths;
-                if (base.empty()) {
-                    return paths;
-                }
-                for (const auto& path : groupPaths) {
-                    if (!path.empty() && (base == "/" || path == base || (path.size() > base.size() && path.starts_with(base) && path[base.size()] == '/'))) {
-                        paths.push_back(path);
-                    }
-                }
-                return paths;
-            };
-            if (selectedPath != renderLodCountedPath || scene.revision() != renderLodCountedRevision) {
-                renderLodCountedPath = selectedPath;
-                renderLodCountedRevision = scene.revision();
-                lodWindow.renderLod.underSelection = (uint32_t) groupsUnder(selectedPath).size();
+            // The tuning, and what the window asked to change.
+            const auto& tuning = scene.lodTuning();
+            lodWindow.bias = tuning.bias;
+            lodWindow.hysteresis = tuning.hysteresis;
+            lodWindow.blending = tuning.blending;
+            lodWindow.overrides = (uint32_t) tuning.overrides.size();
+            auto bias = std::exchange(lodWindow.biasRequested, std::nullopt);
+            auto hysteresis = std::exchange(lodWindow.hysteresisRequested, std::nullopt);
+            auto blending = std::exchange(lodWindow.blendingRequested, std::nullopt);
+            if (bias || hysteresis || blending) {
+                scene.setLodTuning(bias, hysteresis, blending);
             }
-            if (auto request = std::exchange(lodWindow.renderLodRequested, std::nullopt)) {
-                for (const auto& path : groupsUnder(selectedPath)) {
-                    if (*request) {
-                        scene.setLodLevel(path, **request);
-                    } else {
-                        scene.resetLodLevel(path);
-                    }
+            for (auto& request : std::exchange(lodWindow.overrideRequests, {})) {
+                scene.overrideLodThresholds(request.root, request.heuristic, LodOverride{.thresholds = std::move(request.thresholds), .blendThresholds = std::move(request.blendThresholds)});
+            }
+            for (const auto& root : std::exchange(lodWindow.overrideResets, {})) {
+                scene.resetLodOverrides(root);
+            }
+            // The viewport's layers: the LOD Level view and the Triangle Size debug view are the view's modes.
+            constexpr int lodLevelViewMode = 10;
+            lodWindow.levelView = viewUI.getGBufferViewMode() == lodLevelViewMode && viewUI.getDebugView() == 0;
+            if (auto on = std::exchange(lodWindow.levelViewRequested, std::nullopt)) {
+                viewUI.setGBufferViewMode(*on ? lodLevelViewMode : 0);
+                if (*on) {
+                    viewUI.setDebugView(0);
                 }
+            }
+            if (std::exchange(lodWindow.triangleSizeRequested, std::nullopt)) {
+                viewUI.setDebugView((int) DebugView::TriangleSize);
             }
             lodWindow.heuristic = scene.lodHeuristic();
             lodWindow.preference = (int) scene.lodPreference();
@@ -1182,6 +1163,7 @@ auto main(int argc, char* argv[]) -> int {
                 }
             }
             lodWindow.selectedRoot.clear();
+            lodWindow.selectedPath = selectedPath;
             if (!selectedPath.empty()) {
                 for (const auto& row : lodWindow.rows) {
                     bool atOrAbove = selectedPath == row.path || selectedPath.starts_with(row.path + "/");
@@ -1189,6 +1171,15 @@ auto main(int argc, char* argv[]) -> int {
                         lodWindow.selectedRoot = row.path;
                     }
                 }
+            }
+            // The inspector: the selected root's, again when the selection or the snapshot changes and four times a second while shown (its
+            // measures follow the camera).
+            auto now = std::chrono::steady_clock::now();
+            if (viewUI.wantsLodWindow() && (lodWindow.selectedRoot != lodInspected || snapshotsTaken != lodInspectedSnapshot || now - lodInspectedAt > std::chrono::milliseconds(250))) {
+                lodInspected = lodWindow.selectedRoot;
+                lodInspectedSnapshot = snapshotsTaken;
+                lodInspectedAt = now;
+                lodWindow.inspection = inspectLodRoot(scene, latestCull, lodWindow.selectedRoot, {.eye = cam.position, .fovY = glm::radians(cameraFovDegrees), .aspect = viewAspect});
             }
         }
         ImGuiFrameSnapshot imguiSnapshot;
@@ -1233,6 +1224,9 @@ auto main(int argc, char* argv[]) -> int {
             .cullEnabled = cullState.enabled,
             .cullViewProj = cullViewProj,
             .readLodStates = lodStatesWanted,
+            .lodHysteresis = scene.lodTuning().hysteresis,
+            .lodPopFlash = viewUI.lodWindow().flash,
+            .lodFlashFrames = (uint32_t) std::clamp(std::lround(0.5f / std::max(dt, 1e-4f)), 1L, 127L),
             .shadowSettings = viewUI.getShadowSettings(),
             .ambient = viewUI.ambientSettings(),
             .cascadeCount = cascadeCount,

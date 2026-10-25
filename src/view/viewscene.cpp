@@ -121,6 +121,18 @@ auto ViewScene::setLodPreference(LodPreference preference) -> void {
     post(HeuristicRequest{.on = std::nullopt, .unloadDelay = std::nullopt, .prefer = preference});
 }
 
+auto ViewScene::setLodTuning(std::optional<float> bias, std::optional<float> hysteresis, std::optional<bool> blending) -> void {
+    post(TuningRequest{.bias = bias, .hysteresis = hysteresis, .blending = blending});
+}
+
+auto ViewScene::overrideLodThresholds(const std::string& rootPath, std::optional<uint32_t> heuristic, LodOverride thresholds) -> void {
+    post(TuningRequest{.path = rootPath, .heuristic = heuristic, .thresholds = std::move(thresholds)});
+}
+
+auto ViewScene::resetLodOverrides(const std::string& rootPath) -> void {
+    post(TuningRequest{.path = rootPath, .reset = true});
+}
+
 auto ViewScene::setPurposeShown(Purpose purpose, bool shown) -> void {
     if (purpose == Purpose::Default || purpose == Purpose::Render) {
         return;
@@ -309,6 +321,8 @@ auto ViewScene::apply(Request& request) -> void {
             keptLevelsChanged = true;
         }
         evaluateNeeded = true;
+    } else if (auto* tuningRequest = std::get_if<TuningRequest>(&request)) {
+        applyTuning(*tuningRequest);
     } else if (auto* purpose = std::get_if<PurposeRequest>(&request)) {
         if (purpose->shown) {
             drawnPurposes.insert(purpose->purpose);
@@ -631,6 +645,136 @@ auto lodMeasure(const LodHeuristic& heuristic, const glm::mat4& rootToWorld, dou
     return glm::pi<float>() * r * r / windowArea;
 }
 
+auto lodOverrideOf(const LodTuning& tuning, const std::string& rootKey, uint32_t heuristic) -> const LodOverride* {
+    auto root = tuning.overrides.find(rootKey);
+    if (root == tuning.overrides.end()) {
+        return nullptr;
+    }
+    auto found = root->second.find(heuristic);
+    if (found == root->second.end()) {
+        return nullptr;
+    }
+    return &found->second;
+}
+
+auto tunedLodHeuristic(const LodHeuristic& heuristic, const LodOverride* override, const LodTuning& tuning) -> LodHeuristic {
+    auto tuned = heuristic;
+    if (override != nullptr) {
+        if (override->thresholds) {
+            tuned.thresholds = *override->thresholds;
+        }
+        if (override->blendThresholds) {
+            tuned.blendThresholds = *override->blendThresholds;
+        }
+    }
+    if (!tuning.blending) {
+        tuned.blendThresholds.clear();
+    }
+    if (tuning.bias != 1.0f) {
+        // As if `bias` times closer: a distance's thresholds reached `bias` times farther, a screen size's at a size `bias` squared smaller.
+        float scale = heuristic.kind == LodHeuristicKind::Distance ? tuning.bias : 1.0f / (tuning.bias * tuning.bias);
+        for (auto& threshold : tuned.thresholds) {
+            threshold *= scale;
+        }
+        for (auto& threshold : tuned.blendThresholds) {
+            threshold *= scale;
+        }
+    }
+    return tuned;
+}
+
+auto ViewScene::authoredRootOf(const std::string& path) const -> std::optional<std::pair<std::string, const std::vector<LodHeuristic>*>> {
+    if (auto group = lodGroupByPath.find(path); group != lodGroupByPath.end()) {
+        const auto& info = lodGroupInfo[group->second];
+        return std::pair{info.key, &info.heuristics};
+    }
+    if (auto placed = placedRoots.find(path); placed != placedRoots.end()) {
+        return std::pair{placed->second.row.key, &placed->second.row.heuristics};
+    }
+    return std::nullopt;
+}
+
+namespace {
+
+// Whether thresholds go the way UsdLod reads them: a distance's ascending, a screen size's descending.
+auto lodThresholdsOrdered(LodHeuristicKind kind, const std::vector<float>& thresholds) -> bool {
+    for (size_t t = 1; t < thresholds.size(); t++) {
+        bool ordered = kind == LodHeuristicKind::Distance ? thresholds[t] >= thresholds[t - 1] : thresholds[t] <= thresholds[t - 1];
+        if (!ordered) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+auto ViewScene::applyTuning(const TuningRequest& request) -> void {
+    auto next = std::make_shared<LodTuning>(*tuning);
+    if (request.bias) {
+        next->bias = std::max(0.01f, *request.bias);
+    }
+    if (request.hysteresis) {
+        next->hysteresis = std::clamp(*request.hysteresis, 0.0f, 0.9f);
+    }
+    if (request.blending) {
+        next->blending = *request.blending;
+    }
+    std::string changedRoot;
+    if (request.reset && request.path.empty()) {
+        next->overrides.clear();
+    } else if (request.reset || request.thresholds) {
+        auto root = authoredRootOf(request.path);
+        if (!root) {
+            TRACE_WARNING("Scene", "LodTuningRefused", request.path).text(std::format("{}: no LOD root placed at this path, nothing to override", request.path));
+        } else if (request.reset) {
+            next->overrides.erase(root->first);
+            changedRoot = root->first;
+        } else {
+            const auto& heuristics = *root->second;
+            auto index = request.heuristic ? (int32_t) *request.heuristic : chooseLodHeuristic(heuristics, lodPreferenceNow);
+            if (index < 0 || (size_t) index >= heuristics.size()) {
+                TRACE_WARNING("Scene", "LodTuningRefused", request.path).text(std::format("{}: no heuristic {} to override ({} authored)", request.path, index, heuristics.size()));
+            } else {
+                auto kind = heuristics[(size_t) index].kind;
+                const auto& asked = *request.thresholds;
+                if ((asked.thresholds && !lodThresholdsOrdered(kind, *asked.thresholds)) || (asked.blendThresholds && !lodThresholdsOrdered(kind, *asked.blendThresholds))) {
+                    TRACE_WARNING("Scene", "LodTuningRefused", request.path)
+                        .text(std::format("{}: thresholds must {} as UsdLod reads them; nothing changed", request.path, kind == LodHeuristicKind::Distance ? "ascend" : "descend"));
+                } else {
+                    auto& entry = next->overrides[root->first][(uint32_t) index];
+                    if (asked.thresholds) {
+                        entry.thresholds = asked.thresholds;
+                    }
+                    if (asked.blendThresholds) {
+                        entry.blendThresholds = asked.blendThresholds;
+                    }
+                    changedRoot = root->first;
+                }
+            }
+        }
+    }
+    if (*next == *tuning) {
+        return;
+    }
+    tuning = std::move(next);
+    TRACE_EVENT("Scene", "LodTuningChanged", id)
+        .text(std::format("LOD tuning: bias {:.2f}, hysteresis {:.0f}%, blending {}, {} authored roots overridden{}",
+                          tuning->bias,
+                          tuning->hysteresis * 100.0f,
+                          tuning->blending ? "on" : "off",
+                          tuning->overrides.size(),
+                          changedRoot.empty() ? std::string() : std::format(" ({} changed)", changedRoot)))
+        .field("bias", (double) tuning->bias)
+        .field("hysteresis", (double) tuning->hysteresis)
+        .field("blending", tuning->blending)
+        .field("overrides", (int64_t) tuning->overrides.size())
+        .field("root", changedRoot);
+    refreshLodGroups({});
+    placeNeeded = true;
+    evaluateNeeded = true;
+}
+
 auto ViewScene::evaluateLevels() -> bool {
     if (!composer) {
         return false;
@@ -660,12 +804,13 @@ auto ViewScene::evaluateLevels() -> bool {
             choice.level = root.defaultIndex;
             choice.reason = "no camera";
         } else {
-            const auto& heuristic = root.heuristics[(size_t) choice.heuristic];
+            auto override = lodOverrideOf(*tuning, root.key, (uint32_t) choice.heuristic);
+            auto heuristic = tunedLodHeuristic(root.heuristics[(size_t) choice.heuristic], override, *tuning);
             choice.kind = heuristic.kind;
             choice.measure = lodMeasure(heuristic, root.worldTransform, composer->world().metersPerUnit, camera->position, lodWindowArea(camera->fovY, camera->aspect));
             auto previous = heuristicLevels.contains(root.path) ? heuristicLevels[root.path] : root.defaultIndex;
             // A streaming root draws one level: inside a band it wants the finer one.
-            auto pick = pickLodLevel(heuristic.kind, heuristic.thresholds, heuristic.blendThresholds, choice.measure, levelCount, previous, lodHysteresis);
+            auto pick = pickLodLevel(heuristic.kind, heuristic.thresholds, heuristic.blendThresholds, choice.measure, levelCount, previous, tuning->hysteresis);
             choice.level = pick.level;
             heuristicLevels[root.path] = choice.level;
             choice.reason = heuristic.kind == LodHeuristicKind::Distance ? "distance" : "screen size";
@@ -876,6 +1021,8 @@ auto ViewScene::publish() -> void {
     snapshot->lodChoices = choices;
     snapshot->lodHeuristic = heuristicOn;
     snapshot->lodPreference = lodPreferenceNow;
+    snapshot->lodTuning = tuning;
+    snapshot->lodHandLevels = std::make_shared<std::unordered_map<std::string, uint32_t>>(handLevels);
     snapshot->metersPerUnitOfLod = composer ? composer->world().metersPerUnit : 1.0;
     snapshot->unloadDelay = unloadDelaySeconds;
     if (keptLevelsChanged) {

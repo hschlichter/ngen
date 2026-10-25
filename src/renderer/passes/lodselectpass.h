@@ -26,8 +26,9 @@ public:
         glm::vec3 eye = glm::vec3(0.0f);
         float windowArea = 1.0f;
     };
-    // Adds LodSelect and LodSelectSum for the frame slot; nothing when there are no groups.
-    auto addPasses(FrameGraph& fg, const LodGroups::Handles& handles, const Camera& camera, uint32_t groupCount, uint32_t frameSlot) -> void;
+    // Adds LodSelect and LodSelectSum for the frame slot; nothing when there are no groups. `hysteresis`: the margin at a boundary without a
+    // band, as a fraction of a screen size (the view's tuning); `flashFrames`: how many frames a pop flashes.
+    auto addPasses(FrameGraph& fg, const LodGroups::Handles& handles, const Camera& camera, float hysteresis, uint32_t flashFrames, uint32_t groupCount, uint32_t frameSlot) -> void;
 
     // Whether its pipeline has been created; until then the frame leaves the lit path out.
     auto ready() -> bool;

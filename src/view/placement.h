@@ -61,6 +61,7 @@ struct SceneLodRoot {
     std::vector<std::string> levels;
     std::vector<std::vector<std::string>> levelPayloads; // per level, the asset ids of its payloads; empty for a level without
     std::vector<LodHeuristic> heuristics;                // every one it names (LodRoot::heuristics); which one measures it is the view's preference
+    std::string key;                                     // its authored root (lodRootKey), which the view's threshold overrides name
     uint32_t defaultIndex = 0;
     uint32_t wanted = 0;
     std::optional<uint32_t> drawn;
@@ -214,6 +215,11 @@ struct Placement {
     std::vector<SceneVariantPrim> variantPrims;
     std::optional<SceneInstancer> instancerRow; // an Instancer's, without primsDrawn (counted when the records are gathered)
 };
+
+// A LOD root as authored, the key of the view's threshold overrides: the content it is in (World::contents' index, -1 for the stage) and its
+// path in that content. Every instance of an instanceable asset shares its prototype's, so one key tunes them all; a root reached through
+// a plain reference is the stage's, its own.
+auto lodRootKey(int32_t content, const std::string& pathInContent) -> std::string;
 
 // The records of a tree's drawn placements, in tree order.
 struct PlacementRecords {

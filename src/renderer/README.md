@@ -191,7 +191,8 @@ Tables:
 - **Instance buffer.** One `GpuInstanceRecord` (128 bytes, std430) per draw slot.
   - **Contents**: model matrix, material entry, mesh index, submesh `indexOffset` and `indexCount`, world bounds, flags (`primFirst`,
     `doubleSided`, `boundsValid`, `cutout`, `primHasCutout`), the drawn LOD level + 1 of the LOD root above it (0 under none), which the
-    geometry pass writes to the normal target's alpha for the LOD level view, and its render-LOD group + 1 (0 for none; "Render LOD").
+    geometry pass writes to the normal target's alpha for the LOD level view (with its group's flags: "Render LOD", the LOD tag), and its
+    render-LOD group + 1 (0 for none).
   - **Slots.** A draw keeps its slot while it exists. A removed one is dead (mesh index past the table, so culling never draws it) until a new draw
     takes it.
   - **Reading it.** Vertex shaders read it at `gl_InstanceIndex`, and every draw sets `firstInstance` to the slot.
@@ -268,11 +269,19 @@ inside a blend band, that level and the next, cross-faded. `LodGroups` (`lodgrou
   slot's staging, as the instance records). A slot taking a new group gets a new serial.
 - **The pick** (`LodSelect`, one thread per group): the forced level, else the level the group's heuristic wants from the live camera, as
   `pickLodLevel` (`src/world/world.cpp`) picks it: UsdLod's `ComputeLOD` for a distance (to the center, or the nearest point of the box, 0 inside;
-  `ComputeDistance`) or a screen size (the sphere over the view window at depth 1), with its blend bands, and at a boundary without one a 20%
-  margin before going coarser, against the level the group wanted last frame. Then the level drawn: the wanted one when its meshes are in the
+  `ComputeDistance`) or a screen size (the sphere over the view window at depth 1), with its blend bands, and at a boundary without one a
+  margin before going coarser (the hysteresis, the view's tuning as a push constant, `RenderSnapshot::lodHysteresis`, 20% by default),
+  against the level the group wanted last frame. A bias and threshold overrides are the view's too, baked into the group's thresholds. Then the level drawn: the wanted one when its meshes are in the
   pool, else the one drawn last frame when they are, else the nearest resident level, coarser first. Inside a band, when the wanted level is
   drawn and the next one is resident, the next one fades in with the band's share. Written to the state buffer (`gpuscene.lodstate`, 16 bytes a
-  group: the serial; the level wanted, drawn and fading in; the share; the measure).
+  group: the serial; the level wanted, drawn and fading in, a forced bit and the pop flash's frames left; the share; the measure).
+- **Pops.** A drawn level that changes without a fade leading into it or out of it (no band, a forced level, a fallback, blending off) is a
+  pop: counted (`LodSelectTotals::popped`) and flashed for half a second at the view's frame rate (`RenderSnapshot::lodFlashFrames`, at most
+  127 frames). `LodStateFlags` read the forced bit and the flash back per group.
+- **The LOD tag.** `gbuffer.vert` writes the draw's tag to the normal target's alpha (`lodTag`, `lodfade.glsl`): the drawn level + 1, plus
+  16 at a forced level, 32 drawing another level than wanted, 64 flashing. The LOD Level view colours by the level and stripes or
+  checkers by the flags; with `RenderSnapshot::lodPopFlash` the lighting pass tints a flashing draw white over any view. The tag and the
+  fade's coverage travel as one flat `uvec2`, so the opaque fragment shader, which reads only the tag, still consumes the varying.
 - **Fades.** While a group fades, the cull pass draws both levels' instances in the cutout buckets of their sidedness, whose pipelines discard
   (`cutout.glsl`); their vertex stages read the group's state from the geometry set (binding 4, declared as a read by the passes drawing the
   lists) and pass the instance's coverage flat, and the fragment stages discard by a 4×4 ordered (Bayer) pattern in screen space
@@ -286,7 +295,7 @@ inside a blend band, that level and the next, cross-faded. `LodGroups` (`lodgrou
   grown one is new and its contents undefined: the state is written by the pick before culling reads it, and stale residency bits only make a
   group draw another resident level for a frame.
 - **Counts** (`LodSelectSum`, per-workgroup counters summed in order, as the culling scan): groups alive, drawing each level, falling back, at a
-  forced level, fading; read back with the culling readback (`LodReadback`), with every group's state when asked (`RenderSnapshot::readLodStates`)
+  forced level, fading, popping; read back with the culling readback (`LodReadback`), with every group's state when asked (`RenderSnapshot::readLodStates`)
   and the camera the pick measured from, into `CullResult`. The cull pass counts the slots of levels not drawn (`counterLodDropped`), in no view
   and not as culled, and the instances drawn in a fading group (`counterFading`).
 

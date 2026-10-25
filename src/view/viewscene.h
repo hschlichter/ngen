@@ -47,9 +47,47 @@ auto lodRootInFrustum(const SceneLodRoot& root, const glm::vec3& eye, const glm:
 // What the LOD heuristic chose for a root at the last evaluation: its screen size (the fraction of the view its extent's bounding sphere
 // covers, -1 when not computed) and the level it wants, with why: "heuristic", "hand-set", "heuristic off", "no screen-size heuristic",
 // "no camera".
-// The hysteresis at a LOD boundary without a blend band (pickLodLevel): 20% of a screen size, the same margin in a distance. lodselect.comp
-// has the same constant.
+// The hysteresis at a LOD boundary without a blend band (pickLodLevel) until the tuning changes it: 20% of a screen size, the same margin
+// in a distance. lodselect.comp takes the tuned value as a push constant.
 inline constexpr float lodHysteresis = 0.2f;
+
+// One heuristic's thresholds set by the view in place of the authored ones, in the heuristic's units (a distance in the stage's units, a
+// screen size as a fraction of the view); a list not set keeps the authored one.
+struct LodOverride {
+    std::optional<std::vector<float>> thresholds;
+    std::optional<std::vector<float>> blendThresholds;
+
+    auto operator==(const LodOverride&) const -> bool = default;
+};
+
+// The view's LOD tuning: local opinions kept until the view closes, never saved (writing them to USD is the editor's).
+// - bias: every root picks its level as if it were `bias` times closer (2: finer everywhere). Applied to the thresholds, the same pick: a
+//   distance's times the bias, a screen size's over its square; the measures shown stay what the camera sees.
+// - hysteresis: the margin at a boundary without a blend band, a fraction of a screen size.
+// - blending: off drops every blend band (no fades, the hysteresis everywhere).
+// - overrides: by authored root (lodRootKey: the content the root is authored in and its path there, so every instance of an instanceable
+//   asset shares one) and heuristic index.
+struct LodTuning {
+    float bias = 1.0f;
+    float hysteresis = lodHysteresis;
+    bool blending = true;
+    std::map<std::string, std::map<uint32_t, LodOverride>> overrides;
+
+    auto operator==(const LodTuning&) const -> bool = default;
+};
+
+// The override set for one heuristic of an authored root; null for none.
+auto lodOverrideOf(const LodTuning& tuning, const std::string& rootKey, uint32_t heuristic) -> const LodOverride*;
+// A heuristic as the view picks with it under the tuning: the override's thresholds, the bias applied to them, no bands with blending off.
+auto tunedLodHeuristic(const LodHeuristic& heuristic, const LodOverride* override, const LodTuning& tuning) -> LodHeuristic;
+
+// What the view knows of a render-LOD group's root, published with the draws for the inspector: its authored root (lodRootKey), its levels'
+// names finest first, and every heuristic it authors.
+struct LodGroupSource {
+    std::string key;
+    std::vector<std::string> levels;
+    std::vector<LodHeuristic> heuristics;
+};
 
 // What the heuristic chose for a root at its last evaluation: the heuristic it measured by (an index into the root's heuristics, -1 for
 // none), its kind and its measure (a distance in the stage's units, or a screen size; -1 when not measured), the level, and why.
@@ -134,6 +172,7 @@ struct SceneDraws {
     ChunkedList<std::string> primPaths;                                        // by prim index - 1; an index not in use keeps its last path
     ChunkedList<std::shared_ptr<const std::vector<std::string>>> assetsByPrim; // by prim index - 1: the assets a drawn prim's draws use
     ChunkedList<std::string> lodGroupPaths;                                    // by render-LOD group slot (RenderWorld::lodGroups): the root's full path; empty when free
+    ChunkedList<std::shared_ptr<const LodGroupSource>> lodGroupSources;        // by render-LOD group slot: its root's levels and heuristics; null when free
     // Asset id to the prims whose draws use it, built from assetsByPrim on the first query.
     auto drawsByAsset() const -> const std::unordered_map<std::string, std::vector<uint32_t>>&;
     // The drawn placements' cameras, LOD roots, payload placements, point instancers and prims with variant sets, in tree order, gathered
@@ -159,6 +198,8 @@ struct SceneSnapshot {
     std::shared_ptr<const SceneLodChoices> lodChoices = std::make_shared<SceneLodChoices>();
     bool lodHeuristic = true;
     LodPreference lodPreference = LodPreference::Distance;
+    std::shared_ptr<const LodTuning> lodTuning = std::make_shared<LodTuning>();
+    std::shared_ptr<const std::unordered_map<std::string, uint32_t>> lodHandLevels = std::make_shared<std::unordered_map<std::string, uint32_t>>();
     double metersPerUnitOfLod = 1.0; // the stage's, for the measures the records show
     double unloadDelay = 10.0;
     // The levels kept for the unload delay, by root path: each with when the delay runs out.
@@ -210,6 +251,17 @@ public:
     auto setLodPreference(LodPreference preference) -> void;
     auto lodPreference() const -> LodPreference { return current->lodPreference; }
     auto lodMetersPerUnit() const -> double { return current->metersPerUnitOfLod; }
+    // The LOD tuning (LodTuning): each value given is set; the others are kept. A bias at or below 0 or a hysteresis outside [0, 0.9] is
+    // clamped.
+    auto setLodTuning(std::optional<float> bias, std::optional<float> hysteresis, std::optional<bool> blending) -> void;
+    // Sets one heuristic's thresholds for the authored root of the LOD root at a path (every placement of it), the heuristic the
+    // preference uses when none is named; the lists not given keep what they had. A path with no LOD root placed is reported in the trace.
+    auto overrideLodThresholds(const std::string& rootPath, std::optional<uint32_t> heuristic, LodOverride thresholds) -> void;
+    // Drops every override of the authored root of the LOD root at a path; an empty path drops them all.
+    auto resetLodOverrides(const std::string& rootPath) -> void;
+    auto lodTuning() const -> const LodTuning& { return *current->lodTuning; }
+    // The levels set by hand, by LOD root path (streaming roots and render-LOD groups alike).
+    auto lodHandLevels() const -> const std::unordered_map<std::string, uint32_t>& { return *current->lodHandLevels; }
     // How long a LOD level that stopped being wanted stays loaded (its placement, contents, packs, library entries and GPU copies).
     auto setUnloadDelay(double seconds) -> void;
     auto unloadDelay() const -> double { return current->unloadDelay; }
@@ -308,7 +360,17 @@ private:
         std::optional<double> unloadDelay;
         std::optional<LodPreference> prefer;
     };
-    using Request = std::variant<OpenRequest, LodRequest, PurposeRequest, RefreshRequest, TransformRequest, HeuristicRequest>;
+    struct TuningRequest {
+        std::optional<float> bias;
+        std::optional<float> hysteresis;
+        std::optional<bool> blending;
+        // An override (or with `reset`, dropping them) for the authored root at this path; none when empty and not reset.
+        std::string path;
+        std::optional<uint32_t> heuristic;
+        std::optional<LodOverride> thresholds;
+        bool reset = false;
+    };
+    using Request = std::variant<OpenRequest, LodRequest, PurposeRequest, RefreshRequest, TransformRequest, HeuristicRequest, TuningRequest>;
     struct CameraInput {
         glm::vec3 position = glm::vec3(0.0f);
         float fovY = 0.785f;
@@ -400,6 +462,10 @@ private:
     std::optional<CameraInput> camera;
     bool heuristicOn = true;
     LodPreference lodPreferenceNow = LodPreference::Distance;
+    std::shared_ptr<const LodTuning> tuning = std::make_shared<LodTuning>();
+    auto applyTuning(const TuningRequest& request) -> void;
+    // The authored root (lodRootKey) of the LOD root at a path, and its heuristics: a render-LOD group's or a placed streaming root's.
+    auto authoredRootOf(const std::string& path) const -> std::optional<std::pair<std::string, const std::vector<LodHeuristic>*>>;
     bool evaluateNeeded = false;
     std::unordered_map<std::string, uint32_t> handLevels;
     std::unordered_map<std::string, uint32_t> heuristicLevels;
@@ -544,9 +610,11 @@ private:
         uint32_t levelCount = 0;
         std::vector<LodHeuristic> heuristics;
         glm::mat4 toWorld = glm::mat4(1.0f); // the root's space to world metres
+        std::string key;                     // its authored root (lodRootKey)
     };
     std::vector<LodGroupInfo> lodGroupInfo;
     ChunkedList<std::string> lodGroupPaths; // published with the draws
+    ChunkedList<std::shared_ptr<const LodGroupSource>> lodGroupSources;
     std::unordered_map<std::string, uint32_t> lodGroupByPath;
     LowestFreeList freeLodGroups;
     TouchedList<RenderLodGroup> lodGroupsBefore;
