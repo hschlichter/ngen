@@ -6,6 +6,7 @@
 //   ngen-cli view [ngen-view args]     the set variant's ngen-view
 //   ngen-cli introspect [args]         the set variant's ngen-introspect (window; list, get, describe, call)
 //   ngen-cli asset-server              the set variant's ngen-asset-server, in the foreground; ngen-view needs it running
+//   ngen-cli pack <scene>...           the set variant's ngen-pack: the asset server packs everything the scenes can reach
 //
 // The set variant lives in `_out/set` as one line, `<platform>/<config>`: the same two components as the variant's output directory, so a
 // tool of the set variant is `_out/<that line>/<tool>`. `set` also points the repository-root symlink `ngen-cli` at the set variant's own
@@ -56,10 +57,11 @@ struct ToolCommand {
     std::string_view summary;
 };
 
-constexpr std::array<ToolCommand, 3> toolCommands = {{
+constexpr std::array<ToolCommand, 4> toolCommands = {{
     {.command = "view", .binary = "ngen-view", .summary = "run the viewer"},
     {.command = "introspect", .binary = "ngen-introspect", .summary = "see and call running tools: records, methods (no arguments: the window)"},
     {.command = "asset-server", .binary = "ngen-asset-server", .summary = "serve assets to the viewer (run it before `view`)"},
+    {.command = "pack", .binary = "ngen-pack", .summary = "pack everything a scene can reach, so the viewer opens it from the cache"},
 }};
 
 // This binary is <root>/_out/<platform>/<config>/ngen-cli; the root link resolves to it too.

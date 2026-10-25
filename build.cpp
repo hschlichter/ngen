@@ -249,6 +249,8 @@ auto main(int argc, char** argv) -> int {
                         .link(packer)
                         .link(assetClient)
                         .link(rpccore);
+    // ngen-pack: has the asset server pack everything a scene can reach, so a view opens it from a full cache.
+    auto scenePack = cxx::program("ngen-pack").sources({"src/apps/pack.cpp"}).include({"src/asset", "src/asset/pack"}).link(packer).link(assetClient).link(rpccore);
     // The USD packer (src/asset/README.md): one USD file to a layer pack plus its meshes and materials. It links OpenUSD; the USD half
     // builds as C++20, as OpenUSD's headers require.
     auto packerUsd =
@@ -392,7 +394,8 @@ auto main(int argc, char** argv) -> int {
             .link(worldLib)
             .link(packer)
             .link_flags(sdl3_libs)
-            .depend_on(assetServer);
+            .depend_on(assetServer)
+            .depend_on(scenePack);
 
     // ngen-introspect (src/introspect/README.md): sees into and calls the running processes, as a window drawn with
     // SDL's renderer and Dear ImGui, or from the command line. An RPC client only; nothing of the engine.
@@ -486,6 +489,7 @@ auto main(int argc, char** argv) -> int {
     p.target(packerTexture);
     p.target(packerUsd);
     p.target(packDump);
+    p.target(scenePack);
     p.target(worldCheck);
     p.target(usdCheck);
     p.target(assetServer);

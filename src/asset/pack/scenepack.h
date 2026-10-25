@@ -33,3 +33,22 @@ auto scenePackKind(std::span<const std::byte> bytes) -> std::expected<ScenePackK
 auto readLayerPack(std::span<const std::byte> bytes) -> std::expected<LayerPack, std::string>;
 auto readMeshPack(std::span<const std::byte> bytes) -> std::expected<MeshPack, std::string>;
 auto readMaterialPack(std::span<const std::byte> bytes) -> std::expected<MaterialPack, std::string>;
+
+// An asset a scene pack names, and what it is: another layer (a sublayer, a reference or payload's file), a mesh or material pack, or a
+// texture (a material's, or an asset-valued attribute, such as a material input a texture's file comes from).
+enum class NamedAssetKind : uint8_t {
+    Layer,
+    Mesh,
+    Material,
+    Texture,
+};
+
+struct NamedAsset {
+    std::string id;
+    NamedAssetKind kind = NamedAssetKind::Layer;
+};
+
+// Every asset a pack names, each once, in the order the pack names them; whatever composition would select (every LOD level, every
+// variant). A pack's dependencies as ngen-pack follows them: a change to what the format can name changes these with it.
+auto namedAssets(const LayerPack& pack) -> std::vector<NamedAsset>;
+auto namedAssets(const MaterialPack& pack) -> std::vector<NamedAsset>;

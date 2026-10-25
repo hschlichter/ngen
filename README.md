@@ -230,6 +230,7 @@ on your `PATH`). It works from any directory: `../ngen-cli` from `src/` behaves 
 | `ngen-cli view [args]` | Run the set variant's `ngen-view` with your arguments, in your working directory. |
 | `ngen-cli introspect [args]` | Run the set variant's `ngen-introspect`: with no arguments its window; `list` running tools and their records, `get` a record, `describe` a tool, `call` its methods (`src/introspect/README.md`). |
 | `ngen-cli asset-server` | Run the set variant's `ngen-asset-server` in the foreground, until Ctrl-C. `view` needs it running (`src/asset/README.md`). |
+| `ngen-cli pack <scene>...` | Run the set variant's `ngen-pack`: the asset server packs everything the scenes can reach (every LOD level and variant), so a view opens them from a full cache (`src/asset/README.md`). |
 | `ngen-cli help` | The commands, the set variant, and which tools are built for it. |
 
 Forwarded tools replace the cli process, so their output, signals and exit code are exactly those of running the tool directly.

@@ -4,6 +4,7 @@
 #include <cstring>
 #include <format>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace {
 
@@ -586,4 +587,51 @@ auto readMaterialPack(std::span<const std::byte> bytes) -> std::expected<Materia
         return std::unexpected("the material pack's section is cut short or names a string that isn't there");
     }
     return pack;
+}
+
+namespace {
+
+// The assets a pack names, each once: an empty id (a path that didn't resolve, an internal reference) isn't one.
+struct NamedList {
+    std::vector<NamedAsset> out;
+    std::unordered_set<std::string> seen;
+
+    auto add(const std::string& id, NamedAssetKind kind) -> void {
+        if (id.empty() || !seen.insert(id).second) {
+            return;
+        }
+        out.push_back({.id = id, .kind = kind});
+    }
+};
+
+} // namespace
+
+auto namedAssets(const LayerPack& pack) -> std::vector<NamedAsset> {
+    NamedList named;
+    for (const auto& sublayer : pack.sublayers) {
+        named.add(sublayer, NamedAssetKind::Layer);
+    }
+    for (const auto& prim : pack.prims) {
+        for (const auto& placement : prim.placements) {
+            named.add(placement.assetId, NamedAssetKind::Layer);
+        }
+        named.add(prim.meshAsset, NamedAssetKind::Mesh);
+        named.add(prim.materialAsset, NamedAssetKind::Material);
+        for (const auto& attribute : prim.attributes) {
+            if (attribute.value.typeName != "asset" && attribute.value.typeName != "asset[]") {
+                continue;
+            }
+            for (const auto& id : attribute.value.strings) {
+                named.add(id, NamedAssetKind::Texture);
+            }
+        }
+    }
+    return std::move(named.out);
+}
+
+auto namedAssets(const MaterialPack& pack) -> std::vector<NamedAsset> {
+    NamedList named;
+    named.add(pack.baseColorTexture, NamedAssetKind::Texture);
+    named.add(pack.opacityTexture, NamedAssetKind::Texture);
+    return std::move(named.out);
 }

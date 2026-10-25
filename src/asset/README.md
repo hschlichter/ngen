@@ -92,7 +92,8 @@ is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own c
 - **Streaming and flow control.** Chunks of different assets interleave, so a large asset doesn't hold back small ones requested with it. At most
   8 MiB of pack data is queued on a connection; the next chunk goes out as the queue drains, so a slow client is never dropped for a full queue.
 - **Nothing packs without a request.** The server packs nothing at start-up and nothing by itself. An edit is packed by the next request for
-  the asset; the server tells the clients that hold it that one is due (below).
+  the asset; the server tells the clients that hold it that one is due (below). To have a whole scene packed ahead of a view, a client asks
+  for all of it: `ngen-pack` (below).
 - **Change notices.** For every asset a connection was answered for (sent, held or failed), the server watches the files it was packed from:
   the record's packer and inputs, the source and its depfile's files. It watches their directories (`server/filewatcher.h`, inotify on Linux),
   so a save through a rename is seen; a directory inotify can't watch (out of watches) is polled once a second, and `--watch=poll` polls them
@@ -198,6 +199,20 @@ packs them when needed; `--vertices` adds every vertex and index:
 ```sh
 ./_out/linux-vulkan/release/ngen-packdump --id assets/layered/root.usda assets/layered/base.usda
 ./_out/linux-vulkan/release/ngen-packdump --id 'assets/layered/base.usda#/World/Looks/Checker'
+```
+
+`ngen-pack` (`src/apps/pack.cpp`, `./ngen-cli pack <scene>...`) fills the cache with everything a scene can reach, so a view opens it without
+waiting for packers. It is an ordinary client: from the root layer it follows what each pack names, requesting it in batches of 512 until
+nothing new turns up. What a pack names is the format's to say, so it sits with it: `namedAssets` (`pack/scenepack.h`) lists a layer pack's
+sublayers, references and payloads, meshes, materials and asset-valued attributes (such as a material input's texture), and a material
+pack's textures; a change to what the format can name changes it in the same place. Nothing is composed, so every LOD level and every variant is packed, not only what a view would
+reach. Each asset streams back as for a view (the bytes are dropped once read); the server's trace and records show it as any client. It
+prints its progress per batch and, at the end, the assets by kind, packed and from the cache, and every failure with the server's errors;
+it exits 1 when one failed. The streamtest world: 2,745 assets (593 layers, 2,058 meshes, 24 materials, 70 textures) in 9.5 s from a
+mostly warm cache, 8.3 GiB streamed.
+
+```sh
+./ngen-cli pack assets/streamtest-world/world/root.usda
 ```
 
 `assets/layered/` is the test scene for what a single-file scene doesn't show: sublayers, references (one instanced, one inside the file), a
