@@ -94,12 +94,14 @@ auto ViewUI::draw(const PrimPathOf& primPath,
             screenshotRequested = true;
         }
     }
-    auto primOfInstance = primOfEachInstance(renderWorld);
+    // An instance's prim path, looked up when a window names one: a table of every instance's prim costs milliseconds a frame in a large
+    // scene.
     auto instancePath = [&](uint32_t instance) -> std::string {
-        if (instance >= primOfInstance.size()) {
+        if (instance >= renderWorld.meshInstances.size()) {
             return "(instance out of range)";
         }
-        auto path = primPath(primOfInstance[instance]);
+        const auto& meshInstance = renderWorld.meshInstances[instance];
+        auto path = meshInstance.alive ? primPath(meshInstance.prim) : std::string();
         return !path.empty() ? path : std::string("(unknown prim)");
     };
     if (introspectionFlags.frameDebugger) {
@@ -121,6 +123,8 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         // Nothing is selected in the view yet: a click on a row selects nothing.
         auto selectPrim = [](uint32_t) {
         };
+        // Every instance's prim, built only while the window is open.
+        auto primOfInstance = primOfEachInstance(renderWorld);
         drawGpuSceneWindow(introspectionFlags.gpuScene, gpuSceneState, 1 + shadowCascadeCount, primOfInstance, namePrim, selectPrim);
     }
     {

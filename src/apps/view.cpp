@@ -933,8 +933,14 @@ auto main(int argc, char* argv[]) -> int {
 
         static const uint32_t uiZoneId = profile::registerName("EditorUI");
         profile::beginZone(uiZoneId);
-        imguiBackend.beginFrame();
-        viewUI.setStatusBar(statusBar.gather(rhiDevice, assetClient, latestCull));
+        {
+            PROFILE_ZONE("ImGuiBeginFrame");
+            imguiBackend.beginFrame();
+        }
+        {
+            PROFILE_ZONE("StatusBarGather");
+            viewUI.setStatusBar(statusBar.gather(rhiDevice, assetClient, latestCull));
+        }
         if (viewUI.wantsAssetLog()) {
             viewUI.setAssetLog(assetClient.log());
         }
@@ -964,8 +970,12 @@ auto main(int argc, char* argv[]) -> int {
             renderThread.reloadShaders(changed);
             scene.refresh(changed, false);
         }
-        viewUI.draw(primPathOf, !selectedPath.empty(), scene.renderWorld(), cam, std::move(fgDebugSnap), std::move(renderDebugSnap));
         {
+            PROFILE_ZONE("ViewUIDraw");
+            viewUI.draw(primPathOf, !selectedPath.empty(), scene.renderWorld(), cam, std::move(fgDebugSnap), std::move(renderDebugSnap));
+        }
+        {
+            PROFILE_ZONE("LodLabels");
             const auto& io = ImGui::GetIO();
             drawLodLabels(viewUI.lodWindow(), proj * cam.viewMatrix(), glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
         }
@@ -1096,6 +1106,7 @@ auto main(int argc, char* argv[]) -> int {
             }
         }
         {
+            PROFILE_ZONE("LodWindowSync");
             // The LOD window: the levels it asked for, and the root it selects or frames; it highlights the root at or above the selection.
             for (const auto& request : std::exchange(lodWindow.levelRequests, {})) {
                 if (request.level) {
