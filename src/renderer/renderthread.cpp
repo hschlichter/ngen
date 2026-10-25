@@ -26,7 +26,11 @@ auto RenderThread::stop() -> void {
 
 auto RenderThread::submitSnapshot(RenderSnapshot snapshot) -> void {
     std::unique_lock lock(snapshotMutex);
-    slotAvailable.wait(lock, [this] { return !hasSnapshot || shutdownRequested; });
+    {
+        // The main thread waiting for the render thread to take the previous snapshot: a frame bound by the render thread or the GPU.
+        PROFILE_ZONE("WaitRenderThread");
+        slotAvailable.wait(lock, [this] { return !hasSnapshot || shutdownRequested; });
+    }
     if (shutdownRequested) {
         return;
     }

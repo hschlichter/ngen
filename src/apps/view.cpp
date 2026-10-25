@@ -885,9 +885,11 @@ auto main(int argc, char* argv[]) -> int {
             selectedBoundsSnapshot = &scene.snapshot();
             selectedBounds = selectedPath.empty() ? AABB{} : scene.bounds(selectedPath);
         }
-        PROFILE_ZONE("DrawDebug");
-        viewUI.drawDebug(debugDraw, scene.renderWorld(), cam.position, cam.worldUp, overlayVisible, cullState.frozenActive ? &frozenCorners : nullptr, std::span<const ShadowCascade>(cascades.data(), cascadeCount), selectedPath.empty() ? nullptr : &selectedBounds);
-        drawLodGizmos(lodWindow, debugDraw, cam.worldUp, lodWindowArea(glm::radians(cameraFovDegrees), viewAspect));
+        {
+            PROFILE_ZONE("DrawDebug");
+            viewUI.drawDebug(debugDraw, scene.renderWorld(), cam.position, cam.worldUp, overlayVisible, cullState.frozenActive ? &frozenCorners : nullptr, std::span<const ShadowCascade>(cascades.data(), cascadeCount), selectedPath.empty() ? nullptr : &selectedBounds);
+            drawLodGizmos(lodWindow, debugDraw, cam.worldUp, lodWindowArea(glm::radians(cameraFovDegrees), viewAspect));
+        }
 
         renderThread.setFrameGraphDebugEnabled(viewUI.wantsFrameGraphDebug() || dumps.wantsFrameGraphDebug());
         auto fgDebugSnap = renderThread.latestFrameGraphDebug();
