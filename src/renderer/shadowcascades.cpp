@@ -45,6 +45,24 @@ auto sceneBoundsOf(std::span<const RenderMeshInstance> instances) -> AABB {
     return bounds;
 }
 
+auto SceneBoundsCache::update(const ChunkedList<RenderMeshInstance>& instances) -> AABB {
+    chunks.resize(instances.chunkCount());
+    AABB bounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
+    for (size_t c = 0; c < chunks.size(); c++) {
+        auto data = instances.sharedChunk(c);
+        auto& chunk = chunks[c];
+        if (chunk.data != data) {
+            chunk.bounds = sceneBoundsOf(*data);
+            chunk.data = std::move(data);
+        }
+        if (chunk.bounds.valid()) {
+            bounds.min = glm::min(bounds.min, chunk.bounds.min);
+            bounds.max = glm::max(bounds.max, chunk.bounds.max);
+        }
+    }
+    return bounds;
+}
+
 namespace {
 
 // Practical split scheme: a blend of logarithmic and uniform distances.

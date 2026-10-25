@@ -519,6 +519,8 @@ auto main(int argc, char* argv[]) -> int {
     std::string selectedBoundsPath;
     const SceneSnapshot* selectedBoundsSnapshot = nullptr;
     AABB selectedBounds;
+    // The scene's bounds for the shadow cascades, read again only for the chunks of draws that changed.
+    SceneBoundsCache sceneBoundsCache;
     while (!quit && !viewUI.wantsQuit()) {
         PROFILE_FRAME_MARK();
         PROFILE_ZONE("MainFrame");
@@ -852,15 +854,7 @@ auto main(int argc, char* argv[]) -> int {
         uint32_t cascadeCount = 0;
         {
             PROFILE_ZONE("FitCascades");
-            AABB sceneBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
-            const auto& slots = scene.renderWorld().meshInstances;
-            for (size_t chunk = 0; chunk < slots.chunkCount(); chunk++) {
-                auto bounds = sceneBoundsOf(slots.chunk(chunk));
-                if (bounds.valid()) {
-                    sceneBounds.min = glm::min(sceneBounds.min, bounds.min);
-                    sceneBounds.max = glm::max(sceneBounds.max, bounds.max);
-                }
-            }
+            auto sceneBounds = sceneBoundsCache.update(scene.renderWorld().meshInstances);
             auto lightDir = pickShadowLightDirection(scene.renderWorld().lights, cam.worldUp);
             cascadeCount = fitShadowCascades(viewUI.getShadowSettings(), cam.viewMatrix(), proj, cameraNear, lightDir, cam.worldUp, sceneBounds, cascades);
         }

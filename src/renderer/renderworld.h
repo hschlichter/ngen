@@ -70,6 +70,9 @@ public:
     // Each chunk as a contiguous span, in order.
     auto chunkCount() const -> size_t { return chunks.size(); }
     auto chunk(size_t index) const -> std::span<const T> { return *chunks[index]; }
+    // A chunk itself, for a reader that keeps what it derived from it: while the reader holds it, a write to the list copies it first, so
+    // the same pointer means the same contents.
+    auto sharedChunk(size_t index) const -> std::shared_ptr<const std::vector<T>> { return chunks[index]; }
 
 private:
     auto own(size_t chunkIndex) -> std::vector<T>* {

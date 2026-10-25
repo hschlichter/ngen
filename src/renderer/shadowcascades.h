@@ -45,6 +45,20 @@ auto pickShadowLightDirection(std::span<const RenderLight> lights, glm::vec3 wor
 // Union of the instance world bounds; invalid when there are none.
 auto sceneBoundsOf(std::span<const RenderMeshInstance> instances) -> AABB;
 
+// The union of every instance's world bounds, kept per chunk of the instance list: a chunk is read again only when the list holds another
+// chunk in its place (a write copies a chunk this cache holds), so a frame where nothing changed reads no instance.
+class SceneBoundsCache {
+public:
+    auto update(const ChunkedList<RenderMeshInstance>& instances) -> AABB;
+
+private:
+    struct Chunk {
+        std::shared_ptr<const std::vector<RenderMeshInstance>> data;
+        AABB bounds;
+    };
+    std::vector<Chunk> chunks;
+};
+
 // Fits the cascades from the camera's near plane to the shadow distance (settings.maxDistance), pulled in to the scene bounds so no
 // cascade is spent behind the last mesh. The camera's projection has no far plane. Returns the cascade count written to out.
 auto fitShadowCascades(const ShadowCascadeSettings& settings, const glm::mat4& view, const glm::mat4& proj, float nearZ, glm::vec3 lightDir, glm::vec3 worldUp, const AABB& sceneBounds, std::span<ShadowCascade> out) -> uint32_t;
