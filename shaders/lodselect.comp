@@ -3,25 +3,30 @@
 // Render LOD (src/renderer/README.md, "Render LOD"): the level each render-LOD group draws this frame, in two dispatches selected by
 // push.mode:
 //
-//   0 select   one thread per group: the level the screen-size heuristic wants (with the band against the level it wanted last frame),
-//              else the group's forced level; the level drawn, which is the wanted one when resident, else the one drawn last frame
-//              when resident, else the nearest resident level, coarser first; the state written and the residency mask cleared;
-//              per-workgroup counters
+//   0 select   one thread per group: the group's measure (UsdLod's distance or screen size, by the heuristic the view chose for it); the
+//              level it wants, as pickLodLevel (src/world/world.cpp) picks it: UsdLod's levels with their blend bands, and hysteresis at a
+//              boundary without a band, against the level it wanted last frame; else the group's forced level. The level drawn is the
+//              wanted one when resident, else the one drawn last frame when resident, else the nearest resident level, coarser first. Inside
+//              a band the next level fades in when it is resident too. The state written and the residency mask cleared; per-workgroup
+//              counters
 //   1 sum      one workgroup: the counters summed over the workgroups, in order, into the totals
-//
-// The heuristic is the view's (screenSize and levelFor in src/view/viewscene.cpp): the extent's bounding sphere over the view window at
-// depth 1 as a fraction of the window's area, finer as soon as the size passes a threshold, coarser only once it is 20% below it.
 
 layout(local_size_x = 256) in;
 
 const uint maxLevels = 8;
 const uint noLevel = 0xFFu;
+const uint kindScreenSize = 0u;
+const uint kindDistance = 1u;
+// The hysteresis at a boundary without a band, as the view's (ViewScene::lodHysteresis): coarser once a screen size is 20% below the
+// threshold, a distance the same margin beyond it (a size falls with the square of the distance).
+const float hysteresis = 0.2;
 // Counter layout per workgroup and in the totals (LodSelectTotals).
 const uint counterPicked = 0;                    // maxLevels: groups drawing each level
 const uint counterFallbacks = maxLevels;         // groups drawing another level while the wanted one isn't resident
 const uint counterForced = counterFallbacks + 1; // groups at a forced level
 const uint counterGroups = counterForced + 1;    // alive groups
-const uint counterCount = counterGroups + 2;     // and a pad
+const uint counterFading = counterGroups + 1;    // groups drawing two levels, cross-faded
+const uint counterCount = counterFading + 1;
 
 layout(push_constant) uniform Push {
     vec3 eye;         // the camera's position, world metres
@@ -32,22 +37,33 @@ layout(push_constant) uniform Push {
 } push;
 
 struct Group {
-    vec3 center;
+    vec4 toWorld[3]; // distance: the root's space to world metres, as rows
+    vec4 toRoot[3];  // and back
+    vec3 center;     // screen size: the extent's bounding sphere, world metres
     float radius;
+    vec3 point; // distance: the heuristic's center, the root's space
+    uint kind;
+    vec3 boxMin; // distance: the bounding volume's box, the root's space
+    uint hasBox;
+    vec3 boxMax;
+    uint blendCount;
     float thresholds[maxLevels - 1];
+    float blendThresholds[maxLevels - 1];
     uint levelCount;
     uint defaultLevel;
     int forcedLevel;
     uint serial;
     uint alive;
+    uint thresholdCount; // the thresholds authored, at most levelCount - 1: the boundaries the heuristic reaches
 };
 layout(std430, set = 0, binding = 0) readonly buffer Groups {
     Group data[];
 } groups;
 
-// Per group: x the serial of the group it was written for, y the level wanted (bits 0-7) and drawn (bits 8-15).
+// Per group: x the serial of the group it was written for, y the level wanted (bits 0-7), drawn (bits 8-15) and fading in (bits 16-23, 0xFF
+// for none), z the fading level's share as float bits, w the measure as float bits.
 layout(std430, set = 0, binding = 1) buffer States {
-    uvec2 data[];
+    uvec4 data[];
 } states;
 
 // Per group, a bit per level with an instance whose mesh isn't in the pool, set by the cull pass last frame.
@@ -65,23 +81,93 @@ layout(std430, set = 0, binding = 4) buffer Totals {
 
 shared uint sharedCounters[counterCount];
 
-uint levelFor(float size, Group group, uint previous) {
-    uint thresholdCount = min(group.levelCount, maxLevels) - 1;
+vec3 transformPoint(vec4 rows[3], vec3 p) {
+    vec4 h = vec4(p, 1.0);
+    return vec3(dot(rows[0], h), dot(rows[1], h), dot(rows[2], h));
+}
+
+// UsdLodDistanceHeuristicQuery::ComputeDistance: the eye into the root's space, the nearest point of the box (0 inside it) or the center,
+// back out to world metres.
+float distanceOf(Group group) {
+    vec3 target = group.point;
+    if (group.hasBox != 0u) {
+        vec3 eyeRoot = transformPoint(group.toRoot, push.eye);
+        if (all(greaterThanEqual(eyeRoot, group.boxMin)) && all(lessThanEqual(eyeRoot, group.boxMax))) {
+            return 0.0;
+        }
+        target = clamp(eyeRoot, group.boxMin, group.boxMax);
+    }
+    return length(transformPoint(group.toWorld, target) - push.eye);
+}
+
+float screenSizeOf(Group group) {
+    float distance = length(push.eye - group.center);
+    if (distance <= 1e-6) {
+        return 1e30;
+    }
+    float r = group.radius / distance;
+    return 3.14159265358979 * r * r / push.windowArea;
+}
+
+bool pastEdge(Group group, float measure, float edge) {
+    return group.kind == kindDistance ? measure >= edge : measure <= edge;
+}
+
+// A boundary's band edge, clamped to the next threshold as UsdLod does; false for no band.
+bool bandOf(Group group, uint k, out float edge) {
+    if (k >= group.blendCount) {
+        return false;
+    }
+    edge = group.blendThresholds[k];
+    if (k + 1 < group.thresholdCount) {
+        edge = group.kind == kindDistance ? min(edge, group.thresholds[k + 1]) : max(edge, group.thresholds[k + 1]);
+    }
+    return true;
+}
+
+// pickLodLevel (src/world/world.cpp): x the level, y the next level's share inside a band.
+vec2 pickLevel(Group group, float measure, uint previous) {
+    uint last = min(group.levelCount, maxLevels) - 1;
+    uint boundaries = min(group.thresholdCount, last);
+    float coarserScale = group.kind == kindDistance ? 1.0 / sqrt(1.0 - hysteresis) : 1.0 - hysteresis;
     uint finer = 0;
-    while (finer < thresholdCount && size <= group.thresholds[finer]) {
+    while (finer < boundaries) {
+        float edge;
+        if (!bandOf(group, finer, edge)) {
+            edge = group.thresholds[finer];
+        }
+        if (!pastEdge(group, measure, edge)) {
+            break;
+        }
         finer++;
     }
-    if (finer < previous) {
-        return finer;
-    }
     uint coarser = 0;
-    while (coarser < thresholdCount && size <= group.thresholds[coarser] * 0.8) {
+    while (coarser < boundaries) {
+        float edge;
+        if (!bandOf(group, coarser, edge)) {
+            edge = group.thresholds[coarser] * coarserScale;
+        }
+        if (!pastEdge(group, measure, edge)) {
+            break;
+        }
         coarser++;
     }
-    if (coarser > previous) {
-        return coarser;
+    uint level = previous;
+    if (finer < previous) {
+        level = finer;
+    } else if (coarser > previous) {
+        level = coarser;
     }
-    return previous;
+    level = min(level, last);
+    float blend = 0.0;
+    float edge;
+    if (level < boundaries && bandOf(group, level, edge) && pastEdge(group, measure, group.thresholds[level]) && !pastEdge(group, measure, edge)) {
+        float span = edge - group.thresholds[level];
+        if (span != 0.0) {
+            blend = clamp((measure - group.thresholds[level]) / span, 0.0, 1.0);
+        }
+    }
+    return vec2(float(level), blend);
 }
 
 bool resident(uint missing, uint level) {
@@ -101,26 +187,23 @@ void select() {
         uint missing = residency.bits[g];
         residency.bits[g] = 0;
         if (group.alive == 0 || group.levelCount == 0) {
-            states.data[g] = uvec2(group.serial, noLevel | (noLevel << 8));
+            states.data[g] = uvec4(group.serial, noLevel | (noLevel << 8) | (noLevel << 16), 0u, 0u);
         } else {
             uint last = min(group.levelCount, maxLevels) - 1;
-            uvec2 state = states.data[g];
+            uvec4 state = states.data[g];
             bool known = state.x == group.serial;
             uint previousWanted = known ? min(state.y & 0xFFu, last) : min(group.defaultLevel, last);
             uint previousDrawn = known ? ((state.y >> 8) & 0xFFu) : noLevel;
+            float measure = group.kind == kindDistance ? distanceOf(group) : screenSizeOf(group);
             uint wanted;
+            float blend = 0.0;
             if (group.forcedLevel >= 0) {
                 wanted = min(uint(group.forcedLevel), last);
                 atomicAdd(sharedCounters[counterForced], 1u);
             } else {
-                vec3 toCenter = push.eye - group.center;
-                float distance = length(toCenter);
-                float size = 1e30;
-                if (distance > 1e-6) {
-                    float r = group.radius / distance;
-                    size = 3.14159265358979 * r * r / push.windowArea;
-                }
-                wanted = min(levelFor(size, group, previousWanted), last);
+                vec2 pick = pickLevel(group, measure, previousWanted);
+                wanted = uint(pick.x);
+                blend = pick.y;
             }
             uint drawn = wanted;
             if (!resident(missing, wanted)) {
@@ -142,7 +225,15 @@ void select() {
                     atomicAdd(sharedCounters[counterFallbacks], 1u);
                 }
             }
-            states.data[g] = uvec2(group.serial, wanted | (drawn << 8));
+            // Inside a band the next level fades in, when the wanted level is drawn and the next one is resident too.
+            uint fadeLevel = noLevel;
+            if (blend > 0.0 && drawn == wanted && wanted < last && resident(missing, wanted + 1)) {
+                fadeLevel = wanted + 1;
+                atomicAdd(sharedCounters[counterFading], 1u);
+            } else {
+                blend = 0.0;
+            }
+            states.data[g] = uvec4(group.serial, wanted | (drawn << 8) | (fadeLevel << 16), floatBitsToUint(blend), floatBitsToUint(measure));
             atomicAdd(sharedCounters[counterPicked + drawn], 1u);
             atomicAdd(sharedCounters[counterGroups], 1u);
         }

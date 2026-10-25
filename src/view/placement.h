@@ -60,11 +60,7 @@ struct SceneLodRoot {
     std::string path;
     std::vector<std::string> levels;
     std::vector<std::vector<std::string>> levelPayloads; // per level, the asset ids of its payloads; empty for a level without
-    std::string heuristicType;                           // empty when the root names none
-    bool heuristicChosen = false;                        // a heuristic the engine reads, with valid bounds; else the root keeps its default
-    std::vector<float> thresholds;
-    std::array<glm::vec3, 2> extent = {glm::vec3(-1.0f), glm::vec3(1.0f)}; // the heuristic's, in the root's local space
-    bool projectedExtent = false;                                          // projectionMethod: the box, else its bounding sphere
+    std::vector<LodHeuristic> heuristics;                // every one it names (LodRoot::heuristics); which one measures it is the view's preference
     uint32_t defaultIndex = 0;
     uint32_t wanted = 0;
     std::optional<uint32_t> drawn;

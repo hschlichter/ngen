@@ -8,6 +8,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -104,6 +105,60 @@ enum class LodProjection : uint8_t {
     Extent, // projectedExtent: the extent's box
 };
 
+// The heuristics the engine reads (UsdLod's LODDistanceHeuristic and LODScreenSizeHeuristic, imaging domain), and the rest, kept to show.
+enum class LodHeuristicKind : uint8_t {
+    Distance,
+    ScreenSize,
+    Other,
+};
+
+// One heuristic a LOD root names (lod:heuristics), as authored, its bounds resolved as UsdLod's queries read them, in the root's space:
+// - Distance: from the viewpoint to `center`, or to the nearest point of `box` when its boundingVolume names a boundable with a valid
+//   extent (0 inside it). Thresholds ascend.
+// - ScreenSize: `extent` (its boundingVolume's, else its own, else UsdLod's fallback -1..1), as a sphere or a box (`projection`).
+//   Thresholds descend.
+// `blendThresholds` as authored (shorter or empty: no blend past its end). `unusable` says why the engine doesn't read it, empty when it
+// does: a type or domain it doesn't read, no thresholds, thresholds out of order, bounds that aren't finite.
+struct LodHeuristic {
+    LodHeuristicKind kind = LodHeuristicKind::Other;
+    std::string type; // its prim type
+    std::string path; // its prim's path in the root's content
+    std::string domain;
+    std::vector<float> thresholds;
+    std::vector<float> blendThresholds;
+    std::array<glm::vec3, 2> extent = {glm::vec3(-1.0f), glm::vec3(1.0f)};
+    LodProjection projection = LodProjection::Sphere;
+    glm::vec3 center = glm::vec3(0.0f);
+    std::optional<std::array<glm::vec3, 2>> box;
+    std::string unusable;
+
+    auto usable() const -> bool { return unusable.empty(); }
+};
+
+// Which kind a root measures by when it authors both (the view's preference), and UsdLod's order otherwise.
+enum class LodPreference : uint8_t {
+    Distance,   // the first usable distance heuristic, else the first usable screen-size one
+    ScreenSize, // the other way round
+    Authored,   // the first usable heuristic, as UsdLod has a renderer choose
+};
+
+// A preference's name, as the verb and the records say it ("distance", "screen", "authored"), and back.
+auto lodPreferenceName(LodPreference preference) -> const char*;
+auto lodPreferenceFromName(std::string_view name) -> std::optional<LodPreference>;
+
+// The heuristic a root measures by under a preference: an index into its heuristics, -1 when none is usable (it keeps its default).
+auto chooseLodHeuristic(const std::vector<LodHeuristic>& heuristics, LodPreference preference) -> int32_t;
+
+// The level a measure picks, as UsdLod's ComputeLOD with its blend bands, and with hysteresis at a boundary without a band: going coarser
+// waits until the measure is past the threshold by `hysteresis` (a screen size below threshold * (1 - hysteresis), a distance beyond
+// threshold / (1 - hysteresis) ^ 0.5, the same margin in a size that falls with the square of the distance), against `previous`, the level
+// wanted last. Inside a band the level is the finer one and `blend` the share of the next (0 to 1, as UsdLod's fractional index).
+struct LodPick {
+    uint32_t level = 0;
+    float blend = 0.0f;
+};
+auto pickLodLevel(LodHeuristicKind kind, const std::vector<float>& thresholds, const std::vector<float>& blendThresholds, float measure, uint32_t levelCount, uint32_t previous, float hysteresis) -> LodPick;
+
 struct LodRoot {
     std::vector<EntityId> levels;
     // A level is a payload (any of them): the root streams, each level a content of its own linked as it loads, the level chosen per root.
@@ -112,16 +167,8 @@ struct LodRoot {
     bool streams = true;
     uint32_t defaultIndex = 0; // lod:default:index, clamped to the levels
     std::vector<uint32_t> loaded;
-    // The heuristic chosen from its lod:heuristics targets in this content: the first screen-size heuristic in the imaging domain with
-    // valid bounds (heuristicChosen), else the first target, reported (heuristicType says which) while the root keeps its default.
-    EntityId heuristic = noEntity;
-    bool heuristicChosen = false;
-    std::string heuristicType;     // its prim type: LODScreenSizeHeuristic, LODDistanceHeuristic, or another
-    std::vector<float> thresholds; // the heuristic's
-    // The screen-size heuristic's extent, in the root's local space: its boundingVolume's when that names a boundable with a valid
-    // extent, else its own extent attribute, else UsdLod's fallback (-1..1).
-    std::array<glm::vec3, 2> extent = {glm::vec3(-1.0f), glm::vec3(1.0f)};
-    LodProjection projection = LodProjection::Sphere;
+    // Its lod:heuristics targets found in this content, in authored order; which one measures it is the reader's (chooseLodHeuristic).
+    std::vector<LodHeuristic> heuristics;
 };
 
 // A UsdGeomPointInstancer: its prototypes (the prims its `prototypes` relationship names, in this content; noEntity for one that isn't

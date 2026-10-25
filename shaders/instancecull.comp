@@ -17,8 +17,10 @@
 // (submesh range). Cascade regions hold primFirst instances (whole mesh), except for a prim with a
 // cutout submesh: its instances draw one by one (submesh range), so the cutout one is cut.
 //
-// Render LOD: an instance of a render-LOD group is drawn only when the group draws its level (lodselect.comp ran before); one whose mesh
-// isn't in the pool marks its level in the group's residency mask, which the next frame's selection reads.
+// Render LOD: an instance of a render-LOD group is drawn only when the group draws its level, or fades its level in (lodselect.comp ran
+// before); one whose mesh isn't in the pool marks its level in the group's residency mask, which the next frame's selection reads. While a
+// group fades, both its levels' instances draw in the cutout buckets, whose pipelines dither them (lodfade.glsl); the CPU counts every
+// render-LOD instance in its cutout bucket too (DrawLists::countInstance), so the regions hold them.
 
 layout(local_size_x = 256) in;
 
@@ -33,7 +35,8 @@ const uint counterCascadeCulled = counterCameraCulled + 1; // 4: culled primFirs
 const uint counterCascadeDrawn = counterCascadeCulled + 4; // 4: visible primFirst instances per cascade
 const uint counterLodDropped = counterCascadeDrawn + 4;    // 1: instances of a level their group doesn't draw
 const uint counterRegionOverflow = counterLodDropped + 1;  // 1: commands dropped past their region's end (the scatter adds them)
-const uint counterCount = counterRegionOverflow + 1;
+const uint counterFading = counterRegionOverflow + 1;      // 1: instances drawn in a fading group (both levels)
+const uint counterCount = counterFading + 1;
 
 const uint flagPrimFirst = 1u << 0;
 const uint flagDoubleSided = 1u << 1;
@@ -126,10 +129,20 @@ layout(std430, set = 0, binding = 8) writeonly buffer CullPlanes {
     uint codes[];
 } cullPlanes;
 
-// Per render-LOD group (lodselect.comp): x its serial, y the level wanted (bits 0-7) and drawn (bits 8-15).
+// Per render-LOD group (lodselect.comp): x its serial, y the level wanted (bits 0-7), drawn (bits 8-15) and fading in (bits 16-23, 0xFF for
+// none), z the fade's share, w the measure.
 layout(std430, set = 0, binding = 9) readonly buffer LodStates {
-    uvec2 data[];
+    uvec4 data[];
 } lodStates;
+const uint noLevel = 0xFFu;
+
+// Whether the instance's render-LOD group is fading: both its levels draw, in the cutout buckets.
+bool fadingOf(Instance inst) {
+    if (inst.lodGroup == 0 || inst.lodGroup > uint(lodStates.data.length())) {
+        return false;
+    }
+    return ((lodStates.data[inst.lodGroup - 1].y >> 16) & 0xFFu) != noLevel;
+}
 
 // Per render-LOD group, a bit per level with an instance whose mesh isn't in the pool.
 layout(std430, set = 0, binding = 10) buffer LodResidency {
@@ -171,23 +184,23 @@ bool perSubmesh(Instance inst, uint view) {
     return view == 0 || (inst.flags & flagPrimHasCutout) != 0;
 }
 
-// The instance's bucket: cutout instances drawn per submesh go to the cutout buckets.
-uint bucketOf(Instance inst, uint view) {
+// The instance's bucket: cutout instances drawn per submesh go to the cutout buckets, and so does every instance of a fading group.
+uint bucketOf(Instance inst, uint view, bool fading) {
     uint bucket = (inst.flags & flagDoubleSided) != 0 ? 1u : 0u;
-    if ((inst.flags & flagCutout) != 0 && perSubmesh(inst, view)) {
+    if (((inst.flags & flagCutout) != 0 && perSubmesh(inst, view)) || fading) {
         bucket += 2u;
     }
     return bucket;
 }
 
 // Whether instance belongs to region r and is visible in its view.
-bool drawnIn(Instance inst, MeshEntry mesh, uint bits, uint region) {
+bool drawnIn(Instance inst, MeshEntry mesh, uint bits, uint region, bool fading) {
     uint view = region / bucketCount;
     uint bucket = region % bucketCount;
     if (view >= params.viewCount || mesh.indexCount == 0) {
         return false;
     }
-    if (bucket != bucketOf(inst, view)) {
+    if (bucket != bucketOf(inst, view, fading)) {
         return false;
     }
     if (!perSubmesh(inst, view) && (inst.flags & flagPrimFirst) == 0) {
@@ -216,7 +229,12 @@ void cull() {
             if (meshOf(inst).indexCount == 0) {
                 atomicOr(lodResidency.bits[group], 1u << level);
             }
-            dropped = ((lodStates.data[group].y >> 8) & 0xFFu) != level;
+            uint levels = lodStates.data[group].y;
+            dropped = ((levels >> 8) & 0xFFu) != level && ((levels >> 16) & 0xFFu) != level;
+        }
+        bool fading = !dropped && fadingOf(inst);
+        if (fading) {
+            atomicAdd(sharedCounters[counterFading], 1u);
         }
         for (uint v = 0; v < params.viewCount && !dropped; v++) {
             uint code = planeNotTested;
@@ -239,7 +257,7 @@ void cull() {
 
         MeshEntry mesh = meshOf(inst);
         for (uint r = 0; r < regionCount; r++) {
-            if (drawnIn(inst, mesh, bits, r)) {
+            if (drawnIn(inst, mesh, bits, r, fading)) {
                 uint indexCount = perSubmesh(inst, r / bucketCount) ? inst.indexCount : mesh.indexCount;
                 atomicAdd(sharedCounters[counterDraws + r], 1u);
                 atomicAdd(sharedCounters[counterPrimitives + r], indexCount / 3);
@@ -292,14 +310,16 @@ void scatter() {
     Instance inst;
     MeshEntry mesh = MeshEntry(0u, 0, 0u, 0u);
     uint bits = 0;
+    bool fading = false;
     if (live) {
         inst = instances.data[m];
         mesh = meshOf(inst);
         bits = visibility.bits[m];
+        fading = fadingOf(inst);
     }
 
     for (uint r = 0; r < regionCount; r++) {
-        uint member = (live && drawnIn(inst, mesh, bits, r)) ? 1u : 0u;
+        uint member = (live && drawnIn(inst, mesh, bits, r, fading)) ? 1u : 0u;
         // Inclusive Hillis-Steele scan across the workgroup.
         scanData[lid] = member;
         barrier();

@@ -133,13 +133,32 @@ struct RenderLight {
     auto operator==(const RenderLight&) const -> bool = default;
 };
 
-// A render-LOD root where it is placed: the renderer picks its level each frame from the camera (shaders/lodselect.comp), with the
-// view's screen-size heuristic, and draws the slots tagged with it and that level. Slots in RenderWorld::lodGroups, like draw slots.
+// How a render-LOD group measures the camera: UsdLod's two heuristics.
+enum class RenderLodKind : uint32_t {
+    ScreenSize, // the sphere over the view window at depth 1, a fraction of the window
+    Distance,   // to the center, or the nearest point of the box (0 inside), in metres
+};
+
+// A render-LOD root where it is placed: the renderer picks its level each frame from the camera (shaders/lodselect.comp), by the heuristic the
+// view chose for it, and draws the slots tagged with it and that level; inside an authored blend band it draws the next level too, the two
+// cross-faded. Slots in RenderWorld::lodGroups, like draw slots.
 struct RenderLodGroup {
     static constexpr uint32_t maxLevels = 8;
-    glm::vec3 center = glm::vec3(0.0f); // the heuristic extent's bounding sphere, world metres
+    RenderLodKind kind = RenderLodKind::ScreenSize;
+    glm::vec3 center = glm::vec3(0.0f); // screen size: the heuristic extent's bounding sphere, world metres
     float radius = 0.0f;
-    std::array<float, maxLevels - 1> thresholds = {}; // finest first; levelCount - 1 of them used
+    glm::mat4 toWorld = glm::mat4(1.0f); // distance: the root's space to world metres, and back
+    glm::mat4 toRoot = glm::mat4(1.0f);
+    glm::vec3 point = glm::vec3(0.0f); // distance: the heuristic's center, in the root's space
+    bool hasBox = false;               // distance: measured to this box (the root's space) instead
+    glm::vec3 boxMin = glm::vec3(0.0f);
+    glm::vec3 boxMax = glm::vec3(0.0f);
+    // Finest first, in the kind's unit (a fraction of the window, or metres); levelCount - 1 of them used. A blend threshold per boundary up
+    // to blendCount: the band past the threshold where the next level fades in.
+    std::array<float, maxLevels - 1> thresholds = {};
+    std::array<float, maxLevels - 1> blendThresholds = {};
+    uint32_t thresholdCount = 0; // authored, at most levelCount - 1
+    uint32_t blendCount = 0;
     uint32_t levelCount = 0;
     uint32_t defaultLevel = 0;
     int32_t forcedLevel = -1; // hand-set, or the default while the heuristic is off; -1 for the heuristic's

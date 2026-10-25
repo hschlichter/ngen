@@ -503,8 +503,11 @@ struct WorldComposer::Impl {
     // What a LOD heuristic prim authors, by its content and entity, for the roots that name it.
     struct HeuristicData {
         std::string type;
+        std::string path; // in its content
         std::vector<float> thresholds;
-        std::string domain; // lod:domain
+        std::vector<float> blendThresholds;
+        std::optional<glm::vec3> center; // a distance heuristic's
+        std::string domain;              // lod:domain
         std::optional<std::array<glm::vec3, 2>> extent;
         std::vector<PendingTarget> boundingVolumes;
         LodProjection projection = LodProjection::Sphere;
@@ -1207,10 +1210,20 @@ struct WorldComposer::Impl {
         if (const PackValue* values = attribute("thresholds")) {
             auto& heuristic = heuristics[{&content, id}];
             heuristic.type = content.entities[id].typeName;
+            heuristic.path = content.path(id);
             heuristic.domain = token(attribute("lod:domain"));
             heuristic.boundingVolumes = pendingTargets(context, id, findRelationship(specs, "boundingVolume"));
             for (double v : values->numbers) {
                 heuristic.thresholds.push_back((float) v);
+            }
+            if (const PackValue* blends = attribute("blendThresholds")) {
+                for (double v : blends->numbers) {
+                    heuristic.blendThresholds.push_back((float) v);
+                }
+            }
+            if (const PackValue* point = attribute("center"); point != nullptr && point->numbers.size() >= 3) {
+                const auto& n = point->numbers;
+                heuristic.center = glm::vec3((float) n[0], (float) n[1], (float) n[2]);
             }
             if (const PackValue* box = attribute("extent"); box != nullptr && box->numbers.size() >= 6) {
                 const auto& n = box->numbers;
@@ -1277,14 +1290,16 @@ struct WorldComposer::Impl {
         resolvePrototypes(done.prototypes, context.info->messages);
     }
 
-    // A root's heuristic, as UsdLod has a renderer choose it: the first of its lod:heuristics targets of a type and domain it understands
-    // (LODScreenSizeHeuristic, "imaging") that gives a usable result, here valid bounds. A root naming none reports its first target and
-    // keeps its default level.
+    // A root's heuristics, every lod:heuristics target found in its content, in authored order, each with its bounds resolved as UsdLod's
+    // queries read them and why the engine doesn't read it when it doesn't. Which one measures the root is the reader's choice.
     auto resolveHeuristics(const std::vector<PendingTarget>& pending) -> void {
-        std::set<std::pair<const WorldContent*, EntityId>> seen;
-        std::set<std::pair<const WorldContent*, EntityId>> chosen;
+        std::set<std::pair<const WorldContent*, EntityId>> cleared;
         for (const auto& target : pending) {
-            if (target.outside || chosen.contains({target.content, target.entity})) {
+            auto& root = target.content->lodRoots.at(target.entity);
+            if (cleared.insert({target.content, target.entity}).second) {
+                root.heuristics.clear();
+            }
+            if (target.outside) {
                 continue;
             }
             auto it = target.content->byPath.find(target.path);
@@ -1296,38 +1311,59 @@ struct WorldComposer::Impl {
                 continue;
             }
             const auto& data = found->second;
-            // A boundingVolume naming a boundable with a valid extent bounds the root instead of the heuristic's own extent, in the root's
-            // space as UsdLod's query reads it.
-            auto bounds = data.extent.value_or(LodRoot{}.extent);
-            for (const auto& volume : data.boundingVolumes) {
-                if (volume.outside) {
+            // A boundingVolume naming a boundable with a valid extent bounds the root, in the root's space as UsdLod's queries read it.
+            std::optional<std::array<glm::vec3, 2>> volume;
+            for (const auto& named : data.boundingVolumes) {
+                if (named.outside) {
                     continue;
                 }
-                auto entity = volume.content->byPath.find(volume.path);
-                if (entity == volume.content->byPath.end()) {
+                auto entity = named.content->byPath.find(named.path);
+                if (entity == named.content->byPath.end()) {
                     continue;
                 }
-                auto extent = extents.find({volume.content, entity->second});
+                auto extent = extents.find({named.content, entity->second});
                 if (extent != extents.end() && validBox(extent->second)) {
-                    bounds = extent->second;
+                    volume = extent->second;
                     break;
                 }
             }
-            bool usable = data.type == "LODScreenSizeHeuristic" && data.domain == "imaging" && validBox(bounds);
-            if (!usable && !seen.insert({target.content, target.entity}).second) {
-                continue;
+            LodHeuristic heuristic{
+                .type = data.type,
+                .path = data.path,
+                .domain = data.domain,
+                .thresholds = data.thresholds,
+                .blendThresholds = data.blendThresholds,
+                .projection = data.projection,
+            };
+            bool ascending = std::ranges::is_sorted(data.thresholds);
+            bool descending = std::ranges::is_sorted(data.thresholds, std::greater<float>());
+            if (data.type == "LODDistanceHeuristic") {
+                heuristic.kind = LodHeuristicKind::Distance;
+                heuristic.center = data.center.value_or(glm::vec3(0.0f));
+                heuristic.box = volume;
+                if (!ascending) {
+                    heuristic.unusable = "thresholds aren't ascending";
+                } else if (!std::isfinite(heuristic.center.x) || !std::isfinite(heuristic.center.y) || !std::isfinite(heuristic.center.z)) {
+                    heuristic.unusable = "its center isn't finite";
+                }
+            } else if (data.type == "LODScreenSizeHeuristic") {
+                heuristic.kind = LodHeuristicKind::ScreenSize;
+                heuristic.extent = volume.value_or(data.extent.value_or(heuristic.extent));
+                if (!descending) {
+                    heuristic.unusable = "thresholds aren't descending";
+                } else if (!validBox(heuristic.extent)) {
+                    heuristic.unusable = "its extent is empty or not finite";
+                }
+            } else {
+                heuristic.unusable = std::format("{} isn't a heuristic the engine reads", data.type);
             }
-            auto& root = target.content->lodRoots.at(target.entity);
-            root = LodRoot{.levels = root.levels, .streams = root.streams, .defaultIndex = root.defaultIndex, .loaded = root.loaded};
-            root.heuristic = it->second;
-            root.heuristicChosen = usable;
-            root.heuristicType = data.type;
-            root.thresholds = data.thresholds;
-            root.projection = data.projection;
-            root.extent = bounds;
-            if (usable) {
-                chosen.insert({target.content, target.entity});
+            if (heuristic.unusable.empty() && data.domain != "imaging") {
+                heuristic.unusable = std::format("its domain is '{}', not imaging", data.domain);
             }
+            if (heuristic.unusable.empty() && data.thresholds.empty()) {
+                heuristic.unusable = "it has no thresholds";
+            }
+            root.heuristics.push_back(std::move(heuristic));
         }
     }
 

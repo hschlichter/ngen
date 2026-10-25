@@ -4,6 +4,7 @@
 #include <format>
 #include <string>
 #include <string_view>
+#include <vector>
 
 // One line of a scene fingerprint, as ngen-worldcheck (the World) and ngen-usdcheck (OpenUSD) print them, so the two compare as files:
 // the prim's path, its type, and its point count (0 for a prim that isn't point-based), tab separated; with transforms, its world
@@ -47,4 +48,22 @@ inline auto fingerprintPointLine(std::string_view instancer, int64_t id, std::st
         line += fingerprintNumber(matrix[i]);
     }
     return line;
+}
+
+// One heuristic of a LOD root, as --lod-heuristics prints them: the root's path and the heuristic's place among its lod:heuristics targets that
+// author thresholds, its type and domain, its thresholds and blend thresholds, and its bounds as UsdLod's queries read them: a distance
+// heuristic's center, then its boundingVolume's extent when that is valid; a screen-size heuristic's extent (its boundingVolume's, else its
+// own, else -1..1). Numbers as fingerprintNumber prints them, space separated.
+inline auto fingerprintHeuristicLine(std::string_view root, size_t index, std::string_view type, std::string_view domain, const std::vector<double>& thresholds, const std::vector<double>& blendThresholds, const std::vector<double>& bounds) -> std::string {
+    auto numbers = [](const std::vector<double>& values) {
+        std::string text;
+        for (size_t i = 0; i < values.size(); i++) {
+            if (i > 0) {
+                text += " ";
+            }
+            text += fingerprintNumber(values[i]);
+        }
+        return text;
+    };
+    return std::format("{}#{}\t{}\t{}\t{}\t{}\t{}", root, index, type, domain, numbers(thresholds), numbers(blendThresholds), numbers(bounds));
 }

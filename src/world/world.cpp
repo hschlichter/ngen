@@ -1,6 +1,7 @@
 #include "world.h"
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 
 namespace {
@@ -219,4 +220,97 @@ auto World::visit(const std::function<bool(const VisitedEntity&)>& visitor) cons
     VisitState root;
     root.path = "/";
     visitChildren(stage, 0, root);
+}
+
+auto lodPreferenceName(LodPreference preference) -> const char* {
+    switch (preference) {
+        case LodPreference::Distance:
+            return "distance";
+        case LodPreference::ScreenSize:
+            return "screen";
+        case LodPreference::Authored:
+            return "authored";
+    }
+    return "distance";
+}
+
+auto lodPreferenceFromName(std::string_view name) -> std::optional<LodPreference> {
+    for (auto preference : {LodPreference::Distance, LodPreference::ScreenSize, LodPreference::Authored}) {
+        if (name == lodPreferenceName(preference)) {
+            return preference;
+        }
+    }
+    return std::nullopt;
+}
+
+auto chooseLodHeuristic(const std::vector<LodHeuristic>& heuristics, LodPreference preference) -> int32_t {
+    auto first = [&](std::optional<LodHeuristicKind> kind) -> int32_t {
+        for (size_t i = 0; i < heuristics.size(); i++) {
+            if (heuristics[i].usable() && (!kind || heuristics[i].kind == *kind)) {
+                return (int32_t) i;
+            }
+        }
+        return -1;
+    };
+    if (preference == LodPreference::Authored) {
+        return first(std::nullopt);
+    }
+    auto preferred = preference == LodPreference::Distance ? LodHeuristicKind::Distance : LodHeuristicKind::ScreenSize;
+    auto other = preference == LodPreference::Distance ? LodHeuristicKind::ScreenSize : LodHeuristicKind::Distance;
+    if (auto index = first(preferred); index >= 0) {
+        return index;
+    }
+    return first(other);
+}
+
+auto pickLodLevel(LodHeuristicKind kind, const std::vector<float>& thresholds, const std::vector<float>& blendThresholds, float measure, uint32_t levelCount, uint32_t previous, float hysteresis) -> LodPick {
+    if (levelCount == 0) {
+        return {};
+    }
+    auto last = levelCount - 1;
+    auto boundaries = (uint32_t) std::min<size_t>(thresholds.size(), last);
+    bool distance = kind == LodHeuristicKind::Distance;
+    // Whether the measure is at or past an edge toward the coarser side: a distance at or beyond it, a screen size at or below it.
+    auto past = [&](float edge) {
+        return distance ? measure >= edge : measure <= edge;
+    };
+    // A boundary's band: its blend threshold, clamped to the next threshold as UsdLod does; none past the authored ones.
+    auto band = [&](uint32_t k) -> std::optional<float> {
+        if (k >= blendThresholds.size()) {
+            return std::nullopt;
+        }
+        float edge = blendThresholds[k];
+        if (k + 1 < thresholds.size()) {
+            edge = distance ? std::min(edge, thresholds[k + 1]) : std::max(edge, thresholds[k + 1]);
+        }
+        return edge;
+    };
+    float coarserScale = distance ? 1.0f / std::sqrt(1.0f - hysteresis) : 1.0f - hysteresis;
+    // Finer: every boundary the measure is fully past. Coarser: the same, a boundary without a band only once past it with the margin.
+    uint32_t finer = 0;
+    while (finer < boundaries && past(band(finer).value_or(thresholds[finer]))) {
+        finer++;
+    }
+    uint32_t coarser = 0;
+    while (coarser < boundaries && past(band(coarser).value_or(thresholds[coarser] * coarserScale))) {
+        coarser++;
+    }
+    uint32_t level = previous;
+    if (finer < previous) {
+        level = finer;
+    } else if (coarser > previous) {
+        level = coarser;
+    }
+    level = std::min(level, last);
+    LodPick pick{.level = level};
+    // Inside the band past this level's threshold: blending toward the next, as UsdLod's fractional index.
+    if (level < boundaries) {
+        if (auto edge = band(level); edge && past(thresholds[level]) && !past(*edge)) {
+            float span = *edge - thresholds[level];
+            if (span != 0.0f) {
+                pick.blend = std::clamp((measure - thresholds[level]) / span, 0.0f, 1.0f);
+            }
+        }
+    }
+    return pick;
 }

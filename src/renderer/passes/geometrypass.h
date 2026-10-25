@@ -28,7 +28,7 @@ public:
 
     // Set 0, one set per frame slot: 0 view UBO, 1 material
     // texture array (GpuScene::maxTextures), 2 instance buffer, 3 material table.
-    static auto descriptorBindings() -> std::array<RhiDescriptorBinding, 4>;
+    static auto descriptorBindings() -> std::array<RhiDescriptorBinding, 5>;
     auto destroy(RhiDevice* device) -> void;
 
     auto addPass(

@@ -27,7 +27,7 @@ the caller feeds the composer packs from the asset server.
   `strongerThanDescendants`). A material that references another file's network and sets its inputs (a tile setting a library
   material's texture) is that file's pack with this one's values.
 - **Components** beside the entities, per content: lights (UsdLux's inputs, with UsdLux's fallbacks), LOD roots (levels, default index, loaded levels,
-  and the heuristic: its type, thresholds, `extent` with UsdLod's fallback, `projectionMethod`) point instancers (`PointInstancerData`: prototypes,
+  and every heuristic it names, `LodRoot::heuristics`) point instancers (`PointInstancerData`: prototypes,
   and per point its prototype, its transform from `positions`, `orientations` and `scales` as UsdGeomPointInstancer composes them, and whether
   `invisibleIds` hides it; arrays not matching `protoIndices` make no points, as in USD) and payload placements (asset ids, loaded, `extentsHint`).
 - **Scene metadata**: the root layer's up axis and meters per unit, with USD's fallbacks (Y, 0.01) when it authors none; the root layer
@@ -87,11 +87,16 @@ also asks them to be loaded; here loading a level is the engine's, so a level co
   is the renderer's, per placement, and `visit` walks them as children. Loading, linking, `setLodLevel` and the sections below concern
   streaming roots.
 
-As UsdLod has a renderer do it, a root's heuristic is the first of its `lod:heuristics` targets of a type and domain the engine reads
-(`LODScreenSizeHeuristic`, `imaging`) with valid bounds (finite, not empty), as UsdLod has a renderer ignore a heuristic that gives no usable result;
-a root with none keeps its default (`LodRoot::heuristicChosen` false; the packer warns about an empty or non-finite extent). The heuristic's bounds
-are its `boundingVolume`'s extent when that names a boundable with a valid one, else its own `extent`, in the root's space as UsdLod's query reads
-them. A level's own authored visibility is for readers that don't select LOD (UsdLod's recommendation is the default level visible, the others
+A root keeps every heuristic its `lod:heuristics` names (`LodRoot::heuristics`, in authored order), each as UsdLod's queries read it
+(`LodHeuristic`): a `LODDistanceHeuristic`'s `center` and, when its `boundingVolume` names a boundable with a valid extent, that box; a
+`LODScreenSizeHeuristic`'s extent (its `boundingVolume`'s, else its own `extent`, else UsdLod's -1..1) and `projectionMethod`; `thresholds` and
+`blendThresholds` as authored. One the engine doesn't read says why (`unusable`: another type, a domain other than `imaging`, no thresholds,
+thresholds out of order for its kind, bounds that aren't finite). Which one measures a root is the reader's: `chooseLodHeuristic` picks by a
+preference (distance first, screen size first, or the first usable one, as UsdLod has a renderer choose); a root with no usable one keeps its
+default. `pickLodLevel` is UsdLod's `ComputeLOD` for both kinds, with its blend bands (inside one: the finer level and the next one's share), and
+hysteresis at a boundary without a band, against the level wanted before; the view and the GPU's pick follow it. `ngen-worldcheck` and
+`ngen-usdcheck` print every root's heuristics (`--lod-heuristics`), and `ngen-usdcheck --lod-picks` gives UsdLod's fractional level for given
+cameras. A level's own authored visibility is for readers that don't select LOD (UsdLod's recommendation is the default level visible, the others
 invisible): the level the engine draws is shown whatever it authors, and visibility below it applies as usual (`Entity::lodItem`).
 
 A LOD root inside a prototype loads, in the prototype, every level any of its instances wants; which level each instance wants and draws

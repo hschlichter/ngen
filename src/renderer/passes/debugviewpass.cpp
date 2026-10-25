@@ -167,6 +167,9 @@ auto DebugViewPass::addPass(
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             builder.read(drawHandles.commands, FgAccessFlags::IndirectRead);
             builder.read(drawHandles.counts, FgAccessFlags::IndirectRead);
+            if (drawHandles.lodStates.valid()) {
+                builder.read(drawHandles.lodStates, FgAccessFlags::StorageRead);
+            }
         },
         [this, overdraw, mode, extent, &lists, drawHandles, &scene, geometrySet](FrameGraphContext& ctx, const DrawData& data) {
             auto* cmd = ctx.cmd();

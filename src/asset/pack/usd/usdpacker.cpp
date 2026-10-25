@@ -88,6 +88,7 @@ auto isEngineAttribute(const std::string& name) -> bool {
         "thresholds",
         "blendThresholds",
         "projectionMethod",
+        "center", // a LODDistanceHeuristic's
         // UsdGeomPointInstancer's per-point arrays.
         "positions",
         "orientations",

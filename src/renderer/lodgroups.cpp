@@ -7,6 +7,7 @@
 #include "rhidevice.h"
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 
 namespace {
@@ -22,7 +23,16 @@ struct LodReadbackPassData {
     FgBufferHandle readback;
 };
 
-constexpr uint32_t stateBytes = 2 * sizeof(uint32_t);
+constexpr uint32_t stateBytes = 4 * sizeof(uint32_t);
+
+// A matrix's first three rows, as the shader's vec4 rows (glm is column-major: row i is m[0][i] … m[3][i]).
+auto rowsOf(const glm::mat4& m) -> std::array<glm::vec4, 3> {
+    std::array<glm::vec4, 3> rows = {};
+    for (int i = 0; i < 3; i++) {
+        rows[i] = glm::vec4(m[0][i], m[1][i], m[2][i], m[3][i]);
+    }
+    return rows;
+}
 
 } // namespace
 
@@ -131,14 +141,24 @@ auto LodGroups::apply(std::span<const std::pair<uint32_t, RenderLodGroup>> chang
 auto LodGroups::record(uint32_t slot) const -> GpuLodGroup {
     const auto& group = groups[slot];
     return {
+        .toWorld = rowsOf(group.toWorld),
+        .toRoot = rowsOf(group.toRoot),
         .center = group.center,
         .radius = group.radius,
+        .point = group.point,
+        .kind = (uint32_t) group.kind,
+        .boxMin = group.boxMin,
+        .hasBox = group.hasBox ? 1u : 0u,
+        .boxMax = group.boxMax,
+        .blendCount = group.blendCount,
         .thresholds = group.thresholds,
+        .blendThresholds = group.blendThresholds,
         .levelCount = group.levelCount,
         .defaultLevel = group.defaultLevel,
         .forcedLevel = group.forcedLevel,
         .serial = serials[slot],
         .alive = group.alive ? 1u : 0u,
+        .thresholdCount = group.thresholdCount,
     };
 }
 
@@ -231,16 +251,25 @@ auto LodGroups::parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void {
     read.hasStates = slot.readStates;
     read.drawn.clear();
     read.wanted.clear();
+    read.fadeLevel.clear();
+    read.fade.clear();
+    read.measure.clear();
     if (!slot.readStates) {
         return;
     }
     const auto* state = reinterpret_cast<const uint32_t*>(bytes + sizeof(LodSelectTotals));
     read.drawn.resize(slot.groupCount);
     read.wanted.resize(slot.groupCount);
+    read.fadeLevel.resize(slot.groupCount);
+    read.fade.resize(slot.groupCount);
+    read.measure.resize(slot.groupCount);
     for (uint32_t g = 0; g < slot.groupCount; g++) {
-        auto levels = state[(2 * g) + 1];
+        auto levels = state[(4 * g) + 1];
         read.wanted[g] = (uint8_t) (levels & 0xFFu);
         read.drawn[g] = (uint8_t) ((levels >> 8) & 0xFFu);
+        read.fadeLevel[g] = (uint8_t) ((levels >> 16) & 0xFFu);
+        read.fade[g] = std::bit_cast<float>(state[(4 * g) + 2]);
+        read.measure[g] = std::bit_cast<float>(state[(4 * g) + 3]);
     }
 }
 

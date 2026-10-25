@@ -115,12 +115,16 @@ do its draws: only where it is placed.
   root's default) and `setPurposeShown` are requests: the scene thread composes, fetches what the change needs and rebuilds, and the
   renderer uploads the changes over the next frames within its budget.
 - **LOD roots**: every LOD root reached while drawing (`lodRoots()`, the `lod` record): its levels and each level's payloads, its
-  heuristic (type, thresholds, extent, projection), the level it defaults to, wants and draws, the levels loaded, and whether its level was
+  heuristics (every one it names, the one used marked), the level it defaults to, wants and draws, the levels loaded, and whether its level was
   set by hand.
-- **The LOD heuristic**: every LOD root reached wants the level its screen size picks: UsdLod's `LODScreenSizeHeuristic`, its extent's bounding sphere
-  placed by the root's transform, as a fraction of the view window at depth 1, against its `thresholds`. Unlike USD's reference query it ignores the
-  frustum, so what is near stays loaded whichever way the camera looks. Going coarser waits until the size is 20% below the threshold, so a camera at
-  a threshold doesn't flip a root. A level set by hand (`lod`, the LOD window) wins until `lod-reset`; with the heuristic off (`lod-heuristic off`,
+- **The LOD heuristic**: every LOD root reached wants the level its heuristic picks from the camera (`lodMeasure`, `pickLodLevel`). A root naming
+  several measures by the view's preference (`lod-prefer distance|screen|authored`, `view.lod.heuristic {prefer}`, the LOD window; distance first
+  by default): a distance is UsdLod's, to the heuristic's center or the nearest point of its bounding box, in the stage's units like its
+  thresholds; a screen size is its extent's bounding sphere over the view window at depth 1, as a fraction of the window, which unlike USD's
+  reference query ignores the frustum, so what is near stays loaded whichever way the camera looks. Inside an authored blend band
+  (`blendThresholds`) a streaming root wants the finer level (render-LOD groups fade, src/renderer/README.md); at a boundary without one,
+  going coarser waits for a 20% margin (`lodHysteresis`; for a distance the same margin, as a size falls with its square), so a camera at a
+  threshold doesn't flip a root. A level set by hand (`lod`, the LOD window) wins until `lod-reset`; with the heuristic off (`lod-heuristic off`,
   `view.lod.heuristic`, the LOD window's toggle) every other root wants its default; a root without a usable heuristic (`heuristicChosen`,
   src/world/README.md "Loading") wants its default ("no usable heuristic"). Every root the heuristic picks finer goes finer: what fits in memory is
   the budgets' to decide, not a count of roots. The roots evaluated are the streaming roots of drawn placements, kept as placements are built

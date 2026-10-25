@@ -14,19 +14,29 @@ class FrameGraph;
 class RhiBuffer;
 class RhiDevice;
 
-// One entry of the render-LOD group table (std430, stride 64), read by shaders/lodselect.comp. serial changes each time the slot takes a
-// new group, so the level picked for the group before isn't taken as this one's.
+// One entry of the render-LOD group table (std430, stride 240), read by shaders/lodselect.comp: RenderLodGroup, the distance's transforms as
+// three rows each. serial changes each time the slot takes a new group, so the level picked for the group before isn't taken as this one's.
 struct GpuLodGroup {
+    std::array<glm::vec4, 3> toWorld = {};
+    std::array<glm::vec4, 3> toRoot = {};
     glm::vec3 center = glm::vec3(0.0f);
     float radius = 0.0f;
+    glm::vec3 point = glm::vec3(0.0f);
+    uint32_t kind = 0;
+    glm::vec3 boxMin = glm::vec3(0.0f);
+    uint32_t hasBox = 0;
+    glm::vec3 boxMax = glm::vec3(0.0f);
+    uint32_t blendCount = 0;
     std::array<float, RenderLodGroup::maxLevels - 1> thresholds = {};
+    std::array<float, RenderLodGroup::maxLevels - 1> blendThresholds = {};
     uint32_t levelCount = 0;
     uint32_t defaultLevel = 0;
     int32_t forcedLevel = -1;
     uint32_t serial = 0;
     uint32_t alive = 0;
+    uint32_t thresholdCount = 0;
 };
-static_assert(sizeof(GpuLodGroup) == 64);
+static_assert(sizeof(GpuLodGroup) == 240);
 
 // What shaders/lodselect.comp counts over the groups each frame (its Totals, std430).
 struct LodSelectTotals {
@@ -34,13 +44,13 @@ struct LodSelectTotals {
     uint32_t fallbacks = 0;                                      // groups drawing another level while the one wanted isn't resident
     uint32_t forced = 0;                                         // groups at a hand-set level or the default, the heuristic off
     uint32_t groups = 0;                                         // alive
-    uint32_t pad = 0;
+    uint32_t fading = 0;                                         // groups drawing two levels, cross-faded, inside a blend band
 };
 static_assert(sizeof(LodSelectTotals) == 48);
 
 // The render-LOD groups on the GPU (src/renderer/README.md, "Render LOD"): the group table, a record per group slot uploaded as groups
-// change; the state, per group the serial it was picked for, the level the heuristic wants and the level drawn, which lodselect.comp writes
-// each frame and the cull pass reads; and the residency mask, per group a bit per level with a mesh not in the pool, which the cull pass
+// change; the state, per group the serial it was picked for, the level the heuristic wants, the level drawn, the level fading in and its
+// share, and the measure, which lodselect.comp writes each frame and the cull pass and the cutout pipelines read; and the residency mask, per group a bit per level with a mesh not in the pool, which the cull pass
 // sets and lodselect.comp reads and clears the next frame. The three persist across frames; a grown one is new, its contents undefined
 // until written: the state is written before anything reads it, and stale residency bits only make a group fall back for a frame.
 // Per frame slot: the per-workgroup counters, the totals and the readback.
@@ -83,10 +93,11 @@ public:
     auto groupCountersBuffer(uint32_t frameSlot) const -> RhiBuffer* { return slots[frameSlot].groupCounters; }
     auto totalsBuffer(uint32_t frameSlot) const -> RhiBuffer* { return slots[frameSlot].totals; }
     auto frameSlots() const -> uint32_t { return (uint32_t) slots.size(); }
-    auto capacityBytes() const -> uint64_t { return (uint64_t) capacity * (sizeof(GpuLodGroup) + (3 * sizeof(uint32_t))); }
+    // The table, the state (16 bytes a group) and the residency mask.
+    auto capacityBytes() const -> uint64_t { return (uint64_t) capacity * (sizeof(GpuLodGroup) + (5 * sizeof(uint32_t))); }
 
-    // The latest readback (one frame-slot cycle old): the totals, and per group the level drawn and wanted (0xFF for none) when the states
-    // were read.
+    // The latest readback (one frame-slot cycle old): the totals, and per group the level drawn and wanted (0xFF for none), the level
+    // fading in (0xFF for none) and its share, and the measure, when the states were read.
     struct Readback {
         uint64_t frame = 0;
         uint32_t groupCount = 0;
@@ -96,6 +107,9 @@ public:
         float windowArea = 1.0f;
         std::vector<uint8_t> drawn;
         std::vector<uint8_t> wanted;
+        std::vector<uint8_t> fadeLevel;
+        std::vector<float> fade;
+        std::vector<float> measure;
     };
     auto latest() const -> const Readback& { return read; }
 

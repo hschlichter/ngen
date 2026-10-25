@@ -90,8 +90,8 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   rebuild the scene; a live view takes a source edit by itself, from the asset server's change notice, so this is for repacking an unchanged source),
   `goto-asset <id> [all]` (move the camera to an asset's next draw, nearest first, and select it; `all` frames every draw),
   `assets-of [/prim]` (the assets drawn at or under a prim use, or the selection's; `view.assetsOf` answers with them),
-  `lod <LOD root path> <level>` (the level a LOD root wants; loads it), `lod-reset <LOD root path>` (back to its default), `lod-heuristic on|off` (the LOD heuristic; on by default) and `cull on|off|freeze|unfreeze|show|hide`
-  (frustum culling toggle, frozen frustum, red/green AABB overlay), `prepass on|off` (depth prepass) and
+  `lod <LOD root path> <level>` (the level a LOD root wants; loads it), `lod-reset <LOD root path>` (back to its default), `lod-heuristic on|off` (the LOD heuristic; on by default), `lod-prefer distance|screen|authored` (which heuristic a LOD root naming several measures by; distance first by default) and `cull on|off|freeze|unfreeze|show|hide`
+  (frustum culling toggle, frozen frustum, red/green AABB overlay), `prepass on|off` (depth prepass), `aa on|off` (anti-aliasing; off to compare images pixel for pixel, a LOD fade's dither unblurred) and
   `ambient sky=r,g,b ground=r,g,b|reset` (hemisphere ambient), `gpuscene budget=<MiB>,limit=<MiB>` (upload budget, geometry pool limit),
   `sampler aniso=8,bias=0,minlod=0,mip=linear|nearest` (material sampler), `shadow cascades=3,tile=1024,lambda=0.5,pcf=on|off,distance=200`
   (cascaded shadows), `inspect <texture> <level>|off` (texture inspector

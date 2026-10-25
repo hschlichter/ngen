@@ -51,13 +51,20 @@ auto DrawLists::cascadeBucketOf(const GpuInstance& instance) -> uint32_t {
     return noBucket;
 }
 
+// An instance of a render-LOD group counts in its cutout bucket as well as its own: while its group fades, the cull pass draws it there.
 auto DrawLists::countInstance(const GpuInstance& instance, int delta) -> void {
-    if (auto b = cameraBucketOf(instance); b != noBucket) {
-        cameraBuckets[b] += delta;
-    }
-    if (auto b = cascadeBucketOf(instance); b != noBucket) {
-        cascadeBuckets[b] += delta;
-    }
+    bool mayFade = instance.lodGroup != 0;
+    auto count = [&](std::array<uint64_t, bucketCount>& buckets, uint32_t b) {
+        if (b == noBucket) {
+            return;
+        }
+        buckets[b] += delta;
+        if (mayFade && b < 2) {
+            buckets[b + 2] += delta;
+        }
+    };
+    count(cameraBuckets, cameraBucketOf(instance));
+    count(cascadeBuckets, cascadeBucketOf(instance));
 }
 
 auto DrawLists::commandsNeeded() const -> uint64_t {

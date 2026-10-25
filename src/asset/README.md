@@ -164,7 +164,7 @@ file alone, so editing one file of a scene repacks that file only. A file's outp
 - **The layer pack**, the file's own asset: the opinions the file authors, read as written (Sdf, no composition). Its up axis, meters per unit,
   default prim and sublayers (asset ids), and per prim spec: its path, specifier, type, API schemas, `active`, `instanceable`, kind, the attributes
   the engine reads (`xformOp:*` and `xformOpOrder`, `visibility`, `purpose`, `extent`, `extentsHint`, `lod:*`, `thresholds`, `blendThresholds`,
-  `projectionMethod`, `inputs:*` outside shading prims, a material's own `inputs:*` (its interface), and a PointInstancer's `positions`,
+  `projectionMethod`, `center` (a distance heuristic's), `inputs:*` outside shading prims, a material's own `inputs:*` (its interface), and a PointInstancer's `positions`,
   `orientations`/`orientationsf`, `scales`, `protoIndices`, `ids` and `invisibleIds`), the relationships (`material:binding*`, `lod:heuristics`,
   `boundingVolume`, `prototypes`), its references and payloads (asset id and prim path; an empty id is a reference inside the file), the number of
   `points` it authors, and the mesh and material assets it defines. Asset paths are resolved to asset ids, against the file's folder. Each prim's

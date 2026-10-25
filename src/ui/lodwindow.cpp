@@ -118,8 +118,8 @@ auto drawRow(const LodWindowRow& row, LodWindowState& state) -> void {
 
     ImGui::TableSetColumnIndex(ColumnScreen);
     ImGui::AlignTextToFramePadding();
-    if (row.screenSize >= 0.0f) {
-        ImGui::Text("%.3f", row.screenSize);
+    if (row.measure >= 0.0f) {
+        ImGui::Text("%.3f%s", row.measure, row.measureUnit.c_str());
     } else {
         ImGui::TextDisabled("-");
     }
@@ -180,7 +180,7 @@ auto drawLodWindow(bool& show, LodWindowState& state) -> void {
     if (ImGui::CollapsingHeader("Render LOD")) {
         // Roots whose levels aren't payloads: every level is held, and the GPU picks one per placement each frame.
         const auto& lod = state.renderLod;
-        ImGui::Text("%u groups (render-LOD roots placed); %u at a forced level, %u falling back while a level uploads", lod.groups, lod.forced, lod.fallbacks);
+        ImGui::Text("%u groups (render-LOD roots placed); %u at a forced level, %u falling back while a level uploads, %u fading", lod.groups, lod.forced, lod.fallbacks, lod.fading);
         std::string drawing;
         for (size_t level = 0; level < lod.drawing.size(); level++) {
             if (lod.drawing[level] > 0) {
@@ -230,7 +230,16 @@ auto drawLodWindow(bool& show, LodWindowState& state) -> void {
         state.heuristicRequested = heuristic;
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("On: every root not set by hand wants the level its screen size from the camera picks (with a 20%% band before going coarser).\nOff: every root wants its default. Screen size: the fraction of the view its heuristic extent's bounding sphere covers.");
+        ImGui::SetTooltip("On: every root not set by hand wants the level its heuristic picks from the camera: inside an authored blend band it\ncross-fades to the next (render LOD); without one, going coarser waits for a 20%% margin.\nOff: every root wants its default.");
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(150.0f);
+    int preference = state.preference;
+    if (ImGui::Combo("##prefer", &preference, "distance first\0screen size first\0authored order\0")) {
+        state.preferenceRequested = preference;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Which heuristic a root naming several measures by. Distance: metres (the stage's units) to its center or bounding box.\nScreen size: the fraction of the view its extent's bounding sphere covers. Authored: the first it names.");
     }
     ImGui::SameLine();
     ImGui::SetNextItemWidth(90.0f);
@@ -263,7 +272,7 @@ auto drawLodWindow(bool& show, LodWindowState& state) -> void {
         ImGui::TableSetupColumn("Wants", ImGuiTableColumnFlags_WidthFixed, 150.0f, ColumnLevel);
         ImGui::TableSetupColumn("Draws", ImGuiTableColumnFlags_WidthFixed, 110.0f, ColumnDrawn);
         ImGui::TableSetupColumn("Loaded", ImGuiTableColumnFlags_WidthFixed, 70.0f, ColumnLoaded);
-        ImGui::TableSetupColumn("Screen", ImGuiTableColumnFlags_WidthFixed, 60.0f, ColumnScreen);
+        ImGui::TableSetupColumn("Measure", ImGuiTableColumnFlags_WidthFixed, 70.0f, ColumnScreen);
         ImGui::TableSetupColumn("Why", ImGuiTableColumnFlags_WidthFixed, 110.0f, ColumnWhy);
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableHeadersRow();

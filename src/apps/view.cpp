@@ -552,12 +552,15 @@ auto main(int argc, char* argv[]) -> int {
             lodRows.clear();
             for (const auto& root : scene.lodRoots()) {
                 std::string heuristic;
-                if (!root.heuristicType.empty()) {
+                auto used = chooseLodHeuristic(root.heuristics, scene.lodPreference());
+                for (size_t h = 0; h < root.heuristics.size(); h++) {
+                    const auto& named = root.heuristics[h];
                     std::string thresholds;
-                    for (float threshold : root.thresholds) {
+                    for (float threshold : named.thresholds) {
                         thresholds += std::format("{}{:g}", thresholds.empty() ? "" : ", ", threshold);
                     }
-                    heuristic = std::format("{} [{}]", root.heuristicType, thresholds);
+                    auto kind = named.kind == LodHeuristicKind::Distance ? "distance" : (named.kind == LodHeuristicKind::ScreenSize ? "screen" : named.type.c_str());
+                    heuristic += std::format("{}{} [{}]{}", heuristic.empty() ? "" : " | ", kind, thresholds, (int32_t) h == used ? "*" : "");
                 }
                 const auto& choices = scene.lodChoices();
                 auto choice = choices.find(root.path);
@@ -583,7 +586,8 @@ auto main(int argc, char* argv[]) -> int {
                     .drawn = root.drawn ? (int32_t) *root.drawn : -1,
                     .loaded = root.loaded,
                     .setByHand = root.setByHand,
-                    .screenSize = choice != choices.end() ? choice->second.screenSize : -1.0f,
+                    .measure = choice != choices.end() ? choice->second.measure : -1.0f,
+                    .measureUnit = choice != choices.end() && choice->second.kind == LodHeuristicKind::Distance ? "m" : "",
                     .why = choice != choices.end() ? choice->second.reason : std::string("not evaluated yet"),
                     .waiting = waiting,
                     .kept = std::move(kept),
@@ -1127,6 +1131,7 @@ auto main(int argc, char* argv[]) -> int {
             lodWindow.renderLod.drawing = latestCull.lodPicked;
             lodWindow.renderLod.fallbacks = latestCull.lodFallbacks;
             lodWindow.renderLod.forced = latestCull.lodForced;
+            lodWindow.renderLod.fading = latestCull.lodFading;
             lodWindow.renderLod.slotsNotDrawn = latestCull.lodDropped;
             const auto& groupPaths = scene.snapshot().draws->lodGroupPaths;
             auto groupsUnder = [&](const std::string& base) {
@@ -1156,6 +1161,10 @@ auto main(int argc, char* argv[]) -> int {
                 }
             }
             lodWindow.heuristic = scene.lodHeuristic();
+            lodWindow.preference = (int) scene.lodPreference();
+            if (auto preference = std::exchange(lodWindow.preferenceRequested, std::nullopt)) {
+                scene.setLodPreference((LodPreference) *preference);
+            }
             lodWindow.unloadDelay = (float) scene.unloadDelay();
             if (auto on = std::exchange(lodWindow.heuristicRequested, std::nullopt)) {
                 scene.setLodHeuristic(*on);

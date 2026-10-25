@@ -35,13 +35,28 @@ auto decomposeTransform(const glm::mat4& local) -> Transform;
 
 // Whether a LOD root's heuristic extent (its bounding sphere, placed by the root's transform) is inside a view's frustum, as UsdLod's
 // reference query sees it: a root outside measures 0 there. The view's heuristic ignores the frustum; the `streaming` record reports it.
+// A LOD heuristic's measure of a root from an eye in world metres, in the heuristic's unit: a distance in the stage's units (as its
+// thresholds), as UsdLodDistanceHeuristicQuery::ComputeDistance; or a screen size, the extent's bounding sphere over the view window at depth
+// 1 (`windowArea` its area) as a fraction of it, as UsdLodScreenSizeHeuristicQuery's projectedSphere without its frustum test (what is near
+// stays loaded whichever way the camera looks). `rootToWorld` places the root in world metres.
+auto lodMeasure(const LodHeuristic& heuristic, const glm::mat4& rootToWorld, double metersPerUnit, const glm::vec3& eye, float windowArea) -> float;
+// The view window's area at depth 1 for a vertical field of view and an aspect.
+auto lodWindowArea(float fovY, float aspect) -> float;
 auto lodRootInFrustum(const SceneLodRoot& root, const glm::vec3& eye, const glm::vec3& forward, const glm::vec3& right, float fovY, float aspect) -> bool;
 
 // What the LOD heuristic chose for a root at the last evaluation: its screen size (the fraction of the view its extent's bounding sphere
 // covers, -1 when not computed) and the level it wants, with why: "heuristic", "hand-set", "heuristic off", "no screen-size heuristic",
 // "no camera".
+// The hysteresis at a LOD boundary without a blend band (pickLodLevel): 20% of a screen size, the same margin in a distance. lodselect.comp
+// has the same constant.
+inline constexpr float lodHysteresis = 0.2f;
+
+// What the heuristic chose for a root at its last evaluation: the heuristic it measured by (an index into the root's heuristics, -1 for
+// none), its kind and its measure (a distance in the stage's units, or a screen size; -1 when not measured), the level, and why.
 struct SceneLodChoice {
-    float screenSize = -1.0f;
+    int32_t heuristic = -1;
+    LodHeuristicKind kind = LodHeuristicKind::Other;
+    float measure = -1.0f;
     uint32_t level = 0;
     std::string reason;
 };
@@ -143,6 +158,8 @@ struct SceneSnapshot {
     std::shared_ptr<const SceneDraws> draws = std::make_shared<SceneDraws>();
     std::shared_ptr<const SceneLodChoices> lodChoices = std::make_shared<SceneLodChoices>();
     bool lodHeuristic = true;
+    LodPreference lodPreference = LodPreference::Distance;
+    double metersPerUnitOfLod = 1.0; // the stage's, for the measures the records show
     double unloadDelay = 10.0;
     // The levels kept for the unload delay, by root path: each with when the delay runs out.
     std::shared_ptr<const std::map<std::string, std::map<uint32_t, std::chrono::steady_clock::time_point>>> keptLevels =
@@ -189,6 +206,10 @@ public:
     auto cameraAspect() const -> float;
     // The LOD heuristic on (every root not set by hand wants the level its screen size picks) or off (its default).
     auto setLodHeuristic(bool on) -> void;
+    // Which heuristic a root measures by when it names more than one: distance first (the default), screen size first, or the first it names.
+    auto setLodPreference(LodPreference preference) -> void;
+    auto lodPreference() const -> LodPreference { return current->lodPreference; }
+    auto lodMetersPerUnit() const -> double { return current->metersPerUnitOfLod; }
     // How long a LOD level that stopped being wanted stays loaded (its placement, contents, packs, library entries and GPU copies).
     auto setUnloadDelay(double seconds) -> void;
     auto unloadDelay() const -> double { return current->unloadDelay; }
@@ -285,6 +306,7 @@ private:
     struct HeuristicRequest {
         std::optional<bool> on;
         std::optional<double> unloadDelay;
+        std::optional<LodPreference> prefer;
     };
     using Request = std::variant<OpenRequest, LodRequest, PurposeRequest, RefreshRequest, TransformRequest, HeuristicRequest>;
     struct CameraInput {
@@ -377,6 +399,7 @@ private:
     std::optional<CameraInput> postedCamera;
     std::optional<CameraInput> camera;
     bool heuristicOn = true;
+    LodPreference lodPreferenceNow = LodPreference::Distance;
     bool evaluateNeeded = false;
     std::unordered_map<std::string, uint32_t> handLevels;
     std::unordered_map<std::string, uint32_t> heuristicLevels;
@@ -519,7 +542,8 @@ private:
         std::string path;
         uint32_t defaultLevel = 0;
         uint32_t levelCount = 0;
-        bool usable = false;
+        std::vector<LodHeuristic> heuristics;
+        glm::mat4 toWorld = glm::mat4(1.0f); // the root's space to world metres
     };
     std::vector<LodGroupInfo> lodGroupInfo;
     ChunkedList<std::string> lodGroupPaths; // published with the draws
@@ -530,10 +554,13 @@ private:
     auto allocLodGroup() -> uint32_t;
     auto freeLodGroup(uint32_t group) -> void;
     auto setLodGroup(uint32_t group, const RenderLodGroup& value) -> void;
-    // A group's forced level: hand-set, else its default while the heuristic is off or unusable, else none (-1).
+    // A group's forced level: hand-set, else its default while the heuristic is off or it has no usable heuristic, else none (-1).
     auto forcedLevelOf(const LodGroupInfo& info) const -> int32_t;
-    // Applies the forced levels again to the group at a path, or with an empty path to every group (the heuristic turned on or off).
-    auto refreshForcedLevels(const std::string& path) -> void;
+    // A group's record from what the view knows of it: the heuristic the preference chooses, in the GPU's units (thresholds in metres for a
+    // distance), and its forced level.
+    auto lodGroupOf(const LodGroupInfo& info) const -> RenderLodGroup;
+    // Builds the group at a path again, or with an empty path every group (the heuristic turned on or off, the preference changed).
+    auto refreshLodGroups(const std::string& path) -> void;
     // The pass's: assets that arrived or failed since the last (a placement waiting for one is built again), the slots it touched with what
     // they held before, the assets its placements want and lack, and its counts.
     std::set<std::string> arrived;

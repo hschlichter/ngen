@@ -1,8 +1,8 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 
-// The geometry pass for cutout materials: gbuffer.frag's outputs where the opacity reaches the material's threshold, nothing where it
-// doesn't (cutout.glsl). Kept in step with gbuffer.frag.
+// The geometry pass for cutout materials and render-LOD fades: gbuffer.frag's outputs where the opacity reaches the material's threshold
+// and the fade keeps the pixel, nothing elsewhere (cutout.glsl, lodfade.glsl). Kept in step with gbuffer.frag.
 
 layout(set = 0, binding = 1) uniform sampler2D textures[1024];
 
@@ -37,6 +37,8 @@ layout(std430, set = 0, binding = 3) readonly buffer Materials {
 } materials;
 
 #include "cutout.glsl"
+#define LOD_FADE_FRAGMENT
+#include "lodfade.glsl"
 
 layout(location = 0) in vec3 fragNormal;
 layout(location = 1) in vec3 fragColor;
@@ -44,13 +46,14 @@ layout(location = 2) in vec2 fragTexCoord;
 layout(location = 3) flat in uint fragTexture;
 layout(location = 4) flat in uint fragInstance; // the instance index + 1
 layout(location = 5) flat in uint fragLodLevel;
+layout(location = 6) flat in float fragLodCoverage;
 
 layout(location = 0) out vec4 outAlbedo;
 layout(location = 1) out vec4 outNormal;
 layout(location = 2) out uint outInstance;
 
 void main() {
-    if (cutAway(instances.data[fragInstance - 1u].material, fragTexCoord)) {
+    if (lodFadedAway(fragLodCoverage) || cutAway(instances.data[fragInstance - 1u].material, fragTexCoord)) {
         discard;
     }
     vec4 texColor = texture(textures[fragTexture], fragTexCoord);

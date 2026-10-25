@@ -176,6 +176,13 @@ auto parseUnloadDelay(const std::string& args) -> std::expected<Json, std::strin
     return Json{{"unloadDelay", seconds}};
 }
 
+auto parseLodPreference(const std::string& args) -> std::expected<Json, std::string> {
+    if (!lodPreferenceFromName(args)) {
+        return std::unexpected(std::format("expected distance, screen or authored, got '{}'", args));
+    }
+    return Json{{"prefer", args}};
+}
+
 auto parseLodRoot(const std::string& args) -> std::expected<Json, std::string> {
     return Json{{"root", args}};
 }
@@ -319,6 +326,7 @@ auto parseGpuScene(const std::string& args) -> std::expected<Json, std::string> 
     return params;
 }
 
+// "on" or "off" as {enabled}: the prepass and anti-aliasing verbs.
 auto parsePrepass(const std::string& args) -> std::expected<Json, std::string> {
     if (args != "on" && args != "off") {
         return std::unexpected(std::format("unknown argument '{}'", args));
@@ -410,6 +418,7 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"lod-reset", "view.lod.reset", parseLodRoot},
     ScriptVerb{"lod-heuristic", "view.lod.heuristic", parseOnOff},
     ScriptVerb{"lod-unload-delay", "view.lod.heuristic", parseUnloadDelay},
+    ScriptVerb{"lod-prefer", "view.lod.heuristic", parseLodPreference},
     ScriptVerb{"wait-resident", "view.waitResident", parseNothing},
     ScriptVerb{"view", "view.mode", parseViewMode},
     ScriptVerb{"window", "view.window", parseWindow},
@@ -421,6 +430,7 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"dump-texture", "view.dumpTexture", parseDumpTexture},
     ScriptVerb{"shadow", "view.shadow", parseShadow},
     ScriptVerb{"prepass", "view.prepass", parsePrepass},
+    ScriptVerb{"aa", "view.antialiasing", parsePrepass},
     ScriptVerb{"ambient", "view.ambient", parseAmbient},
     ScriptVerb{"gpuscene", "view.gpuscene.set", parseGpuScene},
     ScriptVerb{"screenshot", "view.screenshot", parsePath},
@@ -662,8 +672,9 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.lod.heuristic",
-            .summary = "The LOD heuristic on (every root not set by hand wants the level its screen size from the camera picks) or off (its default), and how long what stopped being drawn is kept.",
+            .summary = "The LOD heuristic on (every root not set by hand wants the level its heuristic picks from the camera) or off (its default), which heuristic a root naming several measures by, and how long a level that stopped being wanted stays loaded.",
             .params = {optionalField("on", RpcType::Bool, "on or off"),
+                       optionalField("prefer", RpcType::String, "distance (the default), screen, or authored (the first the root names)"),
                        optionalField("unloadDelay", RpcType::Float, "seconds a level that stopped being wanted stays loaded")},
             .result = "{}",
         },
@@ -673,6 +684,14 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
             }
             if (p.contains("unloadDelay")) {
                 view.scene.setUnloadDelay(p["unloadDelay"].get<double>());
+            }
+            if (p.contains("prefer")) {
+                auto prefer = lodPreferenceFromName(p["prefer"].get<std::string>());
+                if (!prefer) {
+                    responder.fail(rpc::invalidParams, std::format("prefer is distance, screen or authored, not '{}'", p["prefer"].get<std::string>()));
+                    return;
+                }
+                view.scene.setLodPreference(*prefer);
             }
             responder.respond(Json::object());
         });
@@ -960,6 +979,17 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
         });
     registry.add(
         {
+            .name = "view.antialiasing",
+            .summary = "The anti-aliasing pass (FXAA) on the presented image; off shows the image as the passes wrote it (a dither pattern unblurred).",
+            .params = {requiredField("enabled", RpcType::Bool, "anti-aliasing on")},
+            .result = "{}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            view.ui.setAntiAliasing(p["enabled"].get<bool>());
+            responder.respond(Json::object());
+        });
+    registry.add(
+        {
             .name = "view.inspect",
             .summary = "The texture inspector's capture of one texture level.",
             .params = {
@@ -1239,6 +1269,41 @@ auto sceneRecord(const ViewContext& view) -> Json {
     };
 }
 
+// A LOD root's heuristics as the records list them: kind, type, domain, thresholds and bands, bounds, and why one isn't read.
+auto heuristicsJson(const std::vector<LodHeuristic>& heuristics, LodPreference preference) -> Json {
+    auto chosen = chooseLodHeuristic(heuristics, preference);
+    auto out = Json::array();
+    for (size_t i = 0; i < heuristics.size(); i++) {
+        const auto& heuristic = heuristics[i];
+        Json entry = {
+            {"type", heuristic.type},
+            {"path", heuristic.path},
+            {"domain", heuristic.domain},
+            {"thresholds", heuristic.thresholds},
+            {"blendThresholds", heuristic.blendThresholds},
+            {"used", (int32_t) i == chosen},
+        };
+        if (heuristic.kind == LodHeuristicKind::Distance) {
+            entry["kind"] = "distance";
+            entry["center"] = vec3Json(heuristic.center);
+            if (heuristic.box) {
+                entry["box"] = {vec3Json((*heuristic.box)[0]), vec3Json((*heuristic.box)[1])};
+            }
+        } else if (heuristic.kind == LodHeuristicKind::ScreenSize) {
+            entry["kind"] = "screen";
+            entry["extent"] = {vec3Json(heuristic.extent[0]), vec3Json(heuristic.extent[1])};
+            entry["projection"] = heuristic.projection == LodProjection::Extent ? "projectedExtent" : "projectedSphere";
+        } else {
+            entry["kind"] = "other";
+        }
+        if (!heuristic.usable()) {
+            entry["unusable"] = heuristic.unusable;
+        }
+        out.push_back(entry);
+    }
+    return out;
+}
+
 auto streamingRecord(const ViewContext& view) -> Json {
     const auto& choices = view.scene.lodChoices();
     const auto& t = view.scene.threadStats();
@@ -1280,13 +1345,18 @@ auto streamingRecord(const ViewContext& view) -> Json {
                 kept.push_back({{"level", level}, {"secondsLeft", std::max(0.0, std::chrono::duration<double>(until - now).count())}});
             }
         }
+        auto used = chooseLodHeuristic(root.heuristics, view.scene.lodPreference());
+        bool measured = choice != choices.end() && choice->second.measure >= 0.0f;
         roots.push_back({
             {"path", root.path},
-            {"screenSize", choice != choices.end() ? Json(choice->second.screenSize) : Json(nullptr)},
+            {"heuristic", used},
+            {"kind", measured ? Json(choice->second.kind == LodHeuristicKind::Distance ? "distance" : "screen") : Json(nullptr)},
+            {"measure", measured ? Json(choice->second.measure) : Json(nullptr)},
             {"inFrustum", visible},
             {"wanted", choice != choices.end() ? Json(choice->second.level) : Json(nullptr)},
             {"why", choice != choices.end() ? Json(choice->second.reason) : Json("not evaluated yet")},
-            {"thresholds", root.thresholds},
+            {"thresholds", used >= 0 ? Json(root.heuristics[(size_t) used].thresholds) : Json::array()},
+            {"blendThresholds", used >= 0 ? Json(root.heuristics[(size_t) used].blendThresholds) : Json::array()},
             {"drawn", root.drawn ? Json(*root.drawn) : Json(nullptr)},
             {"loaded", root.loaded},
             {"waiting", waiting},
@@ -1297,6 +1367,7 @@ auto streamingRecord(const ViewContext& view) -> Json {
     return {
         {"totals", {{"roots", roots.size()}, {"placements", t.placements}, {"contentsHeld", t.prototypesHeld + t.levelsHeld}, {"assetsHeld", t.meshPacks + t.materialPacks + t.texturePacks}, {"inFrustum", inFrustum}, {"loading", loading}, {"waiting", {{"meshes", waitingTotal.meshes}, {"materials", waitingTotal.materials}, {"textures", waitingTotal.textures}, {"composing", waitingTotal.composing}}}, {"renderLodGroups", view.scene.threadStats().lodGroups}}},
         {"heuristic", view.scene.lodHeuristic()},
+        {"preference", lodPreferenceName(view.scene.lodPreference())},
         {"unloadDelay", view.scene.unloadDelay()},
         {"unloaded", {{"keptLevels", t.keptLevels}, {"levels", t.releasedLevels}, {"contents", t.releasedContents}, {"meshPacks", t.releasedMeshes}, {"meshBytes", t.releasedMeshBytes}}},
         {"evaluation", {{"count", t.lodEvaluations}, {"roots", t.lodRootsEvaluated}, {"finer", t.lodFiner}, {"coarser", t.lodCoarser}, {"ms", t.lodEvaluateMs}, {"relinks", t.relinks}}},
@@ -1307,21 +1378,11 @@ auto streamingRecord(const ViewContext& view) -> Json {
 auto lodRecord(const ViewContext& view) -> Json {
     auto roots = Json::array();
     for (const auto& root : view.scene.lodRoots()) {
-        auto heuristic = Json(nullptr);
-        if (!root.heuristicType.empty()) {
-            heuristic = {
-                {"type", root.heuristicType},
-                {"chosen", root.heuristicChosen},
-                {"thresholds", root.thresholds},
-                {"extent", {vec3Json(root.extent[0]), vec3Json(root.extent[1])}},
-                {"projection", root.projectedExtent ? "projectedExtent" : "projectedSphere"},
-            };
-        }
         roots.push_back({
             {"path", root.path},
             {"levels", root.levels},
             {"levelPayloads", root.levelPayloads},
-            {"heuristic", heuristic},
+            {"heuristics", heuristicsJson(root.heuristics, view.scene.lodPreference())},
             {"default", root.defaultIndex},
             {"wanted", root.wanted},
             {"drawn", root.drawn ? Json(*root.drawn) : Json(nullptr)},
@@ -1329,7 +1390,7 @@ auto lodRecord(const ViewContext& view) -> Json {
             {"setByHand", root.setByHand},
         });
     }
-    return {{"roots", roots}};
+    return {{"preference", lodPreferenceName(view.scene.lodPreference())}, {"roots", roots}};
 }
 
 auto payloadsRecord(const ViewContext& view) -> Json {
@@ -1444,41 +1505,55 @@ auto cullingRecord(const ViewContext& view) -> Json {
     };
 }
 
-// The levels the view's heuristic may want for a group at a camera, as levelFor picks them with its band (src/view/viewscene.cpp): from
-// the level it goes coarser to (thresholds at 80%) to the level it goes finer to, which it keeps depends on the level it wanted before.
-// onEdge when the size is within 1e-4 of a threshold or of its band, where float order may differ between the CPU and the GPU.
+// The levels the view's heuristic may want for a group at a camera, as pickLodLevel picks them (src/world/world.cpp): from the level it
+// keeps going coarser (wanting the finest before) to the level it goes finer to (wanting the coarsest before); which it keeps depends on the
+// level it wanted before. Inside a band the two agree and `blend` is the next level's share. The measure is the GPU's: a distance in
+// metres, or a screen size. onEdge when the measure is within 1e-4 of a threshold, a band's edge or a hysteresis edge, where float order
+// may differ between the CPU and the GPU.
 struct ExpectedLevels {
-    float size = 0.0f;
+    float measure = 0.0f;
     uint32_t low = 0;
     uint32_t high = 0;
+    float blend = 0.0f;
     bool onEdge = false;
 };
 
 auto expectedLevels(const RenderLodGroup& group, const glm::vec3& eye, float windowArea) -> ExpectedLevels {
     ExpectedLevels out;
-    auto distance = glm::length(eye - group.center);
-    out.size = 1e30f;
-    if (distance > 1e-6f) {
-        float r = group.radius / distance;
-        out.size = glm::pi<float>() * r * r / windowArea;
-    }
-    auto thresholdCount = group.levelCount > 0 ? std::min<uint32_t>(group.levelCount, RenderLodGroup::maxLevels) - 1 : 0;
-    auto count = [&](float scale) {
-        uint32_t level = 0;
-        while (level < thresholdCount && out.size <= group.thresholds[level] * scale) {
-            level++;
+    bool distance = group.kind == RenderLodKind::Distance;
+    if (distance) {
+        auto target = group.point;
+        auto eyeRoot = glm::vec3(group.toRoot * glm::vec4(eye, 1.0f));
+        bool inside = group.hasBox && glm::all(glm::greaterThanEqual(eyeRoot, group.boxMin)) && glm::all(glm::lessThanEqual(eyeRoot, group.boxMax));
+        if (group.hasBox) {
+            target = glm::clamp(eyeRoot, group.boxMin, group.boxMax);
         }
-        return level;
-    };
+        out.measure = inside ? 0.0f : glm::length(glm::vec3(group.toWorld * glm::vec4(target, 1.0f)) - eye);
+    } else {
+        auto toCenter = glm::length(eye - group.center);
+        out.measure = 1e30f;
+        if (toCenter > 1e-6f) {
+            float r = group.radius / toCenter;
+            out.measure = glm::pi<float>() * r * r / windowArea;
+        }
+    }
+    std::vector<float> thresholds(group.thresholds.begin(), group.thresholds.begin() + group.thresholdCount);
+    std::vector<float> blends(group.blendThresholds.begin(), group.blendThresholds.begin() + group.blendCount);
+    auto kind = distance ? LodHeuristicKind::Distance : LodHeuristicKind::ScreenSize;
     auto last = group.levelCount > 0 ? group.levelCount - 1 : 0;
-    out.low = std::min(count(0.8f), last);
-    out.high = std::min(count(1.0f), last);
-    for (uint32_t t = 0; t < thresholdCount; t++) {
-        for (float scale : {1.0f, 0.8f}) {
-            float edge = group.thresholds[t] * scale;
-            if (std::abs(out.size - edge) <= 1e-4f * edge) {
-                out.onEdge = true;
-            }
+    float hysteresis = lodHysteresis;
+    auto fromFinest = pickLodLevel(kind, thresholds, blends, out.measure, group.levelCount, 0, hysteresis);
+    auto fromCoarsest = pickLodLevel(kind, thresholds, blends, out.measure, group.levelCount, last, hysteresis);
+    out.low = fromFinest.level;
+    out.high = fromCoarsest.level;
+    out.blend = fromCoarsest.blend;
+    float coarserScale = distance ? 1.0f / std::sqrt(1.0f - hysteresis) : 1.0f - hysteresis;
+    auto near = [&](float edge) {
+        return std::abs(out.measure - edge) <= 1e-4f * std::abs(edge);
+    };
+    for (size_t t = 0; t < thresholds.size(); t++) {
+        if (near(thresholds[t]) || near(thresholds[t] * coarserScale) || (t < blends.size() && near(blends[t]))) {
+            out.onEdge = true;
         }
     }
     return out;
@@ -1523,45 +1598,76 @@ auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& 
         if (group.forcedLevel >= 0) {
             expected.low = std::min<uint32_t>((uint32_t) group.forcedLevel, group.levelCount - 1);
             expected.high = expected.low;
+            expected.blend = 0.0f;
             expected.onEdge = false;
         }
         bool read = cull.lodHasStates && g < cull.lodWanted.size();
         uint32_t wanted = read ? cull.lodWanted[g] : 0xFFu;
         uint32_t drawn = read ? cull.lodDrawn[g] : 0xFFu;
+        uint32_t fadeLevel = read && g < cull.lodFadeLevel.size() ? cull.lodFadeLevel[g] : 0xFFu;
+        float fade = read && g < cull.lodFade.size() ? cull.lodFade[g] : 0.0f;
+        float gpuMeasure = read && g < cull.lodMeasure.size() ? cull.lodMeasure[g] : 0.0f;
+        // The stage's units for a distance, as its thresholds are authored.
+        float unit = group.kind == RenderLodKind::Distance ? (float) view.scene.lodMetersPerUnit() : 1.0f;
         const auto& groupPath = g < draws.lodGroupPaths.size() ? draws.lodGroupPaths[g] : std::string();
         if (read) {
             compared++;
             if (drawn != wanted) {
                 fallbacks++;
             }
+            // A fade the GPU shows only when the next level is resident and the wanted one is drawn: compared where it does.
+            bool fadeDiffers = fadeLevel != 0xFFu && std::abs(fade - expected.blend) > 1e-3f;
             if (expected.onEdge) {
                 onEdge++;
-            } else if (wanted < expected.low || wanted > expected.high) {
+            } else if (wanted < expected.low || wanted > expected.high || fadeDiffers) {
                 differ++;
                 if (examples.size() < 10) {
-                    examples.push_back({{"path", groupPath}, {"size", expected.size}, {"wanted", wanted}, {"expected", {expected.low, expected.high}}, {"forced", group.forcedLevel}});
+                    examples.push_back({{"path", groupPath},
+                                        {"measure", expected.measure / unit},
+                                        {"wanted", wanted},
+                                        {"expected", {expected.low, expected.high}},
+                                        {"fade", fade},
+                                        {"expectedFade", expected.blend},
+                                        {"forced", group.forcedLevel}});
                 }
             }
         }
         bool under = path && !groupPath.empty() && (*path == "/" || groupPath == *path || (groupPath.size() > path->size() && groupPath.starts_with(*path) && groupPath[path->size()] == '/'));
         if (under) {
             auto thresholds = Json::array();
-            for (uint32_t t = 0; t + 1 < group.levelCount && t < group.thresholds.size(); t++) {
-                thresholds.push_back(group.thresholds[t]);
+            for (uint32_t t = 0; t < group.thresholdCount; t++) {
+                thresholds.push_back(group.thresholds[t] / unit);
             }
-            listed.push_back({
+            auto blends = Json::array();
+            for (uint32_t t = 0; t < group.blendCount; t++) {
+                blends.push_back(group.blendThresholds[t] / unit);
+            }
+            Json entry = {
                 {"group", g},
                 {"path", groupPath},
-                {"center", {group.center.x, group.center.y, group.center.z}},
-                {"radius", group.radius},
+                {"kind", group.kind == RenderLodKind::Distance ? "distance" : "screen"},
                 {"levels", group.levelCount},
                 {"thresholds", thresholds},
+                {"blendThresholds", blends},
                 {"default", group.defaultLevel},
                 {"forced", group.forcedLevel},
-                {"screenSize", expected.size},
+                {"measure", expected.measure / unit},
+                {"gpuMeasure", read ? Json(gpuMeasure / unit) : Json(nullptr)},
                 {"wanted", read ? Json(wanted) : Json(nullptr)},
                 {"drawn", read ? Json(drawn) : Json(nullptr)},
-            });
+                {"fadeLevel", read && fadeLevel != 0xFFu ? Json(fadeLevel) : Json(nullptr)},
+                {"fade", read ? Json(fade) : Json(nullptr)},
+                {"expectedFade", expected.blend},
+            };
+            if (group.kind == RenderLodKind::Distance) {
+                entry["center"] = vec3Json(group.point);
+                if (group.hasBox) {
+                    entry["box"] = {vec3Json(group.boxMin), vec3Json(group.boxMax)};
+                }
+            } else {
+                entry["sphere"] = {{"center", vec3Json(group.center)}, {"radius", group.radius}};
+            }
+            listed.push_back(entry);
         }
     }
     auto picked = Json::array();
@@ -1576,7 +1682,15 @@ auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& 
         {"frame", cull.lodFrame},
         {"groups", {{"alive", alive}, {"forced", forced}}},
         {"slotsPerLevel", placed},
-        {"gpu", {{"groups", cull.lodGroups}, {"drawingLevel", picked}, {"fallbacks", cull.lodFallbacks}, {"forced", cull.lodForced}, {"slotsOfLevelsNotDrawn", cull.lodDropped}}},
+        {"preference", lodPreferenceName(view.scene.lodPreference())},
+        {"gpu",
+         {{"groups", cull.lodGroups},
+          {"drawingLevel", picked},
+          {"fallbacks", cull.lodFallbacks},
+          {"forced", cull.lodForced},
+          {"fading", cull.lodFading},
+          {"fadingInstances", cull.lodFadingInstances},
+          {"slotsOfLevelsNotDrawn", cull.lodDropped}}},
         {"check",
          {{"camera", {{"position", {eye.x, eye.y, eye.z}}, {"windowArea", windowArea}, {"viewWindowArea", viewWindowArea}}},
           {"compared", compared},

@@ -115,6 +115,7 @@ public:
     auto getShowBufferOverlay() const -> bool { return showBufferOverlayFlag; }
     auto getShowShadowOverlay() const -> bool { return showShadowOverlayFlag; }
     auto getAntiAliasing() const -> bool { return antiAliasingFlag; }
+    auto setAntiAliasing(bool on) -> void { antiAliasingFlag = on; }
     auto introspection() -> IntrospectionFlags& { return introspectionFlags; }
     // Whether any open window reads the render debug snapshot.
     auto wantsRenderDebug() const -> bool { return showRenderDebugWindow || introspectionFlags.memory; }

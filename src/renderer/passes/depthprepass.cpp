@@ -64,6 +64,9 @@ auto DepthPrepass::addPass(
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             builder.read(drawHandles.commands, FgAccessFlags::IndirectRead);
             builder.read(drawHandles.counts, FgAccessFlags::IndirectRead);
+            if (drawHandles.lodStates.valid()) {
+                builder.read(drawHandles.lodStates, FgAccessFlags::StorageRead);
+            }
             builder.setSideEffects(true);
         },
         [bucketPipelines, extent, instances, &lists, drawHandles, &scene, descriptorSet](FrameGraphContext& ctx, const DepthPrepassData& data) {

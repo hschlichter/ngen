@@ -61,7 +61,7 @@ auto GeometryPass::init(RhiDevice* device, PipelineRegistry& pipelineRegistry, R
     return true;
 }
 
-auto GeometryPass::descriptorBindings() -> std::array<RhiDescriptorBinding, 4> {
+auto GeometryPass::descriptorBindings() -> std::array<RhiDescriptorBinding, 5> {
     using enum RhiDescriptorType;
     return {{
         {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
@@ -69,6 +69,8 @@ auto GeometryPass::descriptorBindings() -> std::array<RhiDescriptorBinding, 4> {
         // The cutout fragment shaders read the instance's material and its opacity.
         {.binding = 2, .type = StorageBuffer, .stage = RhiShaderStage::Vertex | RhiShaderStage::Fragment},
         {.binding = 3, .type = StorageBuffer, .stage = RhiShaderStage::Vertex | RhiShaderStage::Fragment},
+        // The render-LOD state (lodselect.comp's): the vertex stages read a fading instance's share of the pattern (lodfade.glsl).
+        {.binding = 4, .type = StorageBuffer, .stage = RhiShaderStage::Vertex},
     }};
 }
 
@@ -124,6 +126,9 @@ auto GeometryPass::addPass(
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             builder.read(drawHandles.commands, FgAccessFlags::IndirectRead);
             builder.read(drawHandles.counts, FgAccessFlags::IndirectRead);
+            if (drawHandles.lodStates.valid()) {
+                builder.read(drawHandles.lodStates, FgAccessFlags::StorageRead);
+            }
             builder.setSideEffects(true);
         },
         [bucketPipelines, depthPrepassed, extent, instances, &lists, drawHandles, &scene, descriptorSet](FrameGraphContext& ctx, const GeometryPassData& data) {

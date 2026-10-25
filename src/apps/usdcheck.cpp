@@ -2,8 +2,13 @@
 // is compared with. It loads what the World loads: every payload, except those under a LOD root's levels other than the one it wants
 // (lod:default:index, or --lod) and its coarsest.
 //
-//   ngen-usdcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--instancers] [--output <file>] <scene file>
+//   ngen-usdcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--instancers] [--lod-heuristics] [--lod-picks <file>]
+//                 [--output <file>] <scene file>
 //
+// --lod-heuristics prints every LOD root's heuristics (fingerprintHeuristicLine). --lod-picks reads lines "<root path> <heuristic index>
+// <x> <y> <z> <screen size>" (a camera position in the stage's units, and a screen size) and prints, per line, the root and heuristic, its
+// type, the measure (for a distance heuristic UsdLod's distance from that position under the root's world transform, else the screen size
+// given) and UsdLod's fractional level for it (ComputeLOD), the reference the engine's pick is compared with.
 // --instancers prints every PointInstancer's points (fingerprintPointLine) instead of the fingerprint, from
 // UsdGeomPointInstancer::ComputeInstanceTransformsAtTime without the prototypes' own transforms.
 //
@@ -23,10 +28,13 @@
 #include <pxr/usd/usdGeom/imageable.h>
 #include <pxr/usd/usdGeom/pointBased.h>
 #include <pxr/usd/usdGeom/pointInstancer.h>
+#include <pxr/usd/usdLod/distanceHeuristic.h>
 #include <pxr/usd/usdLod/rootAPI.h>
+#include <pxr/usd/usdLod/screenSizeHeuristic.h>
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -49,7 +57,7 @@ namespace {
 }
 
 auto usage() -> int {
-    std::fputs("usage: ngen-usdcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--instancers] [--output <file>] <scene file>\n", stderr);
+    std::fputs("usage: ngen-usdcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--instancers] [--lod-heuristics] [--lod-picks <file>] [--output <file>] <scene file>\n", stderr);
     return 3;
 }
 
@@ -83,6 +91,79 @@ auto loadedLevels(const UsdPrim& prim, size_t levelCount, const std::map<std::st
     out.insert(std::min(wanted, levelCount - 1));
     out.insert(levelCount - 1);
     return out;
+}
+
+// A root's lod:heuristics targets that author thresholds, in order: the heuristics the World keeps, numbered alike.
+auto rootHeuristics(const UsdPrim& root) -> std::vector<UsdPrim> {
+    std::vector<UsdPrim> out;
+    SdfPathVector targets;
+    UsdLodRootAPI(root).GetLodHeuristicsRel().GetForwardedTargets(&targets);
+    for (const auto& target : targets) {
+        auto prim = root.GetStage()->GetPrimAtPath(target);
+        if (prim && prim.GetAttribute(TfToken("thresholds")).HasAuthoredValue()) {
+            out.push_back(prim);
+        }
+    }
+    return out;
+}
+
+// A boundable's authored extent, when finite and not empty.
+auto validExtent(const UsdPrim& prim, VtArray<GfVec3f>& extent) -> bool {
+    if (!prim || !prim.GetAttribute(TfToken("extent")).Get(&extent) || extent.size() < 2) {
+        return false;
+    }
+    for (int i = 0; i < 3; i++) {
+        if (!std::isfinite(extent[0][i]) || !std::isfinite(extent[1][i]) || extent[0][i] > extent[1][i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// A heuristic's boundingVolume extent, as UsdLod's queries read it: the first target with a valid one.
+auto boundingVolume(const UsdPrim& heuristic, const UsdRelationship& relationship, VtArray<GfVec3f>& extent) -> bool {
+    SdfPathVector targets;
+    relationship.GetForwardedTargets(&targets);
+    for (const auto& target : targets) {
+        if (validExtent(heuristic.GetStage()->GetPrimAtPath(target), extent)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+auto heuristicLine(const std::string& rootPath, size_t index, const UsdPrim& prim) -> std::string {
+    VtArray<float> thresholds;
+    VtArray<float> blends;
+    prim.GetAttribute(TfToken("thresholds")).Get(&thresholds);
+    prim.GetAttribute(TfToken("blendThresholds")).Get(&blends);
+    TfToken domain;
+    prim.GetAttribute(TfToken("lod:domain")).Get(&domain);
+    std::vector<double> bounds;
+    auto add = [&](const GfVec3f& v) {
+        bounds.push_back(v[0]);
+        bounds.push_back(v[1]);
+        bounds.push_back(v[2]);
+    };
+    VtArray<GfVec3f> extent;
+    if (prim.IsA<UsdLodDistanceHeuristic>()) {
+        UsdLodDistanceHeuristic heuristic(prim);
+        GfVec3f center(0.0f);
+        heuristic.GetCenterAttr().Get(&center);
+        add(center);
+        if (boundingVolume(prim, heuristic.GetBoundingVolumeRel(), extent)) {
+            add(extent[0]);
+            add(extent[1]);
+        }
+    } else if (prim.IsA<UsdLodScreenSizeHeuristic>()) {
+        UsdLodScreenSizeHeuristic heuristic(prim);
+        if (!boundingVolume(prim, heuristic.GetBoundingVolumeRel(), extent) && !validExtent(prim, extent)) {
+            extent = VtArray<GfVec3f>{GfVec3f(-1.0f), GfVec3f(1.0f)};
+        }
+        add(extent[0]);
+        add(extent[1]);
+    }
+    return fingerprintHeuristicLine(rootPath, index, prim.GetTypeName().GetString(), domain.GetString(), std::vector<double>(thresholds.begin(), thresholds.end()), std::vector<double>(blends.begin(), blends.end()), bounds);
 }
 
 // The payloads still to load: unloaded, and not under a level that doesn't load.
@@ -126,6 +207,8 @@ auto main(int argc, char** argv) -> int {
     bool transforms = false;
     bool instancing = false;
     bool instancers = false;
+    bool heuristics = false;
+    std::string picks;
     std::string output;
     std::string scene;
     std::map<std::string, unsigned> levels;
@@ -137,6 +220,10 @@ auto main(int argc, char** argv) -> int {
             instancing = true;
         } else if (arg == "--instancers") {
             instancers = true;
+        } else if (arg == "--lod-heuristics") {
+            heuristics = true;
+        } else if (arg == "--lod-picks" && i + 1 < argc) {
+            picks = argv[++i];
         } else if (arg == "--output" && i + 1 < argc) {
             output = argv[++i];
         } else if (arg == "--lod" && i + 1 < argc) {
@@ -209,7 +296,50 @@ auto main(int argc, char** argv) -> int {
     };
     visit(stage->GetPseudoRoot());
 
-    if (instancers) {
+    if (heuristics) {
+        lines.clear();
+        for (const auto& prim : stage->Traverse(everyPrim())) {
+            if (!prim.HasAPI<UsdLodRootAPI>()) {
+                continue;
+            }
+            auto found = rootHeuristics(prim);
+            for (size_t i = 0; i < found.size(); i++) {
+                lines.push_back(heuristicLine(prim.GetPath().GetString(), i, found[i]));
+            }
+        }
+        std::ranges::sort(lines);
+    } else if (!picks.empty()) {
+        lines.clear();
+        std::ifstream in(picks);
+        std::string rootPath;
+        size_t index = 0;
+        double x = 0.0;
+        double y = 0.0;
+        double z = 0.0;
+        double size = 0.0;
+        while (in >> rootPath >> index >> x >> y >> z >> size) {
+            auto root = stage->GetPrimAtPath(SdfPath(rootPath));
+            auto found = root ? rootHeuristics(root) : std::vector<UsdPrim>{};
+            if (index >= found.size()) {
+                lines.push_back(std::format("{}#{}\tmissing", rootPath, index));
+                continue;
+            }
+            const auto& prim = found[index];
+            if (prim.IsA<UsdLodDistanceHeuristic>()) {
+                UsdLodDistanceHeuristic heuristic(prim);
+                GfVec3d eye(x, y, z);
+                auto transform = worldTransform(root);
+                double distance = heuristic.ComputeDistance(eye, transform);
+                float level = heuristic.ComputeLOD(eye, transform);
+                lines.push_back(std::format("{}#{}\t{}\t{:.6f}\t{:.6f}", rootPath, index, prim.GetTypeName().GetString(), distance, level));
+            } else if (prim.IsA<UsdLodScreenSizeHeuristic>()) {
+                float level = UsdLodScreenSizeHeuristic(prim).ComputeLOD(size);
+                lines.push_back(std::format("{}#{}\t{}\t{:.6f}\t{:.6f}", rootPath, index, prim.GetTypeName().GetString(), size, level));
+            } else {
+                lines.push_back(std::format("{}#{}\t{}\tunread", rootPath, index, prim.GetTypeName().GetString()));
+            }
+        }
+    } else if (instancers) {
         lines.clear();
         for (const auto& prim : stage->Traverse(everyPrim())) {
             if (!prim.IsA<UsdGeomPointInstancer>()) {

@@ -1,4 +1,5 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 
 layout(set = 0, binding = 0) uniform UBO {
     mat4 view;
@@ -37,6 +38,13 @@ layout(std430, set = 0, binding = 3) readonly buffer Materials {
     Material data[];
 } materials;
 
+// Per render-LOD group, lodselect.comp's state: the level fading in and its share (lodfade.glsl).
+layout(std430, set = 0, binding = 4) readonly buffer LodStates {
+    uvec4 data[];
+} lodStates;
+
+#include "lodfade.glsl"
+
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec3 inColor;
@@ -51,6 +59,8 @@ layout(location = 3) flat out uint fragTexture;
 layout(location = 4) flat out uint fragInstance;
 // The drawn LOD level + 1 of the LOD root above it, 0 under none, for the LOD level view.
 layout(location = 5) flat out uint fragLodLevel;
+// The instance's share of a render-LOD fade (lodfade.glsl), for the cutout fragment shader; lodCoverAll when its group isn't fading.
+layout(location = 6) flat out float fragLodCoverage;
 
 // Invariant so the depth prepass (depthonly.vert, same expression) produces identical depth.
 invariant gl_Position;
@@ -60,6 +70,7 @@ void main() {
     fragTexture = materials.data[instances.data[gl_InstanceIndex].material].baseColorTexture;
     fragInstance = uint(gl_InstanceIndex) + 1u;
     fragLodLevel = instances.data[gl_InstanceIndex].lodLevel;
+    fragLodCoverage = lodCoverage(instances.data[gl_InstanceIndex].lodGroup, instances.data[gl_InstanceIndex].lodLevel);
     gl_Position = ubo.proj * ubo.view * model * vec4(inPosition, 1.0);
     // Normalise here: the model matrix carries the scene's unit scale (Kitchen_set is
     // authored in cm under a 0.01 root scale), which would leave a near-zero normal for

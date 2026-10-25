@@ -781,7 +781,7 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
 
     auto slots = gpuScene.textureSlots();
     std::vector<RhiDescriptorWrite> writes;
-    writes.reserve(GpuScene::maxTextures + 3);
+    writes.reserve(GpuScene::maxTextures + 4);
     for (uint32_t i = 0; i < imgCount; i++) {
         writes.clear();
         writes.push_back({
@@ -809,6 +809,11 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
             .type = StorageBuffer,
             .buffer = gpuScene.materialBuffer(),
         });
+        writes.push_back({
+            .binding = 4,
+            .type = StorageBuffer,
+            .buffer = lodGroups.stateBuffer(),
+        });
         device->updateDescriptorSet(geometryDescriptorSets[i], writes);
     }
 }
@@ -833,6 +838,7 @@ auto Renderer::cullResult() const -> CullResult {
         .viewBits = drawLists.viewBits(),
         .regionOverflow = drawLists.regionOverflow(),
         .lodDropped = drawLists.lodDropped(),
+        .lodFadingInstances = drawLists.fadingInstances(),
     };
     const auto& lod = lodGroups.latest();
     result.lodFrame = lod.frame;
@@ -840,11 +846,15 @@ auto Renderer::cullResult() const -> CullResult {
     result.lodPicked = lod.totals.picked;
     result.lodFallbacks = lod.totals.fallbacks;
     result.lodForced = lod.totals.forced;
+    result.lodFading = lod.totals.fading;
     result.lodHasStates = lod.hasStates || lod.groupCount == 0;
     result.lodEye = lod.eye;
     result.lodWindowArea = lod.windowArea;
     result.lodDrawn = lod.drawn;
     result.lodWanted = lod.wanted;
+    result.lodFadeLevel = lod.fadeLevel;
+    result.lodFade = lod.fade;
+    result.lodMeasure = lod.measure;
     for (uint32_t c = 0; c < result.cascadeCount; c++) {
         result.cascadeCulled[c] = drawLists.cascadeCulled(c);
         result.cascadeDrawn[c] = drawLists.cascadeDrawn(c);
@@ -1065,6 +1075,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         // GPU culling writes the indirect commands for every view; the passes below read them.
         auto cullGroups = drawLists.writeParams(currentFrame, instanceCount, snapshot.cullViewProj, cascades, snapshot.cullEnabled);
         auto drawHandles = drawLists.import(frameGraph, currentFrame);
+        drawHandles.lodStates = lodHandles.states;
         instanceCullPass.addPasses(frameGraph, drawHandles, lodHandles, instanceHandle, cullGroups, currentFrame);
         if (snapshot.sampler != materialSamplerSettings) {
             applySamplerSettings(snapshot.sampler);

@@ -257,25 +257,38 @@ its size as `maxDrawCount`. An empty region still costs one call; only the GPU k
 ## Render LOD
 
 A render-LOD root (a UsdLod root whose levels aren't payloads; `src/world/README.md` "Loading") where the view places it is a *group*
-(`RenderLodGroup`, slots in `SceneChanges::lodGroups` beside the draw slots): the bounding sphere of its heuristic's extent in world metres,
-its thresholds (up to 8 levels), its default and a forced level (hand-set, or the default while the heuristic is off). Every level's draws are
-slots tagged with the group (`lodGroup`) and their level (`lodLevel`). Each frame the GPU picks the level a group draws, and culling draws only
-that level's slots. `LodGroups` (`lodgroups.*`) holds the buffers; `LodSelectPass` (`passes/lodselectpass.*`, `shaders/lodselect.comp`) runs
-before the culling passes.
-- **The table** (`gpuscene.lodgroups`, `GpuLodGroup`, 64 bytes): uploaded as groups change (`LodGroupUpload`, the changed span through the
+(`RenderLodGroup`, slots in `SceneChanges::lodGroups` beside the draw slots): the heuristic the view's preference chose for it, in the GPU's
+units (`RenderLodKind`: a screen size, the bounding sphere of its extent in world metres; or a distance, the root's transform and its inverse,
+the heuristic's center and its bounding box, thresholds in metres), its thresholds and blend thresholds (up to 8 levels), its default and a
+forced level (hand-set, or the default while the heuristic is off or the group has none usable). Every level's draws are slots tagged with the
+group (`lodGroup`) and their level (`lodLevel`). Each frame the GPU picks the level a group draws, and culling draws only that level's slots, or,
+inside a blend band, that level and the next, cross-faded. `LodGroups` (`lodgroups.*`) holds the buffers; `LodSelectPass`
+(`passes/lodselectpass.*`, `shaders/lodselect.comp`) runs before the culling passes.
+- **The table** (`gpuscene.lodgroups`, `GpuLodGroup`, 240 bytes): uploaded as groups change (`LodGroupUpload`, the changed span through the
   slot's staging, as the instance records). A slot taking a new group gets a new serial.
-- **The pick** (`LodSelect`, one thread per group): the forced level, else the level the view's screen-size heuristic wants (the sphere over the
-  view window at depth 1 from the live camera, finer as soon as the size passes a threshold, coarser once 20% below it, against the level the
-  group wanted last frame); then the level drawn: the wanted one when its meshes are in the pool, else the one drawn last frame when they are,
-  else the nearest resident level, coarser first. Written to the state buffer (`gpuscene.lodstate`: the serial, the level wanted and drawn).
+- **The pick** (`LodSelect`, one thread per group): the forced level, else the level the group's heuristic wants from the live camera, as
+  `pickLodLevel` (`src/world/world.cpp`) picks it: UsdLod's `ComputeLOD` for a distance (to the center, or the nearest point of the box, 0 inside;
+  `ComputeDistance`) or a screen size (the sphere over the view window at depth 1), with its blend bands, and at a boundary without one a 20%
+  margin before going coarser, against the level the group wanted last frame. Then the level drawn: the wanted one when its meshes are in the
+  pool, else the one drawn last frame when they are, else the nearest resident level, coarser first. Inside a band, when the wanted level is
+  drawn and the next one is resident, the next one fades in with the band's share. Written to the state buffer (`gpuscene.lodstate`, 16 bytes a
+  group: the serial; the level wanted, drawn and fading in; the share; the measure).
+- **Fades.** While a group fades, the cull pass draws both levels' instances in the cutout buckets of their sidedness, whose pipelines discard
+  (`cutout.glsl`); their vertex stages read the group's state from the geometry set (binding 4, declared as a read by the passes drawing the
+  lists) and pass the instance's coverage flat, and the fragment stages discard by a 4×4 ordered (Bayer) pattern in screen space
+  (`lodfade.glsl`): the level fading in keeps the pattern's values below the share, the level drawn the rest, so every pixel is covered once.
+  The depth prepass, the geometry pass and the shadow cascades dither alike. The CPU counts every render-LOD instance in its cutout bucket too
+  (`DrawLists::countInstance`), so the regions hold a fade of any group. Opaque instances not fading keep the opaque pipelines and their early
+  depth test. The pattern is fixed per pixel, so screenshots stay byte-identical; without temporal anti-aliasing it shows while a fade lasts.
 - **Residency** (`gpuscene.lodresidency`, a bit per level): the cull pass, which visits every alive slot, sets its level's bit when its mesh
   isn't in the pool (its mesh table entry is empty: not copied yet, or waiting for room); the next frame's pick reads and clears it.
 - **Persistence.** The table, the state and the residency mask persist across frames, imported with the access the last frame left them in. A
   grown one is new and its contents undefined: the state is written by the pick before culling reads it, and stale residency bits only make a
   group draw another resident level for a frame.
 - **Counts** (`LodSelectSum`, per-workgroup counters summed in order, as the culling scan): groups alive, drawing each level, falling back, at a
-  forced level; read back with the culling readback (`LodReadback`), with every group's state when asked (`RenderSnapshot::readLodStates`)
-  and the camera the pick measured from, into `CullResult`. The cull pass counts the slots of levels not drawn (`counterLodDropped`), in no view and not as culled.
+  forced level, fading; read back with the culling readback (`LodReadback`), with every group's state when asked (`RenderSnapshot::readLodStates`)
+  and the camera the pick measured from, into `CullResult`. The cull pass counts the slots of levels not drawn (`counterLodDropped`), in no view
+  and not as culled, and the instances drawn in a fading group (`counterFading`).
 
 ## Cutout materials
 
@@ -321,7 +334,7 @@ Overlays and the UI draw on the backbuffer after the AA blit, so they are never 
 
 | Set | Used by | Bindings |
 |---|---|---|
-| Geometry, one per frame slot | `GeometryPass`, `DepthPrepass`, `DebugViewPass` | 0 view UBO, 1 `sampler2D textures[1024]`, 2 instance buffer, 3 material table |
+| Geometry, one per frame slot | `GeometryPass`, `DepthPrepass`, `DebugViewPass` | 0 view UBO, 1 `sampler2D textures[1024]`, 2 instance buffer, 3 material table, 4 render-LOD state (fades) |
 | Shadow, one | `ShadowPass` | 0 instance buffer; the cascade matrix is a push constant |
 | Culling, one per frame slot | the three cull passes | params, instances, mesh table, visibility, counters, offsets, commands, counts |
 | Lighting, AA, debug lines, gizmos | their passes | per-slot UBOs and the G-buffer, shadow and scene-colour textures |

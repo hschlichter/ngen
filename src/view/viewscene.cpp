@@ -117,6 +117,10 @@ auto ViewScene::setUnloadDelay(double seconds) -> void {
     post(HeuristicRequest{.on = std::nullopt, .unloadDelay = seconds});
 }
 
+auto ViewScene::setLodPreference(LodPreference preference) -> void {
+    post(HeuristicRequest{.on = std::nullopt, .unloadDelay = std::nullopt, .prefer = preference});
+}
+
 auto ViewScene::setPurposeShown(Purpose purpose, bool shown) -> void {
     if (purpose == Purpose::Default || purpose == Purpose::Render) {
         return;
@@ -284,13 +288,19 @@ auto ViewScene::apply(Request& request) -> void {
         }
         rootsToCheck.insert(lod->root);
         // A render-LOD root's group takes the level as its forced one.
-        refreshForcedLevels(lod->root);
+        refreshLodGroups(lod->root);
         placeNeeded = true;
         evaluateNeeded = true;
     } else if (auto* heuristic = std::get_if<HeuristicRequest>(&request)) {
         if (heuristic->on) {
             heuristicOn = *heuristic->on;
-            refreshForcedLevels({});
+            refreshLodGroups({});
+            placeNeeded = true;
+        }
+        if (heuristic->prefer && *heuristic->prefer != lodPreferenceNow) {
+            lodPreferenceNow = *heuristic->prefer;
+            TRACE_EVENT("Scene", "LodPreferenceChanged", id).text(std::format("LOD roots measure by {} first", lodPreferenceName(lodPreferenceNow))).field("prefer", std::string(lodPreferenceName(lodPreferenceNow)));
+            refreshLodGroups({});
             placeNeeded = true;
         }
         if (heuristic->unloadDelay) {
@@ -590,48 +600,36 @@ auto ViewScene::applyTransform(const std::string& path, const glm::mat4& local) 
     placeNeeded = true;
 }
 
-namespace {
+auto lodWindowArea(float fovY, float aspect) -> float {
+    float windowHeight = 2.0f * std::tan(fovY * 0.5f);
+    return windowHeight * windowHeight * aspect;
+}
 
-// UsdLod's projectedSphere screen size (UsdLodScreenSizeHeuristicQuery), without its frustum test: the extent's bounding sphere (its
-// corners placed by the root's transform) over the view window at depth 1, as a fraction of the window's area. Off-screen roots are
-// measured like on-screen ones, so what is near stays loaded whichever way the camera looks.
-auto screenSize(const SceneLodRoot& root, const glm::vec3& eye, float fovY, float aspect) -> float {
-    auto worldMin = glm::vec3(root.worldTransform * glm::vec4(root.extent[0], 1.0f));
-    auto worldMax = glm::vec3(root.worldTransform * glm::vec4(root.extent[1], 1.0f));
+auto lodMeasure(const LodHeuristic& heuristic, const glm::mat4& rootToWorld, double metersPerUnit, const glm::vec3& eye, float windowArea) -> float {
+    if (heuristic.kind == LodHeuristicKind::Distance) {
+        auto target = heuristic.center;
+        if (heuristic.box) {
+            auto eyeRoot = glm::vec3(glm::inverse(rootToWorld) * glm::vec4(eye, 1.0f));
+            const auto& box = *heuristic.box;
+            if (glm::all(glm::greaterThanEqual(eyeRoot, box[0])) && glm::all(glm::lessThanEqual(eyeRoot, box[1]))) {
+                return 0.0f;
+            }
+            target = glm::clamp(eyeRoot, box[0], box[1]);
+        }
+        auto world = glm::vec3(rootToWorld * glm::vec4(target, 1.0f));
+        return (float) (glm::length(world - eye) / metersPerUnit);
+    }
+    auto worldMin = glm::vec3(rootToWorld * glm::vec4(heuristic.extent[0], 1.0f));
+    auto worldMax = glm::vec3(rootToWorld * glm::vec4(heuristic.extent[1], 1.0f));
     auto radius = glm::length(worldMax - worldMin) * 0.5f;
-    auto center = glm::vec3(root.worldTransform * glm::vec4((root.extent[0] + root.extent[1]) * 0.5f, 1.0f));
+    auto center = glm::vec3(rootToWorld * glm::vec4((heuristic.extent[0] + heuristic.extent[1]) * 0.5f, 1.0f));
     auto distance = glm::length(eye - center);
     if (distance <= 1e-6f) {
         return 1e30f;
     }
     float r = radius / distance;
-    float windowHeight = 2.0f * std::tan(fovY * 0.5f);
-    float windowWidth = windowHeight * aspect;
-    return glm::pi<float>() * r * r / (windowWidth * windowHeight);
+    return glm::pi<float>() * r * r / windowArea;
 }
-
-// The level the thresholds pick for a screen size (UsdLod: the number of thresholds at or above it), with a band below each threshold
-// before switching coarser: finer as soon as the size passes a threshold, coarser only once it is 20% below it.
-auto levelFor(float size, const std::vector<float>& thresholds, uint32_t previous) -> uint32_t {
-    auto count = [&](float scale) {
-        uint32_t level = 0;
-        while (level < thresholds.size() && size <= thresholds[level] * scale) {
-            level++;
-        }
-        return level;
-    };
-    auto finer = count(1.0f);
-    if (finer < previous) {
-        return finer;
-    }
-    auto coarser = count(0.8f);
-    if (coarser > previous) {
-        return coarser;
-    }
-    return previous;
-}
-
-} // namespace
 
 auto ViewScene::evaluateLevels() -> bool {
     if (!composer) {
@@ -655,18 +653,22 @@ auto ViewScene::evaluateLevels() -> bool {
         } else if (!heuristicOn) {
             choice.level = root.defaultIndex;
             choice.reason = "heuristic off";
-        } else if (!root.heuristicChosen || root.thresholds.empty()) {
+        } else if (choice.heuristic = chooseLodHeuristic(root.heuristics, lodPreferenceNow); choice.heuristic < 0) {
             choice.level = root.defaultIndex;
             choice.reason = "no usable heuristic";
         } else if (!camera) {
             choice.level = root.defaultIndex;
             choice.reason = "no camera";
         } else {
-            choice.screenSize = screenSize(root, camera->position, camera->fovY, camera->aspect);
+            const auto& heuristic = root.heuristics[(size_t) choice.heuristic];
+            choice.kind = heuristic.kind;
+            choice.measure = lodMeasure(heuristic, root.worldTransform, composer->world().metersPerUnit, camera->position, lodWindowArea(camera->fovY, camera->aspect));
             auto previous = heuristicLevels.contains(root.path) ? heuristicLevels[root.path] : root.defaultIndex;
-            choice.level = std::min(levelFor(choice.screenSize, root.thresholds, previous), levelCount - 1);
+            // A streaming root draws one level: inside a band it wants the finer one.
+            auto pick = pickLodLevel(heuristic.kind, heuristic.thresholds, heuristic.blendThresholds, choice.measure, levelCount, previous, lodHysteresis);
+            choice.level = pick.level;
             heuristicLevels[root.path] = choice.level;
-            choice.reason = "heuristic";
+            choice.reason = heuristic.kind == LodHeuristicKind::Distance ? "distance" : "screen size";
         }
         evaluated++;
         // The composer holds a level only where it isn't the root's default.
@@ -873,6 +875,8 @@ auto ViewScene::publish() -> void {
     snapshot->draws = draws;
     snapshot->lodChoices = choices;
     snapshot->lodHeuristic = heuristicOn;
+    snapshot->lodPreference = lodPreferenceNow;
+    snapshot->metersPerUnitOfLod = composer ? composer->world().metersPerUnit : 1.0;
     snapshot->unloadDelay = unloadDelaySeconds;
     if (keptLevelsChanged) {
         keptLevelsChanged = false;
@@ -1177,10 +1181,27 @@ auto ViewScene::material(const std::string& materialAsset, const std::optional<s
 }
 
 auto lodRootInFrustum(const SceneLodRoot& root, const glm::vec3& eye, const glm::vec3& forward, const glm::vec3& right, float fovY, float aspect) -> bool {
-    auto worldMin = glm::vec3(root.worldTransform * glm::vec4(root.extent[0], 1.0f));
-    auto worldMax = glm::vec3(root.worldTransform * glm::vec4(root.extent[1], 1.0f));
+    // The root's bounds: its first screen-size heuristic's extent, else a distance heuristic's box, else its center.
+    std::array<glm::vec3, 2> bounds = {glm::vec3(0.0f), glm::vec3(0.0f)};
+    bool found = false;
+    for (const auto& heuristic : root.heuristics) {
+        if (heuristic.kind == LodHeuristicKind::ScreenSize) {
+            bounds = heuristic.extent;
+            found = true;
+            break;
+        }
+    }
+    for (size_t i = 0; i < root.heuristics.size() && !found; i++) {
+        const auto& heuristic = root.heuristics[i];
+        if (heuristic.kind == LodHeuristicKind::Distance) {
+            bounds = heuristic.box.value_or(std::array<glm::vec3, 2>{heuristic.center, heuristic.center});
+            found = true;
+        }
+    }
+    auto worldMin = glm::vec3(root.worldTransform * glm::vec4(bounds[0], 1.0f));
+    auto worldMax = glm::vec3(root.worldTransform * glm::vec4(bounds[1], 1.0f));
     auto radius = glm::length(worldMax - worldMin) * 0.5f;
-    auto center = glm::vec3(root.worldTransform * glm::vec4((root.extent[0] + root.extent[1]) * 0.5f, 1.0f));
+    auto center = glm::vec3(root.worldTransform * glm::vec4((bounds[0] + bounds[1]) * 0.5f, 1.0f));
     auto toCenter = center - eye;
     auto up = glm::cross(right, forward);
     float depth = glm::dot(toCenter, forward);

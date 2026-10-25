@@ -24,20 +24,26 @@ struct CullResult {
     std::vector<uint8_t> cameraVisible;                            // per instance, 1 = visible
     std::vector<uint8_t> viewBits;                                 // per instance, bit v = visible in view v (0 camera, 1.. cascades)
     uint32_t regionOverflow = 0;                                   // commands dropped past their region's end: the CPU's bucket counts disagree with the shader's (a bug)
-    // Render LOD: instances of a level their group doesn't draw (in no view), and from the selection's readback the groups, those drawing
-    // each level, those falling back while the wanted level isn't resident, those at a forced level; per group the level drawn and
-    // wanted (0xFF none) when the states were read.
+    // Render LOD: instances of a level their group doesn't draw (in no view), instances drawn in a fading group (both levels, in the cutout
+    // buckets), and from the selection's readback the groups, those drawing each level, those falling back while the wanted level isn't
+    // resident, those at a forced level, those fading; per group the level drawn and wanted (0xFF none), the level fading in (0xFF none)
+    // and its share, and the measure, when the states were read.
     uint32_t lodDropped = 0;
+    uint32_t lodFadingInstances = 0;
     uint64_t lodFrame = 0;
     uint32_t lodGroups = 0;
     std::array<uint32_t, 8> lodPicked = {};
     uint32_t lodFallbacks = 0;
     uint32_t lodForced = 0;
+    uint32_t lodFading = 0;
     bool lodHasStates = false;
     glm::vec3 lodEye = glm::vec3(0.0f); // the camera the pick measured from: its position and the view window's area at depth 1
     float lodWindowArea = 1.0f;
     std::vector<uint8_t> lodDrawn;
     std::vector<uint8_t> lodWanted;
+    std::vector<uint8_t> lodFadeLevel;
+    std::vector<float> lodFade;
+    std::vector<float> lodMeasure;
 };
 
 class DeletionQueue;
@@ -72,7 +78,8 @@ public:
     // Commands the scatter dropped past their region's end: the CPU's bucket counts (countInstance) undercounted a region. 0 unless the
     // CPU's bucket rule and the shader's disagree.
     static constexpr uint32_t counterRegionOverflow = counterLodDropped + 1;
-    static constexpr uint32_t counterCount = counterRegionOverflow + 1;
+    static constexpr uint32_t counterFading = counterRegionOverflow + 1; // instances drawn in a fading render-LOD group
+    static constexpr uint32_t counterCount = counterFading + 1;
     static constexpr uint32_t groupSize = 256;
     static constexpr uint32_t noBucket = UINT32_MAX;
 
@@ -124,6 +131,9 @@ public:
         FgBufferHandle commands;
         FgBufferHandle counts;
         FgBufferHandle readback;
+        // Not the draw lists': the render-LOD state, which the cutout pipelines' vertex stages read for fades. Set by the renderer from
+        // LodGroups::Handles, so the passes drawing these lists declare the read.
+        FgBufferHandle lodStates;
     };
     // Imports the slot's buffers; the slot's fence guards them, so no earlier access carries over.
     auto import(FrameGraph& fg, uint32_t frameSlot) -> Handles;
@@ -163,6 +173,7 @@ public:
     auto cascadeDrawn(uint32_t cascade) const -> uint32_t { return latest.totals[counterCascadeDrawn + cascade]; }
     auto lodDropped() const -> uint32_t { return latest.totals[counterLodDropped]; }
     auto regionOverflow() const -> uint32_t { return latest.totals[counterRegionOverflow]; }
+    auto fadingInstances() const -> uint32_t { return latest.totals[counterFading]; }
     auto cascadeCount() const -> uint32_t { return latest.viewCount > 0 ? latest.viewCount - 1 : 0; }
     auto instanceCount() const -> uint32_t { return latest.instanceCount; }
     auto commandCount() const -> uint32_t;

@@ -80,8 +80,9 @@ const std::vector<EngineMapNode> nodes = {
         .lane = 2,
         .row = 3,
         .description = "The LOD heuristic for streaming roots (LOD roots whose levels are payloads; render-LOD roots are picked on the GPU, "
-                       "see LOD select): each one reached gets the level its screen size from the camera picks (UsdLod's screen-size "
-                       "heuristic, without the frustum, with a 20% band before going coarser), unless set by hand or the heuristic is off. "
+                       "see LOD select): each one reached gets the level its heuristic picks from the camera (UsdLod's distance or screen size, "
+                       "by the preference: distance first by default; inside an authored blend band the finer level, without one a 20% "
+                       "margin before going coarser), unless set by hand or the heuristic is off. "
                        "Changed levels are linked again without composing the stage. A root draws a finer level only once its placement waits "
                        "for nothing (composed, its meshes, materials and textures held), the coarser one until then. A level no longer wanted "
                        "stays loaded for the unload delay, then its placement, contents and assets go; a root's coarsest level never.",
@@ -233,9 +234,11 @@ const std::vector<EngineMapNode> nodes = {
         .label = "LOD select",
         .lane = 4,
         .row = 9,
-        .description = "Render LOD: per group (a render-LOD root where it is placed) the level the screen-size heuristic wants from the live "
-                       "camera, with its band, or the level set by hand; drawn when its meshes are in the pool, else the level drawn last "
-                       "frame, else the nearest resident one. A compute pass before culling, which draws only each group's level.",
+        .description = "Render LOD: per group (a render-LOD root where it is placed) the level its heuristic (UsdLod's distance or screen "
+                       "size, as the view's preference chose) wants from the live camera, or the level set by hand; drawn when its meshes are "
+                       "in the pool, else the level drawn last frame, else the nearest resident one. Inside an authored blend band the next "
+                       "level fades in: culling draws both levels in the cutout buckets, whose pipelines dither them by the band's share. A "
+                       "compute pass before culling.",
         .records = {"renderlod", "culling"},
         .windows = {"lod", "culling"},
         .readme = "src/renderer/README.md",

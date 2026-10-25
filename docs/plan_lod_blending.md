@@ -1,6 +1,6 @@
 # LOD blending: both heuristics, distance first, levels cross-faded over the authored band
 
-**Status. Draft.** Decisions 1, 2 and 6 locked 2026-10-25.
+**Status. Landed.** Decisions 1, 2 and 6 locked 2026-10-25, 3 to 5 as leaned; all steps done 2026-10-25 (Results, before Deferred).
 
 ## Current state
 
@@ -179,6 +179,39 @@ distance in metres divided by `metersPerUnit`. Without a band, the hysteresis fo
   which the nearer level wins (state per group)?
 - Should the dither pattern be offset per instance, so two overlapping fading trees don't share the same pixels? Not needed for the oak;
   maybe for forests.
+
+## Results (2026-10-25)
+
+- **The World** keeps every heuristic a root names (`LodRoot::heuristics`, `LodHeuristic`); `chooseLodHeuristic` picks by the preference,
+  `pickLodLevel` is UsdLod's `ComputeLOD` for both kinds with bands and hysteresis, shared by the view and the `renderlod` check and
+  mirrored in `lodselect.comp`. The packer keeps `center` (usd rule version 9). Deviation: a blend threshold outside its boundary is clamped
+  as USD's query clamps it, not dropped with a message, so the engine's levels equal USD's for any data.
+- **The GPU**: `GpuLodGroup` 240 bytes (not 224: the threshold count and padding), the state 16 bytes (wanted, drawn, fading level, share,
+  measure). Fading instances draw in the cutout buckets; `lodfade.glsl` dithers in `gbuffer.vert`/`gbuffercutout.frag`,
+  `depthcutout.vert`/`shadowcutout.vert` and `cutout.frag`; the state is binding 4 of the geometry set.
+- **Parity**: `--lod-heuristics` in both tools; the oak identical (its two heuristics, bands and bounds), the layered scene identical; the
+  composition fingerprints unchanged (the layered scene's `/World/Inherited`, as before). `ngen-usdcheck --lod-picks` replaces the Python
+  reference planned: UsdLod's own `ComputeDistance`/`ComputeLOD` from C++.
+- **The pick against USD**: the oak walked through all seven boundaries, 36 cameras per kind (just before each threshold, a quarter, half
+  and three quarters into each band, just past it). By distance every fractional level equals `UsdLodDistanceHeuristicQuery`'s within
+  1.1e-6; by screen size every one equals `UsdLodScreenSizeHeuristicQuery`'s within 5.5e-7; fades at exactly 0.25, 0.5, 0.75; the GPU and the
+  CPU check agree everywhere (`differ` 0). `lod-prefer authored` measures the oak by screen size (its first heuristic).
+- **Coverage**: albedo screenshots mid-band at shares 0.25, 0.5 and 0.75 equal, pixel for pixel (3,686,400 of 3,686,400 each), the two
+  forced levels combined through the Bayer mask; of the pixels where the levels differ, 25.0%, 49.9% and 75.0% come from the level fading in.
+  This needed anti-aliasing off, which only the UI reached: `view.antialiasing {enabled}` and the `aa on|off` verb are new (a runtime-access
+  gap closed).
+- **Shadows**: the oak scene has no ground, so the shadow map was compared instead: its occupied texels mid-band (25,523) match either
+  forced level (25,280, 25,230), the tree's casters present while it fades.
+- **Measured on the oak**: a fade draws 4 instances instead of 2 (both levels: 22,083 triangles against 15,998), no region overflow; geometry
+  pass 0.08 → 0.15 ms, shadow pass 0.04 → 0.09 ms at most.
+- **Unchanged**: the eight baselines byte-identical; the layered LOD script gives the same levels (its streaming root names only a
+  screen-size heuristic, so every preference uses it); no warnings in the oak's trace.
+- **Visibility**: `view.lod.heuristic {prefer}`, `lod-prefer`; `view.antialiasing`, `aa`; `lod` record: every heuristic (kind, thresholds,
+  bands, bounds, used, unusable) and the preference; `streaming`: the heuristic used, its kind and measure, its thresholds and bands;
+  `renderlod`/`view.renderlod`: per group kind, measure (CPU and GPU), bands, fading level and share, the expected share, totals `fading`
+  and `fadingInstances`, the check by kind and fade; `LodPreferenceChanged`; the LOD window's preference control, measure column, every
+  heuristic in the tooltip with the used one marked, fading count; the Engine Map's LOD selection and LOD select. Not done: the Culling
+  window's cutout region use with fading apart (the `renderlod` record has it).
 
 ## Deferred / follow-ups
 

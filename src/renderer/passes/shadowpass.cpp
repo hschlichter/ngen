@@ -121,6 +121,9 @@ auto ShadowPass::addPass(
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             builder.read(drawHandles.commands, FgAccessFlags::IndirectRead);
             builder.read(drawHandles.counts, FgAccessFlags::IndirectRead);
+            if (drawHandles.lodStates.valid()) {
+                builder.read(drawHandles.lodStates, FgAccessFlags::StorageRead);
+            }
         },
         [bucketPipelines, instanceSet, geometrySet, atlasExtent, cascadeCopy, cascadeCount, instances, &lists, drawHandles, &scene](FrameGraphContext& ctx, const ShadowPassData& data) {
             auto* cmd = ctx.cmd();

@@ -13,15 +13,16 @@ struct LodWindowRow {
     std::string path;
     std::vector<std::string> levels;
     std::vector<std::vector<std::string>> levelPayloads; // per level, its payloads' asset ids
-    std::string heuristic;                               // "LODScreenSizeHeuristic [0.25, 0.125]", empty for none
+    std::string heuristic;                               // every heuristic it names, the one used marked: "distance [49.3, 70.8]* | screen [0.25]"
     uint32_t defaultIndex = 0;
     uint32_t wanted = 0;
     int32_t drawn = -1;
     std::vector<uint32_t> loaded;
     bool setByHand = false;
-    float screenSize = -1.0f; // the heuristic's measure, -1 when not computed
-    std::string why;          // why it wants its level: "heuristic", "hand-set", "heuristic off", ...
-    std::string waiting;      // while its wanted level is loaded and not drawn: what that level waits for
+    float measure = -1.0f;   // the heuristic's measure, -1 when not computed
+    std::string measureUnit; // "m" for a distance (the stage's units), empty for a screen size
+    std::string why;         // why it wants its level: "heuristic", "hand-set", "heuristic off", ...
+    std::string waiting;     // while its wanted level is loaded and not drawn: what that level waits for
     // The loaded levels it doesn't want, kept for the unload delay: each with when the delay runs out.
     std::vector<std::pair<uint32_t, std::chrono::steady_clock::time_point>> kept;
 };
@@ -43,7 +44,9 @@ struct LodWindowState {
     std::optional<std::string> selectRequested;
     bool heuristic = true;                  // the LOD heuristic's state; set by the application
     std::optional<bool> heuristicRequested; // the toggle was clicked
-    float unloadDelay = 10.0f;              // seconds; set by the application
+    int preference = 0;                     // which heuristic a root naming several measures by: 0 distance first, 1 screen size first, 2 authored order
+    std::optional<int> preferenceRequested;
+    float unloadDelay = 10.0f; // seconds; set by the application
     std::optional<float> unloadDelayRequested;
     // Render LOD, the roots whose levels the GPU picks per placement: the groups placed, and from the latest readback the groups drawing
     // each level, falling back while the level they want uploads, at a forced level, and the slots of levels not drawn; the groups under
@@ -53,6 +56,7 @@ struct LodWindowState {
         std::array<uint32_t, 8> drawing = {};
         uint32_t fallbacks = 0;
         uint32_t forced = 0;
+        uint32_t fading = 0; // groups cross-fading two levels inside a blend band
         uint32_t slotsNotDrawn = 0;
         uint32_t underSelection = 0;
     };

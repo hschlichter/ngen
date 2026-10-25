@@ -563,23 +563,64 @@ auto ViewScene::forcedLevelOf(const LodGroupInfo& info) const -> int32_t {
     if (auto hand = handLevels.find(info.path); hand != handLevels.end()) {
         return (int32_t) std::min(hand->second, info.levelCount - 1);
     }
-    if (!heuristicOn || !info.usable) {
+    if (!heuristicOn || chooseLodHeuristic(info.heuristics, lodPreferenceNow) < 0) {
         return (int32_t) info.defaultLevel;
     }
     return -1;
 }
 
-auto ViewScene::refreshForcedLevels(const std::string& path) -> void {
+auto ViewScene::lodGroupOf(const LodGroupInfo& info) const -> RenderLodGroup {
+    RenderLodGroup group{
+        .levelCount = info.levelCount,
+        .defaultLevel = info.defaultLevel,
+        .forcedLevel = forcedLevelOf(info),
+        .alive = true,
+    };
+    auto chosen = chooseLodHeuristic(info.heuristics, lodPreferenceNow);
+    if (chosen < 0) {
+        return group;
+    }
+    const auto& heuristic = info.heuristics[(size_t) chosen];
+    // A distance is measured in metres on the GPU: its thresholds and bands too.
+    float scale = 1.0f;
+    if (heuristic.kind == LodHeuristicKind::Distance) {
+        scale = (float) composer->world().metersPerUnit;
+        group.kind = RenderLodKind::Distance;
+        group.toWorld = info.toWorld;
+        group.toRoot = glm::inverse(info.toWorld);
+        group.point = heuristic.center;
+        if (heuristic.box) {
+            group.hasBox = true;
+            group.boxMin = (*heuristic.box)[0];
+            group.boxMax = (*heuristic.box)[1];
+        }
+    } else {
+        auto worldMin = glm::vec3(info.toWorld * glm::vec4(heuristic.extent[0], 1.0f));
+        auto worldMax = glm::vec3(info.toWorld * glm::vec4(heuristic.extent[1], 1.0f));
+        group.center = glm::vec3(info.toWorld * glm::vec4((heuristic.extent[0] + heuristic.extent[1]) * 0.5f, 1.0f));
+        group.radius = glm::length(worldMax - worldMin) * 0.5f;
+    }
+    auto boundaries = info.levelCount > 0 ? info.levelCount - 1 : 0;
+    group.thresholdCount = (uint32_t) std::min<size_t>(heuristic.thresholds.size(), boundaries);
+    for (uint32_t t = 0; t < group.thresholdCount; t++) {
+        group.thresholds[t] = heuristic.thresholds[t] * scale;
+    }
+    group.blendCount = (uint32_t) std::min<size_t>(heuristic.blendThresholds.size(), group.thresholdCount);
+    for (uint32_t t = 0; t < group.blendCount; t++) {
+        group.blendThresholds[t] = heuristic.blendThresholds[t] * scale;
+    }
+    return group;
+}
+
+auto ViewScene::refreshLodGroups(const std::string& path) -> void {
     auto refresh = [this](uint32_t group) {
         const auto& current = drawn.lodGroups[group];
         if (!current.alive) {
             return;
         }
-        auto forced = forcedLevelOf(lodGroupInfo[group]);
-        if (forced != current.forcedLevel) {
-            auto changed = current;
-            changed.forcedLevel = forced;
-            setLodGroup(group, changed);
+        auto next = lodGroupOf(lodGroupInfo[group]);
+        if (!(next == current)) {
+            setLodGroup(group, next);
         }
     };
     if (!path.empty()) {
@@ -1107,37 +1148,25 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                 continue;
             }
             if (item.renderLodRoot && spec.drawn) {
-                // A group where the root is placed: its heuristic's extent's bounding sphere (as the view's screenSize measures it), its
-                // thresholds, default and forced level.
+                // A group where the root is placed: its heuristics and transform, from which its record is made under the preference
+                // (lodGroupOf), its default and forced level.
                 const auto& lod = content.lodRoots.at(item.id);
                 LodGroupInfo info{
                     .path = path,
                     .defaultLevel = 0,
                     .levelCount = (uint32_t) std::min<size_t>(lod.levels.size(), RenderLodGroup::maxLevels),
-                    .usable = lod.heuristicChosen && !lod.thresholds.empty(),
+                    .heuristics = lod.heuristics,
+                    .toWorld = unitScale * world,
                 };
                 if (info.levelCount > 0) {
                     info.defaultLevel = std::min(lod.defaultIndex, info.levelCount - 1);
-                    auto placed = unitScale * world;
-                    auto worldMin = glm::vec3(placed * glm::vec4(lod.extent[0], 1.0f));
-                    auto worldMax = glm::vec3(placed * glm::vec4(lod.extent[1], 1.0f));
-                    RenderLodGroup group{
-                        .center = glm::vec3(placed * glm::vec4((lod.extent[0] + lod.extent[1]) * 0.5f, 1.0f)),
-                        .radius = glm::length(worldMax - worldMin) * 0.5f,
-                        .levelCount = info.levelCount,
-                        .defaultLevel = info.defaultLevel,
-                        .forcedLevel = forcedLevelOf(info),
-                        .alive = true,
-                    };
-                    for (size_t t = 0; t < group.thresholds.size() && t < lod.thresholds.size() && t + 1 < info.levelCount; t++) {
-                        group.thresholds[t] = lod.thresholds[t];
-                    }
+                    auto group = lodGroupOf(info);
                     auto slot = takeGroup();
                     node->lodGroups.push_back(slot);
                     if (auto stale = lodGroupByPath.find(lodGroupInfo[slot].path); stale != lodGroupByPath.end() && stale->second == slot && lodGroupInfo[slot].path != path) {
                         lodGroupByPath.erase(stale);
                     }
-                    lodGroupInfo[slot] = info;
+                    lodGroupInfo[slot] = std::move(info);
                     lodGroupByPath[path] = slot;
                     if (lodGroupPaths[slot] != path) {
                         lodGroupPaths.edit(slot) = path;
@@ -1164,11 +1193,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                     auto payload = content.payloads.find(level);
                     row.levelPayloads.push_back(payload != content.payloads.end() ? payload->second.assetIds : std::vector<std::string>{});
                 }
-                row.heuristicType = lod.heuristicType;
-                row.heuristicChosen = lod.heuristicChosen;
-                row.thresholds = lod.thresholds;
-                row.extent = lod.extent;
-                row.projectedExtent = lod.projection == LodProjection::Extent;
+                row.heuristics = lod.heuristics;
                 row.defaultIndex = lod.defaultIndex;
                 row.worldTransform = unitScale * world;
                 auto previous = std::ranges::find(previousRoots, path, &PlacedRoot::path);
