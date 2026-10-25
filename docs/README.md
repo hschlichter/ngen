@@ -10,6 +10,8 @@ them here as you touch them.
 **Start here for what's next:** [roadmap.md](roadmap.md) — a one-page list of planned, open and parked work, consolidated from the plans below,
 the library READMEs and `notes.md`.
 
+**Reviews:** [reviews/](reviews/README.md) — review artifacts (HTML pages, one per change, published as claude.ai artifacts) and how to make one.
+
 ## Build system
 
 Current truth for the build framework is [`../src/build/README.md`](../src/build/README.md); the plans below are how it got there.

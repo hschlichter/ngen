@@ -1,0 +1,623 @@
+<title>LOD Blending Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column with a narrow margin rail for labels; code, diagrams and tables use the full measure and scroll inside their own box. */
+:root {
+  --bg: #f6f7f5;
+  --surface: #ffffff;
+  --code-bg: #f0f3f1;
+  --ink: #1b2124;
+  --muted: #5c676b;
+  --rule: #d9dedb;
+  --accent: #1f6a6f;
+  --accent-soft: #e3efef;
+  --ok: #2f7a3e;
+  --warn: #a36310;
+  --risk: #a3352b;
+  --ok-soft: #e6f2e8;
+  --warn-soft: #f7ecdc;
+  --risk-soft: #f6e4e1;
+  --chart-grid: #e4e8e6;
+  --code-comment: #6f7b7e;
+  --code-keyword: #1f6a6f;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121618; --surface: #1a2023; --code-bg: #151a1c; --ink: #e3e8e6; --muted: #98a4a7; --rule: #2c3538;
+    --accent: #6cc3c6; --accent-soft: #1d3234; --ok: #7fc48c; --warn: #e0a65a; --risk: #ec8a7e;
+    --ok-soft: #1c2c20; --warn-soft: #2f2617; --risk-soft: #321e1b; --chart-grid: #263033;
+    --code-comment: #7f8c8f; --code-keyword: #7fd0d3; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121618; --surface: #1a2023; --code-bg: #151a1c; --ink: #e3e8e6; --muted: #98a4a7; --rule: #2c3538;
+  --accent: #6cc3c6; --accent-soft: #1d3234; --ok: #7fc48c; --warn: #e0a65a; --risk: #ec8a7e;
+  --ok-soft: #1c2c20; --warn-soft: #2f2617; --risk-soft: #321e1b; --chart-grid: #263033;
+  --code-comment: #7f8c8f; --code-keyword: #7fd0d3; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 72px;
+}
+main { max-width: 1040px; margin: 0 auto; display: grid; gap: 52px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: 2.4rem; font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 1.55rem; font-weight: 600; }
+h3 { font-size: 1.15rem; font-weight: 600; }
+p { margin: 0; max-width: 72ch; }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+p code, li code, td code { background: var(--accent-soft); color: var(--ink); padding: 0.05em 0.35em; border-radius: 3px; }
+.eyebrow { font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+section { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 0 30px; border-top: 1px solid var(--rule); padding-top: 22px; }
+section > .rail { padding-top: 4px; }
+section > .content { display: grid; gap: 18px; min-width: 0; }
+@media (max-width: 760px) { section { grid-template-columns: minmax(0, 1fr); gap: 10px; } }
+
+header { display: grid; gap: 18px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 22px; color: var(--muted); font-size: 0.9rem; }
+.meta span b { color: var(--ink); font-weight: 500; }
+.lede { font-size: 1.1rem; max-width: 70ch; }
+
+.verdict { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.verdict div { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; display: grid; gap: 4px; align-content: start; }
+.verdict .k { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.verdict .v { font-family: var(--display); font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.verdict .n { font-size: 0.85rem; color: var(--muted); }
+
+ul.plain { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; max-width: 74ch; }
+
+.flow { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 18px; }
+.flow svg { display: block; min-width: 860px; width: 100%; height: auto; }
+.flow text { font-family: var(--body); font-size: 12.5px; fill: var(--ink); }
+.flow .small { font-size: 11px; fill: var(--muted); }
+.flow .num { font-family: var(--mono); font-size: 11px; fill: var(--accent); font-weight: 500; }
+.flow .lane { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); letter-spacing: 0.06em; }
+.flow rect.lanebg { fill: var(--bg); }
+.flow rect.box { fill: var(--surface); stroke: var(--rule); }
+.flow rect.new { fill: var(--accent-soft); stroke: var(--accent); }
+.flow path.arrow { stroke: var(--muted); stroke-width: 1.2; fill: none; marker-end: url(#head); }
+.flow path.dashed { stroke-dasharray: 4 3; }
+.flow marker path { fill: var(--muted); }
+
+.stage { display: grid; gap: 14px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 20px 20px 22px; }
+.stage-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+.stage-head .step { font-family: var(--mono); font-size: 0.8rem; color: var(--accent); font-weight: 500; }
+.stage-head .where { font-family: var(--mono); font-size: 0.74rem; color: var(--muted); }
+.files { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }
+.inout { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.inout div { border-left: 2px solid var(--rule); padding: 2px 0 2px 12px; font-size: 0.9rem; }
+.inout b { display: block; font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+pre { margin: 0; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; overflow-x: auto; font-family: var(--mono); font-size: 0.8rem; line-height: 1.55; color: var(--ink); tab-size: 4; }
+pre .c { color: var(--code-comment); font-style: italic; }
+pre .k { color: var(--code-keyword); }
+pre .cap { display: block; font-family: var(--mono); font-size: 0.7rem; color: var(--muted); margin-bottom: 8px; letter-spacing: 0.04em; }
+.notes { display: grid; gap: 6px; }
+.notes .label { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--warn); }
+.notes ul { margin: 0; padding-left: 1.1em; display: grid; gap: 5px; font-size: 0.92rem; max-width: 80ch; }
+
+.tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--rule); }
+th { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 0.82rem; white-space: nowrap; }
+td.new { background: var(--accent-soft); }
+
+.pill { display: inline-block; font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.pill.locked { background: var(--accent-soft); color: var(--accent); }
+.pill.lean { background: var(--warn-soft); color: var(--warn); }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.risk { background: var(--risk-soft); color: var(--risk); }
+
+.chart { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 16px 16px 10px; overflow-x: auto; }
+.chart svg { display: block; width: 100%; min-width: 560px; height: auto; }
+.chart text { font-family: var(--mono); font-size: 11px; fill: var(--muted); }
+.chart .grid { stroke: var(--chart-grid); stroke-width: 1; }
+.chart .axis { stroke: var(--rule); }
+.chart .usd { stroke: var(--muted); stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+.chart .band { fill: var(--accent-soft); }
+.chart .pt { fill: var(--accent); }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 0.82rem; color: var(--muted); padding: 8px 2px 0; }
+.legend i { display: inline-block; width: 18px; height: 0; vertical-align: middle; margin-right: 6px; border-top: 2px dashed var(--muted); }
+.legend i.dot { width: 8px; height: 8px; border: 0; border-radius: 50%; background: var(--accent); }
+.legend i.swatch { width: 14px; height: 10px; border: 0; background: var(--accent-soft); }
+
+.risks { display: grid; gap: 10px; }
+.risk { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 14px; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 16px; }
+.risk h3 { font-family: var(--body); font-size: 0.95rem; font-weight: 600; }
+.risk p { font-size: 0.9rem; }
+.risk .ask { color: var(--muted); font-size: 0.86rem; }
+@media (max-width: 520px) { .risk { grid-template-columns: minmax(0, 1fr); gap: 6px; } }
+footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--rule); padding-top: 16px; }
+</style>
+
+<main>
+  <header>
+    <div class="eyebrow">ngen · render LOD · change review</div>
+    <h1>LOD Blending Review</h1>
+    <p class="lede">Render-LOD levels now cross-fade inside the blend bands an asset authors, and each LOD root is measured by distance or screen size by a view-wide preference, distance first. This review follows the change through the engine stage by stage, with the code that does each step and what to check in it.</p>
+    <div class="meta">
+      <span>Plan <b>docs/plan_lod_blending.md</b> (landed)</span>
+      <span>State <b>staged, not committed</b></span>
+      <span>Size <b>44 files, +1,225 / −309</b></span>
+      <span>Date <b>25 Oct 2026</b></span>
+    </div>
+  </header>
+
+  <section>
+    <div class="rail"><div class="eyebrow">Summary</div></div>
+    <div class="content">
+      <div class="verdict">
+        <div><span class="k">Agrees with OpenUSD</span><span class="v">71 of 71 cameras</span><span class="n">The engine picks the same LOD level, and the same point in a fade, as OpenUSD's own LOD code. Checked by distance and by screen size; the largest gap was a millionth of a level.</span></div>
+        <div><span class="k">No holes in a fade</span><span class="v">Every pixel</span><span class="n">Halfway through a fade, each of the image's 3.7 million pixels shows one of the two levels, exactly as the dither pattern says.</span></div>
+        <div><span class="k">Cost of one fading tree</span><span class="v">+0.12 ms a frame</span><span class="n">Both levels draw while it fades (4 draw calls instead of 2). G-buffer pass 0.08 → 0.15 ms, shadow pass 0.04 → 0.09 ms; a 60 fps frame has 16.7 ms.</span></div>
+        <div><span class="k">Everything else</span><span class="v">Unchanged</span><span class="n">Draws that aren't fading take the same path as before; the eight reference screenshots come out identical to the byte.</span></div>
+      </div>
+      <p>Four things change: the World keeps every LOD heuristic a root names; the view chooses one per root by a preference; the GPU computes UsdLod's fractional level and, inside a band, a second level and its share; and the cutout pipelines dither the two levels against each other. Nothing new runs for a draw that isn't fading.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail"><div class="eyebrow">The flow</div></div>
+    <div class="content">
+      <h2>From the authored heuristic to a dithered pixel</h2>
+      <p>The scene thread turns what USD authors into a record per placed group. The render thread uploads changed records; each frame the GPU picks levels, culls, and draws. Numbers match the walkthrough below.</p>
+      <div class="flow" role="img" aria-label="The change's path through the scene thread, the render thread and the GPU frame">
+        <svg viewBox="0 0 960 400">
+          <defs><marker id="head" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z"/></marker></defs>
+          <rect class="lanebg" x="0" y="0" width="960" height="128" rx="6"/>
+          <rect class="lanebg" x="0" y="140" width="960" height="92" rx="6"/>
+          <rect class="lanebg" x="0" y="244" width="960" height="156" rx="6"/>
+          <text class="lane" x="12" y="20">SCENE THREAD · when composed, placed, or the preference changes</text>
+          <text class="lane" x="12" y="160">RENDER THREAD · per change list</text>
+          <text class="lane" x="12" y="264">GPU · every frame, in frame-graph order</text>
+
+          <rect class="box" x="12" y="32" width="210" height="84" rx="5"/>
+          <text class="num" x="24" y="52">1</text><text x="38" y="52">WorldComposer</text>
+          <text class="small" x="24" y="72">resolveHeuristics: every target</text>
+          <text class="small" x="24" y="88">→ LodRoot::heuristics</text>
+          <text class="small" x="24" y="104">bands, center, box, unusable</text>
+
+          <rect class="new" x="250" y="32" width="250" height="84" rx="5"/>
+          <text class="num" x="262" y="52">2</text><text x="276" y="52">View: choose and record</text>
+          <text class="small" x="262" y="72">chooseLodHeuristic (distance first)</text>
+          <text class="small" x="262" y="88">lodGroupOf → RenderLodGroup</text>
+          <text class="small" x="262" y="104">streaming roots: pickLodLevel on CPU</text>
+
+          <rect class="box" x="528" y="32" width="200" height="84" rx="5"/>
+          <text x="540" y="52">SceneChanges::lodGroups</text>
+          <text class="small" x="540" y="72">changed group slots only</text>
+          <text class="small" x="540" y="88">refreshLodGroups on a</text>
+          <text class="small" x="540" y="104">preference or forced change</text>
+
+          <rect class="box" x="250" y="170" width="250" height="52" rx="5"/>
+          <text class="num" x="262" y="190">3</text><text x="276" y="190">LodGroups::apply + record()</text>
+          <text class="small" x="262" y="208">GpuLodGroup 240 B, LodGroupUpload</text>
+
+          <rect class="new" x="12" y="276" width="200" height="110" rx="5"/>
+          <text class="num" x="24" y="296">4</text><text x="38" y="296">LodSelect</text>
+          <text class="small" x="24" y="316">distanceOf / screenSizeOf</text>
+          <text class="small" x="24" y="332">pickLevel (band, hysteresis)</text>
+          <text class="small" x="24" y="348">residency → drawn, fade</text>
+          <text class="small" x="24" y="364">state uvec4 per group</text>
+
+          <rect class="new" x="240" y="276" width="210" height="110" rx="5"/>
+          <text class="num" x="252" y="296">5</text><text x="266" y="296">Cull · scan · scatter</text>
+          <text class="small" x="252" y="316">keeps drawn and fade level</text>
+          <text class="small" x="252" y="332">fadingOf → cutout bucket</text>
+          <text class="small" x="252" y="348">regions sized on the CPU</text>
+          <text class="small" x="252" y="364">with the doubled count</text>
+
+          <rect class="new" x="478" y="276" width="220" height="110" rx="5"/>
+          <text class="num" x="490" y="296">6</text><text x="504" y="296">Shadow · prepass · G-buffer</text>
+          <text class="small" x="490" y="316">cutout pipelines read the state</text>
+          <text class="small" x="490" y="332">(geometry set, binding 4)</text>
+          <text class="small" x="490" y="348">lodCoverage → lodFadedAway</text>
+          <text class="small" x="490" y="364">4×4 Bayer, complementary</text>
+
+          <rect class="box" x="726" y="276" width="220" height="110" rx="5"/>
+          <text class="num" x="738" y="296">7</text><text x="752" y="296">LodReadback</text>
+          <text class="small" x="738" y="316">totals + states, a slot later</text>
+          <text class="small" x="738" y="332">→ CullResult → renderlod record</text>
+          <text class="small" x="738" y="348">CPU check with pickLodLevel</text>
+          <text class="small" x="738" y="364">expected vs GPU level and fade</text>
+
+          <path class="arrow" d="M222,74 L248,74"/>
+          <path class="arrow" d="M500,74 L526,74"/>
+          <path class="arrow" d="M628,116 L628,196 L502,196"/>
+          <path class="arrow" d="M300,222 L300,248 L112,248 L112,274"/>
+          <path class="arrow" d="M212,331 L238,331"/>
+          <path class="arrow" d="M450,331 L476,331"/>
+          <path class="arrow" d="M698,331 L724,331"/>
+          <path class="arrow dashed" d="M836,276 L836,140 L500,140 L500,116"/>
+          <text class="small" x="610" y="136">same rule, checked against the GPU</text>
+        </svg>
+      </div>
+      <p style="color:var(--muted);font-size:0.86rem">Tinted boxes are new behaviour. Untinted ones changed shape only (more fields, a bigger record) or are unchanged plumbing the change rides on.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail"><div class="eyebrow">Walkthrough</div></div>
+    <div class="content">
+      <h2>Stage by stage</h2>
+
+      <article class="stage" id="s1">
+        <div class="stage-head"><span class="step">1 · World</span><h3>Every heuristic is kept, resolved as UsdLod reads it</h3></div>
+        <div class="files">src/world/world.h · src/world/worldcomposer.cpp · src/asset/pack/usd/usdpacker.cpp · pack.cpp</div>
+        <p>Before, <code>resolveHeuristics</code> chose one heuristic per root (the first usable screen-size one) and copied its fields onto <code>LodRoot</code>. Now it appends every <code>lod:heuristics</code> target that authors thresholds, in authored order, as a <code>LodHeuristic</code>. Choosing moved out of the World: it depends on a view setting.</p>
+        <div class="inout">
+          <div><b>In</b>the heuristic prims' attributes from the layer packs: <code>thresholds</code>, <code>blendThresholds</code>, <code>center</code> (newly packed), <code>extent</code>, <code>boundingVolume</code></div>
+          <div><b>Out</b><code>LodRoot::heuristics</code>; the old <code>heuristicChosen</code>, <code>heuristicType</code>, <code>thresholds</code>, <code>extent</code>, <code>projection</code> are gone</div>
+        </div>
+<pre><span class="cap">src/world/world.h</span><span class="k">struct</span> LodHeuristic {
+    LodHeuristicKind kind = LodHeuristicKind::Other;   <span class="c">// Distance, ScreenSize, Other</span>
+    std::string type;                                  <span class="c">// its prim type</span>
+    std::string path;                                  <span class="c">// its prim's path in the root's content</span>
+    std::string domain;
+    std::vector&lt;float&gt; thresholds;
+    std::vector&lt;float&gt; blendThresholds;                 <span class="c">// as authored; shorter or empty: no band past its end</span>
+    std::array&lt;glm::vec3, 2&gt; extent = {glm::vec3(-1.0f), glm::vec3(1.0f)};  <span class="c">// screen size</span>
+    LodProjection projection = LodProjection::Sphere;
+    glm::vec3 center = glm::vec3(0.0f);                 <span class="c">// distance</span>
+    std::optional&lt;std::array&lt;glm::vec3, 2&gt;&gt; box;        <span class="c">// distance: its boundingVolume's valid extent</span>
+    std::string unusable;                              <span class="c">// why the engine doesn't read it; empty when it does</span>
+};</pre>
+<pre><span class="cap">src/world/worldcomposer.cpp · resolveHeuristics (abridged)</span><span class="k">if</span> (data.type == <span class="k">"LODDistanceHeuristic"</span>) {
+    heuristic.kind = LodHeuristicKind::Distance;
+    heuristic.center = data.center.value_or(glm::vec3(0.0f));
+    heuristic.box = volume;                            <span class="c">// the boundingVolume's extent, when valid</span>
+    <span class="k">if</span> (!ascending) { heuristic.unusable = "thresholds aren't ascending"; } …
+} <span class="k">else if</span> (data.type == <span class="k">"LODScreenSizeHeuristic"</span>) {
+    heuristic.kind = LodHeuristicKind::ScreenSize;
+    heuristic.extent = volume.value_or(data.extent.value_or(heuristic.extent));
+    <span class="k">if</span> (!descending) { heuristic.unusable = "thresholds aren't descending"; } …
+} <span class="k">else</span> {
+    heuristic.unusable = std::format("{} isn't a heuristic the engine reads", data.type);
+}
+<span class="c">// then: domain must be "imaging", thresholds must exist</span>
+root.heuristics.push_back(std::move(heuristic));</pre>
+        <div class="notes"><span class="label">Check here</span><ul>
+          <li>Out-of-range blend thresholds are kept as authored and clamped where they are used, as USD's query clamps them. The plan first said "drop with a message"; the clamp keeps the engine's levels equal to USD's on any data, at the price of no warning.</li>
+          <li>The packer now keeps <code>center</code>, so the usd rule goes to version 9 and every USD file repacks once.</li>
+          <li>Parity covers this stage: <code>ngen-worldcheck --lod-heuristics</code> and <code>ngen-usdcheck --lod-heuristics</code> print every heuristic and match on the oak and the layered scene.</li>
+        </ul></div>
+      </article>
+
+      <article class="stage" id="s2">
+        <div class="stage-head"><span class="step">2 · View</span><h3>One heuristic per root, chosen by the preference, written in the GPU's units</h3></div>
+        <div class="files">src/world/world.cpp · src/view/viewscene.* · src/view/placement.cpp · src/view/viewcommands.cpp</div>
+        <p>The view owns the choice. <code>chooseLodHeuristic</code> takes the first usable heuristic of the preferred kind, then of the other kind (or the first usable one under "authored"). For a render-LOD root the result becomes a <code>RenderLodGroup</code> in <code>lodGroupOf</code>; a streaming root is evaluated on the CPU with the same rule.</p>
+        <div class="inout">
+          <div><b>In</b><code>LodRoot::heuristics</code>, the root's world transform (unit-scaled to metres), the preference, hand-set levels</div>
+          <div><b>Out</b>a <code>RenderLodGroup</code> per placed render-LOD root, in <code>SceneChanges::lodGroups</code>; a wanted level per streaming root</div>
+        </div>
+<pre><span class="cap">src/view/placement.cpp · ViewScene::lodGroupOf (abridged)</span><span class="k">auto</span> chosen = chooseLodHeuristic(info.heuristics, lodPreferenceNow);
+<span class="k">if</span> (chosen &lt; 0) {
+    <span class="k">return</span> group;                                  <span class="c">// no usable heuristic: forcedLevelOf gave it its default</span>
+}
+<span class="k">const auto</span>&amp; heuristic = info.heuristics[(size_t) chosen];
+<span class="c">// A distance is measured in metres on the GPU: its thresholds and bands too.</span>
+<span class="k">float</span> scale = 1.0f;
+<span class="k">if</span> (heuristic.kind == LodHeuristicKind::Distance) {
+    scale = (<span class="k">float</span>) composer-&gt;world().metersPerUnit;
+    group.kind = RenderLodKind::Distance;
+    group.toWorld = info.toWorld;
+    group.toRoot = glm::inverse(info.toWorld);
+    group.point = heuristic.center;
+    <span class="k">if</span> (heuristic.box) { group.hasBox = <span class="k">true</span>; group.boxMin = …; group.boxMax = …; }
+} <span class="k">else</span> {
+    group.center = …;  group.radius = …;            <span class="c">// the extent's bounding sphere in world metres, as before</span>
+}
+group.thresholdCount = min(heuristic.thresholds.size(), levelCount - 1);
+group.blendCount     = min(heuristic.blendThresholds.size(), group.thresholdCount);
+<span class="c">// thresholds[t] and blendThresholds[t] copied, times scale</span></pre>
+<pre><span class="cap">src/view/viewscene.cpp · applying a HeuristicRequest {prefer}</span><span class="k">if</span> (heuristic-&gt;prefer &amp;&amp; *heuristic-&gt;prefer != lodPreferenceNow) {
+    lodPreferenceNow = *heuristic-&gt;prefer;
+    TRACE_EVENT("Scene", "LodPreferenceChanged", id) …;
+    refreshLodGroups({});                          <span class="c">// every group's record rebuilt from LodGroupInfo</span>
+    placeNeeded = <span class="k">true</span>;
+}
+evaluateNeeded = <span class="k">true</span>;                             <span class="c">// streaming roots measured again</span></pre>
+        <div class="notes"><span class="label">Check here</span><ul>
+          <li><code>LodGroupInfo</code> now carries a copy of the root's heuristics and its transform, so a preference change can rebuild every record without placing again. That is memory per group (a few hundred bytes with the strings); fine on the oak, to be watched at tens of thousands of groups.</li>
+          <li>The distance threshold scaling by <code>metersPerUnit</code> happens once, here. The CPU path instead divides the measure by <code>metersPerUnit</code> (<code>lodMeasure</code>); the records convert the GPU's metres back to stage units. Both meet in the <code>renderlod</code> check.</li>
+          <li><code>refreshForcedLevels</code> became <code>refreshLodGroups</code>: a hand-set level, the heuristic toggle and the preference all rebuild the whole record and upload it only if it differs.</li>
+        </ul></div>
+      </article>
+
+      <article class="stage" id="s3">
+        <div class="stage-head"><span class="step">3 · Render thread</span><h3>The group table grows from 64 to 240 bytes</h3></div>
+        <div class="files">src/renderer/renderworld.h · src/renderer/lodgroups.*</div>
+        <p>The upload path is unchanged: changed slots go through the frame slot's staging buffer in one <code>LodGroupUpload</code> copy. <code>record()</code> packs the new fields; the two matrices go as three <code>vec4</code> rows each.</p>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Buffer</th><th>Before</th><th>After</th></tr></thead>
+            <tbody>
+              <tr><td><code>GpuLodGroup</code> (table)</td><td class="num">64 B: center, radius, thresholds[7], levelCount, default, forced, serial, alive</td><td class="num new">240 B: toWorld[3], toRoot[3], center, radius, point, kind, boxMin, hasBox, boxMax, blendCount, thresholds[7], blendThresholds[7], levelCount, default, forced, serial, alive, thresholdCount</td></tr>
+              <tr><td>State (per group)</td><td class="num">uvec2: serial · wanted | drawn &lt;&lt; 8</td><td class="num new">uvec4: serial · wanted | drawn &lt;&lt; 8 | fade &lt;&lt; 16 · share (float bits) · measure (float bits)</td></tr>
+              <tr><td><code>LodSelectTotals</code></td><td class="num">48 B, last word pad</td><td class="num new">48 B, last word <code>fading</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="notes"><span class="label">Check here</span><ul>
+          <li><code>thresholdCount</code> took the old pad slot. Without it, a distance group with fewer thresholds than levels would read zero thresholds as "always past" and jump to the coarsest level.</li>
+          <li><code>static_assert(sizeof(GpuLodGroup) == 240)</code> guards the std430 layout against the shader's <code>Group</code> struct; the order of fields is the contract.</li>
+        </ul></div>
+      </article>
+
+      <article class="stage" id="s4">
+        <div class="stage-head"><span class="step">4 · GPU pick</span><h3>Measure, pick, then a fade level only when it can be drawn</h3></div>
+        <div class="files">shaders/lodselect.comp · src/world/world.cpp (the CPU twin)</div>
+        <p>One thread per group. The measure follows the group's kind; the pick is the same rule as <code>pickLodLevel</code> on the CPU. A band at a boundary makes the switch a pure function of the measure (no hysteresis there); without one, going coarser still waits for the 20% margin against last frame's wanted level.</p>
+<pre><span class="cap">shaders/lodselect.comp · distanceOf, as UsdLodDistanceHeuristicQuery::ComputeDistance</span><span class="k">float</span> distanceOf(Group group) {
+    vec3 target = group.point;
+    <span class="k">if</span> (group.hasBox != 0u) {
+        vec3 eyeRoot = transformPoint(group.toRoot, push.eye);
+        <span class="k">if</span> (all(greaterThanEqual(eyeRoot, group.boxMin)) &amp;&amp; all(lessThanEqual(eyeRoot, group.boxMax))) {
+            <span class="k">return</span> 0.0;                             <span class="c">// inside the box</span>
+        }
+        target = clamp(eyeRoot, group.boxMin, group.boxMax);
+    }
+    <span class="k">return</span> length(transformPoint(group.toWorld, target) - push.eye);
+}</pre>
+<pre><span class="cap">src/world/world.cpp · pickLodLevel (the rule; lodselect.comp's pickLevel is the same, line for line)</span><span class="k">auto</span> past = [&amp;](<span class="k">float</span> edge) { <span class="k">return</span> distance ? measure &gt;= edge : measure &lt;= edge; };
+<span class="c">// A boundary's band: its blend threshold, clamped to the next threshold as UsdLod does.</span>
+<span class="k">auto</span> band = [&amp;](uint32_t k) -&gt; std::optional&lt;<span class="k">float</span>&gt; { … };
+<span class="k">float</span> coarserScale = distance ? 1.0f / std::sqrt(1.0f - hysteresis) : 1.0f - hysteresis;
+<span class="c">// Finer: every boundary fully past. Coarser: the same, a boundary without a band only past the margin.</span>
+<span class="k">while</span> (finer &lt; boundaries &amp;&amp; past(band(finer).value_or(thresholds[finer]))) { finer++; }
+<span class="k">while</span> (coarser &lt; boundaries &amp;&amp; past(band(coarser).value_or(thresholds[coarser] * coarserScale))) { coarser++; }
+uint32_t level = previous;
+<span class="k">if</span> (finer &lt; previous) { level = finer; } <span class="k">else if</span> (coarser &gt; previous) { level = coarser; }
+<span class="c">// Inside the band past this level's threshold: the next level's share, UsdLod's fractional index.</span>
+<span class="k">if</span> (<span class="k">auto</span> edge = band(level); edge &amp;&amp; past(thresholds[level]) &amp;&amp; !past(*edge)) {
+    pick.blend = clamp((measure - thresholds[level]) / (*edge - thresholds[level]), 0, 1);
+}</pre>
+<pre><span class="cap">shaders/lodselect.comp · after the residency fallback</span><span class="c">// Inside a band the next level fades in, when the wanted level is drawn and the next one is resident too.</span>
+uint fadeLevel = noLevel;
+<span class="k">if</span> (blend &gt; 0.0 &amp;&amp; drawn == wanted &amp;&amp; wanted &lt; last &amp;&amp; resident(missing, wanted + 1)) {
+    fadeLevel = wanted + 1;
+    atomicAdd(sharedCounters[counterFading], 1u);
+} <span class="k">else</span> {
+    blend = 0.0;
+}
+states.data[g] = uvec4(group.serial, wanted | (drawn &lt;&lt; 8) | (fadeLevel &lt;&lt; 16),
+                       floatBitsToUint(blend), floatBitsToUint(measure));</pre>
+        <div class="notes"><span class="label">Check here</span><ul>
+          <li>The distance hysteresis is <code>1 / sqrt(0.8)</code> ≈ 1.118: the camera must be about 12% farther than the threshold before it switches coarser. That is the same margin as screen size's 20%, since screen size falls with the square of distance. Only used at boundaries without a band.</li>
+          <li>A forced level never fades (<code>blend</code> stays 0). A level falling back for residency never fades either, so a fade can't show a hole while meshes stream.</li>
+          <li>The rule exists twice, C++ and GLSL. Drift is caught by the <code>renderlod</code> record (stage 7) on every readback, but any change must touch both files.</li>
+        </ul></div>
+      </article>
+
+      <article class="stage" id="s5">
+        <div class="stage-head"><span class="step">5 · Culling</span><h3>Both levels pass, and a fading group's instances move to the cutout buckets</h3></div>
+        <div class="files">shaders/instancecull.comp · src/renderer/drawlists.*</div>
+        <p>An instance survives the LOD test if its level is the drawn one or the fading one. While its group fades it goes to the cutout bucket of its sidedness for every view, so it draws through pipelines that discard. The scatter pass computes the same bucket, so both passes agree on the region.</p>
+<pre><span class="cap">shaders/instancecull.comp</span><span class="k">bool</span> fadingOf(Instance inst) {
+    <span class="k">if</span> (inst.lodGroup == 0 || inst.lodGroup &gt; uint(lodStates.data.length())) { <span class="k">return false</span>; }
+    <span class="k">return</span> ((lodStates.data[inst.lodGroup - 1].y &gt;&gt; 16) &amp; 0xFFu) != noLevel;
+}
+uint bucketOf(Instance inst, uint view, <span class="k">bool</span> fading) {
+    uint bucket = (inst.flags &amp; flagDoubleSided) != 0 ? 1u : 0u;
+    <span class="k">if</span> (((inst.flags &amp; flagCutout) != 0 &amp;&amp; perSubmesh(inst, view)) || fading) {
+        bucket += 2u;                                 <span class="c">// the cutout buckets</span>
+    }
+    <span class="k">return</span> bucket;
+}
+<span class="c">// in cull(): the level test</span>
+uint levels = lodStates.data[group].y;
+dropped = ((levels &gt;&gt; 8) &amp; 0xFFu) != level &amp;&amp; ((levels &gt;&gt; 16) &amp; 0xFFu) != level;</pre>
+<pre><span class="cap">src/renderer/drawlists.cpp · the CPU side of region sizing</span><span class="c">// An instance of a render-LOD group counts in its cutout bucket as well as its own:</span>
+<span class="c">// while its group fades, the cull pass draws it there.</span>
+<span class="k">auto</span> DrawLists::countInstance(<span class="k">const</span> GpuInstance&amp; instance, <span class="k">int</span> delta) -&gt; <span class="k">void</span> {
+    <span class="k">bool</span> mayFade = instance.lodGroup != 0;
+    <span class="k">auto</span> count = [&amp;](std::array&lt;uint64_t, bucketCount&gt;&amp; buckets, uint32_t b) {
+        <span class="k">if</span> (b == noBucket) { <span class="k">return</span>; }
+        buckets[b] += delta;
+        <span class="k">if</span> (mayFade &amp;&amp; b &lt; 2) { buckets[b + 2] += delta; }
+    };
+    count(cameraBuckets, cameraBucketOf(instance));
+    count(cascadeBuckets, cascadeBucketOf(instance));
+}</pre>
+        <div class="notes"><span class="label">Check here</span><ul>
+          <li>This is the cost the review should weigh most: regions are sized on the CPU from bucket counts, and the CPU doesn't know which groups will fade, so every render-LOD instance reserves a second command. The shader guard (<code>regionOverflow</code>) stays at 0 on the oak.</li>
+          <li>For a shadow cascade, a fading instance that normally draws its whole mesh (<code>primFirst</code>) still draws the whole mesh, now through the cutout shadow pipeline with the dither.</li>
+          <li>Fading is a per-group property read from the state in both passes; it can't disagree between cull and scatter within a frame.</li>
+        </ul></div>
+      </article>
+
+      <article class="stage" id="s6">
+        <div class="stage-head"><span class="step">6 · Drawing</span><h3>Coverage in the vertex stage, a complementary Bayer test in the fragment stage</h3></div>
+        <div class="files">shaders/lodfade.glsl · gbuffer.vert · gbuffercutout.frag · depthcutout.vert · shadowcutout.vert · cutout.frag · src/renderer/renderer.cpp · passes/*pass.cpp</div>
+        <p>The state buffer joins the geometry descriptor set as binding 4. The vertex stage turns the instance's group state into one flat float; the fragment stage compares it with a 4×4 ordered threshold at the pixel. The fading-in level keeps thresholds below the share, the drawn level keeps the rest, so each pixel is covered exactly once.</p>
+<pre><span class="cap">shaders/lodfade.glsl</span><span class="c">// vertex stages: an instance's coverage</span>
+<span class="k">float</span> lodCoverage(uint lodGroup, uint lodLevel) {
+    <span class="k">if</span> (lodGroup == 0u || lodLevel == 0u || lodGroup &gt; uint(lodStates.data.length())) { <span class="k">return</span> lodCoverAll; }
+    uvec4 state = lodStates.data[lodGroup - 1u];
+    uint fadeLevel = (state.y &gt;&gt; 16) &amp; 0xFFu;
+    <span class="k">if</span> (fadeLevel == lodNoLevel) { <span class="k">return</span> lodCoverAll; }
+    <span class="k">float</span> share = uintBitsToFloat(state.z);
+    <span class="k">return</span> lodLevel - 1u == fadeLevel ? share : -share;   <span class="c">// sign picks the side</span>
+}
+<span class="c">// fragment stages (LOD_FADE_FRAGMENT): whether the pixel belongs to the other level</span>
+<span class="k">bool</span> lodFadedAway(<span class="k">float</span> coverage) {
+    <span class="k">if</span> (coverage &gt; 1.5) { <span class="k">return false</span>; }
+    <span class="k">const float</span> bayer[16] = <span class="k">float</span>[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
+    uvec2 cell = uvec2(gl_FragCoord.xy) &amp; 3u;
+    <span class="k">float</span> threshold = (bayer[cell.y * 4u + cell.x] + 0.5) / 16.0;
+    <span class="k">return</span> coverage &gt;= 0.0 ? threshold &gt;= coverage : threshold &lt; -coverage;
+}</pre>
+<pre><span class="cap">src/renderer/renderer.cpp · the frame's order and the state handle</span><span class="k">auto</span> lodHandles = lodGroups.import(frameGraph, currentFrame);
+lodSelectPass.addPasses(frameGraph, lodHandles, lodCamera, lodGroups.groupCount(), currentFrame);
+<span class="k">auto</span> drawHandles = drawLists.import(frameGraph, currentFrame);
+drawHandles.lodStates = lodHandles.states;              <span class="c">// new: the drawing passes declare the read</span>
+instanceCullPass.addPasses(frameGraph, drawHandles, lodHandles, instanceHandle, cullGroups, currentFrame);
+<span class="c">// shadow, depth prepass, geometry, debug view: builder.read(drawHandles.lodStates, StorageRead)</span>
+<span class="c">// → compute-write to vertex-read barrier from the frame graph</span></pre>
+        <div class="notes"><span class="label">Check here</span><ul>
+          <li>The opaque <code>gbuffer.frag</code> path is untouched; <code>gbuffer.vert</code> now writes one extra flat output that only the cutout fragment shader reads.</li>
+          <li>The pattern is fixed in screen space: depth prepass and G-buffer discard the same pixels, so the Equal depth test still matches. In the shadow map the pattern is in shadow-map texels, which is why lit images differ from the screen-space composite by about 1% of pixels (self-shadowing), while albedo images match exactly.</li>
+          <li>The debug view pass also declares the read; its own shaders don't dither, so a fading group shows both levels in debug views.</li>
+        </ul></div>
+      </article>
+
+      <article class="stage" id="s7">
+        <div class="stage-head"><span class="step">7 · Readback and check</span><h3>The record that keeps the two picks honest</h3></div>
+        <div class="files">src/renderer/lodgroups.cpp (parseReadback) · src/renderer/renderer.cpp (cullResult) · src/view/viewcommands.cpp (renderLodRecord, expectedLevels)</div>
+        <p>A slot later, the totals and, when asked, every group's state reach <code>CullResult</code>. The <code>renderlod</code> record recomputes each group's measure on the CPU from the camera the GPU used, runs <code>pickLodLevel</code> twice (wanting the finest before, and the coarsest) to bound what hysteresis allows, and flags a group whose GPU level or fade share falls outside.</p>
+<pre><span class="cap">src/view/viewcommands.cpp · expectedLevels (abridged)</span><span class="k">auto</span> fromFinest   = pickLodLevel(kind, thresholds, blends, out.measure, group.levelCount, 0, hysteresis);
+<span class="k">auto</span> fromCoarsest = pickLodLevel(kind, thresholds, blends, out.measure, group.levelCount, last, hysteresis);
+out.low = fromFinest.level;
+out.high = fromCoarsest.level;
+out.blend = fromCoarsest.blend;                         <span class="c">// inside a band both agree</span>
+<span class="c">// in renderLodRecord: differs when wanted ∉ [low, high], or the GPU's fade share is off by more than 0.001</span></pre>
+        <div class="notes"><span class="label">Check here</span><ul>
+          <li>Points within 0.01% of a threshold, a band edge or a hysteresis edge are counted as <code>onEdge</code>, not as differences: float order differs between CPU and GPU there.</li>
+          <li>Per group the record carries the CPU measure and the GPU's (<code>gpuMeasure</code>), the fade level and share, and the expected share, which is what the USD comparison below reads.</li>
+        </ul></div>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail"><div class="eyebrow">Evidence</div></div>
+    <div class="content">
+      <h2>Checked against OpenUSD, pixel by pixel</h2>
+      <p>The oak was walked from 30 m to 467 m: just before each threshold, a quarter, half and three quarters into each band, just past it. At every point the GPU's drawn level plus its share is compared with <code>UsdLodDistanceHeuristicQuery::ComputeLOD</code>, run from C++ by <code>ngen-usdcheck --lod-picks</code> at the recorded camera; the screen-size run does the same against <code>UsdLodScreenSizeHeuristicQuery</code>.</p>
+      <div class="chart">
+        <svg id="levelChart" viewBox="0 0 860 300" role="img" aria-label="Fractional LOD level against distance: engine points on USD's curve"></svg>
+        <div class="legend"><span><i class="swatch"></i>authored blend band</span><span><i></i>UsdLod reference</span><span><i class="dot"></i>ngen GPU (drawn level + fade share)</span></div>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Check</th><th>Result</th><th>How</th></tr></thead>
+          <tbody>
+            <tr><td>Distance pick vs USD</td><td class="num"><span class="pill ok">pass</span> same level at all 36</td><td>36 camera positions from 30 m to 467 m. Largest gap: a millionth of a level. Fades come out at exactly a quarter, half and three quarters of the way through each of the seven bands</td></tr>
+            <tr><td>Screen-size pick vs USD</td><td class="num"><span class="pill ok">pass</span> same level at all 35</td><td>35 camera positions placed at the same points within each band. Largest gap: half a millionth of a level</td></tr>
+            <tr><td>GPU vs CPU (stage 7)</td><td class="num"><span class="pill ok">pass</span> no disagreement</td><td>The GPU's level and the CPU's recomputation agree at every camera of both runs</td></tr>
+            <tr><td>Fade coverage</td><td class="num"><span class="pill ok">pass</span> every pixel</td><td>Images taken a quarter, half and three quarters into a fade match, pixel for pixel (all 3.7 million at 2560×1440), the two levels drawn alone and merged by the dither pattern. Where the two levels differ, 25%, 50% and 75% of the pixels come from the incoming level, as intended. Needed anti-aliasing off, so <code>view.antialiasing</code> is new for this</td></tr>
+            <tr><td>Shadow casters</td><td class="num"><span class="pill ok">pass</span> same shadow area</td><td>The scene has no ground to catch a shadow, so the shadow map itself was compared: while fading, the tree covers as much of it as either level alone (within 1%)</td></tr>
+            <tr><td>Heuristic parity (stage 1)</td><td class="num"><span class="pill ok">pass</span> identical</td><td><code>--lod-heuristics</code>, oak and layered scene</td></tr>
+            <tr><td>Regression</td><td class="num"><span class="pill ok">pass</span> byte-identical</td><td>The eight baseline screenshots; the layered scene's LOD script gives the same levels</td></tr>
+            <tr><td>Test world</td><td class="num"><span class="pill warn">deferred</span></td><td>Being re-authored with higher-fidelity LODs; scale is measured then</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail"><div class="eyebrow">Decisions</div></div>
+    <div class="content">
+      <h2>Decisions behind the code</h2>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Decision</th><th>Chosen</th><th>Set aside</th><th>Where it shows</th></tr></thead>
+          <tbody>
+            <tr><td>Technique <span class="pill locked">locked</span></td><td>Dithered cross-fade, opaque</td><td>Alpha blend; geomorph</td><td>Stage 6</td></tr>
+            <tr><td>Fade driver <span class="pill locked">locked</span></td><td>The authored band only</td><td>A timed fade for every switch</td><td>Stage 4: no per-group fade state</td></tr>
+            <tr><td>Heuristic <span class="pill locked">locked</span></td><td>Both kinds, preference, distance first</td><td>UsdLod's authored order</td><td>Stage 2</td></tr>
+            <tr><td>Draw path <span class="pill lean">as leaned</span></td><td>The existing cutout buckets</td><td>Discard in every opaque pipeline; new fade pipelines</td><td>Stage 5: doubled count</td></tr>
+            <tr><td>Pattern <span class="pill lean">as leaned</span></td><td>4×4 Bayer, screen space</td><td>Blue noise texture</td><td>Stage 6</td></tr>
+            <tr><td>Bad bands</td><td>Clamped as USD clamps</td><td>Dropped with a message</td><td>Stage 1, stage 4's <code>band()</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail"><div class="eyebrow">Risks</div></div>
+    <div class="content">
+      <h2>What to weigh</h2>
+      <div class="risks">
+        <div class="risk"><span class="pill risk">cost</span><div><h3>Command capacity doubles for render-LOD instances (stage 5)</h3><p>An estimate, not measured: on the old test world about 16 MB more GPU memory for each frame in flight for the camera's draw list, and up to four times that again for the shadow cascades.</p><p class="ask">Accept until measured at scale, or count only groups near a band.</p></div></div>
+        <div class="risk"><span class="pill risk">cost</span><div><h3>Fading draws lose early depth (stages 5–6)</h3><p>One fading tree adds 0.07 ms to the G-buffer pass. A forest with many trees fading at the same moment could add milliseconds.</p><p class="ask">Measure on the re-authored test world at a dense viewpoint.</p></div></div>
+        <div class="risk"><span class="pill warn">look</span><div><h3>The dither shows</h3><p>No TAA; a camera parked in a band keeps the pattern; overlapping trees share pixels.</p><p class="ask">A settle time, or a per-instance pattern offset, now or after seeing it in motion.</p></div></div>
+        <div class="risk"><span class="pill warn">maintenance</span><div><h3>The pick exists twice (stage 4)</h3><p>C++ and GLSL; the stage 7 check catches drift on every readback.</p><p class="ask">Acceptable while the check runs in verification.</p></div></div>
+        <div class="risk"><span class="pill warn">behaviour</span><div><h3>Distance first changes existing levels (stage 2)</h3><p>Scenes authoring both now switch by distance.</p><p class="ask">Expected; the preference is a runtime setting.</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail"><div class="eyebrow">Runtime access</div></div>
+    <div class="content">
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Kind</th><th>Added or changed</th></tr></thead>
+          <tbody>
+            <tr><td>Methods, verbs</td><td><code>view.lod.heuristic {prefer}</code>, <code>lod-prefer</code>; <code>view.antialiasing</code>, <code>aa</code></td></tr>
+            <tr><td>Records</td><td><code>lod</code>: every heuristic, used, why not; <code>streaming</code>: kind and measure; <code>renderlod</code>: per group kind, CPU and GPU measure, fade level, share, expected share; totals <code>fading</code>, <code>fadingInstances</code></td></tr>
+            <tr><td>Trace</td><td><code>LodPreferenceChanged</code></td></tr>
+            <tr><td>Windows</td><td>LOD window: preference, measure column, heuristics tooltip, fading count; Engine Map text</td></tr>
+            <tr><td>Gap</td><td>The Culling window doesn't show fading draws apart; the per-root inspector is the LOD tool plan's</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail"><div class="eyebrow">Asks</div></div>
+    <div class="content">
+      <ul class="plain">
+        <li>Accept the doubled command capacity until the test world measures it, or ask for a narrower count now.</li>
+        <li>Whether a camera parked in a band should settle on one level after a while.</li>
+        <li>Whether overlapping fading instances should offset the pattern per instance.</li>
+        <li>Whether silent clamping of out-of-range blend thresholds is enough, or the packer should warn.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>Numbers from headless runs of ngen-view on <span class="mono">assets/streamtest-world/world/assets/lodtest/oak_lod8.usda</span> (2560×1440, offscreen) and from <span class="mono">ngen-usdcheck</span> built against the vendored OpenUSD. Code excerpts are from the staged change; abridged ones are marked and elide with "…".</footer>
+</main>
+
+<script>
+(function () {
+  var data = [[30.0,0],[48.3,0],[50.325,0.25],[51.35,0.5],[52.375,0.75],[54.4,1],[69.8,1],[72.275,1.25],[73.75,1.5],[75.225,1.75],[77.7,2],[100.5,2],[103.625,2.25],[105.75,2.5],[107.875,2.75],[111.0,3],[144.7,3],[148.75,3.25],[151.8,3.5],[154.85,3.75],[158.9,4],[208.4,4],[213.775,4.25],[218.15,4.5],[222.525,4.75],[227.9,5],[300.5,5],[307.825,5.25],[314.15,5.5],[320.475,5.75],[327.8,6],[428.4,6],[438.45,6.25],[447.5,6.5],[456.55,6.75],[466.6,7]];
+  var thresholds = [49.3, 70.8, 101.5, 145.7, 209.4, 301.5, 429.4];
+  var blends = [53.4, 76.7, 110, 157.9, 226.9, 326.8, 465.6];
+  var svg = document.getElementById('levelChart');
+  var ns = 'http://www.w3.org/2000/svg';
+  var W = 860, H = 300, left = 46, right = 16, top = 14, bottom = 38;
+  var xMax = 480, yMax = 7;
+  function x(d) { return left + (d / xMax) * (W - left - right); }
+  function y(l) { return top + (1 - l / yMax) * (H - top - bottom); }
+  function el(name, attrs, text) {
+    var e = document.createElementNS(ns, name);
+    for (var k in attrs) { e.setAttribute(k, attrs[k]); }
+    if (text !== undefined) { e.textContent = text; }
+    svg.appendChild(e);
+    return e;
+  }
+  for (var i = 0; i < thresholds.length; i++) {
+    el('rect', {'class': 'band', x: x(thresholds[i]), y: top, width: x(blends[i]) - x(thresholds[i]), height: H - top - bottom});
+  }
+  for (var l = 0; l <= 7; l++) {
+    el('line', {'class': 'grid', x1: left, x2: W - right, y1: y(l), y2: y(l)});
+    el('text', {x: left - 10, y: y(l) + 4, 'text-anchor': 'end'}, String(l));
+  }
+  for (var d = 0; d <= 480; d += 80) {
+    el('line', {'class': 'axis', x1: x(d), x2: x(d), y1: H - bottom, y2: H - bottom + 5});
+    el('text', {x: x(d), y: H - bottom + 18, 'text-anchor': 'middle'}, d + ' m');
+  }
+  el('text', {x: left, y: H - 4}, 'distance to the heuristic center (stage units = metres)');
+  var pts = [[0, 0]];
+  for (var j = 0; j < thresholds.length; j++) { pts.push([thresholds[j], j]); pts.push([blends[j], j + 1]); }
+  pts.push([xMax, 7]);
+  el('path', {'class': 'usd', d: pts.map(function (p, k) { return (k ? 'L' : 'M') + x(p[0]).toFixed(1) + ',' + y(p[1]).toFixed(1); }).join(' ')});
+  data.forEach(function (p) { el('circle', {'class': 'pt', cx: x(p[0]).toFixed(1), cy: y(p[1]).toFixed(1), r: 3.4}); });
+  el('text', {x: left + 4, y: top + 12}, 'LOD level (fractional inside a band)');
+})();
+</script>
