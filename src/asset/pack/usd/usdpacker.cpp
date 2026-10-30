@@ -98,7 +98,7 @@ auto isEngineAttribute(const std::string& name) -> bool {
         "ids",
         "invisibleIds",
     };
-    return names.contains(name) || name.starts_with("xformOp:") || name.starts_with("lod:") || name.starts_with("inputs:");
+    return names.contains(name) || name.starts_with("xformOp:") || name.starts_with("lod:") || name.starts_with("streaming:") || name.starts_with("inputs:");
 }
 
 auto isEngineRelationship(const std::string& name) -> bool {

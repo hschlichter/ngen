@@ -91,15 +91,53 @@ struct LodGroupSource {
 
 // What the heuristic chose for a root at its last evaluation: the heuristic it measured by (an index into the root's heuristics, -1 for
 // none), its kind and its measure (a distance in the stage's units, or a screen size; -1 when not measured), the level, and why.
+// Residency: the streaming heuristic it measured by (-1 for none) and its measure, the state (the finest level that must be resident, its
+// level and every coarser one resident), the levels asked of the composer and why, and what of the authoring contract doesn't hold.
 struct SceneLodChoice {
     int32_t heuristic = -1;
     LodHeuristicKind kind = LodHeuristicKind::Other;
     float measure = -1.0f;
     uint32_t level = 0;
     std::string reason;
+    int32_t streamingHeuristic = -1;
+    float streamingMeasure = -1.0f;
+    uint32_t state = 0;
+    std::vector<uint32_t> resident;
+    std::string residentReason;
+    std::vector<LodAuthoringFinding> findings;
 };
 using SceneLodChoices = std::unordered_map<std::string, SceneLodChoice>; // by the root's full path
 
+// Streaming measured, per placed streaming root: which levels are ready (placed and waiting for nothing, so they can be drawn), each level's
+// last lead (seconds from ready to selected, 0 when it was selected before it was ready; -1 never selected), whether it draws coarser than
+// selected (late) or nothing (a hole), and how often its levels were loaded again after being released. Time is measured here, never
+// acted on.
+struct SceneStreamingRoot {
+    std::vector<bool> ready;
+    std::vector<double> lead;
+    bool late = false;
+    bool hole = false;
+    uint32_t reloads = 0;
+};
+
+// The totals since the scene opened or view.streaming.reset: roots late and holes now; switches of the selected level to a level not ready
+// (late switches), times a root started drawing nothing (holes), and the root-seconds drawn coarser than selected or nothing; levels added to roots' resident sets (loads), of them loaded
+// again after a release (reloads), and taken out (released); the leads of every switch; mesh packs that arrived with no placement naming
+// them any more (asked for a level no longer resident).
+struct SceneStreaming {
+    std::unordered_map<std::string, SceneStreamingRoot> roots;
+    uint32_t lateNow = 0;
+    uint32_t holesNow = 0;
+    uint64_t lateSwitches = 0;
+    uint64_t holes = 0;
+    double lateSeconds = 0.0;
+    uint64_t loads = 0;
+    uint64_t reloads = 0;
+    uint64_t released = 0;
+    std::vector<double> leads;
+    uint64_t arrivedUnwanted = 0;
+    uint32_t findings = 0; // authoring findings over the placed roots, at the last evaluation
+};
 // The scene thread's work as of a snapshot: batches of requests and answers taken, composes (each composes with the packs held and asks for
 // those it names and lacks) and placement passes (the renderer's inputs placed from the World), the assets in flight by kind, and what it holds.
 struct SceneThreadStats {
@@ -134,13 +172,12 @@ struct SceneThreadStats {
     uint32_t lodRootsEvaluated = 0;
     uint32_t lodFiner = 0;
     uint32_t lodCoarser = 0;
-    // Unloading, since the scene opened: levels let go after the unload delay, the composed contents no level reached any more, and mesh
-    // packs no placement named any more; and the levels kept now, not wanted, for the delay.
+    // Unloading, since the scene opened: levels taken out of roots' resident sets, the composed contents no level reached any more, and
+    // mesh packs no placement named any more.
     uint64_t releasedLevels = 0;
     uint64_t releasedContents = 0;
     uint64_t releasedMeshes = 0;
     uint64_t releasedMeshBytes = 0;
-    uint32_t keptLevels = 0;
     double lodEvaluateMs = 0.0;
     uint64_t lodEvaluations = 0;
     uint64_t relinks = 0;
@@ -201,10 +238,7 @@ struct SceneSnapshot {
     std::shared_ptr<const LodTuning> lodTuning = std::make_shared<LodTuning>();
     std::shared_ptr<const std::unordered_map<std::string, uint32_t>> lodHandLevels = std::make_shared<std::unordered_map<std::string, uint32_t>>();
     double metersPerUnitOfLod = 1.0; // the stage's, for the measures the records show
-    double unloadDelay = 10.0;
-    // The levels kept for the unload delay, by root path: each with when the delay runs out.
-    std::shared_ptr<const std::map<std::string, std::map<uint32_t, std::chrono::steady_clock::time_point>>> keptLevels =
-        std::make_shared<std::map<std::string, std::map<uint32_t, std::chrono::steady_clock::time_point>>>();
+    std::shared_ptr<const SceneStreaming> streaming = std::make_shared<SceneStreaming>();
     glm::mat4 unitScale = glm::mat4(1.0f);
     std::vector<std::string> assetIds; // every asset the scene uses: layer packs, meshes, materials, textures, failed ones
     // The World, summarised.
@@ -262,11 +296,10 @@ public:
     auto lodTuning() const -> const LodTuning& { return *current->lodTuning; }
     // The levels set by hand, by LOD root path (streaming roots and render-LOD groups alike).
     auto lodHandLevels() const -> const std::unordered_map<std::string, uint32_t>& { return *current->lodHandLevels; }
-    // How long a LOD level that stopped being wanted stays loaded (its placement, contents, packs, library entries and GPU copies).
-    auto setUnloadDelay(double seconds) -> void;
-    auto unloadDelay() const -> double { return current->unloadDelay; }
-    // The levels kept for the unload delay, by root path: each with when its delay runs out.
-    auto keptLevels() const -> const std::map<std::string, std::map<uint32_t, std::chrono::steady_clock::time_point>>& { return *current->keptLevels; }
+    // Streaming measured (SceneStreaming), as of the snapshot update() took; resetStreamingCounters zeroes the totals, for a run measured
+    // from a known start.
+    auto streaming() const -> const SceneStreaming& { return *current->streaming; }
+    auto resetStreamingCounters() -> void;
     auto lodHeuristic() const -> bool { return current->lodHeuristic; }
     // What the heuristic chose at its last evaluation, by root path.
     auto lodChoices() const -> const SceneLodChoices& { return *current->lodChoices; }
@@ -357,9 +390,9 @@ private:
     };
     struct HeuristicRequest {
         std::optional<bool> on;
-        std::optional<double> unloadDelay;
         std::optional<LodPreference> prefer;
     };
+    struct StreamingResetRequest {};
     struct TuningRequest {
         std::optional<float> bias;
         std::optional<float> hysteresis;
@@ -370,15 +403,17 @@ private:
         std::optional<LodOverride> thresholds;
         bool reset = false;
     };
-    using Request = std::variant<OpenRequest, LodRequest, PurposeRequest, RefreshRequest, TransformRequest, HeuristicRequest, TuningRequest>;
+    using Request = std::variant<OpenRequest, LodRequest, PurposeRequest, RefreshRequest, TransformRequest, HeuristicRequest, TuningRequest, StreamingResetRequest>;
     struct CameraInput {
         glm::vec3 position = glm::vec3(0.0f);
         float fovY = 0.785f;
         float aspect = 1.0f;
     };
-    // The LOD heuristic over the roots the last placement pass drew: each one's level from its screen size, with hysteresis, unless set by
-    // hand; the composer gets what changed. True when something did.
+    // The LOD heuristic over the roots the last placement pass drew: each one's level from its imaging heuristic, with hysteresis, unless
+    // set by hand, and its resident levels from its streaming heuristic; the composer gets what changed. True when something did.
     auto evaluateLevels() -> bool;
+    // Streaming measured from the placed roots' rows after a pass (SceneStreaming).
+    auto measureStreaming() -> void;
     auto relink() -> void;
     // What an asset the scene thread asked for is, so its arrival goes to the right place.
     enum class AssetKind : uint8_t {
@@ -470,18 +505,22 @@ private:
     std::unordered_map<std::string, uint32_t> handLevels;
     std::unordered_map<std::string, uint32_t> heuristicLevels;
     std::unordered_map<std::string, uint32_t> composerLevels;
-    // Unloading: a level that stopped being wanted stays loaded for the delay, by root path and level from when it stopped (or was last
-    // found still drawn); the composer keeps them loaded (keepLodLevels). When the next delay runs out, for the scene thread to wake.
-    double unloadDelaySeconds = 10.0;
-    std::map<std::string, std::map<uint32_t, std::chrono::steady_clock::time_point>> levelsKept;
-    bool keptLevelsChanged = false;
-    std::shared_ptr<const std::map<std::string, std::map<uint32_t, std::chrono::steady_clock::time_point>>> keptPublished =
-        std::make_shared<std::map<std::string, std::map<uint32_t, std::chrono::steady_clock::time_point>>>();
-    std::optional<std::chrono::steady_clock::time_point> levelsDue;
-    auto keepLevel(const std::string& rootPath, uint32_t level, bool keep) -> void;
-    // Lets go of the levels past their delay that aren't drawn; true when it let one go (the composer links again).
-    auto releaseLevels() -> bool;
-    auto updateLevelsDue() -> void;
+    // Residency: per placed root its streaming state (the hysteresis) and the levels the composer was told to keep loaded; both go when the
+    // root is no longer placed, so a root placed again starts afresh.
+    std::unordered_map<std::string, uint32_t> streamingStates;
+    std::unordered_map<std::string, std::set<uint32_t>> residentSets;
+    // Streaming measured: the published totals' working copy, per root when each level became ready and since when it draws late, and every
+    // level released, by root path, to count a reload.
+    SceneStreaming streamingNow;
+    struct RootTimes {
+        std::vector<std::optional<std::chrono::steady_clock::time_point>> readySince;
+        std::optional<std::chrono::steady_clock::time_point> lateSince;
+        std::optional<uint32_t> selected;
+    };
+    std::unordered_map<std::string, RootTimes> rootTimes;
+    std::unordered_map<std::string, std::set<uint32_t>> releasedOf;
+    bool streamingChanged = true;
+    std::shared_ptr<const SceneStreaming> streamingPublished = std::make_shared<SceneStreaming>();
     uint64_t reportedReleasedLevels = 0;
     uint64_t reportedReleasedContents = 0;
     uint64_t reportedReleasedMeshes = 0;

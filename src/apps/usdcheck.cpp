@@ -137,6 +137,8 @@ auto heuristicLine(const std::string& rootPath, size_t index, const UsdPrim& pri
     VtArray<float> blends;
     prim.GetAttribute(TfToken("thresholds")).Get(&thresholds);
     prim.GetAttribute(TfToken("blendThresholds")).Get(&blends);
+    VtArray<float> unloads;
+    prim.GetAttribute(TfToken("streaming:unloadThresholds")).Get(&unloads);
     TfToken domain;
     prim.GetAttribute(TfToken("lod:domain")).Get(&domain);
     std::vector<double> bounds;
@@ -163,7 +165,7 @@ auto heuristicLine(const std::string& rootPath, size_t index, const UsdPrim& pri
         add(extent[0]);
         add(extent[1]);
     }
-    return fingerprintHeuristicLine(rootPath, index, prim.GetTypeName().GetString(), domain.GetString(), std::vector<double>(thresholds.begin(), thresholds.end()), std::vector<double>(blends.begin(), blends.end()), bounds);
+    return fingerprintHeuristicLine(rootPath, index, prim.GetTypeName().GetString(), domain.GetString(), std::vector<double>(thresholds.begin(), thresholds.end()), std::vector<double>(blends.begin(), blends.end()), std::vector<double>(unloads.begin(), unloads.end()), bounds);
 }
 
 // The payloads still to load: unloaded, and not under a level that doesn't load.

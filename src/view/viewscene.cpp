@@ -110,15 +110,15 @@ auto ViewScene::cameraAspect() const -> float {
 }
 
 auto ViewScene::setLodHeuristic(bool on) -> void {
-    post(HeuristicRequest{.on = on, .unloadDelay = std::nullopt});
-}
-
-auto ViewScene::setUnloadDelay(double seconds) -> void {
-    post(HeuristicRequest{.on = std::nullopt, .unloadDelay = seconds});
+    post(HeuristicRequest{.on = on});
 }
 
 auto ViewScene::setLodPreference(LodPreference preference) -> void {
-    post(HeuristicRequest{.on = std::nullopt, .unloadDelay = std::nullopt, .prefer = preference});
+    post(HeuristicRequest{.on = std::nullopt, .prefer = preference});
+}
+
+auto ViewScene::resetStreamingCounters() -> void {
+    post(StreamingResetRequest{});
 }
 
 auto ViewScene::setLodTuning(std::optional<float> bias, std::optional<float> hysteresis, std::optional<bool> blending) -> void {
@@ -218,20 +218,14 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
             auto woken = [this] {
                 return !requests.empty() || answered || postedCamera.has_value() || !retired.empty();
             };
-            // A level kept for the unload delay: wake when its delay runs out, or sooner for a request or an answer.
-            if (levelsDue) {
-                wake.wait_until(lock, stop, *levelsDue, woken);
-            } else {
-                wake.wait(lock, stop, woken);
-            }
+            wake.wait(lock, stop, woken);
             if (stop.stop_requested()) {
                 return;
             }
             toFree = std::move(retired);
             retired.clear();
             // Woken only to free what the main thread let go of: no batch, so nothing is published (which would hand back another).
-            bool due = levelsDue && std::chrono::steady_clock::now() >= *levelsDue;
-            if (requests.empty() && !answered && !postedCamera.has_value() && !due) {
+            if (requests.empty() && !answered && !postedCamera.has_value()) {
                 lock.unlock();
                 PROFILE_ZONE("SceneRetire");
                 toFree.clear();
@@ -262,10 +256,6 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
                 receive(assetId);
             }
         }
-        // Levels past their unload delay go: the composer links again without them (a compose does too) and their placements are released.
-        if (levelsDue && std::chrono::steady_clock::now() >= *levelsDue && releaseLevels() && !composeNeeded) {
-            relink();
-        }
         if (composeNeeded) {
             compose();
         }
@@ -280,7 +270,7 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
                 place();
             }
         }
-        updateLevelsDue();
+        measureStreaming();
         reportReleases();
         reportAssets();
         publish();
@@ -315,12 +305,21 @@ auto ViewScene::apply(Request& request) -> void {
             refreshLodGroups({});
             placeNeeded = true;
         }
-        if (heuristic->unloadDelay) {
-            // Applies to the levels kept now too: their delays run from when they stopped being wanted.
-            unloadDelaySeconds = std::max(0.0, *heuristic->unloadDelay);
-            keptLevelsChanged = true;
-        }
         evaluateNeeded = true;
+    } else if (std::holds_alternative<StreamingResetRequest>(request)) {
+        auto roots = std::move(streamingNow.roots);
+        streamingNow = {};
+        streamingNow.roots = std::move(roots);
+        releasedOf.clear();
+        // A root late now counts from the reset.
+        auto now = std::chrono::steady_clock::now();
+        for (auto& [path, times] : rootTimes) {
+            if (times.lateSince) {
+                times.lateSince = now;
+            }
+        }
+        streamingChanged = true;
+        TRACE_EVENT("Scene", "StreamingCountersReset", id).text("streaming counters reset");
     } else if (auto* tuningRequest = std::get_if<TuningRequest>(&request)) {
         applyTuning(*tuningRequest);
     } else if (auto* purpose = std::get_if<PurposeRequest>(&request)) {
@@ -354,9 +353,12 @@ auto ViewScene::applyOpen(const std::string& sceneId) -> void {
     failedAssets.clear();
     refreshing.clear();
     composeReported = false;
-    levelsKept.clear();
-    keptLevelsChanged = true;
-    levelsDue.reset();
+    streamingStates.clear();
+    residentSets.clear();
+    streamingNow = {};
+    rootTimes.clear();
+    releasedOf.clear();
+    streamingChanged = true;
     reportedReleasedLevels = 0;
     reportedReleasedContents = 0;
     reportedReleasedMeshes = 0;
@@ -490,6 +492,11 @@ auto ViewScene::receive(const std::string& assetId) -> void {
             requestAssets(again, false);
         }
     } else if (packKind && *packKind == ScenePackKind::Mesh) {
+        if (!refreshed && !meshNames.contains(assetId)) {
+            // Asked for by a level no longer resident: dropped by the pass that finds no placement naming it.
+            streamingNow.arrivedUnwanted++;
+            streamingChanged = true;
+        }
         if (auto mesh = readMeshPack(asset->bytes)) {
             meshPacks[assetId] = std::move(*mesh);
             if (!unchanged) {
@@ -732,7 +739,7 @@ auto ViewScene::applyTuning(const TuningRequest& request) -> void {
             changedRoot = root->first;
         } else {
             const auto& heuristics = *root->second;
-            auto index = request.heuristic ? (int32_t) *request.heuristic : chooseLodHeuristic(heuristics, lodPreferenceNow);
+            auto index = request.heuristic ? (int32_t) *request.heuristic : chooseLodHeuristic(heuristics, LodDomain::Imaging, lodPreferenceNow);
             if (index < 0 || (size_t) index >= heuristics.size()) {
                 TRACE_WARNING("Scene", "LodTuningRefused", request.path).text(std::format("{}: no heuristic {} to override ({} authored)", request.path, index, heuristics.size()));
             } else {
@@ -784,6 +791,25 @@ auto ViewScene::evaluateLevels() -> bool {
     uint32_t evaluated = 0;
     uint32_t finer = 0;
     uint32_t coarser = 0;
+    uint32_t requested = 0;
+    uint32_t releasedNow = 0;
+    uint32_t findings = 0;
+    bool changed = false;
+    // A root no longer placed forgets its state, and the composer its resident levels: placed again, it starts afresh.
+    for (auto it = residentSets.begin(); it != residentSets.end();) {
+        if (placedRoots.contains(it->first)) {
+            ++it;
+            continue;
+        }
+        composer->resetResidentLevels(it->first);
+        streamingStates.erase(it->first);
+        it = residentSets.erase(it);
+    }
+    for (auto it = streamingStates.begin(); it != streamingStates.end();) {
+        it = placedRoots.contains(it->first) ? std::next(it) : streamingStates.erase(it);
+    }
+    auto metersPerUnit = composer->world().metersPerUnit;
+    auto windowArea = camera ? lodWindowArea(camera->fovY, camera->aspect) : 1.0f;
     for (const auto& [path, placed] : placedRoots) {
         const auto& root = placed.row;
         auto levelCount = (uint32_t) root.levels.size();
@@ -797,9 +823,9 @@ auto ViewScene::evaluateLevels() -> bool {
         } else if (!heuristicOn) {
             choice.level = root.defaultIndex;
             choice.reason = "heuristic off";
-        } else if (choice.heuristic = chooseLodHeuristic(root.heuristics, lodPreferenceNow); choice.heuristic < 0) {
+        } else if (choice.heuristic = chooseLodHeuristic(root.heuristics, LodDomain::Imaging, lodPreferenceNow); choice.heuristic < 0) {
             choice.level = root.defaultIndex;
-            choice.reason = "no usable heuristic";
+            choice.reason = "no usable imaging heuristic";
         } else if (!camera) {
             choice.level = root.defaultIndex;
             choice.reason = "no camera";
@@ -807,7 +833,7 @@ auto ViewScene::evaluateLevels() -> bool {
             auto override = lodOverrideOf(*tuning, root.key, (uint32_t) choice.heuristic);
             auto heuristic = tunedLodHeuristic(root.heuristics[(size_t) choice.heuristic], override, *tuning);
             choice.kind = heuristic.kind;
-            choice.measure = lodMeasure(heuristic, root.worldTransform, composer->world().metersPerUnit, camera->position, lodWindowArea(camera->fovY, camera->aspect));
+            choice.measure = lodMeasure(heuristic, root.worldTransform, metersPerUnit, camera->position, windowArea);
             auto previous = heuristicLevels.contains(root.path) ? heuristicLevels[root.path] : root.defaultIndex;
             // A streaming root draws one level: inside a band it wants the finer one.
             auto pick = pickLodLevel(heuristic.kind, heuristic.thresholds, heuristic.blendThresholds, choice.measure, levelCount, previous, tuning->hysteresis);
@@ -815,26 +841,113 @@ auto ViewScene::evaluateLevels() -> bool {
             heuristicLevels[root.path] = choice.level;
             choice.reason = heuristic.kind == LodHeuristicKind::Distance ? "distance" : "screen size";
         }
+
+        // Residency: the streaming state's level and every coarser one. The state comes from the streaming heuristic's radii, with the
+        // previous state as its hysteresis; without one, from the level picked to draw. A level set by hand is resident too, as the tool asks
+        // for it. Nothing else: a level picked finer than the state isn't loaded early, it draws late.
+        std::vector<LodHeuristic> tunedHeuristics;
+        tunedHeuristics.reserve(root.heuristics.size());
+        for (size_t i = 0; i < root.heuristics.size(); i++) {
+            tunedHeuristics.push_back(tunedLodHeuristic(root.heuristics[i], lodOverrideOf(*tuning, root.key, (uint32_t) i), *tuning));
+        }
+        uint32_t from = choice.level;
+        choice.streamingHeuristic = chooseLodHeuristic(root.heuristics, LodDomain::Streaming, lodPreferenceNow);
+        if (!heuristicOn) {
+            choice.residentReason = "heuristic off: the level drawn and every coarser one";
+        } else if (choice.streamingHeuristic < 0) {
+            choice.residentReason = "no usable streaming heuristic: the imaging pick and every coarser level";
+        } else if (!camera) {
+            choice.residentReason = "no camera: the level drawn and every coarser one";
+        } else {
+            const auto& streaming = tunedHeuristics[(size_t) choice.streamingHeuristic];
+            choice.streamingMeasure = lodMeasure(streaming, root.worldTransform, metersPerUnit, camera->position, windowArea);
+            auto previous = streamingStates.find(root.path);
+            auto state = streamingState(streaming.kind,
+                                        streaming.thresholds,
+                                        streaming.unloadThresholds,
+                                        choice.streamingMeasure,
+                                        levelCount,
+                                        previous != streamingStates.end() ? std::optional<uint32_t>(previous->second) : std::nullopt);
+            streamingStates[root.path] = state;
+            from = state;
+            choice.residentReason = "streaming radii";
+            if (handLevels.contains(root.path) && choice.level < from) {
+                from = choice.level;
+                choice.residentReason = "streaming radii, and the level set by hand";
+            }
+        }
+        choice.state = from;
+        std::set<uint32_t> resident;
+        for (uint32_t level = from; level < levelCount; level++) {
+            resident.insert(level);
+            choice.resident.push_back(level);
+        }
+
+        // The authoring contract, against the streaming root nearest above it (its parent cell).
+        const std::vector<LodHeuristic>* parentHeuristics = nullptr;
+        std::vector<LodHeuristic> parentTuned;
+        for (auto slash = root.path.rfind('/'); slash != std::string::npos && slash > 0; slash = root.path.rfind('/', slash - 1)) {
+            auto above = placedRoots.find(root.path.substr(0, slash));
+            if (above == placedRoots.end()) {
+                continue;
+            }
+            const auto& parentRow = above->second.row;
+            for (size_t i = 0; i < parentRow.heuristics.size(); i++) {
+                parentTuned.push_back(tunedLodHeuristic(parentRow.heuristics[i], lodOverrideOf(*tuning, parentRow.key, (uint32_t) i), *tuning));
+            }
+            parentHeuristics = &parentTuned;
+            break;
+        }
+        choice.findings = checkLodAuthoring(tunedHeuristics, levelCount, parentHeuristics);
+        findings += (uint32_t) choice.findings.size();
         evaluated++;
-        // The composer holds a level only where it isn't the root's default.
+
+        // The composer: the level drawn, held only where it isn't the root's default, and the resident levels.
         bool held = choice.level != root.defaultIndex || handLevels.contains(root.path);
         auto pushed = composerLevels.find(root.path);
         uint32_t before = pushed != composerLevels.end() ? pushed->second : root.defaultIndex;
-        // The level it wanted before stays loaded for the unload delay (the coarsest always is); the one it wants now isn't kept, it is wanted.
-        if (choice.level != before) {
-            if (before + 1 < levelCount) {
-                keepLevel(root.path, before, true);
-            }
-            keepLevel(root.path, choice.level, false);
-        }
         if (held && (pushed == composerLevels.end() || pushed->second != choice.level)) {
             composer->setLodLevel(root.path, choice.level);
             composerLevels[root.path] = choice.level;
             rootsToCheck.insert(root.path);
+            changed = true;
         } else if (!held && pushed != composerLevels.end()) {
             composer->resetLodLevel(root.path);
             composerLevels.erase(pushed);
             rootsToCheck.insert(root.path);
+            changed = true;
+        }
+        auto& residentBefore = residentSets[root.path];
+        if (resident != residentBefore) {
+            // A root placed for the first time has the composer's default loaded: its default level and its coarsest.
+            std::set<uint32_t> loadedBefore = residentBefore;
+            if (loadedBefore.empty()) {
+                loadedBefore = {std::min(root.defaultIndex, levelCount - 1), levelCount - 1};
+            }
+            auto& released = releasedOf[root.path];
+            for (auto level : resident) {
+                if (!loadedBefore.contains(level)) {
+                    requested++;
+                    streamingNow.loads++;
+                    if (released.contains(level)) {
+                        streamingNow.reloads++;
+                        streamingNow.roots[root.path].reloads++;
+                    }
+                }
+            }
+            for (auto level : loadedBefore) {
+                if (!resident.contains(level)) {
+                    releasedNow++;
+                    streamingNow.released++;
+                    stats.releasedLevels++;
+                    released.insert(level);
+                }
+            }
+            composer->setResidentLevels(root.path, resident);
+            residentBefore = std::move(resident);
+            rootsToCheck.insert(root.path);
+            streamingChanged = true;
+            changed = true;
         }
         if (choice.level < before) {
             finer++;
@@ -843,91 +956,111 @@ auto ViewScene::evaluateLevels() -> bool {
         }
         (*next)[root.path] = std::move(choice);
     }
+    if (streamingNow.findings != findings) {
+        streamingNow.findings = findings;
+        streamingChanged = true;
+    }
     stats.lodRootsEvaluated = evaluated;
     stats.lodFiner = finer;
     stats.lodCoarser = coarser;
     stats.lodEvaluations++;
     stats.lodEvaluateMs = msSince(start);
     choices = std::move(next);
-    if (finer + coarser == 0) {
+    if (!changed) {
         return false;
     }
-    TRACE_EVENT("Scene", "LevelsWanted", id)
-        .text(std::format("LOD levels wanted: {} roots finer, {} coarser of {} evaluated", finer, coarser, stats.lodRootsEvaluated))
+    TRACE_EVENT("Scene", "ResidencyChanged", id)
+        .text(std::format("LOD levels: {} roots finer, {} coarser of {} evaluated; {} levels requested, {} released", finer, coarser, stats.lodRootsEvaluated, requested, releasedNow))
         .field("finer", (int64_t) finer)
         .field("coarser", (int64_t) coarser)
-        .field("roots", (int64_t) stats.lodRootsEvaluated);
+        .field("roots", (int64_t) stats.lodRootsEvaluated)
+        .field("requested", (int64_t) requested)
+        .field("released", (int64_t) releasedNow);
     return true;
 }
 
-// A level kept loaded for the unload delay from now, or no longer kept (wanted again, or let go); the composer is told at once.
-auto ViewScene::keepLevel(const std::string& rootPath, uint32_t level, bool keep) -> void {
-    auto& levels = levelsKept[rootPath];
-    bool changed = false;
-    if (keep) {
-        changed = levels.insert_or_assign(level, std::chrono::steady_clock::now()).second;
-    } else {
-        changed = levels.erase(level) > 0;
-    }
-    if (!changed) {
-        if (levels.empty()) {
-            levelsKept.erase(rootPath);
-        }
-        return;
-    }
-    std::set<uint32_t> kept;
-    for (const auto& [keptLevel, since] : levels) {
-        kept.insert(keptLevel);
-    }
-    if (levels.empty()) {
-        levelsKept.erase(rootPath);
-    }
-    if (composer) {
-        composer->keepLodLevels(rootPath, kept);
-    }
-    keptLevelsChanged = true;
-}
-
-// The levels whose delay ran out go, but a level its root still draws (the level it wants isn't ready yet) is kept for another delay.
-auto ViewScene::releaseLevels() -> bool {
+// Measures what streaming did, from the placed roots' rows as the last pass left them: when each level became ready, the lead of each switch
+// of the selected level, and the time drawn coarser than selected or nothing. It measures; nothing here changes what is loaded or drawn.
+auto ViewScene::measureStreaming() -> void {
     auto now = std::chrono::steady_clock::now();
-    auto delay = std::chrono::milliseconds((int64_t) (unloadDelaySeconds * 1000.0));
-    std::vector<std::pair<std::string, uint32_t>> due;
-    for (auto& [path, levels] : levelsKept) {
-        for (auto& [level, since] : levels) {
-            if (now < since + delay) {
-                continue;
-            }
-            auto placed = placedRoots.find(path);
-            if (placed != placedRoots.end() && placed->second.row.drawn == level) {
-                since = now;
-                keptLevelsChanged = true;
-                continue;
-            }
-            due.emplace_back(path, level);
+    uint32_t lateNow = 0;
+    uint32_t holesNow = 0;
+    for (auto it = rootTimes.begin(); it != rootTimes.end();) {
+        if (placedRoots.contains(it->first)) {
+            ++it;
+            continue;
         }
+        if (it->second.lateSince) {
+            streamingNow.lateSeconds += std::chrono::duration<double>(now - *it->second.lateSince).count();
+        }
+        streamingNow.roots.erase(it->first);
+        it = rootTimes.erase(it);
+        streamingChanged = true;
     }
-    for (const auto& [path, level] : due) {
-        keepLevel(path, level, false);
-        rootsToCheck.insert(path);
-        stats.releasedLevels++;
-    }
-    return !due.empty();
-}
-
-auto ViewScene::updateLevelsDue() -> void {
-    auto delay = std::chrono::milliseconds((int64_t) (unloadDelaySeconds * 1000.0));
-    levelsDue.reset();
-    uint32_t count = 0;
-    for (const auto& [path, levels] : levelsKept) {
-        for (const auto& [level, since] : levels) {
-            count++;
-            if (!levelsDue || since + delay < *levelsDue) {
-                levelsDue = since + delay;
+    for (const auto& [path, placed] : placedRoots) {
+        const auto& row = placed.row;
+        auto levelCount = row.levels.size();
+        auto& times = rootTimes[path];
+        auto& measured = streamingNow.roots[path];
+        times.readySince.resize(levelCount);
+        if (measured.ready.size() != levelCount) {
+            measured.ready.assign(levelCount, false);
+            measured.lead.assign(levelCount, -1.0);
+            streamingChanged = true;
+        }
+        for (size_t level = 0; level < levelCount; level++) {
+            bool ready = level < row.levelWaits.size() && row.levelWaits[level] && row.levelWaits[level]->total() == 0;
+            if (ready && !times.readySince[level]) {
+                times.readySince[level] = now;
+            } else if (!ready) {
+                times.readySince[level].reset();
+            }
+            if (measured.ready[level] != ready) {
+                measured.ready[level] = ready;
+                streamingChanged = true;
             }
         }
+        // A switch of the level picked to draw: its lead, 0 when the level isn't ready (a late switch).
+        auto selected = row.wanted;
+        if (times.selected && *times.selected != selected && selected < levelCount) {
+            double lead = 0.0;
+            if (times.readySince[selected]) {
+                lead = std::chrono::duration<double>(now - *times.readySince[selected]).count();
+            } else {
+                streamingNow.lateSwitches++;
+            }
+            measured.lead[selected] = lead;
+            streamingNow.leads.push_back(lead);
+            streamingChanged = true;
+        }
+        times.selected = selected;
+        bool hole = !row.drawn;
+        bool late = row.drawn && *row.drawn > selected;
+        if (hole || late) {
+            if (!times.lateSince) {
+                times.lateSince = now;
+            }
+        } else if (times.lateSince) {
+            streamingNow.lateSeconds += std::chrono::duration<double>(now - *times.lateSince).count();
+            times.lateSince.reset();
+            streamingChanged = true;
+        }
+        if (hole && !measured.hole) {
+            streamingNow.holes++;
+        }
+        if (measured.late != late || measured.hole != hole) {
+            measured.late = late;
+            measured.hole = hole;
+            streamingChanged = true;
+        }
+        lateNow += late ? 1 : 0;
+        holesNow += hole ? 1 : 0;
     }
-    stats.keptLevels = count;
+    if (streamingNow.lateNow != lateNow || streamingNow.holesNow != holesNow) {
+        streamingNow.lateNow = lateNow;
+        streamingNow.holesNow = holesNow;
+        streamingChanged = true;
+    }
 }
 
 auto ViewScene::reportReleases() -> void {
@@ -943,7 +1076,7 @@ auto ViewScene::reportReleases() -> void {
     reportedReleasedMeshes = stats.releasedMeshes;
     reportedReleasedBytes = stats.releasedMeshBytes;
     TRACE_EVENT("Scene", "LevelsUnloaded", id)
-        .text(std::format("unloaded {} levels not wanted for {:g} s: {} composed contents, {} mesh packs ({:.1f} MiB)", levels, unloadDelaySeconds, contents, meshes, (double) bytes / (1024.0 * 1024.0)))
+        .text(std::format("unloaded {} levels (out of their roots' resident levels), {} composed contents no level reaches, {} mesh packs ({:.1f} MiB)", levels, contents, meshes, (double) bytes / (1024.0 * 1024.0)))
         .field("levels", (int64_t) levels)
         .field("contents", (int64_t) contents)
         .field("meshes", (int64_t) meshes)
@@ -1024,20 +1157,19 @@ auto ViewScene::publish() -> void {
     snapshot->lodTuning = tuning;
     snapshot->lodHandLevels = std::make_shared<std::unordered_map<std::string, uint32_t>>(handLevels);
     snapshot->metersPerUnitOfLod = composer ? composer->world().metersPerUnit : 1.0;
-    snapshot->unloadDelay = unloadDelaySeconds;
-    if (keptLevelsChanged) {
-        keptLevelsChanged = false;
-        auto delay = std::chrono::milliseconds((int64_t) (unloadDelaySeconds * 1000.0));
-        auto kept = std::make_shared<std::map<std::string, std::map<uint32_t, std::chrono::steady_clock::time_point>>>();
-        for (const auto& [path, levels] : levelsKept) {
-            auto& out = (*kept)[path];
-            for (const auto& [level, since] : levels) {
-                out[level] = since + delay;
+    if (streamingChanged) {
+        streamingChanged = false;
+        auto published = std::make_shared<SceneStreaming>(streamingNow);
+        // Roots late now count up to the publish.
+        auto now = std::chrono::steady_clock::now();
+        for (const auto& [path, times] : rootTimes) {
+            if (times.lateSince) {
+                published->lateSeconds += std::chrono::duration<double>(now - *times.lateSince).count();
             }
         }
-        keptPublished = std::move(kept);
+        streamingPublished = std::move(published);
     }
-    snapshot->keptLevels = keptPublished;
+    snapshot->streaming = streamingPublished;
     snapshot->thread = stats;
     for (const auto& [assetId, kind] : inFlight) {
         if (kind == AssetKind::Layer) {

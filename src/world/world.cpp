@@ -243,10 +243,10 @@ auto lodPreferenceFromName(std::string_view name) -> std::optional<LodPreference
     return std::nullopt;
 }
 
-auto chooseLodHeuristic(const std::vector<LodHeuristic>& heuristics, LodPreference preference) -> int32_t {
+auto chooseLodHeuristic(const std::vector<LodHeuristic>& heuristics, LodDomain domain, LodPreference preference) -> int32_t {
     auto first = [&](std::optional<LodHeuristicKind> kind) -> int32_t {
         for (size_t i = 0; i < heuristics.size(); i++) {
-            if (heuristics[i].usable() && (!kind || heuristics[i].kind == *kind)) {
+            if (heuristics[i].usable() && heuristics[i].domainKind == domain && (!kind || heuristics[i].kind == *kind)) {
                 return (int32_t) i;
             }
         }
@@ -261,6 +261,115 @@ auto chooseLodHeuristic(const std::vector<LodHeuristic>& heuristics, LodPreferen
         return index;
     }
     return first(other);
+}
+
+auto streamingState(LodHeuristicKind kind, const std::vector<float>& load, const std::vector<float>& unload, float measure, uint32_t levelCount, std::optional<uint32_t> previous) -> uint32_t {
+    if (levelCount == 0) {
+        return 0;
+    }
+    auto last = levelCount - 1;
+    auto boundaries = (uint32_t) std::min<size_t>(load.size(), last);
+    bool distance = kind == LodHeuristicKind::Distance;
+    // Whether the measure is at or past an edge toward the coarser side: a distance at or beyond it, a screen size at or below it.
+    auto past = [&](float edge) {
+        return distance ? measure >= edge : measure <= edge;
+    };
+    uint32_t byLoad = 0;
+    while (byLoad < boundaries && past(load[byLoad])) {
+        byLoad++;
+    }
+    uint32_t byUnload = 0;
+    while (byUnload < boundaries && past(byUnload < unload.size() ? unload[byUnload] : load[byUnload])) {
+        byUnload++;
+    }
+    if (!previous || byLoad <= *previous) {
+        return byLoad;
+    }
+    return std::min(byLoad, std::max(std::min(*previous, last), byUnload));
+}
+
+auto checkLodAuthoring(const std::vector<LodHeuristic>& heuristics, uint32_t levelCount, const std::vector<LodHeuristic>* parent) -> std::vector<LodAuthoringFinding> {
+    std::vector<LodAuthoringFinding> findings;
+    if (levelCount == 0) {
+        return findings;
+    }
+    auto boundaries = levelCount - 1;
+    for (const auto& heuristic : heuristics) {
+        if (heuristic.domainKind != LodDomain::Other && heuristic.thresholds.size() != boundaries) {
+            findings.push_back({
+                .rule = "a threshold per level boundary",
+                .heuristic = heuristic.path,
+                .boundary = 0,
+                .detail = std::format("{} thresholds for {} levels", heuristic.thresholds.size(), levelCount),
+            });
+        }
+    }
+    auto usableDistance = [](const std::vector<LodHeuristic>& list, LodDomain domain) -> const LodHeuristic* {
+        for (const auto& heuristic : list) {
+            if (heuristic.usable() && heuristic.domainKind == domain && heuristic.kind == LodHeuristicKind::Distance) {
+                return &heuristic;
+            }
+        }
+        return nullptr;
+    };
+    const LodHeuristic* streaming = usableDistance(heuristics, LodDomain::Streaming);
+    if (streaming != nullptr) {
+        for (const auto& imaging : heuristics) {
+            if (!imaging.usable() || imaging.domainKind != LodDomain::Imaging || imaging.kind != LodHeuristicKind::Distance) {
+                continue;
+            }
+            auto count = std::min(imaging.thresholds.size(), streaming->thresholds.size());
+            for (size_t k = 0; k < count; k++) {
+                if (imaging.thresholds[k] > streaming->thresholds[k]) {
+                    findings.push_back({
+                        .rule = "imaging threshold beyond the load radius",
+                        .heuristic = imaging.path,
+                        .boundary = (uint32_t) k,
+                        .detail = std::format("drawn at {:g}, loaded at {:g} ({})", imaging.thresholds[k], streaming->thresholds[k], streaming->path),
+                    });
+                }
+            }
+        }
+        for (size_t k = 0; k < streaming->unloadThresholds.size() && k < streaming->thresholds.size(); k++) {
+            if (streaming->unloadThresholds[k] < streaming->thresholds[k]) {
+                findings.push_back({
+                    .rule = "load radius beyond the unload radius",
+                    .heuristic = streaming->path,
+                    .boundary = (uint32_t) k,
+                    .detail = std::format("loaded at {:g}, unloaded at {:g}", streaming->thresholds[k], streaming->unloadThresholds[k]),
+                });
+            }
+        }
+    }
+    if (parent != nullptr) {
+        const LodHeuristic* parentImaging = usableDistance(*parent, LodDomain::Imaging);
+        const LodHeuristic* parentStreaming = usableDistance(*parent, LodDomain::Streaming);
+        const LodHeuristic* imaging = usableDistance(heuristics, LodDomain::Imaging);
+        if (imaging != nullptr && parentImaging != nullptr && !imaging->thresholds.empty() && !parentImaging->thresholds.empty()) {
+            float farthest = *std::ranges::max_element(imaging->thresholds);
+            if (farthest > parentImaging->thresholds[0]) {
+                findings.push_back({
+                    .rule = "child imaging threshold outside the parent's first",
+                    .heuristic = parentImaging->path,
+                    .boundary = 0,
+                    .detail = std::format("child drawn to {:g}, parent switches at {:g}", farthest, parentImaging->thresholds[0]),
+                });
+            }
+        }
+        if (streaming != nullptr && parentStreaming != nullptr && !streaming->thresholds.empty() && !parentStreaming->thresholds.empty()) {
+            const auto& unload = streaming->unloadThresholds.empty() ? streaming->thresholds : streaming->unloadThresholds;
+            float farthest = *std::ranges::max_element(unload);
+            if (farthest > parentStreaming->thresholds[0]) {
+                findings.push_back({
+                    .rule = "child unload radius outside the parent's first load radius",
+                    .heuristic = parentStreaming->path,
+                    .boundary = 0,
+                    .detail = std::format("child resident to {:g}, parent loads its children at {:g}", farthest, parentStreaming->thresholds[0]),
+                });
+            }
+        }
+    }
+    return findings;
 }
 
 auto pickLodLevel(LodHeuristicKind kind, const std::vector<float>& thresholds, const std::vector<float>& blendThresholds, float measure, uint32_t levelCount, uint32_t previous, float hysteresis) -> LodPick {

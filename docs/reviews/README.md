@@ -9,6 +9,9 @@ claude.ai artifact; the file here is its source, kept with the plan it reviews, 
   blend bands cross-faded with ordered dither (2026-10-25, for a Technical Director)
 - [lod_tool_review.html](lod_tool_review.html) — [plan_lod_tool.md](../plan_lod_tool.md): one list and inspector for both LOD kinds,
   view-local tuning, and the viewport layers (level view with state, labels, gizmo, pop flash) (2026-10-25, for a Technical Director)
+- [streaming_domain_review.html](streaming_domain_review.html) — [plan_streaming_domain.md](../plan_streaming_domain.md): residency from the
+  authored load and unload radii, no unload delay, every coarser level resident, honest fallbacks, streaming measured, `fly` (2026-10-30, for a
+  Technical Director)
 
 ## Making a review
 

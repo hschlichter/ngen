@@ -39,15 +39,17 @@ public:
     // it wants (every payload except those under a LOD root's levels that aren't loaded). Empty when the world is complete.
     auto compose() -> std::vector<std::string>;
 
-    // The level a LOD root wants, by its full path (instances expanded); lod:default:index until set. The root's coarsest level stays
-    // loaded. Takes effect at the next compose, which says what the level needs.
+    // The level a LOD root wants, by its full path (instances expanded); lod:default:index until set. Takes effect at the next compose,
+    // which says what the level needs.
     auto setLodLevel(const std::string& rootPath, uint32_t level) -> void;
-    // After levels changed (setLodLevel, resetLodLevel) and nothing else: links the levels again without composing the stage, composing
-    // the level contents not kept yet. Returns the packs those need, as compose() does.
+    // After levels changed (setLodLevel, resetLodLevel, setResidentLevels) and nothing else: links the levels again without composing the
+    // stage, composing the level contents not kept yet. Returns the packs those need, as compose() does.
     auto relink() -> std::vector<std::string>;
-    // The levels a LOD root keeps loaded besides the one it wants and its coarsest (the caller's unload delay: a level no longer wanted that
-    // isn't let go yet); empty to keep none. Takes effect at the next compose or relink.
-    auto keepLodLevels(const std::string& rootPath, const std::set<uint32_t>& levels) -> void;
+    // The levels a LOD root loads, set by the reader (ngen-view's residency), in place of the default: the level it wants and its coarsest.
+    // Takes effect at the next compose or relink.
+    auto setResidentLevels(const std::string& rootPath, std::set<uint32_t> levels) -> void;
+    // Back to the default: the level it wants and its coarsest.
+    auto resetResidentLevels(const std::string& rootPath) -> void;
     // Forgets a level set by hand, so the root wants lod:default:index again. Takes effect at the next compose.
     auto resetLodLevel(const std::string& rootPath) -> void;
 

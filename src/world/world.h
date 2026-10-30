@@ -105,10 +105,19 @@ enum class LodProjection : uint8_t {
     Extent, // projectedExtent: the extent's box
 };
 
-// The heuristics the engine reads (UsdLod's LODDistanceHeuristic and LODScreenSizeHeuristic, imaging domain), and the rest, kept to show.
+// The heuristics the engine reads (UsdLod's LODDistanceHeuristic and LODScreenSizeHeuristic), and the rest, kept to show.
 enum class LodHeuristicKind : uint8_t {
     Distance,
     ScreenSize,
+    Other,
+};
+
+// What a heuristic decides (its lod:domain): what is drawn (UsdLod's `imaging`), what is resident (`streaming`, a domain token of the
+// world's own, its thresholds the load radii and `streaming:unloadThresholds` the unload radii), or something the engine doesn't read
+// (`physics`, `audio`, any other), kept to show.
+enum class LodDomain : uint8_t {
+    Imaging,
+    Streaming,
     Other,
 };
 
@@ -117,15 +126,19 @@ enum class LodHeuristicKind : uint8_t {
 //   extent (0 inside it). Thresholds ascend.
 // - ScreenSize: `extent` (its boundingVolume's, else its own, else UsdLod's fallback -1..1), as a sphere or a box (`projection`).
 //   Thresholds descend.
-// `blendThresholds` as authored (shorter or empty: no blend past its end). `unusable` says why the engine doesn't read it, empty when it
-// does: a type or domain it doesn't read, no thresholds, thresholds out of order, bounds that aren't finite.
+// `blendThresholds` as authored (shorter or empty: no blend past its end). A streaming heuristic's `thresholds` are its load radii (or load
+// screen sizes) and `unloadThresholds` its unload ones, one per load threshold on its coarser side (empty: the load ones, no hysteresis).
+// `unusable` says why the engine doesn't read it, empty when it does: a type or domain it doesn't read, no thresholds, thresholds out of
+// order, unload thresholds that don't match the load ones, bounds that aren't finite.
 struct LodHeuristic {
     LodHeuristicKind kind = LodHeuristicKind::Other;
     std::string type; // its prim type
     std::string path; // its prim's path in the root's content
     std::string domain;
+    LodDomain domainKind = LodDomain::Other;
     std::vector<float> thresholds;
     std::vector<float> blendThresholds;
+    std::vector<float> unloadThresholds;
     std::array<glm::vec3, 2> extent = {glm::vec3(-1.0f), glm::vec3(1.0f)};
     LodProjection projection = LodProjection::Sphere;
     glm::vec3 center = glm::vec3(0.0f);
@@ -147,8 +160,28 @@ enum class LodPreference : uint8_t {
 auto lodPreferenceName(LodPreference preference) -> const char*;
 auto lodPreferenceFromName(std::string_view name) -> std::optional<LodPreference>;
 
-// The heuristic a root measures by under a preference: an index into its heuristics, -1 when none is usable (it keeps its default).
-auto chooseLodHeuristic(const std::vector<LodHeuristic>& heuristics, LodPreference preference) -> int32_t;
+// The heuristic of a domain a root measures by under a preference: an index into its heuristics, -1 when none is usable.
+auto chooseLodHeuristic(const std::vector<LodHeuristic>& heuristics, LodDomain domain, LodPreference preference) -> int32_t;
+
+// A streaming heuristic's state for a root: the finest level that must be resident. Going finer by the load thresholds, at once; going
+// coarser than `previous` only past the unload thresholds (empty: the load ones). Without a previous state, the load thresholds alone.
+auto streamingState(LodHeuristicKind kind, const std::vector<float>& load, const std::vector<float>& unload, float measure, uint32_t levelCount, std::optional<uint32_t> previous) -> uint32_t;
+
+// One rule of the streaming authoring contract a root breaks, with the values compared: every usable heuristic has a threshold per level
+// boundary; per boundary, the imaging threshold is at or before the load radius and the load radius at or before the unload radius; a child
+// root's imaging thresholds and unload radii lie inside its parent's first imaging threshold and first load radius. `boundary` is the level
+// boundary (0: between levels 0 and 1).
+struct LodAuthoringFinding {
+    std::string rule;
+    std::string heuristic; // the heuristic's path, or the parent's root path for a nesting rule
+    uint32_t boundary = 0;
+    std::string detail;
+
+    auto operator==(const LodAuthoringFinding&) const -> bool = default;
+};
+// The contract checked for a root with `levelCount` levels and its heuristics; `parent`, when given, the heuristics of the streaming root
+// above it, for the nesting rules. Only distance heuristics are compared across domains and roots, as the contract states them in metres.
+auto checkLodAuthoring(const std::vector<LodHeuristic>& heuristics, uint32_t levelCount, const std::vector<LodHeuristic>* parent) -> std::vector<LodAuthoringFinding>;
 
 // The level a measure picks, as UsdLod's ComputeLOD with its blend bands, and with hysteresis at a boundary without a band: going coarser
 // waits until the measure is past the threshold by `hysteresis` (a screen size below threshold * (1 - hysteresis), a distance beyond

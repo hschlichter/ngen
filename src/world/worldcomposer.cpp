@@ -468,7 +468,7 @@ struct WorldComposer::Impl {
     std::unordered_map<std::string, LayerData> layers;
     std::unordered_set<std::string> failed;
     std::unordered_map<std::string, uint32_t> lodLevels;
-    std::unordered_map<std::string, std::set<uint32_t>> keptLevels; // keepLodLevels', by root path
+    std::unordered_map<std::string, std::set<uint32_t>> residentLevels; // setResidentLevels', by root path
     // Levels set by hand on LOD roots inside prototypes: by prototype key, then the root's path in the prototype. A prototype loads
     // every level any of its instances wants.
     std::map<std::string, std::map<std::string, std::set<uint32_t>>> prototypeLevels;
@@ -506,8 +506,9 @@ struct WorldComposer::Impl {
         std::string path; // in its content
         std::vector<float> thresholds;
         std::vector<float> blendThresholds;
-        std::optional<glm::vec3> center; // a distance heuristic's
-        std::string domain;              // lod:domain
+        std::optional<glm::vec3> center;     // a distance heuristic's
+        std::string domain;                  // lod:domain
+        std::vector<float> unloadThresholds; // streaming:unloadThresholds
         std::optional<std::array<glm::vec3, 2>> extent;
         std::vector<PendingTarget> boundingVolumes;
         LodProjection projection = LodProjection::Sphere;
@@ -890,7 +891,8 @@ struct WorldComposer::Impl {
         std::string ownerPath; // its root's path in that prototype
     };
 
-    // The levels a LOD root loads: the one it wants, its coarsest, and in a prototype every level its instances want.
+    // The levels a LOD root loads: those the reader set (setResidentLevels), else the one it wants and its coarsest; in a prototype every
+    // level its instances want, and their coarsest.
     auto loadedLevels(const Reach& at, const std::string& relative, uint32_t levelCount, uint32_t defaultIndex) -> std::set<uint32_t> {
         std::set<uint32_t> out;
         if (levelCount == 0) {
@@ -898,19 +900,19 @@ struct WorldComposer::Impl {
         }
         uint32_t wanted = std::min(defaultIndex, levelCount - 1);
         if (at.sharedKey.empty()) {
-            if (auto it = lodLevels.find(joinPath(at.base, relative)); it != lodLevels.end()) {
+            auto path = joinPath(at.base, relative);
+            if (auto resident = residentLevels.find(path); resident != residentLevels.end() && !resident->second.empty()) {
+                for (uint32_t level : resident->second) {
+                    out.insert(std::min(level, levelCount - 1));
+                }
+                return out;
+            }
+            if (auto it = lodLevels.find(path); it != lodLevels.end()) {
                 wanted = std::min(it->second, levelCount - 1);
             }
         } else if (auto proto = prototypeLevels.find(at.sharedKey); proto != prototypeLevels.end()) {
             if (auto levels = proto->second.find(joinPath(at.ownerPath, relative)); levels != proto->second.end()) {
                 for (uint32_t level : levels->second) {
-                    out.insert(std::min(level, levelCount - 1));
-                }
-            }
-        }
-        if (at.sharedKey.empty()) {
-            if (auto kept = keptLevels.find(joinPath(at.base, relative)); kept != keptLevels.end()) {
-                for (uint32_t level : kept->second) {
                     out.insert(std::min(level, levelCount - 1));
                 }
             }
@@ -1221,6 +1223,11 @@ struct WorldComposer::Impl {
                     heuristic.blendThresholds.push_back((float) v);
                 }
             }
+            if (const PackValue* unloads = attribute("streaming:unloadThresholds")) {
+                for (double v : unloads->numbers) {
+                    heuristic.unloadThresholds.push_back((float) v);
+                }
+            }
             if (const PackValue* point = attribute("center"); point != nullptr && point->numbers.size() >= 3) {
                 const auto& n = point->numbers;
                 heuristic.center = glm::vec3((float) n[0], (float) n[1], (float) n[2]);
@@ -1331,8 +1338,11 @@ struct WorldComposer::Impl {
                 .type = data.type,
                 .path = data.path,
                 .domain = data.domain,
+                .domainKind = data.domain == "imaging" ? LodDomain::Imaging : data.domain == "streaming" ? LodDomain::Streaming
+                                                                                                         : LodDomain::Other,
                 .thresholds = data.thresholds,
                 .blendThresholds = data.blendThresholds,
+                .unloadThresholds = data.unloadThresholds,
                 .projection = data.projection,
             };
             bool ascending = std::ranges::is_sorted(data.thresholds);
@@ -1357,8 +1367,30 @@ struct WorldComposer::Impl {
             } else {
                 heuristic.unusable = std::format("{} isn't a heuristic the engine reads", data.type);
             }
-            if (heuristic.unusable.empty() && data.domain != "imaging") {
-                heuristic.unusable = std::format("its domain is '{}', not imaging", data.domain);
+            if (heuristic.unusable.empty() && heuristic.domainKind == LodDomain::Other) {
+                if (data.domain == "physics") {
+                    heuristic.unusable = "its domain is 'physics', not read: the engine has no physics";
+                } else if (data.domain == "audio") {
+                    heuristic.unusable = "its domain is 'audio', not read: the engine has no audio";
+                } else {
+                    heuristic.unusable = std::format("its domain is '{}', which the engine doesn't read (imaging, streaming)", data.domain);
+                }
+            }
+            if (heuristic.unusable.empty() && heuristic.domainKind == LodDomain::Streaming && !data.unloadThresholds.empty()) {
+                bool distance = heuristic.kind == LodHeuristicKind::Distance;
+                if (data.unloadThresholds.size() != data.thresholds.size()) {
+                    heuristic.unusable = std::format("its {} unload thresholds don't match its {} load thresholds", data.unloadThresholds.size(), data.thresholds.size());
+                } else if (!(distance ? std::ranges::is_sorted(data.unloadThresholds) : std::ranges::is_sorted(data.unloadThresholds, std::greater<float>()))) {
+                    heuristic.unusable = std::format("unload thresholds aren't {}", distance ? "ascending" : "descending");
+                } else {
+                    for (size_t k = 0; k < data.thresholds.size(); k++) {
+                        bool coarserSide = distance ? data.unloadThresholds[k] >= data.thresholds[k] : data.unloadThresholds[k] <= data.thresholds[k];
+                        if (!coarserSide) {
+                            heuristic.unusable = std::format("unload threshold {} ({:g}) is before its load threshold ({:g})", k, data.unloadThresholds[k], data.thresholds[k]);
+                            break;
+                        }
+                    }
+                }
             }
             if (heuristic.unusable.empty() && data.thresholds.empty()) {
                 heuristic.unusable = "it has no thresholds";
@@ -1768,7 +1800,7 @@ struct WorldComposer::Impl {
         for (const auto& [path, level] : lodLevels) {
             add(path, level);
         }
-        for (const auto& [path, levels] : keptLevels) {
+        for (const auto& [path, levels] : residentLevels) {
             for (uint32_t level : levels) {
                 add(path, level);
             }
@@ -1948,12 +1980,16 @@ auto WorldComposer::relink() -> std::vector<std::string> {
     return {m_impl->missing.begin(), m_impl->missing.end()};
 }
 
-auto WorldComposer::keepLodLevels(const std::string& rootPath, const std::set<uint32_t>& levels) -> void {
+auto WorldComposer::setResidentLevels(const std::string& rootPath, std::set<uint32_t> levels) -> void {
     if (levels.empty()) {
-        m_impl->keptLevels.erase(rootPath);
+        m_impl->residentLevels.erase(rootPath);
     } else {
-        m_impl->keptLevels[rootPath] = levels;
+        m_impl->residentLevels[rootPath] = std::move(levels);
     }
+}
+
+auto WorldComposer::resetResidentLevels(const std::string& rootPath) -> void {
+    m_impl->residentLevels.erase(rootPath);
 }
 
 auto WorldComposer::setLodLevel(const std::string& rootPath, uint32_t level) -> void {

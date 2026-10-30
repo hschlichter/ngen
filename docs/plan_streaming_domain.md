@@ -1,6 +1,6 @@
 # Streaming domain: residency from the authored load and unload radii
 
-**Status. Draft.** Decisions 1, 2 and 5 locked 2026-10-30 (Henrik); 3, 4 and 6 as leaned, pushback welcome. First of three plans: this one
+**Status. In progress.** Decisions 1, 2 and 5 locked 2026-10-30 (Henrik); 3, 4 and 6 as leaned, pushback welcome. First of three plans: this one
 (what is resident), [plan_streaming_tool.md](plan_streaming_tool.md) (the window and overlays), [plan_streaming_budgets.md](plan_streaming_budgets.md)
 (what fits).
 
@@ -207,12 +207,56 @@ measurement, weighted below.
   cache and the machine; frame rate moves the camera's sampling too. A difference is a question to look into, not a failure. The flight is
   for comparing the engine with itself across changes, under the same conditions.
 
+## Results
+
+All steps done 2026-10-30, release build, warm asset cache. Where the build differs from the steps:
+- **Composer** (step 3): `setLodLevel` stays, as the level a root selects to draw (`World::wantedLevel`); `keepLodLevels` became
+  `setResidentLevels` / `resetResidentLevels`. A root the view hasn't given levels to loads, as before, its wanted level and its coarsest, so
+  `ngen-worldcheck` and `ngen-usdcheck` load the same payloads as they did.
+- **Measurements** (step 6): a `holes` count (times a root started drawing nothing) beside `holesNow`, for the flight's criterion.
+  `arrivedUnwanted` counts mesh packs only: a layer pack arriving for a level no longer resident isn't told apart yet.
+- **`--lod-authoring`** checks the roots the composition reaches: the regions, and a region's tiles with `--lod <region>=0`.
+
+Checks at fixed positions:
+- **Packing**: `--lod-heuristics` with `R_4_5` at `full`: identical from `ngen-worldcheck` and `ngen-usdcheck` over 6,700 heuristic lines;
+  tile `streaming_distance` load 300 500 / unload 360 580, region 700 1400 / 800 1600; `physics_distance` read but not used.
+- **Authoring**: `--lod-authoring` with `R_4_5` and `R_3_4` at `full`: 1,700 roots, no findings. `T_1_1`'s load radius tuned to 200 m (under its
+  220 m imaging threshold): one finding, "imaging threshold beyond the load radius, drawn at 220, loaded at 200"; approached from beyond its
+  unload radius to 208 m, the tile selects `full`, has `medium` and `simplified` resident, and draws `medium`, `late`.
+- **Selection**: at `/cameras/village` 192 of 196 cells as the manifest; the same 4 in-band cells finer.
+- **The chain**: every root's `resident` and `loaded` are its state and every coarser level; `R_4_5/T_3_0` (289 m) state 0, draws `medium`, `full`
+  resident and ready.
+- **No pop past a level**: village to `-1700,500,50`: `R_4_5` drawn 0 → 1, no record drawing 2 (it stays at state 0 at 691 m, inside its 700 m
+  load radius).
+- **Hysteresis**: `T_1_1` at 249 m draws `full`; at 329 m draws `medium` with `full` resident; at 384 m state 1, `full` released; back at 249 m
+  loaded again (a reload).
+- **No time**: no `unloadDelay`, `levelsKept`, `keepLodLevels`, `levelsDue` or `keptLevels` in `src`; the hysteresis script run twice gave the
+  same `state` and `resident` for all 196 roots at each of its 4 records.
+- The longest frame while loading the village: 64 ms (one cold run after the packer changed: 1.5 s, the layers repacking).
+
+**The flight**, `fly /cameras/flight_ 30` after `streaming-reset`: 26,845 m in 895 s. Pass: completed, no hole (`holes` 0), no warnings or errors.
+Reported, not judged:
+
+| 30 m/s | engine | replay (`streaming`, 50 MB/s simulated) |
+|---|---|---|
+| Late switches | 2 | 0 |
+| Root-seconds drawn coarser | 2.0 | 0 |
+| Loads · reloads | 1,105 · 78 | 2,124 · 198 |
+| Lead, min / median | 0 / 16.8 s | 0.2 / 2.3 s |
+| Mesh packs arrived unwanted | 0 | — |
+
+The two count differently: the engine's lead runs from a level ready to selected, in both directions, so a coarser level resident long before
+it is selected has a long lead (the median); the replay's is the lead of each load. Its loads are levels added to resident sets; the replay's
+are per level file. A split of the lead by direction would make the finer switches' lead comparable.
+
 ## Deferred / follow-ups
 
 - **Cancelling requests** in the asset client and server (decision 3 B). Trigger: `arrivedUnwanted` shows bandwidth worth saving on a
   flight.
 - **Layer packs released with their level**: a level's scene description stays held after the level is released. Trigger: the memory
   budget in [plan_streaming_budgets.md](plan_streaming_budgets.md).
+- **Lead split by direction**: finer switches' lead apart from coarser ones', comparable with the replay's. Trigger: tuning radii by the flight.
+- **Unwanted layer packs counted** in `arrivedUnwanted`, beside mesh packs. Trigger: cancelling requests (above).
 - **Cross-fading cell levels** (decision 4 B). Trigger: visible pops at cell switches.
 - **Physics domain**: collision levels by the `physics` heuristics. Trigger: physics in the engine.
 - **The camera's focal length**: the view's 45° ignores the cameras' aperture and focal length, which the screen-size heuristics are

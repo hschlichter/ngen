@@ -240,7 +240,7 @@ auto buildLodRows(const ViewScene& scene, LodWindowState& state) -> void {
     const char* unit = lodUnitName(metersPerUnit);
     const auto& choices = scene.lodChoices();
     for (const auto& root : scene.lodRoots()) {
-        auto used = chooseLodHeuristic(root.heuristics, preference);
+        auto used = chooseLodHeuristic(root.heuristics, LodDomain::Imaging, preference);
         auto choice = choices.find(root.path);
         std::string waiting;
         if (root.waiting) {
@@ -249,10 +249,6 @@ auto buildLodRows(const ViewScene& scene, LodWindowState& state) -> void {
                                   root.waiting->materials,
                                   root.waiting->textures,
                                   root.waiting->composing);
-        }
-        std::vector<std::pair<uint32_t, std::chrono::steady_clock::time_point>> kept;
-        if (auto levels = scene.keptLevels().find(root.path); levels != scene.keptLevels().end()) {
-            kept.assign(levels->second.begin(), levels->second.end());
         }
         LodShape shape;
         shape.toWorld = root.worldTransform;
@@ -276,7 +272,8 @@ auto buildLodRows(const ViewScene& scene, LodWindowState& state) -> void {
             .measureUnit = choice != choices.end() && choice->second.kind == LodHeuristicKind::Distance ? unit : "",
             .why = choice != choices.end() ? choice->second.reason : std::string("not evaluated yet"),
             .waiting = waiting,
-            .kept = std::move(kept),
+            .state = choice != choices.end() ? std::optional<uint32_t>(choice->second.state) : std::nullopt,
+            .residentWhy = choice != choices.end() ? choice->second.residentReason : std::string(),
             .shape = std::move(shape),
         });
     }
@@ -289,7 +286,7 @@ auto buildLodRows(const ViewScene& scene, LodWindowState& state) -> void {
         }
         const auto& source = *draws.lodGroupSources[g];
         const auto& path = draws.lodGroupPaths[g];
-        auto used = chooseLodHeuristic(source.heuristics, preference);
+        auto used = chooseLodHeuristic(source.heuristics, LodDomain::Imaging, preference);
         bool byHand = hand.contains(path);
         rows.push_back({
             .path = path,
@@ -399,7 +396,7 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
         out.forced = out.setByHand || out.why == "heuristic off" || out.why == "no usable heuristic";
     }
 
-    auto used = chooseLodHeuristic(*heuristics, preference);
+    auto used = chooseLodHeuristic(*heuristics, LodDomain::Imaging, preference);
     auto windowArea = lodWindowArea(camera.fovY, camera.aspect);
     auto levelCount = (uint32_t) levelNames.size();
     for (size_t h = 0; h < heuristics->size(); h++) {

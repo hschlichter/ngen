@@ -79,9 +79,9 @@ also asks them to be loaded; here loading a level is the engine's, so a level co
 `ngen-usdcheck` counts them the same way.
 
 **Two kinds of root, from what is authored** (`LodRoot::streams`):
-- **Streaming**: a level has a payload. A root loads the level it wants, `lod:default:index` until `setLodLevel` sets one for its path, the
-  levels the caller keeps (`keepLodLevels`: ngen-view's unload delay) and its coarsest level. It draws the finest loaded level not finer than
-  the wanted one, so a level still loading falls back to a coarser one. Each level is a content of its own (below).
+- **Streaming**: a level has a payload. A root wants a level, `lod:default:index` until `setLodLevel` sets one for its path, and loads the
+  levels the reader sets for it (`setResidentLevels`: ngen-view's residency), else the wanted one and its coarsest. It draws the finest loaded
+  level not finer than the wanted one, so a level still loading falls back to a coarser one. Each level is a content of its own (below).
 - **Render LOD**: no level has a payload (levels that are references or inline, as an asset's `lod0`… into its one geometry file). Every
   level is composed in place with the root's content, as USD composes it, and is loaded (`LodRoot::loaded` holds them all); which one draws
   is the renderer's, per placement, and `visit` walks them as children. Loading, linking, `setLodLevel` and the sections below concern
@@ -90,13 +90,20 @@ also asks them to be loaded; here loading a level is the engine's, so a level co
 A root keeps every heuristic its `lod:heuristics` names (`LodRoot::heuristics`, in authored order), each as UsdLod's queries read it
 (`LodHeuristic`): a `LODDistanceHeuristic`'s `center` and, when its `boundingVolume` names a boundable with a valid extent, that box; a
 `LODScreenSizeHeuristic`'s extent (its `boundingVolume`'s, else its own `extent`, else UsdLod's -1..1) and `projectionMethod`; `thresholds` and
-`blendThresholds` as authored. One the engine doesn't read says why (`unusable`: another type, a domain other than `imaging`, no thresholds,
-thresholds out of order for its kind, bounds that aren't finite). Which one measures a root is the reader's: `chooseLodHeuristic` picks by a
-preference (distance first, screen size first, or the first usable one, as UsdLod has a renderer choose); a root with no usable one keeps its
-default. `pickLodLevel` is UsdLod's `ComputeLOD` for both kinds, with its blend bands (inside one: the finer level and the next one's share), and
+`blendThresholds` as authored, and its domain (`lod:domain`, `LodDomain`): `imaging` decides what is drawn, `streaming` (a domain token of the
+world's own; UsdLod has no residency) what is resident: its thresholds are the load radii and `streaming:unloadThresholds` (a custom attribute,
+one per load threshold, on its coarser side) the unload radii. One the engine doesn't read says why (`unusable`: another type, `physics` or
+`audio` (the engine has neither) or another domain, no thresholds, thresholds out of order for its kind, unload thresholds that don't match the
+load ones, bounds that aren't finite). Which one measures a root is the reader's, per domain: `chooseLodHeuristic` picks by a preference
+(distance first, screen size first, or the first usable one, as UsdLod has a renderer choose); a root with no usable imaging one keeps its
+default. `streamingState` is a streaming heuristic's state for a root: the finest level that must be resident, finer at once by the load
+thresholds, coarser than the previous state only past the unload thresholds. `checkLodAuthoring` checks the streaming authoring contract for a
+root against the root above it: a threshold per level boundary, each imaging distance threshold at or before its load radius, each load radius
+at or before its unload radius, a child's imaging thresholds and unload radii inside its parent's first imaging threshold and load radius; it
+reports, it corrects nothing. `pickLodLevel` is UsdLod's `ComputeLOD` for both kinds, with its blend bands (inside one: the finer level and the next one's share), and
 hysteresis at a boundary without a band, against the level wanted before; the view and the GPU's pick follow it. `ngen-worldcheck` and
-`ngen-usdcheck` print every root's heuristics (`--lod-heuristics`), and `ngen-usdcheck --lod-picks` gives UsdLod's fractional level for given
-cameras. A level's own authored visibility is for readers that don't select LOD (UsdLod's recommendation is the default level visible, the others
+`ngen-usdcheck` print every root's heuristics (`--lod-heuristics`, unload thresholds included), `ngen-worldcheck --lod-authoring` the contract's
+findings over the roots it reaches, and `ngen-usdcheck --lod-picks` gives UsdLod's fractional level for given cameras. A level's own authored visibility is for readers that don't select LOD (UsdLod's recommendation is the default level visible, the others
 invisible): the level the engine draws is shown whatever it authors, and visibility below it applies as usual (`Entity::lodItem`).
 
 A LOD root inside a prototype loads, in the prototype, every level any of its instances wants; which level each instance wants and draws
@@ -129,8 +136,8 @@ resolution and the bindings took.
 Every content has a `version`, new each time it is composed: a reader can keep what it derived from a content by version. After each compose
 and relink, a kept content the resolution didn't reach is let go at once (`stats().released`): emptied in place (its index stays, a new
 version, no entities) and composed again if it is reached later. A content being composed (incomplete, composed this round) and the
-prototypes it uses yet are held, so a level waiting for packs doesn't compose its prototypes again every round. The composer has no clock:
-how long a level stays loaded is the caller's (`keepLodLevels`).
+prototypes it uses yet are held, so a level waiting for packs doesn't compose its prototypes again every round. Which levels stay loaded is
+the caller's (`setResidentLevels`).
 
 Material bindings are resolved every compose, in their own content first and then anywhere in the World by full path, as a target may be in
 another content (a level's material outside the level). A level in a prototype names its prototype's prims at the path of the instance the

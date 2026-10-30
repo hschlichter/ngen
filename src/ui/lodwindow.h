@@ -56,8 +56,9 @@ struct LodWindowRow {
     std::string measureUnit; // "m" for a distance (the stage's units), empty for a screen size
     std::string why;         // why it wants its level: "distance", "screen size", "hand-set", "heuristic off", ...
     std::string waiting;     // while its wanted level is loaded and not drawn: what that level waits for
-    // The loaded levels it doesn't want, kept for the unload delay: each with when the delay runs out.
-    std::vector<std::pair<uint32_t, std::chrono::steady_clock::time_point>> kept;
+    // A streaming root's residency: the state (the finest level that must be resident) and why, from the streaming heuristic's radii.
+    std::optional<uint32_t> state;
+    std::string residentWhy;
     LodShape shape;
 };
 
@@ -125,8 +126,6 @@ struct LodWindowState {
     std::optional<bool> heuristicRequested; // the toggle was clicked
     int preference = 0;                     // which heuristic a root naming several measures by: 0 distance first, 1 screen size first, 2 authored order
     std::optional<int> preferenceRequested;
-    float unloadDelay = 10.0f; // seconds; set by the application
-    std::optional<float> unloadDelayRequested;
     // The tuning (the view's LodTuning): set by the application; a change asked for in the matching request.
     float bias = 1.0f;
     float hysteresis = 0.2f;

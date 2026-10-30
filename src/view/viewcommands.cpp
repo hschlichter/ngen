@@ -170,13 +170,15 @@ auto parseOnOff(const std::string& args) -> std::expected<Json, std::string> {
     return Json{{"on", args == "on"}};
 }
 
-auto parseUnloadDelay(const std::string& args) -> std::expected<Json, std::string> {
-    char* end = nullptr;
-    auto seconds = std::strtod(args.c_str(), &end);
-    if (args.empty() || *end != '\0' || seconds < 0.0) {
-        return std::unexpected(std::format("expected seconds, got '{}'", args));
+// `fly <camera path prefix> <speed m/s>`.
+auto parseFly(const std::string& args) -> std::expected<Json, std::string> {
+    std::istringstream in(args);
+    std::string prefix;
+    float speed = 0.0f;
+    if (!(in >> prefix >> speed) || speed <= 0.0f) {
+        return std::unexpected(std::format("expected '<camera path prefix> <speed m/s>', got '{}'", args));
     }
-    return Json{{"unloadDelay", seconds}};
+    return Json{{"prefix", prefix}, {"speed", speed}};
 }
 
 auto parseLodPreference(const std::string& args) -> std::expected<Json, std::string> {
@@ -507,7 +509,6 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"lod", "view.lod.set", parseLod},
     ScriptVerb{"lod-reset", "view.lod.reset", parseLodRoot},
     ScriptVerb{"lod-heuristic", "view.lod.heuristic", parseOnOff},
-    ScriptVerb{"lod-unload-delay", "view.lod.heuristic", parseUnloadDelay},
     ScriptVerb{"lod-prefer", "view.lod.heuristic", parseLodPreference},
     ScriptVerb{"lod-thresholds", "view.lod.override", parseLodThresholdList},
     ScriptVerb{"lod-blend-thresholds", "view.lod.override", parseLodBlendList},
@@ -517,6 +518,9 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"lod-blending", "view.lod.tuning", parseLodBlending},
     ScriptVerb{"lod-show", "view.lod.visualize", parseLodShow},
     ScriptVerb{"wait-resident", "view.waitResident", parseNothing},
+    ScriptVerb{"fly", "view.camera.fly", parseFly},
+    ScriptVerb{"fly-stop", "view.camera.fly.stop", parseNothing},
+    ScriptVerb{"streaming-reset", "view.streaming.reset", parseNothing},
     ScriptVerb{"view", "view.mode", parseViewMode},
     ScriptVerb{"window", "view.window", parseWindow},
     ScriptVerb{"debugview", "view.debugview", parseDebugView},
@@ -605,6 +609,62 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
             }
             responder.fail(rpc::appError, std::format("the scene authors no camera at '{}'", path));
         });
+    registry.add(
+        {
+            .name = "view.camera.fly",
+            .summary = "Fly the camera through the cameras the scene authors whose paths start with a prefix, in path order (/cameras/flight_00, …), at a speed in metres a second, eye and direction interpolated. A test driver for streaming: a script holds its clock while it flies. Answers when the last camera is reached (or the flight is stopped), with the cameras, metres and seconds flown.",
+            .params = {requiredField("prefix", RpcType::String, "a camera path prefix"), requiredField("speed", RpcType::Float, "metres a second")},
+            .result = "{cameras, metres, seconds, stopped}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto prefix = p["prefix"].get<std::string>();
+            auto speed = p["speed"].get<float>();
+            if (speed <= 0.0f) {
+                responder.fail(rpc::invalidParams, "speed is metres a second, above 0");
+                return;
+            }
+            std::vector<std::pair<std::string, glm::mat4>> found;
+            for (const auto& camera : view.scene.cameras()) {
+                if (camera.path.starts_with(prefix)) {
+                    found.emplace_back(camera.path, camera.worldTransform);
+                }
+            }
+            std::ranges::sort(found, {}, [](const auto& camera) { return camera.first; });
+            if (found.size() < 2) {
+                responder.fail(rpc::appError, std::format("{} cameras start with '{}': a flight needs two", found.size(), prefix));
+                return;
+            }
+            if (view.flight.responder) {
+                view.flight.responder->respond({{"cameras", view.flight.cameras.size()}, {"metres", view.flight.metres}, {"seconds", view.flight.seconds}, {"stopped", true}});
+            }
+            view.flight = {};
+            view.flight.speed = speed;
+            for (const auto& [path, transform] : found) {
+                Camera placed = view.cam;
+                placed.place(transform);
+                view.flight.cameras.push_back(path);
+                view.flight.eyes.push_back(placed.position);
+                view.flight.yaws.push_back(placed.yaw);
+                view.flight.pitches.push_back(placed.pitch);
+            }
+            view.flight.responder = std::move(responder);
+            view.cam.position = view.flight.eyes.front();
+            view.cam.yaw = view.flight.yaws.front();
+            view.cam.pitch = view.flight.pitches.front();
+            TRACE_EVENT("Engine", "FlightStarted", prefix).text(std::format("flying {} cameras from {} at {:g} m/s", found.size(), found.front().first, speed));
+        });
+    registry.add({.name = "view.streaming.reset", .summary = "Zeroes the streaming counters (late switches, root-seconds coarser, loads, reloads, leads, arrivals unwanted), for a run measured from a known start.", .result = "{}"},
+                 [&view](const Json&, RpcResponder responder) {
+                     view.scene.resetStreamingCounters();
+                     responder.respond(Json::object());
+                 });
+    registry.add({.name = "view.camera.fly.stop", .summary = "Stops the camera's flight where it is; its call answers.", .result = "{}"}, [&view](const Json&, RpcResponder responder) {
+        if (view.flight.responder) {
+            view.flight.responder->respond({{"cameras", view.flight.cameras.size()}, {"metres", view.flight.metres}, {"seconds", view.flight.seconds}, {"stopped", true}});
+        }
+        view.flight = {};
+        responder.respond(Json::object());
+    });
     registry.add(
         {
             .name = "view.camera.frame",
@@ -769,18 +829,13 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.lod.heuristic",
-            .summary = "The LOD heuristic on (every root not set by hand wants the level its heuristic picks from the camera) or off (its default), which heuristic a root naming several measures by, and how long a level that stopped being wanted stays loaded.",
-            .params = {optionalField("on", RpcType::Bool, "on or off"),
-                       optionalField("prefer", RpcType::String, "distance (the default), screen, or authored (the first the root names)"),
-                       optionalField("unloadDelay", RpcType::Float, "seconds a level that stopped being wanted stays loaded")},
+            .summary = "The LOD heuristic on (every root not set by hand wants the level its heuristic picks from the camera, and keeps resident what its streaming radii ask for) or off (its default level and every coarser one), and which heuristic a root naming several measures by.",
+            .params = {optionalField("on", RpcType::Bool, "on or off"), optionalField("prefer", RpcType::String, "distance (the default), screen, or authored (the first the root names)")},
             .result = "{}",
         },
         [&view](const Json& p, RpcResponder responder) {
             if (p.contains("on")) {
                 view.scene.setLodHeuristic(p["on"].get<bool>());
-            }
-            if (p.contains("unloadDelay")) {
-                view.scene.setUnloadDelay(p["unloadDelay"].get<double>());
             }
             if (p.contains("prefer")) {
                 auto prefer = lodPreferenceFromName(p["prefer"].get<std::string>());
@@ -1358,9 +1413,7 @@ auto sceneThreadRecord(const ViewContext& view) -> Json {
         {"held", {{"layerPacks", t.layerPacks}, {"meshPacks", t.meshPacks}, {"materialPacks", t.materialPacks}, {"texturePacks", t.texturePacks}, {"failed", t.failedAssets}}},
         {"library", {{"meshes", t.meshEntries}, {"materials", t.materialEntries}, {"textures", t.textureEntries}}},
         {"unloaded",
-         {{"delay", view.scene.unloadDelay()},
-          {"keptLevels", t.keptLevels},
-          {"levels", t.releasedLevels},
+         {{"levels", t.releasedLevels},
           {"contents", t.releasedContents},
           {"meshPacks", t.releasedMeshes},
           {"meshBytes", t.releasedMeshBytes}}},
@@ -1466,7 +1519,8 @@ auto sceneRecord(const ViewContext& view) -> Json {
 
 // A LOD root's heuristics as the records list them: kind, type, domain, thresholds and bands, bounds, and why one isn't read.
 auto heuristicsJson(const std::vector<LodHeuristic>& heuristics, LodPreference preference) -> Json {
-    auto chosen = chooseLodHeuristic(heuristics, preference);
+    auto chosen = chooseLodHeuristic(heuristics, LodDomain::Imaging, preference);
+    auto chosenStreaming = chooseLodHeuristic(heuristics, LodDomain::Streaming, preference);
     auto out = Json::array();
     for (size_t i = 0; i < heuristics.size(); i++) {
         const auto& heuristic = heuristics[i];
@@ -1476,8 +1530,11 @@ auto heuristicsJson(const std::vector<LodHeuristic>& heuristics, LodPreference p
             {"domain", heuristic.domain},
             {"thresholds", heuristic.thresholds},
             {"blendThresholds", heuristic.blendThresholds},
-            {"used", (int32_t) i == chosen},
+            {"used", (int32_t) i == chosen || (int32_t) i == chosenStreaming},
         };
+        if (heuristic.domainKind == LodDomain::Streaming) {
+            entry["unloadThresholds"] = heuristic.unloadThresholds;
+        }
         if (heuristic.kind == LodHeuristicKind::Distance) {
             entry["kind"] = "distance";
             entry["center"] = vec3Json(heuristic.center);
@@ -1599,15 +1656,16 @@ auto lodToolRecord(const ViewContext& view) -> Json {
 auto streamingRecord(const ViewContext& view) -> Json {
     const auto& choices = view.scene.lodChoices();
     const auto& t = view.scene.threadStats();
+    const auto& streaming = view.scene.streaming();
+    const auto& tuning = view.scene.lodTuning();
     auto roots = Json::array();
     auto aspect = view.scene.cameraAspect();
     uint32_t loading = 0;
     uint32_t inFrustum = 0;
     PlacementWait waitingTotal;
-    auto now = std::chrono::steady_clock::now();
-    const auto& keptLevels = view.scene.keptLevels();
     for (const auto& root : view.scene.lodRoots()) {
         auto choice = choices.find(root.path);
+        bool evaluated = choice != choices.end();
         bool visible = lodRootInFrustum(root, view.cam.position, view.cam.forward(), view.cam.right(), glm::radians(cameraFovDegrees), aspect);
         if (visible) {
             inFrustum++;
@@ -1620,56 +1678,117 @@ auto streamingRecord(const ViewContext& view) -> Json {
             waiting = {{"meshes", root.waiting->meshes}, {"materials", root.waiting->materials}, {"textures", root.waiting->textures}, {"composing", root.waiting->composing}};
             waitingTotal += *root.waiting;
         }
-        // Per loaded level, what its placement waits for (null while it is composing, not linked yet).
-        auto loadedWaits = Json::array();
-        for (auto level : root.loaded) {
+        const SceneStreamingRoot* measured = nullptr;
+        if (auto it = streaming.roots.find(root.path); it != streaming.roots.end()) {
+            measured = &it->second;
+        }
+        // Per level: its name, whether it is asked to be resident, loaded (composed), ready (placed and waiting for nothing), drawn, what its
+        // placement waits for (null while it is composing or not loaded), and its last lead.
+        auto levels = Json::array();
+        for (uint32_t level = 0; level < root.levels.size(); level++) {
             auto wait = Json(nullptr);
             if (level < root.levelWaits.size() && root.levelWaits[level]) {
                 const auto& w = *root.levelWaits[level];
                 wait = {{"meshes", w.meshes}, {"materials", w.materials}, {"textures", w.textures}, {"composing", w.composing}};
             }
-            loadedWaits.push_back({{"level", level}, {"waiting", wait}});
+            bool requested = evaluated && std::ranges::contains(choice->second.resident, level);
+            bool ready = measured != nullptr && level < measured->ready.size() && measured->ready[level];
+            double lead = measured != nullptr && level < measured->lead.size() ? measured->lead[level] : -1.0;
+            levels.push_back({
+                {"level", level},
+                {"name", root.levels[level]},
+                {"requested", requested},
+                {"loaded", std::ranges::contains(root.loaded, level)},
+                {"ready", ready},
+                {"drawn", root.drawn && *root.drawn == level},
+                {"waiting", wait},
+                {"leadSeconds", lead >= 0.0 ? Json(lead) : Json(nullptr)},
+            });
         }
-        // The loaded levels it doesn't want, kept for the unload delay, with the seconds left.
-        auto kept = Json::array();
-        if (auto levels = keptLevels.find(root.path); levels != keptLevels.end()) {
-            for (const auto& [level, until] : levels->second) {
-                kept.push_back({{"level", level}, {"secondsLeft", std::max(0.0, std::chrono::duration<double>(until - now).count())}});
-            }
-        }
-        auto used = chooseLodHeuristic(root.heuristics, view.scene.lodPreference());
-        bool measured = choice != choices.end() && choice->second.measure >= 0.0f;
+        auto used = chooseLodHeuristic(root.heuristics, LodDomain::Imaging, view.scene.lodPreference());
+        bool measuredImaging = evaluated && choice->second.measure >= 0.0f;
         // The thresholds the pick uses: the override's, the bias applied, no bands with blending off.
         LodHeuristic tuned;
         if (used >= 0) {
-            tuned = tunedLodHeuristic(root.heuristics[(size_t) used], lodOverrideOf(view.scene.lodTuning(), root.key, (uint32_t) used), view.scene.lodTuning());
+            tuned = tunedLodHeuristic(root.heuristics[(size_t) used], lodOverrideOf(tuning, root.key, (uint32_t) used), tuning);
+        }
+        auto streamingUsed = chooseLodHeuristic(root.heuristics, LodDomain::Streaming, view.scene.lodPreference());
+        auto streamingJson = Json(nullptr);
+        if (streamingUsed >= 0) {
+            auto radii = tunedLodHeuristic(root.heuristics[(size_t) streamingUsed], lodOverrideOf(tuning, root.key, (uint32_t) streamingUsed), tuning);
+            bool measuredStreaming = evaluated && choice->second.streamingMeasure >= 0.0f;
+            streamingJson = {
+                {"heuristic", streamingUsed},
+                {"kind", radii.kind == LodHeuristicKind::Distance ? "distance" : "screen"},
+                {"measure", measuredStreaming ? Json(choice->second.streamingMeasure) : Json(nullptr)},
+                {"load", radii.thresholds},
+                {"unload", radii.unloadThresholds},
+            };
+        }
+        auto findings = Json::array();
+        if (evaluated) {
+            for (const auto& finding : choice->second.findings) {
+                findings.push_back({{"rule", finding.rule}, {"heuristic", finding.heuristic}, {"boundary", finding.boundary}, {"detail", finding.detail}});
+            }
         }
         roots.push_back({
             {"path", root.path},
             {"heuristic", used},
-            {"kind", measured ? Json(choice->second.kind == LodHeuristicKind::Distance ? "distance" : "screen") : Json(nullptr)},
-            {"measure", measured ? Json(choice->second.measure) : Json(nullptr)},
+            {"kind", measuredImaging ? Json(choice->second.kind == LodHeuristicKind::Distance ? "distance" : "screen") : Json(nullptr)},
+            {"measure", measuredImaging ? Json(choice->second.measure) : Json(nullptr)},
             {"inFrustum", visible},
-            {"wanted", choice != choices.end() ? Json(choice->second.level) : Json(nullptr)},
-            {"why", choice != choices.end() ? Json(choice->second.reason) : Json("not evaluated yet")},
+            {"selected", evaluated ? Json(choice->second.level) : Json(nullptr)},
+            {"why", evaluated ? Json(choice->second.reason) : Json("not evaluated yet")},
             {"thresholds", tuned.thresholds},
             {"blendThresholds", tuned.blendThresholds},
+            {"streaming", streamingJson},
+            {"state", evaluated ? Json(choice->second.state) : Json(nullptr)},
+            {"resident", evaluated ? Json(choice->second.resident) : Json(nullptr)},
+            {"residentWhy", evaluated ? Json(choice->second.residentReason) : Json(nullptr)},
             {"key", root.key},
-            {"tuned", view.scene.lodTuning().overrides.contains(root.key)},
+            {"tuned", tuning.overrides.contains(root.key)},
             {"drawn", root.drawn ? Json(*root.drawn) : Json(nullptr)},
+            {"late", measured != nullptr && measured->late},
+            {"hole", measured != nullptr && measured->hole},
+            {"reloads", measured != nullptr ? measured->reloads : 0},
             {"loaded", root.loaded},
             {"waiting", waiting},
-            {"levels", loadedWaits},
-            {"kept", kept},
+            {"levels", levels},
+            {"findings", findings},
         });
     }
+    auto leads = streaming.leads;
+    std::ranges::sort(leads);
+    auto lead = Json(nullptr);
+    if (!leads.empty()) {
+        lead = {{"count", leads.size()}, {"minSeconds", leads.front()}, {"medianSeconds", leads[leads.size() / 2]}};
+    }
     return {
-        {"totals", {{"roots", roots.size()}, {"placements", t.placements}, {"contentsHeld", t.prototypesHeld + t.levelsHeld}, {"assetsHeld", t.meshPacks + t.materialPacks + t.texturePacks}, {"inFrustum", inFrustum}, {"loading", loading}, {"waiting", {{"meshes", waitingTotal.meshes}, {"materials", waitingTotal.materials}, {"textures", waitingTotal.textures}, {"composing", waitingTotal.composing}}}, {"renderLodGroups", view.scene.threadStats().lodGroups}}},
+        {"totals",
+         {{"roots", roots.size()},
+          {"placements", t.placements},
+          {"contentsHeld", t.prototypesHeld + t.levelsHeld},
+          {"assetsHeld", t.meshPacks + t.materialPacks + t.texturePacks},
+          {"inFrustum", inFrustum},
+          {"loading", loading},
+          {"waiting", {{"meshes", waitingTotal.meshes}, {"materials", waitingTotal.materials}, {"textures", waitingTotal.textures}, {"composing", waitingTotal.composing}}},
+          {"renderLodGroups", view.scene.threadStats().lodGroups}}},
+        {"measured",
+         {{"lateNow", streaming.lateNow},
+          {"holesNow", streaming.holesNow},
+          {"lateSwitches", streaming.lateSwitches},
+          {"holes", streaming.holes},
+          {"rootSecondsCoarser", streaming.lateSeconds},
+          {"loads", streaming.loads},
+          {"reloads", streaming.reloads},
+          {"released", streaming.released},
+          {"lead", lead},
+          {"arrivedUnwanted", streaming.arrivedUnwanted},
+          {"authoringFindings", streaming.findings}}},
         {"heuristic", view.scene.lodHeuristic()},
         {"preference", lodPreferenceName(view.scene.lodPreference())},
-        {"tuning", lodTuningJson(view.scene.lodTuning())},
-        {"unloadDelay", view.scene.unloadDelay()},
-        {"unloaded", {{"keptLevels", t.keptLevels}, {"levels", t.releasedLevels}, {"contents", t.releasedContents}, {"meshPacks", t.releasedMeshes}, {"meshBytes", t.releasedMeshBytes}}},
+        {"tuning", lodTuningJson(tuning)},
+        {"unloaded", {{"levels", t.releasedLevels}, {"contents", t.releasedContents}, {"meshPacks", t.releasedMeshes}, {"meshBytes", t.releasedMeshBytes}}},
         {"evaluation", {{"count", t.lodEvaluations}, {"roots", t.lodRootsEvaluated}, {"finer", t.lodFiner}, {"coarser", t.lodCoarser}, {"ms", t.lodEvaluateMs}, {"relinks", t.relinks}}},
         {"roots", roots},
     };
@@ -2164,6 +2283,50 @@ auto zonesRecord() -> Json {
 
 } // namespace
 
+auto advanceFlight(ViewContext& view, float dt) -> void {
+    auto& flight = view.flight;
+    if (!flight.flying()) {
+        return;
+    }
+    flight.seconds += dt;
+    float step = flight.speed * dt;
+    while (step > 0.0f && flight.flying()) {
+        float length = glm::distance(flight.eyes[flight.segment], flight.eyes[flight.segment + 1]);
+        if (flight.along + step < length) {
+            flight.along += step;
+            flight.metres += step;
+            step = 0.0f;
+        } else {
+            flight.metres += length - flight.along;
+            step -= length - flight.along;
+            flight.segment++;
+            flight.along = 0.0f;
+        }
+    }
+    if (flight.flying()) {
+        auto from = flight.segment;
+        float length = glm::distance(flight.eyes[from], flight.eyes[from + 1]);
+        float t = length > 0.0f ? flight.along / length : 1.0f;
+        // Yaw the short way round.
+        float turn = std::remainder(flight.yaws[from + 1] - flight.yaws[from], 360.0f);
+        view.cam.position = glm::mix(flight.eyes[from], flight.eyes[from + 1], t);
+        view.cam.yaw = flight.yaws[from] + (turn * t);
+        view.cam.pitch = glm::mix(flight.pitches[from], flight.pitches[from + 1], t);
+        return;
+    }
+    view.cam.position = flight.eyes.back();
+    view.cam.yaw = flight.yaws.back();
+    view.cam.pitch = flight.pitches.back();
+    TRACE_EVENT("Engine", "FlightDone", flight.cameras.back())
+        .text(std::format("flew {} cameras, {:.0f} m in {:.1f} s", flight.cameras.size(), flight.metres, flight.seconds))
+        .field("metres", flight.metres)
+        .field("seconds", flight.seconds);
+    if (flight.responder) {
+        flight.responder->respond({{"cameras", flight.cameras.size()}, {"metres", flight.metres}, {"seconds", flight.seconds}, {"stopped", false}});
+        flight.responder.reset();
+    }
+}
+
 auto serviceRenderLodRequests(ViewContext& view) -> bool {
     return answerRenderLodRequests(view);
 }
@@ -2184,7 +2347,8 @@ auto engineMapStats(const ViewContext& view) -> EngineMapStats {
     stats["view.assetclient"] = {std::format("{} in flight, {} received", assets.inFlight(), assets.received), std::format("{} failed", assets.failed)};
     stats["scene.lod"] = {std::format("{} roots, heuristic {}", t.lodRootsEvaluated, view.scene.lodHeuristic() ? "on" : "off"),
                           std::format("last: {} finer, {} coarser", t.lodFiner, t.lodCoarser),
-                          std::format("unloaded: {} levels, {} contents, {} mesh packs ({:.1f} MiB); {} levels kept", t.releasedLevels, t.releasedContents, t.releasedMeshes, mib(t.releasedMeshBytes), t.keptLevels)};
+                          std::format("unloaded: {} levels, {} contents, {} mesh packs ({:.1f} MiB)", t.releasedLevels, t.releasedContents, t.releasedMeshes, mib(t.releasedMeshBytes)),
+                          std::format("{} roots late, {} drawing nothing", view.scene.streaming().lateNow, view.scene.streaming().holesNow)};
     stats["scene.compose"] = {std::format("{} composes, last {:.1f} ms", t.composes, t.lastComposeMs),
                               std::format("{} layer packs, {} in flight", t.layerPacks, t.inFlightLayers),
                               std::format("{} contents held, {} released", t.prototypesHeld + t.levelsHeld, t.releasedContents)};
@@ -2314,7 +2478,7 @@ auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext
     records.add("gpuscene", "the GPU scene's flow: change lists taken and drawn, the upload queue and its budget, the geometry pool and what waits for room", [&view](RpcResponder responder) {
         responder.respond(gpuSceneRecord(view));
     });
-    records.add("streaming", "the LOD heuristic: on or off, its last evaluation, and per root its screen size, the level wanted and why, drawn and loaded", [&view](RpcResponder responder) {
+    records.add("streaming", "residency: per streaming root the level selected to draw and why, its streaming radii and state, the levels resident and why, drawn, late, per level requested, loaded, ready and lead, authoring findings; streaming measured (late, holes, loads, reloads, lead)", [&view](RpcResponder responder) {
         responder.respond(streamingRecord(view));
     });
     records.add("instancers", "every PointInstancer reached while drawing: its points and those shown, its prototypes, and the prims its points draw", [&view](RpcResponder responder) {

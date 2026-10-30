@@ -1,0 +1,544 @@
+<title>Streaming Domain Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column with a narrow margin rail for labels; code, diagrams and tables use the full measure and scroll inside their own box. */
+:root {
+  --bg: #f6f7f5;
+  --surface: #ffffff;
+  --code-bg: #f0f3f1;
+  --ink: #1b2124;
+  --muted: #5c676b;
+  --rule: #d9dedb;
+  --accent: #1f6a6f;
+  --accent-soft: #e3efef;
+  --ok: #2f7a3e;
+  --warn: #a36310;
+  --risk: #a3352b;
+  --ok-soft: #e6f2e8;
+  --warn-soft: #f7ecdc;
+  --risk-soft: #f6e4e1;
+  --chart-grid: #e4e8e6;
+  --code-comment: #6f7b7e;
+  --code-keyword: #1f6a6f;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121618; --surface: #1a2023; --code-bg: #151a1c; --ink: #e3e8e6; --muted: #98a4a7; --rule: #2c3538;
+    --accent: #6cc3c6; --accent-soft: #1d3234; --ok: #7fc48c; --warn: #e0a65a; --risk: #ec8a7e;
+    --ok-soft: #1c2c20; --warn-soft: #2f2617; --risk-soft: #321e1b; --chart-grid: #263033;
+    --code-comment: #7f8c8f; --code-keyword: #7fd0d3; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121618; --surface: #1a2023; --code-bg: #151a1c; --ink: #e3e8e6; --muted: #98a4a7; --rule: #2c3538;
+  --accent: #6cc3c6; --accent-soft: #1d3234; --ok: #7fc48c; --warn: #e0a65a; --risk: #ec8a7e;
+  --ok-soft: #1c2c20; --warn-soft: #2f2617; --risk-soft: #321e1b; --chart-grid: #263033;
+  --code-comment: #7f8c8f; --code-keyword: #7fd0d3; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 72px;
+}
+main { max-width: 1040px; margin: 0 auto; display: grid; gap: 52px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: 2.4rem; font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 1.55rem; font-weight: 600; }
+h3 { font-size: 1.15rem; font-weight: 600; }
+p { margin: 0; max-width: 72ch; }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+p code, li code, td code { background: var(--accent-soft); color: var(--ink); padding: 0.05em 0.35em; border-radius: 3px; }
+.eyebrow { font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+section { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 0 30px; border-top: 1px solid var(--rule); padding-top: 22px; }
+section > .rail { padding-top: 4px; }
+section > .content { display: grid; gap: 18px; min-width: 0; }
+@media (max-width: 760px) { section { grid-template-columns: minmax(0, 1fr); gap: 10px; } }
+
+header { display: grid; gap: 18px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 22px; color: var(--muted); font-size: 0.9rem; }
+.meta span b { color: var(--ink); font-weight: 500; }
+.lede { font-size: 1.1rem; max-width: 70ch; }
+
+.verdict { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.verdict div { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; display: grid; gap: 4px; align-content: start; }
+.verdict .k { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.verdict .v { font-family: var(--display); font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.verdict .n { font-size: 0.85rem; color: var(--muted); }
+
+ul.plain { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; max-width: 74ch; }
+
+.flow { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 18px; }
+.flow svg { display: block; min-width: 860px; width: 100%; height: auto; }
+.flow text { font-family: var(--body); font-size: 12.5px; fill: var(--ink); }
+.flow .small { font-size: 11px; fill: var(--muted); }
+.flow .num { font-family: var(--mono); font-size: 11px; fill: var(--accent); font-weight: 500; }
+.flow .lane { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); letter-spacing: 0.06em; }
+.flow rect.lanebg { fill: var(--bg); }
+.flow rect.box { fill: var(--surface); stroke: var(--rule); }
+.flow rect.new { fill: var(--accent-soft); stroke: var(--accent); }
+.flow path.arrow { stroke: var(--muted); stroke-width: 1.2; fill: none; marker-end: url(#head); }
+.flow path.dashed { stroke-dasharray: 4 3; }
+.flow marker path { fill: var(--muted); }
+
+.stage { display: grid; gap: 14px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 20px 20px 22px; }
+.stage-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+.stage-head .step { font-family: var(--mono); font-size: 0.8rem; color: var(--accent); font-weight: 500; }
+.stage-head .where { font-family: var(--mono); font-size: 0.74rem; color: var(--muted); }
+.files { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }
+.inout { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.inout div { border-left: 2px solid var(--rule); padding: 2px 0 2px 12px; font-size: 0.9rem; }
+.inout b { display: block; font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+pre { margin: 0; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; overflow-x: auto; font-family: var(--mono); font-size: 0.8rem; line-height: 1.55; color: var(--ink); tab-size: 4; }
+pre .c { color: var(--code-comment); font-style: italic; }
+pre .k { color: var(--code-keyword); }
+pre .cap { display: block; font-family: var(--mono); font-size: 0.7rem; color: var(--muted); margin-bottom: 8px; letter-spacing: 0.04em; }
+.notes { display: grid; gap: 6px; }
+.notes .label { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--warn); }
+.notes ul { margin: 0; padding-left: 1.1em; display: grid; gap: 5px; font-size: 0.92rem; max-width: 80ch; }
+
+.tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--rule); }
+th { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 0.82rem; white-space: nowrap; }
+td.new { background: var(--accent-soft); }
+
+.pill { display: inline-block; font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.pill.locked { background: var(--accent-soft); color: var(--accent); }
+.pill.lean { background: var(--warn-soft); color: var(--warn); }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.risk { background: var(--risk-soft); color: var(--risk); }
+
+.chart { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 16px 16px 10px; overflow-x: auto; }
+.chart svg { display: block; width: 100%; min-width: 560px; height: auto; }
+.chart text { font-family: var(--mono); font-size: 11px; fill: var(--muted); }
+.chart .grid { stroke: var(--chart-grid); stroke-width: 1; }
+.chart .axis { stroke: var(--rule); }
+.chart .usd { stroke: var(--muted); stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+.chart .band { fill: var(--accent-soft); }
+.chart .pt { fill: var(--accent); }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 0.82rem; color: var(--muted); padding: 8px 2px 0; }
+.legend i { display: inline-block; width: 18px; height: 0; vertical-align: middle; margin-right: 6px; border-top: 2px dashed var(--muted); }
+.legend i.dot { width: 8px; height: 8px; border: 0; border-radius: 50%; background: var(--accent); }
+.legend i.swatch { width: 14px; height: 10px; border: 0; background: var(--accent-soft); }
+
+.risks { display: grid; gap: 10px; }
+.risk { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 14px; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 16px; }
+.risk h3 { font-family: var(--body); font-size: 0.95rem; font-weight: 600; }
+.risk p { font-size: 0.9rem; }
+.risk .ask { color: var(--muted); font-size: 0.86rem; }
+@media (max-width: 520px) { .risk { grid-template-columns: minmax(0, 1fr); gap: 6px; } }
+footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--rule); padding-top: 16px; }
+.figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+figure { margin: 0; display: grid; gap: 6px; }
+figure img { width: 100%; max-width: 100%; height: auto; border: 1px solid var(--rule); border-radius: 6px; display: block; }
+figcaption { font-size: 0.82rem; color: var(--muted); }
+</style>
+
+<main>
+  <header>
+    <div class="eyebrow">ngen · streaming · change review</div>
+    <h1>Streaming Domain Review</h1>
+    <p class="lede">What is loaded now follows the world's own authored residency: each cell's <code>streaming</code> heuristic gives load and unload radii, the engine keeps the level they ask for and every coarser level, and nothing loads or unloads because time passed. The 10 s unload delay is gone. Drawing falls back only to coarser levels; when authoring leaves a gap, the engine shows it (a late draw, an authoring finding) instead of covering it. This review follows the change from the packer to a drawn level and into the records.</p>
+    <div class="meta">
+      <span>Plan <b>docs/plan_streaming_domain.md</b> (in progress, all steps done)</span>
+      <span>State <b>staged, not committed</b></span>
+      <span>Size <b>25 files, +968 / −316</b> (no new files)</span>
+      <span>Date <b>30 Oct 2026</b></span>
+      <span>For <b>a Technical Director</b></span>
+    </div>
+  </header>
+
+  <section>
+    <div class="rail"><div class="eyebrow">Summary</div></div>
+    <div class="content">
+      <div class="verdict">
+        <div><span class="k">Moving away from a region</span><span class="v">0 frames of proxy</span><span class="n">From inside <code>R_4_5</code> to 691 m away it now goes full → medium. Before, it drew the coarsest level, proxy, for 235 frames while medium loaded.</span></div>
+        <div><span class="k">Cells drawn at the village</span><span class="v">192 of 196 as authored</span><span class="n">The other 4 sit inside a blend band, where the engine draws the finer level by design. Same as before the change: selection didn't move.</span></div>
+        <div><span class="k">Flight, 26.8 km at 30 m/s</span><span class="v">0 holes, 2 late</span><span class="n">No root ever drew nothing; two switches found their level not ready, 2.0 root-seconds drawn coarser in total over 15 minutes.</span></div>
+        <div><span class="k">Scene-thread cost per evaluation</span><span class="v">0.25 → 0.97 ms</span><span class="n">196 roots at the village, the scene thread (not a frame). It runs when the camera moves. The new work is tuning every heuristic and the authoring check per root.</span></div>
+      </div>
+      <p>The change is contained to how a streaming root decides its resident levels and its drawn level; composition, placement and the renderer are unchanged in shape. Imaging selection gives the same levels as before at the village. The packer and both check tools read the new attribute the same way as OpenUSD (6,700 heuristic lines identical). Open questions: the evaluation cost (it quadrupled, still small), the lead metric (it doesn't measure what the world's replay measures), and memory, which the chain of coarser levels raises with no budget yet to bound it.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail"><div class="eyebrow">The flow</div></div>
+    <div class="content">
+      <h2>From an authored radius to a drawn level and a record</h2>
+      <p>The packer keeps the custom attribute; the World reads the domain; the scene thread computes the state, gives the composer the resident set, and the placement pass picks the drawn level; a measurement pass reads the result. On the main thread, <code>fly</code> moves the camera that drives it all. Teal boxes are new behaviour; white ones changed shape only. Numbers match the walkthrough.</p>
+      <div class="flow" role="img" aria-label="The change's path from the packer through the World and the scene thread to the records">
+        <svg viewBox="0 0 960 420">
+          <defs><marker id="head" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z"/></marker></defs>
+          <rect class="lanebg" x="0" y="0" width="960" height="100" rx="6"/>
+          <rect class="lanebg" x="0" y="112" width="960" height="186" rx="6"/>
+          <rect class="lanebg" x="0" y="310" width="960" height="110" rx="6"/>
+          <text class="lane" x="12" y="20">ASSET SERVER · packing, World composing</text>
+          <text class="lane" x="12" y="132">SCENE THREAD · per batch: evaluate, link, place, measure</text>
+          <text class="lane" x="12" y="330">MAIN THREAD · per frame</text>
+
+          <rect class="box" x="12" y="30" width="250" height="60" rx="5"/>
+          <text class="num" x="24" y="50">1</text><text x="38" y="50">USD packer</text>
+          <text class="small" x="24" y="70">isEngineAttribute keeps streaming:*</text>
+          <text class="small" x="24" y="84">usdpacker.cpp</text>
+
+          <rect class="new" x="300" y="30" width="330" height="60" rx="5"/>
+          <text class="num" x="312" y="50">2</text><text x="326" y="50">World: domains, state, contract</text>
+          <text class="small" x="312" y="70">LodDomain · unloadThresholds · streamingState</text>
+          <text class="small" x="312" y="84">checkLodAuthoring · chooseLodHeuristic(domain)</text>
+
+          <rect class="new" x="12" y="144" width="300" height="74" rx="5"/>
+          <text class="num" x="24" y="164">3</text><text x="38" y="164">Residency: evaluateLevels</text>
+          <text class="small" x="24" y="184">selected (imaging) · state (streaming)</text>
+          <text class="small" x="24" y="198">resident = state … coarsest · findings</text>
+          <text class="small" x="24" y="212">delay removed: keepLevel, releaseLevels</text>
+
+          <rect class="box" x="340" y="144" width="270" height="74" rx="5"/>
+          <text class="num" x="352" y="164">4</text><text x="366" y="164">Composer loads the set</text>
+          <text class="small" x="352" y="184">setResidentLevels / reset</text>
+          <text class="small" x="352" y="198">loadedLevels · relink</text>
+
+          <rect class="new" x="640" y="144" width="308" height="74" rx="5"/>
+          <text class="num" x="652" y="164">5</text><text x="666" y="164">Placement picks the drawn level</text>
+          <text class="small" x="652" y="184">drawnLevelOf: never finer than selected</text>
+          <text class="small" x="652" y="198">none ready coarser → a hole</text>
+
+          <rect class="new" x="340" y="232" width="608" height="56" rx="5"/>
+          <text class="num" x="352" y="252">6</text><text x="366" y="252">Measured: measureStreaming · arrivedUnwanted</text>
+          <text class="small" x="352" y="272">ready since, lead per switch, late and holes, loads, reloads → SceneStreaming in the snapshot</text>
+
+          <rect class="new" x="12" y="342" width="300" height="66" rx="5"/>
+          <text class="num" x="24" y="362">7</text><text x="38" y="362">fly: advanceFlight</text>
+          <text class="small" x="24" y="382">CameraFlight · view.camera.fly</text>
+          <text class="small" x="24" y="398">camera → setCamera → scene thread</text>
+
+          <rect class="box" x="340" y="342" width="608" height="66" rx="5"/>
+          <text class="num" x="352" y="362">8</text><text x="366" y="362">Records, RPC, windows, tools</text>
+          <text class="small" x="352" y="382">streaming record · streaming-reset · LOD window tooltip · Scene Flow · Engine Map</text>
+          <text class="small" x="352" y="398">ngen-worldcheck --lod-authoring · --lod-heuristics unload column</text>
+
+          <path class="arrow" d="M262 60 L298 60"/>
+          <path class="arrow" d="M465 90 L465 104 L160 104 L160 142"/>
+          <path class="arrow" d="M312 181 L338 181"/>
+          <path class="arrow" d="M610 181 L638 181"/>
+          <path class="arrow" d="M794 218 L794 230"/>
+          <path class="arrow" d="M160 340 L160 220"/>
+          <path class="arrow dashed" d="M644 288 L644 340"/>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail"><div class="eyebrow">Walkthrough</div></div>
+    <div class="content">
+      <h2>Stage by stage</h2>
+
+      <div class="stage">
+        <div class="stage-head"><span class="step">1</span><h3>The packer keeps the unload radii</h3><span class="where">asset server, at pack time</span></div>
+        <div class="files">src/asset/pack/usd/usdpacker.cpp · src/asset/README.md</div>
+        <p>The layer pack keeps only attributes the engine reads. <code>streaming:unloadThresholds</code> is a custom attribute of the world's own, so it was dropped; now every <code>streaming:</code> attribute is kept. The packer binary is part of each pack's cache key, so the world repacks on its next request (one cold run had a 1.5 s frame while loading; warm, 64 ms).</p>
+        <pre><span class="cap">usdpacker.cpp · isEngineAttribute</span>    return names.contains(name) || name.starts_with("xformOp:") || name.starts_with("lod:") || name.starts_with("streaming:") || name.starts_with("inputs:");</pre>
+        <div class="notes"><span class="label">Check here</span><ul><li>A prefix, not the one name: any future <code>streaming:*</code> attribute is packed too. Small, but wider than this world needs.</li></ul></div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-head"><span class="step">2</span><h3>The World reads domains, the state and the contract</h3><span class="where">World, while composing</span></div>
+        <div class="files">src/world/world.h · world.cpp · worldcomposer.cpp/.h · fingerprint.h · src/apps/worldcheck.cpp · usdcheck.cpp · src/world/README.md</div>
+        <p>Before, any heuristic outside <code>imaging</code> was unusable. Now each has a <code>LodDomain</code>: <code>Imaging</code> picks what is drawn, <code>Streaming</code> what is resident, <code>Other</code> (physics, audio) is listed with why it isn't read. A streaming heuristic carries its unload thresholds and is unusable if they don't match its load thresholds in count, order, or side. <code>chooseLodHeuristic</code> takes the domain.</p>
+        <div class="inout">
+          <div><b>In</b>Packed heuristic prims: <code>thresholds</code>, <code>lod:domain</code>, <code>streaming:unloadThresholds</code></div>
+          <div><b>Out</b><code>LodHeuristic</code> with <code>domainKind</code> and <code>unloadThresholds</code>; <code>streamingState</code> and <code>checkLodAuthoring</code> as free functions</div>
+        </div>
+        <pre><span class="cap">world.cpp · streamingState (the spec's §7 rule)</span>    uint32_t byLoad = 0;
+    while (byLoad &lt; boundaries &amp;&amp; past(load[byLoad])) {
+        byLoad++;
+    }
+    uint32_t byUnload = 0;
+    while (byUnload &lt; boundaries &amp;&amp; past(byUnload &lt; unload.size() ? unload[byUnload] : load[byUnload])) {
+        byUnload++;
+    }
+    if (!previous || byLoad &lt;= *previous) {
+        return byLoad;
+    }
+    return std::min(byLoad, std::max(std::min(*previous, last), byUnload));</pre>
+        <pre><span class="cap">world.cpp · checkLodAuthoring (abridged: one of its four rules)</span>            for (size_t k = 0; k &lt; count; k++) {
+                if (imaging.thresholds[k] &gt; streaming-&gt;thresholds[k]) {
+                    findings.push_back({
+                        .rule = "imaging threshold beyond the load radius",
+                        .heuristic = imaging.path,
+                        .boundary = (uint32_t) k,
+                        .detail = std::format("drawn at {:g}, loaded at {:g} ({})", …),
+                    });
+                }
+            }</pre>
+        <p>The contract's four rules: a threshold per level boundary; each imaging distance threshold at or before its load radius; each load radius at or before its unload radius; a child's imaging thresholds and unload radii inside its parent's first imaging threshold and load radius. It reports; it changes nothing.</p>
+        <div class="notes"><span class="label">Check here</span><ul>
+          <li>Only distance heuristics are compared across domains and roots, as the spec states the contract in metres. A world authoring residency by screen size gets the count rule only.</li>
+          <li><code>ngen-worldcheck --lod-authoring</code> checks only roots the composition reaches: all regions, and a region's tiles when that region is passed with <code>--lod &lt;region&gt;=0</code>. It was run with two regions.</li>
+          <li>The <code>--lod-heuristics</code> line gained an unload column in both tools; any saved fingerprint of the old format no longer compares.</li>
+        </ul></div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-head"><span class="step">3</span><h3>Residency: the state, the chain, no clock</h3><span class="where">scene thread, ViewScene::evaluateLevels</span></div>
+        <div class="files">src/view/viewscene.cpp · viewscene.h</div>
+        <p>Before: a root loaded the level imaging picked plus its coarsest; a level no longer picked stayed 10 s on a timer (<code>keepLevel</code>, <code>releaseLevels</code>, a timed wake of the scene thread). Now, per placed root, the imaging pick is unchanged (<code>selected</code>, the level drawn), and the streaming heuristic gives a <code>state</code> from the camera's distance and the previous state. Resident is the state's level and every coarser one. A root without a streaming heuristic keeps the selected level and every coarser one. A hand-set level is the one exception, as the tool asks for it.</p>
+        <div class="inout">
+          <div><b>In</b>Placed roots (<code>placedRoots</code>), camera, tuning, previous <code>streamingStates</code></div>
+          <div><b>Out</b><code>SceneLodChoice</code> per root (now with <code>state</code>, <code>resident</code>, <code>residentReason</code>, <code>findings</code>); <code>setResidentLevels</code> calls; load, reload and release counts</div>
+        </div>
+        <pre><span class="cap">viewscene.cpp · evaluateLevels (abridged)</span>        <span class="c">// Residency: the state's level and every coarser one. … Nothing else: a level picked finer than the state isn't</span>
+        <span class="c">// loaded early, it draws late.</span>
+        uint32_t from = choice.level;
+        choice.streamingHeuristic = chooseLodHeuristic(root.heuristics, LodDomain::Streaming, lodPreferenceNow);
+        if (!heuristicOn) {
+            choice.residentReason = "heuristic off: the level drawn and every coarser one";
+        } else if (choice.streamingHeuristic &lt; 0) {
+            choice.residentReason = "no usable streaming heuristic: the imaging pick and every coarser level";
+        } else if (!camera) {
+            …
+        } else {
+            const auto&amp; streaming = tunedHeuristics[(size_t) choice.streamingHeuristic];
+            choice.streamingMeasure = lodMeasure(streaming, root.worldTransform, metersPerUnit, camera-&gt;position, windowArea);
+            auto state = streamingState(streaming.kind, streaming.thresholds, streaming.unloadThresholds, choice.streamingMeasure, levelCount, previous …);
+            streamingStates[root.path] = state;
+            from = state;
+            if (handLevels.contains(root.path) &amp;&amp; choice.level &lt; from) {
+                from = choice.level;
+            }
+        }
+        for (uint32_t level = from; level &lt; levelCount; level++) {
+            resident.insert(level);
+        }</pre>
+        <pre><span class="cap">viewscene.cpp · a root no longer placed starts afresh</span>    for (auto it = residentSets.begin(); it != residentSets.end();) {
+        if (placedRoots.contains(it-&gt;first)) {
+            ++it;
+            continue;
+        }
+        composer-&gt;resetResidentLevels(it-&gt;first);
+        streamingStates.erase(it-&gt;first);
+        it = residentSets.erase(it);
+    }</pre>
+        <p>A root's children are placed, and so evaluated, only while its finest level is resident. Since a region's <code>full</code> is resident exactly when its state is 0, its tiles are visited only then, which is the spec's "children only while full is wanted".</p>
+        <div class="notes"><span class="label">Check here</span><ul>
+          <li>The state persists while a root stays placed, and is forgotten once it isn't: a tile whose region drops below <code>full</code> starts from its load radii when it comes back.</li>
+          <li>Each evaluation now tunes every heuristic of every root and runs the authoring check per root (with the parent found by walking the path up). That is the 0.25 → 0.97 ms rise at the village; the flight averaged 2.2 ms for its last evaluation over 164 roots. Findings change only with tuning, so they could be cached.</li>
+          <li><code>heuristicLevels</code> (the imaging hysteresis) is still never forgotten; only the streaming state is cleaned up. Unchanged from before.</li>
+        </ul></div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-head"><span class="step">4</span><h3>The composer loads exactly the set</h3><span class="where">World composer, at relink</span></div>
+        <div class="files">src/world/worldcomposer.h · worldcomposer.cpp</div>
+        <p><code>keepLodLevels</code> (extra levels on top of the wanted one and the coarsest) became <code>setResidentLevels</code>: the levels a root loads, in place of the default. <code>setLodLevel</code> stays, as the level a root selects to draw. A root the view hasn't given a set to loads, as before, its wanted level and its coarsest; that keeps <code>ngen-worldcheck</code> and <code>ngen-usdcheck</code> loading the same payloads as each other.</p>
+        <pre><span class="cap">worldcomposer.cpp · loadedLevels (abridged)</span>        if (at.sharedKey.empty()) {
+            auto path = joinPath(at.base, relative);
+            if (auto resident = residentLevels.find(path); resident != residentLevels.end() &amp;&amp; !resident-&gt;second.empty()) {
+                for (uint32_t level : resident-&gt;second) {
+                    out.insert(std::min(level, levelCount - 1));
+                }
+                return out;
+            }
+            …
+        }
+        out.insert(wanted);
+        out.insert(levelCount - 1);</pre>
+        <div class="notes"><span class="label">Check here</span><ul>
+          <li>Two rules now live in the composer: the reader's set, or the old default. The plan said <code>setLodLevel</code>, <code>resetLodLevel</code> and <code>keepLodLevels</code> would become one opinion; the build kept <code>setLodLevel</code> because <code>World::wantedLevel</code> (the drawn level) needs it. A deviation, written in the plan's Results.</li>
+          <li>A set given by the view replaces the default entirely: the coarsest level is no longer added by the composer. The view's chain always includes it, so nothing loses its floor.</li>
+        </ul></div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-head"><span class="step">5</span><h3>Drawing never goes finer than selected</h3><span class="where">scene thread, placement pass</span></div>
+        <div class="files">src/view/placement.cpp</div>
+        <p><code>drawnLevelOf</code> still draws the finest ready level at or coarser than the selected one, and while none is ready, the coarsest loaded one as it arrives. The change is its last case: if the coarsest loaded level is finer than the selected one, it now returns nothing (a hole, counted) instead of drawing it. With the chain resident this can't happen; the case exists so the engine doesn't hide it if it ever does.</p>
+        <pre><span class="cap">placement.cpp · drawnLevelOf, the end</span>    auto coarsest = *std::ranges::max_element(lod.loaded);
+    if (coarsest &lt; wanted) {
+        return std::nullopt;
+    }
+    return coarsest;</pre>
+        <div class="notes"><span class="label">Check here</span><ul>
+          <li>The pop measured before (full → proxy → medium on moving away) is fixed by residency (stage 3), not by this function: medium is resident before it is selected.</li>
+        </ul></div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-head"><span class="step">6</span><h3>Streaming measured</h3><span class="where">scene thread, end of each batch</span></div>
+        <div class="files">src/view/viewscene.cpp · viewscene.h</div>
+        <p>New: <code>measureStreaming</code> reads the placed roots' rows after a batch and keeps, per root, when each level became ready and since when it draws late or nothing; per switch of the selected level, its lead (seconds from ready to selected; 0 when it wasn't ready, a late switch). Totals go into <code>SceneStreaming</code>, published with the snapshot. Mesh packs that arrive with no placement naming them are counted as <code>arrivedUnwanted</code> (requests are not cancelled). Time is read here and never acted on.</p>
+        <pre><span class="cap">viewscene.cpp · measureStreaming (abridged)</span>        auto selected = row.wanted;
+        if (times.selected &amp;&amp; *times.selected != selected &amp;&amp; selected &lt; levelCount) {
+            double lead = 0.0;
+            if (times.readySince[selected]) {
+                lead = std::chrono::duration&lt;double&gt;(now - *times.readySince[selected]).count();
+            } else {
+                streamingNow.lateSwitches++;
+            }
+            measured.lead[selected] = lead;
+            streamingNow.leads.push_back(lead);
+        }
+        …
+        bool hole = !row.drawn;
+        bool late = row.drawn &amp;&amp; *row.drawn &gt; selected;</pre>
+        <div class="notes"><span class="label">Check here</span><ul>
+          <li>The lead is measured in both directions. A coarser level resident for minutes and then selected has a lead of minutes, which is why the flight's median is 16.8 s against the replay's 2.3 s. The replay measures each load's lead. Splitting by direction is in the plan's Deferred.</li>
+          <li><code>leads</code> grows by one entry per switch for the session (2,079 on the flight); reset with <code>streaming-reset</code>.</li>
+          <li><code>arrivedUnwanted</code> counts mesh packs only; an unwanted layer pack isn't told apart yet (Deferred).</li>
+        </ul></div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-head"><span class="step">7</span><h3>fly: a test driver for the camera</h3><span class="where">main thread, once a frame</span></div>
+        <div class="files">src/view/viewcommands.h/.cpp · src/apps/view.cpp</div>
+        <p>New: <code>fly &lt;camera path prefix&gt; &lt;speed m/s&gt;</code> collects the scene's cameras with that prefix in path order and moves the camera through them at the speed, by each frame's time, eye and direction interpolated (yaw the short way round). A script holds its clock while it flies; the call answers at the last camera. It moves the camera and decides nothing.</p>
+        <pre><span class="cap">viewcommands.cpp · advanceFlight (abridged)</span>    float step = flight.speed * dt;
+    while (step &gt; 0.0f &amp;&amp; flight.flying()) {
+        float length = glm::distance(flight.eyes[flight.segment], flight.eyes[flight.segment + 1]);
+        if (flight.along + step &lt; length) {
+            flight.along += step;
+            …
+        } else {
+            step -= length - flight.along;
+            flight.segment++;
+            flight.along = 0.0f;
+        }
+    }</pre>
+        <div class="notes"><span class="label">Check here</span><ul>
+          <li>Wall-clock motion: a slow frame jumps the camera further. Intended (it loads as a real flight would), but it makes a flight's numbers depend on the machine and the cache. Fixed positions decide pass or fail; the flight is reported.</li>
+          <li>No window control yet; it is reachable by verb and RPC. The Streaming window is the next plan.</li>
+        </ul></div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-head"><span class="step">8</span><h3>Records, RPC, windows and tools</h3><span class="where">main thread and tools</span></div>
+        <div class="files">src/view/viewcommands.cpp · lodtool.cpp · src/ui/lodwindow.* · sceneflowwindow.* · enginemap.cpp · .claude/skills/run-headless/SKILL.md · src/view/README.md</div>
+        <p>The <code>streaming</code> record was rewritten: per root <code>selected</code> (was <code>wanted</code>), the streaming radii in force, <code>state</code>, <code>resident</code> and why, <code>late</code>, <code>hole</code>, per level requested/loaded/ready/drawn and lead, and findings; a <code>measured</code> block of totals. The delay's fields went from the record, the LOD window (its field and the "kept" tooltip, now the resident levels and why), Scene Flow (now a residency line), the Engine Map's LOD selection text and <code>view.lod.heuristic</code>.</p>
+        <pre><span class="cap">a root in the streaming record, at the village (abridged)</span>{"path": "/World/Regions/R_4_5/full/T_3_0", "selected": 1, "state": 0, "resident": [0, 1, 2], "drawn": 1,
+ "streaming": {"kind": "distance", "measure": 289.5, "load": [300, 500], "unload": [360, 580]},
+ "late": false, "hole": false,
+ "levels": [{"name": "full", "requested": true, "ready": true, "drawn": false}, {"name": "medium", … "drawn": true}, …]}</pre>
+        <div class="notes"><span class="label">Check here</span><ul>
+          <li>The record renamed <code>wanted</code> to <code>selected</code> and dropped <code>kept</code>; nothing in the repo read them, but outside scripts would.</li>
+          <li>The Engine Map text changed here, though the plan put Engine Map work in the tool plan: its old text described the removed delay.</li>
+        </ul></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail"><div class="eyebrow">Evidence</div></div>
+    <div class="content">
+      <h2>What was checked</h2>
+      <p>All on the streaming test world, release build, headless at 2560 × 1440, warm asset cache unless said. Fixed camera positions decide pass or fail; the flight is a measurement.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Check</th><th>Result</th><th>How</th></tr></thead>
+        <tbody>
+          <tr><td>The engine reads heuristics as OpenUSD does, unload radii included</td><td><span class="pill ok">pass</span> 6,700 lines identical</td><td><code>--lod-heuristics</code> from <code>ngen-worldcheck</code> and <code>ngen-usdcheck</code>, <code>R_4_5</code> at full; tile radii 300/500 load, 360/580 unload; region 700/1400, 800/1600</td></tr>
+          <tr><td>The world meets its authoring contract</td><td><span class="pill ok">pass</span> 1,700 roots, 0 findings</td><td><code>--lod-authoring</code>, regions plus <code>R_4_5</code> and <code>R_3_4</code> tiles. The other 98 regions' tiles not reached</td></tr>
+          <tr><td>A contract break is reported, not covered</td><td><span class="pill ok">pass</span></td><td>Tile <code>T_1_1</code> load radius tuned to 200 m (imaging at 220): one finding with the numbers; approached to 208 m it selects full, has medium and simplified resident, draws medium, <code>late</code></td></tr>
+          <tr><td>Selection unchanged at the village</td><td><span class="pill ok">pass</span> 192 of 196</td><td>Against the manifest's expected cells; the 4 others inside a blend band, finer, as before</td></tr>
+          <tr><td>The chain: resident is state and every coarser level</td><td><span class="pill ok">pass</span> 196 of 196</td><td><code>streaming</code> record at the village; <code>T_3_0</code> at 289 m draws medium with full prefetched and ready</td></tr>
+          <tr><td>No pop past a level when moving away</td><td><span class="pill ok">pass</span></td><td>Village → <code>-1700,500,50</code>: <code>R_4_5</code> drawn 0 → 1, no record at 2 (before: proxy for 235 frames)</td></tr>
+          <tr><td>Hysteresis by distance</td><td><span class="pill ok">pass</span></td><td><code>T_1_1</code>: full at 249 m; at 329 m draws medium, full resident; at 384 m full released; back at 249 m reloaded (counted)</td></tr>
+          <tr><td>No time in residency</td><td><span class="pill ok">pass</span></td><td>No <code>unloadDelay</code>, <code>levelsKept</code>, <code>keepLodLevels</code>, <code>levelsDue</code>, <code>keptLevels</code> in <code>src</code>; the hysteresis script run twice: same state and resident for 196 roots at all 4 records</td></tr>
+          <tr><td>Loading stays responsive</td><td><span class="pill ok">pass</span> 64 ms</td><td>Longest main-thread frame while the village loads, warm cache (was 86 ms before). One cold run after the packer change: 1.5 s, the layers repacking</td></tr>
+          <tr><td>Flight completes with no hole</td><td><span class="pill ok">pass</span></td><td><code>fly /cameras/flight_ 30</code>, 26,845 m in 895 s, <code>holes</code> 0, no warnings or errors</td></tr>
+          <tr><td>Reference screenshots of the other test scenes</td><td><span class="pill warn">not run</span></td><td>The change touches only streaming roots, which those scenes don't author with a streaming heuristic; worth a run before commit</td></tr>
+          <tr><td>Visual check in a window</td><td><span class="pill warn">not run</span></td><td>Headless only; the fly over RPC is there for you to watch</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>The flight against the world's replay</h3>
+      <p>Reported, not judged. The two are different experiments: the replay simulates one channel at 50 MB/s with the files' sizes; the engine loads packs from a local server, at the machine's speed and frame rate. They also count differently (stage 6).</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>30 m/s, 26.8 km</th><th>Engine</th><th>Replay, streaming policy</th><th>Replay, draw-only policy</th></tr></thead>
+        <tbody>
+          <tr><td>Late switches</td><td class="num">2</td><td class="num">0</td><td class="num">4,064</td></tr>
+          <tr><td>Root-seconds drawn coarser than selected</td><td class="num">2.0</td><td class="num">0</td><td class="num">8,102</td></tr>
+          <tr><td>Holes (a root drawing nothing)</td><td class="num">0</td><td class="num">—</td><td class="num">—</td></tr>
+          <tr><td>Loads · of them reloads</td><td class="num">1,105 · 78</td><td class="num">2,124 · 198</td><td class="num">2,964 · 1,154</td></tr>
+          <tr><td>Lead, min / median</td><td class="num">0 / 16.8 s</td><td class="num">0.2 / 2.3 s</td><td class="num">0 / 0 s</td></tr>
+          <tr><td>Mesh packs arrived unwanted</td><td class="num">0</td><td class="num">—</td><td class="num">—</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail"><div class="eyebrow">Decisions</div></div>
+    <div class="content">
+      <h2>What was chosen</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Decision</th><th>Chosen</th><th>Set aside</th><th>Stage</th></tr></thead>
+        <tbody>
+          <tr><td>Time in residency <span class="pill locked">locked 30 Oct</span></td><td>None: position, authored radii, previous state</td><td>The 10 s unload delay</td><td>3</td></tr>
+          <tr><td>The chain <span class="pill locked">locked 30 Oct</span></td><td>The state's level and every coarser one resident</td><td>Wanted plus coarsest</td><td>3, 4</td></tr>
+          <tr><td>Honest fallbacks <span class="pill locked">locked 30 Oct</span></td><td>Coarser only, else a hole; findings reported; hand-set levels the one exception</td><td>Drawing a finer loaded level; loading the selected level early</td><td>3, 5</td></tr>
+          <tr><td>Unwanted requests <span class="pill lean">as leaned</span></td><td>Dropped on arrival, counted</td><td>Cancelling in the asset client</td><td>6</td></tr>
+          <tr><td>Cell blend bands <span class="pill lean">as leaned</span></td><td>The finer level, no cross-fade</td><td>Dithering two cell levels</td><td>(unchanged)</td></tr>
+          <tr><td>Streaming heuristic kind <span class="pill lean">as leaned</span></td><td>Distance or screen size</td><td>Distance only</td><td>2</td></tr>
+          <tr><td>Composer API <span class="pill warn">deviation</span></td><td><code>setLodLevel</code> kept for the drawn level, <code>setResidentLevels</code> beside it</td><td>One opinion per root</td><td>4</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail"><div class="eyebrow">Risks</div></div>
+    <div class="content">
+      <h2>What to weigh</h2>
+      <div class="risks">
+        <div class="risk"><span class="pill risk">cost</span><div><h3>Memory has no bound yet</h3><p>Keeping every coarser level raises the resident set; the spec measures about 1.5× its draw-only policy. With no budget, a world with tighter radii or denser levels grows until something runs out. Stage 3.</p><p class="ask">Budgets are their own plan (<code>plan_streaming_budgets.md</code>); the order matters.</p></div></div>
+        <div class="risk"><span class="pill warn">cost</span><div><h3>Evaluation is four times as expensive</h3><p>0.25 → 0.97 ms per evaluation at 196 roots, on the scene thread, each time the camera moves (21,847 evaluations over the flight). Most is re-tuning heuristics and re-checking the contract, which only change with tuning. Stage 3.</p><p class="ask">Cache findings and tuned heuristics per tuning revision now, or wait until it shows.</p></div></div>
+        <div class="risk"><span class="pill warn">behaviour</span><div><h3>The lead doesn't mean what the replay's means</h3><p>Measured in both directions, so its median reflects coarser levels held long before they are selected. Late switches and root-seconds coarser are comparable; the lead isn't yet. Stage 6.</p><p class="ask">Split finer and coarser leads before tuning radii by it.</p></div></div>
+        <div class="risk"><span class="pill warn">maintenance</span><div><h3>Two loading rules in the composer</h3><p>The view's set, or the old default (wanted plus coarsest) for readers that give none, kept so the two check tools agree. Stage 4.</p><p class="ask">Accept, or move the check tools to the chain rule too.</p></div></div>
+        <div class="risk"><span class="pill lean">scope</span><div><h3>The contract check reaches only what is composed</h3><p>A tile is checked only while its region's full level is composed: in the view while it is placed, in <code>ngen-worldcheck</code> when passed with <code>--lod</code>. Stage 2.</p><p class="ask">Fine for now; a whole-world check would compose every region's full level.</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail"><div class="eyebrow">Runtime access</div></div>
+    <div class="content">
+      <h2>Records, methods, verbs, trace, windows</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Kind</th><th>Added or changed</th><th>Removed</th></tr></thead>
+        <tbody>
+          <tr><td>Records</td><td><code>streaming</code> rewritten (per root and <code>measured</code> totals); <code>lod</code>/<code>lodtool</code> heuristics carry <code>unloadThresholds</code> and mark the streaming one used; <code>scenethread</code></td><td><code>unloadDelay</code>, <code>kept</code>, <code>keptLevels</code></td></tr>
+          <tr><td>RPC</td><td><code>view.camera.fly</code>, <code>view.camera.fly.stop</code>, <code>view.streaming.reset</code></td><td><code>view.lod.heuristic {unloadDelay}</code></td></tr>
+          <tr><td>Verbs</td><td><code>fly</code>, <code>fly-stop</code>, <code>streaming-reset</code></td><td><code>lod-unload-delay</code></td></tr>
+          <tr><td>Trace</td><td><code>ResidencyChanged</code> (was <code>LevelsWanted</code>), <code>LevelsUnloaded</code> reworded, <code>FlightStarted</code>, <code>FlightDone</code>, <code>StreamingCountersReset</code></td><td></td></tr>
+          <tr><td>Windows</td><td>LOD window loaded-levels tooltip (resident levels and why); Scene Flow residency line; Engine Map LOD selection text</td><td>LOD window's Unload delay field</td></tr>
+          <tr><td>Tools</td><td><code>ngen-worldcheck --lod-authoring</code>; unload column in <code>--lod-heuristics</code> of both check tools</td><td></td></tr>
+          <tr><td>Gap</td><td colspan="2">No window shows residency as a whole, sets the unload radii, or starts a flight: the Streaming window and overlays (<code>plan_streaming_tool.md</code>). Load radii are tunable now (<code>lod-thresholds &lt;root&gt; h=&lt;i&gt;</code> on the streaming heuristic); unload radii aren't yet, that comes with the tool.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail"><div class="eyebrow">For the reviewer</div></div>
+    <div class="content">
+      <h2>Decisions to make</h2>
+      <ul class="plain">
+        <li>Cache the authoring check and tuned heuristics per tuning revision now, or accept 1 ms an evaluation until it shows?</li>
+        <li>Split the lead by direction before the next flight, so it can be compared with the replay?</li>
+        <li>Keep the composer's old default for readers without a set, or move the check tools to the chain rule?</li>
+        <li>Run the reference screenshots of the other test scenes before committing?</li>
+        <li>Land the plan as it is, with the deviations in its Results, and go on to the Streaming tool?</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>Source: <code>docs/reviews/streaming_domain_review.html</code> · numbers from runs on 30 Oct 2026, release build, streaming test world (Eldermark), headless 2560 × 1440.</footer>
+</main>

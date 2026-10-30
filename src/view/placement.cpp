@@ -571,7 +571,7 @@ auto ViewScene::forcedLevelOf(const LodGroupInfo& info) const -> int32_t {
     if (auto hand = handLevels.find(info.path); hand != handLevels.end()) {
         return (int32_t) std::min(hand->second, info.levelCount - 1);
     }
-    if (!heuristicOn || chooseLodHeuristic(info.heuristics, lodPreferenceNow) < 0) {
+    if (!heuristicOn || chooseLodHeuristic(info.heuristics, LodDomain::Imaging, lodPreferenceNow) < 0) {
         return (int32_t) info.defaultLevel;
     }
     return -1;
@@ -586,7 +586,7 @@ auto ViewScene::lodGroupOf(const LodGroupInfo& info) const -> RenderLodGroup {
         .forcedLevel = forcedLevelOf(info),
         .alive = true,
     };
-    auto chosen = chooseLodHeuristic(info.heuristics, lodPreferenceNow);
+    auto chosen = chooseLodHeuristic(info.heuristics, LodDomain::Imaging, lodPreferenceNow);
     if (chosen < 0) {
         return group;
     }
@@ -794,7 +794,8 @@ auto waitOf(const Placement& node) -> PlacementWait {
 }
 
 // The level a root draws (the switch rule): the finest loaded level, not finer than the one it wants, whose placement waits for nothing;
-// while none does, its coarsest loaded. None while no level is loaded.
+// while none does, its coarsest loaded, as it arrives. Never a level finer than the one it wants: with none loaded at or coarser than it,
+// nothing (a hole, which the streaming record counts).
 auto drawnLevelOf(const LodRoot& lod, uint32_t wanted, const std::vector<const Placement*>& levels) -> std::optional<uint32_t> {
     if (lod.loaded.empty()) {
         return std::nullopt;
@@ -808,7 +809,11 @@ auto drawnLevelOf(const LodRoot& lod, uint32_t wanted, const std::vector<const P
             return level;
         }
     }
-    return *std::ranges::max_element(lod.loaded);
+    auto coarsest = *std::ranges::max_element(lod.loaded);
+    if (coarsest < wanted) {
+        return std::nullopt;
+    }
+    return coarsest;
 }
 
 } // namespace

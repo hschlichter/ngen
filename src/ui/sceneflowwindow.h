@@ -48,8 +48,11 @@ struct SceneFlowThread {
     uint64_t releasedMeshBytes = 0;
     uint64_t releasedLevels = 0;
     uint64_t releasedContents = 0;
-    uint32_t keptLevels = 0;
-    double unloadDelaySeconds = 0.0;
+    // Streaming measured (SceneStreaming): levels loaded and loaded again, roots late and drawing nothing now.
+    uint64_t streamingLoads = 0;
+    uint64_t streamingReloads = 0;
+    uint32_t lateNow = 0;
+    uint32_t holesNow = 0;
     double sinceOpenMs = 0.0;
     bool idle = true;
 };

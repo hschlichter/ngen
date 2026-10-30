@@ -51,10 +51,11 @@ inline auto fingerprintPointLine(std::string_view instancer, int64_t id, std::st
 }
 
 // One heuristic of a LOD root, as --lod-heuristics prints them: the root's path and the heuristic's place among its lod:heuristics targets that
-// author thresholds, its type and domain, its thresholds and blend thresholds, and its bounds as UsdLod's queries read them: a distance
-// heuristic's center, then its boundingVolume's extent when that is valid; a screen-size heuristic's extent (its boundingVolume's, else its
-// own, else -1..1). Numbers as fingerprintNumber prints them, space separated.
-inline auto fingerprintHeuristicLine(std::string_view root, size_t index, std::string_view type, std::string_view domain, const std::vector<double>& thresholds, const std::vector<double>& blendThresholds, const std::vector<double>& bounds) -> std::string {
+// author thresholds, its type and domain, its thresholds, blend thresholds and unload thresholds (streaming:unloadThresholds, a streaming
+// heuristic's), and its bounds as UsdLod's queries read them: a distance heuristic's center, then its boundingVolume's extent when that is
+// valid; a screen-size heuristic's extent (its boundingVolume's, else its own, else -1..1). Numbers as fingerprintNumber prints them, space
+// separated.
+inline auto fingerprintHeuristicLine(std::string_view root, size_t index, std::string_view type, std::string_view domain, const std::vector<double>& thresholds, const std::vector<double>& blendThresholds, const std::vector<double>& unloadThresholds, const std::vector<double>& bounds) -> std::string {
     auto numbers = [](const std::vector<double>& values) {
         std::string text;
         for (size_t i = 0; i < values.size(); i++) {
@@ -65,5 +66,5 @@ inline auto fingerprintHeuristicLine(std::string_view root, size_t index, std::s
         }
         return text;
     };
-    return std::format("{}#{}\t{}\t{}\t{}\t{}\t{}", root, index, type, domain, numbers(thresholds), numbers(blendThresholds), numbers(bounds));
+    return std::format("{}#{}\t{}\t{}\t{}\t{}\t{}\t{}", root, index, type, domain, numbers(thresholds), numbers(blendThresholds), numbers(unloadThresholds), numbers(bounds));
 }

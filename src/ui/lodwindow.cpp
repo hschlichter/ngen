@@ -185,14 +185,8 @@ auto drawRow(const LodWindowRow& row, LodWindowState& state) -> void {
     ImGui::TableSetColumnIndex(ColumnLoaded);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(loadedText(row).c_str());
-    if (!row.kept.empty() && ImGui::IsItemHovered()) {
-        std::string kept;
-        auto now = std::chrono::steady_clock::now();
-        for (const auto& [level, until] : row.kept) {
-            auto left = std::max(0.0, std::chrono::duration<double>(until - now).count());
-            kept += std::format("\n{}: {:.0f} s left", levelName(row.levels, level), left);
-        }
-        ImGui::SetTooltip("Not wanted, kept loaded for the unload delay:%s", kept.c_str());
+    if (row.state && ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Resident: %s and every coarser level (%s).", levelName(row.levels, *row.state).c_str(), row.residentWhy.c_str());
     }
 
     ImGui::TableSetColumnIndex(ColumnScreen);
@@ -264,15 +258,6 @@ auto drawControls(LodWindowState& state) -> void {
     }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Which heuristic a root naming several measures by. Distance: metres (the stage's units) to its center or bounding box.\nScreen size: the fraction of the view its extent's bounding sphere covers. Authored: the first it names.");
-    }
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(70.0f);
-    float unloadDelay = state.unloadDelay;
-    if (ImGui::InputFloat("Unload delay (s)", &unloadDelay, 0.0f, 0.0f, "%.0f", ImGuiInputTextFlags_EnterReturnsTrue) && unloadDelay >= 0.0f) {
-        state.unloadDelayRequested = unloadDelay;
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("How long a streaming level that stopped being wanted stays loaded (with its meshes, materials and textures, on the GPU too),\nso turning back draws it at once. A level still drawn then is kept for another delay; a root's coarsest level stays loaded.");
     }
 
     ImGui::SetNextItemWidth(70.0f);

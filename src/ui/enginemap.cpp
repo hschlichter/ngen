@@ -84,9 +84,12 @@ const std::vector<EngineMapNode> nodes = {
                        "by the preference: distance first by default; inside an authored blend band the finer level, without one the "
                        "hysteresis margin before going coarser), unless set by hand or the heuristic is off. The view's LOD tuning (bias, "
                        "hysteresis, blending, thresholds per authored root; never saved) applies here and to the render-LOD groups. "
-                       "Changed levels are linked again without composing the stage. A root draws a finer level only once its placement waits "
-                       "for nothing (composed, its meshes, materials and textures held), the coarser one until then. A level no longer wanted "
-                       "stays loaded for the unload delay, then its placement, contents and assets go; a root's coarsest level never.",
+                       "Residency comes from the root's streaming heuristic (load and unload radii, the state with its hysteresis): the "
+                       "state's level and every coarser one are resident, a level past its unload radius goes with its placement, contents "
+                       "and assets; without one, the level picked and every coarser one. Changed levels are linked again without composing "
+                       "the stage. A root draws its picked level once that level's placement waits for nothing (composed, its meshes, "
+                       "materials and textures held), else the nearest ready coarser one, never a finer one; the streaming record measures "
+                       "late draws, lead and reloads, and checks the authoring contract.",
         .records = {"streaming", "lod", "lodtool"},
         .windows = {"lod"},
         .readme = "src/view/README.md",

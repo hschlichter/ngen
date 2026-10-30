@@ -442,6 +442,8 @@ auto main(int argc, char* argv[]) -> int {
     bool autoFrame = true;
     // Answers waiting for the scene to be resident (view.waitResident, view.lod.set, view.repack, view.purposes).
     std::vector<ResidentWaiter> residentWaiters;
+    // A camera flight (`fly`): moves the camera a frame's time at a time; a script holds its clock while it flies.
+    CameraFlight flight;
     // Script frames count only while nothing waits for residency, so a script sees the scene as it is once loaded; the longest main-loop
     // frame while the scene isn't resident says how responsive the view stayed while it loaded.
     ViewResidency residency;
@@ -499,6 +501,7 @@ auto main(int argc, char* argv[]) -> int {
         .renderLodRequests = renderLodRequests,
         .viewAspect = viewAspect,
         .lodPops = lodPops,
+        .flight = flight,
         .sceneLabel = positional.size() >= 2 ? std::string(positional[1]) : std::string("(new scene)"),
     };
     registerViewMethods(registry, viewContext);
@@ -564,7 +567,7 @@ auto main(int argc, char* argv[]) -> int {
             PROFILE_ZONE("SceneWindowLists");
             buildLodRows(scene, lodWindow);
         }
-        residency.scriptHeld = (waitForResident && !residency.everResident) || !residentWaiters.empty();
+        residency.scriptHeld = (waitForResident && !residency.everResident) || !residentWaiters.empty() || flight.flying();
         dueCommands.clear();
         if (!residency.scriptHeld) {
             residency.scriptFrame++;
@@ -593,6 +596,10 @@ auto main(int argc, char* argv[]) -> int {
         if (!residency.resident && frameCounter > 1) {
             residency.longestLoadingFrameMs = std::max(residency.longestLoadingFrameMs, (double) dt * 1000.0);
             residency.loadingFrames++;
+        }
+        if (flight.flying()) {
+            advanceFlight(viewContext, dt);
+            autoFrame = false;
         }
 
         int winW = 0;
@@ -1077,8 +1084,10 @@ auto main(int argc, char* argv[]) -> int {
                 .releasedMeshBytes = t.releasedMeshBytes,
                 .releasedLevels = t.releasedLevels,
                 .releasedContents = t.releasedContents,
-                .keptLevels = t.keptLevels,
-                .unloadDelaySeconds = scene.unloadDelay(),
+                .streamingLoads = scene.streaming().loads,
+                .streamingReloads = scene.streaming().reloads,
+                .lateNow = scene.streaming().lateNow,
+                .holesNow = scene.streaming().holesNow,
                 .sinceOpenMs = t.sinceOpenMs,
                 .idle = scene.idle(),
             };
@@ -1157,12 +1166,8 @@ auto main(int argc, char* argv[]) -> int {
             if (auto preference = std::exchange(lodWindow.preferenceRequested, std::nullopt)) {
                 scene.setLodPreference((LodPreference) *preference);
             }
-            lodWindow.unloadDelay = (float) scene.unloadDelay();
             if (auto on = std::exchange(lodWindow.heuristicRequested, std::nullopt)) {
                 scene.setLodHeuristic(*on);
-            }
-            if (auto delay = std::exchange(lodWindow.unloadDelayRequested, std::nullopt)) {
-                scene.setUnloadDelay(*delay);
             }
             if (auto path = std::exchange(lodWindow.selectRequested, std::nullopt)) {
                 selectedPath = *path;

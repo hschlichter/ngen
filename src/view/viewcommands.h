@@ -7,6 +7,8 @@
 #include "sessionscript.h"
 #include <nlohmann/json.hpp>
 
+#include <glm/glm.hpp>
+
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -58,6 +60,24 @@ struct ViewResidency {
     double lastLoadLongestMs = 0.0;
 };
 
+// A camera flight (`fly`, view.camera.fly): the camera moves through the scene's cameras whose paths start with a prefix, in path order, at a
+// speed in metres a second of the frame's time, eye and direction interpolated between them. A test driver: it moves the camera, it decides
+// nothing; a script holds its clock while it flies, and the call answers when the last camera is reached or the flight is stopped.
+struct CameraFlight {
+    std::vector<std::string> cameras;
+    std::vector<glm::vec3> eyes;
+    std::vector<float> yaws; // degrees
+    std::vector<float> pitches;
+    float speed = 0.0f; // metres a second
+    size_t segment = 0; // from eyes[segment] to eyes[segment + 1]
+    float along = 0.0f; // metres into the segment
+    double metres = 0.0;
+    double seconds = 0.0;
+    std::optional<RpcResponder> responder;
+
+    auto flying() const -> bool { return segment + 1 < eyes.size(); }
+};
+
 // A `renderlod` record or `view.renderlod` call waiting for a culling readback with every render-LOD group's state (frames later): the
 // readback frame it was asked at, and for the call the path whose groups it lists.
 struct RenderLodRequest {
@@ -93,6 +113,7 @@ struct ViewContext {
     std::vector<RenderLodRequest>& renderLodRequests;
     const float& viewAspect; // the view's width over height, as the LOD heuristic and the GPU's pick measure it
     const uint64_t& lodPops; // render-LOD pops (a drawn level changed without a fade) counted over the readbacks seen
+    CameraFlight& flight;
     std::string sceneLabel;
 };
 
@@ -104,6 +125,9 @@ auto registerViewMethods(RpcRegistry& registry, ViewContext& view) -> void;
 // introspect.list and introspect.get, and introspect.trace (the `record` verb), which puts a record into the trace.
 // `records` must outlive the registry.
 auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext& view) -> void;
+
+// Moves the camera along its flight by a frame's time; answers the flight's call when it ends. Once a frame, before the camera is posted.
+auto advanceFlight(ViewContext& view, float dt) -> void;
 
 // Answers the render-LOD requests whose readback has arrived; once a frame, after the culling readback is taken. True while some still
 // wait, so the next frames read the states back.

@@ -76,8 +76,8 @@ do its draws: only where it is placed.
   loading is placed undrawn), so what a level needs is requested as soon as the level is linked.
 - **Libraries.** `MeshLibrary`, `MaterialLibrary` and `TextureLibrary` keep one entry per mesh asset, per material (or display colour) and per
   texture asset, shared by every draw using it. An entry whose asset arrives again with new content is a new entry with a new handle. An
-  entry is held while a placement uses it: the slots drawing it, and an undrawn placement (a level loading, the floor under a finer level, a
-  level in its unload delay) holding the entries its prims would draw with (`heldMeshes`, `heldMaterials`), so a root switching to a loaded
+  entry is held while a placement uses it: the slots drawing it, and an undrawn placement (a level loading, a resident level coarser or finer
+  than the one drawn) holding the entries its prims would draw with (`heldMeshes`, `heldMaterials`), so a root switching to a loaded
   level, finer or coarser, uploads nothing. The uses are counted as they change, so no pass looks at every slot; what no placement uses
   leaves the libraries and the renderer at once. A placement no longer drawn gives up its slots and holds their entries without being built
   again.
@@ -117,8 +117,8 @@ do its draws: only where it is placed.
 - **LOD roots**: every LOD root reached while drawing (`lodRoots()`, the `lod` record): its levels and each level's payloads, its
   heuristics (every one it names, the one used marked), the level it defaults to, wants and draws, the levels loaded, and whether its level was
   set by hand.
-- **The LOD heuristic**: every LOD root reached wants the level its heuristic picks from the camera (`lodMeasure`, `pickLodLevel`). A root naming
-  several measures by the view's preference (`lod-prefer distance|screen|authored`, `view.lod.heuristic {prefer}`, the LOD window; distance first
+- **The LOD heuristic**: every LOD root reached selects the level its imaging heuristic picks from the camera (`lodMeasure`, `pickLodLevel`),
+  the level it draws. A root naming several measures by the view's preference (`lod-prefer distance|screen|authored`, `view.lod.heuristic {prefer}`, the LOD window; distance first
   by default): a distance is UsdLod's, to the heuristic's center or the nearest point of its bounding box, in the stage's units like its
   thresholds; a screen size is its extent's bounding sphere over the view window at depth 1, as a fraction of the window, which unlike USD's
   reference query ignores the frustum, so what is near stays loaded whichever way the camera looks. Inside an authored blend band
@@ -126,32 +126,56 @@ do its draws: only where it is placed.
   going coarser waits for a margin (`lodHysteresis`, 20% until the tuning changes it; for a distance the same margin, as a size falls with
   its square), so a camera at a threshold doesn't flip a root. The view's LOD tuning applies here and to the groups ("The LOD tool"). A level set by hand (`lod`, the LOD window) wins until `lod-reset`; with the heuristic off (`lod-heuristic off`,
   `view.lod.heuristic`, the LOD window's toggle) every other root wants its default; a root without a usable heuristic (`heuristicChosen`,
-  src/world/README.md "Loading") wants its default ("no usable heuristic"). Every root the heuristic picks finer goes finer: what fits in memory is
-  the budgets' to decide, not a count of roots. The roots evaluated are the streaming roots of drawn placements, kept as placements are built
+  src/world/README.md "Loading") wants its default ("no usable imaging heuristic"). Every root the heuristic picks finer goes finer: what fits in
+  memory is the budgets' to decide, not a count of roots. The roots evaluated are the streaming roots of drawn placements, kept as placements are built
   and released (`placedRoots`), so an evaluation costs per placed root and walks no tree. The main thread posts the camera (`setCamera`) once it has been placed, not while it follows the scene
   loading; the scene thread evaluates when it moved, after a pass that drew roots not drawn before and when levels changed, and gives the composer only what changed, which links
-  the levels again without composing the stage (`WorldComposer::relink`). The `streaming` record has per root its screen size, whether its extent is
-  in the view's frustum (what USD's query would go by), the level wanted and why, drawn and loaded, for a level waited for what it waits for,
-  and the levels kept for the unload delay with the seconds left; totals over the roots. `LevelsWanted` traces each change of wanted levels.
-- **Switching levels**: a root draws the finest loaded level, not finer than the one it wants, whose placement waits for nothing: linked,
+  the levels again without composing the stage (`WorldComposer::relink`). `ResidencyChanged` traces each change of selected and resident
+  levels.
+- **Residency**: what is loaded is decided by where the camera is and what is authored, never by time. A root's streaming heuristic (domain
+  `streaming`: its thresholds the load radii, `streaming:unloadThresholds` the unload radii; src/world/README.md "Loading") gives its state, the
+  finest level that must be resident (`streamingState`): finer at once by the load radii, coarser only past the unload radii, the previous state
+  its hysteresis. The state's level and every coarser one are resident (`WorldComposer::setResidentLevels`), so every authored level is a ready
+  fallback both ways: coming closer a root steps through its levels, moving away the coarser level is loaded before the finer one stops being
+  selected. A root's children are placed, and so evaluated, only while its finest level is resident. A level set by hand is resident too; a root
+  without a streaming heuristic keeps the level selected and every coarser one. Nothing covers for the authoring: a level selected finer than
+  the state isn't loaded early, it draws late. A root no longer placed forgets its state and the composer its resident levels.
+- **The authoring contract** (`checkLodAuthoring`, src/world/README.md): per root, with the thresholds in force, against the streaming root
+  nearest above it: a threshold per level boundary, each imaging threshold at or before its load radius, each load radius at or before its
+  unload radius, a child's imaging thresholds and unload radii inside its parent's first imaging threshold and load radius. A finding is
+  reported (the `streaming` record's `findings`, with the values), not corrected.
+- **Streaming measured** (`SceneStreaming`, `measureStreaming` after each batch): per root, which levels are ready (placed and waiting for
+  nothing), each level's lead (seconds from ready to selected; 0 when selected before it was ready), late (drawing coarser than selected) or a
+  hole (drawing nothing), its reloads; totals since the scene opened or `view.streaming.reset` (`streaming-reset`): late and holes now, late
+  switches, holes, root-seconds drawn coarser, loads, reloads and releases, the leads' count, minimum and median, mesh packs that arrived with
+  no placement naming them any more (`arrivedUnwanted`: asked for by a level no longer resident; requests aren't cancelled), and authoring
+  findings. Time is measured here and never acted on.
+- **The `streaming` record** has per root the imaging pick (`selected`, its heuristic, measure, thresholds and why), its streaming heuristic
+  (measure, load and unload radii in force), `state`, `resident` and why, `drawn`, `late`, `hole`, `reloads`, per level its name, whether it is
+  requested, loaded, ready and drawn, what its placement waits for and its lead, and its authoring findings; whether its extent is in the view's
+  frustum (what USD's query would go by); the measured totals.
+- **Flying a camera path** (`fly <camera path prefix> <speed m/s>`, `view.camera.fly`; `fly-stop`): the camera moves through the scene's
+  cameras whose paths start with the prefix, in path order, at the speed in metres a second of each frame's time, eye and direction
+  interpolated; a script holds its clock while it flies, and the call answers at the last camera (`FlightStarted`, `FlightDone`). A test
+  driver for streaming: it moves the camera and decides nothing. Its numbers depend on the build, the asset server's cache and the machine,
+  so a flight compares the engine with itself under the same conditions.
+- **Switching levels**: a root draws the finest loaded level, not finer than the one it selects, whose placement waits for nothing: linked,
   which the composer does only once it is complete, and every mesh, material pack and texture its prims want (under their own purpose)
   held or failed, through the instances and point instancers in it; a LOD root inside it counts by its coarsest level. Each placement
   counts what it waits for by kind (`PlacementWait`) as it is built, summed up the tree, so nothing walks a level to judge it. Until then
-  the root keeps drawing the coarser level. A root's level placements are synced before it picks, so it switches in the pass the last
+  the root keeps drawing the coarser level, and with no loaded level at or coarser than the selected one it draws nothing (a hole, counted),
+  never a finer level. A root's level placements are synced before it picks, so it switches in the pass the last
   piece arrives, and a district appears whole, with its materials, instead of model by model. `LevelsSwitched` traces the roots whose drawn
   level changed, once per pass; the `streaming` record's `waiting` and the LOD window's tooltip on a loading row count what the wanted level
   waits for (meshes, materials and textures not held, levels still composing and so not linked). GPU uploads aren't part of it: a switched
   level's new meshes are uploaded over the next frames within the upload budget.
-- **Unloading**: the delay is a level's. A level that stops being wanted stays loaded for the unload delay (10 s by default;
-  `lod-unload-delay S`, `view.lod.heuristic {unloadDelay}`, the LOD window), placed undrawn and holding its library and GPU entries, so
-  turning back draws it at once; one still drawn when the delay runs out (its root waits for the level it wants) is kept for another. The
-  view keeps the time per root and level and tells the composer which levels to keep (`WorldComposer::keepLodLevels`); the scene thread
-  wakes when the next delay runs out. Then the level is let go and everything follows at once: its placement is released, the composer
-  releases the contents no level reaches any more, the library entries no placement uses leave the libraries and the renderer, and a
-  mesh's pack goes once no placement names it. A root's coarsest level is never let go. Layer packs and material and texture packs stay
-  held. `LevelsUnloaded` traces each batch that let something go (levels, contents, mesh packs), and the `streaming` and `scenethread`
-  records, the LOD window (a loaded level's tooltip: the seconds left), the Scene Flow window and the Engine Map show what is kept and what
-  was unloaded.
+- **Unloading**: a level taken out of its root's resident levels (past its unload radius, or its root no longer placed) is let go at once,
+  and everything follows: its placement is released, the composer releases the contents no level reaches any more, the library entries no
+  placement uses leave the libraries and the renderer, and a mesh's pack goes once no placement names it. While resident and not drawn, a
+  level is placed undrawn and holds its library and GPU entries, so switching to it draws at once. Layer packs and material and texture packs
+  stay held. `LevelsUnloaded` traces each batch that let something go (levels, contents, mesh packs), and the `streaming` and `scenethread`
+  records, the LOD window (a loaded level's tooltip: the resident levels and why), the Scene Flow window and the Engine Map show what was
+  unloaded.
 - **The LOD tool** (`lodtool.*`, the LOD window `src/ui/lodwindow.*`): one place for LOD inspection, switching and tuning, both kinds.
   - *The list*: every streaming root drawn and every render-LOD group placed (`buildLodRows` per snapshot; a group's wanted, drawn, fade
     and measure from the readback each frame while the window or a layer is shown, so the frames read every group's state back then: 16
@@ -196,7 +220,8 @@ The trace shows the steps:
 - `SceneAssetsReceived`, once the meshes, materials and textures wanted have been answered;
 - `ContentComposed`, per prototype or level content the composer completes (the composes it took);
 - `PlacementsChanged`, per pass that changed something (placements built, slots added, removed and updated, time);
-- `LevelsWanted`, `LevelsSwitched` and `LevelsUnloaded`, as streaming roots change the level they want, the level they draw, and let levels go;
+- `ResidencyChanged`, `LevelsSwitched` and `LevelsUnloaded`, as streaming roots change the level they select and the levels resident, the
+  level they draw, and let levels go;
 - `AssetsRefreshRequested`;
 - `SceneResident`;
 - and `SceneAssetFailed` or `CompositionMessage` warnings.

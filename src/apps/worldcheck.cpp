@@ -1,11 +1,15 @@
 // ngen-worldcheck: composes a scene's World from its packs, fetched from this variant's asset server, and prints its fingerprint
 // (src/world/fingerprint.h), to compare with ngen-usdcheck's for the same scene.
 //
-//   ngen-worldcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--instancers] [--lod-heuristics] [--output <file>] <scene id>
+//   ngen-worldcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--instancers] [--lod-heuristics] [--lod-authoring]
+//                   [--output <file>] <scene id>
 //
 // --lod sets a LOD root's wanted level before composing (the path with instances expanded); --transforms adds world matrices;
 // --instancing prints instance and prototype counts instead of the fingerprint; --instancers prints every PointInstancer's points instead
-// (fingerprintPointLine); --lod-heuristics prints every LOD root's heuristics instead (fingerprintHeuristicLine). A summary and what couldn't compose go to stderr.
+// (fingerprintPointLine); --lod-heuristics prints every LOD root's heuristics instead (fingerprintHeuristicLine); --lod-authoring prints,
+// for every LOD root reached, what of the streaming authoring contract doesn't hold (checkLodAuthoring, against the LOD root nearest above
+// it), a line per finding: the root, the rule, the boundary, the heuristic and the values. Only what the composition reaches is checked:
+// --lod a root to its finer levels to reach the roots in them. A summary and what couldn't compose go to stderr.
 // Exit codes: 0 composed, 1 the server or the scene's root failed, 3 usage.
 
 #include "assetclient.h"
@@ -16,6 +20,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <print>
 #include <set>
 #include <string>
@@ -24,7 +29,7 @@
 namespace {
 
 auto usage() -> int {
-    std::println(stderr, "usage: ngen-worldcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--instancers] [--lod-heuristics] [--output <file>] <scene id>");
+    std::println(stderr, "usage: ngen-worldcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--instancers] [--lod-heuristics] [--lod-authoring] [--output <file>] <scene id>");
     return 3;
 }
 
@@ -67,6 +72,7 @@ auto main(int argc, char** argv) -> int {
     bool instancing = false;
     bool instancers = false;
     bool heuristics = false;
+    bool authoring = false;
     std::string output;
     std::string scene;
     std::vector<std::pair<std::string, uint32_t>> levels;
@@ -80,6 +86,8 @@ auto main(int argc, char** argv) -> int {
             instancers = true;
         } else if (arg == "--lod-heuristics") {
             heuristics = true;
+        } else if (arg == "--lod-authoring") {
+            authoring = true;
         } else if (arg == "--output" && i + 1 < argc) {
             output = argv[++i];
         } else if (arg == "--lod" && i + 1 < argc) {
@@ -184,11 +192,36 @@ auto main(int argc, char** argv) -> int {
                 }
                 std::vector<double> thresholds(heuristic.thresholds.begin(), heuristic.thresholds.end());
                 std::vector<double> blends(heuristic.blendThresholds.begin(), heuristic.blendThresholds.end());
-                lines.push_back(fingerprintHeuristicLine(visited.path, i, heuristic.type, heuristic.domain, thresholds, blends, bounds));
+                std::vector<double> unloads(heuristic.unloadThresholds.begin(), heuristic.unloadThresholds.end());
+                lines.push_back(fingerprintHeuristicLine(visited.path, i, heuristic.type, heuristic.domain, thresholds, blends, unloads, bounds));
             }
             return true;
         });
         std::ranges::sort(lines);
+    } else if (authoring) {
+        // Visited parents first: the roots above a path, by path, for the nesting rules.
+        std::map<std::string, const LodRoot*> roots;
+        world.visit([&](const VisitedEntity& visited) {
+            auto found = visited.content->lodRoots.find(visited.id);
+            if (found != visited.content->lodRoots.end()) {
+                roots[visited.path] = &found->second;
+            }
+            return true;
+        });
+        size_t findings = 0;
+        for (const auto& [path, root] : roots) {
+            const std::vector<LodHeuristic>* parent = nullptr;
+            for (auto slash = path.rfind('/'); slash != std::string::npos && slash > 0 && parent == nullptr; slash = path.rfind('/', slash - 1)) {
+                if (auto above = roots.find(path.substr(0, slash)); above != roots.end()) {
+                    parent = &above->second->heuristics;
+                }
+            }
+            for (const auto& finding : checkLodAuthoring(root->heuristics, (uint32_t) root->levels.size(), parent)) {
+                lines.push_back(std::format("{}\t{}\t{}\t{}\t{}", path, finding.rule, finding.boundary, finding.heuristic, finding.detail));
+                findings++;
+            }
+        }
+        std::println(stderr, "ngen-worldcheck: {} LOD roots checked, {} authoring findings", roots.size(), findings);
     } else if (instancing) {
         lines.push_back(std::format("instances\t{}", countInstances(world)));
         lines.push_back(std::format("prototypes\t{}", world.prototypeCount()));
