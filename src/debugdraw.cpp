@@ -142,6 +142,7 @@ auto DebugDraw::sunLight(glm::vec3 origin, glm::vec3 outgoingDir, float radius, 
 
 auto DebugDraw::newFrame() -> void {
     frameData.lines.clear();
+    frameData.lines.reserve(lastLineCount);
 }
 
 auto DebugDraw::orientedBox(const glm::mat4& toWorld, glm::vec3 min, glm::vec3 max, glm::vec4 color) -> void {

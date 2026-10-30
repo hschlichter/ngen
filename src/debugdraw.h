@@ -3,6 +3,7 @@
 #include "scenetypes.h"
 
 #include <glm/glm.hpp>
+#include <utility>
 #include <vector>
 
 struct DebugVertex {
@@ -31,7 +32,13 @@ public:
     auto sunLight(glm::vec3 origin, glm::vec3 outgoingDir, float radius, float shaftLen, glm::vec4 color) -> void;
     auto newFrame() -> void;
     auto data() const -> const DebugDrawData& { return frameData; }
+    // The frame's lines, moved out: the list is empty afterwards, until the next frame draws. The next frame reserves as many lines.
+    auto take() -> DebugDrawData {
+        lastLineCount = frameData.lines.size();
+        return std::exchange(frameData, {});
+    }
 
 private:
     DebugDrawData frameData;
+    size_t lastLineCount = 0;
 };

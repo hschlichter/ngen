@@ -69,3 +69,9 @@ assets/streamtest-world
 # The asset server's cache and the tools' discovery files, in the directory they run in
 .ngen-assets/
 .ngen-discovery/
+
+# The local OpenUSD build, made from the external/openusd submodule
+external/openusd_build/
+
+# Codex's local state
+.codex

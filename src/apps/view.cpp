@@ -519,6 +519,10 @@ auto main(int argc, char* argv[]) -> int {
     std::string selectedBoundsPath;
     const SceneSnapshot* selectedBoundsSnapshot = nullptr;
     AABB selectedBounds;
+    // The selection's transform, for the gizmo: once per selection and scene snapshot, as transform() walks the placements.
+    std::string selectedXfPath;
+    const SceneSnapshot* selectedXfSnapshot = nullptr;
+    std::optional<ViewScene::PrimTransform> selectedXf;
     // The scene's bounds for the shadow cascades, read again only for the chunks of draws that changed.
     SceneBoundsCache sceneBoundsCache;
     while (!quit && !viewUI.wantsQuit()) {
@@ -1204,14 +1208,24 @@ auto main(int argc, char* argv[]) -> int {
         SDL_GetMouseState(&mouseX, &mouseY);
 
         // The active tool's gizmo, on the selection when it takes a transform.
-        auto selectedXf = selectedPath.empty() ? std::nullopt : scene.transform(selectedPath);
+        if (selectedPath != selectedXfPath || &scene.snapshot() != selectedXfSnapshot) {
+            PROFILE_ZONE("SelectionTransform");
+            selectedXfPath = selectedPath;
+            selectedXfSnapshot = &scene.snapshot();
+            selectedXf = selectedPath.empty() ? std::nullopt : scene.transform(selectedPath);
+        }
         bool showTransformGizmo = selectedXf && selectedXf->xformable;
         auto gizmoAnchor = showTransformGizmo ? gizmoAnchorOf(*selectedXf) : glm::vec3(0.0f);
         auto activeTool = viewUI.activeTool();
-        translateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Translate, gizmoAnchor);
-        rotateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Rotate, gizmoAnchor);
-        scaleGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Scale, gizmoAnchor);
+        {
+            PROFILE_ZONE("Gizmos");
+            translateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Translate, gizmoAnchor);
+            rotateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Rotate, gizmoAnchor);
+            scaleGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Scale, gizmoAnchor);
+        }
 
+        static const uint32_t snapshotFillZoneId = profile::registerName("SnapshotFill");
+        profile::beginZone(snapshotFillZoneId);
         RenderSnapshot snapshot = {
             .viewMatrix = cam.viewMatrix(),
             .projMatrix = proj,
@@ -1241,9 +1255,13 @@ auto main(int argc, char* argv[]) -> int {
             .translateGizmoVerts = {translateGizmo.vertices().begin(), translateGizmo.vertices().end()},
             .rotateGizmoVerts = {rotateGizmo.vertices().begin(), rotateGizmo.vertices().end()},
             .scaleGizmoVerts = {scaleGizmo.vertices().begin(), scaleGizmo.vertices().end()},
-            .debugData = debugDraw.data(),
             .imguiSnapshot = std::move(imguiSnapshot),
         };
+        profile::endZone(); // SnapshotFill
+        {
+            PROFILE_ZONE("TakeDebugLines");
+            snapshot.debugData = debugDraw.take();
+        }
 
         profile::endZone(); // BuildSnapshot
         {
