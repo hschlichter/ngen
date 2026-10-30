@@ -403,6 +403,20 @@ auto ViewScene::countUse(std::vector<uint32_t>& uses, uint32_t index, int delta)
     uses[index] += delta;
 }
 
+auto ViewScene::streamRootSlot(const std::string& path) -> uint32_t {
+    if (auto it = streamRootSlots.find(path); it != streamRootSlots.end()) {
+        return it->second;
+    }
+    uint32_t slot = 0;
+    if (auto free = freeStreamRootSlots.takeLowest()) {
+        slot = *free;
+    } else {
+        slot = streamRootSlotCount++;
+    }
+    streamRootSlots[path] = slot;
+    return slot;
+}
+
 auto ViewScene::allocSlot() -> uint32_t {
     if (auto slot = freeSlots.takeLowest()) {
         return *slot;
@@ -828,7 +842,7 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
         const auto& n = *node;
         rebuild = n.kind != spec.kind || n.content != spec.content || n.contentKind != spec.contentKind || n.instancer != spec.instancer || n.version != version || n.path != spec.path ||
                   n.world != spec.world || n.purpose != spec.purpose || n.material != spec.material || n.strong != spec.strong || n.lodTag != spec.lodTag || n.drawn != spec.drawn ||
-                  n.lodGroup != spec.lodGroup || n.lodGroupLevel != spec.lodGroupLevel;
+                  n.lodGroup != spec.lodGroup || n.lodGroupLevel != spec.lodGroupLevel || n.streamRoot != spec.streamRoot;
     }
     if (!rebuild) {
         rebuild = std::ranges::any_of(overridesMoved, [&](const std::string& moved) { return isUnder(moved, spec.path); });
@@ -844,7 +858,7 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
         const auto& n = *node;
         undraw = n.kind == drawnSpec.kind && n.content == drawnSpec.content && n.contentKind == drawnSpec.contentKind && n.instancer == drawnSpec.instancer && n.version == version &&
                  n.path == drawnSpec.path && n.world == drawnSpec.world && n.purpose == drawnSpec.purpose && n.material == drawnSpec.material && n.strong == drawnSpec.strong &&
-                 n.lodTag == drawnSpec.lodTag && n.lodGroup == drawnSpec.lodGroup && n.lodGroupLevel == drawnSpec.lodGroupLevel &&
+                 n.lodTag == drawnSpec.lodTag && n.lodGroup == drawnSpec.lodGroup && n.lodGroupLevel == drawnSpec.lodGroupLevel && n.streamRoot == drawnSpec.streamRoot &&
                  !std::ranges::any_of(overridesMoved, [&](const std::string& moved) { return isUnder(moved, spec.path); }) &&
                  !std::ranges::any_of(node->waiting, [this](const std::string& asset) { return arrived.contains(asset); });
     }
@@ -878,6 +892,7 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
                                 .material = child->material,
                                 .strong = child->strong,
                                 .lodTag = child->lodTag,
+                                .streamRoot = child->streamRoot,
                                 .drawn = child->drawn,
                                 .lodGroup = child->lodGroup,
                                 .lodGroupLevel = child->lodGroupLevel};
@@ -940,6 +955,7 @@ auto ViewScene::undrawPlacement(const std::shared_ptr<Placement>& node, bool min
                                 .material = child->material,
                                 .strong = child->strong,
                                 .lodTag = child->lodTag,
+                                .streamRoot = child->streamRoot,
                                 .drawn = false,
                                 .lodGroup = child->lodGroup,
                                 .lodGroupLevel = child->lodGroupLevel};
@@ -994,6 +1010,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
     node->material = spec.material;
     node->strong = spec.strong;
     node->lodTag = spec.lodTag;
+    node->streamRoot = spec.streamRoot;
     node->drawn = spec.drawn;
     node->lodGroup = spec.lodGroup;
     node->lodGroupLevel = spec.lodGroupLevel;
@@ -1140,6 +1157,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                        .material = item.material,
                        .strong = item.strongBinding,
                        .lodTag = spec.lodTag,
+                       .streamRoot = spec.streamRoot,
                        .drawn = spec.drawn,
                        .lodGroup = tagGroup,
                        .lodGroupLevel = tagLevel});
@@ -1156,6 +1174,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                        .material = item.material,
                        .strong = item.strongBinding,
                        .lodTag = spec.lodTag,
+                       .streamRoot = spec.streamRoot,
                        .drawn = spec.drawn,
                        .lodGroup = tagGroup,
                        .lodGroupLevel = tagLevel});
@@ -1315,6 +1334,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                     .primHasCutout = resolved->primHasCutout,
                     .lodLevel = tagGroup != 0 ? tagLevel + 1 : spec.lodTag,
                     .lodGroup = tagGroup,
+                    .streamRoot = spec.streamRoot,
                 };
                 if (!(drawn.meshInstances[slot] == instance)) {
                     setSlot(slot, instance);
@@ -1405,6 +1425,7 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
                                .material = rootItem.material,
                                .strong = rootItem.strongBinding,
                                .lodTag = i + 1,
+                               .streamRoot = node.drawn && root.listed ? streamRootSlot(root.path) + 1 : 0,
                                .drawn = node.drawn && drawnLevel == i};
             auto next = syncPlacement(current, spec, mine);
             levelsNow[i] = next.get();
@@ -1473,8 +1494,11 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
             }
             const auto& row = node.roots[r].row;
             bool setByHand = handLevels.contains(root.path);
-            if (row.wanted != wanted || row.drawn != drawnLevel || row.loaded != lod.loaded || row.setByHand != setByHand || row.waiting != waiting || row.levelWaits != levelWaits) {
+            uint32_t streamSlot = node.drawn ? streamRootSlot(root.path) + 1 : 0;
+            if (row.wanted != wanted || row.drawn != drawnLevel || row.loaded != lod.loaded || row.setByHand != setByHand || row.waiting != waiting || row.levelWaits != levelWaits ||
+                row.streamSlot != streamSlot) {
                 auto& changed = edit().roots[r].row;
+                changed.streamSlot = streamSlot;
                 changed.wanted = wanted;
                 changed.drawn = drawnLevel;
                 changed.loaded = lod.loaded;
@@ -1653,6 +1677,16 @@ auto ViewScene::place() -> void {
     addChanges(std::move(changes));
     if (!changed) {
         return;
+    }
+
+    // A streaming root no longer placed gives its slot back; its levels' draws went with its placements.
+    for (auto it = streamRootSlots.begin(); it != streamRootSlots.end();) {
+        if (placedRoots.contains(it->first)) {
+            ++it;
+            continue;
+        }
+        freeStreamRootSlots.insert(it->second);
+        it = streamRootSlots.erase(it);
     }
 
     // What the snapshots read: the lists are shared in chunks, so this copies only their chunk pointers.

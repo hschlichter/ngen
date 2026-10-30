@@ -126,6 +126,11 @@ auto registerViewMethods(RpcRegistry& registry, ViewContext& view) -> void;
 // `records` must outlive the registry.
 auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext& view) -> void;
 
+// Starts a flight through the cameras whose paths start with `prefix` at `speed` metres a second; the responder, when given, answers when it
+// ends. An error when fewer than two cameras match. A flight running before is stopped.
+auto startFlight(ViewContext& view, const std::string& prefix, float speed, std::optional<RpcResponder> responder) -> std::optional<std::string>;
+// Stops the flight where the camera is; its call answers.
+auto stopFlight(ViewContext& view) -> void;
 // Moves the camera along its flight by a frame's time; answers the flight's call when it ends. Once a frame, before the camera is posted.
 auto advanceFlight(ViewContext& view, float dt) -> void;
 

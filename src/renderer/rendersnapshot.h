@@ -37,6 +37,8 @@ struct RenderSnapshot {
     bool showGizmo = true;
     GBufferView gbufferViewMode = GBufferView::Lit;
     DebugView debugView = DebugView::None; // replaces the lit image when on (DebugViewPass)
+    // Per streaming root slot, its state (StreamingRootState, with streamingStateFinding), for the streaming view; empty while it is off.
+    std::vector<uint32_t> streamingStates;
     bool showBufferOverlay = false;
     bool showShadowOverlay = false;
     bool antiAliasing = true;

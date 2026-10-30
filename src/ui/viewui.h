@@ -17,6 +17,7 @@
 #include "renderdebugwindow.h"
 #include "sceneflowwindow.h"
 #include "statusbar.h"
+#include "streamingwindow.h"
 
 #include <glm/glm.hpp>
 
@@ -143,7 +144,7 @@ public:
 
     // grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa, cascadefrusta; false if the name is unknown.
     auto setOverlay(std::string_view name, bool on) -> bool;
-    // Opens or closes an introspection window by name (memory, capture, framedebugger, gpuscene, counters, shaders, culling, assets, lod, sceneflow, enginemap, camera,
+    // Opens or closes an introspection window by name (memory, capture, framedebugger, gpuscene, counters, shaders, culling, assets, lod, streaming, sceneflow, enginemap, camera,
     // renderdebug, framegraph, performance).
     // Returns false for an unknown name.
     auto setIntrospectionWindow(std::string_view name, bool on) -> bool;
@@ -179,6 +180,8 @@ public:
     auto setStatusBar(const StatusBarData& data) -> void { statusBarData = data; }
     auto cameraWindow() -> CameraWindowState& { return cameraState; }
     auto lodWindow() -> LodWindowState& { return lodState; }
+    auto streamingWindow() -> StreamingWindowState& { return streamingState; }
+    auto wantsStreamingWindow() const -> bool { return showStreamingWindow; }
     // The Scene Flow window: the application sets its data each frame while it is open, and applies the settings it asks for.
     auto sceneFlowWindow() -> SceneFlowWindowState& { return sceneFlowState; }
     auto wantsSceneFlow() const -> bool { return showSceneFlowWindow; }
@@ -237,6 +240,8 @@ private:
     bool showAssetsWindow = false;
     bool showLodWindow = false;
     LodWindowState lodState;
+    bool showStreamingWindow = false;
+    StreamingWindowState streamingState;
     bool showSceneFlowWindow = false;
     SceneFlowWindowState sceneFlowState;
     bool showEngineMapWindow = false;

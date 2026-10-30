@@ -201,6 +201,30 @@ do its draws: only where it is placed.
     the level beyond it, a faint ring where a band ends); the pop flash (a group whose drawn level changed without a fade flashes white
     for half a second, over any view: `src/renderer/README.md`, "Render LOD"; the `renderlod` record's `popped`, `flashing`, `popsSeen`).
     A streaming root shows its level, label and gizmo; its flags and flash are render LOD's only, as its state is the CPU's.
+- **The Streaming tool** (`streamingtool.*`, the Streaming window `src/ui/streamingwindow.*`, `window streaming`): residency seen and
+  steered; it adds no rule, it shows the `streaming` record's data and sets the tuning.
+  - *Rows* (`buildStreamingRows`, once per snapshot while the window, a layer or the streaming view is on): every streaming root drawn, its
+    selected, drawn and resident levels, state, streaming measure and radii in force (metres for a distance), its state for the colours
+    (`StreamingRootState`, worst first: a hole, late, refused by a budget, a resident level still requested, a finer level prefetched,
+    drawn as selected; findings marked apart), and its streaming bounds in world metres.
+  - *The window*: an overview (the measured totals, the legend, a strip chart of the last 600 frames: assets in flight, roots late, holes),
+    the measurement controls (reset counters, fly a camera path at a speed, stop), the layers, and two tabs: the roots (filters: path,
+    late, holes, prefetching, findings, under the selection; click selects, double-click frames) with the inspector of the selected root,
+    and the map (the roots from above in their state's colour, finer over coarser, the camera and where it looks; hovering a root draws its
+    next boundary's load and unload rings around its bounds; drag pans, the wheel zooms, a click selects).
+  - *The inspector* (`inspectStreamingRoot`, `view.streaming.inspect {root}`, the `streamingtool` record for the root at or above the
+    selection): its residency and why (`stateWhy`: which radius the camera is inside or past, or the previous state holding it finer), every
+    heuristic it names by domain with its thresholds authored and in force and its measure, its levels (requested, loaded, ready, drawn,
+    lead), its findings, its parent and children; its load and unload radii editable (`lod-thresholds <root> h=<i> …` and
+    `lod-unload-thresholds <root> [h=<i>] …`, `view.lod.override {thresholds, unloadThresholds}`: the unload radii alone name the streaming
+    heuristic; refused unless one per load radius, in order, each at or past it).
+  - *Layers* (`view.streaming.visualize`, `streaming-show bounds|rings|rings-all|labels on|off`, the window): each root's bounds in its
+    state's colour (yellow with findings); the selected or every shown root's load (solid) and unload (faint) radii per boundary, its bounds
+    grown by the radius in the plane across the up axis; labels under the windows (name, drawn / selected, state, its name; a click
+    selects); and the streaming view (`debugview streaming`): every draw in its streaming root's state's colour, a root with findings
+    striped yellow, grey under none. Each draw carries its streaming root's slot (`RenderMeshInstance::streamRoot`, taken by the root while
+    it is drawn, `streamRootSlot`); the main thread gives the renderer each slot's state while the view is on (`src/renderer/README.md`,
+    the debug views).
 - **Point instancers and variants reached**: every PointInstancer reached while drawing (`instancers()`, the `instancers` record): its
   points and those shown, its prototypes, and the prims its points drew; every prim with variant sets (`variantPrims()`, the `variants`
   record): each set and the variant it composed to (`Entity::variantSelections`). A LOD root in a point's prototype draws its default

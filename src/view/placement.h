@@ -70,6 +70,8 @@ struct SceneLodRoot {
     glm::mat4 worldTransform = glm::mat4(1.0f); // the root's, in metres: places the heuristic's extent
     // While it wants a level it doesn't draw yet: what that level's placement waits for, or one level composing while it isn't linked yet.
     std::optional<PlacementWait> waiting;
+    // Its slot + 1 among the placed streaming roots (RenderMeshInstance::streamRoot), 0 when it has none (not drawn).
+    uint32_t streamSlot = 0;
     // Per level, what its placement waits for while it is loaded and linked; none for a level not loaded or still composing.
     std::vector<std::optional<PlacementWait>> levelWaits;
 };
@@ -189,8 +191,9 @@ struct Placement {
     Purpose purpose = Purpose::Default;
     std::string material;
     bool strong = false;
-    uint32_t lodTag = 0; // the drawn level + 1 of the nearest LOD root above, for the draws
-    bool drawn = true;   // false: a loaded level not drawn (the floor under a finer one, a finer one loading), and everything in it
+    uint32_t lodTag = 0;     // the drawn level + 1 of the nearest LOD root above, for the draws
+    uint32_t streamRoot = 0; // the nearest streaming root's slot + 1, for the draws (RenderMeshInstance::streamRoot)
+    bool drawn = true;       // false: a loaded level not drawn (the floor under a finer one, a finer one loading), and everything in it
     std::vector<PlacementSegment> segments;
     std::vector<uint32_t> slots;     // its draws
     std::vector<uint32_t> prims;     // prim indices of its drawn prims and lights

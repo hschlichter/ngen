@@ -46,6 +46,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         .showCulling = showCullingWindow,
         .showAssets = showAssetsWindow,
         .showLod = showLodWindow,
+        .showStreaming = showStreamingWindow,
         .showSceneFlow = showSceneFlowWindow,
         .showEngineMap = showEngineMapWindow,
         .introspection = introspectionFlags,
@@ -155,6 +156,10 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     {
         PROFILE_ZONE("LodWindow");
         drawLodWindow(showLodWindow, lodState);
+    }
+    {
+        PROFILE_ZONE("StreamingWindow");
+        drawStreamingWindow(showStreamingWindow, streamingState);
     }
     {
         PROFILE_ZONE("SceneFlowWindow");
@@ -331,6 +336,8 @@ auto ViewUI::setIntrospectionWindow(std::string_view name, bool on) -> bool {
         showAssetsWindow = on;
     } else if (name == "lod") {
         showLodWindow = on;
+    } else if (name == "streaming") {
+        showStreamingWindow = on;
     } else if (name == "sceneflow") {
         showSceneFlowWindow = on;
     } else if (name == "enginemap") {

@@ -84,21 +84,32 @@ const std::vector<EngineMapNode> nodes = {
                        "by the preference: distance first by default; inside an authored blend band the finer level, without one the "
                        "hysteresis margin before going coarser), unless set by hand or the heuristic is off. The view's LOD tuning (bias, "
                        "hysteresis, blending, thresholds per authored root; never saved) applies here and to the render-LOD groups. "
-                       "Residency comes from the root's streaming heuristic (load and unload radii, the state with its hysteresis): the "
-                       "state's level and every coarser one are resident, a level past its unload radius goes with its placement, contents "
-                       "and assets; without one, the level picked and every coarser one. Changed levels are linked again without composing "
-                       "the stage. A root draws its picked level once that level's placement waits for nothing (composed, its meshes, "
-                       "materials and textures held), else the nearest ready coarser one, never a finer one; the streaming record measures "
-                       "late draws, lead and reloads, and checks the authoring contract.",
+                       "A root draws its picked level once that level's placement waits for nothing (composed, its meshes, materials and "
+                       "textures held), else the nearest ready coarser one, never a finer one. What is resident is Residency's.",
         .records = {"streaming", "lod", "lodtool"},
         .windows = {"lod"},
+        .readme = "src/view/README.md",
+    },
+    {
+        .id = "scene.residency",
+        .label = "Residency",
+        .lane = 2,
+        .row = 4,
+        .description = "Which levels of each streaming root are loaded, from where the camera is and what is authored, never from time: the "
+                       "root's streaming heuristic (load and unload radii) gives its state, the finest level that must be resident, with the "
+                       "previous state as hysteresis; that level and every coarser one are resident (without one, the level picked and every "
+                       "coarser one). Changed levels are linked again without composing the stage; a level released goes with its placement, "
+                       "contents and assets. It checks the authoring contract per root and measures late draws, holes, lead and reloads; "
+                       "nothing acts on the measures.",
+        .records = {"streaming", "streamingtool"},
+        .windows = {"streaming"},
         .readme = "src/view/README.md",
     },
     {
         .id = "scene.compose",
         .label = "Compose",
         .lane = 2,
-        .row = 4,
+        .row = 5,
         .description = "WorldComposer composes the World from the layer packs held, as USD composes a stage (sublayers, references, payloads, "
                        "variant sets, instancing, point instancers, LOD levels, material inputs), and asks for the packs it names and lacks: one "
                        "level of arcs deeper each round. A content is linked once complete; one no level reaches any more is released at once.",
@@ -110,12 +121,12 @@ const std::vector<EngineMapNode> nodes = {
         .id = "scene.placement",
         .label = "Placement",
         .lane = 2,
-        .row = 5,
+        .row = 6,
         .description = "A tree of placements of the World's contents (the stage, a prototype at each instance, each loaded LOD level at its root, "
                        "a point instancer's points), each owning the draws of its own prims; a pass builds again only what changed and looks only "
                        "where something waits or changed, and its slot changes are the change lists. Meshes, materials and textures are kept per "
-                       "asset in libraries while a placement uses them, drawn or not (a level loading, the floor under a finer one, a level "
-                       "in its unload delay), so switching levels uploads nothing.",
+                       "asset in libraries while a placement uses them, drawn or not (a level loading, a resident level not drawn), so "
+                       "switching levels uploads nothing. Each draw carries its streaming root's slot, for the streaming view.",
         .records = {"scenethread", "lod", "payloads", "instancers", "variants"},
         .windows = {"sceneflow", "lod"},
         .readme = "src/view/README.md",
@@ -124,7 +135,7 @@ const std::vector<EngineMapNode> nodes = {
         .id = "scene.changes",
         .label = "Change lists",
         .lane = 2,
-        .row = 6,
+        .row = 7,
         .description = "What a placement pass changed (draws, library entries, lights), published with a snapshot of the scene for the "
                        "main thread's queries, which shares the tree and the slots with the scene thread.",
         .records = {"scenethread"},
@@ -286,7 +297,13 @@ const std::vector<EngineMapEdge> edges = {
     {.from = "main.rpc", .to = "scene.compose", .what = "requests: open, purposes, repack"},
     {.from = "main.rpc", .to = "scene.lod", .what = "levels set by hand, heuristic on or off, tuning and threshold overrides"},
     {.from = "main.input", .to = "scene.lod", .what = "camera (once placed)"},
-    {.from = "scene.lod", .to = "scene.compose", .what = "levels wanted: linked again"},
+    {.from = "scene.lod", .to = "scene.compose", .what = "levels picked to draw"},
+    {.from = "scene.lod", .to = "scene.residency", .what = "the level picked, for roots without a streaming heuristic"},
+    {.from = "main.input", .to = "scene.residency", .what = "camera (once placed)"},
+    {.from = "main.rpc", .to = "scene.residency", .what = "radii tuning, counters reset, fly"},
+    {.from = "scene.residency", .to = "scene.compose", .what = "resident levels: linked again, their packs requested"},
+    {.from = "scene.placement", .to = "scene.residency", .what = "the streaming roots drawn, levels ready"},
+    {.from = "scene.residency", .to = "main.ui", .what = "the streaming record: rows, map, states for the streaming view"},
     {.from = "scene.placement", .to = "scene.lod", .what = "the LOD roots drawn"},
     {.from = "scene.changes", .to = "main.scene", .what = "snapshot and change lists"},
     {.from = "main.scene", .to = "render.gpuscene", .what = "change lists (submitSceneChanges)"},

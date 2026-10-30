@@ -39,6 +39,7 @@ struct GpuInstance {
     bool primHasCutout = false; // some submesh of its prim is cutout: the shadow pass draws the prim per submesh
     uint32_t lodLevel = 0;      // the drawn level + 1 of the LOD root above it, 0 under none (RenderMeshInstance::lodLevel)
     uint32_t lodGroup = 0;      // its render-LOD group + 1, 0 for none: drawn while the group picks lodLevel - 1
+    uint32_t streamRoot = 0;    // RenderMeshInstance::streamRoot, for the streaming view
     AABB worldBounds;           // culling input; invalid bounds are always visible
     bool alive = false;         // a dead slot is never drawn
 };
@@ -62,9 +63,10 @@ struct GpuInstanceRecord {
     glm::vec3 boundsMin = glm::vec3(0.0f);
     uint32_t flags = 0;
     glm::vec3 boundsMax = glm::vec3(0.0f);
-    uint32_t lodLevel = 0; // GpuInstance::lodLevel, for the LOD level view and the level test
-    uint32_t lodGroup = 0; // GpuInstance::lodGroup
-    uint32_t pad[3] = {};
+    uint32_t lodLevel = 0;   // GpuInstance::lodLevel, for the LOD level view and the level test
+    uint32_t lodGroup = 0;   // GpuInstance::lodGroup
+    uint32_t streamRoot = 0; // GpuInstance::streamRoot
+    uint32_t pad[2] = {};
 };
 static_assert(sizeof(GpuInstanceRecord) == 128);
 

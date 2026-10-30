@@ -18,8 +18,8 @@ struct Instance {
     uint flags;
     vec3 boundsMax;
     uint pad;
-    uint lodGroup; // its render-LOD group + 1, 0 for none
-    uint pad1;
+    uint lodGroup;   // its render-LOD group + 1, 0 for none
+    uint streamRoot; // its streaming root's slot + 1, 0 under none
     uint pad2;
     uint pad3;
 };
@@ -33,7 +33,7 @@ layout(location = 3) in vec2 inTexCoord;
 
 layout(location = 0) out vec3 vNormal;
 layout(location = 1) out vec2 vTexCoord;
-layout(location = 2) flat out uvec3 vIds; // instance, mesh, material
+layout(location = 2) flat out uvec4 vIds; // instance, mesh, material, streaming root slot + 1
 
 invariant gl_Position;
 
@@ -42,5 +42,5 @@ void main() {
     gl_Position = ubo.proj * ubo.view * inst.model * vec4(inPosition, 1.0);
     vNormal = normalize(mat3(inst.model) * inNormal);
     vTexCoord = inTexCoord;
-    vIds = uvec3(gl_InstanceIndex, inst.mesh, inst.material);
+    vIds = uvec4(gl_InstanceIndex, inst.mesh, inst.material, inst.streamRoot);
 }

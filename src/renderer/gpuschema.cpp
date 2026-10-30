@@ -27,6 +27,7 @@ auto makeInstanceSchema() -> GpuSchema {
             {"boundsMax", offsetof(R, boundsMax), GpuFieldType::Vec3},
             {"lodLevel", offsetof(R, lodLevel), GpuFieldType::U32},
             {"lodGroup", offsetof(R, lodGroup), GpuFieldType::U32},
+            {"streamRoot", offsetof(R, streamRoot), GpuFieldType::U32},
         },
     };
 }

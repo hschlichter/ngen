@@ -16,9 +16,25 @@ enum class DebugView : uint32_t {
     MaterialId = 6,   // value: material table entry
     PrimitiveId = 7,  // value: triangle index within its draw
     Uv = 8,           // value: u, v
+    Streaming = 9,    // value: the streaming root slot + 1 (RenderMeshInstance::streamRoot), coloured by that root's state (StreamingRootState)
 };
 
-inline constexpr uint32_t debugViewCount = 9;
+inline constexpr uint32_t debugViewCount = 10;
+
+// A streaming root's state as the streaming view colours it (shaders/debugview.comp) and the Streaming tool names it, worst first when
+// several hold: drawing nothing, drawing coarser than selected, a budget granting a coarser level, a resident level still on its way, a
+// finer level resident ahead of being drawn, drawing what it selects. `streamingStateFinding` is added when the root breaks the authoring
+// contract.
+enum class StreamingRootState : uint32_t {
+    None = 0,
+    Drawn = 1,
+    Prefetched = 2,
+    Requested = 3,
+    Refused = 4,
+    Late = 5,
+    Hole = 6,
+};
+inline constexpr uint32_t streamingStateFinding = 16;
 
 inline constexpr std::array<std::string_view, debugViewCount> debugViewNames = {
     "off",
@@ -30,6 +46,7 @@ inline constexpr std::array<std::string_view, debugViewCount> debugViewNames = {
     "material",
     "primitive",
     "uv",
+    "streaming",
 };
 
 inline constexpr std::array<const char*, debugViewCount> debugViewLabels = {
@@ -42,4 +59,5 @@ inline constexpr std::array<const char*, debugViewCount> debugViewLabels = {
     "Material ID",
     "Primitive ID",
     "UV Checker",
+    "Streaming State",
 };

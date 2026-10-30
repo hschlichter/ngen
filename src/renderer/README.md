@@ -191,8 +191,8 @@ Tables:
 - **Instance buffer.** One `GpuInstanceRecord` (128 bytes, std430) per draw slot.
   - **Contents**: model matrix, material entry, mesh index, submesh `indexOffset` and `indexCount`, world bounds, flags (`primFirst`,
     `doubleSided`, `boundsValid`, `cutout`, `primHasCutout`), the drawn LOD level + 1 of the LOD root above it (0 under none), which the
-    geometry pass writes to the normal target's alpha for the LOD level view (with its group's flags: "Render LOD", the LOD tag), and its
-    render-LOD group + 1 (0 for none).
+    geometry pass writes to the normal target's alpha for the LOD level view (with its group's flags: "Render LOD", the LOD tag), its
+    render-LOD group + 1 (0 for none), and its streaming root's slot + 1 (`streamRoot`, 0 under none) for the streaming view.
   - **Slots.** A draw keeps its slot while it exists. A removed one is dead (mesh index past the table, so culling never draws it) until a new draw
     takes it.
   - **Reading it.** Vertex shaders read it at `gl_InstanceIndex`, and every draw sets `firstInstance` to the slot.
@@ -324,7 +324,7 @@ so early depth testing holds for everything else. The debug views discard in `de
 | `ShadowPass` | Depth-only into the cascade atlas: per cascade, the tile's viewport and scissor, the cascade matrix as a push constant, one indirect call per bucket. Position pool only, except the cutout buckets. |
 | `DepthPrepass` | Optional depth-only pass over the camera regions so the geometry pass can use an Equal depth test and shade each pixel once. `depthonly.vert` mirrors `gbuffer.vert`'s position expression with `invariant gl_Position`. |
 | `GeometryPass` | G-buffer: albedo (RGBA8, alpha carries the sampled mip level for the mip view), normals (RGBA16F), the instance id (`gbuffer.instance`, R32_UINT: instance index + 1, 0 where nothing is drawn), depth. Eight pipelines: opaque or cutout, cull back or none, Greater-with-write or Equal-without after the prepass. |
-| `DebugViewPass`, `DebugViewResolve` | Only while a debug view is on (`DebugView`): the camera regions drawn again through `debugview.vert/.geom/.frag` into an RGBA32F value target (`debugview.value`), then coloured by `debugview.comp` into `debugview.color`, which the blit takes instead of the AA result. |
+| `DebugViewPass`, `DebugViewResolve` | Only while a debug view is on (`DebugView`): the camera regions drawn again through `debugview.vert/.geom/.frag` into an RGBA32F value target (`debugview.value`), then coloured by `debugview.comp` into `debugview.color`, which the blit takes instead of the AA result. The streaming view writes each draw's streaming root slot and colours it by that root's state (`StreamingRootState`), from `RenderSnapshot::streamingStates`, which the CPU writes into a mapped buffer per frame slot (`debugview.streaming.slot<n>`, 64 Ki roots). |
 | `LightingPass` | Fullscreen deferred shading into a float scene-colour target: one directional light (the first shadow-enabled directional light, else the first directional), cascade selection by view depth, hardware-compare PCF, shadow tint, a hemisphere ambient (an engine sky colour on faces turned up and ground colour on faces turned down, as fractions of the light's radiance), and the debug views (`GBufferView`) and overlays. |
 | `AAPass` | FXAA as a compute pass, scene colour to a float storage image; falls back to a blit when the format cannot be a storage image. |
 | `BlitToBackbuffer` | Blits the AA result (or the debug view colours) to the sRGB backbuffer. |
@@ -346,6 +346,7 @@ Overlays and the UI draw on the backbuffer after the AA blit, so they are never 
 | Geometry, one per frame slot | `GeometryPass`, `DepthPrepass`, `DebugViewPass` | 0 view UBO, 1 `sampler2D textures[1024]`, 2 instance buffer, 3 material table, 4 render-LOD state (fades) |
 | Shadow, one | `ShadowPass` | 0 instance buffer; the cascade matrix is a push constant |
 | Culling, one per frame slot | the three cull passes | params, instances, mesh table, visibility, counters, offsets, commands, counts |
+| Debug view resolve, one per frame slot | `DebugViewResolve` | 0 the value target, 1 the colour image, 2 the streaming view's root states |
 | Lighting, AA, debug lines, gizmos | their passes | per-slot UBOs and the G-buffer, shadow and scene-colour textures |
 
 The texture array is fixed-size and fully written (unused slots hold the fallback) and indexed with one value per draw: `gbuffer.vert` looks up the slot

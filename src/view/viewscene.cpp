@@ -673,6 +673,9 @@ auto tunedLodHeuristic(const LodHeuristic& heuristic, const LodOverride* overrid
         if (override->blendThresholds) {
             tuned.blendThresholds = *override->blendThresholds;
         }
+        if (override->unloadThresholds) {
+            tuned.unloadThresholds = *override->unloadThresholds;
+        }
     }
     if (!tuning.blending) {
         tuned.blendThresholds.clear();
@@ -684,6 +687,9 @@ auto tunedLodHeuristic(const LodHeuristic& heuristic, const LodOverride* overrid
             threshold *= scale;
         }
         for (auto& threshold : tuned.blendThresholds) {
+            threshold *= scale;
+        }
+        for (auto& threshold : tuned.unloadThresholds) {
             threshold *= scale;
         }
     }
@@ -739,15 +745,32 @@ auto ViewScene::applyTuning(const TuningRequest& request) -> void {
             changedRoot = root->first;
         } else {
             const auto& heuristics = *root->second;
-            auto index = request.heuristic ? (int32_t) *request.heuristic : chooseLodHeuristic(heuristics, LodDomain::Imaging, lodPreferenceNow);
+            // Unload radii alone name the streaming heuristic when no heuristic is given; the rest the imaging one.
+            bool unloadOnly = request.thresholds->unloadThresholds && !request.thresholds->thresholds && !request.thresholds->blendThresholds;
+            auto domain = unloadOnly ? LodDomain::Streaming : LodDomain::Imaging;
+            auto index = request.heuristic ? (int32_t) *request.heuristic : chooseLodHeuristic(heuristics, domain, lodPreferenceNow);
             if (index < 0 || (size_t) index >= heuristics.size()) {
                 TRACE_WARNING("Scene", "LodTuningRefused", request.path).text(std::format("{}: no heuristic {} to override ({} authored)", request.path, index, heuristics.size()));
             } else {
                 auto kind = heuristics[(size_t) index].kind;
                 const auto& asked = *request.thresholds;
+                // Unload radii: one per load radius in force, ordered, on its coarser side.
+                const auto* current = lodOverrideOf(*next, root->first, (uint32_t) index);
+                auto load = asked.thresholds ? *asked.thresholds : current != nullptr && current->thresholds ? *current->thresholds
+                                                                                                             : heuristics[(size_t) index].thresholds;
+                bool unloadFits = true;
+                if (asked.unloadThresholds && !asked.unloadThresholds->empty()) {
+                    unloadFits = asked.unloadThresholds->size() == load.size() && lodThresholdsOrdered(kind, *asked.unloadThresholds);
+                    for (size_t k = 0; unloadFits && k < load.size(); k++) {
+                        unloadFits = kind == LodHeuristicKind::Distance ? (*asked.unloadThresholds)[k] >= load[k] : (*asked.unloadThresholds)[k] <= load[k];
+                    }
+                }
                 if ((asked.thresholds && !lodThresholdsOrdered(kind, *asked.thresholds)) || (asked.blendThresholds && !lodThresholdsOrdered(kind, *asked.blendThresholds))) {
                     TRACE_WARNING("Scene", "LodTuningRefused", request.path)
                         .text(std::format("{}: thresholds must {} as UsdLod reads them; nothing changed", request.path, kind == LodHeuristicKind::Distance ? "ascend" : "descend"));
+                } else if (!unloadFits) {
+                    TRACE_WARNING("Scene", "LodTuningRefused", request.path)
+                        .text(std::format("{}: unload thresholds must be one per load threshold ({}), in order, each at or past its load threshold; nothing changed", request.path, load.size()));
                 } else {
                     auto& entry = next->overrides[root->first][(uint32_t) index];
                     if (asked.thresholds) {
@@ -755,6 +778,9 @@ auto ViewScene::applyTuning(const TuningRequest& request) -> void {
                     }
                     if (asked.blendThresholds) {
                         entry.blendThresholds = asked.blendThresholds;
+                    }
+                    if (asked.unloadThresholds) {
+                        entry.unloadThresholds = asked.unloadThresholds;
                     }
                     changedRoot = root->first;
                 }

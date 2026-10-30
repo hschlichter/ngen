@@ -52,10 +52,12 @@ auto lodRootInFrustum(const SceneLodRoot& root, const glm::vec3& eye, const glm:
 inline constexpr float lodHysteresis = 0.2f;
 
 // One heuristic's thresholds set by the view in place of the authored ones, in the heuristic's units (a distance in the stage's units, a
-// screen size as a fraction of the view); a list not set keeps the authored one.
+// screen size as a fraction of the view); a list not set keeps the authored one. A streaming heuristic's thresholds are its load radii and
+// `unloadThresholds` its unload radii.
 struct LodOverride {
     std::optional<std::vector<float>> thresholds;
     std::optional<std::vector<float>> blendThresholds;
+    std::optional<std::vector<float>> unloadThresholds;
 
     auto operator==(const LodOverride&) const -> bool = default;
 };
@@ -575,6 +577,12 @@ private:
         uint32_t uses = 0;
     };
     std::map<std::string, PlacedLodRoot> placedRoots;
+    // A slot per drawn streaming root, which its levels' draws carry (RenderMeshInstance::streamRoot): taken when its levels are placed,
+    // given back after a pass that left it no longer placed.
+    std::unordered_map<std::string, uint32_t> streamRootSlots;
+    LowestFreeList freeStreamRootSlots;
+    uint32_t streamRootSlotCount = 0;
+    auto streamRootSlot(const std::string& path) -> uint32_t;
     std::unordered_map<int64_t, uint64_t> placedVersions; // the version each placed content had at the last pass
     uint32_t placementCount = 0;
     uint32_t drawnPlacementCount = 0;
@@ -619,6 +627,7 @@ private:
         std::string material;
         bool strong = false;
         uint32_t lodTag = 0;
+        uint32_t streamRoot = 0;
         bool drawn = true;
         uint32_t lodGroup = 0; // Placement::lodGroup
         uint32_t lodGroupLevel = 0;

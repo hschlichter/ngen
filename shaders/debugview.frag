@@ -26,7 +26,7 @@ layout(std430, set = 0, binding = 3) readonly buffer Materials {
 
 layout(location = 0) in vec3 gNormal;
 layout(location = 1) in vec2 gTexCoord;
-layout(location = 2) flat in uvec3 gIds;
+layout(location = 2) flat in uvec4 gIds; // instance, mesh, material, streaming root slot + 1
 layout(location = 3) noperspective in vec3 gEdgeDistance;
 layout(location = 4) flat in float gArea;
 layout(location = 5) flat in uint gPrimitive;
@@ -41,6 +41,7 @@ const uint viewMesh = 5;
 const uint viewMaterial = 6;
 const uint viewPrimitive = 7;
 const uint viewUv = 8;
+const uint viewStreaming = 9;
 
 void main() {
     if (cutAway(gIds.z, gTexCoord)) {
@@ -65,6 +66,8 @@ void main() {
         outValue = vec4(float(gPrimitive), 0.0, 0.0, 1.0);
     } else if (push.mode == viewUv) {
         outValue = vec4(gTexCoord, 0.0, 1.0);
+    } else if (push.mode == viewStreaming) {
+        outValue = vec4(float(gIds.w), 0.0, 0.0, 1.0);
     } else {
         outValue = vec4(0.0);
     }

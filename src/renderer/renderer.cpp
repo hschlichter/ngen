@@ -510,6 +510,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
             .primHasCutout = inst.primHasCutout,
             .lodLevel = inst.lodLevel,
             .lodGroup = inst.lodGroup,
+            .streamRoot = inst.streamRoot,
             .worldBounds = inst.worldBounds,
             .alive = inst.alive,
         };
@@ -1137,7 +1138,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         auto finalImage = aaData.sceneColorAA;
         // Its pipelines come on first use: until they are ready the lit image shows.
         if (snapshot.debugView != DebugView::None && debugViewPass.available() && debugViewPass.ready()) {
-            const auto& debugViewData = debugViewPass.addPass(frameGraph, snapshot.debugView, geomData.depth, ext, imageIdx, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet);
+            const auto& debugViewData = debugViewPass.addPass(frameGraph, snapshot.debugView, geomData.depth, ext, imageIdx, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, snapshot.streamingStates);
             finalImage = debugViewData.color;
         }
         addBlitPass(frameGraph, "BlitToBackbuffer", finalImage, colorHandle, ext, ext);

@@ -9,14 +9,21 @@ layout(set = 0, binding = 1, rgba16f) uniform writeonly image2D colorOut;
 
 layout(push_constant) uniform Push {
     uvec2 size;
-    uint mode;         // DebugView
-    float overdrawMax; // count shown at the top of the heat scale
+    uint mode;           // DebugView
+    float overdrawMax;   // count shown at the top of the heat scale
+    uint streamingRoots; // states written for the streaming view
 } push;
+
+// Per streaming root slot, its state (StreamingRootState in debugview.h, plus 16 when it breaks the authoring contract).
+layout(std430, set = 0, binding = 2) readonly buffer StreamingStates {
+    uint data[];
+} streamingStates;
 
 const uint viewWireframe = 1;
 const uint viewTriangleSize = 2;
 const uint viewOverdraw = 3;
 const uint viewUv = 8;
+const uint viewStreaming = 9;
 
 const vec3 background = vec3(0.02);
 
@@ -27,6 +34,22 @@ vec3 heat(float t) {
     float g = clamp(1.5 - abs(4.0 * t - 2.0), 0.0, 1.0);
     float b = clamp(1.5 - abs(4.0 * t - 1.0), 0.0, 1.0);
     return vec3(r, g, b);
+}
+
+// The streaming view's colours, as the Streaming window's legend (streamingStateColor): no root grey, drawn as selected green, prefetched
+// teal, requested blue, refused by a budget violet, late orange, a hole red. A root breaking the authoring contract is striped yellow.
+vec3 streamingColor(uint slot, uvec2 pixel) {
+    if (slot == 0u || slot > push.streamingRoots) {
+        return vec3(0.35);
+    }
+    uint state = streamingStates.data[slot - 1u];
+    const vec3 colors[7] = vec3[7](vec3(0.35), vec3(0.30, 0.75, 0.35), vec3(0.20, 0.70, 0.70), vec3(0.30, 0.45, 0.95), vec3(0.60, 0.40, 0.85), vec3(0.95, 0.60, 0.15),
+                                   vec3(0.90, 0.20, 0.20));
+    vec3 color = colors[min(state & 15u, 6u)];
+    if ((state & 16u) != 0u && ((pixel.x + pixel.y) / 6u) % 2u == 0u) {
+        color = mix(color, vec3(1.0, 0.9, 0.2), 0.6);
+    }
+    return color;
 }
 
 // A stable, well-spread colour per integer ID.
@@ -57,6 +80,8 @@ void main() {
             vec2 uv = fract(v.rg);
             bool odd = (int(floor(v.r * 8.0)) + int(floor(v.g * 8.0))) % 2 != 0;
             color = vec3(uv, 0.2) * (odd ? 0.55 : 1.0);
+        } else if (push.mode == viewStreaming) {
+            color = streamingColor(uint(v.r), pixel);
         } else {
             color = idColor(uint(v.r));
         }

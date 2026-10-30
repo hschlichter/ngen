@@ -21,6 +21,7 @@
 #include "sessionscript.h"
 #include "shadowcascades.h"
 #include "statusbar.h"
+#include "streamingtool.h"
 #include "trace.h"
 #include "translategizmo.h"
 #include "viewcommands.h"
@@ -474,6 +475,10 @@ auto main(int argc, char* argv[]) -> int {
     uint64_t snapshotsTaken = 0;
     uint64_t cameraListSnapshot = UINT64_MAX;
     uint64_t lodRowsSnapshot = UINT64_MAX;
+    uint64_t streamingRowsSnapshot = UINT64_MAX;
+    std::string streamingInspected;
+    auto streamingInspectedAt = std::chrono::steady_clock::time_point();
+    uint64_t streamingInspectedSnapshot = UINT64_MAX;
     // Dumps and captures that finish frames later, for script verbs and RPC calls alike.
     ViewDumps dumps([&scene]() -> const RenderWorld& { return scene.renderWorld(); }, primPathOf, latestCull, rhiDevice.limits().pipelineStatistics);
 
@@ -566,6 +571,15 @@ auto main(int argc, char* argv[]) -> int {
             lodRowsSnapshot = snapshotsTaken;
             PROFILE_ZONE("SceneWindowLists");
             buildLodRows(scene, lodWindow);
+        }
+        // The Streaming tool's rows (its window, its viewport layers and the streaming view's states), once per snapshot while any is shown.
+        auto& streamingWindow = viewUI.streamingWindow();
+        bool streamingView = viewUI.getDebugView() == (int) DebugView::Streaming;
+        bool streamingToolShown = viewUI.wantsStreamingWindow() || streamingWindow.bounds || streamingWindow.rings || streamingWindow.ringsAll || streamingWindow.labels || streamingView;
+        if (streamingToolShown && streamingRowsSnapshot != snapshotsTaken) {
+            streamingRowsSnapshot = snapshotsTaken;
+            PROFILE_ZONE("SceneWindowLists");
+            buildStreamingRows(scene, streamingWindow);
         }
         residency.scriptHeld = (waitForResident && !residency.everResident) || !residentWaiters.empty() || flight.flying();
         dueCommands.clear();
@@ -894,6 +908,7 @@ auto main(int argc, char* argv[]) -> int {
             PROFILE_ZONE("DrawDebug");
             viewUI.drawDebug(debugDraw, scene.renderWorld(), cam.position, cam.worldUp, overlayVisible, cullState.frozenActive ? &frozenCorners : nullptr, std::span<const ShadowCascade>(cascades.data(), cascadeCount), selectedPath.empty() ? nullptr : &selectedBounds);
             drawLodGizmos(lodWindow, debugDraw, cam.worldUp, lodWindowArea(glm::radians(cameraFovDegrees), viewAspect));
+            drawStreamingOverlays(streamingWindow, debugDraw, cam.worldUp);
         }
 
         renderThread.setFrameGraphDebugEnabled(viewUI.wantsFrameGraphDebug() || dumps.wantsFrameGraphDebug());
@@ -983,6 +998,7 @@ auto main(int argc, char* argv[]) -> int {
             PROFILE_ZONE("LodLabels");
             const auto& io = ImGui::GetIO();
             drawLodLabels(viewUI.lodWindow(), proj * cam.viewMatrix(), glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
+            drawStreamingLabels(viewUI.streamingWindow(), proj * cam.viewMatrix(), glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
         }
         switch (viewUI.takeEditRequest()) {
             case ViewEditRequest::Deselect:
@@ -1198,6 +1214,75 @@ auto main(int argc, char* argv[]) -> int {
                 lodWindow.inspection = inspectLodRoot(scene, latestCull, lodWindow.selectedRoot, {.eye = cam.position, .fovY = glm::radians(cameraFovDegrees), .aspect = viewAspect});
             }
         }
+        {
+            PROFILE_ZONE("StreamingWindowSync");
+            // The Streaming window: what it asked for, the camera and the flight for its map and controls, a sample for its chart.
+            const auto& threadStats = scene.threadStats();
+            streamingWindow.totals.inFlight = threadStats.inFlightLayers + threadStats.inFlightMeshes + threadStats.inFlightMaterials + threadStats.inFlightTextures + threadStats.inFlightOther;
+            if (viewUI.wantsStreamingWindow()) {
+                auto at = streamingWindow.historyAt;
+                streamingWindow.inFlightHistory[at] = (float) streamingWindow.totals.inFlight;
+                streamingWindow.lateHistory[at] = (float) scene.streaming().lateNow;
+                streamingWindow.holeHistory[at] = (float) scene.streaming().holesNow;
+                streamingWindow.historyAt = (at + 1) % StreamingWindowState::historyLength;
+            }
+            streamingWindow.cameraPosition = cam.position;
+            streamingWindow.cameraForward = cam.forward();
+            streamingWindow.up = cam.worldUp;
+            streamingWindow.flying = flight.flying();
+            if (flight.flying()) {
+                streamingWindow.flightText = std::format("{} of {} cameras, {:.0f} m in {:.0f} s", flight.segment + 1, flight.cameras.size(), flight.metres, flight.seconds);
+            }
+            streamingWindow.streamingView = streamingView;
+            if (auto on = std::exchange(streamingWindow.streamingViewRequested, std::nullopt)) {
+                viewUI.setDebugView(*on ? (int) DebugView::Streaming : 0);
+            }
+            if (std::exchange(streamingWindow.resetRequested, false)) {
+                scene.resetStreamingCounters();
+            }
+            if (std::exchange(streamingWindow.flyRequested, false)) {
+                if (auto error = startFlight(viewContext, streamingWindow.flightPrefix, std::max(0.1f, streamingWindow.flightSpeed), std::nullopt)) {
+                    streamingWindow.flightText = *error;
+                }
+            }
+            if (std::exchange(streamingWindow.flyStopRequested, false)) {
+                stopFlight(viewContext);
+            }
+            for (auto& request : std::exchange(streamingWindow.radiiRequests, {})) {
+                scene.overrideLodThresholds(request.root, request.heuristic, LodOverride{.thresholds = std::move(request.load), .unloadThresholds = std::move(request.unload)});
+            }
+            for (const auto& root : std::exchange(streamingWindow.radiiResets, {})) {
+                scene.resetLodOverrides(root);
+            }
+            if (auto path = std::exchange(streamingWindow.selectRequested, std::nullopt)) {
+                selectedPath = *path;
+            }
+            if (auto path = std::exchange(streamingWindow.frameRequested, std::nullopt)) {
+                auto bb = scene.bounds(*path);
+                if (bb.valid()) {
+                    cam.frame(bb, glm::radians(45.0f));
+                }
+            }
+            streamingWindow.selectedPath = selectedPath;
+            streamingWindow.selectedRoot.clear();
+            if (!selectedPath.empty()) {
+                for (const auto& row : streamingWindow.rows) {
+                    bool atOrAbove = selectedPath == row.path || selectedPath.starts_with(row.path + "/");
+                    if (atOrAbove && row.path.size() > streamingWindow.selectedRoot.size()) {
+                        streamingWindow.selectedRoot = row.path;
+                    }
+                }
+            }
+            // The inspector: the selected root's, again when the selection or the snapshot changes and four times a second while shown.
+            auto now = std::chrono::steady_clock::now();
+            if (viewUI.wantsStreamingWindow() &&
+                (streamingWindow.selectedRoot != streamingInspected || snapshotsTaken != streamingInspectedSnapshot || now - streamingInspectedAt > std::chrono::milliseconds(250))) {
+                streamingInspected = streamingWindow.selectedRoot;
+                streamingInspectedSnapshot = snapshotsTaken;
+                streamingInspectedAt = now;
+                streamingWindow.inspection = inspectStreamingRoot(scene, streamingWindow.selectedRoot, cam.position, lodWindowArea(glm::radians(cameraFovDegrees), viewAspect));
+            }
+        }
         ImGuiFrameSnapshot imguiSnapshot;
         {
             PROFILE_ZONE("ImGuiRender");
@@ -1242,6 +1327,7 @@ auto main(int argc, char* argv[]) -> int {
             .showGizmo = viewUI.getShowGizmo(),
             .gbufferViewMode = static_cast<GBufferView>(viewUI.getGBufferViewMode()),
             .debugView = static_cast<DebugView>(viewUI.getDebugView()),
+            .streamingStates = streamingView ? streamingWindow.slotStates : std::vector<uint32_t>(),
             .showBufferOverlay = viewUI.getShowBufferOverlay(),
             .showShadowOverlay = viewUI.getShowShadowOverlay(),
             .antiAliasing = viewUI.getAntiAliasing(),

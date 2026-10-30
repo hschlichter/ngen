@@ -12,11 +12,11 @@ layout(push_constant) uniform Push {
 
 layout(location = 0) in vec3 vNormal[];
 layout(location = 1) in vec2 vTexCoord[];
-layout(location = 2) flat in uvec3 vIds[];
+layout(location = 2) flat in uvec4 vIds[];
 
 layout(location = 0) out vec3 gNormal;
 layout(location = 1) out vec2 gTexCoord;
-layout(location = 2) flat out uvec3 gIds;
+layout(location = 2) flat out uvec4 gIds;
 layout(location = 3) noperspective out vec3 gEdgeDistance; // pixels to the edge opposite each vertex
 layout(location = 4) flat out float gArea;                 // pixels
 layout(location = 5) flat out uint gPrimitive;

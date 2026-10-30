@@ -111,6 +111,8 @@ struct RenderMeshInstance {
     uint32_t lodLevel = 0;      // the drawn level + 1 of the nearest LOD root above its prim, 0 under none; for the LOD level view
     // Its render-LOD group + 1, 0 for none: drawn only while the group picks its level (lodLevel - 1).
     uint32_t lodGroup = 0;
+    // The slot + 1 of the nearest streaming LOD root above its prim, 0 under none: the streaming view colours it by that root's state.
+    uint32_t streamRoot = 0;
     bool alive = true;
 
     auto operator==(const RenderMeshInstance&) const -> bool = default;

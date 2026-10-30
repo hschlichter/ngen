@@ -359,6 +359,7 @@ auto main(int argc, char** argv) -> int {
                 "src/view/viewscene.cpp",
                 "src/view/placement.cpp",
                 "src/view/lodtool.cpp",
+                "src/view/streamingtool.cpp",
             })
             .include({
                 "src",

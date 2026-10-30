@@ -8,6 +8,7 @@
 #include "rhitypes.h"
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 class RhiDevice;
@@ -41,7 +42,11 @@ public:
         const DrawLists& lists,
         DrawLists::Handles drawHandles,
         const GpuScene& scene,
-        RhiDescriptorSet* geometrySet) -> const DebugViewPassData&;
+        RhiDescriptorSet* geometrySet,
+        std::span<const uint32_t> streamingStates) -> const DebugViewPassData&;
+
+    // The streaming view's states per root slot; slots past it show as no root.
+    static constexpr uint32_t maxStreamingRoots = 65536;
 
 private:
     RhiDevice* device = nullptr;
@@ -54,5 +59,8 @@ private:
     PipelineHandle resolvePipeline;
     RhiDescriptorPool* resolvePool = nullptr;
     std::vector<RhiDescriptorSet*> resolveSets; // one per frame slot; rewritten at execute
+    // Per frame slot, the streaming view's root states, written by the CPU when the frame is recorded.
+    std::vector<RhiBuffer*> streamingBuffers;
+    std::vector<void*> streamingMapped;
     RhiSampler* pointSampler = nullptr;
 };

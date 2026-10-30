@@ -1,6 +1,6 @@
 # Streaming tool: a window, overlays and configuration for residency and budgets
 
-**Status. Draft.** Decisions as leaned, pushback welcome. Second of three plans: [plan_streaming_domain.md](plan_streaming_domain.md) (what
+**Status. In progress.** Decisions as leaned; the full plan built 2026-10-30 (Henrik chose it over a leaner cut). Second of three plans: [plan_streaming_domain.md](plan_streaming_domain.md) (what
 is resident), this one (seeing and steering it), [plan_streaming_budgets.md](plan_streaming_budgets.md) (what fits; its controls land here).
 
 ## Current state
@@ -108,9 +108,39 @@ states the records already name.
 - **Engine Map**: the Residency node lists its records and windows, and its edges.
 - No warnings or errors in the trace.
 
+## Results
+
+All steps done 2026-10-30, release build, on the streaming test world at `/cameras/village`. Where the build differs from the steps:
+- **The streaming view is a debug view**, `debugview streaming` (not `view streaming`): the debug-view pass already draws every instance with
+  its own shaders, so it needed one small buffer of root states per frame slot and no change to the G-buffer. Each draw carries its streaming
+  root's slot (`RenderMeshInstance::streamRoot`, a spare field of the 128-byte instance record); the CPU writes each slot's state while the
+  view is on. The Debug View window has its legend and the cursor readout names the slot.
+- **Bytes and priority columns** wait for [plan_streaming_budgets.md](plan_streaming_budgets.md), which measures them; the overview shows assets
+  in flight, not a queue (there is none yet).
+- **Rings** (map and viewport) are drawn for distance heuristics only: a screen-size streaming heuristic has no radius on the ground.
+- **Labels** draw under the windows (ImGui's background list), unlike the LOD labels, so they never cover the window.
+- The Engine Map's LOD selection and Placement texts were trimmed to what they do now; Residency has the residency text and live numbers.
+
+Checks:
+- **Same numbers**: the `streamingtool` record's totals at the village: 196 roots, 248 levels resident, matching the `streaming` record; the
+  window lists 196 roots.
+- **Controls through their methods**: `lod-unload-thresholds` on `T_1_1` set its unload radii to 400 600 in the record and the inspector
+  (authored 360 580); `streaming-show` turned bounds, rings and labels on; `window streaming on` opened it.
+- **States shown**: `T_1_1` with its load radius tuned to 200 m (under its 220 m imaging threshold), approached from beyond its unload
+  radius to 208 m: the streaming view draws it orange striped yellow, prefetched tiles teal; the inspector says "late", "between load radii
+  200 m and 500 m (measure 208 m)" and gives the finding; the map shows it orange among green and teal tiles.
+- **Cost**: with bounds on, DrawDebug 0.02 ms a frame (a 60 fps frame has 16.7 ms); the window's sync 0.03 ms; building the rows 0.36 ms per
+  snapshot.
+- **Nothing else changed**: the 8 reference images of three_cubes and Sponza (lit, albedo, normals, prepass) are identical to the byte
+  before and after, under `--fail-on-validation`; the streaming view on Sponza (no streaming roots) is grey, with validation on and no
+  errors. The domain plan's village checks still pass (192 of 196 cells, no chain violations).
+- Seen with `--show-ui` screenshots: the window (overview, chart, controls, table, inspector) and the map. The map tab can't be chosen by a
+  script; it was looked at once with the tab forced.
+
 ## Deferred / follow-ups
 
 - **A timeline of a flight**: per root, when it was requested, resident and drawn, scrubbable. Trigger: late switches on a flight that the
   counters don't explain.
+- **Choosing the window's tab by RPC** (roots or map), for scripted screenshots of the map. Trigger: the map needing checks in scripts.
 - **Writing tuned radii back** to the authored USD. Trigger: the editor ([plan_lod_tool.md](plan_lod_tool.md) defers the same for
   thresholds).

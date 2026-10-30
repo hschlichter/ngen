@@ -105,6 +105,11 @@ auto drawDebugViewWindow(DebugView view, DebugViewWindowState& state, const std:
         case DebugView::Uv:
             ImGui::TextWrapped("Checker of 8 cells per UV unit, red = U, green = V. Stretched or skewed cells show distorted UVs.");
             break;
+        case DebugView::Streaming:
+            ImGui::TextWrapped("Each mesh in its nearest streaming root's state, as the Streaming window's legend: green drawn as selected, teal a finer "
+                               "level prefetched, blue a resident level requested, violet refused by a budget, orange late, red a hole; grey under no "
+                               "streaming root. Yellow stripes: the root breaks the authoring contract.");
+            break;
         default:
             ImGui::TextWrapped("One hashed colour per ID; neighbouring IDs get unrelated colours.");
             break;
@@ -133,6 +138,13 @@ auto drawDebugViewWindow(DebugView view, DebugViewWindowState& state, const std:
                     break;
                 case DebugView::Uv:
                     ImGui::Text("u %.4f  v %.4f", v.x, v.y);
+                    break;
+                case DebugView::Streaming:
+                    if (id == 0) {
+                        ImGui::TextUnformatted("under no streaming root");
+                    } else {
+                        ImGui::Text("streaming root slot %u", id - 1);
+                    }
                     break;
                 default:
                     ImGui::ColorButton("##id", ImGui::ColorConvertU32ToFloat4(idColor(id)), ImGuiColorEditFlags_NoTooltip, ImVec2(14, 14));

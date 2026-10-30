@@ -6,6 +6,7 @@
 #include "rhidevice.h"
 #include "trace.h"
 
+#include <algorithm>
 #include <array>
 #include <format>
 
@@ -24,6 +25,7 @@ struct ResolvePush {
     uint32_t size[2];
     uint32_t mode;
     float overdrawMax;
+    uint32_t streamingRoots; // the states written for the streaming view
 };
 
 } // namespace
@@ -81,9 +83,10 @@ auto DebugViewPass::init(RhiDevice* dev, PipelineRegistry& pipelineRegistry, uin
         overdrawPipelines[doubleSided] = registry->registerGraphics(std::format("debugview.overdraw.{}", cull), desc, PipelineUse::FirstUse);
     }
 
-    std::array<RhiDescriptorBinding, 2> bindings = {{
+    std::array<RhiDescriptorBinding, 3> bindings = {{
         {.binding = 0, .type = RhiDescriptorType::CombinedImageSampler, .stage = RhiShaderStage::Compute},
         {.binding = 1, .type = RhiDescriptorType::StorageImage, .stage = RhiShaderStage::Compute},
+        {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},
     }};
     resolveLayout = device->createDescriptorSetLayout(bindings);
     device->setDebugName(resolveLayout, "debugview.resolve.setlayout");
@@ -102,6 +105,12 @@ auto DebugViewPass::init(RhiDevice* dev, PipelineRegistry& pipelineRegistry, uin
     for (size_t i = 0; i < resolveSets.size(); i++) {
         device->setDebugName(resolveSets[i], std::format("debugview.resolve.set.slot{}", i).c_str());
     }
+    for (uint32_t i = 0; i < frameCount; i++) {
+        auto* buffer = device->createBuffer({.size = (uint64_t) maxStreamingRoots * sizeof(uint32_t), .usage = RhiBufferUsage::Storage, .memory = RhiMemoryUsage::CpuToGpu});
+        device->setDebugName(buffer, std::format("debugview.streaming.slot{}", i).c_str());
+        streamingBuffers.push_back(buffer);
+        streamingMapped.push_back(device->mapBuffer(buffer));
+    }
     // The resolve reads with texelFetch; a point sampler keeps float formats without linear
     // filtering support valid.
     pointSampler = device->createSampler({.magFilter = RhiFilter::Nearest, .minFilter = RhiFilter::Nearest, .mipmapMode = RhiMipmapMode::Nearest, .debugName = "debugview.sampler"});
@@ -114,6 +123,9 @@ auto DebugViewPass::destroy(RhiDevice* dev) -> void {
         return;
     }
     dev->destroySampler(pointSampler);
+    for (auto* buffer : streamingBuffers) {
+        dev->destroyBuffer(buffer);
+    }
     dev->freeDescriptorSets(resolvePool, resolveSets);
     dev->destroyDescriptorPool(resolvePool);
     dev->destroyDescriptorSetLayout(resolveLayout);
@@ -137,7 +149,8 @@ auto DebugViewPass::addPass(
     const DrawLists& lists,
     DrawLists::Handles drawHandles,
     const GpuScene& scene,
-    RhiDescriptorSet* geometrySet) -> const DebugViewPassData& {
+    RhiDescriptorSet* geometrySet,
+    std::span<const uint32_t> streamingStates) -> const DebugViewPassData& {
     FgTextureDesc valueDesc = {
         .width = extent.width,
         .height = extent.height,
@@ -231,16 +244,24 @@ auto DebugViewPass::addPass(
             data.value = builder.read(valueHandle, FgAccessFlags::ShaderRead);
             data.color = builder.write(builder.createTexture("debugview.color", colorDesc), FgAccessFlags::StorageWrite);
         },
-        [this, mode, extent, frameSlot](FrameGraphContext& ctx, const DebugViewPassData& data) {
-            std::array<RhiDescriptorWrite, 2> writes = {{
+        [this, mode, extent, frameSlot, streamingStates](FrameGraphContext& ctx, const DebugViewPassData& data) {
+            // The streaming view's root states, for this frame slot's buffer: what the GPU read from it last was this slot's previous frame.
+            auto count = (uint32_t) std::min<size_t>(streamingStates.size(), maxStreamingRoots);
+            if (mode == (uint32_t) DebugView::Streaming) {
+                auto* states = static_cast<uint32_t*>(streamingMapped[frameSlot]);
+                std::copy_n(streamingStates.begin(), count, states);
+            }
+            std::array<RhiDescriptorWrite, 3> writes = {{
                 {.binding = 0, .type = RhiDescriptorType::CombinedImageSampler, .texture = ctx.texture(data.value), .sampler = pointSampler},
                 {.binding = 1, .type = RhiDescriptorType::StorageImage, .texture = ctx.texture(data.color)},
+                {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .buffer = streamingBuffers[frameSlot], .bufferRange = (uint64_t) maxStreamingRoots * sizeof(uint32_t)},
             }};
             device->updateDescriptorSet(resolveSets[frameSlot], writes);
             ResolvePush push = {
                 .size = {extent.width, extent.height},
                 .mode = mode,
                 .overdrawMax = 8.0f,
+                .streamingRoots = count,
             };
             auto* cmd = ctx.cmd();
             auto* resolve = registry->get(resolvePipeline);

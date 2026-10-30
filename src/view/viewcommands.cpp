@@ -2,6 +2,7 @@
 
 #include "lodgroups.h"
 #include "lodtool.h"
+#include "streamingtool.h"
 
 #include "assetclient.h"
 #include "camera.h"
@@ -341,6 +342,8 @@ auto parsePrepass(const std::string& args) -> std::expected<Json, std::string> {
 
 // One LOD root's inspection as the view.lod.inspect method and the lodtool record answer it; distances in the stage's units.
 auto lodInspectionJson(const LodInspection& in, double metersPerUnit) -> Json;
+// One streaming root's inspection as view.streaming.inspect and the streamingtool record answer it; distances in metres.
+auto streamingInspectionJson(const StreamingInspection& in) -> Json;
 
 // "<root> [h=<heuristic>] <t> <t> …": one heuristic's thresholds (or blend thresholds) for a LOD root's authored root, the heuristic in use
 // when none is named; no values clears the list.
@@ -375,6 +378,10 @@ auto parseLodThresholdList(const std::string& args) -> std::expected<Json, std::
 
 auto parseLodBlendList(const std::string& args) -> std::expected<Json, std::string> {
     return parseLodThresholds(args, "blendThresholds");
+}
+
+auto parseLodUnloadList(const std::string& args) -> std::expected<Json, std::string> {
+    return parseLodThresholds(args, "unloadThresholds");
 }
 
 // "[<root>]": every override when empty.
@@ -422,6 +429,23 @@ auto parseLodShow(const std::string& args) -> std::expected<Json, std::string> {
     }
     if (layer != "labels" && layer != "gizmo" && layer != "gizmoAll" && layer != "flash") {
         return std::unexpected(std::format("unknown layer '{}': labels, gizmo, gizmo-all or flash", layer));
+    }
+    return Json{{layer, state == "on"}};
+}
+
+// `streaming-show bounds|rings|rings-all|labels on|off`.
+auto parseStreamingShow(const std::string& args) -> std::expected<Json, std::string> {
+    std::istringstream in(args);
+    std::string layer;
+    std::string state;
+    if (!(in >> layer >> state) || (state != "on" && state != "off")) {
+        return std::unexpected(std::format("expected 'bounds|rings|rings-all|labels on|off', got '{}'", args));
+    }
+    if (layer == "rings-all") {
+        layer = "ringsAll";
+    }
+    if (layer != "bounds" && layer != "rings" && layer != "ringsAll" && layer != "labels") {
+        return std::unexpected(std::format("unknown layer '{}': bounds, rings, rings-all or labels", layer));
     }
     return Json{{layer, state == "on"}};
 }
@@ -512,6 +536,7 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"lod-prefer", "view.lod.heuristic", parseLodPreference},
     ScriptVerb{"lod-thresholds", "view.lod.override", parseLodThresholdList},
     ScriptVerb{"lod-blend-thresholds", "view.lod.override", parseLodBlendList},
+    ScriptVerb{"lod-unload-thresholds", "view.lod.override", parseLodUnloadList},
     ScriptVerb{"lod-override-reset", "view.lod.override.reset", parseLodOverrideReset},
     ScriptVerb{"lod-bias", "view.lod.tuning", parseLodBias},
     ScriptVerb{"lod-hysteresis", "view.lod.tuning", parseLodHysteresis},
@@ -521,6 +546,7 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"fly", "view.camera.fly", parseFly},
     ScriptVerb{"fly-stop", "view.camera.fly.stop", parseNothing},
     ScriptVerb{"streaming-reset", "view.streaming.reset", parseNothing},
+    ScriptVerb{"streaming-show", "view.streaming.visualize", parseStreamingShow},
     ScriptVerb{"view", "view.mode", parseViewMode},
     ScriptVerb{"window", "view.window", parseWindow},
     ScriptVerb{"debugview", "view.debugview", parseDebugView},
@@ -617,52 +643,57 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
             .result = "{cameras, metres, seconds, stopped}",
         },
         [&view](const Json& p, RpcResponder responder) {
-            auto prefix = p["prefix"].get<std::string>();
             auto speed = p["speed"].get<float>();
             if (speed <= 0.0f) {
                 responder.fail(rpc::invalidParams, "speed is metres a second, above 0");
                 return;
             }
-            std::vector<std::pair<std::string, glm::mat4>> found;
-            for (const auto& camera : view.scene.cameras()) {
-                if (camera.path.starts_with(prefix)) {
-                    found.emplace_back(camera.path, camera.worldTransform);
-                }
+            if (auto error = startFlight(view, p["prefix"].get<std::string>(), speed, responder)) {
+                responder.fail(rpc::appError, *error);
             }
-            std::ranges::sort(found, {}, [](const auto& camera) { return camera.first; });
-            if (found.size() < 2) {
-                responder.fail(rpc::appError, std::format("{} cameras start with '{}': a flight needs two", found.size(), prefix));
-                return;
-            }
-            if (view.flight.responder) {
-                view.flight.responder->respond({{"cameras", view.flight.cameras.size()}, {"metres", view.flight.metres}, {"seconds", view.flight.seconds}, {"stopped", true}});
-            }
-            view.flight = {};
-            view.flight.speed = speed;
-            for (const auto& [path, transform] : found) {
-                Camera placed = view.cam;
-                placed.place(transform);
-                view.flight.cameras.push_back(path);
-                view.flight.eyes.push_back(placed.position);
-                view.flight.yaws.push_back(placed.yaw);
-                view.flight.pitches.push_back(placed.pitch);
-            }
-            view.flight.responder = std::move(responder);
-            view.cam.position = view.flight.eyes.front();
-            view.cam.yaw = view.flight.yaws.front();
-            view.cam.pitch = view.flight.pitches.front();
-            TRACE_EVENT("Engine", "FlightStarted", prefix).text(std::format("flying {} cameras from {} at {:g} m/s", found.size(), found.front().first, speed));
         });
     registry.add({.name = "view.streaming.reset", .summary = "Zeroes the streaming counters (late switches, root-seconds coarser, loads, reloads, leads, arrivals unwanted), for a run measured from a known start.", .result = "{}"},
                  [&view](const Json&, RpcResponder responder) {
                      view.scene.resetStreamingCounters();
                      responder.respond(Json::object());
                  });
+    registry.add(
+        {
+            .name = "view.streaming.inspect",
+            .summary = "One streaming root inspected, as the Streaming window shows it: its residency (selected, state and why, resident and why, drawn, its state's name), every heuristic it names by domain with its thresholds authored and in force and its measure from the camera, its levels (requested, loaded, ready, drawn, lead), its authoring findings, its parent and children.",
+            .params = {requiredField("root", RpcType::String, "a streaming LOD root's full path")},
+            .result = "the inspection",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto root = p["root"].get<std::string>();
+            auto inspection = inspectStreamingRoot(view.scene, root, view.cam.position, lodWindowArea(glm::radians(cameraFovDegrees), view.viewAspect));
+            if (!inspection) {
+                responder.fail(rpc::appError, std::format("no streaming root is placed at '{}'", root));
+                return;
+            }
+            responder.respond(streamingInspectionJson(*inspection));
+        });
+    registry.add(
+        {
+            .name = "view.streaming.visualize",
+            .summary = "The Streaming tool's viewport layers: each root's streaming bounds in its state's colour (bounds), the load and unload radii of the selected root (rings) or of every root the Streaming window's list shows (ringsAll), labels. The streaming view is `view.debugview streaming`.",
+            .params = {optionalField("bounds", RpcType::Bool, "bounds on"),
+                       optionalField("rings", RpcType::Bool, "the selected root's rings on"),
+                       optionalField("ringsAll", RpcType::Bool, "every shown root's rings on"),
+                       optionalField("labels", RpcType::Bool, "labels on")},
+            .result = "{bounds, rings, ringsAll, labels}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto& state = view.ui.streamingWindow();
+            for (auto [name, flag] : {std::pair{"bounds", &state.bounds}, std::pair{"rings", &state.rings}, std::pair{"ringsAll", &state.ringsAll}, std::pair{"labels", &state.labels}}) {
+                if (p.contains(name)) {
+                    *flag = p[name].get<bool>();
+                }
+            }
+            responder.respond({{"bounds", state.bounds}, {"rings", state.rings}, {"ringsAll", state.ringsAll}, {"labels", state.labels}});
+        });
     registry.add({.name = "view.camera.fly.stop", .summary = "Stops the camera's flight where it is; its call answers.", .result = "{}"}, [&view](const Json&, RpcResponder responder) {
-        if (view.flight.responder) {
-            view.flight.responder->respond({{"cameras", view.flight.cameras.size()}, {"metres", view.flight.metres}, {"seconds", view.flight.seconds}, {"stopped", true}});
-        }
-        view.flight = {};
+        stopFlight(view);
         responder.respond(Json::object());
     });
     registry.add(
@@ -854,7 +885,8 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
             .params = {requiredField("root", RpcType::String, "a LOD root's full path (a streaming root or a render-LOD group)"),
                        optionalField("heuristic", RpcType::Int, "which of its heuristics (an index in authored order); the one the preference uses when absent"),
                        optionalField("thresholds", RpcType::Array, "finest first"),
-                       optionalField("blendThresholds", RpcType::Array, "where each band ends, finest first; [] for none")},
+                       optionalField("blendThresholds", RpcType::Array, "where each band ends, finest first; [] for none"),
+                       optionalField("unloadThresholds", RpcType::Array, "a streaming heuristic's unload radii, one per load threshold, at or past it; the streaming heuristic when no heuristic is named; [] for the load radii")},
             .result = "{}",
         },
         [&view](const Json& p, RpcResponder responder) {
@@ -864,6 +896,9 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
             }
             if (p.contains("blendThresholds")) {
                 thresholds.blendThresholds = p["blendThresholds"].get<std::vector<float>>();
+            }
+            if (p.contains("unloadThresholds")) {
+                thresholds.unloadThresholds = p["unloadThresholds"].get<std::vector<float>>();
             }
             std::optional<uint32_t> heuristic;
             if (p.contains("heuristic")) {
@@ -1566,10 +1601,57 @@ auto lodTuningJson(const LodTuning& tuning) -> Json {
                 {"heuristic", index},
                 {"thresholds", override.thresholds ? Json(*override.thresholds) : Json(nullptr)},
                 {"blendThresholds", override.blendThresholds ? Json(*override.blendThresholds) : Json(nullptr)},
+                {"unloadThresholds", override.unloadThresholds ? Json(*override.unloadThresholds) : Json(nullptr)},
             });
         }
     }
     return {{"bias", tuning.bias}, {"hysteresis", tuning.hysteresis}, {"blending", tuning.blending}, {"overrides", overrides}};
+}
+
+auto streamingInspectionJson(const StreamingInspection& in) -> Json {
+    const auto& row = in.row;
+    auto levels = Json::array();
+    for (size_t level = 0; level < row.levels.size(); level++) {
+        const auto& info = row.levels[level];
+        levels.push_back({{"level", level},
+                          {"name", info.name},
+                          {"requested", info.requested},
+                          {"loaded", info.loaded},
+                          {"ready", info.ready},
+                          {"drawn", info.drawn},
+                          {"leadSeconds", info.lead >= 0.0 ? Json(info.lead) : Json(nullptr)}});
+    }
+    auto heuristics = Json::array();
+    for (const auto& heuristic : in.heuristics) {
+        heuristics.push_back({{"domain", heuristic.domain},
+                              {"kind", heuristic.kind},
+                              {"path", heuristic.path},
+                              {"used", heuristic.used},
+                              {"why", heuristic.why},
+                              {"authored", {{"thresholds", heuristic.authored}, {"unloadThresholds", heuristic.authoredUnload}}},
+                              {"thresholds", heuristic.thresholds},
+                              {"unloadThresholds", heuristic.unload},
+                              {"measure", heuristic.measure >= 0.0f ? Json(heuristic.measure) : Json(nullptr)}});
+    }
+    return {
+        {"path", row.path},
+        {"key", row.key},
+        {"rootState", streamingStateName(row.rootState)},
+        {"selected", row.selected},
+        {"why", row.why},
+        {"state", row.state},
+        {"stateWhy", in.stateWhy},
+        {"resident", row.resident},
+        {"residentWhy", row.residentWhy},
+        {"drawn", row.drawn >= 0 ? Json(row.drawn) : Json(nullptr)},
+        {"streaming", row.streamingHeuristic >= 0 ? Json{{"heuristic", row.streamingHeuristic}, {"kind", row.kind}, {"measureMetres", row.measure}, {"loadMetres", row.load}, {"unloadMetres", row.unload}} : Json(nullptr)},
+        {"tuned", row.tuned},
+        {"levels", levels},
+        {"heuristics", heuristics},
+        {"findings", row.findings},
+        {"parent", in.parent.empty() ? Json(nullptr) : Json(in.parent)},
+        {"children", in.children},
+    };
 }
 
 auto lodInspectionJson(const LodInspection& in, double metersPerUnit) -> Json {
@@ -2283,6 +2365,42 @@ auto zonesRecord() -> Json {
 
 } // namespace
 
+auto startFlight(ViewContext& view, const std::string& prefix, float speed, std::optional<RpcResponder> responder) -> std::optional<std::string> {
+    std::vector<std::pair<std::string, glm::mat4>> found;
+    for (const auto& camera : view.scene.cameras()) {
+        if (camera.path.starts_with(prefix)) {
+            found.emplace_back(camera.path, camera.worldTransform);
+        }
+    }
+    std::ranges::sort(found, {}, [](const auto& camera) { return camera.first; });
+    if (found.size() < 2) {
+        return std::format("{} cameras start with '{}': a flight needs two", found.size(), prefix);
+    }
+    stopFlight(view);
+    view.flight.speed = speed;
+    for (const auto& [path, transform] : found) {
+        Camera placed = view.cam;
+        placed.place(transform);
+        view.flight.cameras.push_back(path);
+        view.flight.eyes.push_back(placed.position);
+        view.flight.yaws.push_back(placed.yaw);
+        view.flight.pitches.push_back(placed.pitch);
+    }
+    view.flight.responder = std::move(responder);
+    view.cam.position = view.flight.eyes.front();
+    view.cam.yaw = view.flight.yaws.front();
+    view.cam.pitch = view.flight.pitches.front();
+    TRACE_EVENT("Engine", "FlightStarted", prefix).text(std::format("flying {} cameras from {} at {:g} m/s", found.size(), found.front().first, speed));
+    return std::nullopt;
+}
+
+auto stopFlight(ViewContext& view) -> void {
+    if (view.flight.responder) {
+        view.flight.responder->respond({{"cameras", view.flight.cameras.size()}, {"metres", view.flight.metres}, {"seconds", view.flight.seconds}, {"stopped", true}});
+    }
+    view.flight = {};
+}
+
 auto advanceFlight(ViewContext& view, float dt) -> void {
     auto& flight = view.flight;
     if (!flight.flying()) {
@@ -2347,8 +2465,9 @@ auto engineMapStats(const ViewContext& view) -> EngineMapStats {
     stats["view.assetclient"] = {std::format("{} in flight, {} received", assets.inFlight(), assets.received), std::format("{} failed", assets.failed)};
     stats["scene.lod"] = {std::format("{} roots, heuristic {}", t.lodRootsEvaluated, view.scene.lodHeuristic() ? "on" : "off"),
                           std::format("last: {} finer, {} coarser", t.lodFiner, t.lodCoarser),
-                          std::format("unloaded: {} levels, {} contents, {} mesh packs ({:.1f} MiB)", t.releasedLevels, t.releasedContents, t.releasedMeshes, mib(t.releasedMeshBytes)),
-                          std::format("{} roots late, {} drawing nothing", view.scene.streaming().lateNow, view.scene.streaming().holesNow)};
+                          std::format("unloaded: {} levels, {} contents, {} mesh packs ({:.1f} MiB)", t.releasedLevels, t.releasedContents, t.releasedMeshes, mib(t.releasedMeshBytes))};
+    stats["scene.residency"] = {std::format("{} loads, {} reloads, {} released", view.scene.streaming().loads, view.scene.streaming().reloads, view.scene.streaming().released),
+                                std::format("{} roots late, {} drawing nothing, {} findings", view.scene.streaming().lateNow, view.scene.streaming().holesNow, view.scene.streaming().findings)};
     stats["scene.compose"] = {std::format("{} composes, last {:.1f} ms", t.composes, t.lastComposeMs),
                               std::format("{} layer packs, {} in flight", t.layerPacks, t.inFlightLayers),
                               std::format("{} contents held, {} released", t.prototypesHeld + t.levelsHeld, t.releasedContents)};
@@ -2493,6 +2612,28 @@ auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext
     records.add("lod", "every LOD root drawn: its levels, the level it defaults to, wants and draws, the levels loaded, and whether set by hand", [&view](RpcResponder responder) {
         responder.respond(lodRecord(view));
     });
+    records.add("streamingtool",
+                "the Streaming tool: the inspection of the streaming root at or above the selection (residency and why, heuristics by domain, levels with lead, findings), the totals and the viewport's layers",
+                [&view](RpcResponder responder) {
+                    // The streaming root at or above the selection: the longest root path that holds it.
+                    std::string root;
+                    for (const auto& placed : view.scene.lodRoots()) {
+                        bool atOrAbove = view.selectedPath == placed.path || view.selectedPath.starts_with(placed.path + "/");
+                        if (atOrAbove && placed.path.size() > root.size() && view.scene.lodChoices().contains(placed.path)) {
+                            root = placed.path;
+                        }
+                    }
+                    auto inspection = root.empty() ? std::nullopt : inspectStreamingRoot(view.scene, root, view.cam.position, lodWindowArea(glm::radians(cameraFovDegrees), view.viewAspect));
+                    const auto& state = view.ui.streamingWindow();
+                    const auto& t = state.totals;
+                    responder.respond({
+                        {"selected", view.selectedPath},
+                        {"inspection", inspection ? streamingInspectionJson(*inspection) : Json(nullptr)},
+                        {"totals", {{"roots", t.roots}, {"residentLevels", t.residentLevels}, {"inFlight", t.inFlight}, {"lateNow", t.lateNow}, {"holesNow", t.holesNow}}},
+                        {"layers", {{"streamingView", state.streamingView}, {"bounds", state.bounds}, {"rings", state.rings}, {"ringsAll", state.ringsAll}, {"labels", state.labels}}},
+                        {"window", view.ui.wantsStreamingWindow()},
+                    });
+                });
     records.add("lodtool",
                 "the LOD tool: the inspection of the LOD root at or above the selection (heuristics with their measures and picks, levels with triangles), the LOD tuning, the viewport's layers and the pops seen (next frames)",
                 [&view](RpcResponder responder) { view.renderLodRequests.push_back({.responder = std::move(responder), .askedAt = view.latestCull.lodFrame, .kind = RenderLodRequest::Kind::Tool}); });
