@@ -50,7 +50,7 @@ process is gone, so a crashed process leaves nothing behind after the next listi
 1. Pick a name `area.verb` (`view.camera.set`, `introspect.memory`).
 2. Register it with a `RpcMethodDesc`:
    - a one-line summary
-   - typed parameters (`Bool`, `Int`, `Float`, `String`, `Vec3`, `Enum` with values, `Array`, `Object`), each required or optional with a
+   - typed parameters (`Bool`, `Int`, `Float`, `String`, `Vec3`, `Enum` with values, `Array`, `Object`, `Any` for a value the handler checks itself), each required or optional with a
      description
    - a result description
 3. Write the handler: parameters are checked before it runs, so it can read them with `get<>()`. Answer through the responder; use

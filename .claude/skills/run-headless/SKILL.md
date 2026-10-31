@@ -94,7 +94,9 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   (frustum culling toggle, frozen frustum, red/green AABB overlay), `prepass on|off` (depth prepass), `aa on|off` (anti-aliasing; off to compare images pixel for pixel, a LOD fade's dither unblurred) and
   `ambient sky=r,g,b ground=r,g,b|reset` (hemisphere ambient), `gpuscene budget=<MiB>,limit=<MiB>` (upload budget, geometry pool limit),
   `sampler aniso=8,bias=0,minlod=0,mip=linear|nearest` (material sampler), `shadow cascades=3,tile=1024,lambda=0.5,pcf=on|off,distance=200`
-  (cascaded shadows), `inspect <texture> <level>|off` (texture inspector
+  (cascaded shadows) — these set configuration values; `config <name> <value>` sets any (`config render.shadow.cascades 1`),
+  `config-reset [<name or prefix>]` puts values back to their defaults, and the `config` record lists every value with its default and
+  description, `inspect <texture> <level>|off` (texture inspector
   capture) and `dump-texture <texture> <level> <path>` (one mip level as PNG; the texture index as the `render` record's `textures` list it); several screenshots in one run.
 - `--fail-on-validation`: exit code 2 if the validation layer reported anything. `--geometry-limit=<MiB>`: cap each geometry pool buffer
   below the device's limit, to exercise a full pool on a small scene (the `GeometryPoolFull` warning, the `memory` record's `geometryPool`). `--render-debug`: draw log on without the window.

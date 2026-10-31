@@ -1,5 +1,7 @@
 #include "shadowcascades.h"
 
+#include "renderconfig.h"
+
 #include <algorithm>
 #include <cmath>
 #include <glm/gtc/matrix_transform.hpp>
@@ -171,3 +173,31 @@ auto fitShadowCascades(const ShadowCascadeSettings& settings, const glm::mat4& v
     }
     return count;
 }
+
+namespace renderconfig {
+
+config::Int shadowCascades{"render.shadow.cascades", 3, "Shadow cascades from the camera out to the shadow distance; the atlas has room for four.", {.min = 1, .max = (double) maxShadowCascades}};
+config::Int shadowTile{"render.shadow.tile", 1024, "Texels along each side of a cascade's shadow map.", {.min = 64, .max = 8192}};
+config::Float shadowSplitLambda{"render.shadow.splitLambda", 0.5, "Where the cascades split: 0 evenly by distance, 1 logarithmically (finer near the camera).", {.min = 0.0, .max = 1.0}};
+config::Bool shadowPcf{"render.shadow.pcf", true, "A 3x3 hardware-compare filter on shadow lookups; off is one comparison, hard-edged."};
+config::Float shadowDistance{"render.shadow.distance", 200.0, "Metres from the camera where shadows end; beyond, surfaces are lit without shadow.", {.min = 1.0, .max = 100000.0}};
+
+auto shadowSettings() -> ShadowCascadeSettings {
+    return {
+        .count = (uint32_t) shadowCascades.get(),
+        .tileSize = (uint32_t) shadowTile.get(),
+        .splitLambda = (float) shadowSplitLambda.get(),
+        .pcf = shadowPcf.get(),
+        .maxDistance = (float) shadowDistance.get(),
+    };
+}
+
+auto setShadowSettings(const ShadowCascadeSettings& settings) -> void {
+    (void) shadowCascades.set(settings.count);
+    (void) shadowTile.set(settings.tileSize);
+    (void) shadowSplitLambda.set(settings.splitLambda);
+    shadowPcf.set(settings.pcf);
+    (void) shadowDistance.set(settings.maxDistance);
+}
+
+} // namespace renderconfig

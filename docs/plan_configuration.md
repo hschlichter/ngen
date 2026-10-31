@@ -1,6 +1,6 @@
 # Configuration: the engine's settings declared in code, in one system
 
-**Status. Draft.** Decisions as leaned, pushback welcome. The first step of [plan_lean_pass.md](plan_lean_pass.md): settings move out of the
+**Status. In progress.** Built 2026-11-01, decisions as leaned. The first step of [plan_lean_pass.md](plan_lean_pass.md): settings move out of the
 UI into this system, so the UI can be cut without taking the engine's settings with it.
 
 ## Current state
@@ -143,6 +143,36 @@ I lean **A**: one path to set a value, and most of the handlers in `viewcommands
   a name it doesn't have is refused with the choices.
 - **The UI no longer holds them**: `rg` finds no `ShadowCascadeSettings`, `SamplerSettings` or `AmbientSettings` member in `src/ui`.
 - No warnings or errors in the trace.
+
+## Results
+
+Built 2026-11-01, release and debug builds. Where the build differs from the steps:
+- **Declared in the renderer, named in one header**: each value is defined in the file of the part it configures (`lightingpass.cpp`,
+  `debugviewpass.cpp`, `renderer.cpp`, `shadowcascades.cpp`, `gpuscene.cpp`); `src/renderer/renderconfig.h` declares them all with the
+  helpers that read and write the snapshot's setting structs (`shadowSettings()`, `setShadowSettings()`, …). The buffer views' names moved
+  next to their enum (`gbufferViewNames`, `lightingpass.h`).
+- **The View menu and the Render Debug window keep their controls**: `ViewUI::draw` copies the values into locals they edit and writes them
+  back after (unchanged values don't count as changes); the shortcuts and `view.overlay`'s buffer, shadow and anti-aliasing set values.
+- **`config.set` takes several values at once** (`{values: {name: value}}`, checked together, nothing set when one fails) and a `reset`
+  prefix: the older verbs (`view`, `debugview`, `shadow`, `sampler`, `ambient`, `prepass`, `aa`, `gpuscene`) are parsers onto it. RPC gained
+  `RpcType::Any` for a value that may be a bool, number, name or array.
+- **`--geometry-limit=<MiB>`** sets `render.geometry.limitMiB`.
+- **19 values**: `render.view.buffer`, `render.view.debug`, `render.overlay.buffer`, `render.overlay.shadow`, `render.antialiasing`,
+  `render.prepass`, `render.sampler.{anisotropy, lodBias, minLod, nearestMip}`, `render.shadow.{cascades, tile, splitLambda, pcf, distance}`,
+  `render.ambient.{sky, ground}`, `render.upload.budgetMiB`, `render.geometry.limitMiB`.
+
+Checks:
+- **Nothing changes**: the 8 reference images byte-identical, run through the old verbs (`--view=albedo`, `prepass on`) now set as
+  configuration; the prepass run has its `DepthPrepass` pass.
+- **The record and the verbs**: the `config` record lists the 19 with defaults and descriptions; `config render.shadow.cascades 1`, the
+  `shadow cascades=2,distance=150` and `ambient sky=0.5,0.5,0.5` short forms show in it; `config-reset render.ambient` puts the sky back;
+  `config render.shadow.cascades 9` is refused ("9 is outside 1 to 4"), `config render.view.buffer nope` with the choices listed.
+- **Applied on change**: `gpuscene budget=32` at the village takes the `gpuscene` record's upload budget from 64 MiB to 32 MiB.
+- **The main-thread rule**: the debug build runs with the Configuration and Render Debug windows open and values set by verbs, no
+  assertion. (It caught an ImGui misuse in the window's number inputs, fixed.)
+- **The UI no longer holds them**: no `ShadowCascadeSettings`, `SamplerSettings` or `AmbientSettings` member in `src/ui`; `ViewUI`'s
+  getters and setters for them gone; the `status` record's shadow, sampler, anti-aliasing and ambient fields gone (the `config` record has
+  them). Validation on, no errors in the trace.
 
 ## Deferred / follow-ups
 

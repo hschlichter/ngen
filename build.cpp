@@ -95,6 +95,13 @@ auto main(int argc, char** argv) -> int {
             .public_include({"src/profile"})
             .include({"src/rhi"});
 
+    // Configuration (src/config/README.md): the engine's settings, typed values declared in code by the system they configure. Standard
+    // library only, beside profile and trace.
+    auto config =
+        cxx::static_library("config")
+            .sources(glob({.include = "src/config/*.cpp"}))
+            .public_include({"src/config"});
+
     // RPC core: frames, JSON-RPC, TCP on loopback, discovery. The standard library plus header-only
     // nlohmann/json, so programs outside the engine, such as the asset server, use it too (src/rpc/README.md).
     auto rpccore =
@@ -193,6 +200,7 @@ auto main(int argc, char** argv) -> int {
             })
             .link(traceLib)
             .link(profile)
+            .link(config)
             .link(assetClient)
             .link(packer)
             .link(rhi_backend);
@@ -234,6 +242,7 @@ auto main(int argc, char** argv) -> int {
             })
             .link(renderer)
             .link(profile)
+            .link(config)
             .link(session)
             .link(imgui);
 
@@ -385,6 +394,7 @@ auto main(int argc, char** argv) -> int {
             })
             .link(traceLib)
             .link(profile)
+            .link(config)
             .link(session)
             .link(rhivulkan)
             .link(renderer)

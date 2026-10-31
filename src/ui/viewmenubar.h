@@ -29,6 +29,7 @@ struct ViewMenuBarState {
     bool& debugCameraControlMain; // DebugCameraState::controlMain
     bool& showFrameGraph;
     bool& showPerformance;
+    bool& showConfig;
     bool& showStatusBar;
     bool& showRenderDebug;
     bool& showCamera;

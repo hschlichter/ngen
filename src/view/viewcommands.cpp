@@ -9,6 +9,7 @@
 #include "debugview.h"
 #include "drawlists.h"
 #include "profile.h"
+#include "renderconfig.h"
 #include "renderdoccapture.h"
 #include "renderer.h"
 #include "renderthread.h"
@@ -39,8 +40,6 @@
 namespace {
 
 using rpc::Json;
-
-constexpr std::array<const char*, 11> viewModeNames = {"lit", "albedo", "normals", "depth", "shadowfactor", "shadowmap", "shadowuv", "worldpos", "miplevel", "cascades", "lodlevel"};
 
 auto enumValues(auto names) -> std::vector<std::string> {
     std::vector<std::string> out;
@@ -212,11 +211,17 @@ auto parseLod(const std::string& args) -> std::expected<Json, std::string> {
     return Json{{"root", root}, {"level", level}};
 }
 
-auto parseViewMode(const std::string& args) -> std::expected<Json, std::string> {
-    if (std::ranges::find(viewModeNames, std::string_view(args)) == viewModeNames.end()) {
-        return std::unexpected(std::format("unknown mode '{}'", args));
+// The verbs that set configuration values (`view lit`, `prepass on`, …): their arguments as config.set's {values}.
+auto configValues(std::initializer_list<std::pair<const char*, std::string>> values) -> Json {
+    Json out = Json::object();
+    for (const auto& [name, value] : values) {
+        out[name] = value;
     }
-    return Json{{"mode", args}};
+    return Json{{"values", out}};
+}
+
+auto parseViewMode(const std::string& args) -> std::expected<Json, std::string> {
+    return configValues({{"render.view.buffer", args}});
 }
 
 auto parseWindow(const std::string& args) -> std::expected<Json, std::string> {
@@ -226,10 +231,7 @@ auto parseWindow(const std::string& args) -> std::expected<Json, std::string> {
 }
 
 auto parseDebugView(const std::string& args) -> std::expected<Json, std::string> {
-    if (std::ranges::find(debugViewNames, std::string_view(args)) == debugViewNames.end()) {
-        return std::unexpected(std::format("unknown view '{}'", args));
-    }
-    return Json{{"view", args}};
+    return configValues({{"render.view.debug", args}});
 }
 
 auto parseOverlay(const std::string& args) -> std::expected<Json, std::string> {
@@ -268,85 +270,97 @@ auto parseCull(const std::string& args) -> std::expected<Json, std::string> {
 }
 
 auto parseSampler(const std::string& args) -> std::expected<Json, std::string> {
-    Json params = Json::object();
+    Json values = Json::object();
     for (const auto& [key, value] : splitItems(args)) {
         if (key == "aniso") {
-            params["aniso"] = std::strtof(value.c_str(), nullptr);
+            values["render.sampler.anisotropy"] = value;
         } else if (key == "bias") {
-            params["bias"] = std::strtof(value.c_str(), nullptr);
+            values["render.sampler.lodBias"] = value;
         } else if (key == "minlod") {
-            params["minLod"] = std::strtof(value.c_str(), nullptr);
+            values["render.sampler.minLod"] = value;
         } else if (key == "mip") {
-            params["mip"] = value == "nearest" ? "nearest" : "linear";
+            values["render.sampler.nearestMip"] = value == "nearest" ? "true" : "false";
         } else {
             return std::unexpected(std::format("unknown key '{}'", key));
         }
     }
-    return params;
+    return Json{{"values", values}};
 }
 
 auto parseShadow(const std::string& args) -> std::expected<Json, std::string> {
-    Json params = Json::object();
+    Json values = Json::object();
     for (const auto& [key, value] : splitItems(args)) {
         if (key == "cascades") {
-            params["cascades"] = std::atoi(value.c_str());
+            values["render.shadow.cascades"] = value;
         } else if (key == "tile") {
-            params["tile"] = std::atoi(value.c_str());
+            values["render.shadow.tile"] = value;
         } else if (key == "lambda") {
-            params["lambda"] = std::strtof(value.c_str(), nullptr);
+            values["render.shadow.splitLambda"] = value;
         } else if (key == "pcf") {
-            params["pcf"] = value == "on";
+            values["render.shadow.pcf"] = value;
         } else if (key == "distance") {
-            params["distance"] = std::strtof(value.c_str(), nullptr);
+            values["render.shadow.distance"] = value;
         } else {
             return std::unexpected(std::format("unknown key '{}'", key));
         }
     }
-    return params;
+    return Json{{"values", values}};
 }
 
 // "sky=r,g,b ground=r,g,b", either or both, or "reset".
 auto parseAmbient(const std::string& args) -> std::expected<Json, std::string> {
-    Json params = Json::object();
+    Json params = {{"values", Json::object()}};
     std::istringstream in(args);
     std::string item;
     while (in >> item) {
         if (item == "reset") {
-            params["reset"] = true;
+            params["reset"] = "render.ambient";
             continue;
         }
         auto equals = item.find('=');
-        glm::vec3 colour(0.0f);
-        bool parsed = equals != std::string::npos && std::sscanf(item.c_str() + equals + 1, "%f,%f,%f", &colour.x, &colour.y, &colour.z) == 3;
         auto key = item.substr(0, equals);
-        if (!parsed || (key != "sky" && key != "ground")) {
+        if (equals == std::string::npos || (key != "sky" && key != "ground")) {
             return std::unexpected(std::format("expected 'sky=r,g,b', 'ground=r,g,b' or 'reset', got '{}'", item));
         }
-        params[key] = vec3Json(colour);
+        params["values"]["render.ambient." + key] = item.substr(equals + 1);
     }
     return params;
 }
 
 auto parseGpuScene(const std::string& args) -> std::expected<Json, std::string> {
-    Json params = Json::object();
+    Json values = Json::object();
     for (const auto& [key, value] : splitItems(args)) {
         if (key == "budget") {
-            params["uploadBudgetMiB"] = std::atoi(value.c_str());
+            values["render.upload.budgetMiB"] = value;
         } else if (key == "limit") {
-            params["geometryLimitMiB"] = std::atoi(value.c_str());
+            values["render.geometry.limitMiB"] = value;
         } else {
             return std::unexpected(std::format("unknown key '{}'", key));
         }
     }
-    return params;
+    return Json{{"values", values}};
 }
 
-// "on" or "off" as {enabled}: the prepass and anti-aliasing verbs.
 auto parsePrepass(const std::string& args) -> std::expected<Json, std::string> {
-    if (args != "on" && args != "off") {
-        return std::unexpected(std::format("unknown argument '{}'", args));
+    return configValues({{"render.prepass", args}});
+}
+
+auto parseAntiAliasing(const std::string& args) -> std::expected<Json, std::string> {
+    return configValues({{"render.antialiasing", args}});
+}
+
+// `config <name> <value>`.
+auto parseConfig(const std::string& args) -> std::expected<Json, std::string> {
+    auto space = args.find(' ');
+    if (space == std::string::npos) {
+        return std::unexpected(std::format("expected '<name> <value>', got '{}'", args));
     }
-    return Json{{"enabled", args == "on"}};
+    return Json{{"name", args.substr(0, space)}, {"value", args.substr(space + 1)}};
+}
+
+// `config-reset [<name or prefix>]`.
+auto parseConfigReset(const std::string& args) -> std::expected<Json, std::string> {
+    return Json{{"name", args}};
 }
 
 // One LOD root's inspection as the view.lod.inspect method and the lodtool record answer it; distances in the stage's units.
@@ -627,19 +641,21 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"fly-stop", "view.camera.fly.stop", parseNothing},
     ScriptVerb{"streaming-reset", "view.streaming.reset", parseNothing},
     ScriptVerb{"streaming-show", "view.streaming.visualize", parseStreamingShow},
-    ScriptVerb{"view", "view.mode", parseViewMode},
+    ScriptVerb{"view", "config.set", parseViewMode},
     ScriptVerb{"window", "view.window", parseWindow},
-    ScriptVerb{"debugview", "view.debugview", parseDebugView},
+    ScriptVerb{"debugview", "config.set", parseDebugView},
     ScriptVerb{"overlay", "view.overlay", parseOverlay},
     ScriptVerb{"cull", "view.cull", parseCull},
-    ScriptVerb{"sampler", "view.sampler", parseSampler},
+    ScriptVerb{"sampler", "config.set", parseSampler},
     ScriptVerb{"inspect", "view.inspect", parseInspect},
     ScriptVerb{"dump-texture", "view.dumpTexture", parseDumpTexture},
-    ScriptVerb{"shadow", "view.shadow", parseShadow},
-    ScriptVerb{"prepass", "view.prepass", parsePrepass},
-    ScriptVerb{"aa", "view.antialiasing", parsePrepass},
-    ScriptVerb{"ambient", "view.ambient", parseAmbient},
-    ScriptVerb{"gpuscene", "view.gpuscene.set", parseGpuScene},
+    ScriptVerb{"shadow", "config.set", parseShadow},
+    ScriptVerb{"prepass", "config.set", parsePrepass},
+    ScriptVerb{"aa", "config.set", parseAntiAliasing},
+    ScriptVerb{"ambient", "config.set", parseAmbient},
+    ScriptVerb{"gpuscene", "config.set", parseGpuScene},
+    ScriptVerb{"config", "config.set", parseConfig},
+    ScriptVerb{"config-reset", "config.reset", parseConfigReset},
     ScriptVerb{"screenshot", "view.screenshot", parsePath},
     ScriptVerb{"renderdoc-capture", "renderdoc.capture", parseNothing},
     ScriptVerb{"capture", "capture.request", parseCapture},
@@ -878,7 +894,7 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.streaming.visualize",
-            .summary = "The Streaming tool's viewport layers: each root's streaming bounds in its state's colour (bounds), the load and unload radii of the selected root (rings) or of every root the Streaming window's list shows (ringsAll), labels. The streaming view is `view.debugview streaming`.",
+            .summary = "The Streaming tool's viewport layers: each root's streaming bounds in its state's colour (bounds), the load and unload radii of the selected root (rings) or of every root the Streaming window's list shows (ringsAll), labels. The streaming view is the configuration `render.view.debug streaming`.",
             .params = {optionalField("bounds", RpcType::Bool, "bounds on"),
                        optionalField("rings", RpcType::Bool, "the selected root's rings on"),
                        optionalField("ringsAll", RpcType::Bool, "every shown root's rings on"),
@@ -1148,7 +1164,7 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.lod.visualize",
-            .summary = "The LOD tool's viewport layers: labels over the LOD roots, the heuristic gizmo of the selected root (gizmo) or of every root the LOD window's list shows (gizmoAll), and the pop flash (a render-LOD root's meshes flash white when its level changes without a fade). The LOD Level view is `view.mode lodlevel`; color picks its colours: by the drawn level (an index within the nearest LOD root) or by how many LOD roots deep the draw is.",
+            .summary = "The LOD tool's viewport layers: labels over the LOD roots, the heuristic gizmo of the selected root (gizmo) or of every root the LOD window's list shows (gizmoAll), and the pop flash (a render-LOD root's meshes flash white when its level changes without a fade). The LOD Level view is the configuration `render.view.buffer lodlevel`; color picks its colours: by the drawn level (an index within the nearest LOD root) or by how many LOD roots deep the draw is.",
             .params = {optionalField("labels", RpcType::Bool, "labels on"),
                        optionalField("gizmo", RpcType::Bool, "the selected root's gizmo on"),
                        optionalField("gizmoAll", RpcType::Bool, "every shown root's gizmo on"),
@@ -1266,33 +1282,169 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
     });
 }
 
+// A configuration value as JSON: typed (a bool, a number, a choice's name, [x, y, z]).
+auto configValueJson(const config::Value& value) -> Json {
+    switch (value.type()) {
+        case config::Type::Bool:
+            return static_cast<const config::Bool&>(value).get();
+        case config::Type::Int:
+            return static_cast<const config::Int&>(value).get();
+        case config::Type::Float:
+            return static_cast<const config::Float&>(value).get();
+        case config::Type::Enum:
+            return static_cast<const config::Enum&>(value).choice();
+        case config::Type::Vec3: {
+            // At float precision: 0.2, not 0.20000000298 (a float widened to double).
+            auto v = static_cast<const config::Vec3&>(value).get();
+            auto number = [](float f) {
+                return std::stod(std::format("{}", f));
+            };
+            return Json::array({number(v[0]), number(v[1]), number(v[2])});
+        }
+    }
+    return nullptr;
+}
+
+auto configEntryJson(const config::Value& value) -> Json {
+    Json out = {
+        {"name", value.name()},
+        {"type", config::typeName(value.type())},
+        {"value", configValueJson(value)},
+        {"default", value.defaultText()},
+        {"isDefault", value.isDefault()},
+        {"description", value.description()},
+    };
+    const config::Range* range = nullptr;
+    if (value.type() == config::Type::Int) {
+        range = &static_cast<const config::Int&>(value).range();
+    } else if (value.type() == config::Type::Float) {
+        range = &static_cast<const config::Float&>(value).range();
+    } else if (value.type() == config::Type::Enum) {
+        out["choices"] = static_cast<const config::Enum&>(value).choices();
+    }
+    if (range != nullptr && range->min) {
+        out["min"] = *range->min;
+    }
+    if (range != nullptr && range->max) {
+        out["max"] = *range->max;
+    }
+    return out;
+}
+
+// The values a name names: the one value by that name, else those under it as a prefix (every value for an empty name).
+auto configNamed(const std::string& name) -> std::vector<config::Value*> {
+    if (auto* value = config::find(name)) {
+        return {value};
+    }
+    return config::under(name);
+}
+
+auto configRecord(const std::string& name) -> Json {
+    auto values = Json::array();
+    for (const auto* value : configNamed(name)) {
+        values.push_back(configEntryJson(*value));
+    }
+    return {{"values", values}};
+}
+
+// A JSON value as the text a configuration value parses: true/false, a number, a name, "x,y,z".
+auto configText(const Json& value) -> std::string {
+    if (value.is_string()) {
+        return value.get<std::string>();
+    }
+    if (value.is_boolean()) {
+        return value.get<bool>() ? "true" : "false";
+    }
+    if (value.is_array()) {
+        std::string out;
+        for (const auto& item : value) {
+            out += (out.empty() ? "" : ",") + configText(item);
+        }
+        return out;
+    }
+    return value.dump();
+}
+
+auto registerConfiguration(RpcRegistry& registry) -> void {
+    registry.add(
+        {
+            .name = "config.get",
+            .summary = "Configuration values (src/config/README.md): the one by a name, or every one under a prefix (all without one); each with its type, value, default, description and range or choices.",
+            .params = {optionalField("name", RpcType::String, "a value's name, or a prefix such as render.shadow")},
+            .result = "{values: [{name, type, value, default, isDefault, description, min?, max?, choices?}]}",
+        },
+        [](const Json& p, RpcResponder responder) { responder.respond(configRecord(p.value("name", std::string()))); });
+    registry.add(
+        {
+            .name = "config.set",
+            .summary = "Set configuration values: one by name and value, or several as {values: {name: value}}; reset (a name or prefix) is put back to its defaults first. Values are checked (range, choices); nothing is set when one fails.",
+            .params = {optionalField("name", RpcType::String, "a value's name"),
+                       {.name = "value", .type = RpcType::Any, .required = false, .description = "its value: a bool, number, choice's name, [x, y, z] or their text"},
+                       optionalField("values", RpcType::Object, "name to value, several at once"),
+                       optionalField("reset", RpcType::String, "a name or prefix put back to its defaults first")},
+            .result = "{values: [the values set, as config.get]}",
+        },
+        [](const Json& p, RpcResponder responder) {
+            std::vector<std::pair<config::Value*, std::string>> sets;
+            auto add = [&](const std::string& name, const Json& value) -> bool {
+                auto* found = config::find(name);
+                if (found == nullptr) {
+                    responder.fail(rpc::invalidParams, std::format("no configuration value '{}'", name));
+                    return false;
+                }
+                sets.emplace_back(found, configText(value));
+                return true;
+            };
+            if (p.contains("name") && !add(p["name"].get<std::string>(), p.contains("value") ? p["value"] : Json(""))) {
+                return;
+            }
+            if (p.contains("values")) {
+                for (const auto& [name, value] : p["values"].items()) {
+                    if (!add(name, value)) {
+                        return;
+                    }
+                }
+            }
+            // Checked before any is set: each value set and put back, so a failing one leaves every value as it was.
+            for (auto& [value, text] : sets) {
+                auto before = value->text();
+                if (auto result = value->setText(text); !result) {
+                    responder.fail(rpc::invalidParams, result.error());
+                    return;
+                }
+                (void) value->setText(before);
+            }
+            if (p.contains("reset")) {
+                for (auto* value : configNamed(p["reset"].get<std::string>())) {
+                    value->reset();
+                }
+            }
+            auto out = Json::array();
+            for (auto& [value, text] : sets) {
+                (void) value->setText(text);
+                out.push_back(configEntryJson(*value));
+            }
+            responder.respond({{"values", out}});
+        });
+    registry.add(
+        {
+            .name = "config.reset",
+            .summary = "Put configuration values back to their defaults: the one by a name, or every one under a prefix (all without one).",
+            .params = {optionalField("name", RpcType::String, "a value's name or a prefix")},
+            .result = "{values: [the values reset, as config.get]}",
+        },
+        [](const Json& p, RpcResponder responder) {
+            auto values = configNamed(p.value("name", std::string()));
+            auto out = Json::array();
+            for (auto* value : values) {
+                value->reset();
+                out.push_back(configEntryJson(*value));
+            }
+            responder.respond({{"values", out}});
+        });
+}
+
 auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
-    registry.add(
-        {
-            .name = "view.mode",
-            .summary = "The lighting pass's view mode.",
-            .params = {{.name = "mode", .type = RpcType::Enum, .required = true, .description = "buffer view", .enumValues = enumValues(viewModeNames)}},
-            .result = "{}",
-        },
-        [&view](const Json& p, RpcResponder responder) {
-            auto mode = p["mode"].get<std::string>();
-            auto it = std::ranges::find(viewModeNames, std::string_view(mode));
-            view.ui.setGBufferViewMode((int) (it - viewModeNames.begin()));
-            responder.respond(Json::object());
-        });
-    registry.add(
-        {
-            .name = "view.debugview",
-            .summary = "A debug view in place of the lit image.",
-            .params = {{.name = "view", .type = RpcType::Enum, .required = true, .description = "debug view", .enumValues = enumValues(debugViewNames)}},
-            .result = "{}",
-        },
-        [&view](const Json& p, RpcResponder responder) {
-            auto name = p["view"].get<std::string>();
-            auto it = std::ranges::find(debugViewNames, std::string_view(name));
-            view.ui.setDebugView((int) (it - debugViewNames.begin()));
-            responder.respond(Json::object());
-        });
     registry.add(
         {
             .name = "view.window",
@@ -1352,131 +1504,6 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
             if (p.contains("overlayView")) {
                 view.ui.setCullOverlayView(p["overlayView"].get<int>());
             }
-            responder.respond(Json::object());
-        });
-    registry.add(
-        {
-            .name = "view.sampler",
-            .summary = "The material sampler.",
-            .params = {
-                optionalField("aniso", RpcType::Float, "max anisotropy, 0 = off"),
-                optionalField("bias", RpcType::Float, "LOD bias"),
-                optionalField("minLod", RpcType::Float, "minimum LOD"),
-                {.name = "mip", .type = RpcType::Enum, .required = false, .description = "mip filter", .enumValues = {"linear", "nearest"}},
-            },
-            .result = "{}",
-        },
-        [&view](const Json& p, RpcResponder responder) {
-            auto& settings = view.ui.samplerSettingsMutable();
-            if (p.contains("aniso")) {
-                settings.maxAnisotropy = p["aniso"].get<float>();
-            }
-            if (p.contains("bias")) {
-                settings.lodBias = p["bias"].get<float>();
-            }
-            if (p.contains("minLod")) {
-                settings.minLod = p["minLod"].get<float>();
-            }
-            if (p.contains("mip")) {
-                settings.nearestMip = p["mip"].get<std::string>() == "nearest";
-            }
-            responder.respond(Json::object());
-        });
-    registry.add(
-        {
-            .name = "view.shadow",
-            .summary = "Cascaded shadow settings.",
-            .params = {
-                optionalField("cascades", RpcType::Int, "1..4"),
-                optionalField("tile", RpcType::Int, "texels per cascade, at least 64"),
-                optionalField("lambda", RpcType::Float, "0 uniform .. 1 logarithmic splits"),
-                optionalField("pcf", RpcType::Bool, "3x3 PCF"),
-                optionalField("distance", RpcType::Float, "metres from the camera where shadows end"),
-            },
-            .result = "{}",
-        },
-        [&view](const Json& p, RpcResponder responder) {
-            auto& settings = view.ui.shadowSettingsMutable();
-            if (p.contains("cascades")) {
-                settings.count = (uint32_t) std::clamp(p["cascades"].get<int>(), 1, (int) maxShadowCascades);
-            }
-            if (p.contains("tile")) {
-                settings.tileSize = (uint32_t) std::max(64, p["tile"].get<int>());
-            }
-            if (p.contains("lambda")) {
-                settings.splitLambda = std::clamp(p["lambda"].get<float>(), 0.0f, 1.0f);
-            }
-            if (p.contains("pcf")) {
-                settings.pcf = p["pcf"].get<bool>();
-            }
-            if (p.contains("distance")) {
-                settings.maxDistance = std::max(1.0f, p["distance"].get<float>());
-            }
-            responder.respond(Json::object());
-        });
-    registry.add(
-        {
-            .name = "view.ambient",
-            .summary = "The hemisphere ambient: sky and ground colours, as fractions of the sun's radiance; reset for the defaults.",
-            .params = {
-                optionalField("sky", RpcType::Vec3, "[r, g, b]"),
-                optionalField("ground", RpcType::Vec3, "[r, g, b]"),
-                optionalField("reset", RpcType::Bool, "back to the defaults first"),
-            },
-            .result = "{}",
-        },
-        [&view](const Json& p, RpcResponder responder) {
-            auto& ambient = view.ui.ambientSettingsMutable();
-            if (p.contains("reset") && p["reset"].get<bool>()) {
-                ambient = AmbientSettings{};
-            }
-            if (p.contains("sky")) {
-                ambient.sky = glm::vec3(p["sky"][0].get<float>(), p["sky"][1].get<float>(), p["sky"][2].get<float>());
-            }
-            if (p.contains("ground")) {
-                ambient.ground = glm::vec3(p["ground"][0].get<float>(), p["ground"][1].get<float>(), p["ground"][2].get<float>());
-            }
-            responder.respond(Json::object());
-        });
-    registry.add(
-        {
-            .name = "view.gpuscene.set",
-            .summary = "GPU scene settings, from the next frame: bytes uploaded per frame, and the most each geometry pool buffer may take (0 for the device's limit; lowering it stops growth, it doesn't shrink the pool).",
-            .params = {
-                optionalField("uploadBudgetMiB", RpcType::Int, "MiB per SceneUpload pass, at least 1"),
-                optionalField("geometryLimitMiB", RpcType::Int, "MiB per pool buffer, 0 for the device's limit"),
-            },
-            .result = "{}",
-        },
-        [&view](const Json& p, RpcResponder responder) {
-            if (p.contains("uploadBudgetMiB")) {
-                view.renderThread.setUploadBudget((uint64_t) std::max(1, p["uploadBudgetMiB"].get<int>()) * 1024 * 1024);
-            }
-            if (p.contains("geometryLimitMiB")) {
-                view.renderThread.setGeometryLimit((uint64_t) std::max(0, p["geometryLimitMiB"].get<int>()) * 1024 * 1024);
-            }
-            responder.respond(Json::object());
-        });
-    registry.add(
-        {
-            .name = "view.prepass",
-            .summary = "The depth prepass.",
-            .params = {requiredField("enabled", RpcType::Bool, "prepass on")},
-            .result = "{}",
-        },
-        [&view](const Json& p, RpcResponder responder) {
-            view.ui.setDepthPrepass(p["enabled"].get<bool>());
-            responder.respond(Json::object());
-        });
-    registry.add(
-        {
-            .name = "view.antialiasing",
-            .summary = "The anti-aliasing pass (FXAA) on the presented image; off shows the image as the passes wrote it (a dither pattern unblurred).",
-            .params = {requiredField("enabled", RpcType::Bool, "anti-aliasing on")},
-            .result = "{}",
-        },
-        [&view](const Json& p, RpcResponder responder) {
-            view.ui.setAntiAliasing(p["enabled"].get<bool>());
             responder.respond(Json::object());
         });
     registry.add(
@@ -1604,8 +1631,6 @@ auto registerIntrospection(RpcRegistry& registry, ViewContext& view) -> void {
 }
 
 auto statusRecord(const ViewContext& view) -> Json {
-    const auto& sampler = view.ui.getSamplerSettings();
-    const auto& shadow = view.ui.getShadowSettings();
     return {
         {"frame", view.frameCounter},
         {"scene", view.sceneLabel},
@@ -1613,11 +1638,7 @@ auto statusRecord(const ViewContext& view) -> Json {
         {"camera", {{"position", vec3Json(view.cam.position)}, {"yaw", view.cam.yaw}, {"pitch", view.cam.pitch}, {"speed", view.cam.speed}}},
         {"debugCamera", debugCameraJson(view.ui.cameraWindow().debug)},
         {"cameraModes", cameraModesJson(view.ui.cameraWindow().modes)},
-        {"shadow", {{"cascades", shadow.count}, {"tile", shadow.tileSize}, {"lambda", shadow.splitLambda}, {"pcf", shadow.pcf}, {"distance", shadow.maxDistance}}},
-        {"antiAliasing", view.ui.getAntiAliasing()},
-        {"sampler", {{"anisotropy", sampler.maxAnisotropy}, {"lodBias", sampler.lodBias}, {"minLod", sampler.minLod}, {"nearestMip", sampler.nearestMip}}},
         {"purposes", {{"guide", view.ui.showGuides()}, {"proxy", view.ui.showProxies()}}},
-        {"ambient", {{"sky", vec3Json(view.ui.ambientSettings().sky)}, {"ground", vec3Json(view.ui.ambientSettings().ground)}}},
     };
 }
 
@@ -1902,7 +1923,7 @@ auto lodToolRecord(const ViewContext& view) -> Json {
         {"selectedRoot", root.empty() ? Json(nullptr) : Json(root)},
         {"inspection", inspection},
         {"tuning", lodTuningJson(view.scene.lodTuning())},
-        {"layers", {{"levelView", view.ui.getGBufferViewMode() == 10}, {"labels", window.labels}, {"gizmo", window.gizmo}, {"gizmoAll", window.gizmoAll}, {"flash", window.flash}, {"color", window.colorByDepth ? "depth" : "level"}}},
+        {"layers", {{"levelView", renderconfig::bufferView.get() == (size_t) GBufferView::LodLevel}, {"labels", window.labels}, {"gizmo", window.gizmo}, {"gizmoAll", window.gizmoAll}, {"flash", window.flash}, {"color", window.colorByDepth ? "depth" : "level"}}},
         {"pops", view.lodPops},
         {"windowRows", window.rows.size()},
     };
@@ -2677,6 +2698,7 @@ auto registerViewMethods(RpcRegistry& registry, ViewContext& view) -> void {
     registerCamera(registry, view);
     registerScene(registry, view);
     registerDisplay(registry, view);
+    registerConfiguration(registry);
     registerIntrospection(registry, view);
 }
 
@@ -2701,11 +2723,14 @@ auto runViewScriptCommand(const RpcRegistry& registry, const SessionCommand& com
 }
 
 auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext& view) -> void {
-    records.add("status", "frame counter, scene, selection, camera, anti-aliasing, the material sampler and the purposes drawn", [&view](RpcResponder responder) {
+    records.add("status", "frame counter, scene, selection, the cameras (main, debug, modes) and the purposes drawn; the render settings are the config record's", [&view](RpcResponder responder) {
         responder.respond(statusRecord(view));
     });
     records.add("scene", "the open scene: its layer stack, up axis and units, prims (instances expanded), prototypes, draws, lights and LOD levels set", [&view](RpcResponder responder) {
         responder.respond(sceneRecord(view));
+    });
+    records.add("config", "the configuration: every value with its type, value, default, description and range or choices", [](RpcResponder responder) {
+        responder.respond(configRecord(""));
     });
     records.add("scenethread", "the scene thread: requests, composes and placement passes, assets in flight and held, and residency (the script's hold, the load's longest frame)", [&view](RpcResponder responder) {
         responder.respond(sceneThreadRecord(view));

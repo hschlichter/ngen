@@ -3,6 +3,7 @@
 #include "assetswindow.h"
 #include "camerawindow.h"
 #include "capturewindow.h"
+#include "configwindow.h"
 #include "counterswindow.h"
 #include "cullingwindow.h"
 #include "debugviewwindow.h"
@@ -94,27 +95,11 @@ public:
     // Which view colours the culling AABB overlay: 0 camera, 1.. shadow cascades.
     auto cullOverlayView() const -> int { return cullOverlayViewIndex; }
     auto setCullOverlayView(int view) -> void { cullOverlayViewIndex = view; }
-    auto getDepthPrepass() const -> bool { return depthPrepassFlag; }
-    auto setDepthPrepass(bool on) -> void { depthPrepassFlag = on; }
-    auto getSamplerSettings() const -> const SamplerSettings& { return samplerSettings; }
-    auto samplerSettingsMutable() -> SamplerSettings& { return samplerSettings; }
-    auto getShadowSettings() const -> const ShadowCascadeSettings& { return shadowSettings; }
-    auto shadowSettingsMutable() -> ShadowCascadeSettings& { return shadowSettings; }
-    auto ambientSettings() const -> const AmbientSettings& { return ambient; }
-    auto ambientSettingsMutable() -> AmbientSettings& { return ambient; }
     auto setShadowCullStats(uint32_t cascades, const std::array<uint32_t, maxShadowCascades>& culled, const std::array<uint32_t, maxShadowCascades>& drawn) -> void {
         shadowCascadeCount = cascades;
         shadowCulledStats = culled;
         shadowDrawnStats = drawn;
     }
-    auto getGBufferViewMode() const -> int { return gbufferViewMode; }
-    auto setGBufferViewMode(int mode) -> void { gbufferViewMode = mode; }
-    auto getDebugView() const -> int { return debugViewMode; }
-    auto setDebugView(int view) -> void { debugViewMode = view; }
-    auto getShowBufferOverlay() const -> bool { return showBufferOverlayFlag; }
-    auto getShowShadowOverlay() const -> bool { return showShadowOverlayFlag; }
-    auto getAntiAliasing() const -> bool { return antiAliasingFlag; }
-    auto setAntiAliasing(bool on) -> void { antiAliasingFlag = on; }
     auto introspection() -> IntrospectionFlags& { return introspectionFlags; }
     // Whether any open window reads the render debug snapshot.
     auto wantsRenderDebug() const -> bool { return showRenderDebugWindow || introspectionFlags.memory; }
@@ -223,20 +208,13 @@ private:
     bool showCulledFlag = false;
     int cullOverlayViewIndex = 0;
     bool showCascadeFrustaFlag = false;
-    bool depthPrepassFlag = false;
-    SamplerSettings samplerSettings;
-    ShadowCascadeSettings shadowSettings;
-    AmbientSettings ambient;
     uint32_t shadowCascadeCount = 0;
     std::array<uint32_t, maxShadowCascades> shadowCulledStats = {};
     std::array<uint32_t, maxShadowCascades> shadowDrawnStats = {};
-    int gbufferViewMode = 0;
-    int debugViewMode = 0; // DebugView
-    bool showBufferOverlayFlag = false;
-    bool showShadowOverlayFlag = false;
-    bool antiAliasingFlag = true;
     bool showFrameGraphWindow = false;
     bool showPerformanceWindow = false;
+    bool showConfigWindow = false;
+    ConfigWindowState configState;
     bool showStatusBar = true;
     StatusBarData statusBarData;
     bool showRenderDebugWindow = false;

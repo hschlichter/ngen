@@ -1,5 +1,7 @@
 #include "debugviewpass.h"
 
+#include "renderconfig.h"
+
 #include "mesh.h"
 #include "profilegpu.h"
 #include "rhicommandbuffer.h"
@@ -280,3 +282,13 @@ auto DebugViewPass::addPass(
             cmd->dispatch((extent.width + 7) / 8, (extent.height + 7) / 8, 1);
         });
 }
+
+namespace renderconfig {
+
+config::Enum debugView{"render.view.debug",
+                       std::vector<std::string>(debugViewNames.begin(), debugViewNames.end()),
+                       0,
+                       "A debug view drawn in place of the lit image: wireframe, triangle size, overdraw, instance, mesh, material and primitive IDs, UVs, "
+                       "streaming state."};
+
+} // namespace renderconfig

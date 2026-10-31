@@ -99,6 +99,7 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::Separator();
         ImGui::MenuItem("Frame Graph", nullptr, &state.showFrameGraph);
         ImGui::MenuItem("Performance", "Ctrl+P", &state.showPerformance);
+        ImGui::MenuItem("Configuration", nullptr, &state.showConfig);
         ImGui::MenuItem("Status Bar", nullptr, &state.showStatusBar);
         ImGui::MenuItem("Render Debug", nullptr, &state.showRenderDebug);
         ImGui::MenuItem("Camera", "Ctrl+C", &state.showCamera);

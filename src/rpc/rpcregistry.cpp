@@ -25,6 +25,8 @@ auto typeName(RpcType type) -> const char* {
             return "array";
         case RpcType::Object:
             return "object";
+        case RpcType::Any:
+            return "any";
     }
     return "?";
 }
@@ -47,6 +49,8 @@ auto matches(const RpcField& field, const rpc::Json& value) -> bool {
             return value.is_array();
         case RpcType::Object:
             return value.is_object();
+        case RpcType::Any:
+            return true;
     }
     return false;
 }

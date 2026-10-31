@@ -1,5 +1,7 @@
 #include "gpuscene.h"
 
+#include "renderconfig.h"
+
 #include "deletionqueue.h"
 #include "framegraph.h"
 #include "framegraphdebug.h"
@@ -910,3 +912,16 @@ auto GpuScene::afterExecute(const FrameGraph& fg) -> void {
     instanceAccess = fg.finalAccess(instanceImport);
     instanceImported = false;
 }
+
+namespace renderconfig {
+
+config::Int uploadBudgetMiB{"render.upload.budgetMiB",
+                            (int64_t) (GpuScene::defaultUploadBudget / (1024 * 1024)),
+                            "MiB the scene's uploads may copy per frame (the SceneUpload pass); the rest waits for the next frame.",
+                            {.min = 1}};
+config::Int geometryLimitMiB{"render.geometry.limitMiB",
+                             0,
+                             "MiB each geometry pool buffer may grow to; 0 for the device's limit. Lowering it stops growth, it doesn't shrink the pool.",
+                             {.min = 0}};
+
+} // namespace renderconfig

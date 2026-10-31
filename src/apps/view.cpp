@@ -9,6 +9,7 @@
 #include "jobsystem.h"
 #include "lodtool.h"
 #include "profile.h"
+#include "renderconfig.h"
 #include "renderdebugjson.h"
 #include "renderdoccapture.h"
 #include "renderer.h"
@@ -154,7 +155,6 @@ auto main(int argc, char* argv[]) -> int {
     bool screenshotsShowUi = false;
     uint64_t maxFrames = 0;
     // --geometry-limit=<MiB>: the most each geometry pool buffer takes, below the device's limit; meshes past it wait, undrawn.
-    uint64_t geometryLimitBytes = 0;
     bool rpcEnabled = true; // --no-rpc: no endpoint, no discovery file
     // --no-wait-resident: script frames (and --frames, --screenshot) count from start-up instead of from the scene first being resident.
     bool waitForResident = true;
@@ -182,7 +182,7 @@ auto main(int argc, char* argv[]) -> int {
             failOnValidation = true;
             enableValidation = true;
         } else if (arg.starts_with("--geometry-limit=")) {
-            geometryLimitBytes = std::stoull(flagValue(arg, "--geometry-limit=")) * 1024 * 1024;
+            (void) renderconfig::geometryLimitMiB.set((int64_t) std::stoull(flagValue(arg, "--geometry-limit=")));
         } else if (arg.starts_with("--frames=")) {
             maxFrames = std::stoull(flagValue(arg, "--frames="));
         } else if (arg.starts_with("--camera=")) {
@@ -360,7 +360,10 @@ auto main(int argc, char* argv[]) -> int {
         auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - rendererInitStart).count();
         TRACE_EVENT("Render", "RendererInitialized", "renderer").text(std::format("renderer initialized in {:.0f} ms", ms)).field("ms", ms);
     }
-    renderer.setGeometryLimit(geometryLimitBytes);
+    renderer.setGeometryLimit((uint64_t) renderconfig::geometryLimitMiB.get() * 1024 * 1024);
+    // The upload budget and the geometry limit, handed to the render thread when their configuration changes.
+    auto uploadBudgetChanges = renderconfig::uploadBudgetMiB.changes();
+    auto geometryLimitChanges = renderconfig::geometryLimitMiB.changes();
     renderer.setValidationEnabled(enableValidation);
     renderer.setScreenshotsShowUi(screenshotsShowUi);
 
@@ -590,7 +593,7 @@ auto main(int argc, char* argv[]) -> int {
         }
         // The Streaming tool's rows (its window, its viewport layers and the streaming view's states), once per snapshot while any is shown.
         auto& streamingWindow = viewUI.streamingWindow();
-        bool streamingView = viewUI.getDebugView() == (int) DebugView::Streaming;
+        bool streamingView = renderconfig::debugView.get() == (size_t) DebugView::Streaming;
         bool streamingToolShown = viewUI.wantsStreamingWindow() || streamingWindow.bounds || streamingWindow.rings || streamingWindow.ringsAll || streamingWindow.labels || streamingView;
         if (streamingToolShown && streamingRowsSnapshot != snapshotsTaken) {
             streamingRowsSnapshot = snapshotsTaken;
@@ -665,6 +668,14 @@ auto main(int argc, char* argv[]) -> int {
         }
         if (scene.purposeShown(Purpose::Proxy) != viewUI.showProxies()) {
             scene.setPurposeShown(Purpose::Proxy, viewUI.showProxies());
+        }
+        if (renderconfig::uploadBudgetMiB.changes() != uploadBudgetChanges) {
+            uploadBudgetChanges = renderconfig::uploadBudgetMiB.changes();
+            renderThread.setUploadBudget((uint64_t) renderconfig::uploadBudgetMiB.get() * 1024 * 1024);
+        }
+        if (renderconfig::geometryLimitMiB.changes() != geometryLimitChanges) {
+            geometryLimitChanges = renderconfig::geometryLimitMiB.changes();
+            renderThread.setGeometryLimit((uint64_t) renderconfig::geometryLimitMiB.get() * 1024 * 1024);
         }
         // What changed in the scene since the last frame: the render thread applies it, uploads go out a budget per frame.
         {
@@ -1003,12 +1014,12 @@ auto main(int argc, char* argv[]) -> int {
             PROFILE_ZONE("FitCascades");
             auto sceneBounds = sceneBoundsCache.update(scene.renderWorld().meshInstances);
             auto lightDir = pickShadowLightDirection(scene.renderWorld().lights, cam.worldUp);
-            cascadeCount = fitShadowCascades(viewUI.getShadowSettings(), shadowCamera.viewMatrix(), proj, cameraNear, lightDir, cam.worldUp, sceneBounds, cascades);
+            cascadeCount = fitShadowCascades(renderconfig::shadowSettings(), shadowCamera.viewMatrix(), proj, cameraNear, lightDir, cam.worldUp, sceneBounds, cascades);
         }
         std::array<glm::vec3, 8> frozenCorners;
         if (cullState.frozenActive) {
             // The frozen frustum has no far plane: drawn out to the shadow distance.
-            frozenCorners = cullState.frozenCorners(cameraDepthAt(viewUI.getShadowSettings().maxDistance));
+            frozenCorners = cullState.frozenCorners(cameraDepthAt((float) renderconfig::shadowDistance.get()));
         }
 
         // The AABB overlay shows one view's GPU culling result: the camera or a cascade.
@@ -1032,7 +1043,7 @@ auto main(int argc, char* argv[]) -> int {
             drawLodGizmos(lodWindow, debugDraw, cam.worldUp, lodWindowArea(glm::radians(cameraFovDegrees), viewAspect));
             drawStreamingOverlays(streamingWindow, debugDraw, cam.worldUp);
             if (debugCamera.on) {
-                drawMainCamera(debugCamera, cam, proj * cam.viewMatrix(), cameraDepthAt(viewUI.getShadowSettings().maxDistance), scene.lodMetersPerUnit(), debugDraw);
+                drawMainCamera(debugCamera, cam, proj * cam.viewMatrix(), cameraDepthAt((float) renderconfig::shadowDistance.get()), scene.lodMetersPerUnit(), debugDraw);
             }
             drawCameraModes(cameraModes, controlledCamera().position, scene.lodMetersPerUnit(), debugDraw);
         }
@@ -1216,16 +1227,15 @@ auto main(int argc, char* argv[]) -> int {
                 scene.resetLodOverrides(root);
             }
             // The viewport's layers: the LOD Level view and the Triangle Size debug view are the view's modes.
-            constexpr int lodLevelViewMode = 10;
-            lodWindow.levelView = viewUI.getGBufferViewMode() == lodLevelViewMode && viewUI.getDebugView() == 0;
+            lodWindow.levelView = renderconfig::bufferView.get() == (size_t) GBufferView::LodLevel && renderconfig::debugView.get() == 0;
             if (auto on = std::exchange(lodWindow.levelViewRequested, std::nullopt)) {
-                viewUI.setGBufferViewMode(*on ? lodLevelViewMode : 0);
+                (void) renderconfig::bufferView.set((size_t) (*on ? GBufferView::LodLevel : GBufferView::Lit));
                 if (*on) {
-                    viewUI.setDebugView(0);
+                    (void) renderconfig::debugView.set((size_t) DebugView::None);
                 }
             }
             if (std::exchange(lodWindow.triangleSizeRequested, std::nullopt)) {
-                viewUI.setDebugView((int) DebugView::TriangleSize);
+                (void) renderconfig::debugView.set((size_t) DebugView::TriangleSize);
             }
             lodWindow.heuristic = scene.lodHeuristic();
             lodWindow.preference = (int) scene.lodPreference();
@@ -1286,7 +1296,7 @@ auto main(int argc, char* argv[]) -> int {
             }
             streamingWindow.streamingView = streamingView;
             if (auto on = std::exchange(streamingWindow.streamingViewRequested, std::nullopt)) {
-                viewUI.setDebugView(*on ? (int) DebugView::Streaming : 0);
+                (void) renderconfig::debugView.set((size_t) (*on ? DebugView::Streaming : DebugView::None));
             }
             if (std::exchange(streamingWindow.resetRequested, false)) {
                 scene.resetStreamingCounters();
@@ -1377,14 +1387,14 @@ auto main(int argc, char* argv[]) -> int {
             .mouseX = mouseX,
             .mouseY = mouseY,
             .showGizmo = viewUI.getShowGizmo(),
-            .gbufferViewMode = static_cast<GBufferView>(viewUI.getGBufferViewMode()),
-            .debugView = static_cast<DebugView>(viewUI.getDebugView()),
+            .gbufferViewMode = static_cast<GBufferView>(renderconfig::bufferView.get()),
+            .debugView = static_cast<DebugView>(renderconfig::debugView.get()),
             .streamingStates = streamingView ? streamingWindow.slotStates : std::vector<uint32_t>(),
-            .showBufferOverlay = viewUI.getShowBufferOverlay(),
-            .showShadowOverlay = viewUI.getShowShadowOverlay(),
-            .antiAliasing = viewUI.getAntiAliasing(),
-            .depthPrepass = viewUI.getDepthPrepass(),
-            .sampler = viewUI.getSamplerSettings(),
+            .showBufferOverlay = renderconfig::bufferOverlay.get(),
+            .showShadowOverlay = renderconfig::shadowOverlay.get(),
+            .antiAliasing = renderconfig::antiAliasing.get(),
+            .depthPrepass = renderconfig::depthPrepass.get(),
+            .sampler = renderconfig::samplerSettings(),
             .cullEnabled = cullState.enabled,
             .cullViewProj = cullViewProj,
             .readLodStates = lodStatesWanted,
@@ -1392,8 +1402,8 @@ auto main(int argc, char* argv[]) -> int {
             .lodPopFlash = viewUI.lodWindow().flash,
             .lodColorByDepth = viewUI.lodWindow().colorByDepth,
             .lodFlashFrames = (uint32_t) std::clamp(std::lround(0.5f / std::max(dt, 1e-4f)), 1L, 127L),
-            .shadowSettings = viewUI.getShadowSettings(),
-            .ambient = viewUI.ambientSettings(),
+            .shadowSettings = renderconfig::shadowSettings(),
+            .ambient = renderconfig::ambient(),
             .cascadeCount = cascadeCount,
             .cascades = cascades,
             .cascadeCamera = &shadowCamera != &viewCamera() ? std::optional<std::pair<glm::vec3, glm::vec3>>({shadowCamera.position, shadowCamera.forward()}) : std::nullopt,

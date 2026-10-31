@@ -295,11 +295,15 @@ From the asset server to the screen, stage by stage in the order data flows:
 5. **Residency**: resident or loading, the script's hold, and the last load's frames and longest frame.
 
 Their numbers are the `assets` record (stage 1), the `scenethread` record (stages 2 and 5) and the `gpuscene` record (stage 4), which the
-render thread publishes after every frame. `view.gpuscene.set {uploadBudgetMiB, geometryLimitMiB}` (the `gpuscene budget=…,limit=…` verb) sets the
-budget and the limit from the next frame; lowering the limit stops growth, it doesn't shrink the pool.
+render thread publishes after every frame. The upload budget and the geometry pool's limit are configuration values,
+`render.upload.budgetMiB` and `render.geometry.limitMiB` (the `gpuscene budget=…,limit=…` verb sets them), handed to the render thread when
+they change; lowering the limit stops growth, it doesn't shrink the pool.
 
-The hemisphere ambient is a setting too: `view.ambient {sky, ground, reset}` (the `ambient sky=r,g,b ground=r,g,b` verb), the Render Debug
-window's Ambient section, and the `status` record's `ambient`. `view.camera.set` takes an optional `speed`.
+The render settings (the shadow cascades, the sampler, the hemisphere ambient, anti-aliasing, the prepass, the buffer and debug views and
+overlays) are configuration values (`src/config/README.md`, `src/renderer/renderconfig.h`): the `config` record, `config.get/set/reset`,
+the `config <name> <value>` verb, and the Configuration window; the older verbs (`view`, `debugview`, `shadow`, `sampler`, `ambient`,
+`prepass`, `aa`, `gpuscene`) set the same values. The main thread reads them to fill the frame's `RenderSnapshot`. `view.camera.set` takes
+an optional `speed`.
 
 ## What arrived: the Assets window
 

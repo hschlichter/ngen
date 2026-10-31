@@ -6,6 +6,8 @@
 #include "renderworld.h"
 #include "viewmenubar.h"
 
+#include "renderconfig.h"
+
 #include <imgui.h>
 
 #include <array>
@@ -37,14 +39,14 @@ auto ViewUI::toggleShortcuts() -> void {
     }};
     for (auto [key, view] : debugViews) {
         if (pressed(key)) {
-            debugViewMode = debugViewMode == (int) view ? (int) DebugView::None : (int) view;
+            (void) renderconfig::debugView.set(renderconfig::debugView.get() == (size_t) view ? (size_t) DebugView::None : (size_t) view);
         }
     }
     if (pressed(ImGuiMod_Ctrl | ImGuiKey_1)) {
-        showBufferOverlayFlag = !showBufferOverlayFlag;
+        renderconfig::bufferOverlay.set(!renderconfig::bufferOverlay.get());
     }
     if (pressed(ImGuiMod_Ctrl | ImGuiKey_2)) {
-        showShadowOverlayFlag = !showShadowOverlayFlag;
+        renderconfig::shadowOverlay.set(!renderconfig::shadowOverlay.get());
     }
     std::array<std::pair<ImGuiKeyChord, GBufferView>, 2> bufferViews = {{
         {ImGuiMod_Ctrl | ImGuiKey_3, GBufferView::MipLevel},
@@ -52,22 +54,28 @@ auto ViewUI::toggleShortcuts() -> void {
     }};
     for (auto [chord, view] : bufferViews) {
         if (pressed(chord)) {
-            gbufferViewMode = gbufferViewMode == (int) view ? (int) GBufferView::Lit : (int) view;
+            (void) renderconfig::bufferView.set(renderconfig::bufferView.get() == (size_t) view ? (size_t) GBufferView::Lit : (size_t) view);
         }
     }
     if (pressed(ImGuiMod_Ctrl | ImGuiKey_5)) {
-        bool plain = gbufferViewMode == (int) GBufferView::Lit && debugViewMode == (int) DebugView::None && !showBufferOverlayFlag && !showShadowOverlayFlag;
+        PlainLit now = {
+            .gbufferView = (int) renderconfig::bufferView.get(),
+            .debugView = (int) renderconfig::debugView.get(),
+            .bufferOverlay = renderconfig::bufferOverlay.get(),
+            .shadowOverlay = renderconfig::shadowOverlay.get(),
+        };
+        bool plain = now.gbufferView == (int) GBufferView::Lit && now.debugView == (int) DebugView::None && !now.bufferOverlay && !now.shadowOverlay;
+        auto apply = [](const PlainLit& views) {
+            (void) renderconfig::bufferView.set((size_t) views.gbufferView);
+            (void) renderconfig::debugView.set((size_t) views.debugView);
+            renderconfig::bufferOverlay.set(views.bufferOverlay);
+            renderconfig::shadowOverlay.set(views.shadowOverlay);
+        };
         if (!plain) {
-            beforePlainLit = PlainLit{.gbufferView = gbufferViewMode, .debugView = debugViewMode, .bufferOverlay = showBufferOverlayFlag, .shadowOverlay = showShadowOverlayFlag};
-            gbufferViewMode = (int) GBufferView::Lit;
-            debugViewMode = (int) DebugView::None;
-            showBufferOverlayFlag = false;
-            showShadowOverlayFlag = false;
+            beforePlainLit = now;
+            apply(PlainLit{});
         } else if (beforePlainLit) {
-            gbufferViewMode = beforePlainLit->gbufferView;
-            debugViewMode = beforePlainLit->debugView;
-            showBufferOverlayFlag = beforePlainLit->bufferOverlay;
-            showShadowOverlayFlag = beforePlainLit->shadowOverlay;
+            apply(*beforePlainLit);
             beforePlainLit.reset();
         }
     }
@@ -86,6 +94,17 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         renderDebugLast = std::move(freshRenderDebugSnap);
     }
     toggleShortcuts();
+    // The render settings the menu and the Render Debug window edit: their configuration values, copied here and written back after
+    // both have drawn (a value written back unchanged doesn't count as a change).
+    bool depthPrepass = renderconfig::depthPrepass.get();
+    int gbufferView = (int) renderconfig::bufferView.get();
+    int debugView = (int) renderconfig::debugView.get();
+    bool bufferOverlay = renderconfig::bufferOverlay.get();
+    bool shadowOverlay = renderconfig::shadowOverlay.get();
+    bool antiAliasing = renderconfig::antiAliasing.get();
+    auto sampler = renderconfig::samplerSettings();
+    auto shadow = renderconfig::shadowSettings();
+    auto ambient = renderconfig::ambient();
     ViewMenuBarState menuState{
         .hasSelection = hasSelection,
         .tool = toolIndex,
@@ -100,17 +119,18 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         .showLightGizmos = showLightGizmosFlag,
         .showGuides = showGuidesFlag,
         .showProxies = showProxiesFlag,
-        .depthPrepass = depthPrepassFlag,
-        .gbufferView = gbufferViewMode,
-        .debugView = debugViewMode,
-        .showBufferOverlay = showBufferOverlayFlag,
-        .showShadowOverlay = showShadowOverlayFlag,
-        .antiAliasing = antiAliasingFlag,
+        .depthPrepass = depthPrepass,
+        .gbufferView = gbufferView,
+        .debugView = debugView,
+        .showBufferOverlay = bufferOverlay,
+        .showShadowOverlay = shadowOverlay,
+        .antiAliasing = antiAliasing,
         .followGround = cameraState.modes.follow,
         .debugCamera = cameraState.debug.on,
         .debugCameraControlMain = cameraState.debug.controlMain,
         .showFrameGraph = showFrameGraphWindow,
         .showPerformance = showPerformanceWindow,
+        .showConfig = showConfigWindow,
         .showStatusBar = showStatusBar,
         .showRenderDebug = showRenderDebugWindow,
         .showCamera = showCameraWindow,
@@ -145,15 +165,19 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         drawPerformanceWindow(showPerformanceWindow, performanceState);
     }
     {
+        PROFILE_ZONE("ConfigWindow");
+        drawConfigWindow(showConfigWindow, configState);
+    }
+    {
         PROFILE_ZONE("RenderDebugWindow");
         RenderDebugViewFlags viewFlags = {
-            .gbufferView = gbufferViewMode,
-            .sampler = samplerSettings,
-            .shadow = shadowSettings,
+            .gbufferView = gbufferView,
+            .sampler = sampler,
+            .shadow = shadow,
             .ambient = ambient,
-            .showBufferOverlay = showBufferOverlayFlag,
-            .showShadowOverlay = showShadowOverlayFlag,
-            .antiAliasing = antiAliasingFlag,
+            .showBufferOverlay = bufferOverlay,
+            .showShadowOverlay = shadowOverlay,
+            .antiAliasing = antiAliasing,
             .showGrid = showGridFlag,
             .showOrigin = showOriginFlag,
             .showGizmo = showGizmoFlag,
@@ -164,6 +188,15 @@ auto ViewUI::draw(const PrimPathOf& primPath,
             screenshotRequested = true;
         }
     }
+    renderconfig::depthPrepass.set(depthPrepass);
+    (void) renderconfig::bufferView.set((size_t) gbufferView);
+    (void) renderconfig::debugView.set((size_t) debugView);
+    renderconfig::bufferOverlay.set(bufferOverlay);
+    renderconfig::shadowOverlay.set(shadowOverlay);
+    renderconfig::antiAliasing.set(antiAliasing);
+    renderconfig::setSamplerSettings(sampler);
+    renderconfig::setShadowSettings(shadow);
+    renderconfig::setAmbient(ambient);
     // An instance's prim path, looked up when a window names one: a table of every instance's prim costs milliseconds a frame in a large
     // scene.
     auto instancePath = [&](uint32_t instance) -> std::string {
@@ -200,7 +233,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     {
         PROFILE_ZONE("DebugViewWindow");
         updateDebugViewCursor(debugViewState);
-        drawDebugViewWindow(static_cast<DebugView>(debugViewMode), debugViewState, instancePath);
+        drawDebugViewWindow(static_cast<DebugView>(renderconfig::debugView.get()), debugViewState, instancePath);
     }
     if (introspectionFlags.counters) {
         PROFILE_ZONE("CountersWindow");
@@ -358,11 +391,11 @@ auto ViewUI::setOverlay(std::string_view name, bool on) -> bool {
     } else if (name == "lightgizmos") {
         showLightGizmosFlag = on;
     } else if (name == "buffer") {
-        showBufferOverlayFlag = on;
+        renderconfig::bufferOverlay.set(on);
     } else if (name == "shadow") {
-        showShadowOverlayFlag = on;
+        renderconfig::shadowOverlay.set(on);
     } else if (name == "aa") {
-        antiAliasingFlag = on;
+        renderconfig::antiAliasing.set(on);
     } else if (name == "cascadefrusta") {
         showCascadeFrustaFlag = on;
     } else {
@@ -400,6 +433,8 @@ auto ViewUI::setIntrospectionWindow(std::string_view name, bool on) -> bool {
         showFrameGraphWindow = on;
     } else if (name == "performance") {
         showPerformanceWindow = on;
+    } else if (name == "config") {
+        showConfigWindow = on;
     } else {
         return false;
     }
@@ -423,7 +458,7 @@ auto ViewUI::captureWatches() const -> std::vector<CaptureWatch> {
             watches.push_back(std::move(watch));
         }
     }
-    if (auto watch = debugViewReadoutWatchFor(debugViewState, static_cast<DebugView>(debugViewMode)); watch.has_value()) {
+    if (auto watch = debugViewReadoutWatchFor(debugViewState, static_cast<DebugView>(renderconfig::debugView.get())); watch.has_value()) {
         watches.push_back(*watch);
     }
     return watches;

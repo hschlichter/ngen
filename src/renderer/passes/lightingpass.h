@@ -59,6 +59,9 @@ struct LightingInputs {
     std::optional<std::pair<glm::vec3, glm::vec3>> cascadeCamera; // RenderSnapshot::cascadeCamera
 };
 
+// The buffer views by name, in GBufferView's order: the `render.view.buffer` configuration's choices.
+inline constexpr std::array<const char*, 11> gbufferViewNames = {"lit", "albedo", "normals", "depth", "shadowfactor", "shadowmap", "shadowuv", "worldpos", "miplevel", "cascades", "lodlevel"};
+
 enum class GBufferView : int {
     Lit = 0,
     Albedo,

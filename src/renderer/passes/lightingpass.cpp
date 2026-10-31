@@ -1,6 +1,8 @@
 #include "lightingpass.h"
+
 #include "camera.h"
 #include "geometrypass.h"
+#include "renderconfig.h"
 #include "renderworld.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
@@ -228,3 +230,37 @@ auto LightingPass::ready() -> bool {
     std::array<PipelineHandle, 1> handles = {pipelineHandle};
     return registry->ready(handles);
 }
+
+namespace renderconfig {
+
+namespace {
+
+auto toVec3(const std::array<float, 3>& value) -> glm::vec3 {
+    return {value[0], value[1], value[2]};
+}
+
+auto toArray(const glm::vec3& value) -> std::array<float, 3> {
+    return {value.x, value.y, value.z};
+}
+
+} // namespace
+
+config::Enum bufferView{"render.view.buffer",
+                        std::vector<std::string>(gbufferViewNames.begin(), gbufferViewNames.end()),
+                        0,
+                        "What the lighting pass shows: the lit image, a G-buffer target, or a view of one of its inputs (shadows, mips, cascades, LOD levels)."};
+config::Bool bufferOverlay{"render.overlay.buffer", false, "A strip of the G-buffer targets (albedo, normals, depth, lit) along the bottom of the view."};
+config::Bool shadowOverlay{"render.overlay.shadow", false, "A strip of the shadow cascades' maps along the bottom of the view."};
+config::Vec3 ambientSky{"render.ambient.sky", toArray(AmbientSettings{}.sky), "The hemisphere ambient on faces turned up, as a fraction of the sun's radiance."};
+config::Vec3 ambientGround{"render.ambient.ground", toArray(AmbientSettings{}.ground), "The hemisphere ambient on faces turned down, as a fraction of the sun's radiance."};
+
+auto ambient() -> AmbientSettings {
+    return {.sky = toVec3(ambientSky.get()), .ground = toVec3(ambientGround.get())};
+}
+
+auto setAmbient(const AmbientSettings& settings) -> void {
+    ambientSky.set(toArray(settings.sky));
+    ambientGround.set(toArray(settings.ground));
+}
+
+} // namespace renderconfig
