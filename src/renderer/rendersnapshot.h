@@ -57,6 +57,7 @@ struct RenderSnapshot {
     // in the size: 1 / sqrt(1 - h) farther); and the pop flash, tinting a group's meshes after its level changed without a fade.
     float lodHysteresis = 0.2f;
     bool lodPopFlash = false;
+    bool lodColorByDepth = false; // the LOD Level view coloured by how many LOD roots deep a draw is, not by its drawn level
     uint32_t lodFlashFrames = 30; // half a second at the view's frame rate, at most 127
 
     // Shadow cascades fitted on the main thread, culled on the GPU.

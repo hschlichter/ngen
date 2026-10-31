@@ -81,8 +81,8 @@ auto parseList(const char* text) -> std::optional<std::vector<float>> {
 }
 
 // A colour swatch for a level, as the LOD Level view colours it.
-auto levelSwatch(uint32_t level) -> void {
-    ImGui::ColorButton(std::format("##level{}", level).c_str(), toImVec4(lodLevelColor(level)), ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoPicker, ImVec2(12.0f, 12.0f));
+auto levelSwatch(uint32_t level, uint32_t depth, bool byDepth) -> void {
+    ImGui::ColorButton(std::format("##level{}.{}", depth, level).c_str(), toImVec4(lodLevelColor(level, depth, byDepth)), ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoPicker, ImVec2(12.0f, 12.0f));
 }
 
 // The level picker: the root's default (or its heuristic's), or one of its levels. A choice asks the application for it.
@@ -160,7 +160,7 @@ auto drawRow(const LodWindowRow& row, LodWindowState& state) -> void {
     ImGui::TableSetColumnIndex(ColumnDrawn);
     ImGui::AlignTextToFramePadding();
     if (row.drawn >= 0) {
-        levelSwatch((uint32_t) row.drawn);
+        levelSwatch((uint32_t) row.drawn, row.depth, state.colorByDepth);
         ImGui::SameLine();
     }
     if (row.drawn >= 0 && row.drawn != (int32_t) row.wanted) {
@@ -304,8 +304,20 @@ auto drawLayers(LodWindowState& state) -> void {
         state.levelViewRequested = levelView;
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Over the lit image, at half strength: each mesh in its drawn level's colour (grey under no LOD root). A fade shows its two colours\ndithered together. Render-LOD roots at a forced level are striped, those drawing another level than they want checkered.");
+        ImGui::SetTooltip("Over the lit image, at half strength: each mesh in its drawn level's colour, or in its LOD depth's (grey under no LOD root).\nA fade shows its two colours dithered together. Render-LOD roots at a forced level are striped, those drawing another level than they want\ncheckered.");
     }
+    ImGui::SameLine();
+    int colorBy = state.colorByDepth ? 1 : 0;
+    ImGui::RadioButton("by level", &colorBy, 0);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("The drawn level of the nearest LOD root. An index within that root: a region's level 1 and a tile's level 1 are different\nresolutions (on the streaming test world a region's medium and a tile's simplified are both 5 m terrain).");
+    }
+    ImGui::SameLine();
+    ImGui::RadioButton("by depth", &colorBy, 1);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("How many LOD roots deep the drawn level is: under a top-level root (a region) 1, a root in its level (a tile) 2, one\ndeeper (a ground chunk, an asset in a tile) 3.");
+    }
+    state.colorByDepth = colorBy == 1;
     ImGui::SameLine();
     ImGui::Checkbox("Labels", &state.labels);
     if (ImGui::IsItemHovered()) {
@@ -331,12 +343,23 @@ auto drawLayers(LodWindowState& state) -> void {
         ImGui::SetTooltip("The debug view of each triangle's size on screen in pixels: whether a level is too dense for how large it is drawn.");
     }
 
-    ImGui::TextDisabled("Levels:");
-    for (uint32_t level = 0; level < 8; level++) {
-        ImGui::SameLine();
-        levelSwatch(level);
-        ImGui::SameLine(0.0f, 2.0f);
-        ImGui::Text("%u", level);
+    if (state.colorByDepth) {
+        ImGui::TextDisabled("Depth:");
+        static constexpr std::array<const char*, 4> depthNames = {"1", "2", "3", "4+"};
+        for (uint32_t depth = 1; depth <= 4; depth++) {
+            ImGui::SameLine();
+            levelSwatch(0, depth, true);
+            ImGui::SameLine(0.0f, 2.0f);
+            ImGui::TextUnformatted(depthNames[depth - 1]);
+        }
+    } else {
+        ImGui::TextDisabled("Levels:");
+        for (uint32_t level = 0; level < 8; level++) {
+            ImGui::SameLine();
+            levelSwatch(level, 1, false);
+            ImGui::SameLine(0.0f, 2.0f);
+            ImGui::Text("%u", level);
+        }
     }
     ImGui::SameLine();
     ImGui::TextDisabled("  grey: no LOD root; stripes: forced; checker: falling back");
@@ -421,7 +444,7 @@ auto drawInspector(LodWindowState& state) -> void {
             ImGui::TableSetColumnIndex(2);
             ImGui::AlignTextToFramePadding();
             if (heuristic.picks >= 0) {
-                levelSwatch((uint32_t) heuristic.picks);
+                levelSwatch((uint32_t) heuristic.picks, in.depth, false);
                 ImGui::SameLine();
                 if (heuristic.blend > 0.0f) {
                     ImGui::Text("%d+%.0f%%", heuristic.picks, heuristic.blend * 100.0f);
@@ -487,7 +510,7 @@ auto drawInspector(LodWindowState& state) -> void {
             const auto& info = in.levels[level];
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            levelSwatch((uint32_t) level);
+            levelSwatch((uint32_t) level, in.depth, false);
             ImGui::SameLine();
             ImGui::Text("%zu  %s", level, info.name.c_str());
             ImGui::TableSetColumnIndex(1);
@@ -535,8 +558,8 @@ auto LodShape::anchor() const -> glm::vec3 {
     return glm::vec3(toWorld[3]);
 }
 
-auto lodLevelColor(uint32_t level) -> glm::vec4 {
-    static constexpr std::array<glm::vec4, 8> ramp = {
+auto lodLevelColor(uint32_t level, uint32_t depth, bool byDepth) -> glm::vec4 {
+    static constexpr std::array<glm::vec4, 8> levelRamp = {
         glm::vec4(1.0f, 0.0f, 0.0f, 1.0f),
         glm::vec4(1.0f, 0.5f, 0.0f, 1.0f),
         glm::vec4(1.0f, 1.0f, 0.0f, 1.0f),
@@ -546,7 +569,16 @@ auto lodLevelColor(uint32_t level) -> glm::vec4 {
         glm::vec4(1.0f, 0.0f, 1.0f, 1.0f),
         glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),
     };
-    return ramp[std::min<uint32_t>(level, 7)];
+    static constexpr std::array<glm::vec4, 4> depthHues = {
+        glm::vec4(0.25f, 0.5f, 1.0f, 1.0f),
+        glm::vec4(0.2f, 0.85f, 0.25f, 1.0f),
+        glm::vec4(1.0f, 0.55f, 0.05f, 1.0f),
+        glm::vec4(0.9f, 0.2f, 0.9f, 1.0f),
+    };
+    if (byDepth) {
+        return depthHues[std::clamp<uint32_t>(depth, 1, 4) - 1];
+    }
+    return levelRamp[std::min<uint32_t>(level, 7)];
 }
 
 auto lodRowShown(const LodWindowState& state, const LodWindowRow& row) -> bool {
@@ -721,7 +753,7 @@ auto drawLodLabels(LodWindowState& state, const glm::mat4& viewProj, glm::vec2 v
         bool selected = row.path == state.selectedRoot;
         drawList->AddRectFilled(min, max, hovered || selected ? IM_COL32(40, 40, 40, 230) : IM_COL32(0, 0, 0, 160), 3.0f);
         if (row.drawn >= 0) {
-            auto color = lodLevelColor((uint32_t) row.drawn);
+            auto color = lodLevelColor((uint32_t) row.drawn, row.depth, state.colorByDepth);
             drawList->AddRectFilled(ImVec2(min.x, max.y - 2.0f), max, ImGui::ColorConvertFloat4ToU32(toImVec4(color)));
         }
         drawList->AddText(ImVec2(min.x + 4.0f, min.y + 2.0f), row.flashing ? IM_COL32(255, 200, 80, 255) : IM_COL32(235, 235, 235, 255), text.c_str());

@@ -28,6 +28,7 @@ auto makeInstanceSchema() -> GpuSchema {
             {"lodLevel", offsetof(R, lodLevel), GpuFieldType::U32},
             {"lodGroup", offsetof(R, lodGroup), GpuFieldType::U32},
             {"streamRoot", offsetof(R, streamRoot), GpuFieldType::U32},
+            {"lodDepth", offsetof(R, lodDepth), GpuFieldType::U32},
         },
     };
 }

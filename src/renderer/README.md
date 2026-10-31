@@ -192,7 +192,8 @@ Tables:
   - **Contents**: model matrix, material entry, mesh index, submesh `indexOffset` and `indexCount`, world bounds, flags (`primFirst`,
     `doubleSided`, `boundsValid`, `cutout`, `primHasCutout`), the drawn LOD level + 1 of the LOD root above it (0 under none), which the
     geometry pass writes to the normal target's alpha for the LOD level view (with its group's flags: "Render LOD", the LOD tag), its
-    render-LOD group + 1 (0 for none), and its streaming root's slot + 1 (`streamRoot`, 0 under none) for the streaming view.
+    render-LOD group + 1 (0 for none), its streaming root's slot + 1 (`streamRoot`, 0 under none) for the streaming view, and how many
+    LOD roots it is under (`lodDepth`, 0 under none) for the LOD level view.
   - **Slots.** A draw keeps its slot while it exists. A removed one is dead (mesh index past the table, so culling never draws it) until a new draw
     takes it.
   - **Reading it.** Vertex shaders read it at `gl_InstanceIndex`, and every draw sets `firstInstance` to the slot.
@@ -280,8 +281,10 @@ inside a blend band, that level and the next, cross-faded. `LodGroups` (`lodgrou
   pop: counted (`LodSelectTotals::popped`) and flashed for half a second at the view's frame rate (`RenderSnapshot::lodFlashFrames`, at most
   127 frames). `LodStateFlags` read the forced bit and the flash back per group.
 - **The LOD tag.** `gbuffer.vert` writes the draw's tag to the normal target's alpha (`lodTag`, `lodfade.glsl`): the drawn level + 1, plus
-  16 at a forced level, 32 drawing another level than wanted, 64 flashing. The LOD Level view lays the level's colour at half strength over the lit colour and stripes or
-  checkers by the flags; with `RenderSnapshot::lodPopFlash` the lighting pass tints a flashing draw white over any view. The tag and the
+  16 at a forced level, 32 drawing another level than wanted, 64 flashing, and 128 per LOD root the draw is under (`lodDepth`, at most 15,
+  so the tag stays exact in a 16-bit float). The LOD Level view lays a colour at half strength over the lit colour: the drawn level's
+  (a ramp), or with `RenderSnapshot::lodColorByDepth` the depth's (a level's index means a different resolution at each depth), and stripes
+  or checkers by the flags; with `RenderSnapshot::lodPopFlash` the lighting pass tints a flashing draw white over any view. The tag and the
   fade's coverage travel as one flat `uvec2`, so the opaque fragment shader, which reads only the tag, still consumes the varying.
 - **Fades.** While a group fades, the cull pass draws both levels' instances in the cutout buckets of their sidedness, whose pipelines discard
   (`cutout.glsl`); their vertex stages read the group's state from the geometry set (binding 4, declared as a read by the passes drawing the

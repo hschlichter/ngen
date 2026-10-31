@@ -20,7 +20,7 @@ struct Instance {
     uint lodLevel; // drawn LOD level + 1, 0 under no LOD root
     uint lodGroup; // its render-LOD group + 1, 0 for none
     uint pad1;
-    uint pad2;
+    uint lodDepth; // how many LOD roots it is under, 0 under none
     uint pad3;
 };
 layout(std430, set = 0, binding = 2) readonly buffer Instances {
@@ -57,9 +57,9 @@ layout(location = 2) out vec2 fragTexCoord;
 layout(location = 3) flat out uint fragTexture;
 // The instance index + 1, for the id target picking reads; 0 is nothing drawn.
 layout(location = 4) flat out uint fragInstance;
-// x: the drawn LOD level + 1 of the LOD root above it, 0 under none, with its group's flags (lodTag), for the LOD level view and the pop
-// flash. y: the instance's share of a render-LOD fade as float bits (lodfade.glsl), for the cutout fragment shader; lodCoverAll when its
-// group isn't fading. One varying, so the opaque fragment shader, which reads only x, still takes it.
+// x: the drawn LOD level + 1 of the LOD root above it, 0 under none, with its group's flags (lodTag), and 128 per LOD root it is under
+// (lodTagDepth, at most 15), for the LOD level view and the pop flash. y: the instance's share of a render-LOD fade as float bits
+// (lodfade.glsl), for the cutout fragment shader; lodCoverAll when its group isn't fading. One varying, so the opaque fragment shader, which reads only x, still takes it.
 layout(location = 5) flat out uvec2 fragLod;
 
 // Invariant so the depth prepass (depthonly.vert, same expression) produces identical depth.
@@ -71,7 +71,8 @@ void main() {
     fragInstance = uint(gl_InstanceIndex) + 1u;
     uint lodGroup = instances.data[gl_InstanceIndex].lodGroup;
     uint lodLevel = instances.data[gl_InstanceIndex].lodLevel;
-    fragLod = uvec2(lodTag(lodGroup, lodLevel), floatBitsToUint(lodCoverage(lodGroup, lodLevel)));
+    uint depth = min(instances.data[gl_InstanceIndex].lodDepth, 15u);
+    fragLod = uvec2(lodTag(lodGroup, lodLevel) + (depth * lodTagDepth), floatBitsToUint(lodCoverage(lodGroup, lodLevel)));
     gl_Position = ubo.proj * ubo.view * model * vec4(inPosition, 1.0);
     // Normalise here: the model matrix carries the scene's unit scale (Kitchen_set is
     // authored in cm under a 0.01 root scale), which would leave a near-zero normal for

@@ -223,8 +223,10 @@ do its draws: only where it is placed.
     `view.lod.tuning`, the window's header and fields. `tunedLodHeuristic` is what the CPU pick, the groups' records (`lodGroupOf`) and the
     records use. `LodTuningChanged` traces a change; `LodTuningRefused` a path with no root, a heuristic not there, thresholds out of order.
     The `lod`, `streaming`, `renderlod` and `lodtool` records carry the tuning; rows say `tuned`.
-  - *Layers* (`view.lod.visualize`, `lod-show labels|gizmo|gizmo-all|flash on|off`, the window): the LOD Level view (`view lodlevel`: a
-    colour per drawn level, at half strength over the lit image; a render-LOD group at a forced level striped, one drawing another level than it wants checkered); labels over
+  - *Layers* (`view.lod.visualize`, `lod-show labels|gizmo|gizmo-all|flash on|off`, the window): the LOD Level view (`view lodlevel`: at
+    half strength over the lit image, the drawn level of the nearest LOD root, or with `lod-show color depth` (`view.lod.visualize {color}`)
+    how many LOD roots deep it is, since a level's index means a different resolution at each depth (a region's `medium` and a tile's
+    `simplified` are both 5 m terrain); the window's swatches and labels follow, the gizmo and the inspector's levels stay by level; a render-LOD group at a forced level striped, one drawing another level than it wants checkered); labels over
     the roots (name, drawn level, fade, measure; a click selects); the heuristic gizmo of the selected or every shown root (`DebugDraw`: the
     distance's center or box, a ring per threshold at the distance it is reached, a screen size's from the view's window, in the colour of
     the level beyond it, a faint ring where a band ends); the pop flash (a group whose drawn level changed without a fade flashes white

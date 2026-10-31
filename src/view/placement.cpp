@@ -841,7 +841,7 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
     if (!rebuild) {
         const auto& n = *node;
         rebuild = n.kind != spec.kind || n.content != spec.content || n.contentKind != spec.contentKind || n.instancer != spec.instancer || n.version != version || n.path != spec.path ||
-                  n.world != spec.world || n.purpose != spec.purpose || n.material != spec.material || n.strong != spec.strong || n.lodTag != spec.lodTag || n.drawn != spec.drawn ||
+                  n.world != spec.world || n.purpose != spec.purpose || n.material != spec.material || n.strong != spec.strong || n.lodTag != spec.lodTag || n.lodDepth != spec.lodDepth || n.drawn != spec.drawn ||
                   n.lodGroup != spec.lodGroup || n.lodGroupLevel != spec.lodGroupLevel || n.streamRoot != spec.streamRoot;
     }
     if (!rebuild) {
@@ -858,7 +858,7 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
         const auto& n = *node;
         undraw = n.kind == drawnSpec.kind && n.content == drawnSpec.content && n.contentKind == drawnSpec.contentKind && n.instancer == drawnSpec.instancer && n.version == version &&
                  n.path == drawnSpec.path && n.world == drawnSpec.world && n.purpose == drawnSpec.purpose && n.material == drawnSpec.material && n.strong == drawnSpec.strong &&
-                 n.lodTag == drawnSpec.lodTag && n.lodGroup == drawnSpec.lodGroup && n.lodGroupLevel == drawnSpec.lodGroupLevel && n.streamRoot == drawnSpec.streamRoot &&
+                 n.lodTag == drawnSpec.lodTag && n.lodDepth == drawnSpec.lodDepth && n.lodGroup == drawnSpec.lodGroup && n.lodGroupLevel == drawnSpec.lodGroupLevel && n.streamRoot == drawnSpec.streamRoot &&
                  !std::ranges::any_of(overridesMoved, [&](const std::string& moved) { return isUnder(moved, spec.path); }) &&
                  !std::ranges::any_of(node->waiting, [this](const std::string& asset) { return arrived.contains(asset); });
     }
@@ -892,6 +892,7 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
                                 .material = child->material,
                                 .strong = child->strong,
                                 .lodTag = child->lodTag,
+                                .lodDepth = child->lodDepth,
                                 .streamRoot = child->streamRoot,
                                 .drawn = child->drawn,
                                 .lodGroup = child->lodGroup,
@@ -955,6 +956,7 @@ auto ViewScene::undrawPlacement(const std::shared_ptr<Placement>& node, bool min
                                 .material = child->material,
                                 .strong = child->strong,
                                 .lodTag = child->lodTag,
+                                .lodDepth = child->lodDepth,
                                 .streamRoot = child->streamRoot,
                                 .drawn = false,
                                 .lodGroup = child->lodGroup,
@@ -1010,6 +1012,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
     node->material = spec.material;
     node->strong = spec.strong;
     node->lodTag = spec.lodTag;
+    node->lodDepth = spec.lodDepth;
     node->streamRoot = spec.streamRoot;
     node->drawn = spec.drawn;
     node->lodGroup = spec.lodGroup;
@@ -1138,10 +1141,13 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
             // The render-LOD group and level its draws are tagged with: its root's in this segment, else the one this placement is under.
             uint32_t tagGroup = spec.lodGroup;
             uint32_t tagLevel = spec.lodGroupLevel;
+            // How many LOD roots its draws are under: the placement's, and one more under a root in this segment.
+            uint32_t tagDepth = spec.lodDepth;
             if (item.lodRootItem >= 0) {
                 auto group = groupOfItem.find(item.lodRootItem);
                 tagGroup = group != groupOfItem.end() ? group->second : 0;
                 tagLevel = item.lodLevel;
+                tagDepth = spec.lodDepth + 1;
                 if (tagLevel >= RenderLodGroup::maxLevels) {
                     // A level past the group's: not drawn (the composer says so).
                     continue;
@@ -1157,6 +1163,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                        .material = item.material,
                        .strong = item.strongBinding,
                        .lodTag = spec.lodTag,
+                       .lodDepth = tagDepth,
                        .streamRoot = spec.streamRoot,
                        .drawn = spec.drawn,
                        .lodGroup = tagGroup,
@@ -1174,6 +1181,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                        .material = item.material,
                        .strong = item.strongBinding,
                        .lodTag = spec.lodTag,
+                       .lodDepth = tagDepth,
                        .streamRoot = spec.streamRoot,
                        .drawn = spec.drawn,
                        .lodGroup = tagGroup,
@@ -1206,9 +1214,11 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                         lodGroupPaths.edit(slot) = path;
                     }
                     const auto& source = lodGroupSources[slot];
-                    if (source == nullptr || source->key != lodGroupInfo[slot].key || source->heuristics != lod.heuristics || source->levels.size() != lod.levels.size()) {
+                    if (source == nullptr || source->key != lodGroupInfo[slot].key || source->depth != tagDepth + 1 || source->heuristics != lod.heuristics ||
+                        source->levels.size() != lod.levels.size()) {
                         auto made = std::make_shared<LodGroupSource>();
                         made->key = lodGroupInfo[slot].key;
+                        made->depth = tagDepth + 1;
                         made->heuristics = lod.heuristics;
                         for (EntityId level : lod.levels) {
                             made->levels.push_back(content.entities[level].name);
@@ -1240,6 +1250,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                 row.heuristics = lod.heuristics;
                 row.key = lodRootKey(spec.content, content.path(item.id));
                 row.defaultIndex = lod.defaultIndex;
+                row.depth = tagDepth + 1;
                 row.worldTransform = unitScale * world;
                 auto previous = std::ranges::find(previousRoots, path, &PlacedRoot::path);
                 if (previous != previousRoots.end()) {
@@ -1333,6 +1344,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                     .cutout = resolved->cutout[sub],
                     .primHasCutout = resolved->primHasCutout,
                     .lodLevel = tagGroup != 0 ? tagLevel + 1 : spec.lodTag,
+                    .lodDepth = tagGroup != 0 || spec.lodTag != 0 ? tagDepth : 0,
                     .lodGroup = tagGroup,
                     .streamRoot = spec.streamRoot,
                 };
@@ -1425,6 +1437,7 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
                                .material = rootItem.material,
                                .strong = rootItem.strongBinding,
                                .lodTag = i + 1,
+                               .lodDepth = node.lodDepth + 1,
                                .streamRoot = node.drawn && root.listed ? streamRootSlot(root.path) + 1 : 0,
                                .drawn = node.drawn && drawnLevel == i};
             auto next = syncPlacement(current, spec, mine);

@@ -26,7 +26,8 @@ layout(push_constant) uniform Push {
     int viewMode;
     int showOverlay;
     int showShadowOverlay;
-    int lodFlash; // 1: tint the meshes of a render-LOD group flashing for a pop (the LOD tag's 64), over any view
+    int lodFlash;        // 1: tint the meshes of a render-LOD group flashing for a pop (the LOD tag's 64), over any view
+    int lodColorByDepth; // the LOD Level view's colour: 0 by the drawn level, 1 by how many LOD roots deep
 } push;
 
 layout(location = 0) in vec2 fragTexCoord;
@@ -123,13 +124,22 @@ float sampleShadow(vec3 worldPos, vec3 normal, float viewDepth) {
     return lit / 9.0;
 }
 
-// The LOD Level view's colour for a normal target tag (lodTag in lodfade.glsl: level + 1, 0 under no LOD root), laid over the lit colour:
-// level 0 red, 1 orange, 2 yellow, 3 green, 4 cyan, 5 blue, 6 magenta, 7 and up white; grey under no LOD root. A render-LOD group at a
-// forced level is striped diagonally, one drawing another level than it wants checkered.
+// The LOD Level view's colour for a normal target tag (lodTag in lodfade.glsl), laid over the lit colour, as lodLevelColor
+// (src/ui/lodwindow.cpp) colours the LOD window's swatches. By level: the drawn level of the nearest LOD root, 0 red, 1 orange, 2 yellow,
+// 3 green, 4 cyan, 5 blue, 6 magenta, 7 and up white; an index within that root, so a region's level 1 and a tile's level 1 are different
+// resolutions. By depth: how many LOD roots the draw is under (the tag from 128 up), 1 blue, 2 green, 3 orange, 4 and more magenta. Grey
+// under no LOD root. A render-LOD group at a forced level is striped diagonally, one drawing another level than it wants checkered.
 vec3 lodLevelTint(int tag) {
-    const vec3 ramp[8] = vec3[](vec3(1.0, 0.0, 0.0), vec3(1.0, 0.5, 0.0), vec3(1.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 1.0), vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 1.0), vec3(1.0, 1.0, 1.0));
+    const vec3 levelRamp[8] = vec3[](vec3(1.0, 0.0, 0.0), vec3(1.0, 0.5, 0.0), vec3(1.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 1.0), vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 1.0), vec3(1.0, 1.0, 1.0));
+    const vec3 depthHues[4] = vec3[](vec3(0.25, 0.5, 1.0), vec3(0.2, 0.85, 0.25), vec3(1.0, 0.55, 0.05), vec3(0.9, 0.2, 0.9));
     int level = tag & 15;
-    vec3 color = level == 0 ? vec3(0.5) : ramp[min(level - 1, 7)];
+    int depth = tag >> 7;
+    vec3 color = vec3(0.5);
+    if (level > 0 && push.lodColorByDepth == 1) {
+        color = depthHues[clamp(depth, 1, 4) - 1];
+    } else if (level > 0) {
+        color = levelRamp[min(level - 1, 7)];
+    }
     ivec2 pixel = ivec2(gl_FragCoord.xy);
     if ((tag & 16) != 0 && ((pixel.x + pixel.y) / 6) % 2 == 0) {
         color *= 0.35;

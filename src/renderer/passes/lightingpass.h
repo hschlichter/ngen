@@ -93,6 +93,7 @@ public:
         bool showOverlay,
         bool showShadowOverlay,
         bool lodFlash,
+        bool lodColorByDepth,
         const glm::mat4& invViewProj,
         RhiSampler* shadowSampler,
         std::span<const ShadowCascade> cascades,

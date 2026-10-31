@@ -40,6 +40,7 @@ struct LodShape {
 struct LodWindowRow {
     std::string path;
     int32_t group = -1; // the render-LOD group slot; -1 for a streaming root
+    uint32_t depth = 1; // how many LOD roots it is in, itself counted: the hue of its swatches
     std::vector<std::string> levels;
     std::vector<std::vector<std::string>> levelPayloads; // per level, its payloads' asset ids
     std::string heuristic;                               // every heuristic it names, the one used marked: "distance [49.3, 70.8]* | screen [0.25]"
@@ -87,6 +88,7 @@ struct LodInspection {
         bool loaded = false;
     };
     std::string path;
+    uint32_t depth = 1; // how many LOD roots it is in, itself counted: the hue of its swatches
     bool renderLod = false;
     int32_t group = -1;
     std::string key;
@@ -164,6 +166,8 @@ struct LodWindowState {
     bool gizmo = false;
     bool gizmoAll = false;
     bool flash = false;
+    // The LOD Level view's colour (and the window's swatches): by the drawn level (an index within its root), or by how many LOD roots deep.
+    bool colorByDepth = false;
     std::optional<bool> triangleSizeRequested;
     // The inspector: the selected root's, refreshed by the application when the selection changes and once a second while shown.
     std::optional<LodInspection> inspection;
@@ -187,8 +191,9 @@ struct LodWindowState {
     std::vector<std::array<char, 256>> blendText;
 };
 
-// The level view's colour of a LOD level, as lighting.frag's ramp: 0 red, 1 orange, 2 yellow, 3 green, 4 cyan, 5 blue, 6 magenta, 7 white.
-auto lodLevelColor(uint32_t level) -> glm::vec4;
+// The LOD Level view's colour of a level of a root `depth` LOD roots deep (itself counted), as lighting.frag's lodLevelTint: by level, 0 red,
+// 1 orange, 2 yellow, 3 green, 4 cyan, 5 blue, 6 magenta, 7 white; by depth, 1 blue, 2 green, 3 orange, 4 and more magenta.
+auto lodLevelColor(uint32_t level, uint32_t depth, bool byDepth) -> glm::vec4;
 
 // The LOD tool: every LOD root placed, both kinds, in one list (filtered by path, kind, under the selection, not drawing what it wants,
 // fading; click selects, double-click frames), and below it the inspector of the selected root: its heuristics (each one's thresholds in

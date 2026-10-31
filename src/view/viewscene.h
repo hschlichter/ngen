@@ -87,6 +87,7 @@ auto tunedLodHeuristic(const LodHeuristic& heuristic, const LodOverride* overrid
 // names finest first, and every heuristic it authors.
 struct LodGroupSource {
     std::string key;
+    uint32_t depth = 1; // how many LOD roots it is in, itself counted: the LOD Level view's hue
     std::vector<std::string> levels;
     std::vector<LodHeuristic> heuristics;
 };
@@ -630,6 +631,7 @@ private:
         std::string material;
         bool strong = false;
         uint32_t lodTag = 0;
+        uint32_t lodDepth = 0;
         uint32_t streamRoot = 0;
         bool drawn = true;
         uint32_t lodGroup = 0; // Placement::lodGroup

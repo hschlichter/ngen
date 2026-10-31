@@ -62,6 +62,7 @@ struct SceneLodRoot {
     std::vector<std::vector<std::string>> levelPayloads; // per level, the asset ids of its payloads; empty for a level without
     std::vector<LodHeuristic> heuristics;                // every one it names (LodRoot::heuristics); which one measures it is the view's preference
     std::string key;                                     // its authored root (lodRootKey), which the view's threshold overrides name
+    uint32_t depth = 1;                                  // how many LOD roots it is in, itself counted (1 for a root under none): the LOD Level view's hue
     uint32_t defaultIndex = 0;
     uint32_t wanted = 0;
     std::optional<uint32_t> drawn;
@@ -192,6 +193,7 @@ struct Placement {
     std::string material;
     bool strong = false;
     uint32_t lodTag = 0;     // the drawn level + 1 of the nearest LOD root above, for the draws
+    uint32_t lodDepth = 0;   // how many LOD roots it is under (1 under a root that is under none), for the draws
     uint32_t streamRoot = 0; // the nearest streaming root's slot + 1, for the draws (RenderMeshInstance::streamRoot)
     bool drawn = true;       // false: a loaded level not drawn (the floor under a finer one, a finer one loading), and everything in it
     std::vector<PlacementSegment> segments;

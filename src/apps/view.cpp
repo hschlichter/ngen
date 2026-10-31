@@ -1482,6 +1482,7 @@ auto main(int argc, char* argv[]) -> int {
             .readLodStates = lodStatesWanted,
             .lodHysteresis = scene.lodTuning().hysteresis,
             .lodPopFlash = viewUI.lodWindow().flash,
+            .lodColorByDepth = viewUI.lodWindow().colorByDepth,
             .lodFlashFrames = (uint32_t) std::clamp(std::lround(0.5f / std::max(dt, 1e-4f)), 1L, 127L),
             .shadowSettings = viewUI.getShadowSettings(),
             .ambient = viewUI.ambientSettings(),

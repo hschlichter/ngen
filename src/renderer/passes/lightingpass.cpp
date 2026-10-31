@@ -32,7 +32,7 @@ auto LightingPass::init(RhiDevice* dev, PipelineRegistry& pipelines, uint32_t im
         .vertex = {.id = "shaders/lighting.vert", .stage = RhiShaderStage::Vertex},
         .fragment = {.id = "shaders/lighting.frag", .stage = RhiShaderStage::Fragment},
         .descriptorSetLayouts = {descriptorSetLayout},
-        .pushConstant = {.stage = RhiShaderStage::Fragment, .offset = 0, .size = 4 * sizeof(int32_t)},
+        .pushConstant = {.stage = RhiShaderStage::Fragment, .offset = 0, .size = 5 * sizeof(int32_t)},
         .colorFormats = {colorFormat},
         .vertexStride = 0,
         .raster = {.cullMode = RhiCullMode::None},
@@ -88,6 +88,7 @@ auto LightingPass::addPass(
     bool showOverlay,
     bool showShadowOverlay,
     bool lodFlash,
+    bool lodColorByDepth,
     const glm::mat4& invViewProj,
     RhiSampler* shadowSampler,
     std::span<const ShadowCascade> cascades,
@@ -117,7 +118,7 @@ auto LightingPass::addPass(
             data.sceneColor = builder.write(builder.createTexture("sceneColor", sceneColorDesc), FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);
         },
-        [this, pipeline = registry->get(pipelineHandle), imageIndex, extent, sampler, lightInputs, viewMode, showOverlay, showShadowOverlay, lodFlash, invViewProj, shadowSampler, cascadeCopy, cascadeCount, pcf, atlasExtent, previewFar](
+        [this, pipeline = registry->get(pipelineHandle), imageIndex, extent, sampler, lightInputs, viewMode, showOverlay, showShadowOverlay, lodFlash, lodColorByDepth, invViewProj, shadowSampler, cascadeCopy, cascadeCount, pcf, atlasExtent, previewFar](
             FrameGraphContext& ctx, const LightingPassData& data) {
             auto* cmd = ctx.cmd();
 
@@ -203,12 +204,14 @@ auto LightingPass::addPass(
                 int32_t showOverlay;
                 int32_t showShadowOverlay;
                 int32_t lodFlash;
+                int32_t lodColorByDepth;
             };
             LightingPush push = {
                 .viewMode = static_cast<int32_t>(viewMode),
                 .showOverlay = showOverlay ? 1 : 0,
                 .showShadowOverlay = showShadowOverlay ? 1 : 0,
                 .lodFlash = lodFlash ? 1 : 0,
+                .lodColorByDepth = lodColorByDepth ? 1 : 0,
             };
             cmd->pushConstants(pipeline, RhiShaderStage::Fragment, 0, sizeof(push), &push);
 

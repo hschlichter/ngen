@@ -41,6 +41,9 @@ float lodCoverage(uint lodGroup, uint lodLevel) {
 const uint lodTagForced = 16u;
 const uint lodTagFallback = 32u;
 const uint lodTagFlash = 64u;
+// The tag's bits from 128 up: how many LOD roots the draw is under (gbuffer.vert adds it), at most 15 so the tag stays under 2048, which a
+// 16-bit float holds exactly.
+const uint lodTagDepth = 128u;
 uint lodTag(uint lodGroup, uint lodLevel) {
     if (lodGroup == 0u || lodLevel == 0u || lodGroup > uint(lodStates.data.length())) {
         return lodLevel;

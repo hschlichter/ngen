@@ -175,7 +175,7 @@ auto roundedRing(DebugDraw& draw, const LodShape& shape, const glm::vec3& up, fl
 auto drawGizmo(const LodWindowRow& row, DebugDraw& draw, const glm::vec3& up, float windowArea, bool selected) -> void {
     const auto& shape = row.shape;
     float alpha = selected ? 1.0f : 0.6f;
-    auto drawnColor = row.drawn >= 0 ? lodLevelColor((uint32_t) row.drawn) : glm::vec4(0.7f, 0.7f, 0.7f, 1.0f);
+    auto drawnColor = row.drawn >= 0 ? lodLevelColor((uint32_t) row.drawn, row.depth, false) : glm::vec4(0.7f, 0.7f, 0.7f, 1.0f);
     drawnColor.a = alpha;
     auto [axisA, axisB] = planeAxes(up);
     auto anchor = shape.anchor();
@@ -209,7 +209,7 @@ auto drawGizmo(const LodWindowRow& row, DebugDraw& draw, const glm::vec3& up, fl
         }
     };
     for (size_t t = 0; t < shape.thresholds.size(); t++) {
-        auto color = lodLevelColor((uint32_t) t + 1);
+        auto color = lodLevelColor((uint32_t) t + 1, row.depth, false);
         color.a = alpha;
         ring(distanceOf(shape.thresholds[t]), color);
         if (t < shape.blendThresholds.size()) {
@@ -271,6 +271,7 @@ auto buildLodRows(const ViewScene& scene, LodWindowState& state) -> void {
         }
         rows.push_back({
             .path = root.path,
+            .depth = root.depth,
             .levels = root.levels,
             .levelPayloads = root.levelPayloads,
             .heuristic = heuristicText(root.heuristics, used, root.key, tuning),
@@ -310,6 +311,7 @@ auto buildLodRows(const ViewScene& scene, LodWindowState& state) -> void {
         rows.push_back({
             .path = path,
             .group = (int32_t) g,
+            .depth = source.depth,
             .levels = source.levels,
             .heuristic = heuristicText(source.heuristics, used, source.key, tuning),
             .key = source.key,
@@ -375,6 +377,7 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
         out.renderLod = true;
         out.group = (int32_t) g;
         out.key = source.key;
+        out.depth = source.depth;
         out.defaultIndex = group.defaultLevel;
         heuristics = &source.heuristics;
         toWorld = group.toWorld;
@@ -402,6 +405,7 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
             return std::nullopt;
         }
         out.key = streaming->key;
+        out.depth = streaming->depth;
         out.defaultIndex = streaming->defaultIndex;
         heuristics = &streaming->heuristics;
         toWorld = streaming->worldTransform;

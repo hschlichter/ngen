@@ -885,6 +885,7 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
                 .lodLevel = inst.lodLevel,
                 .lodGroup = inst.lodGroup,
                 .streamRoot = inst.streamRoot,
+                .lodDepth = inst.lodDepth,
             };
         }
         // A run of consecutive slots is one region.

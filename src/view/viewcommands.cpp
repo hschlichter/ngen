@@ -430,8 +430,15 @@ auto parseLodShow(const std::string& args) -> std::expected<Json, std::string> {
     std::istringstream in(args);
     std::string layer;
     std::string state;
+    if (args.starts_with("color ")) {
+        in >> layer >> state;
+        if (state != "level" && state != "depth") {
+            return std::unexpected(std::format("expected 'color level|depth', got '{}'", args));
+        }
+        return Json{{"color", state}};
+    }
     if (!(in >> layer >> state) || (state != "on" && state != "off")) {
-        return std::unexpected(std::format("expected 'labels|gizmo|gizmo-all|flash on|off', got '{}'", args));
+        return std::unexpected(std::format("expected 'labels|gizmo|gizmo-all|flash on|off' or 'color level|depth', got '{}'", args));
     }
     if (layer == "gizmo-all") {
         layer = "gizmoAll";
@@ -1135,11 +1142,12 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.lod.visualize",
-            .summary = "The LOD tool's viewport layers: labels over the LOD roots, the heuristic gizmo of the selected root (gizmo) or of every root the LOD window's list shows (gizmoAll), and the pop flash (a render-LOD root's meshes flash white when its level changes without a fade). The LOD Level view is `view.mode lodlevel`.",
+            .summary = "The LOD tool's viewport layers: labels over the LOD roots, the heuristic gizmo of the selected root (gizmo) or of every root the LOD window's list shows (gizmoAll), and the pop flash (a render-LOD root's meshes flash white when its level changes without a fade). The LOD Level view is `view.mode lodlevel`; color picks its colours: by the drawn level (an index within the nearest LOD root) or by how many LOD roots deep the draw is.",
             .params = {optionalField("labels", RpcType::Bool, "labels on"),
                        optionalField("gizmo", RpcType::Bool, "the selected root's gizmo on"),
                        optionalField("gizmoAll", RpcType::Bool, "every shown root's gizmo on"),
-                       optionalField("flash", RpcType::Bool, "the pop flash on")},
+                       optionalField("flash", RpcType::Bool, "the pop flash on"),
+                       {.name = "color", .type = RpcType::Enum, .required = false, .description = "the LOD Level view's colours", .enumValues = {"level", "depth"}}},
             .result = "{}",
         },
         [&view](const Json& p, RpcResponder responder) {
@@ -1155,6 +1163,9 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
             }
             if (p.contains("flash")) {
                 window.flash = p["flash"].get<bool>();
+            }
+            if (p.contains("color")) {
+                window.colorByDepth = p["color"].get<std::string>() == "depth";
             }
             responder.respond(Json::object());
         });
@@ -1920,7 +1931,7 @@ auto lodToolRecord(const ViewContext& view) -> Json {
         {"selectedRoot", root.empty() ? Json(nullptr) : Json(root)},
         {"inspection", inspection},
         {"tuning", lodTuningJson(view.scene.lodTuning())},
-        {"layers", {{"levelView", view.ui.getGBufferViewMode() == 10}, {"labels", window.labels}, {"gizmo", window.gizmo}, {"gizmoAll", window.gizmoAll}, {"flash", window.flash}}},
+        {"layers", {{"levelView", view.ui.getGBufferViewMode() == 10}, {"labels", window.labels}, {"gizmo", window.gizmo}, {"gizmoAll", window.gizmoAll}, {"flash", window.flash}, {"color", window.colorByDepth ? "depth" : "level"}}},
         {"pops", view.lodPops},
         {"windowRows", window.rows.size()},
     };
