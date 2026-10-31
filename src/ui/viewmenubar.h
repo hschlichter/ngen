@@ -24,6 +24,8 @@ struct ViewMenuBarState {
     bool& showBufferOverlay;
     bool& showShadowOverlay;
     bool& antiAliasing;
+    bool& debugCamera;            // DebugCameraState::on
+    bool& debugCameraControlMain; // DebugCameraState::controlMain
     bool& showFrameGraph;
     bool& showPerformance;
     bool& showStatusBar;

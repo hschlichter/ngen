@@ -1,6 +1,6 @@
 # Streaming domain: residency from the authored load and unload radii
 
-**Status. In progress.** Decisions 1, 2 and 5 locked 2026-10-30 (Henrik); 3, 4 and 6 as leaned, pushback welcome. First of three plans: this one
+**Status. Landed.** Decisions 1, 2 and 5 locked 2026-10-30 (Henrik); 3, 4 and 6 as leaned, pushback welcome. First of three plans: this one
 (what is resident), [plan_streaming_tool.md](plan_streaming_tool.md) (the window and overlays), [plan_streaming_budgets.md](plan_streaming_budgets.md)
 (what fits).
 

@@ -86,12 +86,21 @@ struct ScriptVerb {
     ScriptParser parse;
 };
 
+// "x,y,z,yaw,pitch" places the main camera; "x,y,z,yaw,pitch debug" the debug camera.
 auto parseCamera(const std::string& args) -> std::expected<Json, std::string> {
+    std::istringstream in(args);
+    std::string poseText;
+    std::string camera;
+    in >> poseText >> camera;
     float pose[5] = {};
-    if (!parseCameraPose(args, pose)) {
-        return std::unexpected(std::format("expected x,y,z,yaw,pitch, got '{}'", args));
+    if (!parseCameraPose(poseText, pose) || (!camera.empty() && camera != "main" && camera != "debug")) {
+        return std::unexpected(std::format("expected 'x,y,z,yaw,pitch [main|debug]', got '{}'", args));
     }
-    return Json{{"x", pose[0]}, {"y", pose[1]}, {"z", pose[2]}, {"yaw", pose[3]}, {"pitch", pose[4]}};
+    Json out = {{"x", pose[0]}, {"y", pose[1]}, {"z", pose[2]}, {"yaw", pose[3]}, {"pitch", pose[4]}};
+    if (!camera.empty()) {
+        out["camera"] = camera;
+    }
+    return out;
 }
 
 auto parseTarget(const std::string& args) -> std::expected<Json, std::string> {
@@ -450,6 +459,32 @@ auto parseStreamingShow(const std::string& args) -> std::expected<Json, std::str
     return Json{{layer, state == "on"}};
 }
 
+auto parseDebugCamera(const std::string& args) -> std::expected<Json, std::string> {
+    std::istringstream in(args);
+    std::string first;
+    std::string second;
+    in >> first >> second;
+    if ((first == "on" || first == "off") && second.empty()) {
+        return Json{{"on", first == "on"}};
+    }
+    if (first == "place" && second.empty()) {
+        return Json{{"place", true}};
+    }
+    if (first == "control" && (second == "main" || second == "debug")) {
+        return Json{{"controlMain", second == "main"}};
+    }
+    if (first == "cull" && (second == "main" || second == "view")) {
+        return Json{{"cullFromMain", second == "main"}};
+    }
+    if (first == "trail" && (second == "on" || second == "off")) {
+        return Json{{"trail", second == "on"}};
+    }
+    if (first == "trail" && second == "clear") {
+        return Json{{"clearTrail", true}};
+    }
+    return std::unexpected(std::format("expected 'on|off', 'place', 'control main|debug', 'cull view|main' or 'trail on|off|clear', got '{}'", args));
+}
+
 auto parseInspect(const std::string& args) -> std::expected<Json, std::string> {
     if (args == "off") {
         return Json{{"enabled", false}};
@@ -523,6 +558,7 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"camera", "view.camera.set", parseCamera},
     ScriptVerb{"camera-frame", "view.camera.frame", parseTarget},
     ScriptVerb{"camera-use", "view.camera.use", parseCameraPath},
+    ScriptVerb{"debug-camera", "view.camera.debug", parseDebugCamera},
     ScriptVerb{"select", "view.select", parsePrim},
     ScriptVerb{"translate", "view.translate", parseTranslate},
     ScriptVerb{"pick", "view.pick", parsePick},
@@ -580,11 +616,35 @@ auto requiredField(const std::string& name, RpcType type, std::string descriptio
     return {.name = name, .type = type, .required = true, .description = std::move(description)};
 }
 
+// The camera a `camera` parameter names: the main camera unless it says "debug"; none for the debug camera while it is off.
+auto namedCamera(ViewContext& view, const Json& p) -> Camera* {
+    if (p.value("camera", std::string("main")) != "debug") {
+        return &view.cam;
+    }
+    auto& debug = view.ui.cameraWindow().debug;
+    return debug.on ? &debug.camera : nullptr;
+}
+
+auto debugCameraJson(const DebugCameraState& debug) -> Json {
+    return {
+        {"on", debug.on},
+        {"position", vec3Json(debug.camera.position)},
+        {"yaw", debug.camera.yaw},
+        {"pitch", debug.camera.pitch},
+        {"controlMain", debug.controlMain},
+        {"cullFromMain", debug.cullFromMain},
+        {"trail", debug.trail},
+        {"trailPoints", debug.trailPoints.size()},
+    };
+}
+
+const std::vector<std::string> cameraNames = {"main", "debug"};
+
 auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.camera.set",
-            .summary = "Place the camera: position and yaw/pitch in degrees.",
+            .summary = "Place a camera: position and yaw/pitch in degrees. The main camera (the player: residency, LOD and culling follow it) unless `camera` is debug.",
             .params = {
                 requiredField("x", RpcType::Float, "position x"),
                 requiredField("y", RpcType::Float, "position y"),
@@ -592,21 +652,63 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
                 requiredField("yaw", RpcType::Float, "degrees"),
                 requiredField("pitch", RpcType::Float, "degrees"),
                 optionalField("speed", RpcType::Float, "fly speed, m/s"),
+                {.name = "camera", .type = RpcType::Enum, .required = false, .description = "which camera, main by default", .enumValues = cameraNames},
             },
             .result = "{}",
         },
         [&view](const Json& p, RpcResponder responder) {
-            view.cam.position = glm::vec3(p["x"].get<float>(), p["y"].get<float>(), p["z"].get<float>());
-            view.cam.yaw = p["yaw"].get<float>();
-            view.cam.pitch = p["pitch"].get<float>();
+            auto* camera = namedCamera(view, p);
+            if (camera == nullptr) {
+                responder.fail(rpc::appError, "the debug camera is off (view.camera.debug {on: true})");
+                return;
+            }
+            camera->position = glm::vec3(p["x"].get<float>(), p["y"].get<float>(), p["z"].get<float>());
+            camera->yaw = p["yaw"].get<float>();
+            camera->pitch = p["pitch"].get<float>();
             if (p.contains("speed")) {
-                view.cam.speed = std::clamp(p["speed"].get<float>(), 0.1f, 5000.0f);
+                camera->speed = std::clamp(p["speed"].get<float>(), 0.1f, 5000.0f);
             }
             responder.respond(Json::object());
         });
-    registry.add({.name = "view.camera.get", .summary = "The camera's position and yaw/pitch.", .result = "{x, y, z, yaw, pitch}"}, [&view](const Json&, RpcResponder responder) {
-        responder.respond({{"x", view.cam.position.x}, {"y", view.cam.position.y}, {"z", view.cam.position.z}, {"yaw", view.cam.yaw}, {"pitch", view.cam.pitch}});
-    });
+    registry.add(
+        {
+            .name = "view.camera.get",
+            .summary = "A camera's position and yaw/pitch: the main camera unless `camera` is debug.",
+            .params = {{.name = "camera", .type = RpcType::Enum, .required = false, .description = "which camera, main by default", .enumValues = cameraNames}},
+            .result = "{x, y, z, yaw, pitch}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            const auto* camera = namedCamera(view, p);
+            if (camera == nullptr) {
+                responder.fail(rpc::appError, "the debug camera is off (view.camera.debug {on: true})");
+                return;
+            }
+            responder.respond({{"x", camera->position.x}, {"y", camera->position.y}, {"z", camera->position.z}, {"yaw", camera->yaw}, {"pitch", camera->pitch}});
+        });
+    registry.add(
+        {
+            .name = "view.camera.debug",
+            .summary = "The debug camera: while on, the view renders from it and the main camera (drawn as a frustum with its trail) keeps deciding residency, LOD and, with cullFromMain, culling. Turned on, it is placed 15 m behind and 10 m above the main camera; place puts it there again. controlMain hands the keys and mouse to the main camera.",
+            .params = {optionalField("on", RpcType::Bool, "debug camera on"),
+                       optionalField("place", RpcType::Bool, "put it behind and above the main camera"),
+                       optionalField("controlMain", RpcType::Bool, "the keys and mouse move the main camera"),
+                       optionalField("cullFromMain", RpcType::Bool, "cull, and fit the shadow cascades, from the main camera"),
+                       optionalField("trail", RpcType::Bool, "the main camera's trail drawn"),
+                       optionalField("clearTrail", RpcType::Bool, "forget the trail")},
+            .result = "{on, position, yaw, pitch, controlMain, cullFromMain, trail, trailPoints}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto& debug = view.ui.cameraWindow().debug;
+            debug.on = p.value("on", debug.on);
+            debug.placeRequested = debug.placeRequested || p.value("place", false);
+            debug.controlMain = p.value("controlMain", debug.controlMain);
+            debug.cullFromMain = p.value("cullFromMain", debug.cullFromMain);
+            debug.trail = p.value("trail", debug.trail);
+            if (p.value("clearTrail", false)) {
+                debug.trailPoints.clear();
+            }
+            responder.respond(debugCameraJson(debug));
+        });
     registry.add({.name = "view.camera.list", .summary = "The cameras the scene authors, in scene order.", .result = "{cameras: [{path, x, y, z, yaw, pitch}]}"},
                  [&view](const Json&, RpcResponder responder) {
                      auto list = Json::array();
@@ -1405,6 +1507,7 @@ auto statusRecord(const ViewContext& view) -> Json {
         {"scene", view.sceneLabel},
         {"selected", view.selectedPath},
         {"camera", {{"position", vec3Json(view.cam.position)}, {"yaw", view.cam.yaw}, {"pitch", view.cam.pitch}, {"speed", view.cam.speed}}},
+        {"debugCamera", debugCameraJson(view.ui.cameraWindow().debug)},
         {"shadow", {{"cascades", shadow.count}, {"tile", shadow.tileSize}, {"lambda", shadow.splitLambda}, {"pcf", shadow.pcf}, {"distance", shadow.maxDistance}}},
         {"antiAliasing", view.ui.getAntiAliasing()},
         {"sampler", {{"anisotropy", sampler.maxAnisotropy}, {"lodBias", sampler.lodBias}, {"minLod", sampler.minLod}, {"nearestMip", sampler.nearestMip}}},

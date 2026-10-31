@@ -101,7 +101,10 @@ auto Camera::viewMatrix() const -> glm::mat4 {
 
 auto Camera::place(const glm::mat4& cameraTransform) -> void {
     position = glm::vec3(cameraTransform[3]);
-    auto look = -glm::vec3(cameraTransform[2]);
+    lookAlong(-glm::vec3(cameraTransform[2]));
+}
+
+auto Camera::lookAlong(glm::vec3 look) -> void {
     if (glm::dot(look, look) < 1e-12f) {
         return;
     }

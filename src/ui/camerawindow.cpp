@@ -49,6 +49,49 @@ auto applyPose(Camera& camera, const float pose[5]) -> void {
     camera.pitch = pose[4];
 }
 
+// The debug camera's section: the main camera is the pose above, which everything placing the camera moves.
+auto drawDebugCamera(DebugCameraState& debug) -> void {
+    ImGui::Checkbox("Debug camera", &debug.on);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Render from a second camera. The main camera above (the player) still decides what is resident, the LOD levels\nand, unless culling is set to it, nothing else; it is drawn as a frustum with its trail.");
+    }
+    if (!debug.on) {
+        return;
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Place behind main")) {
+        debug.placeRequested = true;
+    }
+    float pose[5] = {debug.camera.position.x, debug.camera.position.y, debug.camera.position.z, debug.camera.yaw, debug.camera.pitch};
+    ImGui::Text("Debug pose: %s", formatCameraPose(pose).c_str());
+    int control = debug.controlMain ? 1 : 0;
+    ImGui::TextUnformatted("Controls move");
+    ImGui::SameLine();
+    ImGui::RadioButton("debug camera", &control, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("main camera", &control, 1);
+    debug.controlMain = control == 1;
+    ImGui::SameLine();
+    ImGui::TextDisabled("(C)");
+    int cull = debug.cullFromMain ? 1 : 0;
+    ImGui::TextUnformatted("Cull from");
+    ImGui::SameLine();
+    ImGui::RadioButton("debug camera##cull", &cull, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("main camera##cull", &cull, 1);
+    debug.cullFromMain = cull == 1;
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("From the main camera, only what the player draws is drawn (and its shadows).");
+    }
+    ImGui::Checkbox("Trail", &debug.trail);
+    ImGui::SameLine();
+    ImGui::Text("%zu points", debug.trailPoints.size());
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Clear")) {
+        debug.trailPoints.clear();
+    }
+}
+
 } // namespace
 
 void drawCameraWindow(bool& show, Camera& camera, CameraWindowState& state) {
@@ -98,6 +141,9 @@ void drawCameraWindow(bool& show, Camera& camera, CameraWindowState& state) {
     if (ImGui::Button("Frame selected")) {
         state.requestFrameSelected = true;
     }
+
+    ImGui::Separator();
+    drawDebugCamera(state.debug);
 
     ImGui::Separator();
     ImGui::Text("Scene cameras (%zu)", state.sceneCameras.size());

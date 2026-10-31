@@ -267,7 +267,8 @@ inside a blend band, that level and the next, cross-faded. `LodGroups` (`lodgrou
 (`passes/lodselectpass.*`, `shaders/lodselect.comp`) runs before the culling passes.
 - **The table** (`gpuscene.lodgroups`, `GpuLodGroup`, 240 bytes): uploaded as groups change (`LodGroupUpload`, the changed span through the
   slot's staging, as the instance records). A slot taking a new group gets a new serial.
-- **The pick** (`LodSelect`, one thread per group): the forced level, else the level the group's heuristic wants from the live camera, as
+- **The pick** (`LodSelect`, one thread per group): the forced level, else the level the group's heuristic wants from the live main camera (`RenderSnapshot::lodEye`, which a debug camera rendered from
+  leaves where it is), as
   `pickLodLevel` (`src/world/world.cpp`) picks it: UsdLod's `ComputeLOD` for a distance (to the center, or the nearest point of the box, 0 inside;
   `ComputeDistance`) or a screen size (the sphere over the view window at depth 1), with its blend bands, and at a boundary without one a
   margin before going coarser (the hysteresis, the view's tuning as a push constant, `RenderSnapshot::lodHysteresis`, 20% by default),

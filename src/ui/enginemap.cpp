@@ -159,8 +159,10 @@ const std::vector<EngineMapNode> nodes = {
         .label = "Input and camera",
         .lane = 3,
         .row = 1,
-        .description = "SDL events: fly camera (WASD, mouse look, the wheel for speed), picking, gizmos, shortcuts. Scene cameras and "
-                       "bookmarks place the camera.",
+        .description = "SDL events: fly camera (WASD, mouse look, the wheel for speed), picking, gizmos, shortcuts. Two cameras: the "
+                       "main camera (the player), which scene cameras, bookmarks, scripts and fly place, and from which residency, LOD and "
+                       "culling are decided; and the debug camera, rendered from while on, the main camera drawn in it with its trail "
+                       "(C hands the controls between them).",
         .records = {"status"},
         .windows = {"camera"},
         .readme = "src/view/README.md",
@@ -296,10 +298,10 @@ const std::vector<EngineMapEdge> edges = {
     {.from = "scene.placement", .to = "scene.changes", .what = "slots, LOD groups, library entries, lights"},
     {.from = "main.rpc", .to = "scene.compose", .what = "requests: open, purposes, repack"},
     {.from = "main.rpc", .to = "scene.lod", .what = "levels set by hand, heuristic on or off, tuning and threshold overrides"},
-    {.from = "main.input", .to = "scene.lod", .what = "camera (once placed)"},
+    {.from = "main.input", .to = "scene.lod", .what = "main camera (once placed)"},
     {.from = "scene.lod", .to = "scene.compose", .what = "levels picked to draw"},
     {.from = "scene.lod", .to = "scene.residency", .what = "the level picked, for roots without a streaming heuristic"},
-    {.from = "main.input", .to = "scene.residency", .what = "camera (once placed)"},
+    {.from = "main.input", .to = "scene.residency", .what = "main camera (once placed)"},
     {.from = "main.rpc", .to = "scene.residency", .what = "radii tuning, counters reset, fly"},
     {.from = "scene.residency", .to = "scene.compose", .what = "resident levels: linked again, their packs requested"},
     {.from = "scene.placement", .to = "scene.residency", .what = "the streaming roots drawn, levels ready"},
@@ -308,7 +310,7 @@ const std::vector<EngineMapEdge> edges = {
     {.from = "scene.changes", .to = "main.scene", .what = "snapshot and change lists"},
     {.from = "main.scene", .to = "render.gpuscene", .what = "change lists (submitSceneChanges)"},
     {.from = "render.gpuscene", .to = "main.scene", .what = "drawn and idle: residency"},
-    {.from = "main.input", .to = "main.frame", .what = "camera"},
+    {.from = "main.input", .to = "main.frame", .what = "the camera rendered from, the main camera's eye, the culling camera"},
     {.from = "main.ui", .to = "main.frame", .what = "settings, UI draw data"},
     {.from = "main.frame", .to = "render.framegraph", .what = "RenderSnapshot"},
     {.from = "render.gpuscene", .to = "render.uploads", .what = "queued copies"},
@@ -316,7 +318,7 @@ const std::vector<EngineMapEdge> edges = {
     {.from = "render.pool", .to = "render.framegraph", .what = "geometry and tables, read by culling and the passes"},
     {.from = "render.pipelines", .to = "render.framegraph", .what = "pipelines"},
     {.from = "render.gpuscene", .to = "render.lodselect", .what = "the LOD group table"},
-    {.from = "main.frame", .to = "render.lodselect", .what = "live camera"},
+    {.from = "main.frame", .to = "render.lodselect", .what = "the main camera's eye (lodEye)"},
     {.from = "render.lodselect", .to = "render.framegraph", .what = "the level each group draws, read by culling"},
     {.from = "render.framegraph", .to = "render.present", .what = "the frame"},
 };

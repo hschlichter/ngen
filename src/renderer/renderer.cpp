@@ -1067,11 +1067,12 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         auto invViewProj = glm::inverse(snapshot.projMatrix * snapshot.viewMatrix);
 
         profile::endZone(); // ShadowSetup
-        // Render LOD picks each group's level from the live camera (not a frozen culling frustum): its position, and the view window's
-        // area at depth 1 from the projection (2 / |proj[0][0]| wide, 2 / |proj[1][1]| high), as the view's heuristic measures.
+        // Render LOD picks each group's level from the live main camera (not a frozen culling frustum, nor a debug camera rendered from):
+        // its position, and the view window's area at depth 1 from the projection (2 / |proj[0][0]| wide, 2 / |proj[1][1]| high), as the
+        // view's heuristic measures.
         auto lodHandles = lodGroups.import(frameGraph, currentFrame);
         LodSelectPass::Camera lodCamera{
-            .eye = glm::vec3(glm::inverse(snapshot.viewMatrix)[3]),
+            .eye = snapshot.lodEye,
             .windowArea = 4.0f / std::max(1e-12f, std::abs(snapshot.projMatrix[0][0] * snapshot.projMatrix[1][1])),
         };
         lodSelectPass.addPasses(frameGraph, lodHandles, lodCamera, snapshot.lodHysteresis, snapshot.lodFlashFrames, lodGroups.groupCount(), currentFrame);

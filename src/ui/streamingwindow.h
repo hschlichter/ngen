@@ -121,8 +121,9 @@ struct StreamingWindowState {
     glm::vec2 mapCenter = glm::vec2(0.0f);
     float mapMetresPerPixel = 4.0f;
     bool mapFollow = true;
-    // The camera, for the map; set by the application.
+    // The camera, for the map; set by the application. The main camera's, which residency follows; the debug camera's when it is on.
     glm::vec3 cameraPosition = glm::vec3(0.0f);
+    std::optional<glm::vec3> debugCameraPosition;
     glm::vec3 cameraForward = glm::vec3(0.0f, 1.0f, 0.0f);
     glm::vec3 up = glm::vec3(0.0f, 0.0f, 1.0f);
     // The flight: set by the application while one runs.

@@ -2,6 +2,7 @@
 #include "assetid.h"
 #include "camera.h"
 #include "culling.h"
+#include "debugcamera.h"
 #include "debugdraw.h"
 #include "imguibackendvulkan.h"
 #include "jobsystem.h"
@@ -400,6 +401,16 @@ auto main(int argc, char* argv[]) -> int {
         .mouseSensitivity = 0.15f,
     };
     auto mouseCapture = false;
+    // The debug camera (the Camera window's): while on, the view renders from it and the keys move it, unless they are handed to the main
+    // camera. `cam` stays the main camera: everything that places the camera moves it, and residency, LOD and culling read it.
+    auto& debugCamera = viewUI.cameraWindow().debug;
+    auto viewCamera = [&] -> Camera& {
+        return debugCamera.on ? debugCamera.camera : cam;
+    };
+    auto controlledCamera = [&] -> Camera& {
+        return debugCamera.on && !debugCamera.controlMain ? debugCamera.camera : cam;
+    };
+    bool debugCameraWasOn = false;
 
     renderer.initGizmos(&cam);
     TranslateGizmo translateGizmo;
@@ -417,7 +428,7 @@ auto main(int argc, char* argv[]) -> int {
     auto frameSelected = [&] -> void {
         auto bb = scene.bounds(selectedPath);
         if (!selectedPath.empty() && bb.valid()) {
-            cam.frame(bb, glm::radians(45.0f));
+            controlledCamera().frame(bb, glm::radians(45.0f));
         }
     };
     auto selectParent = [&] -> void {
@@ -615,6 +626,16 @@ auto main(int argc, char* argv[]) -> int {
             advanceFlight(viewContext, dt);
             autoFrame = false;
         }
+        // The debug camera, placed behind the main camera when it is turned on or asked to be; the main camera's trail starts afresh.
+        if (debugCamera.on && (!debugCameraWasOn || debugCamera.placeRequested)) {
+            placeDebugCamera(debugCamera, cam, scene.lodMetersPerUnit());
+            if (!debugCameraWasOn) {
+                debugCamera.trailPoints.clear();
+            }
+        }
+        debugCamera.placeRequested = false;
+        debugCameraWasOn = debugCamera.on;
+        debugCamera.camera.worldUp = cam.worldUp;
 
         int winW = 0;
         int winH = 0;
@@ -741,6 +762,11 @@ auto main(int argc, char* argv[]) -> int {
                 frameSelected();
                 continue;
             }
+            // C hands the controls between the debug camera and the main camera while the debug camera is on.
+            if (plainKey && ev.key.key == SDLK_C && debugCamera.on) {
+                debugCamera.controlMain = !debugCamera.controlMain;
+                continue;
+            }
             if (plainKey) {
                 switch (ev.key.key) {
                     case SDLK_1:
@@ -767,12 +793,12 @@ auto main(int argc, char* argv[]) -> int {
                 mouseCapture = false;
             }
             if (ev.type == SDL_EVENT_MOUSE_MOTION && mouseCapture) {
-                cam.handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
+                controlledCamera().handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
                 autoFrame = false;
             }
             // The wheel changes the fly speed.
             if (ev.type == SDL_EVENT_MOUSE_WHEEL) {
-                cam.scaleSpeed(ev.wheel.y);
+                controlledCamera().scaleSpeed(ev.wheel.y);
                 continue;
             }
 
@@ -780,12 +806,12 @@ auto main(int argc, char* argv[]) -> int {
             bool dragging = translateGizmo.isDragging() || rotateGizmo.isDragging() || scaleGizmo.isDragging();
             auto dragTo = [&](float x, float y) -> std::optional<Transform> {
                 if (translateGizmo.isDragging()) {
-                    return translateGizmo.dragUpdate(x, y, winExtent, cam.viewMatrix(), proj);
+                    return translateGizmo.dragUpdate(x, y, winExtent, viewCamera().viewMatrix(), proj);
                 }
                 if (rotateGizmo.isDragging()) {
-                    return rotateGizmo.dragUpdate(x, y, winExtent, cam.viewMatrix(), proj);
+                    return rotateGizmo.dragUpdate(x, y, winExtent, viewCamera().viewMatrix(), proj);
                 }
-                return scaleGizmo.dragUpdate(x, y, winExtent, cam.viewMatrix(), proj);
+                return scaleGizmo.dragUpdate(x, y, winExtent, viewCamera().viewMatrix(), proj);
             };
             if (ev.type == SDL_EVENT_MOUSE_MOTION && dragging) {
                 if (auto local = dragTo(ev.motion.x, ev.motion.y)) {
@@ -816,11 +842,11 @@ auto main(int argc, char* argv[]) -> int {
                     auto anchor = gizmoAnchorOf(*xf);
                     bool grabbed = false;
                     if (tool == ViewTool::Translate) {
-                        grabbed = translateGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, anchor, local, xf->world);
+                        grabbed = translateGizmo.tryGrab(mx, my, winExtent, viewCamera().viewMatrix(), proj, anchor, local, xf->world);
                     } else if (tool == ViewTool::Rotate) {
-                        grabbed = rotateGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, anchor, local, xf->world);
+                        grabbed = rotateGizmo.tryGrab(mx, my, winExtent, viewCamera().viewMatrix(), proj, anchor, local, xf->world);
                     } else if (tool == ViewTool::Scale) {
-                        grabbed = scaleGizmo.tryGrab(mx, my, winExtent, cam.viewMatrix(), proj, anchor, local, xf->world);
+                        grabbed = scaleGizmo.tryGrab(mx, my, winExtent, viewCamera().viewMatrix(), proj, anchor, local, xf->world);
                     }
                     if (grabbed) {
                         continue;
@@ -844,18 +870,24 @@ auto main(int argc, char* argv[]) -> int {
         static const uint32_t cameraCullZoneId = profile::registerName("CameraAndCull");
         profile::beginZone(cameraCullZoneId);
         const auto* keys = SDL_GetKeyboardState(nullptr);
-        auto camBefore = cam.position;
-        cam.update(keys, dt);
-        if (cam.position != camBefore) {
+        auto& controlled = controlledCamera();
+        auto camBefore = controlled.position;
+        controlled.update(keys, dt);
+        if (controlled.position != camBefore) {
             autoFrame = false;
         }
+        if (debugCamera.on) {
+            extendDebugCameraTrail(debugCamera, cam.position, scene.lodMetersPerUnit());
+        }
+        // The camera culling and the shadow cascades follow: the one rendered from, or the main camera when the debug camera culls from it.
+        const auto& cullCamera = debugCamera.cullFromMain ? cam : viewCamera();
 
         // Culling runs on the GPU: the snapshot carries the frustum
         // to cull against (live, or frozen so the culled set can be inspected from elsewhere),
         // and the results come back a few frames later for the Culling window and overlay.
         cullState.enabled = viewUI.getCullEnabled();
         cullState.frozen = viewUI.getCullFrozen();
-        auto cullViewProj = cullState.update(proj * cam.viewMatrix());
+        auto cullViewProj = cullState.update(proj * cullCamera.viewMatrix());
         if (auto cull = renderThread.latestCullResult(); cull.has_value()) {
             latestCull = std::move(*cull);
         }
@@ -881,7 +913,7 @@ auto main(int argc, char* argv[]) -> int {
             PROFILE_ZONE("FitCascades");
             auto sceneBounds = sceneBoundsCache.update(scene.renderWorld().meshInstances);
             auto lightDir = pickShadowLightDirection(scene.renderWorld().lights, cam.worldUp);
-            cascadeCount = fitShadowCascades(viewUI.getShadowSettings(), cam.viewMatrix(), proj, cameraNear, lightDir, cam.worldUp, sceneBounds, cascades);
+            cascadeCount = fitShadowCascades(viewUI.getShadowSettings(), cullCamera.viewMatrix(), proj, cameraNear, lightDir, cam.worldUp, sceneBounds, cascades);
         }
         std::array<glm::vec3, 8> frozenCorners;
         if (cullState.frozenActive) {
@@ -906,9 +938,12 @@ auto main(int argc, char* argv[]) -> int {
         }
         {
             PROFILE_ZONE("DrawDebug");
-            viewUI.drawDebug(debugDraw, scene.renderWorld(), cam.position, cam.worldUp, overlayVisible, cullState.frozenActive ? &frozenCorners : nullptr, std::span<const ShadowCascade>(cascades.data(), cascadeCount), selectedPath.empty() ? nullptr : &selectedBounds);
+            viewUI.drawDebug(debugDraw, scene.renderWorld(), viewCamera().position, cam.worldUp, overlayVisible, cullState.frozenActive ? &frozenCorners : nullptr, std::span<const ShadowCascade>(cascades.data(), cascadeCount), selectedPath.empty() ? nullptr : &selectedBounds);
             drawLodGizmos(lodWindow, debugDraw, cam.worldUp, lodWindowArea(glm::radians(cameraFovDegrees), viewAspect));
             drawStreamingOverlays(streamingWindow, debugDraw, cam.worldUp);
+            if (debugCamera.on) {
+                drawMainCamera(debugCamera, cam, proj * cam.viewMatrix(), cameraDepthAt(viewUI.getShadowSettings().maxDistance), scene.lodMetersPerUnit(), debugDraw);
+            }
         }
 
         renderThread.setFrameGraphDebugEnabled(viewUI.wantsFrameGraphDebug() || dumps.wantsFrameGraphDebug());
@@ -997,8 +1032,8 @@ auto main(int argc, char* argv[]) -> int {
         {
             PROFILE_ZONE("LodLabels");
             const auto& io = ImGui::GetIO();
-            drawLodLabels(viewUI.lodWindow(), proj * cam.viewMatrix(), glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
-            drawStreamingLabels(viewUI.streamingWindow(), proj * cam.viewMatrix(), glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
+            drawLodLabels(viewUI.lodWindow(), proj * viewCamera().viewMatrix(), glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
+            drawStreamingLabels(viewUI.streamingWindow(), proj * viewCamera().viewMatrix(), glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
         }
         switch (viewUI.takeEditRequest()) {
             case ViewEditRequest::Deselect:
@@ -1227,6 +1262,7 @@ auto main(int argc, char* argv[]) -> int {
                 streamingWindow.historyAt = (at + 1) % StreamingWindowState::historyLength;
             }
             streamingWindow.cameraPosition = cam.position;
+            streamingWindow.debugCameraPosition = debugCamera.on ? std::optional<glm::vec3>(debugCamera.camera.position) : std::nullopt;
             streamingWindow.cameraForward = cam.forward();
             streamingWindow.up = cam.worldUp;
             streamingWindow.flying = flight.flying();
@@ -1309,16 +1345,17 @@ auto main(int argc, char* argv[]) -> int {
         auto activeTool = viewUI.activeTool();
         {
             PROFILE_ZONE("Gizmos");
-            translateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Translate, gizmoAnchor);
-            rotateGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Rotate, gizmoAnchor);
-            scaleGizmo.update(winExtent, cam.viewMatrix(), proj, cam.position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Scale, gizmoAnchor);
+            translateGizmo.update(winExtent, viewCamera().viewMatrix(), proj, viewCamera().position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Translate, gizmoAnchor);
+            rotateGizmo.update(winExtent, viewCamera().viewMatrix(), proj, viewCamera().position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Rotate, gizmoAnchor);
+            scaleGizmo.update(winExtent, viewCamera().viewMatrix(), proj, viewCamera().position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Scale, gizmoAnchor);
         }
 
         static const uint32_t snapshotFillZoneId = profile::registerName("SnapshotFill");
         profile::beginZone(snapshotFillZoneId);
         RenderSnapshot snapshot = {
-            .viewMatrix = cam.viewMatrix(),
+            .viewMatrix = viewCamera().viewMatrix(),
             .projMatrix = proj,
+            .lodEye = glm::vec3(glm::inverse(cam.viewMatrix())[3]),
             .worldUp = cam.worldUp,
             .windowWidth = winW,
             .windowHeight = winH,

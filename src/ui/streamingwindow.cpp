@@ -479,6 +479,11 @@ auto drawMap(StreamingWindowState& state) -> void {
         draw->AddLine(at, ImVec2(at.x + (look.x * 18.0f), at.y - (look.y * 18.0f)), IM_COL32(255, 255, 255, 255), 2.0f);
     }
     draw->AddCircleFilled(at, 4.0f, IM_COL32(255, 255, 255, 255));
+    // The debug camera, hollow, where it looks from.
+    if (state.debugCameraPosition) {
+        glm::vec2 debugAt(glm::dot(*state.debugCameraPosition, ax), glm::dot(*state.debugCameraPosition, ay));
+        draw->AddCircle(toScreen(debugAt), 5.0f, IM_COL32(255, 140, 25, 255), 0, 2.0f);
+    }
     // A scale bar.
     float bar = std::pow(10.0f, std::floor(std::log10(state.mapMetresPerPixel * 120.0f)));
     ImVec2 barAt(origin.x + 10.0f, origin.y + size.y - 14.0f);

@@ -37,4 +37,6 @@ struct Camera {
     // Move the camera to where a camera transform is, looking down its local -Z as USD's cameras do. Roll is dropped (the view's up stays
     // worldUp), and pitch is clamped as mouse look clamps it.
     auto place(const glm::mat4& cameraTransform) -> void;
+    // Turn to look along a direction, keeping the position; roll dropped and pitch clamped as in place().
+    auto lookAlong(glm::vec3 look) -> void;
 };

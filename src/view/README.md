@@ -161,6 +161,17 @@ do its draws: only where it is placed.
   interpolated; a script holds its clock while it flies, and the call answers at the last camera (`FlightStarted`, `FlightDone`). A test
   driver for streaming: it moves the camera and decides nothing. Its numbers depend on the build, the asset server's cache and the machine,
   so a flight compares the engine with itself under the same conditions.
+- **The debug camera** (`debugcamera.*`, the Camera window's Debug camera section, `debug-camera on|off|place`, `view.camera.debug`): a
+  second camera to watch the main camera from. `cam` stays the main camera (the player): everything that places the camera (`camera`,
+  `camera-use`, `fly`, `--camera`, scene cameras and bookmarks) moves it, and residency, the LOD heuristic, render LOD (`RenderSnapshot::lodEye`),
+  the LOD and Streaming inspectors and the Streaming map measure from it. While the debug camera is on, the view renders from it (and
+  picks, drags gizmos and places labels through it); culling and the shadow cascades follow it too, or the main camera with
+  `debug-camera cull main` (`cullFromMain`: only what the player draws is drawn). Turned on, it is placed 15 m behind and 10 m above the
+  main camera, looking at it. The keys and mouse move it; C (`debug-camera control main|debug`, `controlMain`) hands them to the main
+  camera while the view stays. The main camera is drawn in it: its frustum to the shadow distance, a box at its eye with its forward axis,
+  and its trail, a point every 2 m it moved (the last 500; `debug-camera trail on|off|clear`). `camera <pose> debug` and
+  `view.camera.set/get {camera: "debug"}` place and read it; the `status` record's `debugCamera` holds its state. The corner axis gizmo still
+  shows and turns the main camera.
 - **Switching levels**: a root draws the finest loaded level, not finer than the one it selects, whose placement waits for nothing: linked,
   which the composer does only once it is complete, and every mesh, material pack and texture its prims want (under their own purpose)
   held or failed, through the instances and point instancers in it; a LOD root inside it counts by its coarsest level. Each placement

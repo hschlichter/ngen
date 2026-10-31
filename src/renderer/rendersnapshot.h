@@ -26,6 +26,8 @@ struct SamplerSettings {
 struct RenderSnapshot {
     glm::mat4 viewMatrix;
     glm::mat4 projMatrix;
+    // Where render LOD measures from: the main camera's eye, which a debug camera rendered from (viewMatrix) leaves where it is.
+    glm::vec3 lodEye = glm::vec3(0.0f);
     glm::vec3 worldUp = glm::vec3(0.0f, 1.0f, 0.0f); // stage's up axis (from USDScene::worldUp())
 
     int windowWidth = 0;

@@ -1,6 +1,6 @@
 # Streaming tool: a window, overlays and configuration for residency and budgets
 
-**Status. In progress.** Decisions as leaned; the full plan built 2026-10-30 (Henrik chose it over a leaner cut). Second of three plans: [plan_streaming_domain.md](plan_streaming_domain.md) (what
+**Status. Landed.** Decisions as leaned; the full plan built 2026-10-30 (Henrik chose it over a leaner cut). Second of three plans: [plan_streaming_domain.md](plan_streaming_domain.md) (what
 is resident), this one (seeing and steering it), [plan_streaming_budgets.md](plan_streaming_budgets.md) (what fits; its controls land here).
 
 ## Current state
