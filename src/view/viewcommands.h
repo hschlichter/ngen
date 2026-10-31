@@ -133,6 +133,8 @@ auto startFlight(ViewContext& view, const std::string& prefix, float speed, std:
 auto stopFlight(ViewContext& view) -> void;
 // Moves the camera along its flight by a frame's time; answers the flight's call when it ends. Once a frame, before the camera is posted.
 auto advanceFlight(ViewContext& view, float dt) -> void;
+// The camera LOD and streaming are decided from: the main camera, or the debug camera while it is on and set to drive them.
+auto lodCamera(const ViewContext& view) -> const Camera&;
 
 // Answers the render-LOD requests whose readback has arrived; once a frame, after the culling readback is taken. True while some still
 // wait, so the next frames read the states back.

@@ -15,14 +15,18 @@ struct CameraBookmark {
     float pose[5] = {};
 };
 
-// The debug camera: while on, the view renders from it, and the main camera (the player) keeps deciding residency, LOD and, unless
-// culling is from the camera rendered from, culling. The window edits it directly; ngen-view applies it each frame (src/view/README.md,
-// "The debug camera").
+// The debug camera: while on, the view renders from it, and the main camera (the player) keeps driving what is decided from a viewpoint:
+// LOD and streaming, culling and the shadow cascades, each switchable to the debug camera. The window edits it directly; ngen-view applies
+// it each frame (src/view/README.md, "The debug camera").
 struct DebugCameraState {
     bool on = false;
     Camera camera{};
-    bool controlMain = false;    // the keys and mouse move the main camera instead, while the view stays on the debug camera
-    bool cullFromMain = false;   // culling and the shadow cascades from the main camera instead of the one rendered from
+    bool controlMain = false; // the keys and mouse move the main camera instead, while the view stays on the debug camera
+    // What the debug camera drives instead of the main camera: the LOD heuristic, residency and render LOD (one viewpoint, the scene's and
+    // the GPU's); culling; the shadow cascades' fit.
+    bool lodFromDebug = false;
+    bool cullFromDebug = false;
+    bool shadowsFromDebug = false;
     bool trail = true;           // the main camera's trail drawn
     bool placeRequested = false; // put it behind and above the main camera
     // The main camera's trail: a point each time it moved trailSpacingMetres from the last, the last trailCount, kept while the debug

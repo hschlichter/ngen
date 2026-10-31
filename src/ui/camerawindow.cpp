@@ -11,6 +11,7 @@
 #include <cfloat>
 #include <cstdio>
 #include <cstring>
+#include <format>
 #include <fstream>
 #include <sstream>
 
@@ -73,16 +74,22 @@ auto drawDebugCamera(DebugCameraState& debug) -> void {
     debug.controlMain = control == 1;
     ImGui::SameLine();
     ImGui::TextDisabled("(C)");
-    int cull = debug.cullFromMain ? 1 : 0;
-    ImGui::TextUnformatted("Cull from");
-    ImGui::SameLine();
-    ImGui::RadioButton("debug camera##cull", &cull, 0);
-    ImGui::SameLine();
-    ImGui::RadioButton("main camera##cull", &cull, 1);
-    debug.cullFromMain = cull == 1;
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("From the main camera, only what the player draws is drawn (and its shadows).");
-    }
+    // What the main camera drives, each switchable to the debug camera.
+    auto source = [](const char* label, const char* id, bool& fromDebug, const char* tooltip) {
+        int from = fromDebug ? 1 : 0;
+        ImGui::TextUnformatted(label);
+        ImGui::SameLine(150.0f);
+        ImGui::RadioButton(std::format("main##{}", id).c_str(), &from, 0);
+        ImGui::SameLine();
+        ImGui::RadioButton(std::format("debug##{}", id).c_str(), &from, 1);
+        fromDebug = from == 1;
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%s", tooltip);
+        }
+    };
+    source("LOD and streaming", "lod", debug.lodFromDebug, "The LOD heuristic, what is resident and render LOD's pick, measured from the debug camera instead of the player.");
+    source("Culling", "cull", debug.cullFromDebug, "Draw what the debug camera sees instead of what the player sees.");
+    source("Shadows", "shadows", debug.shadowsFromDebug, "Fit the shadow cascades to the debug camera's view instead of the player's.");
     ImGui::Checkbox("Trail", &debug.trail);
     ImGui::SameLine();
     ImGui::Text("%zu points", debug.trailPoints.size());

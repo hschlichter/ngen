@@ -50,6 +50,9 @@ auto drawStatusBar(const StatusBarData& data) -> void {
         }
         std::string leftText = left;
         leftText += "   |   " + countText(data.trianglesDrawn) + " / " + countText(data.trianglesScene) + " tris";
+        char speed[48];
+        std::snprintf(speed, sizeof(speed), "   |   camera %.1f m/s", data.cameraSpeed);
+        leftText += speed;
         ImGui::TextUnformatted(leftText.c_str());
 
         std::string right = "CPU " + bytesText(data.cpuMemoryBytes) + "   GPU " + bytesText(data.gpuMemoryBytes) + "   |   ";

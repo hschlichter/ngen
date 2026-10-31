@@ -4,6 +4,9 @@
 
 #include <imgui.h>
 
+#include <format>
+#include <string>
+
 auto drawViewMenuBar(ViewMenuBarState& state) -> void {
     if (!ImGui::BeginMainMenuBar()) {
         return;
@@ -25,10 +28,10 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
             state.requestFrameSelected = true;
         }
         ImGui::Separator();
-        ImGui::RadioButton("Select (1)", &state.tool, 0);
-        ImGui::RadioButton("Translate (2)", &state.tool, 1);
-        ImGui::RadioButton("Rotate (3)", &state.tool, 2);
-        ImGui::RadioButton("Scale (4)", &state.tool, 3);
+        ImGui::RadioButton("Select", &state.tool, 0);
+        ImGui::RadioButton("Translate", &state.tool, 1);
+        ImGui::RadioButton("Rotate", &state.tool, 2);
+        ImGui::RadioButton("Scale", &state.tool, 3);
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("View")) {
@@ -43,12 +46,12 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::MenuItem("Show Light Gizmos", nullptr, &state.showLightGizmos);
         ImGui::Separator();
         ImGui::MenuItem("Depth Prepass", nullptr, &state.depthPrepass);
-        ImGui::MenuItem("Show Buffer Overlay", nullptr, &state.showBufferOverlay);
-        ImGui::MenuItem("Show Shadow Overlay", nullptr, &state.showShadowOverlay);
+        ImGui::MenuItem("Show Buffer Overlay", "Ctrl+1", &state.showBufferOverlay);
+        ImGui::MenuItem("Show Shadow Overlay", "Ctrl+2", &state.showShadowOverlay);
         ImGui::MenuItem("Anti-Aliasing (FXAA)", nullptr, &state.antiAliasing);
         ImGui::Separator();
         ImGui::MenuItem("Follow Ground", "G", &state.followGround);
-        ImGui::MenuItem("Debug Camera", nullptr, &state.debugCamera);
+        ImGui::MenuItem("Debug Camera", "Ctrl+D", &state.debugCamera);
         ImGui::MenuItem("Controls Move Main Camera", "C", &state.debugCameraControlMain, state.debugCamera);
         ImGui::Separator();
         ImGui::Text("Fullscreen Buffer View");
@@ -59,14 +62,36 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::RadioButton("Shadow Map", &state.gbufferView, 5);
         ImGui::RadioButton("Shadow UV", &state.gbufferView, 6);
         ImGui::RadioButton("World Pos", &state.gbufferView, 7);
-        ImGui::RadioButton("Mip Level", &state.gbufferView, 8);
+        ImGui::RadioButton("Mip Level (Ctrl+3)", &state.gbufferView, 8);
         ImGui::RadioButton("Cascades", &state.gbufferView, 9);
-        ImGui::RadioButton("LOD Level", &state.gbufferView, 10);
-        ImGui::RadioButton("Lit", &state.gbufferView, 0);
+        ImGui::RadioButton("LOD Level (Ctrl+4)", &state.gbufferView, 10);
+        ImGui::RadioButton("Lit (Ctrl+5: everything off, again to restore)", &state.gbufferView, 0);
         ImGui::Separator();
         ImGui::Text("Debug View");
+        // The views with a key (ViewUI::toggleShortcuts) show it.
         for (int i = 0; i < (int) debugViewCount; i++) {
-            ImGui::RadioButton(debugViewLabels[i], &state.debugView, i);
+            const char* key = nullptr;
+            switch ((DebugView) i) {
+                case DebugView::Wireframe:
+                    key = "1";
+                    break;
+                case DebugView::TriangleSize:
+                    key = "2";
+                    break;
+                case DebugView::Overdraw:
+                    key = "3";
+                    break;
+                case DebugView::InstanceId:
+                    key = "4";
+                    break;
+                case DebugView::Streaming:
+                    key = "5";
+                    break;
+                default:
+                    break;
+            }
+            auto label = key != nullptr ? std::format("{} ({})", debugViewLabels[i], key) : std::string(debugViewLabels[i]);
+            ImGui::RadioButton(label.c_str(), &state.debugView, i);
         }
         ImGui::EndMenu();
     }
@@ -74,14 +99,14 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::MenuItem("Engine Map", nullptr, &state.showEngineMap);
         ImGui::Separator();
         ImGui::MenuItem("Frame Graph", nullptr, &state.showFrameGraph);
-        ImGui::MenuItem("Performance", nullptr, &state.showPerformance);
+        ImGui::MenuItem("Performance", "Ctrl+P", &state.showPerformance);
         ImGui::MenuItem("Status Bar", nullptr, &state.showStatusBar);
         ImGui::MenuItem("Render Debug", nullptr, &state.showRenderDebug);
-        ImGui::MenuItem("Camera", nullptr, &state.showCamera);
+        ImGui::MenuItem("Camera", "Ctrl+C", &state.showCamera);
         ImGui::MenuItem("Culling", nullptr, &state.showCulling);
-        ImGui::MenuItem("Assets", nullptr, &state.showAssets);
-        ImGui::MenuItem("LOD", nullptr, &state.showLod);
-        ImGui::MenuItem("Streaming", nullptr, &state.showStreaming);
+        ImGui::MenuItem("Assets", "Ctrl+A", &state.showAssets);
+        ImGui::MenuItem("LOD", "Ctrl+L", &state.showLod);
+        ImGui::MenuItem("Streaming", "Ctrl+S", &state.showStreaming);
         ImGui::MenuItem("Scene Flow", nullptr, &state.showSceneFlow);
         if (ImGui::BeginMenu("Introspection")) {
             ImGui::MenuItem("Capture", nullptr, &state.introspection.capture);

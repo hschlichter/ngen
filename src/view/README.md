@@ -163,10 +163,11 @@ do its draws: only where it is placed.
   so a flight compares the engine with itself under the same conditions.
 - **The debug camera** (`debugcamera.*`, the Camera window's Debug camera section, `debug-camera on|off|place`, `view.camera.debug`): a
   second camera to watch the main camera from. `cam` stays the main camera (the player): everything that places the camera (`camera`,
-  `camera-use`, `fly`, `--camera`, scene cameras and bookmarks) moves it, and residency, the LOD heuristic, render LOD (`RenderSnapshot::lodEye`),
-  the LOD and Streaming inspectors and the Streaming map measure from it. While the debug camera is on, the view renders from it (and
-  picks, drags gizmos and places labels through it); culling and the shadow cascades follow it too, or the main camera with
-  `debug-camera cull main` (`cullFromMain`: only what the player draws is drawn). Turned on, it is placed 15 m behind and 10 m above the
+  `camera-use`, `fly`, `--camera`, scene cameras and bookmarks) moves it, and it drives what is decided from a viewpoint: residency, the
+  LOD heuristic and render LOD (`RenderSnapshot::lodEye`; the LOD and Streaming inspectors and the Streaming map measure from the same
+  camera, `lodCamera`), culling and the shadow cascades. While the debug camera is on, the view renders from it (and picks, drags gizmos
+  and places labels through it), and each of the three can be switched to it: `debug-camera lod|cull|shadows main|debug` (`lodFromDebug`,
+  `cullFromDebug`, `shadowsFromDebug`, the Camera window's switches), all main by default. Turned on, it is placed 15 m behind and 10 m above the
   main camera, looking at it. The keys and mouse move it; C (`debug-camera control main|debug`, `controlMain`) hands them to the main
   camera while the view stays. The main camera is drawn in it: its frustum to the shadow distance, a box at its eye with its forward axis,
   and its trail, a point every 2 m it moved (the last 500; `debug-camera trail on|off|clear`). `camera <pose> debug` and
@@ -351,7 +352,14 @@ The selection is a prim's full path (instances expanded), so a prim inside an in
 (`viewpicking.*`): the geometry pass writes each pixel's instance index + 1 into `gbuffer.instance`, the click asks for that one texel after the
 pass, and a few frames later the instance under the cursor maps to its prim (`instancePath`); nothing drawn there deselects. The `pick <x> <y>`
 verb and `view.pick` do the same at a framebuffer pixel and answer with the path; `select` and `view.select` select by path. Keys: Z
-deselects, R selects the parent, F frames the selection, 1 to 4 pick the tool (select, translate, rotate, scale); the Edit menu has the same.
+deselects, R selects the parent, F frames the selection; the Edit menu has the same, and picks the tool (select, translate, rotate, scale).
+
+The window and view toggles have keys too (`ViewUI::toggleShortcuts`), each pressed again to turn it off. Ctrl+D turns the debug camera on and
+off. They go through ImGui's shortcut routing, so they work with the cursor over a window, never while typing in a field, and a focused window's own chord wins (the Assets
+window's Ctrl+A selects all there). Ctrl+P, Ctrl+C, Ctrl+S, Ctrl+L and Ctrl+A open and close the Performance, Camera, Streaming, LOD and
+Assets windows; 1 to 5 the wireframe, triangle size, overdraw, instance and streaming debug views; Ctrl+1 and Ctrl+2 the buffer and shadow
+overlays; Ctrl+3 and Ctrl+4 the mip level and LOD level views; Ctrl+5 turns every view and overlay off for the plain lit image, and pressed
+again restores them. The menus show each key. The camera's keys are in "Camera modes" and "The debug camera" (G, C, Left Alt).
 
 A gizmo drag is the view's own opinion on the prim's local transform (`setLocalTransform`), kept until the view closes and never saved: the
 placements holding the prim are built again in the next pass, walking it afresh with the opinion, and what is drawn under it moves with them;

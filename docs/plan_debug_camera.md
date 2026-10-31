@@ -150,6 +150,14 @@ Checks, at `/cameras/village`, the main camera stepped 1 m a frame for 60 frames
   prefetched tiles.
 - No warnings or errors in the trace. The controls (C, the mouse) handed off as a check by hand.
 
+Changed 2026-10-31 (Henrik): **the main camera drives everything by default**, culling and the shadow cascades too (decision 1's A
+reversed), and each of LOD and streaming, culling and shadows can be switched to the debug camera on its own (`lodFromDebug`,
+`cullFromDebug`, `shadowsFromDebug`; `debug-camera lod|cull|shadows main|debug`), replacing `cullFromMain` and `debug-camera cull
+view|main`. LOD and streaming are one switch: the scene's LOD heuristic, residency and the GPU's render LOD answer the same "where is the
+viewer". Checked at the village with the main camera stepped 30 frames: with the defaults, the `streaming` record's 396 roots, the `culling`
+record and render LOD's levels not drawn equal the run without the debug camera; with all three on the debug camera, 82 roots change
+state, culling draws what the debug camera sees, and the measures are from it. The 8 reference images byte-identical.
+
 ## Deferred / follow-ups
 
 - **Picture in picture** of the main camera's view. Trigger: the renderer rendering more than one view per frame.

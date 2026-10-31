@@ -201,6 +201,19 @@ public:
     auto takeTextureDumpRequest() -> std::optional<TextureInspectRequest>;
 
 private:
+    // The window and view toggles' keys, routed through ImGui so typing in a field doesn't trigger them and a focused window's own chord
+    // (the Assets window's Ctrl+A) wins: Ctrl+D the debug camera; Ctrl+P/C/S/L/A the Performance, Camera, Streaming, LOD and Assets windows; 1-5 the wireframe,
+    // triangle size, overdraw, instance and streaming debug views; Ctrl+1/2 the buffer and shadow overlays, Ctrl+3/4 the mip and LOD level
+    // views; Ctrl+5 back to the plain lit image, and again to what was on.
+    auto toggleShortcuts() -> void;
+    // What Ctrl+5 turned off, restored when it is pressed again with nothing on since.
+    struct PlainLit {
+        int gbufferView = 0;
+        int debugView = 0;
+        bool bufferOverlay = false;
+        bool shadowOverlay = false;
+    };
+    std::optional<PlainLit> beforePlainLit;
     bool showGridFlag = true;
     bool showOriginFlag = true;
     bool showGizmoFlag = true;

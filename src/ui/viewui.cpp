@@ -6,6 +6,73 @@
 #include "renderworld.h"
 #include "viewmenubar.h"
 
+#include <imgui.h>
+
+#include <array>
+#include <utility>
+
+auto ViewUI::toggleShortcuts() -> void {
+    auto pressed = [](ImGuiKeyChord chord) {
+        return ImGui::Shortcut(chord, ImGuiInputFlags_RouteGlobal);
+    };
+    std::array<std::pair<ImGuiKeyChord, bool*>, 6> windows = {{
+        {ImGuiMod_Ctrl | ImGuiKey_D, &cameraState.debug.on},
+        {ImGuiMod_Ctrl | ImGuiKey_P, &showPerformanceWindow},
+        {ImGuiMod_Ctrl | ImGuiKey_C, &showCameraWindow},
+        {ImGuiMod_Ctrl | ImGuiKey_S, &showStreamingWindow},
+        {ImGuiMod_Ctrl | ImGuiKey_L, &showLodWindow},
+        {ImGuiMod_Ctrl | ImGuiKey_A, &showAssetsWindow},
+    }};
+    for (auto [chord, shown] : windows) {
+        if (pressed(chord)) {
+            *shown = !*shown;
+        }
+    }
+    std::array<std::pair<ImGuiKey, DebugView>, 5> debugViews = {{
+        {ImGuiKey_1, DebugView::Wireframe},
+        {ImGuiKey_2, DebugView::TriangleSize},
+        {ImGuiKey_3, DebugView::Overdraw},
+        {ImGuiKey_4, DebugView::InstanceId},
+        {ImGuiKey_5, DebugView::Streaming},
+    }};
+    for (auto [key, view] : debugViews) {
+        if (pressed(key)) {
+            debugViewMode = debugViewMode == (int) view ? (int) DebugView::None : (int) view;
+        }
+    }
+    if (pressed(ImGuiMod_Ctrl | ImGuiKey_1)) {
+        showBufferOverlayFlag = !showBufferOverlayFlag;
+    }
+    if (pressed(ImGuiMod_Ctrl | ImGuiKey_2)) {
+        showShadowOverlayFlag = !showShadowOverlayFlag;
+    }
+    std::array<std::pair<ImGuiKeyChord, GBufferView>, 2> bufferViews = {{
+        {ImGuiMod_Ctrl | ImGuiKey_3, GBufferView::MipLevel},
+        {ImGuiMod_Ctrl | ImGuiKey_4, GBufferView::LodLevel},
+    }};
+    for (auto [chord, view] : bufferViews) {
+        if (pressed(chord)) {
+            gbufferViewMode = gbufferViewMode == (int) view ? (int) GBufferView::Lit : (int) view;
+        }
+    }
+    if (pressed(ImGuiMod_Ctrl | ImGuiKey_5)) {
+        bool plain = gbufferViewMode == (int) GBufferView::Lit && debugViewMode == (int) DebugView::None && !showBufferOverlayFlag && !showShadowOverlayFlag;
+        if (!plain) {
+            beforePlainLit = PlainLit{.gbufferView = gbufferViewMode, .debugView = debugViewMode, .bufferOverlay = showBufferOverlayFlag, .shadowOverlay = showShadowOverlayFlag};
+            gbufferViewMode = (int) GBufferView::Lit;
+            debugViewMode = (int) DebugView::None;
+            showBufferOverlayFlag = false;
+            showShadowOverlayFlag = false;
+        } else if (beforePlainLit) {
+            gbufferViewMode = beforePlainLit->gbufferView;
+            debugViewMode = beforePlainLit->debugView;
+            showBufferOverlayFlag = beforePlainLit->bufferOverlay;
+            showShadowOverlayFlag = beforePlainLit->shadowOverlay;
+            beforePlainLit.reset();
+        }
+    }
+}
+
 auto ViewUI::draw(const PrimPathOf& primPath,
                   bool hasSelection,
                   const RenderWorld& renderWorld,
@@ -18,6 +85,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     if (freshRenderDebugSnap.has_value()) {
         renderDebugLast = std::move(freshRenderDebugSnap);
     }
+    toggleShortcuts();
     ViewMenuBarState menuState{
         .hasSelection = hasSelection,
         .tool = toolIndex,

@@ -651,11 +651,12 @@ auto main(int argc, char* argv[]) -> int {
         // The camera for the LOD heuristic, when it moved: once it has been placed (by hand, a script, or the framing when the scene was
         // first resident), not while it follows what has arrived.
         bool cameraPlaced = residency.everResident || !autoFrame;
-        if (cameraPlaced && (cam.position != postedCameraPosition || winW != postedCameraWidth || winH != postedCameraHeight)) {
-            postedCameraPosition = cam.position;
+        const auto& lodCam = lodCamera(viewContext);
+        if (cameraPlaced && (lodCam.position != postedCameraPosition || winW != postedCameraWidth || winH != postedCameraHeight)) {
+            postedCameraPosition = lodCam.position;
             postedCameraWidth = winW;
             postedCameraHeight = winH;
-            scene.setCamera(cam.position, glm::radians(cameraFovDegrees), (float) winW / (float) std::max(1, winH));
+            scene.setCamera(lodCam.position, glm::radians(cameraFovDegrees), (float) winW / (float) std::max(1, winH));
         }
 
         // The purposes the View menu or a script turned on or off: the scene loads and draws them, and moves its revision on.
@@ -790,7 +791,7 @@ auto main(int argc, char* argv[]) -> int {
                 continue;
             }
             bool plainKey = ev.type == SDL_EVENT_KEY_DOWN && (ev.key.mod & SDL_KMOD_CTRL) == 0 && !ev.key.repeat;
-            // Z deselects, R selects the parent, F frames the selection, 1-4 pick the tool.
+            // Z deselects, R selects the parent, F frames the selection. The window and view toggles are the UI's (ViewUI::toggleShortcuts).
             if (plainKey && ev.key.key == SDLK_Z) {
                 selectedPath.clear();
                 continue;
@@ -819,24 +820,6 @@ auto main(int argc, char* argv[]) -> int {
             if (plainKey && ev.key.key == SDLK_C && debugCamera.on) {
                 debugCamera.controlMain = !debugCamera.controlMain;
                 continue;
-            }
-            if (plainKey) {
-                switch (ev.key.key) {
-                    case SDLK_1:
-                        viewUI.setActiveTool(ViewTool::Select);
-                        continue;
-                    case SDLK_2:
-                        viewUI.setActiveTool(ViewTool::Translate);
-                        continue;
-                    case SDLK_3:
-                        viewUI.setActiveTool(ViewTool::Rotate);
-                        continue;
-                    case SDLK_4:
-                        viewUI.setActiveTool(ViewTool::Scale);
-                        continue;
-                    default:
-                        break;
-                }
             }
 
             if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_RIGHT) {
@@ -985,8 +968,9 @@ auto main(int argc, char* argv[]) -> int {
         if (debugCamera.on) {
             extendDebugCameraTrail(debugCamera, cam.position, scene.lodMetersPerUnit());
         }
-        // The camera culling and the shadow cascades follow: the one rendered from, or the main camera when the debug camera culls from it.
-        const auto& cullCamera = debugCamera.cullFromMain ? cam : viewCamera();
+        // Culling and the shadow cascades follow the main camera, or the debug camera while it is on and set to drive them.
+        const auto& cullCamera = debugCamera.on && debugCamera.cullFromDebug ? debugCamera.camera : cam;
+        const auto& shadowCamera = debugCamera.on && debugCamera.shadowsFromDebug ? debugCamera.camera : cam;
 
         // Culling runs on the GPU: the snapshot carries the frustum
         // to cull against (live, or frozen so the culled set can be inspected from elsewhere),
@@ -1019,7 +1003,7 @@ auto main(int argc, char* argv[]) -> int {
             PROFILE_ZONE("FitCascades");
             auto sceneBounds = sceneBoundsCache.update(scene.renderWorld().meshInstances);
             auto lightDir = pickShadowLightDirection(scene.renderWorld().lights, cam.worldUp);
-            cascadeCount = fitShadowCascades(viewUI.getShadowSettings(), cullCamera.viewMatrix(), proj, cameraNear, lightDir, cam.worldUp, sceneBounds, cascades);
+            cascadeCount = fitShadowCascades(viewUI.getShadowSettings(), shadowCamera.viewMatrix(), proj, cameraNear, lightDir, cam.worldUp, sceneBounds, cascades);
         }
         std::array<glm::vec3, 8> frozenCorners;
         if (cullState.frozenActive) {
@@ -1101,7 +1085,9 @@ auto main(int argc, char* argv[]) -> int {
         }
         {
             PROFILE_ZONE("StatusBarGather");
-            viewUI.setStatusBar(statusBar.gather(rhiDevice, assetClient, latestCull));
+            auto statusBarData = statusBar.gather(rhiDevice, assetClient, latestCull);
+            statusBarData.cameraSpeed = (float) (controlledCamera().speed * scene.lodMetersPerUnit());
+            viewUI.setStatusBar(statusBarData);
         }
         if (viewUI.wantsAssetLog()) {
             viewUI.setAssetLog(assetClient.log());
@@ -1353,7 +1339,7 @@ auto main(int argc, char* argv[]) -> int {
                 lodInspected = lodWindow.selectedRoot;
                 lodInspectedSnapshot = snapshotsTaken;
                 lodInspectedAt = now;
-                lodWindow.inspection = inspectLodRoot(scene, latestCull, lodWindow.selectedRoot, {.eye = cam.position, .fovY = glm::radians(cameraFovDegrees), .aspect = viewAspect});
+                lodWindow.inspection = inspectLodRoot(scene, latestCull, lodWindow.selectedRoot, {.eye = lodCamera(viewContext).position, .fovY = glm::radians(cameraFovDegrees), .aspect = viewAspect});
             }
         }
         {
@@ -1368,9 +1354,9 @@ auto main(int argc, char* argv[]) -> int {
                 streamingWindow.holeHistory[at] = (float) scene.streaming().holesNow;
                 streamingWindow.historyAt = (at + 1) % StreamingWindowState::historyLength;
             }
-            streamingWindow.cameraPosition = cam.position;
+            streamingWindow.cameraPosition = lodCamera(viewContext).position;
             streamingWindow.debugCameraPosition = debugCamera.on ? std::optional<glm::vec3>(debugCamera.camera.position) : std::nullopt;
-            streamingWindow.cameraForward = cam.forward();
+            streamingWindow.cameraForward = lodCamera(viewContext).forward();
             streamingWindow.up = cam.worldUp;
             streamingWindow.flying = flight.flying();
             if (flight.flying()) {
@@ -1423,7 +1409,7 @@ auto main(int argc, char* argv[]) -> int {
                 streamingInspected = streamingWindow.selectedRoot;
                 streamingInspectedSnapshot = snapshotsTaken;
                 streamingInspectedAt = now;
-                streamingWindow.inspection = inspectStreamingRoot(scene, streamingWindow.selectedRoot, cam.position, lodWindowArea(glm::radians(cameraFovDegrees), viewAspect));
+                streamingWindow.inspection = inspectStreamingRoot(scene, streamingWindow.selectedRoot, lodCamera(viewContext).position, lodWindowArea(glm::radians(cameraFovDegrees), viewAspect));
             }
         }
         ImGuiFrameSnapshot imguiSnapshot;
@@ -1462,7 +1448,7 @@ auto main(int argc, char* argv[]) -> int {
         RenderSnapshot snapshot = {
             .viewMatrix = viewCamera().viewMatrix(),
             .projMatrix = proj,
-            .lodEye = glm::vec3(glm::inverse(cam.viewMatrix())[3]),
+            .lodEye = glm::vec3(glm::inverse(lodCamera(viewContext).viewMatrix())[3]),
             .worldUp = cam.worldUp,
             .windowWidth = winW,
             .windowHeight = winH,

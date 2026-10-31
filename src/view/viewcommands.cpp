@@ -480,8 +480,8 @@ auto parseDebugCamera(const std::string& args) -> std::expected<Json, std::strin
     if (first == "control" && (second == "main" || second == "debug")) {
         return Json{{"controlMain", second == "main"}};
     }
-    if (first == "cull" && (second == "main" || second == "view")) {
-        return Json{{"cullFromMain", second == "main"}};
+    if ((first == "lod" || first == "cull" || first == "shadows") && (second == "main" || second == "debug")) {
+        return Json{{first + "FromDebug", second == "debug"}};
     }
     if (first == "trail" && (second == "on" || second == "off")) {
         return Json{{"trail", second == "on"}};
@@ -489,7 +489,7 @@ auto parseDebugCamera(const std::string& args) -> std::expected<Json, std::strin
     if (first == "trail" && second == "clear") {
         return Json{{"clearTrail", true}};
     }
-    return std::unexpected(std::format("expected 'on|off', 'place', 'control main|debug', 'cull view|main' or 'trail on|off|clear', got '{}'", args));
+    return std::unexpected(std::format("expected 'on|off', 'place', 'control main|debug', 'lod|cull|shadows main|debug' or 'trail on|off|clear', got '{}'", args));
 }
 
 // "x,y,z yaw pitch [main|debug]": turn a camera around the pivot x,y,z by the angles.
@@ -691,7 +691,9 @@ auto debugCameraJson(const DebugCameraState& debug) -> Json {
         {"yaw", debug.camera.yaw},
         {"pitch", debug.camera.pitch},
         {"controlMain", debug.controlMain},
-        {"cullFromMain", debug.cullFromMain},
+        {"lodFromDebug", debug.lodFromDebug},
+        {"cullFromDebug", debug.cullFromDebug},
+        {"shadowsFromDebug", debug.shadowsFromDebug},
         {"trail", debug.trail},
         {"trailPoints", debug.trailPoints.size()},
     };
@@ -782,21 +784,25 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.camera.debug",
-            .summary = "The debug camera: while on, the view renders from it and the main camera (drawn as a frustum with its trail) keeps deciding residency, LOD and, with cullFromMain, culling. Turned on, it is placed 15 m behind and 10 m above the main camera; place puts it there again. controlMain hands the keys and mouse to the main camera.",
+            .summary = "The debug camera: while on, the view renders from it and the main camera (drawn as a frustum with its trail) drives LOD and streaming, culling and the shadow cascades, each switchable to the debug camera (lodFromDebug, cullFromDebug, shadowsFromDebug). Turned on, it is placed 15 m behind and 10 m above the main camera; place puts it there again. controlMain hands the keys and mouse to the main camera.",
             .params = {optionalField("on", RpcType::Bool, "debug camera on"),
                        optionalField("place", RpcType::Bool, "put it behind and above the main camera"),
                        optionalField("controlMain", RpcType::Bool, "the keys and mouse move the main camera"),
-                       optionalField("cullFromMain", RpcType::Bool, "cull, and fit the shadow cascades, from the main camera"),
+                       optionalField("lodFromDebug", RpcType::Bool, "the LOD heuristic, residency and render LOD from the debug camera"),
+                       optionalField("cullFromDebug", RpcType::Bool, "cull from the debug camera"),
+                       optionalField("shadowsFromDebug", RpcType::Bool, "fit the shadow cascades to the debug camera"),
                        optionalField("trail", RpcType::Bool, "the main camera's trail drawn"),
                        optionalField("clearTrail", RpcType::Bool, "forget the trail")},
-            .result = "{on, position, yaw, pitch, controlMain, cullFromMain, trail, trailPoints}",
+            .result = "{on, position, yaw, pitch, controlMain, lodFromDebug, cullFromDebug, shadowsFromDebug, trail, trailPoints}",
         },
         [&view](const Json& p, RpcResponder responder) {
             auto& debug = view.ui.cameraWindow().debug;
             debug.on = p.value("on", debug.on);
             debug.placeRequested = debug.placeRequested || p.value("place", false);
             debug.controlMain = p.value("controlMain", debug.controlMain);
-            debug.cullFromMain = p.value("cullFromMain", debug.cullFromMain);
+            debug.lodFromDebug = p.value("lodFromDebug", debug.lodFromDebug);
+            debug.cullFromDebug = p.value("cullFromDebug", debug.cullFromDebug);
+            debug.shadowsFromDebug = p.value("shadowsFromDebug", debug.shadowsFromDebug);
             debug.trail = p.value("trail", debug.trail);
             if (p.value("clearTrail", false)) {
                 debug.trailPoints.clear();
@@ -862,7 +868,7 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
         },
         [&view](const Json& p, RpcResponder responder) {
             auto root = p["root"].get<std::string>();
-            auto inspection = inspectStreamingRoot(view.scene, root, view.cam.position, lodWindowArea(glm::radians(cameraFovDegrees), view.viewAspect));
+            auto inspection = inspectStreamingRoot(view.scene, root, lodCamera(view).position, lodWindowArea(glm::radians(cameraFovDegrees), view.viewAspect));
             if (!inspection) {
                 responder.fail(rpc::appError, std::format("no streaming root is placed at '{}'", root));
                 return;
@@ -1923,7 +1929,7 @@ auto lodToolRecord(const ViewContext& view) -> Json {
         }
     }
     if (!root.empty()) {
-        if (auto found = inspectLodRoot(view.scene, view.latestCull, root, {.eye = view.cam.position, .fovY = glm::radians(cameraFovDegrees), .aspect = view.viewAspect})) {
+        if (auto found = inspectLodRoot(view.scene, view.latestCull, root, {.eye = lodCamera(view).position, .fovY = glm::radians(cameraFovDegrees), .aspect = view.viewAspect})) {
             inspection = lodInspectionJson(*found, view.scene.lodMetersPerUnit());
         }
     }
@@ -2427,7 +2433,7 @@ auto answerRenderLodRequests(ViewContext& view) -> bool {
     for (auto it = requests.begin(); it != requests.end();) {
         if (view.latestCull.lodFrame > it->askedAt && view.latestCull.lodHasStates) {
             if (it->kind == RenderLodRequest::Kind::Inspect) {
-                auto inspection = inspectLodRoot(view.scene, view.latestCull, *it->path, {.eye = view.cam.position, .fovY = glm::radians(cameraFovDegrees), .aspect = view.viewAspect});
+                auto inspection = inspectLodRoot(view.scene, view.latestCull, *it->path, {.eye = lodCamera(view).position, .fovY = glm::radians(cameraFovDegrees), .aspect = view.viewAspect});
                 if (inspection) {
                     it->responder.respond(lodInspectionJson(*inspection, view.scene.lodMetersPerUnit()));
                 } else {
@@ -2601,6 +2607,11 @@ auto stopFlight(ViewContext& view) -> void {
         view.flight.responder->respond({{"cameras", view.flight.cameras.size()}, {"metres", view.flight.metres}, {"seconds", view.flight.seconds}, {"stopped", true}});
     }
     view.flight = {};
+}
+
+auto lodCamera(const ViewContext& view) -> const Camera& {
+    const auto& debug = view.ui.cameraWindow().debug;
+    return debug.on && debug.lodFromDebug ? debug.camera : view.cam;
 }
 
 auto advanceFlight(ViewContext& view, float dt) -> void {
@@ -2825,7 +2836,7 @@ auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext
                             root = placed.path;
                         }
                     }
-                    auto inspection = root.empty() ? std::nullopt : inspectStreamingRoot(view.scene, root, view.cam.position, lodWindowArea(glm::radians(cameraFovDegrees), view.viewAspect));
+                    auto inspection = root.empty() ? std::nullopt : inspectStreamingRoot(view.scene, root, lodCamera(view).position, lodWindowArea(glm::radians(cameraFovDegrees), view.viewAspect));
                     const auto& state = view.ui.streamingWindow();
                     const auto& t = state.totals;
                     responder.respond({

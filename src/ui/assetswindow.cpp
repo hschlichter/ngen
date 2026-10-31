@@ -207,7 +207,7 @@ auto drawAssetsWindow(bool& show, const std::vector<AssetLogEntry>& log, AssetsW
     if (!state.goToStatus.empty()) {
         ImGui::TextUnformatted(state.goToStatus.c_str());
     }
-    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_A)) {
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_A)) {
         selectShown();
     }
 
