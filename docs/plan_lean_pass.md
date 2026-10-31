@@ -1,6 +1,6 @@
 # Lean pass: the engine apart from its tools, a lean frame loop and lean instrumentation
 
-**Status. In progress.** Step 0 done 2026-10-31, step 1 2026-11-01. Decisions locked 2026-10-31 (Henrik): the layering and the order below; settings move into the configuration system
+**Status. In progress.** Step 0 done 2026-10-31, step 1 and 2 2026-11-01. Decisions locked 2026-10-31 (Henrik): the layering and the order below; settings move into the configuration system
 ([plan_configuration.md](plan_configuration.md)); the Engine Map and Scene Flow windows removed with their code. Pushback welcome on the
 open choices.
 
@@ -138,9 +138,26 @@ At the end:
     build runs with the Configuration, Camera, LOD, Streaming, Culling and Render Debug windows open. It caught the LOD window's Bias and
     Hysteresis inputs asserting in ImGui (since the LOD tool), fixed.
 
+- **Step 2** (2026-11-01): the tools layer is `src/tools/` (Henrik). `lodtool.*`, `streamingtool.*` and `debugcamera.*` moved there from
+  `src/view` (step 3's file moves done here, so nothing moves twice), with their data out of `src/ui`:
+  - `src/tools/lodtool.h`: `LodShape`, `LodRow` (was `LodWindowRow`), `LodInspection`, `LodToolState` (the rows, inspection, filters,
+    selection, render-LOD counts and the window's requests), `lodLevelColor`, `lodRowShown`.
+  - `src/tools/streamingtool.h`: `StreamingLevel`, `StreamingRow`, `StreamingInspection`, `StreamingTotals`, `StreamingToolState` (rows,
+    totals, inspection, filters, selection, history, cameras, flight, requests), `streamingStateColor`, `streamingStateName`,
+    `streamingRowShown`.
+  - `src/tools/debugcamera.h`: `DebugCameraState`. `src/view/ground.h`: `CameraModesState` (the camera modes are the view runtime's).
+  - `src/tools/tools.h`: `ToolsState`, the three together, owned by `view.cpp` and bound into `ViewUI` (`bindTools`) and `ViewContext`.
+    `ViewUI` no longer owns any tool's state; the windows keep only theirs (`LodWindowState`: scroll, "Set shown", edit buffers;
+    `StreamingWindowState`: scroll, the map's pan and zoom, edit buffers; `CameraWindowState`: bookmarks and jump).
+  - Nothing in `src/tools` or `src/view` includes a UI header except `viewcommands.cpp` (`viewui.h`) and `viewdumps.cpp`
+    (`gpuscenewindow.h`), for step 4. The tools' code still compiles into `ngen-view` until step 3 makes it a library; the UI library
+    includes `src/tools` and `src/view`.
+  - Checks: the 8 reference images byte-identical; the three debug camera runs' `streaming` and `culling` records identical to before;
+    with the LOD, Streaming and Camera windows open, labels, bounds and following on, the `lodtool` record has its 11,954 rows and the
+    `streamingtool` its 396 roots, as before; validation clean.
+
 ## Open questions
 
-- **Where the tools layer lives**: `src/tools/` beside `src/ui` (leaned: a layer of its own is clearer) or `src/view/tools/`.
 - **The renderer split (step 6) now or later**: steps 1 to 5 already make the view cuttable; step 6 is the largest single move.
 
 ## Deferred / follow-ups

@@ -18,6 +18,7 @@
 #include "renderdebugwindow.h"
 #include "statusbar.h"
 #include "streamingwindow.h"
+#include "tools.h"
 
 #include <glm/glm.hpp>
 
@@ -160,8 +161,11 @@ public:
     // What the status bar shows next frame; the application sets it each frame.
     auto setStatusBar(const StatusBarData& data) -> void { statusBarData = data; }
     auto cameraWindow() -> CameraWindowState& { return cameraState; }
-    auto lodWindow() -> LodWindowState& { return lodState; }
-    auto streamingWindow() -> StreamingWindowState& { return streamingState; }
+    // The tools' state and the camera modes' the windows draw and edit; the application owns them. Windows over them are drawn once bound.
+    auto bindTools(ToolsState& state, CameraModesState& modes) -> void {
+        tools = &state;
+        cameraModes = &modes;
+    }
     auto wantsStreamingWindow() const -> bool { return showStreamingWindow; }
     // Whether the LOD and Camera windows are open: their lists are built from the scene only then.
     auto wantsLodWindow() const -> bool { return showLodWindow; }
@@ -207,9 +211,11 @@ private:
     bool showCullingWindow = false;
     bool showAssetsWindow = false;
     bool showLodWindow = false;
-    LodWindowState lodState;
+    LodWindowState lodWindowState;
     bool showStreamingWindow = false;
-    StreamingWindowState streamingState;
+    StreamingWindowState streamingWindowState;
+    ToolsState* tools = nullptr;
+    CameraModesState* cameraModes = nullptr;
     std::vector<AssetLogEntry> assetLog;
     AssetsWindowState assetsState;
     uint32_t cullStatInstances = 0;

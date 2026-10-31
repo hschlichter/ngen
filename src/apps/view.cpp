@@ -405,9 +405,14 @@ auto main(int argc, char* argv[]) -> int {
         .mouseSensitivity = 0.15f,
     };
     auto mouseCapture = false;
-    // The debug camera (the Camera window's): while on, the view renders from it and the keys move it, unless they are handed to the main
-    // camera. `cam` stays the main camera: everything that places the camera moves it, and residency, LOD and culling read it.
-    auto& debugCamera = viewUI.cameraWindow().debug;
+    // The tools' state and the camera modes' (following the ground, orbiting while Left Alt is held): the application's, drawn and edited
+    // by the UI's windows.
+    ToolsState tools;
+    CameraModesState cameraModes;
+    viewUI.bindTools(tools, cameraModes);
+    // The debug camera: while on, the view renders from it and the keys move it, unless they are handed to the main camera. `cam` stays
+    // the main camera: everything that places the camera moves it, and residency, LOD and culling read it.
+    auto& debugCamera = tools.debugCamera;
     auto viewCamera = [&] -> Camera& {
         return toolsconfig::debugCamera.get() ? debugCamera.camera : cam;
     };
@@ -415,8 +420,6 @@ auto main(int argc, char* argv[]) -> int {
         return toolsconfig::debugCamera.get() && !toolsconfig::debugControlMain.get() ? debugCamera.camera : cam;
     };
     bool debugCameraWasOn = false;
-    // The camera modes (the Camera window's), for the camera that has the controls: following the ground, orbiting while Left Alt is held.
-    auto& cameraModes = viewUI.cameraWindow().modes;
     // The meshes the draws use, for the ground test: kept from the scene's changes as they pass to the renderer.
     GroundMeshes groundMeshes;
 
@@ -526,6 +529,8 @@ auto main(int argc, char* argv[]) -> int {
         .viewAspect = viewAspect,
         .lodPops = lodPops,
         .flight = flight,
+        .tools = tools,
+        .cameraModes = cameraModes,
         .sceneLabel = positional.size() >= 2 ? std::string(positional[1]) : std::string("(new scene)"),
     };
     registerViewMethods(registry, viewContext);
@@ -584,7 +589,7 @@ auto main(int argc, char* argv[]) -> int {
             }
         }
         // The LOD tool's rows (the LOD window and its viewport layers), once per snapshot while either is shown.
-        auto& lodWindow = viewUI.lodWindow();
+        auto& lodWindow = tools.lod;
         bool lodToolShown = viewUI.wantsLodWindow() || toolsconfig::lodLabels.get() || toolsconfig::lodGizmo.get() || toolsconfig::lodGizmoAll.get();
         if (lodToolShown && lodRowsSnapshot != snapshotsTaken) {
             lodRowsSnapshot = snapshotsTaken;
@@ -592,7 +597,7 @@ auto main(int argc, char* argv[]) -> int {
             buildLodRows(scene, lodWindow);
         }
         // The Streaming tool's rows (its window, its viewport layers and the streaming view's states), once per snapshot while any is shown.
-        auto& streamingWindow = viewUI.streamingWindow();
+        auto& streamingWindow = tools.streaming;
         bool streamingView = renderconfig::debugView.get() == (size_t) DebugView::Streaming;
         bool streamingToolShown = viewUI.wantsStreamingWindow() || toolsconfig::streamingBounds.get() || toolsconfig::streamingRings.get() || toolsconfig::streamingRingsAll.get() || toolsconfig::streamingLabels.get() || streamingView;
         if (streamingToolShown && streamingRowsSnapshot != snapshotsTaken) {
@@ -1136,8 +1141,8 @@ auto main(int argc, char* argv[]) -> int {
         {
             PROFILE_ZONE("LodLabels");
             const auto& io = ImGui::GetIO();
-            drawLodLabels(viewUI.lodWindow(), proj * viewCamera().viewMatrix(), glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
-            drawStreamingLabels(viewUI.streamingWindow(), proj * viewCamera().viewMatrix(), glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
+            drawLodLabels(tools.lod, proj * viewCamera().viewMatrix(), glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
+            drawStreamingLabels(tools.streaming, proj * viewCamera().viewMatrix(), glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
         }
         switch (viewUI.takeEditRequest()) {
             case ViewEditRequest::Deselect:
@@ -1284,7 +1289,7 @@ auto main(int argc, char* argv[]) -> int {
                 streamingWindow.inFlightHistory[at] = (float) streamingWindow.totals.inFlight;
                 streamingWindow.lateHistory[at] = (float) scene.streaming().lateNow;
                 streamingWindow.holeHistory[at] = (float) scene.streaming().holesNow;
-                streamingWindow.historyAt = (at + 1) % StreamingWindowState::historyLength;
+                streamingWindow.historyAt = (at + 1) % StreamingToolState::historyLength;
             }
             streamingWindow.cameraPosition = lodCamera(viewContext).position;
             streamingWindow.debugCameraPosition = toolsconfig::debugCamera.get() ? std::optional<glm::vec3>(debugCamera.camera.position) : std::nullopt;

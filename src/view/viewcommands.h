@@ -1,8 +1,10 @@
 #pragma once
 
+#include "ground.h"
 #include "rpcrecords.h"
 #include "rpcregistry.h"
 #include "sessionscript.h"
+#include "tools.h"
 #include <nlohmann/json.hpp>
 
 #include <glm/glm.hpp>
@@ -112,6 +114,8 @@ struct ViewContext {
     const float& viewAspect; // the view's width over height, as the LOD heuristic and the GPU's pick measure it
     const uint64_t& lodPops; // render-LOD pops (a drawn level changed without a fade) counted over the readbacks seen
     CameraFlight& flight;
+    ToolsState& tools;             // the tools' state (src/tools/tools.h)
+    CameraModesState& cameraModes; // the camera modes' state (ground.h)
     std::string sceneLabel;
 };
 

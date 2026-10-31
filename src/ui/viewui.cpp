@@ -265,7 +265,9 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     }
     {
         PROFILE_ZONE("CameraWindow");
-        drawCameraWindow(showCameraWindow, camera, cameraState);
+        if (tools != nullptr && cameraModes != nullptr) {
+            drawCameraWindow(showCameraWindow, camera, cameraState, tools->debugCamera, *cameraModes);
+        }
     }
     {
         PROFILE_ZONE("AssetsWindow");
@@ -273,11 +275,15 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     }
     {
         PROFILE_ZONE("LodWindow");
-        drawLodWindow(showLodWindow, lodState);
+        if (tools != nullptr) {
+            drawLodWindow(showLodWindow, tools->lod, lodWindowState);
+        }
     }
     {
         PROFILE_ZONE("StreamingWindow");
-        drawStreamingWindow(showStreamingWindow, streamingState);
+        if (tools != nullptr) {
+            drawStreamingWindow(showStreamingWindow, tools->streaming, streamingWindowState);
+        }
     }
     {
         PROFILE_ZONE("CullingWindow");

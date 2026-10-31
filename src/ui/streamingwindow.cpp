@@ -51,7 +51,7 @@ auto parseList(const char* text) -> std::optional<std::vector<float>> {
     return values;
 }
 
-auto levelName(const StreamingWindowRow& row, int32_t level) -> std::string {
+auto levelName(const StreamingRow& row, int32_t level) -> std::string {
     if (level < 0) {
         return "-";
     }
@@ -61,7 +61,7 @@ auto levelName(const StreamingWindowRow& row, int32_t level) -> std::string {
     return std::format("{}", level);
 }
 
-auto residentText(const StreamingWindowRow& row) -> std::string {
+auto residentText(const StreamingRow& row) -> std::string {
     std::string text;
     for (auto level : row.resident) {
         text += std::format("{}{}", text.empty() ? "" : ", ", level);
@@ -73,13 +73,8 @@ auto stateSwatch(StreamingRootState state, const char* id) -> void {
     ImGui::ColorButton(id, toImVec4(streamingStateColor(state)), ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoPicker, ImVec2(12.0f, 12.0f));
 }
 
-// Under the selection: the root at or under the view's selected prim.
-auto underPath(const std::string& path, const std::string& base) -> bool {
-    return !base.empty() && (base == "/" || path == base || (path.size() > base.size() && path.starts_with(base) && path[base.size()] == '/'));
-}
-
 // The overview: the measured counters, the legend, and the strip chart of the last frames.
-auto drawOverview(StreamingWindowState& state) -> void {
+auto drawOverview(StreamingToolState& state) -> void {
     const auto& t = state.totals;
     ImGui::Text("%u roots, %u levels resident; %u assets in flight", t.roots, t.residentLevels, t.inFlight);
     ImGui::SameLine();
@@ -118,7 +113,7 @@ auto drawOverview(StreamingWindowState& state) -> void {
     ImGui::TextDisabled("  yellow stripes: authoring findings");
 
     // The chart: oldest on the left.
-    auto plot = [&](const char* label, const std::array<float, StreamingWindowState::historyLength>& values, float now) {
+    auto plot = [&](const char* label, const std::array<float, StreamingToolState::historyLength>& values, float now) {
         float most = std::max(1.0f, *std::ranges::max_element(values));
         ImGui::PlotLines(label, values.data(), (int) values.size(), (int) state.historyAt, std::format("{:.0f} now, at most {:.0f}", now, most).c_str(), 0.0f, most, ImVec2(0.0f, 36.0f));
     };
@@ -133,7 +128,7 @@ auto drawOverview(StreamingWindowState& state) -> void {
 }
 
 // The measurement controls and the viewport's layers.
-auto drawControls(StreamingWindowState& state) -> void {
+auto drawControls(StreamingToolState& state) -> void {
     if (ImGui::Button("Reset counters")) {
         state.resetRequested = true;
     }
@@ -181,7 +176,7 @@ auto drawControls(StreamingWindowState& state) -> void {
 }
 
 // One root of the list: click selects, double-click frames.
-auto drawRow(const StreamingWindowRow& row, StreamingWindowState& state) -> void {
+auto drawRow(const StreamingRow& row, StreamingToolState& state) -> void {
     ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetFrameHeightWithSpacing());
     ImGui::PushID(row.path.c_str());
     ImGui::TableSetColumnIndex(0);
@@ -235,19 +230,19 @@ auto drawRow(const StreamingWindowRow& row, StreamingWindowState& state) -> void
 }
 
 // The selected root: its heuristics by domain, the streaming radii (editable), its levels, its state and why, findings.
-auto drawInspector(StreamingWindowState& state) -> void {
+auto drawInspector(StreamingToolState& state, StreamingWindowState& window) -> void {
     if (!state.inspection) {
         ImGui::TextDisabled("Select a streaming root (in the list, the map, the viewport or a label) to inspect it.");
         return;
     }
     const auto& in = *state.inspection;
     const auto& row = in.row;
-    if (state.editedRoot != row.path) {
-        state.editedRoot = row.path;
-        state.loadText = {};
-        state.unloadText = {};
-        std::format_to_n(state.loadText.data(), state.loadText.size() - 1, "{}", listText(row.load));
-        std::format_to_n(state.unloadText.data(), state.unloadText.size() - 1, "{}", listText(row.unload));
+    if (window.editedRoot != row.path) {
+        window.editedRoot = row.path;
+        window.loadText = {};
+        window.unloadText = {};
+        std::format_to_n(window.loadText.data(), window.loadText.size() - 1, "{}", listText(row.load));
+        std::format_to_n(window.unloadText.data(), window.unloadText.size() - 1, "{}", listText(row.unload));
     }
     stateSwatch(row.rootState, "##inspected");
     ImGui::SameLine();
@@ -274,7 +269,7 @@ auto drawInspector(StreamingWindowState& state) -> void {
         ImGui::TextUnformatted("Load");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(180.0f);
-        bool loadEdited = ImGui::InputText("##load", state.loadText.data(), state.loadText.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+        bool loadEdited = ImGui::InputText("##load", window.loadText.data(), window.loadText.size(), ImGuiInputTextFlags_EnterReturnsTrue);
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Load radii, finest boundary first, %s: the camera this close makes the finer level resident.", distance ? "metres, ascending" : "screen sizes, descending");
         }
@@ -282,15 +277,15 @@ auto drawInspector(StreamingWindowState& state) -> void {
         ImGui::TextUnformatted("Unload");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(180.0f);
-        bool unloadEdited = ImGui::InputText("##unload", state.unloadText.data(), state.unloadText.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+        bool unloadEdited = ImGui::InputText("##unload", window.unloadText.data(), window.unloadText.size(), ImGuiInputTextFlags_EnterReturnsTrue);
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Unload radii, one per load radius, each at or past it: the level stays resident until the camera is this far. Empty: the load radii.");
         }
         if (loadEdited || unloadEdited) {
-            auto load = parseList(state.loadText.data());
-            auto unload = parseList(state.unloadText.data());
+            auto load = parseList(window.loadText.data());
+            auto unload = parseList(window.unloadText.data());
             if (load && unload) {
-                StreamingWindowState::RadiiRequest request{.root = row.path, .heuristic = (uint32_t) row.streamingHeuristic};
+                StreamingToolState::RadiiRequest request{.root = row.path, .heuristic = (uint32_t) row.streamingHeuristic};
                 if (loadEdited) {
                     request.load = *load;
                 }
@@ -298,14 +293,14 @@ auto drawInspector(StreamingWindowState& state) -> void {
                     request.unload = *unload;
                 }
                 state.radiiRequests.push_back(std::move(request));
-                state.editedRoot.clear();
+                window.editedRoot.clear();
             }
         }
         if (row.tuned) {
             ImGui::SameLine();
             if (ImGui::SmallButton("Reset")) {
                 state.radiiResets.push_back(row.path);
-                state.editedRoot.clear();
+                window.editedRoot.clear();
             }
         }
     }
@@ -393,15 +388,15 @@ auto mapAxes(const glm::vec3& up) -> std::pair<glm::vec3, glm::vec3> {
 // The map: the roots' bounds from above in their state's colour, finer roots over coarser ones, the camera and where it looks. Hover shows a
 // root's state and its next boundary's load (solid) and unload (faint) rings around its bounds; click selects, double-click frames; drag pans,
 // the wheel zooms.
-auto drawMap(StreamingWindowState& state) -> void {
-    ImGui::Checkbox("Follow the camera", &state.mapFollow);
+auto drawMap(StreamingToolState& state, StreamingWindowState& window) -> void {
+    ImGui::Checkbox("Follow the camera", &window.mapFollow);
     ImGui::SameLine();
     ImGui::SetNextItemWidth(120.0f);
-    ImGui::SliderFloat("m per pixel", &state.mapMetresPerPixel, 0.25f, 40.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat("m per pixel", &window.mapMetresPerPixel, 0.25f, 40.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
     auto [ax, ay] = mapAxes(state.up);
     glm::vec2 camera(glm::dot(state.cameraPosition, ax), glm::dot(state.cameraPosition, ay));
-    if (state.mapFollow) {
-        state.mapCenter = camera;
+    if (window.mapFollow) {
+        window.mapCenter = camera;
     }
     auto size = ImGui::GetContentRegionAvail();
     size.x = std::max(size.x, 100.0f);
@@ -412,24 +407,24 @@ auto drawMap(StreamingWindowState& state) -> void {
     auto* draw = ImGui::GetWindowDrawList();
     draw->AddRectFilled(origin, ImVec2(origin.x + size.x, origin.y + size.y), IM_COL32(18, 20, 22, 255));
     draw->PushClipRect(origin, ImVec2(origin.x + size.x, origin.y + size.y), true);
-    float scale = 1.0f / state.mapMetresPerPixel;
+    float scale = 1.0f / window.mapMetresPerPixel;
     auto toScreen = [&](glm::vec2 world) {
-        return ImVec2(origin.x + (size.x * 0.5f) + ((world.x - state.mapCenter.x) * scale), origin.y + (size.y * 0.5f) - ((world.y - state.mapCenter.y) * scale));
+        return ImVec2(origin.x + (size.x * 0.5f) + ((world.x - window.mapCenter.x) * scale), origin.y + (size.y * 0.5f) - ((world.y - window.mapCenter.y) * scale));
     };
     auto toWorld = [&](ImVec2 screen) {
-        return glm::vec2(state.mapCenter.x + ((screen.x - origin.x - (size.x * 0.5f)) / scale), state.mapCenter.y - ((screen.y - origin.y - (size.y * 0.5f)) / scale));
+        return glm::vec2(window.mapCenter.x + ((screen.x - origin.x - (size.x * 0.5f)) / scale), window.mapCenter.y - ((screen.y - origin.y - (size.y * 0.5f)) / scale));
     };
     // Coarser roots first (shorter paths), so a tile draws over its region.
-    std::vector<const StreamingWindowRow*> rows;
+    std::vector<const StreamingRow*> rows;
     for (const auto& row : state.rows) {
         if (row.hasBounds && streamingRowShown(state, row)) {
             rows.push_back(&row);
         }
     }
-    std::ranges::stable_sort(rows, {}, [](const StreamingWindowRow* row) { return row->path.size(); });
+    std::ranges::stable_sort(rows, {}, [](const StreamingRow* row) { return row->path.size(); });
     auto mouse = ImGui::GetIO().MousePos;
     auto mouseWorld = toWorld(mouse);
-    const StreamingWindowRow* under = nullptr;
+    const StreamingRow* under = nullptr;
     for (const auto* row : rows) {
         glm::vec2 lo(glm::dot(row->boundsMin, ax), glm::dot(row->boundsMin, ay));
         glm::vec2 hi(glm::dot(row->boundsMax, ax), glm::dot(row->boundsMax, ay));
@@ -476,7 +471,7 @@ auto drawMap(StreamingWindowState& state) -> void {
         draw->AddCircle(toScreen(debugAt), 5.0f, IM_COL32(255, 140, 25, 255), 0, 2.0f);
     }
     // A scale bar.
-    float bar = std::pow(10.0f, std::floor(std::log10(state.mapMetresPerPixel * 120.0f)));
+    float bar = std::pow(10.0f, std::floor(std::log10(window.mapMetresPerPixel * 120.0f)));
     ImVec2 barAt(origin.x + 10.0f, origin.y + size.y - 14.0f);
     draw->AddLine(barAt, ImVec2(barAt.x + (bar * scale), barAt.y), IM_COL32(220, 220, 220, 255), 2.0f);
     draw->AddText(ImVec2(barAt.x, barAt.y - 16.0f), IM_COL32(220, 220, 220, 255), std::format("{:g} m", bar).c_str());
@@ -485,11 +480,11 @@ auto drawMap(StreamingWindowState& state) -> void {
     if (hovered) {
         auto& io = ImGui::GetIO();
         if (io.MouseWheel != 0.0f) {
-            state.mapMetresPerPixel = std::clamp(state.mapMetresPerPixel * std::pow(0.85f, io.MouseWheel), 0.25f, 40.0f);
+            window.mapMetresPerPixel = std::clamp(window.mapMetresPerPixel * std::pow(0.85f, io.MouseWheel), 0.25f, 40.0f);
         }
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-            state.mapFollow = false;
-            state.mapCenter -= glm::vec2(io.MouseDelta.x, -io.MouseDelta.y) / scale;
+            window.mapFollow = false;
+            window.mapCenter -= glm::vec2(io.MouseDelta.x, -io.MouseDelta.y) / scale;
         }
         if (under != nullptr) {
             ImGui::SetTooltip("%s\n%s: selects %s, draws %s, state %d, resident %s", under->path.c_str(), streamingStateName(under->rootState), levelName(*under, under->selected).c_str(), levelName(*under, under->drawn).c_str(), under->state, residentText(*under).c_str());
@@ -503,8 +498,8 @@ auto drawMap(StreamingWindowState& state) -> void {
     }
 }
 
-auto drawRoots(StreamingWindowState& state) -> void {
-    std::vector<const StreamingWindowRow*> rows;
+auto drawRoots(StreamingToolState& state, StreamingWindowState& window) -> void {
+    std::vector<const StreamingRow*> rows;
     rows.reserve(state.rows.size());
     for (const auto& row : state.rows) {
         if (streamingRowShown(state, row)) {
@@ -527,8 +522,8 @@ auto drawRoots(StreamingWindowState& state) -> void {
     ImGui::Text("%zu of %zu roots", rows.size(), state.rows.size());
 
     int scrollTo = -1;
-    if (state.selectedRoot != state.scrolledTo) {
-        state.scrolledTo = state.selectedRoot;
+    if (state.selectedRoot != window.scrolledTo) {
+        window.scrolledTo = state.selectedRoot;
         for (size_t i = 0; i < rows.size(); i++) {
             if (rows[i]->path == state.selectedRoot) {
                 scrollTo = (int) i;
@@ -563,76 +558,14 @@ auto drawRoots(StreamingWindowState& state) -> void {
     }
     ImGui::Separator();
     if (ImGui::BeginChild("##inspector")) {
-        drawInspector(state);
+        drawInspector(state, window);
     }
     ImGui::EndChild();
 }
 
 } // namespace
 
-auto streamingStateColor(StreamingRootState state) -> glm::vec4 {
-    switch (state) {
-        case StreamingRootState::Drawn:
-            return {0.30f, 0.75f, 0.35f, 1.0f};
-        case StreamingRootState::Prefetched:
-            return {0.20f, 0.70f, 0.70f, 1.0f};
-        case StreamingRootState::Requested:
-            return {0.30f, 0.45f, 0.95f, 1.0f};
-        case StreamingRootState::Refused:
-            return {0.60f, 0.40f, 0.85f, 1.0f};
-        case StreamingRootState::Late:
-            return {0.95f, 0.60f, 0.15f, 1.0f};
-        case StreamingRootState::Hole:
-            return {0.90f, 0.20f, 0.20f, 1.0f};
-        case StreamingRootState::None:
-            break;
-    }
-    return {0.35f, 0.35f, 0.35f, 1.0f};
-}
-
-auto streamingStateName(StreamingRootState state) -> const char* {
-    switch (state) {
-        case StreamingRootState::Drawn:
-            return "drawn";
-        case StreamingRootState::Prefetched:
-            return "prefetched";
-        case StreamingRootState::Requested:
-            return "requested";
-        case StreamingRootState::Refused:
-            return "refused";
-        case StreamingRootState::Late:
-            return "late";
-        case StreamingRootState::Hole:
-            return "hole";
-        case StreamingRootState::None:
-            break;
-    }
-    return "no root";
-}
-
-auto streamingRowShown(const StreamingWindowState& state, const StreamingWindowRow& row) -> bool {
-    if (state.filter[0] != '\0' && !row.path.contains(state.filter)) {
-        return false;
-    }
-    if (state.onlyLate && !row.late) {
-        return false;
-    }
-    if (state.onlyHoles && !row.hole) {
-        return false;
-    }
-    if (state.onlyPrefetching && row.rootState != StreamingRootState::Prefetched) {
-        return false;
-    }
-    if (state.onlyFindings && row.findings.empty()) {
-        return false;
-    }
-    if (state.onlyUnderSelection && !underPath(row.path, state.selectedPath)) {
-        return false;
-    }
-    return true;
-}
-
-auto drawStreamingWindow(bool& show, StreamingWindowState& state) -> void {
+auto drawStreamingWindow(bool& show, StreamingToolState& state, StreamingWindowState& window) -> void {
     if (!show) {
         return;
     }
@@ -646,11 +579,11 @@ auto drawStreamingWindow(bool& show, StreamingWindowState& state) -> void {
     ImGui::Separator();
     if (ImGui::BeginTabBar("##streamingtabs")) {
         if (ImGui::BeginTabItem("Roots")) {
-            drawRoots(state);
+            drawRoots(state, window);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Map")) {
-            drawMap(state);
+            drawMap(state, window);
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -658,7 +591,7 @@ auto drawStreamingWindow(bool& show, StreamingWindowState& state) -> void {
     ImGui::End();
 }
 
-auto drawStreamingLabels(StreamingWindowState& state, const glm::mat4& viewProj, glm::vec2 viewport) -> void {
+auto drawStreamingLabels(StreamingToolState& state, const glm::mat4& viewProj, glm::vec2 viewport) -> void {
     if (auto* labels = configBool("tools.streaming.labels"); labels == nullptr || !labels->get()) {
         return;
     }

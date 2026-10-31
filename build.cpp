@@ -237,8 +237,13 @@ auto main(int argc, char** argv) -> int {
                 "src/scene",
                 "src/profile",
                 "src/session",
+                "src/tools",
+                "src/view",
+                "src/world",
+                "src/asset/pack",
                 "external/imgui",
                 "external/glm",
+                "external/json/single_include",
             })
             .link(renderer)
             .link(profile)
@@ -367,12 +372,13 @@ auto main(int argc, char** argv) -> int {
                 "src/view/viewpicking.cpp",
                 "src/view/viewscene.cpp",
                 "src/view/placement.cpp",
-                "src/view/lodtool.cpp",
-                "src/view/streamingtool.cpp", "src/view/debugcamera.cpp", "src/view/ground.cpp",
+                "src/tools/lodtool.cpp",
+                "src/tools/streamingtool.cpp", "src/tools/debugcamera.cpp", "src/view/ground.cpp",
             })
             .include({
                 "src",
                 "src/view",
+                "src/tools",
                 "src/trace",
                 "src/rhi",
                 "src/rhi/vulkan",

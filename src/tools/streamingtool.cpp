@@ -83,7 +83,7 @@ auto boundsOf(const SceneLodRoot& root, int32_t heuristicIndex, glm::vec3& outMi
     return true;
 }
 
-auto rowOf(const ViewScene& scene, const SceneLodRoot& root) -> StreamingWindowRow {
+auto rowOf(const ViewScene& scene, const SceneLodRoot& root) -> StreamingRow {
     const auto& choices = scene.lodChoices();
     const auto& streaming = scene.streaming();
     const auto& tuning = scene.lodTuning();
@@ -93,7 +93,7 @@ auto rowOf(const ViewScene& scene, const SceneLodRoot& root) -> StreamingWindowR
     auto measuredIt = streaming.roots.find(root.path);
     const SceneStreamingRoot* measured = measuredIt != streaming.roots.end() ? &measuredIt->second : nullptr;
 
-    StreamingWindowRow row;
+    StreamingRow row;
     row.path = root.path;
     auto slash = root.path.find_last_of('/');
     row.name = slash == std::string::npos ? root.path : root.path.substr(slash + 1);
@@ -113,7 +113,7 @@ auto rowOf(const ViewScene& scene, const SceneLodRoot& root) -> StreamingWindowR
         }
     }
     for (size_t level = 0; level < root.levels.size(); level++) {
-        StreamingWindowLevel info;
+        StreamingLevel info;
         info.name = root.levels[level];
         info.requested = std::ranges::contains(row.resident, (uint32_t) level);
         info.loaded = std::ranges::contains(root.loaded, (uint32_t) level);
@@ -179,7 +179,7 @@ auto drawRing(DebugDraw& draw, const glm::vec3& boxMin, const glm::vec3& boxMax,
 
 } // namespace
 
-auto buildStreamingRows(const ViewScene& scene, StreamingWindowState& state) -> void {
+auto buildStreamingRows(const ViewScene& scene, StreamingToolState& state) -> void {
     state.rows.clear();
     state.slotStates.clear();
     uint32_t residentLevels = 0;
@@ -294,7 +294,7 @@ auto inspectStreamingRoot(const ViewScene& scene, const std::string& path, const
     return out;
 }
 
-auto drawStreamingOverlays(const StreamingWindowState& state, DebugDraw& draw, const glm::vec3& up) -> void {
+auto drawStreamingOverlays(const StreamingToolState& state, DebugDraw& draw, const glm::vec3& up) -> void {
     if (!toolsconfig::streamingBounds.get() && !toolsconfig::streamingRings.get() && !toolsconfig::streamingRingsAll.get()) {
         return;
     }
@@ -316,6 +316,77 @@ auto drawStreamingOverlays(const StreamingWindowState& state, DebugDraw& draw, c
             }
         }
     }
+}
+
+namespace {
+
+// Under the selection: the root at or under the view's selected prim.
+auto underPath(const std::string& path, const std::string& base) -> bool {
+    return !base.empty() && (base == "/" || path == base || (path.size() > base.size() && path.starts_with(base) && path[base.size()] == '/'));
+}
+
+} // namespace
+
+auto streamingStateColor(StreamingRootState state) -> glm::vec4 {
+    switch (state) {
+        case StreamingRootState::Drawn:
+            return {0.30f, 0.75f, 0.35f, 1.0f};
+        case StreamingRootState::Prefetched:
+            return {0.20f, 0.70f, 0.70f, 1.0f};
+        case StreamingRootState::Requested:
+            return {0.30f, 0.45f, 0.95f, 1.0f};
+        case StreamingRootState::Refused:
+            return {0.60f, 0.40f, 0.85f, 1.0f};
+        case StreamingRootState::Late:
+            return {0.95f, 0.60f, 0.15f, 1.0f};
+        case StreamingRootState::Hole:
+            return {0.90f, 0.20f, 0.20f, 1.0f};
+        case StreamingRootState::None:
+            break;
+    }
+    return {0.35f, 0.35f, 0.35f, 1.0f};
+}
+
+auto streamingStateName(StreamingRootState state) -> const char* {
+    switch (state) {
+        case StreamingRootState::Drawn:
+            return "drawn";
+        case StreamingRootState::Prefetched:
+            return "prefetched";
+        case StreamingRootState::Requested:
+            return "requested";
+        case StreamingRootState::Refused:
+            return "refused";
+        case StreamingRootState::Late:
+            return "late";
+        case StreamingRootState::Hole:
+            return "hole";
+        case StreamingRootState::None:
+            break;
+    }
+    return "no root";
+}
+
+auto streamingRowShown(const StreamingToolState& state, const StreamingRow& row) -> bool {
+    if (state.filter[0] != '\0' && !row.path.contains(state.filter)) {
+        return false;
+    }
+    if (state.onlyLate && !row.late) {
+        return false;
+    }
+    if (state.onlyHoles && !row.hole) {
+        return false;
+    }
+    if (state.onlyPrefetching && row.rootState != StreamingRootState::Prefetched) {
+        return false;
+    }
+    if (state.onlyFindings && row.findings.empty()) {
+        return false;
+    }
+    if (state.onlyUnderSelection && !underPath(row.path, state.selectedPath)) {
+        return false;
+    }
+    return true;
 }
 
 namespace toolsconfig {

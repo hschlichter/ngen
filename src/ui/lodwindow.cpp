@@ -35,7 +35,7 @@ auto levelName(const std::vector<std::string>& levels, uint32_t level) -> std::s
     return std::format("{}", level);
 }
 
-auto loadedText(const LodWindowRow& row) -> std::string {
+auto loadedText(const LodRow& row) -> std::string {
     if (row.group >= 0) {
         return "all";
     }
@@ -98,7 +98,7 @@ auto levelSwatch(uint32_t level, uint32_t depth, bool byDepth) -> void {
 }
 
 // The level picker: the root's default (or its heuristic's), or one of its levels. A choice asks the application for it.
-auto levelCombo(const std::string& path, const std::vector<std::string>& levels, uint32_t defaultIndex, bool setByHand, uint32_t wanted, bool heuristic, LodWindowState& state) -> void {
+auto levelCombo(const std::string& path, const std::vector<std::string>& levels, uint32_t defaultIndex, bool setByHand, uint32_t wanted, bool heuristic, LodToolState& state) -> void {
     auto unset = heuristic ? std::string("heuristic") : std::format("default: {}", levelName(levels, defaultIndex));
     auto preview = setByHand ? levelName(levels, wanted) : unset;
     if (!ImGui::BeginCombo("##level", preview.c_str())) {
@@ -115,7 +115,7 @@ auto levelCombo(const std::string& path, const std::vector<std::string>& levels,
     ImGui::EndCombo();
 }
 
-auto drawnText(const LodWindowRow& row) -> std::string {
+auto drawnText(const LodRow& row) -> std::string {
     if (row.drawn < 0) {
         return row.group >= 0 ? "-" : "loading";
     }
@@ -127,7 +127,7 @@ auto drawnText(const LodWindowRow& row) -> std::string {
 }
 
 // One row: the root (click selects, double-click frames), its kind, its level picker, the level drawn and the levels loaded, the measure, why.
-auto drawRow(const LodWindowRow& row, LodWindowState& state) -> void {
+auto drawRow(const LodRow& row, LodToolState& state) -> void {
     ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetFrameHeightWithSpacing());
     ImGui::PushID(row.path.c_str());
 
@@ -219,17 +219,17 @@ auto drawRow(const LodWindowRow& row, LodWindowState& state) -> void {
 }
 
 // "Set shown": every shown row to its default, its coarsest level or one level; a root with fewer levels takes its coarsest.
-auto drawSetShown(const std::vector<const LodWindowRow*>& rows, size_t mostLevels, LodWindowState& state) -> void {
+auto drawSetShown(const std::vector<const LodRow*>& rows, size_t mostLevels, LodToolState& state, LodWindowState& window) -> void {
     std::vector<std::string> choices = {"default", "coarsest"};
     for (size_t level = 0; level < mostLevels; level++) {
         choices.push_back(std::format("level {}", level));
     }
-    state.allChoice = std::clamp(state.allChoice, 0, (int) choices.size() - 1);
+    window.allChoice = std::clamp(window.allChoice, 0, (int) choices.size() - 1);
     ImGui::SetNextItemWidth(120.0f);
-    if (ImGui::BeginCombo("##allChoice", choices[(size_t) state.allChoice].c_str())) {
+    if (ImGui::BeginCombo("##allChoice", choices[(size_t) window.allChoice].c_str())) {
         for (size_t i = 0; i < choices.size(); i++) {
-            if (ImGui::Selectable(choices[i].c_str(), state.allChoice == (int) i)) {
-                state.allChoice = (int) i;
+            if (ImGui::Selectable(choices[i].c_str(), window.allChoice == (int) i)) {
+                window.allChoice = (int) i;
             }
         }
         ImGui::EndCombo();
@@ -238,12 +238,12 @@ auto drawSetShown(const std::vector<const LodWindowRow*>& rows, size_t mostLevel
     ImGui::BeginDisabled(rows.empty());
     if (ImGui::Button(std::format("Set {} shown###setshown", rows.size()).c_str())) {
         for (const auto* row : rows) {
-            if (state.allChoice == 0) {
+            if (window.allChoice == 0) {
                 state.levelRequests.push_back({.root = row->path, .level = std::nullopt});
-            } else if (state.allChoice == 1) {
+            } else if (window.allChoice == 1) {
                 state.levelRequests.push_back({.root = row->path, .level = row->levels.empty() ? 0u : (uint32_t) row->levels.size() - 1});
             } else {
-                state.levelRequests.push_back({.root = row->path, .level = (uint32_t) (state.allChoice - 2)});
+                state.levelRequests.push_back({.root = row->path, .level = (uint32_t) (window.allChoice - 2)});
             }
         }
     }
@@ -254,7 +254,7 @@ auto drawSetShown(const std::vector<const LodWindowRow*>& rows, size_t mostLevel
 }
 
 // The global controls: the heuristic, the preference, the unload delay; the tuning.
-auto drawControls(LodWindowState& state) -> void {
+auto drawControls(LodToolState& state) -> void {
     bool heuristic = state.heuristic;
     if (ImGui::Checkbox("Heuristic", &heuristic)) {
         state.heuristicRequested = heuristic;
@@ -310,7 +310,7 @@ auto drawControls(LodWindowState& state) -> void {
 }
 
 // The viewport's layers, with the LOD Level view's legend.
-auto drawLayers(LodWindowState& state) -> void {
+auto drawLayers(LodToolState& state) -> void {
     bool levelView = state.levelView;
     if (ImGui::Checkbox("LOD Level view", &levelView)) {
         state.levelViewRequested = levelView;
@@ -372,19 +372,19 @@ auto drawLayers(LodWindowState& state) -> void {
 }
 
 // The selected root: its state, its heuristics (thresholds editable), its levels.
-auto drawInspector(LodWindowState& state) -> void {
+auto drawInspector(LodToolState& state, LodWindowState& window) -> void {
     if (!state.inspection) {
         ImGui::TextDisabled("Select a LOD root (in the list, the viewport or a label) to inspect it.");
         return;
     }
     const auto& in = *state.inspection;
-    if (state.editedRoot != in.path || state.thresholdText.size() != in.heuristics.size()) {
-        state.editedRoot = in.path;
-        state.thresholdText.assign(in.heuristics.size(), {});
-        state.blendText.assign(in.heuristics.size(), {});
+    if (window.editedRoot != in.path || window.thresholdText.size() != in.heuristics.size()) {
+        window.editedRoot = in.path;
+        window.thresholdText.assign(in.heuristics.size(), {});
+        window.blendText.assign(in.heuristics.size(), {});
         for (size_t h = 0; h < in.heuristics.size(); h++) {
-            std::format_to_n(state.thresholdText[h].data(), state.thresholdText[h].size() - 1, "{}", listText(in.heuristics[h].thresholds));
-            std::format_to_n(state.blendText[h].data(), state.blendText[h].size() - 1, "{}", listText(in.heuristics[h].blendThresholds));
+            std::format_to_n(window.thresholdText[h].data(), window.thresholdText[h].size() - 1, "{}", listText(in.heuristics[h].thresholds));
+            std::format_to_n(window.blendText[h].data(), window.blendText[h].size() - 1, "{}", listText(in.heuristics[h].blendThresholds));
         }
     }
     ImGui::TextUnformatted(in.path.c_str());
@@ -466,7 +466,7 @@ auto drawInspector(LodWindowState& state) -> void {
             for (int column = 3; column <= 4; column++) {
                 bool blends = column == 4;
                 ImGui::TableSetColumnIndex(column);
-                auto& text = blends ? state.blendText[h] : state.thresholdText[h];
+                auto& text = blends ? window.blendText[h] : window.thresholdText[h];
                 ImGui::SetNextItemWidth(-FLT_MIN);
                 bool edited = ImGui::InputText(blends ? "##blends" : "##thresholds", text.data(), text.size(), ImGuiInputTextFlags_EnterReturnsTrue);
                 if (ImGui::IsItemHovered()) {
@@ -478,14 +478,14 @@ auto drawInspector(LodWindowState& state) -> void {
                 }
                 if (edited) {
                     if (auto values = parseList(text.data())) {
-                        LodWindowState::OverrideRequest request{.root = in.path, .heuristic = (uint32_t) h};
+                        LodToolState::OverrideRequest request{.root = in.path, .heuristic = (uint32_t) h};
                         if (blends) {
                             request.blendThresholds = *values;
                         } else {
                             request.thresholds = *values;
                         }
                         state.overrideRequests.push_back(std::move(request));
-                        state.editedRoot.clear();
+                        window.editedRoot.clear();
                     }
                 }
             }
@@ -493,7 +493,7 @@ auto drawInspector(LodWindowState& state) -> void {
             if (heuristic.overridden) {
                 if (ImGui::SmallButton("Reset")) {
                     state.overrideResets.push_back(in.path);
-                    state.editedRoot.clear();
+                    window.editedRoot.clear();
                 }
                 if (ImGui::IsItemHovered()) {
                     ImGui::SetTooltip("Back to the authored thresholds for every heuristic of this authored root.");
@@ -553,64 +553,7 @@ auto drawInspector(LodWindowState& state) -> void {
 
 } // namespace
 
-auto LodShape::anchor() const -> glm::vec3 {
-    if (kind == Kind::Distance) {
-        auto local = hasBox ? (boxMin + boxMax) * 0.5f : point;
-        return glm::vec3(toWorld * glm::vec4(local, 1.0f));
-    }
-    if (kind == Kind::ScreenSize) {
-        return center;
-    }
-    return glm::vec3(toWorld[3]);
-}
-
-auto lodLevelColor(uint32_t level, uint32_t depth, bool byDepth) -> glm::vec4 {
-    static constexpr std::array<glm::vec4, 8> levelRamp = {
-        glm::vec4(1.0f, 0.0f, 0.0f, 1.0f),
-        glm::vec4(1.0f, 0.5f, 0.0f, 1.0f),
-        glm::vec4(1.0f, 1.0f, 0.0f, 1.0f),
-        glm::vec4(0.0f, 1.0f, 0.0f, 1.0f),
-        glm::vec4(0.0f, 1.0f, 1.0f, 1.0f),
-        glm::vec4(0.0f, 0.0f, 1.0f, 1.0f),
-        glm::vec4(1.0f, 0.0f, 1.0f, 1.0f),
-        glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),
-    };
-    static constexpr std::array<glm::vec4, 4> depthHues = {
-        glm::vec4(0.25f, 0.5f, 1.0f, 1.0f),
-        glm::vec4(0.2f, 0.85f, 0.25f, 1.0f),
-        glm::vec4(1.0f, 0.55f, 0.05f, 1.0f),
-        glm::vec4(0.9f, 0.2f, 0.9f, 1.0f),
-    };
-    if (byDepth) {
-        return depthHues[std::clamp<uint32_t>(depth, 1, 4) - 1];
-    }
-    return levelRamp[std::min<uint32_t>(level, 7)];
-}
-
-auto lodRowShown(const LodWindowState& state, const LodWindowRow& row) -> bool {
-    if (state.filter[0] != '\0' && !row.path.contains(state.filter)) {
-        return false;
-    }
-    if ((state.kindFilter == 1 && row.group < 0) || (state.kindFilter == 2 && row.group >= 0)) {
-        return false;
-    }
-    if (state.onlyUnderSelection) {
-        const auto& base = state.selectedPath;
-        bool under = !base.empty() && (base == "/" || row.path == base || (row.path.size() > base.size() && row.path.starts_with(base) && row.path[base.size()] == '/'));
-        if (!under) {
-            return false;
-        }
-    }
-    if (state.onlyNotDrawingWanted && row.drawn == (int32_t) row.wanted) {
-        return false;
-    }
-    if (state.onlyFading && row.fadeLevel < 0) {
-        return false;
-    }
-    return true;
-}
-
-auto drawLodWindow(bool& show, LodWindowState& state) -> void {
+auto drawLodWindow(bool& show, LodToolState& state, LodWindowState& window) -> void {
     if (!show) {
         return;
     }
@@ -640,7 +583,7 @@ auto drawLodWindow(bool& show, LodWindowState& state) -> void {
     }
     ImGui::Separator();
 
-    std::vector<const LodWindowRow*> rows;
+    std::vector<const LodRow*> rows;
     rows.reserve(state.rows.size());
     size_t mostLevels = 0;
     for (const auto& row : state.rows) {
@@ -664,14 +607,14 @@ auto drawLodWindow(bool& show, LodWindowState& state) -> void {
     ImGui::Checkbox("fading", &state.onlyFading);
     ImGui::SameLine();
     ImGui::Text("%zu of %zu roots", rows.size(), state.rows.size());
-    drawSetShown(rows, mostLevels, state);
+    drawSetShown(rows, mostLevels, state, window);
     ImGui::SameLine();
     ImGui::TextDisabled("click selects, double-click frames");
 
     // Scroll to the selected root once each time the selection moves to another one.
     int scrollTo = -1;
-    if (state.selectedRoot != state.scrolledTo) {
-        state.scrolledTo = state.selectedRoot;
+    if (state.selectedRoot != window.scrolledTo) {
+        window.scrolledTo = state.selectedRoot;
         for (size_t i = 0; i < rows.size(); i++) {
             if (rows[i]->path == state.selectedRoot) {
                 scrollTo = (int) i;
@@ -707,13 +650,13 @@ auto drawLodWindow(bool& show, LodWindowState& state) -> void {
     }
     ImGui::Separator();
     if (ImGui::BeginChild("##inspector")) {
-        drawInspector(state);
+        drawInspector(state, window);
     }
     ImGui::EndChild();
     ImGui::End();
 }
 
-auto drawLodLabels(LodWindowState& state, const glm::mat4& viewProj, glm::vec2 viewport) -> void {
+auto drawLodLabels(LodToolState& state, const glm::mat4& viewProj, glm::vec2 viewport) -> void {
     if (!labelsShown()) {
         return;
     }

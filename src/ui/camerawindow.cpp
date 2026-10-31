@@ -126,7 +126,7 @@ auto drawCameraModes(CameraModesState& modes) -> void {
 
 } // namespace
 
-void drawCameraWindow(bool& show, Camera& camera, CameraWindowState& state) {
+void drawCameraWindow(bool& show, Camera& camera, CameraWindowState& state, DebugCameraState& debug, CameraModesState& modes) {
     if (!show) {
         return;
     }
@@ -174,10 +174,10 @@ void drawCameraWindow(bool& show, Camera& camera, CameraWindowState& state) {
     }
 
     ImGui::Separator();
-    drawCameraModes(state.modes);
+    drawCameraModes(modes);
 
     ImGui::Separator();
-    drawDebugCamera(state.debug);
+    drawDebugCamera(debug);
 
     ImGui::Separator();
     ImGui::Text("Scene cameras (%zu)", state.sceneCameras.size());

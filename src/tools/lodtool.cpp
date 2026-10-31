@@ -172,7 +172,7 @@ auto roundedRing(DebugDraw& draw, const LodShape& shape, const glm::vec3& up, fl
     draw.line(*previous, *first, color);
 }
 
-auto drawGizmo(const LodWindowRow& row, DebugDraw& draw, const glm::vec3& up, float windowArea, bool selected) -> void {
+auto drawGizmo(const LodRow& row, DebugDraw& draw, const glm::vec3& up, float windowArea, bool selected) -> void {
     const auto& shape = row.shape;
     float alpha = selected ? 1.0f : 0.6f;
     auto drawnColor = row.drawn >= 0 ? lodLevelColor((uint32_t) row.drawn, row.depth, false) : glm::vec4(0.7f, 0.7f, 0.7f, 1.0f);
@@ -231,9 +231,9 @@ auto lodUnitName(double metersPerUnit) -> const char* {
     return "units";
 }
 
-auto buildLodRows(const ViewScene& scene, LodWindowState& state) -> void {
+auto buildLodRows(const ViewScene& scene, LodToolState& state) -> void {
     const auto& snapshot = scene.snapshot();
-    LodWindowState::GroupRowsSource source = {
+    LodToolState::GroupRowsSource source = {
         .drawsRevision = snapshot.revision,
         .tuning = snapshot.lodTuning,
         .handLevels = snapshot.lodHandLevels,
@@ -244,7 +244,7 @@ auto buildLodRows(const ViewScene& scene, LodWindowState& state) -> void {
     // what they are built from, and their live state comes from the GPU each frame (updateLodRows). The roots come with the draws, so
     // while the group rows are kept the roots' count is too, and their rows are replaced in place.
     bool groupsKept = source == state.groupRowsSource && state.rootRowCount == scene.lodRoots().size();
-    std::vector<LodWindowRow> rootRows;
+    std::vector<LodRow> rootRows;
     auto& rows = groupsKept ? rootRows : state.rows;
     rows.clear();
     const auto& tuning = scene.lodTuning();
@@ -327,7 +327,7 @@ auto buildLodRows(const ViewScene& scene, LodWindowState& state) -> void {
     }
 }
 
-auto updateLodRows(const ViewScene& scene, const CullResult& cull, LodWindowState& state) -> void {
+auto updateLodRows(const ViewScene& scene, const CullResult& cull, LodToolState& state) -> void {
     if (!cull.lodHasStates) {
         return;
     }
@@ -485,7 +485,7 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
     return out;
 }
 
-auto drawLodGizmos(const LodWindowState& state, DebugDraw& draw, const glm::vec3& up, float windowArea) -> void {
+auto drawLodGizmos(const LodToolState& state, DebugDraw& draw, const glm::vec3& up, float windowArea) -> void {
     if (!toolsconfig::lodGizmo.get() && !toolsconfig::lodGizmoAll.get()) {
         return;
     }
@@ -497,6 +497,63 @@ auto drawLodGizmos(const LodWindowState& state, DebugDraw& draw, const glm::vec3
         }
         drawGizmo(row, draw, up, windowArea, selected);
     }
+}
+
+auto LodShape::anchor() const -> glm::vec3 {
+    if (kind == Kind::Distance) {
+        auto local = hasBox ? (boxMin + boxMax) * 0.5f : point;
+        return glm::vec3(toWorld * glm::vec4(local, 1.0f));
+    }
+    if (kind == Kind::ScreenSize) {
+        return center;
+    }
+    return glm::vec3(toWorld[3]);
+}
+
+auto lodLevelColor(uint32_t level, uint32_t depth, bool byDepth) -> glm::vec4 {
+    static constexpr std::array<glm::vec4, 8> levelRamp = {
+        glm::vec4(1.0f, 0.0f, 0.0f, 1.0f),
+        glm::vec4(1.0f, 0.5f, 0.0f, 1.0f),
+        glm::vec4(1.0f, 1.0f, 0.0f, 1.0f),
+        glm::vec4(0.0f, 1.0f, 0.0f, 1.0f),
+        glm::vec4(0.0f, 1.0f, 1.0f, 1.0f),
+        glm::vec4(0.0f, 0.0f, 1.0f, 1.0f),
+        glm::vec4(1.0f, 0.0f, 1.0f, 1.0f),
+        glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),
+    };
+    static constexpr std::array<glm::vec4, 4> depthHues = {
+        glm::vec4(0.25f, 0.5f, 1.0f, 1.0f),
+        glm::vec4(0.2f, 0.85f, 0.25f, 1.0f),
+        glm::vec4(1.0f, 0.55f, 0.05f, 1.0f),
+        glm::vec4(0.9f, 0.2f, 0.9f, 1.0f),
+    };
+    if (byDepth) {
+        return depthHues[std::clamp<uint32_t>(depth, 1, 4) - 1];
+    }
+    return levelRamp[std::min<uint32_t>(level, 7)];
+}
+
+auto lodRowShown(const LodToolState& state, const LodRow& row) -> bool {
+    if (state.filter[0] != '\0' && !row.path.contains(state.filter)) {
+        return false;
+    }
+    if ((state.kindFilter == 1 && row.group < 0) || (state.kindFilter == 2 && row.group >= 0)) {
+        return false;
+    }
+    if (state.onlyUnderSelection) {
+        const auto& base = state.selectedPath;
+        bool under = !base.empty() && (base == "/" || row.path == base || (row.path.size() > base.size() && row.path.starts_with(base) && row.path[base.size()] == '/'));
+        if (!under) {
+            return false;
+        }
+    }
+    if (state.onlyNotDrawingWanted && row.drawn == (int32_t) row.wanted) {
+        return false;
+    }
+    if (state.onlyFading && row.fadeLevel < 0) {
+        return false;
+    }
+    return true;
 }
 
 namespace toolsconfig {

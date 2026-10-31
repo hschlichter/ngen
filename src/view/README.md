@@ -162,7 +162,7 @@ do its draws: only where it is placed.
   interpolated; a script holds its clock while it flies, and the call answers at the last camera (`FlightStarted`, `FlightDone`). A test
   driver for streaming: it moves the camera and decides nothing. Its numbers depend on the build, the asset server's cache and the machine,
   so a flight compares the engine with itself under the same conditions.
-- **The debug camera** (`debugcamera.*`, the Camera window's Debug camera section, `debug-camera on|off|place`, `view.camera.debug`): a
+- **The debug camera** (`src/tools/debugcamera.*`, its state `DebugCameraState` in the tools' `ToolsState`, the Camera window's Debug camera section, `debug-camera on|off|place`, `view.camera.debug`): a
   second camera to watch the main camera from. `cam` stays the main camera (the player): everything that places the camera (`camera`,
   `camera-use`, `fly`, `--camera`, scene cameras and bookmarks) moves it, and it drives what is decided from a viewpoint: residency, the
   LOD heuristic and render LOD (`RenderSnapshot::lodEye`; the LOD and Streaming inspectors and the Streaming map measure from the same
@@ -176,7 +176,7 @@ do its draws: only where it is placed.
   `view.camera.set/get {camera: "debug"}` place and read it; the `status` record's `debugCamera` holds its pose and trail, the `config` record its switches (`tools.debugcamera.*`, on with
   `tools.debugcamera.on`); `view.camera.debug` places it and clears the trail. The corner axis gizmo still
   shows and turns the main camera.
-- **Camera modes** (`ground.*`, the Camera window's mode section, the View menu): for the camera that has the controls.
+- **Camera modes** (`ground.*`, their state `CameraModesState` owned by the application, the Camera window's mode section, the View menu): for the camera that has the controls.
   - *Orbit*: while Left Alt is held, right-drag turns around a pivot (yaw around the up axis through it, pitch around the camera's right,
     the distance kept, `Camera::orbit`) and the wheel moves toward it (`Camera::dolly`); WASD carry the pivot along. The pivot is the
     surface under the cursor when Alt went down: a depth pick (`ViewPicking::requestDepth`, the `depth` texel after the geometry pass)
@@ -207,7 +207,8 @@ do its draws: only where it is placed.
   level is placed undrawn and holds its library and GPU entries, so switching to it draws at once. Layer packs and material and texture packs
   stay held. `LevelsUnloaded` traces each batch that let something go (levels, contents, mesh packs), and the `streaming` and `scenethread`
   records and the LOD window (a loaded level's tooltip: the resident levels and why) show what was unloaded.
-- **The LOD tool** (`lodtool.*`, the LOD window `src/ui/lodwindow.*`): one place for LOD inspection, switching and tuning, both kinds.
+- **The LOD tool** (`src/tools/lodtool.*`: its rows, inspection and requests in `LodToolState`, which the application owns in `ToolsState`
+  and fills; the LOD window `src/ui/lodwindow.*` draws it and keeps only its scroll and edit buffers): one place for LOD inspection, switching and tuning, both kinds.
   - *The list*: every streaming root drawn and every render-LOD group placed (`buildLodRows` per snapshot: the roots' rows each time, the groups'
     only when the draws, the tuning, the hand-set levels, the preference or the heuristic's state changed; a group's wanted, drawn, fade
     and measure from the readback each frame while the window or a layer is shown, so the frames read every group's state back then: 16
@@ -235,7 +236,9 @@ do its draws: only where it is placed.
     the level beyond it, a faint ring where a band ends); the pop flash (a group whose drawn level changed without a fade flashes white
     for half a second, over any view: `src/renderer/README.md`, "Render LOD"; the `renderlod` record's `popped`, `flashing`, `popsSeen`).
     A streaming root shows its level, label and gizmo; its flags and flash are render LOD's only, as its state is the CPU's.
-- **The Streaming tool** (`streamingtool.*`, the Streaming window `src/ui/streamingwindow.*`, `window streaming`): residency seen and
+- **The Streaming tool** (`src/tools/streamingtool.*`: its rows, totals, inspection, history and requests in `StreamingToolState`, owned
+  by the application in `ToolsState`; the Streaming window `src/ui/streamingwindow.*`, `window streaming`, keeps its scroll, the map's pan and
+  zoom, and edit buffers): residency seen and
   steered; it adds no rule, it shows the `streaming` record's data and sets the tuning.
   - *Rows* (`buildStreamingRows`, once per snapshot while the window, a layer or the streaming view is on): every streaming root drawn, its
     selected, drawn and resident levels, state, streaming measure and radii in force (metres for a distance), its state for the colours

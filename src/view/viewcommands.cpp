@@ -683,7 +683,7 @@ auto namedCamera(ViewContext& view, const Json& p) -> Camera* {
     if (p.value("camera", std::string("main")) != "debug") {
         return &view.cam;
     }
-    return toolsconfig::debugCamera.get() ? &view.ui.cameraWindow().debug.camera : nullptr;
+    return toolsconfig::debugCamera.get() ? &view.tools.debugCamera.camera : nullptr;
 }
 
 auto cameraModesJson(const CameraModesState& modes) -> Json {
@@ -791,7 +791,7 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
             .result = "{position, yaw, pitch, trailPoints}",
         },
         [&view](const Json& p, RpcResponder responder) {
-            auto& debug = view.ui.cameraWindow().debug;
+            auto& debug = view.tools.debugCamera;
             for (auto [field, value] : {std::pair{"on", &toolsconfig::debugCamera},
                                         std::pair{"controlMain", &toolsconfig::debugControlMain},
                                         std::pair{"lodFromDebug", &toolsconfig::debugLod},
@@ -1543,8 +1543,8 @@ auto statusRecord(const ViewContext& view) -> Json {
         {"scene", view.sceneLabel},
         {"selected", view.selectedPath},
         {"camera", {{"position", vec3Json(view.cam.position)}, {"yaw", view.cam.yaw}, {"pitch", view.cam.pitch}, {"speed", view.cam.speed}}},
-        {"debugCamera", debugCameraJson(view.ui.cameraWindow().debug)},
-        {"cameraModes", cameraModesJson(view.ui.cameraWindow().modes)},
+        {"debugCamera", debugCameraJson(view.tools.debugCamera)},
+        {"cameraModes", cameraModesJson(view.cameraModes)},
     };
 }
 
@@ -1803,7 +1803,7 @@ auto lodInspectionJson(const LodInspection& in, double metersPerUnit) -> Json {
 
 // The LOD tool: the selected root's inspection, the tuning, the viewport's layers and the pops seen.
 auto lodToolRecord(const ViewContext& view) -> Json {
-    const auto& window = view.ui.lodWindow();
+    const auto& window = view.tools.lod;
     auto inspection = Json(nullptr);
     std::string root;
     if (!view.selectedPath.empty()) {
@@ -2502,7 +2502,7 @@ auto stopFlight(ViewContext& view) -> void {
 }
 
 auto lodCamera(const ViewContext& view) -> const Camera& {
-    return toolsconfig::debugCamera.get() && toolsconfig::debugLod.get() ? view.ui.cameraWindow().debug.camera : view.cam;
+    return toolsconfig::debugCamera.get() && toolsconfig::debugLod.get() ? view.tools.debugCamera.camera : view.cam;
 }
 
 auto advanceFlight(ViewContext& view, float dt) -> void {
@@ -2670,7 +2670,7 @@ auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext
                         }
                     }
                     auto inspection = root.empty() ? std::nullopt : inspectStreamingRoot(view.scene, root, lodCamera(view).position, lodWindowArea(glm::radians(cameraFovDegrees), view.viewAspect));
-                    const auto& state = view.ui.streamingWindow();
+                    const auto& state = view.tools.streaming;
                     const auto& t = state.totals;
                     responder.respond({
                         {"selected", view.selectedPath},

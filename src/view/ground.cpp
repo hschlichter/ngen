@@ -1,6 +1,5 @@
 #include "ground.h"
 
-#include "camerawindow.h"
 #include "debugdraw.h"
 
 #include <cmath>
