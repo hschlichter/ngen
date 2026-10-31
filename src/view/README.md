@@ -93,7 +93,8 @@ do its draws: only where it is placed.
 
 - **What is drawn**: entities that are active, defined and not abstract, visible (an invisible ancestor hides its subtree), not in a LOD
   level their root doesn't draw, with a mesh asset, and of a purpose that is shown: `default` and `render` always, `guide` and `proxy`
-  when turned on (`purposes` verb, `view.purposes`, the View menu).
+  when turned on (the configuration values `scene.purposes.guide` and `scene.purposes.proxy`: the `purposes` verb, `view.purposes`, which
+  answers once the change is drawn, the View menu).
 - **Point instancers**: each visible point of a `PointInstancer` draws its prototype at the instancer's world transform times the point's.
   The prototype's walk (rooted at the prototype, in the instancer's content) is kept once and used per point; a point's draws have a path
   of their own, `<prototype>#<id>`, and no transform for the queries. A prototype beneath its instancer draws only through it. A level
@@ -167,12 +168,13 @@ do its draws: only where it is placed.
   LOD heuristic and render LOD (`RenderSnapshot::lodEye`; the LOD and Streaming inspectors and the Streaming map measure from the same
   camera, `lodCamera`), culling and the shadow cascades. While the debug camera is on, the view renders from it (and picks, drags gizmos
   and places labels through it; the lighting picks each pixel's shadow cascade by its depth from the shadow camera, not the one rendered
-  from), and each of the three can be switched to it: `debug-camera lod|cull|shadows main|debug` (`lodFromDebug`,
-  `cullFromDebug`, `shadowsFromDebug`, the Camera window's switches), all main by default. Turned on, it is placed 15 m behind and 10 m above the
-  main camera, looking at it. The keys and mouse move it; C (`debug-camera control main|debug`, `controlMain`) hands them to the main
+  from), and each of the three can be switched to it: `debug-camera lod|cull|shadows main|debug` (the configuration values
+  `tools.debugcamera.lod`, `.cull`, `.shadows`; the Camera window's switches), all main by default. Turned on, it is placed 15 m behind and 10 m above the
+  main camera, looking at it. The keys and mouse move it; C (`debug-camera control main|debug`, `tools.debugcamera.controlMain`) hands them to the main
   camera while the view stays. The main camera is drawn in it: its frustum to the shadow distance, a box at its eye with its forward axis,
   and its trail, a point every 2 m it moved (the last 500; `debug-camera trail on|off|clear`). `camera <pose> debug` and
-  `view.camera.set/get {camera: "debug"}` place and read it; the `status` record's `debugCamera` holds its state. The corner axis gizmo still
+  `view.camera.set/get {camera: "debug"}` place and read it; the `status` record's `debugCamera` holds its pose and trail, the `config` record its switches (`tools.debugcamera.*`, on with
+  `tools.debugcamera.on`); `view.camera.debug` places it and clears the trail. The corner axis gizmo still
   shows and turns the main camera.
 - **Camera modes** (`ground.*`, the Camera window's mode section, the View menu): for the camera that has the controls.
   - *Orbit*: while Left Alt is held, right-drag turns around a pivot (yaw around the up axis through it, pitch around the camera's right,
@@ -180,7 +182,7 @@ do its draws: only where it is placed.
     surface under the cursor when Alt went down: a depth pick (`ViewPicking::requestDepth`, the `depth` texel after the geometry pass)
     turned into a world point a few frames later, and until then (or over the sky) the point at the last pivot's distance along the cursor
     ray. `camera-orbit x,y,z yaw pitch [debug]` and `view.camera.orbit` turn a camera by angles.
-  - *Following the ground* (G, `camera-follow on|off|height <m>`, `view.camera.follow`): the eye kept a height (1.8 m by default) above the
+  - *Following the ground* (G, `camera-follow on|off|height <m>`, the configuration values `view.camera.follow` and `view.camera.followHeight`): the eye kept a height (1.8 m by default) above the
     highest drawn surface under it, set each frame with no smoothing; WASD move across the ground by yaw, Q/E change the height. The ground
     is the render geometry the main thread holds: a ray down from the height above the eye (so ground that rose by up to the height since
     the last frame is found) through the draws whose bounds hold the camera across the up axis, the chunks of 4,096 draws skipped by the
@@ -224,8 +226,8 @@ do its draws: only where it is placed.
     `view.lod.tuning`, the window's header and fields. `tunedLodHeuristic` is what the CPU pick, the groups' records (`lodGroupOf`) and the
     records use. `LodTuningChanged` traces a change; `LodTuningRefused` a path with no root, a heuristic not there, thresholds out of order.
     The `lod`, `streaming`, `renderlod` and `lodtool` records carry the tuning; rows say `tuned`.
-  - *Layers* (`view.lod.visualize`, `lod-show labels|gizmo|gizmo-all|flash on|off`, the window): the LOD Level view (`view lodlevel`: at
-    half strength over the lit image, the drawn level of the nearest LOD root, or with `lod-show color depth` (`view.lod.visualize {color}`)
+  - *Layers* (the configuration values `tools.lod.*`: `lod-show labels|gizmo|gizmo-all|flash on|off`, the window): the LOD Level view (`view lodlevel`: at
+    half strength over the lit image, the drawn level of the nearest LOD root, or with `lod-show color depth` (`tools.lod.colorByDepth`)
     how many LOD roots deep it is, since a level's index means a different resolution at each depth (a region's `medium` and a tile's
     `simplified` are both 5 m terrain); the window's swatches and labels follow, the gizmo and the inspector's levels stay by level; a render-LOD group at a forced level striped, one drawing another level than it wants checkered); labels over
     the roots (name, drawn level, fade, measure; a click selects); the heuristic gizmo of the selected or every shown root (`DebugDraw`: the
@@ -250,7 +252,7 @@ do its draws: only where it is placed.
     lead), its findings, its parent and children; its load and unload radii editable (`lod-thresholds <root> h=<i> …` and
     `lod-unload-thresholds <root> [h=<i>] …`, `view.lod.override {thresholds, unloadThresholds}`: the unload radii alone name the streaming
     heuristic; refused unless one per load radius, in order, each at or past it).
-  - *Layers* (`view.streaming.visualize`, `streaming-show bounds|rings|rings-all|labels on|off`, the window): each root's bounds in its
+  - *Layers* (the configuration values `tools.streaming.*`: `streaming-show bounds|rings|rings-all|labels on|off`, the window): each root's bounds in its
     state's colour (yellow with findings); the selected or every shown root's load (solid) and unload (faint) radii per boundary, its bounds
     grown by the radius in the plane across the up axis; labels under the windows (name, drawn / selected, state, its name; a click
     selects); and the streaming view (`debugview streaming`): every draw in its streaming root's state's colour at half strength over the lit image, a root with findings

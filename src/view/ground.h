@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include "mesh.h"
 #include "renderworld.h"
 #include "shadowcascades.h"
@@ -47,3 +49,9 @@ auto groundBelow(const RenderWorld& world, const SceneBoundsCache& chunkBounds, 
 // The modes' overlays: the orbit's pivot as a cross while orbiting; while following, a line from the eye down to the ground hit and a cross
 // at it.
 auto drawCameraModes(const CameraModesState& modes, const glm::vec3& eye, double metersPerUnit, DebugDraw& draw) -> void;
+
+// The camera modes' configuration values (src/config/README.md), for the camera that has the controls.
+namespace viewconfig {
+extern config::Bool follow;        // view.camera.follow
+extern config::Float followHeight; // view.camera.followHeight, metres
+} // namespace viewconfig

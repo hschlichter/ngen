@@ -1,6 +1,7 @@
 #include "camerawindow.h"
 
 #include "camera.h"
+#include "configwindow.h"
 #include "sessionscript.h"
 
 #include <imgui.h>
@@ -48,13 +49,29 @@ auto applyPose(Camera& camera, const float pose[5]) -> void {
     camera.pitch = pose[4];
 }
 
-// The debug camera's section: the main camera is the pose above, which everything placing the camera moves.
-auto drawDebugCamera(DebugCameraState& debug) -> void {
-    ImGui::Checkbox("Debug camera", &debug.on);
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Render from a second camera. The main camera above (the player) still decides what is resident, the LOD levels\nand, unless culling is set to it, nothing else; it is drawn as a frustum with its trail.");
+// Two radio buttons over a Bool configuration value by name: `off` for false, `on` for true.
+auto boolRadios(const char* label, const char* id, std::string_view name, const char* off, const char* on) -> void {
+    auto* value = configBool(name);
+    if (value == nullptr) {
+        return;
     }
-    if (!debug.on) {
+    int choice = value->get() ? 1 : 0;
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine(150.0f);
+    ImGui::RadioButton(std::format("{}##{}", off, id).c_str(), &choice, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton(std::format("{}##{}", on, id).c_str(), &choice, 1);
+    value->set(choice == 1);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+        ImGui::SetTooltip("%s\n\n%s", value->description().c_str(), value->name().c_str());
+    }
+}
+
+// The debug camera's section: the main camera is the pose above, which everything placing the camera moves. Its switches are
+// configuration values (tools.debugcamera.*).
+auto drawDebugCamera(DebugCameraState& debug) -> void {
+    bool on = configCheckbox("Debug camera", "tools.debugcamera.on");
+    if (!on) {
         return;
     }
     ImGui::SameLine();
@@ -63,32 +80,12 @@ auto drawDebugCamera(DebugCameraState& debug) -> void {
     }
     float pose[5] = {debug.camera.position.x, debug.camera.position.y, debug.camera.position.z, debug.camera.yaw, debug.camera.pitch};
     ImGui::Text("Debug pose: %s", formatCameraPose(pose).c_str());
-    int control = debug.controlMain ? 1 : 0;
-    ImGui::TextUnformatted("Controls move");
-    ImGui::SameLine();
-    ImGui::RadioButton("debug camera", &control, 0);
-    ImGui::SameLine();
-    ImGui::RadioButton("main camera", &control, 1);
-    debug.controlMain = control == 1;
-    ImGui::SameLine();
-    ImGui::TextDisabled("(C)");
+    boolRadios("Controls move (C)", "control", "tools.debugcamera.controlMain", "debug camera", "main camera");
     // What the main camera drives, each switchable to the debug camera.
-    auto source = [](const char* label, const char* id, bool& fromDebug, const char* tooltip) {
-        int from = fromDebug ? 1 : 0;
-        ImGui::TextUnformatted(label);
-        ImGui::SameLine(150.0f);
-        ImGui::RadioButton(std::format("main##{}", id).c_str(), &from, 0);
-        ImGui::SameLine();
-        ImGui::RadioButton(std::format("debug##{}", id).c_str(), &from, 1);
-        fromDebug = from == 1;
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("%s", tooltip);
-        }
-    };
-    source("LOD and streaming", "lod", debug.lodFromDebug, "The LOD heuristic, what is resident and render LOD's pick, measured from the debug camera instead of the player.");
-    source("Culling", "cull", debug.cullFromDebug, "Draw what the debug camera sees instead of what the player sees.");
-    source("Shadows", "shadows", debug.shadowsFromDebug, "Fit the shadow cascades to the debug camera's view instead of the player's.");
-    ImGui::Checkbox("Trail", &debug.trail);
+    boolRadios("LOD and streaming", "lod", "tools.debugcamera.lod", "main", "debug");
+    boolRadios("Culling", "cull", "tools.debugcamera.cull", "main", "debug");
+    boolRadios("Shadows", "shadows", "tools.debugcamera.shadows", "main", "debug");
+    configCheckbox("Trail", "tools.debugcamera.trail");
     ImGui::SameLine();
     ImGui::Text("%zu points", debug.trailPoints.size());
     ImGui::SameLine();
@@ -97,18 +94,21 @@ auto drawDebugCamera(DebugCameraState& debug) -> void {
     }
 }
 
-// The camera modes' section: following the ground and orbiting, for the camera that has the controls.
+// The camera modes' section: following the ground and orbiting, for the camera that has the controls. Following and its height are
+// configuration values (view.camera.follow*).
 auto drawCameraModes(CameraModesState& modes) -> void {
-    ImGui::Checkbox("Follow ground", &modes.follow);
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Keep the eye a height above the highest drawn surface under it (render geometry: ground cover and roofs count).\nWASD move across the ground, Q/E change the height. G toggles it.");
-    }
+    bool follow = configCheckbox("Follow ground", "view.camera.follow");
     ImGui::SameLine();
     ImGui::TextDisabled("(G)");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(120.0f);
-    ImGui::DragFloat("height (m)", &modes.followHeightMetres, 0.05f, 0.0f, 1000.0f, "%.2f");
-    if (modes.follow) {
+    if (auto* height = configFloat("view.camera.followHeight")) {
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120.0f);
+        auto metres = (float) height->get();
+        if (ImGui::DragFloat("height (m)", &metres, 0.05f, 0.0f, 1000.0f, "%.2f")) {
+            (void) height->set(metres);
+        }
+    }
+    if (follow) {
         if (modes.ground) {
             ImGui::Text("Ground at %.2f, %.2f, %.2f", modes.ground->x, modes.ground->y, modes.ground->z);
             ImGui::TextWrapped("on %s", modes.groundPrim.c_str());

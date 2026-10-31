@@ -1,6 +1,6 @@
 # Lean pass: the engine apart from its tools, a lean frame loop and lean instrumentation
 
-**Status. In progress.** Step 0 done 2026-10-31. Decisions locked 2026-10-31 (Henrik): the layering and the order below; settings move into the configuration system
+**Status. In progress.** Step 0 done 2026-10-31, step 1 2026-11-01. Decisions locked 2026-10-31 (Henrik): the layering and the order below; settings move into the configuration system
 ([plan_configuration.md](plan_configuration.md)); the Engine Map and Scene Flow windows removed with their code. Pushback welcome on the
 open choices.
 
@@ -118,6 +118,25 @@ At the end:
   scene's path to the screen as "How a scene reaches the screen", its numbers in the `assets`, `scenethread` and `gpuscene` records. In all
   1,195 lines removed, 22 added. The 8 reference images byte-identical with validation on; the village run with the LOD, Streaming, Camera
   and Assets windows open clean; `window sceneflow` and `window enginemap` answer "unknown window".
+
+- **Step 1** (2026-11-01; the render settings went with [plan_configuration.md](plan_configuration.md)): 30 more values, 49 in all.
+  - Where they are declared: culling in the renderer (`render.culling.enabled`, `.frozen`), purposes in the scene (`scene.purposes.guide`,
+    `.proxy`), following in the camera modes (`view.camera.follow`, `.followHeight`), and the tools' in their files: the debug camera
+    (`tools.debugcamera.on`, `.controlMain`, `.lod`, `.cull`, `.shadows`, `.trail`), the LOD layers (`tools.lod.labels`, `.gizmo`,
+    `.gizmoAll`, `.popFlash`, `.colorByDepth`), the Streaming layers (`tools.streaming.bounds`, `.rings`, `.ringsAll`, `.labels`), and the
+    viewport overlays in `viewui.cpp` where `drawDebug` draws them (`tools.overlay.grid`, `.origin`, `.gizmos`, `.aabbs`, `.selectedAabb`,
+    `.lightGizmos`, `.culled`, `.culledView`, `.cascadeFrusta`; they move with that code in step 3).
+  - Windows show a value another library declares by name (`configCheckbox`, `configBool`, `configMenuItem` in `src/ui/configwindow.h`),
+    so the Camera, LOD and Streaming windows and the menu include no tool header.
+  - Removed: the settings-only methods `view.cull`, `view.camera.follow`, `view.lod.visualize`, `view.streaming.visualize`; their verbs
+    (`cull`, `camera-follow`, `lod-show`, `streaming-show`) set configuration. `view.camera.debug` (place, clear the trail) and
+    `view.purposes` (answers once drawn) stay, their switches setting the values. The `status`, `lodtool` and `streamingtool` records
+    no longer copy switches the `config` record has.
+  - `ViewUI` holds no setting now: its members are windows open, filters, selections, requests and statistics.
+  - Checks: the 8 reference images byte-identical; the debug camera's three runs at the village (off, defaults, every switch on the debug
+    camera) give `streaming` and `culling` records identical to before the step; every verb above shows in the `config` record; the debug
+    build runs with the Configuration, Camera, LOD, Streaming, Culling and Render Debug windows open. It caught the LOD window's Bias and
+    Hysteresis inputs asserting in ImGui (since the LOD tool), fixed.
 
 ## Open questions
 

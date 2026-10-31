@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include "material.h"
 #include "mesh.h"
 #include "placement.h"
@@ -258,6 +260,12 @@ struct SceneSnapshot {
     bool idle = true;
     SceneThreadStats thread;
 };
+
+// The view's configuration values (src/config/README.md) for the scene: which purposes beyond the default it loads and draws.
+namespace viewconfig {
+extern config::Bool purposeGuide; // scene.purposes.guide
+extern config::Bool purposeProxy; // scene.purposes.proxy
+} // namespace viewconfig
 
 // The scene ngen-view shows: its World, composed from the scene's packs, and the renderer's inputs placed from it: a tree of placements of
 // the World's contents (placement.h), whose draws are RenderWorld's slots (one per prim submesh), and the meshes, materials and textures they

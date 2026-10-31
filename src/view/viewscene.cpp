@@ -1612,3 +1612,10 @@ auto ViewScene::collectChanges(const std::set<uint32_t>& meshesNow, const std::s
     usedMaterials = materialsKept;
     usedTextures = texturesKept;
 }
+
+namespace viewconfig {
+
+config::Bool purposeGuide{"scene.purposes.guide", false, "Load and draw prims of purpose guide (helpers: bounds, markers) beside the default ones."};
+config::Bool purposeProxy{"scene.purposes.proxy", false, "Load and draw prims of purpose proxy (stand-ins for heavy geometry) beside the default ones."};
+
+} // namespace viewconfig

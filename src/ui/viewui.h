@@ -3,6 +3,7 @@
 #include "assetswindow.h"
 #include "camerawindow.h"
 #include "capturewindow.h"
+#include "config.h"
 #include "configwindow.h"
 #include "counterswindow.h"
 #include "cullingwindow.h"
@@ -50,6 +51,19 @@ enum class ViewEditRequest : uint8_t {
     FrameSelected,
 };
 
+// The viewport overlays' configuration values (src/config/README.md), drawn by ViewUI::drawDebug.
+namespace toolsconfig {
+extern config::Bool overlayGrid;          // tools.overlay.grid
+extern config::Bool overlayOrigin;        // tools.overlay.origin
+extern config::Bool overlayGizmos;        // tools.overlay.gizmos: the axis and transform gizmos
+extern config::Bool overlayAabbs;         // tools.overlay.aabbs: every instance's bounds
+extern config::Bool overlaySelectedAabb;  // tools.overlay.selectedAabb
+extern config::Bool overlayLightGizmos;   // tools.overlay.lightGizmos
+extern config::Bool overlayCulled;        // tools.overlay.culled: the instances' bounds by their cull result
+extern config::Int overlayCulledView;     // tools.overlay.culledView: whose result, 0 the camera, 1.. the cascades
+extern config::Bool overlayCascadeFrusta; // tools.overlay.cascadeFrusta
+} // namespace toolsconfig
+
 // ngen-view's UI: the menu bar, the status bar, the overlays, the camera window and the introspection windows (frame graph,
 // performance, render debug, culling, capture, frame debugger, GPU scene, counters, memory). It edits the settings the view renders
 // with; the view reads them each frame. Prims are named by the path `primPath` gives for a draw's prim index.
@@ -79,22 +93,6 @@ public:
 
     auto wantsQuit() const -> bool { return requestQuit; }
 
-    // Prims of the guide and proxy purposes are drawn when these are on; default and render prims always are.
-    auto showGuides() const -> bool { return showGuidesFlag; }
-    auto showProxies() const -> bool { return showProxiesFlag; }
-    auto setShowGuides(bool on) -> void { showGuidesFlag = on; }
-    auto setShowProxies(bool on) -> void { showProxiesFlag = on; }
-
-    auto getShowGizmo() const -> bool { return showGizmoFlag; }
-    auto getCullEnabled() const -> bool { return cullEnabledFlag; }
-    auto setCullEnabled(bool on) -> void { cullEnabledFlag = on; }
-    auto getCullFrozen() const -> bool { return cullFrozenFlag; }
-    auto setCullFrozen(bool on) -> void { cullFrozenFlag = on; }
-    auto getShowCulled() const -> bool { return showCulledFlag; }
-    auto setShowCulled(bool on) -> void { showCulledFlag = on; }
-    // Which view colours the culling AABB overlay: 0 camera, 1.. shadow cascades.
-    auto cullOverlayView() const -> int { return cullOverlayViewIndex; }
-    auto setCullOverlayView(int view) -> void { cullOverlayViewIndex = view; }
     auto setShadowCullStats(uint32_t cascades, const std::array<uint32_t, maxShadowCascades>& culled, const std::array<uint32_t, maxShadowCascades>& drawn) -> void {
         shadowCascadeCount = cascades;
         shadowCulledStats = culled;
@@ -191,23 +189,10 @@ private:
         bool shadowOverlay = false;
     };
     std::optional<PlainLit> beforePlainLit;
-    bool showGridFlag = true;
-    bool showOriginFlag = true;
-    bool showGizmoFlag = true;
-    bool showAABBsFlag = false;
-    bool showSelectedAABBFlag = true;
     int toolIndex = 0; // ViewTool
     bool deselectRequested = false;
     bool selectParentRequested = false;
     bool frameSelectedRequested = false;
-    bool showLightGizmosFlag = true;
-    bool showGuidesFlag = false;
-    bool showProxiesFlag = false;
-    bool cullEnabledFlag = true;
-    bool cullFrozenFlag = false;
-    bool showCulledFlag = false;
-    int cullOverlayViewIndex = 0;
-    bool showCascadeFrustaFlag = false;
     uint32_t shadowCascadeCount = 0;
     std::array<uint32_t, maxShadowCascades> shadowCulledStats = {};
     std::array<uint32_t, maxShadowCascades> shadowDrawnStats = {};

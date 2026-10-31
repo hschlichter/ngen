@@ -6,8 +6,10 @@
 
 #include "assetclient.h"
 #include "camera.h"
+#include "debugcamera.h"
 #include "debugview.h"
 #include "drawlists.h"
+#include "ground.h"
 #include "profile.h"
 #include "renderconfig.h"
 #include "renderdoccapture.h"
@@ -255,16 +257,16 @@ auto parseOverlay(const std::string& args) -> std::expected<Json, std::string> {
 
 auto parseCull(const std::string& args) -> std::expected<Json, std::string> {
     if (args == "on" || args == "off") {
-        return Json{{"enabled", args == "on"}};
+        return configValues({{"render.culling.enabled", args}});
     }
     if (args == "freeze" || args == "unfreeze") {
-        return Json{{"frozen", args == "freeze"}};
+        return configValues({{"render.culling.frozen", args == "freeze" ? "true" : "false"}});
     }
     if (args == "show" || args == "hide") {
-        return Json{{"showCulled", args == "show"}};
+        return configValues({{"tools.overlay.culled", args == "show" ? "true" : "false"}});
     }
     if (args.starts_with("view ")) {
-        return Json{{"overlayView", std::atoi(args.c_str() + 5)}};
+        return configValues({{"tools.overlay.culledView", args.substr(5)}});
     }
     return std::unexpected(std::format("unknown argument '{}'", args));
 }
@@ -444,23 +446,21 @@ auto parseLodShow(const std::string& args) -> std::expected<Json, std::string> {
     std::istringstream in(args);
     std::string layer;
     std::string state;
-    if (args.starts_with("color ")) {
-        in >> layer >> state;
-        if (state != "level" && state != "depth") {
-            return std::unexpected(std::format("expected 'color level|depth', got '{}'", args));
-        }
-        return Json{{"color", state}};
+    in >> layer >> state;
+    if (layer == "color" && (state == "level" || state == "depth")) {
+        return configValues({{"tools.lod.colorByDepth", state == "depth" ? "true" : "false"}});
     }
-    if (!(in >> layer >> state) || (state != "on" && state != "off")) {
+    static constexpr std::array<std::pair<std::string_view, const char*>, 4> layers = {{
+        {"labels", "tools.lod.labels"},
+        {"gizmo", "tools.lod.gizmo"},
+        {"gizmo-all", "tools.lod.gizmoAll"},
+        {"flash", "tools.lod.popFlash"},
+    }};
+    auto found = std::ranges::find(layers, std::string_view(layer), &std::pair<std::string_view, const char*>::first);
+    if (found == layers.end() || (state != "on" && state != "off")) {
         return std::unexpected(std::format("expected 'labels|gizmo|gizmo-all|flash on|off' or 'color level|depth', got '{}'", args));
     }
-    if (layer == "gizmo-all") {
-        layer = "gizmoAll";
-    }
-    if (layer != "labels" && layer != "gizmo" && layer != "gizmoAll" && layer != "flash") {
-        return std::unexpected(std::format("unknown layer '{}': labels, gizmo, gizmo-all or flash", layer));
-    }
-    return Json{{layer, state == "on"}};
+    return configValues({{found->second, state}});
 }
 
 // `streaming-show bounds|rings|rings-all|labels on|off`.
@@ -468,16 +468,18 @@ auto parseStreamingShow(const std::string& args) -> std::expected<Json, std::str
     std::istringstream in(args);
     std::string layer;
     std::string state;
-    if (!(in >> layer >> state) || (state != "on" && state != "off")) {
+    in >> layer >> state;
+    static constexpr std::array<std::pair<std::string_view, const char*>, 4> layers = {{
+        {"bounds", "tools.streaming.bounds"},
+        {"rings", "tools.streaming.rings"},
+        {"rings-all", "tools.streaming.ringsAll"},
+        {"labels", "tools.streaming.labels"},
+    }};
+    auto found = std::ranges::find(layers, std::string_view(layer), &std::pair<std::string_view, const char*>::first);
+    if (found == layers.end() || (state != "on" && state != "off")) {
         return std::unexpected(std::format("expected 'bounds|rings|rings-all|labels on|off', got '{}'", args));
     }
-    if (layer == "rings-all") {
-        layer = "ringsAll";
-    }
-    if (layer != "bounds" && layer != "rings" && layer != "ringsAll" && layer != "labels") {
-        return std::unexpected(std::format("unknown layer '{}': bounds, rings, rings-all or labels", layer));
-    }
-    return Json{{layer, state == "on"}};
+    return configValues({{found->second, state}});
 }
 
 auto parseDebugCamera(const std::string& args) -> std::expected<Json, std::string> {
@@ -530,13 +532,13 @@ auto parseCameraOrbit(const std::string& args) -> std::expected<Json, std::strin
 auto parseCameraFollow(const std::string& args) -> std::expected<Json, std::string> {
     std::istringstream in(args);
     std::string first;
-    in >> first;
-    if ((first == "on" || first == "off") && in.eof()) {
-        return Json{{"on", first == "on"}};
+    std::string metres;
+    in >> first >> metres;
+    if ((first == "on" || first == "off") && metres.empty()) {
+        return configValues({{"view.camera.follow", first}});
     }
-    float metres = 0.0f;
-    if (first == "height" && (in >> metres) && metres >= 0.0f) {
-        return Json{{"height", metres}};
+    if (first == "height" && !metres.empty()) {
+        return configValues({{"view.camera.followHeight", metres}});
     }
     return std::unexpected(std::format("expected 'on|off' or 'height <metres>', got '{}'", args));
 }
@@ -615,7 +617,7 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"camera-frame", "view.camera.frame", parseTarget},
     ScriptVerb{"camera-use", "view.camera.use", parseCameraPath},
     ScriptVerb{"debug-camera", "view.camera.debug", parseDebugCamera},
-    ScriptVerb{"camera-follow", "view.camera.follow", parseCameraFollow},
+    ScriptVerb{"camera-follow", "config.set", parseCameraFollow},
     ScriptVerb{"camera-orbit", "view.camera.orbit", parseCameraOrbit},
     ScriptVerb{"select", "view.select", parsePrim},
     ScriptVerb{"translate", "view.translate", parseTranslate},
@@ -635,17 +637,17 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"lod-bias", "view.lod.tuning", parseLodBias},
     ScriptVerb{"lod-hysteresis", "view.lod.tuning", parseLodHysteresis},
     ScriptVerb{"lod-blending", "view.lod.tuning", parseLodBlending},
-    ScriptVerb{"lod-show", "view.lod.visualize", parseLodShow},
+    ScriptVerb{"lod-show", "config.set", parseLodShow},
     ScriptVerb{"wait-resident", "view.waitResident", parseNothing},
     ScriptVerb{"fly", "view.camera.fly", parseFly},
     ScriptVerb{"fly-stop", "view.camera.fly.stop", parseNothing},
     ScriptVerb{"streaming-reset", "view.streaming.reset", parseNothing},
-    ScriptVerb{"streaming-show", "view.streaming.visualize", parseStreamingShow},
+    ScriptVerb{"streaming-show", "config.set", parseStreamingShow},
     ScriptVerb{"view", "config.set", parseViewMode},
     ScriptVerb{"window", "view.window", parseWindow},
     ScriptVerb{"debugview", "config.set", parseDebugView},
     ScriptVerb{"overlay", "view.overlay", parseOverlay},
-    ScriptVerb{"cull", "view.cull", parseCull},
+    ScriptVerb{"cull", "config.set", parseCull},
     ScriptVerb{"sampler", "config.set", parseSampler},
     ScriptVerb{"inspect", "view.inspect", parseInspect},
     ScriptVerb{"dump-texture", "view.dumpTexture", parseDumpTexture},
@@ -681,8 +683,7 @@ auto namedCamera(ViewContext& view, const Json& p) -> Camera* {
     if (p.value("camera", std::string("main")) != "debug") {
         return &view.cam;
     }
-    auto& debug = view.ui.cameraWindow().debug;
-    return debug.on ? &debug.camera : nullptr;
+    return toolsconfig::debugCamera.get() ? &view.ui.cameraWindow().debug.camera : nullptr;
 }
 
 auto cameraModesJson(const CameraModesState& modes) -> Json {
@@ -692,25 +693,18 @@ auto cameraModesJson(const CameraModesState& modes) -> Json {
     }
     return {
         {"follow",
-         {{"on", modes.follow},
-          {"heightMetres", modes.followHeightMetres},
-          {"ground", ground},
+         {{"ground", ground},
           {"tested", {{"chunks", modes.groundChunks}, {"draws", modes.groundDraws}, {"triangles", modes.groundTriangles}, {"ms", modes.groundMs}}}}},
         {"orbit", modes.orbiting ? Json{{"pivot", vec3Json(modes.pivot)}, {"picked", modes.pivotPicked}} : Json(nullptr)},
     };
 }
 
+// The debug camera's state: its pose and the trail's length (its switches are the config record's tools.debugcamera.*).
 auto debugCameraJson(const DebugCameraState& debug) -> Json {
     return {
-        {"on", debug.on},
         {"position", vec3Json(debug.camera.position)},
         {"yaw", debug.camera.yaw},
         {"pitch", debug.camera.pitch},
-        {"controlMain", debug.controlMain},
-        {"lodFromDebug", debug.lodFromDebug},
-        {"cullFromDebug", debug.cullFromDebug},
-        {"shadowsFromDebug", debug.shadowsFromDebug},
-        {"trail", debug.trail},
         {"trailPoints", debug.trailPoints.size()},
     };
 }
@@ -764,21 +758,6 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
         });
     registry.add(
         {
-            .name = "view.camera.follow",
-            .summary = "Following the ground, for the camera that has the controls: its eye kept a height above the highest drawn surface under it (the render geometry, tested naively each frame); WASD move across the ground, Q/E change the height. G toggles it.",
-            .params = {optionalField("on", RpcType::Bool, "following on"), optionalField("height", RpcType::Float, "the eye's height above the ground, metres")},
-            .result = "{follow: {on, heightMetres, ground: {point, prim} | null, tested: {draws, triangles, ms}}, orbit}",
-        },
-        [&view](const Json& p, RpcResponder responder) {
-            auto& modes = view.ui.cameraWindow().modes;
-            modes.follow = p.value("on", modes.follow);
-            if (p.contains("height")) {
-                modes.followHeightMetres = std::max(0.0f, p["height"].get<float>());
-            }
-            responder.respond(cameraModesJson(modes));
-        });
-    registry.add(
-        {
             .name = "view.camera.orbit",
             .summary = "Turn a camera around a pivot by angles, as Alt + right-drag does: yaw around the world's up through the pivot, pitch around the camera's right, the distance kept. The main camera unless `camera` is debug.",
             .params = {requiredField("pivot", RpcType::Vec3, "the point to turn around, world"),
@@ -800,26 +779,30 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.camera.debug",
-            .summary = "The debug camera: while on, the view renders from it and the main camera (drawn as a frustum with its trail) drives LOD and streaming, culling and the shadow cascades, each switchable to the debug camera (lodFromDebug, cullFromDebug, shadowsFromDebug). Turned on, it is placed 15 m behind and 10 m above the main camera; place puts it there again. controlMain hands the keys and mouse to the main camera.",
-            .params = {optionalField("on", RpcType::Bool, "debug camera on"),
-                       optionalField("place", RpcType::Bool, "put it behind and above the main camera"),
-                       optionalField("controlMain", RpcType::Bool, "the keys and mouse move the main camera"),
-                       optionalField("lodFromDebug", RpcType::Bool, "the LOD heuristic, residency and render LOD from the debug camera"),
-                       optionalField("cullFromDebug", RpcType::Bool, "cull from the debug camera"),
-                       optionalField("shadowsFromDebug", RpcType::Bool, "fit the shadow cascades to the debug camera"),
-                       optionalField("trail", RpcType::Bool, "the main camera's trail drawn"),
-                       optionalField("clearTrail", RpcType::Bool, "forget the trail")},
-            .result = "{on, position, yaw, pitch, controlMain, lodFromDebug, cullFromDebug, shadowsFromDebug, trail, trailPoints}",
+            .summary = "The debug camera's actions: place puts it 15 m behind and 10 m above the main camera, clearTrail forgets the main camera's trail. Its switches are configuration values (tools.debugcamera.on, controlMain, lod, cull, shadows, trail); the switches here set them, as the debug-camera verb does.",
+            .params = {optionalField("place", RpcType::Bool, "put it behind and above the main camera"),
+                       optionalField("clearTrail", RpcType::Bool, "forget the trail"),
+                       optionalField("on", RpcType::Bool, "tools.debugcamera.on"),
+                       optionalField("controlMain", RpcType::Bool, "tools.debugcamera.controlMain"),
+                       optionalField("lodFromDebug", RpcType::Bool, "tools.debugcamera.lod"),
+                       optionalField("cullFromDebug", RpcType::Bool, "tools.debugcamera.cull"),
+                       optionalField("shadowsFromDebug", RpcType::Bool, "tools.debugcamera.shadows"),
+                       optionalField("trail", RpcType::Bool, "tools.debugcamera.trail")},
+            .result = "{position, yaw, pitch, trailPoints}",
         },
         [&view](const Json& p, RpcResponder responder) {
             auto& debug = view.ui.cameraWindow().debug;
-            debug.on = p.value("on", debug.on);
+            for (auto [field, value] : {std::pair{"on", &toolsconfig::debugCamera},
+                                        std::pair{"controlMain", &toolsconfig::debugControlMain},
+                                        std::pair{"lodFromDebug", &toolsconfig::debugLod},
+                                        std::pair{"cullFromDebug", &toolsconfig::debugCull},
+                                        std::pair{"shadowsFromDebug", &toolsconfig::debugShadows},
+                                        std::pair{"trail", &toolsconfig::debugTrail}}) {
+                if (p.contains(field)) {
+                    value->set(p[field].get<bool>());
+                }
+            }
             debug.placeRequested = debug.placeRequested || p.value("place", false);
-            debug.controlMain = p.value("controlMain", debug.controlMain);
-            debug.lodFromDebug = p.value("lodFromDebug", debug.lodFromDebug);
-            debug.cullFromDebug = p.value("cullFromDebug", debug.cullFromDebug);
-            debug.shadowsFromDebug = p.value("shadowsFromDebug", debug.shadowsFromDebug);
-            debug.trail = p.value("trail", debug.trail);
             if (p.value("clearTrail", false)) {
                 debug.trailPoints.clear();
             }
@@ -890,25 +873,6 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
                 return;
             }
             responder.respond(streamingInspectionJson(*inspection));
-        });
-    registry.add(
-        {
-            .name = "view.streaming.visualize",
-            .summary = "The Streaming tool's viewport layers: each root's streaming bounds in its state's colour (bounds), the load and unload radii of the selected root (rings) or of every root the Streaming window's list shows (ringsAll), labels. The streaming view is the configuration `render.view.debug streaming`.",
-            .params = {optionalField("bounds", RpcType::Bool, "bounds on"),
-                       optionalField("rings", RpcType::Bool, "the selected root's rings on"),
-                       optionalField("ringsAll", RpcType::Bool, "every shown root's rings on"),
-                       optionalField("labels", RpcType::Bool, "labels on")},
-            .result = "{bounds, rings, ringsAll, labels}",
-        },
-        [&view](const Json& p, RpcResponder responder) {
-            auto& state = view.ui.streamingWindow();
-            for (auto [name, flag] : {std::pair{"bounds", &state.bounds}, std::pair{"rings", &state.rings}, std::pair{"ringsAll", &state.ringsAll}, std::pair{"labels", &state.labels}}) {
-                if (p.contains(name)) {
-                    *flag = p[name].get<bool>();
-                }
-            }
-            responder.respond({{"bounds", state.bounds}, {"rings", state.rings}, {"ringsAll", state.ringsAll}, {"labels", state.labels}});
         });
     registry.add({.name = "view.camera.fly.stop", .summary = "Stops the camera's flight where it is; its call answers.", .result = "{}"}, [&view](const Json&, RpcResponder responder) {
         stopFlight(view);
@@ -1041,11 +1005,11 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
         },
         [&view](const Json& p, RpcResponder responder) {
             if (p.contains("guide")) {
-                view.ui.setShowGuides(p["guide"].get<bool>());
+                viewconfig::purposeGuide.set(p["guide"].get<bool>());
                 view.scene.setPurposeShown(Purpose::Guide, p["guide"].get<bool>());
             }
             if (p.contains("proxy")) {
-                view.ui.setShowProxies(p["proxy"].get<bool>());
+                viewconfig::purposeProxy.set(p["proxy"].get<bool>());
                 view.scene.setPurposeShown(Purpose::Proxy, p["proxy"].get<bool>());
             }
             view.residentWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
@@ -1159,36 +1123,6 @@ auto registerScene(RpcRegistry& registry, ViewContext& view) -> void {
                 blending = p["blending"].get<bool>();
             }
             view.scene.setLodTuning(bias, hysteresis, blending);
-            responder.respond(Json::object());
-        });
-    registry.add(
-        {
-            .name = "view.lod.visualize",
-            .summary = "The LOD tool's viewport layers: labels over the LOD roots, the heuristic gizmo of the selected root (gizmo) or of every root the LOD window's list shows (gizmoAll), and the pop flash (a render-LOD root's meshes flash white when its level changes without a fade). The LOD Level view is the configuration `render.view.buffer lodlevel`; color picks its colours: by the drawn level (an index within the nearest LOD root) or by how many LOD roots deep the draw is.",
-            .params = {optionalField("labels", RpcType::Bool, "labels on"),
-                       optionalField("gizmo", RpcType::Bool, "the selected root's gizmo on"),
-                       optionalField("gizmoAll", RpcType::Bool, "every shown root's gizmo on"),
-                       optionalField("flash", RpcType::Bool, "the pop flash on"),
-                       {.name = "color", .type = RpcType::Enum, .required = false, .description = "the LOD Level view's colours", .enumValues = {"level", "depth"}}},
-            .result = "{}",
-        },
-        [&view](const Json& p, RpcResponder responder) {
-            auto& window = view.ui.lodWindow();
-            if (p.contains("labels")) {
-                window.labels = p["labels"].get<bool>();
-            }
-            if (p.contains("gizmo")) {
-                window.gizmo = p["gizmo"].get<bool>();
-            }
-            if (p.contains("gizmoAll")) {
-                window.gizmoAll = p["gizmoAll"].get<bool>();
-            }
-            if (p.contains("flash")) {
-                window.flash = p["flash"].get<bool>();
-            }
-            if (p.contains("color")) {
-                window.colorByDepth = p["color"].get<std::string>() == "depth";
-            }
             responder.respond(Json::object());
         });
     registry.add(
@@ -1481,33 +1415,6 @@ auto registerDisplay(RpcRegistry& registry, ViewContext& view) -> void {
         });
     registry.add(
         {
-            .name = "view.cull",
-            .summary = "GPU culling: on/off, frozen frustum, culled overlay, overlay view.",
-            .params = {
-                optionalField("enabled", RpcType::Bool, "culling on"),
-                optionalField("frozen", RpcType::Bool, "freeze the culling frustum"),
-                optionalField("showCulled", RpcType::Bool, "the red/green AABB overlay"),
-                optionalField("overlayView", RpcType::Int, "0 camera, 1+ cascades"),
-            },
-            .result = "{}",
-        },
-        [&view](const Json& p, RpcResponder responder) {
-            if (p.contains("enabled")) {
-                view.ui.setCullEnabled(p["enabled"].get<bool>());
-            }
-            if (p.contains("frozen")) {
-                view.ui.setCullFrozen(p["frozen"].get<bool>());
-            }
-            if (p.contains("showCulled")) {
-                view.ui.setShowCulled(p["showCulled"].get<bool>());
-            }
-            if (p.contains("overlayView")) {
-                view.ui.setCullOverlayView(p["overlayView"].get<int>());
-            }
-            responder.respond(Json::object());
-        });
-    registry.add(
-        {
             .name = "view.inspect",
             .summary = "The texture inspector's capture of one texture level.",
             .params = {
@@ -1638,7 +1545,6 @@ auto statusRecord(const ViewContext& view) -> Json {
         {"camera", {{"position", vec3Json(view.cam.position)}, {"yaw", view.cam.yaw}, {"pitch", view.cam.pitch}, {"speed", view.cam.speed}}},
         {"debugCamera", debugCameraJson(view.ui.cameraWindow().debug)},
         {"cameraModes", cameraModesJson(view.ui.cameraWindow().modes)},
-        {"purposes", {{"guide", view.ui.showGuides()}, {"proxy", view.ui.showProxies()}}},
     };
 }
 
@@ -1923,7 +1829,7 @@ auto lodToolRecord(const ViewContext& view) -> Json {
         {"selectedRoot", root.empty() ? Json(nullptr) : Json(root)},
         {"inspection", inspection},
         {"tuning", lodTuningJson(view.scene.lodTuning())},
-        {"layers", {{"levelView", renderconfig::bufferView.get() == (size_t) GBufferView::LodLevel}, {"labels", window.labels}, {"gizmo", window.gizmo}, {"gizmoAll", window.gizmoAll}, {"flash", window.flash}, {"color", window.colorByDepth ? "depth" : "level"}}},
+        {"levelView", renderconfig::bufferView.get() == (size_t) GBufferView::LodLevel},
         {"pops", view.lodPops},
         {"windowRows", window.rows.size()},
     };
@@ -2596,8 +2502,7 @@ auto stopFlight(ViewContext& view) -> void {
 }
 
 auto lodCamera(const ViewContext& view) -> const Camera& {
-    const auto& debug = view.ui.cameraWindow().debug;
-    return debug.on && debug.lodFromDebug ? debug.camera : view.cam;
+    return toolsconfig::debugCamera.get() && toolsconfig::debugLod.get() ? view.ui.cameraWindow().debug.camera : view.cam;
 }
 
 auto advanceFlight(ViewContext& view, float dt) -> void {
@@ -2771,7 +2676,7 @@ auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext
                         {"selected", view.selectedPath},
                         {"inspection", inspection ? streamingInspectionJson(*inspection) : Json(nullptr)},
                         {"totals", {{"roots", t.roots}, {"residentLevels", t.residentLevels}, {"inFlight", t.inFlight}, {"lateNow", t.lateNow}, {"holesNow", t.holesNow}}},
-                        {"layers", {{"streamingView", state.streamingView}, {"bounds", state.bounds}, {"rings", state.rings}, {"ringsAll", state.ringsAll}, {"labels", state.labels}}},
+                        {"streamingView", state.streamingView},
                         {"window", view.ui.wantsStreamingWindow()},
                     });
                 });

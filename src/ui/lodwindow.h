@@ -162,12 +162,7 @@ struct LodWindowState {
     // selected root or of every root the list shows, and the pop flash.
     bool levelView = false; // set by the application
     std::optional<bool> levelViewRequested;
-    bool labels = false;
-    bool gizmo = false;
-    bool gizmoAll = false;
-    bool flash = false;
     // The LOD Level view's colour (and the window's swatches): by the drawn level (an index within its root), or by how many LOD roots deep.
-    bool colorByDepth = false;
     std::optional<bool> triangleSizeRequested;
     // The inspector: the selected root's, refreshed by the application when the selection changes and once a second while shown.
     std::optional<LodInspection> inspection;

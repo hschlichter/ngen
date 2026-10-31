@@ -1,5 +1,7 @@
 #include "lodwindow.h"
 
+#include "configwindow.h"
+
 #include <imgui.h>
 
 #include <algorithm>
@@ -76,6 +78,18 @@ auto parseList(const char* text) -> std::optional<std::vector<float>> {
         at = next;
     }
     return values;
+}
+
+// Whether the labels are on (tools.lod.labels).
+auto labelsShown() -> bool {
+    auto* value = configBool("tools.lod.labels");
+    return value != nullptr && value->get();
+}
+
+// Whether the LOD Level view colours by depth (tools.lod.colorByDepth), which the swatches and labels follow.
+auto colorByDepth() -> bool {
+    auto* value = configBool("tools.lod.colorByDepth");
+    return value != nullptr && value->get();
 }
 
 // A colour swatch for a level, as the LOD Level view colours it.
@@ -158,7 +172,7 @@ auto drawRow(const LodWindowRow& row, LodWindowState& state) -> void {
     ImGui::TableSetColumnIndex(ColumnDrawn);
     ImGui::AlignTextToFramePadding();
     if (row.drawn >= 0) {
-        levelSwatch((uint32_t) row.drawn, row.depth, state.colorByDepth);
+        levelSwatch((uint32_t) row.drawn, row.depth, colorByDepth());
         ImGui::SameLine();
     }
     if (row.drawn >= 0 && row.drawn != (int32_t) row.wanted) {
@@ -260,7 +274,7 @@ auto drawControls(LodWindowState& state) -> void {
 
     ImGui::SetNextItemWidth(70.0f);
     float bias = state.bias;
-    if (ImGui::InputFloat("Bias", &bias, 0.0f, 0.0f, "%.2f", ImGuiInputTextFlags_EnterReturnsTrue) && bias > 0.0f) {
+    if (ImGui::InputFloat("Bias", &bias, 0.0f, 0.0f, "%.2f") && bias > 0.0f) {
         state.biasRequested = bias;
     }
     if (ImGui::IsItemHovered()) {
@@ -269,7 +283,7 @@ auto drawControls(LodWindowState& state) -> void {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(70.0f);
     float hysteresis = state.hysteresis * 100.0f;
-    if (ImGui::InputFloat("Hysteresis (%)", &hysteresis, 0.0f, 0.0f, "%.0f", ImGuiInputTextFlags_EnterReturnsTrue) && hysteresis >= 0.0f) {
+    if (ImGui::InputFloat("Hysteresis (%)", &hysteresis, 0.0f, 0.0f, "%.0f") && hysteresis >= 0.0f) {
         state.hysteresisRequested = hysteresis / 100.0f;
     }
     if (ImGui::IsItemHovered()) {
@@ -305,7 +319,8 @@ auto drawLayers(LodWindowState& state) -> void {
         ImGui::SetTooltip("Over the lit image, at half strength: each mesh in its drawn level's colour, or in its LOD depth's (grey under no LOD root).\nA fade shows its two colours dithered together. Render-LOD roots at a forced level are striped, those drawing another level than they want\ncheckered.");
     }
     ImGui::SameLine();
-    int colorBy = state.colorByDepth ? 1 : 0;
+    auto* byDepth = configBool("tools.lod.colorByDepth");
+    int colorBy = byDepth != nullptr && byDepth->get() ? 1 : 0;
     ImGui::RadioButton("by level", &colorBy, 0);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("The drawn level of the nearest LOD root. An index within that root: a region's level 1 and a tile's level 1 are different\nresolutions (on the streaming test world a region's medium and a tile's simplified are both 5 m terrain).");
@@ -315,24 +330,17 @@ auto drawLayers(LodWindowState& state) -> void {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("How many LOD roots deep the drawn level is: under a top-level root (a region) 1, a root in its level (a tile) 2, one\ndeeper (a ground chunk, an asset in a tile) 3.");
     }
-    state.colorByDepth = colorBy == 1;
-    ImGui::SameLine();
-    ImGui::Checkbox("Labels", &state.labels);
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Over each root the list shows: its name, drawn level (→ the level fading in and its share) and measure. Click one to select it.");
+    if (byDepth != nullptr) {
+        byDepth->set(colorBy == 1);
     }
     ImGui::SameLine();
-    ImGui::Checkbox("Gizmo", &state.gizmo);
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("The selected root's heuristic in the viewport. Distance: its center or box, a ring at each threshold distance in the\ncolour of the level beyond it, a faint ring where each blend band ends. Screen size: the sphere it measures.");
-    }
+    configCheckbox("Labels", "tools.lod.labels");
     ImGui::SameLine();
-    ImGui::Checkbox("of every shown root", &state.gizmoAll);
+    configCheckbox("Gizmo", "tools.lod.gizmo");
     ImGui::SameLine();
-    ImGui::Checkbox("Pop flash", &state.flash);
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Over any view, the lit one too: a render-LOD root flashes white for half a second when its drawn level changes\nwithout a fade (no band, a forced level, a fallback). Each one is a visible pop.");
-    }
+    configCheckbox("of every shown root", "tools.lod.gizmoAll");
+    ImGui::SameLine();
+    configCheckbox("Pop flash", "tools.lod.popFlash");
     ImGui::SameLine();
     if (ImGui::Button("Triangle Size view")) {
         state.triangleSizeRequested = true;
@@ -341,7 +349,7 @@ auto drawLayers(LodWindowState& state) -> void {
         ImGui::SetTooltip("The debug view of each triangle's size on screen in pixels: whether a level is too dense for how large it is drawn.");
     }
 
-    if (state.colorByDepth) {
+    if (colorByDepth()) {
         ImGui::TextDisabled("Depth:");
         static constexpr std::array<const char*, 4> depthNames = {"1", "2", "3", "4+"};
         for (uint32_t depth = 1; depth <= 4; depth++) {
@@ -706,7 +714,7 @@ auto drawLodWindow(bool& show, LodWindowState& state) -> void {
 }
 
 auto drawLodLabels(LodWindowState& state, const glm::mat4& viewProj, glm::vec2 viewport) -> void {
-    if (!state.labels) {
+    if (!labelsShown()) {
         return;
     }
     auto* drawList = ImGui::GetForegroundDrawList();
@@ -750,7 +758,7 @@ auto drawLodLabels(LodWindowState& state, const glm::mat4& viewProj, glm::vec2 v
         bool selected = row.path == state.selectedRoot;
         drawList->AddRectFilled(min, max, hovered || selected ? IM_COL32(40, 40, 40, 230) : IM_COL32(0, 0, 0, 160), 3.0f);
         if (row.drawn >= 0) {
-            auto color = lodLevelColor((uint32_t) row.drawn, row.depth, state.colorByDepth);
+            auto color = lodLevelColor((uint32_t) row.drawn, row.depth, colorByDepth());
             drawList->AddRectFilled(ImVec2(min.x, max.y - 2.0f), max, ImGui::ColorConvertFloat4ToU32(toImVec4(color)));
         }
         drawList->AddText(ImVec2(min.x + 4.0f, min.y + 2.0f), row.flashing ? IM_COL32(255, 200, 80, 255) : IM_COL32(235, 235, 235, 255), text.c_str());

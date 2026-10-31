@@ -134,8 +134,15 @@ auto drawCameraModes(const CameraModesState& modes, const glm::vec3& eye, double
     if (modes.orbiting) {
         cross(modes.pivot, 0.5f);
     }
-    if (modes.follow && modes.ground) {
+    if (viewconfig::follow.get() && modes.ground) {
         draw.line(eye, *modes.ground, color);
         cross(*modes.ground, 0.25f);
     }
 }
+
+namespace viewconfig {
+
+config::Bool follow{"view.camera.follow", false, "Keep the eye of the camera that has the controls a height above the highest drawn surface under it (G)."};
+config::Float followHeight{"view.camera.followHeight", 1.8, "Metres the eye is kept above the ground while following it; Q/E change it.", {.min = 0.0, .max = 1000.0}};
+
+} // namespace viewconfig

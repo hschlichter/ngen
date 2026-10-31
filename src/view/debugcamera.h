@@ -1,6 +1,7 @@
 #pragma once
 
 #include "camerawindow.h"
+#include "config.h"
 
 #include <glm/glm.hpp>
 
@@ -17,3 +18,13 @@ auto extendDebugCameraTrail(DebugCameraState& debug, const glm::vec3& mainPositi
 // The main camera: its frustum out to `farDepth` (`mainViewProj` is its view-projection), a box at its eye with a line along its forward
 // axis, and its trail.
 auto drawMainCamera(const DebugCameraState& debug, const Camera& main, const glm::mat4& mainViewProj, float farDepth, double metersPerUnit, DebugDraw& draw) -> void;
+
+// The debug camera's configuration values (src/config/README.md).
+namespace toolsconfig {
+extern config::Bool debugCamera;      // tools.debugcamera.on: render from the debug camera
+extern config::Bool debugControlMain; // tools.debugcamera.controlMain: the keys and mouse move the main camera
+extern config::Bool debugLod;         // tools.debugcamera.lod: LOD and streaming measured from the debug camera
+extern config::Bool debugCull;        // tools.debugcamera.cull: culling from the debug camera
+extern config::Bool debugShadows;     // tools.debugcamera.shadows: the shadow cascades fitted to the debug camera
+extern config::Bool debugTrail;       // tools.debugcamera.trail: the main camera's trail drawn
+} // namespace toolsconfig

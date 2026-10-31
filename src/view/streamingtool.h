@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.h"
 #include "streamingwindow.h"
 
 #include <glm/glm.hpp>
@@ -22,3 +23,11 @@ auto inspectStreamingRoot(const ViewScene& scene, const std::string& path, const
 // The viewport's layers: each shown root's bounds in its state's colour, and the load (solid) and unload (faint) radii of the selected root,
 // or of every shown root, per boundary around its bounds, in the plane across `up` through the bounds' middle.
 auto drawStreamingOverlays(const StreamingWindowState& state, DebugDraw& draw, const glm::vec3& up) -> void;
+
+// The Streaming tool's configuration values (src/config/README.md): its viewport layers.
+namespace toolsconfig {
+extern config::Bool streamingBounds;   // tools.streaming.bounds
+extern config::Bool streamingRings;    // tools.streaming.rings: the selected root's
+extern config::Bool streamingRingsAll; // tools.streaming.ringsAll: every shown root's
+extern config::Bool streamingLabels;   // tools.streaming.labels
+} // namespace toolsconfig

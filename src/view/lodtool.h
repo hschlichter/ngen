@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.h"
 #include "lodwindow.h"
 
 #include <glm/glm.hpp>
@@ -34,3 +35,12 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
 auto drawLodGizmos(const LodWindowState& state, DebugDraw& draw, const glm::vec3& up, float windowArea) -> void;
 // The distance unit a stage's metres per unit names: "m", "cm", else "units".
 auto lodUnitName(double metersPerUnit) -> const char*;
+
+// The LOD tool's configuration values (src/config/README.md): its viewport layers.
+namespace toolsconfig {
+extern config::Bool lodLabels;       // tools.lod.labels
+extern config::Bool lodGizmo;        // tools.lod.gizmo: the selected root's heuristic
+extern config::Bool lodGizmoAll;     // tools.lod.gizmoAll: every shown root's
+extern config::Bool lodPopFlash;     // tools.lod.popFlash
+extern config::Bool lodColorByDepth; // tools.lod.colorByDepth: the LOD Level view's colours
+} // namespace toolsconfig

@@ -135,10 +135,6 @@ struct StreamingWindowState {
     // selected root's (or every root's) load and unload rings, labels.
     bool streamingView = false; // set by the application
     std::optional<bool> streamingViewRequested;
-    bool bounds = false;
-    bool rings = false;
-    bool ringsAll = false;
-    bool labels = false;
     // What the window asked for this frame: the application applies them and clears these.
     std::optional<std::string> selectRequested;
     std::optional<std::string> frameRequested;

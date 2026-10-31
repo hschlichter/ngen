@@ -180,3 +180,36 @@ auto drawConfigWindow(bool& show, ConfigWindowState& state) -> void {
     }
     ImGui::End();
 }
+
+auto configBool(std::string_view name) -> config::Bool* {
+    auto* value = config::find(name);
+    return value != nullptr && value->type() == config::Type::Bool ? static_cast<config::Bool*>(value) : nullptr;
+}
+
+auto configFloat(std::string_view name) -> config::Float* {
+    auto* value = config::find(name);
+    return value != nullptr && value->type() == config::Type::Float ? static_cast<config::Float*>(value) : nullptr;
+}
+
+auto configCheckbox(const char* label, std::string_view name) -> bool {
+    auto* value = configBool(name);
+    bool on = value != nullptr && value->get();
+    ImGui::BeginDisabled(value == nullptr);
+    if (ImGui::Checkbox(label, &on) && value != nullptr) {
+        value->set(on);
+    }
+    ImGui::EndDisabled();
+    if (value != nullptr && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+        ImGui::SetTooltip("%s\n\n%s", value->description().c_str(), value->name().c_str());
+    }
+    return on;
+}
+
+auto configMenuItem(const char* label, const char* shortcut, std::string_view name, bool enabled) -> bool {
+    auto* value = configBool(name);
+    bool on = value != nullptr && value->get();
+    if (ImGui::MenuItem(label, shortcut, &on, enabled && value != nullptr) && value != nullptr) {
+        value->set(on);
+    }
+    return on;
+}

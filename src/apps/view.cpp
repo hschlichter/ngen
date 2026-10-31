@@ -409,10 +409,10 @@ auto main(int argc, char* argv[]) -> int {
     // camera. `cam` stays the main camera: everything that places the camera moves it, and residency, LOD and culling read it.
     auto& debugCamera = viewUI.cameraWindow().debug;
     auto viewCamera = [&] -> Camera& {
-        return debugCamera.on ? debugCamera.camera : cam;
+        return toolsconfig::debugCamera.get() ? debugCamera.camera : cam;
     };
     auto controlledCamera = [&] -> Camera& {
-        return debugCamera.on && !debugCamera.controlMain ? debugCamera.camera : cam;
+        return toolsconfig::debugCamera.get() && !toolsconfig::debugControlMain.get() ? debugCamera.camera : cam;
     };
     bool debugCameraWasOn = false;
     // The camera modes (the Camera window's), for the camera that has the controls: following the ground, orbiting while Left Alt is held.
@@ -585,7 +585,7 @@ auto main(int argc, char* argv[]) -> int {
         }
         // The LOD tool's rows (the LOD window and its viewport layers), once per snapshot while either is shown.
         auto& lodWindow = viewUI.lodWindow();
-        bool lodToolShown = viewUI.wantsLodWindow() || lodWindow.labels || lodWindow.gizmo || lodWindow.gizmoAll;
+        bool lodToolShown = viewUI.wantsLodWindow() || toolsconfig::lodLabels.get() || toolsconfig::lodGizmo.get() || toolsconfig::lodGizmoAll.get();
         if (lodToolShown && lodRowsSnapshot != snapshotsTaken) {
             lodRowsSnapshot = snapshotsTaken;
             PROFILE_ZONE("SceneWindowLists");
@@ -594,7 +594,7 @@ auto main(int argc, char* argv[]) -> int {
         // The Streaming tool's rows (its window, its viewport layers and the streaming view's states), once per snapshot while any is shown.
         auto& streamingWindow = viewUI.streamingWindow();
         bool streamingView = renderconfig::debugView.get() == (size_t) DebugView::Streaming;
-        bool streamingToolShown = viewUI.wantsStreamingWindow() || streamingWindow.bounds || streamingWindow.rings || streamingWindow.ringsAll || streamingWindow.labels || streamingView;
+        bool streamingToolShown = viewUI.wantsStreamingWindow() || toolsconfig::streamingBounds.get() || toolsconfig::streamingRings.get() || toolsconfig::streamingRingsAll.get() || toolsconfig::streamingLabels.get() || streamingView;
         if (streamingToolShown && streamingRowsSnapshot != snapshotsTaken) {
             streamingRowsSnapshot = snapshotsTaken;
             PROFILE_ZONE("SceneWindowLists");
@@ -635,14 +635,14 @@ auto main(int argc, char* argv[]) -> int {
             autoFrame = false;
         }
         // The debug camera, placed behind the main camera when it is turned on or asked to be; the main camera's trail starts afresh.
-        if (debugCamera.on && (!debugCameraWasOn || debugCamera.placeRequested)) {
+        if (toolsconfig::debugCamera.get() && (!debugCameraWasOn || debugCamera.placeRequested)) {
             placeDebugCamera(debugCamera, cam, scene.lodMetersPerUnit());
             if (!debugCameraWasOn) {
                 debugCamera.trailPoints.clear();
             }
         }
         debugCamera.placeRequested = false;
-        debugCameraWasOn = debugCamera.on;
+        debugCameraWasOn = toolsconfig::debugCamera.get();
         debugCamera.camera.worldUp = cam.worldUp;
 
         int winW = 0;
@@ -663,11 +663,11 @@ auto main(int argc, char* argv[]) -> int {
         }
 
         // The purposes the View menu or a script turned on or off: the scene loads and draws them, and moves its revision on.
-        if (scene.purposeShown(Purpose::Guide) != viewUI.showGuides()) {
-            scene.setPurposeShown(Purpose::Guide, viewUI.showGuides());
+        if (scene.purposeShown(Purpose::Guide) != viewconfig::purposeGuide.get()) {
+            scene.setPurposeShown(Purpose::Guide, viewconfig::purposeGuide.get());
         }
-        if (scene.purposeShown(Purpose::Proxy) != viewUI.showProxies()) {
-            scene.setPurposeShown(Purpose::Proxy, viewUI.showProxies());
+        if (scene.purposeShown(Purpose::Proxy) != viewconfig::purposeProxy.get()) {
+            scene.setPurposeShown(Purpose::Proxy, viewconfig::purposeProxy.get());
         }
         if (renderconfig::uploadBudgetMiB.changes() != uploadBudgetChanges) {
             uploadBudgetChanges = renderconfig::uploadBudgetMiB.changes();
@@ -817,7 +817,7 @@ auto main(int argc, char* argv[]) -> int {
             }
             // G toggles following the ground.
             if (plainKey && ev.key.key == SDLK_G) {
-                cameraModes.follow = !cameraModes.follow;
+                viewconfig::follow.set(!viewconfig::follow.get());
                 continue;
             }
             if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.scancode == SDL_SCANCODE_LALT && !ev.key.repeat) {
@@ -828,8 +828,8 @@ auto main(int argc, char* argv[]) -> int {
                 continue;
             }
             // C hands the controls between the debug camera and the main camera while the debug camera is on.
-            if (plainKey && ev.key.key == SDLK_C && debugCamera.on) {
-                debugCamera.controlMain = !debugCamera.controlMain;
+            if (plainKey && ev.key.key == SDLK_C && toolsconfig::debugCamera.get()) {
+                toolsconfig::debugControlMain.set(!toolsconfig::debugControlMain.get());
                 continue;
             }
 
@@ -936,8 +936,8 @@ auto main(int argc, char* argv[]) -> int {
         cam.followHeight.reset();
         debugCamera.camera.followHeight.reset();
         auto& controlled = controlledCamera();
-        if (cameraModes.follow) {
-            controlled.followHeight = (float) (cameraModes.followHeightMetres / metersPerUnit);
+        if (viewconfig::follow.get()) {
+            controlled.followHeight = (float) (viewconfig::followHeight.get() / metersPerUnit);
         }
         auto camBefore = controlled.position;
         controlled.update(keys, dt);
@@ -946,10 +946,10 @@ auto main(int argc, char* argv[]) -> int {
             cameraModes.pivot += controlled.position - camBefore;
         }
         bool flown = flight.flying() && &controlled == &cam;
-        if (cameraModes.follow && controlled.followHeight) {
-            cameraModes.followHeightMetres = (float) (*controlled.followHeight * metersPerUnit);
+        if (viewconfig::follow.get() && controlled.followHeight) {
+            (void) viewconfig::followHeight.set(*controlled.followHeight * metersPerUnit);
         }
-        if (!cameraModes.follow) {
+        if (!viewconfig::follow.get()) {
             cameraModes.ground.reset();
             cameraModes.groundPrim.clear();
         } else if (!cameraModes.orbiting && !flown) {
@@ -976,18 +976,18 @@ auto main(int argc, char* argv[]) -> int {
         if (controlled.position != camBefore) {
             autoFrame = false;
         }
-        if (debugCamera.on) {
+        if (toolsconfig::debugCamera.get()) {
             extendDebugCameraTrail(debugCamera, cam.position, scene.lodMetersPerUnit());
         }
         // Culling and the shadow cascades follow the main camera, or the debug camera while it is on and set to drive them.
-        const auto& cullCamera = debugCamera.on && debugCamera.cullFromDebug ? debugCamera.camera : cam;
-        const auto& shadowCamera = debugCamera.on && debugCamera.shadowsFromDebug ? debugCamera.camera : cam;
+        const auto& cullCamera = toolsconfig::debugCamera.get() && toolsconfig::debugCull.get() ? debugCamera.camera : cam;
+        const auto& shadowCamera = toolsconfig::debugCamera.get() && toolsconfig::debugShadows.get() ? debugCamera.camera : cam;
 
         // Culling runs on the GPU: the snapshot carries the frustum
         // to cull against (live, or frozen so the culled set can be inspected from elsewhere),
         // and the results come back a few frames later for the Culling window and overlay.
-        cullState.enabled = viewUI.getCullEnabled();
-        cullState.frozen = viewUI.getCullFrozen();
+        cullState.enabled = renderconfig::cullingEnabled.get();
+        cullState.frozen = renderconfig::cullingFrozen.get();
         auto cullViewProj = cullState.update(proj * cullCamera.viewMatrix());
         if (auto cull = renderThread.latestCullResult(); cull.has_value()) {
             latestCull = std::move(*cull);
@@ -1026,7 +1026,7 @@ auto main(int argc, char* argv[]) -> int {
         static const uint32_t overlayZoneId = profile::registerName("CullOverlay");
         profile::beginZone(overlayZoneId);
         std::vector<uint8_t> overlayVisible(latestCull.viewBits.size());
-        auto overlayBit = (uint8_t) (1u << std::clamp(viewUI.cullOverlayView(), 0, (int) maxShadowCascades));
+        auto overlayBit = (uint8_t) (1u << std::clamp((int) toolsconfig::overlayCulledView.get(), 0, (int) maxShadowCascades));
         for (size_t i = 0; i < overlayVisible.size(); i++) {
             overlayVisible[i] = (latestCull.viewBits[i] & overlayBit) != 0 ? 1 : 0;
         }
@@ -1042,7 +1042,7 @@ auto main(int argc, char* argv[]) -> int {
             viewUI.drawDebug(debugDraw, scene.renderWorld(), viewCamera().position, cam.worldUp, overlayVisible, cullState.frozenActive ? &frozenCorners : nullptr, std::span<const ShadowCascade>(cascades.data(), cascadeCount), selectedPath.empty() ? nullptr : &selectedBounds);
             drawLodGizmos(lodWindow, debugDraw, cam.worldUp, lodWindowArea(glm::radians(cameraFovDegrees), viewAspect));
             drawStreamingOverlays(streamingWindow, debugDraw, cam.worldUp);
-            if (debugCamera.on) {
+            if (toolsconfig::debugCamera.get()) {
                 drawMainCamera(debugCamera, cam, proj * cam.viewMatrix(), cameraDepthAt((float) renderconfig::shadowDistance.get()), scene.lodMetersPerUnit(), debugDraw);
             }
             drawCameraModes(cameraModes, controlledCamera().position, scene.lodMetersPerUnit(), debugDraw);
@@ -1287,7 +1287,7 @@ auto main(int argc, char* argv[]) -> int {
                 streamingWindow.historyAt = (at + 1) % StreamingWindowState::historyLength;
             }
             streamingWindow.cameraPosition = lodCamera(viewContext).position;
-            streamingWindow.debugCameraPosition = debugCamera.on ? std::optional<glm::vec3>(debugCamera.camera.position) : std::nullopt;
+            streamingWindow.debugCameraPosition = toolsconfig::debugCamera.get() ? std::optional<glm::vec3>(debugCamera.camera.position) : std::nullopt;
             streamingWindow.cameraForward = lodCamera(viewContext).forward();
             streamingWindow.up = cam.worldUp;
             streamingWindow.flying = flight.flying();
@@ -1386,7 +1386,7 @@ auto main(int argc, char* argv[]) -> int {
             .windowHeight = winH,
             .mouseX = mouseX,
             .mouseY = mouseY,
-            .showGizmo = viewUI.getShowGizmo(),
+            .showGizmo = toolsconfig::overlayGizmos.get(),
             .gbufferViewMode = static_cast<GBufferView>(renderconfig::bufferView.get()),
             .debugView = static_cast<DebugView>(renderconfig::debugView.get()),
             .streamingStates = streamingView ? streamingWindow.slotStates : std::vector<uint32_t>(),
@@ -1399,8 +1399,8 @@ auto main(int argc, char* argv[]) -> int {
             .cullViewProj = cullViewProj,
             .readLodStates = lodStatesWanted,
             .lodHysteresis = scene.lodTuning().hysteresis,
-            .lodPopFlash = viewUI.lodWindow().flash,
-            .lodColorByDepth = viewUI.lodWindow().colorByDepth,
+            .lodPopFlash = toolsconfig::lodPopFlash.get(),
+            .lodColorByDepth = toolsconfig::lodColorByDepth.get(),
             .lodFlashFrames = (uint32_t) std::clamp(std::lround(0.5f / std::max(dt, 1e-4f)), 1L, 127L),
             .shadowSettings = renderconfig::shadowSettings(),
             .ambient = renderconfig::ambient(),

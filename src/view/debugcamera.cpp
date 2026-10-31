@@ -43,7 +43,7 @@ auto drawMainCamera(const DebugCameraState& debug, const Camera& main, const glm
     auto half = glm::vec3(0.25f * unitsPerMetre);
     draw.box({.min = main.position - half, .max = main.position + half}, frustumColor);
     draw.line(main.position, main.position + (main.forward() * (2.0f * unitsPerMetre)), frustumColor);
-    if (debug.trail) {
+    if (toolsconfig::debugTrail.get()) {
         for (size_t i = 1; i < debug.trailPoints.size(); i++) {
             draw.line(debug.trailPoints[i - 1], debug.trailPoints[i], trailColor);
         }
@@ -52,3 +52,14 @@ auto drawMainCamera(const DebugCameraState& debug, const Camera& main, const glm
         }
     }
 }
+
+namespace toolsconfig {
+
+config::Bool debugCamera{"tools.debugcamera.on", false, "Render from a second camera; the main camera (the player) keeps driving what is decided from a viewpoint (Ctrl+D)."};
+config::Bool debugControlMain{"tools.debugcamera.controlMain", false, "The keys and mouse move the main camera while the view stays on the debug camera (C)."};
+config::Bool debugLod{"tools.debugcamera.lod", false, "Measure the LOD heuristic, residency and render LOD from the debug camera instead of the player."};
+config::Bool debugCull{"tools.debugcamera.cull", false, "Cull from the debug camera: draw what it sees instead of what the player sees."};
+config::Bool debugShadows{"tools.debugcamera.shadows", false, "Fit the shadow cascades to the debug camera's view instead of the player's."};
+config::Bool debugTrail{"tools.debugcamera.trail", true, "Draw the main camera's trail, a point every 2 m it moved."};
+
+} // namespace toolsconfig

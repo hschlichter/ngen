@@ -1,5 +1,6 @@
 #include "viewmenubar.h"
 
+#include "configwindow.h"
 #include "debugview.h"
 
 #include <imgui.h>
@@ -50,9 +51,9 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::MenuItem("Show Shadow Overlay", "Ctrl+2", &state.showShadowOverlay);
         ImGui::MenuItem("Anti-Aliasing (FXAA)", nullptr, &state.antiAliasing);
         ImGui::Separator();
-        ImGui::MenuItem("Follow Ground", "G", &state.followGround);
-        ImGui::MenuItem("Debug Camera", "Ctrl+D", &state.debugCamera);
-        ImGui::MenuItem("Controls Move Main Camera", "C", &state.debugCameraControlMain, state.debugCamera);
+        configMenuItem("Follow Ground", "G", "view.camera.follow");
+        bool debugCamera = configMenuItem("Debug Camera", "Ctrl+D", "tools.debugcamera.on");
+        configMenuItem("Controls Move Main Camera", "C", "tools.debugcamera.controlMain", debugCamera);
         ImGui::Separator();
         ImGui::Text("Fullscreen Buffer View");
         ImGui::RadioButton("Albedo", &state.gbufferView, 1);

@@ -31,6 +31,9 @@ extern config::Int shadowTile;
 extern config::Float shadowSplitLambda;
 extern config::Bool shadowPcf;
 extern config::Float shadowDistance;
+// culling.cpp
+extern config::Bool cullingEnabled;
+extern config::Bool cullingFrozen;
 // gpuscene.cpp
 extern config::Int uploadBudgetMiB;
 extern config::Int geometryLimitMiB;

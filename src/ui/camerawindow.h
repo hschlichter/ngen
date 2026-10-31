@@ -15,19 +15,11 @@ struct CameraBookmark {
     float pose[5] = {};
 };
 
-// The debug camera: while on, the view renders from it, and the main camera (the player) keeps driving what is decided from a viewpoint:
-// LOD and streaming, culling and the shadow cascades, each switchable to the debug camera. The window edits it directly; ngen-view applies
-// it each frame (src/view/README.md, "The debug camera").
+// The debug camera's state: its pose, and the main camera's trail. Its switches (on, what it drives, the controls, the trail drawn) are
+// configuration values (`tools.debugcamera.*`, src/view/debugcamera.h); ngen-view applies them each frame (src/view/README.md, "The
+// debug camera").
 struct DebugCameraState {
-    bool on = false;
     Camera camera{};
-    bool controlMain = false; // the keys and mouse move the main camera instead, while the view stays on the debug camera
-    // What the debug camera drives instead of the main camera: the LOD heuristic, residency and render LOD (one viewpoint, the scene's and
-    // the GPU's); culling; the shadow cascades' fit.
-    bool lodFromDebug = false;
-    bool cullFromDebug = false;
-    bool shadowsFromDebug = false;
-    bool trail = true;           // the main camera's trail drawn
     bool placeRequested = false; // put it behind and above the main camera
     // The main camera's trail: a point each time it moved trailSpacingMetres from the last, the last trailCount, kept while the debug
     // camera is on. By distance moved, never by time.
@@ -36,12 +28,10 @@ struct DebugCameraState {
     static constexpr size_t trailCount = 500;
 };
 
-// The camera modes, for the camera that has the controls: following the ground (its eye kept a height above the render geometry under
-// it) and orbiting (Left Alt held: right-drag turns around the surface under the cursor, the wheel moves toward it). The window edits
-// the toggles; ngen-view applies them and fills in the rest each frame (src/view/README.md, "Camera modes").
+// The camera modes' state, for the camera that has the controls: following the ground (its eye kept a height above the render geometry
+// under it; on and the height are configuration values, `view.camera.follow*`) and orbiting (Left Alt held: right-drag turns around the
+// surface under the cursor, the wheel moves toward it). ngen-view fills it in each frame (src/view/README.md, "Camera modes").
 struct CameraModesState {
-    bool follow = false;
-    float followHeightMetres = 1.8f;
     // The last ground test: what it hit (none: no drawn surface under the camera, the height held), and what it tested.
     std::optional<glm::vec3> ground;
     std::string groundPrim;

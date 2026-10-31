@@ -17,8 +17,7 @@ auto ViewUI::toggleShortcuts() -> void {
     auto pressed = [](ImGuiKeyChord chord) {
         return ImGui::Shortcut(chord, ImGuiInputFlags_RouteGlobal);
     };
-    std::array<std::pair<ImGuiKeyChord, bool*>, 6> windows = {{
-        {ImGuiMod_Ctrl | ImGuiKey_D, &cameraState.debug.on},
+    std::array<std::pair<ImGuiKeyChord, bool*>, 5> windows = {{
         {ImGuiMod_Ctrl | ImGuiKey_P, &showPerformanceWindow},
         {ImGuiMod_Ctrl | ImGuiKey_C, &showCameraWindow},
         {ImGuiMod_Ctrl | ImGuiKey_S, &showStreamingWindow},
@@ -28,6 +27,11 @@ auto ViewUI::toggleShortcuts() -> void {
     for (auto [chord, shown] : windows) {
         if (pressed(chord)) {
             *shown = !*shown;
+        }
+    }
+    if (pressed(ImGuiMod_Ctrl | ImGuiKey_D)) {
+        if (auto* debugCamera = configBool("tools.debugcamera.on")) {
+            debugCamera->set(!debugCamera->get());
         }
     }
     std::array<std::pair<ImGuiKey, DebugView>, 5> debugViews = {{
@@ -97,6 +101,21 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     // The render settings the menu and the Render Debug window edit: their configuration values, copied here and written back after
     // both have drawn (a value written back unchanged doesn't count as a change).
     bool depthPrepass = renderconfig::depthPrepass.get();
+    bool showGrid = toolsconfig::overlayGrid.get();
+    bool showOrigin = toolsconfig::overlayOrigin.get();
+    bool showGizmo = toolsconfig::overlayGizmos.get();
+    bool showAabbs = toolsconfig::overlayAabbs.get();
+    bool showSelectedAabb = toolsconfig::overlaySelectedAabb.get();
+    bool showLightGizmos = toolsconfig::overlayLightGizmos.get();
+    auto* guides = configBool("scene.purposes.guide");
+    auto* proxies = configBool("scene.purposes.proxy");
+    bool showGuides = guides != nullptr && guides->get();
+    bool showProxies = proxies != nullptr && proxies->get();
+    bool cullEnabled = renderconfig::cullingEnabled.get();
+    bool cullFrozen = renderconfig::cullingFrozen.get();
+    bool showCulled = toolsconfig::overlayCulled.get();
+    int culledView = (int) toolsconfig::overlayCulledView.get();
+    bool cascadeFrusta = toolsconfig::overlayCascadeFrusta.get();
     int gbufferView = (int) renderconfig::bufferView.get();
     int debugView = (int) renderconfig::debugView.get();
     bool bufferOverlay = renderconfig::bufferOverlay.get();
@@ -111,23 +130,20 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         .requestDeselect = deselectRequested,
         .requestSelectParent = selectParentRequested,
         .requestFrameSelected = frameSelectedRequested,
-        .showGrid = showGridFlag,
-        .showOrigin = showOriginFlag,
-        .showGizmo = showGizmoFlag,
-        .showAABBs = showAABBsFlag,
-        .showSelectedAABB = showSelectedAABBFlag,
-        .showLightGizmos = showLightGizmosFlag,
-        .showGuides = showGuidesFlag,
-        .showProxies = showProxiesFlag,
+        .showGrid = showGrid,
+        .showOrigin = showOrigin,
+        .showGizmo = showGizmo,
+        .showAABBs = showAabbs,
+        .showSelectedAABB = showSelectedAabb,
+        .showLightGizmos = showLightGizmos,
+        .showGuides = showGuides,
+        .showProxies = showProxies,
         .depthPrepass = depthPrepass,
         .gbufferView = gbufferView,
         .debugView = debugView,
         .showBufferOverlay = bufferOverlay,
         .showShadowOverlay = shadowOverlay,
         .antiAliasing = antiAliasing,
-        .followGround = cameraState.modes.follow,
-        .debugCamera = cameraState.debug.on,
-        .debugCameraControlMain = cameraState.debug.controlMain,
         .showFrameGraph = showFrameGraphWindow,
         .showPerformance = showPerformanceWindow,
         .showConfig = showConfigWindow,
@@ -178,11 +194,11 @@ auto ViewUI::draw(const PrimPathOf& primPath,
             .showBufferOverlay = bufferOverlay,
             .showShadowOverlay = shadowOverlay,
             .antiAliasing = antiAliasing,
-            .showGrid = showGridFlag,
-            .showOrigin = showOriginFlag,
-            .showGizmo = showGizmoFlag,
-            .showAABBs = showAABBsFlag,
-            .showLightGizmos = showLightGizmosFlag,
+            .showGrid = showGrid,
+            .showOrigin = showOrigin,
+            .showGizmo = showGizmo,
+            .showAABBs = showAabbs,
+            .showLightGizmos = showLightGizmos,
         };
         if (drawRenderDebugWindow(showRenderDebugWindow, renderDebugLast, viewFlags, primPath, renderDebugSelectedPrim, renderDebugDraws)) {
             screenshotRequested = true;
@@ -266,11 +282,11 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     {
         PROFILE_ZONE("CullingWindow");
         drawCullingWindow(showCullingWindow,
-                          {.enabled = cullEnabledFlag,
-                           .frozen = cullFrozenFlag,
-                           .showCulled = showCulledFlag,
-                           .overlayView = cullOverlayViewIndex,
-                           .showCascadeFrusta = showCascadeFrustaFlag,
+                          {.enabled = cullEnabled,
+                           .frozen = cullFrozen,
+                           .showCulled = showCulled,
+                           .overlayView = culledView,
+                           .showCascadeFrusta = cascadeFrusta,
                            .instances = cullStatInstances,
                            .culled = cullStatCulled,
                            .lodLevelNotDrawn = cullStatLodNotDrawn,
@@ -281,6 +297,23 @@ auto ViewUI::draw(const PrimPathOf& primPath,
                            .trianglesScene = cullTrianglesScene,
                            .shadowTriangles = cullTrianglesCascades});
     }
+    toolsconfig::overlayGrid.set(showGrid);
+    toolsconfig::overlayOrigin.set(showOrigin);
+    toolsconfig::overlayGizmos.set(showGizmo);
+    toolsconfig::overlayAabbs.set(showAabbs);
+    toolsconfig::overlaySelectedAabb.set(showSelectedAabb);
+    toolsconfig::overlayLightGizmos.set(showLightGizmos);
+    if (guides != nullptr) {
+        guides->set(showGuides);
+    }
+    if (proxies != nullptr) {
+        proxies->set(showProxies);
+    }
+    renderconfig::cullingEnabled.set(cullEnabled);
+    renderconfig::cullingFrozen.set(cullFrozen);
+    toolsconfig::overlayCulled.set(showCulled);
+    (void) toolsconfig::overlayCulledView.set(culledView);
+    toolsconfig::overlayCascadeFrusta.set(cascadeFrusta);
 }
 
 auto ViewUI::drawDebug(DebugDraw& debugDraw,
@@ -292,13 +325,13 @@ auto ViewUI::drawDebug(DebugDraw& debugDraw,
                        std::span<const ShadowCascade> cascades,
                        const AABB* selectedBounds) -> void {
     debugDraw.newFrame();
-    if (showGridFlag) {
+    if (toolsconfig::overlayGrid.get()) {
         debugDraw.grid(cameraPos, worldUp, 1.0f, 50, {0.25f, 0.25f, 0.25f, 1.0f});
     }
-    if (showOriginFlag) {
+    if (toolsconfig::overlayOrigin.get()) {
         debugDraw.sphere({0, 0, 0}, 0.1f, {1.0f, 0.9f, 0.2f, 1.0f}, 16);
     }
-    if (showAABBsFlag) {
+    if (toolsconfig::overlayAabbs.get()) {
         for (const auto& inst : renderWorld.meshInstances) {
             if (inst.alive && inst.worldBounds.valid()) {
                 debugDraw.box(inst.worldBounds, {0.0f, 1.0f, 0.0f, 1.0f});
@@ -307,7 +340,7 @@ auto ViewUI::drawDebug(DebugDraw& debugDraw,
     }
     // Culling debug: every instance AABB by its cull result, red for culled, green for drawn, and the frozen frustum's twelve edges in
     // yellow when the frustum is frozen.
-    if (showCulledFlag && visible.size() == renderWorld.meshInstances.size()) {
+    if (toolsconfig::overlayCulled.get() && visible.size() == renderWorld.meshInstances.size()) {
         for (size_t i = 0; i < visible.size(); i++) {
             const auto& inst = renderWorld.meshInstances[i];
             if (!inst.alive || !inst.worldBounds.valid()) {
@@ -329,7 +362,7 @@ auto ViewUI::drawDebug(DebugDraw& debugDraw,
     }
     // Each shadow cascade's light frustum (an ortho box) in its own colour: red, green, blue, yellow from near to far, the same colours
     // as the cascades view.
-    if (showCascadeFrustaFlag) {
+    if (toolsconfig::overlayCascadeFrusta.get()) {
         const std::array<glm::vec4, 4> colors = {{{1.0f, 0.3f, 0.3f, 1.0f}, {0.3f, 1.0f, 0.3f, 1.0f}, {0.3f, 0.5f, 1.0f, 1.0f}, {1.0f, 0.9f, 0.2f, 1.0f}}};
         for (size_t i = 0; i < cascades.size() && i < colors.size(); i++) {
             auto c = Frustum::corners(cascades[i].viewProj);
@@ -341,7 +374,7 @@ auto ViewUI::drawDebug(DebugDraw& debugDraw,
             }
         }
     }
-    if (showLightGizmosFlag && !renderWorld.lights.empty()) {
+    if (toolsconfig::overlayLightGizmos.get() && !renderWorld.lights.empty()) {
         // The sun floats a fixed distance in front of the camera along the toward-light direction: constant world size, so it reads the
         // same at any scene scale and never meets scene geometry. A directional compass, not an object in the scene.
         constexpr float sunDistance = 3.0f;
@@ -361,7 +394,7 @@ auto ViewUI::drawDebug(DebugDraw& debugDraw,
             debugDraw.sunLight(sunPos, -towardUnit, discRadius, shaftLength, {1.0f, 0.85f, 0.2f, 1.0f});
         }
     }
-    if (selectedBounds != nullptr && showSelectedAABBFlag && selectedBounds->valid()) {
+    if (selectedBounds != nullptr && toolsconfig::overlaySelectedAabb.get() && selectedBounds->valid()) {
         debugDraw.box(*selectedBounds, {1.0f, 0.0f, 0.6f, 1.0f});
     }
 }
@@ -381,15 +414,15 @@ auto ViewUI::takeEditRequest() -> ViewEditRequest {
 
 auto ViewUI::setOverlay(std::string_view name, bool on) -> bool {
     if (name == "grid") {
-        showGridFlag = on;
+        toolsconfig::overlayGrid.set(on);
     } else if (name == "origin") {
-        showOriginFlag = on;
+        toolsconfig::overlayOrigin.set(on);
     } else if (name == "gizmo" || name == "gizmos") {
-        showGizmoFlag = on;
+        toolsconfig::overlayGizmos.set(on);
     } else if (name == "aabbs") {
-        showAABBsFlag = on;
+        toolsconfig::overlayAabbs.set(on);
     } else if (name == "lightgizmos") {
-        showLightGizmosFlag = on;
+        toolsconfig::overlayLightGizmos.set(on);
     } else if (name == "buffer") {
         renderconfig::bufferOverlay.set(on);
     } else if (name == "shadow") {
@@ -397,7 +430,7 @@ auto ViewUI::setOverlay(std::string_view name, bool on) -> bool {
     } else if (name == "aa") {
         renderconfig::antiAliasing.set(on);
     } else if (name == "cascadefrusta") {
-        showCascadeFrustaFlag = on;
+        toolsconfig::overlayCascadeFrusta.set(on);
     } else {
         return false;
     }
@@ -500,3 +533,17 @@ auto ViewUI::takeTextureDumpRequest() -> std::optional<TextureInspectRequest> {
     renderDebugDraws.dumpRequested = false;
     return renderDebugDraws.inspect;
 }
+
+namespace toolsconfig {
+
+config::Bool overlayGrid{"tools.overlay.grid", true, "A ground grid on the scene's up axis."};
+config::Bool overlayOrigin{"tools.overlay.origin", true, "The world's axes at the origin."};
+config::Bool overlayGizmos{"tools.overlay.gizmos", true, "The corner axis gizmo and the selection's transform gizmo."};
+config::Bool overlayAabbs{"tools.overlay.aabbs", false, "Every instance's world bounds."};
+config::Bool overlaySelectedAabb{"tools.overlay.selectedAabb", true, "The selection's world bounds."};
+config::Bool overlayLightGizmos{"tools.overlay.lightGizmos", true, "Each light's direction."};
+config::Bool overlayCulled{"tools.overlay.culled", false, "Every instance's bounds by its GPU cull result: green drawn, red culled."};
+config::Int overlayCulledView{"tools.overlay.culledView", 0, "Whose cull result the culled overlay shows: 0 the camera, 1 and up a shadow cascade.", {.min = 0, .max = 4}};
+config::Bool overlayCascadeFrusta{"tools.overlay.cascadeFrusta", false, "Each shadow cascade's light frustum, in the cascades view's colours."};
+
+} // namespace toolsconfig

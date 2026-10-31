@@ -13,7 +13,9 @@ A value is a variable of one of the types below, declared where it belongs and r
 config::Int shadowCascades{"render.shadow.cascades", 3, "Shadow cascades from the camera out to the shadow distance; the atlas has room for four.", {.min = 1, .max = 4}};
 ```
 
-A header names the values other code reads (the renderer's are in `src/renderer/renderconfig.h`). The registry is a function-local static,
+A header names the values other code reads (the renderer's are in `src/renderer/renderconfig.h`; the others in the header of the part that
+declares them). A window shows a value another library declares by its name (`configCheckbox`, `configBool`, `src/ui/configwindow.h`),
+so it doesn't include that library. The registry is a function-local static,
 so the order translation units construct their values in doesn't matter; a name declared twice asserts.
 
 | Type | Holds | Set from text |
@@ -29,7 +31,9 @@ so the order translation units construct their values in doesn't matter; a name 
 
 ## Names
 
-Dotted, by system then subject: `render.shadow.cascades`, `render.sampler.anisotropy`, `render.view.debug`. A value's group is its name's
+Dotted, by system then subject: `render.*` the renderer's (views, overlays, shadows, sampler, ambient, culling, budgets), `scene.*` the
+scene's (purposes), `view.*` the view's runtime (the camera modes), `tools.*` the tools' (the debug camera, the LOD and Streaming layers,
+the viewport overlays). For example `render.shadow.cascades`, `render.sampler.anisotropy`, `render.view.debug`. A value's group is its name's
 first two parts (`render.shadow`); a prefix selects every value under it (`config-reset render.shadow`, `config.get {name: "render"}`).
 The names are meant as an init file's keys once there is one: `name = value`, the value as `setText` takes it.
 
@@ -52,7 +56,8 @@ There are no callbacks, so nothing runs inside a `set`.
 - **RPC**: `config.get {name?}` (one value by name, or every one under a prefix), `config.set {name, value}` or `{values: {name: value}}`
   (checked together: nothing is set when one fails; `reset` names values put back to their defaults first), `config.reset {name?}`.
 - **Verbs**: `config <name> <value>`, `config-reset [<name or prefix>]`. Older verbs that set settings (`view`, `debugview`, `shadow`,
-  `sampler`, `ambient`, `prepass`, `aa`, `gpuscene`) are kept as short forms that set the matching values.
+  `sampler`, `ambient`, `prepass`, `aa`, `gpuscene`, `cull`, `overlay`, `purposes`, `lod-show`, `streaming-show`, `camera-follow`,
+  `debug-camera`) are kept as short forms that set the matching values.
 - **Window**: Windows > Configuration (`window config`): every value by group with an editor for its type, its description and default on
   hover, values changed from their default marked, reset per value and per group. The View menu and the Render Debug window's controls edit
   the same values.

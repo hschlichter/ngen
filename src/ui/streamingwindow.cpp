@@ -1,5 +1,7 @@
 #include "streamingwindow.h"
 
+#include "configwindow.h"
+
 #include <imgui.h>
 
 #include <algorithm>
@@ -169,22 +171,13 @@ auto drawControls(StreamingWindowState& state) -> void {
         ImGui::SetTooltip("Replaces the lit image: each mesh in the colour of its nearest streaming root's state (debugview streaming).");
     }
     ImGui::SameLine();
-    ImGui::Checkbox("Bounds", &state.bounds);
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Each root's streaming bounds in the viewport, in its state's colour.");
-    }
+    configCheckbox("Bounds", "tools.streaming.bounds");
     ImGui::SameLine();
-    ImGui::Checkbox("Rings", &state.rings);
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("The selected root's load radii (solid) and unload radii (faint), per boundary, around its bounds:\nthe camera inside a load ring makes that level resident; outside its unload ring lets it go.");
-    }
+    configCheckbox("Rings", "tools.streaming.rings");
     ImGui::SameLine();
-    ImGui::Checkbox("of every root", &state.ringsAll);
+    configCheckbox("of every root", "tools.streaming.ringsAll");
     ImGui::SameLine();
-    ImGui::Checkbox("Labels", &state.labels);
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Over each root the list shows: its name, drawn / selected level, state and the state's name. Click one to select it.");
-    }
+    configCheckbox("Labels", "tools.streaming.labels");
 }
 
 // One root of the list: click selects, double-click frames.
@@ -666,7 +659,7 @@ auto drawStreamingWindow(bool& show, StreamingWindowState& state) -> void {
 }
 
 auto drawStreamingLabels(StreamingWindowState& state, const glm::mat4& viewProj, glm::vec2 viewport) -> void {
-    if (!state.labels) {
+    if (auto* labels = configBool("tools.streaming.labels"); labels == nullptr || !labels->get()) {
         return;
     }
     // Under the windows, so a label never covers a window.
