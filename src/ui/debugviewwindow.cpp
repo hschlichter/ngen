@@ -106,7 +106,7 @@ auto drawDebugViewWindow(DebugView view, DebugViewWindowState& state, const std:
             ImGui::TextWrapped("Checker of 8 cells per UV unit, red = U, green = V. Stretched or skewed cells show distorted UVs.");
             break;
         case DebugView::Streaming:
-            ImGui::TextWrapped("Each mesh in its nearest streaming root's state, as the Streaming window's legend: green drawn as selected, teal a finer "
+            ImGui::TextWrapped("Over the lit image, at half strength: each mesh in its nearest streaming root's state, as the Streaming window's legend: green drawn as selected, teal a finer "
                                "level prefetched, blue a resident level requested, violet refused by a budget, orange late, red a hole; grey under no "
                                "streaming root. Yellow stripes: the root breaks the authoring contract.");
             break;

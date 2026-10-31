@@ -72,7 +72,7 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
 - `--screenshot=PATH` writes the presented frame as PNG on the last frame of `--frames`; Read the PNG to see it. Screenshots leave the UI out
   (the menu bar, windows and the status bar, whose numbers change every run), so they compare byte for byte; `--show-ui` keeps it in.
 - `--view=lit|albedo|normals|depth|shadowfactor|shadowmap|shadowuv|worldpos|miplevel|cascades|lodlevel` (miplevel: red level 0 to white
-  level 7+; cascades: red, green, blue, yellow near to far; lodlevel: the drawn level of the nearest LOD root, red level 0, orange 1,
+  level 7+; cascades: red, green, blue, yellow near to far; lodlevel: the drawn level of the nearest LOD root at half strength over the lit image, red level 0, orange 1,
   yellow 2, green 3, … white 7+, grey under none; shadowmap shows the cascade atlas), `--overlay=grid=on,aabbs=off,...`
   (grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa), `--camera=x,y,z,yaw,pitch` or `--camera=/camera/prim` (a camera the scene authors; Caldera has 13 under `/cameras`), `--camera-frame=scene|/prim` (what is drawn at and under the prim), `--select=/prim` (full path, instances expanded).
 - Records at a frame go to a file: a script line `120 record render /tmp/records.jsonl` appends the render debug record (meshes, textures,

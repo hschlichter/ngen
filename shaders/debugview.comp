@@ -19,6 +19,9 @@ layout(std430, set = 0, binding = 2) readonly buffer StreamingStates {
     uint data[];
 } streamingStates;
 
+// The lit image, which the streaming view lays its colours over (bound only in that view; another view's set holds the values again).
+layout(set = 0, binding = 3) uniform sampler2D lit;
+
 const uint viewWireframe = 1;
 const uint viewTriangleSize = 2;
 const uint viewOverdraw = 3;
@@ -26,6 +29,8 @@ const uint viewUv = 8;
 const uint viewStreaming = 9;
 
 const vec3 background = vec3(0.02);
+// How strongly the streaming view's colours cover the lit image.
+const float layerOpacity = 0.5;
 
 // Blue, cyan, green, yellow, red over t in [0, 1] (the "jet" scale).
 vec3 heat(float t) {
@@ -67,6 +72,9 @@ void main() {
     }
     vec4 v = texelFetch(values, ivec2(pixel), 0);
     vec3 color = background;
+    if (push.mode == viewStreaming) {
+        color = texelFetch(lit, ivec2(pixel), 0).rgb;
+    }
     if (v.a > 0.0) {
         if (push.mode == viewWireframe) {
             float line = 1.0 - smoothstep(0.5, 1.5, v.r);
@@ -81,7 +89,7 @@ void main() {
             bool odd = (int(floor(v.r * 8.0)) + int(floor(v.g * 8.0))) % 2 != 0;
             color = vec3(uv, 0.2) * (odd ? 0.55 : 1.0);
         } else if (push.mode == viewStreaming) {
-            color = streamingColor(uint(v.r), pixel);
+            color = mix(color, streamingColor(uint(v.r), pixel), layerOpacity);
         } else {
             color = idColor(uint(v.r));
         }

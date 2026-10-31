@@ -83,10 +83,11 @@ auto DebugViewPass::init(RhiDevice* dev, PipelineRegistry& pipelineRegistry, uin
         overdrawPipelines[doubleSided] = registry->registerGraphics(std::format("debugview.overdraw.{}", cull), desc, PipelineUse::FirstUse);
     }
 
-    std::array<RhiDescriptorBinding, 3> bindings = {{
+    std::array<RhiDescriptorBinding, 4> bindings = {{
         {.binding = 0, .type = RhiDescriptorType::CombinedImageSampler, .stage = RhiShaderStage::Compute},
         {.binding = 1, .type = RhiDescriptorType::StorageImage, .stage = RhiShaderStage::Compute},
         {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},
+        {.binding = 3, .type = RhiDescriptorType::CombinedImageSampler, .stage = RhiShaderStage::Compute},
     }};
     resolveLayout = device->createDescriptorSetLayout(bindings);
     device->setDebugName(resolveLayout, "debugview.resolve.setlayout");
@@ -150,7 +151,8 @@ auto DebugViewPass::addPass(
     DrawLists::Handles drawHandles,
     const GpuScene& scene,
     RhiDescriptorSet* geometrySet,
-    std::span<const uint32_t> streamingStates) -> const DebugViewPassData& {
+    std::span<const uint32_t> streamingStates,
+    FgTextureHandle litHandle) -> const DebugViewPassData& {
     FgTextureDesc valueDesc = {
         .width = extent.width,
         .height = extent.height,
@@ -164,6 +166,8 @@ auto DebugViewPass::addPass(
         .usage = RhiTextureUsage::Storage | RhiTextureUsage::TransferSrc,
     };
     bool overdraw = view == DebugView::Overdraw;
+    // The streaming view lays its colours over the lit image; the other views replace it, so the lit image isn't kept alive for them.
+    bool overLit = view == DebugView::Streaming;
     auto mode = (uint32_t) view;
 
     struct DrawData {
@@ -243,18 +247,23 @@ auto DebugViewPass::addPass(
         [&](FrameGraphBuilder& builder, DebugViewPassData& data) {
             data.value = builder.read(valueHandle, FgAccessFlags::ShaderRead);
             data.color = builder.write(builder.createTexture("debugview.color", colorDesc), FgAccessFlags::StorageWrite);
+            if (overLit) {
+                data.lit = builder.read(litHandle, FgAccessFlags::ShaderRead);
+            }
         },
-        [this, mode, extent, frameSlot, streamingStates](FrameGraphContext& ctx, const DebugViewPassData& data) {
+        [this, mode, extent, frameSlot, streamingStates, overLit](FrameGraphContext& ctx, const DebugViewPassData& data) {
             // The streaming view's root states, for this frame slot's buffer: what the GPU read from it last was this slot's previous frame.
             auto count = (uint32_t) std::min<size_t>(streamingStates.size(), maxStreamingRoots);
             if (mode == (uint32_t) DebugView::Streaming) {
                 auto* states = static_cast<uint32_t*>(streamingMapped[frameSlot]);
                 std::copy_n(streamingStates.begin(), count, states);
             }
-            std::array<RhiDescriptorWrite, 3> writes = {{
+            auto* lit = overLit ? ctx.texture(data.lit) : ctx.texture(data.value);
+            std::array<RhiDescriptorWrite, 4> writes = {{
                 {.binding = 0, .type = RhiDescriptorType::CombinedImageSampler, .texture = ctx.texture(data.value), .sampler = pointSampler},
                 {.binding = 1, .type = RhiDescriptorType::StorageImage, .texture = ctx.texture(data.color)},
                 {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .buffer = streamingBuffers[frameSlot], .bufferRange = (uint64_t) maxStreamingRoots * sizeof(uint32_t)},
+                {.binding = 3, .type = RhiDescriptorType::CombinedImageSampler, .texture = lit, .sampler = pointSampler},
             }};
             device->updateDescriptorSet(resolveSets[frameSlot], writes);
             ResolvePush push = {

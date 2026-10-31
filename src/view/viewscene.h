@@ -238,18 +238,21 @@ struct SceneSnapshot {
     bool lodHeuristic = true;
     LodPreference lodPreference = LodPreference::Distance;
     std::shared_ptr<const LodTuning> lodTuning = std::make_shared<LodTuning>();
+    // Shared between snapshots until it changes, as are the asset ids, the layer stack and the World's LOD levels below: a snapshot published
+    // for a camera move copies none of them, and freeing it frees none of them.
     std::shared_ptr<const std::unordered_map<std::string, uint32_t>> lodHandLevels = std::make_shared<std::unordered_map<std::string, uint32_t>>();
     double metersPerUnitOfLod = 1.0; // the stage's, for the measures the records show
     std::shared_ptr<const SceneStreaming> streaming = std::make_shared<SceneStreaming>();
     glm::mat4 unitScale = glm::mat4(1.0f);
-    std::vector<std::string> assetIds; // every asset the scene uses: layer packs, meshes, materials, textures, failed ones
+    // Every asset the scene uses: layer packs, meshes, materials, textures, failed ones.
+    std::shared_ptr<const std::vector<std::string>> assetIds = std::make_shared<std::vector<std::string>>();
     // The World, summarised.
-    std::vector<std::string> layerStack;
+    std::shared_ptr<const std::vector<std::string>> layerStack = std::make_shared<std::vector<std::string>>();
     std::string upAxis = "Y";
     double metersPerUnit = 0.01;
     size_t prims = 0;
     size_t prototypes = 0;
-    std::unordered_map<std::string, uint32_t> lodLevels;
+    std::shared_ptr<const std::unordered_map<std::string, uint32_t>> lodLevels = std::make_shared<std::unordered_map<std::string, uint32_t>>();
     // Nothing queued, requested or waiting to be placed when it was published.
     bool idle = true;
     SceneThreadStats thread;
@@ -342,7 +345,7 @@ public:
     // Moves on each time the renderer's inputs change.
     auto revision() const -> uint64_t { return current->revision; }
     // Every asset the scene uses: its layer packs, meshes, materials and textures.
-    auto assetIds() const -> std::vector<std::string> { return current->assetIds; }
+    auto assetIds() const -> std::vector<std::string> { return *current->assetIds; }
     // The scene's up axis, as a vector.
     auto worldUp() const -> glm::vec3;
     // The full path of the entity a draw instance or light names (RenderWorld's prim index); empty for none.
@@ -599,7 +602,7 @@ private:
     auto countPrims(const World& world, const WorldContent& content, bool rootIsPrim) -> size_t;
     auto countWorld() -> void;
     // Every asset id the scene uses, rebuilt when the sets of packs change size.
-    std::vector<std::string> assetIdList;
+    std::shared_ptr<const std::vector<std::string>> assetIdList = std::make_shared<std::vector<std::string>>();
     size_t assetIdKey = SIZE_MAX;
 
     // Content walks (placement.h), kept by content, version and inherited state.

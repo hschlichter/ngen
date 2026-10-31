@@ -304,7 +304,7 @@ auto drawLayers(LodWindowState& state) -> void {
         state.levelViewRequested = levelView;
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Replaces the lit image: each mesh in its drawn level's colour (grey under no LOD root). A fade shows its two colours\ndithered together. Render-LOD roots at a forced level are striped, those drawing another level than they want checkered.");
+        ImGui::SetTooltip("Over the lit image, at half strength: each mesh in its drawn level's colour (grey under no LOD root). A fade shows its two colours\ndithered together. Render-LOD roots at a forced level are striped, those drawing another level than they want checkered.");
     }
     ImGui::SameLine();
     ImGui::Checkbox("Labels", &state.labels);

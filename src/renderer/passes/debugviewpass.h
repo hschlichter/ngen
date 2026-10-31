@@ -16,6 +16,7 @@ class RhiDevice;
 struct DebugViewPassData {
     FgTextureHandle value; // RGBA32F raw values (debugview.frag), read back by the cursor readout
     FgTextureHandle color; // RGBA16F colours (debugview.comp), blitted in place of the lit image
+    FgTextureHandle lit;   // the lit image, read by the streaming view, which lays its colours over it
 };
 
 // Viewport debug views: draws the camera's indirect commands again through a geometry
@@ -43,7 +44,8 @@ public:
         DrawLists::Handles drawHandles,
         const GpuScene& scene,
         RhiDescriptorSet* geometrySet,
-        std::span<const uint32_t> streamingStates) -> const DebugViewPassData&;
+        std::span<const uint32_t> streamingStates,
+        FgTextureHandle litHandle) -> const DebugViewPassData&;
 
     // The streaming view's states per root slot; slots past it show as no root.
     static constexpr uint32_t maxStreamingRoots = 65536;

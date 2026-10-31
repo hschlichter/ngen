@@ -5,6 +5,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -110,10 +111,23 @@ struct LodWindowState {
     bool onlyNotDrawingWanted = false;
     bool onlyFading = false;
     std::vector<LodWindowRow> rows; // set by the application when the scene changes; render-LOD rows' live state each frame
-    std::string selectedRoot;       // the root at or above the view's selected prim; set by the application each frame
-    std::string selectedPath;       // the view's selection, for "under selection"
-    std::string scrolledTo;         // the selected root the list last scrolled to
-    int allChoice = 0;              // the "Set shown" choice: 0 default, 1 coarsest, 2 + n level n
+    // What the render-LOD group rows (after the LOD roots' rows in `rows`) were built from: the snapshot's draws (their revision), the tuning
+    // and the hand-set levels (held, so a new one can't take a freed one's address), the preference and the heuristic's state. A snapshot
+    // that changes none of them (a camera move) rebuilds only the roots' rows.
+    struct GroupRowsSource {
+        uint64_t drawsRevision = UINT64_MAX;
+        std::shared_ptr<const void> tuning;
+        std::shared_ptr<const void> handLevels;
+        int preference = -1;
+        bool heuristic = false;
+        auto operator==(const GroupRowsSource&) const -> bool = default;
+    };
+    GroupRowsSource groupRowsSource;
+    size_t rootRowCount = 0;
+    std::string selectedRoot; // the root at or above the view's selected prim; set by the application each frame
+    std::string selectedPath; // the view's selection, for "under selection"
+    std::string scrolledTo;   // the selected root the list last scrolled to
+    int allChoice = 0;        // the "Set shown" choice: 0 default, 1 coarsest, 2 + n level n
     // What the window asked for this frame: the application applies them and clears these.
     struct LevelRequest {
         std::string root;

@@ -1181,7 +1181,13 @@ auto ViewScene::publish() -> void {
     snapshot->lodHeuristic = heuristicOn;
     snapshot->lodPreference = lodPreferenceNow;
     snapshot->lodTuning = tuning;
-    snapshot->lodHandLevels = std::make_shared<std::unordered_map<std::string, uint32_t>>(handLevels);
+    // Shared with the snapshot before unless they changed (the same for the layer stack and the World's LOD levels below).
+    const auto* before = published.get();
+    if (before != nullptr && *before->lodHandLevels == handLevels) {
+        snapshot->lodHandLevels = before->lodHandLevels;
+    } else {
+        snapshot->lodHandLevels = std::make_shared<std::unordered_map<std::string, uint32_t>>(handLevels);
+    }
     snapshot->metersPerUnitOfLod = composer ? composer->world().metersPerUnit : 1.0;
     if (streamingChanged) {
         streamingChanged = false;
@@ -1236,17 +1242,25 @@ auto ViewScene::publish() -> void {
             ids.insert(assetId);
         }
         ids.insert(failedAssets.begin(), failedAssets.end());
-        assetIdList.assign(ids.begin(), ids.end());
+        assetIdList = std::make_shared<std::vector<std::string>>(ids.begin(), ids.end());
     }
     snapshot->assetIds = assetIdList;
     if (composer) {
         const auto& world = composer->world();
-        snapshot->layerStack = world.layerStack;
+        if (before != nullptr && *before->layerStack == world.layerStack) {
+            snapshot->layerStack = before->layerStack;
+        } else {
+            snapshot->layerStack = std::make_shared<std::vector<std::string>>(world.layerStack);
+        }
         snapshot->upAxis = world.upAxis;
         snapshot->metersPerUnit = world.metersPerUnit;
         snapshot->prims = worldPrims;
         snapshot->prototypes = world.prototypeCount();
-        snapshot->lodLevels = world.lodLevels;
+        if (before != nullptr && *before->lodLevels == world.lodLevels) {
+            snapshot->lodLevels = before->lodLevels;
+        } else {
+            snapshot->lodLevels = std::make_shared<std::unordered_map<std::string, uint32_t>>(world.lodLevels);
+        }
     }
     snapshot->idle = inFlight.empty() && !composeNeeded && !placeNeeded;
     // The snapshot this replaces, when the main thread never took it, is freed here after the lock, not under it: update() waits on it.

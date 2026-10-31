@@ -1133,12 +1133,12 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         // never filtered and sceneColorAA holds nothing but the AA result.
         const auto& aaData = aaPass.addPass(frameGraph, lightData.sceneColor, ext, imageIdx, textureSampler, snapshot.antiAliasing);
 
-        // A debug view replaces the lit image; it is drawn after everything the geometry pass
-        // wrote and never anti-aliased (AA would blend IDs).
+        // A debug view replaces the lit image (the streaming view lays its colours over it); it is
+        // drawn after everything the geometry pass wrote and never anti-aliased (AA would blend IDs).
         auto finalImage = aaData.sceneColorAA;
         // Its pipelines come on first use: until they are ready the lit image shows.
         if (snapshot.debugView != DebugView::None && debugViewPass.available() && debugViewPass.ready()) {
-            const auto& debugViewData = debugViewPass.addPass(frameGraph, snapshot.debugView, geomData.depth, ext, imageIdx, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, snapshot.streamingStates);
+            const auto& debugViewData = debugViewPass.addPass(frameGraph, snapshot.debugView, geomData.depth, ext, imageIdx, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, snapshot.streamingStates, lightData.sceneColor);
             finalImage = debugViewData.color;
         }
         addBlitPass(frameGraph, "BlitToBackbuffer", finalImage, colorHandle, ext, ext);

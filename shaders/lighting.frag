@@ -36,6 +36,8 @@ const float STRIP_HEIGHT = 0.25;
 const float GBUFFER_PREVIEW_WIDTH = 0.25;
 const float SHADOW_PREVIEW_WIDTH = 0.2;
 const float BORDER = 0.003;
+// How strongly a debug layer's colour (the LOD Level view's) covers the lit image under it.
+const float LAYER_OPACITY = 0.5;
 const int NUM_GBUFFER_PREVIEWS = 4;
 const int NUM_SHADOW_PREVIEWS = 3;
 
@@ -121,6 +123,23 @@ float sampleShadow(vec3 worldPos, vec3 normal, float viewDepth) {
     return lit / 9.0;
 }
 
+// The LOD Level view's colour for a normal target tag (lodTag in lodfade.glsl: level + 1, 0 under no LOD root), laid over the lit colour:
+// level 0 red, 1 orange, 2 yellow, 3 green, 4 cyan, 5 blue, 6 magenta, 7 and up white; grey under no LOD root. A render-LOD group at a
+// forced level is striped diagonally, one drawing another level than it wants checkered.
+vec3 lodLevelTint(int tag) {
+    const vec3 ramp[8] = vec3[](vec3(1.0, 0.0, 0.0), vec3(1.0, 0.5, 0.0), vec3(1.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 1.0), vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 1.0), vec3(1.0, 1.0, 1.0));
+    int level = tag & 15;
+    vec3 color = level == 0 ? vec3(0.5) : ramp[min(level - 1, 7)];
+    ivec2 pixel = ivec2(gl_FragCoord.xy);
+    if ((tag & 16) != 0 && ((pixel.x + pixel.y) / 6) % 2 == 0) {
+        color *= 0.35;
+    }
+    if ((tag & 32) != 0 && ((pixel.x / 8) + (pixel.y / 8)) % 2 == 0) {
+        color = mix(color, vec3(0.0), 0.6);
+    }
+    return color;
+}
+
 vec3 sampleBuffer(int mode, vec2 uv) {
     if (mode == 3) {
         float d = texture(gbufferDepth, uv).r;
@@ -151,26 +170,6 @@ vec3 sampleBuffer(int mode, vec2 uv) {
     vec4 normalSample = texture(gbufferNormal, uv);
     vec3 normal = normalSample.rgb * 2.0 - 1.0;
     if (mode == 2) return normalize(normal) * 0.5 + 0.5;
-    if (mode == 10) {
-        // The drawn LOD level, from the normal target's tag (lodTag in lodfade.glsl: level + 1, 0 under no LOD root): level 0 red, 1
-        // orange, 2 yellow, 3 green, 4 cyan, 5 blue, 6 magenta, 7 and up white; grey under no LOD root. Dimmed by the sun so shapes stay
-        // readable. A render-LOD group at a forced level is striped diagonally, one drawing another level than it wants checkered.
-        const vec3 ramp[8] = vec3[](vec3(1.0, 0.0, 0.0), vec3(1.0, 0.5, 0.0), vec3(1.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 1.0), vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 1.0), vec3(1.0, 1.0, 1.0));
-        int tag = int(normalSample.a + 0.5);
-        int level = tag & 15;
-        vec3 color = level == 0 ? vec3(0.5) : ramp[min(level - 1, 7)];
-        float diffuse = max(dot(normalize(normal), normalize(light.lightDirection.xyz)), 0.0);
-        color *= 0.35 + 0.65 * diffuse;
-        ivec2 pixel = ivec2(gl_FragCoord.xy);
-        if ((tag & 16) != 0 && ((pixel.x + pixel.y) / 6) % 2 == 0) {
-            color *= 0.35;
-        }
-        if ((tag & 32) != 0 && ((pixel.x / 8) + (pixel.y / 8)) % 2 == 0) {
-            color = mix(color, vec3(0.0), 0.6);
-        }
-        return color;
-    }
-
     float depth = texture(gbufferDepth, uv).r;
     vec3 worldPos = reconstructWorld(uv, depth);
     float viewDepth = linearizeDepth(depth);
@@ -209,7 +208,11 @@ vec3 sampleBuffer(int mode, vec2 uv) {
     float upness = dot(N, normalize(light.ambientUp.xyz)) * 0.5 + 0.5;
     vec3 ambient = mix(light.groundAmbient.rgb, light.skyAmbient.rgb, upness);
 
-    return albedo * light.lightColor.rgb * (ambient + diff * shadowFactor);
+    vec3 lit = albedo * light.lightColor.rgb * (ambient + diff * shadowFactor);
+    if (mode == 10) {
+        return mix(lit, lodLevelTint(int(normalSample.a + 0.5)), LAYER_OPACITY);
+    }
+    return lit;
 }
 
 void main() {

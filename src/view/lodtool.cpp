@@ -232,7 +232,20 @@ auto lodUnitName(double metersPerUnit) -> const char* {
 }
 
 auto buildLodRows(const ViewScene& scene, LodWindowState& state) -> void {
-    auto& rows = state.rows;
+    const auto& snapshot = scene.snapshot();
+    LodWindowState::GroupRowsSource source = {
+        .drawsRevision = snapshot.revision,
+        .tuning = snapshot.lodTuning,
+        .handLevels = snapshot.lodHandLevels,
+        .preference = (int) snapshot.lodPreference,
+        .heuristic = snapshot.lodHeuristic,
+    };
+    // The LOD roots' rows change with every snapshot (their measures and choices follow the camera); the render-LOD groups' rows only with
+    // what they are built from, and their live state comes from the GPU each frame (updateLodRows). The roots come with the draws, so
+    // while the group rows are kept the roots' count is too, and their rows are replaced in place.
+    bool groupsKept = source == state.groupRowsSource && state.rootRowCount == scene.lodRoots().size();
+    std::vector<LodWindowRow> rootRows;
+    auto& rows = groupsKept ? rootRows : state.rows;
     rows.clear();
     const auto& tuning = scene.lodTuning();
     auto preference = scene.lodPreference();
@@ -277,7 +290,13 @@ auto buildLodRows(const ViewScene& scene, LodWindowState& state) -> void {
             .shape = std::move(shape),
         });
     }
-    const auto& draws = *scene.snapshot().draws;
+    if (groupsKept) {
+        std::ranges::move(rootRows, state.rows.begin());
+        return;
+    }
+    state.groupRowsSource = std::move(source);
+    state.rootRowCount = rows.size();
+    const auto& draws = *snapshot.draws;
     const auto& hand = scene.lodHandLevels();
     for (uint32_t g = 0; g < draws.drawn.lodGroups.size(); g++) {
         const auto& group = draws.drawn.lodGroups[g];

@@ -84,7 +84,9 @@ do its draws: only where it is placed.
 - **Shared with the main thread.** The scene thread's tree and lists are shared with what it published: a placement or a chunk of slots
   (`ChunkedList`) a published snapshot holds is copied before it changes, so publishing copies no slots. `SceneDraws` holds the slots, the
   tree, the prim paths and the assets per prim; what the queries derive from them (the records, the prims per asset, the slots per prim) is
-  gathered from it on the first query.
+  gathered from it on the first query. The rest a snapshot carries that seldom changes (the asset ids, the layer stack, the World's LOD
+  levels, the hand-set levels, the tuning) is shared with the snapshot before until it changes, so a snapshot published for a camera move
+  copies, and later frees, little more than the LOD choices.
 - **Freed off the main thread.** A snapshot the main thread lets go of (`update` takes the next) goes back to the scene thread, which frees
   it on its next wake without publishing; one the main thread never took is freed after the lock, and a change list joins the pending
   one by moving its lists when that is empty. So `update` and `takeChanges` swap pointers under the lock and wait on nothing large.
@@ -177,7 +179,8 @@ do its draws: only where it is placed.
   records, the LOD window (a loaded level's tooltip: the resident levels and why), the Scene Flow window and the Engine Map show what was
   unloaded.
 - **The LOD tool** (`lodtool.*`, the LOD window `src/ui/lodwindow.*`): one place for LOD inspection, switching and tuning, both kinds.
-  - *The list*: every streaming root drawn and every render-LOD group placed (`buildLodRows` per snapshot; a group's wanted, drawn, fade
+  - *The list*: every streaming root drawn and every render-LOD group placed (`buildLodRows` per snapshot: the roots' rows each time, the groups'
+    only when the draws, the tuning, the hand-set levels, the preference or the heuristic's state changed; a group's wanted, drawn, fade
     and measure from the readback each frame while the window or a layer is shown, so the frames read every group's state back then: 16
     bytes a group). Filters by path, kind, under the selection, not drawing what it wants, fading. A level picker per row (`lod`,
     `lod-reset` on a group's path force its level), "Set shown", click selects, double-click frames.
@@ -195,7 +198,7 @@ do its draws: only where it is placed.
     records use. `LodTuningChanged` traces a change; `LodTuningRefused` a path with no root, a heuristic not there, thresholds out of order.
     The `lod`, `streaming`, `renderlod` and `lodtool` records carry the tuning; rows say `tuned`.
   - *Layers* (`view.lod.visualize`, `lod-show labels|gizmo|gizmo-all|flash on|off`, the window): the LOD Level view (`view lodlevel`: a
-    colour per drawn level; a render-LOD group at a forced level striped, one drawing another level than it wants checkered); labels over
+    colour per drawn level, at half strength over the lit image; a render-LOD group at a forced level striped, one drawing another level than it wants checkered); labels over
     the roots (name, drawn level, fade, measure; a click selects); the heuristic gizmo of the selected or every shown root (`DebugDraw`: the
     distance's center or box, a ring per threshold at the distance it is reached, a screen size's from the view's window, in the colour of
     the level beyond it, a faint ring where a band ends); the pop flash (a group whose drawn level changed without a fade flashes white
@@ -221,7 +224,7 @@ do its draws: only where it is placed.
   - *Layers* (`view.streaming.visualize`, `streaming-show bounds|rings|rings-all|labels on|off`, the window): each root's bounds in its
     state's colour (yellow with findings); the selected or every shown root's load (solid) and unload (faint) radii per boundary, its bounds
     grown by the radius in the plane across the up axis; labels under the windows (name, drawn / selected, state, its name; a click
-    selects); and the streaming view (`debugview streaming`): every draw in its streaming root's state's colour, a root with findings
+    selects); and the streaming view (`debugview streaming`): every draw in its streaming root's state's colour at half strength over the lit image, a root with findings
     striped yellow, grey under none. Each draw carries its streaming root's slot (`RenderMeshInstance::streamRoot`, taken by the root while
     it is drawn, `streamRootSlot`); the main thread gives the renderer each slot's state while the view is on (`src/renderer/README.md`,
     the debug views).

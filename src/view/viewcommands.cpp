@@ -1532,12 +1532,12 @@ auto gpuSceneRecord(const ViewContext& view) -> Json {
 auto sceneRecord(const ViewContext& view) -> Json {
     const auto& snapshot = view.scene.snapshot();
     auto lodLevels = Json::object();
-    for (const auto& [root, level] : snapshot.lodLevels) {
+    for (const auto& [root, level] : *snapshot.lodLevels) {
         lodLevels[root] = level;
     }
     return {
         {"scene", view.sceneLabel},
-        {"layerStack", snapshot.layerStack},
+        {"layerStack", *snapshot.layerStack},
         {"upAxis", snapshot.upAxis},
         {"metersPerUnit", snapshot.metersPerUnit},
         {"up", vec3Json(view.scene.worldUp())},
