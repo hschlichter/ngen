@@ -1,6 +1,6 @@
 # Debug camera: watching the main camera from outside
 
-**Status. In progress.** Built 2026-10-31. Decisions as leaned, pushback welcome. Comes before [plan_streaming_budgets.md](plan_streaming_budgets.md): budgets are
+**Status. Landed.** Built 2026-10-31. Decisions as leaned, pushback welcome. Comes before [plan_streaming_budgets.md](plan_streaming_budgets.md): budgets are
 easier to judge when the refused and late roots can be watched around the player from above.
 
 ## Current state

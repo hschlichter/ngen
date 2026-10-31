@@ -1,6 +1,6 @@
 # Camera modes: orbit and ground following
 
-**Status. In progress.** Decisions locked 2026-10-31 (Henrik): built on what exists, nothing new to accommodate collision. Built
+**Status. Landed.** Decisions locked 2026-10-31 (Henrik): built on what exists, nothing new to accommodate collision. Built
 2026-10-31. Builds on
 [plan_debug_camera.md](plan_debug_camera.md): the modes act on the camera that has the controls (the main camera, or the debug camera
 while it is on).

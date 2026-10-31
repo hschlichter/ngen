@@ -1,7 +1,5 @@
 #pragma once
 
-#include "enginemap.h"
-
 #include "rpcrecords.h"
 #include "rpcregistry.h"
 #include "sessionscript.h"
@@ -139,9 +137,6 @@ auto lodCamera(const ViewContext& view) -> const Camera&;
 // Answers the render-LOD requests whose readback has arrived; once a frame, after the culling readback is taken. True while some still
 // wait, so the next frames read the states back.
 auto serviceRenderLodRequests(ViewContext& view) -> bool;
-
-// The Engine Map's live numbers, a few lines per node (the window and the `map` record show the same).
-auto engineMapStats(const ViewContext& view) -> EngineMapStats;
 
 // Moves the camera to an asset: the next of its draws (the first go-to picks the nearest), framed and its prim selected, or with `all`
 // every draw framed together. `index` and `count` say where in its draws it is; `error` is set when nothing draws it.

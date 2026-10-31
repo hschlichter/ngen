@@ -1,7 +1,5 @@
 #include "lodwindow.h"
 
-#include "enginemap.h"
-
 #include <imgui.h>
 
 #include <algorithm>
@@ -614,7 +612,6 @@ auto drawLodWindow(bool& show, LodWindowState& state) -> void {
         return;
     }
 
-    drawEngineMapLink("scene.compose");
     drawControls(state);
     drawLayers(state);
     {

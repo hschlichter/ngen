@@ -1,7 +1,5 @@
 #include "streamingwindow.h"
 
-#include "enginemap.h"
-
 #include <imgui.h>
 
 #include <algorithm>
@@ -650,7 +648,6 @@ auto drawStreamingWindow(bool& show, StreamingWindowState& state) -> void {
         ImGui::End();
         return;
     }
-    drawEngineMapLink("scene.residency");
     drawOverview(state);
     drawControls(state);
     ImGui::Separator();

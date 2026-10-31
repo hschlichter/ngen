@@ -1,6 +1,9 @@
 # Streaming budgets: what fits, and in what order it comes
 
-**Status. Draft.** Decisions as leaned, pushback welcome. Third of three plans: [plan_streaming_domain.md](plan_streaming_domain.md) (what is
+**Status. Draft.** Set aside 2026-10-31 (Henrik): no observed need. Nothing measured runs short of memory, and there is no memory target
+(a minimum-spec machine, a console) to budget against; whether request order causes the late switches a flight shows hasn't been
+measured. Taken up again when one of those shows: a memory target or a measured peak near the device's limit (the memory budgets,
+steps 1-3), or late levels found waiting behind others (the request order alone, step 4). Decisions as leaned, pushback welcome. Third of three plans: [plan_streaming_domain.md](plan_streaming_domain.md) (what is
 resident), [plan_streaming_tool.md](plan_streaming_tool.md) (the window and overlays, where these budgets are set), this one (what fits).
 
 ## Current state

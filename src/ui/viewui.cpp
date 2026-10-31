@@ -118,8 +118,6 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         .showAssets = showAssetsWindow,
         .showLod = showLodWindow,
         .showStreaming = showStreamingWindow,
-        .showSceneFlow = showSceneFlowWindow,
-        .showEngineMap = showEngineMapWindow,
         .introspection = introspectionFlags,
         .requestQuit = requestQuit,
     };
@@ -231,21 +229,6 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     {
         PROFILE_ZONE("StreamingWindow");
         drawStreamingWindow(showStreamingWindow, streamingState);
-    }
-    {
-        PROFILE_ZONE("SceneFlowWindow");
-        drawSceneFlowWindow(showSceneFlowWindow, sceneFlowState);
-    }
-    {
-        PROFILE_ZONE("EngineMapWindow");
-        // A "Map" link in another window: open the map at its node.
-        if (auto focus = takeEngineMapFocus(); !focus.empty()) {
-            showEngineMapWindow = true;
-            engineMapState.selected = focus;
-            engineMapState.scrollToSelected = true;
-            engineMapState.focusWindow = true;
-        }
-        drawEngineMapWindow(showEngineMapWindow, engineMapState, [this](const char* window) { setIntrospectionWindow(window, true); });
     }
     {
         PROFILE_ZONE("CullingWindow");
@@ -409,10 +392,6 @@ auto ViewUI::setIntrospectionWindow(std::string_view name, bool on) -> bool {
         showLodWindow = on;
     } else if (name == "streaming") {
         showStreamingWindow = on;
-    } else if (name == "sceneflow") {
-        showSceneFlowWindow = on;
-    } else if (name == "enginemap") {
-        showEngineMapWindow = on;
     } else if (name == "camera") {
         showCameraWindow = on;
     } else if (name == "renderdebug") {

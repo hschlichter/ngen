@@ -1672,41 +1672,6 @@ auto sceneThreadRecord(const ViewContext& view) -> Json {
     };
 }
 
-auto mapRecord(const ViewContext& view) -> Json {
-    auto stats = engineMapStats(view);
-    auto lanes = Json::array();
-    for (const auto* lane : engineMapLanes()) {
-        lanes.push_back(lane);
-    }
-    auto nodes = Json::array();
-    for (const auto& node : engineMapNodes()) {
-        auto records = Json::array();
-        for (const auto* record : node.records) {
-            records.push_back(record);
-        }
-        auto windows = Json::array();
-        for (const auto* window : node.windows) {
-            windows.push_back(window);
-        }
-        auto it = stats.find(node.id);
-        nodes.push_back({
-            {"id", node.id},
-            {"label", node.label},
-            {"lane", engineMapLanes()[(size_t) node.lane]},
-            {"description", node.description},
-            {"records", records},
-            {"windows", windows},
-            {"readme", node.readme},
-            {"now", it != stats.end() ? Json(it->second) : Json::array()},
-        });
-    }
-    auto edges = Json::array();
-    for (const auto& edge : engineMapEdges()) {
-        edges.push_back({{"from", edge.from}, {"to", edge.to}, {"what", edge.what}});
-    }
-    return {{"lanes", lanes}, {"nodes", nodes}, {"edges", edges}};
-}
-
 auto gpuSceneRecord(const ViewContext& view) -> Json {
     auto s = view.renderThread.latestSceneGpuStats();
     const auto& u = s.uploads;
@@ -2662,65 +2627,6 @@ auto serviceRenderLodRequests(ViewContext& view) -> bool {
     return answerRenderLodRequests(view);
 }
 
-auto engineMapStats(const ViewContext& view) -> EngineMapStats {
-    EngineMapStats stats;
-    auto assets = view.assets.stats();
-    const auto& t = view.scene.threadStats();
-    const auto& r = view.residency;
-    auto gpu = view.renderThread.latestSceneGpuStats();
-    const auto& cull = view.latestCull;
-    auto mib = [](uint64_t bytes) -> double {
-        return (double) bytes / (1024.0 * 1024.0);
-    };
-    stats["assets.packing"] = {std::format("{} packed for this view", assets.packed)};
-    stats["assets.cache"] = {std::format("{} answered from the cache", assets.cached)};
-    stats["assets.delivery"] = {std::format("{:.1f} MiB to this view", mib(assets.bytes))};
-    stats["view.assetclient"] = {std::format("{} in flight, {} received", assets.inFlight(), assets.received), std::format("{} failed", assets.failed)};
-    stats["scene.lod"] = {std::format("{} roots, heuristic {}", t.lodRootsEvaluated, view.scene.lodHeuristic() ? "on" : "off"),
-                          std::format("last: {} finer, {} coarser", t.lodFiner, t.lodCoarser),
-                          std::format("unloaded: {} levels, {} contents, {} mesh packs ({:.1f} MiB)", t.releasedLevels, t.releasedContents, t.releasedMeshes, mib(t.releasedMeshBytes))};
-    stats["scene.residency"] = {std::format("{} loads, {} reloads, {} released", view.scene.streaming().loads, view.scene.streaming().reloads, view.scene.streaming().released),
-                                std::format("{} roots late, {} drawing nothing, {} findings", view.scene.streaming().lateNow, view.scene.streaming().holesNow, view.scene.streaming().findings)};
-    stats["scene.compose"] = {std::format("{} composes, last {:.1f} ms", t.composes, t.lastComposeMs),
-                              std::format("{} layer packs, {} in flight", t.layerPacks, t.inFlightLayers),
-                              std::format("{} contents held, {} released", t.prototypesHeld + t.levelsHeld, t.releasedContents)};
-    stats["scene.placement"] = {std::format("{} placements ({} drawn), last change {:.1f} ms", t.placements, t.placementsDrawn, t.lastPlaceMs),
-                                std::format("{} meshes, {} materials, {} textures", t.meshEntries, t.materialEntries, t.textureEntries)};
-    stats["scene.changes"] = {std::format("{} change lists sent", gpu.changeListsSubmitted), view.scene.idle() ? std::string("scene thread idle") : std::string("scene thread working")};
-    stats["main.scene"] = {r.resident ? std::string("resident") : std::format("loading, {} frames", r.loadingFrames), std::format("script frame {}{}", r.scriptFrame, r.scriptHeld ? ", held" : "")};
-    stats["main.input"] = {std::format("{:.1f} m/s", view.cam.speed)};
-    stats["main.frame"] = {std::format("frame {}", view.frameCounter)};
-    size_t pending = 0;
-    size_t failed = 0;
-    auto pipelines = view.renderer.pipelineInfos();
-    for (const auto& info : pipelines) {
-        if (info.state == PipelineState::Failed) {
-            failed++;
-        } else if (info.state != PipelineState::Ready) {
-            pending++;
-        }
-    }
-    stats["render.pipelines"] = {std::format("{} pipelines, {} pending, {} failed", pipelines.size(), pending, failed)};
-    stats["render.gpuscene"] = {std::format("{} draw slots, {} meshes", gpu.drawSlots, gpu.meshes), std::format("{} materials, {} textures", gpu.materials, gpu.textures)};
-    {
-        const auto& cull = view.latestCull;
-        std::string drawing;
-        for (size_t level = 0; level < cull.lodPicked.size(); level++) {
-            if (cull.lodPicked[level] > 0) {
-                drawing += std::format("{}L{} {}", drawing.empty() ? "" : ", ", level, cull.lodPicked[level]);
-            }
-        }
-        stats["render.lodselect"] = {std::format("{} groups: {}", cull.lodGroups, drawing.empty() ? std::string("none drawing") : drawing),
-                                     std::format("{} falling back, {} forced; {} slots of levels not drawn", cull.lodFallbacks, cull.lodForced, cull.lodDropped)};
-    }
-    stats["render.uploads"] = {std::format("{} queued, {:.1f} MiB", gpu.uploads.queued, mib(gpu.uploads.queuedBytes)), std::format("budget {:.0f} MiB per frame", mib(gpu.uploads.budget))};
-    const auto& pool = gpu.geometryPool;
-    stats["render.pool"] = {std::format("{:.1f}M of {:.1f}M vertices", (double) pool.vertexUsed / 1e6, (double) pool.vertexLimit / 1e6),
-                            pool.waitingMeshes > 0 ? std::format("{} meshes waiting", pool.waitingMeshes) : std::string("nothing waiting")};
-    stats["render.framegraph"] = {std::format("{} of {} instances drawn", cull.instances - cull.cameraCulled, cull.instances), std::format("{:.1f}M triangles", (double) cull.cameraTriangles / 1e6)};
-    return stats;
-}
-
 auto goToAsset(ViewContext& view, const std::string& assetId, bool all) -> AssetGoToResult {
     AssetGoToResult result;
     auto prims = view.scene.drawsOf(assetId);
@@ -2800,9 +2706,6 @@ auto registerViewRecords(RpcRecords& records, RpcRegistry& registry, ViewContext
     });
     records.add("scene", "the open scene: its layer stack, up axis and units, prims (instances expanded), prototypes, draws, lights and LOD levels set", [&view](RpcResponder responder) {
         responder.respond(sceneRecord(view));
-    });
-    records.add("map", "the engine as a map: lanes (processes, threads), nodes (what each part is, its records, windows and README, its live numbers) and edges (what flows between them)", [&view](RpcResponder responder) {
-        responder.respond(mapRecord(view));
     });
     records.add("scenethread", "the scene thread: requests, composes and placement passes, assets in flight and held, and residency (the script's hold, the load's longest frame)", [&view](RpcResponder responder) {
         responder.respond(sceneThreadRecord(view));

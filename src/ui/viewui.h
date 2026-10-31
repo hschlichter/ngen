@@ -6,7 +6,6 @@
 #include "counterswindow.h"
 #include "cullingwindow.h"
 #include "debugviewwindow.h"
-#include "enginemapwindow.h"
 #include "framedebuggerwindow.h"
 #include "framegraphdebug.h"
 #include "gpuscenewindow.h"
@@ -15,7 +14,6 @@
 #include "memorywindow.h"
 #include "performancewindow.h"
 #include "renderdebugwindow.h"
-#include "sceneflowwindow.h"
 #include "statusbar.h"
 #include "streamingwindow.h"
 
@@ -144,7 +142,7 @@ public:
 
     // grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa, cascadefrusta; false if the name is unknown.
     auto setOverlay(std::string_view name, bool on) -> bool;
-    // Opens or closes an introspection window by name (memory, capture, framedebugger, gpuscene, counters, shaders, culling, assets, lod, streaming, sceneflow, enginemap, camera,
+    // Opens or closes an introspection window by name (memory, capture, framedebugger, gpuscene, counters, shaders, culling, assets, lod, streaming, camera,
     // renderdebug, framegraph, performance).
     // Returns false for an unknown name.
     auto setIntrospectionWindow(std::string_view name, bool on) -> bool;
@@ -182,15 +180,9 @@ public:
     auto lodWindow() -> LodWindowState& { return lodState; }
     auto streamingWindow() -> StreamingWindowState& { return streamingState; }
     auto wantsStreamingWindow() const -> bool { return showStreamingWindow; }
-    // The Scene Flow window: the application sets its data each frame while it is open, and applies the settings it asks for.
-    auto sceneFlowWindow() -> SceneFlowWindowState& { return sceneFlowState; }
-    auto wantsSceneFlow() const -> bool { return showSceneFlowWindow; }
-    // The Engine Map: the application sets its live numbers each frame while it is open.
-    auto wantsEngineMap() const -> bool { return showEngineMapWindow; }
     // Whether the LOD and Camera windows are open: their lists are built from the scene only then.
     auto wantsLodWindow() const -> bool { return showLodWindow; }
     auto wantsCameraWindow() const -> bool { return showCameraWindow; }
-    auto setEngineMapStats(EngineMapStats stats) -> void { engineMapState.stats = std::move(stats); }
     auto setBookmarkPath(std::string path) -> void {
         cameraState.bookmarkPath = std::move(path);
         cameraState.loaded = false;
@@ -255,10 +247,6 @@ private:
     LodWindowState lodState;
     bool showStreamingWindow = false;
     StreamingWindowState streamingState;
-    bool showSceneFlowWindow = false;
-    SceneFlowWindowState sceneFlowState;
-    bool showEngineMapWindow = false;
-    EngineMapWindowState engineMapState;
     std::vector<AssetLogEntry> assetLog;
     AssetsWindowState assetsState;
     uint32_t cullStatInstances = 0;

@@ -54,7 +54,7 @@ do its draws: only where it is placed.
   frames: it asks the renderer for every group's state) has the groups and their slots per level, what the GPU picked, and a check of every
   pick against this heuristic at the camera the GPU measured from (`check.differ` 0 but on a threshold's edge); `view.renderlod {path}`
   lists the groups under a path. The LOD window lists every group beside the streaming roots ("The LOD tool" below); the Culling window
-  counts the slots of levels not drawn; the Engine Map's "LOD select" is the GPU's pick.
+  counts the slots of levels not drawn.
 - **Walks.** A content is walked once per version and inherited state: the walk keeps, in walk order, the prims that draw, light, frame,
   root LOD or have variant sets, with transforms relative to the content's root, and where its instances and levels sit (`ContentWalk`).
   Every placement of the content uses the kept walk; one with a gizmo's move under it is walked afresh, with the move.
@@ -204,8 +204,7 @@ do its draws: only where it is placed.
   placement uses leave the libraries and the renderer, and a mesh's pack goes once no placement names it. While resident and not drawn, a
   level is placed undrawn and holds its library and GPU entries, so switching to it draws at once. Layer packs and material and texture packs
   stay held. `LevelsUnloaded` traces each batch that let something go (levels, contents, mesh packs), and the `streaming` and `scenethread`
-  records, the LOD window (a loaded level's tooltip: the resident levels and why), the Scene Flow window and the Engine Map show what was
-  unloaded.
+  records and the LOD window (a loaded level's tooltip: the resident levels and why) show what was unloaded.
 - **The LOD tool** (`lodtool.*`, the LOD window `src/ui/lodwindow.*`): one place for LOD inspection, switching and tuning, both kinds.
   - *The list*: every streaming root drawn and every render-LOD group placed (`buildLodRows` per snapshot: the roots' rows each time, the groups'
     only when the draws, the tuning, the hand-set levels, the preference or the heuristic's state changed; a group's wanted, drawn, fade
@@ -283,33 +282,20 @@ The trace shows the steps:
 - `SceneResident`;
 - and `SceneAssetFailed` or `CompositionMessage` warnings.
 
-## Where everything sits: the Engine Map
+## How a scene reaches the screen
 
-The Engine Map (Windows > Engine Map, `window enginemap`) is the engine drawn as lanes, one per process or thread (ngen-asset-server, the
-asset client's I/O thread, the scene thread, the main thread, the render thread), with its parts as nodes in the order data flows and arrows
-for what flows between them. Selecting a node labels its arrows and shows what it is, what it receives and hands on, its live numbers, its
-records (those of the process it runs in), the windows that show it (a button opens each) and its README. Windows about one part carry a
-"Map: <lane> > <part>" link that opens the map at it.
-
-The map is hand-written (`src/ui/enginemap.cpp`): it says what each part means, which a map derived from threads or profiler zones
-couldn't. A new part of the engine adds its node and edges there with its records and windows; its live numbers come from
-`engineMapStats` (`viewcommands.cpp`), which the `map` record serves too.
-
-## How a scene reaches the screen: the Scene Flow window
-
-The Scene Flow window (Windows > Scene Flow) shows the path from the asset server to the screen, stage by stage in the order data flows, each
-saying what it is and where its data goes next:
+From the asset server to the screen, stage by stage in the order data flows:
 1. **Asset client**: requested, received (packed or from the server's cache), failed, in flight.
 2. **Scene thread**: requests posted and applied, batches, composes and placement passes (count, whether one is needed, the placements and
    those drawn, the last changing pass's time, placements built and slots added, removed and updated, walks built and kept), assets in flight
    by kind, packs held, library entries, idle.
 3. **Change lists**: what a placement pass changed, which the main thread takes each frame and hands to the render thread.
 4. **GPU scene** (render thread): change lists submitted and drawn, the tables, the upload queue (queued, budget, the last SceneUpload pass)
-   and the geometry pool (use against capacity and limit, meshes waiting for room). The upload budget and the pool limit are set here.
+   and the geometry pool (use against capacity and limit, meshes waiting for room).
 5. **Residency**: resident or loading, the script's hold, and the last load's frames and longest frame.
 
-The same numbers are the `scenethread` record (stages 2 and 5) and the `gpuscene` record (stage 4), which the render thread publishes after
-every frame whatever window is open. `view.gpuscene.set {uploadBudgetMiB, geometryLimitMiB}` (the `gpuscene budget=…,limit=…` verb) sets the
+Their numbers are the `assets` record (stage 1), the `scenethread` record (stages 2 and 5) and the `gpuscene` record (stage 4), which the
+render thread publishes after every frame. `view.gpuscene.set {uploadBudgetMiB, geometryLimitMiB}` (the `gpuscene budget=…,limit=…` verb) sets the
 budget and the limit from the next frame; lowering the limit stops growth, it doesn't shrink the pool.
 
 The hemisphere ambient is a setting too: `view.ambient {sky, ground, reset}` (the `ambient sky=r,g,b ground=r,g,b` verb), the Render Debug
