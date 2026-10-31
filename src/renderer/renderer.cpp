@@ -1038,6 +1038,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         LightingInputs lighting;
         lighting.up = snapshot.worldUp;
         lighting.ambient = snapshot.ambient;
+        lighting.cascadeCamera = snapshot.cascadeCamera;
         if (picked != nullptr) {
             auto raw = glm::vec3(picked->worldTransform[2]);
             lighting.direction = glm::dot(raw, raw) > 1e-6f ? glm::normalize(raw) : snapshot.worldUp;

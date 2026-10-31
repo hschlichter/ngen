@@ -17,6 +17,8 @@ layout(set = 0, binding = 2) uniform LightUBO {
     vec4 ambientUp;     // xyz = the scene's up axis
     vec4 skyAmbient;    // ambient on faces turned up, as a fraction of the light's radiance
     vec4 groundAmbient; // ambient on faces turned down
+    vec4 cascadeEye;    // xyz = the eye the cascades were fitted from, w = 1 when it isn't the camera rendered from
+    vec4 cascadeForward;
 } light;
 layout(set = 0, binding = 3) uniform sampler2D gbufferDepth;
 layout(set = 0, binding = 4) uniform sampler2D shadowMap;          // atlas, plain reads
@@ -182,7 +184,8 @@ vec3 sampleBuffer(int mode, vec2 uv) {
     if (mode == 2) return normalize(normal) * 0.5 + 0.5;
     float depth = texture(gbufferDepth, uv).r;
     vec3 worldPos = reconstructWorld(uv, depth);
-    float viewDepth = linearizeDepth(depth);
+    // The depth that picks the cascade: from the camera the cascades were fitted to, which a debug camera rendered from isn't.
+    float viewDepth = light.cascadeEye.w > 0.5 ? dot(worldPos - light.cascadeEye.xyz, light.cascadeForward.xyz) : linearizeDepth(depth);
     float shadow = sampleShadow(worldPos, normal, viewDepth);
     // shadow factor per channel: full light where lit, shadowTint where shadowed
     vec3 shadowFactor = mix(light.shadowTint.rgb, vec3(1.0), shadow);

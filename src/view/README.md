@@ -166,7 +166,8 @@ do its draws: only where it is placed.
   `camera-use`, `fly`, `--camera`, scene cameras and bookmarks) moves it, and it drives what is decided from a viewpoint: residency, the
   LOD heuristic and render LOD (`RenderSnapshot::lodEye`; the LOD and Streaming inspectors and the Streaming map measure from the same
   camera, `lodCamera`), culling and the shadow cascades. While the debug camera is on, the view renders from it (and picks, drags gizmos
-  and places labels through it), and each of the three can be switched to it: `debug-camera lod|cull|shadows main|debug` (`lodFromDebug`,
+  and places labels through it; the lighting picks each pixel's shadow cascade by its depth from the shadow camera, not the one rendered
+  from), and each of the three can be switched to it: `debug-camera lod|cull|shadows main|debug` (`lodFromDebug`,
   `cullFromDebug`, `shadowsFromDebug`, the Camera window's switches), all main by default. Turned on, it is placed 15 m behind and 10 m above the
   main camera, looking at it. The keys and mouse move it; C (`debug-camera control main|debug`, `controlMain`) hands them to the main
   camera while the view stays. The main camera is drawn in it: its frustum to the shadow distance, a box at its eye with its forward axis,

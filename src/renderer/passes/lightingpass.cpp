@@ -133,6 +133,10 @@ auto LightingPass::addPass(
                 .skyAmbient = glm::vec4(lightInputs.ambient.sky, 0.0f),
                 .groundAmbient = glm::vec4(lightInputs.ambient.ground, 0.0f),
             };
+            if (lightInputs.cascadeCamera) {
+                lightUbo.cascadeEye = glm::vec4(lightInputs.cascadeCamera->first, 1.0f);
+                lightUbo.cascadeForward = glm::vec4(lightInputs.cascadeCamera->second, 0.0f);
+            }
             for (uint32_t c = 0; c < maxShadowCascades; c++) {
                 const auto& cascade = cascadeCopy[c < cascadeCount ? c : 0];
                 lightUbo.cascadeViewProj[c] = cascade.viewProj;

@@ -374,7 +374,8 @@ Cascaded shadow maps in one atlas: one tile for a single cascade, a 2×2 grid ot
 thread fits the cascades (`fitShadowCascades`: practical split scheme, bounding-sphere ortho frusta snapped to texels) from the near plane to the
 shadow distance (`ShadowCascadeSettings::maxDistance`, 200 m by default, the Render Debug window's slider and `shadow distance=`), pulled in to the
 scene bounds; beyond it surfaces are lit without shadow. It puts them in the snapshot; the GPU culling tests instances against each cascade; the
-lighting pass picks the cascade by view depth and samples the atlas with a hardware compare sampler (3×3 PCF by default). The shadow maps use
+lighting pass picks the cascade by view depth (from the camera the cascades were fitted to, `RenderSnapshot::cascadeCamera`, when that
+isn't the camera rendered from: a debug camera watching the main camera) and samples the atlas with a hardware compare sampler (3×3 PCF by default). The shadow maps use
 standard depth (cleared to 1, compare `LessOrEqual`): each cascade's orthographic depth is linear and fitted to it, so reversing it gains nothing.
 
 ## Depth

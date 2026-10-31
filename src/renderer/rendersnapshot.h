@@ -10,6 +10,8 @@
 
 #include <glm/glm.hpp>
 
+#include <optional>
+#include <utility>
 #include <vector>
 
 // Material sampler state, editable live from the Render Debug View tab and the
@@ -66,6 +68,9 @@ struct RenderSnapshot {
     AmbientSettings ambient;
     uint32_t cascadeCount = 0;
     std::array<ShadowCascade, maxShadowCascades> cascades;
+    // The camera the cascades were fitted to, when it isn't the one rendered from (a debug camera watching the main camera): the lighting
+    // pass picks a pixel's cascade by its depth from this camera instead.
+    std::optional<std::pair<glm::vec3, glm::vec3>> cascadeCamera; // eye, forward
 
     std::vector<GizmoVertex> translateGizmoVerts;
     std::vector<GizmoVertex> rotateGizmoVerts;

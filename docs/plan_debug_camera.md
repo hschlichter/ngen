@@ -156,7 +156,9 @@ reversed), and each of LOD and streaming, culling and shadows can be switched to
 view|main`. LOD and streaming are one switch: the scene's LOD heuristic, residency and the GPU's render LOD answer the same "where is the
 viewer". Checked at the village with the main camera stepped 30 frames: with the defaults, the `streaming` record's 396 roots, the `culling`
 record and render LOD's levels not drawn equal the run without the debug camera; with all three on the debug camera, 82 roots change
-state, culling draws what the debug camera sees, and the measures are from it. The 8 reference images byte-identical.
+state, culling draws what the debug camera sees, and the measures are from it. The 8 reference images byte-identical. The lighting pass also picks each pixel's cascade by its depth from the shadow camera
+(`RenderSnapshot::cascadeCamera`) when that isn't the camera rendered from; before, cascades fitted to the main camera were chosen by depth
+from the debug camera.
 
 ## Deferred / follow-ups
 

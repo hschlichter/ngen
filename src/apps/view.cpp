@@ -1474,6 +1474,7 @@ auto main(int argc, char* argv[]) -> int {
             .ambient = viewUI.ambientSettings(),
             .cascadeCount = cascadeCount,
             .cascades = cascades,
+            .cascadeCamera = &shadowCamera != &viewCamera() ? std::optional<std::pair<glm::vec3, glm::vec3>>({shadowCamera.position, shadowCamera.forward()}) : std::nullopt,
             .translateGizmoVerts = {translateGizmo.vertices().begin(), translateGizmo.vertices().end()},
             .rotateGizmoVerts = {rotateGizmo.vertices().begin(), rotateGizmo.vertices().end()},
             .scaleGizmoVerts = {scaleGizmo.vertices().begin(), scaleGizmo.vertices().end()},

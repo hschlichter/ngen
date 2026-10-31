@@ -8,7 +8,10 @@
 #include <array>
 #include <cstdint>
 #include <glm/glm.hpp>
+
+#include <optional>
 #include <span>
+#include <utility>
 #include <vector>
 
 class RhiDevice;
@@ -30,6 +33,8 @@ struct LightingUBO {
     glm::vec4 ambientUp;                          // xyz = the scene's up axis, w = unused
     glm::vec4 skyAmbient;                         // xyz = ambient on faces turned up, as a fraction of the light's radiance
     glm::vec4 groundAmbient;                      // xyz = ambient on faces turned down, as a fraction of the light's radiance
+    glm::vec4 cascadeEye;                         // xyz = the eye the cascades were fitted from, w = 1 when it isn't the camera rendered from
+    glm::vec4 cascadeForward;                     // xyz = that camera's forward: a pixel's cascade depth is along it
 };
 
 // Pre-resolved per-frame lighting inputs. The renderer picks one active light and flattens
@@ -51,6 +56,7 @@ struct LightingInputs {
     glm::vec3 shadowColor = glm::vec3(0.0f);           // attenuation tint from UsdLuxShadowAPI::shadow:color
     glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);        // the scene's up axis, for the hemisphere ambient
     AmbientSettings ambient;
+    std::optional<std::pair<glm::vec3, glm::vec3>> cascadeCamera; // RenderSnapshot::cascadeCamera
 };
 
 enum class GBufferView : int {
