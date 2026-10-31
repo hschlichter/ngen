@@ -4,6 +4,7 @@
 #include "culling.h"
 #include "debugcamera.h"
 #include "debugdraw.h"
+#include "ground.h"
 #include "imguibackendvulkan.h"
 #include "jobsystem.h"
 #include "lodtool.h"
@@ -411,6 +412,10 @@ auto main(int argc, char* argv[]) -> int {
         return debugCamera.on && !debugCamera.controlMain ? debugCamera.camera : cam;
     };
     bool debugCameraWasOn = false;
+    // The camera modes (the Camera window's), for the camera that has the controls: following the ground, orbiting while Left Alt is held.
+    auto& cameraModes = viewUI.cameraWindow().modes;
+    // The meshes the draws use, for the ground test: kept from the scene's changes as they pass to the renderer.
+    GroundMeshes groundMeshes;
 
     renderer.initGizmos(&cam);
     TranslateGizmo translateGizmo;
@@ -664,6 +669,7 @@ auto main(int argc, char* argv[]) -> int {
         {
             PROFILE_ZONE("TakeChanges");
             if (auto changes = scene.takeChanges(); !changes.empty()) {
+                groundMeshes.apply(changes);
                 renderThread.submitSceneChanges(std::move(changes));
             }
         }
@@ -715,6 +721,41 @@ auto main(int argc, char* argv[]) -> int {
         static const uint32_t pollZoneId = profile::registerName("PollEvents");
         profile::beginZone(pollZoneId);
         uint64_t polledEvents = 0;
+        // A framebuffer pixel from a point in the window (they differ on high-density displays).
+        auto toPixel = [&](float pointX, float pointY) -> glm::uvec2 {
+            int pointsW = 0;
+            int pointsH = 0;
+            SDL_GetWindowSize(window, &pointsW, &pointsH);
+            return {(uint32_t) std::max(0.0f, pointX * (float) winW / (float) std::max(pointsW, 1)),
+                    (uint32_t) std::max(0.0f, pointY * (float) winH / (float) std::max(pointsH, 1))};
+        };
+        // The world point at a pixel of a framebuffer `size` and a depth, through an inverse view-projection.
+        auto unproject = [](glm::uvec2 pixel, glm::uvec2 size, float depth, const glm::mat4& inverseViewProj) -> glm::vec3 {
+            auto ndc = glm::vec4((((float) pixel.x + 0.5f) / (float) size.x * 2.0f) - 1.0f, (((float) pixel.y + 0.5f) / (float) size.y * 2.0f) - 1.0f, depth, 1.0f);
+            auto world = inverseViewProj * ndc;
+            return glm::vec3(world) / world.w;
+        };
+        // Left Alt down starts orbiting around the surface under the cursor: the point at the last pivot's distance along the cursor ray
+        // at once, the depth there when the pick comes back.
+        auto startOrbit = [&](float pointX, float pointY) {
+            auto pixel = toPixel(pointX, pointY);
+            auto inverseViewProj = glm::inverse(proj * viewCamera().viewMatrix());
+            auto eye = viewCamera().position;
+            auto unitsPerMetre = (float) (1.0 / scene.lodMetersPerUnit());
+            auto size = glm::uvec2((uint32_t) winW, (uint32_t) winH);
+            auto direction = glm::normalize(unproject(pixel, size, 1.0f, inverseViewProj) - eye);
+            cameraModes.orbiting = true;
+            cameraModes.pivotPicked = false;
+            cameraModes.pivot = eye + (direction * (cameraModes.pivotDistanceMetres * unitsPerMetre));
+            picking.requestDepth(pixel.x, pixel.y, [&cameraModes, &scene, unproject, pixel, size, inverseViewProj, eye](std::optional<float> depth) {
+                if (!depth || !cameraModes.orbiting || cameraModes.pivotPicked) {
+                    return;
+                }
+                cameraModes.pivot = unproject(pixel, size, *depth, inverseViewProj);
+                cameraModes.pivotPicked = true;
+                cameraModes.pivotDistanceMetres = (float) (glm::distance(eye, cameraModes.pivot) * scene.lodMetersPerUnit());
+            });
+        };
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
             polledEvents++;
@@ -762,6 +803,18 @@ auto main(int argc, char* argv[]) -> int {
                 frameSelected();
                 continue;
             }
+            // G toggles following the ground.
+            if (plainKey && ev.key.key == SDLK_G) {
+                cameraModes.follow = !cameraModes.follow;
+                continue;
+            }
+            if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.scancode == SDL_SCANCODE_LALT && !ev.key.repeat) {
+                float pointX = 0.0f;
+                float pointY = 0.0f;
+                SDL_GetMouseState(&pointX, &pointY);
+                startOrbit(pointX, pointY);
+                continue;
+            }
             // C hands the controls between the debug camera and the main camera while the debug camera is on.
             if (plainKey && ev.key.key == SDLK_C && debugCamera.on) {
                 debugCamera.controlMain = !debugCamera.controlMain;
@@ -792,13 +845,23 @@ auto main(int argc, char* argv[]) -> int {
             if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_RIGHT) {
                 mouseCapture = false;
             }
+            // Mouse look turns in place, or around the pivot while orbiting.
             if (ev.type == SDL_EVENT_MOUSE_MOTION && mouseCapture) {
-                controlledCamera().handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
+                auto& camera = controlledCamera();
+                if (cameraModes.orbiting) {
+                    camera.orbit(cameraModes.pivot, ev.motion.xrel * camera.mouseSensitivity, -ev.motion.yrel * camera.mouseSensitivity);
+                } else {
+                    camera.handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
+                }
                 autoFrame = false;
             }
-            // The wheel changes the fly speed.
+            // The wheel changes the fly speed, or moves toward the pivot while orbiting.
             if (ev.type == SDL_EVENT_MOUSE_WHEEL) {
-                controlledCamera().scaleSpeed(ev.wheel.y);
+                if (cameraModes.orbiting) {
+                    controlledCamera().dolly(cameraModes.pivot, ev.wheel.y);
+                } else {
+                    controlledCamera().scaleSpeed(ev.wheel.y);
+                }
                 continue;
             }
 
@@ -870,9 +933,52 @@ auto main(int argc, char* argv[]) -> int {
         static const uint32_t cameraCullZoneId = profile::registerName("CameraAndCull");
         profile::beginZone(cameraCullZoneId);
         const auto* keys = SDL_GetKeyboardState(nullptr);
+        if (cameraModes.orbiting && !keys[SDL_SCANCODE_LALT]) {
+            cameraModes.orbiting = false;
+        }
+        // Following the ground: the controlled camera moves across it, and its eye is set the height above the highest drawn surface
+        // under it. The ray starts the height above the eye, so ground that rose by up to the height since the last frame is found.
+        auto metersPerUnit = scene.lodMetersPerUnit();
+        cam.followHeight.reset();
+        debugCamera.camera.followHeight.reset();
         auto& controlled = controlledCamera();
+        if (cameraModes.follow) {
+            controlled.followHeight = (float) (cameraModes.followHeightMetres / metersPerUnit);
+        }
         auto camBefore = controlled.position;
         controlled.update(keys, dt);
+        // WASD carry the orbit's pivot along.
+        if (cameraModes.orbiting) {
+            cameraModes.pivot += controlled.position - camBefore;
+        }
+        bool flown = flight.flying() && &controlled == &cam;
+        if (cameraModes.follow && controlled.followHeight) {
+            cameraModes.followHeightMetres = (float) (*controlled.followHeight * metersPerUnit);
+        }
+        if (!cameraModes.follow) {
+            cameraModes.ground.reset();
+            cameraModes.groundPrim.clear();
+        } else if (!cameraModes.orbiting && !flown) {
+            PROFILE_ZONE("GroundTest");
+            auto start = std::chrono::steady_clock::now();
+            auto up = controlled.worldUp;
+            auto height = *controlled.followHeight;
+            GroundTestCounts counts;
+            sceneBoundsCache.update(scene.renderWorld().meshInstances);
+            auto hit = groundBelow(scene.renderWorld(), sceneBoundsCache, groundMeshes, controlled.position + (up * height), up, counts);
+            if (hit) {
+                controlled.position += up * (glm::dot(hit->point, up) + height - glm::dot(controlled.position, up));
+                cameraModes.ground = hit->point;
+                cameraModes.groundPrim = primPathOf(hit->prim);
+            } else {
+                cameraModes.ground.reset();
+                cameraModes.groundPrim.clear();
+            }
+            cameraModes.groundChunks = counts.chunks;
+            cameraModes.groundDraws = counts.draws;
+            cameraModes.groundTriangles = counts.triangles;
+            cameraModes.groundMs = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - start).count();
+        }
         if (controlled.position != camBefore) {
             autoFrame = false;
         }
@@ -944,6 +1050,7 @@ auto main(int argc, char* argv[]) -> int {
             if (debugCamera.on) {
                 drawMainCamera(debugCamera, cam, proj * cam.viewMatrix(), cameraDepthAt(viewUI.getShadowSettings().maxDistance), scene.lodMetersPerUnit(), debugDraw);
             }
+            drawCameraModes(cameraModes, controlledCamera().position, scene.lodMetersPerUnit(), debugDraw);
         }
 
         renderThread.setFrameGraphDebugEnabled(viewUI.wantsFrameGraphDebug() || dumps.wantsFrameGraphDebug());

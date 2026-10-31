@@ -5,6 +5,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <optional>
+
 // The view's projection: reversed-Z (depth 1 at the near plane, falling to 0 at infinity) with no far plane, and the Vulkan y flip. Depth
 // is a 32-bit float, where reversed-Z keeps precision even far away, so nothing is ever clipped at a distance.
 inline constexpr float cameraNear = 0.1f;
@@ -21,6 +23,9 @@ struct Camera {
     float pitch;                                     // degrees, elevation toward worldUp
     float speed;
     float mouseSensitivity;
+    // Following the ground: the eye's height above it in world units. While set, update() moves across the ground by yaw only and Q/E
+    // change the height; the view sets the eye's height from the ground under it.
+    std::optional<float> followHeight;
 
     [[nodiscard]] auto forward() const -> glm::vec3;
     [[nodiscard]] auto right() const -> glm::vec3;
@@ -39,4 +44,9 @@ struct Camera {
     auto place(const glm::mat4& cameraTransform) -> void;
     // Turn to look along a direction, keeping the position; roll dropped and pitch clamped as in place().
     auto lookAlong(glm::vec3 look) -> void;
+    // Turn around a pivot by angles, as mouse look turns in place: yaw around worldUp through the pivot, pitch around the camera's right
+    // (clamped as mouse look clamps it). The distance to the pivot is kept, and the pivot stays where it was in the view.
+    auto orbit(glm::vec3 pivot, float yawDegrees, float pitchDegrees) -> void;
+    // Move toward the pivot (positive steps) or away from it, each step 15% of the distance, never through it.
+    auto dolly(glm::vec3 pivot, float steps) -> void;
 };

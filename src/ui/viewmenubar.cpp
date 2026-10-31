@@ -47,6 +47,7 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::MenuItem("Show Shadow Overlay", nullptr, &state.showShadowOverlay);
         ImGui::MenuItem("Anti-Aliasing (FXAA)", nullptr, &state.antiAliasing);
         ImGui::Separator();
+        ImGui::MenuItem("Follow Ground", "G", &state.followGround);
         ImGui::MenuItem("Debug Camera", nullptr, &state.debugCamera);
         ImGui::MenuItem("Controls Move Main Camera", "C", &state.debugCameraControlMain, state.debugCamera);
         ImGui::Separator();

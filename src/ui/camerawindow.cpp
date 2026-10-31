@@ -92,6 +92,33 @@ auto drawDebugCamera(DebugCameraState& debug) -> void {
     }
 }
 
+// The camera modes' section: following the ground and orbiting, for the camera that has the controls.
+auto drawCameraModes(CameraModesState& modes) -> void {
+    ImGui::Checkbox("Follow ground", &modes.follow);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Keep the eye a height above the highest drawn surface under it (render geometry: ground cover and roofs count).\nWASD move across the ground, Q/E change the height. G toggles it.");
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("(G)");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::DragFloat("height (m)", &modes.followHeightMetres, 0.05f, 0.0f, 1000.0f, "%.2f");
+    if (modes.follow) {
+        if (modes.ground) {
+            ImGui::Text("Ground at %.2f, %.2f, %.2f", modes.ground->x, modes.ground->y, modes.ground->z);
+            ImGui::TextWrapped("on %s", modes.groundPrim.c_str());
+        } else {
+            ImGui::TextDisabled("No drawn surface under the camera: the height is held.");
+        }
+        ImGui::Text("Tested %u chunks, %u draws, %llu triangles in %.2f ms", modes.groundChunks, modes.groundDraws, (unsigned long long) modes.groundTriangles, modes.groundMs);
+    }
+    if (modes.orbiting) {
+        ImGui::Text("Orbiting %.2f, %.2f, %.2f%s", modes.pivot.x, modes.pivot.y, modes.pivot.z, modes.pivotPicked ? "" : " (the cursor's depth on its way)");
+    } else {
+        ImGui::TextDisabled("Hold Left Alt: right-drag orbits the surface under the cursor, the wheel moves toward it.");
+    }
+}
+
 } // namespace
 
 void drawCameraWindow(bool& show, Camera& camera, CameraWindowState& state) {
@@ -141,6 +168,9 @@ void drawCameraWindow(bool& show, Camera& camera, CameraWindowState& state) {
     if (ImGui::Button("Frame selected")) {
         state.requestFrameSelected = true;
     }
+
+    ImGui::Separator();
+    drawCameraModes(state.modes);
 
     ImGui::Separator();
     drawDebugCamera(state.debug);

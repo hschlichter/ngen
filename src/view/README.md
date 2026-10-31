@@ -172,6 +172,21 @@ do its draws: only where it is placed.
   and its trail, a point every 2 m it moved (the last 500; `debug-camera trail on|off|clear`). `camera <pose> debug` and
   `view.camera.set/get {camera: "debug"}` place and read it; the `status` record's `debugCamera` holds its state. The corner axis gizmo still
   shows and turns the main camera.
+- **Camera modes** (`ground.*`, the Camera window's mode section, the View menu): for the camera that has the controls.
+  - *Orbit*: while Left Alt is held, right-drag turns around a pivot (yaw around the up axis through it, pitch around the camera's right,
+    the distance kept, `Camera::orbit`) and the wheel moves toward it (`Camera::dolly`); WASD carry the pivot along. The pivot is the
+    surface under the cursor when Alt went down: a depth pick (`ViewPicking::requestDepth`, the `depth` texel after the geometry pass)
+    turned into a world point a few frames later, and until then (or over the sky) the point at the last pivot's distance along the cursor
+    ray. `camera-orbit x,y,z yaw pitch [debug]` and `view.camera.orbit` turn a camera by angles.
+  - *Following the ground* (G, `camera-follow on|off|height <m>`, `view.camera.follow`): the eye kept a height (1.8 m by default) above the
+    highest drawn surface under it, set each frame with no smoothing; WASD move across the ground by yaw, Q/E change the height. The ground
+    is the render geometry the main thread holds: a ray down from the height above the eye (so ground that rose by up to the height since
+    the last frame is found) through the draws whose bounds hold the camera across the up axis, the chunks of 4,096 draws skipped by the
+    bounds `SceneBoundsCache` keeps for the shadow cascades, and every triangle of the draws left, brute force (`groundBelow`); the meshes
+    are kept from `SceneChanges` as they pass to the renderer (`GroundMeshes`). Ground cover and roofs lift the camera, and every level of a
+    render-LOD group counts; with nothing drawn under the camera it holds its height. `fly` suspends it for the main camera, orbiting for
+    either. Ground from collision geometry waits for physics. The `status` record's `cameraModes` has the hit, its prim and what was tested
+    (chunks, draws, triangles, milliseconds); the overlay draws a line from the eye to the hit and the orbit's pivot.
 - **Switching levels**: a root draws the finest loaded level, not finer than the one it selects, whose placement waits for nothing: linked,
   which the composer does only once it is complete, and every mesh, material pack and texture its prims want (under their own purpose)
   held or failed, through the instances and point instancers in it; a LOD root inside it counts by its coarsest level. Each placement

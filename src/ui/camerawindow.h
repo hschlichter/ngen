@@ -4,6 +4,7 @@
 
 #include <glm/glm.hpp>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,27 @@ struct DebugCameraState {
     static constexpr size_t trailCount = 500;
 };
 
+// The camera modes, for the camera that has the controls: following the ground (its eye kept a height above the render geometry under
+// it) and orbiting (Left Alt held: right-drag turns around the surface under the cursor, the wheel moves toward it). The window edits
+// the toggles; ngen-view applies them and fills in the rest each frame (src/view/README.md, "Camera modes").
+struct CameraModesState {
+    bool follow = false;
+    float followHeightMetres = 1.8f;
+    // The last ground test: what it hit (none: no drawn surface under the camera, the height held), and what it tested.
+    std::optional<glm::vec3> ground;
+    std::string groundPrim;
+    uint32_t groundChunks = 0;
+    uint32_t groundDraws = 0;
+    uint64_t groundTriangles = 0;
+    float groundMs = 0.0f;
+    // Orbiting: the pivot, from the depth under the cursor when Alt went down (a few frames later), and until then the point at the last
+    // pivot's distance along the cursor ray.
+    bool orbiting = false;
+    glm::vec3 pivot = glm::vec3(0.0f);
+    bool pivotPicked = false;
+    float pivotDistanceMetres = 10.0f;
+};
+
 struct CameraWindowState {
     std::string bookmarkPath; // "" = no scene file, bookmarks not persisted
     std::vector<CameraBookmark> bookmarks;
@@ -41,6 +63,7 @@ struct CameraWindowState {
     bool requestFrameScene = false;
     bool requestFrameSelected = false;
     DebugCameraState debug;
+    CameraModesState modes;
 };
 
 void drawCameraWindow(bool& show, Camera& camera, CameraWindowState& state);

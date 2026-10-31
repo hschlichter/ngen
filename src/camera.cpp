@@ -56,6 +56,11 @@ auto Camera::update(const bool* keys, float dt) -> void {
     auto fwd = forward();
     auto r = right();
     auto up = worldUp;
+    // Following the ground: forward is the heading across it (right is level already), and Q/E change the height above it.
+    if (followHeight) {
+        fwd = glm::cross(worldUp, r);
+        up = glm::vec3(0.0f);
+    }
 
     auto spd = keys[SDL_SCANCODE_LSHIFT] ? speed * 5.0f : speed;
     if (keys[SDL_SCANCODE_W]) {
@@ -76,6 +81,34 @@ auto Camera::update(const bool* keys, float dt) -> void {
     if (keys[SDL_SCANCODE_Q]) {
         position -= up * spd * dt;
     }
+    if (followHeight && keys[SDL_SCANCODE_E]) {
+        *followHeight += spd * dt;
+    }
+    if (followHeight && keys[SDL_SCANCODE_Q]) {
+        *followHeight = std::max(0.0f, *followHeight - (spd * dt));
+    }
+}
+
+auto Camera::orbit(glm::vec3 pivot, float yawDegrees, float pitchDegrees) -> void {
+    auto newPitch = std::clamp(pitch + pitchDegrees, -89.0f, 89.0f);
+    // Pitching turns forward toward worldUp around right; yaw grows clockwise seen from +worldUp (forward()), so it turns the other way
+    // round worldUp. The camera and its offset from the pivot turn together.
+    auto pitchTurn = glm::rotate(glm::mat4(1.0f), glm::radians(newPitch - pitch), right());
+    auto yawTurn = glm::rotate(glm::mat4(1.0f), glm::radians(-yawDegrees), worldUp);
+    auto offset = glm::vec3(yawTurn * pitchTurn * glm::vec4(position - pivot, 0.0f));
+    position = pivot + offset;
+    yaw += yawDegrees;
+    pitch = newPitch;
+}
+
+auto Camera::dolly(glm::vec3 pivot, float steps) -> void {
+    auto offset = position - pivot;
+    auto distance = glm::length(offset);
+    if (distance < 1e-6f) {
+        return;
+    }
+    auto next = std::max(distance * std::pow(0.85f, steps), cameraNear);
+    position = pivot + (offset * (next / distance));
 }
 
 auto Camera::snapToAxis(int axis, bool negative) -> void {

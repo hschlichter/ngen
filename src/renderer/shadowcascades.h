@@ -50,6 +50,10 @@ auto sceneBoundsOf(std::span<const RenderMeshInstance> instances) -> AABB;
 class SceneBoundsCache {
 public:
     auto update(const ChunkedList<RenderMeshInstance>& instances) -> AABB;
+    // The bounds of a chunk of the instances (ChunkedList::chunk) as of the last update, invalid for a chunk with nothing alive; the ground
+    // test skips a chunk by them.
+    auto chunkCount() const -> size_t { return chunks.size(); }
+    auto chunkBounds(size_t index) const -> const AABB& { return chunks[index].bounds; }
 
 private:
     struct Chunk {

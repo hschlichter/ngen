@@ -485,6 +485,41 @@ auto parseDebugCamera(const std::string& args) -> std::expected<Json, std::strin
     return std::unexpected(std::format("expected 'on|off', 'place', 'control main|debug', 'cull view|main' or 'trail on|off|clear', got '{}'", args));
 }
 
+// "x,y,z yaw pitch [main|debug]": turn a camera around the pivot x,y,z by the angles.
+auto parseCameraOrbit(const std::string& args) -> std::expected<Json, std::string> {
+    std::istringstream in(args);
+    std::string pivotText;
+    float yaw = 0.0f;
+    float pitch = 0.0f;
+    std::string camera;
+    in >> pivotText >> yaw >> pitch;
+    bool parsed = !in.fail();
+    in >> camera;
+    std::array<float, 3> pivot = {};
+    if (!parsed || std::sscanf(pivotText.c_str(), "%f,%f,%f", &pivot[0], &pivot[1], &pivot[2]) != 3 || (!camera.empty() && camera != "main" && camera != "debug")) {
+        return std::unexpected(std::format("expected 'x,y,z yaw pitch [main|debug]', got '{}'", args));
+    }
+    Json out = {{"pivot", {pivot[0], pivot[1], pivot[2]}}, {"yaw", yaw}, {"pitch", pitch}};
+    if (!camera.empty()) {
+        out["camera"] = camera;
+    }
+    return out;
+}
+
+auto parseCameraFollow(const std::string& args) -> std::expected<Json, std::string> {
+    std::istringstream in(args);
+    std::string first;
+    in >> first;
+    if ((first == "on" || first == "off") && in.eof()) {
+        return Json{{"on", first == "on"}};
+    }
+    float metres = 0.0f;
+    if (first == "height" && (in >> metres) && metres >= 0.0f) {
+        return Json{{"height", metres}};
+    }
+    return std::unexpected(std::format("expected 'on|off' or 'height <metres>', got '{}'", args));
+}
+
 auto parseInspect(const std::string& args) -> std::expected<Json, std::string> {
     if (args == "off") {
         return Json{{"enabled", false}};
@@ -559,6 +594,8 @@ constexpr std::array scriptVerbs = {
     ScriptVerb{"camera-frame", "view.camera.frame", parseTarget},
     ScriptVerb{"camera-use", "view.camera.use", parseCameraPath},
     ScriptVerb{"debug-camera", "view.camera.debug", parseDebugCamera},
+    ScriptVerb{"camera-follow", "view.camera.follow", parseCameraFollow},
+    ScriptVerb{"camera-orbit", "view.camera.orbit", parseCameraOrbit},
     ScriptVerb{"select", "view.select", parsePrim},
     ScriptVerb{"translate", "view.translate", parseTranslate},
     ScriptVerb{"pick", "view.pick", parsePick},
@@ -625,6 +662,21 @@ auto namedCamera(ViewContext& view, const Json& p) -> Camera* {
     return debug.on ? &debug.camera : nullptr;
 }
 
+auto cameraModesJson(const CameraModesState& modes) -> Json {
+    Json ground = nullptr;
+    if (modes.ground) {
+        ground = {{"point", vec3Json(*modes.ground)}, {"prim", modes.groundPrim}};
+    }
+    return {
+        {"follow",
+         {{"on", modes.follow},
+          {"heightMetres", modes.followHeightMetres},
+          {"ground", ground},
+          {"tested", {{"chunks", modes.groundChunks}, {"draws", modes.groundDraws}, {"triangles", modes.groundTriangles}, {"ms", modes.groundMs}}}}},
+        {"orbit", modes.orbiting ? Json{{"pivot", vec3Json(modes.pivot)}, {"picked", modes.pivotPicked}} : Json(nullptr)},
+    };
+}
+
 auto debugCameraJson(const DebugCameraState& debug) -> Json {
     return {
         {"on", debug.on},
@@ -683,6 +735,41 @@ auto registerCamera(RpcRegistry& registry, ViewContext& view) -> void {
                 responder.fail(rpc::appError, "the debug camera is off (view.camera.debug {on: true})");
                 return;
             }
+            responder.respond({{"x", camera->position.x}, {"y", camera->position.y}, {"z", camera->position.z}, {"yaw", camera->yaw}, {"pitch", camera->pitch}});
+        });
+    registry.add(
+        {
+            .name = "view.camera.follow",
+            .summary = "Following the ground, for the camera that has the controls: its eye kept a height above the highest drawn surface under it (the render geometry, tested naively each frame); WASD move across the ground, Q/E change the height. G toggles it.",
+            .params = {optionalField("on", RpcType::Bool, "following on"), optionalField("height", RpcType::Float, "the eye's height above the ground, metres")},
+            .result = "{follow: {on, heightMetres, ground: {point, prim} | null, tested: {draws, triangles, ms}}, orbit}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto& modes = view.ui.cameraWindow().modes;
+            modes.follow = p.value("on", modes.follow);
+            if (p.contains("height")) {
+                modes.followHeightMetres = std::max(0.0f, p["height"].get<float>());
+            }
+            responder.respond(cameraModesJson(modes));
+        });
+    registry.add(
+        {
+            .name = "view.camera.orbit",
+            .summary = "Turn a camera around a pivot by angles, as Alt + right-drag does: yaw around the world's up through the pivot, pitch around the camera's right, the distance kept. The main camera unless `camera` is debug.",
+            .params = {requiredField("pivot", RpcType::Vec3, "the point to turn around, world"),
+                       requiredField("yaw", RpcType::Float, "degrees"),
+                       requiredField("pitch", RpcType::Float, "degrees"),
+                       {.name = "camera", .type = RpcType::Enum, .required = false, .description = "which camera, main by default", .enumValues = cameraNames}},
+            .result = "{x, y, z, yaw, pitch}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto* camera = namedCamera(view, p);
+            if (camera == nullptr) {
+                responder.fail(rpc::appError, "the debug camera is off (view.camera.debug {on: true})");
+                return;
+            }
+            auto pivot = glm::vec3(p["pivot"][0].get<float>(), p["pivot"][1].get<float>(), p["pivot"][2].get<float>());
+            camera->orbit(pivot, p["yaw"].get<float>(), p["pitch"].get<float>());
             responder.respond({{"x", camera->position.x}, {"y", camera->position.y}, {"z", camera->position.z}, {"yaw", camera->yaw}, {"pitch", camera->pitch}});
         });
     registry.add(
@@ -1508,6 +1595,7 @@ auto statusRecord(const ViewContext& view) -> Json {
         {"selected", view.selectedPath},
         {"camera", {{"position", vec3Json(view.cam.position)}, {"yaw", view.cam.yaw}, {"pitch", view.cam.pitch}, {"speed", view.cam.speed}}},
         {"debugCamera", debugCameraJson(view.ui.cameraWindow().debug)},
+        {"cameraModes", cameraModesJson(view.ui.cameraWindow().modes)},
         {"shadow", {{"cascades", shadow.count}, {"tile", shadow.tileSize}, {"lambda", shadow.splitLambda}, {"pcf", shadow.pcf}, {"distance", shadow.maxDistance}}},
         {"antiAliasing", view.ui.getAntiAliasing()},
         {"sampler", {{"anisotropy", sampler.maxAnisotropy}, {"lodBias", sampler.lodBias}, {"minLod", sampler.minLod}, {"nearestMip", sampler.nearestMip}}},

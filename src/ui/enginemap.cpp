@@ -162,7 +162,9 @@ const std::vector<EngineMapNode> nodes = {
         .description = "SDL events: fly camera (WASD, mouse look, the wheel for speed), picking, gizmos, shortcuts. Two cameras: the "
                        "main camera (the player), which scene cameras, bookmarks, scripts and fly place, and from which residency, LOD and "
                        "culling are decided; and the debug camera, rendered from while on, the main camera drawn in it with its trail "
-                       "(C hands the controls between them).",
+                       "(C hands the controls between them). Modes for the camera with the controls: Left Alt held orbits the surface "
+                       "under the cursor (the pick's depth); G follows the ground, its eye kept a height above the highest drawn surface "
+                       "under it (a ray down through the draws, skipped by chunk bounds, every triangle of those left).",
         .records = {"status"},
         .windows = {"camera"},
         .readme = "src/view/README.md",
@@ -311,6 +313,7 @@ const std::vector<EngineMapEdge> edges = {
     {.from = "main.scene", .to = "render.gpuscene", .what = "change lists (submitSceneChanges)"},
     {.from = "render.gpuscene", .to = "main.scene", .what = "drawn and idle: residency"},
     {.from = "main.input", .to = "main.frame", .what = "the camera rendered from, the main camera's eye, the culling camera"},
+    {.from = "main.scene", .to = "main.input", .what = "the draws and their meshes, for the ground under the camera"},
     {.from = "main.ui", .to = "main.frame", .what = "settings, UI draw data"},
     {.from = "main.frame", .to = "render.framegraph", .what = "RenderSnapshot"},
     {.from = "render.gpuscene", .to = "render.uploads", .what = "queued copies"},
