@@ -128,8 +128,9 @@ items in an "Open questions" section instead of picking silently.
   (SDL renderer and Dear ImGui) and a command line. Records and the tool in `src/introspect/README.md`.
 - `src/trace/` — the trace: structured events (`TRACE_EVENT`) in an always-on ring per process, streamed over RPC. Conventions in
   `src/trace/README.md`.
-- `src/view/` — ngen-view's scene (`viewscene.*`: the World composed from packs, flattened into the renderer's inputs), its commands as RPC
-  methods and script verbs (`viewcommands.*`), and its dumps (`viewdumps.*`). Design in `src/view/README.md`.
+- `src/view/` — ngen-view's runtime (the `view` library: `viewscene.*`, the World composed from packs and flattened into the renderer's inputs;
+  the camera, its flight and modes; picking) and its engine commands (the `viewcommands` library: RPC methods, script verbs and records by
+  domain in `*commands.cpp`, and the dumps in `viewdumps.*`). The tools and the UI register their own commands. Design in `src/view/README.md`.
 - `src/tools/` — the tools (LOD and Streaming tools, the debug camera): their data, state and viewport layers, apart from the UI that draws
   them; nothing here includes `src/ui`. Rules in `src/tools/README.md`.
 - `src/asset/` — the asset system: `ngen-asset-server` (`server/`), `AssetClient`, and packing (`pack/`: the rule type and what every packer

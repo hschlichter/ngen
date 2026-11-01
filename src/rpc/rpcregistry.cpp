@@ -91,6 +91,14 @@ auto check(const RpcMethodDesc& desc, const rpc::Json& params) -> std::optional<
 
 } // namespace
 
+auto requiredField(std::string name, RpcType type, std::string description) -> RpcField {
+    return {.name = std::move(name), .type = type, .required = true, .description = std::move(description)};
+}
+
+auto optionalField(std::string name, RpcType type, std::string description) -> RpcField {
+    return {.name = std::move(name), .type = type, .required = false, .description = std::move(description)};
+}
+
 auto RpcRegistry::add(RpcMethodDesc desc, RpcHandler handler) -> void {
     auto name = desc.name;
     methods[name] = Entry{.desc = std::move(desc), .handler = std::move(handler)};

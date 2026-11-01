@@ -175,6 +175,33 @@ At the end:
     records identical to before; following holds 1.8 m on all 30 steps; the village run with the tool windows open gives the same
     `lodtool` (11,954 rows) and `streamingtool` (396 roots) records; the debug build runs with every tool window open.
 
+- **Step 4** (2026-11-01): `viewcommands.cpp` (2,755 lines) split by domain into the `viewcommands` library, and every command registered
+  by the layer that owns what it acts on.
+  - Engine (`src/view`): `cameracommands`, `scenecommands`, `lodcommands`, `configcommands`, `displaycommands` (texture inspection, dumps,
+    screenshots, captures, RenderDoc), `profilecommands`, and `viewcommands.cpp` (`registerViewCommands`, `introspect.record`). `zones` is the
+    profiler's, so it went there, not with the tools.
+  - Tools (`src/tools/toolcommands.*`): `view.camera.debug`, `view.lod.inspect`, `view.streaming.inspect`; `debug-camera`, `lod-show`,
+    `streaming-show`; the `lodtool` and `streamingtool` records, and a new `debugcamera` record (its pose and trail, from `status`). They set
+    `ViewContext::debugCamera`, which the camera methods use for `camera: "debug"`. `lodCamera` went to `debugcamera.h`.
+  - UI (`src/ui/uicommands.*`): `view.window`, `window`, and a new `windows` record (each window and whether it is open, which replaces
+    `streamingtool`'s `window` field). `view.overlay` is gone: the `overlay` verb sets the configuration values, as the other short forms do,
+    and `ViewUI::setOverlay` went with it.
+  - `ViewContext` has no `ViewUI&` and no `ToolsState&`. `RenderLodRequest` carries its own answer (a callback) instead of a kind the engine
+    dispatched to the tools' inspection.
+  - The verb table is `RpcVerbs` (`src/rpc/rpcverbs.*`): each layer adds its verbs beside its methods. `requiredField`/`optionalField` are
+    the registry's. The flight (`cameraflight.*`) and "go to asset" (`assetgoto.*`) are the view runtime's, over a camera and the scene
+    instead of the commands' context; the flight ends through a callback, so the runtime has no RPC.
+  - The GPU scene's capture join (`GpuSceneInstanceRow`, `buildGpuSceneRows`, the JSON writer, the capture list) went from the GPU Scene
+    window to the renderer (`src/renderer/gpuscenecapture.*`); `viewdumps.cpp` includes no UI header.
+  - Prim paths have one owner, `src/world/primpath.*` (`child`, `join`, `isAtOrUnder`), for the copies in the composer, the World,
+    placement, the LOD and Streaming tools, the commands and `view.cpp`. The composer keeps its own variant-aware child and parent paths. The
+    framegraph's "Helpers" banner says what the functions under it are for.
+  - Checks: release and debug build; the 8 reference images byte-identical; the debug camera's runs give `streaming` and `culling` records
+    identical (but for timings and pack keys) to before and to the first runs; following holds 1.8 m on all 30 steps; the village run with
+    the tool windows open gives `lodtool` 11,954 rows and `streamingtool` 396 roots; a bad overlay name, an unknown verb, the debug camera
+    while off, a flight with no cameras and an unknown window each fail with their message; the debug build runs with every tool window
+    open, and its assert that no verb is added twice holds.
+
 ## Open questions
 
 - **The renderer split (step 6) now or later**: steps 1 to 5 already make the view cuttable; step 6 is the largest single move.

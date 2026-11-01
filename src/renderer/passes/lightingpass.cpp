@@ -1,7 +1,7 @@
 #include "lightingpass.h"
 
-#include "projection.h"
 #include "geometrypass.h"
+#include "projection.h"
 #include "renderconfig.h"
 #include "renderworld.h"
 #include "rhicommandbuffer.h"

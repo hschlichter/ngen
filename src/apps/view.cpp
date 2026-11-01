@@ -3,13 +3,14 @@
 #include "camera.h"
 #include "culling.h"
 #include "debugcamera.h"
-#include "projection.h"
 #include "debugdraw.h"
 #include "ground.h"
 #include "imguibackendvulkan.h"
 #include "jobsystem.h"
 #include "lodtool.h"
+#include "primpath.h"
 #include "profile.h"
+#include "projection.h"
 #include "renderconfig.h"
 #include "renderdebugjson.h"
 #include "renderdoccapture.h"
@@ -21,13 +22,16 @@
 #include "rotategizmo.h"
 #include "rpcendpoint.h"
 #include "rpcregistry.h"
+#include "rpcverbs.h"
 #include "scalegizmo.h"
 #include "sessionscript.h"
 #include "shadowcascades.h"
 #include "statusbar.h"
 #include "streamingtool.h"
+#include "toolcommands.h"
 #include "trace.h"
 #include "translategizmo.h"
+#include "uicommands.h"
 #include "viewcommands.h"
 #include "viewdumps.h"
 #include "viewpicking.h"
@@ -510,7 +514,6 @@ auto main(int argc, char* argv[]) -> int {
     ViewContext viewContext = {
         .cam = cam,
         .scene = scene,
-        .ui = viewUI,
         .selectedPath = selectedPath,
         .picking = picking,
         .goTo = assetGoTo,
@@ -529,13 +532,15 @@ auto main(int argc, char* argv[]) -> int {
         .viewAspect = viewAspect,
         .lodPops = lodPops,
         .flight = flight,
-        .tools = tools,
         .cameraModes = cameraModes,
         .sceneLabel = positional.size() >= 2 ? std::string(positional[1]) : std::string("(new scene)"),
     };
-    registerViewMethods(registry, viewContext);
+    // Each layer adds its methods, script verbs and records: the engine's, the tools', the UI's.
+    RpcVerbs verbs;
     RpcRecords records;
-    registerViewRecords(records, registry, viewContext);
+    registerViewCommands(registry, verbs, records, viewContext);
+    registerToolCommands(registry, verbs, records, viewContext, tools);
+    registerUiCommands(registry, verbs, records, viewUI);
     registerRpcRecords(registry, records);
     // The endpoint is tooling: debug and release only (NGEN_INTROSPECTION), off with --no-rpc.
     RpcEndpoint endpoint;
@@ -618,7 +623,7 @@ auto main(int argc, char* argv[]) -> int {
         {
             PROFILE_ZONE("Commands");
             for (const auto& c : dueCommands) {
-                runViewScriptCommand(registry, c);
+                verbs.run(registry, c.verb, c.args);
             }
             endpoint.drain();
         }
@@ -636,7 +641,7 @@ auto main(int argc, char* argv[]) -> int {
             residency.loadingFrames++;
         }
         if (flight.flying()) {
-            advanceFlight(viewContext, dt);
+            advanceFlight(flight, cam, dt);
             autoFrame = false;
         }
         // The debug camera, placed behind the main camera when it is turned on or asked to be; the main camera's trail starts afresh.
@@ -659,7 +664,7 @@ auto main(int argc, char* argv[]) -> int {
         // The camera for the LOD heuristic, when it moved: once it has been placed (by hand, a script, or the framing when the scene was
         // first resident), not while it follows what has arrived.
         bool cameraPlaced = residency.everResident || !autoFrame;
-        const auto& lodCam = lodCamera(viewContext);
+        const auto& lodCam = lodCamera(debugCamera, cam);
         if (cameraPlaced && (lodCam.position != postedCameraPosition || winW != postedCameraWidth || winH != postedCameraHeight)) {
             postedCameraPosition = lodCam.position;
             postedCameraWidth = winW;
@@ -1127,7 +1132,7 @@ auto main(int argc, char* argv[]) -> int {
             viewUI.selectAssets(scene.assetsUnder(selectedPath));
         }
         if (auto goTo = viewUI.takeGoToRequest()) {
-            auto result = goToAsset(viewContext, goTo->id, goTo->all);
+            auto result = goToAsset(assetGoTo, cam, scene, selectedPath, goTo->id, goTo->all);
             if (!result.error.empty()) {
                 viewUI.setGoToStatus(result.error);
             } else if (goTo->all) {
@@ -1276,7 +1281,7 @@ auto main(int argc, char* argv[]) -> int {
             lodWindow.selectedPath = selectedPath;
             if (!selectedPath.empty()) {
                 for (const auto& row : lodWindow.rows) {
-                    bool atOrAbove = selectedPath == row.path || selectedPath.starts_with(row.path + "/");
+                    bool atOrAbove = primpath::isAtOrUnder(selectedPath, row.path);
                     if (atOrAbove && row.path.size() > lodWindow.selectedRoot.size()) {
                         lodWindow.selectedRoot = row.path;
                     }
@@ -1289,7 +1294,7 @@ auto main(int argc, char* argv[]) -> int {
                 lodInspected = lodWindow.selectedRoot;
                 lodInspectedSnapshot = snapshotsTaken;
                 lodInspectedAt = now;
-                lodWindow.inspection = inspectLodRoot(scene, latestCull, lodWindow.selectedRoot, {.eye = lodCamera(viewContext).position, .fovY = glm::radians(cameraFovDegrees), .aspect = viewAspect});
+                lodWindow.inspection = inspectLodRoot(scene, latestCull, lodWindow.selectedRoot, {.eye = lodCamera(debugCamera, cam).position, .fovY = glm::radians(cameraFovDegrees), .aspect = viewAspect});
             }
         }
         {
@@ -1304,9 +1309,9 @@ auto main(int argc, char* argv[]) -> int {
                 streamingWindow.holeHistory[at] = (float) scene.streaming().holesNow;
                 streamingWindow.historyAt = (at + 1) % StreamingToolState::historyLength;
             }
-            streamingWindow.cameraPosition = lodCamera(viewContext).position;
+            streamingWindow.cameraPosition = lodCamera(debugCamera, cam).position;
             streamingWindow.debugCameraPosition = toolsconfig::debugCamera.get() ? std::optional<glm::vec3>(debugCamera.camera.position) : std::nullopt;
-            streamingWindow.cameraForward = lodCamera(viewContext).forward();
+            streamingWindow.cameraForward = lodCamera(debugCamera, cam).forward();
             streamingWindow.up = cam.worldUp;
             streamingWindow.flying = flight.flying();
             if (flight.flying()) {
@@ -1320,12 +1325,12 @@ auto main(int argc, char* argv[]) -> int {
                 scene.resetStreamingCounters();
             }
             if (std::exchange(streamingWindow.flyRequested, false)) {
-                if (auto error = startFlight(viewContext, streamingWindow.flightPrefix, std::max(0.1f, streamingWindow.flightSpeed), std::nullopt)) {
+                if (auto error = startFlight(flight, cam, scene, streamingWindow.flightPrefix, std::max(0.1f, streamingWindow.flightSpeed), nullptr)) {
                     streamingWindow.flightText = *error;
                 }
             }
             if (std::exchange(streamingWindow.flyStopRequested, false)) {
-                stopFlight(viewContext);
+                stopFlight(flight);
             }
             for (auto& request : std::exchange(streamingWindow.radiiRequests, {})) {
                 scene.overrideLodThresholds(request.root, request.heuristic, LodOverride{.thresholds = std::move(request.load), .unloadThresholds = std::move(request.unload)});
@@ -1346,7 +1351,7 @@ auto main(int argc, char* argv[]) -> int {
             streamingWindow.selectedRoot.clear();
             if (!selectedPath.empty()) {
                 for (const auto& row : streamingWindow.rows) {
-                    bool atOrAbove = selectedPath == row.path || selectedPath.starts_with(row.path + "/");
+                    bool atOrAbove = primpath::isAtOrUnder(selectedPath, row.path);
                     if (atOrAbove && row.path.size() > streamingWindow.selectedRoot.size()) {
                         streamingWindow.selectedRoot = row.path;
                     }
@@ -1359,7 +1364,7 @@ auto main(int argc, char* argv[]) -> int {
                 streamingInspected = streamingWindow.selectedRoot;
                 streamingInspectedSnapshot = snapshotsTaken;
                 streamingInspectedAt = now;
-                streamingWindow.inspection = inspectStreamingRoot(scene, streamingWindow.selectedRoot, lodCamera(viewContext).position, lodWindowArea(glm::radians(cameraFovDegrees), viewAspect));
+                streamingWindow.inspection = inspectStreamingRoot(scene, streamingWindow.selectedRoot, lodCamera(debugCamera, cam).position, lodWindowArea(glm::radians(cameraFovDegrees), viewAspect));
             }
         }
         ImGuiFrameSnapshot imguiSnapshot;
@@ -1398,7 +1403,7 @@ auto main(int argc, char* argv[]) -> int {
         RenderSnapshot snapshot = {
             .viewMatrix = viewCamera().viewMatrix(),
             .projMatrix = proj,
-            .lodEye = glm::vec3(glm::inverse(lodCamera(viewContext).viewMatrix())[3]),
+            .lodEye = glm::vec3(glm::inverse(lodCamera(debugCamera, cam).viewMatrix())[3]),
             .worldUp = cam.worldUp,
             .windowWidth = winW,
             .windowHeight = winH,

@@ -34,6 +34,8 @@ auto extendDebugCameraTrail(DebugCameraState& debug, const glm::vec3& mainPositi
 // The main camera: its frustum out to `farDepth` (`mainViewProj` is its view-projection), a box at its eye with a line along its forward
 // axis, and its trail.
 auto drawMainCamera(const DebugCameraState& debug, const Camera& main, const glm::mat4& mainViewProj, float farDepth, double metersPerUnit, DebugDraw& draw) -> void;
+// The camera LOD and streaming are decided from: the main camera, or the debug camera while it is on and set to drive them.
+auto lodCamera(const DebugCameraState& debug, const Camera& main) -> const Camera&;
 
 // The debug camera's configuration values (src/config/README.md).
 namespace toolsconfig {

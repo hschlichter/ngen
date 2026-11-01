@@ -1,6 +1,6 @@
 #include "viewdumps.h"
 
-#include "gpuscenewindow.h"
+#include "gpuscenecapture.h"
 #include "renderdebugjson.h"
 #include "renderworld.h"
 #include "trace.h"

@@ -1,17 +1,12 @@
 #include "world.h"
 
+#include "primpath.h"
+
 #include <algorithm>
 #include <cmath>
 #include <format>
 
 namespace {
-
-auto childPath(const std::string& parent, const std::string& name) -> std::string {
-    if (parent == "/") {
-        return "/" + name;
-    }
-    return parent + "/" + name;
-}
 
 struct VisitState {
     std::string path;
@@ -142,7 +137,7 @@ auto World::visit(const std::function<bool(const VisitedEntity&)>& visitor) cons
     auto visitEntity = [&](const WorldContent& content, EntityId id, const VisitState& parent) -> void {
         const auto& entity = content.entities[id];
         VisitState state;
-        state.path = childPath(parent.path, entity.name);
+        state.path = primpath::child(parent.path, entity.name);
         state.worldTransform = parent.worldTransform;
         if (entity.xformable) {
             if (entity.resetsXformStack) {

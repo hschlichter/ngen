@@ -31,7 +31,7 @@ changing how scene data reaches the GPU.
 | Pipelines | `pipelineregistry.h/.cpp` (`PipelineRegistry`): every pipeline and shader module |
 | Shadows | `shadowcascades.h/.cpp` |
 | Editor support | `imguibackend.h/.cpp` (interface), `gizmo.h`, `axis3dgizmo`, `translategizmo`, `rotategizmo`, `scalegizmo` |
-| Debugging and introspection | `renderdebug.h`, `renderdebugjson.h/.cpp`, `screenshot.h/.cpp`, `capture.h/.cpp` (`CaptureService`), `gpuschema.h/.cpp`, `framedebug.h/.cpp`, `gpucounters.h/.cpp`, `debugview.h` |
+| Debugging and introspection | `renderdebug.h`, `renderdebugjson.h/.cpp`, `screenshot.h/.cpp`, `capture.h/.cpp` (`CaptureService`), `gpuschema.h/.cpp`, `gpuscenecapture.h/.cpp`, `framedebug.h/.cpp`, `gpucounters.h/.cpp`, `debugview.h` |
 
 Shaders live in `shaders/` at the repository root. They are packed assets, streamed from the asset server (`src/asset/README.md`) and turned into
 pipelines by the pipeline registry ("Pipelines", below).
@@ -413,6 +413,8 @@ falling to 0 at infinity, so nothing is clipped at a distance and the 32-bit flo
   `FgCaptureRequest` after the named pass with the resource's physical object and state; the service copies it into a readback buffer, restoring the
   state around the copy, and parses it after the slot's fence. Results carry the raw bytes, per-channel ranges and an ImGui preview.
   `gpuschema` describes every struct that crosses to the GPU (field, offset, type) so buffers decode into rows the same way in the UI and in dumps.
+  `gpuscenecapture` lists the GPU scene's tables to capture and joins them per instance (prim, mesh, material, bounds, visibility and cull plane
+  per view): the view's `introspect.gpuscene` and the GPU Scene window read the same rows.
   The culling readback and the frame-graph previews predate it and keep their own paths.
 - **Frame debug capture** (`FrameDebugCapture`, `framedebug`). For one requested frame the command buffer's command log is on. The capture holds, per
   pass: the barriers the graph issued (`FgBarrierRecord`, always kept) with the backend's derived stages, accesses and layouts

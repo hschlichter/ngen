@@ -2,10 +2,31 @@
 
 The `view` library, ngen-view's runtime: the scene it shows (`viewscene.*`, its placement tree in `placement.*`), picking (`viewpicking.*`),
 the camera (`camera.*`: pose, flying, orbit, dolly, the height kept while following; it takes a `CameraMove` the application maps its keys
-onto, and leaves the projection to the renderer's `projection.h`) and the camera modes (`ground.*`). It includes nothing of the tools (`src/tools/README.md`) or the UI. ngen-view's commands as RPC methods
-and script verbs (`viewcommands.*`) and its dumps (`viewdumps.*`) are compiled into the program until they are split by domain. The
-program's `main` is `src/apps/view.cpp`; its UI is `ViewUI` (`src/ui/viewui.*`). The tools' sections below (the LOD and Streaming tools,
-the debug camera) describe code in `src/tools`.
+onto, and leaves the projection to the renderer's `projection.h`), its flight through the scene's cameras (`cameraflight.*`), the camera
+modes (`ground.*`) and "go to asset" (`assetgoto.*`). It includes nothing of the tools (`src/tools/README.md`) or the UI. ngen-view's engine
+commands are the `viewcommands` library ("Commands", below). The program's `main` is `src/apps/view.cpp`; its UI is `ViewUI`
+(`src/ui/viewui.*`). The tools' sections below (the LOD and Streaming tools, the debug camera) describe code in `src/tools`.
+
+## Commands
+
+What an agent reaches without the tools or the UI: every method, script verb and record of the engine, registered by domain over a
+`ViewContext` (`viewcommands.h`: references to what the main loop owns) into the `RpcRegistry`, the `RpcVerbs` table and the `RpcRecords`
+(`src/rpc/README.md`). They run at the top of each frame, before the camera moves: a script's due lines through `RpcVerbs::run`, then the
+endpoint's calls; an answer that needs a readback or residency waits in `renderLodRequests` or `residentWaiters` and is given frames later.
+
+| File | Methods | Verbs | Records |
+|---|---|---|---|
+| `cameracommands.cpp` | `view.camera.set/get/orbit/list/use/fly/fly.stop/frame` | `camera`, `camera-frame`, `camera-use`, `camera-orbit`, `camera-follow`, `fly`, `fly-stop` | |
+| `scenecommands.cpp` | `view.select/transform/translate/pick/purposes/waitResident/repack/gotoAsset/assetsOf/quit` | `select`, `translate`, `pick`, `purposes`, `repack`, `goto-asset`, `assets-of`, `wait-resident`, `quit` | `status`, `scene`, `scenethread`, `gpuscene`, `instancers`, `variants`, `payloads`, `assets` |
+| `lodcommands.cpp` | `view.lod.set/reset/heuristic/override/override.reset/tuning`, `view.renderlod`, `view.streaming.reset` | `lod`, `lod-*`, `streaming-reset` | `lod`, `streaming`, `renderlod` |
+| `configcommands.cpp` | `config.get/set/reset` | `config`, `config-reset` and the short forms (`view`, `debugview`, `overlay`, `cull`, `sampler`, `shadow`, `prepass`, `aa`, `ambient`, `gpuscene`) | `config` |
+| `displaycommands.cpp` | `view.inspect/dumpTexture/screenshot`, `capture.request`, `introspect.frame/gpuscene`, `renderdoc.capture` | `inspect`, `dump-texture`, `screenshot`, `capture`, `dump-frame`, `dump-gpuscene`, `renderdoc-capture` | `culling`, `pipelines`, `render`, `memory`, `counters` |
+| `profilecommands.cpp` | `introspect.profile` | `dump-profile` | `profile`, `zones` |
+| `viewcommands.cpp` | `introspect.record` | `record` | |
+
+The tools add theirs over the same context (`src/tools/toolcommands.*`: the debug camera, the LOD and Streaming inspections) and the UI its
+own (`src/ui/uicommands.*`: `view.window`, `window`, the `windows` record), so leaving either out leaves the engine's surface whole. A
+method's camera is the main camera unless it names the debug camera, which the tools provide (`ViewContext::debugCamera`).
 
 ## The scene: `ViewScene`
 
@@ -170,14 +191,14 @@ do its draws: only where it is placed.
   second camera to watch the main camera from. `cam` stays the main camera (the player): everything that places the camera (`camera`,
   `camera-use`, `fly`, `--camera`, scene cameras and bookmarks) moves it, and it drives what is decided from a viewpoint: residency, the
   LOD heuristic and render LOD (`RenderSnapshot::lodEye`; the LOD and Streaming inspectors and the Streaming map measure from the same
-  camera, `lodCamera`), culling and the shadow cascades. While the debug camera is on, the view renders from it (and picks, drags gizmos
+  camera, `lodCamera` in `debugcamera.h`), culling and the shadow cascades. While the debug camera is on, the view renders from it (and picks, drags gizmos
   and places labels through it; the lighting picks each pixel's shadow cascade by its depth from the shadow camera, not the one rendered
   from), and each of the three can be switched to it: `debug-camera lod|cull|shadows main|debug` (the configuration values
   `tools.debugcamera.lod`, `.cull`, `.shadows`; the Camera window's switches), all main by default. Turned on, it is placed 15 m behind and 10 m above the
   main camera, looking at it. The keys and mouse move it; C (`debug-camera control main|debug`, `tools.debugcamera.controlMain`) hands them to the main
   camera while the view stays. The main camera is drawn in it: its frustum to the shadow distance, a box at its eye with its forward axis,
   and its trail, a point every 2 m it moved (the last 500; `debug-camera trail on|off|clear`). `camera <pose> debug` and
-  `view.camera.set/get {camera: "debug"}` place and read it; the `status` record's `debugCamera` holds its pose and trail, the `config` record its switches (`tools.debugcamera.*`, on with
+  `view.camera.set/get {camera: "debug"}` place and read it; the `debugcamera` record holds its pose and trail, the `config` record its switches (`tools.debugcamera.*`, on with
   `tools.debugcamera.on`); `view.camera.debug` places it and clears the trail. The corner axis gizmo shows
   and turns the camera rendered from: the renderer reports the axis clicked (`gizmoHitTest`), `view.cpp` turns the camera.
 - **Camera modes** (`ground.*`, their state `CameraModesState` owned by the application, the Camera window's mode section, the View menu): for the camera that has the controls.

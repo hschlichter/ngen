@@ -124,11 +124,11 @@ public:
         cullTrianglesCascades = cascades;
     }
 
-    // grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa, cascadefrusta; false if the name is unknown.
-    auto setOverlay(std::string_view name, bool on) -> bool;
-    // Opens or closes an introspection window by name (memory, capture, framedebugger, gpuscene, counters, shaders, culling, assets, lod, streaming, camera,
-    // renderdebug, framegraph, performance).
-    // Returns false for an unknown name.
+    // The windows view.window opens and closes, by name.
+    static constexpr std::array windowNames = {"memory", "capture", "framedebugger", "gpuscene", "counters", "shaders", "culling", "assets", "lod", "streaming", "camera", "renderdebug", "framegraph", "performance", "config"};
+    // Whether a window is open, by its name in windowNames; null for an unknown name.
+    auto windowFlag(std::string_view name) -> bool*;
+    // Opens or closes a window by its name in windowNames; false for an unknown name.
     auto setIntrospectionWindow(std::string_view name, bool on) -> bool;
     // Screenshot requested from the UI (button or F12); main hands it to the renderer.
     auto takeScreenshotRequest() -> bool { return std::exchange(screenshotRequested, false); }

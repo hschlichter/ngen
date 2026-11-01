@@ -1,5 +1,6 @@
 #include "placement.h"
 
+#include "primpath.h"
 #include "profile.h"
 #include "trace.h"
 #include "viewscene.h"
@@ -14,32 +15,6 @@ namespace {
 
 auto msSince(std::chrono::steady_clock::time_point start) -> double {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-}
-
-auto childPathOf(const std::string& parent, const std::string& name) -> std::string {
-    if (parent == "/") {
-        return "/" + name;
-    }
-    return parent + "/" + name;
-}
-
-// A path relative to a content's root ("/" for the root itself), made full where the content is placed.
-auto joinPathOf(const std::string& base, const std::string& relative) -> std::string {
-    if (relative == "/") {
-        return base;
-    }
-    if (base == "/") {
-        return relative;
-    }
-    return base + relative;
-}
-
-// Whether `path` is `base` or under it.
-auto isUnder(const std::string& path, const std::string& base) -> bool {
-    if (base == "/") {
-        return true;
-    }
-    return path == base || (path.size() > base.size() && path.starts_with(base) && path[base.size()] == '/');
 }
 
 auto kindChar(Placement::Kind kind) -> char {
@@ -67,7 +42,7 @@ auto findTransform(const Placement& tree, const std::string& path) -> std::optio
     // The deepest drawn placement at or above the path that holds it: a prim is in the content placed nearest above it. A PointInstancer's
     // points aren't looked into: the instancer prim itself is in the content holding it.
     auto deeper = [&](const std::shared_ptr<Placement>& child) -> std::optional<EntityTransform> {
-        if (!child || !child->drawn || child->kind == Placement::Kind::Instancer || !isUnder(path, child->path)) {
+        if (!child || !child->drawn || child->kind == Placement::Kind::Instancer || !primpath::isAtOrUnder(path, child->path)) {
             return std::nullopt;
         }
         return findTransform(*child, path);
@@ -84,7 +59,7 @@ auto findTransform(const Placement& tree, const std::string& path) -> std::optio
             }
         }
     }
-    if (tree.segments.empty() || !isUnder(path, tree.path)) {
+    if (tree.segments.empty() || !primpath::isAtOrUnder(path, tree.path)) {
         return std::nullopt;
     }
     const auto& segment = tree.segments.front();
@@ -186,7 +161,7 @@ auto ViewScene::overridesUnder(const std::string& usePath) const -> bool {
     if (localOverrides.empty()) {
         return false;
     }
-    return std::ranges::any_of(localOverrides, [&](const auto& entry) { return isUnder(entry.first, usePath); });
+    return std::ranges::any_of(localOverrides, [&](const auto& entry) { return primpath::isAtOrUnder(entry.first, usePath); });
 }
 
 auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& overrideBase, EntityId root)
@@ -209,10 +184,10 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
     std::function<void(EntityId, const State&)> walk = [&](EntityId id, const State& parent) {
         const auto& entity = content.entities[id];
         State state;
-        state.path = id == walkRoot ? std::string("/") : childPathOf(parent.path, entity.name);
+        state.path = id == walkRoot ? std::string("/") : primpath::child(parent.path, entity.name);
         glm::mat4 local(entity.localTransform);
         if (!overrideBase.empty() && entity.xformable) {
-            if (auto authored = localOverrides.find(joinPathOf(overrideBase, state.path)); authored != localOverrides.end()) {
+            if (auto authored = localOverrides.find(primpath::join(overrideBase, state.path)); authored != localOverrides.end()) {
                 local = authored->second;
             }
         }
@@ -325,7 +300,7 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
             for (uint32_t i = 0; i < lod->second.levels.size(); i++) {
                 auto standIn = lod->second.levels[i];
                 out->items.push_back({.kind = WalkItem::Kind::Level,
-                                      .path = childPathOf(state.path, content.entities[standIn].name),
+                                      .path = primpath::child(state.path, content.entities[standIn].name),
                                       .world = state.world,
                                       .absolute = state.absolute,
                                       .id = standIn,
@@ -658,7 +633,7 @@ auto ViewScene::refreshLodGroups(const std::string& path) -> void {
 }
 
 auto ViewScene::touched(const std::string& path) const -> bool {
-    if (std::ranges::any_of(overridesMoved, [&](const std::string& moved) { return isUnder(moved, path); })) {
+    if (std::ranges::any_of(overridesMoved, [&](const std::string& moved) { return primpath::isAtOrUnder(moved, path); })) {
         return true;
     }
     if (rootsToCheck.empty()) {
@@ -845,7 +820,7 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
                   n.lodGroup != spec.lodGroup || n.lodGroupLevel != spec.lodGroupLevel || n.streamRoot != spec.streamRoot;
     }
     if (!rebuild) {
-        rebuild = std::ranges::any_of(overridesMoved, [&](const std::string& moved) { return isUnder(moved, spec.path); });
+        rebuild = std::ranges::any_of(overridesMoved, [&](const std::string& moved) { return primpath::isAtOrUnder(moved, spec.path); });
     }
     if (!rebuild) {
         rebuild = std::ranges::any_of(node->waiting, [this](const std::string& asset) { return arrived.contains(asset); });
@@ -859,7 +834,7 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
         undraw = n.kind == drawnSpec.kind && n.content == drawnSpec.content && n.contentKind == drawnSpec.contentKind && n.instancer == drawnSpec.instancer && n.version == version &&
                  n.path == drawnSpec.path && n.world == drawnSpec.world && n.purpose == drawnSpec.purpose && n.material == drawnSpec.material && n.strong == drawnSpec.strong &&
                  n.lodTag == drawnSpec.lodTag && n.lodDepth == drawnSpec.lodDepth && n.lodGroup == drawnSpec.lodGroup && n.lodGroupLevel == drawnSpec.lodGroupLevel && n.streamRoot == drawnSpec.streamRoot &&
-                 !std::ranges::any_of(overridesMoved, [&](const std::string& moved) { return isUnder(moved, spec.path); }) &&
+                 !std::ranges::any_of(overridesMoved, [&](const std::string& moved) { return primpath::isAtOrUnder(moved, spec.path); }) &&
                  !std::ranges::any_of(node->waiting, [this](const std::string& asset) { return arrived.contains(asset); });
     }
     if (undraw) {
@@ -1117,7 +1092,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
             for (auto index : segment.walk->rowItems) {
                 const auto& item = items[index];
                 auto world = unitScale * (item.absolute ? item.world : segment.world * item.world);
-                auto path = joinPathOf(segment.path, item.path);
+                auto path = primpath::join(segment.path, item.path);
                 if (item.camera) {
                     node->cameras.push_back({.path = path, .worldTransform = world});
                 }
@@ -1137,7 +1112,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
         for (uint32_t i = 0; i < items.size(); i++) {
             const auto& item = items[i];
             auto world = item.absolute ? item.world : segment.world * item.world;
-            auto path = joinPathOf(segment.path, item.path);
+            auto path = primpath::join(segment.path, item.path);
             // The render-LOD group and level its draws are tagged with: its root's in this segment, else the one this placement is under.
             uint32_t tagGroup = spec.lodGroup;
             uint32_t tagLevel = spec.lodGroupLevel;
@@ -1431,7 +1406,7 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
             PlacementSpec spec{.kind = Placement::Kind::Level,
                                .content = content.entities[standIn].linkedContent,
                                .contentKind = Placement::Kind::Level,
-                               .path = childPathOf(root.path, content.entities[standIn].name),
+                               .path = primpath::child(root.path, content.entities[standIn].name),
                                .world = rootWorld,
                                .purpose = rootItem.purpose,
                                .material = rootItem.material,

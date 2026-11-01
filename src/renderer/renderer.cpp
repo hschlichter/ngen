@@ -3,7 +3,6 @@
 #include "renderconfig.h"
 
 #include "blitpass.h"
-#include "projection.h"
 #include "imguibackend.h"
 #include "instanceuploadpass.h"
 #include "material.h"
@@ -11,6 +10,7 @@
 #include "mipchain.h"
 #include "presentpass.h"
 #include "profile.h"
+#include "projection.h"
 #include "rendersnapshot.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"

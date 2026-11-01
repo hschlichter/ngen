@@ -3,6 +3,7 @@
 #include "debugdraw.h"
 #include "drawlists.h"
 #include "lodgroups.h"
+#include "primpath.h"
 #include "viewscene.h"
 
 #include <algorithm>
@@ -19,10 +20,6 @@ auto kindName(const LodHeuristic& heuristic) -> std::string {
         return "screen";
     }
     return heuristic.type;
-}
-
-auto isUnderPath(const std::string& path, const std::string& base) -> bool {
-    return base == "/" || path == base || (path.size() > base.size() && path.starts_with(base) && path[base.size()] == '/');
 }
 
 // Every heuristic a root names, the one used marked: "distance [49.3, 70.8]* | screen [0.25]"; the thresholds as the view picks with them,
@@ -475,7 +472,7 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
             }
             out.levels[instance.lodLevel - 1].triangles += instance.indexCount / 3;
             out.levels[instance.lodLevel - 1].draws++;
-        } else if (out.drawn >= 0 && instance.lodGroup == 0 && instance.lodLevel == (uint32_t) out.drawn + 1 && isUnderPath(scene.primPath(instance.prim), path)) {
+        } else if (out.drawn >= 0 && instance.lodGroup == 0 && instance.lodLevel == (uint32_t) out.drawn + 1 && primpath::isAtOrUnder(scene.primPath(instance.prim), path)) {
             auto& level = out.levels[(size_t) out.drawn];
             level.known = true;
             level.triangles += instance.indexCount / 3;
@@ -541,9 +538,7 @@ auto lodRowShown(const LodToolState& state, const LodRow& row) -> bool {
         return false;
     }
     if (state.onlyUnderSelection) {
-        const auto& base = state.selectedPath;
-        bool under = !base.empty() && (base == "/" || row.path == base || (row.path.size() > base.size() && row.path.starts_with(base) && row.path[base.size()] == '/'));
-        if (!under) {
+        if (state.selectedPath.empty() || !primpath::isAtOrUnder(row.path, state.selectedPath)) {
             return false;
         }
     }

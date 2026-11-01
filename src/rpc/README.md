@@ -8,7 +8,7 @@ discovery files.
 | Part | Files | Depends on |
 |---|---|---|
 | Core | `core/rpcframe.*` (frames), `core/rpcprotocol.*` (JSON-RPC messages, error codes), `core/rpcsocket.*` (loopback TCP), `core/rpcserver.*` (an endpoint with an I/O thread that listens, connects out, or both), `core/rpcclient.*` (blocking client), `core/rpcdiscovery.*` (discovery files), `core/rpcresponder.*` (replies that can complete later), `core/rpcrecords.*` (named records: `introspect.list`, `introspect.get`) | the standard library and header-only nlohmann/json (`external/json`) |
-| Engine layer | `rpcregistry.*` (methods, parameter schemas, `rpc.*` builtins, records as methods), `rpcendpoint.*` (server + discovery + main-thread dispatch, the trace stream) | the core, `src/trace` |
+| Engine layer | `rpcregistry.*` (methods, parameter schemas, `rpc.*` builtins, records as methods), `rpcverbs.*` (script verbs: a line's text to a method's parameters), `rpcendpoint.*` (server + discovery + main-thread dispatch, the trace stream) | the core, `src/trace` |
 | Tool | `ngen-introspect` (`src/introspect/`) | the core |
 
 The core stays free of engine code, so the build server (`src/build/`) can use it as well. Only `.cpp` files include `nlohmann/json.hpp`; headers
@@ -51,16 +51,17 @@ process is gone, so a crashed process leaves nothing behind after the next listi
 2. Register it with a `RpcMethodDesc`:
    - a one-line summary
    - typed parameters (`Bool`, `Int`, `Float`, `String`, `Vec3`, `Enum` with values, `Array`, `Object`, `Any` for a value the handler checks itself), each required or optional with a
-     description
+     description (`requiredField`, `optionalField`)
    - a result description
 3. Write the handler: parameters are checked before it runs, so it can read them with `get<>()`. Answer through the responder; use
    `rpc::appError` with a message for engine failures.
-4. If it should also be a script verb, add a row to the verb table with a parser from the script's text to the parameters
-   (`src/view/viewcommands.cpp`). Script lines and live calls then run the same code.
+4. If it should also be a script verb, add it to the `RpcVerbs` table beside the method (`verbs.add(verb, method, parser)`), with a parser from
+   the script's text to the parameters. Script lines and live calls then run the same code.
 5. `rpc.describe` lists the new method automatically.
 
-ngen-view's methods live in `src/view/`: `viewcommands.*` (the methods and the script verb table) and `viewdumps.*` (dumps and captures that
-complete frames later, into a file, a reply or both).
+ngen-view's methods are registered by the layer that owns what they act on: the engine's by domain in `src/view/*commands.cpp` (the
+`viewcommands` library, `src/view/README.md`, "Commands"), with `viewdumps.*` for dumps and captures that complete frames later, into a file,
+a reply or both; the tools' in `src/tools/toolcommands.*`; the UI's in `src/ui/uicommands.*`.
 
 ## Records
 

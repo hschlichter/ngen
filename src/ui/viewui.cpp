@@ -418,65 +418,47 @@ auto ViewUI::takeEditRequest() -> ViewEditRequest {
     return ViewEditRequest::None;
 }
 
-auto ViewUI::setOverlay(std::string_view name, bool on) -> bool {
-    if (name == "grid") {
-        toolsconfig::overlayGrid.set(on);
-    } else if (name == "origin") {
-        toolsconfig::overlayOrigin.set(on);
-    } else if (name == "gizmo" || name == "gizmos") {
-        toolsconfig::overlayGizmos.set(on);
-    } else if (name == "aabbs") {
-        toolsconfig::overlayAabbs.set(on);
-    } else if (name == "lightgizmos") {
-        toolsconfig::overlayLightGizmos.set(on);
-    } else if (name == "buffer") {
-        renderconfig::bufferOverlay.set(on);
-    } else if (name == "shadow") {
-        renderconfig::shadowOverlay.set(on);
-    } else if (name == "aa") {
-        renderconfig::antiAliasing.set(on);
-    } else if (name == "cascadefrusta") {
-        toolsconfig::overlayCascadeFrusta.set(on);
-    } else {
-        return false;
+auto ViewUI::windowFlag(std::string_view name) -> bool* {
+    if (name == "memory") {
+        return &introspectionFlags.memory;
+    } else if (name == "capture") {
+        return &introspectionFlags.capture;
+    } else if (name == "framedebugger") {
+        return &introspectionFlags.frameDebugger;
+    } else if (name == "gpuscene") {
+        return &introspectionFlags.gpuScene;
+    } else if (name == "counters") {
+        return &introspectionFlags.counters;
+    } else if (name == "shaders") {
+        return &introspectionFlags.shaders;
+    } else if (name == "culling") {
+        return &showCullingWindow;
+    } else if (name == "assets") {
+        return &showAssetsWindow;
+    } else if (name == "lod") {
+        return &showLodWindow;
+    } else if (name == "streaming") {
+        return &showStreamingWindow;
+    } else if (name == "camera") {
+        return &showCameraWindow;
+    } else if (name == "renderdebug") {
+        return &showRenderDebugWindow;
+    } else if (name == "framegraph") {
+        return &showFrameGraphWindow;
+    } else if (name == "performance") {
+        return &showPerformanceWindow;
+    } else if (name == "config") {
+        return &showConfigWindow;
     }
-    return true;
+    return nullptr;
 }
 
 auto ViewUI::setIntrospectionWindow(std::string_view name, bool on) -> bool {
-    if (name == "memory") {
-        introspectionFlags.memory = on;
-    } else if (name == "capture") {
-        introspectionFlags.capture = on;
-    } else if (name == "framedebugger") {
-        introspectionFlags.frameDebugger = on;
-    } else if (name == "gpuscene") {
-        introspectionFlags.gpuScene = on;
-    } else if (name == "counters") {
-        introspectionFlags.counters = on;
-    } else if (name == "shaders") {
-        introspectionFlags.shaders = on;
-    } else if (name == "culling") {
-        showCullingWindow = on;
-    } else if (name == "assets") {
-        showAssetsWindow = on;
-    } else if (name == "lod") {
-        showLodWindow = on;
-    } else if (name == "streaming") {
-        showStreamingWindow = on;
-    } else if (name == "camera") {
-        showCameraWindow = on;
-    } else if (name == "renderdebug") {
-        showRenderDebugWindow = on;
-    } else if (name == "framegraph") {
-        showFrameGraphWindow = on;
-    } else if (name == "performance") {
-        showPerformanceWindow = on;
-    } else if (name == "config") {
-        showConfigWindow = on;
-    } else {
+    auto* open = windowFlag(name);
+    if (open == nullptr) {
         return false;
     }
+    *open = on;
     return true;
 }
 

@@ -105,7 +105,7 @@ auto FrameGraphContext::buffer(FgBufferHandle handle) -> RhiBuffer* {
     return graph->resources[handle.index].physicalBuffer;
 }
 
-// --- Helpers ---
+// The texture and buffer states a pass's declared access needs, for the barriers before it.
 
 static auto accessToLayout(FgAccessFlags access) -> RhiTextureState {
     if (access & FgAccessFlags::ColorAttachment) {

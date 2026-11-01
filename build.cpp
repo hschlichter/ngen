@@ -217,6 +217,8 @@ auto main(int argc, char** argv) -> int {
                 "src/view/viewpicking.cpp",
                 "src/view/ground.cpp",
                 "src/view/camera.cpp",
+                "src/view/cameraflight.cpp",
+                "src/view/assetgoto.cpp",
             })
             .public_include({"src/view"})
             .include({
@@ -234,6 +236,38 @@ auto main(int argc, char** argv) -> int {
             .link(traceLib)
             .link(profile);
 
+    // The view's commands (src/view/README.md): every engine method, script verb and record, by domain, and the dumps that answer frames later.
+    // What an agent reaches without the tools or the UI.
+    auto viewCommands =
+        cxx::static_library("viewcommands")
+            .sources({
+                "src/view/viewcommands.cpp",
+                "src/view/cameracommands.cpp",
+                "src/view/scenecommands.cpp",
+                "src/view/lodcommands.cpp",
+                "src/view/configcommands.cpp",
+                "src/view/displaycommands.cpp",
+                "src/view/profilecommands.cpp",
+                "src/view/viewdumps.cpp",
+            })
+            .include({
+                "src",
+                "src/trace",
+                "src/profile",
+                "src/rhi",
+                "src/rhi/vulkan",
+                "external/json/single_include",
+            })
+            .link(viewLib)
+            .link(renderer)
+            .link(rpc)
+            .link(rpccore)
+            .link(session)
+            .link(assetClient)
+            .link(config)
+            .link(traceLib)
+            .link(profile);
+
     // The tools (src/tools/README.md): the LOD and Streaming tools and the debug camera, their data built from the view's scene. No UI.
     auto toolsLib =
         cxx::static_library("tools")
@@ -245,6 +279,7 @@ auto main(int argc, char** argv) -> int {
                 "src/rhi",
                 "src/rhi/vulkan",
             })
+            .link(viewCommands)
             .link(viewLib)
             .link(renderer)
             .link(config);
@@ -406,8 +441,6 @@ auto main(int argc, char** argv) -> int {
                 "src/jobsystem.cpp",
                 "src/imguibackendvulkan.cpp",
                 "src/renderdoccapture.cpp",
-                "src/view/viewcommands.cpp",
-                "src/view/viewdumps.cpp",
             })
             .include({
                 "src",
@@ -439,6 +472,7 @@ auto main(int argc, char** argv) -> int {
             .link(rhivulkan)
             .link(renderer)
             .link(toolsLib)
+            .link(viewCommands)
             .link(viewLib)
             .link(ui)
             .link(imgui)

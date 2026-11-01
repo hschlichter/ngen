@@ -10,6 +10,7 @@ the caller feeds the composer packs from the asset server.
 | `worldcomposer.*` | `WorldComposer`: layer packs to a `World` |
 | `xformops.*` | a prim's local transform from its `xformOpOrder` |
 | `fingerprint.h` | the fingerprint line `ngen-worldcheck` and `ngen-usdcheck` print |
+| `primpath.*` | prim paths: a child's path, a content's path joined where it is placed, whether a path is at or under another; the view and the tools use the same |
 
 ## What a World holds
 

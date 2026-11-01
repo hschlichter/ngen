@@ -27,6 +27,10 @@ auto extendDebugCameraTrail(DebugCameraState& debug, const glm::vec3& mainPositi
     }
 }
 
+auto lodCamera(const DebugCameraState& debug, const Camera& main) -> const Camera& {
+    return toolsconfig::debugCamera.get() && toolsconfig::debugLod.get() ? debug.camera : main;
+}
+
 auto drawMainCamera(const DebugCameraState& debug, const Camera& main, const glm::mat4& mainViewProj, float farDepth, double metersPerUnit, DebugDraw& draw) -> void {
     const glm::vec4 frustumColor = {1.0f, 0.55f, 0.1f, 1.0f};
     const glm::vec4 trailColor = {1.0f, 0.55f, 0.1f, 0.6f};

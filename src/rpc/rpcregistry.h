@@ -33,6 +33,10 @@ struct RpcField {
     std::vector<std::string> enumValues;
 };
 
+// A parameter the call must give, and one it may leave out.
+auto requiredField(std::string name, RpcType type, std::string description) -> RpcField;
+auto optionalField(std::string name, RpcType type, std::string description) -> RpcField;
+
 struct RpcMethodDesc {
     std::string name;
     std::string summary;

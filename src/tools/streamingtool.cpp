@@ -1,6 +1,7 @@
 #include "streamingtool.h"
 
 #include "debugdraw.h"
+#include "primpath.h"
 #include "viewscene.h"
 
 #include <algorithm>
@@ -9,10 +10,6 @@
 #include <numbers>
 
 namespace {
-
-auto isUnderPath(const std::string& path, const std::string& base) -> bool {
-    return base == "/" || path == base || (path.size() > base.size() && path.starts_with(base) && path[base.size()] == '/');
-}
 
 auto kindName(const LodHeuristic& heuristic) -> std::string {
     if (heuristic.kind == LodHeuristicKind::Distance) {
@@ -284,10 +281,10 @@ auto inspectStreamingRoot(const ViewScene& scene, const std::string& path, const
         if (other.path == path || scene.lodChoices().find(other.path) == scene.lodChoices().end()) {
             continue;
         }
-        if (isUnderPath(path, other.path) && other.path.size() > out.parent.size()) {
+        if (primpath::isAtOrUnder(path, other.path) && other.path.size() > out.parent.size()) {
             out.parent = other.path;
         }
-        if (isUnderPath(other.path, path)) {
+        if (primpath::isAtOrUnder(other.path, path)) {
             out.children.push_back(other.path);
         }
     }
@@ -317,15 +314,6 @@ auto drawStreamingOverlays(const StreamingToolState& state, DebugDraw& draw, con
         }
     }
 }
-
-namespace {
-
-// Under the selection: the root at or under the view's selected prim.
-auto underPath(const std::string& path, const std::string& base) -> bool {
-    return !base.empty() && (base == "/" || path == base || (path.size() > base.size() && path.starts_with(base) && path[base.size()] == '/'));
-}
-
-} // namespace
 
 auto streamingStateColor(StreamingRootState state) -> glm::vec4 {
     switch (state) {
@@ -383,7 +371,7 @@ auto streamingRowShown(const StreamingToolState& state, const StreamingRow& row)
     if (state.onlyFindings && row.findings.empty()) {
         return false;
     }
-    if (state.onlyUnderSelection && !underPath(row.path, state.selectedPath)) {
+    if (state.onlyUnderSelection && (state.selectedPath.empty() || !primpath::isAtOrUnder(row.path, state.selectedPath))) {
         return false;
     }
     return true;

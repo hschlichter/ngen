@@ -20,7 +20,11 @@ records with `registerRpcRecords` (engine layer); the asset server answers the t
 
 | Process | Record | What it holds |
 |---|---|---|
-| view | `status` | frame counter, scene, selection, camera, anti-aliasing, material sampler, purposes drawn |
+| view | `status` | frame counter, scene, selection, the main camera, the camera modes (the follow mode's ground hit, the orbit's pivot) |
+| view | `config` | every configuration value with its type, value, default, description and range or choices (`src/config/README.md`) |
+| view | `debugcamera` | the debug camera's pose and the main camera's trail (the tools'; its switches are `config`'s `tools.debugcamera.*`) |
+| view | `lodtool`, `streamingtool` | the LOD and Streaming tools: the inspection of the root at or above the selection, and the tools' totals (the tools'; `src/tools/README.md`) |
+| view | `windows` | the UI's windows by name and whether each is open (the UI's) |
 | view | `scene` | layer stack, up axis and units, prims (instances expanded), prototypes, draws, lights, LOD levels set, point instancers and their points, prims with variant sets |
 | view | `instancers` | every PointInstancer reached while drawing: its points and those shown, its prototypes, the prims its points draw |
 | view | `variants` | every prim with variant sets reached while drawing: each set and the variant it composed to; per set, how many prims chose each variant |
@@ -46,8 +50,8 @@ JSON line: `{record, requested_frame, frame, ts_ns, value}`, `frame` being the f
 sample itself, so the frame is exact and nothing has to be connected at that frame; a script run collects its values in one file, for example
 `120 record render /tmp/records.jsonl` and `150 record memory /tmp/records.jsonl`.
 
-**Adding a record:** `records.add(name, description, producer)` in the process — `registerViewRecords` (`src/view/viewcommands.cpp`) for
-ngen-view, `AssetServer::addRecords` for the asset server. The tool shows it without changes. A record is for reading; anything that changes
+**Adding a record:** `records.add(name, description, producer)` in the process — for ngen-view in the register function of the domain or
+layer that owns the data (`src/view/*commands.cpp`, `src/tools/toolcommands.cpp`, `src/ui/uicommands.cpp`), `AssetServer::addRecords` for the asset server. The tool shows it without changes. A record is for reading; anything that changes
 state is a method.
 
 ## Command line

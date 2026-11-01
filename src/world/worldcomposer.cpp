@@ -1,5 +1,6 @@
 #include "worldcomposer.h"
 
+#include "primpath.h"
 #include "scenepack.h"
 #include "xformops.h"
 
@@ -112,13 +113,6 @@ auto elementCount(const std::string& path) -> int {
         return 0;
     }
     return (int) std::ranges::count(path, '/');
-}
-
-auto hasPrefix(const std::string& path, const std::string& prefix) -> bool {
-    if (prefix == "/") {
-        return true;
-    }
-    return path == prefix || (path.size() > prefix.size() && path.starts_with(prefix) && path[prefix.size()] == '/');
 }
 
 auto replacePrefix(const std::string& path, const std::string& from, const std::string& to) -> std::string {
@@ -277,7 +271,7 @@ auto contributions(const Node& root) -> std::vector<Contribution> {
 auto mapToComposed(const std::string& path, const Contribution& contribution) -> std::optional<std::string> {
     std::string mapped = path;
     for (const Node* node : contribution.chain) {
-        if (hasPrefix(mapped, node->mapSource)) {
+        if (primpath::isAtOrUnder(mapped, node->mapSource)) {
             mapped = replacePrefix(mapped, node->mapSource, node->mapTarget);
         } else if (!node->rootIdentity) {
             return std::nullopt;
@@ -430,16 +424,6 @@ auto relativePath(const ContentContext& context, const std::string& composedPath
         return "/";
     }
     return composedPath.substr(context.base.size());
-}
-
-auto joinPath(const std::string& base, const std::string& relative) -> std::string {
-    if (relative == "/") {
-        return base;
-    }
-    if (base == "/") {
-        return relative;
-    }
-    return base + relative;
 }
 
 auto msSince(std::chrono::steady_clock::time_point start) -> double {
@@ -900,7 +884,7 @@ struct WorldComposer::Impl {
         }
         uint32_t wanted = std::min(defaultIndex, levelCount - 1);
         if (at.sharedKey.empty()) {
-            auto path = joinPath(at.base, relative);
+            auto path = primpath::join(at.base, relative);
             if (auto resident = residentLevels.find(path); resident != residentLevels.end() && !resident->second.empty()) {
                 for (uint32_t level : resident->second) {
                     out.insert(std::min(level, levelCount - 1));
@@ -911,7 +895,7 @@ struct WorldComposer::Impl {
                 wanted = std::min(it->second, levelCount - 1);
             }
         } else if (auto proto = prototypeLevels.find(at.sharedKey); proto != prototypeLevels.end()) {
-            if (auto levels = proto->second.find(joinPath(at.ownerPath, relative)); levels != proto->second.end()) {
+            if (auto levels = proto->second.find(primpath::join(at.ownerPath, relative)); levels != proto->second.end()) {
                 for (uint32_t level : levels->second) {
                     out.insert(std::min(level, levelCount - 1));
                 }
@@ -1070,7 +1054,7 @@ struct WorldComposer::Impl {
         PendingTarget target;
         target.content = context.content;
         target.entity = id;
-        if (context.key.empty() || hasPrefix(*mapped, context.base)) {
+        if (context.key.empty() || primpath::isAtOrUnder(*mapped, context.base)) {
             target.path = relativePath(context, *mapped);
         } else {
             target.path = *mapped;
@@ -1660,7 +1644,7 @@ struct WorldComposer::Impl {
                     }
                     bool loads = slot->second.parentLoads && levels.contains(i);
                     auto levelRelative = at.content->path(standIn);
-                    auto ownerPath = joinPath(at.ownerPath, levelRelative);
+                    auto ownerPath = primpath::join(at.ownerPath, levelRelative);
                     auto linked = linkedContent(slot->second, loads, at, ownerPath);
                     at.content->entities[standIn].linkedContent = linked;
                     if (linked < 0) {
@@ -1673,7 +1657,7 @@ struct WorldComposer::Impl {
                     } else {
                         at.content->payloads.erase(standIn);
                     }
-                    pending.push_back(Reach{.content = &level, .info = &contentInfo[(size_t) linked], .base = joinPath(at.base, levelRelative), .sharedKey = at.sharedKey, .ownerPath = ownerPath});
+                    pending.push_back(Reach{.content = &level, .info = &contentInfo[(size_t) linked], .base = primpath::join(at.base, levelRelative), .sharedKey = at.sharedKey, .ownerPath = ownerPath});
                 }
             }
         }
@@ -1695,7 +1679,7 @@ struct WorldComposer::Impl {
                     if (auto it = pending.content->byPath.find(pending.path); it != pending.content->byPath.end()) {
                         found = it->second;
                     } else if (info->sharedKey.empty()) {
-                        if (auto located = locate(joinPath(info->base, pending.path))) {
+                        if (auto located = locate(primpath::join(info->base, pending.path))) {
                             lookIn = located->content;
                             found = located->id;
                         }
@@ -1740,7 +1724,7 @@ struct WorldComposer::Impl {
             if (auto it = prototypeByKey.find(info.sharedKey); it != prototypeByKey.end()) {
                 auto& prototype = world.contents[(size_t) it->second];
                 const auto& base = contentInfo[(size_t) it->second].base;
-                if (hasPrefix(path, base)) {
+                if (primpath::isAtOrUnder(path, base)) {
                     auto inPrototype = path == base ? std::string("/") : path.substr(base.size());
                     return locate(inPrototype, Located{.content = &prototype, .id = 0, .sharedKey = info.sharedKey, .pathInOwner = "/"});
                 }
