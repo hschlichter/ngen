@@ -107,6 +107,7 @@ struct StreamingTotals {
 // cameras for the map, the flight, and what the window asked for this frame (the application applies the requests and clears them). The
 // window's own state (scroll, the map's pan and zoom, edit buffers) is the UI's.
 struct StreamingToolState {
+    bool windowOpen = false; // the Streaming window is open; set by the UI each frame. The rows, inspector and chart are kept while it is.
     char filter[128] = "";
     bool onlyLate = false;
     bool onlyHoles = false;

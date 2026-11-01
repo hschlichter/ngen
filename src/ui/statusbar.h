@@ -1,8 +1,16 @@
 #pragma once
 
-#include <cstdint>
+#include "profile.h"
+#include "rhitypes.h"
 
-// What the status bar shows, gathered by the application each frame. The UI library only draws it.
+#include <cstdint>
+#include <vector>
+
+class AssetClient;
+class RhiDevice;
+struct CullResult;
+
+// What the status bar shows, gathered each frame (StatusBarGatherer).
 struct StatusBarData {
     double fps = 0.0;
     double frameMs = 0.0;        // CPU frame interval, averaged over the last second
@@ -23,3 +31,16 @@ struct StatusBarData {
 
 // A bar along the bottom of the main viewport: timings on the left, memory and asset activity on the right.
 auto drawStatusBar(const StatusBarData& data) -> void;
+
+// Gathers the status bar's numbers each frame: timings from the profiler's frame history, memory from the process and the device (sampled
+// four times a second), asset counts from the asset client.
+class StatusBarGatherer {
+public:
+    auto gather(const RhiDevice& device, const AssetClient& assets, const CullResult& cull) -> StatusBarData;
+
+private:
+    std::vector<profile::FrameStats> frames;
+    std::vector<RhiMemoryHeapInfo> heaps;
+    uint64_t lastMemorySampleNs = 0;
+    StatusBarData data;
+};

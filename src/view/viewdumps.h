@@ -8,6 +8,7 @@
 #include "renderdebug.h"
 #include "rpcresponder.h"
 #include "screenshot.h"
+#include "viewframe.h"
 
 #include <cstdint>
 #include <functional>
@@ -50,7 +51,12 @@ public:
     // A screenshot the renderer was asked for; answered when the file is written.
     auto trackScreenshot(std::string path, RpcResponder responder, bool inlinePng) -> void;
 
-    // Per frame, from the main loop.
+    // Per frame, from the main loop: what the dumps waiting want read back, then what came back for them. A capture result a dump takes is
+    // removed from `readbacks`.
+    auto wantReadbacks(FrameReadbacks& readbacks) -> void;
+    auto takeReadbacks(FrameReadbacks& readbacks) -> void;
+
+private:
     auto wantsFrameGraphDebug() const -> bool;
     auto wantsRenderDebug() const -> bool;
     auto wantsCounters() const -> bool;
@@ -64,7 +70,6 @@ public:
     auto onRenderDebug(const std::optional<RenderDebugSnapshot>& snapshot) -> void;
     auto onScreenshots(const std::vector<ScreenshotResult>& results) -> void;
 
-private:
     struct CaptureDump {
         CaptureWatch watch;
         DumpTarget target;

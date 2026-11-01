@@ -154,8 +154,8 @@ auto sceneThreadRecord(const ViewContext& view) -> Json {
         {"renderThreadDrawn", view.renderThread.sceneDrawn()},
         {"resident", r.resident},
         {"everResident", r.everResident},
-        {"scriptHeld", r.scriptHeld},
-        {"scriptFrame", r.scriptFrame},
+        {"scriptHeld", view.script.held},
+        {"scriptFrame", view.script.frame},
         {"loading", {{"frames", r.loadingFrames}, {"longestFrameMs", r.longestLoadingFrameMs}}},
         {"lastResident", {{"frame", r.lastResidentFrame}, {"ms", r.lastResidentMs}, {"loadFrames", r.lastLoadFrames}, {"longestFrameMs", r.lastLoadLongestMs}}},
     };

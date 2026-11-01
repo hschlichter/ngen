@@ -1,6 +1,6 @@
 # Lean pass: the engine apart from its tools, a lean frame loop and lean instrumentation
 
-**Status. In progress.** Step 0 done 2026-10-31, steps 1 to 3 2026-11-01. Decisions locked 2026-10-31 (Henrik): the layering and the order below; settings move into the configuration system
+**Status. In progress.** Step 0 done 2026-10-31, steps 1 to 5 2026-11-01. Decisions locked 2026-10-31 (Henrik): the layering and the order below; settings move into the configuration system
 ([plan_configuration.md](plan_configuration.md)); the Engine Map and Scene Flow windows removed with their code. Pushback welcome on the
 open choices.
 
@@ -201,6 +201,38 @@ At the end:
     the tool windows open gives `lodtool` 11,954 rows and `streamingtool` 396 roots; a bad overlay name, an unknown verb, the debug camera
     while off, a flight with no cameras and an unknown window each fail with their message; the debug build runs with every tool window
     open, and its assert that no verb is added twice holds.
+
+- **Step 5** (2026-11-01): the frame loop is the engine's steps in order (Henrik: the steps in the `view` library, the hooks an interface
+  the tools and the UI implement).
+  - `ViewFrame` (`src/view/viewframe.*`) holds the frame's engine state (the main camera, the cameras the frame uses, the camera modes, the
+    flight, go-to, the selection and picking, residency, culling and its readback, the cascades, the debug lines, the readbacks) and one
+    method per step: `updateScene`, `advanceTime`, `resetCameras`, `setViewport`, `sendSceneInputs`, `updateResidency`, the controls (`look`,
+    `wheel`, `startOrbit`, `pick`, `deselect`, `selectParent`, `frameSelected`, `frameScene`), `moveCamera`, `cull`, `countLodPops`,
+    `fitCascades`, `drawCameraModes`, `readBack`, `buildSnapshot`.
+  - `ViewHooks` (`src/view/viewhooks.h`): `afterScene`, `cameras`, `event`, `afterCamera`, `debugDraw`, `wantReadbacks`/`takeReadbacks`,
+    `drawUi`, `fillSnapshot`, each a no-op unless overridden. `ToolsHooks` (`src/tools/toolshooks.*`) implements the tools' part: the rows,
+    the debug camera's placement and the cameras it takes over (`FrameCameras`, replacing the loop's `viewCamera`/`controlledCamera`
+    lambdas), the C key, the transform and axis gizmos, the trail, the overlays and layers, the LOD and Streaming windows' requests (the
+    loop's two syncs). `UiHooks` (`src/ui/uihooks.*`) wraps it: ImGui's events and frame, F12, the Camera window's list, the Culling
+    window's numbers, the windows' readbacks, the status bar (`StatusBarGatherer` moved from `view.cpp` to `src/ui/statusbar.*`), the
+    Assets, Edit, texture, RenderDoc, screenshot and Camera window requests.
+  - The overlays moved from `ViewUI::drawDebug` to `src/tools/overlays.*` with their configuration values; `ViewTool` went to `tools.h`
+    (`ToolsState::activeTool`, set from the menu by the UI). The tools' states know whether their window is open (`windowOpen`, set by the
+    UI), so the tools decide alone when their rows are kept.
+  - The commands: `runFrameCommands` (the script's clock, its due lines, the endpoint, `--frames`) and `answerResidentWaiters` in
+    `viewcommands`; the clock is `ScriptClock` (`scriptHeld` and `scriptFrame` left `ViewResidency`). `ViewDumps` takes its readbacks
+    through `wantReadbacks`/`takeReadbacks`. The asset server's change notices are the scene update's now, not the UI section's.
+  - `view.cpp`: 1,481 lines to 566; the loop from about 880 lines to 47. The window's input is `pollInput` (SDL's events to the hooks, then
+    to `ViewFrame`'s controls), the program's. `ImGuiBackendVulkan::processEvent` takes a const event.
+  - Behaviour kept, with three differences in when: a camera taken over by the debug camera is decided once a frame after the commands, so
+    a switch made in a window or by C shows the next frame (before, the same frame, from a debug camera not yet placed); a gizmo drag takes
+    the mouse's motion before mouse look; the first frame's time is 0. The `Camera` and `Cull` profiler zones replace `CameraAndCull`.
+  - Records, methods, verbs and windows unchanged.
+  - Checks: release and debug build; the 8 reference images byte-identical; the debug camera's runs give `status`, `streaming` and
+    `culling` records identical (but for timings and pack keys) to step 4's; following holds 1.8 m on all 30 steps; the village run with
+    the tool windows open gives `lodtool` 11,954 rows and `streamingtool` the same as step 4 (only `pops` differs, and it differs between
+    runs of one build: 4 and 22); the error paths fail with their messages; the debug build runs with every tool window open; the overlays
+    (grid, origin, bounds, selection, cascades, light, axis gizmo) draw on three_cubes.
 
 ## Open questions
 

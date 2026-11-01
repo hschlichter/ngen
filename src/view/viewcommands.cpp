@@ -1,5 +1,8 @@
 #include "viewcommands.h"
 
+#include "profile.h"
+#include "rpcendpoint.h"
+#include "sessionscript.h"
 #include "trace.h"
 
 #include <nlohmann/json.hpp>
@@ -76,4 +79,34 @@ auto registerViewCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& re
             records.get(name, write);
         });
     verbs.add("record", "introspect.record", parseRecord);
+}
+
+auto runFrameCommands(ViewContext& view, SessionScript& session, const RpcRegistry& registry, const RpcVerbs& verbs, RpcEndpoint& endpoint) -> void {
+    auto& script = view.script;
+    script.held = (script.waitForResident && !view.residency.everResident) || !view.residentWaiters.empty() || view.flight.flying();
+    std::vector<SessionCommand> due;
+    if (!script.held) {
+        script.frame++;
+        session.takeDue(script.frame, due);
+    }
+    {
+        PROFILE_ZONE("Commands");
+        for (const auto& command : due) {
+            verbs.run(registry, command.verb, command.args);
+        }
+        endpoint.drain();
+    }
+    if (script.lastFrame > 0 && script.frame > script.lastFrame) {
+        view.quit = true;
+    }
+}
+
+auto answerResidentWaiters(ViewContext& view) -> void {
+    if (!view.residency.resident) {
+        return;
+    }
+    for (auto& waiter : view.residentWaiters) {
+        waiter.responder.respond(waiter.result);
+    }
+    view.residentWaiters.clear();
 }

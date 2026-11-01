@@ -6,6 +6,7 @@
 #include "rpcrecords.h"
 #include "rpcregistry.h"
 #include "rpcverbs.h"
+#include "viewframe.h"
 #include <nlohmann/json.hpp>
 
 #include <glm/glm.hpp>
@@ -19,6 +20,8 @@
 #include <vector>
 
 class AssetClient;
+class RpcEndpoint;
+class SessionScript;
 class Renderer;
 class RenderThread;
 class RenderDocCapture;
@@ -42,21 +45,13 @@ struct ResidentWaiter {
     rpc::Json result;
 };
 
-// Where the view is in loading its scene, kept by the main loop and read by the `scenethread` record and the Scene window. Resident: the scene
-// thread has nothing left to do and the render thread has drawn every change with nothing left to upload.
-struct ViewResidency {
-    bool resident = false;
-    bool everResident = false;
-    bool scriptHeld = false; // script frames don't count: waiting for the first residency or for a method that answers on it
-    uint64_t scriptFrame = 0;
-    // The load in progress: main-loop frames while not resident, and the longest of them.
-    uint64_t loadingFrames = 0;
-    double longestLoadingFrameMs = 0.0;
-    // The last time it became resident: the frame, the time since start, and that load's frames and longest frame.
-    uint64_t lastResidentFrame = 0;
-    double lastResidentMs = 0.0;
-    uint64_t lastLoadFrames = 0;
-    double lastLoadLongestMs = 0.0;
+// The script's clock: its frames count only while nothing holds it (the scene first becoming resident, unless --no-wait-resident; a method
+// that answers on residency; a flight), so a script sees the scene as it is once loaded. The view quits after `lastFrame` (--frames).
+struct ScriptClock {
+    bool waitForResident = true;
+    uint64_t lastFrame = 0; // none: 0
+    bool held = false;
+    uint64_t frame = 0;
 };
 
 // An answer waiting for a culling readback with every render-LOD group's state (frames later): the `renderlod` record, view.renderlod, and
@@ -84,6 +79,7 @@ struct ViewContext {
     const uint64_t& frameCounter;
     std::vector<ResidentWaiter>& residentWaiters;
     const ViewResidency& residency;
+    ScriptClock& script;
     std::vector<RenderLodRequest>& renderLodRequests;
     const float& viewAspect; // the view's width over height, as the LOD heuristic and the GPU's pick measure it
     const uint64_t& lodPops; // render-LOD pops (a drawn level changed without a fade) counted over the readbacks seen
@@ -106,6 +102,13 @@ auto registerLodCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& rec
 auto registerConfigCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records) -> void;
 auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view) -> void;
 auto registerProfileCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records) -> void;
+
+// The commands due this frame: the script's lines at its frame while nothing holds its clock, then the calls the endpoint received. Once a
+// frame, after the scene update and the tools' lists.
+auto runFrameCommands(ViewContext& view, SessionScript& session, const RpcRegistry& registry, const RpcVerbs& verbs, RpcEndpoint& endpoint) -> void;
+
+// Answers the methods waiting for the scene to be resident once it is; once a frame, after residency is updated.
+auto answerResidentWaiters(ViewContext& view) -> void;
 
 // Answers the render-LOD requests whose readback has arrived; once a frame, after the culling readback is taken. True while some still
 // wait, so the next frames read the states back.
