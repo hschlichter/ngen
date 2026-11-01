@@ -130,6 +130,8 @@ items in an "Open questions" section instead of picking silently.
   `src/trace/README.md`.
 - `src/view/` — ngen-view's scene (`viewscene.*`: the World composed from packs, flattened into the renderer's inputs), its commands as RPC
   methods and script verbs (`viewcommands.*`), and its dumps (`viewdumps.*`). Design in `src/view/README.md`.
+- `src/tools/` — the tools (LOD and Streaming tools, the debug camera): their data, state and viewport layers, apart from the UI that draws
+  them; nothing here includes `src/ui`. Rules in `src/tools/README.md`.
 - `src/asset/` — the asset system: `ngen-asset-server` (`server/`), `AssetClient`, and packing (`pack/`: the rule type and what every packer
   shares). Assets are the system, packing is the process that makes an asset engine-ready. Asset ids, the server, its cache, the stream, `pack.cpp`
   rules and the packer contract in `src/asset/README.md`. Packers are programs in `src/apps/packer<type>.cpp`; their rules are in the root
@@ -140,7 +142,8 @@ items in an "Open questions" section instead of picking silently.
   `src/rhi/examples/`.
 - `src/build/` — the build system (framework, IR, runner, bootstrap). Standard library only and self-contained, so it can be lifted into another
   project; design and rules in `src/build/README.md`. The project's own description is the root `build.cpp`.
-- Cross-cutting files (`types.h`, `camera.*`) live directly in `src/`.
+- Cross-cutting files (`types.h`) live directly in `src/`; code with an owner lives in its library (the camera in `src/view`, the projection
+  and debug lines in `src/renderer`).
 
 ## Build
 
