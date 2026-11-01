@@ -1,48 +1,34 @@
 #include "assetclient.h"
 #include "assetid.h"
-#include "camera.h"
-#include "culling.h"
-#include "debugcamera.h"
-#include "debugdraw.h"
 #include "ground.h"
 #include "imguibackendvulkan.h"
 #include "jobsystem.h"
-#include "lodtool.h"
-#include "primpath.h"
 #include "profile.h"
-#include "projection.h"
 #include "renderconfig.h"
-#include "renderdebugjson.h"
 #include "renderdoccapture.h"
 #include "renderer.h"
-#include "rendersnapshot.h"
 #include "renderthread.h"
-#include "renderworld.h"
 #include "rhidevicevulkan.h"
-#include "rotategizmo.h"
 #include "rpcendpoint.h"
 #include "rpcregistry.h"
 #include "rpcverbs.h"
-#include "scalegizmo.h"
 #include "sessionscript.h"
-#include "shadowcascades.h"
-#include "statusbar.h"
-#include "streamingtool.h"
 #include "toolcommands.h"
+#include "toolshooks.h"
 #include "trace.h"
-#include "translategizmo.h"
 #include "uicommands.h"
+#include "uihooks.h"
 #include "viewcommands.h"
 #include "viewdumps.h"
-#include "viewpicking.h"
+#include "viewframe.h"
+#include "viewhooks.h"
 #include "viewscene.h"
 #include "viewui.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
-#include <imgui.h>
 
-#include <glm/gtc/matrix_transform.hpp>
+#include <glm/glm.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -83,70 +69,112 @@ static auto makeRhiWindowSdl(SDL_Window* window) -> RhiWindow {
 
 namespace {
 
-// Gathers the status bar's numbers each frame: timings from the profiler's frame history, memory from the process and
-// the device (sampled four times a second), asset counts from the asset client.
-class StatusBarGatherer {
-public:
-    auto gather(const RhiDevice& device, const AssetClient& assets, const CullResult& cull) -> StatusBarData {
-        data.trianglesDrawn = cull.cameraTriangles;
-        data.trianglesScene = cull.sceneTriangles;
-        profile::frameHistory(frames);
-        // Average over the last second of frames, newest first.
-        double cpuSum = 0.0;
-        double gpuSum = 0.0;
-        size_t count = 0;
-        size_t gpuCount = 0;
-        for (auto it = frames.rbegin(); it != frames.rend() && cpuSum < 1000.0; ++it) {
-            cpuSum += it->cpuMs;
-            count++;
-            if (it->gpuMs > 0.0) {
-                gpuSum += it->gpuMs;
-                gpuCount++;
-            }
-        }
-        if (count > 0 && cpuSum > 0.0) {
-            data.frameMs = cpuSum / (double) count;
-            data.fps = 1000.0 / data.frameMs;
-        }
-        data.gpuMs = gpuCount > 0 ? gpuSum / (double) gpuCount : 0.0;
-
-        auto now = profile::now();
-        if (now - lastMemorySampleNs >= 250'000'000ull || lastMemorySampleNs == 0) {
-            lastMemorySampleNs = now;
-            data.cpuMemoryBytes = residentBytes();
-            device.memoryHeaps(heaps);
-            data.gpuMemoryBytes = 0;
-            for (const auto& heap : heaps) {
-                data.gpuMemoryBytes += heap.allocated;
-            }
-        }
-
-        auto stats = assets.stats();
-        data.assetsConnected = true;
-        data.assetsRequested = stats.requested;
-        data.assetsPacked = stats.packed;
-        data.assetsCached = stats.cached;
-        data.assetsFailed = stats.failed;
-        data.assetsInFlight = stats.inFlight();
-        data.assetBytes = stats.bytes;
-        return data;
-    }
-
-private:
-    // The process's resident set, from /proc/self/statm (pages).
-    static auto residentBytes() -> uint64_t {
-        std::ifstream statm("/proc/self/statm");
-        uint64_t size = 0;
-        uint64_t resident = 0;
-        statm >> size >> resident;
-        return resident * (uint64_t) sysconf(_SC_PAGESIZE);
-    }
-
-    std::vector<profile::FrameStats> frames;
-    std::vector<RhiMemoryHeapInfo> heaps;
-    uint64_t lastMemorySampleNs = 0;
-    StatusBarData data;
+// The window layer's input, as the view's controls take it: the right button held for mouse look, the keys as a camera move, Left Alt held
+// for orbiting, and the window's size as the trace last reported it.
+struct WindowInput {
+    int tracedWidth = 0;
+    int tracedHeight = 0;
+    bool mouseLook = false;
+    CameraMove move;
+    bool orbitHeld = false;
 };
+
+// SDL's events this frame: quitting and resizing; then the hooks (the UI's ImGui and shortcuts, the tools' gizmos and keys), which may take
+// an event; then the view's controls. Z deselects, R selects the parent, F frames the selection, G toggles following the ground, Left Alt
+// starts orbiting, the right button looks, the wheel sets the fly speed, a left click picks. Then the keys held, as a camera move.
+auto pollInput(SDL_Window* window, ViewFrame& frame, ViewHooks& hooks, WindowInput& input) -> void {
+    static const uint32_t pollZoneId = profile::registerName("PollEvents");
+    profile::beginZone(pollZoneId);
+    uint64_t polledEvents = 0;
+    // A framebuffer pixel from a point in the window (they differ on high-density displays).
+    auto toPixel = [&](float pointX, float pointY) -> glm::uvec2 {
+        int pointsW = 0;
+        int pointsH = 0;
+        SDL_GetWindowSize(window, &pointsW, &pointsH);
+        return {(uint32_t) std::max(0.0f, pointX * (float) frame.width / (float) std::max(pointsW, 1)),
+                (uint32_t) std::max(0.0f, pointY * (float) frame.height / (float) std::max(pointsH, 1))};
+    };
+    SDL_Event ev;
+    while (SDL_PollEvent(&ev)) {
+        polledEvents++;
+        if (ev.type == SDL_EVENT_QUIT) {
+            TRACE_EVENT("Engine", "QuitRequested", "view").text("quitting");
+            frame.quit = true;
+        }
+        if (ev.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
+            bool sizeChanged = ev.window.data1 != input.tracedWidth || ev.window.data2 != input.tracedHeight;
+            if (sizeChanged) {
+                input.tracedWidth = ev.window.data1;
+                input.tracedHeight = ev.window.data2;
+                TRACE_EVENT("Engine", "WindowResized", "window")
+                    .text(std::format("window resized to {}x{} pixels", ev.window.data1, ev.window.data2))
+                    .field("width", ev.window.data1)
+                    .field("height", ev.window.data2);
+            }
+        }
+        if (hooks.event(frame, ev)) {
+            continue;
+        }
+
+        bool plainKey = ev.type == SDL_EVENT_KEY_DOWN && (ev.key.mod & SDL_KMOD_CTRL) == 0 && !ev.key.repeat;
+        if (plainKey && ev.key.key == SDLK_Z) {
+            frame.deselect();
+            continue;
+        }
+        if (plainKey && ev.key.key == SDLK_R) {
+            frame.selectParent();
+            continue;
+        }
+        if (plainKey && ev.key.key == SDLK_F) {
+            frame.frameSelected();
+            continue;
+        }
+        if (plainKey && ev.key.key == SDLK_G) {
+            viewconfig::follow.set(!viewconfig::follow.get());
+            continue;
+        }
+        if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.scancode == SDL_SCANCODE_LALT && !ev.key.repeat) {
+            float pointX = 0.0f;
+            float pointY = 0.0f;
+            SDL_GetMouseState(&pointX, &pointY);
+            frame.startOrbit(toPixel(pointX, pointY));
+            continue;
+        }
+
+        if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_RIGHT) {
+            input.mouseLook = true;
+        }
+        if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_RIGHT) {
+            input.mouseLook = false;
+        }
+        if (ev.type == SDL_EVENT_MOUSE_MOTION && input.mouseLook) {
+            frame.look(ev.motion.xrel, ev.motion.yrel);
+        }
+        if (ev.type == SDL_EVENT_MOUSE_WHEEL) {
+            frame.wheel(ev.wheel.y);
+            continue;
+        }
+        if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_LEFT) {
+            frame.pick(toPixel(ev.button.x, ev.button.y));
+        }
+    }
+    profile::zoneValue(polledEvents);
+    profile::endZone();
+
+    // The keys as a camera move: WASD across, E/Q up and down, Shift fast; none while Ctrl is held, which the shortcuts use.
+    const auto* keys = SDL_GetKeyboardState(nullptr);
+    input.move = {};
+    if (!keys[SDL_SCANCODE_LCTRL] && !keys[SDL_SCANCODE_RCTRL]) {
+        input.move = {
+            .forward = (keys[SDL_SCANCODE_W] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_S] ? 1.0f : 0.0f),
+            .right = (keys[SDL_SCANCODE_D] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_A] ? 1.0f : 0.0f),
+            .up = (keys[SDL_SCANCODE_E] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_Q] ? 1.0f : 0.0f),
+            .fast = keys[SDL_SCANCODE_LSHIFT],
+        };
+    }
+    input.orbitHeld = keys[SDL_SCANCODE_LALT];
+    SDL_GetMouseState(&frame.mouse.x, &frame.mouse.y);
+}
 
 } // namespace
 
@@ -366,9 +394,6 @@ auto main(int argc, char* argv[]) -> int {
         TRACE_EVENT("Render", "RendererInitialized", "renderer").text(std::format("renderer initialized in {:.0f} ms", ms)).field("ms", ms);
     }
     renderer.setGeometryLimit((uint64_t) renderconfig::geometryLimitMiB.get() * 1024 * 1024);
-    // The upload budget and the geometry limit, handed to the render thread when their configuration changes.
-    auto uploadBudgetChanges = renderconfig::uploadBudgetMiB.changes();
-    auto geometryLimitChanges = renderconfig::geometryLimitMiB.changes();
     renderer.setValidationEnabled(enableValidation);
     renderer.setScreenshotsShowUi(screenshotsShowUi);
 
@@ -380,159 +405,63 @@ auto main(int argc, char* argv[]) -> int {
     ViewScene scene(assetClient);
     scene.open(sceneId);
 
+    // Render thread
+    RenderThread renderThread;
+    renderThread.start(&renderer);
+
+    // The engine's frame: the camera (its up axis the scene's), the selection, residency, culling, the snapshot.
+    ViewFrame frame(scene, renderer, renderThread, assetClient);
+
+    // The tools and the UI join the frame through their hooks; the UI's windows draw and edit the tools' state and the camera modes'.
+    ToolsState tools;
     ViewUI viewUI;
     if (positional.size() > 1) {
         viewUI.setBookmarkPath(std::string(positional[1]) + ".cameras.txt");
     }
     viewUI.setAssetDrawCount([&scene](const std::string& assetId) { return scene.drawCount(assetId); });
-    auto primPathOf = [&scene](uint32_t prim) -> std::string {
-        return scene.primPath(prim);
-    };
-    // The selected prim, by full path (instances expanded); empty for none. A click picks it on the GPU.
-    std::string selectedPath;
-    ViewPicking picking;
-    AssetGoToState assetGoTo;
+    viewUI.bindTools(tools, frame.cameraModes);
+    ToolsHooks toolsHooks(tools);
+    UiHooks uiHooks(viewUI, toolsHooks, imguiBackend, rhiDevice, renderDoc);
+    ViewHooks& hooks = uiHooks;
 
-    // Render thread
-    RenderThread renderThread;
-    renderThread.start(&renderer);
-
-    DebugDraw debugDraw;
-
-    // Camera — worldUp tracks the scene's up axis so the controls stay
-    // consistent whether we're looking at a Y-up or Z-up asset.
-    auto cam = Camera{
-        .position = glm::vec3(2.0f, 1.5f, 2.0f),
-        .worldUp = scene.worldUp(),
-        .yaw = -135.0f,
-        .pitch = -20.0f,
-        .speed = 5.0f,
-        .mouseSensitivity = 0.15f,
-    };
-    auto mouseCapture = false;
-    // The tools' state and the camera modes' (following the ground, orbiting while Left Alt is held): the application's, drawn and edited
-    // by the UI's windows.
-    ToolsState tools;
-    CameraModesState cameraModes;
-    viewUI.bindTools(tools, cameraModes);
-    // The debug camera: while on, the view renders from it and the keys move it, unless they are handed to the main camera. `cam` stays
-    // the main camera: everything that places the camera moves it, and residency, LOD and culling read it.
-    auto& debugCamera = tools.debugCamera;
-    auto viewCamera = [&] -> Camera& {
-        return toolsconfig::debugCamera.get() ? debugCamera.camera : cam;
-    };
-    auto controlledCamera = [&] -> Camera& {
-        return toolsconfig::debugCamera.get() && !toolsconfig::debugControlMain.get() ? debugCamera.camera : cam;
-    };
-    bool debugCameraWasOn = false;
-    // The meshes the draws use, for the ground test: kept from the scene's changes as they pass to the renderer.
-    GroundMeshes groundMeshes;
-
-    TranslateGizmo translateGizmo;
-    RotateGizmo rotateGizmo;
-    ScaleGizmo scaleGizmo;
-    // Where the gizmo of the selection sits: its pivot, or its bounds' centre when the pivot lies outside what it draws.
-    auto gizmoAnchorOf = [&](const ViewScene::PrimTransform& xf) -> glm::vec3 {
-        auto anchor = glm::vec3(xf.world[3]);
-        auto bb = scene.bounds(selectedPath);
-        if (bb.valid() && !bb.contains(anchor)) {
-            anchor = (bb.min + bb.max) * 0.5f;
-        }
-        return anchor;
-    };
-    auto frameSelected = [&] -> void {
-        auto bb = scene.bounds(selectedPath);
-        if (!selectedPath.empty() && bb.valid()) {
-            controlledCamera().frame(bb, glm::radians(45.0f));
-        }
-    };
-    auto selectParent = [&] -> void {
-        auto slash = selectedPath.rfind('/');
-        selectedPath = slash == 0 || slash == std::string::npos ? std::string() : selectedPath.substr(0, slash);
-    };
-
-    // Union the world bounds of all mesh instances and frame the camera on them.
-    // Used at startup so the initial view works for any up-axis and asset scale.
-    auto frameSceneView = [&] -> void {
-        AABB sceneBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
-        for (const auto& inst : scene.renderWorld().meshInstances) {
-            if (inst.alive && inst.worldBounds.valid()) {
-                sceneBounds.min = glm::min(sceneBounds.min, inst.worldBounds.min);
-                sceneBounds.max = glm::max(sceneBounds.max, inst.worldBounds.max);
-            }
-        }
-        if (sceneBounds.valid()) {
-            cam.frame(sceneBounds, glm::radians(45.0f));
-        }
-    };
-    // Until the scene is first resident the camera follows it, framing what has arrived, unless it is moved by hand.
-    bool autoFrame = true;
-    // Answers waiting for the scene to be resident (view.waitResident, view.lod.set, view.repack, view.purposes).
+    // Answers waiting for the scene to be resident (view.waitResident, view.lod.set, view.repack, view.purposes), and render-LOD records
+    // waiting for the groups' states to be read back.
     std::vector<ResidentWaiter> residentWaiters;
-    // A camera flight (`fly`): moves the camera a frame's time at a time; a script holds its clock while it flies.
-    CameraFlight flight;
-    // Script frames count only while nothing waits for residency, so a script sees the scene as it is once loaded; the longest main-loop
-    // frame while the scene isn't resident says how responsive the view stayed while it loaded.
-    ViewResidency residency;
-    // The camera last posted to the scene thread for the LOD heuristic.
-    glm::vec3 postedCameraPosition(std::numeric_limits<float>::quiet_NaN());
-    int postedCameraWidth = 0;
-    int postedCameraHeight = 0;
-
-    // Main loop
-    profile::registerThread("Main");
-    auto lastTicks = SDL_GetTicksNS();
-    auto quit = false;
-    uint64_t frameCounter = 0;
-    CullState cullState;
-    CullResult latestCull; // GPU culling readback, a few frames old
-    std::vector<SessionCommand> dueCommands;
-
-    // render-LOD records waiting for the groups' states to be read back, and the aspect the LOD heuristic measures with.
     std::vector<RenderLodRequest> renderLodRequests;
-    float viewAspect = 1.0f;
-    bool lodStatesWanted = false;
-    uint64_t lodPops = 0;
-    uint64_t lodPopsFrame = 0;
-    std::string lodInspected;
-    auto lodInspectedAt = std::chrono::steady_clock::time_point();
-    uint64_t lodInspectedSnapshot = UINT64_MAX;
-    // Snapshots taken, and the one the Camera and LOD windows' lists were last built from (UINT64_MAX: not yet).
-    uint64_t snapshotsTaken = 0;
-    uint64_t cameraListSnapshot = UINT64_MAX;
-    uint64_t lodRowsSnapshot = UINT64_MAX;
-    uint64_t streamingRowsSnapshot = UINT64_MAX;
-    std::string streamingInspected;
-    auto streamingInspectedAt = std::chrono::steady_clock::time_point();
-    uint64_t streamingInspectedSnapshot = UINT64_MAX;
+    ScriptClock script = {.waitForResident = waitForResident, .lastFrame = maxFrames};
     // Dumps and captures that finish frames later, for script verbs and RPC calls alike.
-    ViewDumps dumps([&scene]() -> const RenderWorld& { return scene.renderWorld(); }, primPathOf, latestCull, rhiDevice.limits().pipelineStatistics);
+    ViewDumps dumps(
+        [&scene]() -> const RenderWorld& { return scene.renderWorld(); },
+        [&scene](uint32_t prim) -> std::string { return scene.primPath(prim); },
+        frame.latestCull,
+        rhiDevice.limits().pipelineStatistics);
 
     // Every command is an RPC method; script lines and live calls run the same code.
     RpcRegistry registry;
     registerRpcBuiltins(registry, "view");
     ViewContext viewContext = {
-        .cam = cam,
+        .cam = frame.cam,
         .scene = scene,
-        .selectedPath = selectedPath,
-        .picking = picking,
-        .goTo = assetGoTo,
+        .selectedPath = frame.selectedPath,
+        .picking = frame.picking,
+        .goTo = frame.goTo,
         .renderer = renderer,
         .renderThread = renderThread,
         .renderDoc = renderDoc,
         .dumps = dumps,
-        .latestCull = latestCull,
+        .latestCull = frame.latestCull,
         .assets = assetClient,
-        .frameSceneView = frameSceneView,
-        .quit = quit,
-        .frameCounter = frameCounter,
+        .frameSceneView = [&frame] { frame.frameScene(); },
+        .quit = frame.quit,
+        .frameCounter = frame.frameCounter,
         .residentWaiters = residentWaiters,
-        .residency = residency,
+        .residency = frame.residency,
+        .script = script,
         .renderLodRequests = renderLodRequests,
-        .viewAspect = viewAspect,
-        .lodPops = lodPops,
-        .flight = flight,
-        .cameraModes = cameraModes,
+        .viewAspect = frame.viewAspect,
+        .lodPops = frame.lodPops,
+        .flight = frame.flight,
+        .cameraModes = frame.cameraModes,
         .sceneLabel = positional.size() >= 2 ? std::string(positional[1]) : std::string("(new scene)"),
     };
     // Each layer adds its methods, script verbs and records: the engine's, the tools', the UI's.
@@ -552,896 +481,52 @@ auto main(int argc, char* argv[]) -> int {
     (void) rpcEnabled;
 #endif
 
+    // Main loop: the engine's steps in order, the commands after the scene update, the hooks between the steps.
+    profile::registerThread("Main");
+    WindowInput input = {.tracedWidth = tracedWindowWidth, .tracedHeight = tracedWindowHeight};
     TRACE_EVENT("Engine", "MainLoopStarted", "view").text(std::format("main loop started, {:.0f} ms after start", trace::msSinceStart())).field("since_start_ms", trace::msSinceStart());
-    std::string selectedBoundsPath;
-    const SceneSnapshot* selectedBoundsSnapshot = nullptr;
-    AABB selectedBounds;
-    // The selection's transform, for the gizmo: once per selection and scene snapshot, as transform() walks the placements.
-    std::string selectedXfPath;
-    const SceneSnapshot* selectedXfSnapshot = nullptr;
-    std::optional<ViewScene::PrimTransform> selectedXf;
-    // The scene's bounds for the shadow cascades, read again only for the chunks of draws that changed.
-    SceneBoundsCache sceneBoundsCache;
-    while (!quit && !viewUI.wantsQuit()) {
+    while (!frame.quit) {
         PROFILE_FRAME_MARK();
         PROFILE_ZONE("MainFrame");
-        frameCounter++;
-        // The scene as the scene thread last published it. Until it is first resident the camera follows it.
-        static const uint32_t sceneUpdateZoneId = profile::registerName("SceneUpdate");
-        profile::beginZone(sceneUpdateZoneId);
-        bool sceneUpdated = scene.update();
-        profile::endZone();
-        if (sceneUpdated) {
-            PROFILE_ZONE("SceneInputs");
-            snapshotsTaken++;
-            cam.worldUp = scene.worldUp();
-            if (autoFrame) {
-                frameSceneView();
-            }
-        }
-        // The Camera and LOD windows' lists, built from a snapshot's records (gathered from the placement tree on first use) only while the
-        // window is open, once per snapshot.
-        if (viewUI.wantsCameraWindow() && cameraListSnapshot != snapshotsTaken) {
-            cameraListSnapshot = snapshotsTaken;
-            PROFILE_ZONE("SceneWindowLists");
-            // The cameras the scene authors, as poses for the Camera window.
-            auto& sceneCameras = viewUI.cameraWindow().sceneCameras;
-            sceneCameras.clear();
-            for (const auto& authored : scene.cameras()) {
-                Camera placed = cam;
-                placed.place(authored.worldTransform);
-                sceneCameras.push_back({.name = authored.path, .pose = {placed.position.x, placed.position.y, placed.position.z, placed.yaw, placed.pitch}});
-            }
-        }
-        // The LOD tool's rows (the LOD window and its viewport layers), once per snapshot while either is shown.
-        auto& lodWindow = tools.lod;
-        bool lodToolShown = viewUI.wantsLodWindow() || toolsconfig::lodLabels.get() || toolsconfig::lodGizmo.get() || toolsconfig::lodGizmoAll.get();
-        if (lodToolShown && lodRowsSnapshot != snapshotsTaken) {
-            lodRowsSnapshot = snapshotsTaken;
-            PROFILE_ZONE("SceneWindowLists");
-            buildLodRows(scene, lodWindow);
-        }
-        // The Streaming tool's rows (its window, its viewport layers and the streaming view's states), once per snapshot while any is shown.
-        auto& streamingWindow = tools.streaming;
-        bool streamingView = renderconfig::debugView.get() == (size_t) DebugView::Streaming;
-        bool streamingToolShown = viewUI.wantsStreamingWindow() || toolsconfig::streamingBounds.get() || toolsconfig::streamingRings.get() || toolsconfig::streamingRingsAll.get() || toolsconfig::streamingLabels.get() || streamingView;
-        if (streamingToolShown && streamingRowsSnapshot != snapshotsTaken) {
-            streamingRowsSnapshot = snapshotsTaken;
-            PROFILE_ZONE("SceneWindowLists");
-            buildStreamingRows(scene, streamingWindow);
-        }
-        residency.scriptHeld = (waitForResident && !residency.everResident) || !residentWaiters.empty() || flight.flying();
-        dueCommands.clear();
-        if (!residency.scriptHeld) {
-            residency.scriptFrame++;
-            session.takeDue(residency.scriptFrame, dueCommands);
-        }
-        // A script or an RPC call that moves the camera ends the following, as a hand on the controls does.
-        auto camPositionBefore = cam.position;
-        auto camYawBefore = cam.yaw;
-        auto camPitchBefore = cam.pitch;
-        {
-            PROFILE_ZONE("Commands");
-            for (const auto& c : dueCommands) {
-                verbs.run(registry, c.verb, c.args);
-            }
-            endpoint.drain();
-        }
-        if (cam.position != camPositionBefore || cam.yaw != camYawBefore || cam.pitch != camPitchBefore) {
-            autoFrame = false;
-        }
-        if (maxFrames > 0 && residency.scriptFrame > maxFrames) {
-            quit = true;
-        }
-        auto nowTicks = SDL_GetTicksNS();
-        auto dt = (float) (nowTicks - lastTicks) / 1.0e9f;
-        lastTicks = nowTicks;
-        if (!residency.resident && frameCounter > 1) {
-            residency.longestLoadingFrameMs = std::max(residency.longestLoadingFrameMs, (double) dt * 1000.0);
-            residency.loadingFrames++;
-        }
-        if (flight.flying()) {
-            advanceFlight(flight, cam, dt);
-            autoFrame = false;
-        }
-        // The debug camera, placed behind the main camera when it is turned on or asked to be; the main camera's trail starts afresh.
-        if (toolsconfig::debugCamera.get() && (!debugCameraWasOn || debugCamera.placeRequested)) {
-            placeDebugCamera(debugCamera, cam, scene.lodMetersPerUnit());
-            if (!debugCameraWasOn) {
-                debugCamera.trailPoints.clear();
-            }
-        }
-        debugCamera.placeRequested = false;
-        debugCameraWasOn = toolsconfig::debugCamera.get();
-        debugCamera.camera.worldUp = cam.worldUp;
+        frame.updateScene();
+        hooks.afterScene(frame);
+        runFrameCommands(viewContext, session, registry, verbs, endpoint);
+        frame.advanceTime(SDL_GetTicksNS());
+        frame.resetCameras();
+        hooks.cameras(frame);
 
-        int winW = 0;
-        int winH = 0;
-        SDL_GetWindowSizeInPixels(window, &winW, &winH);
-        RhiExtent2D winExtent = {.width = (uint32_t) winW, .height = (uint32_t) winH};
-        auto proj = perspectiveProjection(glm::radians(cameraFovDegrees), (float) winW / (float) winH);
-        viewAspect = (float) winW / (float) std::max(1, winH);
-        // The camera for the LOD heuristic, when it moved: once it has been placed (by hand, a script, or the framing when the scene was
-        // first resident), not while it follows what has arrived.
-        bool cameraPlaced = residency.everResident || !autoFrame;
-        const auto& lodCam = lodCamera(debugCamera, cam);
-        if (cameraPlaced && (lodCam.position != postedCameraPosition || winW != postedCameraWidth || winH != postedCameraHeight)) {
-            postedCameraPosition = lodCam.position;
-            postedCameraWidth = winW;
-            postedCameraHeight = winH;
-            scene.setCamera(lodCam.position, glm::radians(cameraFovDegrees), (float) winW / (float) std::max(1, winH));
-        }
+        int width = 0;
+        int height = 0;
+        SDL_GetWindowSizeInPixels(window, &width, &height);
+        frame.setViewport(width, height);
+        frame.sendSceneInputs();
+        frame.updateResidency();
+        answerResidentWaiters(viewContext);
 
-        // The purposes the View menu or a script turned on or off: the scene loads and draws them, and moves its revision on.
-        if (scene.purposeShown(Purpose::Guide) != viewconfig::purposeGuide.get()) {
-            scene.setPurposeShown(Purpose::Guide, viewconfig::purposeGuide.get());
-        }
-        if (scene.purposeShown(Purpose::Proxy) != viewconfig::purposeProxy.get()) {
-            scene.setPurposeShown(Purpose::Proxy, viewconfig::purposeProxy.get());
-        }
-        if (renderconfig::uploadBudgetMiB.changes() != uploadBudgetChanges) {
-            uploadBudgetChanges = renderconfig::uploadBudgetMiB.changes();
-            renderThread.setUploadBudget((uint64_t) renderconfig::uploadBudgetMiB.get() * 1024 * 1024);
-        }
-        if (renderconfig::geometryLimitMiB.changes() != geometryLimitChanges) {
-            geometryLimitChanges = renderconfig::geometryLimitMiB.changes();
-            renderThread.setGeometryLimit((uint64_t) renderconfig::geometryLimitMiB.get() * 1024 * 1024);
-        }
-        // What changed in the scene since the last frame: the render thread applies it, uploads go out a budget per frame.
-        {
-            PROFILE_ZONE("TakeChanges");
-            if (auto changes = scene.takeChanges(); !changes.empty()) {
-                groundMeshes.apply(changes);
-                renderThread.submitSceneChanges(std::move(changes));
-            }
-        }
-        // Resident: the scene thread has nothing left to do, and the render thread has drawn every change with nothing left to upload.
-        static const uint32_t residencyZoneId = profile::registerName("Residency");
-        profile::beginZone(residencyZoneId);
-        bool resident = scene.idle() && renderThread.sceneDrawn();
-        if (resident && !residency.resident) {
-            if (!residency.everResident) {
-                residency.everResident = true;
-                if (autoFrame) {
-                    frameSceneView();
-                }
-                autoFrame = false;
-            }
-            if (!residentWaiters.empty() || frameCounter > 0) {
-                auto stats = assetClient.stats();
-                TRACE_EVENT("Scene", "SceneResident", scene.sceneId().empty() ? "(empty scene)" : scene.sceneId())
-                    .text(std::format("scene resident at frame {}, {:.0f} ms after start: {} draws, {} assets received; longest of the {} frames before, {:.1f} ms",
-                                      frameCounter,
-                                      trace::msSinceStart(),
-                                      std::ranges::count_if(scene.renderWorld().meshInstances, [](const RenderMeshInstance& instance) {
-                                          return instance.alive;
-                                      }),
-                                      stats.received,
-                                      residency.loadingFrames,
-                                      residency.longestLoadingFrameMs))
-                    .field("frame", (int64_t) frameCounter)
-                    .field("since_start_ms", trace::msSinceStart())
-                    .field("assets", (int64_t) stats.received)
-                    .field("longest_frame_ms", residency.longestLoadingFrameMs);
-            }
-            residency.lastResidentFrame = frameCounter;
-            residency.lastResidentMs = trace::msSinceStart();
-            residency.lastLoadFrames = residency.loadingFrames;
-            residency.lastLoadLongestMs = residency.longestLoadingFrameMs;
-            residency.longestLoadingFrameMs = 0.0;
-            residency.loadingFrames = 0;
-        }
-        residency.resident = resident;
-        if (resident) {
-            for (auto& waiter : residentWaiters) {
-                waiter.responder.respond(waiter.result);
-            }
-            residentWaiters.clear();
-        }
+        pollInput(window, frame, hooks, input);
+        frame.moveCamera(input.move, input.orbitHeld);
+        frame.cull();
+        // Render-LOD records answer once a readback carries every group's state; while one waits, the frames read them back.
+        frame.readLodStates = serviceRenderLodRequests(viewContext);
+        frame.countLodPops();
+        frame.fitCascades();
+        hooks.afterCamera(frame);
 
-        profile::endZone(); // Residency
-        static const uint32_t pollZoneId = profile::registerName("PollEvents");
-        profile::beginZone(pollZoneId);
-        uint64_t polledEvents = 0;
-        // A framebuffer pixel from a point in the window (they differ on high-density displays).
-        auto toPixel = [&](float pointX, float pointY) -> glm::uvec2 {
-            int pointsW = 0;
-            int pointsH = 0;
-            SDL_GetWindowSize(window, &pointsW, &pointsH);
-            return {(uint32_t) std::max(0.0f, pointX * (float) winW / (float) std::max(pointsW, 1)),
-                    (uint32_t) std::max(0.0f, pointY * (float) winH / (float) std::max(pointsH, 1))};
-        };
-        // The world point at a pixel of a framebuffer `size` and a depth, through an inverse view-projection.
-        auto unproject = [](glm::uvec2 pixel, glm::uvec2 size, float depth, const glm::mat4& inverseViewProj) -> glm::vec3 {
-            auto ndc = glm::vec4((((float) pixel.x + 0.5f) / (float) size.x * 2.0f) - 1.0f, (((float) pixel.y + 0.5f) / (float) size.y * 2.0f) - 1.0f, depth, 1.0f);
-            auto world = inverseViewProj * ndc;
-            return glm::vec3(world) / world.w;
-        };
-        // Left Alt down starts orbiting around the surface under the cursor: the point at the last pivot's distance along the cursor ray
-        // at once, the depth there when the pick comes back.
-        auto startOrbit = [&](float pointX, float pointY) {
-            auto pixel = toPixel(pointX, pointY);
-            auto inverseViewProj = glm::inverse(proj * viewCamera().viewMatrix());
-            auto eye = viewCamera().position;
-            auto unitsPerMetre = (float) (1.0 / scene.lodMetersPerUnit());
-            auto size = glm::uvec2((uint32_t) winW, (uint32_t) winH);
-            auto direction = glm::normalize(unproject(pixel, size, 1.0f, inverseViewProj) - eye);
-            cameraModes.orbiting = true;
-            cameraModes.pivotPicked = false;
-            cameraModes.pivot = eye + (direction * (cameraModes.pivotDistanceMetres * unitsPerMetre));
-            picking.requestDepth(pixel.x, pixel.y, [&cameraModes, &scene, unproject, pixel, size, inverseViewProj, eye](std::optional<float> depth) {
-                if (!depth || !cameraModes.orbiting || cameraModes.pivotPicked) {
-                    return;
-                }
-                cameraModes.pivot = unproject(pixel, size, *depth, inverseViewProj);
-                cameraModes.pivotPicked = true;
-                cameraModes.pivotDistanceMetres = (float) (glm::distance(eye, cameraModes.pivot) * scene.lodMetersPerUnit());
-            });
-        };
-        SDL_Event ev;
-        while (SDL_PollEvent(&ev)) {
-            polledEvents++;
-            bool uiCaptured = false;
-            {
-                PROFILE_ZONE("ImGuiEvent");
-                uiCaptured = imguiBackend.processEvent(&ev);
-            }
+        frame.debugDraw.newFrame();
+        hooks.debugDraw(frame);
+        frame.drawCameraModes();
 
-            if (ev.type == SDL_EVENT_QUIT) {
-                TRACE_EVENT("Engine", "QuitRequested", "view").text("quitting");
-                quit = true;
-            }
-            if (ev.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
-                bool sizeChanged = ev.window.data1 != tracedWindowWidth || ev.window.data2 != tracedWindowHeight;
-                if (sizeChanged) {
-                    tracedWindowWidth = ev.window.data1;
-                    tracedWindowHeight = ev.window.data2;
-                    TRACE_EVENT("Engine", "WindowResized", "window")
-                        .text(std::format("window resized to {}x{} pixels", ev.window.data1, ev.window.data2))
-                        .field("width", ev.window.data1)
-                        .field("height", ev.window.data2);
-                }
-            }
+        frame.readbacks = {.renderDebug = forceRenderDebug};
+        hooks.wantReadbacks(frame);
+        dumps.wantReadbacks(frame.readbacks);
+        frame.readBack();
+        dumps.takeReadbacks(frame.readbacks);
+        hooks.takeReadbacks(frame);
 
-            if (uiCaptured) {
-                continue;
-            }
+        hooks.drawUi(frame);
 
-            if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_F12 && !ev.key.repeat) {
-                viewUI.requestScreenshot();
-                continue;
-            }
-            bool plainKey = ev.type == SDL_EVENT_KEY_DOWN && (ev.key.mod & SDL_KMOD_CTRL) == 0 && !ev.key.repeat;
-            // Z deselects, R selects the parent, F frames the selection. The window and view toggles are the UI's (ViewUI::toggleShortcuts).
-            if (plainKey && ev.key.key == SDLK_Z) {
-                selectedPath.clear();
-                continue;
-            }
-            if (plainKey && ev.key.key == SDLK_R) {
-                selectParent();
-                continue;
-            }
-            if (plainKey && ev.key.key == SDLK_F) {
-                frameSelected();
-                continue;
-            }
-            // G toggles following the ground.
-            if (plainKey && ev.key.key == SDLK_G) {
-                viewconfig::follow.set(!viewconfig::follow.get());
-                continue;
-            }
-            if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.scancode == SDL_SCANCODE_LALT && !ev.key.repeat) {
-                float pointX = 0.0f;
-                float pointY = 0.0f;
-                SDL_GetMouseState(&pointX, &pointY);
-                startOrbit(pointX, pointY);
-                continue;
-            }
-            // C hands the controls between the debug camera and the main camera while the debug camera is on.
-            if (plainKey && ev.key.key == SDLK_C && toolsconfig::debugCamera.get()) {
-                toolsconfig::debugControlMain.set(!toolsconfig::debugControlMain.get());
-                continue;
-            }
-
-            if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_RIGHT) {
-                mouseCapture = true;
-            }
-            if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_RIGHT) {
-                mouseCapture = false;
-            }
-            // Mouse look turns in place, or around the pivot while orbiting.
-            if (ev.type == SDL_EVENT_MOUSE_MOTION && mouseCapture) {
-                auto& camera = controlledCamera();
-                if (cameraModes.orbiting) {
-                    camera.orbit(cameraModes.pivot, ev.motion.xrel * camera.mouseSensitivity, -ev.motion.yrel * camera.mouseSensitivity);
-                } else {
-                    camera.handleMouseMotion(ev.motion.xrel, ev.motion.yrel);
-                }
-                autoFrame = false;
-            }
-            // The wheel changes the fly speed, or moves toward the pivot while orbiting.
-            if (ev.type == SDL_EVENT_MOUSE_WHEEL) {
-                if (cameraModes.orbiting) {
-                    controlledCamera().dolly(cameraModes.pivot, ev.wheel.y);
-                } else {
-                    controlledCamera().scaleSpeed(ev.wheel.y);
-                }
-                continue;
-            }
-
-            // A gizmo drag in progress: the new local transform is the view's own opinion on the prim, until the view closes.
-            bool dragging = translateGizmo.isDragging() || rotateGizmo.isDragging() || scaleGizmo.isDragging();
-            auto dragTo = [&](float x, float y) -> std::optional<Transform> {
-                if (translateGizmo.isDragging()) {
-                    return translateGizmo.dragUpdate(x, y, winExtent, viewCamera().viewMatrix(), proj);
-                }
-                if (rotateGizmo.isDragging()) {
-                    return rotateGizmo.dragUpdate(x, y, winExtent, viewCamera().viewMatrix(), proj);
-                }
-                return scaleGizmo.dragUpdate(x, y, winExtent, viewCamera().viewMatrix(), proj);
-            };
-            if (ev.type == SDL_EVENT_MOUSE_MOTION && dragging) {
-                if (auto local = dragTo(ev.motion.x, ev.motion.y)) {
-                    scene.setLocalTransform(selectedPath, local->toMat4());
-                }
-                continue;
-            }
-            if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP && ev.button.button == SDL_BUTTON_LEFT && dragging) {
-                if (auto local = dragTo(ev.button.x, ev.button.y)) {
-                    scene.setLocalTransform(selectedPath, local->toMat4());
-                }
-                translateGizmo.release();
-                rotateGizmo.release();
-                scaleGizmo.release();
-                continue;
-            }
-
-            if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev.button.button == SDL_BUTTON_LEFT) {
-                float mx = ev.button.x;
-                float my = ev.button.y;
-                // The axis gizmo turns the camera to an axis.
-                if (auto axis = renderer.gizmoHitTest(mx, my)) {
-                    // Turn the camera rendered from to look along the axis, the way it already faces.
-                    auto& camera = viewCamera();
-                    camera.snapToAxis(*axis, camera.forward()[*axis] < 0.0f);
-                    continue;
-                }
-                if (auto xf = scene.transform(selectedPath); xf && xf->xformable && !selectedPath.empty()) {
-                    auto tool = viewUI.activeTool();
-                    auto local = decomposeTransform(xf->local);
-                    auto anchor = gizmoAnchorOf(*xf);
-                    bool grabbed = false;
-                    if (tool == ViewTool::Translate) {
-                        grabbed = translateGizmo.tryGrab(mx, my, winExtent, viewCamera().viewMatrix(), proj, anchor, local, xf->world);
-                    } else if (tool == ViewTool::Rotate) {
-                        grabbed = rotateGizmo.tryGrab(mx, my, winExtent, viewCamera().viewMatrix(), proj, anchor, local, xf->world);
-                    } else if (tool == ViewTool::Scale) {
-                        grabbed = scaleGizmo.tryGrab(mx, my, winExtent, viewCamera().viewMatrix(), proj, anchor, local, xf->world);
-                    }
-                    if (grabbed) {
-                        continue;
-                    }
-                }
-                // Anything else picks: the instance under the cursor, read back from the GPU a few frames later.
-                int pointsW = 0;
-                int pointsH = 0;
-                SDL_GetWindowSize(window, &pointsW, &pointsH);
-                auto px = (uint32_t) std::max(0.0f, mx * (float) winW / (float) std::max(pointsW, 1));
-                auto py = (uint32_t) std::max(0.0f, my * (float) winH / (float) std::max(pointsH, 1));
-                picking.request(px, py, [&scene, &selectedPath](std::optional<uint32_t> instance) {
-                    selectedPath = instance ? scene.instancePath(*instance) : std::string();
-                });
-            }
-        }
-
-        profile::zoneValue(polledEvents);
-        profile::endZone(); // PollEvents
-
-        static const uint32_t cameraCullZoneId = profile::registerName("CameraAndCull");
-        profile::beginZone(cameraCullZoneId);
-        const auto* keys = SDL_GetKeyboardState(nullptr);
-        if (cameraModes.orbiting && !keys[SDL_SCANCODE_LALT]) {
-            cameraModes.orbiting = false;
-        }
-        // Following the ground: the controlled camera moves across it, and its eye is set the height above the highest drawn surface
-        // under it. The ray starts the height above the eye, so ground that rose by up to the height since the last frame is found.
-        auto metersPerUnit = scene.lodMetersPerUnit();
-        cam.followHeight.reset();
-        debugCamera.camera.followHeight.reset();
-        auto& controlled = controlledCamera();
-        if (viewconfig::follow.get()) {
-            controlled.followHeight = (float) (viewconfig::followHeight.get() / metersPerUnit);
-        }
-        // The keys as a camera move: WASD across, E/Q up and down, Shift fast; none while Ctrl is held, which the shortcuts use.
-        CameraMove move;
-        if (!keys[SDL_SCANCODE_LCTRL] && !keys[SDL_SCANCODE_RCTRL]) {
-            move = {
-                .forward = (keys[SDL_SCANCODE_W] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_S] ? 1.0f : 0.0f),
-                .right = (keys[SDL_SCANCODE_D] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_A] ? 1.0f : 0.0f),
-                .up = (keys[SDL_SCANCODE_E] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_Q] ? 1.0f : 0.0f),
-                .fast = keys[SDL_SCANCODE_LSHIFT],
-            };
-        }
-        auto camBefore = controlled.position;
-        controlled.update(move, dt);
-        // WASD carry the orbit's pivot along.
-        if (cameraModes.orbiting) {
-            cameraModes.pivot += controlled.position - camBefore;
-        }
-        bool flown = flight.flying() && &controlled == &cam;
-        if (viewconfig::follow.get() && controlled.followHeight) {
-            (void) viewconfig::followHeight.set(*controlled.followHeight * metersPerUnit);
-        }
-        if (!viewconfig::follow.get()) {
-            cameraModes.ground.reset();
-            cameraModes.groundPrim.clear();
-        } else if (!cameraModes.orbiting && !flown) {
-            PROFILE_ZONE("GroundTest");
-            auto start = std::chrono::steady_clock::now();
-            auto up = controlled.worldUp;
-            auto height = *controlled.followHeight;
-            GroundTestCounts counts;
-            sceneBoundsCache.update(scene.renderWorld().meshInstances);
-            auto hit = groundBelow(scene.renderWorld(), sceneBoundsCache, groundMeshes, controlled.position + (up * height), up, counts);
-            if (hit) {
-                controlled.position += up * (glm::dot(hit->point, up) + height - glm::dot(controlled.position, up));
-                cameraModes.ground = hit->point;
-                cameraModes.groundPrim = primPathOf(hit->prim);
-            } else {
-                cameraModes.ground.reset();
-                cameraModes.groundPrim.clear();
-            }
-            cameraModes.groundChunks = counts.chunks;
-            cameraModes.groundDraws = counts.draws;
-            cameraModes.groundTriangles = counts.triangles;
-            cameraModes.groundMs = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - start).count();
-        }
-        if (controlled.position != camBefore) {
-            autoFrame = false;
-        }
-        if (toolsconfig::debugCamera.get()) {
-            extendDebugCameraTrail(debugCamera, cam.position, scene.lodMetersPerUnit());
-        }
-        // Culling and the shadow cascades follow the main camera, or the debug camera while it is on and set to drive them.
-        const auto& cullCamera = toolsconfig::debugCamera.get() && toolsconfig::debugCull.get() ? debugCamera.camera : cam;
-        const auto& shadowCamera = toolsconfig::debugCamera.get() && toolsconfig::debugShadows.get() ? debugCamera.camera : cam;
-
-        // Culling runs on the GPU: the snapshot carries the frustum
-        // to cull against (live, or frozen so the culled set can be inspected from elsewhere),
-        // and the results come back a few frames later for the Culling window and overlay.
-        cullState.enabled = renderconfig::cullingEnabled.get();
-        cullState.frozen = renderconfig::cullingFrozen.get();
-        auto cullViewProj = cullState.update(proj * cullCamera.viewMatrix());
-        if (auto cull = renderThread.latestCullResult(); cull.has_value()) {
-            latestCull = std::move(*cull);
-        }
-        viewUI.setCullStats(latestCull.instances, latestCull.cameraCulled, latestCull.lodDropped);
-        // Render-LOD records answer once a readback carries every group's state; while one waits, or the LOD tool is shown, the frames read
-        // them back. The pops counted over the readbacks seen.
-        lodStatesWanted = serviceRenderLodRequests(viewContext) || lodToolShown;
-        if (latestCull.lodFrame != lodPopsFrame) {
-            lodPopsFrame = latestCull.lodFrame;
-            lodPops += latestCull.lodPopped;
-        }
-        if (lodToolShown) {
-            updateLodRows(scene, latestCull, lodWindow);
-        }
-        viewUI.setShadowCullStats(latestCull.cascadeCount, latestCull.cascadeCulled, latestCull.cascadeDrawn);
-        viewUI.setCullTriangles(latestCull.cameraTriangles, latestCull.sceneTriangles, latestCull.cascadeTriangles);
-
-        profile::endZone(); // CameraAndCull
-        // Shadow cascades: fitted to the live camera and the scene bounds.
-        std::array<ShadowCascade, maxShadowCascades> cascades;
-        uint32_t cascadeCount = 0;
-        {
-            PROFILE_ZONE("FitCascades");
-            auto sceneBounds = sceneBoundsCache.update(scene.renderWorld().meshInstances);
-            auto lightDir = pickShadowLightDirection(scene.renderWorld().lights, cam.worldUp);
-            cascadeCount = fitShadowCascades(renderconfig::shadowSettings(), shadowCamera.viewMatrix(), proj, projectionNear, lightDir, cam.worldUp, sceneBounds, cascades);
-        }
-        std::array<glm::vec3, 8> frozenCorners;
-        if (cullState.frozenActive) {
-            // The frozen frustum has no far plane: drawn out to the shadow distance.
-            frozenCorners = cullState.frozenCorners(projectionDepthAt((float) renderconfig::shadowDistance.get()));
-        }
-
-        // The AABB overlay shows one view's GPU culling result: the camera or a cascade.
-        static const uint32_t overlayZoneId = profile::registerName("CullOverlay");
-        profile::beginZone(overlayZoneId);
-        std::vector<uint8_t> overlayVisible(latestCull.viewBits.size());
-        auto overlayBit = (uint8_t) (1u << std::clamp((int) toolsconfig::overlayCulledView.get(), 0, (int) maxShadowCascades));
-        for (size_t i = 0; i < overlayVisible.size(); i++) {
-            overlayVisible[i] = (latestCull.viewBits[i] & overlayBit) != 0 ? 1 : 0;
-        }
-        profile::endZone();
-        // The selection's bounds, for its box: once per selection and scene snapshot, as bounds() walks every draw.
-        if (selectedPath != selectedBoundsPath || &scene.snapshot() != selectedBoundsSnapshot) {
-            selectedBoundsPath = selectedPath;
-            selectedBoundsSnapshot = &scene.snapshot();
-            selectedBounds = selectedPath.empty() ? AABB{} : scene.bounds(selectedPath);
-        }
-        {
-            PROFILE_ZONE("DrawDebug");
-            viewUI.drawDebug(debugDraw, scene.renderWorld(), viewCamera().position, cam.worldUp, overlayVisible, cullState.frozenActive ? &frozenCorners : nullptr, std::span<const ShadowCascade>(cascades.data(), cascadeCount), selectedPath.empty() ? nullptr : &selectedBounds);
-            drawLodGizmos(lodWindow, debugDraw, cam.worldUp, lodWindowArea(glm::radians(cameraFovDegrees), viewAspect));
-            drawStreamingOverlays(streamingWindow, debugDraw, cam.worldUp);
-            if (toolsconfig::debugCamera.get()) {
-                drawMainCamera(debugCamera, cam, proj * cam.viewMatrix(), projectionDepthAt((float) renderconfig::shadowDistance.get()), scene.lodMetersPerUnit(), debugDraw);
-            }
-            drawCameraModes(cameraModes, controlledCamera().position, scene.lodMetersPerUnit(), debugDraw);
-        }
-
-        renderThread.setFrameGraphDebugEnabled(viewUI.wantsFrameGraphDebug() || dumps.wantsFrameGraphDebug());
-        auto fgDebugSnap = renderThread.latestFrameGraphDebug();
-        dumps.onFrameGraph(fgDebugSnap);
-        bool frameDebugPending = dumps.takeFrameDebugRequest();
-        if (viewUI.takeFrameDebugRequest()) {
-            frameDebugPending = true;
-        }
-        renderThread.setRenderDebugEnabled(viewUI.wantsRenderDebug() || forceRenderDebug || dumps.wantsRenderDebug());
-        auto renderDebugSnap = renderThread.latestRenderDebug();
-        dumps.onRenderDebug(renderDebugSnap);
-        {
-            // Capture watches: the editor's windows plus pending dumps, sent when they change.
-            static std::vector<CaptureWatch> sentWatches;
-            auto watches = viewUI.captureWatches();
-            dumps.appendWatches(watches);
-            picking.appendWatches(watches);
-            if (watches != sentWatches || frameDebugPending) {
-                sentWatches = watches;
-                renderThread.setCaptureWatches(watches, frameDebugPending);
-            }
-            if (auto frameDebug = renderThread.latestFrameDebug(); frameDebug.has_value()) {
-                dumps.onFrameDebug(*frameDebug);
-                viewUI.onFrameDebugCapture(std::move(*frameDebug));
-            }
-            for (auto& result : renderThread.takeCaptureResults()) {
-                if (picking.onCaptureResult(result)) {
-                    continue;
-                }
-                if (!dumps.onCaptureResult(result)) {
-                    viewUI.onCaptureResult(std::move(result));
-                }
-            }
-            dumps.onScreenshots(renderThread.takeScreenshotResults());
-        }
-        renderThread.setCountersEnabled(viewUI.wantsCounters() || dumps.wantsCounters());
-        for (auto& counters : renderThread.takeCounters()) {
-            dumps.onCounters(counters);
-            viewUI.onCounters(std::move(counters));
-        }
-
-        static const uint32_t uiZoneId = profile::registerName("EditorUI");
-        profile::beginZone(uiZoneId);
-        {
-            PROFILE_ZONE("ImGuiBeginFrame");
-            imguiBackend.beginFrame();
-        }
-        {
-            PROFILE_ZONE("StatusBarGather");
-            auto statusBarData = statusBar.gather(rhiDevice, assetClient, latestCull);
-            statusBarData.cameraSpeed = (float) (controlledCamera().speed * scene.lodMetersPerUnit());
-            viewUI.setStatusBar(statusBarData);
-        }
-        if (viewUI.wantsAssetLog()) {
-            viewUI.setAssetLog(assetClient.log());
-        }
-        // Repacks the Assets window asked for: blocking, as loading the scene is; the rebuilt scene uploads as any change does.
-        viewUI.setHasPrimSelected(!selectedPath.empty());
-        if (viewUI.takeFindSelectedRequest()) {
-            viewUI.selectAssets(scene.assetsUnder(selectedPath));
-        }
-        if (auto goTo = viewUI.takeGoToRequest()) {
-            auto result = goToAsset(assetGoTo, cam, scene, selectedPath, goTo->id, goTo->all);
-            if (!result.error.empty()) {
-                viewUI.setGoToStatus(result.error);
-            } else if (goTo->all) {
-                viewUI.setGoToStatus(std::format("{}: all {} draws framed", goTo->id, result.count));
-            } else {
-                viewUI.setGoToStatus(std::format("{}: draw {} of {}, {}", goTo->id, result.index + 1, result.count, result.prim));
-            }
-        }
-        if (auto repack = viewUI.takeRepackRequest(); repack.scene) {
-            scene.refresh(scene.assetIds(), true);
-        } else if (!repack.ids.empty()) {
-            scene.refresh(repack.ids, true);
-        }
-        // What the asset server said changed at its source: shaders reload on the render thread, the scene's assets are fetched again and
-        // the scene rebuilt (blocking, as a repack is).
-        if (auto changed = assetClient.takeChanged(); !changed.empty()) {
-            renderThread.reloadShaders(changed);
-            scene.refresh(changed, false);
-        }
-        {
-            PROFILE_ZONE("ViewUIDraw");
-            viewUI.draw(primPathOf, !selectedPath.empty(), scene.renderWorld(), cam, std::move(fgDebugSnap), std::move(renderDebugSnap));
-        }
-        {
-            PROFILE_ZONE("LodLabels");
-            const auto& io = ImGui::GetIO();
-            drawLodLabels(tools.lod, proj * viewCamera().viewMatrix(), glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
-            drawStreamingLabels(tools.streaming, proj * viewCamera().viewMatrix(), glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
-        }
-        switch (viewUI.takeEditRequest()) {
-            case ViewEditRequest::Deselect:
-                selectedPath.clear();
-                break;
-            case ViewEditRequest::SelectParent:
-                selectParent();
-                break;
-            case ViewEditRequest::FrameSelected:
-                frameSelected();
-                break;
-            case ViewEditRequest::None:
-                break;
-        }
-        if (auto inspect = viewUI.takeTextureInspectRequest(); inspect.has_value()) {
-            renderThread.setTextureInspect(*inspect);
-        }
-        if (auto dump = viewUI.takeTextureDumpRequest(); dump.has_value()) {
-            renderer.requestTextureDump(dump->texture, dump->level, "texture_" + std::to_string(dump->texture) + "_L" + std::to_string(dump->level) + ".png");
-        }
-        {
-            auto& flags = viewUI.introspection();
-            flags.renderDocAvailable = renderDoc.available();
-            if (flags.renderDocCaptureRequested) {
-                flags.renderDocCaptureRequested = false;
-                renderDoc.triggerCapture();
-            }
-            if (flags.renderDocOpenRequested) {
-                flags.renderDocOpenRequested = false;
-                if (!renderDoc.openInUi(renderDoc.lastCapture())) {
-                    TRACE_WARNING("Engine", "RenderDocOpenFailed", "renderdoc").text("RenderDoc: no capture to open");
-                }
-            }
-            for (const auto& path : renderDoc.pollNewCaptures()) {
-                TRACE_EVENT("Engine", "RenderDocCapture", path).text(std::format("RenderDoc capture written: {}", path)).field("frame", (int64_t) frameCounter);
-            }
-        }
-        if (viewUI.takeScreenshotRequest()) {
-            renderer.requestScreenshot("screenshot_" + std::to_string(frameCounter) + ".png");
-        }
-        {
-            auto& camWindow = viewUI.cameraWindow();
-            if (camWindow.requestFrameScene) {
-                camWindow.requestFrameScene = false;
-                frameSceneView();
-            }
-            if (camWindow.requestFrameSelected) {
-                camWindow.requestFrameSelected = false;
-                frameSelected();
-            }
-        }
-        {
-            PROFILE_ZONE("LodWindowSync");
-            // The LOD window: the levels it asked for, and the root it selects or frames; it highlights the root at or above the selection.
-            for (const auto& request : std::exchange(lodWindow.levelRequests, {})) {
-                if (request.level) {
-                    scene.setLodLevel(request.root, *request.level);
-                } else {
-                    scene.resetLodLevel(request.root);
-                }
-            }
-            // Render LOD: the GPU's counts.
-            lodWindow.renderLod.groups = scene.threadStats().lodGroups;
-            lodWindow.renderLod.drawing = latestCull.lodPicked;
-            lodWindow.renderLod.fallbacks = latestCull.lodFallbacks;
-            lodWindow.renderLod.forced = latestCull.lodForced;
-            lodWindow.renderLod.fading = latestCull.lodFading;
-            lodWindow.renderLod.popped = latestCull.lodPopped;
-            lodWindow.renderLod.pops = lodPops;
-            lodWindow.renderLod.slotsNotDrawn = latestCull.lodDropped;
-            // The tuning, and what the window asked to change.
-            const auto& tuning = scene.lodTuning();
-            lodWindow.bias = tuning.bias;
-            lodWindow.hysteresis = tuning.hysteresis;
-            lodWindow.blending = tuning.blending;
-            lodWindow.overrides = (uint32_t) tuning.overrides.size();
-            auto bias = std::exchange(lodWindow.biasRequested, std::nullopt);
-            auto hysteresis = std::exchange(lodWindow.hysteresisRequested, std::nullopt);
-            auto blending = std::exchange(lodWindow.blendingRequested, std::nullopt);
-            if (bias || hysteresis || blending) {
-                scene.setLodTuning(bias, hysteresis, blending);
-            }
-            for (auto& request : std::exchange(lodWindow.overrideRequests, {})) {
-                scene.overrideLodThresholds(request.root, request.heuristic, LodOverride{.thresholds = std::move(request.thresholds), .blendThresholds = std::move(request.blendThresholds)});
-            }
-            for (const auto& root : std::exchange(lodWindow.overrideResets, {})) {
-                scene.resetLodOverrides(root);
-            }
-            // The viewport's layers: the LOD Level view and the Triangle Size debug view are the view's modes.
-            lodWindow.levelView = renderconfig::bufferView.get() == (size_t) GBufferView::LodLevel && renderconfig::debugView.get() == 0;
-            if (auto on = std::exchange(lodWindow.levelViewRequested, std::nullopt)) {
-                (void) renderconfig::bufferView.set((size_t) (*on ? GBufferView::LodLevel : GBufferView::Lit));
-                if (*on) {
-                    (void) renderconfig::debugView.set((size_t) DebugView::None);
-                }
-            }
-            if (std::exchange(lodWindow.triangleSizeRequested, std::nullopt)) {
-                (void) renderconfig::debugView.set((size_t) DebugView::TriangleSize);
-            }
-            lodWindow.heuristic = scene.lodHeuristic();
-            lodWindow.preference = (int) scene.lodPreference();
-            if (auto preference = std::exchange(lodWindow.preferenceRequested, std::nullopt)) {
-                scene.setLodPreference((LodPreference) *preference);
-            }
-            if (auto on = std::exchange(lodWindow.heuristicRequested, std::nullopt)) {
-                scene.setLodHeuristic(*on);
-            }
-            if (auto path = std::exchange(lodWindow.selectRequested, std::nullopt)) {
-                selectedPath = *path;
-            }
-            if (auto path = std::exchange(lodWindow.frameRequested, std::nullopt)) {
-                auto bb = scene.bounds(*path);
-                if (bb.valid()) {
-                    cam.frame(bb, glm::radians(45.0f));
-                }
-            }
-            lodWindow.selectedRoot.clear();
-            lodWindow.selectedPath = selectedPath;
-            if (!selectedPath.empty()) {
-                for (const auto& row : lodWindow.rows) {
-                    bool atOrAbove = primpath::isAtOrUnder(selectedPath, row.path);
-                    if (atOrAbove && row.path.size() > lodWindow.selectedRoot.size()) {
-                        lodWindow.selectedRoot = row.path;
-                    }
-                }
-            }
-            // The inspector: the selected root's, again when the selection or the snapshot changes and four times a second while shown (its
-            // measures follow the camera).
-            auto now = std::chrono::steady_clock::now();
-            if (viewUI.wantsLodWindow() && (lodWindow.selectedRoot != lodInspected || snapshotsTaken != lodInspectedSnapshot || now - lodInspectedAt > std::chrono::milliseconds(250))) {
-                lodInspected = lodWindow.selectedRoot;
-                lodInspectedSnapshot = snapshotsTaken;
-                lodInspectedAt = now;
-                lodWindow.inspection = inspectLodRoot(scene, latestCull, lodWindow.selectedRoot, {.eye = lodCamera(debugCamera, cam).position, .fovY = glm::radians(cameraFovDegrees), .aspect = viewAspect});
-            }
-        }
-        {
-            PROFILE_ZONE("StreamingWindowSync");
-            // The Streaming window: what it asked for, the camera and the flight for its map and controls, a sample for its chart.
-            const auto& threadStats = scene.threadStats();
-            streamingWindow.totals.inFlight = threadStats.inFlightLayers + threadStats.inFlightMeshes + threadStats.inFlightMaterials + threadStats.inFlightTextures + threadStats.inFlightOther;
-            if (viewUI.wantsStreamingWindow()) {
-                auto at = streamingWindow.historyAt;
-                streamingWindow.inFlightHistory[at] = (float) streamingWindow.totals.inFlight;
-                streamingWindow.lateHistory[at] = (float) scene.streaming().lateNow;
-                streamingWindow.holeHistory[at] = (float) scene.streaming().holesNow;
-                streamingWindow.historyAt = (at + 1) % StreamingToolState::historyLength;
-            }
-            streamingWindow.cameraPosition = lodCamera(debugCamera, cam).position;
-            streamingWindow.debugCameraPosition = toolsconfig::debugCamera.get() ? std::optional<glm::vec3>(debugCamera.camera.position) : std::nullopt;
-            streamingWindow.cameraForward = lodCamera(debugCamera, cam).forward();
-            streamingWindow.up = cam.worldUp;
-            streamingWindow.flying = flight.flying();
-            if (flight.flying()) {
-                streamingWindow.flightText = std::format("{} of {} cameras, {:.0f} m in {:.0f} s", flight.segment + 1, flight.cameras.size(), flight.metres, flight.seconds);
-            }
-            streamingWindow.streamingView = streamingView;
-            if (auto on = std::exchange(streamingWindow.streamingViewRequested, std::nullopt)) {
-                (void) renderconfig::debugView.set((size_t) (*on ? DebugView::Streaming : DebugView::None));
-            }
-            if (std::exchange(streamingWindow.resetRequested, false)) {
-                scene.resetStreamingCounters();
-            }
-            if (std::exchange(streamingWindow.flyRequested, false)) {
-                if (auto error = startFlight(flight, cam, scene, streamingWindow.flightPrefix, std::max(0.1f, streamingWindow.flightSpeed), nullptr)) {
-                    streamingWindow.flightText = *error;
-                }
-            }
-            if (std::exchange(streamingWindow.flyStopRequested, false)) {
-                stopFlight(flight);
-            }
-            for (auto& request : std::exchange(streamingWindow.radiiRequests, {})) {
-                scene.overrideLodThresholds(request.root, request.heuristic, LodOverride{.thresholds = std::move(request.load), .unloadThresholds = std::move(request.unload)});
-            }
-            for (const auto& root : std::exchange(streamingWindow.radiiResets, {})) {
-                scene.resetLodOverrides(root);
-            }
-            if (auto path = std::exchange(streamingWindow.selectRequested, std::nullopt)) {
-                selectedPath = *path;
-            }
-            if (auto path = std::exchange(streamingWindow.frameRequested, std::nullopt)) {
-                auto bb = scene.bounds(*path);
-                if (bb.valid()) {
-                    cam.frame(bb, glm::radians(45.0f));
-                }
-            }
-            streamingWindow.selectedPath = selectedPath;
-            streamingWindow.selectedRoot.clear();
-            if (!selectedPath.empty()) {
-                for (const auto& row : streamingWindow.rows) {
-                    bool atOrAbove = primpath::isAtOrUnder(selectedPath, row.path);
-                    if (atOrAbove && row.path.size() > streamingWindow.selectedRoot.size()) {
-                        streamingWindow.selectedRoot = row.path;
-                    }
-                }
-            }
-            // The inspector: the selected root's, again when the selection or the snapshot changes and four times a second while shown.
-            auto now = std::chrono::steady_clock::now();
-            if (viewUI.wantsStreamingWindow() &&
-                (streamingWindow.selectedRoot != streamingInspected || snapshotsTaken != streamingInspectedSnapshot || now - streamingInspectedAt > std::chrono::milliseconds(250))) {
-                streamingInspected = streamingWindow.selectedRoot;
-                streamingInspectedSnapshot = snapshotsTaken;
-                streamingInspectedAt = now;
-                streamingWindow.inspection = inspectStreamingRoot(scene, streamingWindow.selectedRoot, lodCamera(debugCamera, cam).position, lodWindowArea(glm::radians(cameraFovDegrees), viewAspect));
-            }
-        }
-        ImGuiFrameSnapshot imguiSnapshot;
-        {
-            PROFILE_ZONE("ImGuiRender");
-            imguiSnapshot = imguiBackend.endFrame();
-        }
-        profile::endZone(); // EditorUI
-
-        static const uint32_t snapshotZoneId = profile::registerName("BuildSnapshot");
-        profile::beginZone(snapshotZoneId);
-
-        float mouseX = 0;
-        float mouseY = 0;
-        SDL_GetMouseState(&mouseX, &mouseY);
-
-        // The active tool's gizmo, on the selection when it takes a transform.
-        if (selectedPath != selectedXfPath || &scene.snapshot() != selectedXfSnapshot) {
-            PROFILE_ZONE("SelectionTransform");
-            selectedXfPath = selectedPath;
-            selectedXfSnapshot = &scene.snapshot();
-            selectedXf = selectedPath.empty() ? std::nullopt : scene.transform(selectedPath);
-        }
-        bool showTransformGizmo = selectedXf && selectedXf->xformable;
-        auto gizmoAnchor = showTransformGizmo ? gizmoAnchorOf(*selectedXf) : glm::vec3(0.0f);
-        auto activeTool = viewUI.activeTool();
-        {
-            PROFILE_ZONE("Gizmos");
-            translateGizmo.update(winExtent, viewCamera().viewMatrix(), proj, viewCamera().position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Translate, gizmoAnchor);
-            rotateGizmo.update(winExtent, viewCamera().viewMatrix(), proj, viewCamera().position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Rotate, gizmoAnchor);
-            scaleGizmo.update(winExtent, viewCamera().viewMatrix(), proj, viewCamera().position, mouseX, mouseY, showTransformGizmo && activeTool == ViewTool::Scale, gizmoAnchor);
-        }
-
-        static const uint32_t snapshotFillZoneId = profile::registerName("SnapshotFill");
-        profile::beginZone(snapshotFillZoneId);
-        RenderSnapshot snapshot = {
-            .viewMatrix = viewCamera().viewMatrix(),
-            .projMatrix = proj,
-            .lodEye = glm::vec3(glm::inverse(lodCamera(debugCamera, cam).viewMatrix())[3]),
-            .worldUp = cam.worldUp,
-            .windowWidth = winW,
-            .windowHeight = winH,
-            .mouseX = mouseX,
-            .mouseY = mouseY,
-            .showGizmo = toolsconfig::overlayGizmos.get(),
-            .gbufferViewMode = static_cast<GBufferView>(renderconfig::bufferView.get()),
-            .debugView = static_cast<DebugView>(renderconfig::debugView.get()),
-            .streamingStates = streamingView ? streamingWindow.slotStates : std::vector<uint32_t>(),
-            .showBufferOverlay = renderconfig::bufferOverlay.get(),
-            .showShadowOverlay = renderconfig::shadowOverlay.get(),
-            .antiAliasing = renderconfig::antiAliasing.get(),
-            .depthPrepass = renderconfig::depthPrepass.get(),
-            .sampler = renderconfig::samplerSettings(),
-            .cullEnabled = cullState.enabled,
-            .cullViewProj = cullViewProj,
-            .readLodStates = lodStatesWanted,
-            .lodHysteresis = scene.lodTuning().hysteresis,
-            .lodPopFlash = toolsconfig::lodPopFlash.get(),
-            .lodColorByDepth = toolsconfig::lodColorByDepth.get(),
-            .lodFlashFrames = (uint32_t) std::clamp(std::lround(0.5f / std::max(dt, 1e-4f)), 1L, 127L),
-            .shadowSettings = renderconfig::shadowSettings(),
-            .ambient = renderconfig::ambient(),
-            .cascadeCount = cascadeCount,
-            .cascades = cascades,
-            .cascadeCamera = &shadowCamera != &viewCamera() ? std::optional<std::pair<glm::vec3, glm::vec3>>({shadowCamera.position, shadowCamera.forward()}) : std::nullopt,
-            .translateGizmoVerts = {translateGizmo.vertices().begin(), translateGizmo.vertices().end()},
-            .rotateGizmoVerts = {rotateGizmo.vertices().begin(), rotateGizmo.vertices().end()},
-            .scaleGizmoVerts = {scaleGizmo.vertices().begin(), scaleGizmo.vertices().end()},
-            .imguiSnapshot = std::move(imguiSnapshot),
-        };
-        profile::endZone(); // SnapshotFill
-        {
-            PROFILE_ZONE("TakeDebugLines");
-            snapshot.debugData = debugDraw.take();
-        }
-
-        profile::endZone(); // BuildSnapshot
+        auto snapshot = frame.buildSnapshot();
+        hooks.fillSnapshot(frame, snapshot);
         {
             PROFILE_ZONE("SubmitSnapshot");
             renderThread.submitSnapshot(std::move(snapshot));
@@ -1468,8 +553,8 @@ auto main(int argc, char* argv[]) -> int {
         TRACE_ERROR("Engine", "PipelinesFailed", "view").text("a pipeline failed: its shader didn't pack or the device couldn't create it (the reason is above)");
     }
     TRACE_EVENT("Engine", "ProcessExiting", "view")
-        .text(std::format("exiting after {} frames", frameCounter))
-        .field("frames", (int64_t) frameCounter)
+        .text(std::format("exiting after {} frames", frame.frameCounter))
+        .field("frames", (int64_t) frame.frameCounter)
         .field("validation_errors", (int64_t) validationErrors);
     endpoint.finishTrace(std::chrono::seconds(1));
     endpoint.stop();

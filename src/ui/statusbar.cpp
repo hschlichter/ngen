@@ -1,12 +1,27 @@
 #include "statusbar.h"
 
+#include "assetclient.h"
+#include "drawlists.h"
+#include "rhidevice.h"
+
 #include <imgui.h>
 #include <imgui_internal.h>
 
 #include <cstdio>
+#include <fstream>
 #include <string>
+#include <unistd.h>
 
 namespace {
+
+// The process's resident set, from /proc/self/statm (pages).
+auto residentBytes() -> uint64_t {
+    std::ifstream statm("/proc/self/statm");
+    uint64_t size = 0;
+    uint64_t resident = 0;
+    statm >> size >> resident;
+    return resident * (uint64_t) sysconf(_SC_PAGESIZE);
+}
 
 auto bytesText(uint64_t bytes) -> std::string {
     char text[32];
@@ -81,4 +96,49 @@ auto drawStatusBar(const StatusBarData& data) -> void {
         ImGui::EndMenuBar();
     }
     ImGui::End();
+}
+
+auto StatusBarGatherer::gather(const RhiDevice& device, const AssetClient& assets, const CullResult& cull) -> StatusBarData {
+    data.trianglesDrawn = cull.cameraTriangles;
+    data.trianglesScene = cull.sceneTriangles;
+    profile::frameHistory(frames);
+    // Average over the last second of frames, newest first.
+    double cpuSum = 0.0;
+    double gpuSum = 0.0;
+    size_t count = 0;
+    size_t gpuCount = 0;
+    for (auto it = frames.rbegin(); it != frames.rend() && cpuSum < 1000.0; ++it) {
+        cpuSum += it->cpuMs;
+        count++;
+        if (it->gpuMs > 0.0) {
+            gpuSum += it->gpuMs;
+            gpuCount++;
+        }
+    }
+    if (count > 0 && cpuSum > 0.0) {
+        data.frameMs = cpuSum / (double) count;
+        data.fps = 1000.0 / data.frameMs;
+    }
+    data.gpuMs = gpuCount > 0 ? gpuSum / (double) gpuCount : 0.0;
+
+    auto now = profile::now();
+    if (now - lastMemorySampleNs >= 250'000'000ull || lastMemorySampleNs == 0) {
+        lastMemorySampleNs = now;
+        data.cpuMemoryBytes = residentBytes();
+        device.memoryHeaps(heaps);
+        data.gpuMemoryBytes = 0;
+        for (const auto& heap : heaps) {
+            data.gpuMemoryBytes += heap.allocated;
+        }
+    }
+
+    auto stats = assets.stats();
+    data.assetsConnected = true;
+    data.assetsRequested = stats.requested;
+    data.assetsPacked = stats.packed;
+    data.assetsCached = stats.cached;
+    data.assetsFailed = stats.failed;
+    data.assetsInFlight = stats.inFlight();
+    data.assetBytes = stats.bytes;
+    return data;
 }

@@ -138,6 +138,29 @@ auto ViewDumps::trackScreenshot(std::string path, RpcResponder responder, bool i
     screenshots.push_back({.path = std::move(path), .responder = std::move(responder), .inlinePng = inlinePng});
 }
 
+auto ViewDumps::wantReadbacks(FrameReadbacks& readbacks) -> void {
+    readbacks.frameGraphDebug = readbacks.frameGraphDebug || wantsFrameGraphDebug();
+    readbacks.renderDebug = readbacks.renderDebug || wantsRenderDebug();
+    readbacks.counters = readbacks.counters || wantsCounters();
+    readbacks.frameDebug = takeFrameDebugRequest() || readbacks.frameDebug;
+    appendWatches(readbacks.watches);
+}
+
+auto ViewDumps::takeReadbacks(FrameReadbacks& readbacks) -> void {
+    onFrameGraph(readbacks.frameGraph);
+    onRenderDebug(readbacks.renderDebugSnapshot);
+    if (readbacks.frameDebugCapture.has_value()) {
+        onFrameDebug(*readbacks.frameDebugCapture);
+    }
+    std::erase_if(readbacks.captures, [this](CaptureResult& result) {
+        return onCaptureResult(result);
+    });
+    onScreenshots(readbacks.screenshots);
+    for (const auto& counters : readbacks.counterFrames) {
+        onCounters(counters);
+    }
+}
+
 auto ViewDumps::wantsFrameGraphDebug() const -> bool {
     return std::ranges::any_of(frameRequests, [](const FrameRequest& r) { return !r.armed && !r.target.path.empty(); });
 }

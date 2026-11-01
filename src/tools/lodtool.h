@@ -117,6 +117,7 @@ struct LodInspection {
 // list's filters (the gizmo of every root the list shows reads them), the selection, the render-LOD counts, and what the window asked for
 // this frame (the application applies the requests and clears them). The window's own state (scroll, edit buffers) is the UI's.
 struct LodToolState {
+    bool windowOpen = false; // the LOD window is open; set by the UI each frame. The rows and the inspector are kept while it is.
     char filter[128] = "";
     int kindFilter = 0; // 0 every root, 1 render LOD, 2 streaming
     bool onlyUnderSelection = false;

@@ -14,7 +14,7 @@ public:
     explicit ImGuiBackendVulkan(SDL_Window* window) : window(window) {}
 
     auto init(const ImGuiBackendInitInfo& info) -> void override;
-    auto processEvent(SDL_Event* event) -> bool;
+    auto processEvent(const SDL_Event* event) -> bool;
     auto beginFrame() -> void override;
     auto endFrame() -> ImGuiFrameSnapshot override;
     auto renderDrawData(RhiCommandBuffer* cmd, ImGuiFrameSnapshot& snapshot) -> void override;

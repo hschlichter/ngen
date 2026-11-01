@@ -46,7 +46,7 @@ it from the values each frame) or through the render thread's setters, the scene
 ## Acting on a change
 
 A value counts every set that changed it (`changes()`). Code that must act when a value changes keeps the count it last acted on and
-compares, in its place in the frame: the upload budget and the geometry pool's limit are handed to the render thread that way (`view.cpp`).
+compares, in its place in the frame: the upload budget and the geometry pool's limit are handed to the render thread that way (`ViewFrame::sendSceneInputs`).
 There are no callbacks, so nothing runs inside a `set`.
 
 ## At runtime

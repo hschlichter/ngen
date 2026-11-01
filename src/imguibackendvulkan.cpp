@@ -59,7 +59,7 @@ auto ImGuiBackendVulkan::init(const ImGuiBackendInitInfo& info) -> void {
     TRACE_EVENT("Engine", "ImGuiInitialized", "imgui").text("Dear ImGui initialized");
 }
 
-auto ImGuiBackendVulkan::processEvent(SDL_Event* event) -> bool {
+auto ImGuiBackendVulkan::processEvent(const SDL_Event* event) -> bool {
     ImGui_ImplSDL3_ProcessEvent(event);
     auto& io = ImGui::GetIO();
     return io.WantCaptureMouse || io.WantCaptureKeyboard;

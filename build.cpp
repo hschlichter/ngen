@@ -208,7 +208,8 @@ auto main(int argc, char** argv) -> int {
             .link(packer)
             .link(rhi_backend);
 
-    // The view's runtime (src/view/README.md): the scene composed from the packs and placed for the renderer, picking, the camera modes.
+    // The view's runtime (src/view/README.md): the scene composed from the packs and placed for the renderer, picking, the camera modes, and
+    // the frame's engine steps the main loop calls (ViewFrame) with the hooks the tools and the UI join it by.
     auto viewLib =
         cxx::static_library("view")
             .sources({
@@ -219,6 +220,7 @@ auto main(int argc, char** argv) -> int {
                 "src/view/camera.cpp",
                 "src/view/cameraflight.cpp",
                 "src/view/assetgoto.cpp",
+                "src/view/viewframe.cpp",
             })
             .public_include({"src/view"})
             .include({

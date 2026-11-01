@@ -14,6 +14,7 @@
 #include "introspectionflags.h"
 #include "lodwindow.h"
 #include "memorywindow.h"
+#include "overlays.h"
 #include "performancewindow.h"
 #include "renderdebugwindow.h"
 #include "statusbar.h"
@@ -31,18 +32,8 @@
 #include <utility>
 #include <vector>
 
-class DebugDraw;
-struct AABB;
 struct Camera;
 struct RenderWorld;
-
-// What a click and a drag do in the viewport: select, or move the selection with a gizmo.
-enum class ViewTool : uint8_t {
-    Select,
-    Translate,
-    Rotate,
-    Scale,
-};
 
 // A selection command from the Edit menu, for the view to carry out.
 enum class ViewEditRequest : uint8_t {
@@ -52,20 +43,7 @@ enum class ViewEditRequest : uint8_t {
     FrameSelected,
 };
 
-// The viewport overlays' configuration values (src/config/README.md), drawn by ViewUI::drawDebug.
-namespace toolsconfig {
-extern config::Bool overlayGrid;          // tools.overlay.grid
-extern config::Bool overlayOrigin;        // tools.overlay.origin
-extern config::Bool overlayGizmos;        // tools.overlay.gizmos: the axis and transform gizmos
-extern config::Bool overlayAabbs;         // tools.overlay.aabbs: every instance's bounds
-extern config::Bool overlaySelectedAabb;  // tools.overlay.selectedAabb
-extern config::Bool overlayLightGizmos;   // tools.overlay.lightGizmos
-extern config::Bool overlayCulled;        // tools.overlay.culled: the instances' bounds by their cull result
-extern config::Int overlayCulledView;     // tools.overlay.culledView: whose result, 0 the camera, 1.. the cascades
-extern config::Bool overlayCascadeFrusta; // tools.overlay.cascadeFrusta
-} // namespace toolsconfig
-
-// ngen-view's UI: the menu bar, the status bar, the overlays, the camera window and the introspection windows (frame graph,
+// ngen-view's UI: the menu bar (the overlays' switches among it), the status bar, the camera window and the introspection windows (frame graph,
 // performance, render debug, culling, capture, frame debugger, GPU scene, counters, memory). It edits the settings the view renders
 // with; the view reads them each frame. Prims are named by the path `primPath` gives for a draw's prim index.
 class ViewUI {
@@ -77,15 +55,6 @@ public:
               Camera& camera,
               std::optional<FrameGraphDebugSnapshot> freshFrameGraphSnap,
               std::optional<RenderDebugSnapshot> freshRenderDebugSnap) -> void;
-
-    auto drawDebug(DebugDraw& debugDraw,
-                   const RenderWorld& renderWorld,
-                   glm::vec3 cameraPos,
-                   glm::vec3 worldUp,
-                   std::span<const uint8_t> visible,
-                   const std::array<glm::vec3, 8>* frozenFrustum,
-                   std::span<const ShadowCascade> cascades,
-                   const AABB* selectedBounds) -> void;
 
     auto activeTool() const -> ViewTool { return (ViewTool) toolIndex; }
     auto setActiveTool(ViewTool tool) -> void { toolIndex = (int) tool; }

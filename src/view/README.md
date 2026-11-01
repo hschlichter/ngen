@@ -3,14 +3,48 @@
 The `view` library, ngen-view's runtime: the scene it shows (`viewscene.*`, its placement tree in `placement.*`), picking (`viewpicking.*`),
 the camera (`camera.*`: pose, flying, orbit, dolly, the height kept while following; it takes a `CameraMove` the application maps its keys
 onto, and leaves the projection to the renderer's `projection.h`), its flight through the scene's cameras (`cameraflight.*`), the camera
-modes (`ground.*`) and "go to asset" (`assetgoto.*`). It includes nothing of the tools (`src/tools/README.md`) or the UI. ngen-view's engine
-commands are the `viewcommands` library ("Commands", below). The program's `main` is `src/apps/view.cpp`; its UI is `ViewUI`
-(`src/ui/viewui.*`). The tools' sections below (the LOD and Streaming tools, the debug camera) describe code in `src/tools`.
+modes (`ground.*`), "go to asset" (`assetgoto.*`), and the frame (`viewframe.*`) with the hooks the tools and the UI join it by
+(`viewhooks.h`, "The frame", below). It includes nothing of the tools (`src/tools/README.md`) or the UI. ngen-view's engine commands are the
+`viewcommands` library ("Commands", below). The program's `main` is `src/apps/view.cpp`: arguments, wiring, the window's input and the loop;
+its UI is `ViewUI` (`src/ui/viewui.*`). The tools' sections below (the LOD and Streaming tools, the debug camera) describe code in `src/tools`.
+
+## The frame
+
+`ViewFrame` (`viewframe.*`) is one frame of the engine: the main camera and its modes, the selection, the scene's inputs, residency, culling,
+the shadow cascades and the snapshot. `src/apps/view.cpp`'s loop calls its steps in order, with the commands and the hooks between them:
+
+| Step | What it does | Then the hooks |
+|---|---|---|
+| `updateScene` | the asset server's change notices (shaders reload, the scene's assets fetched again); the scene thread's latest snapshot; the camera framing what has arrived until the scene is first resident | `afterScene`: the tools' rows, the Camera window's list |
+| `runFrameCommands` (`viewcommands`) | the script's due lines while nothing holds its clock, then the endpoint's calls ("Commands", below) | |
+| `advanceTime` | the frame's time, the loading frames, the flight; a camera the commands moved ends the framing | |
+| `resetCameras` | every camera the frame uses is the main camera | `cameras`: the debug camera takes over what it drives |
+| `setViewport`, `sendSceneInputs` | the projection; the LOD camera, the purposes, the upload limits and the scene's changes to the scene thread and the render thread | |
+| `updateResidency`, `answerResidentWaiters` (`viewcommands`) | resident or not, `SceneResident`; the methods waiting for it answered | |
+| input (`view.cpp`) | SDL's events, each to the hooks first (`event`: ImGui, F12, the gizmos, C), then to the view's controls (`look`, `wheel`, `startOrbit`, `pick`, Z, R, F, G) | |
+| `moveCamera` | the keys as a camera move; orbiting; following the ground | |
+| `cull`, `serviceRenderLodRequests` (`viewcommands`), `countLodPops`, `fitCascades` | culling's frustum and latest readback, the render-LOD records it answers, the shadow cascades | `afterCamera`: the debug camera's trail, the LOD rows' live state, the Culling window's numbers |
+| `drawCameraModes` | the camera modes' lines, after the hooks' | `debugDraw` (before it): the overlays and the tools' layers |
+| `readBack` | what the readers asked for (`wantReadbacks`, then the dumps) sent to the render thread; what came back taken by picking, the dumps, then `takeReadbacks` | |
+| | | `drawUi`: the windows drawn, and what they asked for carried out |
+| `buildSnapshot`, submit | the frame for the render thread | `fillSnapshot` (before submit): the gizmos, the tools' layers, ImGui's draw data |
+
+**The hooks.** `ViewHooks` (`viewhooks.h`) is how the layers above the engine join the frame, at the points above; each does nothing unless
+overridden. The tools implement them (`ToolsHooks`, `src/tools/README.md`) and the UI wraps the tools' (`UiHooks`, `src/ui/uihooks.*`), so the
+loop holds one. Without hooks the frame is the engine's alone: the main camera renders with nothing drawn over it but the camera modes, and
+every engine method and record still answers.
+
+**The cameras.** `FrameCameras` names the camera each use takes: rendered from, moved by the controls, measured from by LOD and streaming,
+culled from, fitted to by the cascades. Each is the main camera (`ViewFrame::cam`) unless the `cameras` hook takes it over, once a frame
+after the commands, so a command that turns the debug camera on shows the frame it runs, and one from the UI the next.
+
+**The script's clock** (`ScriptClock`, `viewcommands.h`): a script's frames count only while nothing holds it (the first residency, a method
+answering on residency, a flight); `--frames` quits after the last. The `scenethread` record shows it (`scriptHeld`, `scriptFrame`).
 
 ## Commands
 
 What an agent reaches without the tools or the UI: every method, script verb and record of the engine, registered by domain over a
-`ViewContext` (`viewcommands.h`: references to what the main loop owns) into the `RpcRegistry`, the `RpcVerbs` table and the `RpcRecords`
+`ViewContext` (`viewcommands.h`: references into the `ViewFrame` and to what the main loop owns) into the `RpcRegistry`, the `RpcVerbs` table and the `RpcRecords`
 (`src/rpc/README.md`). They run at the top of each frame, before the camera moves: a script's due lines through `RpcVerbs::run`, then the
 endpoint's calls; an answer that needs a readback or residency waits in `renderLodRequests` or `residentWaiters` and is given frames later.
 
@@ -50,7 +84,7 @@ cutout whose opacity texture is still uploading draws opaque. A material that ha
   published (so a moved camera's levels count: while the camera moves, the scene isn't resident);
 - the render thread has applied every change list in a frame it finished, with no upload or pipeline pending.
 
-The main loop checks once a frame, and traces `SceneResident` when it becomes true, with the time since start and the longest frame while
+`ViewFrame::updateResidency` checks once a frame, and traces `SceneResident` when it becomes true, with the time since start and the longest frame while
 loading.
 
 Until the scene is first resident the camera frames what has arrived, unless it is moved by hand. Script frames, `--frames` and `--screenshot`
@@ -200,8 +234,8 @@ do its draws: only where it is placed.
   and its trail, a point every 2 m it moved (the last 500; `debug-camera trail on|off|clear`). `camera <pose> debug` and
   `view.camera.set/get {camera: "debug"}` place and read it; the `debugcamera` record holds its pose and trail, the `config` record its switches (`tools.debugcamera.*`, on with
   `tools.debugcamera.on`); `view.camera.debug` places it and clears the trail. The corner axis gizmo shows
-  and turns the camera rendered from: the renderer reports the axis clicked (`gizmoHitTest`), `view.cpp` turns the camera.
-- **Camera modes** (`ground.*`, their state `CameraModesState` owned by the application, the Camera window's mode section, the View menu): for the camera that has the controls.
+  and turns the camera rendered from: the renderer reports the axis clicked (`gizmoHitTest`), the tools' hooks turn the camera.
+- **Camera modes** (`ground.*`, their state `CameraModesState` held by the `ViewFrame`, the Camera window's mode section, the View menu): for the camera that has the controls.
   - *Orbit*: while Left Alt is held, right-drag turns around a pivot (yaw around the up axis through it, pitch around the camera's right,
     the distance kept, `Camera::orbit`) and the wheel moves toward it (`Camera::dolly`); WASD carry the pivot along. The pivot is the
     surface under the cursor when Alt went down: a depth pick (`ViewPicking::requestDepth`, the `depth` texel after the geometry pass)
@@ -233,7 +267,7 @@ do its draws: only where it is placed.
   stay held. `LevelsUnloaded` traces each batch that let something go (levels, contents, mesh packs), and the `streaming` and `scenethread`
   records and the LOD window (a loaded level's tooltip: the resident levels and why) show what was unloaded.
 - **The LOD tool** (`src/tools/lodtool.*`: its rows, inspection and requests in `LodToolState`, which the application owns in `ToolsState`
-  and fills; the LOD window `src/ui/lodwindow.*` draws it and keeps only its scroll and edit buffers): one place for LOD inspection, switching and tuning, both kinds.
+  and the tools' hooks fill; the LOD window `src/ui/lodwindow.*` draws it and keeps only its scroll and edit buffers): one place for LOD inspection, switching and tuning, both kinds.
   - *The list*: every streaming root drawn and every render-LOD group placed (`buildLodRows` per snapshot: the roots' rows each time, the groups'
     only when the draws, the tuning, the hand-set levels, the preference or the heuristic's state changed; a group's wanted, drawn, fade
     and measure from the readback each frame while the window or a layer is shown, so the frames read every group's state back then: 16
@@ -262,7 +296,7 @@ do its draws: only where it is placed.
     for half a second, over any view: `src/renderer/README.md`, "Render LOD"; the `renderlod` record's `popped`, `flashing`, `popsSeen`).
     A streaming root shows its level, label and gizmo; its flags and flash are render LOD's only, as its state is the CPU's.
 - **The Streaming tool** (`src/tools/streamingtool.*`: its rows, totals, inspection, history and requests in `StreamingToolState`, owned
-  by the application in `ToolsState`; the Streaming window `src/ui/streamingwindow.*`, `window streaming`, keeps its scroll, the map's pan and
+  by the application in `ToolsState` and filled by the tools' hooks; the Streaming window `src/ui/streamingwindow.*`, `window streaming`, keeps its scroll, the map's pan and
   zoom, and edit buffers): residency seen and
   steered; it adds no rule, it shows the `streaming` record's data and sets the tuning.
   - *Rows* (`buildStreamingRows`, once per snapshot while the window, a layer or the streaming view is on): every streaming root drawn, its

@@ -129,10 +129,11 @@ items in an "Open questions" section instead of picking silently.
 - `src/trace/` — the trace: structured events (`TRACE_EVENT`) in an always-on ring per process, streamed over RPC. Conventions in
   `src/trace/README.md`.
 - `src/view/` — ngen-view's runtime (the `view` library: `viewscene.*`, the World composed from packs and flattened into the renderer's inputs;
-  the camera, its flight and modes; picking) and its engine commands (the `viewcommands` library: RPC methods, script verbs and records by
-  domain in `*commands.cpp`, and the dumps in `viewdumps.*`). The tools and the UI register their own commands. Design in `src/view/README.md`.
-- `src/tools/` — the tools (LOD and Streaming tools, the debug camera): their data, state and viewport layers, apart from the UI that draws
-  them; nothing here includes `src/ui`. Rules in `src/tools/README.md`.
+  the camera, its flight and modes; picking; the frame, `ViewFrame`, whose steps the main loop calls in order, and the hooks the tools and the
+  UI join it by, `viewhooks.h`) and its engine commands (the `viewcommands` library: RPC methods, script verbs and records by domain in
+  `*commands.cpp`, and the dumps in `viewdumps.*`). The tools and the UI register their own commands. Design in `src/view/README.md`.
+- `src/tools/` — the tools (LOD and Streaming tools, the debug camera, the overlays, the gizmos): their data, state, viewport layers and their
+  part of the frame (`ToolsHooks`), apart from the UI that draws them; nothing here includes `src/ui`. Rules in `src/tools/README.md`.
 - `src/asset/` — the asset system: `ngen-asset-server` (`server/`), `AssetClient`, and packing (`pack/`: the rule type and what every packer
   shares). Assets are the system, packing is the process that makes an asset engine-ready. Asset ids, the server, its cache, the stream, `pack.cpp`
   rules and the packer contract in `src/asset/README.md`. Packers are programs in `src/apps/packer<type>.cpp`; their rules are in the root
