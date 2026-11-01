@@ -88,6 +88,7 @@ Each library documents its design and rules in a README next to the code:
 - [`src/editor/README.md`](src/editor/README.md) — the USD editor code, unbuilt until `ngen-editor` is built from it.
 - [`src/asset/README.md`](src/asset/README.md) — the asset system: asset ids, `ngen-asset-server`, its cache and stream, `AssetClient`, and packing (`pack.cpp` rules, packers).
 - [`src/view/README.md`](src/view/README.md) — ngen-view's scene: the World composed from packs and flattened into the renderer's inputs; its commands and dumps.
+- [`src/tools/README.md`](src/tools/README.md) — the tools: the LOD and Streaming tools and the debug camera, their data and state, apart from the UI that draws them.
 - [`src/world/README.md`](src/world/README.md) — the runtime scene: the World composed from scene packs as USD composes a stage, and `ngen-worldcheck` / `ngen-usdcheck` to compare the two.
 
 `docs/` holds plans and design history; code and library READMEs do not depend on it.

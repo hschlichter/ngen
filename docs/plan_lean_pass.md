@@ -1,6 +1,6 @@
 # Lean pass: the engine apart from its tools, a lean frame loop and lean instrumentation
 
-**Status. In progress.** Step 0 done 2026-10-31, step 1 and 2 2026-11-01. Decisions locked 2026-10-31 (Henrik): the layering and the order below; settings move into the configuration system
+**Status. In progress.** Step 0 done 2026-10-31, steps 1 to 3 2026-11-01. Decisions locked 2026-10-31 (Henrik): the layering and the order below; settings move into the configuration system
 ([plan_configuration.md](plan_configuration.md)); the Engine Map and Scene Flow windows removed with their code. Pushback welcome on the
 open choices.
 
@@ -155,6 +155,25 @@ At the end:
   - Checks: the 8 reference images byte-identical; the three debug camera runs' `streaming` and `culling` records identical to before;
     with the LOD, Streaming and Camera windows open, labels, bounds and following on, the `lodtool` record has its 11,954 rows and the
     `streamingtool` its 396 roots, as before; validation clean.
+
+- **Step 3** (2026-11-01): two libraries in `build.cpp`.
+  - `view`: `viewscene`, `placement`, `viewpicking`, `ground`, `camera`; links `renderer`, `world`, `assetclient`, `packer`, `config`.
+  - `tools`: `src/tools/*`; links `view`, `renderer`, `config`. `ui` links `tools`, and no longer adds `src/view` or `src/tools` to its own
+    include paths (they come with the libraries).
+  - `src/camera.*` and `src/debugdraw.*`, compiled into the program and called by the renderer, the view runtime and the tools, went to
+    their owners instead of a shared library (a `common` library was tried and dropped, Henrik: ownership over buckets):
+    - the projection convention (`perspectiveProjection`, `projectionDepthAt`, `projectionNear`, was `cameraProjection`, …) is the
+      renderer's: `src/renderer/projection.*`; the field of view stays the view's (`cameraFovDegrees`);
+    - the camera (pose, flying, orbit, dolly, the follow height) is the view runtime's: `src/view/camera.*`; it takes a `CameraMove`
+      (forward, right, up, fast) the application maps its keys onto, instead of reading SDL's keyboard;
+    - the debug lines are the renderer's input: `src/renderer/debugdraw.*`;
+    - the corner axis gizmo no longer holds the main thread's `Camera*` (a race, and the renderer's only need for `Camera`):
+      `gizmoHitTest` returns the axis clicked and `view.cpp` turns the camera rendered from (before, always the main camera).
+    - The renderer's public include paths carry `src/scene`, `src` and glm, which its headers need.
+  - `viewcommands.cpp` and `viewdumps.cpp` stay in the program until step 4 splits them. `src/tools/README.md` (new) has the layer's rules.
+  - Checks: every release target builds; the 8 reference images byte-identical; the debug camera's runs give `streaming` and `culling`
+    records identical to before; following holds 1.8 m on all 30 steps; the village run with the tool windows open gives the same
+    `lodtool` (11,954 rows) and `streamingtool` (396 roots) records; the debug build runs with every tool window open.
 
 ## Open questions
 

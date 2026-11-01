@@ -1,23 +1,9 @@
 #include "camera.h"
 
-#include <SDL3/SDL.h>
+#include "projection.h"
+
 #include <algorithm>
 #include <cmath>
-
-auto cameraProjection(float aspect) -> glm::mat4 {
-    float f = 1.0f / std::tan(glm::radians(cameraFovDegrees) * 0.5f);
-    // Clip z is the near distance and w the view depth, so depth is near / distance.
-    glm::mat4 proj(0.0f);
-    proj[0][0] = f / aspect;
-    proj[1][1] = -f; // Vulkan's y points down
-    proj[2][3] = -1.0f;
-    proj[3][2] = cameraNear;
-    return proj;
-}
-
-auto cameraDepthAt(float distance) -> float {
-    return cameraNear / std::max(distance, cameraNear);
-}
 
 // Pick a stable horizontal axis perpendicular to worldUp for yaw=0.
 static auto horizontalReference(glm::vec3 worldUp) -> glm::vec3 {
@@ -46,46 +32,21 @@ auto Camera::handleMouseMotion(float xrel, float yrel) -> void {
     pitch = std::max(pitch, -89.0f);
 }
 
-auto Camera::update(const bool* keys, float dt) -> void {
-    // Reserve Ctrl-modified keystrokes for editor shortcuts (Ctrl+E, etc.)
-    // so they don't double as camera movement.
-    if (keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL]) {
-        return;
-    }
-
+auto Camera::update(const CameraMove& move, float dt) -> void {
     auto fwd = forward();
     auto r = right();
     auto up = worldUp;
-    // Following the ground: forward is the heading across it (right is level already), and Q/E change the height above it.
+    // Following the ground: forward is the heading across it (right is level already), and the up axis changes the height above it.
     if (followHeight) {
         fwd = glm::cross(worldUp, r);
         up = glm::vec3(0.0f);
     }
-
-    auto spd = keys[SDL_SCANCODE_LSHIFT] ? speed * 5.0f : speed;
-    if (keys[SDL_SCANCODE_W]) {
-        position += fwd * spd * dt;
-    }
-    if (keys[SDL_SCANCODE_S]) {
-        position -= fwd * spd * dt;
-    }
-    if (keys[SDL_SCANCODE_A]) {
-        position -= r * spd * dt;
-    }
-    if (keys[SDL_SCANCODE_D]) {
-        position += r * spd * dt;
-    }
-    if (keys[SDL_SCANCODE_E]) {
-        position += up * spd * dt;
-    }
-    if (keys[SDL_SCANCODE_Q]) {
-        position -= up * spd * dt;
-    }
-    if (followHeight && keys[SDL_SCANCODE_E]) {
-        *followHeight += spd * dt;
-    }
-    if (followHeight && keys[SDL_SCANCODE_Q]) {
-        *followHeight = std::max(0.0f, *followHeight - (spd * dt));
+    auto spd = move.fast ? speed * 5.0f : speed;
+    position += fwd * spd * dt * move.forward;
+    position += r * spd * dt * move.right;
+    position += up * spd * dt * move.up;
+    if (followHeight) {
+        *followHeight = std::max(0.0f, *followHeight + (spd * dt * move.up));
     }
 }
 
@@ -107,7 +68,7 @@ auto Camera::dolly(glm::vec3 pivot, float steps) -> void {
     if (distance < 1e-6f) {
         return;
     }
-    auto next = std::max(distance * std::pow(0.85f, steps), cameraNear);
+    auto next = std::max(distance * std::pow(0.85f, steps), projectionNear);
     position = pivot + (offset * (next / distance));
 }
 

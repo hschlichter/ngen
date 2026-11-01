@@ -1,6 +1,6 @@
 #include "lightingpass.h"
 
-#include "camera.h"
+#include "projection.h"
 #include "geometrypass.h"
 #include "renderconfig.h"
 #include "renderworld.h"
@@ -127,7 +127,7 @@ auto LightingPass::addPass(
             LightingUBO lightUbo = {
                 .lightDirection = glm::vec4(lightInputs.direction, 1.0f),
                 .lightColor = glm::vec4(lightInputs.radiance, 0.0f),
-                .depthParams = glm::vec4(cameraNear, previewFar, 0.0f, 0.0f),
+                .depthParams = glm::vec4(projectionNear, previewFar, 0.0f, 0.0f),
                 .shadowTint = glm::vec4(lightInputs.shadowColor, 0.0f),
                 .invViewProj = invViewProj,
                 .cascadeParams = glm::vec4((float) cascadeCount, pcf ? 1.0f : 0.0f, (float) atlasExtent.width, 0.0f),

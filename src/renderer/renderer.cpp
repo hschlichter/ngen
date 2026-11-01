@@ -3,7 +3,7 @@
 #include "renderconfig.h"
 
 #include "blitpass.h"
-#include "camera.h"
+#include "projection.h"
 #include "imguibackend.h"
 #include "instanceuploadpass.h"
 #include "material.h"
@@ -872,10 +872,6 @@ auto Renderer::cullResult() const -> CullResult {
     return result;
 }
 
-auto Renderer::initGizmos(Camera* camera) -> void {
-    axisGizmo = Axis3DGizmo(camera);
-}
-
 auto Renderer::gizmoUpdate(const RenderSnapshot& snapshot, RhiExtent2D extent) -> std::vector<GizmoDrawRequest> {
     std::vector<GizmoDrawRequest> requests;
     if (snapshot.showGizmo) {
@@ -906,8 +902,8 @@ auto Renderer::gizmoUpdate(const RenderSnapshot& snapshot, RhiExtent2D extent) -
     return requests;
 }
 
-auto Renderer::gizmoHitTest(float mouseX, float mouseY, RhiExtent2D windowExtent) -> bool {
-    return axisGizmo.hitTest(mouseX, mouseY, windowExtent);
+auto Renderer::gizmoHitTest(float mouseX, float mouseY) const -> std::optional<int> {
+    return axisGizmo.hitTest(mouseX, mouseY);
 }
 
 auto Renderer::render(RenderSnapshot& snapshot) -> void {
@@ -1059,7 +1055,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         if (snapshot.cascadeCount == 0) {
             ShadowCascadeSettings single = snapshot.shadowSettings;
             single.count = 1;
-            auto count = fitShadowCascades(single, snapshot.viewMatrix, snapshot.projMatrix, cameraNear, lighting.direction, snapshot.worldUp, sceneBounds, fallbackCascades);
+            auto count = fitShadowCascades(single, snapshot.viewMatrix, snapshot.projMatrix, projectionNear, lighting.direction, snapshot.worldUp, sceneBounds, fallbackCascades);
             cascades = std::span<const ShadowCascade>(fallbackCascades.data(), count);
         }
         auto atlasExtent = shadowAtlasExtent(snapshot.shadowSettings);
@@ -1101,7 +1097,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         lodGroups.addReadbackPass(frameGraph, lodHandles, currentFrame, snapshot.readLodStates, lodCamera.eye, lodCamera.windowArea);
 
         // The depth preview's far end: the camera has no far plane, so the farthest corner of the scene.
-        float previewFar = cameraNear * 10.0f;
+        float previewFar = projectionNear * 10.0f;
         if (sceneBounds.valid()) {
             auto eye = glm::vec3(glm::inverse(snapshot.viewMatrix)[3]);
             for (int i = 0; i < 8; i++) {

@@ -97,9 +97,9 @@ public:
     auto requestTextureDump(uint32_t texture, uint32_t level, std::string path) -> void {
         textureDump = {.texture = texture, .level = level, .path = std::move(path)};
     }
-    auto initGizmos(Camera* camera) -> void;
     auto gizmoUpdate(const RenderSnapshot& snapshot, RhiExtent2D extent) -> std::vector<GizmoDrawRequest>;
-    auto gizmoHitTest(float mouseX, float mouseY, RhiExtent2D windowExtent) -> bool;
+    // The axis of the corner axis gizmo under the cursor (0 x, 1 y, 2 z); none off it.
+    auto gizmoHitTest(float mouseX, float mouseY) const -> std::optional<int>;
     // Latest GPU culling readback (one frame-slot cycle old), for the editor.
     auto cullResult() const -> CullResult;
     // Capture watches from the main thread, and the results that came back.

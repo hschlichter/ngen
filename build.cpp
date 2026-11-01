@@ -186,6 +186,9 @@ auto main(int argc, char** argv) -> int {
             .public_include({
                 "src/renderer",
                 "src/renderer/passes",
+                "src/scene",
+                "src",
+                "external/glm",
             })
             .include({
                 "src",
@@ -204,6 +207,47 @@ auto main(int argc, char** argv) -> int {
             .link(assetClient)
             .link(packer)
             .link(rhi_backend);
+
+    // The view's runtime (src/view/README.md): the scene composed from the packs and placed for the renderer, picking, the camera modes.
+    auto viewLib =
+        cxx::static_library("view")
+            .sources({
+                "src/view/viewscene.cpp",
+                "src/view/placement.cpp",
+                "src/view/viewpicking.cpp",
+                "src/view/ground.cpp",
+                "src/view/camera.cpp",
+            })
+            .public_include({"src/view"})
+            .include({
+                "src/trace",
+                "src/profile",
+                "src/rhi",
+                "src/rhi/vulkan",
+                "external/json/single_include",
+            })
+            .link(renderer)
+            .link(worldLib)
+            .link(assetClient)
+            .link(packer)
+            .link(config)
+            .link(traceLib)
+            .link(profile);
+
+    // The tools (src/tools/README.md): the LOD and Streaming tools and the debug camera, their data built from the view's scene. No UI.
+    auto toolsLib =
+        cxx::static_library("tools")
+            .sources(glob({.include = "src/tools/*.cpp"}))
+            .public_include({"src/tools"})
+            .include({
+                "src/trace",
+                "src/profile",
+                "src/rhi",
+                "src/rhi/vulkan",
+            })
+            .link(viewLib)
+            .link(renderer)
+            .link(config);
 
     auto imgui =
         cxx::static_library("imgui")
@@ -237,14 +281,11 @@ auto main(int argc, char** argv) -> int {
                 "src/scene",
                 "src/profile",
                 "src/session",
-                "src/tools",
-                "src/view",
-                "src/world",
-                "src/asset/pack",
                 "external/imgui",
                 "external/glm",
                 "external/json/single_include",
             })
+            .link(toolsLib)
             .link(renderer)
             .link(profile)
             .link(config)
@@ -362,18 +403,11 @@ auto main(int argc, char** argv) -> int {
         cxx::program("ngen-view")
             .sources({
                 "src/apps/view.cpp",
-                "src/camera.cpp",
-                "src/debugdraw.cpp",
                 "src/jobsystem.cpp",
                 "src/imguibackendvulkan.cpp",
                 "src/renderdoccapture.cpp",
                 "src/view/viewcommands.cpp",
                 "src/view/viewdumps.cpp",
-                "src/view/viewpicking.cpp",
-                "src/view/viewscene.cpp",
-                "src/view/placement.cpp",
-                "src/tools/lodtool.cpp",
-                "src/tools/streamingtool.cpp", "src/tools/debugcamera.cpp", "src/view/ground.cpp",
             })
             .include({
                 "src",
@@ -404,6 +438,8 @@ auto main(int argc, char** argv) -> int {
             .link(session)
             .link(rhivulkan)
             .link(renderer)
+            .link(toolsLib)
+            .link(viewLib)
             .link(ui)
             .link(imgui)
             .link(rpc)

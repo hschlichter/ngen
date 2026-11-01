@@ -3,6 +3,7 @@
 #include "camera.h"
 #include "culling.h"
 #include "debugcamera.h"
+#include "projection.h"
 #include "debugdraw.h"
 #include "ground.h"
 #include "imguibackendvulkan.h"
@@ -423,7 +424,6 @@ auto main(int argc, char* argv[]) -> int {
     // The meshes the draws use, for the ground test: kept from the scene's changes as they pass to the renderer.
     GroundMeshes groundMeshes;
 
-    renderer.initGizmos(&cam);
     TranslateGizmo translateGizmo;
     RotateGizmo rotateGizmo;
     ScaleGizmo scaleGizmo;
@@ -654,7 +654,7 @@ auto main(int argc, char* argv[]) -> int {
         int winH = 0;
         SDL_GetWindowSizeInPixels(window, &winW, &winH);
         RhiExtent2D winExtent = {.width = (uint32_t) winW, .height = (uint32_t) winH};
-        auto proj = cameraProjection((float) winW / (float) winH);
+        auto proj = perspectiveProjection(glm::radians(cameraFovDegrees), (float) winW / (float) winH);
         viewAspect = (float) winW / (float) std::max(1, winH);
         // The camera for the LOD heuristic, when it moved: once it has been placed (by hand, a script, or the framing when the scene was
         // first resident), not while it follows what has arrived.
@@ -895,7 +895,10 @@ auto main(int argc, char* argv[]) -> int {
                 float mx = ev.button.x;
                 float my = ev.button.y;
                 // The axis gizmo turns the camera to an axis.
-                if (renderer.gizmoHitTest(mx, my, winExtent)) {
+                if (auto axis = renderer.gizmoHitTest(mx, my)) {
+                    // Turn the camera rendered from to look along the axis, the way it already faces.
+                    auto& camera = viewCamera();
+                    camera.snapToAxis(*axis, camera.forward()[*axis] < 0.0f);
                     continue;
                 }
                 if (auto xf = scene.transform(selectedPath); xf && xf->xformable && !selectedPath.empty()) {
@@ -944,8 +947,18 @@ auto main(int argc, char* argv[]) -> int {
         if (viewconfig::follow.get()) {
             controlled.followHeight = (float) (viewconfig::followHeight.get() / metersPerUnit);
         }
+        // The keys as a camera move: WASD across, E/Q up and down, Shift fast; none while Ctrl is held, which the shortcuts use.
+        CameraMove move;
+        if (!keys[SDL_SCANCODE_LCTRL] && !keys[SDL_SCANCODE_RCTRL]) {
+            move = {
+                .forward = (keys[SDL_SCANCODE_W] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_S] ? 1.0f : 0.0f),
+                .right = (keys[SDL_SCANCODE_D] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_A] ? 1.0f : 0.0f),
+                .up = (keys[SDL_SCANCODE_E] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_Q] ? 1.0f : 0.0f),
+                .fast = keys[SDL_SCANCODE_LSHIFT],
+            };
+        }
         auto camBefore = controlled.position;
-        controlled.update(keys, dt);
+        controlled.update(move, dt);
         // WASD carry the orbit's pivot along.
         if (cameraModes.orbiting) {
             cameraModes.pivot += controlled.position - camBefore;
@@ -1019,12 +1032,12 @@ auto main(int argc, char* argv[]) -> int {
             PROFILE_ZONE("FitCascades");
             auto sceneBounds = sceneBoundsCache.update(scene.renderWorld().meshInstances);
             auto lightDir = pickShadowLightDirection(scene.renderWorld().lights, cam.worldUp);
-            cascadeCount = fitShadowCascades(renderconfig::shadowSettings(), shadowCamera.viewMatrix(), proj, cameraNear, lightDir, cam.worldUp, sceneBounds, cascades);
+            cascadeCount = fitShadowCascades(renderconfig::shadowSettings(), shadowCamera.viewMatrix(), proj, projectionNear, lightDir, cam.worldUp, sceneBounds, cascades);
         }
         std::array<glm::vec3, 8> frozenCorners;
         if (cullState.frozenActive) {
             // The frozen frustum has no far plane: drawn out to the shadow distance.
-            frozenCorners = cullState.frozenCorners(cameraDepthAt((float) renderconfig::shadowDistance.get()));
+            frozenCorners = cullState.frozenCorners(projectionDepthAt((float) renderconfig::shadowDistance.get()));
         }
 
         // The AABB overlay shows one view's GPU culling result: the camera or a cascade.
@@ -1048,7 +1061,7 @@ auto main(int argc, char* argv[]) -> int {
             drawLodGizmos(lodWindow, debugDraw, cam.worldUp, lodWindowArea(glm::radians(cameraFovDegrees), viewAspect));
             drawStreamingOverlays(streamingWindow, debugDraw, cam.worldUp);
             if (toolsconfig::debugCamera.get()) {
-                drawMainCamera(debugCamera, cam, proj * cam.viewMatrix(), cameraDepthAt((float) renderconfig::shadowDistance.get()), scene.lodMetersPerUnit(), debugDraw);
+                drawMainCamera(debugCamera, cam, proj * cam.viewMatrix(), projectionDepthAt((float) renderconfig::shadowDistance.get()), scene.lodMetersPerUnit(), debugDraw);
             }
             drawCameraModes(cameraModes, controlledCamera().position, scene.lodMetersPerUnit(), debugDraw);
         }

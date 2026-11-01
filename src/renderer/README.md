@@ -332,7 +332,7 @@ so early depth testing holds for everything else. The debug views discard in `de
 | `LightingPass` | Fullscreen deferred shading into a float scene-colour target: one directional light (the first shadow-enabled directional light, else the first directional), cascade selection by view depth, hardware-compare PCF, shadow tint, a hemisphere ambient (an engine sky colour on faces turned up and ground colour on faces turned down, as fractions of the light's radiance), and the debug views (`GBufferView`) and overlays. |
 | `AAPass` | FXAA as a compute pass, scene colour to a float storage image; falls back to a blit when the format cannot be a storage image. |
 | `BlitToBackbuffer` | Blits the AA result (or the debug view colours) to the sRGB backbuffer. |
-| `DebugLinePass` (`DebugRenderer`) | Debug lines from `DebugDrawData` (AABBs, frustum outlines, light gizmos), depth-tested against the scene depth. |
+| `DebugLinePass` (`DebugRenderer`) | Debug lines from `DebugDrawData` (AABBs, frustum outlines, light gizmos), depth-tested against the scene depth. `DebugDraw` (`debugdraw.*`) is the renderer's debug-line input: lines, boxes, circles and spheres the main thread adds and the frame's `RenderSnapshot` carries. |
 | `GizmoPass` | Wide-line gizmo geometry: the axis gizmo the renderer owns and the translate, rotate and scale gizmo vertices the main thread computes. |
 | `EditorUIPass` | Renders the cloned ImGui draw data through `ImGuiBackend`. |
 | `PresentPass` | Moves the backbuffer to `PresentSrc`; no GPU work. |
@@ -380,7 +380,7 @@ standard depth (cleared to 1, compare `LessOrEqual`): each cascade's orthographi
 
 ## Depth
 
-The camera uses reversed-Z with no far plane (`cameraProjection` in `src/camera.h`): depth is `near / distance`, 1 at the near plane (0.1 m) and
+The camera uses reversed-Z with no far plane (`perspectiveProjection` in `projection.h`, the renderer's convention; the view picks the field of view): depth is `near / distance`, 1 at the near plane (0.1 m) and
 falling to 0 at infinity, so nothing is clipped at a distance and the 32-bit float depth keeps its precision far away.
 - **Conventions.** Camera depth is cleared to 0. The depth prepass and geometry pass write with `Greater`, the geometry pass tests `Equal` after
   the prepass, the debug views test `GreaterOrEqual` and the debug lines `Greater`. `RhiDepthState`'s default (`Less`) is the shadow pass's.

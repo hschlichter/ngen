@@ -7,14 +7,17 @@
 
 #include <optional>
 
-// The view's projection: reversed-Z (depth 1 at the near plane, falling to 0 at infinity) with no far plane, and the Vulkan y flip. Depth
-// is a 32-bit float, where reversed-Z keeps precision even far away, so nothing is ever clipped at a distance.
-inline constexpr float cameraNear = 0.1f;
+// The view's vertical field of view; the projection is the renderer's (projection.h).
 inline constexpr float cameraFovDegrees = 45.0f;
 
-auto cameraProjection(float aspect) -> glm::mat4;
-// The depth (0..1] at which a point `distance` in front of the camera lands.
-auto cameraDepthAt(float distance) -> float;
+// What the controls ask of the camera this frame, each -1 to 1: along its forward, its right, and worldUp; `fast` moves five times as
+// fast. The application maps its input (keys) onto it.
+struct CameraMove {
+    float forward = 0.0f;
+    float right = 0.0f;
+    float up = 0.0f;
+    bool fast = false;
+};
 
 struct Camera {
     glm::vec3 position;
@@ -30,7 +33,7 @@ struct Camera {
     [[nodiscard]] auto forward() const -> glm::vec3;
     [[nodiscard]] auto right() const -> glm::vec3;
     auto handleMouseMotion(float xrel, float yrel) -> void;
-    auto update(const bool* keys, float dt) -> void;
+    auto update(const CameraMove& move, float dt) -> void;
     [[nodiscard]] auto viewMatrix() const -> glm::mat4;
     auto snapToAxis(int axis, bool negative) -> void;
 

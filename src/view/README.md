@@ -1,7 +1,11 @@
 # View
 
-ngen-view's library: the scene it shows (`viewscene.*`, its placement tree in `placement.*`), picking (`viewpicking.*`), its commands as RPC methods and script verbs
-(`viewcommands.*`), and its dumps (`viewdumps.*`). The program's `main` is `src/apps/view.cpp`; its UI is `ViewUI` (`src/ui/viewui.*`).
+The `view` library, ngen-view's runtime: the scene it shows (`viewscene.*`, its placement tree in `placement.*`), picking (`viewpicking.*`),
+the camera (`camera.*`: pose, flying, orbit, dolly, the height kept while following; it takes a `CameraMove` the application maps its keys
+onto, and leaves the projection to the renderer's `projection.h`) and the camera modes (`ground.*`). It includes nothing of the tools (`src/tools/README.md`) or the UI. ngen-view's commands as RPC methods
+and script verbs (`viewcommands.*`) and its dumps (`viewdumps.*`) are compiled into the program until they are split by domain. The
+program's `main` is `src/apps/view.cpp`; its UI is `ViewUI` (`src/ui/viewui.*`). The tools' sections below (the LOD and Streaming tools,
+the debug camera) describe code in `src/tools`.
 
 ## The scene: `ViewScene`
 
@@ -174,8 +178,8 @@ do its draws: only where it is placed.
   camera while the view stays. The main camera is drawn in it: its frustum to the shadow distance, a box at its eye with its forward axis,
   and its trail, a point every 2 m it moved (the last 500; `debug-camera trail on|off|clear`). `camera <pose> debug` and
   `view.camera.set/get {camera: "debug"}` place and read it; the `status` record's `debugCamera` holds its pose and trail, the `config` record its switches (`tools.debugcamera.*`, on with
-  `tools.debugcamera.on`); `view.camera.debug` places it and clears the trail. The corner axis gizmo still
-  shows and turns the main camera.
+  `tools.debugcamera.on`); `view.camera.debug` places it and clears the trail. The corner axis gizmo shows
+  and turns the camera rendered from: the renderer reports the axis clicked (`gizmoHitTest`), `view.cpp` turns the camera.
 - **Camera modes** (`ground.*`, their state `CameraModesState` owned by the application, the Camera window's mode section, the View menu): for the camera that has the controls.
   - *Orbit*: while Left Alt is held, right-drag turns around a pivot (yaw around the up axis through it, pitch around the camera's right,
     the distance kept, `Camera::orbit`) and the wheel moves toward it (`Camera::dolly`); WASD carry the pivot along. The pivot is the

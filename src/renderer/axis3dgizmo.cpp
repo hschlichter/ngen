@@ -1,5 +1,4 @@
 #include "axis3dgizmo.h"
-#include "camera.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -8,9 +7,6 @@
 static constexpr glm::vec3 axisDirs[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
 static constexpr glm::vec4 axisColors[3] = {{1, 0, 0, 1}, {0, 1, 0, 1}, {0, 0.4f, 1, 1}};
 static constexpr float axisLen = 0.75f; // shortened from 1.0 to leave room for labels
-
-Axis3DGizmo::Axis3DGizmo(Camera* camera) : camera(camera) {
-}
 
 auto Axis3DGizmo::draw(RhiExtent2D fullExtent, const glm::mat4& viewMatrix) -> GizmoDrawRequest {
     auto rotView = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -4.0f)) * glm::mat4(glm::mat3(viewMatrix));
@@ -129,17 +125,10 @@ auto Axis3DGizmo::findClosestAxis(float mouseX, float mouseY) const -> int {
     return bestAxis;
 }
 
-auto Axis3DGizmo::hitTest(float mouseX, float mouseY, RhiExtent2D windowExtent) -> bool {
-    int bestAxis = findClosestAxis(mouseX, mouseY);
-    if (bestAxis < 0) {
-        return false;
+auto Axis3DGizmo::hitTest(float mouseX, float mouseY) const -> std::optional<int> {
+    int axis = findClosestAxis(mouseX, mouseY);
+    if (axis < 0) {
+        return std::nullopt;
     }
-
-    // Snap to whichever direction the camera is already closest to looking along
-    auto camForward = camera->forward();
-    float d = glm::dot(camForward, axisDirs[bestAxis]);
-    bool negative = d < 0.0f;
-
-    camera->snapToAxis(bestAxis, negative);
-    return true;
+    return axis;
 }
