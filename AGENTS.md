@@ -85,6 +85,15 @@ Decisions in plans: when there are meaningful alternatives, list them with trade
 ("I lean X because …; pushback welcome"). Lock decisions explicitly with the why; put genuinely unresolved
 items in an "Open questions" section instead of picking silently.
 
+## Architecture decision records
+
+`docs/adr/` holds the architecture decisions, one per file in Michael Nygard's format (Status, Context, Decision,
+Consequences, plus Verification: sources, code references, where the code differs from the plan), numbered in the
+order they were made: `NNNN_snake_case_title.md`. When a plan that makes an architecture decision lands, add its
+record and a row in `docs/adr/README.md`. A decision that replaces an earlier one gets a new record ("Supersedes N");
+the old record is kept, its status changed to "Superseded by N". Read the relevant records before proposing to change
+a decision they cover.
+
 ## C++ style
 
 - C++23.
