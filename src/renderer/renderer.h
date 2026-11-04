@@ -132,6 +132,7 @@ private:
 
     // Scene GPU resources
     std::vector<GpuInstance> gpuInstances; // by draw slot
+    uint64_t sceneTriangles = 0;           // every draw slot's triangles, culled or not: kept as the slots change, not summed each frame
     bool descriptorSetsDirty = false;      // a buffer they name was replaced; rewritten at the next frame
     AABB sceneBounds;                      // union of instance world bounds, refreshed with gpuInstances
     uint32_t debugCulledInstances = 0;     // from the last snapshot, for the debug window

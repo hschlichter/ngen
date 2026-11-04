@@ -185,7 +185,7 @@ struct CullReadbackPassData {
 };
 } // namespace
 
-auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool captureCommands, uint64_t frame) -> void {
+auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool readVisibility, bool captureCommands, uint64_t frame) -> void {
     auto& slot = slots[frameSlot];
     if (!captureCommands && slot.commandsReadback != nullptr) {
         // The render debugger closed: the slot's last commands readback was parsed before this frame (after the slot's fence), so it goes.
@@ -198,6 +198,7 @@ auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t
         slot.commandsReadbackMapped = device->mapBuffer(slot.commandsReadback);
     }
     slot.pending = true;
+    slot.readVisibility = readVisibility;
     slot.capturedCommands = captureCommands;
     RhiBufferCopy countsRegion = {.srcOffset = 0, .dstOffset = 0, .size = counterCount * sizeof(uint32_t)};
     RhiBufferCopy visibilityRegion = {.srcOffset = 0, .dstOffset = readbackVisibilityOffset(), .size = std::max<uint64_t>(1, slot.instanceCount) * sizeof(uint32_t)};
@@ -210,7 +211,9 @@ auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t
         "CullReadback",
         [&](FrameGraphBuilder& builder, CullReadbackPassData& data) {
             data.counts = builder.read(handles.counts, FgAccessFlags::TransferSrc);
-            data.visibility = builder.read(handles.visibility, FgAccessFlags::TransferSrc);
+            if (readVisibility) {
+                data.visibility = builder.read(handles.visibility, FgAccessFlags::TransferSrc);
+            }
             if (captureCommands) {
                 data.commands = builder.read(handles.commands, FgAccessFlags::TransferSrc);
                 data.commandsReadback = builder.write(commandsReadback, FgAccessFlags::TransferDst);
@@ -218,10 +221,12 @@ auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t
             data.readback = builder.write(handles.readback, FgAccessFlags::TransferDst);
             builder.setSideEffects(true);
         },
-        [countsRegion, visibilityRegion, commandsRegion, captureCommands](FrameGraphContext& ctx, const CullReadbackPassData& data) {
+        [countsRegion, visibilityRegion, commandsRegion, readVisibility, captureCommands](FrameGraphContext& ctx, const CullReadbackPassData& data) {
             auto* cmd = ctx.cmd();
             cmd->copyBuffer(ctx.buffer(data.counts), ctx.buffer(data.readback), countsRegion);
-            cmd->copyBuffer(ctx.buffer(data.visibility), ctx.buffer(data.readback), visibilityRegion);
+            if (readVisibility) {
+                cmd->copyBuffer(ctx.buffer(data.visibility), ctx.buffer(data.readback), visibilityRegion);
+            }
             if (captureCommands) {
                 cmd->copyBuffer(ctx.buffer(data.commands), ctx.buffer(data.commandsReadback), commandsRegion);
             }
@@ -240,12 +245,14 @@ auto DrawLists::parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void {
     latest.viewCount = slot.viewCount;
     std::memcpy(latest.totals.data(), bytes, counterCount * sizeof(uint32_t));
 
-    const auto* bits = reinterpret_cast<const uint32_t*>(bytes + readbackVisibilityOffset());
-    latest.cameraVisible.resize(slot.instanceCount);
-    latest.viewBits.resize(slot.instanceCount);
-    for (uint32_t m = 0; m < slot.instanceCount; m++) {
-        latest.cameraVisible[m] = (bits[m] & 1u) != 0 ? 1 : 0;
-        latest.viewBits[m] = (uint8_t) bits[m];
+    // The visibility bits only when the frame asked for them (the culled overlay): at 2.4 million instances they cost milliseconds a frame.
+    latest.viewBits.clear();
+    if (slot.readVisibility) {
+        const auto* bits = reinterpret_cast<const uint32_t*>(bytes + readbackVisibilityOffset());
+        latest.viewBits.resize(slot.instanceCount);
+        for (uint32_t m = 0; m < slot.instanceCount; m++) {
+            latest.viewBits[m] = (uint8_t) bits[m];
+        }
     }
 
     latest.hasCommands = slot.capturedCommands && slot.commandsReadbackMapped != nullptr;

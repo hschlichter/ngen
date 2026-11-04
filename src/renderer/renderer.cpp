@@ -490,6 +490,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
     // Slots past the new count leave the bucket counts with them (the slot list doesn't shrink today).
     for (size_t slot = changes.slotCount; slot < gpuInstances.size(); slot++) {
         drawLists.countInstance(gpuInstances[slot], -1);
+        sceneTriangles -= gpuInstances[slot].indexCount / 3;
     }
     gpuInstances.resize(changes.slotCount);
     std::vector<uint32_t> changedSlots;
@@ -499,6 +500,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
             continue;
         }
         drawLists.countInstance(gpuInstances[slot], -1);
+        sceneTriangles -= gpuInstances[slot].indexCount / 3;
         gpuInstances[slot] = {
             .mesh = inst.mesh,
             .material = inst.material,
@@ -518,6 +520,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
             .alive = inst.alive,
         };
         drawLists.countInstance(gpuInstances[slot], 1);
+        sceneTriangles += gpuInstances[slot].indexCount / 3;
         changedSlots.push_back(slot);
     }
     profile::endZone();
@@ -838,7 +841,6 @@ auto Renderer::cullResult() const -> CullResult {
         .cameraCulled = drawLists.cameraCulled(),
         .cameraTriangles = trianglesIn(drawLists, 0),
         .cascadeCount = drawLists.cascadeCount(),
-        .cameraVisible = drawLists.cameraVisible(),
         .viewBits = drawLists.viewBits(),
         .regionOverflow = drawLists.regionOverflow(),
         .lodDropped = drawLists.lodDropped(),
@@ -866,9 +868,7 @@ auto Renderer::cullResult() const -> CullResult {
         result.cascadeDrawn[c] = drawLists.cascadeDrawn(c);
         result.cascadeTriangles[c] = trianglesIn(drawLists, 1 + c);
     }
-    for (const auto& instance : gpuInstances) {
-        result.sceneTriangles += instance.indexCount / 3;
-    }
+    result.sceneTriangles = sceneTriangles;
     return result;
 }
 
@@ -1093,7 +1093,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         }
         const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, snapshot.depthPrepass);
 
-        drawLists.addReadbackPass(frameGraph, drawHandles, currentFrame, renderDebugEnabled, m_frameIndex);
+        drawLists.addReadbackPass(frameGraph, drawHandles, currentFrame, snapshot.readVisibility, renderDebugEnabled, m_frameIndex);
         lodGroups.addReadbackPass(frameGraph, lodHandles, currentFrame, snapshot.readLodStates, lodCamera.eye, lodCamera.windowArea);
 
         // The depth preview's far end: the camera has no far plane, so the farthest corner of the scene.

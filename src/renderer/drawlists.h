@@ -21,9 +21,10 @@ struct CullResult {
     std::array<uint32_t, maxShadowCascades> cascadeCulled = {};
     std::array<uint32_t, maxShadowCascades> cascadeDrawn = {};
     std::array<uint64_t, maxShadowCascades> cascadeTriangles = {}; // drawn per cascade, every bucket
-    std::vector<uint8_t> cameraVisible;                            // per instance, 1 = visible
-    std::vector<uint8_t> viewBits;                                 // per instance, bit v = visible in view v (0 camera, 1.. cascades)
-    uint32_t regionOverflow = 0;                                   // commands dropped past their region's end: the CPU's bucket counts disagree with the shader's (a bug)
+    // Per instance, bit v = visible in view v (0 camera, 1.. cascades); read back only for a frame whose snapshot asked (readVisibility),
+    // empty otherwise.
+    std::vector<uint8_t> viewBits;
+    uint32_t regionOverflow = 0; // commands dropped past their region's end: the CPU's bucket counts disagree with the shader's (a bug)
     // Render LOD: instances of a level their group doesn't draw (in no view), instances drawn in a fading group (both levels, in the cutout
     // buckets), and from the selection's readback the groups, those drawing each level, those falling back while the wanted level isn't
     // resident, those at a forced level, those fading, those whose drawn level changed this frame without a fade (a pop); per group the
@@ -140,9 +141,10 @@ public:
     };
     // Imports the slot's buffers; the slot's fence guards them, so no earlier access carries over.
     auto import(FrameGraph& fg, uint32_t frameSlot) -> Handles;
-    // Copies counts and visibility into the slot's readback buffer, and with captureCommands the commands into the slot's commands
-    // readback, made when it is asked for and let go (at `frame`, through the deletion queue) the first frame it isn't.
-    auto addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool captureCommands, uint64_t frame) -> void;
+    // Copies the counts into the slot's readback buffer, with readVisibility every instance's visibility bits too, and with captureCommands
+    // the commands into the slot's commands readback, made when it is asked for and let go (at `frame`, through the deletion queue) the
+    // first frame it isn't.
+    auto addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool readVisibility, bool captureCommands, uint64_t frame) -> void;
     // Once the slot's fence has passed: parses what that slot's frame read back.
     auto parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void;
 
@@ -181,8 +183,7 @@ public:
     auto instanceCount() const -> uint32_t { return latest.instanceCount; }
     auto commandCount() const -> uint32_t;
     // Per instance, 1 if visible to the camera in the latest readback (for the editor overlay).
-    auto cameraVisible() const -> const std::vector<uint8_t>& { return latest.cameraVisible; }
-    // Per instance, visibility bit v for view v (camera, then cascades), latest readback.
+    // Per instance, visibility bit v for view v (camera, then cascades), latest readback; empty when it didn't read them.
     auto viewBits() const -> const std::vector<uint8_t>& { return latest.viewBits; }
 
     // For a pass that just issued `region` indirectly: folds the region's draws and primitives
@@ -205,6 +206,7 @@ private:
         void* commandsReadbackMapped = nullptr;
         // What the slot's last recorded frame copied into the readback, and how it laid out the regions.
         bool pending = false;
+        bool readVisibility = false;
         bool capturedCommands = false;
         uint32_t instanceCount = 0;
         uint32_t viewCount = 0;
@@ -215,7 +217,6 @@ private:
         uint32_t instanceCount = 0;
         uint32_t viewCount = 0;
         std::array<uint32_t, counterCount> totals = {};
-        std::vector<uint8_t> cameraVisible;
         std::vector<uint8_t> viewBits;
         bool hasCommands = false;
         std::array<std::vector<RhiDrawIndexedIndirectCommand>, regionCount> commands;

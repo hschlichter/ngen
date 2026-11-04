@@ -145,16 +145,17 @@ auto ToolsHooks::afterCamera(ViewFrame& frame) -> void {
 }
 
 auto ToolsHooks::debugDraw(ViewFrame& frame) -> void {
-    // The culled overlay shows one view's GPU culling result: the camera or a cascade.
-    static const uint32_t overlayZoneId = profile::registerName("CullOverlay");
-    profile::beginZone(overlayZoneId);
-    const auto& cull = frame.latestCull;
-    std::vector<uint8_t> overlayVisible(cull.viewBits.size());
-    auto overlayBit = (uint8_t) (1u << std::clamp((int) toolsconfig::overlayCulledView.get(), 0, (int) maxShadowCascades));
-    for (size_t i = 0; i < overlayVisible.size(); i++) {
-        overlayVisible[i] = (cull.viewBits[i] & overlayBit) != 0 ? 1 : 0;
+    // The culled overlay shows one view's GPU culling result, the camera or a cascade, from the visibility bits it has read back while on.
+    std::vector<uint8_t> overlayVisible;
+    if (toolsconfig::overlayCulled.get()) {
+        PROFILE_ZONE("CullOverlay");
+        const auto& cull = frame.latestCull;
+        overlayVisible.resize(cull.viewBits.size());
+        auto overlayBit = (uint8_t) (1u << std::clamp((int) toolsconfig::overlayCulledView.get(), 0, (int) maxShadowCascades));
+        for (size_t i = 0; i < overlayVisible.size(); i++) {
+            overlayVisible[i] = (cull.viewBits[i] & overlayBit) != 0 ? 1 : 0;
+        }
     }
-    profile::endZone();
     const auto& selectedPath = frame.selectedPath;
     if (selectedPath != selectedBoundsPath || &frame.scene.snapshot() != selectedBoundsSnapshot) {
         selectedBoundsPath = selectedPath;
@@ -373,6 +374,7 @@ auto ToolsHooks::fillSnapshot(ViewFrame& frame, RenderSnapshot& snapshot) -> voi
         scaleGizmo.update(extent, view, frame.proj, camera.position, frame.mouse.x, frame.mouse.y, shown && tool == ViewTool::Scale, anchor);
     }
     snapshot.showGizmo = toolsconfig::overlayGizmos.get();
+    snapshot.readVisibility = toolsconfig::overlayCulled.get();
     snapshot.streamingStates = streamingView ? tools.streaming.slotStates : std::vector<uint32_t>();
     snapshot.lodPopFlash = toolsconfig::lodPopFlash.get();
     snapshot.lodColorByDepth = toolsconfig::lodColorByDepth.get();

@@ -1,6 +1,6 @@
 # Lean pass: the engine apart from its tools, a lean frame loop and lean instrumentation
 
-**Status. In progress.** Step 0 done 2026-10-31, steps 1 to 5 2026-11-01. Decisions locked 2026-10-31 (Henrik): the layering and the order below; settings move into the configuration system
+**Status. In progress.** Step 0 done 2026-10-31, steps 1 to 5 2026-11-01, step 7 2026-11-04. Decisions locked 2026-10-31 (Henrik): the layering and the order below; settings move into the configuration system
 ([plan_configuration.md](plan_configuration.md)); the Engine Map and Scene Flow windows removed with their code. Pushback welcome on the
 open choices.
 
@@ -233,6 +233,19 @@ At the end:
     the tool windows open gives `lodtool` 11,954 rows and `streamingtool` the same as step 4 (only `pops` differs, and it differs between
     runs of one build: 4 and 22); the error paths fail with their messages; the debug build runs with every tool window open; the overlays
     (grid, origin, bounds, selection, cascades, light, axis gizmo) draw on three_cubes.
+
+- **Step 7** (2026-11-04): what the readback cost was not what the plan assumed. Measured at `/cameras/village`, the overlay off, over 60
+  frames: the render thread's `CullResult` 13.9 ms a frame, `ParseReadback` 1.5 ms. The visibility bits were only `ParseReadback` (unpacking
+  2.4 million words into two byte arrays); `CullResult` was `Renderer::cullResult` summing every draw slot's triangles (`sceneTriangles`,
+  for the status bar and the `culling` record), 2.4 million 128-byte records walked every frame.
+  - The visibility bits are read back only for a frame whose snapshot asks (`RenderSnapshot::readVisibility`, set by the tools while
+    `tools.overlay.culled` is on); `DrawLists` copies and parses them only then, and `CullResult::viewBits` is empty otherwise.
+    `cameraVisible` is gone (nothing read it). The overlay's byte list (`CullOverlay`, 0.28 ms) is built only while the overlay is on.
+  - `sceneTriangles` is kept by the renderer as slots change (the bucket counts' way), the same number (175,419,138 at the village).
+  - After: `CullResult` 0.00 ms, `ParseReadback` 0.00 ms; the render thread's own work from about 17 ms a frame to about 1 ms. The frame
+    went only from 35.2 to 33.5 ms: the village is GPU-bound (culling and the geometry pass, about 33 ms), and the render thread now waits
+    in `Present` instead of working. With the overlay on: the bits come back (`ParseReadback` 0.8 ms) and the overlay draws its 2.4 million
+    boxes as before.
 
 ## Open questions
 
