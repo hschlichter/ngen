@@ -10,6 +10,9 @@ them here as you touch them.
 **Start here for what's next:** [roadmap.md](roadmap.md) — a one-page list of planned, open and parked work, consolidated from the plans below,
 the library READMEs and `notes.md`.
 
+**Why it is built this way:** [adr/](adr/README.md) — architecture decision records: the decisions the plans below made, one per file in the
+order they were made, superseded ones kept, each checked against the code.
+
 **Reviews:** [reviews/](reviews/README.md) — review artifacts (HTML pages, one per change, published as claude.ai artifacts) and how to make one.
 
 ## Build system
