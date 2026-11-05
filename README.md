@@ -65,25 +65,16 @@ selected pass's GPU time, reads and writes.*
 
 ## Architecture
 
-```
-ngen-asset-server     packs on request (ngen-packer-usd, -texture, -shader, -copy) into a cache; streams packs over RPC; notices source edits
-        │
-        ▼  packs, by asset id
-ngen-view
-  Foundation        profile, trace, config, rpccore
-  Engine            world (WorldComposer), view (ViewScene, placement, ViewFrame, camera), renderer (frame graph, GPU scene, culling,
-                    passes), rhi + rhi/vulkan
-  Instrumentation   viewcommands (RPC methods, script verbs and records by domain), rendertools (debug snapshots, frame debugger,
-                    counters, screenshots)
-  Tools             LOD and Streaming tools, debug camera, overlays, gizmos
-  UI                Dear ImGui windows
-        ▲
-        │  records, trace, method calls (JSON-RPC over loopback TCP)
-ngen-introspect       every running process's records and trace, in a window or on the command line
-```
+![The processes: ngen-asset-server packs source files on request and streams them to ngen-view; ngen-introspect reads and calls every running process](screenshots/architecture_processes.svg)
 
-Each layer is a library that links only the layers below it. The engine's frame is a fixed order of steps (`ViewFrame`); the tools and the UI join
-it through hooks at fixed points, and join the renderer's frame as render extensions.
+`ngen-asset-server` packs the authored files on request into engine-ready packs and streams them to `ngen-view` by asset id. The view composes
+them on its scene thread, steps its frame on the main thread and renders on its own thread. `ngen-introspect`, scripts and agents read every
+running process's records and trace and call its methods.
+
+![The code's layers: Foundation, Engine, Instrumentation, Tools, UI and the program, each linking only the layers below it](screenshots/architecture_layers.svg)
+
+Each layer is a library that links only the layers below it. The engine's frame is a fixed order of steps (`ViewFrame`); the tools and the UI
+join it through hooks at fixed points (`ViewHooks`), and join the renderer's frame as render extensions (`RenderExtension`).
 
 ### Library documentation
 

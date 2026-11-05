@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="746" viewBox="0 0 1000 746" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .layer { font-size: 15px; font-weight: 700; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="746" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">ngen-view: the code's layers</text>
+  <text x="28" y="62" class="s" style="font-size:12px">Each layer is libraries that link only the layers below them; nothing includes upward.</text>
+  <rect x="28" y="92" width="944" height="74" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="44" y="134.0" class="layer" fill="#64748b">Program</text>
+  <rect x="202" y="104" width="284" height="50" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="214" y="125" class="lib">ngen-view</text>
+  <text x="214" y="143" class="s">src/apps/view.cpp: wiring, input, the loop</text>
+  <rect x="28" y="176" width="944" height="74" rx="10" fill="#fdf2f8" stroke="#db2777" stroke-opacity="0.45"/>
+  <text x="44" y="218.0" class="layer" fill="#db2777">UI</text>
+  <rect x="202" y="188" width="328" height="50" rx="7" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="214" y="209" class="lib">ui</text>
+  <text x="214" y="227" class="s">src/ui: windows, ImGui backend, UiHooks, UiRender</text>
+  <rect x="540" y="188" width="111" height="50" rx="7" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="552" y="209" class="lib">imgui</text>
+  <text x="552" y="227" class="s">external/imgui</text>
+  <rect x="28" y="260" width="944" height="74" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-opacity="0.45"/>
+  <text x="44" y="302.0" class="layer" fill="#7c3aed">Tools</text>
+  <rect x="202" y="272" width="588" height="50" rx="7" fill="#ffffff" stroke="#7c3aed" stroke-opacity="0.6"/>
+  <text x="214" y="293" class="lib">tools</text>
+  <text x="214" y="311" class="s">src/tools: LOD and Streaming tools, debug camera, overlays, gizmos, ToolsHooks, GizmoRender</text>
+  <rect x="28" y="344" width="944" height="74" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="44" y="386.0" class="layer" fill="#16a34a">Instrumentation</text>
+  <rect x="202" y="356" width="229" height="50" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="214" y="377" class="lib">viewcommands</text>
+  <text x="214" y="395" class="s">methods, verbs, records by domain</text>
+  <rect x="441" y="356" width="322" height="50" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="453" y="377" class="lib">rendertools</text>
+  <text x="453" y="395" class="s">snapshots, frame debugger, counters, screenshots</text>
+  <rect x="772" y="356" width="136" height="50" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="784" y="377" class="lib">rpc</text>
+  <text x="784" y="395" class="s">registry, endpoint</text>
+  <rect x="28" y="428" width="944" height="74" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="44" y="470.0" class="layer" fill="#2563eb">Engine</text>
+  <rect x="202" y="440" width="198" height="50" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="214" y="461" class="lib">view</text>
+  <text x="214" y="479" class="s">ViewScene, ViewFrame, camera</text>
+  <rect x="410" y="440" width="105" height="50" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="422" y="461" class="lib">world</text>
+  <text x="422" y="479" class="s">WorldComposer</text>
+  <rect x="524" y="440" width="210" height="50" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="536" y="461" class="lib">renderer</text>
+  <text x="536" y="479" class="s">frame graph, GPU scene, passes</text>
+  <rect x="744" y="440" width="123" height="50" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="756" y="461" class="lib">rhivulkan</text>
+  <text x="756" y="479" class="s">src/rhi + vulkan</text>
+  <rect x="28" y="512" width="944" height="74" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-opacity="0.45"/>
+  <text x="44" y="554.0" class="layer" fill="#ea580c">Foundation</text>
+  <rect x="202" y="524" width="94" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="214" y="554.0" class="lib">profile</text>
+  <rect x="306" y="524" width="76" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="318" y="554.0" class="lib">trace</text>
+  <rect x="392" y="524" width="85" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="404" y="554.0" class="lib">config</text>
+  <rect x="487" y="524" width="94" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="499" y="554.0" class="lib">rpccore</text>
+  <rect x="592" y="524" width="94" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="604" y="545" class="lib">session</text>
+  <text x="604" y="563" class="s">scripts</text>
+  <rect x="696" y="524" width="132" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="708" y="554.0" class="lib">assetclient</text>
+  <rect x="838" y="524" width="98" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="850" y="545" class="lib">packer</text>
+  <text x="850" y="563" class="s">pack formats</text>
+  <line x1="184" y1="112" x2="184" y2="566" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="180" y="339" class="s" transform="rotate(-90 180 339)" text-anchor="middle" dy="-6">links downward</text>
+  <rect x="28" y="602" width="467" height="124" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="44" y="628" class="lib">ViewHooks</text>
+  <text x="140" y="628" class="s">src/view/viewhooks.h</text>
+  <text x="44" y="652" class="t">How the tools and the UI join the engine's frame: hooks at</text>
+  <text x="44" y="670" class="t">fixed points between ViewFrame's steps.</text>
+  <text x="44" y="694" class="s">ToolsHooks (tools), UiHooks (ui, wrapping the tools')</text>
+  <text x="44" y="712" class="s">Without them the frame is the engine's alone.</text>
+  <rect x="505" y="602" width="467" height="124" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="521" y="628" class="lib">RenderExtension</text>
+  <text x="665" y="628" class="s">src/renderer/renderextension.h</text>
+  <text x="521" y="652" class="t">How the rest joins the renderer's frame: hooks in</text>
+  <text x="521" y="670" class="t">Renderer::render, their data a payload in the snapshot.</text>
+  <text x="521" y="694" class="s">RenderTools (rendertools), GizmoRender (tools), UiRender (ui)</text>
+  <text x="521" y="712" class="s">The renderer includes no ImGui and no tool.</text>
+</svg>
