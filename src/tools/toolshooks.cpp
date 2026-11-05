@@ -1,11 +1,12 @@
 #include "toolshooks.h"
 
+#include "gizmorender.h"
 #include "overlays.h"
 #include "primpath.h"
 #include "profile.h"
 #include "projection.h"
 #include "renderconfig.h"
-#include "renderer.h"
+#include "rendersnapshot.h"
 #include "viewframe.h"
 
 #include <SDL3/SDL_events.h>
@@ -108,7 +109,7 @@ auto ToolsHooks::event(ViewFrame& frame, const SDL_Event& event) -> bool {
     float mx = event.button.x;
     float my = event.button.y;
     // The axis gizmo turns the camera rendered from to look along an axis, the way it already faces.
-    if (auto axis = frame.renderer.gizmoHitTest(mx, my)) {
+    if (auto axis = axisGizmo.hitTest(mx, my)) {
         auto& camera = *frame.cameras.view;
         camera.snapToAxis(*axis, camera.forward()[*axis] < 0.0f);
         return true;
@@ -373,14 +374,31 @@ auto ToolsHooks::fillSnapshot(ViewFrame& frame, RenderSnapshot& snapshot) -> voi
         rotateGizmo.update(extent, view, frame.proj, camera.position, frame.mouse.x, frame.mouse.y, shown && tool == ViewTool::Rotate, anchor);
         scaleGizmo.update(extent, view, frame.proj, camera.position, frame.mouse.x, frame.mouse.y, shown && tool == ViewTool::Scale, anchor);
     }
-    snapshot.showGizmo = toolsconfig::overlayGizmos.get();
     snapshot.readVisibility = toolsconfig::overlayCulled.get();
     snapshot.streamingStates = streamingView ? tools.streaming.slotStates : std::vector<uint32_t>();
     snapshot.lodPopFlash = toolsconfig::lodPopFlash.get();
     snapshot.lodColorByDepth = toolsconfig::lodColorByDepth.get();
-    snapshot.translateGizmoVerts = {translateGizmo.vertices().begin(), translateGizmo.vertices().end()};
-    snapshot.rotateGizmoVerts = {rotateGizmo.vertices().begin(), rotateGizmo.vertices().end()};
-    snapshot.scaleGizmoVerts = {scaleGizmo.vertices().begin(), scaleGizmo.vertices().end()};
+    // The gizmos' lines for the render thread: the axis gizmo in its corner (it hovers under the cursor), then the transform gizmos with
+    // the view's view-projection over the whole backbuffer.
+    auto gizmoFrame = std::make_unique<GizmoFrame>();
+    auto viewMatrix = frame.cameras.view->viewMatrix();
+    if (toolsconfig::overlayGizmos.get()) {
+        axisGizmo.updateHover(frame.mouse.x, frame.mouse.y);
+        auto axis = axisGizmo.draw({.width = (uint32_t) frame.width, .height = (uint32_t) frame.height}, viewMatrix);
+        gizmoFrame->draws.push_back({
+            .vertices = {axis.vertices.begin(), axis.vertices.end()},
+            .viewProj = axis.viewProj,
+            .vpX = axis.vpX,
+            .vpY = axis.vpY,
+            .vpExtent = axis.vpExtent,
+        });
+    }
+    for (auto vertices : {translateGizmo.vertices(), rotateGizmo.vertices(), scaleGizmo.vertices()}) {
+        if (!vertices.empty()) {
+            gizmoFrame->draws.push_back({.vertices = {vertices.begin(), vertices.end()}, .viewProj = frame.proj * viewMatrix});
+        }
+    }
+    snapshot.setExtension(gizmos.index(), std::move(gizmoFrame));
 }
 
 auto ToolsHooks::gizmoAnchor(const ViewFrame& frame, const ViewScene::PrimTransform& transform) const -> glm::vec3 {

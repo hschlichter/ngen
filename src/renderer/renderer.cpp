@@ -3,19 +3,18 @@
 #include "renderconfig.h"
 
 #include "blitpass.h"
-#include "imguibackend.h"
 #include "instanceuploadpass.h"
 #include "material.h"
 #include "mesh.h"
 #include "mipchain.h"
 #include "presentpass.h"
+#include "previewtextures.h"
 #include "profile.h"
 #include "projection.h"
 #include "rendersnapshot.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "rhiswapchain.h"
-#include "screenshot.h"
 #include "shadowpass.h"
 #include "trace.h"
 
@@ -27,7 +26,12 @@
 #include <limits>
 #include <span>
 
-auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, AssetClient* shaders, RhiExtent2D windowExtent) -> std::expected<void, int> {
+auto Renderer::addExtension(RenderExtension& extension) -> void {
+    extension.extensionIndex = (uint32_t) extensions.size();
+    extensions.push_back(&extension);
+}
+
+auto Renderer::init(RhiDevice* rhiDevice, AssetClient* shaders, RhiExtent2D windowExtent) -> std::expected<void, int> {
     using enum RhiFormat;
 
     device = rhiDevice;
@@ -143,9 +147,6 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, AssetClien
     if (!debugRenderer.init(device, pipelineRegistry, imgCount, ext, colorFmt, depthFmt, uniformBuffers)) {
         return std::unexpected(1);
     }
-    if (!gizmoPass.init(device, pipelineRegistry, imgCount, ext, colorFmt)) {
-        return std::unexpected(1);
-    }
 
     // Scene GPU tables; the instance buffer exists from here on, grown by applySceneChanges.
     gpuScene.init(device, imgCount, &deletionQueue, fallbackTexture, pendingTexture);
@@ -184,17 +185,25 @@ auto Renderer::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, AssetClien
             .field("available", device->limits().calibratedTimestamps);
     }
 
-    // Editor UI
-    editorUI = imguiBackend;
-    editorUI->init({
-        .device = device,
+    captureService.init(device, previewTextures, &deletionQueue, &uploader, imgCount);
+
+    // What joins the frame from outside the core: the instrumentation, the tools' gizmos, the UI.
+    RenderExtensionContext context = {
+        .device = *device,
+        .pipelines = pipelineRegistry,
+        .frameGraph = frameGraph,
+        .deletionQueue = deletionQueue,
+        .uploader = uploader,
+        .textureSampler = textureSampler,
+        .previews = previewTextures,
+        .frameSlots = imgCount,
         .colorFormat = swapchain->colorFormat(),
-        .imageCount = swapchain->imageCount(),
-    });
-
-    fgPreviews.init(device, editorUI, textureSampler, &deletionQueue);
-    captureService.init(device, editorUI, &deletionQueue, &uploader, imgCount);
-
+    };
+    for (auto* extension : extensions) {
+        if (!extension->init(context)) {
+            return std::unexpected(1);
+        }
+    }
     return {};
 }
 
@@ -220,137 +229,9 @@ auto Renderer::recreateDepthTexture(RhiExtent2D extent) -> void {
     depthTexture = device->createTexture(desc);
 }
 
-auto Renderer::setFrameGraphDebugEnabled(bool enabled) -> void {
-    if (enabled == fgDebugEnabled) {
-        return;
-    }
-    fgDebugEnabled = enabled;
-    if (enabled) {
-        frameGraph.setDebugCaptureHook([this](RhiCommandBuffer* cmd, const FgCapturedResource& view) { fgPreviews.capture(cmd, view); });
-    } else {
-        frameGraph.setDebugCaptureHook(nullptr);
-    }
-}
-
 auto Renderer::requestShaders() -> size_t {
     pipelineRegistry.requestAtStart();
     return pipelineRegistry.atStartShaders().size();
-}
-
-auto Renderer::buildRenderDebugSnapshot() const -> RenderDebugSnapshot {
-    RenderDebugSnapshot snap;
-    snap.frameIndex = m_frameIndex;
-    snap.pipelines = pipelineRegistry.infos();
-    snap.limits = device->limits();
-    snap.validation = validationEnabled;
-    snap.swapchainExtent = swapchain->extent();
-    snap.swapchainFormat = swapchain->colorFormat();
-    snap.swapchainImages = swapchain->imageCount();
-    snap.currentSlot = currentFrame;
-    device->allocations(snap.allocations);
-    device->memoryHeaps(snap.heaps);
-    auto pool = gpuScene.geometryPoolStats();
-    snap.geometryPool = {
-        .limitBytes = pool.limitBytes,
-        .vertexLimit = pool.vertexLimit,
-        .indexLimit = pool.indexLimit,
-        .vertexCapacity = pool.vertexCapacity,
-        .vertexUsed = pool.vertexUsed,
-        .indexCapacity = pool.indexCapacity,
-        .indexUsed = pool.indexUsed,
-        .waitingMeshes = pool.waitingMeshes,
-        .waitingBytes = pool.waitingBytes,
-    };
-
-    snap.instanceCount = (uint32_t) gpuInstances.size();
-    snap.culledInstances = debugCulledInstances;
-    std::unordered_map<uint32_t, uint32_t> instancesPerMesh;
-    uint32_t live = 0;
-    for (const auto& inst : gpuInstances) {
-        if (!inst.alive) {
-            continue;
-        }
-        live++;
-        instancesPerMesh[inst.mesh.index]++;
-        if (inst.primFirst) {
-            snap.primFirstInstances++;
-        }
-        if (inst.cutout) {
-            snap.cutoutInstances++;
-        }
-    }
-    snap.instanceCount = live;
-    snap.cutoutMaterials = gpuScene.cutoutMaterialCount();
-    snap.meshes.reserve(gpuScene.meshRanges().size());
-    for (const auto& [index, cached] : gpuScene.meshRanges()) {
-        snap.meshes.push_back({
-            .meshIndex = index,
-            .vertexCount = cached.vertexCount,
-            .indexCount = cached.indexCount,
-            .vertexBytes = cached.vertexBytes,
-            .indexBytes = cached.indexBytes,
-            .instances = instancesPerMesh[index],
-        });
-    }
-    snap.materialCount = gpuScene.materialCount();
-    snap.materialsWithTexture = gpuScene.texturedMaterialCount();
-    snap.textures.reserve(gpuScene.textures().size());
-    for (const auto& [index, info] : gpuScene.textures()) {
-        snap.textures.push_back({
-            .textureIndex = index,
-            .slot = info.slot,
-            .materials = gpuScene.materialsUsingTexture(index),
-            .width = info.width,
-            .height = info.height,
-            .mipLevels = info.mipLevels,
-            .format = info.format,
-            .bytes = info.bytes,
-        });
-    }
-    std::ranges::sort(snap.textures, [](const RenderDebugTexture& a, const RenderDebugTexture& b) { return a.textureIndex < b.textureIndex; });
-    snap.inspect = textureInspectResult;
-    snap.lightCount = (uint32_t) lights.size();
-    snap.hasSun = debugHasSun;
-    snap.sunDirection = debugSun.direction;
-    snap.sunRadiance = debugSun.radiance;
-    snap.sunShadowColor = debugSun.shadowColor;
-    snap.shadowMapExtent = debugShadowExtent;
-
-    auto fg = buildFrameGraphDebugSnapshot();
-    snap.passes.reserve(fg.executionOrder.size());
-    for (auto passIdx : fg.executionOrder) {
-        const auto& pass = fg.passes[passIdx];
-        snap.passes.push_back(pass);
-        snap.frameTotals.draws += pass.stats.draws;
-        snap.frameTotals.dispatches += pass.stats.dispatches;
-        snap.frameTotals.barriers += pass.stats.barriers;
-        snap.frameTotals.pipelineBinds += pass.stats.pipelineBinds;
-        snap.frameTotals.bufferBinds += pass.stats.bufferBinds;
-        snap.frameTotals.descriptorBinds += pass.stats.descriptorBinds;
-        snap.frameTotals.copies += pass.stats.copies;
-        snap.frameTotals.primitives += pass.stats.primitives;
-    }
-    resourcePool.forEach([&](const ResourcePoolKey& key, bool inUse) {
-        snap.poolTextures.push_back({.width = key.width, .height = key.height, .format = key.format, .inUse = inUse});
-    });
-    snap.poolAllocationsTotal = resourcePool.stats().allocationsTotal;
-    snap.draws = lastDrawLog;
-    return snap;
-}
-
-auto Renderer::buildFrameGraphDebugSnapshot() const -> FrameGraphDebugSnapshot {
-    auto snap = frameGraph.buildDebugSnapshot();
-    fgPreviews.annotate(snap);
-    snap.gpuFrameMs = lastGpuFrameMs;
-    for (auto& pass : snap.passes) {
-        for (const auto& timing : lastGpuTimes) {
-            if (pass.name == timing.name) {
-                pass.gpuTimeMs = timing.ms;
-                break;
-            }
-        }
-    }
-    return snap;
 }
 
 // Called once the slot's fence has signalled: the zones recorded on that slot's command
@@ -398,29 +279,6 @@ auto Renderer::readGpuTimings(uint32_t slot) -> void {
         profileZones.push_back({.nameId = profile::registerName(zone.name), .depth = zone.depth, .startNs = toCpu(zone.startNs), .endNs = toCpu(zone.endNs)});
     }
     profile::submitGpuZones(lastGpuFrame, slotSubmitNs[slot], profileZones);
-
-    if (countersEnabled) {
-        GpuCounters counters = {
-            .frame = lastGpuFrame,
-            .gpuFrameMs = lastGpuFrameMs,
-            .width = swapchain->extent().width,
-            .height = swapchain->extent().height,
-        };
-        counters.zones.reserve(gpuZoneScratch.size());
-        for (const auto& zone : gpuZoneScratch) {
-            counters.zones.push_back({.name = zone.name, .depth = zone.depth, .startMs = (double) (zone.startNs - minStart) * 1e-6, .ms = (double) (zone.endNs - zone.startNs) * 1e-6});
-        }
-        if (device->collectPipelineStats(cmdBuffers[slot], pipelineStatsScratch)) {
-            for (const auto& zone : pipelineStatsScratch) {
-                counters.passes.push_back({.name = zone.name, .stats = zone.stats});
-            }
-        }
-        // Bounded: a consumer that stops taking keeps only recent frames.
-        if (countersResults.size() >= 300) {
-            countersResults.erase(countersResults.begin());
-        }
-        countersResults.push_back(std::move(counters));
-    }
 }
 
 // The backbuffer cleared to the lit image's background: the frame while the lit path's pipelines are still on their way.
@@ -644,96 +502,6 @@ auto Renderer::flushSceneUploads() -> void {
         .field("ms", ms);
 }
 
-// Preview extent for the inspector: the level scaled to fit a 256 box, up or down, so a
-// 4x4 level shows as blocks instead of a dot.
-static auto inspectPreviewExtent(uint32_t w, uint32_t h) -> RhiExtent2D {
-    constexpr uint32_t box = 256;
-    auto maxSide = std::max(w, h);
-    if (maxSide == 0) {
-        return {box, box};
-    }
-    return {std::max(1u, (w * box) / maxSide), std::max(1u, (h * box) / maxSide)};
-}
-
-auto Renderer::releaseTexturePreview() -> void {
-    if (texturePreview.imguiId != 0) {
-        deletionQueue.defer(m_frameIndex, [ui = editorUI, id = texturePreview.imguiId] { ui->unregisterTexture(id); });
-    }
-    if (texturePreview.texture != nullptr) {
-        deletionQueue.deferTexture(m_frameIndex, texturePreview.texture);
-    }
-    texturePreview = {};
-}
-
-auto Renderer::recordTextureInspect(RhiCommandBuffer* cmd) -> void {
-    textureInspectResult = {};
-    if (!textureInspectRequest.enabled || editorUI == nullptr) {
-        if (texturePreview.texture != nullptr) {
-            releaseTexturePreview();
-        }
-        return;
-    }
-    const auto& inspected = gpuScene.textures();
-    auto texIt = inspected.find(textureInspectRequest.texture);
-    if (texIt == inspected.end() || texIt->second.slot == GpuScene::fallbackSlot) {
-        return;
-    }
-    const auto& cached = texIt->second;
-    auto level = std::min(textureInspectRequest.level, cached.mipLevels - 1);
-    uint32_t levelW = std::max(1u, cached.width >> level);
-    uint32_t levelH = std::max(1u, cached.height >> level);
-    auto ext = inspectPreviewExtent(levelW, levelH);
-
-    if (texturePreview.texture == nullptr || texturePreview.width != ext.width || texturePreview.height != ext.height) {
-        releaseTexturePreview();
-        RhiTextureDesc desc = {
-            .width = ext.width,
-            .height = ext.height,
-            .format = cached.format,
-            .usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst,
-            .debugName = "inspector.preview",
-        };
-        texturePreview.texture = device->createTexture(desc);
-        texturePreview.width = ext.width;
-        texturePreview.height = ext.height;
-        if (texturePreview.texture != nullptr) {
-            texturePreview.imguiId = editorUI->registerTexture(texturePreview.texture, textureSampler);
-        }
-    }
-    if (texturePreview.texture == nullptr) {
-        return;
-    }
-
-    auto dstStart = texturePreview.everCaptured ? RhiTextureState::ShaderReadOnly : RhiTextureState::Undefined;
-    std::array<RhiTextureBarrierDesc, 2> pre = {{
-        {.texture = cached.texture, .oldState = RhiTextureState::ShaderReadOnly, .newState = RhiTextureState::TransferSrc},
-        {.texture = texturePreview.texture, .oldState = dstStart, .newState = RhiTextureState::TransferDst},
-    }};
-    cmd->pipelineBarrier(pre);
-    // Nearest when magnifying so texels stay visible as blocks; linear when shrinking.
-    auto filter = ext.width > levelW ? RhiFilter::Nearest : RhiFilter::Linear;
-    cmd->blitTexture(cached.texture, texturePreview.texture, {.mipLevel = level, .extent = {levelW, levelH}}, {.mipLevel = 0, .extent = ext}, filter);
-    std::array<RhiTextureBarrierDesc, 2> post = {{
-        {.texture = cached.texture, .oldState = RhiTextureState::TransferSrc, .newState = RhiTextureState::ShaderReadOnly},
-        {.texture = texturePreview.texture, .oldState = RhiTextureState::TransferDst, .newState = RhiTextureState::ShaderReadOnly},
-    }};
-    cmd->pipelineBarrier(post);
-    texturePreview.everCaptured = true;
-
-    textureInspectResult = {
-        .valid = true,
-        .texture = textureInspectRequest.texture,
-        .level = level,
-        .mipLevels = cached.mipLevels,
-        .levelWidth = levelW,
-        .levelHeight = levelH,
-        .levelBytes = (uint64_t) levelW * levelH * 4,
-        .previewTextureId = texturePreview.imguiId,
-        .previewWidth = ext.width,
-        .previewHeight = ext.height,
-    };
-}
-
 auto Renderer::toSamplerDesc(const SamplerSettings& settings) -> RhiSamplerDesc {
     return {
         .mipmapMode = settings.nearestMip ? RhiMipmapMode::Nearest : RhiMipmapMode::Linear,
@@ -872,44 +640,25 @@ auto Renderer::cullResult() const -> CullResult {
     return result;
 }
 
-auto Renderer::gizmoUpdate(const RenderSnapshot& snapshot, RhiExtent2D extent) -> std::vector<GizmoDrawRequest> {
-    std::vector<GizmoDrawRequest> requests;
-    if (snapshot.showGizmo) {
-        axisGizmo.updateHover(snapshot.mouseX, snapshot.mouseY);
-        requests.push_back(axisGizmo.draw(extent, snapshot.viewMatrix));
-    }
-    if (!snapshot.translateGizmoVerts.empty()) {
-        requests.push_back({
-            .vertices = snapshot.translateGizmoVerts,
-            .viewProj = snapshot.projMatrix * snapshot.viewMatrix,
-            .vpExtent = extent,
-        });
-    }
-    if (!snapshot.rotateGizmoVerts.empty()) {
-        requests.push_back({
-            .vertices = snapshot.rotateGizmoVerts,
-            .viewProj = snapshot.projMatrix * snapshot.viewMatrix,
-            .vpExtent = extent,
-        });
-    }
-    if (!snapshot.scaleGizmoVerts.empty()) {
-        requests.push_back({
-            .vertices = snapshot.scaleGizmoVerts,
-            .viewProj = snapshot.projMatrix * snapshot.viewMatrix,
-            .vpExtent = extent,
-        });
-    }
-    return requests;
-}
-
-auto Renderer::gizmoHitTest(float mouseX, float mouseY) const -> std::optional<int> {
-    return axisGizmo.hitTest(mouseX, mouseY);
-}
-
 auto Renderer::render(RenderSnapshot& snapshot) -> void {
+    renderFrame(snapshot);
+    for (auto* extension : extensions) {
+        extension->endFrame(*this);
+    }
+}
+
+auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     auto frame = ++m_frameIndex;
-    // Taken now, so the frame that builds without UI is the frame that is read back.
-    auto screenshotPending = std::exchange(screenshotPath, {});
+    if (snapshot.captureWatches.has_value()) {
+        captureService.setWatches(std::move(*snapshot.captureWatches));
+    }
+    RenderFrame current = {
+        .frame = frame,
+        .slot = currentFrame,
+    };
+    for (auto* extension : extensions) {
+        extension->beginFrame(*this, snapshot, current);
+    }
 
     {
         PROFILE_ZONE("WaitFence");
@@ -936,7 +685,9 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         lodGroups.parseReadback(currentFrame, slotFrame[currentFrame]);
     }
     captureService.afterFence(currentFrame);
-    fgPreviews.setFrame(frame);
+    for (auto* extension : extensions) {
+        extension->afterFence(*this, currentFrame);
+    }
 
     std::expected<uint32_t, RhiError> index;
     {
@@ -953,10 +704,6 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
             }
             resourcePool.flush();
             currentFrame = 0;
-        }
-        // No frame this time: the screenshot waits for the next one.
-        if (screenshotPath.empty()) {
-            screenshotPath = std::move(screenshotPending);
         }
         return;
     }
@@ -983,6 +730,10 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
 
     auto colorHandle = frameGraph.importTexture("backbuffer", swapchain->image(*index), {ext.width, ext.height, swapchain->colorFormat()});
     auto depthHandle = frameGraph.importTexture("depth", depthTexture, {ext.width, ext.height, depthFormat, RhiTextureUsage::DepthAttachment | RhiTextureUsage::Sampled});
+    current.extent = ext;
+    current.backbuffer = swapchain->image(*index);
+    current.color = colorHandle;
+    current.depth = depthHandle;
 
     // Textures uploaded in earlier frames take their slots; then this frame's scene uploads, before anything reads the tables.
     static const uint32_t sceneFrameZoneId = profile::registerName("GpuSceneBeginFrame");
@@ -1093,7 +844,7 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         }
         const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, snapshot.depthPrepass);
 
-        drawLists.addReadbackPass(frameGraph, drawHandles, currentFrame, snapshot.readVisibility, renderDebugEnabled, m_frameIndex);
+        drawLists.addReadbackPass(frameGraph, drawHandles, currentFrame, snapshot.readVisibility, drawLogEnabled, m_frameIndex);
         lodGroups.addReadbackPass(frameGraph, lodHandles, currentFrame, snapshot.readLodStates, lodCamera.eye, lodCamera.windowArea);
 
         // The depth preview's far end: the camera has no far plane, so the farthest corner of the scene.
@@ -1150,23 +901,16 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
         debugRenderer.addPass(frameGraph, colorHandle, depthHandle, ext, snapshot.debugData, imageIdx);
     }
 
-    static const uint32_t gizmoZoneId = profile::registerName("GizmoUpdate");
-    profile::beginZone(gizmoZoneId);
-    auto gizmoRequests = gizmoUpdate(snapshot, ext);
-    profile::endZone(); // GizmoUpdate
-    if (gizmoPass.ready()) {
-        gizmoPass.addPass(frameGraph, colorHandle, ext, gizmoRequests, imageIdx);
-    }
-
-    if (screenshotPending.empty() || screenshotsShowUi) {
-        editorUIPass.addPass(frameGraph, colorHandle, ext, editorUI, snapshot.imguiSnapshot);
+    // The extensions' overlays: the tools' gizmos, the UI.
+    for (auto* extension : extensions) {
+        extension->addOverlayPasses(*this, snapshot, current);
     }
 
     addPresentPass(frameGraph, colorHandle);
 
     profile::zoneValue(instanceCount);
     profile::endZone(); // BuildFrameGraph
-    frameGraph.setDrawLogEnabled(renderDebugEnabled);
+    frameGraph.setDrawLogEnabled(drawLogEnabled);
     captureService.setStaticBuffer("gpuscene.meshtable", gpuScene.meshTableBuffer(), gpuScene.meshTableBytes());
     captureService.setStaticBuffer("gpuscene.materials", gpuScene.materialBuffer(), gpuScene.materialTableBytes());
     frameGraph.setCaptureRequests(captureService.requestsForFrame(currentFrame, frame));
@@ -1178,71 +922,22 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     // Command buffer and fence belong to the frame slot; the render-finished semaphore
     // belongs to the swapchain image, since present consumes it per image.
     auto* cmd = cmdBuffers[currentFrame];
-    // Screenshot: read the presented image back inside this frame's command buffer. The
-    // present pass left the backbuffer in PresentSrc; return it there afterwards.
-    RhiBuffer* screenshotBuffer = nullptr;
-    // Texture dump: one mip level of a material texture read back after this frame.
-    RhiBuffer* textureDumpBuffer = nullptr;
-    uint32_t dumpWidth = 0;
-    uint32_t dumpHeight = 0;
-    auto dumpPending = std::move(textureDump);
-    textureDump.reset();
     {
         PROFILE_ZONE("Record");
         PROFILE_ZONE_VALUE(frameGraph.passCount() - frameGraph.culledCount());
-        bool frameDebug = std::exchange(frameDebugRequested, false);
-        cmd->setCommandLog(frameDebug);
-        frameGraph.setCommandLogEnabled(frameDebug);
-        frameGraph.setPipelineStatsEnabled(countersEnabled && device->limits().pipelineStatistics);
+        for (auto* extension : extensions) {
+            extension->beforeExecute(*this, cmd, current);
+        }
         cmd->reset();
         cmd->begin();
         frameGraph.execute(cmd);
-        if (frameDebug) {
-            frameDebugResult = buildFrameDebugCapture(buildFrameGraphDebugSnapshot(), *device, frame);
-            cmd->setCommandLog(false);
-            frameGraph.setCommandLogEnabled(false);
+        // The extensions' copies after the frame (the frame debugger, the inspector, dumps, screenshots), the command log first off.
+        for (auto* extension : extensions) {
+            extension->afterExecute(*this, cmd, current);
         }
         gpuScene.afterExecute(frameGraph);
         lodGroups.afterExecute(frameGraph);
         captureService.recordStatic(cmd, currentFrame, frame);
-        recordTextureInspect(cmd);
-        if (dumpPending.has_value()) {
-            auto texIt = gpuScene.textures().find(dumpPending->texture);
-            if (texIt != gpuScene.textures().end() && texIt->second.slot != GpuScene::fallbackSlot && dumpPending->level < texIt->second.mipLevels) {
-                const auto& cached = texIt->second;
-                dumpWidth = std::max(1u, cached.width >> dumpPending->level);
-                dumpHeight = std::max(1u, cached.height >> dumpPending->level);
-                RhiBufferDesc desc = {
-                    .size = (uint64_t) dumpWidth * dumpHeight * 4,
-                    .usage = RhiBufferUsage::TransferDst,
-                    .memory = RhiMemoryUsage::CpuToGpu,
-                    .debugName = "readback.texturedump",
-                };
-                textureDumpBuffer = device->createBuffer(desc);
-                std::array<RhiTextureBarrierDesc, 1> toTransfer = {{{.texture = cached.texture, .oldState = RhiTextureState::ShaderReadOnly, .newState = RhiTextureState::TransferSrc}}};
-                cmd->pipelineBarrier(toTransfer);
-                cmd->copyTextureToBuffer(cached.texture, textureDumpBuffer, {.width = dumpWidth, .height = dumpHeight, .mipLevel = dumpPending->level});
-                std::array<RhiTextureBarrierDesc, 1> toShader = {{{.texture = cached.texture, .oldState = RhiTextureState::TransferSrc, .newState = RhiTextureState::ShaderReadOnly}}};
-                cmd->pipelineBarrier(toShader);
-            } else {
-                TRACE_ERROR("Render", "TextureDumpFailed", dumpPending->path).text(std::format("dump-texture: texture {} level {} not found", dumpPending->texture, dumpPending->level));
-            }
-        }
-        if (!screenshotPending.empty()) {
-            RhiBufferDesc desc = {
-                .size = (uint64_t) ext.width * ext.height * 4,
-                .usage = RhiBufferUsage::TransferDst,
-                .memory = RhiMemoryUsage::CpuToGpu,
-                .debugName = "readback.screenshot",
-            };
-            screenshotBuffer = device->createBuffer(desc);
-            auto* backbuffer = swapchain->image(*index);
-            std::array<RhiTextureBarrierDesc, 1> toTransfer = {{{.texture = backbuffer, .oldState = RhiTextureState::PresentSrc, .newState = RhiTextureState::TransferSrc}}};
-            cmd->pipelineBarrier(toTransfer);
-            cmd->copyTextureToBuffer(backbuffer, screenshotBuffer, {.width = ext.width, .height = ext.height});
-            std::array<RhiTextureBarrierDesc, 1> toPresent = {{{.texture = backbuffer, .oldState = RhiTextureState::TransferSrc, .newState = RhiTextureState::PresentSrc}}};
-            cmd->pipelineBarrier(toPresent);
-        }
         cmd->end();
     }
     slotDrawLogs[currentFrame] = frameGraph.drawLog();
@@ -1258,50 +953,8 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     slotFrame[currentFrame] = frame;
     slotSubmitNs[currentFrame] = profile::now();
 
-    if (textureDumpBuffer != nullptr) {
-        PROFILE_ZONE("TextureDump");
-        device->waitForFence(inflightFences[currentFrame]);
-        auto count = (size_t) dumpWidth * dumpHeight * 4;
-        std::vector<uint8_t> rgba(count);
-        auto* mapped = static_cast<const uint8_t*>(device->mapBuffer(textureDumpBuffer));
-        memcpy(rgba.data(), mapped, count);
-        device->unmapBuffer(textureDumpBuffer);
-        device->destroyBuffer(textureDumpBuffer);
-        bool ok = writeScreenshotPng(dumpPending->path.c_str(), rgba, dumpWidth, dumpHeight);
-        if (ok) {
-            TRACE_EVENT("Render", "TextureDump", dumpPending->path)
-                .text(std::format("texture dump written: {} texture {} level {} ({}x{})", dumpPending->path, dumpPending->texture, dumpPending->level, dumpWidth, dumpHeight))
-                .field("texture", (int64_t) dumpPending->texture)
-                .field("level", (int64_t) dumpPending->level);
-        } else {
-            TRACE_ERROR("Render", "TextureDumpFailed", dumpPending->path).text(std::format("cannot write texture dump {}", dumpPending->path));
-        }
-    }
-    if (screenshotBuffer != nullptr) {
-        PROFILE_ZONE("Screenshot");
-        device->waitForFence(inflightFences[currentFrame]);
-        auto count = (size_t) ext.width * ext.height * 4;
-        std::vector<uint8_t> rgba(count);
-        auto* mapped = static_cast<const uint8_t*>(device->mapBuffer(screenshotBuffer));
-        memcpy(rgba.data(), mapped, count);
-        device->unmapBuffer(screenshotBuffer);
-        device->destroyBuffer(screenshotBuffer);
-        auto format = swapchain->colorFormat();
-        if (format == RhiFormat::B8G8R8A8_SRGB || format == RhiFormat::B8G8R8A8_UNORM) {
-            for (size_t i = 0; i < count; i += 4) {
-                std::swap(rgba[i], rgba[i + 2]);
-            }
-        }
-        for (size_t i = 3; i < count; i += 4) {
-            rgba[i] = 255; // swapchain alpha is undefined for the viewer
-        }
-        bool ok = writeScreenshotPng(screenshotPending.c_str(), rgba, ext.width, ext.height);
-        screenshotResults.push_back({.path = screenshotPending, .ok = ok, .frame = frame, .width = ext.width, .height = ext.height});
-        if (ok) {
-            TRACE_EVENT("Render", "Screenshot", screenshotPending).text(std::format("screenshot written: {} ({}x{})", screenshotPending, ext.width, ext.height)).field("frame", (int64_t) frame);
-        } else {
-            TRACE_ERROR("Render", "ScreenshotFailed", screenshotPending).text(std::format("cannot write screenshot {}", screenshotPending)).field("frame", (int64_t) frame);
-        }
+    for (auto* extension : extensions) {
+        extension->afterSubmit(*this, current);
     }
     std::expected<void, RhiError> presented;
     {
@@ -1330,23 +983,43 @@ auto Renderer::render(RenderSnapshot& snapshot) -> void {
     currentFrame = (currentFrame + 1) % swapchain->imageCount();
 }
 
+auto Renderer::waitForFrame() -> void {
+    device->waitForFence(inflightFences[currentFrame]);
+}
+
+auto Renderer::state() const -> RendererState {
+    return {
+        .frame = m_frameIndex,
+        .slot = currentFrame,
+        .device = device,
+        .swapchainExtent = swapchain->extent(),
+        .swapchainFormat = swapchain->colorFormat(),
+        .swapchainImages = swapchain->imageCount(),
+        .gpuScene = &gpuScene,
+        .instances = gpuInstances,
+        .culledInstances = debugCulledInstances,
+        .lightCount = (uint32_t) lights.size(),
+        .hasSun = debugHasSun,
+        .sun = debugSun,
+        .shadowAtlasExtent = debugShadowExtent,
+        .resourcePool = &resourcePool,
+        .drawLog = lastDrawLog,
+        .passGpuTimes = lastGpuTimes,
+        .gpuFrameMs = lastGpuFrameMs,
+        .gpuFrame = lastGpuFrame,
+        .gpuZones = gpuZoneScratch,
+    };
+}
+
 auto Renderer::destroy() -> void {
     device->waitIdle();
     deletionQueue.flushAll();
     uploader.destroy();
 
-    fgPreviews.shutdown();
     captureService.destroy();
-    if (texturePreview.imguiId != 0) {
-        editorUI->unregisterTexture(texturePreview.imguiId);
+    for (auto* extension : extensions) {
+        extension->destroy();
     }
-    if (texturePreview.texture != nullptr) {
-        device->destroyTexture(texturePreview.texture);
-    }
-    texturePreview = {};
-
-    editorUI->shutdown();
-    editorUI = nullptr;
 
     if (geometryDescriptorPool) {
         device->freeDescriptorSets(geometryDescriptorPool, geometryDescriptorSets);
@@ -1366,7 +1039,6 @@ auto Renderer::destroy() -> void {
     aaPass.destroy(device);
     debugViewPass.destroy(device);
     debugRenderer.destroy(device);
-    gizmoPass.destroy(device);
 
     for (uint32_t i = 0; i < swapchain->imageCount(); i++) {
         device->unmapBuffer(uniformBuffers[i]);

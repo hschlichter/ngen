@@ -6,7 +6,7 @@ Date: 2026-10-31
 
 Accepted
 
-Partly built: steps 0 to 5 and 7 of the lean pass are done; the build does not enforce the layers yet (see Verification).
+Partly built: steps 0 to 7 of the lean pass are done; the build does not enforce the layers yet (see Verification).
 
 ## Context
 
@@ -42,9 +42,11 @@ Rejected: a `common` library (tried and dropped: ownership over buckets), and ke
 - Code: `build.cpp:213` (`view`), `:242` (`viewcommands`), `:273` (`tools`), `:305` (`ui`); no file in `src/view`, `src/renderer`, `src/world` or
   `src/tools` includes a UI window header.
 - Differs from plan (steps not done):
-  - Step 6: the renderer still includes `imguibackend.h` (`renderer.cpp`, `rendersnapshot.h`, `capture.cpp`, `framegraphpreviews.cpp`,
-    `passes/editoruipass.cpp`), and the gizmos still live in `src/renderer/` (included from `src/tools/toolshooks.h:3-6`).
   - Step 8: there is no `ngen-view-core` target.
 - Step 7 (2026-11-04): the per-instance visibility bits are read back only for a frame whose snapshot asks (`RenderSnapshot::readVisibility`, set
   by `ToolsHooks::fillSnapshot` while the culled overlay is on); `cameraVisible` is gone. Most of the 15 ms the plan put on that readback was
   `Renderer::cullResult` summing every slot's triangles each frame; the renderer now keeps `sceneTriangles` as slots change.
+- Step 6 (2026-11-05): the renderer includes no ImGui and no tool. What isn't its core joins its frame as a `RenderExtension`
+  (`src/renderer/renderextension.h`), its frame data a payload in the snapshot: `RenderTools` (`src/rendertools/`, the instrumentation),
+  `GizmoRender` (`src/tools/gizmorender.h`) and `UiRender` (`src/ui/uirender.h`). The capture service stays in the core (picking reads through
+  it), showing its previews through `PreviewTextures`.

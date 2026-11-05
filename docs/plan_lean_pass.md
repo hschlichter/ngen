@@ -1,6 +1,6 @@
 # Lean pass: the engine apart from its tools, a lean frame loop and lean instrumentation
 
-**Status. In progress.** Step 0 done 2026-10-31, steps 1 to 5 2026-11-01, step 7 2026-11-04. Decisions locked 2026-10-31 (Henrik): the layering and the order below; settings move into the configuration system
+**Status. In progress.** Step 0 done 2026-10-31, steps 1 to 5 2026-11-01, step 7 2026-11-04, step 6 2026-11-05. Decisions locked 2026-10-31 (Henrik): the layering and the order below; settings move into the configuration system
 ([plan_configuration.md](plan_configuration.md)); the Engine Map and Scene Flow windows removed with their code. Pushback welcome on the
 open choices.
 
@@ -234,6 +234,41 @@ At the end:
     runs of one build: 4 and 22); the error paths fail with their messages; the debug build runs with every tool window open; the overlays
     (grid, origin, bounds, selection, cascades, light, axis gizmo) draw on three_cubes.
 
+- **Step 6** (2026-11-05): the renderer's tools out of its core, split by layer (Henrik: the instrumentation as `rendertools`, one step).
+  - The extension point: `RenderExtension` (`src/renderer/renderextension.h`), added before `Renderer::init`, called in order at fixed points of
+    `render`: `init` (with the device, pipeline registry, frame graph, deletion queue, uploader, preview sampler and `PreviewTextures`),
+    `beginFrame` (first in every frame, recording or not), `afterFence`, `addOverlayPasses`, `beforeExecute`, `afterExecute`, `afterSubmit`,
+    `endFrame`, `destroy`. `Renderer::state()` gives the instrumentation what the renderer holds and last did; `setDrawLogEnabled`,
+    `waitForFrame` and `commandBuffer(slot)` the rest.
+  - Frame data rides in the snapshot (Henrik): `RenderSnapshot::extensions`, one `RenderExtensionData` per extension at its index. The snapshot
+    lost the ImGui draw data, the gizmo vertices, `showGizmo` and the mouse, and gained the capture watches (when they change), so a frame debug
+    capture and the watches it describes arrive together.
+  - `src/rendertools/` (new library, no ImGui): `RenderTools` with the frame graph debug snapshot and previews, the render debug snapshot, the
+    frame debugger, GPU counters, the texture inspector and dumps and screenshots (all moved out of `Renderer` and `RenderThread`), and the files
+    `framedebug`, `framegraphpreviews`, `gpucounters`, `renderdebug`, `renderdebugjson`, `screenshot`, `gpuscenecapture` and `capturefiles` (the
+    capture writers, out of `capture.cpp`). `SceneGpuStats` and its parts stay in the core (`scenegpustats.h`): the `gpuscene` record is the
+    engine's. On the main thread: `startFrame`, `request()`, `results()`, `fillSnapshot`, `requestScreenshot`, `requestTextureDump`,
+    `setTextureInspect`; `ViewDumps` and `UiHooks` go through it, and `ViewFrame`'s readbacks are only the captures.
+  - `src/tools/`: the gizmos (`gizmo.h`, `axis3dgizmo`, `translategizmo`, `rotategizmo`, `scalegizmo`) and `GizmoPass`, drawn by `GizmoRender`
+    from the `GizmoFrame` `ToolsHooks::fillSnapshot` makes. The axis gizmo is drawn and hit-tested on the main thread (`Renderer::gizmoHitTest`
+    gone), which ends the render thread writing its hover while the main thread read it.
+  - `src/ui/`: `ImGuiBackend` (now a `PreviewTextures`), `ImGuiFrameSnapshot` and `EditorUIPass`, drawn by `UiRender` from the `UiFrame`
+    `UiHooks::fillSnapshot` makes; it stays out of a screenshot frame unless `--show-ui`.
+  - The capture service stays in the core: picking reads through it (ADR 31: one capture service). Without `PreviewTextures` it makes no
+    preview textures; the dumps' pixels are kept either way.
+  - Behaviour kept, with these differences in when: a screenshot is of the frame whose snapshot asked for it (before, of whichever frame the render
+    thread recorded next); a pick's watch reaches the render thread with its snapshot, at most one frame later than before (9 frames from pick to
+    selection at three_cubes); counters switched on start a frame later. The extensions' copies after the frame are recorded before the core's
+    static captures instead of after them. The `GizmoUpdate` zone moved into `GizmoRender`; `Screenshot` and `TextureDump` became
+    `ReadbackFiles`.
+  - Records, methods, verbs and windows unchanged.
+  - Checks: every release target and the debug build build; no ImGui and no tools, UI or rendertools header in `src/renderer`, `src/world` or
+    the view runtime; the 8 reference images byte-identical (the axis gizmo now drawn from the main thread); the debug camera's village runs give
+    `status`, `streaming` and `culling` records identical to step 7's, and the windows run the same tool records (`lodtool` 11,954 rows);
+    `inspect`, `dump-texture`, `capture`, `dump-frame` (13 passes with their commands and descriptor sets), `dump-gpuscene`, `screenshot` and
+    the `render`, `memory`, `counters` and `pipelines` records all answer; picking selects `/World/Cube_1`; the debug build runs with every
+    window open and `--show-ui`.
+
 - **Step 7** (2026-11-04): what the readback cost was not what the plan assumed. Measured at `/cameras/village`, the overlay off, over 60
   frames: the render thread's `CullResult` 13.9 ms a frame, `ParseReadback` 1.5 ms. The visibility bits were only `ParseReadback` (unpacking
   2.4 million words into two byte arrays); `CullResult` was `Renderer::cullResult` summing every draw slot's triangles (`sceneTriangles`,
@@ -249,7 +284,7 @@ At the end:
 
 ## Open questions
 
-- **The renderer split (step 6) now or later**: steps 1 to 5 already make the view cuttable; step 6 is the largest single move.
+None left: the renderer split (step 6) was done in its place in the order.
 
 ## Deferred / follow-ups
 

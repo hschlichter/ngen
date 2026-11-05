@@ -1,5 +1,6 @@
 #pragma once
 
+#include "previewtextures.h"
 #include "rhitypes.h"
 
 #include <vector>
@@ -44,26 +45,13 @@ struct ImGuiBackendInitInfo {
     uint32_t imageCount;
 };
 
-// Renders ImGui draw data through the RHI. The application owns the concrete
-// backend (e.g. ImGuiBackendVulkan) and the window/event plumbing; the renderer
-// only sees this interface.
-class ImGuiBackend {
+// Renders ImGui draw data through the RHI, in the UI's render extension (UiRender), and shows the renderer's previews (PreviewTextures:
+// an id is an ImTextureID for ImGui::Image). The application owns the concrete backend (ImGuiBackendVulkan) and the window and its events.
+class ImGuiBackend : public PreviewTextures {
 public:
-    ImGuiBackend() = default;
-    ImGuiBackend(const ImGuiBackend&) = delete;
-    ImGuiBackend& operator=(const ImGuiBackend&) = delete;
-    ImGuiBackend(ImGuiBackend&&) = default;
-    ImGuiBackend& operator=(ImGuiBackend&&) = default;
-    virtual ~ImGuiBackend() = default;
-
     virtual auto init(const ImGuiBackendInitInfo& info) -> void = 0;
     virtual auto beginFrame() -> void = 0;
     virtual auto endFrame() -> ImGuiFrameSnapshot = 0;
     virtual auto renderDrawData(RhiCommandBuffer* cmd, ImGuiFrameSnapshot& snapshot) -> void = 0;
     virtual auto shutdown() -> void = 0;
-
-    // Register a sampled texture (expected in ShaderReadOnly layout) with ImGui.
-    // Returns an opaque ID to be cast to ImTextureID in ImGui::Image.
-    virtual auto registerTexture(RhiTexture* texture, RhiSampler* sampler) -> uint64_t = 0;
-    virtual auto unregisterTexture(uint64_t id) -> void = 0;
 };

@@ -25,9 +25,9 @@ the shadow cascades and the snapshot. `src/apps/view.cpp`'s loop calls its steps
 | `moveCamera` | the keys as a camera move; orbiting; following the ground | |
 | `cull`, `serviceRenderLodRequests` (`viewcommands`), `countLodPops`, `fitCascades` | culling's frustum and latest readback, the render-LOD records it answers, the shadow cascades | `afterCamera`: the debug camera's trail, the LOD rows' live state, the Culling window's numbers |
 | `drawCameraModes` | the camera modes' lines, after the hooks' | `debugDraw` (before it): the overlays and the tools' layers |
-| `readBack` | what the readers asked for (`wantReadbacks`, then the dumps) sent to the render thread; what came back taken by picking, the dumps, then `takeReadbacks` | |
+| `readBack` | the capture watches (picking's, the dumps', the windows') sent with the snapshot when they change, and the captures that came back taken by picking, the dumps, then `takeReadbacks`; the render tools' requests and results go the same way through `RenderTools` (`src/rendertools/README.md`) | |
 | | | `drawUi`: the windows drawn, and what they asked for carried out |
-| `buildSnapshot`, submit | the frame for the render thread | `fillSnapshot` (before submit): the gizmos, the tools' layers, ImGui's draw data |
+| `buildSnapshot`, submit | the frame for the render thread; the render tools' requests added to it (`RenderTools::fillSnapshot`) | `fillSnapshot` (before submit): the tools' layers, the gizmos' lines and ImGui's draw data, each as its render extension's data |
 
 **The hooks.** `ViewHooks` (`viewhooks.h`) is how the layers above the engine join the frame, at the points above; each does nothing unless
 overridden. The tools implement them (`ToolsHooks`, `src/tools/README.md`) and the UI wraps the tools' (`UiHooks`, `src/ui/uihooks.*`), so the
@@ -234,7 +234,7 @@ do its draws: only where it is placed.
   and its trail, a point every 2 m it moved (the last 500; `debug-camera trail on|off|clear`). `camera <pose> debug` and
   `view.camera.set/get {camera: "debug"}` place and read it; the `debugcamera` record holds its pose and trail, the `config` record its switches (`tools.debugcamera.*`, on with
   `tools.debugcamera.on`); `view.camera.debug` places it and clears the trail. The corner axis gizmo shows
-  and turns the camera rendered from: the renderer reports the axis clicked (`gizmoHitTest`), the tools' hooks turn the camera.
+  and turns the camera rendered from: the tools draw it and hit-test it on the main thread (`Axis3DGizmo`, `src/tools`) and turn the camera.
 - **Camera modes** (`ground.*`, their state `CameraModesState` held by the `ViewFrame`, the Camera window's mode section, the View menu): for the camera that has the controls.
   - *Orbit*: while Left Alt is held, right-drag turns around a pivot (yaw around the up axis through it, pitch around the camera's right,
     the distance kept, `Camera::orbit`) and the wheel moves toward it (`Camera::dolly`); WASD carry the pivot along. The pivot is the

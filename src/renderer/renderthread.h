@@ -2,13 +2,9 @@
 
 #include "capture.h"
 #include "drawlists.h"
-#include "framedebug.h"
-#include "framegraphdebug.h"
-#include "gpucounters.h"
-#include "renderdebug.h"
 #include "rendersnapshot.h"
 #include "renderworld.h"
-#include "screenshot.h"
+#include "scenegpustats.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -49,43 +45,12 @@ public:
     auto setUploadBudget(uint64_t bytes) -> void { uploadBudgetWanted.store(bytes, std::memory_order_relaxed); }
     auto setGeometryLimit(uint64_t bytes) -> void { geometryLimitWanted.store(bytes, std::memory_order_relaxed); }
 
-    auto setFrameGraphDebugEnabled(bool enabled) -> void { fgDebugWanted.store(enabled, std::memory_order_relaxed); }
-    auto latestFrameGraphDebug() -> std::optional<FrameGraphDebugSnapshot>;
-    auto setRenderDebugEnabled(bool enabled) -> void { renderDebugWanted.store(enabled, std::memory_order_relaxed); }
-    auto latestRenderDebug() -> std::optional<RenderDebugSnapshot>;
     // Latest GPU culling readback, when one arrived since the last call.
     auto latestCullResult() -> std::optional<CullResult>;
-    // Capture watches (latest-only) and every capture result since the last call.
-    // requestFrameDebug records the frame that applies these watches as a FrameDebugCapture,
-    // so the captures and the frame debug data describe the same frame.
-    auto setCaptureWatches(std::vector<CaptureWatch> watches, bool requestFrameDebug = false) -> void {
-        std::lock_guard lock(captureMutex);
-        captureWatches = std::move(watches);
-        captureWatchesChanged = true;
-        frameDebugWanted = frameDebugWanted || requestFrameDebug;
-    }
-    auto latestFrameDebug() -> std::optional<FrameDebugCapture> {
-        std::lock_guard lock(captureMutex);
-        return std::exchange(frameDebugSlot, std::nullopt);
-    }
+    // Every capture result since the last call; the watches go with the snapshot (RenderSnapshot::captureWatches).
     auto takeCaptureResults() -> std::vector<CaptureResult> {
         std::lock_guard lock(captureMutex);
         return std::exchange(captureResults, {});
-    }
-    // Screenshots written since the last call.
-    auto takeScreenshotResults() -> std::vector<ScreenshotResult> {
-        std::lock_guard lock(captureMutex);
-        return std::exchange(screenshotResults, {});
-    }
-    // GPU counters, one per completed frame while enabled (see Renderer::setCountersEnabled).
-    auto setCountersEnabled(bool enabled) -> void { countersWanted.store(enabled, std::memory_order_relaxed); }
-    auto takeCounters() -> std::vector<GpuCounters> {
-        std::lock_guard lock(countersMutex);
-        return std::exchange(countersResults, {});
-    }
-    auto setTextureInspect(TextureInspectRequest request) -> void {
-        std::lock_guard lock(textureInspectMutex);
-        textureInspectRequest = request;
     }
     // Asset ids whose sources changed; the renderer reloads those that are its shaders before its next frame.
     auto reloadShaders(std::span<const std::string> ids) -> void {
@@ -118,29 +83,11 @@ private:
     std::atomic<uint64_t> uploadBudgetWanted{0};           // 0: unchanged
     std::atomic<uint64_t> geometryLimitWanted{UINT64_MAX}; // UINT64_MAX: unchanged
 
-    // Frame graph debug slot (separate channel, latest-only, non-blocking)
-    std::atomic<bool> fgDebugWanted{false};
-    std::mutex fgDebugMutex;
-    std::optional<FrameGraphDebugSnapshot> fgDebugSlot;
-    std::atomic<bool> renderDebugWanted{false};
-    std::mutex renderDebugMutex;
-    std::optional<RenderDebugSnapshot> renderDebugSlot;
     std::mutex captureMutex;
-    std::vector<CaptureWatch> captureWatches;
-    bool captureWatchesChanged = false;
     std::vector<CaptureResult> captureResults;
-    std::vector<ScreenshotResult> screenshotResults;
-    bool frameDebugWanted = false;
-    std::optional<FrameDebugCapture> frameDebugSlot;
-    std::atomic<bool> countersWanted{false};
-    std::mutex countersMutex;
-    std::vector<GpuCounters> countersResults;
     std::mutex cullResultMutex;
     std::optional<CullResult> cullResultSlot;
     uint64_t lastCullResultFrame = 0;
-    std::mutex textureInspectMutex;
-    TextureInspectRequest textureInspectRequest;
     std::mutex reloadMutex;
     std::vector<std::string> reloadIds;
-    uint64_t fgDebugFrameCounter = 0;
 };

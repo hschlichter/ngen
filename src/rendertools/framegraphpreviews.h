@@ -9,13 +9,13 @@
 #include <unordered_map>
 
 class RhiDevice;
-class ImGuiBackend;
+class PreviewTextures;
 class RhiCommandBuffer;
 class DeletionQueue;
 
 class FrameGraphPreviews {
 public:
-    auto init(RhiDevice* device, ImGuiBackend* editorUI, RhiSampler* sampler, DeletionQueue* deletionQueue) -> void;
+    auto init(RhiDevice* device, PreviewTextures* previews, RhiSampler* sampler, DeletionQueue* deletionQueue) -> void;
     auto shutdown() -> void;
 
     // Frame number currently being recorded; tags deferred destruction of replaced previews.
@@ -30,7 +30,7 @@ public:
 private:
     struct Entry {
         RhiTexture* texture = nullptr;
-        uint64_t imguiId = 0;
+        uint64_t previewId = 0;
         uint32_t width = 0;
         uint32_t height = 0;
         RhiFormat format = RhiFormat::Undefined;
@@ -44,7 +44,7 @@ private:
     static auto isBlittableColorFormat(RhiFormat f) -> bool;
 
     RhiDevice* device = nullptr;
-    ImGuiBackend* editorUI = nullptr;
+    PreviewTextures* previews = nullptr; // none: no previews
     RhiSampler* sampler = nullptr;
     DeletionQueue* deletionQueue = nullptr;
     uint64_t currentFrame = 0;

@@ -6,7 +6,7 @@
 #include <array>
 #include <cstring>
 
-auto GizmoPass::init(RhiDevice* device, PipelineRegistry& pipelines, uint32_t imageCount, RhiExtent2D extent, RhiFormat colorFormat) -> bool {
+auto GizmoPass::init(RhiDevice* device, PipelineRegistry& pipelines, uint32_t imageCount, RhiFormat colorFormat) -> bool {
     using enum RhiFormat;
     registry = &pipelines;
 

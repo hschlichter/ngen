@@ -1,5 +1,6 @@
 #include "assetclient.h"
 #include "assetid.h"
+#include "gizmorender.h"
 #include "ground.h"
 #include "imguibackendvulkan.h"
 #include "jobsystem.h"
@@ -8,6 +9,7 @@
 #include "renderdoccapture.h"
 #include "renderer.h"
 #include "renderthread.h"
+#include "rendertools.h"
 #include "rhidevicevulkan.h"
 #include "rpcendpoint.h"
 #include "rpcregistry.h"
@@ -18,6 +20,7 @@
 #include "trace.h"
 #include "uicommands.h"
 #include "uihooks.h"
+#include "uirender.h"
 #include "viewcommands.h"
 #include "viewdumps.h"
 #include "viewframe.h"
@@ -382,9 +385,20 @@ auto main(int argc, char* argv[]) -> int {
     }
     ImGuiBackendVulkan imguiBackend(window);
     Renderer renderer;
+    // What joins the renderer's frame from outside its core, in order: the instrumentation, the tools' gizmos, the UI (last on the
+    // backbuffer). The UI shows the renderer's previews.
+    RenderTools renderTools;
+    GizmoRender gizmoRender;
+    UiRender uiRender(imguiBackend);
+    renderer.addExtension(renderTools);
+    renderer.addExtension(gizmoRender);
+    renderer.addExtension(uiRender);
+    renderer.setPreviewTextures(&imguiBackend);
+    renderTools.setValidationEnabled(enableValidation);
+    renderTools.setScreenshotsShowUi(screenshotsShowUi);
     StatusBarGatherer statusBar;
     auto rendererInitStart = std::chrono::steady_clock::now();
-    if (!renderer.init(&rhiDevice, &imguiBackend, &assetClient, initialExtent)) {
+    if (!renderer.init(&rhiDevice, &assetClient, initialExtent)) {
         TRACE_ERROR("Render", "RendererInitFailed", "renderer").text("renderer init failed");
         rhiDevice.waitIdle();
         return failAfterInit();
@@ -394,8 +408,6 @@ auto main(int argc, char* argv[]) -> int {
         TRACE_EVENT("Render", "RendererInitialized", "renderer").text(std::format("renderer initialized in {:.0f} ms", ms)).field("ms", ms);
     }
     renderer.setGeometryLimit((uint64_t) renderconfig::geometryLimitMiB.get() * 1024 * 1024);
-    renderer.setValidationEnabled(enableValidation);
-    renderer.setScreenshotsShowUi(screenshotsShowUi);
 
     // The passes have registered their pipelines: their shaders go out in one request, and each pipeline is made when its shaders arrive.
     // Nothing waits for them: the frame is the clear colour and the UI until the lit path's pipelines are there.
@@ -420,8 +432,16 @@ auto main(int argc, char* argv[]) -> int {
     }
     viewUI.setAssetDrawCount([&scene](const std::string& assetId) { return scene.drawCount(assetId); });
     viewUI.bindTools(tools, frame.cameraModes);
-    ToolsHooks toolsHooks(tools);
-    UiHooks uiHooks(viewUI, toolsHooks, imguiBackend, rhiDevice, renderDoc);
+    ToolsHooks toolsHooks(tools, gizmoRender);
+    UiHooks uiHooks({
+        .ui = viewUI,
+        .tools = toolsHooks,
+        .imgui = imguiBackend,
+        .uiRender = uiRender,
+        .renderTools = renderTools,
+        .device = rhiDevice,
+        .renderDoc = renderDoc,
+    });
     ViewHooks& hooks = uiHooks;
 
     // Answers waiting for the scene to be resident (view.waitResident, view.lod.set, view.repack, view.purposes), and render-LOD records
@@ -448,6 +468,7 @@ auto main(int argc, char* argv[]) -> int {
         .renderer = renderer,
         .renderThread = renderThread,
         .renderDoc = renderDoc,
+        .renderTools = renderTools,
         .dumps = dumps,
         .latestCull = frame.latestCull,
         .assets = assetClient,
@@ -516,16 +537,19 @@ auto main(int argc, char* argv[]) -> int {
         hooks.debugDraw(frame);
         frame.drawCameraModes();
 
-        frame.readbacks = {.renderDebug = forceRenderDebug};
+        frame.readbacks = {};
+        renderTools.startFrame();
+        renderTools.request().renderDebug = forceRenderDebug;
         hooks.wantReadbacks(frame);
-        dumps.wantReadbacks(frame.readbacks);
+        dumps.wantReadbacks(frame.readbacks, renderTools);
         frame.readBack();
-        dumps.takeReadbacks(frame.readbacks);
+        dumps.takeReadbacks(frame.readbacks, renderTools);
         hooks.takeReadbacks(frame);
 
         hooks.drawUi(frame);
 
         auto snapshot = frame.buildSnapshot();
+        renderTools.fillSnapshot(snapshot);
         hooks.fillSnapshot(frame, snapshot);
         {
             PROFILE_ZONE("SubmitSnapshot");

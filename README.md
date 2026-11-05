@@ -78,6 +78,8 @@ Each library documents its design and rules in a README next to the code:
 - [`src/rhi/README.md`](src/rhi/README.md) — RHI principles, the integrator contract, the example programs, known gaps.
 - [`src/renderer/README.md`](src/renderer/README.md) — how a frame is built: GPU scene tables, GPU culling and indirect draws, descriptor sets, frame graph
   rules, shadows, trace events.
+- [`src/rendertools/README.md`](src/rendertools/README.md) — the renderer's instrumentation, a render extension: debug snapshots, the frame
+  debugger, GPU counters, the texture inspector and dumps, screenshots.
 - [`src/trace/README.md`](src/trace/README.md) — the trace: `TRACE_EVENT`, the always-on ring per process, streaming events over RPC, conventions.
 - [`src/config/README.md`](src/config/README.md) — configuration: the engine's settings as typed values declared in code, their names, threads,
   changes, and how they are read and set at runtime.

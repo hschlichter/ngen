@@ -6,6 +6,7 @@
 #include "framegraphdebug.h"
 #include "gpucounters.h"
 #include "renderdebug.h"
+#include "rendertools.h"
 #include "rpcresponder.h"
 #include "screenshot.h"
 #include "viewframe.h"
@@ -51,10 +52,10 @@ public:
     // A screenshot the renderer was asked for; answered when the file is written.
     auto trackScreenshot(std::string path, RpcResponder responder, bool inlinePng) -> void;
 
-    // Per frame, from the main loop: what the dumps waiting want read back, then what came back for them. A capture result a dump takes is
-    // removed from `readbacks`.
-    auto wantReadbacks(FrameReadbacks& readbacks) -> void;
-    auto takeReadbacks(FrameReadbacks& readbacks) -> void;
+    // Per frame, from the main loop: what the dumps waiting want read back (captures, and the render tools' snapshots), then what came
+    // back for them. A capture result a dump takes is removed from `readbacks`.
+    auto wantReadbacks(FrameReadbacks& readbacks, RenderTools& renderTools) -> void;
+    auto takeReadbacks(FrameReadbacks& readbacks, RenderTools& renderTools) -> void;
 
 private:
     auto wantsFrameGraphDebug() const -> bool;

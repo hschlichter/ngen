@@ -197,7 +197,6 @@ auto main(int argc, char** argv) -> int {
                 "src/scene",
                 "src/trace",
                 "src/profile",
-                "external/imgui",
                 "external/stb",
                 "external/glm",
             })
@@ -207,6 +206,23 @@ auto main(int argc, char** argv) -> int {
             .link(assetClient)
             .link(packer)
             .link(rhi_backend);
+
+    // The renderer's instrumentation (src/rendertools/README.md): the frame graph's debug snapshot and previews, the render debug snapshot,
+    // the frame debugger, GPU counters, the texture inspector and dumps, screenshots. A render extension; no ImGui.
+    auto rendertools =
+        cxx::static_library("rendertools")
+            .sources(glob({.include = "src/rendertools/*.cpp"}))
+            .public_include({"src/rendertools"})
+            .include({
+                "src/trace",
+                "src/profile",
+                "src/rhi",
+                "src/rhi/vulkan",
+                "external/stb",
+            })
+            .link(renderer)
+            .link(traceLib)
+            .link(profile);
 
     // The view's runtime (src/view/README.md): the scene composed from the packs and placed for the renderer, picking, the camera modes, and
     // the frame's engine steps the main loop calls (ViewFrame) with the hooks the tools and the UI join it by.
@@ -261,6 +277,7 @@ auto main(int argc, char** argv) -> int {
                 "external/json/single_include",
             })
             .link(viewLib)
+            .link(rendertools)
             .link(renderer)
             .link(rpc)
             .link(rpccore)
@@ -323,6 +340,7 @@ auto main(int argc, char** argv) -> int {
                 "external/json/single_include",
             })
             .link(toolsLib)
+            .link(rendertools)
             .link(renderer)
             .link(profile)
             .link(config)
@@ -476,6 +494,7 @@ auto main(int argc, char** argv) -> int {
             .link(toolsLib)
             .link(viewCommands)
             .link(viewLib)
+            .link(rendertools)
             .link(ui)
             .link(imgui)
             .link(rpc)

@@ -14,7 +14,7 @@
 
 class DeletionQueue;
 class GpuUploader;
-class ImGuiBackend;
+class PreviewTextures;
 class RhiDevice;
 
 // How a captured texture is turned into the preview image. Values are normalized from
@@ -50,7 +50,7 @@ struct CaptureWatch {
 };
 
 // What came back for a watch. `bytes` is the raw copy (tightly packed texels of mip 0, or
-// the whole buffer); the preview is an ImGui texture of the display conversion.
+// the whole buffer); the preview is a texture of the display conversion, shown through PreviewTextures.
 struct CaptureResult {
     uint32_t id = 0;
     uint64_t frame = 0;
@@ -82,13 +82,6 @@ auto decodeTexel(RhiFormat format, const std::byte* texel) -> glm::vec4;
 // A captured texture converted for display as RGBA8, scaled down to at most maxSide texels
 // on the longer side (0 keeps full size). Returns the pixels and writes the size.
 auto convertCaptureForDisplay(const CaptureResult& result, const CaptureDisplay& display, uint32_t maxSide, uint32_t& outWidth, uint32_t& outHeight) -> std::vector<uint8_t>;
-// Writes a capture as files: buffers as JSON rows decoded with their schema (at most
-// maxRows), textures as a PNG of the display conversion plus `<path>.json` with format,
-// size and channel ranges. Returns false when a file cannot be written.
-auto writeCaptureFiles(const std::string& path, const CaptureResult& result, const CaptureDisplay& display, size_t maxRows) -> bool;
-// The JSON part of a capture into an open stream: a texture's sidecar (format, size, ranges,
-// texels of small regions) or a buffer's decoded rows (at most maxRows).
-auto writeCaptureJson(FILE* f, const CaptureResult& result, size_t maxRows) -> void;
 // The scene buffers outside the frame graph that can be captured at the end of the frame.
 auto captureStaticBufferNames() -> std::span<const char* const>;
 
@@ -96,7 +89,8 @@ auto captureStaticBufferNames() -> std::span<const char* const>;
 // frame slot's fence (docs in src/renderer/README.md, "Debugging and introspection").
 class CaptureService {
 public:
-    auto init(RhiDevice* device, ImGuiBackend* imgui, DeletionQueue* deletionQueue, GpuUploader* uploader, uint32_t frameSlots) -> void;
+    // `previews` shows the previews; none makes no preview textures (the previews' pixels are still kept for dumps).
+    auto init(RhiDevice* device, PreviewTextures* previews, DeletionQueue* deletionQueue, GpuUploader* uploader, uint32_t frameSlots) -> void;
     auto destroy() -> void;
 
     auto setWatches(std::vector<CaptureWatch> watches) -> void;
@@ -138,7 +132,7 @@ private:
     auto releasePreview(Kept& kept) -> void;
 
     RhiDevice* device = nullptr;
-    ImGuiBackend* imgui = nullptr;
+    PreviewTextures* previews = nullptr;
     DeletionQueue* deletionQueue = nullptr;
     GpuUploader* uploader = nullptr;
     RhiSampler* previewSampler = nullptr;

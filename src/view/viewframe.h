@@ -7,13 +7,8 @@
 #include "culling.h"
 #include "debugdraw.h"
 #include "drawlists.h"
-#include "framedebug.h"
-#include "framegraphdebug.h"
-#include "gpucounters.h"
 #include "ground.h"
-#include "renderdebug.h"
 #include "rendersnapshot.h"
-#include "screenshot.h"
 #include "shadowcascades.h"
 #include "viewpicking.h"
 
@@ -55,21 +50,12 @@ struct ViewResidency {
     double lastLoadLongestMs = 0.0;
 };
 
-// What the render thread reads back this frame for whoever asks (picking, the dumps, the UI's windows), and what came back. Each reader adds
-// what it wants, then takes what it reads; a capture result belongs to the first that takes it.
+// The captures the render thread takes this frame for whoever asks (picking, the dumps, the UI's windows), and what came back. Each reader
+// adds its watches, then takes its results; a capture result belongs to the first that takes it. The renderer's other readbacks are the
+// render tools' (src/rendertools).
 struct FrameReadbacks {
-    bool frameGraphDebug = false;
-    bool renderDebug = false;
-    bool counters = false;
-    bool frameDebug = false; // a frame debug capture, once
     std::vector<CaptureWatch> watches;
-
-    std::optional<FrameGraphDebugSnapshot> frameGraph;
-    std::optional<RenderDebugSnapshot> renderDebugSnapshot;
-    std::optional<FrameDebugCapture> frameDebugCapture;
     std::vector<CaptureResult> captures;
-    std::vector<ScreenshotResult> screenshots;
-    std::vector<GpuCounters> counterFrames;
 };
 
 // One frame of ngen-view's engine (src/view/README.md, "The frame"): the main camera and its modes, the selection, the scene's inputs to
@@ -120,7 +106,8 @@ public:
     auto fitCascades() -> void;
     // The engine's own debug lines, after the hooks': the camera modes'.
     auto drawCameraModes() -> void;
-    // Sends what `readbacks` asks for to the render thread and fills in what came back; picking takes its captures first.
+    // The watches `readbacks` asks for go with the snapshot when they change; the captures that came back are filled in, picking's taken
+    // first.
     auto readBack() -> void;
     // The frame as the render thread draws it; the hooks add the tools' and the UI's parts.
     auto buildSnapshot() -> RenderSnapshot;
@@ -187,4 +174,5 @@ private:
     uint64_t geometryLimitChanges = 0;
     uint64_t lodPopsFrame = 0;
     std::vector<CaptureWatch> sentWatches;
+    bool watchesChanged = false; // since the last snapshot
 };

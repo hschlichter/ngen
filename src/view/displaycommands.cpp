@@ -4,6 +4,7 @@
 #include "renderdoccapture.h"
 #include "renderer.h"
 #include "renderthread.h"
+#include "rendertools.h"
 #include "viewdumps.h"
 
 #include <nlohmann/json.hpp>
@@ -138,9 +139,9 @@ auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
         },
         [&view](const Json& p, RpcResponder responder) {
             if (!p["enabled"].get<bool>()) {
-                view.renderThread.setTextureInspect({});
+                view.renderTools.setTextureInspect({});
             } else {
-                view.renderThread.setTextureInspect({.enabled = true, .texture = p.value("texture", 0u), .level = p.value("level", 0u)});
+                view.renderTools.setTextureInspect({.enabled = true, .texture = p.value("texture", 0u), .level = p.value("level", 0u)});
             }
             responder.respond(Json::object());
         });
@@ -156,7 +157,7 @@ auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
             .result = "{} once requested; the file is written after the frame",
         },
         [&view](const Json& p, RpcResponder responder) {
-            view.renderer.requestTextureDump(p["texture"].get<uint32_t>(), p["level"].get<uint32_t>(), p["path"].get<std::string>());
+            view.renderTools.requestTextureDump(p["texture"].get<uint32_t>(), p["level"].get<uint32_t>(), p["path"].get<std::string>());
             responder.respond(Json::object());
         });
     registry.add(
@@ -174,7 +175,7 @@ auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
             if (path.empty()) {
                 path = (std::filesystem::current_path() / std::format("screenshot-{}-{}.png", (int) getpid(), view.frameCounter)).string();
             }
-            view.renderer.requestScreenshot(path);
+            view.renderTools.requestScreenshot(path);
             view.dumps.trackScreenshot(path, responder, p.value("inline", false));
         });
     registry.add(

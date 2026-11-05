@@ -50,19 +50,9 @@ auto RenderThread::submitSceneChanges(SceneChanges changes) -> void {
     }
 }
 
-auto RenderThread::latestRenderDebug() -> std::optional<RenderDebugSnapshot> {
-    std::lock_guard lock(renderDebugMutex);
-    return std::exchange(renderDebugSlot, std::nullopt);
-}
-
 auto RenderThread::latestCullResult() -> std::optional<CullResult> {
     std::lock_guard lock(cullResultMutex);
     return std::exchange(cullResultSlot, std::nullopt);
-}
-
-auto RenderThread::latestFrameGraphDebug() -> std::optional<FrameGraphDebugSnapshot> {
-    std::lock_guard lock(fgDebugMutex);
-    return std::exchange(fgDebugSlot, std::nullopt);
 }
 
 auto RenderThread::threadLoop() -> void {
@@ -95,11 +85,6 @@ auto RenderThread::threadLoop() -> void {
             }
         }
 
-        bool wantDebug = fgDebugWanted.load(std::memory_order_relaxed);
-        renderer->setFrameGraphDebugEnabled(wantDebug);
-        bool wantRenderDebug = renderDebugWanted.load(std::memory_order_relaxed);
-        renderer->setRenderDebugEnabled(wantRenderDebug);
-        renderer->setCountersEnabled(countersWanted.load(std::memory_order_relaxed));
         if (auto budget = uploadBudgetWanted.exchange(0, std::memory_order_relaxed); budget > 0) {
             renderer->setUploadBudget(budget);
         }
@@ -107,25 +92,9 @@ auto RenderThread::threadLoop() -> void {
             renderer->setGeometryLimit(limit);
         }
         {
-            std::lock_guard lock(textureInspectMutex);
-            renderer->setTextureInspect(textureInspectRequest);
-        }
-        {
             std::lock_guard lock(reloadMutex);
             if (!reloadIds.empty()) {
                 renderer->reloadShaders(std::exchange(reloadIds, {}));
-            }
-        }
-
-        {
-            std::lock_guard lock(captureMutex);
-            if (captureWatchesChanged) {
-                captureWatchesChanged = false;
-                renderer->setCaptureWatches(captureWatches);
-            }
-            if (frameDebugWanted) {
-                frameDebugWanted = false;
-                renderer->requestFrameDebugCapture();
             }
         }
 
@@ -148,30 +117,11 @@ auto RenderThread::threadLoop() -> void {
 
         {
             PROFILE_ZONE("TakeResults");
-            auto results = renderer->takeCaptureResults();
-            auto frameDebug = renderer->takeFrameDebugCapture();
-            auto screenshots = renderer->takeScreenshotResults();
-            if (!results.empty() || frameDebug.has_value() || !screenshots.empty()) {
+            if (auto results = renderer->takeCaptureResults(); !results.empty()) {
                 std::lock_guard lock(captureMutex);
-                for (auto& shot : screenshots) {
-                    screenshotResults.push_back(std::move(shot));
-                }
                 for (auto& result : results) {
                     captureResults.push_back(std::move(result));
                 }
-                if (frameDebug.has_value()) {
-                    frameDebugSlot = std::move(frameDebug);
-                }
-            }
-        }
-
-        if (auto counters = renderer->takeCounters(); !counters.empty()) {
-            std::lock_guard lock(countersMutex);
-            for (auto& c : counters) {
-                countersResults.push_back(std::move(c));
-            }
-            if (countersResults.size() > 300) {
-                countersResults.erase(countersResults.begin(), countersResults.end() - 300);
             }
         }
 
@@ -183,18 +133,6 @@ auto RenderThread::threadLoop() -> void {
                 std::lock_guard lock(cullResultMutex);
                 cullResultSlot = std::move(cull);
             }
-        }
-
-        if (wantDebug) {
-            auto fgSnap = renderer->buildFrameGraphDebugSnapshot();
-            fgSnap.frameIndex = ++fgDebugFrameCounter;
-            std::lock_guard lock(fgDebugMutex);
-            fgDebugSlot = std::move(fgSnap);
-        }
-        if (wantRenderDebug) {
-            auto snap = renderer->buildRenderDebugSnapshot();
-            std::lock_guard lock(renderDebugMutex);
-            renderDebugSlot = std::move(snap);
         }
     }
 }

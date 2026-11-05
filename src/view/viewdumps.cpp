@@ -1,5 +1,6 @@
 #include "viewdumps.h"
 
+#include "capturefiles.h"
 #include "gpuscenecapture.h"
 #include "renderdebugjson.h"
 #include "renderworld.h"
@@ -138,25 +139,27 @@ auto ViewDumps::trackScreenshot(std::string path, RpcResponder responder, bool i
     screenshots.push_back({.path = std::move(path), .responder = std::move(responder), .inlinePng = inlinePng});
 }
 
-auto ViewDumps::wantReadbacks(FrameReadbacks& readbacks) -> void {
-    readbacks.frameGraphDebug = readbacks.frameGraphDebug || wantsFrameGraphDebug();
-    readbacks.renderDebug = readbacks.renderDebug || wantsRenderDebug();
-    readbacks.counters = readbacks.counters || wantsCounters();
-    readbacks.frameDebug = takeFrameDebugRequest() || readbacks.frameDebug;
+auto ViewDumps::wantReadbacks(FrameReadbacks& readbacks, RenderTools& renderTools) -> void {
+    auto& request = renderTools.request();
+    request.frameGraphDebug = request.frameGraphDebug || wantsFrameGraphDebug();
+    request.renderDebug = request.renderDebug || wantsRenderDebug();
+    request.counters = request.counters || wantsCounters();
+    request.frameDebug = takeFrameDebugRequest() || request.frameDebug;
     appendWatches(readbacks.watches);
 }
 
-auto ViewDumps::takeReadbacks(FrameReadbacks& readbacks) -> void {
-    onFrameGraph(readbacks.frameGraph);
-    onRenderDebug(readbacks.renderDebugSnapshot);
-    if (readbacks.frameDebugCapture.has_value()) {
-        onFrameDebug(*readbacks.frameDebugCapture);
+auto ViewDumps::takeReadbacks(FrameReadbacks& readbacks, RenderTools& renderTools) -> void {
+    const auto& results = renderTools.results();
+    onFrameGraph(results.frameGraph);
+    onRenderDebug(results.renderDebug);
+    if (results.frameDebug.has_value()) {
+        onFrameDebug(*results.frameDebug);
     }
     std::erase_if(readbacks.captures, [this](CaptureResult& result) {
         return onCaptureResult(result);
     });
-    onScreenshots(readbacks.screenshots);
-    for (const auto& counters : readbacks.counterFrames) {
+    onScreenshots(results.screenshots);
+    for (const auto& counters : results.counters) {
         onCounters(counters);
     }
 }

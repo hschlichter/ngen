@@ -2,12 +2,10 @@
 
 #include "deletionqueue.h"
 #include "framegraphdebug.h"
-#include "gpuschema.h"
 #include "gpuuploader.h"
-#include "imguibackend.h"
+#include "previewtextures.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "screenshot.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -110,9 +108,9 @@ auto decodeTexel(RhiFormat format, const std::byte* texel) -> glm::vec4 {
     }
 }
 
-auto CaptureService::init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, DeletionQueue* queue, GpuUploader* gpuUploader, uint32_t frameSlots) -> void {
+auto CaptureService::init(RhiDevice* rhiDevice, PreviewTextures* previewTextures, DeletionQueue* queue, GpuUploader* gpuUploader, uint32_t frameSlots) -> void {
     device = rhiDevice;
-    imgui = imguiBackend;
+    previews = previewTextures;
     deletionQueue = queue;
     uploader = gpuUploader;
     pending.assign(frameSlots, {});
@@ -130,7 +128,7 @@ auto CaptureService::destroy() -> void {
     }
     for (auto& [id, k] : kept) {
         if (k.result.previewId != 0) {
-            imgui->unregisterTexture(k.result.previewId);
+            previews->unregisterTexture(k.result.previewId);
         }
         if (k.preview != nullptr) {
             device->destroyTexture(k.preview);
@@ -402,24 +400,25 @@ auto CaptureService::buildPreview(Kept& k) -> void {
     uint32_t w = 0;
     uint32_t h = 0;
     r.previewRgba = convertCaptureForDisplay(r, k.display, maxPreviewSide, w, h);
-    if (r.previewRgba.empty()) {
+    // The preview texture only where a UI shows it; the pixels serve the dumps either way.
+    if (r.previewRgba.empty() || previews == nullptr) {
         return;
     }
     uploader->begin();
     k.preview = uploader->uploadTexture({.width = w, .height = h, .format = RhiFormat::R8G8B8A8_UNORM, .usage = RhiTextureUsage::Sampled, .debugName = "capture.preview"}, std::as_bytes(std::span(r.previewRgba)));
     uploader->end();
-    r.previewId = imgui->registerTexture(k.preview, previewSampler);
+    r.previewId = previews->registerTexture(k.preview, previewSampler);
     r.previewWidth = w;
     r.previewHeight = h;
 }
 
 auto CaptureService::releasePreview(Kept& k) -> void {
-    // The main thread may still hand the old preview id to ImGui for a few frames (its
+    // The main thread may still hand the old preview id to the UI for a few frames (its
     // results lag the render thread), so the preview outlives the frames in flight by a margin.
     constexpr uint64_t previewGraceFrames = 16;
     auto frame = currentFrame + previewGraceFrames;
     if (k.result.previewId != 0) {
-        deletionQueue->defer(frame, [ui = imgui, id = k.result.previewId] { ui->unregisterTexture(id); });
+        deletionQueue->defer(frame, [ui = previews, id = k.result.previewId] { ui->unregisterTexture(id); });
         k.result.previewId = 0;
     }
     if (k.preview != nullptr) {
@@ -430,79 +429,4 @@ auto CaptureService::releasePreview(Kept& k) -> void {
 
 auto CaptureService::takeResults() -> std::vector<CaptureResult> {
     return std::exchange(ready, {});
-}
-
-namespace {
-
-auto jsonEscape(const std::string& text) -> std::string {
-    std::string out;
-    for (char c : text) {
-        if (c == '"' || c == '\\') {
-            out += '\\';
-        }
-        out += c;
-    }
-    return out;
-}
-
-} // namespace
-
-auto writeCaptureJson(FILE* f, const CaptureResult& r, size_t maxRows) -> void {
-    if (r.texture) {
-        std::fprintf(f, "{\"frame\": %llu, \"pass\": \"%s\", \"resource\": \"%s\", \"kind\": \"texture\", \"format\": \"%s\", \"width\": %u, \"height\": %u, \"bytes\": %llu, \"error\": \"%s\",\n", (unsigned long long) r.frame, jsonEscape(r.pass).c_str(), jsonEscape(r.resource).c_str(), toString(r.format), r.width, r.height, (unsigned long long) r.byteSize, jsonEscape(r.error).c_str());
-        std::fprintf(f, " \"regionX\": %u, \"regionY\": %u,\n", r.regionX, r.regionY);
-        // Small captures (a cursor readout) list every texel's decoded value.
-        auto texel = captureTexelBytes(r.format);
-        if (r.bytes && texel > 0 && (uint64_t) r.width * r.height <= 64) {
-            std::fprintf(f, " \"texels\": [");
-            for (uint32_t i = 0; i < r.width * r.height; i++) {
-                auto v = decodeTexel(r.format, r.bytes->data() + (size_t) i * texel);
-                std::fprintf(f, "%s{\"x\": %u, \"y\": %u, \"value\": [%g, %g, %g, %g]}", i > 0 ? ", " : "", r.regionX + i % r.width, r.regionY + i / r.width, v.x, v.y, v.z, v.w);
-            }
-            std::fprintf(f, "],\n");
-        }
-        std::fprintf(f, " \"channelMin\": [%g, %g, %g, %g], \"channelMax\": [%g, %g, %g, %g]}\n", r.channelMin.x, r.channelMin.y, r.channelMin.z, r.channelMin.w, r.channelMax.x, r.channelMax.y, r.channelMax.z, r.channelMax.w);
-        return;
-    }
-    const auto& schema = schemaForResource(r.resource);
-    std::fprintf(f, "{\"frame\": %llu, \"pass\": \"%s\", \"resource\": \"%s\", \"kind\": \"buffer\", \"bytes\": %llu, \"error\": \"%s\",\n", (unsigned long long) r.frame, jsonEscape(r.pass).c_str(), jsonEscape(r.resource).c_str(), (unsigned long long) r.byteSize, jsonEscape(r.error).c_str());
-    std::fprintf(f, " \"schema\": {\"name\": \"%s\", \"stride\": %u, \"fields\": [", schema.name.c_str(), schema.stride);
-    for (size_t i = 0; i < schema.fields.size(); i++) {
-        const auto& field = schema.fields[i];
-        std::fprintf(f, "%s{\"name\": \"%s\", \"offset\": %u, \"type\": \"%s\"}", i > 0 ? ", " : "", field.name.c_str(), field.offset, fieldTypeName(field.type));
-    }
-    size_t rows = 0;
-    if (r.bytes && schema.stride > 0) {
-        rows = std::min(maxRows, r.bytes->size() / schema.stride);
-    }
-    std::fprintf(f, "]},\n \"rows\": [\n");
-    for (size_t row = 0; row < rows; row++) {
-        auto values = decodeRow(schema, *r.bytes, row);
-        std::fprintf(f, "  {\"row\": %zu", row);
-        for (size_t i = 0; i < values.size(); i++) {
-            std::fprintf(f, ", \"%s\": \"%s\"", schema.fields[i].name.c_str(), values[i].c_str());
-        }
-        std::fprintf(f, "}%s\n", row + 1 < rows ? "," : "");
-    }
-    std::fprintf(f, " ]}\n");
-}
-
-auto writeCaptureFiles(const std::string& path, const CaptureResult& r, const CaptureDisplay& display, size_t maxRows) -> bool {
-    if (r.texture) {
-        uint32_t w = 0;
-        uint32_t h = 0;
-        auto rgba = convertCaptureForDisplay(r, display, 0, w, h);
-        if (!rgba.empty() && !writeScreenshotPng(path.c_str(), rgba, w, h)) {
-            return false;
-        }
-    }
-    // Textures: the PNG above plus `<path>.json`. Buffers: the rows as `<path>`.
-    auto jsonPath = r.texture ? path + ".json" : path;
-    auto* f = std::fopen(jsonPath.c_str(), "w");
-    if (f == nullptr) {
-        return false;
-    }
-    writeCaptureJson(f, r, maxRows);
-    std::fclose(f);
-    return true;
 }

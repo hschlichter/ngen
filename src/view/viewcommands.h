@@ -24,6 +24,7 @@ class RpcEndpoint;
 class SessionScript;
 class Renderer;
 class RenderThread;
+class RenderTools;
 class RenderDocCapture;
 class ViewDumps;
 class ViewPicking;
@@ -71,6 +72,7 @@ struct ViewContext {
     Renderer& renderer;
     RenderThread& renderThread;
     RenderDocCapture& renderDoc;
+    RenderTools& renderTools; // the renderer's instrumentation: screenshots, the texture inspector and dumps
     ViewDumps& dumps;
     const CullResult& latestCull;
     const AssetClient& assets;

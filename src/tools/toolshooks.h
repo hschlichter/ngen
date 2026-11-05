@@ -1,5 +1,6 @@
 #pragma once
 
+#include "axis3dgizmo.h"
 #include "rotategizmo.h"
 #include "scalegizmo.h"
 #include "tools.h"
@@ -12,12 +13,15 @@
 #include <optional>
 #include <string>
 
+class GizmoRender;
+
 // The tools' part of ngen-view's frame (src/tools/README.md): the LOD and Streaming tools' rows and inspectors kept while shown, the debug
 // camera taking over the cameras it is set to drive, the transform gizmos and the axis gizmo, the viewport's overlays and the tools' layers,
 // and the requests the tools' windows leave in ToolsState carried out.
 class ToolsHooks : public ViewHooks {
 public:
-    explicit ToolsHooks(ToolsState& tools) : tools(tools) {}
+    // `gizmos` draws what fillSnapshot sends it on the render thread.
+    ToolsHooks(ToolsState& tools, const GizmoRender& gizmos) : tools(tools), gizmos(gizmos) {}
 
     auto state() -> ToolsState& { return tools; }
 
@@ -38,6 +42,7 @@ private:
     auto gizmoAnchor(const ViewFrame& frame, const ViewScene::PrimTransform& transform) const -> glm::vec3;
 
     ToolsState& tools;
+    const GizmoRender& gizmos;
     // Whether each tool is shown (its window, a viewport layer, or the streaming view): its rows are kept only then, once per scene snapshot.
     bool lodShown = false;
     bool streamingShown = false;
@@ -53,6 +58,8 @@ private:
     std::chrono::steady_clock::time_point streamingInspectedAt;
     bool debugCameraWasOn = false;
 
+    // The world's axes in the view's corner, drawn and clicked on the main thread.
+    Axis3DGizmo axisGizmo;
     TranslateGizmo translateGizmo;
     RotateGizmo rotateGizmo;
     ScaleGizmo scaleGizmo;

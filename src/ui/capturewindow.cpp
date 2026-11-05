@@ -1,5 +1,6 @@
 #include "capturewindow.h"
 
+#include "capturefiles.h"
 #include "gpuschema.h"
 #include "uiformat.h"
 

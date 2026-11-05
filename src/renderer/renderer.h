@@ -1,20 +1,14 @@
 #pragma once
 
 #include "aapass.h"
-#include "axis3dgizmo.h"
 #include "capture.h"
 #include "debugrenderer.h"
 #include "debugviewpass.h"
 #include "deletionqueue.h"
 #include "depthprepass.h"
-#include "editoruipass.h"
-#include "framedebug.h"
 #include "framegraph.h"
 #include "framegraphdebug.h"
-#include "framegraphpreviews.h"
 #include "geometrypass.h"
-#include "gizmopass.h"
-#include "gpucounters.h"
 #include "gpuscene.h"
 #include "gpuuploader.h"
 #include "instancecullpass.h"
@@ -22,27 +16,58 @@
 #include "lodgroups.h"
 #include "lodselectpass.h"
 #include "pipelineregistry.h"
-#include "renderdebug.h"
 #include "renderertypes.h"
+#include "renderextension.h"
 #include "rendersnapshot.h"
 #include "renderworld.h"
 #include "resourcepool.h"
 #include "rhitypes.h"
-#include "screenshot.h"
+#include "scenegpustats.h"
 #include "shadowpass.h"
 
 #include <expected>
 #include <memory>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 class AssetClient;
+class PreviewTextures;
 class RhiDevice;
 class RhiSwapchain;
 class RhiCommandBuffer;
-class ImGuiBackend;
 struct RenderSnapshot;
+
+// A pass's GPU time in the last frame read back.
+struct PassGpuTime {
+    const char* name;
+    double ms;
+};
+
+// What the renderer holds and last did, for the instrumentation (src/rendertools): read on the render thread, between its hooks.
+struct RendererState {
+    uint64_t frame = 0; // the last frame recorded
+    uint32_t slot = 0;  // the frame slot being recorded, or recorded last
+    const RhiDevice* device = nullptr;
+    RhiExtent2D swapchainExtent = {};
+    RhiFormat swapchainFormat = RhiFormat::Undefined;
+    uint32_t swapchainImages = 0;
+    const GpuScene* gpuScene = nullptr;
+    std::span<const GpuInstance> instances; // by draw slot
+    uint32_t culledInstances = 0;           // by the camera, from the latest readback the last frame used
+    uint32_t lightCount = 0;
+    bool hasSun = false; // the lighting's pick in the last frame
+    LightingInputs sun;
+    RhiExtent2D shadowAtlasExtent = {};
+    const ResourcePool* resourcePool = nullptr;
+    std::span<const FgDrawRecord> drawLog; // the last frame read back's, while the draw log is on
+    // The GPU's timings of the last frame read back: per pass, in all, and every zone.
+    std::span<const PassGpuTime> passGpuTimes;
+    double gpuFrameMs = -1.0;
+    uint64_t gpuFrame = 0;
+    std::span<const RhiGpuZone> gpuZones;
+};
 
 class Renderer {
 public:
@@ -53,8 +78,13 @@ public:
     Renderer& operator=(Renderer&&) = default;
     ~Renderer() = default;
 
-    // Creates the passes, which register their pipelines; no pipeline exists yet. `shaders` is where they come from.
-    auto init(RhiDevice* rhiDevice, ImGuiBackend* imguiBackend, AssetClient* shaders, RhiExtent2D windowExtent) -> std::expected<void, int>;
+    // What joins the frame from outside the core (renderextension.h), called in the order added; and where previews are shown. Both
+    // before init; the renderer holds references.
+    auto addExtension(RenderExtension& extension) -> void;
+    auto setPreviewTextures(PreviewTextures* previews) -> void { previewTextures = previews; }
+    // Creates the passes, which register their pipelines, then inits the extensions; no pipeline exists yet. `shaders` is where they
+    // come from.
+    auto init(RhiDevice* rhiDevice, AssetClient* shaders, RhiExtent2D windowExtent) -> std::expected<void, int>;
     // Sends one request for the at-start pipelines' shaders; returns how many shaders it names. The pipelines are created as they arrive.
     auto requestShaders() -> size_t;
     // Whether a pipeline failed (its shader didn't pack, or the device couldn't create it).
@@ -72,46 +102,26 @@ public:
     auto destroy() -> void;
 
     auto frameGraphRef() const -> const FrameGraph& { return frameGraph; }
-    auto setFrameGraphDebugEnabled(bool enabled) -> void;
-    auto buildFrameGraphDebugSnapshot() const -> FrameGraphDebugSnapshot;
-    auto buildRenderDebugSnapshot() const -> RenderDebugSnapshot;
-    auto setValidationEnabled(bool enabled) -> void { validationEnabled = enabled; }
+    // For the instrumentation, on the render thread: what the renderer holds and last did.
+    auto state() const -> RendererState;
+    // The draw log (each indirect draw the frame recorded, with the commands the culling wrote) while on; off by default.
+    auto setDrawLogEnabled(bool enabled) -> void { drawLogEnabled = enabled; }
+    // Waits until the frame just submitted has finished on the GPU (an extension's afterSubmit).
+    auto waitForFrame() -> void;
+    // A frame slot's command buffer: what its frame recorded, read after its fence (pipeline statistics).
+    auto commandBuffer(uint32_t slot) const -> RhiCommandBuffer* { return cmdBuffers[slot]; }
     // The most each geometry pool buffer may take, in bytes; 0 for the device's largest buffer (GpuScene::setGeometryLimit). Before the
     // render thread starts.
     auto setGeometryLimit(uint64_t bytes) -> void { gpuScene.setGeometryLimit(bytes); }
     auto setUploadBudget(uint64_t bytes) -> void { gpuScene.setUploadBudget(bytes); }
     // The GPU scene's draw slots, tables, upload queue and pool, after a frame (the change list counts are the render thread's).
     auto sceneGpuStats() const -> SceneGpuStats;
-    // Next presented frame is read back and written as PNG. Waits on that frame's fence once. The UI is left out of
-    // that frame (it skips the editor UI pass) unless setScreenshotsShowUi(true).
-    auto requestScreenshot(std::string path) -> void { screenshotPath = std::move(path); }
-    auto setScreenshotsShowUi(bool show) -> void { screenshotsShowUi = show; }
-    // Screenshots written since the last call, in order (after their fence).
-    auto takeScreenshotResults() -> std::vector<ScreenshotResult> { return std::exchange(screenshotResults, {}); }
-    // Render debugger inputs, set by the render thread before render().
-    auto setRenderDebugEnabled(bool enabled) -> void { renderDebugEnabled = enabled; }
-    auto setTextureInspect(const TextureInspectRequest& request) -> void { textureInspectRequest = request; }
     // Asset ids whose sources changed: the ones that are shaders are requested again and their pipelines recreated when they arrive.
     auto reloadShaders(std::span<const std::string> ids) -> void { pipelineRegistry.reload(ids); }
-    // Writes one mip level of a texture (TextureHandle::index) as PNG after this frame's fence.
-    auto requestTextureDump(uint32_t texture, uint32_t level, std::string path) -> void {
-        textureDump = {.texture = texture, .level = level, .path = std::move(path)};
-    }
-    auto gizmoUpdate(const RenderSnapshot& snapshot, RhiExtent2D extent) -> std::vector<GizmoDrawRequest>;
-    // The axis of the corner axis gizmo under the cursor (0 x, 1 y, 2 z); none off it.
-    auto gizmoHitTest(float mouseX, float mouseY) const -> std::optional<int>;
     // Latest GPU culling readback (one frame-slot cycle old), for the editor.
     auto cullResult() const -> CullResult;
-    // Capture watches from the main thread, and the results that came back.
-    auto setCaptureWatches(std::vector<CaptureWatch> watches) -> void { captureService.setWatches(std::move(watches)); }
+    // The capture results that came back (the watches arrive with the snapshot).
     auto takeCaptureResults() -> std::vector<CaptureResult> { return captureService.takeResults(); }
-    // Records the next frame with the command log on and keeps it as a FrameDebugCapture.
-    auto requestFrameDebugCapture() -> void { frameDebugRequested = true; }
-    auto takeFrameDebugCapture() -> std::optional<FrameDebugCapture> { return std::exchange(frameDebugResult, std::nullopt); }
-    // GPU counters: one GpuCounters per completed frame while enabled; enabling also turns on
-    // per-pass pipeline statistics.
-    auto setCountersEnabled(bool enabled) -> void { countersEnabled = enabled; }
-    auto takeCounters() -> std::vector<GpuCounters> { return std::exchange(countersResults, {}); }
 
 private:
     RhiDevice* device = nullptr;
@@ -156,11 +166,8 @@ private:
     LodSelectPass lodSelectPass;         // the level each group draws, before culling
     uint32_t reportedRegionOverflow = 0; // the region overflow last traced (CullRegionOverflow), so a steady one is said once
     CaptureService captureService;       // resource captures at pass boundaries
-    bool frameDebugRequested = false;
-    std::optional<FrameDebugCapture> frameDebugResult;
-    bool countersEnabled = false;
-    std::vector<GpuCounters> countersResults;
-    std::vector<RhiPipelineStatsZone> pipelineStatsScratch;
+    std::vector<RenderExtension*> extensions;
+    PreviewTextures* previewTextures = nullptr; // owned by the UI
     auto nameSwapchainImages() -> void;
     uint32_t boundInstanceGeneration = 0; // instance buffer generation the descriptor sets point at
 
@@ -172,9 +179,6 @@ private:
     LightingPass lightingPass;
     AAPass aaPass;
     DebugRenderer debugRenderer;
-    GizmoPass gizmoPass;
-    Axis3DGizmo axisGizmo;
-    EditorUIPass editorUIPass;
 
     // Frame sync
     std::vector<RhiCommandBuffer*> cmdBuffers;
@@ -192,10 +196,6 @@ private:
 
     // GPU timings come from the zones recorded on each slot's command buffer, read back
     // when the slot's fence has signalled, so results lag by the number of frames in flight.
-    struct PassGpuTime {
-        const char* name;
-        double ms;
-    };
     std::vector<PassGpuTime> lastGpuTimes;
     std::vector<RhiGpuZone> gpuZoneScratch;
     // GPU clock -> CPU clock: cpuNs = gpuNs - gpuClockAtCalibration + cpuClockAtCalibration.
@@ -216,42 +216,14 @@ private:
 
     FrameGraph frameGraph;
     ResourcePool resourcePool;
-    FrameGraphPreviews fgPreviews;
-    bool fgDebugEnabled = false;
-    bool validationEnabled = false;
     bool firstFramePresented = false;
-    bool renderDebugEnabled = false;
-    std::string screenshotPath;
-    bool screenshotsShowUi = false;
-    std::vector<ScreenshotResult> screenshotResults;
-
-    // Texture inspector: one level of one material
-    // texture blitted into a preview the editor draws; replaced when the request changes.
-    TextureInspectRequest textureInspectRequest;
-    struct TexturePreview {
-        RhiTexture* texture = nullptr;
-        uint64_t imguiId = 0;
-        uint32_t width = 0;
-        uint32_t height = 0;
-        bool everCaptured = false;
-    };
-    TexturePreview texturePreview;
-    RenderDebugTextureInspect textureInspectResult;
-    auto recordTextureInspect(RhiCommandBuffer* cmd) -> void;
-    auto releaseTexturePreview() -> void;
-
-    struct TextureDumpRequest {
-        uint32_t texture = 0;
-        uint32_t level = 0;
-        std::string path;
-    };
-    std::optional<TextureDumpRequest> textureDump;
+    bool drawLogEnabled = false;
+    // The frame recorded by render(), its parts after the fence wait and the acquire.
+    auto renderFrame(RenderSnapshot& snapshot) -> void;
     std::vector<std::vector<FgDrawRecord>> slotDrawLogs; // per frame slot, joined with GPU zones after the fence
     std::vector<FgDrawRecord> lastDrawLog;
     // Last frame's lighting pick, kept for the debug snapshot.
     bool debugHasSun = false;
     LightingInputs debugSun;
     RhiExtent2D debugShadowExtent = {};
-
-    ImGuiBackend* editorUI = nullptr; // owned by the application
 };

@@ -124,7 +124,10 @@ a decision they cover.
 - All source code lives under `src/`.
 - `src/rhi/` — backend-agnostic RHI interfaces. Principles and integrator contract in `src/rhi/README.md`; read it before touching the interface.
 - `src/rhi/vulkan/` — Vulkan backend implementation. Additional backends go in sibling folders (e.g. `src/rhi/d3d12/`).
-- `src/renderer/` — renderer front-end (frame graph, GPU scene tables, GPU culling, passes). Design and rules in `src/renderer/README.md`.
+- `src/renderer/` — renderer front-end (frame graph, GPU scene tables, GPU culling, passes) and the extension point the rest joins its frame by
+  (`RenderExtension`). No ImGui, no tool. Design and rules in `src/renderer/README.md`.
+- `src/rendertools/` — the renderer's instrumentation as a render extension (debug snapshots, frame debugger, counters, texture inspector and
+  dumps, screenshots). Rules in `src/rendertools/README.md`.
 - `src/scene/` — the plain types the renderer and ngen-view share for what is drawn (`MeshDesc`, `MaterialDesc`, `Transform`, handles). No USD;
   `src/scene/README.md`.
 - `src/editor/` — the USD editor code (`USDScene`, the asset resolver, edits and undo, the editor windows), unchanged and unbuilt until
@@ -142,7 +145,8 @@ a decision they cover.
   UI join it by, `viewhooks.h`) and its engine commands (the `viewcommands` library: RPC methods, script verbs and records by domain in
   `*commands.cpp`, and the dumps in `viewdumps.*`). The tools and the UI register their own commands. Design in `src/view/README.md`.
 - `src/tools/` — the tools (LOD and Streaming tools, the debug camera, the overlays, the gizmos): their data, state, viewport layers and their
-  part of the frame (`ToolsHooks`), apart from the UI that draws them; nothing here includes `src/ui`. Rules in `src/tools/README.md`.
+  part of the frame (`ToolsHooks`; the gizmos' drawing as a render extension, `GizmoRender`), apart from the UI that draws them; nothing here
+  includes `src/ui`. Rules in `src/tools/README.md`.
 - `src/asset/` — the asset system: `ngen-asset-server` (`server/`), `AssetClient`, and packing (`pack/`: the rule type and what every packer
   shares). Assets are the system, packing is the process that makes an asset engine-ready. Asset ids, the server, its cache, the stream, `pack.cpp`
   rules and the packer contract in `src/asset/README.md`. Packers are programs in `src/apps/packer<type>.cpp`; their rules are in the root

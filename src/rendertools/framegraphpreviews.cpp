@@ -1,17 +1,17 @@
 #include "framegraphpreviews.h"
 
 #include "deletionqueue.h"
-#include "imguibackend.h"
+#include "previewtextures.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 
 #include <algorithm>
 #include <array>
 
-auto FrameGraphPreviews::init(RhiDevice* d, ImGuiBackend* ui, RhiSampler* s, DeletionQueue* dq) -> void {
+auto FrameGraphPreviews::init(RhiDevice* d, PreviewTextures* ui, RhiSampler* s, DeletionQueue* dq) -> void {
     deletionQueue = dq;
     device = d;
-    editorUI = ui;
+    previews = ui;
     sampler = s;
 }
 
@@ -25,9 +25,9 @@ auto FrameGraphPreviews::shutdown() -> void {
 // Immediate destruction; only valid when no frame can still reference the entry
 // (shutdown after waitIdle).
 auto FrameGraphPreviews::destroyEntry(Entry& e) -> void {
-    if (e.imguiId != 0 && editorUI != nullptr) {
-        editorUI->unregisterTexture(e.imguiId);
-        e.imguiId = 0;
+    if (e.previewId != 0 && previews != nullptr) {
+        previews->unregisterTexture(e.previewId);
+        e.previewId = 0;
     }
     if (e.texture != nullptr && device != nullptr) {
         device->destroyTexture(e.texture);
@@ -42,9 +42,9 @@ auto FrameGraphPreviews::releaseEntry(Entry& e) -> void {
         destroyEntry(e);
         return;
     }
-    if (e.imguiId != 0 && editorUI != nullptr) {
-        deletionQueue->defer(currentFrame, [ui = editorUI, id = e.imguiId] { ui->unregisterTexture(id); });
-        e.imguiId = 0;
+    if (e.previewId != 0 && previews != nullptr) {
+        deletionQueue->defer(currentFrame, [ui = previews, id = e.previewId] { ui->unregisterTexture(id); });
+        e.previewId = 0;
     }
     if (e.texture != nullptr) {
         deletionQueue->deferTexture(currentFrame, e.texture);
@@ -82,7 +82,8 @@ auto FrameGraphPreviews::previewExtent(uint32_t srcW, uint32_t srcH) -> RhiExten
 }
 
 auto FrameGraphPreviews::entryFor(const FgCapturedResource& view) -> Entry* {
-    if (view.name == nullptr || view.name[0] == '\0') {
+    // Previews only where a UI shows them.
+    if (previews == nullptr || view.name == nullptr || view.name[0] == '\0') {
         return nullptr;
     }
     if (!isBlittableColorFormat(view.desc.format)) {
@@ -110,7 +111,7 @@ auto FrameGraphPreviews::entryFor(const FgCapturedResource& view) -> Entry* {
         e.format = view.desc.format;
         e.everCaptured = false;
         if (e.texture != nullptr) {
-            e.imguiId = editorUI->registerTexture(e.texture, sampler);
+            e.previewId = previews->registerTexture(e.texture, sampler);
         }
     }
     return e.texture != nullptr ? &e : nullptr;
@@ -176,7 +177,7 @@ auto FrameGraphPreviews::annotate(FrameGraphDebugSnapshot& snap) const -> void {
         if (it == entries.end() || !it->second.everCaptured) {
             continue;
         }
-        r.previewTextureId = it->second.imguiId;
+        r.previewTextureId = it->second.previewId;
         r.previewWidth = it->second.width;
         r.previewHeight = it->second.height;
     }

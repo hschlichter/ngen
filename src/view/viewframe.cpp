@@ -12,6 +12,7 @@
 #include <chrono>
 #include <format>
 #include <limits>
+#include <utility>
 
 ViewFrame::ViewFrame(ViewScene& scene, Renderer& renderer, RenderThread& renderThread, AssetClient& assets)
     : scene(scene), renderer(renderer), renderThread(renderThread), assets(assets), cam{
@@ -335,24 +336,16 @@ auto ViewFrame::drawCameraModes() -> void {
 }
 
 auto ViewFrame::readBack() -> void {
-    renderThread.setFrameGraphDebugEnabled(readbacks.frameGraphDebug);
-    renderThread.setRenderDebugEnabled(readbacks.renderDebug);
-    renderThread.setCountersEnabled(readbacks.counters);
     picking.appendWatches(readbacks.watches);
-    // Capture watches are sent when they change, or with a frame debug capture.
-    if (readbacks.watches != sentWatches || readbacks.frameDebug) {
+    // Capture watches go with the snapshot when they change.
+    if (readbacks.watches != sentWatches) {
         sentWatches = readbacks.watches;
-        renderThread.setCaptureWatches(readbacks.watches, readbacks.frameDebug);
+        watchesChanged = true;
     }
-    readbacks.frameGraph = renderThread.latestFrameGraphDebug();
-    readbacks.renderDebugSnapshot = renderThread.latestRenderDebug();
-    readbacks.frameDebugCapture = renderThread.latestFrameDebug();
     readbacks.captures = renderThread.takeCaptureResults();
     std::erase_if(readbacks.captures, [this](const CaptureResult& result) {
         return picking.onCaptureResult(result);
     });
-    readbacks.screenshots = renderThread.takeScreenshotResults();
-    readbacks.counterFrames = renderThread.takeCounters();
 }
 
 auto ViewFrame::buildSnapshot() -> RenderSnapshot {
@@ -366,8 +359,6 @@ auto ViewFrame::buildSnapshot() -> RenderSnapshot {
         .worldUp = cam.worldUp,
         .windowWidth = width,
         .windowHeight = height,
-        .mouseX = mouse.x,
-        .mouseY = mouse.y,
         .gbufferViewMode = static_cast<GBufferView>(renderconfig::bufferView.get()),
         .debugView = static_cast<DebugView>(renderconfig::debugView.get()),
         .showBufferOverlay = renderconfig::bufferOverlay.get(),
@@ -390,6 +381,9 @@ auto ViewFrame::buildSnapshot() -> RenderSnapshot {
     {
         PROFILE_ZONE("TakeDebugLines");
         snapshot.debugData = debugDraw.take();
+    }
+    if (std::exchange(watchesChanged, false)) {
+        snapshot.captureWatches = sentWatches;
     }
     return snapshot;
 }

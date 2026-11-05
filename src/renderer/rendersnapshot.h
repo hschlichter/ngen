@@ -1,15 +1,16 @@
 #pragma once
 
+#include "capture.h"
 #include "debugdraw.h"
 #include "debugview.h"
-#include "gizmo.h"
-#include "imguibackend.h"
 #include "lightingpass.h"
-
+#include "renderextension.h"
 #include "shadowcascades.h"
 
 #include <glm/glm.hpp>
 
+#include <cstdint>
+#include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -35,10 +36,6 @@ struct RenderSnapshot {
     int windowWidth = 0;
     int windowHeight = 0;
 
-    float mouseX = 0;
-    float mouseY = 0;
-
-    bool showGizmo = true;
     GBufferView gbufferViewMode = GBufferView::Lit;
     DebugView debugView = DebugView::None; // replaces the lit image when on (DebugViewPass)
     // Per streaming root slot, its state (StreamingRootState, with streamingStateFinding), for the streaming view; empty while it is off.
@@ -74,10 +71,21 @@ struct RenderSnapshot {
     // pass picks a pixel's cascade by its depth from this camera instead.
     std::optional<std::pair<glm::vec3, glm::vec3>> cascadeCamera; // eye, forward
 
-    std::vector<GizmoVertex> translateGizmoVerts;
-    std::vector<GizmoVertex> rotateGizmoVerts;
-    std::vector<GizmoVertex> scaleGizmoVerts;
-
     DebugDrawData debugData;
-    ImGuiFrameSnapshot imguiSnapshot;
+    // The capture watches (picking's and the inspectors'), when they changed since the last snapshot that carried them.
+    std::optional<std::vector<CaptureWatch>> captureWatches;
+
+    // Each render extension's data for this frame, at its index (RenderExtension::index); empty or null for one that sent none.
+    std::vector<std::unique_ptr<RenderExtensionData>> extensions;
+    auto setExtension(uint32_t index, std::unique_ptr<RenderExtensionData> data) -> void {
+        if (extensions.size() <= index) {
+            extensions.resize(index + 1);
+        }
+        extensions[index] = std::move(data);
+    }
+    // The data an extension sent, as the type it made it with; null when it sent none.
+    template <typename T>
+    auto extension(uint32_t index) -> T* {
+        return index < extensions.size() ? static_cast<T*>(extensions[index].get()) : nullptr;
+    }
 };

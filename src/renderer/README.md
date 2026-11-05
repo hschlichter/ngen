@@ -24,14 +24,17 @@ changing how scene data reaches the GPU.
 | Area | Files |
 |---|---|
 | Orchestration | `renderer.h/.cpp` (`Renderer`), `renderthread.h/.cpp` (`RenderThread`), `rendersnapshot.h`, `renderworld.h`, `renderertypes.h` |
-| Frame graph | `framegraph.h/.cpp`, `framegraphbuilder.h`, `framegraphcontext.h`, `framegraphresource.h`, `passnode.h`, `framegraphdraw.h`, `framegraphdebug.h`, `framegraphpreviews.h/.cpp`, `resourcepool.h/.cpp` |
+| Frame graph | `framegraph.h/.cpp`, `framegraphbuilder.h`, `framegraphcontext.h`, `framegraphresource.h`, `passnode.h`, `framegraphdraw.h`, `framegraphdebug.h`, `resourcepool.h/.cpp` |
 | GPU scene and culling | `gpuscene.h/.cpp` (`GpuScene`), `drawlists.h/.cpp` (`DrawLists`), `passes/instanceuploadpass`, `passes/instancecullpass`, `culling.h/.cpp` (`CullState`) |
-| Passes | `passes/`: shadow, depth prepass, geometry, debug views, lighting, AA, blit, debug lines, gizmos, editor UI, present |
+| Passes | `passes/`: shadow, depth prepass, geometry, debug views, lighting, AA, blit, debug lines, present |
 | Resource lifetime and upload | `deletionqueue.h/.cpp`, `gpuuploader.h/.cpp` |
 | Pipelines | `pipelineregistry.h/.cpp` (`PipelineRegistry`): every pipeline and shader module |
 | Shadows | `shadowcascades.h/.cpp` |
-| Editor support | `imguibackend.h/.cpp` (interface), `gizmo.h`, `axis3dgizmo`, `translategizmo`, `rotategizmo`, `scalegizmo` |
-| Debugging and introspection | `renderdebug.h`, `renderdebugjson.h/.cpp`, `screenshot.h/.cpp`, `capture.h/.cpp` (`CaptureService`), `gpuschema.h/.cpp`, `gpuscenecapture.h/.cpp`, `framedebug.h/.cpp`, `gpucounters.h/.cpp`, `debugview.h` |
+| Extensions | `renderextension.h` (`RenderExtension`, `RenderExtensionData`, `RenderFrame`), `previewtextures.h` (`PreviewTextures`) |
+| Debugging and introspection | `capture.h/.cpp` (`CaptureService`), `gpuschema.h/.cpp`, `scenegpustats.h`, `debugview.h` |
+
+What isn't the renderer's core joins its frame as an extension ("Extensions", below): its instrumentation in `src/rendertools`
+(`src/rendertools/README.md`), the gizmos in `src/tools`, the UI in `src/ui`. Nothing in this library includes ImGui or a tool.
 
 Shaders live in `shaders/` at the repository root. They are packed assets, streamed from the asset server (`src/asset/README.md`) and turned into
 pipelines by the pipeline registry ("Pipelines", below).
@@ -80,25 +83,27 @@ ViewScene -> RenderWorld  --RenderUpload-->   Renderer::uploadRenderWorld
                                                 DrawLists / InstanceCullPass descriptor sets
 camera, view UI           --RenderSnapshot--> Renderer::render
   (cull frustum, cascades,                      wait slot fence, read back last use of the slot
-   ImGui, debug lines)                          build FrameGraph (passes declare accesses)
+   debug lines, watches,                        build FrameGraph (passes declare accesses)
+   extensions' data)
                                                 compile (order, cull, lifetimes)
                                                 execute into the slot's command buffer  ------>  cull, draw, light, post
                                                 submit, present
-editor windows            <--latest-only----  FrameGraphDebugSnapshot, RenderDebugSnapshot,
-                                              CullResult
+records, windows          <--latest-only----  CullResult, capture results; the render tools'
+                                              snapshots (src/rendertools)
 ```
 
 ### Threads and handoff
 
-- **`RenderSnapshot`** (main to render, every frame): view and projection, world up, window size and mouse, view mode and overlay toggles, AA and depth
+- **`RenderSnapshot`** (main to render, every frame): view and projection, world up, window size, view mode and overlay toggles, AA and depth
   prepass switches, material sampler settings, the culling frustum (`cullViewProj`, live or frozen) and `cullEnabled`, shadow settings and the fitted
-  cascades, gizmo vertices, debug line data and the cloned ImGui draw data. One slot with back-pressure: the main thread blocks if the render thread has
-  not taken the previous snapshot.
+  cascades, debug line data, the capture watches when they changed, and each extension's data for the frame (`extensions`: the render tools'
+  requests, the gizmos' lines, the cloned ImGui draw data). One slot with back-pressure: the main thread blocks if the render thread has not taken
+  the previous snapshot.
 - **`SceneChanges`** (main to render, on scene changes): what changed, with the added meshes' and textures' data shared, applied at the start of the
   next render frame. Lists submitted between two frames are appended and applied together, in order.
-- **Back to the main thread**, each latest-only and non-blocking: `FrameGraphDebugSnapshot` (when the Frame Graph window is open),
-  `RenderDebugSnapshot` (when the Render Debug window is open or a dump is requested) and `CullResult` (every new readback).
-- **Small requests** go straight to the `Renderer` or `RenderThread` under a lock: texture inspect, texture dump, screenshot.
+- **Back to the main thread**, non-blocking: `CullResult` (latest-only, every new readback), the capture results, and what the extensions hand
+  back on their own (the render tools' snapshots, counters and screenshots).
+- **Settings** go to the `RenderThread` under a lock, applied before the next frame: the upload budget, the geometry limit, shaders to reload.
 
 ### Renderer
 
@@ -106,7 +111,7 @@ editor windows            <--latest-only----  FrameGraphDebugSnapshot, RenderDeb
 `FrameGraph`, `ResourcePool`, `DeletionQueue`, `GpuUploader` and the texture cache. Its entry points:
 
 - `init`: swapchain, samplers, fallback texture, every pass's pipelines, `GpuScene` and `DrawLists` (the instance buffer exists from here on), frame
-  sync, the ImGui backend and frame-graph previews.
+  sync, the capture service, then each extension (`addExtension`, before `init`).
 - `uploadRenderWorld`: rebuilds `GpuInstance`s from the `RenderWorld`, updates instance records (transform changes are a delta), and on any other change
   rebuilds the geometry pool, textures, material table and descriptor sets.
 - `render`: one frame (below).
@@ -334,8 +339,7 @@ so early depth testing holds for everything else. The debug views discard in `de
 | `AAPass` | FXAA as a compute pass, scene colour to a float storage image; falls back to a blit when the format cannot be a storage image. |
 | `BlitToBackbuffer` | Blits the AA result (or the debug view colours) to the sRGB backbuffer. |
 | `DebugLinePass` (`DebugRenderer`) | Debug lines from `DebugDrawData` (AABBs, frustum outlines, light gizmos), depth-tested against the scene depth. `DebugDraw` (`debugdraw.*`) is the renderer's debug-line input: lines, boxes, circles and spheres the main thread adds and the frame's `RenderSnapshot` carries. |
-| `GizmoPass` | Wide-line gizmo geometry: the axis gizmo the renderer owns and the translate, rotate and scale gizmo vertices the main thread computes. |
-| `EditorUIPass` | Renders the cloned ImGui draw data through `ImGuiBackend`. |
+| *the extensions' overlays* | On the backbuffer after the debug lines, in the order the extensions were added: `GizmoPass` (`src/tools`, the gizmos' lines), `EditorUIPass` (`src/ui`, ImGui). |
 | `PresentPass` | Moves the backbuffer to `PresentSrc`; no GPU work. |
 
 **Picking** reads the id target: a pick asks the capture service for the one texel of `gbuffer.instance` under a pixel, right after
@@ -352,7 +356,7 @@ Overlays and the UI draw on the backbuffer after the AA blit, so they are never 
 | Shadow, one | `ShadowPass` | 0 instance buffer; the cascade matrix is a push constant |
 | Culling, one per frame slot | the three cull passes | params, instances, mesh table, visibility, counters, offsets, commands, counts |
 | Debug view resolve, one per frame slot | `DebugViewResolve` | 0 the value target, 1 the colour image, 2 the streaming view's root states, 3 the lit image (the streaming view; the value target again in the others) |
-| Lighting, AA, debug lines, gizmos | their passes | per-slot UBOs and the G-buffer, shadow and scene-colour textures |
+| Lighting, AA, debug lines | their passes | per-slot UBOs and the G-buffer, shadow and scene-colour textures |
 
 The texture array is fixed-size and fully written (unused slots hold the fallback) and indexed with one value per draw: `gbuffer.vert` looks up the slot
 through the instance's material and passes it flat to `gbuffer.frag`. That dynamically uniform indexing holds for multi-draw indirect too, where each draw
@@ -391,45 +395,57 @@ falling to 0 at infinity, so nothing is clipped at a distance and the 32-bit flo
   camera's far plane has no normal and always passes. `Frustum::corners` takes the depths of its two planes, so the frozen-frustum overlay ends
   at the shadow distance. `Ray::fromCamera` unprojects depths 1 and 0.5 for the gizmos' mouse rays.
 
-## Editor support
+## Extensions
 
-- **`ImGuiBackend`** is the interface the renderer draws ImGui through; the application owns the concrete backend (`ImGuiBackendVulkan` in `src/`) and
-  the event plumbing. The main thread clones the draw data into the snapshot (`ImGuiFrameSnapshot`); `EditorUIPass` renders it.
-- **Gizmos.** `TranslateGizmo`, `RotateGizmo` and `ScaleGizmo` live on the main thread: they hit-test, drag and produce vertices and new transforms;
-  the renderer only draws their vertices. `Axis3DGizmo` (the corner orientation gizmo) is owned and drawn by the renderer.
-- **Texture inspector and dumps.** One level of one material texture is blitted into a preview texture registered with ImGui, or copied to a buffer and
-  written as PNG after the fence.
-- **Screenshots.** The presented image is copied into a buffer inside the frame's command buffer and written as PNG after the fence.
+What lies outside the renderer's core joins its frame through `RenderExtension` (`renderextension.h`), added before `init` and called at fixed
+points of `Renderer::render`, in the order added; each hook does nothing unless overridden:
+
+| Hook | When |
+|---|---|
+| `init` | the end of `Renderer::init`, with a `RenderExtensionContext`: the device, the pipeline registry (pipelines registered here are at-start ones), the frame graph, the deletion queue, the uploader, the preview sampler and `PreviewTextures` |
+| `beginFrame` | first in every `render`, whether it records or not: the extension takes its data from the snapshot, so what a frame that can't acquire asked for waits for the next |
+| `afterFence` | the frame slot's fence passed, after the core's readbacks of that slot |
+| `addOverlayPasses` | passes on the backbuffer after the debug lines, before present |
+| `beforeExecute`, `afterExecute` | on the frame's command buffer, before it is reset, and right after the graph is recorded (before the core's static captures) |
+| `afterSubmit` | the frame is submitted, not presented; it may wait for the frame (`Renderer::waitForFrame`) |
+| `endFrame` | last in every `render` |
+| `destroy` | before the renderer's own resources, after the capture service's |
+
+- **Their data rides in the snapshot.** An extension's main-thread side puts a `RenderExtensionData` of its own type in
+  `RenderSnapshot::extensions` at its `index()`, so the data arrives with the frame it belongs to; the render-thread side reads it back as that type
+  (`RenderSnapshot::extension<T>`).
+- **Reading the renderer.** `Renderer::state()` gives what it holds and last did (the GPU scene, the instances, the lighting's pick, the pool, the
+  draw log, the GPU's timings), and `setDrawLogEnabled` turns the draw log and the culling's command readback on.
+- **Previews.** `PreviewTextures` is where the textures made for inspection are shown: the capture service's previews, the frame graph's, the texture
+  inspector's. The UI's ImGui backend implements it; without one, none are made.
+- **The three in ngen-view**, added in this order: `RenderTools` (`src/rendertools`: debug snapshots, the frame debugger, counters, the texture
+  inspector and dumps, screenshots, which leave the UI out unless `--show-ui`), `GizmoRender` (`src/tools`: the gizmos' lines, made on the main thread
+  with the axis gizmo, which is hit-tested there too) and `UiRender` (`src/ui`: the ImGui backend set up, ImGui drawn last).
 
 ## Debugging and introspection
 
-- **Render Debug snapshot** (`RenderDebugSnapshot`): device limits, swapchain and pacing, scene tables (meshes, textures, materials, culled instances),
-  per-pass stats with GPU times, pool textures, the draw log, and every live allocation and memory heap (from `RhiDevice::allocations` and
-  `memoryHeaps`). `renderdebugjson` writes it for the view's `render` record and the memory part for its `memory` record.
+- **The render tools** (`src/rendertools/README.md`): the render debug snapshot, the frame debug capture, GPU counters, the frame graph's previews,
+  the texture inspector and dumps, screenshots and the capture file writers. Nothing of them runs unless asked for.
 - **Debug names.** Every buffer, texture, pipeline, set and shader gets a name at creation (`gpuscene.pool.*`, `gpuscene.instances`,
   `material.N.basecolor`, `cull.*`, `fg.<resource>` for transient textures, `frameslotN.*`, `swapchain.imageN`). They show in validation messages,
   the Memory window, command logs and RenderDoc.
 - **`CaptureService`.** Captures any frame-graph resource right after any pass, or a static scene buffer at the end of the frame. The main thread
   sends `CaptureWatch`es (one-shot on a trigger change, or live every frame; textures optionally a sub-rectangle); the graph runs an
   `FgCaptureRequest` after the named pass with the resource's physical object and state; the service copies it into a readback buffer, restoring the
-  state around the copy, and parses it after the slot's fence. Results carry the raw bytes, per-channel ranges and an ImGui preview.
+  state around the copy, and parses it after the slot's fence. Results carry the raw bytes, per-channel ranges and a preview (`PreviewTextures`).
   `gpuschema` describes every struct that crosses to the GPU (field, offset, type) so buffers decode into rows the same way in the UI and in dumps.
-  `gpuscenecapture` lists the GPU scene's tables to capture and joins them per instance (prim, mesh, material, bounds, visibility and cull plane
-  per view): the view's `introspect.gpuscene` and the GPU Scene window read the same rows.
-  The culling readback and the frame-graph previews predate it and keep their own paths.
-- **Frame debug capture** (`FrameDebugCapture`, `framedebug`). For one requested frame the command buffer's command log is on. The capture holds, per
-  pass: the barriers the graph issued (`FgBarrierRecord`, always kept) with the backend's derived stages, accesses and layouts
-  (`RhiDevice::describeTransition`), the logged commands, and the contents of every descriptor set a pass bound (`describeDescriptorSet`).
-- **GPU timings and counters.** Every pass is a GPU zone, and every indirect call in the depth prepass, geometry and shadow passes is a nested zone
-  named by its region (`DrawLists::regionName`). The zones of a slot are read after its fence and handed to the profiler's GPU lane on the CPU clock. While counters are enabled (`setCountersEnabled`), the frame graph also wraps each pass in a pipeline statistics query, and
-  `GpuCounters` (zones plus statistics per pass) is queued per frame for the Counters window and the view's `counters` record.
+  Picking reads through it, so it is the core's; its file writers are the render tools'. The culling readback and the frame-graph previews
+  predate it and keep their own paths. The watches go with the snapshot, so the captures and the frame's other requests describe the same frame.
+- **GPU timings.** Every pass is a GPU zone, and every indirect call in the depth prepass, geometry and shadow passes is a nested zone named by its
+  region (`DrawLists::regionName`). The zones of a slot are read after its fence and handed to the profiler's GPU lane on the CPU clock; the render
+  tools make counters from them.
 - **Culling introspection.** `instancecull.comp` writes, next to the visibility bits, the frustum plane that rejected each instance in each view
   (`cullPlanes`, 4 bits per view: plane 0–5, `D` a render-LOD level its group doesn't draw, `E` visible, `F` not tested). The readback keeps every view's visibility bit (`CullResult::viewBits`) when it reads them.
 - **The scene's triangles** (`CullResult::sceneTriangles`, the status bar and the `culling` record) are kept as draw slots change, never summed
   over the slots each frame (14 ms at 2.4 million).
 - **Trace events** (Render category, conventions in `src/trace/README.md`). The renderer traces flow and problems, never per-frame data:
   `ShaderLoaded` per startup shader, `FirstFramePresented` once (ms since the process started), `SceneUploaded` when an upload changes geometry (instances, meshes, textures, ms; a transform edit is silent), `SwapchainRecreate` and
-  `SwapchainRecreateFailed`, `Screenshot` and `TextureDump` per file written (`ScreenshotFailed`, `TextureDumpFailed`), `ShaderLoadFailed`,
+  `SwapchainRecreateFailed`, `ShaderLoadFailed`,
   warnings for fallbacks (`FormatFallback`, `DebugViewsOff`, `TextureSlotsFull`), and the RHI's messages (`RhiMessage`: validation and native
   errors, through `RhiDeviceOptions::onMessage`). Per-frame numbers are in the view's records: `render` (passes with draw counters and GPU time,
   culled passes, meshes, textures, frame totals, draw log), `counters` (GPU zones and pipeline statistics), `culling`, `memory` (every buffer and

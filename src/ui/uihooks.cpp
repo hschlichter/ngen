@@ -4,10 +4,11 @@
 #include "imguibackendvulkan.h"
 #include "profile.h"
 #include "renderdoccapture.h"
-#include "renderer.h"
 #include "renderthread.h"
+#include "rendertools.h"
 #include "toolshooks.h"
 #include "trace.h"
+#include "uirender.h"
 #include "viewframe.h"
 #include "viewscene.h"
 #include "viewui.h"
@@ -69,25 +70,25 @@ auto UiHooks::debugDraw(ViewFrame& frame) -> void {
 }
 
 auto UiHooks::wantReadbacks(ViewFrame& frame) -> void {
-    auto& readbacks = frame.readbacks;
-    readbacks.frameGraphDebug = readbacks.frameGraphDebug || ui.wantsFrameGraphDebug();
-    readbacks.renderDebug = readbacks.renderDebug || ui.wantsRenderDebug();
-    readbacks.counters = readbacks.counters || ui.wantsCounters();
-    readbacks.frameDebug = ui.takeFrameDebugRequest() || readbacks.frameDebug;
+    auto& request = renderTools.request();
+    request.frameGraphDebug = request.frameGraphDebug || ui.wantsFrameGraphDebug();
+    request.renderDebug = request.renderDebug || ui.wantsRenderDebug();
+    request.counters = request.counters || ui.wantsCounters();
+    request.frameDebug = ui.takeFrameDebugRequest() || request.frameDebug;
     auto watches = ui.captureWatches();
-    readbacks.watches.insert(readbacks.watches.end(), watches.begin(), watches.end());
+    frame.readbacks.watches.insert(frame.readbacks.watches.end(), watches.begin(), watches.end());
 }
 
 auto UiHooks::takeReadbacks(ViewFrame& frame) -> void {
-    auto& readbacks = frame.readbacks;
-    if (readbacks.frameDebugCapture.has_value()) {
-        ui.onFrameDebugCapture(std::move(*readbacks.frameDebugCapture));
+    auto& results = renderTools.results();
+    if (results.frameDebug.has_value()) {
+        ui.onFrameDebugCapture(std::move(*results.frameDebug));
     }
-    for (auto& result : readbacks.captures) {
+    for (auto& result : frame.readbacks.captures) {
         ui.onCaptureResult(std::move(result));
     }
-    readbacks.captures.clear();
-    for (auto& counters : readbacks.counterFrames) {
+    frame.readbacks.captures.clear();
+    for (auto& counters : results.counters) {
         ui.onCounters(std::move(counters));
     }
 }
@@ -135,7 +136,8 @@ auto UiHooks::drawUi(ViewFrame& frame) -> void {
         auto primPathOf = [&scene](uint32_t prim) -> std::string {
             return scene.primPath(prim);
         };
-        ui.draw(primPathOf, !frame.selectedPath.empty(), scene.renderWorld(), frame.cam, std::move(frame.readbacks.frameGraph), std::move(frame.readbacks.renderDebugSnapshot));
+        auto& results = renderTools.results();
+        ui.draw(primPathOf, !frame.selectedPath.empty(), scene.renderWorld(), frame.cam, std::move(results.frameGraph), std::move(results.renderDebug));
     }
     {
         PROFILE_ZONE("LodLabels");
@@ -159,10 +161,10 @@ auto UiHooks::drawUi(ViewFrame& frame) -> void {
             break;
     }
     if (auto inspect = ui.takeTextureInspectRequest(); inspect.has_value()) {
-        frame.renderThread.setTextureInspect(*inspect);
+        renderTools.setTextureInspect(*inspect);
     }
     if (auto dump = ui.takeTextureDumpRequest(); dump.has_value()) {
-        frame.renderer.requestTextureDump(dump->texture, dump->level, "texture_" + std::to_string(dump->texture) + "_L" + std::to_string(dump->level) + ".png");
+        renderTools.requestTextureDump(dump->texture, dump->level, "texture_" + std::to_string(dump->texture) + "_L" + std::to_string(dump->level) + ".png");
     }
     {
         auto& flags = ui.introspection();
@@ -182,7 +184,7 @@ auto UiHooks::drawUi(ViewFrame& frame) -> void {
         }
     }
     if (ui.takeScreenshotRequest()) {
-        frame.renderer.requestScreenshot("screenshot_" + std::to_string(frame.frameCounter) + ".png");
+        renderTools.requestScreenshot("screenshot_" + std::to_string(frame.frameCounter) + ".png");
     }
     {
         auto& camWindow = ui.cameraWindow();
@@ -210,5 +212,7 @@ auto UiHooks::drawUi(ViewFrame& frame) -> void {
 
 auto UiHooks::fillSnapshot(ViewFrame& frame, RenderSnapshot& snapshot) -> void {
     tools.fillSnapshot(frame, snapshot);
-    snapshot.imguiSnapshot = std::move(imguiSnapshot);
+    auto uiFrame = std::make_unique<UiFrame>();
+    uiFrame->imgui = std::move(imguiSnapshot);
+    snapshot.setExtension(uiRender.index(), std::move(uiFrame));
 }
