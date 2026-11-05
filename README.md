@@ -5,10 +5,10 @@ engine-ready packs on request, and the viewer, `ngen-view`, composes those packs
 GPU-driven, without linking OpenUSD. Everything it holds and does can be read and driven at runtime, by a person through its windows and by an
 agent through records, RPC methods and scripts.
 
-![Eldermark, the 10 km × 10 km streaming test world: forest, farmland and mountains, about 10.8 million of 368 million triangles drawn](screenshots/engine_eldermark_01.png)
+![Moving through Eldermark, the 10 km × 10 km streaming test world: along a path, through the forest, out over the valley toward the mountains](screenshots/engine_eldermark.gif)
 
-*Eldermark, the streaming test world (10 km × 10 km, every cell a UsdLod root with payloaded levels), at 2560×1440: 10.8 million of the
-368 million triangles placed are drawn, from 3,504 streamed assets.*
+*Moving through Eldermark, the streaming test world (10 km × 10 km, every cell a UsdLod root with payloaded levels): the world streams in and
+out and changes level around the camera as it moves.*
 
 ## Features
 
