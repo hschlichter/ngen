@@ -92,16 +92,17 @@ locked; **Superseded by N** — replaced, kept as a record.
 | [75](0075_engine_layering.md) | 2026-10-31 | Engine layering, the tools apart from the UI | Accepted |
 | [76](0076_viewframe_steps_and_hooks.md) | 2026-11-01 | The frame loop as `ViewFrame` steps and `ViewHooks` | Accepted |
 | [77](0077_record_architecture_decisions.md) | 2026-11-04 | Record architecture decisions | Accepted |
+| [78](0078_render_extensions.md) | 2026-11-05 | Render extensions: what isn't the renderer's core joins its frame | Accepted |
 
 ## By area
 
 - **Build:** 11, 12, 13, 14, 15, 16, 17, 18, 32, 33, 40
 - **RHI:** 2, 19, 20, 21, 25, 64
-- **Renderer:** 5, 7, 8, 22, 26, 27, 28, 29, 30, 41, 55, 56, 68
+- **Renderer:** 5, 7, 8, 22, 26, 27, 28, 29, 30, 41, 55, 56, 68, 78
 - **Scene, USD and world:** 1, 3, 4, 6, 9, 52, 53, 54, 58, 66
 - **Tools, RPC and assets:** 34, 35, 36, 37, 38, 39, 42, 43, 44, 45, 57
 - **Streaming, LOD and camera:** 49, 50, 51, 59, 60, 61, 65, 67, 69, 70, 71, 72, 73
-- **Observability, configuration and layering:** 10, 23, 24, 31, 46, 47, 48, 62, 63, 74, 75, 76
+- **Observability, configuration and layering:** 10, 23, 24, 31, 46, 47, 48, 62, 63, 74, 75, 76, 78
 
 ## Adding a record
 

@@ -6,8 +6,6 @@ Date: 2026-10-31
 
 Accepted
 
-Partly built: steps 0 to 7 of the lean pass are done; the build does not enforce the layers yet (see Verification).
-
 ## Context
 
 Dependencies ran both ways. The tools' data types were defined in UI window headers and built in `src/view`; `viewcommands.cpp` was a 2,922-line
@@ -20,33 +18,26 @@ Locked by Henrik on 2026-10-31:
 
 - Five layers, nothing including upward: Foundation (`profile`, `trace`, `config`, `rpccore`) → Engine (`world`, `renderer`, the view runtime) →
   Instrumentation (records, methods and verbs, by domain) → Tools → UI.
-- Built as libraries: `view`, `viewcommands` (split by domain), `tools` (`src/tools/`) and `ui`.
+- Built as libraries, the layering being the code's structure: `view`, `viewcommands` (split by domain), `rendertools`, `tools` (`src/tools/`) and
+  `ui`, each linking only the layers below it.
 - The tools' state is plain structs the application owns. Windows read them and write requests; the tools' hooks apply the requests.
 - `src/tools` never includes `src/ui`.
 - No "common" bucket: the camera, the projection and debug drawing moved to their owners.
 - Commands are registered by the layer that owns them, with verbs per layer.
-- An `ngen-view-core` target (engine plus instrumentation, without tools and UI) is to prove the layering in the build.
 
 Rejected: a `common` library (tried and dropped: ownership over buckets), and keeping the tools' data in the windows.
 
 ## Consequences
 
-- Easier: the engine runs without tools or UI hooks ([ADR 76](0076_viewframe_steps_and_hooks.md)), and the tools build without the UI.
-- Easier: `src/apps/view.cpp` went from 1,481 lines to 566.
-- Harder: until `ngen-view-core` exists, the layering is kept by convention and can erode.
-- Harder: the renderer is still not free of ImGui or the gizmos.
+- Easier: the engine runs without tools or UI hooks ([ADR 76](0076_viewframe_steps_and_hooks.md)), the tools build without the UI, and the
+  renderer includes neither ImGui nor a tool ([ADR 78](0078_render_extensions.md)).
+- Easier: `src/apps/view.cpp` went from 1,481 lines to 590.
+- Harder: each library's README and `AGENTS.md` carry the rule; a change that reaches upward is caught by its library's links and in review.
 
 ## Verification
 
-- Sources: [plan_lean_pass.md](../plan_lean_pass.md), `src/tools/README.md`, `AGENTS.md` ("Folder structure").
-- Code: `build.cpp:213` (`view`), `:242` (`viewcommands`), `:273` (`tools`), `:305` (`ui`); no file in `src/view`, `src/renderer`, `src/world` or
-  `src/tools` includes a UI window header.
-- Differs from plan (steps not done):
-  - Step 8: there is no `ngen-view-core` target.
-- Step 7 (2026-11-04): the per-instance visibility bits are read back only for a frame whose snapshot asks (`RenderSnapshot::readVisibility`, set
-  by `ToolsHooks::fillSnapshot` while the culled overlay is on); `cameraVisible` is gone. Most of the 15 ms the plan put on that readback was
-  `Renderer::cullResult` summing every slot's triangles each frame; the renderer now keeps `sceneTriangles` as slots change.
-- Step 6 (2026-11-05): the renderer includes no ImGui and no tool. What isn't its core joins its frame as a `RenderExtension`
-  (`src/renderer/renderextension.h`), its frame data a payload in the snapshot: `RenderTools` (`src/rendertools/`, the instrumentation),
-  `GizmoRender` (`src/tools/gizmorender.h`) and `UiRender` (`src/ui/uirender.h`). The capture service stays in the core (picking reads through
-  it), showing its previews through `PreviewTextures`.
+- Sources: [plan_lean_pass.md](../plan_lean_pass.md), `src/tools/README.md`, `src/rendertools/README.md`, `AGENTS.md` ("Folder structure").
+- Code: `build.cpp:183` (`renderer`), `:212` (`rendertools`), `:229` (`view`), `:259` (`viewcommands`), `:291` (`tools`), `:323` (`ui`); no file in
+  `src/view`, `src/renderer`, `src/world` or `src/tools` includes a UI header, and nothing in `src/renderer` includes ImGui or a tool.
+- Built in steps 0 to 7 of the plan, 2026-10-31 to 2026-11-05. Step 7 found the per-frame readback cost the plan put on the visibility bits was
+  mostly `Renderer::cullResult` summing every slot's triangles each frame; the renderer now keeps `sceneTriangles` as slots change.

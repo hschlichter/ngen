@@ -1,6 +1,6 @@
 # Lean pass: the engine apart from its tools, a lean frame loop and lean instrumentation
 
-**Status. In progress.** Step 0 done 2026-10-31, steps 1 to 5 2026-11-01, step 7 2026-11-04, step 6 2026-11-05. Decisions locked 2026-10-31 (Henrik): the layering and the order below; settings move into the configuration system
+**Status. Landed.** Step 0 done 2026-10-31, steps 1 to 5 2026-11-01, step 7 2026-11-04, step 6 2026-11-05; step 8 dropped 2026-11-05. Decisions locked 2026-10-31 (Henrik): the layering and the order below; settings move into the configuration system
 ([plan_configuration.md](plan_configuration.md)); the Engine Map and Scene Flow windows removed with their code. Pushback welcome on the
 open choices.
 
@@ -31,7 +31,7 @@ The UI and tools can't be cut from the engine: the dependencies run both ways.
 ## Scope
 
 **In**
-- The layering below, enforced by the build: a target without the tools and UI layers.
+- The layering below, as the code's structure: each layer a library that links only the layers below it.
 - Moving code to its layer; splitting `view.cpp`'s loop and `viewcommands.cpp`; the renderer's tools moved out of its core.
 - Removing what nothing needs, and making instrumentation cost nothing while unused.
 
@@ -84,8 +84,7 @@ One step, one commit; each verified before the next.
    the snapshot's view matrix instead of a `Camera*`.
 7. **Instrumentation paid for only when used**: the per-draw visibility read back while the AABB overlay is on only; `cameraVisible`
    removed; the overlay's list built only while it is shown.
-8. **The proof target**: `ngen-view-core` in `build.cpp`, the engine and instrumentation layers without tools and UI, built with the rest so
-   the layering can't erode.
+8. Dropped (Henrik, 2026-11-05): the layering is the code's structure; an executable only to check it adds confusion and complexity.
 
 ## Visibility
 
@@ -103,11 +102,12 @@ After every step:
 - No warnings or errors in the trace.
 
 At the end:
-- `ngen-view-core` builds and runs the baseline script headless, its images byte-identical to `ngen-view`'s.
 - `rg` finds no include of a `src/ui` or `src/tools` header from `src/view`, `src/world` or `src/renderer`, and no ImGui include in the
   renderer's core; nothing names the Engine Map or Scene Flow outside `docs/` plans and reviews.
 - The render thread's time at the village with the AABB overlay off drops by the visibility readback (about 15 ms a frame measured
   2026-10-31: `ParseReadback` and `CullResult`).
+- The architecture decisions recorded: [ADR 75](adr/0075_engine_layering.md), [ADR 76](adr/0076_viewframe_steps_and_hooks.md),
+  [ADR 78](adr/0078_render_extensions.md).
 - `src/apps/view.cpp`'s loop and each split `viewcommands` file listed with their line counts beside today's.
 
 ## Results

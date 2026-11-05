@@ -152,9 +152,8 @@ a decision they cover.
   rules and the packer contract in `src/asset/README.md`. Packers are programs in `src/apps/packer<type>.cpp`; their rules are in the root
   `pack.cpp`. The asset system uses nothing from `src/build/`.
 - `src/apps/` — every program's `main`, one file per program named after it without `ngen-` or dashes (`view.cpp` for `ngen-view`, `cli.cpp`
-  for `ngen-cli`). Entry points stay thin: argument parsing, wiring and the loop; reusable logic goes into a library. `src/apps/tool/` holds the
-  shell shared by the windowed tools. Exceptions: `ngen-build` and its helpers keep their mains in `src/build/`, and the RHI examples stay in
-  `src/rhi/examples/`.
+  for `ngen-cli`). Entry points stay thin: argument parsing, wiring and the loop; reusable logic goes into a library. Exceptions: `ngen-build`
+  and its helpers keep their mains in `src/build/`, and the RHI examples stay in `src/rhi/examples/`.
 - `src/build/` — the build system (framework, IR, runner, bootstrap). Standard library only and self-contained, so it can be lifted into another
   project; design and rules in `src/build/README.md`. The project's own description is the root `build.cpp`.
 - Cross-cutting files (`types.h`) live directly in `src/`; code with an owner lives in its library (the camera in `src/view`, the projection
