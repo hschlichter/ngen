@@ -1,75 +1,89 @@
 # ngen
 
-A modern 3D engine written in C++23 with a Vulkan rendering backend and OpenUSD scene system.
+A C++23 engine with a Vulkan 1.3 renderer that streams large OpenUSD worlds. Worlds are authored in USD; an asset server packs them into
+engine-ready packs on request, and the viewer, `ngen-view`, composes those packs at runtime, streams and LODs them by the camera, and draws them
+GPU-driven, without linking OpenUSD. Everything it holds and does can be read and driven at runtime, by a person through its windows and by an
+agent through records, RPC methods and scripts.
 
-![Editor UI with scene hierarchy and properties](screenshots/engine_editor_v2.png)
+![Eldermark, the 10 km × 10 km streaming test world: forest, farmland and mountains, about 10.8 million of 368 million triangles drawn](screenshots/engine_eldermark_01.png)
+
+*Eldermark, the streaming test world (10 km × 10 km, every cell a UsdLod root with payloaded levels), at 2560×1440: 10.8 million of the
+368 million triangles placed are drawn, from 3,504 streamed assets.*
 
 ## Features
 
-- **Deferred Lighting** — G-buffer pass (albedo + normals MRT) followed by a fullscreen lighting pass with directional + hemisphere ambient shading
-- **G-buffer Debug Views** — Fullscreen buffer visualization (Albedo, Normals, Depth, Lit) and a toggleable bottom-strip overlay showing all buffers
-  simultaneously
-- **Threaded Rendering** — Pipelined main/render thread architecture with snapshot-based handoff, allowing the main thread to run one frame ahead of the render
-  thread
-- **Vulkan Renderer** — Dynamic rendering (VK_KHR_dynamic_rendering), synchronization2 barriers, dynamic viewport/scissor
-- **Frame Graph** — Declarative render pass system with automatic dependency resolution, topological sorting, pass culling, write-chain ordering, and barrier
-  insertion
-- **Transient Resource Management** — Pool-based GPU resource allocation with lifetime tracking
-- **RHI Abstraction** — Backend-agnostic GPU interface, currently implemented for Vulkan
-- **Swapchain Recreation** — Automatic resize handling with resource pool flushing
-- **OpenUSD Scene System** — Stage loading, layer stack, composition, sublayer management
-- **Scene Graph UI** — Hierarchical tree view with selection, raycast picking, context menus, auto-scroll-to-selection
-- **Property Inspector** — Transform (local + world), visibility, bounds (own + subtree), material inspection; values are click-to-select-and-copy
-- **Gizmos** — Translate (single-axis arrows + plane handles for 2-axis movement), Rotate (per-axis circles), Scale (per-axis with position compensation to
-  scale from the anchor). All gizmos anchor on the visible mesh (walks up `!resetXformStack!` ancestors and uses subtree bounds for Xform parents)
-- **Tools Window** — Select / Translate / Rotate / Scale tool selector; Select mode disables gizmo handles for click-through picking
-- **Orientation Gizmo** — Corner viewport with X/Y/Z axis indicator, billboarded labels, and click-to-snap-to-axis
-- **Undo / Redo** — Per-frame snapshot stack with `Ctrl+Z` / `Ctrl+Shift+Z`, an Edit menu, and a History panel listing entries with their target prim
-- **Preview / Authoring Edit Pipeline** — Interactive operations (gizmo drag, Properties slider scrub) emit transient `Preview` edits that only touch the
-  runtime cache; one final `Authoring` edit commits to the USD layer on operation end. Keeps interactive frames at microseconds and gives undo a meaningful
-  commit boundary
-- **Incremental Scene Updates** — Fast path applies transform edits inline (no async batch, no library copies, no descriptor rebuilds) and patches only the
-  affected `RenderWorld` instances + BVH leaves
-- **Layer Management** — Full layer stack (session, root, sublayers, referenced), mute/unmute, add/save
-- **Debug Renderer** — Line-based debug drawing (AABBs, selection highlights)
-- **Job System** — Thread pool with fence-based synchronization for background work
-- **Background Scene Updates** — Heavyweight edits (visibility, sublayer ops, resyncs) processed on worker threads
-- **Incremental GPU Upload** — Resource caching, transform-only fast path
-- **Material Support** — UsdPreviewSurface textures, displayColor primvars, constant colors
-- **Up Axis Handling** — Automatic Z-up to Y-up conversion
-- **FPS Camera** — WASD movement, right-click mouse look, snap-to-axis via the corner orientation gizmo
+**Worlds and streaming**
+- **USD as authored, without OpenUSD at runtime.** `ngen-asset-server` packs each USD layer into a layer pack (`ngen-packer-usd`); the view's
+  `WorldComposer` composes them as USD's Pcp does: sublayers, references, payloads, variant sets, instancing and `PointInstancer`.
+- **Streaming and LOD as one system**, from UsdLod's schemas: every LOD root picks a level by its authored distance or screen-size heuristic;
+  payload levels stream in and out by the camera's position and the authored load and unload radii, with no timers; inline levels are picked
+  per placement on the GPU and cross-fade with a dither over their authored band.
+- **Assets are streamed**, not loaded: packs, meshes, materials, textures and shaders come from the asset server over RPC, by asset id; the view
+  never waits for them, and the asset server repacks what changed at its source and tells the view.
+
+**Rendering**
+- **GPU-driven only**: persistent GPU scene tables (instances, meshes, materials), one geometry pool, bindless material textures, GPU culling
+  with ordered compaction into indirect draws, one call per bucket per view.
+- **Deferred shading**: a G-buffer, cascaded shadow maps in one atlas with hardware-compare PCF, a directional sun with a hemisphere ambient,
+  FXAA, reversed-Z with an infinite far plane.
+- **A frame graph** orders the passes, derives every barrier, culls unused passes and pools transient textures.
+- **A render thread** fed by one snapshot a frame; a **scene thread** composes and places the world; the main thread never waits for either.
+- **Vulkan 1.3** behind a thin, backend-agnostic RHI, with dynamic rendering and synchronization2.
+
+**Seeing inside**
+- **Debug views**: wireframe, triangle size, overdraw, instance, mesh, material and primitive ids, UVs, streaming state, LOD level, mip level,
+  shadow cascades and the G-buffer, each with a legend and a cursor readout.
+- **Tools**: the LOD and Streaming tools (every root's levels, measures, residency and findings, with viewport layers and a map), a debug camera
+  that watches the main camera's frustum, culling and streaming from outside, camera modes (following the ground, orbiting), camera flights.
+- **Introspection**: the frame graph with live previews, a frame debugger (barriers, commands, descriptor sets), resource captures, GPU
+  counters, a GPU scene inspector, the memory of every allocation, a CPU and GPU profiler, and RenderDoc.
+- **For agents**: every window's data is also a record, every action an RPC method and a script verb. `ngen-view` runs headless with a script
+  (`--script`, `--screenshot`), and `ngen-introspect` lists, reads and calls any running process, and streams its trace.
+
+**Tooling**
+- **A self-hosted build system**, `ngen-build`: the project is a C++ program (`build.cpp`) against a reusable framework; no CMake, no Ninja.
+- **`ngen-cli`**, the front door: build, run the view and the asset server, introspect.
+- **Configuration**: every engine setting is a typed value declared by its owner, readable and settable at runtime (`config.*`).
+
+## Screenshots
+
+| | |
+|---|---|
+| ![LOD Level view](screenshots/engine_eldermark_debug_lod_01.png) | ![Debug camera watching the main camera](screenshots/engine_eldermark_debug_culling_01.png) |
+| **LOD Level view**: each draw coloured by the level it draws, finest to coarsest, across the world's nested LOD roots. | **The debug camera** watching the main camera, its frustum in orange: culling and streaming follow the main camera, so only what it draws is drawn. |
+| ![Overdraw view](screenshots/engine_eldermark_debug_overdraw_01.png) | ![Triangle Size view](screenshots/engine_eldermark_debug_trianglesize_01.png) |
+| **Overdraw**: fragments shaded per pixel without the depth test; the forest canopy is where the geometry pass spends its time. | **Triangle Size**: each triangle's screen area, log scale; red triangles cover a pixel or less. |
+
+![Frame Graph window, graph view](screenshots/engine_eldermark_framegraph_01.png)
+
+*The Frame Graph window: the frame's passes left to right with the resources they read and write, live previews of every texture, and the
+selected pass's GPU time, reads and writes.*
+
+![Performance window](screenshots/engine_eldermark_performance_01.png)
+
+*The Performance window: the main, render and GPU lanes on one clock, frame by frame; here the geometry pass, split by bucket.*
 
 ## Architecture
 
 ```
-App (src/apps/view.cpp)
- ├─ JobSystem (jobsystem/)   — Static thread pool, fence-based sync
- ├─ Scene (scene/)           — USD loading, mesh/texture/material extraction
- │   ├─ USDScene             — Stage, layers, prim cache, transforms, change notifications
- │   ├─ USDRenderExtractor   — Extract render data from composed stage; incremental patchTransforms
- │   ├─ SceneUpdater         — Fast path for transform edits + async batch for heavier ops
- │   ├─ UndoStack            — Per-frame snapshot stack of inverse SceneEditCommands
- │   ├─ SceneQuerySystem     — Spatial queries (raycast, frustum), gizmo anchor resolution
- │   └─ BoundsCache          — AABB caching for prims
- ├─ EditorUI (ui/)           — ImGui panels: Scene, Properties, Layers, Tools, History
- │   ├─ TranslateGizmo       — Axis arrows + plane handles for 1- or 2-axis translation
- │   ├─ RotateGizmo          — Per-axis ring drag with world→local rotation conversion
- │   ├─ ScaleGizmo           — Per-axis scale with position compensation + local axis mapping
- │   └─ Edit/Windows menus   — Undo/Redo, Select Parent, Frame Selected, panel toggles
- └─ Renderer (renderer/)     — Frame graph, resource pool, GPU mesh management
-     ├─ RenderThread         — Dedicated render thread with snapshot-based handoff
-     ├─ RenderSnapshot       — Per-frame value-type snapshot (matrices, settings, ImGui, debug, gizmo verts)
-     ├─ FrameGraph           — Pass declaration, compilation, execution
-     │   ├─ GeometryPass     — G-buffer MRT (albedo + normals + depth)
-     │   ├─ LightingPass     — Fullscreen deferred shading from G-buffer
-     │   ├─ DebugLinePass    — Debug line drawing (AABBs, highlights)
-     │   ├─ GizmoPass        — Wide-line world-space gizmo geometry
-     │   └─ EditorUIPass     — ImGui overlay (cloned draw data from main thread)
-     ├─ ResourcePool         — Transient texture pooling
-     ├─ DebugRenderer        — Debug line pass setup
-     └─ RHI (rhi/)           — Abstract device, swapchain, command buffer interfaces
-         └─ Vulkan (rhi/vulkan/)  — Vulkan 1.3 backend
+ngen-asset-server     packs on request (ngen-packer-usd, -texture, -shader, -copy) into a cache; streams packs over RPC; notices source edits
+        │
+        ▼  packs, by asset id
+ngen-view
+  Foundation        profile, trace, config, rpccore
+  Engine            world (WorldComposer), view (ViewScene, placement, ViewFrame, camera), renderer (frame graph, GPU scene, culling,
+                    passes), rhi + rhi/vulkan
+  Instrumentation   viewcommands (RPC methods, script verbs and records by domain), rendertools (debug snapshots, frame debugger,
+                    counters, screenshots)
+  Tools             LOD and Streaming tools, debug camera, overlays, gizmos
+  UI                Dear ImGui windows
+        ▲
+        │  records, trace, method calls (JSON-RPC over loopback TCP)
+ngen-introspect       every running process's records and trace, in a window or on the command line
 ```
+
+Each layer is a library that links only the layers below it. The engine's frame is a fixed order of steps (`ViewFrame`); the tools and the UI join
+it through hooks at fixed points, and join the renderer's frame as render extensions.
 
 ### Library documentation
 
@@ -93,76 +107,33 @@ Each library documents its design and rules in a README next to the code:
 - [`src/tools/README.md`](src/tools/README.md) — the tools: the LOD and Streaming tools and the debug camera, their data and state, apart from the UI that draws them.
 - [`src/world/README.md`](src/world/README.md) — the runtime scene: the World composed from scene packs as USD composes a stage, and `ngen-worldcheck` / `ngen-usdcheck` to compare the two.
 
-`docs/` holds plans and design history; code and library READMEs do not depend on it.
+`docs/` holds plans and design history; code and library READMEs do not depend on it. Why the engine is shaped as it is, decision by decision,
+is in [`docs/adr/`](docs/adr/README.md).
 
-### Threading Model
+### Threads
 
-```
-Frame N:   [Main: update + prepare]  -->  [Render: build FG + record CB + submit]  -->  [GPU: execute]
-Frame N+1: [Main: update + prepare]  -->  [Render: ...]                             -->  ...
-```
-
-The main thread prepares a `RenderSnapshot` each frame containing view/projection matrices, render settings, deep-copied ImGui draw data, debug geometry, and
-the active gizmo's vertex buffer (translate, rotate, or scale). This snapshot is handed off to a dedicated render thread via a single-slot condvar with
-back-pressure (main blocks if the render thread hasn't consumed the previous snapshot). Scene uploads (mesh/texture data) travel through a separate channel and
-are processed at the start of each render frame.
-
-### Edit Pipeline
-
-Interactive operations follow a **Preview → Authoring** lifecycle. Each frame the user is dragging a gizmo or
-scrubbing a slider, the engine emits one or more `Preview` `SceneEditCommand`s — the `SceneUpdater` fast path applies them directly to the runtime transform
-cache, patches only the affected `RenderWorld` instances and BVH leaves, and skips USD entirely. On operation end (mouse-up, slider release) one `Authoring`
-edit commits the final value to the active USD layer; that commit is the undo step. Heavyweight edits (`SetVisibility`, layer mutes, sublayer ops, resyncs) take
-the existing async batch path through a worker thread.
-
-### Lighting & Shadows
-
-Deferred directional lighting with hard shadow mapping. The `GeometryPass` writes albedo / normals / depth into a G-buffer; `ShadowPass` renders the scene's
-depth from the first directional light's point of view into a 1024² shadow map; the fullscreen `LightingPass` reconstructs each fragment's world-space position
-from the G-buffer depth and the inverse view-projection, projects it into light-clip space, and compares against the shadow map to modulate the diffuse term.
-The shadow ortho is auto-fitted to a bounding sphere around the instance origins each frame, so it scales to whatever scene you load. Dedicated debug views
-(`Shadow Map`, `Shadow Factor`, `Shadow UV`, `World Pos`) are available under **Debug → Fullscreen Buffer View** and as a top-strip overlay via **Debug → Show
-Shadow Overlay**.
-
-![Deferred lighting with shadow-mapped scene and shadow-map debug overlay](screenshots/engine_lighting_shadows.png)
-
-### Directional Light
-
-Directional lights are authored as `UsdLuxDistantLight` prims; color, intensity, exposure, and `UsdLuxShadowAPI::shadow:color` all drive the lighting pass
-directly. When a loaded stage has no distant light, the engine authors one into the session layer so the scene is never unlit — edits to that default light
-round-trip through the Properties panel but stay in-session and don't touch the source file. Rotation and position edits flow through the fast transform path,
-so the shadow frustum and shading direction update live as you drag. **Debug → Show Light Gizmos** draws a sun disc and arrow anchored along the toward-light
-direction, sized to the scene bounds, so the visualized position always agrees with the direction the shader actually uses.
-
-![Directional light gizmo anchored to the scene, with shadows following the light](screenshots/engine_lighting_sun.png)
-
-### Frame Graph Debugger
-
-The Frame Graph window (**Debug → Frame Graph**) exposes every render pass and the resources flowing between them, with live thumbnails blitted from each color
-target each frame. Two views of the same graph:
-
-**List view** — passes in execution order with their reads and writes; clicking any row pins the full resource details (size, format, lifetime, producer,
-consumers) in the bottom pane.
-
-![Frame graph list view](screenshots/engine_framegraph_list.png)
-
-**Graph view** — passes arranged across a single row at the top, with resources stacked directly beneath their producer. Edges are access-colored and highlight
-when either endpoint is selected. Pan with middle-drag (or left-drag on empty canvas); scroll to zoom.
-
-![Frame graph node view](screenshots/engine_framegraph_nodes.png)
+- **Main thread**: the frame's steps in order: the scene's latest snapshot, the commands (script lines and RPC calls), the camera, culling and
+  cascades, the tools and the UI, then the frame's `RenderSnapshot` for the render thread.
+- **Scene thread** (`ViewScene`): composes the world from the packs as they arrive, places it (LOD levels, residency), and publishes snapshots
+  and the changes for the renderer. Nothing waits for it.
+- **Render thread**: takes one snapshot a frame (the main thread is at most one frame ahead), applies the scene's changes within an upload
+  budget, builds and records the frame graph, submits and presents.
+- **Workers** (`JobSystem`) for parallel work; the asset client receives on its own thread.
 
 ## Dependencies
 
 | Library | Purpose |
 |---------|---------|
-| [SDL3](https://github.com/libsdl-org/SDL) | Window creation, input, Vulkan surface, file dialogs |
+| [SDL3](https://github.com/libsdl-org/SDL) | Window, input, Vulkan surface |
 | [Vulkan SDK](https://vulkan.lunarg.com/) | GPU API + glslc shader compiler |
 | [GLM](https://github.com/g-truc/glm) | Math (vectors, matrices, quaternions) |
-| [stb](https://github.com/nothings/stb) | Image loading (stb_image) |
-| [Dear ImGui](https://github.com/ocornut/imgui) | Editor UI |
-| [OpenUSD](https://github.com/PixarAnimationStudios/OpenUSD) | USD scene format (stage, layers, composition) |
+| [stb](https://github.com/nothings/stb) | Image decoding when packing, PNG writing |
+| [Dear ImGui](https://github.com/ocornut/imgui) | The windows |
+| [OpenUSD](https://github.com/PixarAnimationStudios/OpenUSD) | Reading USD when packing (`ngen-packer-usd`) and in `ngen-worldcheck` / `ngen-usdcheck`; `ngen-view` doesn't link it |
+| [nlohmann/json](https://github.com/nlohmann/json) | JSON for RPC, records and packs |
+| [concurrentqueue](https://github.com/cameron314/concurrentqueue) | Lock-free queues between threads |
 
-GLM, stb, Dear ImGui, and OpenUSD are included as git submodules in `external/`. SDL3 and the Vulkan SDK must be installed on the system.
+GLM, stb, Dear ImGui, OpenUSD, nlohmann/json and concurrentqueue are git submodules in `external/`. SDL3 and the Vulkan SDK must be installed on the system.
 
 After cloning, initialize the submodules:
 
@@ -264,41 +235,53 @@ Forwarded tools replace the cli process, so their output, signals and exit code 
 
 ## Usage
 
+`ngen-view` needs its variant's asset server running in the same directory; scenes are asset ids, paths relative to that directory.
+
 ```bash
-./_out/linux-vulkan/debug/ngen-view [scene.usd]
+./ngen-cli asset-server &                                        # once, and leave it running
+./ngen-cli view assets/three_cubes.usda
+./ngen-cli view assets/streamtest-world/world/root.usda --camera=/cameras/village
 ```
 
-Or launch without arguments and use File > Open.
+| Flag | What it does |
+|---|---|
+| `--camera=<pose or /path>` | Start at a pose (`x,y,z,yaw,pitch`) or a camera the scene authors |
+| `--view=<lit, albedo, normals, …>` | The G-buffer or debug view to show |
+| `--overlay=<name=on/off,…>` | Overlays: grid, origin, gizmo, aabbs, lightgizmos, cascadefrusta, buffer, shadow, aa |
+| `--script=<file>` | Script lines: `<frame> <verb> <args>`, frames counted once the scene is resident |
+| `--screenshot=<file>`, `--frames=<n>` | A PNG of the last frame, and quit after `n` frames |
+| `--validation`, `--fail-on-validation` | Vulkan validation; with the second, exit nonzero on any validation error |
+| `--show-ui` | Keep the UI in screenshots |
+| `--no-wait-resident` | Count script frames from start-up instead of from the scene being resident |
+| `--renderdoc`, `--no-rpc`, `--render-debug`, `--geometry-limit=<MiB>`, `--select=<path>`, `--camera-frame=<path>` | RenderDoc capture, no endpoint, the render debug snapshot always on, the geometry pool's limit, a selection, framing a prim |
+
+`SDL_VIDEODRIVER=offscreen` runs it without a window. The verbs, records and methods are listed by `./ngen-cli introspect describe` against a
+running view; `src/view/README.md` has them by domain.
 
 ### Controls
 
 | Input | Action |
-|-------|--------|
-| WASD | Move camera |
-| Q / E | Move down / up |
-| Shift | Sprint (5× speed) |
-| Mouse wheel | Fly speed up / down (×1.25 per notch; 5 m/s at start) |
+|---|---|
+| WASD, Q / E, Shift | Move; down / up; five times as fast |
 | Right mouse button | Hold to look around |
-| Left click | Pick object (Select tool) or grab gizmo handle (Translate / Rotate / Scale) |
-| **R** | Select parent of current selection |
-| **F** | Frame the selected prim in the camera view |
-| **Ctrl+Z** | Undo last commit |
-| **Ctrl+Shift+Z** | Redo |
-| **Ctrl+E** | Toggle Scene / Properties / Layers / Tools panels |
+| Mouse wheel | Fly speed (×1.25 a notch); toward the pivot while orbiting |
+| Left Alt | Hold to orbit around the surface under the cursor |
+| G | Follow the ground at eye height |
+| Left click | Pick a prim, or grab the active gizmo's handle; on the corner axis gizmo, look along that axis |
+| Z, R, F | Deselect, select the parent, frame the selection |
+| Ctrl+D, C | Debug camera on or off; hand the controls between it and the main camera |
+| 1 – 5 | Wireframe, triangle size, overdraw, instance and streaming views (again for off) |
+| Ctrl+1, Ctrl+2 | The G-buffer and shadow overlays |
+| Ctrl+3, Ctrl+4, Ctrl+5 | The mip level and LOD level views; back to the plain lit image |
+| Ctrl+P, Ctrl+C, Ctrl+S, Ctrl+L, Ctrl+A | The Performance, Camera, Streaming, LOD and Assets windows |
+| F12 | Screenshot |
 
-### Test Scenes
+Every window is under **Windows**; the overlays, purposes and camera modes under **View**.
 
-Generated city scenes of varying sizes are included:
+### Test scenes
 
-```bash
-./_out/ngen models/city/city_1x1/city.usda    # 1 block
-./_out/ngen models/city/city_5x5/city.usda    # 25 blocks
-./_out/ngen models/city/city_10x10/city.usda  # 100 blocks
-./_out/ngen models/city/city_20x20/city.usda  # 400 blocks
-```
-
-Regenerate with `python3 models/city/generate_city.py`.
-
-## Screenshots
-
-![Gizmos, grid, and origin marker](screenshots/engine_city.png)
+| Scene | Where |
+|---|---|
+| `assets/three_cubes.usda` | In the repository: three cubes on a fourth flattened into the ground; it authors no light, so the engine adds its default sun |
+| Intel's New Sponza | Not in the repository: `assets/main_sponza/NewSponza_Main_USD_Zup_003.usda` |
+| Eldermark | Not in the repository: a generated 10 km × 10 km world (about 24 GB), every cell a UsdLod root with payloaded levels, eleven authored cameras and a flight path; `assets/streamtest-world/world/root.usda` |
