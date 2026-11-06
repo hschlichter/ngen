@@ -5,6 +5,8 @@ view's scene, the renderer's readbacks), draws its viewport layers with `DebugDr
 owns. The UI's windows (`src/ui`) draw that state and write requests into it; they keep only their own state (scroll, edit buffers, a map's
 pan and zoom). Nothing here includes the UI, so the UI can be left out and the tools still build.
 
+![A UI window reads a tool's state struct and writes request fields; ToolsHooks::drawUi, called inside UiHooks, takes and clears the requests and refills the state, and ToolsHooks::fillSnapshot sends the gizmos' lines to GizmoRender on the render thread](../../screenshots/tools_state_requests.svg)
+
 ## What is here
 
 | Tool | Files | State | Its viewport layers |

@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="560" viewBox="0 0 1000 560" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .layer { font-size: 15px; font-weight: 700; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .m { font-size: 11px; fill: #3a4452; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="560" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">ngen-build: the build system's layers</text>
+  <text x="28" y="62" class="s" style="font-size:12px">Each directory includes only the ones below it; each program is one translation unit, compiled by a single c++ command.</text>
+
+  <!-- Programs -->
+  <rect x="28" y="92" width="944" height="112" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="44" y="138" class="layer" fill="#64748b">Programs</text>
+  <text x="44" y="156" class="s">one .cpp each</text>
+  <rect x="202" y="104" width="246" height="88" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="214" y="125" class="lib">bootstrap.cpp</text>
+  <text x="214" y="143" class="s">→ _out/ngen-build, the seed compile</text>
+  <text x="214" y="163" class="m">run/execute.hpp, ir/reader.hpp,</text>
+  <text x="214" y="179" class="m">ir/resolve.hpp, ir/schema.hpp</text>
+  <rect x="458" y="104" width="246" height="88" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="470" y="125" class="lib">build.cpp</text>
+  <text x="558" y="125" class="s">project root</text>
+  <text x="470" y="143" class="s">→ _out/ngen-build-graph</text>
+  <text x="470" y="163" class="m">framework/ (cxx, project, tool,</text>
+  <text x="470" y="179" class="m">phony, glob), ir/main.hpp</text>
+  <rect x="714" y="104" width="242" height="88" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="726" y="125" class="lib">run/main.cpp</text>
+  <text x="726" y="143" class="s">→ _out/ngen-build-run</text>
+  <text x="726" y="163" class="m">run/execute.hpp,</text>
+  <text x="726" y="179" class="m">ir/reader.hpp</text>
+
+  <!-- run/ -->
+  <rect x="28" y="214" width="944" height="74" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="44" y="246" class="layer" fill="#16a34a">run/</text>
+  <text x="44" y="264" class="s">the executor</text>
+  <rect x="202" y="226" width="520" height="50" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="214" y="247" class="lib">ngen::run::execute(IR&amp;, RunOptions&amp;)</text>
+  <text x="214" y="265" class="s">execute · scheduler · process · hash · buildlog · depfile · progress</text>
+  <rect x="732" y="226" width="224" height="50" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="744" y="247" class="s" font-weight="700">produces</text>
+  <text x="744" y="265" class="s">the build's outputs, .ngen-buildlog</text>
+
+  <!-- ir/ -->
+  <rect x="28" y="298" width="944" height="74" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="44" y="330" class="layer" fill="#2563eb">ir/</text>
+  <text x="44" y="348" class="s">the transport</text>
+  <rect x="202" y="310" width="520" height="50" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="214" y="331" class="lib">build::ir::IR · ir::Emitter</text>
+  <text x="214" y="349" class="s">schema · writer · reader · json · emit · resolve · compile_commands · main</text>
+  <rect x="732" y="310" width="224" height="50" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="744" y="331" class="s" font-weight="700">produces</text>
+  <text x="744" y="349" class="s">build.ngenir, compile_commands.json</text>
+
+  <!-- framework/ -->
+  <rect x="28" y="382" width="944" height="74" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-opacity="0.45"/>
+  <text x="44" y="414" class="layer" fill="#ea580c">framework/</text>
+  <text x="44" y="432" class="s">the configuration API</text>
+  <rect x="202" y="394" width="520" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="214" y="415" class="lib">Target · Project · Platform · Configuration</text>
+  <text x="214" y="433" class="s">ExtensionMap · cxx/ · Tool · Alias · Phony · glob · path · inspect</text>
+  <rect x="732" y="394" width="224" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="744" y="415" class="s" font-weight="700">produces</text>
+  <text x="744" y="433" class="s">nothing alone: header-only API</text>
+
+  <line x1="184" y1="112" x2="184" y2="446" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="180" y="279" class="s" transform="rotate(-90 180 279)" text-anchor="middle" dy="-6">includes downward</text>
+
+  <rect x="28" y="472" width="944" height="68" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="44" y="495" class="t">ir/ includes framework/; run/ includes ir/schema.hpp and framework/ (glob, path); never the reverse.</text>
+  <text x="44" y="513" class="t">build.cpp is the project; everything under src/build/ is the build system.</text>
+  <text x="44" y="531" class="t">Another project copies src/build/ and writes its own build.cpp.</text>
+</svg>

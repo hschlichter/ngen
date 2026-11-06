@@ -73,6 +73,8 @@ the `status` record lists them under `delays`.
 the binaries are, except that the packers sit next to the server. It takes its variant (and so the rules' configuration) from the folder its binary
 is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own cache, its own job runner, and the RPC core.
 
+![One asset.request from AssetClient through the server and a packer process to asset.data chunks and asset.ready, and a later edit's asset.changed](../../screenshots/asset_request.svg)
+
 - **`asset.request`** `{ids: [...], have: {id: version}, force}` answers at once with `{request}`. With `force: true` the server packs the
   assets even when its cache is up to date, each file's job once per request: the other ids of a file it forced (its meshes and materials)
   come from what that job wrote, and still say `packed: true`. Then each asset is answered on its own as it finishes:
@@ -124,6 +126,8 @@ from (`server/assetcache.*`):
 - the source and every file in the packer's depfile
 - the packed file
 
+![The up-to-date check: the job key, then per recorded file size and mtime, then the content hash; any mismatch repacks](../../screenshots/asset_cache_check.svg)
+
 A job's secondary outputs are kept in its record, each with its packed file: they share the job's packer and inputs, and are up to date when
 those are and their own file is. When the file is packed again, its new list replaces the old one.
 
@@ -153,14 +157,18 @@ A packer with secondary outputs writes each to `secondaryOutputFile(out, fragmen
 |---|---|---|
 | `ngen-packer-shader` | GLSL with `glslc`: `optimize` (0 = `-O0`, 1 = `-O`) and `debug_info` (1 = `-g`); glslc's depfile gives the `#include`s | SPIR-V |
 | `ngen-packer-texture` | `.png .jpg .jpeg`: decoded with stb_image, the full mip chain built with `pack/mipchain.h` (2×2 box filter, colour averaged in linear space), written as a packed texture (`pack/packedtexture.h`): a 28-byte `NGTX` header (version 2, format, width, height, mip levels, irradiance floats) and every level, level 0 first, tightly packed | RGBA8 sRGB, all mips |
-| `ngen-packer-exr` | `.exr` (a dome light's lat-long sky): decoded with tinyexr (`external/tinyexr`, through stb's zlib; the only packer that links it) to linear RGB, written as a packed texture with one level and its irradiance as a lat-long dome: 9 spherical-harmonic coefficients per channel, convolved with the cosine lobe, in the image's frame (pole +Z, UsdLux's lat-long), in the header's irradiance block | `Rgb9e5` (HDR, Vulkan's E5B9G9R9), one level, irradiance |
+| `ngen-packer-exr` | `.exr` (a dome light's lat-long sky): decoded with tinyexr (`external/tinyexr`, through stb's zlib; the only packer that links it) to linear RGB, written as a packed texture with one level and its irradiance as a lat-long dome: 9 spherical-harmonic coefficients per channel, convolved with the cosine lobe, in the image's frame (pole +Z, UsdLux's lat-long), in the irradiance block after the header | `Rgb9e5` (HDR, Vulkan's E5B9G9R9), one level, irradiance |
 | `ngen-packer-usd` | `.usda .usdc .usd`, one job per file (below) | a layer pack, and a mesh or material pack per prim that defines one |
 | `ngen-packer-copy` | `.hdr`: the source's bytes, unchanged, for assets the engine still reads in their source format. A clone (`FICLONE`) where the filesystem has one (btrfs, XFS), so the cache shares the source's blocks; a byte copy elsewhere | the source |
+
+![The packed texture format: the 28-byte NGTX header, the optional 27-float irradiance block, the levels, and the Rgb9e5 texel's bits](../../screenshots/asset_packed_texture.svg)
 
 ## Scene packs
 
 `ngen-packer-usd` (`src/apps/packerusd.cpp`, `pack/usd/usdpacker.*`) packs one USD file, and reads nothing from any other: its depfile names the
 file alone, so editing one file of a scene repacks that file only. A file's outputs are:
+
+![One USD file packed by ngen-packer-usd into its layer pack, mesh and material packs, the outputs list and the depfile; other files are named as asset ids](../../screenshots/asset_usd_outputs.svg)
 
 - **The layer pack**, the file's own asset: the opinions the file authors, read as written (Sdf, no composition). Its up axis, meters per unit,
   default prim and sublayers (asset ids), and per prim spec: its path, specifier, type, API schemas, `active`, `instanceable`, kind, the attributes
@@ -193,6 +201,8 @@ form for, asset paths that don't resolve, and an `over` that authors geometry (a
 The format (`pack/scenepack.h`) is binary and little-endian: a 32-byte header (`NGPK`, the kind, the format version, the section count, and the
 offsets of the string table and the section table), a string table, and a table of typed sections. Readers check every offset and index, and
 return an error rather than read past the bytes. A change to the format bumps `scenePackFormatVersion` and the `usd` rule's version.
+
+![The scene pack format: the 32-byte NGPK header, the string table, the section table's 24-byte entries, and the section ids per kind](../../screenshots/asset_scene_pack.svg)
 
 `ngen-packdump` (`src/apps/packdump.cpp`) prints scene packs as JSON, from files or, with `--id`, fetched from its variant's asset server, which
 packs them when needed; `--vertices` adds every vertex and index:

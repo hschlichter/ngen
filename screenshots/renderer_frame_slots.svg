@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="640" viewBox="0 0 1000 640" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 15px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .m { font-size: 11px; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .b { font-size: 11px; fill: #1f2733; text-anchor: middle; font-weight: 600; }
+    .bs { font-size: 10px; fill: #3a4452; text-anchor: middle; }
+    .edge { font-size: 11px; fill: #334155; font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <pattern id="wait" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="6" height="6" fill="#ffffff"/>
+      <line x1="0" y1="0" x2="0" y2="6" stroke="#cbd5e1" stroke-width="2"/>
+    </pattern>
+  </defs>
+  <rect x="0" y="0" width="1000" height="640" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">Renderer: frame slots</text>
+  <text x="28" y="62" class="s" style="font-size:12px">One slot per swapchain image (3 here): the render thread records frame k on slot k mod 3 once that slot's previous frame has finished on the GPU.</text>
+
+  <!-- Lanes -->
+  <rect x="28" y="92" width="944" height="52" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-opacity="0.45"/>
+  <text x="42" y="116" class="t" font-weight="700">Render thread</text>
+  <text x="42" y="132" class="s">records, submits</text>
+  <rect x="28" y="174" width="944" height="52" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="42" y="198" class="t" font-weight="700">GPU</text>
+  <text x="42" y="214" class="s">runs them in order</text>
+
+  <!-- Frames: k on slot (k - 1) mod 3 -->
+  <rect x="150" y="104" width="58" height="28" rx="4" fill="#fed7aa" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="179" y="116" class="b">frame 1</text>
+  <text x="179" y="128" class="bs">slot 0</text>
+  <rect x="210" y="186" width="140" height="28" rx="4" fill="#bbf7d0" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="280" y="198" class="b">frame 1</text>
+  <text x="280" y="210" class="bs">slot 0</text>
+  <line x1="204" y1="132" x2="204" y2="184" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <rect x="210" y="104" width="58" height="28" rx="4" fill="#ffedd5" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="239" y="116" class="b">frame 2</text>
+  <text x="239" y="128" class="bs">slot 1</text>
+  <rect x="354" y="186" width="140" height="28" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="424" y="198" class="b">frame 2</text>
+  <text x="424" y="210" class="bs">slot 1</text>
+  <line x1="264" y1="132" x2="264" y2="184" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <rect x="270" y="104" width="58" height="28" rx="4" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="299" y="116" class="b">frame 3</text>
+  <text x="299" y="128" class="bs">slot 2</text>
+  <rect x="498" y="186" width="140" height="28" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="568" y="198" class="b">frame 3</text>
+  <text x="568" y="210" class="bs">slot 2</text>
+  <line x1="324" y1="132" x2="324" y2="184" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <rect x="330" y="104" width="20" height="28" rx="4" fill="url(#wait)" stroke="#94a3b8" stroke-opacity="0.6"/>
+  <rect x="350" y="104" width="58" height="28" rx="4" fill="#fed7aa" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="379" y="116" class="b">frame 4</text>
+  <text x="379" y="128" class="bs">slot 0</text>
+  <rect x="642" y="186" width="140" height="28" rx="4" fill="#bbf7d0" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="712" y="198" class="b">frame 4</text>
+  <text x="712" y="210" class="bs">slot 0</text>
+  <line x1="404" y1="132" x2="404" y2="184" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <rect x="410" y="104" width="84" height="28" rx="4" fill="url(#wait)" stroke="#94a3b8" stroke-opacity="0.6"/>
+  <rect x="494" y="104" width="58" height="28" rx="4" fill="#ffedd5" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="523" y="116" class="b">frame 5</text>
+  <text x="523" y="128" class="bs">slot 1</text>
+  <rect x="786" y="186" width="140" height="28" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="856" y="198" class="b">frame 5</text>
+  <text x="856" y="210" class="bs">slot 1</text>
+  <line x1="548" y1="132" x2="548" y2="184" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <rect x="554" y="104" width="84" height="28" rx="4" fill="url(#wait)" stroke="#94a3b8" stroke-opacity="0.6"/>
+  <rect x="638" y="104" width="58" height="28" rx="4" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="667" y="116" class="b">frame 6</text>
+  <text x="667" y="128" class="bs">slot 2</text>
+  <line x1="692" y1="132" x2="692" y2="184" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <rect x="698" y="104" width="84" height="28" rx="4" fill="url(#wait)" stroke="#94a3b8" stroke-opacity="0.6"/>
+  <rect x="782" y="104" width="58" height="28" rx="4" fill="#fed7aa" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="811" y="116" class="b">frame 7</text>
+  <text x="811" y="128" class="bs">slot 0</text>
+
+  <!-- A slot's fence: its previous frame done, the next frame on it may start -->
+  <line x1="350" y1="186" x2="350" y2="136" stroke="#475569" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+  <line x1="494" y1="186" x2="494" y2="136" stroke="#475569" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+  <line x1="638" y1="186" x2="638" y2="136" stroke="#475569" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+  <line x1="782" y1="186" x2="782" y2="136" stroke="#475569" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+  <line x1="350" y1="214" x2="350" y2="238" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="356" y="236" class="edge">frame 1 done: slot 0's fence lets frame 4 start, which reads frame 1's readbacks</text>
+  <line x1="150" y1="262" x2="958" y2="262" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <text x="150" y="278" class="s">time; GPU-bound, so the render thread waits (hatched) for the slot it needs</text>
+
+  <!-- One frame on slot 0, in Renderer::render -->
+  <rect x="28" y="300" width="944" height="168" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-opacity="0.45"/>
+  <text x="42" y="324" class="t" font-weight="700">Frame 4 on slot 0, in <tspan class="m" font-weight="700">Renderer::render</tspan></text>
+  <rect x="42" y="338" width="146" height="112" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="52" y="358" class="t" font-weight="700">wait</text>
+  <text x="52" y="376" class="m">inflightFences[0]</text>
+  <text x="52" y="398" class="s">frame 1 has finished</text>
+  <rect x="195" y="338" width="146" height="112" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="205" y="358" class="t" font-weight="700">flush deletions</text>
+  <text x="205" y="376" class="m">deletionQueue</text>
+  <text x="205" y="398" class="s">what frame 1 or earlier</text>
+  <text x="205" y="414" class="s">last used</text>
+  <line x1="188" y1="394" x2="194" y2="394" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <rect x="348" y="338" width="146" height="112" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="358" y="358" class="t" font-weight="700">read back frame 1</text>
+  <text x="358" y="376" class="m">parseReadback</text>
+  <text x="358" y="398" class="s">culling, LOD, GPU</text>
+  <text x="358" y="414" class="s">timings, captures</text>
+  <line x1="341" y1="394" x2="347" y2="394" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <rect x="501" y="338" width="146" height="112" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="511" y="358" class="t" font-weight="700">acquire image i</text>
+  <text x="511" y="376" class="m">imageAvailable[0]</text>
+  <text x="511" y="398" class="s">signalled when the</text>
+  <text x="511" y="414" class="s">image is free</text>
+  <line x1="494" y1="394" x2="500" y2="394" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <rect x="654" y="338" width="146" height="112" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="664" y="358" class="t" font-weight="700">record, submit</text>
+  <text x="664" y="376" class="m">cmdBuffers[0]</text>
+  <text x="664" y="398" class="s">waits imageAvailable[0];</text>
+  <text x="664" y="414" class="s">signals renderFinished[i]</text>
+  <text x="664" y="430" class="s">and inflightFences[0]</text>
+  <line x1="647" y1="394" x2="653" y2="394" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <rect x="807" y="338" width="146" height="112" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="817" y="358" class="t" font-weight="700">present image i</text>
+  <text x="817" y="376" class="m">renderFinished[i]</text>
+  <text x="817" y="398" class="s">present waits on it</text>
+  <line x1="800" y1="394" x2="806" y2="394" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+  <!-- Ownership -->
+  <rect x="28" y="488" width="560" height="128" rx="10" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="42" y="512" class="t" font-weight="700">A frame slot owns, guarded by its fence</text>
+  <text x="42" y="536" class="s">command buffer, in-flight fence, image-available semaphore</text>
+  <text x="42" y="554" class="s">view UBO, instance staging buffer, LOD staging</text>
+  <text x="42" y="572" class="s">culling buffers: params, visibility, counters, offsets, commands, counts</text>
+  <text x="42" y="590" class="s">readback buffers (culling, LOD), the geometry descriptor set</text>
+  <rect x="604" y="488" width="368" height="128" rx="10" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="618" y="512" class="t" font-weight="700">A swapchain image owns</text>
+  <text x="618" y="536" class="s">its render-finished semaphore: present consumes it</text>
+  <text x="618" y="554" class="s">per image, and the image acquired need not be</text>
+  <text x="618" y="572" class="s">the slot's number. Slots = swapchain images</text>
+  <text x="618" y="590" class="s">(minImageCount + 1 in the Vulkan backend).</text>
+</svg>

@@ -74,23 +74,7 @@ pipelines by the pipeline registry ("Pipelines", below).
 
 ## How the pieces fit
 
-```
-main thread                                   render thread (RenderThread)                       GPU
------------                                   ----------------------------                       ---
-ViewScene -> RenderWorld  --RenderUpload-->   Renderer::uploadRenderWorld
-                                                GpuScene: geometry pool, mesh/material tables,
-                                                          instance records (delta)
-                                                DrawLists / InstanceCullPass descriptor sets
-camera, view UI           --RenderSnapshot--> Renderer::render
-  (cull frustum, cascades,                      wait slot fence, read back last use of the slot
-   debug lines, watches,                        build FrameGraph (passes declare accesses)
-   extensions' data)
-                                                compile (order, cull, lifetimes)
-                                                execute into the slot's command buffer  ------>  cull, draw, light, post
-                                                submit, present
-records, windows          <--latest-only----  CullResult, capture results; the render tools'
-                                              snapshots (src/rendertools)
-```
+![The main thread hands RenderSnapshot, SceneChanges and settings to the render thread, which waits for the slot's fence, reads its readbacks, builds, compiles and executes the frame graph and submits to the GPU, and hands back CullResult, capture results and the render tools' snapshots](../../screenshots/renderer_threads_handoff.svg)
 
 ### Threads and handoff
 
@@ -112,14 +96,16 @@ records, windows          <--latest-only----  CullResult, capture results; the r
 
 - `init`: swapchain, samplers, fallback texture, every pass's pipelines, `GpuScene` and `DrawLists` (the instance buffer exists from here on), frame
   sync, the capture service, then each extension (`addExtension`, before `init`).
-- `uploadRenderWorld`: rebuilds `GpuInstance`s from the `RenderWorld`, updates instance records (transform changes are a delta), and on any other change
-  rebuilds the geometry pool, textures, material table and descriptor sets.
+- `applySceneChanges`: what changed in the scene (`SceneChanges`, the render thread's `submitSceneChanges`) applied to the GPU scene piece by
+  piece, its uploads queued ("Scene data on the GPU", below); `flushSceneUploads` records them all and waits, for the first frame.
 - `render`: one frame (below).
 - `destroy`: waits idle, drains the deletion queue, destroys in reverse.
 
 **Frame slots.** The renderer keeps one slot per swapchain image. A slot owns its command buffer, in-flight fence, image-available semaphore, view UBO,
 instance staging buffer, culling buffers and readback buffers; the slot's fence guards all of them. The render-finished semaphore belongs to the swapchain
 image, because present consumes it per image.
+
+![A timeline of three frame slots: the render thread records frame k on slot k mod 3 once that slot's fence says its previous frame is done, then flushes deletions, reads back that frame, acquires, records, submits and presents; what a slot and a swapchain image own](../../screenshots/renderer_frame_slots.svg)
 
 **A frame (`Renderer::render`).**
 
@@ -163,6 +149,8 @@ textures and materials added and removed, draw slots changed, the lights. `Rende
 - **Then the draw slots.**
 
 Applying only queues uploads. Nothing waits.
+
+![An instance record names a material table entry, whose texture fields are slots in the 1024-texture array (0 fallback, 1 white), and a mesh table entry, whose firstIndex, vertexOffset and indexCount are ranges in the geometry pool's vertex, position and index buffers](../../screenshots/renderer_gpu_tables.svg)
 
 Tables:
 
@@ -231,6 +219,8 @@ Tables:
 
 `DrawLists` defines the command layout and owns the per-slot culling buffers; `InstanceCullPass` runs `shaders/instancecull.comp` in three modes.
 
+![InstanceCull counts commands per workgroup of 256 and region, InstanceCullScan turns the counts into workgroup offsets and draw counts, InstanceCullScatter writes each command in instance order into the command buffer laid out as regions per view and bucket, each drawn with one drawIndexedIndirectCount](../../screenshots/renderer_culling_scan.svg)
+
 - **Regions.** One region per (view, bucket), four buckets per view (`DrawLists::bucket`): single-sided (back-face culling), double-sided, and the
   same two for cutout materials. View 0 is the camera, views 1..4 the shadow cascades. Camera regions hold every visible instance with a mesh in the
   pool, drawing its submesh range. Cascade regions hold `primFirst` instances (one per prim), drawing the whole mesh, except for a prim with a cutout
@@ -253,7 +243,7 @@ Tables:
 - **Per-slot buffers.** Parameters, visibility, counters, offsets, commands and counts are per frame slot and imported every frame. The
   per-instance ones grow with the instance count, the command buffer with the instances counted in the buckets. The graph has no
   transient buffers yet: a pooled buffer reused next frame would need synchronisation against the previous frame's reads.
-- **Readback.** `CullReadback` copies the totals into the slot's host-visible readback buffer, the visibility bits too for a frame whose snapshot asks
+- **Readback.** `CullReadback` (ordered by the graph after the scatter, so it may run after the shadow pass and the prepass) copies the totals into the slot's host-visible readback buffer, the visibility bits too for a frame whose snapshot asks
   (`RenderSnapshot::readVisibility`, while the culled overlay is on: at 2.4 million instances parsing them cost 1.5 ms a frame), and while the render debugger
   is open the commands into the slot's commands readback, made when it is asked for and let go the first frame the slot's frame isn't; `DrawLists::parseReadback` reads them after the slot's
   fence, each region at the offset that frame laid it out at. `CullResult` (the view's `culling` record, Culling window, AABB
@@ -271,14 +261,19 @@ the heuristic's center and its bounding box, thresholds in metres), its threshol
 forced level (hand-set, or the default while the heuristic is off or the group has none usable). Every level's draws are slots tagged with the
 group (`lodGroup`) and their level (`lodLevel`). Each frame the GPU picks the level a group draws, and culling draws only that level's slots, or,
 inside a blend band, that level and the next, cross-faded. `LodGroups` (`lodgroups.*`) holds the buffers; `LodSelectPass`
-(`passes/lodselectpass.*`, `shaders/lodselect.comp`) runs before the culling passes.
+(`passes/lodselectpass.*`, `shaders/lodselect.comp`) adds `LodSelect`, which runs before the culling passes, and `LodSelectSum`, which the
+frame graph orders in among them, as it orders every pass by what it reads and writes (`LodReadback` follows the sum).
+
+![The render-LOD pick along a distance axis, with a blend band where the next level fades in and the hysteresis margin at a boundary without one, and the 4×4 Bayer tile that splits a fade's pixels between the two levels](../../screenshots/renderer_lod_bands.svg)
+
 - **The table** (`gpuscene.lodgroups`, `GpuLodGroup`, 240 bytes): uploaded as groups change (`LodGroupUpload`, the changed span through the
   slot's staging, as the instance records). A slot taking a new group gets a new serial.
 - **The pick** (`LodSelect`, one thread per group): the forced level, else the level the group's heuristic wants from the live main camera (`RenderSnapshot::lodEye`, which a debug camera rendered from
   leaves where it is), as
   `pickLodLevel` (`src/world/world.cpp`) picks it: UsdLod's `ComputeLOD` for a distance (to the center, or the nearest point of the box, 0 inside;
   `ComputeDistance`) or a screen size (the sphere over the view window at depth 1), with its blend bands, and at a boundary without one a
-  margin before going coarser (the hysteresis, the view's tuning as a push constant, `RenderSnapshot::lodHysteresis`, 20% by default),
+  margin before going coarser (the hysteresis, the view's tuning as a push constant, `RenderSnapshot::lodHysteresis`, 20% of a screen size by default; a distance's threshold grows by 1/√0.8, about 12%, as a size falls with
+  the distance's square),
   against the level the group wanted last frame. A bias and threshold overrides are the view's too, baked into the group's thresholds. Then the level drawn: the wanted one when its meshes are in the
   pool, else the one drawn last frame when they are, else the nearest resident level, coarser first. Inside a band, when the wanted level is
   drawn and the next one is resident, the next one fades in with the band's share. Written to the state buffer (`gpuscene.lodstate`, 16 bytes a
@@ -326,6 +321,8 @@ so early depth testing holds for everything else. The debug views discard in `de
 
 ## Passes
 
+![Every pass of a lit frame in the order the frame graph ran them, from the uploads through LOD selection, culling, shadow, prepass, geometry, debug view, lighting, AA and blit to the overlays and present, against the buffers and textures each writes and reads](../../screenshots/renderer_frame_passes.svg)
+
 | Pass | What it does |
 |---|---|
 | `InstanceUploadPass` | Copies the dirty span of instance records from the slot's staging buffer into the instance buffer. Added only when something changed. |
@@ -369,7 +366,7 @@ is its own invocation group.
 - **`GpuUploader`.** One command buffer, a staging buffer per upload, one submit and a blocking fence wait in `end()`. Start-up only: the fallback
   textures, and the scene's first upload (`flushSceneUploads`). The scene's uploads after that go through `GpuScene`'s per-frame queue.
 - **`ResourcePool`.** Transient textures for the frame graph, reused across frames by size, format and usage; flushed on swapchain recreation.
-- **Textures.** Material textures are RGBA8 sRGB with full mip chains. Textures from files arrive packed by the asset server with every level
+- **Textures.** Material textures are RGBA8 sRGB with full mip chains; a dome's sky is `E5B9G9R9_UFLOAT` with one level ("The sky"). Textures from files arrive packed by the asset server with every level
   (`src/asset/README.md`), and are uploaded as they are; the generated 1×1 textures of constant colours have one level. The material sampler is
   trilinear with anisotropy and editable live (`SamplerSettings`, `sampler` session verb); changing it rebuilds the geometry descriptor sets.
 
@@ -383,10 +380,15 @@ lighting pass picks the cascade by view depth (from the camera the cascades were
 isn't the camera rendered from: a debug camera watching the main camera) and samples the atlas with a hardware compare sampler (3×3 PCF by default). The shadow maps use
 standard depth (cleared to 1, compare `LessOrEqual`): each cascade's orthographic depth is linear and fitted to it, so reversing it gains nothing.
 
+![The camera frustum from the side split into three cascades up to the 200 m shadow distance, each with its bounding sphere and ortho light frustum, and the 2×2 atlas holding their tiles](../../screenshots/renderer_shadow_cascades.svg)
+
 ## Depth
 
 The camera uses reversed-Z with no far plane (`perspectiveProjection` in `projection.h`, the renderer's convention; the view picks the field of view): depth is `near / distance`, 1 at the near plane (0.1 m) and
 falling to 0 at infinity, so nothing is clipped at a distance and the 32-bit float depth keeps its precision far away.
+
+![The camera's depth, near over distance, falling from 1 to 0 against standard depth, with what a float step means at 1 km and the depth conventions](../../screenshots/renderer_reversed_z.svg)
+
 - **Conventions.** Camera depth is cleared to 0. The depth prepass and geometry pass write with `Greater`, the geometry pass tests `Equal` after
   the prepass, the debug views test `GreaterOrEqual` and the debug lines `Greater`. `RhiDepthState`'s default (`Less`) is the shadow pass's.
 - **Reading it.** `lighting.frag`: background where depth is 0, view distance `near / depth` (cascade selection), world position through the inverse
@@ -406,10 +408,14 @@ normal over π, a Lambert surface's share, in place of the hemisphere ambient. W
 the clear colour and `render.ambient.*`. The `render` record and the Render Debug window say whether the frame drew it, with its mean radiance;
 the view's `environment` record has the rest.
 
+![The sky image's lat-long frame, what ngen-packer-exr and collectEnvironment make of it, and its two uses in lighting.frag: the background and the irradiance on lit surfaces](../../screenshots/renderer_sky.svg)
+
 ## Extensions
 
 What lies outside the renderer's core joins its frame through `RenderExtension` (`renderextension.h`), added before `init` and called at fixed
 points of `Renderer::render`, in the order added; each hook does nothing unless overridden:
+
+![Renderer::render as a timeline with the hooks where they run, which hooks RenderTools, GizmoRender and UiRender override, and their frame data in RenderSnapshot::extensions](../../screenshots/renderer_extension_hooks.svg)
 
 | Hook | When |
 |---|---|
@@ -478,5 +484,4 @@ image for the compute AA (optional, blit fallback), pipeline statistics for the 
 - No transient buffers in the frame graph (see "Culling and draw lists").
 - The texture array is fixed at 1024 slots; materials past it use the fallback texture and a warning is printed.
 - Culling is per instance against frusta only: no occlusion culling, no clusters or meshlets. Building-sized meshes cull poorly.
-- Geometry, textures and tables re-upload in full on any change other than transforms.
 - Everything runs on one graphics queue; the cull passes are separate graph passes so a multi-queue scheduler could move them.

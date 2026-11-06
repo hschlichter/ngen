@@ -541,7 +541,7 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
     instanceCullPass.rebuildDescriptors(device, drawLists, gpuScene, lodGroups, deletionQueue, m_frameIndex);
     lodSelectPass.rebuildDescriptors(device, lodGroups, deletionQueue, m_frameIndex);
 
-    // Tables come from uploadRenderWorld; nothing to point at before the first one.
+    // Tables come from applySceneChanges; nothing to point at before the first one.
     if (gpuInstances.empty() || gpuScene.materialBuffer() == nullptr) {
         return;
     }

@@ -287,7 +287,7 @@ struct World {
 
     // The level a LOD root wants: set by hand for its path, or its default.
     auto wantedLevel(const std::string& rootPath, const LodRoot& root) const -> uint32_t;
-    // The level it draws: the finest loaded level not finer than the wanted one, else the finest loaded one.
+    // The level it draws: the finest loaded level not finer than the wanted one, else the coarsest loaded one (finer than the wanted one).
     auto drawnLevel(const std::string& rootPath, const LodRoot& root) const -> std::optional<uint32_t>;
 
     // The prototypes held in contents.

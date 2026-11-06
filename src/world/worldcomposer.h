@@ -12,8 +12,9 @@
 
 // Composes a World from layer packs (src/asset/pack/scenepack.h), as USD composes a stage from layers, for what the engine composes:
 // the layer stack (sublayers, strongest first, per attribute), references and payloads to other files and inside a file, with namespace
-// mapping and relationship targets mapped through them, instancing (one prototype per distinct set of arcs), and UsdLod roots. What packs
-// report as unsupported (variant sets, inherits, specializes, relocates) isn't composed. See src/world/README.md.
+// mapping and relationship targets mapped through them, variant sets and their selections, instancing (one prototype per distinct set of
+// arcs), and UsdLod roots. What packs report as unsupported (inherits, specializes, relocates, layer offsets) isn't composed. See
+// src/world/README.md.
 //
 // The composer doesn't fetch anything. The caller feeds it packs and calls compose(), which says which packs it still needs; composing
 // again once they have arrived goes deeper:

@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="708" viewBox="0 0 1000 708" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 15px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .m { font-size: 11px; fill: #3a4452; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="708" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">build framework: core types and the cxx wrappers</text>
+  <text x="28" y="62" class="s" style="font-size:12px">Each wrapper owns its core object through a shared_ptr and attaches itself to that object's ExtensionMap, where the emitter finds it.</text>
+
+  <!-- Lanes -->
+  <rect x="28" y="88" width="400" height="484" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="44" y="112" class="h">Core: build::</text>
+  <text x="44" y="130" class="s">framework/: no language vocabulary</text>
+  <rect x="572" y="88" width="400" height="484" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="588" y="112" class="h">C++ module: build::cxx</text>
+  <text x="588" y="130" class="s">framework/cxx/: fluent wrappers, one per core type</text>
+
+  <!-- Project and legend -->
+  <rect x="44" y="140" width="368" height="58" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="56" y="161" class="lib">build::Project</text>
+  <text x="56" y="179" class="s">entry targets, default target, platforms, configs,</text>
+  <text x="56" y="192" class="s">by pointer to the core objects below</text>
+  <rect x="588" y="140" width="368" height="58" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+  <line x1="630" y1="163" x2="602" y2="163" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="640" y="167" class="s">shared_ptr: the wrapper owns its core object</text>
+  <line x1="602" y1="184" x2="630" y2="184" stroke="#475569" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+  <text x="640" y="188" class="s">extensions().attach(*this): the core finds its wrapper</text>
+
+  <!-- Platform -->
+  <rect x="44" y="210" width="368" height="84" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="56" y="231" class="lib">build::Platform</text>
+  <text x="56" y="249" class="s">name · os · graphics_api · exe_suffix</text>
+  <text x="56" y="265" class="m">ExtensionMap</text>
+  <rect x="588" y="210" width="368" height="84" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="600" y="231" class="lib">cxx::Platform</text>
+  <text x="600" y="249" class="s">compile_flags · link_flags · defines · system_libs</text>
+  <rect x="600" y="258" width="344" height="26" rx="5" fill="#eff6ff"/>
+  <text x="610" y="275" class="m" font-weight="700">Toolchain</text>
+  <text x="684" y="275" class="s">compiler · archiver · linker · default_std, by value</text>
+  <line x1="588" y1="244" x2="416" y2="244" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="412" y1="262" x2="584" y2="262" stroke="#475569" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+
+  <!-- Configuration -->
+  <rect x="44" y="306" width="368" height="58" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="56" y="327" class="lib">build::Configuration</text>
+  <text x="56" y="345" class="s">name · out_dir</text>
+  <text x="140" y="345" class="m">ExtensionMap</text>
+  <rect x="588" y="306" width="368" height="58" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="600" y="327" class="lib">cxx::Configuration</text>
+  <text x="600" y="345" class="s">compile_flags · link_flags · defines</text>
+  <line x1="588" y1="327" x2="416" y2="327" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="412" y1="345" x2="584" y2="345" stroke="#475569" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+
+  <!-- Target -->
+  <rect x="44" y="376" width="368" height="74" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="56" y="397" class="lib">build::Target</text>
+  <text x="180" y="397" class="s">a graph node</text>
+  <text x="56" y="415" class="s">name · deps · only_on / except_on · only_in / except_in</text>
+  <text x="56" y="433" class="m">ExtensionMap</text>
+  <rect x="588" y="376" width="368" height="74" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="600" y="397" class="lib">cxx::Target</text>
+  <text x="704" y="397" class="s">one per library or program</text>
+  <text x="600" y="415" class="s">StaticLibrary · SharedLibrary · Program</text>
+  <text x="600" y="433" class="s">archive or link edge; sources() makes the ObjectFiles</text>
+  <line x1="588" y1="404" x2="416" y2="404" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="412" y1="422" x2="584" y2="422" stroke="#475569" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+
+  <!-- ObjectFile -->
+  <line x1="228" y1="450" x2="228" y2="480" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="238" y="469" class="s">deps: the parent depends on each</text>
+  <line x1="772" y1="450" x2="772" y2="480" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="782" y="469" class="s">owns: shared_ptr&lt;ObjectFile&gt;</text>
+
+  <rect x="44" y="482" width="368" height="74" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="56" y="503" class="lib">build::Target</text>
+  <text x="180" y="503" class="s">one per translation unit</text>
+  <text x="56" y="521" class="s">named &lt;parent&gt;/&lt;source&gt;</text>
+  <text x="56" y="539" class="m">ExtensionMap</text>
+  <rect x="588" y="482" width="368" height="74" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="600" y="503" class="lib">cxx::ObjectFile</text>
+  <text x="736" y="503" class="s">one per .cpp</text>
+  <text x="600" y="521" class="s">compile edge; holds a shared_ptr to the parent's base</text>
+  <text x="600" y="539" class="s">flags layered: platform → config → parent → object</text>
+  <line x1="588" y1="510" x2="416" y2="510" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="412" y1="528" x2="584" y2="528" stroke="#475569" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+
+  <!-- Auxiliary -->
+  <rect x="28" y="588" width="944" height="100" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-opacity="0.45"/>
+  <text x="44" y="612" class="h">Tool · Alias · Phony</text>
+  <text x="200" y="612" class="s">the same pattern: each owns a shared_ptr&lt;Target&gt; and attaches to its ExtensionMap</text>
+  <rect x="44" y="624" width="296" height="50" rx="7" fill="#ffffff" stroke="#7c3aed" stroke-opacity="0.6"/>
+  <text x="56" y="645" class="lib">Tool</text>
+  <text x="56" y="663" class="s">an opaque shell command; per variant, or global()</text>
+  <rect x="352" y="624" width="296" height="50" rx="7" fill="#ffffff" stroke="#7c3aed" stroke-opacity="0.6"/>
+  <text x="364" y="645" class="lib">Alias</text>
+  <text x="364" y="663" class="s">resolves to another target per (platform, config)</text>
+  <rect x="660" y="624" width="296" height="50" rx="7" fill="#ffffff" stroke="#7c3aed" stroke-opacity="0.6"/>
+  <text x="672" y="645" class="lib">Phony</text>
+  <text x="672" y="663" class="s">names dependencies: one command-less edge</text>
+</svg>

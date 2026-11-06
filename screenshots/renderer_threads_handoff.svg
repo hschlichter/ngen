@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="736" viewBox="0 0 1000 736" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 15px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 12.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .mono { font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .edge { font-size: 11px; fill: #334155; font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="736" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">Renderer: threads and handoff</text>
+  <text x="28" y="62" class="s" style="font-size:12px">The main thread hands values down; the render thread alone records and submits; results come back latest-only.</text>
+
+  <!-- Lanes -->
+  <rect x="28" y="88" width="266" height="620" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="44" y="114" class="h">Main thread</text>
+  <text x="44" y="132" class="s">ViewFrame's steps</text>
+
+  <rect x="370" y="88" width="356" height="620" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-opacity="0.45"/>
+  <text x="386" y="114" class="h">Render thread</text>
+  <text x="386" y="132" class="s mono">RenderThread::threadLoop</text>
+
+  <rect x="800" y="88" width="172" height="620" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="816" y="114" class="h">GPU</text>
+  <text x="816" y="132" class="s">one graphics queue</text>
+
+  <!-- Main thread: what goes down -->
+  <rect x="42" y="146" width="238" height="52" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="54" y="167" class="lib">RenderSnapshot</text>
+  <text x="54" y="186" class="s">every frame; one slot, blocks while full</text>
+
+  <rect x="42" y="206" width="238" height="52" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="54" y="227" class="lib">SceneChanges</text>
+  <text x="54" y="246" class="s">on scene changes; appended until taken</text>
+
+  <rect x="42" y="266" width="238" height="52" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="54" y="287" class="t" font-weight="700">Settings, under a lock</text>
+  <text x="54" y="306" class="s">upload budget, geometry limit, reloads</text>
+
+  <rect x="42" y="338" width="238" height="166" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="54" y="360" class="t" font-weight="700">A snapshot carries</text>
+  <text x="54" y="380" class="s">view and projection, window size</text>
+  <text x="54" y="396" class="s">view mode, overlays, AA, prepass, sampler</text>
+  <text x="54" y="412" class="s">cull frustum (live or frozen), cullEnabled</text>
+  <text x="54" y="428" class="s">shadow settings and fitted cascades</text>
+  <text x="54" y="444" class="s">render-LOD eye and tuning</text>
+  <text x="54" y="460" class="s">debug lines, capture watches</text>
+  <text x="54" y="476" class="s">each extension's data: render tools'</text>
+  <text x="54" y="492" class="s">requests, gizmo lines, ImGui draw data</text>
+
+  <!-- Main thread: what comes back -->
+  <rect x="42" y="516" width="238" height="56" rx="8" fill="#ffffff" stroke="#7c3aed" stroke-opacity="0.6"/>
+  <text x="54" y="537" class="t" font-weight="700">Render tools' snapshots</text>
+  <text x="54" y="556" class="s">latest-only; every screenshot, counters</text>
+
+  <rect x="42" y="584" width="238" height="110" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="54" y="605" class="t" font-weight="700">Records and windows</text>
+  <text x="54" y="628" class="s mono">latestCullResult()</text>
+  <text x="190" y="628" class="s">newest only</text>
+  <text x="54" y="650" class="s mono">takeCaptureResults()</text>
+  <text x="204" y="650" class="s">every one</text>
+  <text x="54" y="672" class="s mono">latestSceneGpuStats()</text>
+
+  <!-- Render thread: one iteration -->
+  <rect x="384" y="146" width="328" height="36" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="396" y="169" class="t">take the snapshot, free the slot</text>
+
+  <rect x="384" y="214" width="328" height="36" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="396" y="237" class="lib">applySceneChanges</text>
+  <text x="548" y="237" class="s">queues uploads, nothing waits</text>
+
+  <rect x="384" y="274" width="328" height="36" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="396" y="297" class="t">apply settings, reload shaders</text>
+
+  <rect x="384" y="328" width="328" height="296" rx="8" fill="#ffedd5" stroke="#ea580c" stroke-opacity="0.45"/>
+  <text x="396" y="348" class="lib">Renderer::render</text>
+
+  <rect x="396" y="358" width="304" height="32" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="408" y="379" class="t">wait for the slot's fence</text>
+
+  <rect x="396" y="396" width="304" height="46" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="408" y="415" class="t">read the slot's readbacks</text>
+  <text x="408" y="432" class="s">culling, LOD, GPU timings, captures; deletions</text>
+
+  <rect x="396" y="448" width="304" height="32" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="408" y="469" class="t">acquire an image, update pipelines</text>
+
+  <rect x="396" y="486" width="304" height="32" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="408" y="507" class="t">build the <tspan class="mono" font-weight="700">FrameGraph</tspan>: passes declare accesses</text>
+
+  <rect x="396" y="524" width="304" height="32" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="408" y="545" class="t">compile: order, cull, lifetimes</text>
+
+  <rect x="396" y="562" width="304" height="52" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="408" y="582" class="t">execute into the slot's command buffer</text>
+  <text x="408" y="602" class="t">submit, present</text>
+
+  <rect x="384" y="640" width="328" height="54" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="396" y="661" class="t">publish after the frame</text>
+  <text x="396" y="680" class="s">SceneGpuStats, capture results, a newer CullResult</text>
+
+  <!-- Render thread flow -->
+  <line x1="548" y1="182" x2="548" y2="210" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="548" y1="250" x2="548" y2="270" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="548" y1="310" x2="548" y2="324" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="548" y1="624" x2="548" y2="636" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+  <!-- Down: main to render -->
+  <line x1="280" y1="164" x2="380" y2="164" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="280" y1="232" x2="380" y2="232" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="280" y1="292" x2="380" y2="292" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- Up: render to main -->
+  <line x1="384" y1="667" x2="284" y2="667" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="296" y="658" class="edge">each frame</text>
+  <line x1="384" y1="544" x2="284" y2="544" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="300" y="535" class="edge">own channel</text>
+
+  <!-- GPU -->
+  <rect x="814" y="358" width="144" height="84" rx="8" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="826" y="379" class="t" font-weight="700">The slot's</text>
+  <text x="826" y="397" class="s">fence and readback</text>
+  <text x="826" y="413" class="s">buffers, from its</text>
+  <text x="826" y="429" class="s">previous frame</text>
+
+  <rect x="814" y="540" width="144" height="84" rx="8" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="826" y="561" class="t" font-weight="700">The frame runs</text>
+  <text x="826" y="579" class="s">upload, LOD, cull,</text>
+  <text x="826" y="595" class="s">draw, light, post,</text>
+  <text x="826" y="611" class="s">overlays, readbacks</text>
+
+  <line x1="700" y1="588" x2="810" y2="588" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="726" y="580" class="edge">submit</text>
+  <line x1="886" y1="540" x2="886" y2="446" stroke="#475569" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <text x="892" y="482" class="s">signals,</text>
+  <text x="892" y="497" class="s">copies</text>
+  <line x1="814" y1="374" x2="704" y2="374" stroke="#475569" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <text x="730" y="366" class="edge">fence</text>
+  <line x1="814" y1="419" x2="704" y2="419" stroke="#475569" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <text x="724" y="411" class="edge">mapped</text>
+
+  <text x="816" y="660" class="s">A slot comes round</text>
+  <text x="816" y="676" class="s">again a slot cycle</text>
+  <text x="816" y="692" class="s">later (Frame slots)</text>
+</svg>

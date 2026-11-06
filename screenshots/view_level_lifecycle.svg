@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="672" viewBox="0 0 1000 672" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 13px; font-weight: 700; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .m { font-size: 12px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .sm { font-size: 11px; fill: #3a4452; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .b { font-size: 12.5px; font-weight: 700; fill: #1f2733; }
+    .tag { font-size: 10.5px; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="672" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">ngen-view: a level's life</text>
+  <text x="28" y="62" class="s" style="font-size:12px">One level of a streaming LOD root, from requested to drawn and let go; the level its root draws each pass; and what unloading releases.</text>
+
+  <!-- The level's states -->
+  <rect x="28" y="92" width="170" height="112" rx="9" fill="#ffffff" stroke="#94a3b8" stroke-dasharray="4 3"/>
+  <text x="40" y="114" class="b">not resident</text>
+  <text x="40" y="134" class="s">not among its root's</text>
+  <text x="40" y="149" class="s">resident levels:</text>
+  <text x="40" y="164" class="s">no placement</text>
+  <rect x="221.5" y="92" width="170" height="112" rx="9" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="233.5" y="114" class="b">resident</text>
+  <text x="233.5" y="134" class="s">the state reaches it: the</text>
+  <text x="233.5" y="149" class="s">composer relinks and asks</text>
+  <text x="233.5" y="164" class="s">for its payload packs</text>
+  <rect x="229.5" y="178" width="154" height="18" rx="9" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.4"/>
+  <text x="306.5" y="191" class="s" text-anchor="middle">waits: composing</text>
+  <line x1="200" y1="126" x2="219.5" y2="126" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="415" y="92" width="170" height="112" rx="9" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="427" y="114" class="b">linked, undrawn</text>
+  <text x="427" y="134" class="s">complete, so linked; placed</text>
+  <text x="427" y="149" class="s">with drawn = false, it asks</text>
+  <text x="427" y="164" class="s">for the assets it lacks</text>
+  <rect x="423" y="178" width="154" height="18" rx="9" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.4"/>
+  <text x="500" y="191" class="s" text-anchor="middle">waits: its assets</text>
+  <line x1="393.5" y1="126" x2="413" y2="126" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="608.5" y="92" width="170" height="112" rx="9" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="620.5" y="114" class="b">ready</text>
+  <text x="620.5" y="134" class="s">PlacementWait total 0:</text>
+  <text x="620.5" y="149" class="s">every asset held or failed;</text>
+  <text x="620.5" y="164" class="s">heldMeshes, heldMaterials</text>
+  <line x1="587" y1="126" x2="606.5" y2="126" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="802" y="92" width="170" height="112" rx="9" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.8" stroke-width="1.8"/>
+  <text x="814" y="114" class="b">drawn</text>
+  <text x="814" y="134" class="s">the root picks it: its</text>
+  <text x="814" y="149" class="s">draws take slots;</text>
+  <text x="814" y="164" class="s">LevelsSwitched</text>
+  <line x1="780.5" y1="126" x2="800" y2="126" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- Switching away from a drawn level -->
+  <path d="M887,206 C887,234 693.5,234 693.5,208" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="790" y="242" class="s" text-anchor="middle">switched away: slots given up, entries held</text>
+
+  <!-- Letting go -->
+  <path d="M241.5,206 V262 H952 V206" fill="none" stroke="#94a3b8" stroke-width="1.4"/>
+  <line x1="791" y1="262" x2="791" y2="302" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="251.5" y="256" class="s">out of the resident levels: past its unload radius, or its root no longer placed</text>
+
+  <!-- The level the root draws each pass -->
+  <rect x="28" y="304" width="562" height="340" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="44" y="328" class="h" fill="#3a4452">the level the root draws (drawnLevelOf), each pass</text>
+  <text x="44" y="345" class="s">the finest loaded, not finer than the selected, that waits for nothing</text>
+  <text x="360" y="364" class="s" text-anchor="middle">high</text>
+  <text x="430" y="364" class="s" text-anchor="middle">medium</text>
+  <text x="500" y="364" class="s" text-anchor="middle">low</text>
+  <text x="540" y="364" class="s"></text>
+  <text x="44" y="389" class="b">on time</text>
+  <text x="132" y="389" class="s">the selected level is ready</text>
+  <rect x="328" y="374" width="64" height="26" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-dasharray="3 3"/>
+  <text x="360" y="391" class="s" text-anchor="middle" style="fill:#94a3b8">—</text>
+  <rect x="398" y="374" width="64" height="26" rx="6" fill="#2563eb" stroke="#2563eb"/>
+  <text x="430" y="391" class="s" text-anchor="middle" style="fill:#ffffff">drawn</text>
+  <rect x="395" y="371" width="70" height="32" rx="8" fill="none" stroke="#1f2733" stroke-width="1.5"/>
+  <rect x="468" y="374" width="64" height="26" rx="6" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="500" y="391" class="s" text-anchor="middle" style="fill:#1f2733">ready</text>
+  <text x="44" y="439" class="b">late</text>
+  <text x="132" y="439" class="s">the selected level still waits:</text>
+  <text x="132" y="454" class="s">a coarser ready level draws</text>
+  <rect x="328" y="424" width="64" height="26" rx="6" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="360" y="441" class="s" text-anchor="middle" style="fill:#5a6575">waits</text>
+  <rect x="325" y="421" width="70" height="32" rx="8" fill="none" stroke="#1f2733" stroke-width="1.5"/>
+  <rect x="398" y="424" width="64" height="26" rx="6" fill="#2563eb" stroke="#2563eb"/>
+  <text x="430" y="441" class="s" text-anchor="middle" style="fill:#ffffff">drawn</text>
+  <rect x="468" y="424" width="64" height="26" rx="6" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="500" y="441" class="s" text-anchor="middle" style="fill:#1f2733">ready</text>
+  <text x="44" y="489" class="b">none ready</text>
+  <text x="132" y="489" class="s">the coarsest loaded draws,</text>
+  <text x="132" y="504" class="s">as its assets arrive</text>
+  <rect x="328" y="474" width="64" height="26" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-dasharray="3 3"/>
+  <text x="360" y="491" class="s" text-anchor="middle" style="fill:#94a3b8">—</text>
+  <rect x="398" y="474" width="64" height="26" rx="6" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="430" y="491" class="s" text-anchor="middle" style="fill:#5a6575">waits</text>
+  <rect x="395" y="471" width="70" height="32" rx="8" fill="none" stroke="#1f2733" stroke-width="1.5"/>
+  <rect x="468" y="474" width="64" height="26" rx="6" fill="#93c5fd" stroke="#2563eb"/>
+  <text x="500" y="491" class="s" text-anchor="middle" style="fill:#1f2733">drawn</text>
+  <text x="44" y="539" class="b">hole</text>
+  <text x="132" y="539" class="s">nothing loaded at or coarser</text>
+  <text x="132" y="554" class="s">than selected: nothing draws</text>
+  <rect x="328" y="524" width="64" height="26" rx="6" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="360" y="541" class="s" text-anchor="middle" style="fill:#1f2733">ready</text>
+  <rect x="398" y="524" width="64" height="26" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-dasharray="3 3"/>
+  <text x="430" y="541" class="s" text-anchor="middle" style="fill:#94a3b8">—</text>
+  <rect x="395" y="521" width="70" height="32" rx="8" fill="none" stroke="#1f2733" stroke-width="1.5"/>
+  <rect x="468" y="524" width="64" height="26" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-dasharray="3 3"/>
+  <text x="500" y="541" class="s" text-anchor="middle" style="fill:#94a3b8">—</text>
+  <text x="44" y="630" class="s">Framed: the level selected; a dashed cell: not loaded. A finer level never draws in its place.</text>
+
+  <!-- Unloading -->
+  <rect x="610" y="304" width="362" height="340" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="626" y="328" class="h" fill="#3a4452">unloading: let go at once, everything follows</text>
+  <circle cx="636" cy="356" r="9" fill="#2563eb"/>
+  <text x="636" y="360" class="tag" text-anchor="middle" fill="#ffffff">1</text>
+  <text x="654" y="360.5" class="s">its placement is released</text>
+  <circle cx="636" cy="389" r="9" fill="#2563eb"/>
+  <text x="636" y="393" class="tag" text-anchor="middle" fill="#ffffff">2</text>
+  <text x="654" y="393.5" class="s">the composer releases the contents</text>
+  <text x="654" y="408.5" class="s">no level reaches any more</text>
+  <circle cx="636" cy="437" r="9" fill="#2563eb"/>
+  <text x="636" y="441" class="tag" text-anchor="middle" fill="#ffffff">3</text>
+  <text x="654" y="441.5" class="s">library entries no placement uses leave</text>
+  <text x="654" y="456.5" class="s">the libraries and the renderer</text>
+  <circle cx="636" cy="485" r="9" fill="#2563eb"/>
+  <text x="636" y="489" class="tag" text-anchor="middle" fill="#ffffff">4</text>
+  <text x="654" y="489.5" class="s">a mesh's pack goes once no placement</text>
+  <text x="654" y="504.5" class="s">names it</text>
+  <text x="626" y="535" class="s">Layer packs and material and texture packs stay held.</text>
+  <rect x="626" y="549" width="330" height="44" rx="7" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="638" y="567" class="m">LevelsUnloaded</text>
+  <text x="638" y="584" class="s">per batch: levels, contents, mesh packs</text>
+  <text x="626" y="630" class="s">Shown by the streaming and scenethread records.</text>
+</svg>

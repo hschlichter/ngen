@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="540" viewBox="0 0 1000 540" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 13px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .m { font-size: 11px; fill: #334155; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .edge { font-size: 11px; fill: #334155; font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="540" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">Composing in rounds</text>
+  <text x="28" y="62" class="s" style="font-size:12px">compose() returns the layer packs it names and doesn't hold; the caller fetches them, addPacks them and composes again until nothing is needed.</text>
+
+  <rect x="28" y="88" width="944" height="164" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="44" y="114" class="lib">WorldComposer</text>
+  <text x="44" y="132" class="s">composes from the</text>
+  <text x="44" y="147" class="s">packs it holds</text>
+  <rect x="28" y="264" width="944" height="88" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="44" y="290" class="lib">caller</text>
+  <text x="44" y="308" class="s">ViewScene::compose,</text>
+  <text x="44" y="323" class="s">ngen-worldcheck</text>
+  <rect x="28" y="376" width="944" height="72" rx="10" fill="#fdf2f8" stroke="#db2777" stroke-opacity="0.45"/>
+  <text x="44" y="402" class="lib">ngen-asset-server</text>
+  <text x="44" y="420" class="s">packs by asset id</text>
+
+  <!-- round 1 -->
+  <rect x="196" y="100" width="172" height="140" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="208" y="122" class="h">compose(), round 1</text>
+  <text x="208" y="141" class="s">holds no pack yet</text>
+  <line x1="208" y1="188" x2="356" y2="188" stroke="#e2e8f0"/>
+  <text x="208" y="204" class="s">returns</text>
+  <text x="256" y="204" class="m">root.usda</text>
+  <rect x="196" y="276" width="172" height="64" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="208" y="302" class="s">fetches root.usda,</text>
+  <text x="208" y="319" class="s">addPacks it</text>
+  <path d="M 282 240 V 272" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="196" y="388" width="172" height="48" rx="8" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="208" y="417" class="s">packs root.usda</text>
+  <path d="M 258 340 V 384" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 306 388 V 344" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="252" y="366" class="edge" text-anchor="end">request</text>
+  <text x="312" y="366" class="edge">pack</text>
+  <path d="M 368 308 H 380 V 160 H 390" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- round 2 -->
+  <rect x="392" y="100" width="172" height="140" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="404" y="122" class="h">compose(), round 2</text>
+  <text x="404" y="141" class="s">the stage from root.usda;</text>
+  <text x="404" y="156" class="s">arcs to packs not held</text>
+  <text x="404" y="171" class="s">compose as gaps</text>
+  <line x1="404" y1="188" x2="552" y2="188" stroke="#e2e8f0"/>
+  <text x="404" y="204" class="s">returns</text>
+  <text x="452" y="204" class="m">edits.usda</text>
+  <text x="452" y="219" class="m">tree.usda</text>
+  <text x="452" y="234" class="m">tree_geo.usda</text>
+  <rect x="392" y="276" width="172" height="64" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="404" y="302" class="s">fetches the three,</text>
+  <text x="404" y="319" class="s">addPacks each</text>
+  <path d="M 478 240 V 272" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="392" y="388" width="172" height="48" rx="8" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="404" y="417" class="s">packs the three</text>
+  <path d="M 454 340 V 384" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 502 388 V 344" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="448" y="366" class="edge" text-anchor="end">request</text>
+  <text x="508" y="366" class="edge">pack</text>
+  <path d="M 564 308 H 576 V 160 H 586" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- round 3 -->
+  <rect x="588" y="100" width="172" height="140" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="600" y="122" class="h">compose(), round 3</text>
+  <text x="600" y="141" class="s">one level of arcs deeper:</text>
+  <text x="600" y="156" class="s">tree.usda references</text>
+  <text x="600" y="171" class="s">bark.usda</text>
+  <line x1="600" y1="188" x2="748" y2="188" stroke="#e2e8f0"/>
+  <text x="600" y="204" class="s">returns</text>
+  <text x="648" y="204" class="m">bark.usda</text>
+  <rect x="588" y="276" width="172" height="64" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="600" y="302" class="s">bark.usda can't be had:</text>
+  <text x="600" y="319" class="m">markFailed(bark.usda)</text>
+  <path d="M 674 240 V 272" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="588" y="388" width="172" height="48" rx="8" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="600" y="417" class="s">bark.usda: an error</text>
+  <path d="M 650 340 V 384" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 698 388 V 344" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="644" y="366" class="edge" text-anchor="end">request</text>
+  <text x="704" y="366" class="edge">pack</text>
+  <path d="M 760 308 H 772 V 160 H 782" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- round 4 -->
+  <rect x="784" y="100" width="172" height="140" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="796" y="122" class="h">compose(), round 4</text>
+  <text x="796" y="141" class="s">the arc to bark.usda</text>
+  <text x="796" y="156" class="s">composes as if it</text>
+  <text x="796" y="171" class="s">weren't authored</text>
+  <line x1="796" y1="188" x2="944" y2="188" stroke="#e2e8f0"/>
+  <text x="796" y="204" class="s">returns nothing: done</text>
+  <rect x="784" y="276" width="172" height="64" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="796" y="302" class="s">nothing needed:</text>
+  <text x="796" y="319" class="s">the World is complete</text>
+  <path d="M 870 240 V 272" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <text x="28" y="486" class="t">Each round goes one level of arcs deeper. An arc to a pack not held composes as a gap: it adds nothing until the pack arrives.</text>
+  <text x="28" y="506" class="t">messages() lists what the last compose couldn't compose: a file with no default prim, a target that isn't there, an arc cycle,</text>
+  <text x="28" y="525" class="t">a binding to a prim that isn't there.</text>
+</svg>

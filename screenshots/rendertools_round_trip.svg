@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="540" viewBox="0 0 1000 540" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 14px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .code { font-size: 11px; fill: #334155; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .edge { font-size: 11px; fill: #334155; font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="540" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">Render tools: how a frame asks and gets an answer</text>
+  <text x="28" y="62" class="s" style="font-size:12px">The request travels in the frame's snapshot; what the render thread builds comes back through one locked hand-off.</text>
+
+  <!-- Main thread -->
+  <rect x="28" y="84" width="944" height="156" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="44" y="106" class="h">Main thread</text>
+  <text x="140" y="106" class="s">once a frame, in ngen-view's loop</text>
+
+  <rect x="44" y="120" width="190" height="104" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="58" y="142" class="lib">startFrame()</text>
+  <text x="58" y="162" class="t">takes what came back</text>
+  <text x="58" y="182" class="s">into results(); this</text>
+  <text x="58" y="197" class="s">frame's request() starts</text>
+  <text x="58" y="212" class="s">empty</text>
+
+  <rect x="258" y="120" width="320" height="104" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="272" y="142" class="lib">the readers</text>
+  <text x="272" y="162" class="t">ViewDumps, UiHooks (the windows)</text>
+  <text x="272" y="182" class="s">take theirs from results(); set what they want in request():</text>
+  <text x="272" y="198" class="code">frameGraphDebug, renderDebug,</text>
+  <text x="272" y="213" class="code">counters, frameDebug</text>
+
+  <rect x="602" y="120" width="354" height="104" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="616" y="142" class="lib">fillSnapshot(snapshot)</text>
+  <text x="616" y="162" class="t">the RenderToolsFrame into the snapshot</text>
+  <text x="616" y="182" class="s">with what was asked for since, at any time:</text>
+  <text x="616" y="198" class="code">requestScreenshot, requestTextureDump,</text>
+  <text x="616" y="213" class="code">setTextureInspect</text>
+
+  <line x1="234" y1="172" x2="256" y2="172" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="578" y1="172" x2="600" y2="172" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- Hand-offs -->
+  <rect x="44" y="262" width="692" height="54" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="58" y="283" class="lib">published</text>
+  <text x="142" y="283" class="s">RenderToolsResults, under resultsMutex</text>
+  <text x="58" y="302" class="s">latest only: frameGraph, renderDebug, frameDebug; every one: screenshots, counters (at most 300)</text>
+
+  <rect x="756" y="262" width="200" height="54" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="770" y="283" class="lib">RenderSnapshot</text>
+  <text x="770" y="302" class="s">submitSnapshot</text>
+
+  <line x1="856" y1="224" x2="856" y2="260" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="139" y1="262" x2="139" y2="226" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="147" y="249" class="edge">next startFrame</text>
+
+  <!-- Render thread -->
+  <rect x="28" y="338" width="944" height="182" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-opacity="0.45"/>
+  <text x="296" y="360" class="h">Render thread</text>
+  <text x="404" y="360" class="s">the hooks in Renderer::render's order, right to left</text>
+
+  <rect x="812" y="374" width="144" height="130" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="824" y="396" class="lib">beginFrame</text>
+  <text x="824" y="416" class="t">takes the request</text>
+  <text x="824" y="436" class="s">screenshots and dumps</text>
+  <text x="824" y="451" class="s">wait for a frame that</text>
+  <text x="824" y="466" class="s">records; a screenshot</text>
+  <text x="824" y="481" class="s">frame leaves the UI out</text>
+
+  <rect x="660" y="374" width="136" height="130" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="672" y="396" class="lib">afterFence</text>
+  <text x="672" y="416" class="t">counters</text>
+  <text x="672" y="436" class="s">from the GPU zones</text>
+  <text x="672" y="451" class="s">of the slot's last</text>
+  <text x="672" y="466" class="s">frame, when asked</text>
+
+  <rect x="508" y="374" width="136" height="130" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="520" y="396" class="lib">beforeExecute</text>
+  <text x="520" y="416" class="t">command log</text>
+  <text x="520" y="436" class="s">on for a frame debug</text>
+  <text x="520" y="451" class="s">capture; pipeline</text>
+  <text x="520" y="466" class="s">statistics for counters</text>
+
+  <rect x="356" y="374" width="136" height="130" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="368" y="396" class="lib">afterExecute</text>
+  <text x="368" y="416" class="t">copies recorded</text>
+  <text x="368" y="436" class="s">the frame debug</text>
+  <text x="368" y="451" class="s">capture; the inspector's</text>
+  <text x="368" y="466" class="s">blit; the dumps' and</text>
+  <text x="368" y="481" class="s">screenshot's copies</text>
+
+  <rect x="204" y="374" width="136" height="130" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="216" y="396" class="lib">afterSubmit</text>
+  <text x="216" y="416" class="t">files written</text>
+  <text x="216" y="436" class="s">waits for the frame,</text>
+  <text x="216" y="451" class="s">writes the PNGs;</text>
+  <text x="216" y="466" class="s">screenshot results</text>
+
+  <rect x="44" y="374" width="144" height="130" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="56" y="396" class="lib">endFrame</text>
+  <text x="56" y="416" class="t">hands back</text>
+  <text x="56" y="436" class="s">builds the frame graph</text>
+  <text x="56" y="451" class="s">and render debug</text>
+  <text x="56" y="466" class="s">snapshots asked for;</text>
+  <text x="56" y="481" class="s">hands them back with</text>
+  <text x="56" y="496" class="s">the frame debug capture</text>
+
+  <line x1="884" y1="316" x2="884" y2="372" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="812" y1="439" x2="798" y2="439" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="660" y1="439" x2="646" y2="439" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="508" y1="439" x2="494" y2="439" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="356" y1="439" x2="342" y2="439" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="204" y1="439" x2="190" y2="439" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <line x1="116" y1="374" x2="116" y2="318" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="272" y1="374" x2="272" y2="318" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="716" y1="374" x2="716" y2="318" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+</svg>

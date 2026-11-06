@@ -41,6 +41,8 @@ the caller feeds the composer packs from the asset server.
 
 ## Composition
 
+![The index of /World/Tree as a tree of nodes in strength order: the root node, a reference with a variant under it, and a payload; one attribute resolved by the first opinion, and a child's index.](../../screenshots/world_prim_index.svg)
+
 `WorldComposer` follows USD's prim indexing (`pxr/usd/pcp`), so a World has the prims, types and opinions a USD stage of the same files
 has:
 
@@ -80,10 +82,14 @@ children UsdLod counts as LOD items: defined, active and not abstract (an `over`
 also asks them to be loaded; here loading a level is the engine's, so a level counts loaded or not, and a child defined only by its payload counts.
 `ngen-usdcheck` counts them the same way.
 
+![The two kinds of LOD root side by side: a streaming root whose levels are payloads, each a linked content of its own, and a render-LOD root whose levels are composed in place and picked per placement by the GPU.](../../screenshots/world_lod_root_kinds.svg)
+
 **Two kinds of root, from what is authored** (`LodRoot::streams`):
 - **Streaming**: a level has a payload. A root wants a level, `lod:default:index` until `setLodLevel` sets one for its path, and loads the
-  levels the reader sets for it (`setResidentLevels`: ngen-view's residency), else the wanted one and its coarsest. It draws the finest loaded
-  level not finer than the wanted one, so a level still loading falls back to a coarser one. Each level is a content of its own (below).
+  levels the reader sets for it (`setResidentLevels`: ngen-view's residency), else the wanted one and its coarsest. `visit` draws the finest loaded
+  level not finer than the wanted one, else the coarsest loaded one; a level the reader hasn't made resident isn't loaded, so it falls back to
+  a coarser one. Whether a loaded level has everything it draws is the reader's to judge (ngen-view's, `src/view/README.md`, "Switching
+  levels"). Each level is a content of its own (below).
 - **Render LOD**: no level has a payload (levels that are references or inline, as an asset's `lod0`… into its one geometry file). Every
   level is composed in place with the root's content, as USD composes it, and is loaded (`LodRoot::loaded` holds them all); which one draws
   is the renderer's, per placement, and `visit` walks them as children. Loading, linking, `setLodLevel` and the sections below concern
@@ -123,6 +129,8 @@ payloads in one level pays for it in that level's composition rounds.
 
 ## Composed content is kept across composes
 
+![World::stage linking to World::contents: instances to a shared prototype, LOD level stand-ins to level contents, -1 until a content is complete, a released content emptied in place, a version per content.](../../screenshots/world_contents.svg)
+
 The stage is composed again every compose; prototypes and level contents are kept in one store (`World::contents`, at stable indices) and
 reused by key: a prototype by its kept nodes, a level by its prim index (every node's site, arc and namespace mapping) and whether it loads.
 **A content is linked only once it is complete**, composed with every pack it named held (or failed): until then an instance's `prototype`
@@ -146,6 +154,8 @@ another content (a level's material outside the level). A level in a prototype n
 prototype was composed for; those are looked up in the prototype, as that instance's own content may not be linked yet.
 
 ## Composing in rounds
+
+![compose() in rounds: each returns the packs it names and lacks, the caller fetches them from the asset server and addPacks them, a pack that can't be had is markFailed, until nothing is needed.](../../screenshots/world_compose_rounds.svg)
 
 `compose()` composes from the packs held and returns the layer packs it names and doesn't hold: sublayers, references, and the payloads it
 loads. An arc to a pack that isn't held yet composes as a gap. The caller fetches what is needed, `addPack`s it and composes again until

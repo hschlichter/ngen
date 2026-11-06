@@ -1,0 +1,210 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1278" viewBox="0 0 1000 1278" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 13px; font-weight: 700; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .m { font-size: 12px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .sm { font-size: 11px; fill: #3a4452; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .b { font-size: 12.5px; font-weight: 700; fill: #1f2733; }
+    .tag { font-size: 10.5px; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="1278" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">ngen-view: the frame</text>
+  <text x="28" y="62" class="s" style="font-size:12px">ViewFrame's steps in the order src/apps/view.cpp's loop calls them, and the ViewHooks points between them where the tools and the UI join.</text>
+
+  <!-- Legend: the layers, coloured as in architecture_layers.svg -->
+  <rect x="28" y="80" width="12" height="12" rx="3" fill="#ffffff" stroke="#2563eb" stroke-width="2"/>
+  <text x="46" y="90" class="s">view (engine)</text>
+  <rect x="148.5" y="80" width="12" height="12" rx="3" fill="#ffffff" stroke="#16a34a" stroke-width="2"/>
+  <text x="166.5" y="90" class="s">viewcommands, rendertools</text>
+  <rect x="340" y="80" width="12" height="12" rx="3" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+  <text x="358" y="90" class="s">view.cpp (program)</text>
+  <rect x="490.5" y="80" width="12" height="12" rx="3" fill="#ffffff" stroke="#db2777" stroke-width="2"/>
+  <text x="508.5" y="90" class="s">ui: UiHooks</text>
+  <rect x="599.5" y="80" width="12" height="12" rx="3" fill="#ffffff" stroke="#7c3aed" stroke-width="2"/>
+  <text x="617.5" y="90" class="s">tools: ToolsHooks, run inside UiHooks</text>
+
+  <!-- Column headings -->
+  <text x="84" y="124" class="h" fill="#3a4452">the steps: ViewFrame, the commands, the loop</text>
+  <text x="560" y="124" class="h" fill="#3a4452">the hooks: hooks.&lt;point&gt;(frame)</text>
+
+  <!-- The timeline -->
+  <line x1="60" y1="132" x2="60" y2="1226" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="70" y="1230" class="s">next frame</text>
+  <rect x="84" y="140" width="452" height="30" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <rect x="84" y="146" width="3" height="18" rx="1.5" fill="#2563eb" stroke="#2563eb"/>
+  <text x="98" y="159.5" class="m">updateScene()</text>
+  <text x="204" y="159.5" class="s">change notices; the scene thread's latest snapshot</text>
+  <circle cx="60" cy="155" r="4.5" fill="#2563eb"/>
+  <line x1="66" y1="202" x2="558" y2="202" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <rect x="560" y="178" width="412" height="48" rx="7" fill="#ffffff" stroke="#94a3b8"/>
+  <text x="572" y="206.5" class="m">afterScene</text>
+  <rect x="686" y="185.5" width="38" height="15" rx="4" fill="#fdf2f8" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="705" y="196.5" class="tag" text-anchor="middle" fill="#db2777">ui</text>
+  <text x="732" y="196.5" class="s">the Camera window's list of scene cameras</text>
+  <rect x="686" y="203.5" width="38" height="15" rx="4" fill="#f5f3ff" stroke="#7c3aed" stroke-opacity="0.6"/>
+  <text x="705" y="214.5" class="tag" text-anchor="middle" fill="#7c3aed">tools</text>
+  <text x="732" y="214.5" class="s">the LOD and Streaming tools' rows</text>
+  <circle cx="60" cy="202" r="4.5" fill="#ffffff" stroke="#475569" stroke-width="1.6"/>
+  <rect x="84" y="234" width="452" height="30" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <rect x="84" y="240" width="3" height="18" rx="1.5" fill="#16a34a" stroke="#16a34a"/>
+  <text x="98" y="253.5" class="m">runFrameCommands()</text>
+  <text x="240.5" y="253.5" class="s">the script's due lines, then the endpoint's calls</text>
+  <circle cx="60" cy="249" r="4.5" fill="#16a34a"/>
+  <rect x="84" y="272" width="452" height="30" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <rect x="84" y="278" width="3" height="18" rx="1.5" fill="#2563eb" stroke="#2563eb"/>
+  <text x="98" y="291.5" class="m">advanceTime(), resetCameras()</text>
+  <text x="320" y="291.5" class="s">time, flight; every camera the main one</text>
+  <circle cx="60" cy="287" r="4.5" fill="#2563eb"/>
+  <line x1="66" y1="325" x2="558" y2="325" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <rect x="560" y="310" width="412" height="30" rx="7" fill="#ffffff" stroke="#94a3b8"/>
+  <text x="572" y="329.5" class="m">cameras</text>
+  <rect x="686" y="317.5" width="38" height="15" rx="4" fill="#f5f3ff" stroke="#7c3aed" stroke-opacity="0.6"/>
+  <text x="705" y="328.5" class="tag" text-anchor="middle" fill="#7c3aed">tools</text>
+  <text x="732" y="328.5" class="s">the debug camera takes what it drives</text>
+  <circle cx="60" cy="325" r="4.5" fill="#ffffff" stroke="#475569" stroke-width="1.6"/>
+  <rect x="84" y="348" width="452" height="30" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <rect x="84" y="354" width="3" height="18" rx="1.5" fill="#2563eb" stroke="#2563eb"/>
+  <text x="98" y="367.5" class="m">setViewport(), sendSceneInputs()</text>
+  <text x="342" y="367.5" class="s">LOD camera, purposes; takeChanges</text>
+  <circle cx="60" cy="363" r="4.5" fill="#2563eb"/>
+  <rect x="84" y="386" width="452" height="30" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <rect x="84" y="392" width="3" height="18" rx="1.5" fill="#2563eb" stroke="#2563eb"/>
+  <text x="98" y="405.5" class="m">updateResidency()</text>
+  <text x="233" y="405.5" class="s">resident or not: SceneResident</text>
+  <circle cx="60" cy="401" r="4.5" fill="#2563eb"/>
+  <rect x="84" y="424" width="452" height="30" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <rect x="84" y="430" width="3" height="18" rx="1.5" fill="#16a34a" stroke="#16a34a"/>
+  <text x="98" y="443.5" class="m">answerResidentWaiters()</text>
+  <text x="277" y="443.5" class="s">methods waiting for residency</text>
+  <circle cx="60" cy="439" r="4.5" fill="#16a34a"/>
+  <rect x="84" y="462" width="452" height="48" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <rect x="84" y="468" width="3" height="36" rx="1.5" fill="#64748b" stroke="#64748b"/>
+  <text x="98" y="481.5" class="m">pollInput()</text>
+  <text x="190" y="481.5" class="s">each SDL event: the hook first,</text>
+  <text x="190" y="499.5" class="s">then look, wheel, startOrbit, pick, Z R F</text>
+  <circle cx="60" cy="486" r="4.5" fill="#64748b"/>
+  <line x1="538" y1="486" x2="558" y2="486" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <rect x="560" y="462" width="412" height="48" rx="7" fill="#ffffff" stroke="#94a3b8"/>
+  <text x="572" y="490.5" class="m">event</text>
+  <rect x="686" y="469.5" width="38" height="15" rx="4" fill="#fdf2f8" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="705" y="480.5" class="tag" text-anchor="middle" fill="#db2777">ui</text>
+  <text x="732" y="480.5" class="s">ImGui, F12 screenshot</text>
+  <rect x="686" y="487.5" width="38" height="15" rx="4" fill="#f5f3ff" stroke="#7c3aed" stroke-opacity="0.6"/>
+  <text x="705" y="498.5" class="tag" text-anchor="middle" fill="#7c3aed">tools</text>
+  <text x="732" y="498.5" class="s">the gizmos' drags, C (camera controls)</text>
+  <rect x="84" y="518" width="452" height="30" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <rect x="84" y="524" width="3" height="18" rx="1.5" fill="#2563eb" stroke="#2563eb"/>
+  <text x="98" y="537.5" class="m">moveCamera(), cull()</text>
+  <text x="255" y="537.5" class="s">the camera moves; culling's readback</text>
+  <circle cx="60" cy="533" r="4.5" fill="#2563eb"/>
+  <rect x="84" y="556" width="452" height="30" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <rect x="84" y="562" width="3" height="18" rx="1.5" fill="#16a34a" stroke="#16a34a"/>
+  <text x="98" y="575.5" class="m">serviceRenderLodRequests()</text>
+  <text x="298.5" y="575.5" class="s">renderlod records answered</text>
+  <circle cx="60" cy="571" r="4.5" fill="#16a34a"/>
+  <rect x="84" y="594" width="452" height="30" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <rect x="84" y="600" width="3" height="18" rx="1.5" fill="#2563eb" stroke="#2563eb"/>
+  <text x="98" y="613.5" class="m">countLodPops(), fitCascades()</text>
+  <text x="320" y="613.5" class="s">LOD pops; the shadow cascades</text>
+  <circle cx="60" cy="609" r="4.5" fill="#2563eb"/>
+  <line x1="66" y1="656" x2="558" y2="656" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <rect x="560" y="632" width="412" height="48" rx="7" fill="#ffffff" stroke="#94a3b8"/>
+  <text x="572" y="660.5" class="m">afterCamera</text>
+  <rect x="686" y="639.5" width="38" height="15" rx="4" fill="#fdf2f8" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="705" y="650.5" class="tag" text-anchor="middle" fill="#db2777">ui</text>
+  <text x="732" y="650.5" class="s">the Culling window's numbers</text>
+  <rect x="686" y="657.5" width="38" height="15" rx="4" fill="#f5f3ff" stroke="#7c3aed" stroke-opacity="0.6"/>
+  <text x="705" y="668.5" class="tag" text-anchor="middle" fill="#7c3aed">tools</text>
+  <text x="732" y="668.5" class="s">debug camera's trail, LOD rows' live state</text>
+  <circle cx="60" cy="656" r="4.5" fill="#ffffff" stroke="#475569" stroke-width="1.6"/>
+  <line x1="66" y1="703" x2="558" y2="703" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <rect x="560" y="688" width="412" height="30" rx="7" fill="#ffffff" stroke="#94a3b8"/>
+  <text x="572" y="707.5" class="m">debugDraw</text>
+  <rect x="686" y="695.5" width="38" height="15" rx="4" fill="#f5f3ff" stroke="#7c3aed" stroke-opacity="0.6"/>
+  <text x="705" y="706.5" class="tag" text-anchor="middle" fill="#7c3aed">tools</text>
+  <text x="732" y="706.5" class="s">the overlays and the tools' layers</text>
+  <circle cx="60" cy="703" r="4.5" fill="#ffffff" stroke="#475569" stroke-width="1.6"/>
+  <rect x="84" y="726" width="452" height="30" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <rect x="84" y="732" width="3" height="18" rx="1.5" fill="#2563eb" stroke="#2563eb"/>
+  <text x="98" y="745.5" class="m">drawCameraModes()</text>
+  <text x="233" y="745.5" class="s">the camera modes' lines, after the hook's</text>
+  <circle cx="60" cy="741" r="4.5" fill="#2563eb"/>
+  <rect x="84" y="764" width="452" height="30" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <rect x="84" y="770" width="3" height="18" rx="1.5" fill="#16a34a" stroke="#16a34a"/>
+  <text x="98" y="783.5" class="m">renderTools.startFrame()</text>
+  <text x="284" y="783.5" class="s">results() taken; a new request()</text>
+  <circle cx="60" cy="779" r="4.5" fill="#16a34a"/>
+  <line x1="66" y1="817" x2="558" y2="817" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <rect x="560" y="802" width="412" height="30" rx="7" fill="#ffffff" stroke="#94a3b8"/>
+  <text x="572" y="821.5" class="m">wantReadbacks</text>
+  <rect x="686" y="809.5" width="38" height="15" rx="4" fill="#fdf2f8" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="705" y="820.5" class="tag" text-anchor="middle" fill="#db2777">ui</text>
+  <text x="732" y="820.5" class="s">the windows' capture watches, render tools</text>
+  <circle cx="60" cy="817" r="4.5" fill="#ffffff" stroke="#475569" stroke-width="1.6"/>
+  <rect x="84" y="840" width="452" height="30" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <rect x="84" y="846" width="3" height="18" rx="1.5" fill="#16a34a" stroke="#16a34a"/>
+  <text x="98" y="859.5" class="m">dumps.wantReadbacks()</text>
+  <text x="262" y="859.5" class="s">the dumps' capture watches</text>
+  <circle cx="60" cy="855" r="4.5" fill="#16a34a"/>
+  <rect x="84" y="878" width="452" height="30" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <rect x="84" y="884" width="3" height="18" rx="1.5" fill="#2563eb" stroke="#2563eb"/>
+  <text x="98" y="897.5" class="m">readBack()</text>
+  <text x="182.5" y="897.5" class="s">picking's watches out; captures back</text>
+  <circle cx="60" cy="893" r="4.5" fill="#2563eb"/>
+  <rect x="84" y="916" width="452" height="30" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <rect x="84" y="922" width="3" height="18" rx="1.5" fill="#16a34a" stroke="#16a34a"/>
+  <text x="98" y="935.5" class="m">dumps.takeReadbacks()</text>
+  <text x="262" y="935.5" class="s">the dumps' captures</text>
+  <circle cx="60" cy="931" r="4.5" fill="#16a34a"/>
+  <line x1="66" y1="969" x2="558" y2="969" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <rect x="560" y="954" width="412" height="30" rx="7" fill="#ffffff" stroke="#94a3b8"/>
+  <text x="572" y="973.5" class="m">takeReadbacks</text>
+  <rect x="686" y="961.5" width="38" height="15" rx="4" fill="#fdf2f8" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="705" y="972.5" class="tag" text-anchor="middle" fill="#db2777">ui</text>
+  <text x="732" y="972.5" class="s">the windows' captures, frame debug, counters</text>
+  <circle cx="60" cy="969" r="4.5" fill="#ffffff" stroke="#475569" stroke-width="1.6"/>
+  <line x1="66" y1="1016" x2="558" y2="1016" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <rect x="560" y="992" width="412" height="48" rx="7" fill="#ffffff" stroke="#94a3b8"/>
+  <text x="572" y="1020.5" class="m">drawUi</text>
+  <rect x="686" y="999.5" width="38" height="15" rx="4" fill="#fdf2f8" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="705" y="1010.5" class="tag" text-anchor="middle" fill="#db2777">ui</text>
+  <text x="732" y="1010.5" class="s">windows drawn, what they asked carried out</text>
+  <rect x="686" y="1017.5" width="38" height="15" rx="4" fill="#f5f3ff" stroke="#7c3aed" stroke-opacity="0.6"/>
+  <text x="705" y="1028.5" class="tag" text-anchor="middle" fill="#7c3aed">tools</text>
+  <text x="732" y="1028.5" class="s">the LOD and Streaming tools' requests</text>
+  <circle cx="60" cy="1016" r="4.5" fill="#ffffff" stroke="#475569" stroke-width="1.6"/>
+  <rect x="84" y="1048" width="452" height="30" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <rect x="84" y="1054" width="3" height="18" rx="1.5" fill="#2563eb" stroke="#2563eb"/>
+  <text x="98" y="1067.5" class="m">buildSnapshot()</text>
+  <text x="219" y="1067.5" class="s">the RenderSnapshot for the render thread</text>
+  <circle cx="60" cy="1063" r="4.5" fill="#2563eb"/>
+  <rect x="84" y="1086" width="452" height="30" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <rect x="84" y="1092" width="3" height="18" rx="1.5" fill="#16a34a" stroke="#16a34a"/>
+  <text x="98" y="1105.5" class="m">renderTools.fillSnapshot()</text>
+  <text x="298.5" y="1105.5" class="s">the render tools' requests (rendertools)</text>
+  <circle cx="60" cy="1101" r="4.5" fill="#16a34a"/>
+  <line x1="66" y1="1148" x2="558" y2="1148" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <rect x="560" y="1124" width="412" height="48" rx="7" fill="#ffffff" stroke="#94a3b8"/>
+  <text x="572" y="1152.5" class="m">fillSnapshot</text>
+  <rect x="686" y="1131.5" width="38" height="15" rx="4" fill="#f5f3ff" stroke="#7c3aed" stroke-opacity="0.6"/>
+  <text x="705" y="1142.5" class="tag" text-anchor="middle" fill="#7c3aed">tools</text>
+  <text x="732" y="1142.5" class="s">the tools' layers, the gizmos (GizmoRender)</text>
+  <rect x="686" y="1149.5" width="38" height="15" rx="4" fill="#fdf2f8" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="705" y="1160.5" class="tag" text-anchor="middle" fill="#db2777">ui</text>
+  <text x="732" y="1160.5" class="s">ImGui's draw data (UiRender)</text>
+  <circle cx="60" cy="1148" r="4.5" fill="#ffffff" stroke="#475569" stroke-width="1.6"/>
+  <rect x="84" y="1180" width="452" height="30" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <rect x="84" y="1186" width="3" height="18" rx="1.5" fill="#64748b" stroke="#64748b"/>
+  <text x="98" y="1199.5" class="m">renderThread.submitSnapshot()</text>
+  <text x="320" y="1199.5" class="s">the frame to the render thread</text>
+  <circle cx="60" cy="1195" r="4.5" fill="#64748b"/>
+  <text x="28" y="1258" class="s">Each hook does nothing unless overridden: without hooks the frame is the engine's alone, and every engine method and record still answers.</text>
+</svg>

@@ -16,8 +16,11 @@ use `json_fwd.hpp`, with one exception: `rpcclient.h`, whose users are command-l
 
 ## Protocol
 
-- **Frames.** `u32 jsonLength`, `u32 attachmentLength` (little-endian), the JSON text, then the attachment bytes. A message refers to its attachment
-  by offset and length. Frames over 256 MB close the connection.
+![A frame's byte layout: two little-endian u32 lengths, the JSON text and the attachment bytes, with an asset.data chunk placed in its asset by offset and total](../../screenshots/rpc_frame.svg)
+
+- **Frames.** `u32 jsonLength`, `u32 attachmentLength` (little-endian), the JSON text, then the attachment bytes. A frame's attachment belongs to its
+  message whole: `asset.data` carries one chunk of an asset, placed in the asset by its `offset` and `total`. Frames over 256 MB close the
+  connection.
 - **Messages.** JSON-RPC 2.0: requests (`id`, `method`, `params`), notifications (no `id`) and responses (`result` or `error`). Either side of a
   connection may send requests; responses are matched by id.
 - **Errors.** `-32700` parse error, `-32600` invalid request, `-32601` unknown method, `-32602` invalid params (the message names the field),
@@ -32,6 +35,8 @@ their own working directory, so tools find each other when they run in the same 
 process is gone, so a crashed process leaves nothing behind after the next listing. Ports are chosen by the OS.
 
 ## Threading
+
+![The I/O thread reads frames and writes queued replies, answers trace subscriptions itself, and queues every other request for RpcEndpoint::drain() on the main thread, whose handlers answer through an RpcResponder now or later](../../screenshots/rpc_threading.svg)
 
 - **The I/O thread** (`RpcServer`) accepts connections, reads frames, and writes queued replies. Any thread may queue a message. A caller never
   blocks on a slow client: a client whose unread replies pass 256 MB is dropped.

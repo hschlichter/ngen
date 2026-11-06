@@ -19,15 +19,18 @@ tool, so a program without the UI keeps every record and dump it serves.
 
 ## How a frame asks
 
+![The main thread's request goes to the render thread in the RenderSnapshot; the render thread's hooks, from beginFrame to endFrame, hand counters, screenshot results and snapshots back through the locked published results, which the next startFrame takes](../../screenshots/rendertools_round_trip.svg)
+
 - **On the main thread**, once a frame: `startFrame` takes what came back since the last frame into `results()` and starts the frame's
   `request()`; the readers (ngen-view's dumps, the UI's windows) set what they want there (the frame graph and render debug snapshots, counters, a
   frame debug capture) and take theirs from `results()`; `fillSnapshot` puts the request in the frame's `RenderSnapshot`, with the texture
   inspector's selection and the screenshots and dumps asked for since (`requestScreenshot`, `requestTextureDump`, `setTextureInspect`, any time).
 - **On the render thread**, at the renderer's hooks: `beginFrame` takes the request (screenshots and dumps wait for a frame that records, and a
-  screenshot frame tells the UI to stay out); `afterFence` makes counters from the slot's GPU zones; `beforeExecute` and `afterExecute` turn the
-  command log on for a frame debug capture and record the inspector's blit, the dumps' and the screenshot's copies; `afterSubmit` waits for the
-  frame and writes the files; `endFrame` builds the snapshots asked for and hands them back, latest-only, with every screenshot result and counters
-  frame (at most 300).
+  screenshot frame tells the UI to stay out); `afterFence` makes counters from the slot's GPU zones and hands them back (every frame's, the last
+  300 kept); `beforeExecute` turns the command log on for a frame debug capture, and `afterExecute` builds that capture and records the
+  inspector's blit, the dumps' and the screenshot's copies; `afterSubmit` waits for the frame, writes the files and hands back each screenshot's
+  result; `endFrame` builds the frame graph and render debug snapshots asked for and hands them back with the frame debug capture, latest-only.
+  What is handed back waits under a lock until the next `startFrame` takes it.
 
 ## Rules
 

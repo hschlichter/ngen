@@ -1,0 +1,173 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="970" viewBox="0 0 1000 970" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .pass { font-size: 12.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .res { font-size: 11px; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .band { font-size: 11px; font-weight: 700; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+  </style>
+  <rect x="0" y="0" width="1000" height="970" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">Renderer: the passes of a lit frame</text>
+  <text x="28" y="62" class="s" style="font-size:12px">Rows in the order compile() ran them (one frame with every optional pass); columns are what each pass writes and reads.</text>
+
+  <!-- Resources -->
+  <text x="339" y="200" class="res" transform="rotate(-55 339 200)">instances</text>
+  <text x="377" y="200" class="res" transform="rotate(-55 377 200)">lodGroups</text>
+  <text x="415" y="200" class="res" transform="rotate(-55 415 200)">lodStates</text>
+  <text x="453" y="200" class="res" transform="rotate(-55 453 200)">drawCommands</text>
+  <text x="491" y="200" class="res" transform="rotate(-55 491 200)">drawCounts</text>
+  <text x="529" y="200" class="res" transform="rotate(-55 529 200)">cullReadback</text>
+  <text x="567" y="200" class="res" transform="rotate(-55 567 200)">lodReadback</text>
+  <text x="605" y="200" class="res" transform="rotate(-55 605 200)">shadowMap</text>
+  <text x="643" y="200" class="res" transform="rotate(-55 643 200)">gbuffer.albedo</text>
+  <text x="681" y="200" class="res" transform="rotate(-55 681 200)">gbuffer.normal</text>
+  <text x="719" y="200" class="res" transform="rotate(-55 719 200)">gbuffer.instance</text>
+  <text x="757" y="200" class="res" transform="rotate(-55 757 200)">debugview.value</text>
+  <text x="795" y="200" class="res" transform="rotate(-55 795 200)">sceneColor</text>
+  <text x="833" y="200" class="res" transform="rotate(-55 833 200)">sceneColorAA</text>
+  <text x="871" y="200" class="res" transform="rotate(-55 871 200)">debugview.color</text>
+  <text x="909" y="200" class="res" transform="rotate(-55 909 200)">depth</text>
+  <text x="947" y="200" class="res" transform="rotate(-55 947 200)">backbuffer</text>
+  <line x1="319" y1="210" x2="427" y2="210" stroke="#64748b" stroke-width="1.5"/>
+  <text x="373" y="225" class="s" text-anchor="middle">persistent</text>
+  <line x1="433" y1="210" x2="579" y2="210" stroke="#64748b" stroke-width="1.5"/>
+  <text x="506" y="225" class="s" text-anchor="middle">per frame slot</text>
+  <line x1="585" y1="210" x2="883" y2="210" stroke="#64748b" stroke-width="1.5"/>
+  <text x="734" y="225" class="s" text-anchor="middle">transient (ResourcePool)</text>
+  <line x1="889" y1="210" x2="959" y2="210" stroke="#64748b" stroke-width="1.5"/>
+  <text x="924" y="225" class="s" text-anchor="middle">imported</text>
+
+  <!-- Stages -->
+  <rect x="28" y="238" width="944" height="90" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="40" y="254" class="band" fill="#16a34a">uploads</text>
+  <rect x="28" y="336" width="944" height="156" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="40" y="352" class="band" fill="#16a34a">render LOD and culling (compute)</text>
+  <rect x="28" y="500" width="944" height="134" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="40" y="516" class="band" fill="#16a34a">indirect draws</text>
+  <rect x="28" y="642" width="944" height="112" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="40" y="658" class="band" fill="#16a34a">shading and post</text>
+  <rect x="28" y="762" width="944" height="112" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-opacity="0.45"/>
+  <text x="40" y="778" class="band" fill="#7c3aed">on the backbuffer: debug lines, then the extensions' overlays</text>
+
+  <!-- Lifetimes: first use to last use -->
+  <line x1="335" y1="289" x2="335" y2="617" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  <line x1="373" y1="311" x2="373" y2="365" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  <line x1="411" y1="365" x2="411" y2="617" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  <line x1="449" y1="475" x2="449" y2="617" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  <line x1="487" y1="431" x2="487" y2="617" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  <line x1="601" y1="529" x2="601" y2="671" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  <line x1="639" y1="595" x2="639" y2="671" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  <line x1="677" y1="595" x2="677" y2="671" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  <line x1="753" y1="617" x2="753" y2="693" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  <line x1="791" y1="671" x2="791" y2="715" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  <line x1="829" y1="715" x2="829" y2="737" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  <line x1="867" y1="693" x2="867" y2="737" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  <line x1="905" y1="551" x2="905" y2="791" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  <line x1="943" y1="737" x2="943" y2="857" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+
+  <!-- Passes: filled dot writes, ring reads -->
+  <text x="44" y="274" class="pass">SceneUpload</text>
+  <text x="300" y="274" class="s" text-anchor="end">if uploads are queued</text>
+  <text x="322" y="274" class="s">records its own barriers: geometry pool, tables, textures</text>
+  <text x="44" y="296" class="pass">InstanceUpload</text>
+  <text x="300" y="296" class="s" text-anchor="end">if records changed</text>
+  <circle cx="335" cy="292" r="5" fill="#16a34a"/>
+  <text x="44" y="318" class="pass">LodGroupUpload</text>
+  <text x="300" y="318" class="s" text-anchor="end">if groups changed</text>
+  <circle cx="373" cy="314" r="5" fill="#16a34a"/>
+  <text x="44" y="372" class="pass">LodSelect</text>
+  <text x="300" y="372" class="s" text-anchor="end">if LOD groups</text>
+  <circle cx="411" cy="368" r="5" fill="#16a34a"/>
+  <circle cx="373" cy="368" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="44" y="394" class="pass">InstanceCull</text>
+  <text x="300" y="394" class="s" text-anchor="end">counts per workgroup</text>
+  <circle cx="335" cy="390" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="411" cy="390" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="44" y="416" class="pass">LodSelectSum</text>
+  <text x="300" y="416" class="s" text-anchor="end">into lodTotals</text>
+  <text x="44" y="438" class="pass">InstanceCullScan</text>
+  <text x="300" y="438" class="s" text-anchor="end">offsets, totals</text>
+  <circle cx="487" cy="434" r="5" fill="#16a34a"/>
+  <text x="44" y="460" class="pass">LodReadback</text>
+  <text x="300" y="460" class="s" text-anchor="end">if LOD groups</text>
+  <circle cx="563" cy="456" r="5" fill="#16a34a"/>
+  <text x="44" y="482" class="pass">InstanceCullScatter</text>
+  <text x="300" y="482" class="s" text-anchor="end">in instance order</text>
+  <circle cx="449" cy="478" r="5" fill="#16a34a"/>
+  <circle cx="487" cy="478" r="5" fill="#16a34a"/>
+  <circle cx="335" cy="478" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="44" y="536" class="pass">ShadowPass</text>
+  <circle cx="601" cy="532" r="5" fill="#16a34a"/>
+  <circle cx="335" cy="532" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="411" cy="532" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="449" cy="532" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="487" cy="532" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="44" y="558" class="pass">DepthPrepass</text>
+  <text x="300" y="558" class="s" text-anchor="end">if render.prepass</text>
+  <circle cx="905" cy="554" r="5" fill="#16a34a"/>
+  <circle cx="335" cy="554" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="411" cy="554" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="449" cy="554" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="487" cy="554" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="44" y="580" class="pass">CullReadback</text>
+  <circle cx="525" cy="576" r="5" fill="#16a34a"/>
+  <circle cx="487" cy="576" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="44" y="602" class="pass">GeometryPass</text>
+  <circle cx="639" cy="598" r="5" fill="#16a34a"/>
+  <circle cx="677" cy="598" r="5" fill="#16a34a"/>
+  <circle cx="715" cy="598" r="5" fill="#16a34a"/>
+  <circle cx="905" cy="598" r="5" fill="#16a34a"/>
+  <circle cx="335" cy="598" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="411" cy="598" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="449" cy="598" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="487" cy="598" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="44" y="624" class="pass">DebugViewPass</text>
+  <text x="300" y="624" class="s" text-anchor="end">if a debug view</text>
+  <circle cx="753" cy="620" r="5" fill="#16a34a"/>
+  <circle cx="905" cy="620" r="5" fill="#16a34a"/>
+  <circle cx="335" cy="620" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="411" cy="620" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="449" cy="620" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="487" cy="620" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="44" y="678" class="pass">LightingPass</text>
+  <circle cx="791" cy="674" r="5" fill="#16a34a"/>
+  <circle cx="639" cy="674" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="677" cy="674" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="905" cy="674" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="601" cy="674" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="44" y="700" class="pass">DebugViewResolve</text>
+  <text x="300" y="700" class="s" text-anchor="end">if a debug view</text>
+  <circle cx="867" cy="696" r="5" fill="#16a34a"/>
+  <circle cx="753" cy="696" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="791" cy="696" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="44" y="722" class="pass">AAPass</text>
+  <text x="300" y="722" class="s" text-anchor="end">culled in a debug view</text>
+  <circle cx="829" cy="718" r="5" fill="#16a34a"/>
+  <circle cx="791" cy="718" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="44" y="744" class="pass">BlitToBackbuffer</text>
+  <circle cx="943" cy="740" r="5" fill="#16a34a"/>
+  <circle cx="829" cy="740" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="867" cy="740" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="44" y="798" class="pass">DebugLinePass</text>
+  <circle cx="943" cy="794" r="5" fill="#16a34a"/>
+  <circle cx="905" cy="794" r="5" fill="#16a34a"/>
+  <text x="44" y="820" class="pass">GizmoPass</text>
+  <text x="300" y="820" class="s" text-anchor="end">extension, src/tools</text>
+  <circle cx="943" cy="816" r="5" fill="#16a34a"/>
+  <text x="44" y="842" class="pass">EditorUIPass</text>
+  <text x="300" y="842" class="s" text-anchor="end">extension, src/ui</text>
+  <circle cx="943" cy="838" r="5" fill="#16a34a"/>
+  <text x="44" y="864" class="pass">PresentPass</text>
+  <circle cx="943" cy="860" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+
+  <!-- Legend -->
+  <circle cx="34" cy="896" r="5" fill="#16a34a"/>
+  <text x="46" y="900" class="t">writes</text>
+  <circle cx="104" cy="896" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="116" y="900" class="t">reads</text>
+  <line x1="170" y1="896" x2="196" y2="896" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  <text x="204" y="900" class="t">first use to last use</text>
+  <text x="28" y="924" class="s">The graph orders passes by these accesses (Kahn sort) and inserts every barrier. Blit reads sceneColorAA, or debugview.color in a debug view.</text>
+  <text x="28" y="942" class="s">DebugViewResolve reads sceneColor in the streaming view only. Picking copies a texel of gbuffer.instance after GeometryPass.</text>
+</svg>

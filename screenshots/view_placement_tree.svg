@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="720" viewBox="0 0 1000 720" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 13px; font-weight: 700; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .m { font-size: 12px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .sm { font-size: 11px; fill: #3a4452; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .b { font-size: 12.5px; font-weight: 700; fill: #1f2733; }
+    .tag { font-size: 10.5px; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="720" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">ngen-view: the placement tree</text>
+  <text x="28" y="62" class="s" style="font-size:12px">A worked example: what a placement pass builds from the World (placement.h), and the draw slots its placements take in RenderWorld.</text>
+  <text x="40" y="106" class="h" fill="#3a4452">the tree: Placement nodes (kind, path) and a root's PlacedRoot</text>
+  <text x="668" y="106" class="h" fill="#3a4452">RenderWorld</text>
+
+  <!-- Tree connectors -->
+  <path d="M54,165 V197 H68" fill="none" stroke="#94a3b8" stroke-width="1.4"/>
+  <path d="M54,165 V254 H68" fill="none" stroke="#94a3b8" stroke-width="1.4"/>
+  <path d="M54,165 V326 H68" fill="none" stroke="#94a3b8" stroke-width="1.4"/>
+  <path d="M84,366 V398 H98" fill="none" stroke="#94a3b8" stroke-width="1.4"/>
+  <path d="M84,366 V455 H98" fill="none" stroke="#94a3b8" stroke-width="1.4"/>
+  <path d="M84,366 V512 H98" fill="none" stroke="#94a3b8" stroke-width="1.4"/>
+  <path d="M54,165 V584 H68" fill="none" stroke="#94a3b8" stroke-width="1.4"/>
+
+  <!-- The nodes -->
+  <rect x="40" y="120" width="560" height="45" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="52" y="139" class="m">Stage</text>
+  <text x="98" y="139" class="sm">/</text>
+  <text x="52" y="156" class="s">the stage's own prims: their draws</text>
+  <text x="588" y="139" class="tag" text-anchor="end" fill="#2563eb">slots 0–1</text>
+  <rect x="70" y="177" width="530" height="45" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="82" y="196" class="m">Prototype</text>
+  <text x="157" y="196" class="sm">/World/Rock_1</text>
+  <text x="82" y="213" class="s">an instance: its prototype placed at the instance</text>
+  <text x="588" y="196" class="tag" text-anchor="end" fill="#2563eb">slots 2–3</text>
+  <rect x="70" y="234" width="530" height="60" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="82" y="253" class="m">Prototype</text>
+  <text x="157" y="253" class="sm">/World/Tree_1</text>
+  <text x="82" y="270" class="s">a render-LOD root in it: group 0 (its lodGroups); every</text>
+  <text x="82" y="285" class="s">level placed, its draws tagged with the group and level</text>
+  <text x="588" y="253" class="tag" text-anchor="end" fill="#2563eb">slots 4–7</text>
+  <rect x="70" y="306" width="530" height="60" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="82" y="325" class="m">PlacedRoot</text>
+  <text x="164.5" y="325" class="sm">/World/Town</text>
+  <text x="82" y="342" class="s">a streaming LOD root: wants level 1, draws 1;</text>
+  <text x="82" y="357" class="s">levels[]: a placement per loaded level</text>
+  <rect x="100" y="378" width="500" height="45" rx="8" fill="#f8fafc" stroke="#cbd5e1" stroke-dasharray="3 3"/>
+  <text x="112" y="397" class="m" style="fill:#94a3b8">levels[0]</text>
+  <text x="187" y="397" class="sm" style="fill:#94a3b8">high</text>
+  <text x="112" y="414" class="s">not resident: no placement</text>
+  <rect x="100" y="435" width="500" height="45" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="112" y="454" class="m">Level</text>
+  <text x="158" y="454" class="sm">medium</text>
+  <text x="112" y="471" class="s">drawn: waits for nothing (wait 0)</text>
+  <text x="588" y="454" class="tag" text-anchor="end" fill="#2563eb">slots 8–10</text>
+  <rect x="100" y="492" width="500" height="60" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6" stroke-dasharray="5 4"/>
+  <text x="112" y="511" class="m">Level</text>
+  <text x="158" y="511" class="sm">low</text>
+  <text x="112" y="528" class="s">resident, not drawn (drawn = false): no slots;</text>
+  <text x="112" y="543" class="s">heldMeshes, heldMaterials keep its library entries</text>
+  <rect x="70" y="564" width="530" height="60" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="82" y="583" class="m">Instancer</text>
+  <text x="157" y="583" class="sm">/World/Grass</text>
+  <text x="82" y="600" class="s">a PointInstancer: each shown point draws the</text>
+  <text x="82" y="615" class="s">prototype's walk at the instancer times the point</text>
+  <text x="588" y="583" class="tag" text-anchor="end" fill="#2563eb">slots 11–14</text>
+
+  <!-- RenderWorld::meshInstances: a slot per draw (a prim's submesh) -->
+  <rect x="658" y="112" width="324" height="436" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="672" y="136" class="sm">meshInstances: a slot per draw</text>
+  <rect x="668" y="146" width="304" height="22" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="678" y="161.5" class="tag" fill="#64748b">0</text>
+  <text x="700" y="161.5" class="sm">Ground</text>
+  <rect x="668" y="172" width="304" height="22" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="678" y="187.5" class="tag" fill="#64748b">1</text>
+  <text x="700" y="187.5" class="sm">Road</text>
+  <rect x="668" y="198" width="304" height="22" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="678" y="213.5" class="tag" fill="#64748b">2</text>
+  <text x="700" y="213.5" class="sm">Rock_1/Rock</text>
+  <text x="962" y="213.5" class="s" text-anchor="end">submesh 0</text>
+  <rect x="668" y="224" width="304" height="22" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="678" y="239.5" class="tag" fill="#64748b">3</text>
+  <text x="700" y="239.5" class="sm">Rock_1/Rock</text>
+  <text x="962" y="239.5" class="s" text-anchor="end">submesh 1</text>
+  <rect x="668" y="250" width="304" height="22" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="678" y="265.5" class="tag" fill="#64748b">4</text>
+  <text x="700" y="265.5" class="sm">Tree_1/LOD0/Trunk</text>
+  <text x="962" y="265.5" class="s" text-anchor="end">group 0, level 0</text>
+  <rect x="668" y="276" width="304" height="22" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="678" y="291.5" class="tag" fill="#64748b">5</text>
+  <text x="700" y="291.5" class="sm">Tree_1/LOD0/Leaves</text>
+  <text x="962" y="291.5" class="s" text-anchor="end">group 0, level 0</text>
+  <rect x="668" y="302" width="304" height="22" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="678" y="317.5" class="tag" fill="#64748b">6</text>
+  <text x="700" y="317.5" class="sm">Tree_1/LOD1/Tree</text>
+  <text x="962" y="317.5" class="s" text-anchor="end">group 0, level 1</text>
+  <rect x="668" y="328" width="304" height="22" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="678" y="343.5" class="tag" fill="#64748b">7</text>
+  <text x="700" y="343.5" class="sm">Tree_1/LOD2/Tree</text>
+  <text x="962" y="343.5" class="s" text-anchor="end">group 0, level 2</text>
+  <rect x="668" y="354" width="304" height="22" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="678" y="369.5" class="tag" fill="#64748b">8</text>
+  <text x="700" y="369.5" class="sm">Town/medium/Hall</text>
+  <rect x="668" y="380" width="304" height="22" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="678" y="395.5" class="tag" fill="#64748b">9</text>
+  <text x="700" y="395.5" class="sm">Town/medium/Houses</text>
+  <rect x="668" y="406" width="304" height="22" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="678" y="421.5" class="tag" fill="#64748b">10</text>
+  <text x="700" y="421.5" class="sm">Town/medium/Wall</text>
+  <rect x="668" y="432" width="304" height="22" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="678" y="447.5" class="tag" fill="#64748b">11</text>
+  <text x="700" y="447.5" class="sm">Blade#0</text>
+  <text x="962" y="447.5" class="s" text-anchor="end">point 0</text>
+  <rect x="668" y="458" width="304" height="22" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="678" y="473.5" class="tag" fill="#64748b">12</text>
+  <text x="700" y="473.5" class="sm">Blade#1</text>
+  <text x="962" y="473.5" class="s" text-anchor="end">point 1</text>
+  <rect x="668" y="484" width="304" height="22" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="678" y="499.5" class="tag" fill="#64748b">13</text>
+  <text x="700" y="499.5" class="sm">Blade#2</text>
+  <text x="962" y="499.5" class="s" text-anchor="end">point 2</text>
+  <rect x="668" y="510" width="304" height="22" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="678" y="525.5" class="tag" fill="#64748b">14</text>
+  <text x="700" y="525.5" class="sm">Blade#3</text>
+  <text x="962" y="525.5" class="s" text-anchor="end">point 3</text>
+
+  <!-- Each drawn placement owns its slots -->
+  <path d="M656,147 H650 V193 H656" fill="none" stroke="#2563eb" stroke-width="1.4"/>
+  <path d="M602,142.5 C630,142.5 620,170 648,170" fill="none" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <path d="M656,199 H650 V245 H656" fill="none" stroke="#2563eb" stroke-width="1.4"/>
+  <path d="M602,199.5 C630,199.5 620,222 648,222" fill="none" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <path d="M656,251 H650 V349 H656" fill="none" stroke="#2563eb" stroke-width="1.4"/>
+  <path d="M602,264 C630,264 620,300 648,300" fill="none" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <path d="M656,355 H650 V427 H656" fill="none" stroke="#2563eb" stroke-width="1.4"/>
+  <path d="M602,457.5 C630,457.5 620,391 648,391" fill="none" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <path d="M656,433 H650 V531 H656" fill="none" stroke="#2563eb" stroke-width="1.4"/>
+  <path d="M602,594 C630,594 620,482 648,482" fill="none" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+  <!-- RenderWorld::lodGroups -->
+  <rect x="658" y="562" width="324" height="84" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="672" y="584" class="sm">lodGroups: a slot per render-LOD group</text>
+  <rect x="668" y="594" width="304" height="42" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="678" y="610" class="tag" fill="#64748b">0</text>
+  <text x="700" y="610" class="s">Tree_1: sphere, thresholds,</text>
+  <text x="700" y="626" class="s">default, forced; the GPU picks a level</text>
+  <text x="28" y="682" class="s">A placement built again puts its draws back in the slots it had, in order; a new draw takes the lowest free slot. The slots a pass touched are its SceneChanges.</text>
+  <text x="28" y="700" class="s">Solid: drawn placements, which own slots. Dashed: a level resident but not drawn, holding its entries so switching to it uploads nothing.</text>
+</svg>

@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="600" viewBox="0 0 1000 600" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 14px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .code { font-size: 11px; fill: #334155; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .edge { font-size: 11px; fill: #334155; font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="600" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">Configuration: a value from its declaration to its use</text>
+  <text x="28" y="62" class="s" style="font-size:12px">Declared in code, found by name, read and set on the main thread; a consumer acts on a change at its place in the frame.</text>
+
+  <!-- Main thread -->
+  <rect x="28" y="84" width="944" height="384" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="44" y="108" class="h">Main thread</text>
+  <text x="140" y="108" class="s">values are read and set here only; debug builds assert it; no locks</text>
+
+  <!-- Declaration -->
+  <rect x="44" y="124" width="296" height="166" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="58" y="146" class="t" font-weight="700">declared in code by its owner</text>
+  <text x="58" y="168" class="code">config::Int shadowCascades{</text>
+  <text x="72" y="184" class="code">"render.shadow.cascades",</text>
+  <text x="72" y="200" class="code">3, "Shadow cascades from …",</text>
+  <text x="72" y="216" class="code">{.min = 1, .max = 4}};</text>
+  <text x="58" y="240" class="s">a name, a default, a description, a range</text>
+  <text x="58" y="256" class="s">Bool, Int, Float, Enum or Vec3</text>
+  <text x="58" y="276" class="code">src/renderer/shadowcascades.cpp</text>
+
+  <!-- Registry -->
+  <rect x="388" y="124" width="222" height="166" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="402" y="146" class="t" font-weight="700">the registry, by name</text>
+  <text x="402" y="166" class="code">config::all()</text>
+  <text x="402" y="182" class="code">config::find(name)</text>
+  <text x="402" y="198" class="code">config::under(prefix)</text>
+  <text x="402" y="222" class="s">each value: text(), defaultText(),</text>
+  <text x="402" y="237" class="s">changes(), set, setText, reset</text>
+  <text x="402" y="258" class="s">set checks the range or choices,</text>
+  <text x="402" y="273" class="s">unchanged on an error</text>
+  <line x1="340" y1="207" x2="386" y2="207" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="364" y="198" class="edge" text-anchor="middle">at start</text>
+
+  <!-- Readers and writers -->
+  <rect x="660" y="124" width="296" height="36" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="674" y="147" class="code" font-weight="700">config</text>
+  <text x="730" y="147" class="s">record: each value, default, range</text>
+  <rect x="660" y="167" width="296" height="36" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="674" y="190" class="code" font-weight="700">config.get/set/reset</text>
+  <text x="840" y="190" class="s">RPC methods</text>
+  <rect x="660" y="210" width="296" height="36" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="674" y="233" class="code" font-weight="700">config, config-reset</text>
+  <text x="840" y="233" class="s">verbs; view, shadow…</text>
+  <rect x="660" y="253" width="296" height="36" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="674" y="276" class="t" font-weight="700">windows</text>
+  <text x="736" y="276" class="s">Configuration; View menu, Render Debug</text>
+  <line x1="612" y1="207" x2="658" y2="207" stroke="#475569" stroke-width="1.6" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="635" y="198" class="edge" text-anchor="middle">by name</text>
+
+  <!-- Consumers -->
+  <rect x="44" y="330" width="440" height="122" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="58" y="352" class="lib">ViewFrame::sendSceneInputs</text>
+  <text x="58" y="372" class="t">acts on a change: compares changes() with its count</text>
+  <text x="58" y="394" class="code">if (uploadBudgetMiB.changes() != uploadBudgetChanges) {</text>
+  <text x="72" y="410" class="code">uploadBudgetChanges = uploadBudgetMiB.changes();</text>
+  <text x="72" y="426" class="code">renderThread.setUploadBudget(…);</text>
+  <text x="58" y="444" class="s">no callbacks: nothing runs inside a set</text>
+
+  <rect x="508" y="330" width="448" height="122" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="522" y="352" class="lib">ViewFrame::buildSnapshot</text>
+  <text x="522" y="372" class="t">reads the render thread's values every frame</text>
+  <text x="522" y="394" class="code">.gbufferViewMode = … renderconfig::bufferView.get(),</text>
+  <text x="522" y="410" class="code">.debugView = … renderconfig::debugView.get(),</text>
+  <text x="522" y="432" class="s">the scene thread's values go in its requests</text>
+
+  <path d="M470,290 L470,310 L264,310 L264,328" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="272" y="323" class="edge">changes(), get()</text>
+  <path d="M550,290 L550,328" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="558" y="316" class="edge">get()</text>
+
+  <!-- Render thread -->
+  <rect x="28" y="484" width="944" height="96" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-opacity="0.45"/>
+  <text x="44" y="508" class="h">Render thread</text>
+  <rect x="160" y="520" width="324" height="46" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="174" y="540" class="code" font-weight="700">setUploadBudget, setGeometryLimit</text>
+  <text x="174" y="556" class="s">the render thread's setters, on a change</text>
+  <rect x="508" y="520" width="448" height="46" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="522" y="540" class="code" font-weight="700">RenderSnapshot</text>
+  <text x="522" y="556" class="s">the frame's settings travel with its snapshot to the renderer</text>
+  <line x1="322" y1="452" x2="322" y2="518" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="732" y1="452" x2="732" y2="518" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="740" y="500" class="edge">each frame</text>
+</svg>

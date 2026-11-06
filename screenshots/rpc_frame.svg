@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="452" viewBox="0 0 760 452" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 13px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .code { font-size: 11px; fill: #334155; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+  </style>
+  <rect x="0" y="0" width="760" height="452" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">RPC: one frame on the wire</text>
+  <text x="28" y="62" class="s" style="font-size:12px">An 8-byte header, the JSON text, then the attachment bytes.</text>
+
+  <!-- Byte offsets -->
+  <text x="28" y="104" class="s">0</text>
+  <text x="148" y="104" class="s" text-anchor="middle">4</text>
+  <text x="308" y="104" class="s" text-anchor="middle">8</text>
+  <text x="538" y="104" class="s" text-anchor="middle">8 + jsonLength</text>
+  <text x="732" y="104" class="s" text-anchor="end">+ attachmentLength</text>
+
+  <!-- The frame -->
+  <rect x="28" y="112" width="120" height="54" fill="#e2e8f0" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="88" y="136" class="code" text-anchor="middle" font-weight="700">jsonLength</text>
+  <text x="88" y="154" class="s" text-anchor="middle">u32</text>
+  <rect x="148" y="112" width="160" height="54" fill="#e2e8f0" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="228" y="136" class="code" text-anchor="middle" font-weight="700">attachmentLength</text>
+  <text x="228" y="154" class="s" text-anchor="middle">u32</text>
+  <rect x="308" y="112" width="230" height="54" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="423" y="136" class="h" text-anchor="middle">JSON text</text>
+  <text x="423" y="154" class="s" text-anchor="middle">jsonLength bytes: a JSON-RPC 2.0 message</text>
+  <rect x="538" y="112" width="194" height="54" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="635" y="136" class="h" text-anchor="middle">attachment</text>
+  <text x="635" y="154" class="s" text-anchor="middle">attachmentLength bytes, binary</text>
+
+  <!-- Header brace -->
+  <path d="M28,174 L28,180 L308,180 L308,174" fill="none" stroke="#64748b" stroke-width="1.2"/>
+  <text x="168" y="196" class="s" text-anchor="middle">header: 8 bytes, little-endian</text>
+
+  <!-- Example -->
+  <text x="28" y="230" class="t" font-weight="700">For example, a chunk of a packed asset</text>
+  <text x="28" y="248" class="s">the asset server streams an asset in chunks of at most 1 MiB</text>
+  <rect x="28" y="262" width="320" height="84" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="42" y="284" class="code">{"jsonrpc": "2.0", "method": "asset.data",</text>
+  <text x="49" y="302" class="code">"params": {"request": …, "id": "…",</text>
+  <text x="128" y="320" class="code">"version": "…",</text>
+  <text x="128" y="338" class="code">"offset": …, "total": …}}</text>
+
+  <!-- The attachment placed in the asset -->
+  <path d="M538,166 L420,370" fill="none" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <path d="M732,166 L614,370" fill="none" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <text x="28" y="362" class="s">the asset's packed bytes</text>
+  <rect x="28" y="370" width="704" height="28" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <rect x="420" y="370" width="194" height="28" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="517" y="388" class="s" text-anchor="middle">this frame's attachment</text>
+  <text x="28" y="414" class="s">0</text>
+  <text x="420" y="414" class="s" text-anchor="middle">offset</text>
+  <text x="732" y="414" class="s" text-anchor="end">total</text>
+  <text x="28" y="436" class="s">A frame whose 8 + jsonLength + attachmentLength passes 256 MB (rpcMaxFrameSize) closes the connection.</text>
+</svg>

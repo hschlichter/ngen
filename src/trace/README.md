@@ -107,6 +107,8 @@ loading didn't cover. Each step that takes time says how long; the two "after st
 
 ## How it works
 
+![TRACE_EVENT prints an event and pushes it into the process's ring; TraceStream sends each subscriber batches from its cursor through the I/O thread, and ngen-introspect merges the view's and the asset server's batches by ts_ns](../../screenshots/trace_ring_stream.svg)
+
 - **The ring** (`tracering.*`): the process's last 65,536 events. A push takes a short lock, assigns the event its sequence number and stamps its
   time, so times never decrease with sequence. Readers copy events out by sequence number, each with its own cursor.
 - **One clock.** `ts_ns` is `CLOCK_MONOTONIC` in nanoseconds, the same in every process on the machine (and the profiler's clock), so events of
@@ -114,7 +116,8 @@ loading didn't cover. Each step that takes time says how long; the two "after st
 - **The stream** (`tracestream.*`): `trace.subscribe {since_ns?}` starts a subscription on a connection, from the oldest event the ring holds or
   from `since_ns`; the reply is `{process, from, head}`. Then `trace.events` notifications arrive, `{process, dropped, events: [...]}`, every
   50 ms or once 1,024 events wait, at most 4,096 events each. `trace.unsubscribe` stops it. ngen-view's `RpcEndpoint` and the asset server
-  answer both on their I/O thread.
+  answer both on their I/O thread; the batches are made on the stream's own thread (`TraceStream`), which wakes on that interval or that count,
+  and queued to the I/O thread to write.
 - **Never stalls a frame.** Nothing more is sent to a subscriber while over 16 MiB wait on its connection. Events the ring overwrites meanwhile
   are counted in the next batch's `dropped`.
 - **Nothing lost at exit.** A process sends its last events and waits up to a second for them to be written before its connections close:

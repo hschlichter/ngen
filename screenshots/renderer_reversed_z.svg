@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="500" viewBox="0 0 720 500" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 14px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .m { font-size: 11px; fill: #334155; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .mono { font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .edge { font-size: 11.5px; fill: #334155; font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="720" height="500" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">Depth: reversed-Z, no far plane</text>
+  <text x="28" y="62" class="s" style="font-size:12px">The camera&#8217;s depth against its distance (log scale), next to standard depth.</text>
+
+  <!-- the plot -->
+  <rect x="28" y="84" width="412" height="296" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <line x1="92" y1="330" x2="420" y2="330" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="84" y="334" class="s" text-anchor="end">0</text>
+  <line x1="92" y1="219" x2="420" y2="219" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="84" y="223" class="s" text-anchor="end">0.5</text>
+  <line x1="92" y1="108" x2="420" y2="108" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="84" y="112" class="s" text-anchor="end">1</text>
+  <line x1="92" y1="330" x2="92" y2="335" stroke="#475569" stroke-width="1.2"/>
+  <text x="92" y="349" class="s" text-anchor="middle">0.1 m</text>
+  <line x1="157.5" y1="330" x2="157.5" y2="335" stroke="#475569" stroke-width="1.2"/>
+  <text x="157.5" y="349" class="s" text-anchor="middle">1 m</text>
+  <line x1="223" y1="330" x2="223" y2="335" stroke="#475569" stroke-width="1.2"/>
+  <text x="223" y="349" class="s" text-anchor="middle">10 m</text>
+  <line x1="289" y1="330" x2="289" y2="335" stroke="#475569" stroke-width="1.2"/>
+  <text x="289" y="349" class="s" text-anchor="middle">100 m</text>
+  <line x1="354.5" y1="330" x2="354.5" y2="335" stroke="#475569" stroke-width="1.2"/>
+  <text x="354.5" y="349" class="s" text-anchor="middle">1 km</text>
+  <line x1="420" y1="330" x2="420" y2="335" stroke="#475569" stroke-width="1.2"/>
+  <text x="420" y="349" class="s" text-anchor="middle">10 km</text>
+  <line x1="92" y1="330" x2="420" y2="330" stroke="#475569" stroke-width="1.4"/>
+  <line x1="92" y1="102" x2="92" y2="330" stroke="#475569" stroke-width="1.4"/>
+  <text x="84" y="96" class="s" text-anchor="end">depth</text>
+  <text x="420" y="368" class="s" text-anchor="end">distance from the camera</text>
+  <polyline points="92,330 96,300 100,274.5 104.5,252 108.5,233 112.5,216 116.5,201.5 120.5,189 125,178 129,169 133,160.5 137,153.5 141,147.5 145.5,142 149.5,137.5 153.5,133.5 157.5,130 161.5,127 166,124.5 170,122.5 174,120.5 178,119 182,117.5 186.5,116 190.5,115 194.5,114 198.5,113.5 202.5,112.5 207,112 211,111.5 215,111 219,110.5 223,110 227.5,110 231.5,109.5 235.5,109.5 239.5,109 243.5,109 248,109 252,109 256,108.5 260,108.5 264,108.5 268.5,108.5 272.5,108.5 276.5,108.5 280.5,108.5 284.5,108.5 289,108 293,108 297,108 301,108 305,108 309.5,108 313.5,108 317.5,108 321.5,108 325.5,108 330,108 334,108 338,108 342,108 346,108 350.5,108 354.5,108 358.5,108 362.5,108 366.5,108 371,108 375,108 379,108 383,108 387,108 391.5,108 395.5,108 399.5,108 403.5,108 407.5,108 412,108 416,108 420,108" fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="6 4"/>
+  <polyline points="92,108 96,138 100,163.5 104.5,186 108.5,205 112.5,222 116.5,236.5 120.5,249 125,260 129,269 133,277.5 137,284.5 141,290.5 145.5,296 149.5,300.5 153.5,304.5 157.5,308 161.5,311 166,313.5 170,315.5 174,317.5 178,319 182,320.5 186.5,322 190.5,323 194.5,324 198.5,324.5 202.5,325.5 207,326 211,326.5 215,327 219,327.5 223,328 227.5,328 231.5,328.5 235.5,328.5 239.5,329 243.5,329 248,329 252,329 256,329.5 260,329.5 264,329.5 268.5,329.5 272.5,329.5 276.5,329.5 280.5,329.5 284.5,329.5 289,330 293,330 297,330 301,330 305,330 309.5,330 313.5,330 317.5,330 321.5,330 325.5,330 330,330 334,330 338,330 342,330 346,330 350.5,330 354.5,330 358.5,330 362.5,330 366.5,330 371,330 375,330 379,330 383,330 387,330 391.5,330 395.5,330 399.5,330 403.5,330 407.5,330 412,330 416,330 420,330" fill="none" stroke="#2563eb" stroke-width="2.4"/>
+  <text x="169" y="279.5" class="t" style="fill:#2563eb;font-weight:700">near / distance</text>
+  <text x="169" y="295.5" class="s">ngen&#8217;s camera</text>
+  <text x="207.5" y="148" class="s">standard (far plane 10 km)</text>
+  <circle cx="354.5" cy="330" r="3.5" fill="#2563eb"/>
+  <circle cx="354.5" cy="108" r="3.5" fill="#64748b"/>
+
+  <!-- precision at 1 km -->
+  <rect x="28" y="392" width="664" height="86" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="44" y="416" class="h">What a 32-bit float step means at 1 km (the dots)</text>
+  <text x="44" y="438" class="t">standard: depth 0.99991, where a float step is 1 / 16.8 million: 0.6 m of distance</text>
+  <text x="44" y="458" class="t">reversed: depth 0.0001, where floats are dense: 0.07 mm of distance</text>
+
+  <!-- conventions -->
+  <rect x="456" y="84" width="236" height="296" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="472" y="108" class="h">Conventions</text>
+  <text x="472" y="132" class="t">cleared to 0 (infinity)</text>
+  <text x="472" y="151" class="t">prepass, geometry: Greater</text>
+  <text x="472" y="170" class="t">geometry after a prepass:</text>
+  <text x="472" y="189" class="t">Equal, no write</text>
+  <text x="472" y="208" class="t">debug views: GreaterOrEqual</text>
+  <text x="472" y="227" class="t">debug lines: Greater</text>
+  <text x="472" y="252" class="lib">lighting.frag</text>
+  <text x="472" y="271" class="t">depth 0: background (sky)</text>
+  <text x="472" y="290" class="t">distance = near / depth</text>
+  <text x="472" y="315" class="s">near 0.1 m (projectionNear);</text>
+  <text x="472" y="331" class="s">shadow maps keep standard depth:</text>
+  <text x="472" y="347" class="s">cleared to 1, LessOrEqual</text>
+</svg>

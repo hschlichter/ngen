@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="590" viewBox="0 0 1000 590" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 14px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .m { font-size: 11px; fill: #334155; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .mono { font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .edge { font-size: 11.5px; fill: #334155; font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="590" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">Shadows: three cascades in one atlas</text>
+  <text x="28" y="62" class="s" style="font-size:12px">Side view of the camera frustum (schematic angle, distances to scale), split by the practical scheme; the defaults throughout.</text>
+
+  <!-- fitting, main thread -->
+  <rect x="28" y="88" width="676" height="482" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="44" y="112" class="lib">fitShadowCascades</text>
+  <text x="198" y="112" class="s">main thread, into RenderSnapshot</text>
+  <clipPath id="fit"><rect x="29" y="124" width="674" height="362"/></clipPath>
+  <g clip-path="url(#fit)">
+    <polygon points="-108.5,-522 169.5,334 105,355 -173.5,-501" fill="#dc2626" fill-opacity="0.05" stroke="#dc2626" stroke-opacity="0.55" stroke-dasharray="5 4"/>
+    <polygon points="-22,-512 256.5,344 162,374.5 -116,-481.5" fill="#16a34a" fill-opacity="0.05" stroke="#16a34a" stroke-opacity="0.55" stroke-dasharray="5 4"/>
+    <polygon points="247,-451.5 525,404.5 250.5,494 -27.5,-362" fill="#2563eb" fill-opacity="0.05" stroke="#2563eb" stroke-opacity="0.55" stroke-dasharray="5 4"/>
+    <circle cx="126.5" cy="312" r="34" fill="none" stroke="#dc2626" stroke-opacity="0.8" stroke-width="1.4"/>
+    <circle cx="194" cy="312" r="49.5" fill="none" stroke="#16a34a" stroke-opacity="0.8" stroke-width="1.4"/>
+    <circle cx="343" cy="312" r="144.5" fill="none" stroke="#2563eb" stroke-opacity="0.8" stroke-width="1.4"/>
+  </g>
+  <polygon points="96,312 157,296.5 157,327.5 96,312" fill="#fee2e2" fill-opacity="0.85" stroke="#dc2626" stroke-width="1.2"/>
+  <polygon points="157,296.5 230.5,278.5 230.5,345.5 157,327.5" fill="#dcfce7" fill-opacity="0.85" stroke="#16a34a" stroke-width="1.2"/>
+  <polygon points="230.5,278.5 456,222 456,402 230.5,345.5" fill="#dbeafe" fill-opacity="0.85" stroke="#2563eb" stroke-width="1.2"/>
+  <circle cx="96" cy="312" r="4" fill="#1f2733"/>
+  <text x="88" y="316" class="s" text-anchor="end">camera</text>
+  <line x1="157" y1="327.5" x2="157" y2="341.5" stroke="#475569" stroke-width="1"/>
+  <text x="157" y="355.5" class="s" text-anchor="middle" stroke="#eff6ff" stroke-width="4" paint-order="stroke">34.0 m</text>
+  <line x1="230.5" y1="345.5" x2="230.5" y2="359.5" stroke="#475569" stroke-width="1"/>
+  <text x="230.5" y="373.5" class="s" text-anchor="middle" stroke="#eff6ff" stroke-width="4" paint-order="stroke">74.6 m</text>
+  <line x1="456" y1="402" x2="456" y2="416" stroke="#475569" stroke-width="1"/>
+  <text x="456" y="430" class="s" text-anchor="middle" stroke="#eff6ff" stroke-width="4" paint-order="stroke">200 m</text>
+  <text x="132.5" y="316" class="edge" text-anchor="middle">0</text>
+  <text x="194" y="316" class="edge" text-anchor="middle">1</text>
+  <text x="343" y="316" class="edge" text-anchor="middle">2</text>
+  <line x1="600" y1="210" x2="581.5" y2="153" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="606" y="214" class="s">toward the light</text>
+  <text x="556" y="236" class="t">Splits: λ · log + (1 &#8722; λ)</text>
+  <text x="556" y="254" class="t">· uniform, λ 0.5, from the</text>
+  <text x="556" y="272" class="t">near plane (0.1 m) to the</text>
+  <text x="556" y="290" class="t">shadow distance (200 m),</text>
+  <text x="556" y="308" class="t">pulled in to the farthest</text>
+  <text x="556" y="326" class="t">scene-bounds corner.</text>
+  <text x="556" y="352" class="s">Beyond it: lit without shadow.</text>
+  <text x="44" y="512" class="t">Each slice: its bounding sphere (solid; radius rounded to 1/16 m) and an ortho light frustum 2r wide</text>
+  <text x="44" y="530" class="t">(dashed) whose far plane touches the sphere and which reaches back toward the light past the scene</text>
+  <text x="44" y="548" class="t">bounds, so casters between the light and the slice still cast. Its origin is snapped to whole texels.</text>
+
+  <!-- the atlas, GPU -->
+  <rect x="720" y="88" width="252" height="482" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="736" y="112" class="lib">ShadowPass</text>
+  <text x="736" y="130" class="s">depth only, a viewport per tile</text>
+  <rect x="736" y="150" width="220" height="220" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <rect x="740" y="154" width="102" height="102" rx="4" fill="#fee2e2" stroke="#dc2626" stroke-opacity="0.6"/>
+  <text x="791" y="203" class="h" text-anchor="middle">cascade 0</text>
+  <text x="791" y="221" class="s" text-anchor="middle">1024 &#215; 1024</text>
+  <rect x="850" y="154" width="102" height="102" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="901" y="203" class="h" text-anchor="middle">cascade 1</text>
+  <text x="901" y="221" class="s" text-anchor="middle">1024 &#215; 1024</text>
+  <rect x="740" y="264" width="102" height="102" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="791" y="313" class="h" text-anchor="middle">cascade 2</text>
+  <text x="791" y="331" class="s" text-anchor="middle">1024 &#215; 1024</text>
+  <text x="901" y="319" class="s" text-anchor="middle">unused</text>
+  <text x="736" y="396" class="t">D32, 2048 &#215; 2048, one tile per</text>
+  <text x="736" y="414" class="t">cascade (atlasRect)</text>
+  <text x="736" y="440" class="s">standard depth: cleared to 1,</text>
+  <text x="736" y="456" class="s">compared LessOrEqual</text>
+  <text x="736" y="482" class="s">lighting.frag: the cascade by view</text>
+  <text x="736" y="498" class="s">depth (first splitFar past it), then</text>
+  <text x="736" y="514" class="s">3&#215;3 PCF, a compare sampler</text>
+  <text x="736" y="540" class="s">render.shadow.cascades, .tile,</text>
+  <text x="736" y="556" class="s">.splitLambda, .distance, .pcf</text>
+</svg>

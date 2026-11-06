@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="626" viewBox="0 0 1000 626" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 13px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .m { font-size: 11px; fill: #334155; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .mb { font-size: 12px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .edge { font-size: 11.5px; fill: #334155; font-weight: 600; }
+    .n { font-size: 11px; font-weight: 700; fill: #ffffff; }
+    .off { fill: #94a3b8; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="626" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">Composition: a prim's index</text>
+  <text x="28" y="62" class="s" style="font-size:12px">The index of /World/Tree as WorldComposer builds it from three files: a tree of nodes, each a site (a prim path in a layer stack), numbered in strength order.</text>
+
+  <!-- Authored files -->
+  <rect x="28" y="84" width="300" height="108" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="42" y="106" class="lib">root.usda</text>
+  <text x="128" y="106" class="s">sublayers = edits.usda</text>
+  <text x="42" y="128" class="m">def "World" { def "Tree" (</text>
+  <text x="55" y="144" class="m">references = @tree.usda@</text>
+  <text x="55" y="160" class="m">payload = @tree_geo.usda@</text>
+  <text x="55" y="176" class="m">variants = { string shape = "a" } )</text>
+
+  <rect x="350" y="84" width="300" height="108" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="364" y="106" class="lib">tree.usda</text>
+  <text x="450" y="106" class="s">defaultPrim = Tree</text>
+  <text x="364" y="128" class="m">def "Tree" (variantSets = "shape") {</text>
+  <text x="377" y="144" class="m">variantSet "shape" {</text>
+  <text x="390" y="160" class="m">"a" { float height = 4 }</text>
+  <text x="390" y="176" class="m">"b" { float height = 6 } } }</text>
+
+  <rect x="672" y="84" width="300" height="108" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="686" y="106" class="lib">tree_geo.usda</text>
+  <text x="808" y="106" class="s">defaultPrim = Geo</text>
+  <text x="686" y="128" class="m">def Xform "Geo" {</text>
+  <text x="699" y="144" class="m">float height = 5</text>
+  <text x="699" y="160" class="m">def Mesh "Trunk" { … }</text>
+  <text x="686" y="176" class="m">}</text>
+
+  <!-- The index -->
+  <rect x="28" y="212" width="592" height="386" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="44" y="236" class="lib">PrimIndex</text>
+  <text x="44" y="254" class="s">of /World/Tree</text>
+
+  <rect x="172" y="250" width="300" height="74" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <circle cx="194" cy="271" r="10" fill="#334155"/>
+  <text x="194" y="275" class="n" text-anchor="middle">1</text>
+  <text x="212" y="276" class="h">root node</text>
+  <text x="186" y="297" class="mb">root.usda &lt;/World/Tree&gt;</text>
+  <text x="186" y="314" class="s">the root layer stack, strongest first: root.usda, edits.usda</text>
+
+  <rect x="44" y="374" width="262" height="74" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <circle cx="66" cy="395" r="10" fill="#334155"/>
+  <text x="66" y="399" class="n" text-anchor="middle">2</text>
+  <text x="84" y="400" class="h">reference</text>
+  <text x="58" y="421" class="mb">tree.usda &lt;/Tree&gt;</text>
+  <text x="58" y="438" class="s">its target, mapped /Tree → /World/Tree</text>
+
+  <rect x="342" y="374" width="262" height="74" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <circle cx="364" cy="395" r="10" fill="#334155"/>
+  <text x="364" y="399" class="n" text-anchor="middle">4</text>
+  <text x="382" y="400" class="h">payload</text>
+  <text x="356" y="421" class="mb">tree_geo.usda &lt;/Geo&gt;</text>
+  <text x="356" y="438" class="s">its default prim, mapped /Geo → /World/Tree</text>
+
+  <rect x="44" y="498" width="262" height="74" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <circle cx="66" cy="519" r="10" fill="#334155"/>
+  <text x="66" y="523" class="n" text-anchor="middle">3</text>
+  <text x="84" y="524" class="h">variant</text>
+  <text x="58" y="545" class="mb">tree.usda &lt;/Tree{shape=a}&gt;</text>
+  <text x="58" y="562" class="s">under the node that authors the set</text>
+
+  <path d="M 250 324 V 348 H 175 V 370" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="183" y="364" class="edge">references</text>
+  <path d="M 394 324 V 348 H 473 V 370" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="481" y="364" class="edge">payload</text>
+  <path d="M 175 448 V 494" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="183" y="470" class="edge">variant set shape</text>
+  <text x="183" y="485" class="s">selection "a": the strongest anywhere in the index</text>
+
+  <text x="342" y="508" class="h">Strength order 1, 2, 3, 4</text>
+  <text x="342" y="527" class="s">depth first, a node before its children;</text>
+  <text x="342" y="543" class="s">siblings: variants, then references, then payloads,</text>
+  <text x="342" y="559" class="s">then an arc authored deeper in namespace first,</text>
+  <text x="342" y="575" class="s">then in authored order</text>
+
+  <!-- One attribute resolved -->
+  <rect x="640" y="212" width="332" height="196" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="656" y="236" class="h">One attribute resolved: height</text>
+  <text x="656" y="254" class="s">every node's layers, in strength order: the first opinion wins</text>
+  <circle cx="664" cy="274" r="8" fill="#334155"/>
+  <text x="664" y="278" class="n" text-anchor="middle" style="font-size:10px">1</text>
+  <text x="680" y="278" class="m">root.usda</text>
+  <text x="956" y="278" class="s" text-anchor="end">none</text>
+  <text x="680" y="298" class="m">edits.usda</text>
+  <text x="956" y="298" class="s" text-anchor="end">none</text>
+  <circle cx="664" cy="314" r="8" fill="#334155"/>
+  <text x="664" y="318" class="n" text-anchor="middle" style="font-size:10px">2</text>
+  <text x="680" y="318" class="m">tree.usda &lt;/Tree&gt;</text>
+  <text x="956" y="318" class="s" text-anchor="end">none</text>
+  <rect x="650" y="324" width="312" height="24" rx="5" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <circle cx="664" cy="336" r="8" fill="#334155"/>
+  <text x="664" y="340" class="n" text-anchor="middle" style="font-size:10px">3</text>
+  <text x="680" y="340" class="m">tree.usda &lt;/Tree{shape=a}&gt;</text>
+  <text x="956" y="340" class="mb" text-anchor="end">= 4, wins</text>
+  <circle cx="664" cy="360" r="8" fill="#94a3b8"/>
+  <text x="664" y="364" class="n" text-anchor="middle" style="font-size:10px">4</text>
+  <text x="680" y="364" class="m off">tree_geo.usda &lt;/Geo&gt;</text>
+  <text x="956" y="364" class="s" text-anchor="end">= 5, weaker</text>
+  <text x="656" y="386" class="s">Depth first, the payload authored on node 1 comes</text>
+  <text x="656" y="400" class="s">after node 2's whole subtree, its variant included.</text>
+
+  <!-- A child's index -->
+  <rect x="640" y="424" width="332" height="174" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="656" y="448" class="h">A child's index: /World/Tree/Trunk</text>
+  <text x="656" y="466" class="s">the parent's nodes, each path extended by the name,</text>
+  <text x="656" y="481" class="s">plus the arcs authored at /World/Tree/Trunk (none here)</text>
+  <circle cx="664" cy="502" r="8" fill="#334155"/>
+  <text x="664" y="506" class="n" text-anchor="middle" style="font-size:10px">1</text>
+  <text x="680" y="506" class="m">root.usda &lt;/World/Tree/Trunk&gt;</text>
+  <circle cx="664" cy="524" r="8" fill="#94a3b8"/>
+  <text x="664" y="528" class="n" text-anchor="middle" style="font-size:10px">2</text>
+  <text x="680" y="528" class="m off">tree.usda &lt;/Tree/Trunk&gt;</text>
+  <circle cx="664" cy="546" r="8" fill="#94a3b8"/>
+  <text x="664" y="550" class="n" text-anchor="middle" style="font-size:10px">3</text>
+  <text x="680" y="550" class="m off">tree.usda &lt;/Tree{shape=a}Trunk&gt;</text>
+  <circle cx="664" cy="568" r="8" fill="#334155"/>
+  <text x="664" y="572" class="n" text-anchor="middle" style="font-size:10px">4</text>
+  <text x="680" y="572" class="m">tree_geo.usda &lt;/Geo/Trunk&gt;</text>
+  <text x="656" y="590" class="s">2 and 3 have no spec there and no children: dropped</text>
+</svg>

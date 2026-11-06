@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="607" viewBox="0 0 1000 607" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 13px; font-weight: 700; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .m { font-size: 12px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .sm { font-size: 11px; fill: #3a4452; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .b { font-size: 12.5px; font-weight: 700; fill: #1f2733; }
+    .tag { font-size: 10.5px; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="607" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">ngen-view: how a scene reaches the screen</text>
+  <text x="28" y="62" class="s" style="font-size:12px">The five stages from the asset server's stream to a resident scene, the thread each runs on, and the record that shows it.</text>
+
+  <!-- Stage 1: Asset client -->
+  <rect x="28" y="96" width="176" height="437" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <circle cx="50" cy="118" r="11" fill="#2563eb"/>
+  <text x="50" y="122.5" class="tag" text-anchor="middle" fill="#ffffff">1</text>
+  <text x="68" y="123" class="h" fill="#2563eb">Asset client</text>
+  <text x="42" y="144" class="s">the stream from the server</text>
+  <rect x="36" y="158" width="160" height="45" rx="7" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="46" y="178" class="b">ngen-asset-server</text>
+  <text x="46" y="195" class="s">packs, or serves its cache</text>
+  <rect x="36" y="221" width="160" height="60" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="46" y="241" class="m">AssetClient</text>
+  <text x="46" y="258" class="s">requested, received, failed,</text>
+  <text x="46" y="273" class="s">in flight; its log()</text>
+  <line x1="116" y1="204" x2="116" y2="219" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="36" y="299" width="160" height="60" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="46" y="319" class="m">takeAnswered()</text>
+  <text x="46" y="336" class="s">what arrived, taken by the</text>
+  <text x="46" y="351" class="s">scene thread it wakes</text>
+  <line x1="116" y1="282" x2="116" y2="297" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="36" y="485" width="160" height="38" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="46" y="501" class="s">record</text>
+  <text x="88" y="501" class="m">assets</text>
+  <text x="46" y="516" class="s">totals, every asset</text>
+
+  <!-- Stage 2: Scene thread -->
+  <rect x="220" y="96" width="176" height="437" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <circle cx="242" cy="118" r="11" fill="#2563eb"/>
+  <text x="242" y="122.5" class="tag" text-anchor="middle" fill="#ffffff">2</text>
+  <text x="260" y="123" class="h" fill="#2563eb">Scene thread</text>
+  <text x="234" y="144" class="s">composer, packs, libraries</text>
+  <rect x="228" y="158" width="160" height="90" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="238" y="178" class="b">requests, arrivals</text>
+  <text x="238" y="195" class="s">open, setLodLevel,</text>
+  <text x="238" y="210" class="s">setPurposeShown, refresh,</text>
+  <text x="238" y="225" class="s">setLocalTransform; what</text>
+  <text x="238" y="240" class="s">the client answered</text>
+  <rect x="228" y="266" width="160" height="60" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="238" y="286" class="b">compose</text>
+  <text x="238" y="303" class="s">per batch: WorldComposer</text>
+  <text x="238" y="318" class="s">with the layer packs held</text>
+  <line x1="308" y1="249" x2="308" y2="264" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="228" y="344" width="160" height="60" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="238" y="364" class="b">placement pass</text>
+  <text x="238" y="381" class="s">places the tree; asks for</text>
+  <text x="238" y="396" class="s">meshes, materials, textures</text>
+  <line x1="308" y1="327" x2="308" y2="342" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="228" y="422" width="160" height="45" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="238" y="442" class="m">SceneSnapshot</text>
+  <text x="238" y="459" class="s">+ SceneChanges, published</text>
+  <line x1="308" y1="405" x2="308" y2="420" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="228" y="485" width="160" height="38" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="238" y="501" class="s">record</text>
+  <text x="280" y="501" class="m">scenethread</text>
+  <text x="238" y="516" class="s">batches, passes, held</text>
+
+  <!-- Stage 3: Main thread -->
+  <rect x="412" y="96" width="176" height="437" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <circle cx="434" cy="118" r="11" fill="#2563eb"/>
+  <text x="434" y="122.5" class="tag" text-anchor="middle" fill="#ffffff">3</text>
+  <text x="452" y="123" class="h" fill="#2563eb">Main thread</text>
+  <text x="426" y="144" class="s">once a frame, ViewFrame</text>
+  <rect x="420" y="158" width="160" height="60" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="430" y="178" class="m">update()</text>
+  <text x="430" y="195" class="s">takes the latest snapshot;</text>
+  <text x="430" y="210" class="s">every query reads it</text>
+  <rect x="420" y="236" width="160" height="60" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="430" y="256" class="m">takeChanges()</text>
+  <text x="430" y="273" class="s">the slots the passes</text>
+  <text x="430" y="288" class="s">touched, against before</text>
+  <line x1="500" y1="219" x2="500" y2="234" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="420" y="314" width="160" height="45" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="430" y="334" class="m">submitSceneChanges</text>
+  <text x="430" y="351" class="s">to the render thread</text>
+  <line x1="500" y1="297" x2="500" y2="312" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="420" y="485" width="160" height="38" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="430" y="501" class="s">record</text>
+  <text x="472" y="501" class="m">gpuscene</text>
+  <text x="430" y="516" class="s">changeLists</text>
+
+  <!-- Stage 4: GPU scene -->
+  <rect x="604" y="96" width="176" height="437" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-opacity="0.45"/>
+  <circle cx="626" cy="118" r="11" fill="#ea580c"/>
+  <text x="626" y="122.5" class="tag" text-anchor="middle" fill="#ffffff">4</text>
+  <text x="644" y="123" class="h" fill="#ea580c">GPU scene</text>
+  <text x="618" y="144" class="s">the render thread</text>
+  <rect x="612" y="158" width="160" height="60" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="622" y="178" class="b">change lists applied</text>
+  <text x="622" y="195" class="s">the tables: draw slots,</text>
+  <text x="622" y="210" class="s">meshes, materials, textures</text>
+  <rect x="612" y="236" width="160" height="60" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="622" y="256" class="b">upload queue</text>
+  <text x="622" y="273" class="s">render.upload.budgetMiB</text>
+  <text x="622" y="288" class="s">a frame; SceneUpload pass</text>
+  <line x1="692" y1="219" x2="692" y2="234" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="612" y="314" width="160" height="75" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="622" y="334" class="b">geometry pool</text>
+  <text x="622" y="351" class="s">used of capacity, up to</text>
+  <text x="622" y="366" class="s">render.geometry.limitMiB;</text>
+  <text x="622" y="381" class="s">meshes waiting for room</text>
+  <line x1="692" y1="297" x2="692" y2="312" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="612" y="485" width="160" height="38" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="622" y="501" class="s">record</text>
+  <text x="664" y="501" class="m">gpuscene</text>
+  <text x="622" y="516" class="s">uploads, geometryPool</text>
+
+  <!-- Stage 5: Residency -->
+  <rect x="796" y="96" width="176" height="437" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <circle cx="818" cy="118" r="11" fill="#2563eb"/>
+  <text x="818" y="122.5" class="tag" text-anchor="middle" fill="#ffffff">5</text>
+  <text x="836" y="123" class="h" fill="#2563eb">Residency</text>
+  <text x="810" y="144" class="s">ViewFrame::updateResidency</text>
+  <rect x="804" y="158" width="160" height="75" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="814" y="178" class="m">scene.idle()</text>
+  <text x="814" y="195" class="s">nothing queued, requested</text>
+  <text x="814" y="210" class="s">or unplaced; the camera</text>
+  <text x="814" y="225" class="s">evaluated</text>
+  <rect x="804" y="251" width="160" height="75" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
+  <text x="814" y="271" class="m">sceneDrawn()</text>
+  <text x="814" y="288" class="s">every change list applied</text>
+  <text x="814" y="303" class="s">in a finished frame; no</text>
+  <text x="814" y="318" class="s">upload or pipeline pending</text>
+  <line x1="884" y1="234" x2="884" y2="249" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="804" y="344" width="160" height="75" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="814" y="364" class="m">SceneResident</text>
+  <text x="814" y="381" class="s">traced when both hold:</text>
+  <text x="814" y="396" class="s">time since start, longest</text>
+  <text x="814" y="411" class="s">frame while loading</text>
+  <line x1="884" y1="327" x2="884" y2="342" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="804" y="485" width="160" height="38" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="814" y="501" class="s">record</text>
+  <text x="856" y="501" class="m">scenethread</text>
+  <text x="814" y="516" class="s">resident, loading</text>
+
+  <!-- The flow between the stages -->
+  <path d="M198,329 H216 V203 H226" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M390,444.5 H404 V188 H418" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M582,336.5 H596 V188 H610" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M774,351.5 H788 V288.5 H802" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- The scene thread asks the client for what it lacks -->
+  <path d="M226,374 H208 V251 H198" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <text x="28" y="569" class="s">Dashed: the scene thread asks the client for what it lacks (the packs a compose names, the meshes, materials and textures a placement wants).</text>
+  <text x="28" y="587" class="s">The upload budget and the pool's limit are configuration values (the gpuscene budget=…,limit=… verb), handed to the render thread when they change.</text>
+</svg>

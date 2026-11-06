@@ -26,8 +26,9 @@
 // is the root layer stack at the prim's own path. A reference or payload adds a child node under the node whose spec authors it: the
 // index of the target prim in its file's layer stack, mapped from the target's path to the authoring prim's. Opinions are read from the
 // nodes in strength order, the tree depth first, a node before its children; within a node, its layer stack's layers strongest first.
-// Siblings are ordered as USD orders them: references before payloads, an arc authored deeper in namespace before one inherited from an
-// ancestor, then in authored order.
+// A selected variant adds a child node, at its variant path, under the node that authors the set. Siblings are ordered as USD orders them:
+// variants before references, references before payloads, an arc authored deeper in namespace before one inherited from an ancestor, then
+// in authored order.
 //
 // A child prim's index is its parent's with every node's path extended by the child's name (a node without a spec there keeps only its
 // own arcs), plus the arcs authored at the child's path. Paths a node authors (relationship targets) map to the composed namespace

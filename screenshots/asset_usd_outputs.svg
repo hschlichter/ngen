@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="524" viewBox="0 0 1000 524" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 14px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .f { font-size: 12px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .b { font-weight: 700; fill: #1f2733; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .mono { font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .edge { font-size: 11.5px; font-weight: 600; fill: #334155; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="arrowGrey" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="524" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">Scene packs: one USD file, one job</text>
+  <text x="28" y="62" class="s" style="font-size:12px">ngen-packer-usd packs one file into its layer pack and a pack per mesh and material it defines; other files are named, not read.</text>
+
+  <!-- the source file -->
+  <rect x="28" y="92" width="272" height="200" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="44" y="116" class="lib">base.usda</text>
+  <text x="44" y="134" class="s mono">assets/layered/base.usda</text>
+  <text x="44" y="162" class="s">Material</text>
+  <text x="110" y="162" class="s mono">/World/Looks/Red</text>
+  <text x="44" y="180" class="s">Material</text>
+  <text x="110" y="180" class="s mono">/World/Looks/Checker</text>
+  <text x="44" y="198" class="s">Cube</text>
+  <text x="110" y="198" class="s mono">/World/Group/Inherits</text>
+  <text x="44" y="216" class="s">Cube</text>
+  <text x="110" y="216" class="s mono">/World/Group/Own</text>
+  <text x="44" y="234" class="s">reference</text>
+  <text x="110" y="234" class="s mono">@./model.usda@</text>
+  <text x="44" y="252" class="s">texture</text>
+  <text x="110" y="252" class="s mono">@./textures/checker.png@</text>
+  <text x="44" y="276" class="s">and more prims, arcs and attributes</text>
+
+  <!-- files it names -->
+  <line x1="164" y1="292" x2="164" y2="352" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrowGrey)"/>
+  <text x="172" y="326" class="s">named, not read</text>
+  <rect x="28" y="354" width="272" height="82" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6" stroke-dasharray="5 4"/>
+  <text x="44" y="377" class="s mono">model.usda, textures/checker.png</text>
+  <text x="44" y="397" class="s">not read by this job: resolved to asset ids,</text>
+  <text x="44" y="413" class="s">each requested and packed on its own</text>
+
+  <!-- the packer -->
+  <line x1="300" y1="193" x2="338" y2="193" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="340" y="150" width="200" height="86" rx="8" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="440" y="174" class="lib" text-anchor="middle">ngen-packer-usd</text>
+  <text x="440" y="194" class="s" text-anchor="middle">the layer: Sdf, as written</text>
+  <text x="440" y="210" class="s" text-anchor="middle">meshes, materials: a stage</text>
+  <text x="440" y="224" class="s" text-anchor="middle">of this file alone</text>
+
+  <!-- outputs -->
+  <path d="M540,193 L570,193" fill="none" stroke="#475569" stroke-width="1.6"/>
+  <line x1="570" y1="124" x2="570" y2="444" stroke="#475569" stroke-width="1.6"/>
+  <rect x="598" y="88" width="374" height="72" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <line x1="570" y1="124" x2="596" y2="124" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="612" y="108" class="t b">layer pack</text>
+  <text x="612" y="124" class="s mono">assets/layered/base.usda</text>
+  <text x="612" y="140" class="s">the file's own id: the opinions it authors, read as written;</text>
+  <text x="612" y="154" class="s">its sublayers, references and payloads as asset ids</text>
+  <rect x="598" y="168" width="374" height="72" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <line x1="570" y1="204" x2="596" y2="204" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="612" y="188" class="t b">mesh packs</text>
+  <text x="612" y="204" class="s mono">assets/layered/base.usda#/World/Group/Own</text>
+  <text x="612" y="220" class="s">one per prim the file defines with geometry</text>
+  <text x="612" y="234" class="s">(and …#/World/Group/Inherits)</text>
+  <rect x="598" y="248" width="374" height="72" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <line x1="570" y1="284" x2="596" y2="284" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="612" y="268" class="t b">material packs</text>
+  <text x="612" y="284" class="s mono">assets/layered/base.usda#/World/Looks/Checker</text>
+  <text x="612" y="300" class="s">one per def Material authoring its network</text>
+  <text x="612" y="314" class="s">(and …#/World/Looks/Red); names its texture</text>
+  <rect x="598" y="328" width="374" height="72" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <line x1="570" y1="364" x2="596" y2="364" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="612" y="348" class="f">&lt;out&gt;.outputs</text>
+  <text x="612" y="364" class="s mono">&lt;id&gt;\t&lt;out&gt;#.World.Group.Own</text>
+  <text x="612" y="380" class="s">the secondary outputs: one &lt;id&gt;\t&lt;file&gt; line each;</text>
+  <text x="612" y="394" class="s">the server records what it names, only that</text>
+  <rect x="598" y="408" width="374" height="72" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <line x1="570" y1="444" x2="596" y2="444" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="612" y="428" class="f">&lt;out&gt;.d</text>
+  <text x="612" y="444" class="s mono">&lt;out&gt;: assets/layered/base.usda</text>
+  <text x="612" y="460" class="s">the depfile names the file alone:</text>
+  <text x="612" y="474" class="s">editing one file of a scene repacks that file only</text>
+  <text x="28" y="508" class="s">&lt;out&gt; is .ngen-assets/&lt;platform&gt;/&lt;config&gt;/assets/layered/base.usda; a secondary output's file is &lt;out&gt;#&lt;fragment&gt;, '/' written as '.'.</text>
+</svg>

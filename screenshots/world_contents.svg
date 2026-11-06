@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="626" viewBox="0 0 1000 626" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .m { font-size: 11px; fill: #334155; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .i { font-size: 11px; fill: #94a3b8; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="626" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">What a World holds</text>
+  <text x="28" y="62" class="s" style="font-size:12px">The stage is composed again every compose; prototypes and LOD level contents are kept in World::contents, at stable indices, and linked to.</text>
+
+  <!-- World::stage -->
+  <rect x="28" y="92" width="432" height="448" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="44" y="116" class="lib">World::stage</text>
+  <text x="44" y="134" class="s">ContentKind::Stage, entities by EntityId, version 7</text>
+
+  <rect x="44" y="148" width="400" height="28" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="56" y="166" class="i">0</text>
+  <text x="76" y="166" class="m">/</text>
+  <text x="210" y="166" class="s">pseudo-root</text>
+
+  <rect x="44" y="182" width="400" height="28" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="56" y="200" class="i">1</text>
+  <text x="92" y="200" class="m">World</text>
+
+  <rect x="44" y="216" width="400" height="28" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="56" y="234" class="i">2</text>
+  <text x="108" y="234" class="m">House_1</text>
+  <text x="210" y="234" class="s">instance</text>
+  <text x="432" y="234" class="m" text-anchor="end">prototype = 0</text>
+
+  <rect x="44" y="250" width="400" height="28" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="56" y="268" class="i">3</text>
+  <text x="108" y="268" class="m">House_2</text>
+  <text x="210" y="268" class="s">instance, same arcs</text>
+  <text x="432" y="268" class="m" text-anchor="end">prototype = 0</text>
+
+  <rect x="44" y="284" width="400" height="28" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="56" y="302" class="i">4</text>
+  <text x="108" y="302" class="m">Tree</text>
+  <text x="210" y="302" class="s">LOD root that streams</text>
+
+  <rect x="44" y="318" width="400" height="28" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="56" y="336" class="i">5</text>
+  <text x="124" y="336" class="m">lod0</text>
+  <text x="210" y="336" class="s">level stand-in</text>
+  <text x="432" y="336" class="m" text-anchor="end">linkedContent = 2</text>
+
+  <rect x="44" y="352" width="400" height="28" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6" stroke-dasharray="4 3"/>
+  <text x="56" y="370" class="i">6</text>
+  <text x="124" y="370" class="m">lod1</text>
+  <text x="210" y="370" class="s">level stand-in</text>
+  <text x="432" y="370" class="m" text-anchor="end">linkedContent = -1</text>
+
+  <rect x="44" y="386" width="400" height="28" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="56" y="404" class="i">7</text>
+  <text x="124" y="404" class="m">lod2</text>
+  <text x="210" y="404" class="s">level stand-in</text>
+  <text x="432" y="404" class="m" text-anchor="end">linkedContent = 4</text>
+
+  <text x="44" y="442" class="s">An instance's prototype and a stand-in's linkedContent stay -1 until</text>
+  <text x="44" y="458" class="s">that content is complete (every pack it named held, or failed):</text>
+  <text x="44" y="474" class="s">nothing that reads the World sees a partial content.</text>
+  <text x="44" y="500" class="s">visit expands an instance into its prototype and a stand-in into</text>
+  <text x="44" y="516" class="s">its level content, giving every entity its full path.</text>
+
+  <!-- World::contents -->
+  <rect x="480" y="92" width="492" height="448" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="496" y="116" class="lib">World::contents</text>
+  <text x="496" y="134" class="s">std::deque&lt;WorldContent&gt;: kept across composes, at stable indices</text>
+
+  <rect x="496" y="148" width="460" height="88" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="510" y="170" class="lib">[0] Prototype</text>
+  <text x="630" y="170" class="s">sourcePath /World/House_1</text>
+  <text x="942" y="170" class="s" text-anchor="end">version 2</text>
+  <text x="510" y="190" class="s">entity 0: the instance prim, standing for every instance</text>
+  <text x="510" y="206" class="s">children /Roof, /Walls: paths relative to the prototype</text>
+  <text x="510" y="222" class="s">shared by the instances with the same arcs (its kept nodes)</text>
+
+  <rect x="496" y="246" width="460" height="64" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6" stroke-dasharray="4 3"/>
+  <text x="510" y="268" class="lib">[1] Level</text>
+  <text x="600" y="268" class="s">/World/Tree/lod0, loaded</text>
+  <text x="942" y="268" class="s" text-anchor="end">version 10</text>
+  <text x="510" y="287" class="s">released: reached no more, so emptied in place (index kept, no entities)</text>
+  <text x="510" y="302" class="s">composed again if it is reached later</text>
+
+  <rect x="496" y="320" width="460" height="64" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="510" y="342" class="lib">[2] Level</text>
+  <text x="600" y="342" class="s">/World/Tree/lod0, not loaded</text>
+  <text x="942" y="342" class="s" text-anchor="end">version 4</text>
+  <text x="510" y="361" class="s">entity 0: the level prim, composed without its payload</text>
+  <text x="510" y="376" class="s">complete: linked</text>
+
+  <rect x="496" y="394" width="460" height="64" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6" stroke-dasharray="4 3"/>
+  <text x="510" y="416" class="lib">[3] Level</text>
+  <text x="600" y="416" class="s">/World/Tree/lod1, loaded</text>
+  <text x="942" y="416" class="s" text-anchor="end">version 8</text>
+  <text x="510" y="435" class="s">incomplete: a pack it named isn't held yet (a gap)</text>
+  <text x="510" y="450" class="s">composed again, in place, when next reached; linked once complete</text>
+
+  <rect x="496" y="468" width="460" height="64" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="510" y="490" class="lib">[4] Level</text>
+  <text x="600" y="490" class="s">/World/Tree/lod2, loaded</text>
+  <text x="942" y="490" class="s" text-anchor="end">version 9</text>
+  <text x="510" y="509" class="s">entity 0: the level prim, its payload's prims under it</text>
+  <text x="510" y="524" class="s">complete: linked</text>
+
+  <!-- Links -->
+  <path d="M 444 230 L 492 182" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 444 264 L 492 202" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 444 332 L 492 352" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 444 366 L 494 426" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <path d="M 444 400 L 492 500" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <text x="28" y="568" class="t">Kept by key: a prototype by its kept nodes, a level by its prim index and whether it loads. Every content has a version,</text>
+  <text x="28" y="587" class="t">new each time it is composed, so a reader keeps what it derived from a content by version. A pack that changes (addPack</text>
+  <text x="28" y="606" class="t">of an id already held: a repack or an edit) drops every kept content, as contents don't record which packs they read.</text>
+</svg>

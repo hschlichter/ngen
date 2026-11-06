@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="652" viewBox="0 0 1000 652" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .f { font-size: 11.5px; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .fs { font-size: 10.5px; fill: #5a6575; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .c { font-size: 10.5px; fill: #3a4452; text-anchor: middle; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="652" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">Renderer: scene data on the GPU</text>
+  <text x="28" y="62" class="s" style="font-size:12px">An instance record names a material entry and a mesh entry; those name texture slots and ranges in the geometry pool.</text>
+
+  <!-- Instance buffer -->
+  <rect x="28" y="88" width="240" height="282" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="42" y="112" class="lib">GpuInstanceRecord</text>
+  <text x="42" y="130" class="s">gpuscene.instances: one per draw slot,</text>
+  <text x="42" y="145" class="s">128 bytes, read at gl_InstanceIndex</text>
+
+  <rect x="40" y="158" width="216" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="172" class="f">model</text>
+  <text x="248" y="172" class="fs" text-anchor="end">mat4</text>
+  <rect x="40" y="182" width="216" height="20" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="196" class="f" font-weight="700">material</text>
+  <text x="248" y="196" class="fs" text-anchor="end">entry</text>
+  <rect x="40" y="206" width="216" height="20" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="220" class="f" font-weight="700">mesh</text>
+  <text x="248" y="220" class="fs" text-anchor="end">MeshHandle</text>
+  <rect x="40" y="230" width="216" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="244" class="f">indexOffset, indexCount</text>
+  <rect x="40" y="254" width="216" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="268" class="f">boundsMin, boundsMax</text>
+  <rect x="40" y="278" width="216" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="292" class="f">flags</text>
+  <rect x="40" y="302" width="216" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="316" class="f">lodLevel, lodGroup</text>
+  <rect x="40" y="326" width="216" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="340" class="f">streamRoot, lodDepth</text>
+  <text x="42" y="362" class="s">world bounds; flags: primFirst, cutout…</text>
+
+  <!-- Material table -->
+  <rect x="316" y="88" width="276" height="196" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="330" y="112" class="lib">GpuMaterial</text>
+  <text x="330" y="130" class="s">gpuscene.materials: per MaterialHandle, 16 B</text>
+  <rect x="330" y="142" width="30" height="24" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="345" y="158" class="c">0</text>
+  <rect x="362" y="142" width="30" height="24" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="377" y="158" class="c">1</text>
+  <rect x="394" y="142" width="30" height="24" rx="3" fill="#dcfce7" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="409" y="158" class="c" font-weight="700">2</text>
+  <rect x="426" y="142" width="30" height="24" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="441" y="158" class="c">3</text>
+  <text x="472" y="158" class="c">…</text>
+  <rect x="330" y="178" width="248" height="20" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="338" y="192" class="f" font-weight="700">baseColorTexture</text>
+  <text x="570" y="192" class="fs" text-anchor="end">slot</text>
+  <rect x="330" y="202" width="248" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="338" y="216" class="f">opacityTexture</text>
+  <text x="570" y="216" class="fs" text-anchor="end">slot</text>
+  <rect x="330" y="226" width="248" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="338" y="240" class="f">opacityInfo</text>
+  <text x="570" y="240" class="fs" text-anchor="end">channel, raw</text>
+  <rect x="330" y="250" width="248" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="338" y="264" class="f">opacityThreshold</text>
+  <text x="570" y="264" class="fs" text-anchor="end">0: opaque</text>
+
+  <!-- Texture array -->
+  <rect x="640" y="88" width="332" height="196" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="654" y="112" class="lib">textures[1024]</text>
+  <text x="654" y="130" class="s">sampler2D array, geometry set binding 1</text>
+  <rect x="654" y="142" width="40" height="24" rx="3" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="674" y="158" class="c">0</text>
+  <rect x="696" y="142" width="40" height="24" rx="3" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="716" y="158" class="c">1</text>
+  <rect x="738" y="142" width="40" height="24" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="758" y="158" class="c">2</text>
+  <rect x="780" y="142" width="40" height="24" rx="3" fill="#dcfce7" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="800" y="158" class="c" font-weight="700">3</text>
+  <rect x="822" y="142" width="40" height="24" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="842" y="158" class="c">4</text>
+  <text x="878" y="158" class="c">…</text>
+  <rect x="894" y="142" width="62" height="24" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="925" y="158" class="c">1023</text>
+  <text x="654" y="198" class="t"><tspan font-weight="700">0</tspan> fallback, <tspan font-weight="700">1</tspan> white 1×1, <tspan font-weight="700">2…</tspan> textures</text>
+  <text x="654" y="220" class="s">A texture takes a slot once every level is copied</text>
+  <text x="654" y="236" class="s">(next beginFrame); its materials are rewritten</text>
+  <text x="654" y="252" class="s">then. Until that they sample slot 1. Unused</text>
+  <text x="654" y="268" class="s">slots hold the fallback; freed slots are reused.</text>
+
+  <!-- Mesh table -->
+  <rect x="316" y="316" width="276" height="170" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="330" y="340" class="lib">GpuMeshEntry</text>
+  <text x="330" y="358" class="s">gpuscene.meshtable: per MeshHandle, 16 B</text>
+  <rect x="330" y="370" width="30" height="24" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="345" y="386" class="c">0</text>
+  <rect x="362" y="370" width="30" height="24" rx="3" fill="#dcfce7" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="377" y="386" class="c" font-weight="700">1</text>
+  <rect x="394" y="370" width="30" height="24" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="409" y="386" class="c">2</text>
+  <text x="440" y="386" class="c">…</text>
+  <rect x="330" y="406" width="248" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="338" y="420" class="f">firstIndex</text>
+  <rect x="330" y="430" width="248" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="338" y="444" class="f">vertexOffset</text>
+  <rect x="330" y="454" width="248" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="338" y="468" class="f">indexCount</text>
+  <text x="570" y="468" class="fs" text-anchor="end">0: not drawn</text>
+
+  <!-- Geometry pool -->
+  <rect x="640" y="316" width="332" height="270" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="654" y="340" class="t" font-weight="700">Geometry pool</text>
+  <text x="654" y="358" class="s">a first-fit range per mesh; grows by doubling</text>
+
+  <text x="654" y="384" class="f">gpuscene.pool.vertices</text>
+  <text x="956" y="384" class="fs" text-anchor="end">Vertex</text>
+  <rect x="654" y="390" width="302" height="22" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <rect x="744" y="390" width="84" height="22" fill="#bbf7d0" stroke="#16a34a"/>
+
+  <line x1="744" y1="412" x2="744" y2="436" stroke="#16a34a" stroke-dasharray="3 3"/>
+  <line x1="828" y1="412" x2="828" y2="436" stroke="#16a34a" stroke-dasharray="3 3"/>
+  <text x="836" y="428" class="fs">same range:</text>
+  <text x="836" y="441" class="fs">vertexOffset</text>
+
+  <text x="654" y="450" class="f">gpuscene.pool.positions</text>
+  <rect x="654" y="456" width="302" height="22" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <rect x="744" y="456" width="84" height="22" fill="#bbf7d0" stroke="#16a34a"/>
+  <text x="956" y="494" class="fs" text-anchor="end">12 B a vertex, depth-only</text>
+
+  <text x="654" y="514" class="f">gpuscene.pool.indices</text>
+  <text x="956" y="514" class="fs" text-anchor="end">uint32, mesh-local</text>
+  <rect x="654" y="520" width="302" height="22" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <rect x="700" y="520" width="168" height="22" fill="#dcfce7" stroke="#16a34a"/>
+  <rect x="756" y="520" width="56" height="22" fill="#86efac" stroke="#16a34a"/>
+  <text x="700" y="558" class="fs">firstIndex</text>
+  <text x="868" y="558" class="fs" text-anchor="end">+ indexCount</text>
+  <text x="784" y="574" class="fs" text-anchor="middle">submesh: + indexOffset, its indexCount</text>
+
+  <!-- References -->
+  <path d="M256,192 H286 V154 H326" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M256,216 H300 V382 H326" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M578,188 H612 V176 H800 V170" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="578" y1="440" x2="636" y2="440" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <text x="28" y="612" class="s">A draw is firstIndex (+ indexOffset for a submesh), vertexOffset and indexCount: what InstanceCullScatter writes into each command,</text>
+  <text x="28" y="628" class="s">with firstInstance = the slot. Removals apply first, so what is added reuses their pool ranges, table entries and texture slots.</text>
+</svg>

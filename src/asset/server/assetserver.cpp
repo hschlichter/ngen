@@ -659,7 +659,7 @@ auto AssetServer::deliver(const std::string& id, const Outcome& outcome) -> void
             auto read = readBytes(outcome.path);
             if (!read) {
                 rpc.send(subscriber.connection,
-                         rpc::makeNotification("asset.failed", {{"request", subscriber.request}, {"id", id}, {"errors", {std::format("cannot read {}", outcome.path)}}}));
+                         rpc::makeNotification("asset.failed", {{"request", subscriber.request}, {"id", id}, {"errors", {std::format("cannot read {}", outcome.path)}}, {"ms", outcome.ms}}));
                 traceWarning("  {}  failed: cannot read {}", id, outcome.path);
                 answered(subscriber.request, Answer::Failed, 0);
                 continue;

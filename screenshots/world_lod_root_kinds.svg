@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="566" viewBox="0 0 1000 566" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 15px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .m { font-size: 11px; fill: #334155; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .mb { font-size: 11px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .tag { font-size: 10.5px; font-weight: 700; fill: #2563eb; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="566" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">Loading: payloads and LOD levels</text>
+  <text x="28" y="62" class="s" style="font-size:12px">A LOD root's levels are its children, finest first; what is authored makes it one of two kinds (LodRoot::streams).</text>
+
+  <!-- Streaming root -->
+  <rect x="28" y="84" width="458" height="454" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="44" y="110" class="h">Streaming root</text>
+  <text x="166" y="110" class="m">LodRoot::streams = true</text>
+  <text x="44" y="130" class="s">a level has a payload</text>
+
+  <rect x="44" y="144" width="426" height="80" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="56" y="164" class="m">def "Tree" (apiSchemas = ["LODRootAPI"])</text>
+  <text x="69" y="180" class="m">def "lod0" (payload = @tree_lod0.usda@)</text>
+  <text x="69" y="196" class="m">def "lod1" (payload = @tree_lod1.usda@)</text>
+  <text x="69" y="212" class="m">def "lod2" (payload = @tree_lod2.usda@)</text>
+
+  <text x="44" y="250" class="s">the root's content: stand-ins</text>
+  <text x="280" y="250" class="s">World::contents: a content per level</text>
+
+  <rect x="44" y="260" width="168" height="28" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="56" y="278" class="mb">lod0</text>
+  <text x="92" y="278" class="s">stand-in</text>
+  <rect x="44" y="296" width="168" height="28" rx="7" fill="#ffffff" stroke="#2563eb" stroke-width="2"/>
+  <text x="56" y="314" class="mb">lod1</text>
+  <text x="92" y="314" class="s">stand-in</text>
+  <text x="200" y="314" class="tag" text-anchor="end">drawn</text>
+  <rect x="44" y="332" width="168" height="28" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="56" y="350" class="mb">lod2</text>
+  <text x="92" y="350" class="s">stand-in</text>
+
+  <rect x="280" y="260" width="190" height="28" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="292" y="278" class="mb">lod0</text>
+  <text x="328" y="278" class="s">not loaded: the prim only</text>
+  <rect x="280" y="296" width="190" height="28" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="292" y="314" class="mb">lod1</text>
+  <text x="328" y="314" class="s">loaded: with its payload</text>
+  <rect x="280" y="332" width="190" height="28" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="292" y="350" class="mb">lod2</text>
+  <text x="328" y="350" class="s">loaded: with its payload</text>
+
+  <path d="M 212 274 H 276" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 212 310 H 276" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 212 346 H 276" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="244" y="376" class="s" text-anchor="middle">linkedContent</text>
+
+  <rect x="44" y="398" width="426" height="84" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="56" y="418" class="mb">wanted 0</text>
+  <text x="150" y="418" class="s">lod:default:index, until setLodLevel sets one</text>
+  <text x="56" y="438" class="mb">loaded 1, 2</text>
+  <text x="150" y="438" class="s">setResidentLevels (ngen-view's residency),</text>
+  <text x="150" y="452" class="s">else the wanted one and the coarsest</text>
+  <text x="56" y="472" class="mb">drawn 1</text>
+  <text x="150" y="472" class="s">the finest loaded level not finer than the wanted one</text>
+
+  <text x="44" y="504" class="s">Which levels load is decided after composing, by linking: changing a level</text>
+  <text x="44" y="520" class="s">changes only which content its stand-in links to, never the root's content.</text>
+
+  <!-- Render-LOD root -->
+  <rect x="514" y="84" width="458" height="454" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="530" y="110" class="h">Render-LOD root</text>
+  <text x="662" y="110" class="m">LodRoot::streams = false</text>
+  <text x="530" y="130" class="s">no level has a payload: levels are references or inline</text>
+
+  <rect x="530" y="144" width="426" height="80" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="542" y="164" class="m">def "Rock" (apiSchemas = ["LODRootAPI"])</text>
+  <text x="555" y="180" class="m">def "lod0" (references = @rock.usda@&lt;/lod0&gt;)</text>
+  <text x="555" y="196" class="m">def "lod1" (references = @rock.usda@&lt;/lod1&gt;)</text>
+  <text x="555" y="212" class="m">def "lod2" { … }</text>
+
+  <text x="530" y="250" class="s">the root's content: the levels as children</text>
+
+  <rect x="530" y="260" width="200" height="28" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="542" y="278" class="mb">lod0</text>
+  <text x="578" y="278" class="s">level, composed in place</text>
+  <rect x="530" y="296" width="200" height="28" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="542" y="314" class="mb">lod1</text>
+  <text x="578" y="314" class="s">level, composed in place</text>
+  <rect x="530" y="332" width="200" height="28" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="542" y="350" class="mb">lod2</text>
+  <text x="578" y="350" class="s">level, composed in place</text>
+
+  <rect x="782" y="260" width="174" height="100" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="794" y="281" class="t" font-weight="700">GPU</text>
+  <text x="794" y="300" class="m">LodSelectPass</text>
+  <text x="794" y="318" class="s">picks the level each</text>
+  <text x="794" y="333" class="s">placement draws, every</text>
+  <text x="794" y="348" class="s">frame (pickLodLevel's rule)</text>
+
+  <path d="M 736 274 H 748 V 346 H 736" fill="none" stroke="#475569" stroke-width="1.5"/>
+  <path d="M 748 310 H 778" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="530" y="398" width="426" height="84" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="542" y="418" class="mb">loaded 0, 1, 2</text>
+  <text x="654" y="418" class="s">LodRoot::loaded holds every level</text>
+  <text x="542" y="438" class="mb">visit</text>
+  <text x="654" y="438" class="s">walks the levels as children</text>
+  <text x="542" y="458" class="mb">drawn</text>
+  <text x="654" y="458" class="s">the renderer's, per placement</text>
+  <text x="654" y="472" class="s">(no linking, setLodLevel or residency)</text>
+
+  <text x="530" y="504" class="s">Every level is composed with the root's content, as USD composes it:</text>
+  <text x="530" y="520" class="s">an asset's lod0, lod1… into its one geometry file.</text>
+</svg>

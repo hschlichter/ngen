@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="770" viewBox="0 0 1000 770" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 15px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .m { font-size: 12px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .n { font-size: 12px; font-weight: 700; fill: #2563eb; }
+    .edge { font-size: 11.5px; fill: #334155; font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="770" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">RHI: frame pacing, as the integrator provides it</text>
+  <text x="28" y="62" class="s" style="font-size:12px">What belongs to a frame slot and what to a swapchain image, and one frame from acquire to present (rhiexample.h).</text>
+
+  <!-- Per frame slot -->
+  <rect x="28" y="88" width="462" height="178" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="44" y="112" class="h">Per frame slot</text>
+  <text x="44" y="130" class="s">indexed by slot; slot = (slot + 1) % N after each frame</text>
+  <rect x="44" y="142" width="136" height="62" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="56" y="162" class="m">commandBuffers</text>
+  <text x="56" y="180" class="s">RhiCommandBuffer</text>
+  <text x="56" y="195" class="s">reset and re-recorded</text>
+  <rect x="188" y="142" width="136" height="62" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="200" y="162" class="m">inFlightFences</text>
+  <text x="200" y="180" class="s">RhiFence</text>
+  <text x="200" y="195" class="s">created signalled</text>
+  <rect x="332" y="142" width="142" height="62" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="344" y="162" class="m">imageAvailable</text>
+  <text x="344" y="180" class="s">RhiSemaphore</text>
+  <text x="344" y="195" class="s">given to acquire</text>
+  <text x="44" y="230" class="s">imageAvailable goes to acquire before the image index is known.</text>
+  <text x="44" y="248" class="s">N is the program's choice; the examples use imageCount().</text>
+
+  <!-- Per swapchain image -->
+  <rect x="510" y="88" width="462" height="178" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="526" y="112" class="h">Per swapchain image</text>
+  <text x="526" y="130" class="s">indexed by the imageIndex (i) that acquireNextImage returns</text>
+  <rect x="526" y="142" width="148" height="62" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="538" y="162" class="m">renderFinished</text>
+  <text x="538" y="180" class="s">RhiSemaphore</text>
+  <text x="538" y="195" class="s">signalled by the submit</text>
+  <rect x="682" y="142" width="148" height="62" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="694" y="162" class="m">image(i)</text>
+  <text x="694" y="180" class="s">RhiTexture</text>
+  <text x="694" y="195" class="s">the backbuffer</text>
+  <text x="526" y="230" class="s">present consumes the render-finished semaphore per image,</text>
+  <text x="526" y="248" class="s">so it is indexed by the image, not by the slot.</text>
+
+  <!-- Lanes -->
+  <rect x="28" y="286" width="458" height="446" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="44" y="310" class="h">CPU: the integrator's loop</text>
+  <rect x="498" y="286" width="236" height="446" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="514" y="310" class="h">GPU queue</text>
+  <rect x="746" y="286" width="226" height="446" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="762" y="310" class="h">Swapchain</text>
+
+  <!-- CPU steps -->
+  <rect x="44" y="324" width="426" height="50" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="56" y="345" class="n">1</text>
+  <text x="74" y="345" class="m">waitForFence(inFlightFences[slot])</text>
+  <text x="74" y="363" class="s">the GPU finished the slot's last frame, N frames ago: its buffer is free</text>
+
+  <rect x="44" y="384" width="426" height="50" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="56" y="405" class="n">2</text>
+  <text x="74" y="405" class="m">acquireNextImage(imageAvailable[slot])</text>
+  <text x="74" y="423" class="s">returns imageIndex; the image is not ready until the semaphore signals</text>
+
+  <rect x="44" y="444" width="426" height="50" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="56" y="465" class="n">3</text>
+  <text x="74" y="465" class="m">resetFence(inFlightFences[slot])</text>
+  <text x="74" y="483" class="s">after a successful acquire; OutOfDate skips the frame</text>
+
+  <rect x="44" y="504" width="426" height="50" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="56" y="525" class="n">4</text>
+  <text x="74" y="525" class="m">record commandBuffers[slot]</text>
+  <text x="74" y="543" class="s">image: Undefined → ColorAttachment, draws, → PresentSrc</text>
+
+  <rect x="44" y="564" width="426" height="66" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="56" y="585" class="n">5</text>
+  <text x="74" y="585" class="m">submitCommandBuffer(cmd, { … })</text>
+  <text x="74" y="603" class="s">wait imageAvailable[slot] · signal renderFinished[imageIndex]</text>
+  <text x="74" y="619" class="s">fence inFlightFences[slot]</text>
+
+  <rect x="44" y="640" width="426" height="50" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="56" y="661" class="n">6</text>
+  <text x="74" y="661" class="m">present(…, renderFinished[imageIndex], imageIndex)</text>
+  <text x="74" y="679" class="s">OutOfDate or Suboptimal: recreate the swapchain next frame</text>
+
+  <text x="56" y="715" class="n">7</text>
+  <text x="74" y="715" class="m">slot = (slot + 1) % N</text>
+
+  <!-- GPU -->
+  <rect x="514" y="556" width="204" height="80" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="526" y="577" class="t" font-weight="700">commandBuffers[slot] runs</text>
+  <text x="526" y="595" class="s">waits: imageAvailable[slot]</text>
+  <text x="526" y="611" class="s">signals: renderFinished[i]</text>
+  <text x="526" y="627" class="s">and inFlightFences[slot]</text>
+
+  <!-- Swapchain -->
+  <rect x="762" y="384" width="194" height="50" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="774" y="405" class="t" font-weight="700">hands out image i</text>
+  <text x="774" y="423" class="s">signals imageAvailable when free</text>
+
+  <rect x="762" y="640" width="194" height="50" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="774" y="661" class="t" font-weight="700">presents image i</text>
+  <text x="774" y="679" class="s">once renderFinished signals</text>
+
+  <!-- Calls -->
+  <line x1="470" y1="409" x2="758" y2="409" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="560" y="401" class="edge">acquire</text>
+  <line x1="470" y1="589" x2="510" y2="589" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="470" y1="665" x2="758" y2="665" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- Semaphores -->
+  <path d="M859,434 L859,500 L600,500 L600,552" fill="none" stroke="#16a34a" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+  <text x="608" y="528" class="s" font-weight="700">imageAvailable[slot]</text>
+  <path d="M718,604 L800,604 L800,636" fill="none" stroke="#16a34a" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+  <text x="808" y="626" class="s" font-weight="700">renderFinished[i]</text>
+  <line x1="44" y1="746" x2="72" y2="746" stroke="#16a34a" stroke-width="1.6" stroke-dasharray="6 4"/>
+  <text x="80" y="750" class="s">semaphore: the GPU or the swapchain signals, the other side waits; no CPU wait</text>
+</svg>

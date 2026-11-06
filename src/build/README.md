@@ -45,12 +45,14 @@ src/build/
   run/              # Runner: execute, scheduler, process, hash, buildlog, depfile, progress.
 ```
 
+![The build system's layers: framework/ under ir/ under run/, and the three programs (bootstrap.cpp, build.cpp, run/main.cpp) with the headers they include and what each produces](../../screenshots/build_layers.svg)
+
 `build.cpp` lives at the project root because it's *project-specific* configuration, not part of the build system. Everything under `src/build/` is the build
 system itself — header-only framework, IR, runner, and the orchestrator. To bring the build system to a different project, copy `src/build/` and write a new
 `build.cpp`.
 
 Dependency direction: `ir/` depends on `framework/`, never the reverse. `run/` depends on `ir/` and `framework/`, never the reverse. `bootstrap.cpp` depends
-on `ir/` (to construct the self-build IR) and on `run/` (to execute it). `build.cpp` depends on `framework/` and `ir/emit.hpp`.
+on `ir/` (to construct the self-build IR) and on `run/` (to execute it). `build.cpp` depends on `framework/` and `ir/main.hpp` (the graph stage's `main`, which runs `ir/emit.hpp`).
 
 For per-file documentation — what each header is for, what it exports, how it fits — open the file. Every `.hpp` in `src/build/` carries a prose header at the top.
 
@@ -60,15 +62,9 @@ For per-file documentation — what each header is for, what it exports, how it 
 
 Three layers, each built from a small set of types.
 
-### Core (language-agnostic — `src/build/framework/`)
+![The core types (Project, Platform, Configuration, Target, ExtensionMap) beside the cxx wrappers that own them through shared_ptr and attach to their ExtensionMap, ObjectFile per translation unit, and Tool, Alias, Phony attaching the same way](../../screenshots/build_core_cxx.svg)
 
-```text
-build::Target         → graph node (name, deps, platform/config gating, ExtensionMap)
-build::Project        → entry targets + registered platforms + registered configs
-build::Platform       → environment identity (name, os, graphics_api, exe_suffix) + ExtensionMap
-build::Configuration  → variant identity (name, out_dir) + ExtensionMap
-build::ExtensionMap   → type-erased attachment point that everything language-specific hangs from
-```
+### Core (language-agnostic — `src/build/framework/`)
 
 The core types carry zero language vocabulary. They model "what to build", "where", and "how identities relate". Anything language-specific lives in
 extensions attached through `ExtensionMap`. See `src/build/framework/extensionmap.hpp`.
@@ -76,23 +72,15 @@ extensions attached through `ExtensionMap`. See `src/build/framework/extensionma
 ### C++ language module (`build::cxx` — `src/build/framework/cxx/`)
 
 A parallel namespace mirroring the core, with each type as a fluent wrapper that owns its corresponding core type via `shared_ptr` and registers itself as
-the cxx extension:
+the cxx extension.
 
-```text
-build::cxx::Toolchain      → compiler / archiver / linker / default_std (composed inside cxx::Platform)
-build::cxx::Platform       → wraps build::Platform; per-platform compile_flags / link_flags / defines / system_libs
-build::cxx::Configuration  → wraps build::Configuration; per-config compile_flags / link_flags / defines
-build::cxx::Target         → wraps build::Target; one node per library/program
-build::cxx::ObjectFile     → wraps build::Target; one node per translation unit
-```
-
-A library or program is `cxx::Target`; each `.cpp` it owns is a `cxx::ObjectFile` child whose base is dep-edged to the parent's base. Compile edges are
+A library or program is `cxx::Target`; each `.cpp` it owns is a `cxx::ObjectFile` child whose base the parent's base depends on. Compile edges are
 emitted from the ObjectFile node, archive/link edges from the parent. The framework graph is one node per TU plus one node per library/program — sources
 are first-class, not an opaque list inside the parent.
 
 ### Generic auxiliary (`Tool`, `Alias`, `Phony`)
 
-Both follow the cxx wrapper pattern: own a `shared_ptr<Target>`, attach themselves to the base's `ExtensionMap`, expose a fluent builder.
+All three follow the cxx wrapper pattern: own a `shared_ptr<Target>`, attach themselves to the base's `ExtensionMap`, expose a fluent builder.
 
 - **`Tool`** runs an opaque shell command (`glslc`, `rm`, `clang-format`, `clang-tidy`, …). Per-variant by default; `global()` makes it variant-independent.
   See `src/build/framework/tool.hpp`.
@@ -119,20 +107,7 @@ stat fast-path, propagate dirty along the DAG, hand a Plan to the parallel sched
 
 ## Bootstrap and execution flow
 
-```text
-fresh-clone seed (documented one-line `c++` invocation in AGENTS.md):
-  $ c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/bootstrap.cpp
-  → produces _out/ngen-build
-
-every subsequent invocation:
-ngen-build
-  → build a small in-memory IR (`self_build_ir()`) with two edges (graph, runner)
-  → ngen::run::execute(self_build_ir, opts)   ← runner library, in-process
-      → if stale: c++ ... build.cpp           → _out/ngen-build-graph
-      → if stale: c++ ... src/build/run/main.cpp  → _out/ngen-build-run
-  → ngen-build-graph                          → _out/<plat>/<cfg>/build.ngenir per variant
-  → ngen-build-run --ir <variant>/build.ngenir <target>   ← subprocess, executes the project IR
-```
+![ngen-build's flow: the one-time seed compile, then per run the in-process self-build of ngen-build-graph and ngen-build-run, the graph stage writing build.ngenir per variant, the runner executing it, and the two build logs](../../screenshots/build_bootstrap_flow.svg)
 
 There is one execution engine — the runner library at `src/build/run/` — and it does both build-system self-build (in-process inside `ngen-build`) and project
 build (as a subprocess invocation of `_out/ngen-build-run`). Both use the same dirty detection, content hashing, scheduler, and build log format. They differ

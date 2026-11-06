@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="626" viewBox="0 0 1000 626" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 14px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .edge { font-size: 11px; fill: #334155; font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="626" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">RPC: who runs what</text>
+  <text x="28" y="62" class="s" style="font-size:12px">The I/O thread moves frames; requests wait in a queue for the thread that owns the data; any thread queues a reply.</text>
+
+  <!-- Clients -->
+  <rect x="28" y="84" width="944" height="50" rx="8" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="44" y="105" class="lib">clients</text>
+  <text x="44" y="123" class="s">ngen-introspect, RpcClient in command-line tools, agents, another process's RpcServer connecting out</text>
+
+  <!-- The process -->
+  <rect x="28" y="156" width="944" height="450" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="500" y="178" class="s" text-anchor="middle">one process: ngen-view or the asset server</text>
+
+  <!-- I/O thread -->
+  <rect x="44" y="190" width="912" height="150" rx="10" fill="#fdf2f8" stroke="#db2777" stroke-opacity="0.45"/>
+  <text x="60" y="212" class="h">I/O thread</text>
+  <text x="360" y="212" class="s">RpcServer: listens, connects out (connect), or both</text>
+
+  <rect x="60" y="226" width="280" height="98" rx="8" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="76" y="248" class="lib">read frames</text>
+  <text x="76" y="268" class="t">accept connections, read frames</text>
+  <text x="76" y="288" class="s">RpcFrameReader</text>
+  <text x="76" y="306" class="s">a frame over 256 MB closes the connection</text>
+
+  <rect x="360" y="226" width="280" height="98" rx="8" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="376" y="248" class="lib">TraceStream::handle</text>
+  <text x="376" y="268" class="t">trace.subscribe, trace.unsubscribe</text>
+  <text x="376" y="288" class="s">answered here, never queued; the batches</text>
+  <text x="376" y="306" class="s">come from the stream's own thread</text>
+
+  <rect x="660" y="226" width="280" height="98" rx="8" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="676" y="248" class="lib">write queued replies</text>
+  <text x="676" y="268" class="t">a queue per connection</text>
+  <text x="676" y="288" class="s">unread replies over 256 MB: client dropped</text>
+  <text x="676" y="306" class="s">drain handler at or below its threshold</text>
+
+  <line x1="340" y1="275" x2="358" y2="275" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="640" y1="275" x2="658" y2="275" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <line x1="200" y1="134" x2="200" y2="224" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="208" y="152" class="edge">request</text>
+  <line x1="800" y1="226" x2="800" y2="136" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="808" y="152" class="edge">reply</text>
+
+  <!-- Queue -->
+  <rect x="60" y="362" width="280" height="46" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="76" y="382" class="lib">queue</text>
+  <text x="76" y="399" class="s">RpcEndpoint::Queued, under a mutex</text>
+  <line x1="200" y1="324" x2="200" y2="360" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="208" y="354" class="edge">every other request</text>
+
+  <!-- Main thread -->
+  <rect x="44" y="430" width="912" height="160" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="60" y="454" class="h">Main thread</text>
+  <text x="360" y="454" class="s">the thread that owns the data; in ngen-view, where session commands run</text>
+
+  <rect x="60" y="470" width="280" height="104" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="76" y="492" class="lib">RpcEndpoint::drain()</text>
+  <text x="76" y="512" class="t">runs calls in arrival order</text>
+  <text x="76" y="532" class="s">at most 2 ms a drain, at least one call;</text>
+  <text x="76" y="548" class="s">the rest wait for the next drain</text>
+
+  <rect x="360" y="470" width="280" height="104" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="376" y="492" class="lib">registry-&gt;invoke</text>
+  <text x="376" y="512" class="t">params checked, then the handler</text>
+  <text x="376" y="532" class="s">runs with an RpcResponder</text>
+  <text x="376" y="548" class="s">a failed call is traced: RpcCallFailed</text>
+
+  <rect x="660" y="470" width="280" height="104" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="676" y="492" class="lib">RpcResponder</text>
+  <text x="676" y="512" class="t">answers at once, or keeps a copy</text>
+  <text x="676" y="532" class="s">and completes later: a screenshot after its</text>
+  <text x="676" y="548" class="s">fence, a capture, a dump; first answer wins</text>
+
+  <line x1="200" y1="408" x2="200" y2="468" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="340" y1="522" x2="358" y2="522" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="640" y1="522" x2="658" y2="522" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="800" y1="470" x2="800" y2="326" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="792" y="392" class="edge" text-anchor="end">send(): any thread may queue</text>
+</svg>

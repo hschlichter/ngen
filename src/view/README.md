@@ -10,6 +10,8 @@ its UI is `ViewUI` (`src/ui/viewui.*`). The tools' sections below (the LOD and S
 
 ## The frame
 
+![ViewFrame's steps in the order the main loop calls them, with the ViewHooks points between them and the tools and the UI joining at each](../../screenshots/view_frame_hooks.svg)
+
 `ViewFrame` (`viewframe.*`) is one frame of the engine: the main camera and its modes, the selection, the scene's inputs, residency, culling,
 the shadow cascades and the snapshot. `src/apps/view.cpp`'s loop calls its steps in order, with the commands and the hooks between them:
 
@@ -25,7 +27,10 @@ the shadow cascades and the snapshot. `src/apps/view.cpp`'s loop calls its steps
 | `moveCamera` | the keys as a camera move; orbiting; following the ground | |
 | `cull`, `serviceRenderLodRequests` (`viewcommands`), `countLodPops`, `fitCascades` | culling's frustum and latest readback, the render-LOD records it answers, the shadow cascades | `afterCamera`: the debug camera's trail, the LOD rows' live state, the Culling window's numbers |
 | `drawCameraModes` | the camera modes' lines, after the hooks' | `debugDraw` (before it): the overlays and the tools' layers |
-| `readBack` | the capture watches (picking's, the dumps', the windows') sent with the snapshot when they change, and the captures that came back taken by picking, the dumps, then `takeReadbacks`; the render tools' requests and results go the same way through `RenderTools` (`src/rendertools/README.md`) | |
+| `renderTools.startFrame` (`rendertools`) | what the render tools handed back since the last frame into `results()`, and a new `request()` (`src/rendertools/README.md`) | `wantReadbacks`: the windows' capture watches and render-tools requests |
+| `dumps.wantReadbacks` (`viewcommands`) | the dumps' capture watches and render-tools requests | |
+| `readBack` | picking's watch added; the watches sent with the snapshot when they changed; the captures that came back taken, picking's first | |
+| `dumps.takeReadbacks` (`viewcommands`) | the dumps' captures and render-tools results | `takeReadbacks`: the windows' captures, the frame debug capture, the counters |
 | | | `drawUi`: the windows drawn, and what they asked for carried out |
 | `buildSnapshot`, submit | the frame for the render thread; the render tools' requests added to it (`RenderTools::fillSnapshot`) | `fillSnapshot` (before submit): the tools' layers, the gizmos' lines and ImGui's draw data, each as its render extension's data |
 
@@ -101,6 +106,9 @@ level at its root; `src/world/README.md`) at a world transform, with the state i
 or a `PointInstancer`'s points. It owns the draws of its own prims and its children: the instances and point instancers in it, and a
 placement per loaded level of each LOD root in it, of which only the drawn level draws. A content never changes once linked, so neither
 do its draws: only where it is placed.
+
+![A worked placement tree: the stage, prototypes at instances, a render-LOD group, a streaming root with a drawn and an undrawn level, a point instancer, and the draw slots they take in RenderWorld](../../screenshots/view_placement_tree.svg)
+
 - **LOD roots.** A streaming root (its levels are payloads; `src/world/README.md` "Loading") is a placed root with a placement per loaded
   level, as below. A render-LOD root (levels in place) is a *group* where it is placed (`RenderLodGroup`, slots in `RenderWorld::lodGroups`
   taken and freed with its placement, as draw slots): the bounding sphere of its heuristic's extent placed by the root's transform, as the
@@ -209,6 +217,9 @@ do its draws: only where it is placed.
   selected. A root's children are placed, and so evaluated, only while its finest level is resident. A level set by hand is resident too; a root
   without a streaming heuristic keeps the level selected and every coarser one. Nothing covers for the authoring: a level selected finer than
   the state isn't loaded early, it draws late. A root no longer placed forgets its state and the composer its resident levels.
+
+  ![A streaming root from above with its imaging thresholds, load radii and unload radii per level boundary, and the state the camera gets at four places](../../screenshots/view_residency_radii.svg)
+
 - **The authoring contract** (`checkLodAuthoring`, src/world/README.md): per root, with the thresholds in force, against the streaming root
   nearest above it: a threshold per level boundary, each imaging threshold at or before its load radius, each load radius at or before its
   unload radius, a child's imaging thresholds and unload radii inside its parent's first imaging threshold and load radius. A finding is
@@ -261,8 +272,9 @@ do its draws: only where it is placed.
   which the composer does only once it is complete, and every mesh, material pack and texture its prims want (under their own purpose)
   held or failed, through the instances and point instancers in it; a LOD root inside it counts by its coarsest level. Each placement
   counts what it waits for by kind (`PlacementWait`) as it is built, summed up the tree, so nothing walks a level to judge it. Until then
-  the root keeps drawing the coarser level, and with no loaded level at or coarser than the selected one it draws nothing (a hole, counted),
-  never a finer level. A root's level placements are synced before it picks, so it switches in the pass the last
+  the root keeps drawing a coarser level that waits for nothing; while no loaded level at or coarser than the selected one is ready, it
+  draws its coarsest loaded level, filling in as its pieces arrive; with no loaded level at or coarser than the selected one it draws nothing
+  (a hole, counted), never a finer level. A root's level placements are synced before it picks, so it switches in the pass the last
   piece arrives, and a district appears whole, with its materials, instead of model by model. `LevelsSwitched` traces the roots whose drawn
   level changed, once per pass; the `streaming` record's `waiting` and the LOD window's tooltip on a loading row count what the wanted level
   waits for (meshes, materials and textures not held, levels still composing and so not linked). GPU uploads aren't part of it: a switched
@@ -273,6 +285,9 @@ do its draws: only where it is placed.
   level is placed undrawn and holds its library and GPU entries, so switching to it draws at once. Layer packs and material and texture packs
   stay held. `LevelsUnloaded` traces each batch that let something go (levels, contents, mesh packs), and the `streaming` and `scenethread`
   records and the LOD window (a loaded level's tooltip: the resident levels and why) show what was unloaded.
+
+  ![A level's states from not resident to drawn, the level its root draws when the selected one is ready, late or missing, and what unloading releases](../../screenshots/view_level_lifecycle.svg)
+
 - **The LOD tool** (`src/tools/lodtool.*`: its rows, inspection and requests in `LodToolState`, which the application owns in `ToolsState`
   and the tools' hooks fill; the LOD window `src/ui/lodwindow.*` draws it and keeps only its scroll and edit buffers): one place for LOD inspection, switching and tuning, both kinds.
   - *The list*: every streaming root drawn and every render-LOD group placed (`buildLodRows` per snapshot: the roots' rows each time, the groups'
@@ -355,6 +370,8 @@ The trace shows the steps:
 
 ## How a scene reaches the screen
 
+![The five stages from the asset server's stream through the scene thread, the main thread and the GPU scene to residency, with the record that shows each](../../screenshots/view_scene_to_screen.svg)
+
 From the asset server to the screen, stage by stage in the order data flows:
 1. **Asset client**: requested, received (packed or from the server's cache), failed, in flight.
 2. **Scene thread**: requests posted and applied, batches, composes and placement passes (count, whether one is needed, the placements and
@@ -415,6 +432,8 @@ The selection is a prim's full path (instances expanded), so a prim inside an in
 pass, and a few frames later the instance under the cursor maps to its prim (`instancePath`); nothing drawn there deselects. The `pick <x> <y>`
 verb and `view.pick` do the same at a framebuffer pixel and answer with the path; `select` and `view.select` select by path. Keys: Z
 deselects, R selects the parent, F frames the selection; the Edit menu has the same, and picks the tool (select, translate, rotate, scale).
+
+![Picking: a click's capture watch on gbuffer.instance after the geometry pass, read back a few frames later and mapped through instancePath to the selected prim](../../screenshots/view_picking.svg)
 
 The window and view toggles have keys too (`ViewUI::toggleShortcuts`), each pressed again to turn it off. Ctrl+D turns the debug camera on and
 off. They go through ImGui's shortcut routing, so they work with the cursor over a window, never while typing in a field, and a focused window's own chord wins (the Assets

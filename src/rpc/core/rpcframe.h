@@ -11,7 +11,7 @@
 //
 //   u32 jsonLength, u32 attachmentLength (little-endian), JSON bytes, attachment bytes
 //
-// A message refers to its attachment by offset and length inside the attachment bytes.
+// The attachment belongs to the frame's message whole (asset.data: one chunk of an asset).
 struct RpcFrame {
     std::string json;
     std::vector<std::byte> attachment;

@@ -16,8 +16,8 @@
 //
 //   2. **Graph stage.** `./_out/ngen-build-graph` is invoked as a subprocess. It walks the `Project` defined
 //      in `build.cpp`, runs `ir::Emitter`, and writes one `_out/<platform>/<config>/build.ngenir` per
-//      variant plus the per-variant and merged `compile_commands.json`. Short-circuits with `--list` /
-//      `--dump-graph` if the user asked for those.
+//      variant, and with `--compile-commands` the per-variant and merged `compile_commands.json`. Short-circuits
+//      with `--list` / `--dump-graph` if the user asked for those.
 //
 //   3. **Project run.** Positional target arguments are first run through `ir::resolve_target` — exact names
 //      pass through, otherwise the resolver fuzzy-matches against ObjectFile source stems and then non-OF edge

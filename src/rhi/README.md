@@ -132,6 +132,8 @@ moves resources from an old to a new state and the backend derives layouts, stag
 current state; the RHI does not. Shader states cover every shader stage (vertex, fragment, compute), which is
 conservative but correct.
 
+![A pipelineBarrier from ColorAttachment to ShaderReadOnly: the caller (the frame graph) names the states, the Vulkan backend derives layouts, stage and access masks and records one vkCmdPipelineBarrier2](../../screenshots/rhi_state_barriers.svg)
+
 ### Descriptors
 
 Vulkan-shaped: a `RhiDescriptorSetLayout` from `RhiDescriptorBinding { binding, type, stage, count }`, a
@@ -240,6 +242,8 @@ program can check.
 
 `src/rhi/examples/common/rhiexample.h` is the reference implementation of this list, numbered sections in run order.
 `src/rhi/examples/triangle.cpp` is the smallest program on top of it: shaders, pipeline, draw, checks.
+
+![Frame pacing (point 3): command buffer, fence and image-available semaphore per frame slot, render-finished semaphore per swapchain image, and one frame from waitForFence through acquire and submit to present](../../screenshots/rhi_frame_pacing.svg)
 
 1. A window and an `RhiWindow` filled from it.
 2. A concrete backend instance, `init(window, options)`, then `createSwapchain(extent)` with the framebuffer size in pixels.

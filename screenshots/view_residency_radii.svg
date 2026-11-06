@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="658" viewBox="0 0 1000 658" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 13px; font-weight: 700; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .m { font-size: 12px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .sm { font-size: 11px; fill: #3a4452; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .b { font-size: 12.5px; font-weight: 700; fill: #1f2733; }
+    .tag { font-size: 10.5px; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="658" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">ngen-view: residency by the camera's position</text>
+  <text x="28" y="62" class="s" style="font-size:12px">A streaming root from above: its bounds, and per level boundary the imaging threshold, the load radius and the unload radius; the camera at four places.</text>
+
+  <!-- The top-down view -->
+  <rect x="28" y="92" width="520" height="506" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="44" y="116" class="h" fill="#3a4452">from above: the bounds grown by each radius</text>
+  <text x="44" y="150" class="s">the measure: the camera's distance to the bounds</text>
+  <text x="44" y="134" class="s">levels 0 high, 1 medium, 2 low; boundary 0 is high | medium, 1 is medium | low</text>
+  <rect x="109" y="182" width="398" height="372" rx="154" fill="none" stroke="#475569" stroke-opacity="0.45" stroke-width="1.5" stroke-dasharray="7 4"/>
+  <rect x="133" y="206" width="350" height="324" rx="130" fill="none" stroke="#475569" stroke-opacity="0.9" stroke-width="1.8"/>
+  <rect x="157" y="230" width="302" height="276" rx="106" fill="none" stroke="#475569" stroke-opacity="0.9" stroke-width="1.3" stroke-dasharray="2 3"/>
+  <rect x="201" y="274" width="214" height="188" rx="62" fill="none" stroke="#2563eb" stroke-opacity="0.45" stroke-width="1.5" stroke-dasharray="7 4"/>
+  <rect x="219" y="292" width="178" height="152" rx="44" fill="none" stroke="#2563eb" stroke-opacity="0.9" stroke-width="1.8"/>
+  <rect x="237" y="310" width="142" height="116" rx="26" fill="none" stroke="#2563eb" stroke-opacity="0.9" stroke-width="1.3" stroke-dasharray="2 3"/>
+  <text x="314" y="305" class="tag" text-anchor="middle" fill="#2563eb">imaging 0</text>
+  <text x="314" y="287" class="tag" text-anchor="middle" fill="#2563eb">load 0</text>
+  <text x="314" y="269" class="tag" text-anchor="middle" fill="#2563eb">unload 0</text>
+  <text x="314" y="225" class="tag" text-anchor="middle" fill="#475569">imaging 1</text>
+  <text x="314" y="201" class="tag" text-anchor="middle" fill="#475569">load 1</text>
+  <text x="314" y="177" class="tag" text-anchor="middle" fill="#475569">unload 1</text>
+
+  <!-- The root's bounds -->
+  <rect x="263" y="336" width="90" height="64" rx="4" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.8" stroke-width="1.5"/>
+  <text x="308" y="366" class="s" text-anchor="middle">the root's</text>
+  <text x="308" y="380" class="s" text-anchor="middle">bounds</text>
+
+  <!-- The camera at four places -->
+  <path d="M250,368 L263,361 L263,375 Z" fill="#cbd5e1" stroke="#1f2733" stroke-width="1"/>
+  <circle cx="250" cy="368" r="4.5" fill="#1f2733"/>
+  <text x="249" y="390" class="b" text-anchor="middle">A</text>
+  <path d="M210,368 L223,361 L223,375 Z" fill="#cbd5e1" stroke="#1f2733" stroke-width="1"/>
+  <circle cx="210" cy="368" r="4.5" fill="#1f2733"/>
+  <text x="209" y="390" class="b" text-anchor="middle">B</text>
+  <path d="M179,368 L192,361 L192,375 Z" fill="#cbd5e1" stroke="#1f2733" stroke-width="1"/>
+  <circle cx="179" cy="368" r="4.5" fill="#1f2733"/>
+  <text x="178" y="390" class="b" text-anchor="middle">C</text>
+  <path d="M81,368 L94,361 L94,375 Z" fill="#cbd5e1" stroke="#1f2733" stroke-width="1"/>
+  <circle cx="81" cy="368" r="4.5" fill="#1f2733"/>
+  <text x="80" y="390" class="b" text-anchor="middle">D</text>
+
+  <!-- Legend of the rings -->
+  <line x1="44" y1="572" x2="70" y2="572" stroke="#475569" stroke-opacity="0.9" stroke-width="1.3" stroke-dasharray="2 3"/>
+  <text x="76" y="576" class="s">imaging threshold: the level selected</text>
+  <line x1="311" y1="572" x2="337" y2="572" stroke="#475569" stroke-opacity="0.9" stroke-width="1.8"/>
+  <text x="343" y="576" class="s">load radius</text>
+  <line x1="429.5" y1="572" x2="455.5" y2="572" stroke="#475569" stroke-opacity="0.45" stroke-width="1.5" stroke-dasharray="7 4"/>
+  <text x="461.5" y="576" class="s">unload radius</text>
+
+  <!-- What each camera gets -->
+  <rect x="568" y="92" width="404" height="506" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="584" y="116" class="h" fill="#3a4452">the state: the finest level that must be resident</text>
+  <rect x="582" y="138" width="376" height="60" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <circle cx="600" cy="153" r="9" fill="#1f2733"/>
+  <text x="600" y="157" class="tag" text-anchor="middle" fill="#ffffff">A</text>
+  <text x="618" y="157.5" class="b">inside imaging 0</text>
+  <text x="618" y="175" class="s">state 0: high, medium and low resident;</text>
+  <text x="618" y="190" class="s">high selected and drawn</text>
+  <rect x="582" y="206" width="376" height="60" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <circle cx="600" cy="221" r="9" fill="#1f2733"/>
+  <text x="600" y="225" class="tag" text-anchor="middle" fill="#ffffff">B</text>
+  <text x="618" y="225.5" class="b">past load 0, inside unload 0</text>
+  <text x="618" y="243" class="s">state 0 coming from A: coarser only past unload 0</text>
+  <text x="618" y="258" class="s">state 1 coming from C: finer only inside load 0</text>
+  <rect x="582" y="274" width="376" height="60" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <circle cx="600" cy="289" r="9" fill="#1f2733"/>
+  <text x="600" y="293" class="tag" text-anchor="middle" fill="#ffffff">C</text>
+  <text x="618" y="293.5" class="b">past unload 0, inside imaging 1</text>
+  <text x="618" y="311" class="s">state 1: medium and low resident;</text>
+  <text x="618" y="326" class="s">medium selected; high let go</text>
+  <rect x="582" y="342" width="376" height="45" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <circle cx="600" cy="357" r="9" fill="#1f2733"/>
+  <text x="600" y="361" class="tag" text-anchor="middle" fill="#ffffff">D</text>
+  <text x="618" y="361.5" class="b">past unload 1</text>
+  <text x="618" y="379" class="s">state 2: low resident, selected, drawn</text>
+  <text x="584" y="411" class="m">streamingState (src/world/world.cpp)</text>
+  <text x="584" y="431" class="s">byLoad, byUnload: the boundaries the measure is past</text>
+  <text x="584" y="447" class="s">by the load radii, and by the unload radii.</text>
+  <text x="584" y="463" class="s">Finer at once: byLoad, when at or finer than the previous.</text>
+  <text x="584" y="479" class="s">Coarser only past the unload radii: otherwise</text>
+  <text x="584" y="495" class="s">min(byLoad, max(previous, byUnload)).</text>
+  <text x="584" y="511" class="s">Resident: the state's level and every coarser one</text>
+  <text x="584" y="527" class="s">(WorldComposer::setResidentLevels). A level selected</text>
+  <text x="584" y="543" class="s">finer than the state isn't loaded early: it draws late.</text>
+  <text x="28" y="636" class="s">The authoring contract per boundary: imaging threshold ≤ load radius ≤ unload radius (checkLodAuthoring reports a finding, never corrects it).</text>
+</svg>

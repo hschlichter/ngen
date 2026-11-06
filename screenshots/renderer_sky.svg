@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="676" viewBox="0 0 1000 676" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 14px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .m { font-size: 11px; fill: #334155; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .mono { font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .edge { font-size: 11.5px; fill: #334155; font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#bfdbfe"/>
+      <stop offset="0.5" stop-color="#f8fafc"/>
+      <stop offset="0.5" stop-color="#e7e5e4"/>
+      <stop offset="1" stop-color="#d6d3d1"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1000" height="676" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">The sky: a dome light&#8217;s lat-long image</text>
+  <text x="28" y="62" class="s" style="font-size:12px">The image&#8217;s frame, what packing and the view make of it, and the two places lighting.frag reads it.</text>
+
+  <!-- the image's frame -->
+  <rect x="28" y="88" width="472" height="352" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="44" y="112" class="h">The image&#8217;s frame</text>
+  <text x="190" y="112" class="s">pole +Z, UsdLux&#8217;s lat-long</text>
+  <rect x="108" y="168" width="352" height="200" fill="url(#sky)" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="108" y="142" class="m" text-anchor="middle">+&#960;</text>
+  <text x="108" y="158" class="t" text-anchor="middle" style="font-weight:700">+Y</text>
+  <line x1="196" y1="168" x2="196" y2="368" stroke="#64748b" stroke-width="1" stroke-opacity="0.5" stroke-dasharray="3 3"/>
+  <text x="196" y="142" class="m" text-anchor="middle">&#960;/2</text>
+  <text x="196" y="158" class="t" text-anchor="middle" style="font-weight:700">+X</text>
+  <line x1="284" y1="168" x2="284" y2="368" stroke="#64748b" stroke-width="1" stroke-opacity="0.5" stroke-dasharray="3 3"/>
+  <text x="284" y="142" class="m" text-anchor="middle">0</text>
+  <text x="284" y="158" class="t" text-anchor="middle" style="font-weight:700">&#8722;Y</text>
+  <line x1="372" y1="168" x2="372" y2="368" stroke="#64748b" stroke-width="1" stroke-opacity="0.5" stroke-dasharray="3 3"/>
+  <text x="372" y="142" class="m" text-anchor="middle">&#8722;&#960;/2</text>
+  <text x="372" y="158" class="t" text-anchor="middle" style="font-weight:700">&#8722;X</text>
+  <text x="460" y="142" class="m" text-anchor="middle">&#8722;&#960;</text>
+  <text x="460" y="158" class="t" text-anchor="middle" style="font-weight:700">+Y</text>
+  <text x="86" y="142" class="s" text-anchor="end">&#966;</text>
+  <text x="86" y="158" class="s" text-anchor="end">dir</text>
+  <line x1="108" y1="268" x2="460" y2="268" stroke="#64748b" stroke-width="1" stroke-opacity="0.5"/>
+  <text x="116" y="186" class="s" stroke="#f8fafc" stroke-width="3" paint-order="stroke">row 0: &#952; = 0, the zenith (+Z)</text>
+  <text x="116" y="262" class="s" stroke="#f8fafc" stroke-width="3" paint-order="stroke">horizon, &#952; = &#960;/2</text>
+  <text x="116" y="360" class="s" stroke="#f8fafc" stroke-width="3" paint-order="stroke">row h &#8722; 1: the nadir (&#8722;Z)</text>
+  <text x="108" y="384" class="s">column 0</text>
+  <text x="460" y="384" class="s" text-anchor="end">column w &#8722; 1</text>
+  <text x="44" y="412" class="t">&#952; = &#960; (row + 0.5) / h,    &#966; = &#960; &#8722; 2&#960; (column + 0.5) / w</text>
+  <text x="44" y="432" class="t">dir = (sin&#952; sin&#966;, &#8722;sin&#952; cos&#966;, cos&#952;)</text>
+
+  <!-- packing, asset server -->
+  <rect x="516" y="88" width="456" height="148" rx="10" fill="#fdf2f8" stroke="#db2777" stroke-opacity="0.45"/>
+  <text x="532" y="112" class="lib">ngen-packer-exr</text>
+  <text x="664" y="112" class="s">in the asset server, when the EXR is packed</text>
+  <text x="532" y="138" class="t">tinyexr decodes the EXR to linear float RGB;</text>
+  <text x="532" y="157" class="t">written as one Rgb9e5 level, no mips</text>
+  <text x="532" y="182" class="t">its irradiance: 9 spherical-harmonic coefficients</text>
+  <text x="532" y="201" class="t">per channel (bands 0 to 2) in the image&#8217;s frame:</text>
+  <text x="532" y="220" class="s">radiance &#215; Y&#7522;(dir) &#215; solid angle, summed; &#215; &#960;, 2&#960;/3, &#960;/4 by band</text>
+
+  <!-- the view, main thread -->
+  <rect x="516" y="252" width="456" height="188" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="532" y="276" class="lib">collectEnvironment</text>
+  <text x="686" y="276" class="s">src/view/placement.cpp</text>
+  <text x="532" y="300" class="t">the first lat-long dome light with an EXR image:</text>
+  <text x="532" y="322" class="m">RenderWorld::environment</text>
+  <text x="552" y="342" class="t">texture: the image&#8217;s handle</text>
+  <text x="552" y="360" class="t">radiance: colour &#183; intensity &#183; 2^exposure</text>
+  <text x="552" y="378" class="t">toImage: pole &#215; transpose(dome rotation)</text>
+  <text x="552" y="396" class="t">irradiance: the 9 coefficients</text>
+  <text x="532" y="420" class="s">pole: identity for a Z-up scene, Y onto +Z for Y-up: (x, y, z) to (x, &#8722;z, y)</text>
+  <line x1="744" y1="236" x2="744" y2="250" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- lighting.frag, GPU -->
+  <rect x="28" y="456" width="944" height="196" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="44" y="480" class="lib">lighting.frag</text>
+  <text x="162" y="480" class="s">LightingPass, fullscreen; nothing changes without a sky or with render.sky.on off</text>
+  <line x1="744" y1="440" x2="744" y2="454" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="44" y="494" width="300" height="142" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="58" y="516" class="lib">skyImage, binding 6</text>
+  <text x="58" y="538" class="t">E5B9G9R9_UFLOAT, 4096 &#215; 2048: 32 MiB</text>
+  <text x="58" y="556" class="t">linear; U repeats, V clamps (the poles)</text>
+  <text x="58" y="582" class="t">d = toImage &#183; dir</text>
+  <text x="58" y="602" class="t">u = (&#960; &#8722; atan(d.x, &#8722;d.y)) / 2&#960;</text>
+  <text x="58" y="620" class="t">v = acos(d.z) / &#960;</text>
+  <rect x="360" y="494" width="270" height="142" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="374" y="516" class="h">Background</text>
+  <text x="374" y="536" class="s">where depth is 0, in the lit view</text>
+  <text x="374" y="562" class="m">skyRadianceToward(view ray)</text>
+  <text x="374" y="584" class="t">= texture(skyImage, uv) &#183; radiance</text>
+  <text x="374" y="608" class="s">the view ray through the pixel, from</text>
+  <text x="374" y="624" class="s">depths 1 and 0.5 (no far plane)</text>
+  <rect x="646" y="494" width="310" height="142" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="660" y="516" class="h">Lit surface</text>
+  <text x="660" y="536" class="s">in place of the hemisphere ambient</text>
+  <text x="660" y="562" class="m">albedo &#183; (E(n) / &#960; + sun)</text>
+  <text x="660" y="584" class="t">E(n) = &#931; c&#7522; Y&#7522;(n) &#183; radiance, i = 0 to 8</text>
+  <text x="660" y="604" class="t">sun = light colour &#183; max(N&#183;L, 0) &#183; shadow</text>
+  <text x="660" y="624" class="s">skyIrradianceToward, n = toImage &#183; normal</text>
+  <line x1="344" y1="565" x2="358" y2="565" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+</svg>
