@@ -5,7 +5,7 @@ engine-ready packs on request, and the viewer, `ngen-view`, composes those packs
 GPU-driven, without linking OpenUSD. Everything it holds and does can be read and driven at runtime, by a person through its windows and by an
 agent through records, RPC methods and scripts.
 
-![Moving through Eldermark, the 10 km × 10 km streaming test world: along a path, through the forest, out over the valley toward the mountains](screenshots/engine_eldermark.gif)
+![Moving through Eldermark, the 10 km × 10 km streaming test world: along a path, through the forest, out over the valley toward the mountains](screenshots/engine_eldermark_intro_01.gif)
 
 *Moving through Eldermark, the streaming test world (10 km × 10 km, every cell a UsdLod root with payloaded levels): the world streams in and
 out and changes level around the camera as it moves.*
@@ -63,6 +63,11 @@ selected pass's GPU time, reads and writes.*
 ![Performance window](screenshots/engine_eldermark_performance_01.png)
 
 *The Performance window: the main, render and GPU lanes on one clock, frame by frame; here the geometry pass, split by bucket.*
+
+![Streaming window, map tab, with the debug camera watching the main camera fly](screenshots/engine_eldermark_streaming_map_01.png)
+
+*The Streaming window's map during a flight: every streaming root from above in its state's colour, finer tiles around the camera, the
+next ones prefetched ahead of it; behind, the debug camera watches the main camera's frustum cross what is resident.*
 
 ## Architecture
 
