@@ -1,6 +1,7 @@
 #version 450
+#extension GL_EXT_nonuniform_qualifier : require
 
-// Material textures, indexed by the slot gbuffer.vert looks up; size matches GpuScene::maxTextures.
+// Material textures, indexed by the slot gbuffer.mesh looks up; size matches GpuScene::maxTextures.
 layout(set = 0, binding = 1) uniform sampler2D textures[1024];
 
 layout(location = 0) in vec3 fragNormal;
@@ -16,9 +17,10 @@ layout(location = 1) out vec4 outNormal;
 layout(location = 2) out uint outInstance;
 
 void main() {
-    vec4 texColor = texture(textures[fragTexture], fragTexCoord);
+    // A draw is a region's meshlets, whatever their instance: the texture differs within it.
+    vec4 texColor = texture(textures[nonuniformEXT(fragTexture)], fragTexCoord);
     // Alpha carries the mip level the sampler picked, for the mip level buffer view.
-    float lod = textureQueryLod(textures[fragTexture], fragTexCoord).x;
+    float lod = textureQueryLod(textures[nonuniformEXT(fragTexture)], fragTexCoord).x;
     outAlbedo = vec4(texColor.rgb * fragColor, clamp(lod / 16.0, 0.0, 1.0));
 
     vec3 n = fragNormal;

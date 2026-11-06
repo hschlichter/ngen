@@ -1,6 +1,5 @@
 #include "depthprepass.h"
 
-#include "mesh.h"
 #include "profilegpu.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
@@ -11,15 +10,15 @@ auto DepthPrepass::init(PipelineRegistry& pipelines, RhiFormat depthFormat, RhiD
     using enum RhiFormat;
     registry = &pipelines;
 
+    // Task and mesh shaders pull positions from the pool (meshlet.task, depth.mesh); cutout ones the texture coordinate too.
     GraphicsPipelineRequest request = {
-        .vertex = {.id = "shaders/depthonly.vert", .stage = RhiShaderStage::Vertex},
         .fragment = {.id = "shaders/shadow.frag", .stage = RhiShaderStage::Fragment},
+        .task = ShaderRef{.id = "shaders/meshlet.task", .stage = RhiShaderStage::Task},
+        .mesh = ShaderRef{.id = "shaders/depth.mesh", .stage = RhiShaderStage::Mesh},
         .descriptorSetLayouts = {geometrySetLayout},
-        .pushConstant = {}, // model matrix comes from the instance buffer at gl_InstanceIndex
+        .pushConstant = {.stage = RhiShaderStage::Task | RhiShaderStage::Mesh, .offset = 0, .size = sizeof(MeshletPush)},
         .colorFormats = {},
         .depthFormat = depthFormat,
-        .vertexStride = sizeof(std::array<float, 3>),
-        .vertexAttributes = {{.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = 0}}, // position-only stream
         .raster = {.cullMode = RhiCullMode::Back},
         .depth = {.testEnable = true, .writeEnable = true, .compareOp = RhiCompareOp::Greater}, // reversed-Z
     };
@@ -27,14 +26,8 @@ auto DepthPrepass::init(PipelineRegistry& pipelines, RhiFormat depthFormat, RhiD
     request.raster.cullMode = RhiCullMode::None;
     this->pipelines[DrawLists::bucket(true, false)] = pipelines.registerGraphics("prepass.pipeline.cullnone", request, PipelineUse::AtStart);
 
-    // Cutout: the texture coordinates too, from the full vertex stream.
-    request.vertex.id = "shaders/depthcutout.vert";
+    request.mesh = ShaderRef{.id = "shaders/depthcutout.mesh", .stage = RhiShaderStage::Mesh};
     request.fragment.id = "shaders/cutout.frag";
-    request.vertexStride = sizeof(Vertex);
-    request.vertexAttributes = {
-        {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
-        {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
-    };
     request.raster.cullMode = RhiCullMode::Back;
     this->pipelines[DrawLists::bucket(false, true)] = pipelines.registerGraphics("prepass.pipeline.cullback.cutout", request, PipelineUse::AtStart);
     request.raster.cullMode = RhiCullMode::None;
@@ -51,31 +44,36 @@ auto DepthPrepass::addPass(
     const DrawLists& lists,
     DrawLists::Handles drawHandles,
     const GpuScene& scene,
-    RhiDescriptorSet* descriptorSet) -> const DepthPrepassData& {
+    RhiDescriptorSet* descriptorSet,
+    FgTextureHandle hzb,
+    bool late,
+    bool cullCamera) -> const DepthPrepassData& {
     std::array<RhiPipeline*, DrawLists::bucketCount> bucketPipelines = {};
     for (uint32_t bucket = 0; bucket < DrawLists::bucketCount; bucket++) {
         bucketPipelines[bucket] = registry->get(pipelines[bucket]);
     }
 
     return fg.addPass<DepthPrepassData>(
-        "DepthPrepass",
+        cullCamera ? (late ? "DepthPrepassCullLate" : "DepthPrepassCull") : (late ? "DepthPrepassLate" : "DepthPrepass"),
         [&](FrameGraphBuilder& builder, DepthPrepassData& data) {
             data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
+            builder.read(hzb, FgAccessFlags::ShaderRead);
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
-            builder.read(drawHandles.commands, FgAccessFlags::IndirectRead);
-            builder.read(drawHandles.counts, FgAccessFlags::IndirectRead);
+            // One draw per region: its RegionWork is the draw's command and the task shaders' range of work items.
+            builder.read(drawHandles.regionWork, FgAccessFlags::IndirectRead | FgAccessFlags::StorageRead);
+            builder.read(drawHandles.workItems, FgAccessFlags::StorageRead);
             if (drawHandles.lodStates.valid()) {
                 builder.read(drawHandles.lodStates, FgAccessFlags::StorageRead);
             }
             builder.setSideEffects(true);
         },
-        [bucketPipelines, extent, instances, &lists, drawHandles, &scene, descriptorSet](FrameGraphContext& ctx, const DepthPrepassData& data) {
+        [bucketPipelines, extent, instances, &lists, drawHandles, &scene, descriptorSet, late, cullCamera](FrameGraphContext& ctx, const DepthPrepassData& data) {
             auto* cmd = ctx.cmd();
 
             RhiRenderingAttachmentInfo depthAtt = {
                 .texture = ctx.texture(data.depth),
                 .state = RhiTextureState::DepthStencilAttachment,
-                .clear = true,
+                .clear = !late,     // the late phase adds to the first phase's depth
                 .clearDepth = 0.0f, // reversed-Z: 0 is infinitely far
             };
             RhiRenderingInfo info = {
@@ -86,24 +84,27 @@ auto DepthPrepass::addPass(
             cmd->setViewport(extent);
             cmd->setScissor(extent);
 
-            // The camera regions the geometry pass draws, one indirect call per bucket; the
-            // position pool shares the vertex pool's vertexOffset. Cutout buckets read the vertex pool.
-            auto* commands = ctx.buffer(drawHandles.commands);
-            auto* counts = ctx.buffer(drawHandles.counts);
+            // The camera regions the geometry pass draws, one indirect call per bucket, culling the same meshlets (it doesn't count them).
+            auto* regionWork = ctx.buffer(drawHandles.regionWork);
             for (uint32_t bucket = 0; bucket < DrawLists::bucketCount; bucket++) {
                 bool cutout = bucket >= 2;
-                auto region = DrawLists::cameraRegion(bucket % 2 != 0, cutout);
+                auto region = late ? DrawLists::cameraLateRegion(bucket % 2 != 0, cutout) : DrawLists::cameraRegion(bucket % 2 != 0, cutout);
                 // The GPU-written count decides how many commands draw; an empty region costs one call.
-                if (scene.indexBuffer() == nullptr) {
+                if (!scene.poolReady() || descriptorSet == nullptr) {
                     continue;
                 }
                 auto* pip = bucketPipelines[bucket];
                 cmd->bindPipeline(pip);
                 cmd->bindDescriptorSet(pip, 0, descriptorSet);
-                cmd->bindVertexBuffer(cutout ? scene.vertexBuffer() : scene.positionBuffer());
-                cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
+                // The late phase's meshlets are tested against the depth pyramid, as the geometry pass tests them.
+                uint32_t flags = late ? meshletFlagOcclusion : 0u;
+                if (cullCamera) {
+                    flags |= meshletFlagCullCamera;
+                }
+                MeshletPush push = {.region = region, .flags = flags};
+                cmd->pushConstants(pip, RhiShaderStage::Task | RhiShaderStage::Mesh, 0, sizeof(push), &push);
                 PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
-                cmd->drawIndexedIndirectCount(commands, lists.commandOffset(region), counts, DrawLists::countOffset(region), lists.regionCapacity(region));
+                DrawLists::drawRegion(cmd, regionWork, region);
                 lists.report(ctx, region, instances);
             }
 

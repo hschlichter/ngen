@@ -1,5 +1,4 @@
 #include "geometrypass.h"
-#include "mesh.h"
 #include "profilegpu.h"
 #include "renderertypes.h"
 #include "rhicommandbuffer.h"
@@ -25,20 +24,15 @@ auto GeometryPass::init(RhiDevice* device, PipelineRegistry& pipelineRegistry, R
         TRACE_WARNING("Render", "FormatFallback", "GeometryPass").text("R16G16B16A16_SFLOAT not renderable, normal target stays R32G32B32A32_SFLOAT");
         normalTargetFormat = R32G32B32A32_SFLOAT;
     }
+    // Task and mesh shaders pull the vertices (meshlet.task, gbuffer.mesh): no vertex input.
     GraphicsPipelineRequest request = {
-        .vertex = {.id = "shaders/gbuffer.vert", .stage = RhiShaderStage::Vertex},
         .fragment = {.id = "shaders/gbuffer.frag", .stage = RhiShaderStage::Fragment},
+        .task = ShaderRef{.id = "shaders/meshlet.task", .stage = RhiShaderStage::Task},
+        .mesh = ShaderRef{.id = "shaders/gbuffer.mesh", .stage = RhiShaderStage::Mesh},
         .descriptorSetLayouts = {descSetLayout},
-        .pushConstant = {}, // model matrix comes from the instance buffer at gl_InstanceIndex
+        .pushConstant = {.stage = RhiShaderStage::Task | RhiShaderStage::Mesh, .offset = 0, .size = sizeof(MeshletPush)},
         .colorFormats = {R8G8B8A8_UNORM, normalTargetFormat, R32_UINT},
         .depthFormat = depthFormat,
-        .vertexStride = sizeof(Vertex),
-        .vertexAttributes = {
-            {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
-            {.location = 1, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, normal)},
-            {.location = 2, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, color)},
-            {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
-        },
     };
     // Eight variants: opaque or cutout (gbuffercutout.frag discards where the material's
     // opacity is below its threshold), back-face culling or none (USD doubleSided), and
@@ -61,16 +55,33 @@ auto GeometryPass::init(RhiDevice* device, PipelineRegistry& pipelineRegistry, R
     return true;
 }
 
-auto GeometryPass::descriptorBindings() -> std::array<RhiDescriptorBinding, 5> {
+auto GeometryPass::descriptorBindings() -> std::array<RhiDescriptorBinding, 16> {
     using enum RhiDescriptorType;
+    auto shaders = RhiShaderStage::Task | RhiShaderStage::Mesh | RhiShaderStage::Fragment;
     return {{
-        {.binding = 0, .type = UniformBuffer, .stage = RhiShaderStage::Vertex},
+        {.binding = 0, .type = UniformBuffer, .stage = shaders},
         {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment, .count = GpuScene::maxTextures},
         // The cutout fragment shaders read the instance's material and its opacity.
-        {.binding = 2, .type = StorageBuffer, .stage = RhiShaderStage::Vertex | RhiShaderStage::Fragment},
-        {.binding = 3, .type = StorageBuffer, .stage = RhiShaderStage::Vertex | RhiShaderStage::Fragment},
-        // The render-LOD state (lodselect.comp's): the vertex stages read a fading instance's share of the pattern (lodfade.glsl).
-        {.binding = 4, .type = StorageBuffer, .stage = RhiShaderStage::Vertex},
+        {.binding = 2, .type = StorageBuffer, .stage = shaders},
+        {.binding = 3, .type = StorageBuffer, .stage = shaders},
+        // The geometry pool (meshlet.glsl): vertices, positions, meshlets, their vertex indices and triangles, the mesh table.
+        {.binding = 4, .type = StorageBuffer, .stage = shaders},
+        {.binding = 5, .type = StorageBuffer, .stage = shaders},
+        {.binding = 6, .type = StorageBuffer, .stage = shaders},
+        {.binding = 7, .type = StorageBuffer, .stage = shaders},
+        {.binding = 8, .type = StorageBuffer, .stage = shaders},
+        {.binding = 9, .type = StorageBuffer, .stage = shaders},
+        // The frame slot's culling buffers: the meshlet work items, the culling parameters, the meshlet counts.
+        {.binding = 10, .type = StorageBuffer, .stage = shaders},
+        {.binding = 11, .type = StorageBuffer, .stage = shaders},
+        {.binding = 12, .type = StorageBuffer, .stage = shaders},
+        // The depth pyramid, for the late phase's meshlets.
+        {.binding = 13, .type = CombinedImageSampler, .stage = shaders},
+        // The regions' draws and work item ranges.
+        {.binding = 14, .type = StorageBuffer, .stage = shaders},
+        // The render-LOD state (lodselect.comp's): the cutout buckets' mesh shaders read a fading instance's share of the pattern, the geometry
+        // pass's its LOD tag (lodfade.glsl).
+        {.binding = 15, .type = StorageBuffer, .stage = shaders},
     }};
 }
 
@@ -88,7 +99,9 @@ auto GeometryPass::addPass(
     DrawLists::Handles drawHandles,
     const GpuScene& scene,
     RhiDescriptorSet* descriptorSet,
-    bool depthPrepassed) -> const GeometryPassData& {
+    bool depthPrepassed,
+    FgTextureHandle hzb,
+    bool occlusion) -> const GeometryPassData& {
     FgTextureDesc albedoDesc = {
         .width = extent.width,
         .height = extent.height,
@@ -124,14 +137,18 @@ auto GeometryPass::addPass(
             data.instance = builder.write(builder.createTexture("gbuffer.instance", instanceDesc), FgAccessFlags::ColorAttachment);
             data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
-            builder.read(drawHandles.commands, FgAccessFlags::IndirectRead);
-            builder.read(drawHandles.counts, FgAccessFlags::IndirectRead);
+            // The task shaders read their draw's instance from the commands, and add to the meshlet counts.
+            // One draw per region: its RegionWork is the draw's command and the task shaders' range of work items.
+            builder.read(drawHandles.regionWork, FgAccessFlags::IndirectRead | FgAccessFlags::StorageRead);
+            builder.read(drawHandles.workItems, FgAccessFlags::StorageRead);
+            builder.write(drawHandles.meshletStats, FgAccessFlags::StorageWrite);
+            builder.read(hzb, FgAccessFlags::ShaderRead);
             if (drawHandles.lodStates.valid()) {
                 builder.read(drawHandles.lodStates, FgAccessFlags::StorageRead);
             }
             builder.setSideEffects(true);
         },
-        [bucketPipelines, depthPrepassed, extent, instances, &lists, drawHandles, &scene, descriptorSet](FrameGraphContext& ctx, const GeometryPassData& data) {
+        [bucketPipelines, depthPrepassed, extent, instances, &lists, drawHandles, &scene, descriptorSet, occlusion](FrameGraphContext& ctx, const GeometryPassData& data) {
             auto* cmd = ctx.cmd();
 
             std::array<RhiRenderingAttachmentInfo, 3> colorAtts = {{
@@ -172,26 +189,29 @@ auto GeometryPass::addPass(
             cmd->setScissor(extent);
 
             // One indirect call per pipeline bucket: single-sided instances under back-face
-            // culling first, then double-sided ones without it, then the same two cutout.
-            auto* commands = ctx.buffer(drawHandles.commands);
-            auto* counts = ctx.buffer(drawHandles.counts);
-            for (uint32_t bucket = 0; bucket < DrawLists::bucketCount; bucket++) {
-                auto region = DrawLists::cameraRegion(bucket % 2 != 0, bucket >= 2);
-                // The GPU-written count decides how many commands draw; an empty region costs one call.
-                if (scene.indexBuffer() == nullptr) {
-                    continue;
+            // culling first, then double-sided ones without it, then the same two cutout; with occlusion, then the late phase's. With
+            // occlusion every meshlet of both phases is tested against the pyramid of the prepass's whole depth (HzbBuildFinal): one it
+            // hides lies behind the depth at every pixel it covers, so under the Equal test it would shade nothing.
+            auto* regionWork = ctx.buffer(drawHandles.regionWork);
+            for (uint32_t phase = 0; phase < (occlusion ? 2u : 1u); phase++) {
+                bool late = phase == 1;
+                for (uint32_t bucket = 0; bucket < DrawLists::bucketCount; bucket++) {
+                    auto region = late ? DrawLists::cameraLateRegion(bucket % 2 != 0, bucket >= 2) : DrawLists::cameraRegion(bucket % 2 != 0, bucket >= 2);
+                    // The GPU-written count decides how many commands draw; an empty region costs one call.
+                    if (!scene.poolReady() || descriptorSet == nullptr) {
+                        continue;
+                    }
+                    auto* pip = bucketPipelines[bucket];
+                    cmd->bindPipeline(pip);
+                    // One set for every draw: materials are indexed through the instance record, vertices pulled from the pool.
+                    cmd->bindDescriptorSet(pip, 0, descriptorSet);
+                    // The camera's meshlet counts come from this pass.
+                    MeshletPush push = {.region = region, .flags = meshletFlagCount | (occlusion ? meshletFlagOcclusion : 0u)};
+                    cmd->pushConstants(pip, RhiShaderStage::Task | RhiShaderStage::Mesh, 0, sizeof(push), &push);
+                    PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
+                    DrawLists::drawRegion(cmd, regionWork, region);
+                    lists.report(ctx, region, instances);
                 }
-                auto* pip = bucketPipelines[bucket];
-                cmd->bindPipeline(pip);
-                // One set for every draw: materials are indexed through the instance record.
-                cmd->bindDescriptorSet(pip, 0, descriptorSet);
-                // One pool for every mesh: commands address it by firstIndex and vertexOffset.
-                cmd->bindVertexBuffer(scene.vertexBuffer());
-                cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
-                // Each command's firstInstance is its instance index: instances[gl_InstanceIndex].
-                PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
-                cmd->drawIndexedIndirectCount(commands, lists.commandOffset(region), counts, DrawLists::countOffset(region), lists.regionCapacity(region));
-                lists.report(ctx, region, instances);
             }
 
             cmd->endRendering();

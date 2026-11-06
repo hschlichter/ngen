@@ -157,6 +157,10 @@ auto parsePrepass(const std::string& args) -> std::expected<Json, std::string> {
     return configValues({{"render.prepass", args}});
 }
 
+auto parseOcclusion(const std::string& args) -> std::expected<Json, std::string> {
+    return configValues({{"render.culling.occlusion", args}});
+}
+
 auto parseAntiAliasing(const std::string& args) -> std::expected<Json, std::string> {
     return configValues({{"render.antialiasing", args}});
 }
@@ -342,6 +346,7 @@ auto registerConfigCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& 
     verbs.add("sampler", "config.set", parseSampler);
     verbs.add("shadow", "config.set", parseShadow);
     verbs.add("prepass", "config.set", parsePrepass);
+    verbs.add("occlusion", "config.set", parseOcclusion);
     verbs.add("aa", "config.set", parseAntiAliasing);
     verbs.add("ambient", "config.set", parseAmbient);
     verbs.add("gpuscene", "config.set", parseGpuScene);

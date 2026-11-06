@@ -10,18 +10,8 @@ namespace {
 auto statsValue(const RhiPipelineStats& s, int metric) -> uint64_t {
     switch (metric) {
         case 1:
-            return s.iaVertices;
-        case 2:
-            return s.iaPrimitives;
-        case 3:
-            return s.vertexInvocations;
-        case 4:
-            return s.clippingInvocations;
-        case 5:
-            return s.clippingPrimitives;
-        case 6:
             return s.fragmentInvocations;
-        case 7:
+        case 2:
             return s.computeInvocations;
         default:
             return 0;
@@ -61,11 +51,6 @@ auto metricCell(CountersWindowState& state, const std::string& zone, int metric,
 auto countersMetricName(int metric) -> const char* {
     static constexpr const char* names[countersMetricCount] = {
         "GPU ms",
-        "IA vertices",
-        "IA primitives",
-        "VS invocations",
-        "Clip in",
-        "Clip out",
         "FS invocations",
         "CS invocations",
     };
@@ -186,12 +171,6 @@ auto drawCountersWindow(bool& show, CountersWindowState& state) -> void {
                 std::string ratios;
                 if (stats->fragmentInvocations > 0 && pixels > 0.0) {
                     ratios += std::format("{:.2f} FS/px  ", (double) stats->fragmentInvocations / pixels);
-                }
-                if (stats->clippingInvocations > 0) {
-                    ratios += std::format("{:.0f}% survive clip  ", 100.0 * (double) stats->clippingPrimitives / (double) stats->clippingInvocations);
-                }
-                if (stats->iaPrimitives > 0) {
-                    ratios += std::format("{:.2f} VS/prim", (double) stats->vertexInvocations / (double) stats->iaPrimitives);
                 }
                 ImGui::TextUnformatted(ratios.c_str());
             }

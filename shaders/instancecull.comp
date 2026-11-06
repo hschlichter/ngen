@@ -1,21 +1,30 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 
-// GPU instance culling with ordered compaction (src/renderer/README.md, "GPU-driven frame"),
-// in three dispatches selected by push.mode:
+// GPU instance culling with ordered compaction (src/renderer/README.md, "Culling and draw lists"), in dispatches selected by push.mode:
 //
-//   0 cull     one thread per instance: frustum test against every view, visibility bits,
-//              per-workgroup counters (draws and primitives per region, culling stats)
-//   1 scan     one workgroup: per-region exclusive prefix over the workgroup counters gives
-//              each workgroup's start offset; totals become the draw counts and stats
-//   2 scatter  one thread per instance: in-workgroup prefix per region, command written at
-//              the workgroup's offset plus the local prefix
+//   0 cull       one thread per instance: frustum test against every view, visibility bits,
+//                per-workgroup counters (draws and primitives per region, culling stats)
+//   1 scan       one workgroup: per-region exclusive prefix over the workgroup counters gives
+//                each workgroup's start offset; totals become the draw counts and stats
+//   2 scatter    one thread per instance: in-workgroup prefix per region, command written at
+//                the workgroup's offset plus the local prefix
+//   3 occlusion  one thread per instance, after the depth pyramid is built: the camera's frustum-visible instances against it; the
+//                history written; the ones that show and weren't drawn in the first phase go to the camera's late regions
+//   4 clear      one thread per instance slot: the history zeroed (a new history buffer)
 //
-// Commands keep instance order within a region, so output is deterministic.
+// Two-phase occlusion (src/renderer/README.md, "Occlusion culling"): with params.occlusion on, the first phase's camera regions hold only
+// the instances visible last frame (the history); the depth prepass draws them, the depth pyramid is built from that depth, and mode 3
+// tests every frustum-visible instance against it. Scan and scatter run per phase (push.phase): the first over every counter and the views
+// 0..4, the second over the late regions (view 5) and the occlusion count.
 //
-// Regions: view * 4 + bucket; view 0 is the camera, views 1.. the shadow cascades; bucket bit 0
-// is double-sided, bit 1 cutout. Camera regions hold every instance whose mesh is in the pool
-// (submesh range). Cascade regions hold primFirst instances (whole mesh), except for a prim with a
-// cutout submesh: its instances draw one by one (submesh range), so the cutout one is cut.
+// Output keeps instance order within a region, so it is deterministic. Per region: a draw record per drawn instance (for the tools), and
+// its meshlet work items, every drawn instance's meshlets in order, in the slot's one work item buffer; the scan lays the regions out in it
+// and writes each region's draw (RegionWork: the task workgroups for its items, 32 meshlets each, meshlet.task).
+//
+// Regions: view * 4 + bucket; view 0 is the camera, views 1..4 the shadow cascades, view 5 the camera's late phase; bucket bit 0
+// is double-sided, bit 1 cutout. Every region holds the instances whose mesh is in the pool and that its view sees, each drawing its
+// submesh's meshlets: a prim draws one instance per submesh, in the camera and in the cascades alike, each culled by its submesh's box.
 //
 // Render LOD: an instance of a render-LOD group is drawn only when the group draws its level, or fades its level in (lodselect.comp ran
 // before); one whose mesh isn't in the pool marks its level in the group's residency mask, which the next frame's selection reads. While a
@@ -24,76 +33,93 @@
 
 layout(local_size_x = 256) in;
 
-const uint maxViews = 5;
+const uint maxViews = 6;
+const uint lateView = 5;
 const uint bucketCount = 4;
 const uint regionCount = maxViews * bucketCount;
+const uint lateRegion = lateView * bucketCount; // the first late region
 // Counter layout per workgroup and in the totals.
-const uint counterDraws = 0;                              // regionCount: draws per region
-const uint counterPrimitives = regionCount;               // regionCount: primitives per region
-const uint counterCameraCulled = regionCount * 2;         // 1: camera-culled instances (all)
-const uint counterCascadeCulled = counterCameraCulled + 1; // 4: culled primFirst instances per cascade
-const uint counterCascadeDrawn = counterCascadeCulled + 4; // 4: visible primFirst instances per cascade
+const uint counterDraws = 0;                               // regionCount: draws per region
+const uint counterPrimitives = regionCount;                // regionCount: primitives per region
+const uint counterCameraCulled = regionCount * 2;          // 1: camera-culled instances (all)
+const uint counterCascadeCulled = counterCameraCulled + 1; // 4: culled instances per cascade
+const uint counterCascadeDrawn = counterCascadeCulled + 4; // 4: visible instances per cascade
 const uint counterLodDropped = counterCascadeDrawn + 4;    // 1: instances of a level their group doesn't draw
-const uint counterRegionOverflow = counterLodDropped + 1;  // 1: commands dropped past their region's end (the scatter adds them)
-const uint counterFading = counterRegionOverflow + 1;      // 1: instances drawn in a fading group (both levels)
+const uint counterCameraOccluded = counterLodDropped + 1;  // 1: frustum-visible camera instances the depth pyramid hides
+const uint counterMeshlets = counterCameraOccluded + 1;      // regionCount: work items per region
+const uint counterWorkOverflow = counterMeshlets + regionCount; // 1: work items past the buffer's capacity, not drawn
+const uint counterRegionOverflow = counterWorkOverflow + 1;     // 1: draw records dropped past their region's end (the scatters add them)
+const uint counterFading = counterRegionOverflow + 1;           // 1: instances drawn in a fading group (both levels)
 const uint counterCount = counterFading + 1;
 
-const uint flagPrimFirst = 1u << 0;
+// Visibility bits per instance: bit v visible in view v (the camera's cleared when occluded), and the camera's phase.
+const uint bitLate = 1u << lateView; // drawn in the second phase (shows now, wasn't drawn first)
+const uint bitEarly = 1u << 6;       // drawn in the first phase (visible last frame)
+
 const uint flagDoubleSided = 1u << 1;
 const uint flagBoundsValid = 1u << 2;
 const uint flagCutout = 1u << 3;
-const uint flagPrimHasCutout = 1u << 4;
+// Meshlets per task workgroup (meshlet.task's local size), and the task workgroups a draw launches in x before it goes on in y.
+const uint meshletsPerTask = 32;
+const uint maxTaskGroupsX = 32768;
 
 layout(push_constant) uniform Push {
     uint mode;
+    uint phase; // scan and scatter: 0 the first phase's counters and regions, 1 the second's
 } push;
 
 layout(std430, set = 0, binding = 0) readonly buffer Params {
     uint instanceCount;
-    uint viewCount;
+    uint viewCount; // the camera and the cascades: the views tested against their frustum
     uint cullEnabled;
-    uint commandCapacity;
+    uint commandCapacity; // draw records the buffer holds, every region
     uint groupCount;
+    uint occlusion; // two-phase occlusion on
+    uint hzbWidth;  // the depth pyramid's mip 0
+    uint hzbHeight;
+    uint workCapacity; // meshlet work items the buffer holds, every region together
     uint commandsUsed; // the end of the last region
-    uint pad0;
     uint pad1;
-    // Each region's first command: the regions are packed one after another, each as large as the instances the CPU counted in its
-    // bucket (DrawLists::countInstance), so a region's end is the next one's start.
+    uint pad2;
+    vec4 cameraPosition;       // for the meshlets' cone test (meshlet.task)
+    mat4 cameraViewProj;       // the culling camera's, for the occlusion test
+    vec4 planes[maxViews * 6]; // normalized, from Frustum::fromViewProj on the CPU; view 5 repeats the camera's
+    // Each region's first draw record: the regions are packed one after another, each as large as the instances the CPU counted in its
+    // bucket (DrawLists::countInstance), so a region's end is the next one's start. Last, so meshlet.glsl's Params is a prefix of this.
     uint regionOffsets[regionCount];
-    vec4 planes[maxViews * 6]; // normalized, from Frustum::fromViewProj on the CPU
 } params;
 
 struct Instance {
     mat4 model;
     uint material;
     uint mesh;
-    uint indexOffset;
-    uint indexCount;
+    uint meshletOffset; // the submesh's meshlets, from the mesh's first
+    uint meshletCount;
     vec3 boundsMin;
     uint flags;
     vec3 boundsMax;
-    uint lodLevel; // the instance's level + 1 in its group
-    uint lodGroup; // its render-LOD group + 1, 0 for none
+    uint lodLevel;      // the instance's level + 1 in its group
+    uint lodGroup;      // its render-LOD group + 1, 0 for none
+    uint triangleCount; // the submesh's
     uint pad1;
     uint pad2;
-    uint pad3;
 };
 layout(std430, set = 0, binding = 1) readonly buffer Instances {
     Instance data[];
 } instances;
 
 struct MeshEntry {
-    uint firstIndex;
     int vertexOffset;
-    uint indexCount;
-    uint pad;
+    uint meshletOffset;
+    uint meshletCount; // 0: not in the pool
+    uint triangleCount;
 };
 layout(std430, set = 0, binding = 2) readonly buffer Meshes {
     MeshEntry data[];
 } meshes;
 
 layout(std430, set = 0, binding = 3) buffer Visibility {
-    uint bits[]; // bit v: visible in view v
+    uint bits[]; // bit v: visible in view v; bitEarly, bitLate: the camera's phase
 } visibility;
 
 layout(std430, set = 0, binding = 4) buffer GroupCounters {
@@ -101,18 +127,18 @@ layout(std430, set = 0, binding = 4) buffer GroupCounters {
 } groupCounters;
 
 layout(std430, set = 0, binding = 5) buffer GroupOffsets {
-    uint data[]; // groupCount * regionCount
+    uint data[]; // per workgroup, regionCount draw record offsets then regionCount work item offsets
 } groupOffsets;
 
-struct DrawCommand {
-    uint indexCount;
-    uint instanceCount;
-    uint firstIndex;
-    int vertexOffset;
-    uint firstInstance;
+// DrawRecord: one drawn instance in a region, its meshlets and where they start in the work items.
+struct DrawRecord {
+    uint instance;
+    uint meshletCount;
+    uint firstItem;
+    uint pad;
 };
 layout(std430, set = 0, binding = 6) writeonly buffer Commands {
-    DrawCommand data[]; // the regions, packed at params.regionOffsets
+    DrawRecord data[]; // the regions, packed at params.regionOffsets
 } commands;
 
 layout(std430, set = 0, binding = 7) buffer Totals {
@@ -120,12 +146,13 @@ layout(std430, set = 0, binding = 7) buffer Totals {
 } totals;
 
 // Why each instance was culled, 4 bits per view: 0..5 the frustum plane that rejected it
-// (left, right, bottom, top, near, far), 0xD a LOD level its group doesn't draw, 0xE visible, 0xF not tested (culling off or no
-// bounds).
+// (left, right, bottom, top, near, far), 0xC hidden by the depth pyramid (the camera), 0xD a LOD level its group doesn't draw, 0xE
+// visible, 0xF not tested (culling off or no bounds).
 const uint planeVisible = 0xEu;
 const uint planeNotTested = 0xFu;
 const uint planeLevelNotDrawn = 0xDu; // a render-LOD level its group doesn't draw, in every view
-layout(std430, set = 0, binding = 8) writeonly buffer CullPlanes {
+const uint planeOccluded = 0xCu;
+layout(std430, set = 0, binding = 8) buffer CullPlanes {
     uint codes[];
 } cullPlanes;
 
@@ -149,8 +176,45 @@ layout(std430, set = 0, binding = 10) buffer LodResidency {
     uint bits[];
 } lodResidency;
 
+// The meshlet counts the mesh passes' task shaders add to (meshlet.glsl); the first phase's scan zeroes them for this frame.
+const uint meshletCounterCount = maxViews * 6;
+layout(std430, set = 0, binding = 11) writeonly buffer MeshletStats {
+    uint data[];
+} meshletStats;
+
+// The depth pyramid (hzb.glsl).
+layout(set = 0, binding = 12) uniform sampler2D hzb;
+
+// Per instance slot, kept across frames: bit 0 visible to the camera last frame.
+layout(std430, set = 0, binding = 13) buffer History {
+    uint bits[];
+} history;
+
+// RegionWork: a region's draw (task workgroups x, y, z) and its work items.
+struct RegionWork {
+    uint taskGroupsX;
+    uint taskGroupsY;
+    uint taskGroupsZ;
+    uint firstItem;
+    uint itemCount;
+    uint pad0;
+    uint pad1;
+    uint pad2;
+};
+layout(std430, set = 0, binding = 14) buffer RegionWorks {
+    RegionWork data[];
+} regionWork;
+
+// The meshlets to draw: the instance and the meshlet's place in the meshlet pool.
+layout(std430, set = 0, binding = 15) writeonly buffer WorkItems {
+    uvec2 data[];
+} workItems;
+
+#include "hzb.glsl"
+
 shared uint sharedCounters[counterCount];
 shared uint scanData[256];
+shared uint scanItems[256];
 
 // Same test as Frustum::contains: the box corner furthest along each plane normal must not
 // be behind the plane. Evaluated in the CPU's order, without contraction. Returns the index of
@@ -174,39 +238,61 @@ uint rejectingPlane(Instance inst, uint view) {
 
 MeshEntry meshOf(Instance inst) {
     if (inst.mesh >= uint(meshes.data.length())) {
-        return MeshEntry(0u, 0, 0u, 0u);
+        return MeshEntry(0, 0u, 0u, 0u);
     }
     return meshes.data[inst.mesh];
 }
 
-// Whether the instance draws its submesh range in view v; otherwise a cascade draws its whole mesh.
-bool perSubmesh(Instance inst, uint view) {
-    return view == 0 || (inst.flags & flagPrimHasCutout) != 0;
+bool cameraView(uint view) {
+    return view == 0u || view == lateView;
 }
 
-// The instance's bucket: cutout instances drawn per submesh go to the cutout buckets, and so does every instance of a fading group.
-uint bucketOf(Instance inst, uint view, bool fading) {
+// The instance's bucket: double-sided, and cutout; every instance of a fading group draws in the cutout buckets.
+uint bucketOf(Instance inst, bool fading) {
     uint bucket = (inst.flags & flagDoubleSided) != 0 ? 1u : 0u;
-    if (((inst.flags & flagCutout) != 0 && perSubmesh(inst, view)) || fading) {
+    if ((inst.flags & flagCutout) != 0 || fading) {
         bucket += 2u;
     }
     return bucket;
 }
 
-// Whether instance belongs to region r and is visible in its view.
+// Whether instance belongs to region r and is drawn in its view.
 bool drawnIn(Instance inst, MeshEntry mesh, uint bits, uint region, bool fading) {
     uint view = region / bucketCount;
     uint bucket = region % bucketCount;
-    if (view >= params.viewCount || mesh.indexCount == 0) {
+    if (mesh.meshletCount == 0) {
         return false;
     }
-    if (bucket != bucketOf(inst, view, fading)) {
+    if (bucket != bucketOf(inst, fading)) {
         return false;
     }
-    if (!perSubmesh(inst, view) && (inst.flags & flagPrimFirst) == 0) {
+    if (view == lateView) {
+        return (bits & bitLate) != 0;
+    }
+    if (view >= params.viewCount) {
         return false;
+    }
+    if (view == 0u && params.occlusion != 0u) {
+        return (bits & bitEarly) != 0;
     }
     return (bits & (1u << view)) != 0;
+}
+
+// Whether a counter belongs to the second phase: the late regions' draws, primitives and work items, and the occlusion count.
+bool lateCounter(uint counter) {
+    bool lateDraws = counter >= counterDraws + lateRegion && counter < counterDraws + regionCount;
+    bool latePrimitives = counter >= counterPrimitives + lateRegion && counter < counterPrimitives + regionCount;
+    bool lateMeshlets = counter >= counterMeshlets + lateRegion && counter < counterMeshlets + regionCount;
+    return lateDraws || latePrimitives || lateMeshlets || counter == counterCameraOccluded;
+}
+
+// The instance's meshlets (its submesh's), and the first one's place in the meshlet pool.
+uint meshletsIn(Instance inst) {
+    return inst.meshletCount;
+}
+
+uint firstMeshletIn(Instance inst, MeshEntry mesh) {
+    return mesh.meshletOffset + inst.meshletOffset;
 }
 
 void cull() {
@@ -226,7 +312,7 @@ void cull() {
         if (inst.lodGroup != 0 && inst.lodGroup <= uint(lodStates.data.length()) && inst.lodLevel != 0) {
             uint group = inst.lodGroup - 1;
             uint level = inst.lodLevel - 1;
-            if (meshOf(inst).indexCount == 0) {
+            if (meshOf(inst).meshletCount == 0) {
                 atomicOr(lodResidency.bits[group], 1u << level);
             }
             uint levels = lodStates.data[group].y;
@@ -252,23 +338,26 @@ void cull() {
             }
             atomicAdd(sharedCounters[counterLodDropped], 1u);
         }
+        // The first phase draws what the camera saw last frame.
+        if (params.occlusion != 0u && (bits & 1u) != 0u && (history.bits[m] & 1u) != 0u) {
+            bits |= bitEarly;
+        }
         visibility.bits[m] = bits;
         cullPlanes.codes[m] = planes;
 
         MeshEntry mesh = meshOf(inst);
-        for (uint r = 0; r < regionCount; r++) {
+        for (uint r = 0; r < lateRegion; r++) {
             if (drawnIn(inst, mesh, bits, r, fading)) {
-                uint indexCount = perSubmesh(inst, r / bucketCount) ? inst.indexCount : mesh.indexCount;
                 atomicAdd(sharedCounters[counterDraws + r], 1u);
-                atomicAdd(sharedCounters[counterPrimitives + r], indexCount / 3);
+                atomicAdd(sharedCounters[counterPrimitives + r], inst.triangleCount);
+                atomicAdd(sharedCounters[counterMeshlets + r], meshletsIn(inst));
             }
         }
-        // Statistics: camera culling over every instance, cascade culling over primFirst
-        // instances (the ones the shadow pass draws); a level not drawn counts as neither.
+        // Statistics: culling per view over every instance; a level not drawn counts as neither.
         if ((bits & 1u) == 0 && !dropped) {
             atomicAdd(sharedCounters[counterCameraCulled], 1u);
         }
-        if ((inst.flags & flagPrimFirst) != 0 && !dropped) {
+        if (!dropped) {
             for (uint c = 0; c + 1 < params.viewCount; c++) {
                 if ((bits & (1u << (c + 1))) != 0) {
                     atomicAdd(sharedCounters[counterCascadeDrawn + c], 1u);
@@ -285,22 +374,102 @@ void cull() {
     }
 }
 
-void scan() {
-    // One thread per counter walks the workgroups in order; draw counters also record each
-    // workgroup's start offset. Integer sums, so the result does not depend on scheduling.
-    uint t = gl_LocalInvocationID.x;
-    if (t >= counterCount) {
-        return;
+// The second phase: every frustum-visible camera instance against the depth pyramid built from the first phase's depth. Its history is
+// whether it shows now; one that shows and wasn't drawn first is drawn in the late regions; one hidden is culled for the camera (bit 0
+// and code 0xC), though the first phase may have drawn it.
+void occlusion() {
+    uint lid = gl_LocalInvocationID.x;
+    uint m = gl_GlobalInvocationID.x;
+    if (lid < counterCount) {
+        sharedCounters[lid] = 0;
     }
-    uint running = 0;
-    for (uint g = 0; g < params.groupCount; g++) {
-        uint value = groupCounters.data[g * counterCount + t];
-        if (t < regionCount) {
-            groupOffsets.data[g * regionCount + t] = running;
+    barrier();
+
+    if (m < params.instanceCount) {
+        Instance inst = instances.data[m];
+        uint bits = visibility.bits[m];
+        uint shows = 0u;
+        if ((bits & 1u) != 0u) {
+            bool hidden = (inst.flags & flagBoundsValid) != 0u && params.cullEnabled != 0u && boxOccluded(inst.boundsMin, inst.boundsMax);
+            if (hidden) {
+                bits &= ~1u;
+                cullPlanes.codes[m] = (cullPlanes.codes[m] & ~0xFu) | planeOccluded;
+                atomicAdd(sharedCounters[counterCameraOccluded], 1u);
+            } else {
+                shows = 1u;
+                if ((bits & bitEarly) == 0u) {
+                    bits |= bitLate;
+                }
+            }
+            visibility.bits[m] = bits;
         }
-        running += value;
+        history.bits[m] = shows;
+
+        MeshEntry mesh = meshOf(inst);
+        bool fading = fadingOf(inst);
+        for (uint r = lateRegion; r < regionCount; r++) {
+            if (drawnIn(inst, mesh, bits, r, fading)) {
+                atomicAdd(sharedCounters[counterDraws + r], 1u);
+                atomicAdd(sharedCounters[counterPrimitives + r], inst.triangleCount);
+                atomicAdd(sharedCounters[counterMeshlets + r], meshletsIn(inst));
+            }
+        }
     }
-    totals.data[t] = running;
+    barrier();
+
+    // Only the second phase's counters: the first phase's are scanned already.
+    if (lid < counterCount && lateCounter(lid)) {
+        groupCounters.data[gl_WorkGroupID.x * counterCount + lid] = sharedCounters[lid];
+    }
+}
+
+void scan() {
+    // One thread per counter walks the workgroups in order; draw and work item counters also record each workgroup's start offset.
+    // Integer sums, so the result does not depend on scheduling.
+    uint t = gl_LocalInvocationID.x;
+    if (push.phase == 0u && t < meshletCounterCount) {
+        meshletStats.data[t] = 0u;
+    }
+    // The first phase sums every counter (the second phase's are zero until it runs), the second only its own.
+    bool mine = t < counterCount && t != counterWorkOverflow && (push.phase == 0u || lateCounter(t));
+    if (mine) {
+        uint running = 0;
+        for (uint g = 0; g < params.groupCount; g++) {
+            uint value = groupCounters.data[g * counterCount + t];
+            if (t < regionCount) {
+                groupOffsets.data[g * regionCount * 2u + t] = running;
+            }
+            if (t >= counterMeshlets && t < counterMeshlets + regionCount) {
+                groupOffsets.data[g * regionCount * 2u + regionCount + (t - counterMeshlets)] = running;
+            }
+            running += value;
+        }
+        totals.data[t] = running;
+    }
+    memoryBarrierBuffer();
+    barrier();
+
+    // The phase's regions laid out one after another in the work items, after the first phase's; what doesn't fit is counted, not drawn.
+    if (t == 0u) {
+        uint first = push.phase == 0u ? 0u : lateRegion;
+        uint end = push.phase == 0u ? lateRegion : regionCount;
+        uint base = 0u;
+        if (push.phase != 0u) {
+            base = regionWork.data[lateRegion - 1u].firstItem + regionWork.data[lateRegion - 1u].itemCount;
+        }
+        uint overflow = 0u;
+        for (uint r = first; r < end; r++) {
+            uint count = totals.data[counterMeshlets + r];
+            uint fit = base < params.workCapacity ? min(count, params.workCapacity - base) : 0u;
+            overflow += count - fit;
+            uint groups = (fit + meshletsPerTask - 1u) / meshletsPerTask;
+            uint x = min(groups, maxTaskGroupsX);
+            uint y = x > 0u ? (groups + x - 1u) / x : 0u;
+            regionWork.data[r] = RegionWork(x, y, 1u, base, fit, 0u, 0u, 0u);
+            base += fit;
+        }
+        totals.data[counterWorkOverflow] = (push.phase == 0u ? 0u : totals.data[counterWorkOverflow]) + overflow;
+    }
 }
 
 void scatter() {
@@ -308,7 +477,7 @@ void scatter() {
     uint m = gl_GlobalInvocationID.x;
     bool live = m < params.instanceCount;
     Instance inst;
-    MeshEntry mesh = MeshEntry(0u, 0, 0u, 0u);
+    MeshEntry mesh = MeshEntry(0, 0u, 0u, 0u);
     uint bits = 0;
     bool fading = false;
     if (live) {
@@ -318,31 +487,40 @@ void scatter() {
         fading = fadingOf(inst);
     }
 
-    for (uint r = 0; r < regionCount; r++) {
+    uint first = push.phase == 0u ? 0u : lateRegion;
+    uint end = push.phase == 0u ? lateRegion : regionCount;
+    for (uint r = first; r < end; r++) {
         uint member = (live && drawnIn(inst, mesh, bits, r, fading)) ? 1u : 0u;
-        // Inclusive Hillis-Steele scan across the workgroup.
+        uint meshlets = member != 0u ? meshletsIn(inst) : 0u;
+        // Inclusive Hillis-Steele scans across the workgroup: draw records and work items.
         scanData[lid] = member;
+        scanItems[lid] = meshlets;
         barrier();
         for (uint offset = 1; offset < 256; offset <<= 1) {
             uint add = lid >= offset ? scanData[lid - offset] : 0u;
+            uint addItems = lid >= offset ? scanItems[lid - offset] : 0u;
             barrier();
             scanData[lid] += add;
+            scanItems[lid] += addItems;
             barrier();
         }
-        uint regionEnd = r + 1 < regionCount ? params.regionOffsets[r + 1] : params.commandsUsed;
         if (member != 0) {
-            uint slot = groupOffsets.data[gl_WorkGroupID.x * regionCount + r] + scanData[lid] - 1;
-            bool submesh = perSubmesh(inst, r / bucketCount);
-            DrawCommand command;
-            command.indexCount = submesh ? inst.indexCount : mesh.indexCount;
-            command.instanceCount = 1;
-            command.firstIndex = submesh ? mesh.firstIndex + inst.indexOffset : mesh.firstIndex;
-            command.vertexOffset = mesh.vertexOffset;
-            command.firstInstance = m;
-            // A command past the region's counted size would land in the next region (or past the buffer): never written, and counted, so
-            // a CPU count that disagrees with this shader's bucket rule shows (the scan zeroed the counter this frame).
+            uint groupBase = gl_WorkGroupID.x * regionCount * 2u;
+            uint slot = groupOffsets.data[groupBase + r] + scanData[lid] - 1;
+            RegionWork work = regionWork.data[r];
+            // Within the region's work items: its workgroup's start, then the meshlets of the instances before it in the workgroup.
+            uint local = groupOffsets.data[groupBase + regionCount + r] + scanItems[lid] - meshlets;
+            uint meshletBase = firstMeshletIn(inst, mesh);
+            for (uint k = 0; k < meshlets; k++) {
+                if (local + k < work.itemCount) {
+                    workItems.data[work.firstItem + local + k] = uvec2(m, meshletBase + k);
+                }
+            }
+            // A record past the region's counted size would land in the next region (or past the buffer): never written, and counted, so a
+            // CPU count that disagrees with this shader's bucket rule shows (the first phase's scan zeroed the counter this frame).
+            uint regionEnd = r + 1u < regionCount ? params.regionOffsets[r + 1u] : params.commandsUsed;
             if (params.regionOffsets[r] + slot < regionEnd) {
-                commands.data[params.regionOffsets[r] + slot] = command;
+                commands.data[params.regionOffsets[r] + slot] = DrawRecord(m, meshlets, work.firstItem + local, 0u);
             } else {
                 atomicAdd(totals.data[counterRegionOverflow], 1u);
             }
@@ -351,12 +529,23 @@ void scatter() {
     }
 }
 
+void clearHistory() {
+    uint m = gl_GlobalInvocationID.x;
+    if (m < uint(history.bits.length())) {
+        history.bits[m] = 0u;
+    }
+}
+
 void main() {
     if (push.mode == 0) {
         cull();
     } else if (push.mode == 1) {
         scan();
-    } else {
+    } else if (push.mode == 2) {
         scatter();
+    } else if (push.mode == 3) {
+        occlusion();
+    } else {
+        clearHistory();
     }
 }

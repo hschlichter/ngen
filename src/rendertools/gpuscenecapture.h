@@ -32,7 +32,7 @@ auto capturedValue(const CaptureResult& table, size_t offset) -> T {
 
 // A culling view's name: 0 is the camera, then the shadow cascades.
 auto gpuSceneViewName(uint32_t view) -> std::string;
-// An instance record's flags as words: "primFirst doubleSided noBounds".
+// An instance record's flags as words: "doubleSided noBounds".
 auto gpuInstanceFlagText(uint32_t flags) -> std::string;
 
 // One instance of the GPU scene, joined from the captured tables: the instance record, the
@@ -44,9 +44,9 @@ struct GpuSceneInstanceRow {
     uint32_t mesh = 0;
     uint32_t material = 0;    // material table entry
     uint32_t textureSlot = 0; // from the material table
-    uint32_t indexOffset = 0;
-    uint32_t indexCount = 0;
-    uint32_t meshIndexCount = 0; // from the mesh table; 0 = mesh not in the pool
+    uint32_t meshletOffset = 0;
+    uint32_t meshletCount = 0;
+    uint32_t meshMeshletCount = 0; // from the mesh table; 0 = mesh not in the pool
     uint32_t flags = 0;
     glm::vec3 boundsMin = glm::vec3(0.0f);
     glm::vec3 boundsMax = glm::vec3(0.0f);

@@ -10,13 +10,13 @@ auto packRules(const std::string& config) -> std::vector<PackRule> {
     // info and no optimisation, release optimises and keeps debug info, gamerelease optimises only.
     rules.push_back(PackRule{
         .name = "shader",
-        .extensions = {".vert", ".frag", ".comp", ".geom"},
+        .extensions = {".vert", ".frag", ".comp", ".geom", ".task", ".mesh"},
         .packer = "ngen-packer-shader",
         .params = {
             {"optimize", config == "debug" ? "0" : "1"},
             {"debug_info", config == "gamerelease" ? "0" : "1"},
         },
-        .version = 1,
+        .version = 2,
     });
     // Images become engine-ready textures: RGBA8 sRGB with the full mip chain, decoded and mip-mapped once, here.
     rules.push_back(PackRule{
@@ -41,7 +41,7 @@ auto packRules(const std::string& config) -> std::vector<PackRule> {
         .extensions = {".usda", ".usdc", ".usd"},
         .packer = "ngen-packer-usd",
         .params = {},
-        .version = 10,
+        .version = 11,
     });
     // Assets the engine still reads in their source format, until a packer for their engine-ready format exists: the packed
     // asset is the source's bytes.

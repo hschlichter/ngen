@@ -579,8 +579,7 @@ private:
     MeshLibrary meshLibrary;
     MaterialLibrary materialLibrary;
     TextureLibrary textureLibrary;
-    std::unordered_map<uint32_t, AABB> meshBoundsOf; // by mesh handle
-    std::set<uint32_t> usedMeshes;                   // what the slots used at the last library check, by handle
+    std::set<uint32_t> usedMeshes; // what the slots used at the last library check, by handle
     std::set<uint32_t> usedMaterials;
     std::set<uint32_t> usedTextures;
     std::unordered_map<std::string, MaterialHandle> materialByAsset; // this pass's, by material asset id or "displayColor r g b"
@@ -733,7 +732,6 @@ private:
     struct ResolvedDraw {
         std::vector<MaterialHandle> materials;
         std::vector<bool> cutout;
-        bool primHasCutout = false;
         std::shared_ptr<const std::vector<std::string>> uses;
     };
     std::unordered_map<std::string, std::shared_ptr<const ResolvedDraw>> resolvedDraws;

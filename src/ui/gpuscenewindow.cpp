@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <format>
@@ -88,7 +89,7 @@ auto drawGpuSceneWindow(bool& show,
                     ImGui::TableSetColumnIndex(4);
                     ImGui::Text("%u", r.textureSlot);
                     ImGui::TableSetColumnIndex(5);
-                    ImGui::Text("%u +%u", r.indexOffset, r.indexCount);
+                    ImGui::Text("%u +%u", r.meshletOffset, r.meshletCount);
                     ImGui::TableSetColumnIndex(6);
                     ImGui::TextUnformatted(gpuInstanceFlagText(r.flags).c_str());
                     ImGui::TableSetColumnIndex(7);
@@ -113,27 +114,27 @@ auto drawGpuSceneWindow(bool& show,
                 auto count = meshes->bytes->size() / schema.stride;
                 if (ImGui::BeginTable("##meshes", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY)) {
                     ImGui::TableSetupColumn("Mesh");
-                    ImGui::TableSetupColumn("firstIndex");
                     ImGui::TableSetupColumn("vertexOffset");
-                    ImGui::TableSetupColumn("indexCount");
+                    ImGui::TableSetupColumn("meshletOffset");
+                    ImGui::TableSetupColumn("meshletCount");
                     ImGui::TableSetupColumn("Triangles");
                     ImGui::TableHeadersRow();
                     for (size_t i = 0; i < count; i++) {
                         auto e = capturedValue<GpuMeshEntry>(*meshes, i * sizeof(GpuMeshEntry));
-                        if (e.indexCount == 0) {
+                        if (e.meshletCount == 0) {
                             continue;
                         }
                         ImGui::TableNextRow();
                         ImGui::TableSetColumnIndex(0);
                         ImGui::Text("%zu", i);
                         ImGui::TableSetColumnIndex(1);
-                        ImGui::Text("%u", e.firstIndex);
-                        ImGui::TableSetColumnIndex(2);
                         ImGui::Text("%d", e.vertexOffset);
+                        ImGui::TableSetColumnIndex(2);
+                        ImGui::Text("%u", e.meshletOffset);
                         ImGui::TableSetColumnIndex(3);
-                        ImGui::Text("%u", e.indexCount);
+                        ImGui::Text("%u", e.meshletCount);
                         ImGui::TableSetColumnIndex(4);
-                        ImGui::Text("%u", e.indexCount / 3);
+                        ImGui::Text("%u", e.triangleCount);
                     }
                     ImGui::EndTable();
                 }
@@ -168,13 +169,15 @@ auto drawGpuSceneWindow(bool& show,
             for (uint32_t code = 0; code < 6; code++) {
                 ImGui::BulletText("culled by the %s plane: %u", cullPlaneName(code), byReason[code]);
             }
+            ImGui::BulletText("hidden by the depth pyramid (occlusion, camera): %u", byReason[0xC]);
             ImGui::BulletText("not tested (culling off or no bounds): %u", byReason[0xF]);
             ImGui::BulletText("a LOD level its group doesn't draw: %u", byReason[0xD]);
             ImGui::SeparatorText("Culled instances");
             ImGui::BeginChild("##culled");
             for (const auto& r : rows) {
                 auto code = (r.cullPlanes >> (4 * v)) & 0xFu;
-                if (code < 6 && ImGui::Selectable(std::format("{:4}  {}  ({})", r.index, r.primPath, cullPlaneName(code)).c_str())) {
+                // A plane, or occluded (0xC): every reason an instance isn't drawn in the view.
+                if ((code < 6 || code == 0xC) && ImGui::Selectable(std::format("{:4}  {}  ({})", r.index, r.primPath, cullPlaneName(code)).c_str())) {
                     selectPrim(r.prim);
                 }
             }
@@ -195,24 +198,31 @@ auto drawGpuSceneWindow(bool& show,
             const auto* offsets = capturedTable(state.results, "cullGroupOffsets");
             const auto* counts = capturedTable(state.results, "drawCounts");
             const auto* commands = capturedTable(state.results, "drawCommands");
+            const auto* params = capturedTable(state.results, "cullParams");
+            // Per workgroup: each region's draw record offset, then its work item offset.
             if (counters != nullptr && offsets != nullptr) {
-                auto groups = std::min(counters->bytes->size() / (DrawLists::counterCount * 4), offsets->bytes->size() / (DrawLists::regionCount * 4));
+                auto groups = std::min(counters->bytes->size() / (DrawLists::counterCount * 4), offsets->bytes->size() / (DrawLists::regionCount * 2 * 4));
                 auto used = (rows.size() + DrawLists::groupSize - 1) / DrawLists::groupSize;
                 for (size_t g = 0; g < std::min(groups, std::max<size_t>(used, 1)); g++) {
                     auto count = capturedValue<uint32_t>(*counters, (g * DrawLists::counterCount + DrawLists::counterDraws + region) * 4);
-                    auto offset = capturedValue<uint32_t>(*offsets, (g * DrawLists::regionCount + region) * 4);
+                    auto offset = capturedValue<uint32_t>(*offsets, (g * DrawLists::regionCount * 2 + region) * 4);
                     ImGui::BulletText("workgroup %zu (instances %zu..%zu): %u commands, written from offset %u", g, g * DrawLists::groupSize, (g + 1) * DrawLists::groupSize - 1, count, offset);
                 }
             }
-            if (counts != nullptr && commands != nullptr) {
+            if (counts != nullptr && commands != nullptr && params != nullptr) {
+                // The region's records as the frame packed them: from its offset to the next region's (the last ends at commandsUsed).
+                using P = DrawLists::CullParams;
                 auto total = capturedValue<uint32_t>(*counts, DrawLists::countOffset(region));
-                auto capacity = commands->bytes->size() / sizeof(RhiDrawIndexedIndirectCommand) / DrawLists::regionCount;
-                ImGui::SeparatorText(std::format("Final order: {} commands", total).c_str());
+                auto first = capturedValue<uint32_t>(*params, offsetof(P, regionOffsets) + (region * 4));
+                auto end = region + 1 < DrawLists::regionCount ? capturedValue<uint32_t>(*params, offsetof(P, regionOffsets) + ((region + 1) * 4)) : capturedValue<uint32_t>(*params, offsetof(P, commandsUsed));
+                auto inBuffer = (uint32_t) (commands->bytes->size() / sizeof(DrawRecord));
+                auto capacity = std::min(end, inBuffer) > first ? std::min(end, inBuffer) - first : 0u;
+                ImGui::SeparatorText(std::format("Final order: {} commands, from record {}, room for {}", total, first, capacity).c_str());
                 ImGui::BeginChild("##order");
                 for (uint32_t i = 0; i < total && i < capacity; i++) {
-                    auto command = capturedValue<RhiDrawIndexedIndirectCommand>(*commands, (region * capacity + i) * sizeof(RhiDrawIndexedIndirectCommand));
-                    auto path = command.firstInstance < primOfInstance.size() ? primPath(primOfInstance[command.firstInstance]) : std::string("(instance out of range)");
-                    ImGui::Text("%4u  instance %4u  %s  (%u triangles)", i, command.firstInstance, path.c_str(), command.indexCount / 3);
+                    auto command = capturedValue<DrawRecord>(*commands, (first + i) * sizeof(DrawRecord));
+                    auto path = command.instance < primOfInstance.size() ? primPath(primOfInstance[command.instance]) : std::string("(instance out of range)");
+                    ImGui::Text("%4u  instance %4u  %s  (%u meshlets from work item %u)", i, command.instance, path.c_str(), command.meshletCount, command.firstItem);
                 }
                 ImGui::EndChild();
             }

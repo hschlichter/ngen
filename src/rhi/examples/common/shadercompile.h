@@ -20,6 +20,10 @@ inline auto compileGlsl(RhiShaderStage stage, std::string_view source, const cha
         kind = shaderc_glsl_fragment_shader;
     } else if (stage == RhiShaderStage::Compute) {
         kind = shaderc_glsl_compute_shader;
+    } else if (stage == RhiShaderStage::Task) {
+        kind = shaderc_glsl_task_shader;
+    } else if (stage == RhiShaderStage::Mesh) {
+        kind = shaderc_glsl_mesh_shader;
     }
 
     auto* compiler = shaderc_compiler_initialize();

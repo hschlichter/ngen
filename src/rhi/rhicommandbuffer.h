@@ -77,6 +77,12 @@ public:
     // As drawIndexedIndirect, with the draw count read on the GPU: a uint32 at countOffset in
     // `count`, clamped to maxDrawCount.
     virtual auto drawIndexedIndirectCount(RhiBuffer* commands, uint64_t offset, RhiBuffer* count, uint64_t countOffset, uint32_t maxDrawCount) -> void = 0;
+    // Mesh shading: draws with a mesh pipeline bound, one draw per RhiDrawMeshTasksIndirectCommand, `stride` bytes apart from `offset` in
+    // `commands` (RhiBufferState::IndirectRead), the draw count read on the GPU as for drawIndexedIndirectCount. Shaders see each draw's
+    // index as gl_DrawID, so the words a caller puts after a command can be read from the same buffer.
+    virtual auto drawMeshTasksIndirectCount(RhiBuffer* commands, uint64_t offset, uint32_t stride, RhiBuffer* count, uint64_t countOffset, uint32_t maxDrawCount) -> void = 0;
+    // As drawMeshTasksIndirectCount with the draw count given on the CPU.
+    virtual auto drawMeshTasksIndirect(RhiBuffer* commands, uint64_t offset, uint32_t drawCount, uint32_t stride) -> void = 0;
     // Compute; a compute pipeline must be bound. Not allowed inside beginRendering/endRendering.
     virtual auto dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) -> void = 0;
 };

@@ -60,9 +60,7 @@ auto UiHooks::event(ViewFrame& frame, const SDL_Event& event) -> bool {
 auto UiHooks::afterCamera(ViewFrame& frame) -> void {
     tools.afterCamera(frame);
     const auto& cull = frame.latestCull;
-    ui.setCullStats(cull.instances, cull.cameraCulled, cull.lodDropped);
-    ui.setShadowCullStats(cull.cascadeCount, cull.cascadeCulled, cull.cascadeDrawn);
-    ui.setCullTriangles(cull.cameraTriangles, cull.sceneTriangles, cull.cascadeTriangles);
+    ui.setCullResult(cull);
 }
 
 auto UiHooks::debugDraw(ViewFrame& frame) -> void {

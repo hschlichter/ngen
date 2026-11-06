@@ -1,0 +1,137 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+#extension GL_GOOGLE_include_directive : require
+
+// Meshlet culling, for every mesh pass. One draw is one region (view * 4 + bucket); each task workgroup takes 32 of its work items
+// (meshlets with their instance, in instance order: instancecull.comp), tests them, and launches a mesh workgroup per meshlet that
+// survives, in order:
+//   - every view: the meshlet's bounding sphere against the view's frustum planes;
+//   - the camera, single-sided buckets: the normal cone, when every triangle faces away from the camera (skipped for an instance whose
+//     model scales unevenly, which bends the cone);
+//   - with meshletFlagOcclusion: the sphere's box against the depth pyramid (hzb.glsl). The depth prepass's late phase tests against the
+//     pyramid of the first phase's depth; the geometry pass tests both phases against the pyramid of the prepass's whole depth.
+// The survivors are compacted with a prefix over the workgroup, not atomics, so the order never depends on scheduling.
+// Classifying (meshletFlagClassify, the meshletcull debug view), every meshlet survives with the test that would cull it, or, with
+// meshletFlagHiddenOnly, only those the pyramid hides.
+
+layout(local_size_x = 32) in;
+
+#include "meshlet.glsl"
+#include "hzb.glsl"
+
+layout(push_constant) uniform Push {
+    uint region;
+    uint flags; // meshletFlag*
+} push;
+
+shared uint survives[meshletsPerTask];
+shared uint counts[meshletCountersPerView];
+
+// Whether the sphere lies on the inner side of every plane of the view.
+bool sphereInView(vec3 center, float radius, uint view) {
+    for (uint p = 0; p < 6u; p++) {
+        vec4 plane = params.planes[view * 6u + p];
+        if (dot(plane.xyz, center) + plane.w < -radius) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Whether every triangle of the meshlet faces away from the camera (meshoptimizer's sphere form of the cone test).
+bool backFacing(Meshlet meshlet, vec3 center, float radius, mat3 model, float scale) {
+    vec4 cone = vec4(ivec4(int(meshlet.cone << 24) >> 24, int(meshlet.cone << 16) >> 24, int(meshlet.cone << 8) >> 24, int(meshlet.cone) >> 24)) / 127.0;
+    if (cone.w >= 1.0) {
+        return false;
+    }
+    // Geometric normals turn over with a mirroring model.
+    vec3 axis = model * cone.xyz / scale;
+    if (determinant(model) < 0.0) {
+        axis = -axis;
+    }
+    vec3 toCenter = center - params.cameraPosition.xyz;
+    return dot(toCenter, normalize(axis)) >= cone.w * length(toCenter) + radius;
+}
+
+void main() {
+    uint lid = gl_LocalInvocationIndex;
+    uint view = push.region / bucketCount;
+    uint bucket = push.region % bucketCount;
+    RegionWork work = regionWork.data[push.region];
+    uint item = ((gl_WorkGroupID.y * gl_NumWorkGroups.x) + gl_WorkGroupID.x) * meshletsPerTask + lid;
+
+    if (lid < meshletCountersPerView) {
+        counts[lid] = 0u;
+    }
+    barrier();
+
+    uint visible = 0u;
+    uint reason = meshletKept;
+    uint meshletIndex = 0u;
+    uint instanceIndex = 0u;
+    if (item < work.itemCount) {
+        uvec2 workItem = workItems.data[work.firstItem + item];
+        instanceIndex = workItem.x;
+        meshletIndex = workItem.y;
+        Instance inst = instances.data[instanceIndex];
+        Meshlet meshlet = meshlets.data[meshletIndex];
+        // The model's scale: the sphere grows by its largest axis; the cone holds only under an even scale.
+        mat3 model = mat3(inst.model);
+        vec3 axisLengths = vec3(length(model[0]), length(model[1]), length(model[2]));
+        float scale = max(axisLengths.x, max(axisLengths.y, axisLengths.z));
+        bool evenScale = (scale - min(axisLengths.x, min(axisLengths.y, axisLengths.z))) <= scale * 1e-3;
+        bool testCone = cameraView(view) && (bucket & 1u) == 0u && evenScale && params.cullEnabled != 0u;
+        bool testOcclusion = (push.flags & meshletFlagOcclusion) != 0u && params.cullEnabled != 0u;
+        vec3 center = (inst.model * vec4(meshlet.center, 1.0)).xyz;
+        float radius = meshlet.radius * scale;
+        visible = 1u;
+        if (params.cullEnabled != 0u && !sphereInView(center, radius, view)) {
+            visible = 0u;
+            reason = meshletCulledFrustum;
+            atomicAdd(counts[meshletCounterFrustum], 1u);
+        } else if (testCone && backFacing(meshlet, center, radius, model, scale)) {
+            visible = 0u;
+            reason = meshletCulledCone;
+            atomicAdd(counts[meshletCounterCone], 1u);
+        } else if (testOcclusion && boxOccluded(center - vec3(radius), center + vec3(radius))) {
+            visible = 0u;
+            reason = meshletCulledOccluded;
+            atomicAdd(counts[meshletCounterOccluded], 1u);
+        }
+        if ((push.flags & meshletFlagClassify) != 0u) {
+            visible = (push.flags & meshletFlagHiddenOnly) != 0u ? (reason == meshletCulledOccluded ? 1u : 0u) : 1u;
+        }
+        atomicAdd(counts[meshletCounterTested], 1u);
+        if (visible != 0u) {
+            atomicAdd(counts[meshletCounterDrawn], 1u);
+            atomicAdd(counts[meshletCounterTriangles], meshletTriangleCount(meshlet));
+        }
+    }
+    survives[lid] = visible;
+    barrier();
+
+    // Ordered compaction: a survivor's place is the number of survivors before it.
+    uint place = 0u;
+    uint total = 0u;
+    for (uint i = 0; i < meshletsPerTask; i++) {
+        if (i < lid) {
+            place += survives[i];
+        }
+        total += survives[i];
+    }
+    if (visible != 0u) {
+        payload.meshlets[place] = meshletIndex;
+        payload.instances[place] = instanceIndex;
+        payload.reasons[place] = reason;
+    }
+    if (lid == 0u && (push.flags & meshletFlagCount) != 0u) {
+        uint base = view * meshletCountersPerView;
+        for (uint c = 0; c < meshletCountersPerView; c++) {
+            if (counts[c] != 0u) {
+                atomicAdd(meshletStats.data[base + c], counts[c]);
+            }
+        }
+    }
+    uint groups = (push.flags & meshletFlagSplit) != 0u ? total * 2u : total;
+    EmitMeshTasksEXT(groups, 1u, 1u);
+}

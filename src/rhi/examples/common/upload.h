@@ -38,11 +38,11 @@ public:
     UploadBatch(const UploadBatch&) = delete;
     UploadBatch& operator=(const UploadBatch&) = delete;
 
-    auto buffer(std::span<const std::byte> bytes, RhiBufferUsage usage) -> RhiBuffer* {
+    auto buffer(std::span<const std::byte> bytes, RhiBufferUsageFlags usage) -> RhiBuffer* {
         auto* src = stagingFor(bytes);
         RhiBufferDesc desc = {
             .size = bytes.size(),
-            .usage = usage | RhiBufferUsage::TransferDst,
+            .usage = usage | RhiBufferUsageFlags(RhiBufferUsage::TransferDst),
             .memory = RhiMemoryUsage::GpuOnly,
         };
         auto* dst = device.createBuffer(desc);

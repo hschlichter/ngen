@@ -396,12 +396,12 @@ auto ViewScene::allocSlot() -> uint32_t {
     if (auto slot = freeSlots.takeLowest()) {
         return *slot;
     }
-    drawn.meshInstances.push_back(RenderMeshInstance{.primFirst = false, .alive = false});
+    drawn.meshInstances.push_back(RenderMeshInstance{.alive = false});
     return (uint32_t) drawn.meshInstances.size() - 1;
 }
 
 auto ViewScene::freeSlot(uint32_t slot) -> void {
-    setSlot(slot, RenderMeshInstance{.primFirst = false, .alive = false});
+    setSlot(slot, RenderMeshInstance{.alive = false});
     freeSlots.insert(slot);
 }
 
@@ -729,7 +729,6 @@ auto ViewScene::resolveDraw(const std::string& meshAsset, const std::string& bou
         const auto* materialData = materialLibrary.get(handle);
         bool cuts = materialData != nullptr && materialData->cutout();
         out->cutout.push_back(cuts);
-        out->primHasCutout = out->primHasCutout || cuts;
     }
     std::ranges::sort(*uses);
     auto [last, end] = std::ranges::unique(*uses);
@@ -1313,7 +1312,6 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
             }
             const auto* meshData = meshLibrary.get(meshHandle);
             auto worldTransform = unitScale * world;
-            auto worldBounds = meshBoundsOf[meshHandle.index].transformed(worldTransform);
             auto prim = takePrim(path);
             node->prims.push_back(prim);
             if (assetsByPrim[prim - 1] != resolved->uses) {
@@ -1327,13 +1325,14 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                     .material = resolved->materials[sub],
                     .prim = prim,
                     .worldTransform = worldTransform,
-                    .worldBounds = worldBounds,
+                    // Its own submesh's box: each draw is culled apart from the prim's other submeshes.
+                    .worldBounds = submesh.bounds.transformed(worldTransform),
                     .indexOffset = submesh.indexOffset,
                     .indexCount = submesh.indexCount,
-                    .primFirst = (sub == 0),
+                    .meshletOffset = submesh.meshletOffset,
+                    .meshletCount = submesh.meshletCount,
                     .doubleSided = meshData->doubleSided,
                     .cutout = resolved->cutout[sub],
-                    .primHasCutout = resolved->primHasCutout,
                     .lodLevel = tagGroup != 0 ? tagLevel + 1 : spec.lodTag,
                     .lodDepth = tagGroup != 0 || spec.lodTag != 0 ? tagDepth : 0,
                     .lodGroup = tagGroup,

@@ -14,14 +14,8 @@ auto writeGpuCountersJson(FILE* f, const GpuCounters& counters) -> void {
         const auto& p = counters.passes[i];
         const auto& s = p.stats;
         std::fprintf(f,
-                     "    {\"name\": \"%s\", \"iaVertices\": %llu, \"iaPrimitives\": %llu, \"vertexInvocations\": %llu, \"clippingInvocations\": %llu, "
-                     "\"clippingPrimitives\": %llu, \"fragmentInvocations\": %llu, \"computeInvocations\": %llu}%s\n",
+                     "    {\"name\": \"%s\", \"fragmentInvocations\": %llu, \"computeInvocations\": %llu}%s\n",
                      p.name.c_str(),
-                     (unsigned long long) s.iaVertices,
-                     (unsigned long long) s.iaPrimitives,
-                     (unsigned long long) s.vertexInvocations,
-                     (unsigned long long) s.clippingInvocations,
-                     (unsigned long long) s.clippingPrimitives,
                      (unsigned long long) s.fragmentInvocations,
                      (unsigned long long) s.computeInvocations,
                      i + 1 < counters.passes.size() ? "," : "");

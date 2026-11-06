@@ -1,6 +1,8 @@
 #include "viewcommands.h"
 
 #include "culling.h"
+#include "drawlists.h"
+#include "renderconfig.h"
 #include "renderdoccapture.h"
 #include "renderer.h"
 #include "renderthread.h"
@@ -81,6 +83,33 @@ auto parseCapture(const std::string& args) -> std::expected<Json, std::string> {
     return params;
 }
 
+auto meshletCountsJson(const MeshletCounts& counts) -> Json {
+    return {
+        {"tested", counts.tested},
+        {"frustumCulled", counts.frustumCulled},
+        {"coneCulled", counts.coneCulled},
+        {"occluded", counts.occluded},
+        {"drawn", counts.drawn},
+        {"triangles", counts.triangles},
+    };
+}
+
+auto regionsJson(const CullResult& cull) -> Json {
+    auto regions = Json::array();
+    for (uint32_t region = 0; region < cull.regionDraws.size(); region++) {
+        if (cull.regionDraws[region] == 0) {
+            continue;
+        }
+        regions.push_back({
+            {"region", DrawLists::regionName(region)},
+            {"draws", cull.regionDraws[region]},
+            {"meshlets", region < cull.regionMeshlets.size() ? cull.regionMeshlets[region] : 0u},
+            {"instanceTriangles", cull.regionTriangles[region]},
+        });
+    }
+    return regions;
+}
+
 auto cullingRecord(const ViewContext& view) -> Json {
     const auto& cull = view.latestCull;
     auto cascades = Json::array();
@@ -89,16 +118,34 @@ auto cullingRecord(const ViewContext& view) -> Json {
             {"cascade", i},
             {"drawn", cull.cascadeDrawn[i]},
             {"culled", cull.cascadeCulled[i]},
+            {"instanceTriangles", cull.cascadeInstanceTriangles[i]},
             {"triangles", cull.cascadeTriangles[i]},
+            {"meshlets", meshletCountsJson(cull.cascadeMeshlets[i])},
         });
     }
     return {
         {"frame", cull.frame},
         {"instances", cull.instances},
-        {"camera", {{"drawn", cull.instances - cull.cameraCulled - cull.lodDropped}, {"culled", cull.cameraCulled}, {"triangles", cull.cameraTriangles}}},
+        {"camera",
+         {{"drawn", cull.cameraDrawn},
+          {"culled", cull.cameraCulled},
+          {"occluded", cull.occluded},
+          {"instanceTriangles", cull.cameraInstanceTriangles},
+          {"triangles", cull.cameraTriangles},
+          {"meshlets", meshletCountsJson(cull.cameraMeshlets)}}},
+        {"regions", regionsJson(cull)},
+        {"occlusion",
+         {{"ran", cull.occlusion},
+          {"enabled", renderconfig::cullingOcclusion.get()},
+          {"frozen", renderconfig::cullingFrozen.get()},
+          {"depthFrom", cull.occlusionCullCamera ? "culling camera" : "rendered camera"},
+          {"drawnFirst", cull.earlyDrawn},
+          {"drawnSecond", cull.lateDrawn},
+          {"occluded", cull.occluded}}},
         {"lodLevelNotDrawn", cull.lodDropped},
         {"regionOverflow", cull.regionOverflow},
         {"sceneTriangles", cull.sceneTriangles},
+        {"sceneMeshlets", cull.sceneMeshlets},
         {"cascades", cascades},
     };
 }
@@ -238,9 +285,12 @@ auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
     verbs.add("dump-gpuscene", "introspect.gpuscene", parseDir);
     verbs.add("renderdoc-capture", "renderdoc.capture", RpcVerbs::none);
 
-    records.add("culling", "GPU culling's latest readback: instances and triangles drawn and culled, per view", [&view](RpcResponder responder) {
-        responder.respond(cullingRecord(view));
-    });
+    records.add("culling",
+                "GPU culling's latest readback, per view: instances drawn and culled, meshlets tested and culled by frustum, cone and depth, triangles "
+                "drawn after meshlet culling (instanceTriangles: before it)",
+                [&view](RpcResponder responder) {
+                    responder.respond(cullingRecord(view));
+                });
     records.add("pipelines", "every pipeline the renderer registered: start-up or first use, state, shaders and their versions, the last error", [&view](RpcResponder responder) {
         responder.respond(pipelinesRecord(view));
     });

@@ -1,6 +1,6 @@
 // Render-LOD fades (src/renderer/README.md, "Render LOD"): while a group draws two levels inside an authored blend band, each pixel keeps
 // one of them by a 4x4 ordered (Bayer) pattern in screen space, the two levels' tests complementary, so every pixel is covered once. The
-// cull pass draws a fading group's instances in the cutout buckets; their vertex stage reads the group's state (lodCoverage, with the
+// cull pass draws a fading group's instances in the cutout buckets; their mesh shaders read the group's state (lodCoverage, with the
 // includer's `lodStates`, lodselect.comp's) and passes the coverage flat; the fragment stage, which defines LOD_FADE_FRAGMENT before
 // including this, discards what the pattern leaves out (lodFadedAway).
 
@@ -41,7 +41,7 @@ float lodCoverage(uint lodGroup, uint lodLevel) {
 const uint lodTagForced = 16u;
 const uint lodTagFallback = 32u;
 const uint lodTagFlash = 64u;
-// The tag's bits from 128 up: how many LOD roots the draw is under (gbuffer.vert adds it), at most 15 so the tag stays under 2048, which a
+// The tag's bits from 128 up: how many LOD roots the draw is under (gbuffer.mesh adds it), at most 15 so the tag stays under 2048, which a
 // 16-bit float holds exactly.
 const uint lodTagDepth = 128u;
 uint lodTag(uint lodGroup, uint lodLevel) {

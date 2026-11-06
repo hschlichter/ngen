@@ -14,11 +14,17 @@ auto DrawLists::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* q
     deletionQueue = queue;
     slots.assign(frameSlots, {});
     ensureCapacity(0, 0, 0);
+    ensureWorkCapacity(0, 0);
 }
 
 auto DrawLists::destroy() -> void {
+    if (history != nullptr) {
+        device->destroyBuffer(history);
+        history = nullptr;
+    }
     for (auto& slot : slots) {
-        for (auto* buffer : {slot.params, slot.visibility, slot.cullPlanes, slot.groupCounters, slot.groupOffsets, slot.commands, slot.counts, slot.readback, slot.commandsReadback}) {
+        for (auto* buffer :
+             {slot.params, slot.visibility, slot.cullPlanes, slot.groupCounters, slot.groupOffsets, slot.commands, slot.counts, slot.meshletStats, slot.regionWork, slot.workItems, slot.readback, slot.commandsReadback}) {
             if (buffer != nullptr) {
                 device->destroyBuffer(buffer);
             }
@@ -31,50 +37,41 @@ auto DrawLists::groupCountFor(uint32_t instanceCount) -> uint32_t {
     return std::max(1u, (instanceCount + groupSize - 1) / groupSize);
 }
 
-auto DrawLists::cameraBucketOf(const GpuInstance& instance) -> uint32_t {
+auto DrawLists::bucketOf(const GpuInstance& instance) -> uint32_t {
     if (!instance.alive) {
         return noBucket;
     }
     return bucket(instance.doubleSided, instance.cutout);
 }
 
-auto DrawLists::cascadeBucketOf(const GpuInstance& instance) -> uint32_t {
-    if (!instance.alive) {
-        return noBucket;
-    }
-    if (instance.primHasCutout) {
-        return bucket(instance.doubleSided, instance.cutout);
-    }
-    if (instance.primFirst) {
-        return bucket(instance.doubleSided, false);
-    }
-    return noBucket;
-}
-
 // An instance of a render-LOD group counts in its cutout bucket as well as its own: while its group fades, the cull pass draws it there.
 auto DrawLists::countInstance(const GpuInstance& instance, int delta) -> void {
-    bool mayFade = instance.lodGroup != 0;
-    auto count = [&](std::array<uint64_t, bucketCount>& buckets, uint32_t b) {
-        if (b == noBucket) {
-            return;
+    auto b = bucketOf(instance);
+    if (b == noBucket) {
+        return;
+    }
+    bool mayFade = instance.lodGroup != 0 && b < 2;
+    if (delta > 0) {
+        buckets[b] += 1;
+        if (mayFade) {
+            buckets[b + 2] += 1;
         }
-        buckets[b] += delta;
-        if (mayFade && b < 2) {
-            buckets[b + 2] += delta;
+        liveMeshletCount += instance.meshletCount;
+    } else {
+        buckets[b] -= 1;
+        if (mayFade) {
+            buckets[b + 2] -= 1;
         }
-    };
-    count(cameraBuckets, cameraBucketOf(instance));
-    count(cascadeBuckets, cascadeBucketOf(instance));
+        liveMeshletCount -= instance.meshletCount;
+    }
 }
 
 auto DrawLists::commandsNeeded() const -> uint64_t {
-    uint64_t camera = 0;
-    uint64_t cascade = 0;
+    uint64_t live = 0;
     for (uint32_t b = 0; b < bucketCount; b++) {
-        camera += cameraBuckets[b];
-        cascade += cascadeBuckets[b];
+        live += buckets[b];
     }
-    return camera + (cascade * maxShadowCascades);
+    return live * viewCount;
 }
 
 auto DrawLists::ensureCapacity(uint32_t instanceCount, uint64_t commandCount, uint64_t frame) -> bool {
@@ -95,9 +92,14 @@ auto DrawLists::ensureCapacity(uint32_t instanceCount, uint64_t commandCount, ui
     };
     if (!instancesFit) {
         capacity = std::max({instanceCount, capacity * 2, minCapacity});
+        retire(history);
+        // A new history is undefined until the culling clears it; until then occlusion treats nothing as seen.
+        history = device->createBuffer({.size = (uint64_t) capacity * sizeof(uint32_t), .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::GpuOnly, .debugName = "cull.history"});
+        historyAccess = FgAccessFlags::None;
+        historyFresh = true;
         auto groups = groupCountFor(capacity);
         for (auto& slot : slots) {
-            for (auto* buffer : {&slot.params, &slot.visibility, &slot.cullPlanes, &slot.groupCounters, &slot.groupOffsets, &slot.counts, &slot.readback}) {
+            for (auto* buffer : {&slot.params, &slot.visibility, &slot.cullPlanes, &slot.groupCounters, &slot.groupOffsets, &slot.counts, &slot.meshletStats, &slot.regionWork, &slot.readback}) {
                 retire(*buffer);
             }
             slot.params = device->createBuffer({.size = sizeof(CullParams), .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "cull.params"});
@@ -105,8 +107,11 @@ auto DrawLists::ensureCapacity(uint32_t instanceCount, uint64_t commandCount, ui
             slot.visibility = storage((uint64_t) capacity * sizeof(uint32_t), RhiBufferUsage::TransferSrc, "cull.visibility");
             slot.cullPlanes = storage((uint64_t) capacity * sizeof(uint32_t), {}, "cull.planes");
             slot.groupCounters = storage((uint64_t) groups * counterCount * sizeof(uint32_t), {}, "cull.groupcounters");
-            slot.groupOffsets = storage((uint64_t) groups * regionCount * sizeof(uint32_t), {}, "cull.groupoffsets");
+            // Per workgroup and region: where its draw records start, then where its work items start.
+            slot.groupOffsets = storage((uint64_t) groups * regionCount * 2 * sizeof(uint32_t), {}, "cull.groupoffsets");
             slot.counts = storage(counterCount * sizeof(uint32_t), RhiBufferUsage::Indirect | RhiBufferUsage::TransferSrc, "cull.counts");
+            slot.meshletStats = storage(meshletCounterCount * sizeof(uint32_t), RhiBufferUsage::TransferSrc, "cull.meshletstats");
+            slot.regionWork = storage(regionCount * sizeof(RegionWork), RhiBufferUsage::Indirect, "cull.regionwork");
             slot.readback = device->createBuffer({.size = readbackBytes(), .usage = RhiBufferUsage::TransferDst | RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::GpuToCpu, .debugName = "cull.readback"});
             slot.readbackMapped = device->mapBuffer(slot.readback);
             slot.pending = false;
@@ -119,32 +124,63 @@ auto DrawLists::ensureCapacity(uint32_t instanceCount, uint64_t commandCount, ui
             // The commands readback is made again at the new size when the render debugger next asks.
             retire(slot.commandsReadback);
             slot.commandsReadbackMapped = nullptr;
-            slot.commands = storage(commandBytes(), RhiBufferUsage::Indirect | RhiBufferUsage::TransferSrc, "cull.commands");
+            slot.commands = storage(commandBytes(), RhiBufferUsage::TransferSrc, "cull.commands");
             slot.pending = false;
         }
     }
     return true;
 }
 
-auto DrawLists::writeParams(uint32_t frameSlot, uint32_t instanceCount, const glm::mat4& cameraViewProj, std::span<const ShadowCascade> cascades, bool cullEnabled) -> uint32_t {
+auto DrawLists::ensureWorkCapacity(uint64_t items, uint64_t frame) -> bool {
+    // What the last readback couldn't hold: the frame drew without those meshlets, so grow past it.
+    auto wanted = std::max<uint64_t>(items, (uint64_t) workItemCapacity + latest.totals[counterWorkOverflow]);
+    if (slots[0].workItems != nullptr && wanted <= workItemCapacity) {
+        return false;
+    }
+    constexpr uint64_t minItems = 64 * 1024;
+    auto grown = std::max({wanted, (uint64_t) workItemCapacity * 2, minItems});
+    grown = std::min<uint64_t>(grown, device->limits().maxBufferBytes / sizeof(MeshletWorkItem));
+    workItemCapacity = (uint32_t) std::min<uint64_t>(grown, UINT32_MAX);
+    for (auto& slot : slots) {
+        deletionQueue->deferBuffer(frame, slot.workItems);
+        slot.workItems = device->createBuffer({
+            .size = (uint64_t) workItemCapacity * sizeof(MeshletWorkItem),
+            .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc,
+            .memory = RhiMemoryUsage::GpuOnly,
+            .debugName = "cull.workitems",
+        });
+    }
+    // The overflow is answered: don't grow for it again.
+    latest.totals[counterWorkOverflow] = 0;
+    return true;
+}
+
+auto DrawLists::writeParams(uint32_t frameSlot, uint32_t instanceCount, const glm::mat4& cameraViewProj, std::span<const ShadowCascade> cascades, bool cullEnabled, Occlusion occlusion)
+    -> uint32_t {
     CullParams params;
     params.instanceCount = instanceCount;
     params.viewCount = 1 + (uint32_t) std::min(cascades.size(), (size_t) maxShadowCascades);
     params.cullEnabled = cullEnabled ? 1 : 0;
     params.commandCapacity = (uint32_t) commandCapacity;
     params.groupCount = groupCountFor(instanceCount);
-    // The regions one after another, each as large as the instances that can land in it.
+    // The regions one after another, each as large as the instances of its bucket: every view sees an instance in the same bucket.
     uint32_t next = 0;
     for (uint32_t r = 0; r < regionCount; r++) {
-        auto view = r / bucketCount;
-        auto b = r % bucketCount;
-        auto size = (uint32_t) (view == 0 ? cameraBuckets[b] : cascadeBuckets[b]);
+        auto size = (uint32_t) buckets[r % bucketCount];
         frameOffsets[r] = next;
         frameCapacities[r] = size;
         params.regionOffsets[r] = next;
         next += size;
     }
     params.commandsUsed = next;
+    params.occlusion = occlusion.enabled ? 1 : 0;
+    params.hzbWidth = occlusion.hzbWidth;
+    params.hzbHeight = occlusion.hzbHeight;
+    params.workCapacity = workItemCapacity;
+    params.cameraViewProj = cameraViewProj;
+    // The culling camera's position: the point its view-projection maps to w = 0 with x = y = 0 (reversed-Z, no far plane: clip (0, 0, 1, 0)).
+    auto eye = glm::inverse(cameraViewProj) * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
+    params.cameraPosition = std::abs(eye.w) > 1e-12f ? glm::vec4(glm::vec3(eye) / eye.w, 1.0f) : glm::vec4(0.0f);
     // Normalized planes from Frustum::fromViewProj, tested per instance in instancecull.comp.
     for (uint32_t v = 0; v < params.viewCount; v++) {
         // The camera's projection is reversed-Z with no far plane; the cascades' are standard.
@@ -153,10 +189,18 @@ auto DrawLists::writeParams(uint32_t frameSlot, uint32_t instanceCount, const gl
             params.planes[(v * 6) + p] = frustum.planes[p];
         }
     }
+    // The late view culls as the camera does.
+    for (uint32_t p = 0; p < 6; p++) {
+        params.planes[(lateView * 6) + p] = params.planes[p];
+    }
     std::memcpy(slots[frameSlot].paramsMapped, &params, sizeof(params));
     slots[frameSlot].instanceCount = instanceCount;
     slots[frameSlot].viewCount = params.viewCount;
+    slots[frameSlot].occlusion = occlusion.enabled;
+    slots[frameSlot].occlusionCullCamera = occlusion.enabled && occlusion.cullCamera;
+    slots[frameSlot].workCapacity = workItemCapacity;
     slots[frameSlot].offsets = frameOffsets;
+    slots[frameSlot].capacities = frameCapacities;
     return params.groupCount;
 }
 
@@ -168,16 +212,35 @@ auto DrawLists::import(FrameGraph& fg, uint32_t frameSlot) -> Handles {
         .visibility = fg.importBuffer("cullVisibility", slot.visibility, {.size = (uint64_t) capacity * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}),
         .cullPlanes = fg.importBuffer("cullPlanes", slot.cullPlanes, {.size = (uint64_t) capacity * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}),
         .groupCounters = fg.importBuffer("cullGroupCounters", slot.groupCounters, {.size = (uint64_t) groups * counterCount * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}),
-        .groupOffsets = fg.importBuffer("cullGroupOffsets", slot.groupOffsets, {.size = (uint64_t) groups * regionCount * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}),
-        .commands = fg.importBuffer("drawCommands", slot.commands, {.size = commandBytes(), .usage = RhiBufferUsage::Storage | RhiBufferUsage::Indirect}),
+        .groupOffsets = fg.importBuffer("cullGroupOffsets", slot.groupOffsets, {.size = (uint64_t) groups * regionCount * 2 * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}),
+        .commands = fg.importBuffer("drawCommands", slot.commands, {.size = commandBytes(), .usage = RhiBufferUsage::Storage}),
         .counts = fg.importBuffer("drawCounts", slot.counts, {.size = counterCount * sizeof(uint32_t), .usage = RhiBufferUsage::Storage | RhiBufferUsage::Indirect}),
+        .meshletStats = fg.importBuffer("cullMeshletStats", slot.meshletStats, {.size = meshletCounterCount * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}),
         .readback = fg.importBuffer("cullReadback", slot.readback, {.size = readbackBytes(), .usage = RhiBufferUsage::TransferDst}),
+        .history = importHistory(fg),
+        .regionWork = fg.importBuffer("cullRegionWork", slot.regionWork, {.size = regionCount * sizeof(RegionWork), .usage = RhiBufferUsage::Storage | RhiBufferUsage::Indirect}),
+        .workItems = fg.importBuffer("cullWorkItems", slot.workItems, {.size = (uint64_t) workItemCapacity * sizeof(MeshletWorkItem), .usage = RhiBufferUsage::Storage}),
     };
+}
+
+auto DrawLists::importHistory(FrameGraph& fg) -> FgBufferHandle {
+    historyImport = fg.importBuffer("cullHistory", history, {.size = (uint64_t) capacity * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}, historyAccess);
+    historyImported = true;
+    return historyImport;
+}
+
+auto DrawLists::afterExecute(const FrameGraph& fg) -> void {
+    if (!historyImported) {
+        return;
+    }
+    historyAccess = fg.finalAccess(historyImport);
+    historyImported = false;
 }
 
 namespace {
 struct CullReadbackPassData {
     FgBufferHandle counts;
+    FgBufferHandle meshletStats;
     FgBufferHandle visibility;
     FgBufferHandle commands;
     FgBufferHandle readback;
@@ -201,6 +264,7 @@ auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t
     slot.readVisibility = readVisibility;
     slot.capturedCommands = captureCommands;
     RhiBufferCopy countsRegion = {.srcOffset = 0, .dstOffset = 0, .size = counterCount * sizeof(uint32_t)};
+    RhiBufferCopy meshletRegion = {.srcOffset = 0, .dstOffset = readbackMeshletOffset(), .size = meshletCounterCount * sizeof(uint32_t)};
     RhiBufferCopy visibilityRegion = {.srcOffset = 0, .dstOffset = readbackVisibilityOffset(), .size = std::max<uint64_t>(1, slot.instanceCount) * sizeof(uint32_t)};
     RhiBufferCopy commandsRegion = {.srcOffset = 0, .dstOffset = 0, .size = commandBytes()};
     FgBufferHandle commandsReadback;
@@ -211,6 +275,7 @@ auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t
         "CullReadback",
         [&](FrameGraphBuilder& builder, CullReadbackPassData& data) {
             data.counts = builder.read(handles.counts, FgAccessFlags::TransferSrc);
+            data.meshletStats = builder.read(handles.meshletStats, FgAccessFlags::TransferSrc);
             if (readVisibility) {
                 data.visibility = builder.read(handles.visibility, FgAccessFlags::TransferSrc);
             }
@@ -221,9 +286,10 @@ auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t
             data.readback = builder.write(handles.readback, FgAccessFlags::TransferDst);
             builder.setSideEffects(true);
         },
-        [countsRegion, visibilityRegion, commandsRegion, readVisibility, captureCommands](FrameGraphContext& ctx, const CullReadbackPassData& data) {
+        [countsRegion, meshletRegion, visibilityRegion, commandsRegion, readVisibility, captureCommands](FrameGraphContext& ctx, const CullReadbackPassData& data) {
             auto* cmd = ctx.cmd();
             cmd->copyBuffer(ctx.buffer(data.counts), ctx.buffer(data.readback), countsRegion);
+            cmd->copyBuffer(ctx.buffer(data.meshletStats), ctx.buffer(data.readback), meshletRegion);
             if (readVisibility) {
                 cmd->copyBuffer(ctx.buffer(data.visibility), ctx.buffer(data.readback), visibilityRegion);
             }
@@ -243,7 +309,14 @@ auto DrawLists::parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void {
     latest.frame = slotFrame;
     latest.instanceCount = slot.instanceCount;
     latest.viewCount = slot.viewCount;
+    latest.occlusion = slot.occlusion;
+    latest.occlusionCullCamera = slot.occlusionCullCamera;
     std::memcpy(latest.totals.data(), bytes, counterCount * sizeof(uint32_t));
+    std::memcpy(latest.meshletStats.data(), bytes + readbackMeshletOffset(), meshletCounterCount * sizeof(uint32_t));
+    // The frames in flight when the buffer grew report the overflow it grew for; only a frame built with the current buffer counts.
+    if (slot.workCapacity < workItemCapacity) {
+        latest.totals[counterWorkOverflow] = 0;
+    }
 
     // The visibility bits only when the frame asked for them (the culled overlay): at 2.4 million instances they cost milliseconds a frame.
     latest.viewBits.clear();
@@ -256,12 +329,12 @@ auto DrawLists::parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void {
     }
 
     latest.hasCommands = slot.capturedCommands && slot.commandsReadbackMapped != nullptr;
-    const auto* commands = static_cast<const RhiDrawIndexedIndirectCommand*>(slot.commandsReadbackMapped);
+    const auto* commands = static_cast<const DrawRecord*>(slot.commandsReadbackMapped);
     for (uint32_t r = 0; r < regionCount; r++) {
         latest.commands[r].clear();
         if (latest.hasCommands) {
-            // Each region at the offset the slot's frame laid it out at.
-            auto count = latest.totals[counterDraws + r];
+            // Each region at the offset the slot's frame laid it out at; what overflowed it was never written.
+            auto count = std::min(latest.totals[counterDraws + r], slot.capacities[r]);
             latest.commands[r].assign(commands + slot.offsets[r], commands + slot.offsets[r] + count);
         }
     }
@@ -277,6 +350,9 @@ auto DrawLists::slotBuffers(uint32_t frameSlot) const -> SlotBuffers {
         .groupOffsets = slot.groupOffsets,
         .commands = slot.commands,
         .counts = slot.counts,
+        .meshletStats = slot.meshletStats,
+        .regionWork = slot.regionWork,
+        .workItems = slot.workItems,
     };
 }
 
@@ -289,29 +365,32 @@ auto DrawLists::commandCount() const -> uint32_t {
 }
 
 auto DrawLists::report(FrameGraphContext& ctx, uint32_t region, std::span<const GpuInstance> instances) const -> void {
-    // Camera regions draw a submesh range; cascade regions the whole mesh from index 0, except for prims with a cutout submesh.
-    bool cascade = region >= bucketCount;
+    // Every region draws each instance's submesh.
     for (const auto& command : latest.commands[region]) {
-        auto m = command.firstInstance;
+        auto m = command.instance;
         if (m >= instances.size()) {
             continue;
         }
         const auto& inst = instances[m];
-        bool wholeMesh = cascade && !inst.primHasCutout;
         ctx.logDraw({
             .instance = m,
             .mesh = inst.mesh.index,
             .material = inst.material.index,
             .prim = inst.prim,
-            .indexOffset = wholeMesh ? 0 : inst.indexOffset,
-            .indexCount = command.indexCount,
+            .indexOffset = inst.indexOffset,
+            .indexCount = inst.indexCount,
+            .meshlets = command.meshletCount,
         });
     }
     ctx.addIndirectStats(drawsIn(region), primitivesIn(region));
 }
 
+auto DrawLists::drawRegion(RhiCommandBuffer* cmd, RhiBuffer* regionWork, uint32_t region) -> void {
+    cmd->drawMeshTasksIndirect(regionWork, (uint64_t) region * sizeof(RegionWork), 1, sizeof(RegionWork));
+}
+
 auto DrawLists::regionName(uint32_t region) -> const char* {
-    static constexpr std::array<const char*, 20> names = {
+    static constexpr std::array<const char*, 24> names = {
         "camera.single",
         "camera.double",
         "camera.single.cutout",
@@ -332,6 +411,10 @@ auto DrawLists::regionName(uint32_t region) -> const char* {
         "cascade3.double",
         "cascade3.single.cutout",
         "cascade3.double.cutout",
+        "camera.late.single",
+        "camera.late.double",
+        "camera.late.single.cutout",
+        "camera.late.double.cutout",
     };
     static_assert(names.size() == regionCount);
     return region < names.size() ? names[region] : "region.invalid";

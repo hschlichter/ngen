@@ -63,7 +63,7 @@ enum class RhiBufferUsage : uint32_t {
     Index = 1 << 3,
     Uniform = 1 << 4,
     Storage = 1 << 5,
-    Indirect = 1 << 6, // draw arguments and counts for drawIndexedIndirect*
+    Indirect = 1 << 6, // draw arguments and counts for drawIndexedIndirect* and drawMeshTasksIndirectCount
 };
 template <>
 struct RhiFlagEnum<RhiBufferUsage> : std::true_type {};
@@ -94,6 +94,8 @@ enum class RhiShaderStage : uint32_t {
     Fragment = 1 << 1,
     Compute = 1 << 2,
     Geometry = 1 << 3, // optional: RhiDeviceLimits::geometryShaders
+    Task = 1 << 4,     // mesh shading: required on every device
+    Mesh = 1 << 5,
 };
 template <>
 struct RhiFlagEnum<RhiShaderStage> : std::true_type {};
@@ -137,7 +139,8 @@ enum class RhiFormat {
     R32G32_SFLOAT,
     R32G32B32_SFLOAT,
     R32G32B32A32_SFLOAT,
-    R32_UINT, // integer colour attachment (ids); not filterable, not blittable
+    R32_UINT,   // integer colour attachment (ids); not filterable, not blittable
+    R32_SFLOAT, // one float channel: storage images (a depth pyramid)
     D32_SFLOAT,
     D24_UNORM_S8_UINT,  // optional on Vulkan; query supportsTextureFormat, or use D32_SFLOAT_S8_UINT
     D32_SFLOAT_S8_UINT, // Vulkan guarantees at least one of the two depth-stencil formats
@@ -258,7 +261,8 @@ enum class RhiBufferState {
     StorageWrite,
     TransferSrc,
     TransferDst,
-    IndirectRead, // read as draw arguments or a draw count
+    IndirectRead,        // read as draw arguments or a draw count
+    IndirectStorageRead, // both: draw arguments that shaders read too (a task shader reading its draw's words at gl_DrawID)
 };
 
 inline auto rhiStateName(RhiTextureState state) -> const char* {
@@ -303,6 +307,8 @@ inline auto rhiStateName(RhiBufferState state) -> const char* {
             return "TransferDst";
         case RhiBufferState::IndirectRead:
             return "IndirectRead";
+        case RhiBufferState::IndirectStorageRead:
+            return "IndirectStorageRead";
     }
     return "?";
 }
@@ -317,6 +323,16 @@ struct RhiDrawIndexedIndirectCommand {
     uint32_t firstInstance = 0;
 };
 static_assert(sizeof(RhiDrawIndexedIndirectCommand) == 20);
+
+// Arguments of one indirect mesh-task draw: the task workgroups to launch (the mesh workgroups without a task shader). Layout matches
+// VkDrawMeshTasksIndirectCommandEXT and D3D12_DISPATCH_MESH_ARGUMENTS. A command may be followed by the caller's own words: the stride
+// passed to drawMeshTasksIndirectCount says how far apart commands are.
+struct RhiDrawMeshTasksIndirectCommand {
+    uint32_t groupCountX = 0;
+    uint32_t groupCountY = 0;
+    uint32_t groupCountZ = 0;
+};
+static_assert(sizeof(RhiDrawMeshTasksIndirectCommand) == 12);
 
 struct RhiExtent2D {
     uint32_t width, height;
@@ -396,6 +412,10 @@ struct RhiDeviceLimits {
     bool geometryShaders = false;          // RhiGraphicsPipelineDesc::geometryShader allowed
     uint32_t maxPerStageSampledImages = 0; // upper bound for sampled-image array bindings, per shader stage
     uint64_t maxBufferBytes = 0;           // the largest buffer createBuffer can make: one allocation, one buffer
+    // Mesh shading (required): what one mesh workgroup may output, and the task payload's size in bytes.
+    uint32_t maxMeshOutputVertices = 0;
+    uint32_t maxMeshOutputPrimitives = 0;
+    uint32_t maxTaskPayloadSize = 0;
 };
 
 // Compiled shader bytecode in the backend's native format (SPIR-V for Vulkan,
@@ -596,10 +616,14 @@ struct RhiBlendState {
     RhiBlendOp alphaOp = RhiBlendOp::Add;
 };
 
+// A pipeline draws either with vertices (vertexShader, vertex input, topology) or with mesh shading (meshShader and an optional
+// taskShader; no vertex shader, the vertex input and topology are ignored, and it draws with drawMeshTasksIndirectCount).
 struct RhiGraphicsPipelineDesc {
     RhiShaderModule* vertexShader = nullptr;
     RhiShaderModule* fragmentShader = nullptr;
-    RhiShaderModule* geometryShader = nullptr;                     // optional; needs RhiDeviceLimits::geometryShaders
+    RhiShaderModule* geometryShader = nullptr; // optional; needs RhiDeviceLimits::geometryShaders
+    RhiShaderModule* taskShader = nullptr;     // optional with a mesh shader
+    RhiShaderModule* meshShader = nullptr;
     std::span<RhiDescriptorSetLayout* const> descriptorSetLayouts; // index in span = set index
     RhiPushConstantRange pushConstant;
     std::span<const RhiFormat> colorFormats;
@@ -623,12 +647,9 @@ struct RhiGpuZone {
 };
 
 // Work the GPU did between RhiCommandBuffer::beginPipelineStats/endPipelineStats.
+// No input-assembly, vertex shader or clipping counts: a query counting them may not be active while a mesh shader draws (Vulkan), and
+// mesh shading draws every scene mesh.
 struct RhiPipelineStats {
-    uint64_t iaVertices = 0;          // vertices read by input assembly
-    uint64_t iaPrimitives = 0;        // primitives assembled
-    uint64_t vertexInvocations = 0;   // vertex shader runs (post-transform cache hits don't run it)
-    uint64_t clippingInvocations = 0; // primitives entering clipping
-    uint64_t clippingPrimitives = 0;  // primitives leaving clipping (after clipping and culling)
     uint64_t fragmentInvocations = 0; // fragment shader runs, including helper lanes the driver counts
     uint64_t computeInvocations = 0;  // compute shader invocations
 };
@@ -655,6 +676,8 @@ struct RhiDescriptorWrite {
     uint64_t bufferRange = 0;
     RhiTexture* texture = nullptr;
     RhiSampler* sampler = nullptr;
+    // A StorageImage of a texture with mips names one level: a storage view covers a single mip. Ignored for other types, which see every level.
+    uint32_t mipLevel = 0;
 };
 
 class RhiCommandBuffer;

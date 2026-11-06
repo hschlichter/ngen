@@ -43,7 +43,13 @@ struct RenderSnapshot {
     bool showBufferOverlay = false;
     bool showShadowOverlay = false;
     bool antiAliasing = true;
-    bool depthPrepass = false; // off by default: costs more than it saves without heavy overdraw
+    bool depthPrepass = false; // off by default: costs more than it saves without heavy overdraw; occlusion runs it anyway
+    // Two-phase occlusion culling of the camera's instances and meshlets against a depth pyramid (DepthPyramid): runs the depth prepass
+    // in two phases. Skipped while culling is off.
+    bool occlusion = true;
+    // The culling camera isn't the rendered one (a debug camera rendering while the main camera culls, a frozen culling frustum): occlusion's
+    // depth is drawn from the culling camera into a depth buffer of its own, and the geometry pass draws without the prepass's Equal test.
+    bool cullCameraSeparate = false;
     SamplerSettings sampler;
 
     // GPU culling inputs: the camera frustum to cull against (live,

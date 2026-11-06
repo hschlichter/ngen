@@ -9,7 +9,7 @@
 // The scene pack types, separate from their reader and writer (scenepack.h) so that code built as C++20, the USD packer among it, can
 // fill them: OpenUSD's headers don't compile as C++23, and the reader uses std::expected.
 
-inline constexpr uint32_t scenePackFormatVersion = 4;
+inline constexpr uint32_t scenePackFormatVersion = 5;
 inline constexpr size_t scenePackHeaderSize = 32;
 
 enum class ScenePackKind : uint32_t {
@@ -101,17 +101,40 @@ struct PackVertex {
 };
 
 // A range of the index buffer drawn with one material: a GeomSubset's faces, or the mesh's faces outside every subset (`subsetPath` empty).
-// The material is the binding the engine resolves for the subset, or for the mesh.
+// The material is the binding the engine resolves for the subset, or for the mesh. Its meshlets are a range of the mesh's, built from its
+// faces alone, so a meshlet never mixes materials.
 struct PackSubmesh {
     uint32_t indexOffset = 0;
     uint32_t indexCount = 0;
     std::string subsetPath;
+    uint32_t meshletOffset = 0;
+    uint32_t meshletCount = 0;
 };
 
+// At most this many vertices and triangles per meshlet: one mesh shader workgroup of 64 threads draws one meshlet.
+inline constexpr uint32_t meshletMaxVertices = 64;
+inline constexpr uint32_t meshletMaxTriangles = 124;
+
+// A small piece of a submesh, drawn and culled as one: up to meshletMaxVertices vertices and meshletMaxTriangles triangles, with bounds.
+struct PackMeshlet {
+    uint32_t vertexOffset = 0;   // into MeshPack::meshletVertices
+    uint32_t triangleOffset = 0; // into MeshPack::meshletTriangles
+    uint32_t vertexCount = 0;
+    uint32_t triangleCount = 0;
+    std::array<float, 3> center = {0.0f, 0.0f, 0.0f}; // bounding sphere, in the mesh's space
+    float radius = 0.0f;
+    std::array<int8_t, 4> cone = {0, 0, 0, 0}; // normal cone: axis xyz and cos(half angle), each as value * 127 (a cutoff of 127 culls nothing)
+};
+
+// Vertices are welded (bitwise-identical vertices merged). The meshlets index the vertices through meshletVertices (mesh vertex indices) and
+// draw meshletTriangles: one word per triangle, three meshlet-local vertex indices in its low three bytes.
 struct MeshPack {
     std::vector<PackVertex> vertices;
     std::vector<uint32_t> indices;
     std::vector<PackSubmesh> submeshes;
+    std::vector<PackMeshlet> meshlets;
+    std::vector<uint32_t> meshletVertices;
+    std::vector<uint32_t> meshletTriangles;
     bool doubleSided = false;
     bool hasDisplayColor = false; // the colour a prim with no material shows (primvars:displayColor)
     std::array<float, 3> displayColor = {1.0f, 1.0f, 1.0f};

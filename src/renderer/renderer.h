@@ -6,6 +6,7 @@
 #include "debugviewpass.h"
 #include "deletionqueue.h"
 #include "depthprepass.h"
+#include "depthpyramid.h"
 #include "framegraph.h"
 #include "framegraphdebug.h"
 #include "geometrypass.h"
@@ -138,6 +139,7 @@ private:
     // recreated with the swapchain. Immediate destroy is safe there because recreate waits idle.
     static constexpr RhiFormat depthFormat = RhiFormat::D32_SFLOAT;
     RhiTexture* depthTexture = nullptr;
+    RhiTexture* cullDepthTexture = nullptr; // occlusion culling's depth from the culling camera, while it isn't the rendered one
     auto recreateDepthTexture(RhiExtent2D extent) -> void;
     std::vector<RhiBuffer*> uniformBuffers;
     std::vector<void*> uniformBuffersMapped;
@@ -164,10 +166,12 @@ private:
 
     // Scene GPU tables and the GPU-driven draw path (src/renderer/README.md).
     GpuScene gpuScene;
-    DrawLists drawLists;                 // indirect commands per view and bucket, written by instanceCullPass
+    DrawLists drawLists;                 // per view and bucket, the draw records and meshlet work items, written by instanceCullPass
     InstanceCullPass instanceCullPass;   // GPU culling
     LodGroups lodGroups;                 // render-LOD groups: their table, the levels picked, the residency of their levels
     LodSelectPass lodSelectPass;         // the level each group draws, before culling
+    DepthPyramid depthPyramid;           // occlusion culling's depth pyramid, built from the prepass's first phase and from its whole depth
+    bool lastOcclusion = false;          // whether the frame last built ran occlusion culling, for the culling result
     uint32_t reportedRegionOverflow = 0; // the region overflow last traced (CullRegionOverflow), so a steady one is said once
     CaptureService captureService;       // resource captures at pass boundaries
     std::vector<RenderExtension*> extensions;

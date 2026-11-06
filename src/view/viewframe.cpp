@@ -405,6 +405,8 @@ auto ViewFrame::buildSnapshot() -> RenderSnapshot {
         .showShadowOverlay = renderconfig::shadowOverlay.get(),
         .antiAliasing = renderconfig::antiAliasing.get(),
         .depthPrepass = renderconfig::depthPrepass.get(),
+        .occlusion = renderconfig::cullingOcclusion.get(),
+        .cullCameraSeparate = cameras.cull != cameras.view || cullState.frozenActive,
         .sampler = renderconfig::samplerSettings(),
         .cullEnabled = cullState.enabled,
         .cullViewProj = cullViewProj,

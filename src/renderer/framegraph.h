@@ -141,6 +141,7 @@ private:
     bool pipelineStatsEnabled = false;
     std::vector<FgDrawRecord> draws;
     const char* executingPass = "";
+    uint32_t executingPassIndex = 0;
     uint32_t executingPassDraws = 0;
     uint32_t executingIndirectDraws = 0; // FrameGraphContext::addIndirectStats
     uint64_t executingIndirectPrimitives = 0;

@@ -35,6 +35,7 @@ extern config::Float shadowDistance;
 // culling.cpp
 extern config::Bool cullingEnabled;
 extern config::Bool cullingFrozen;
+extern config::Bool cullingOcclusion; // render.culling.occlusion: two-phase occlusion culling against the depth pyramid
 // gpuscene.cpp
 extern config::Int uploadBudgetMiB;
 extern config::Int geometryLimitMiB;

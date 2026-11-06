@@ -1,6 +1,7 @@
 #include "debugviewwindow.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <format>
 #include <imgui.h>
@@ -110,6 +111,30 @@ auto drawDebugViewWindow(DebugView view, DebugViewWindowState& state, const std:
                                "level prefetched, blue a resident level requested, violet refused by a budget, orange late, red a hole; grey under no "
                                "streaming root. Yellow stripes: the root breaks the authoring contract.");
             break;
+        case DebugView::Meshlet:
+            ImGui::TextWrapped("One hashed colour per meshlet (up to 64 vertices and 124 triangles, drawn and culled as one), by its index in its "
+                               "mesh and the instance.");
+            break;
+        case DebugView::MeshletCull:
+            ImGui::TextWrapped("Every meshlet of the camera's drawn instances, coloured by the test the task shader culls it with; magenta also "
+                               "shows through what hides it. Freeze the frustum in the Culling window and move away to see frustum and cone "
+                               "culling. Instances culled whole aren't drawn (Show culled outlines them).");
+            ImGui::ColorButton("##kept", ImVec4(0.2f, 0.8f, 0.25f, 1.0f), ImGuiColorEditFlags_NoTooltip, ImVec2(14, 14));
+            ImGui::SameLine();
+            ImGui::TextUnformatted("kept");
+            ImGui::SameLine();
+            ImGui::ColorButton("##frustum", ImVec4(0.95f, 0.2f, 0.15f, 1.0f), ImGuiColorEditFlags_NoTooltip, ImVec2(14, 14));
+            ImGui::SameLine();
+            ImGui::TextUnformatted("frustum");
+            ImGui::SameLine();
+            ImGui::ColorButton("##cone", ImVec4(0.2f, 0.4f, 1.0f, 1.0f), ImGuiColorEditFlags_NoTooltip, ImVec2(14, 14));
+            ImGui::SameLine();
+            ImGui::TextUnformatted("cone");
+            ImGui::SameLine();
+            ImGui::ColorButton("##depth", ImVec4(1.0f, 0.2f, 0.9f, 1.0f), ImGuiColorEditFlags_NoTooltip, ImVec2(14, 14));
+            ImGui::SameLine();
+            ImGui::TextUnformatted("depth");
+            break;
         default:
             ImGui::TextWrapped("One hashed colour per ID; neighbouring IDs get unrelated colours.");
             break;
@@ -146,6 +171,13 @@ auto drawDebugViewWindow(DebugView view, DebugViewWindowState& state, const std:
                         ImGui::Text("streaming root slot %u", id - 1);
                     }
                     break;
+                case DebugView::MeshletCull: {
+                    static constexpr std::array<const char*, 4> reasons = {"kept", "culled by the frustum", "culled by the normal cone", "hidden by depth"};
+                    auto instance = (uint32_t) v.y;
+                    ImGui::Text("meshlet %u of its mesh: %s", (uint32_t) v.z, reasons[std::min<uint32_t>(id, 3)]);
+                    ImGui::Text("instance %u  %s", instance, instancePath(instance).c_str());
+                    break;
+                }
                 default:
                     ImGui::ColorButton("##id", ImGui::ColorConvertU32ToFloat4(idColor(id)), ImGuiColorEditFlags_NoTooltip, ImVec2(14, 14));
                     ImGui::SameLine();
@@ -155,8 +187,10 @@ auto drawDebugViewWindow(DebugView view, DebugViewWindowState& state, const std:
                         ImGui::Text("mesh table entry %u", id);
                     } else if (view == DebugView::MaterialId) {
                         ImGui::Text("material table entry %u", id);
+                    } else if (view == DebugView::Meshlet) {
+                        ImGui::Text("meshlet %u of its mesh, instance %u  %s", id, (uint32_t) v.y, instancePath((uint32_t) v.y).c_str());
                     } else {
-                        ImGui::Text("triangle %u of its draw", id);
+                        ImGui::Text("triangle %u of its mesh's meshlets (meshlet * 124 + triangle)", id);
                     }
                     break;
             }

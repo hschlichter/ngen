@@ -35,6 +35,9 @@ public:
     // Null when VK_EXT_debug_utils is not enabled; labels become no-ops.
     PFN_vkCmdBeginDebugUtilsLabelEXT beginLabelFn = nullptr;
     PFN_vkCmdEndDebugUtilsLabelEXT endLabelFn = nullptr;
+    // VK_EXT_mesh_shader's draw, from the device.
+    PFN_vkCmdDrawMeshTasksIndirectCountEXT drawMeshTasksIndirectCountFn = nullptr;
+    PFN_vkCmdDrawMeshTasksIndirectEXT drawMeshTasksIndirectFn = nullptr;
 
     auto begin() -> void override;
     auto end() -> void override;
@@ -72,6 +75,8 @@ public:
     auto drawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) -> void override;
     auto drawIndexedIndirect(RhiBuffer* commands, uint64_t offset, uint32_t drawCount) -> void override;
     auto drawIndexedIndirectCount(RhiBuffer* commands, uint64_t offset, RhiBuffer* count, uint64_t countOffset, uint32_t maxDrawCount) -> void override;
+    auto drawMeshTasksIndirectCount(RhiBuffer* commands, uint64_t offset, uint32_t stride, RhiBuffer* count, uint64_t countOffset, uint32_t maxDrawCount) -> void override;
+    auto drawMeshTasksIndirect(RhiBuffer* commands, uint64_t offset, uint32_t drawCount, uint32_t stride) -> void override;
     auto dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) -> void override;
 
     auto setCommandLog(bool enabled) -> void override { logging = enabled; }

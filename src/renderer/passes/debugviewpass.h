@@ -19,8 +19,9 @@ struct DebugViewPassData {
     FgTextureHandle lit;   // the lit image, read by the streaming view, which lays its colours over it
 };
 
-// Viewport debug views: draws the camera's indirect commands again through a geometry
-// shader, writing one raw value per pixel, then colours the values in a compute pass.
+// Viewport debug views: draws the camera's regions again through the task and mesh shaders, writing one raw value per pixel, then colours
+// the values in a compute pass. The meshlet culling view draws every meshlet of the camera's drawn instances with the test that would cull
+// it, into a depth buffer of its own, then the meshlets the depth pyramid hides again where they lie behind it (an x-ray).
 // Only added to the graph while a view is on, and once its pipelines are ready: they are registered for first use, so their shaders are
 // requested the first time a view is turned on, and the lit image shows until they have arrived.
 class DebugViewPass {
@@ -44,6 +45,8 @@ public:
         DrawLists::Handles drawHandles,
         const GpuScene& scene,
         RhiDescriptorSet* geometrySet,
+        FgTextureHandle hzb,
+        bool occlusion,
         std::span<const uint32_t> streamingStates,
         FgTextureHandle litHandle) -> const DebugViewPassData&;
 
@@ -57,6 +60,10 @@ private:
     // [doubleSided]: depth-tested views, and the overdraw view (no depth, additive).
     PipelineHandle pipelines[2] = {};
     PipelineHandle overdrawPipelines[2] = {};
+    // [doubleSided]: the meshlet culling view, writing its own depth, and its x-ray (only what lies behind that depth).
+    PipelineHandle classifyPipelines[2] = {};
+    PipelineHandle xrayPipelines[2] = {};
+    RhiFormat depthTargetFormat = RhiFormat::Undefined;
     RhiDescriptorSetLayout* resolveLayout = nullptr;
     PipelineHandle resolvePipeline;
     RhiDescriptorPool* resolvePool = nullptr;

@@ -26,9 +26,11 @@ class GeometryPass {
 public:
     auto init(RhiDevice* device, PipelineRegistry& pipelines, RhiExtent2D extent, RhiFormat depthFormat) -> bool;
 
-    // Set 0, one set per frame slot: 0 view UBO, 1 material
-    // texture array (GpuScene::maxTextures), 2 instance buffer, 3 material table.
-    static auto descriptorBindings() -> std::array<RhiDescriptorBinding, 5>;
+    // Set 0, one set per frame slot, for every mesh pass: 0 view UBO, 1 material texture array (GpuScene::maxTextures), 2 instance buffer,
+    // 3 material table, 4-9 the geometry pool (vertices, positions, meshlets, meshlet vertices, meshlet triangles, mesh table), 10-12 the
+    // slot's meshlet work items, culling parameters and meshlet counts, 13 the depth pyramid, 14 the slot's region draws, 15 the render-LOD
+    // state (shaders/meshlet.glsl).
+    static auto descriptorBindings() -> std::array<RhiDescriptorBinding, 16>;
     auto destroy(RhiDevice* device) -> void;
 
     auto addPass(
@@ -41,7 +43,9 @@ public:
         DrawLists::Handles drawHandles,
         const GpuScene& scene,
         RhiDescriptorSet* descriptorSet,
-        bool depthPrepassed) -> const GeometryPassData&;
+        bool depthPrepassed,
+        FgTextureHandle hzb,
+        bool occlusion) -> const GeometryPassData&;
 
     auto normalFormat() const -> RhiFormat { return normalTargetFormat; }
 

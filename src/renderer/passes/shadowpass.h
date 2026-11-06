@@ -22,19 +22,13 @@ struct ShadowPassData {
 
 class ShadowPass {
 public:
-    // The cutout pipelines use the geometry pass's set layout: instances, material table and textures.
-    auto init(RhiDevice* device, PipelineRegistry& pipelines, RhiExtent2D extent, RhiFormat depthFormat, RhiDescriptorSetLayout* geometrySetLayout) -> bool;
-    auto destroy(RhiDevice* device) -> void;
-
-    // Points the pass's descriptor set at the instance buffer. Called whenever the buffer is
-    // (re)created; the old set may still be bound by frames in flight, so it is freed through
-    // the deletion queue at `frame`.
-    auto bindInstanceBuffer(RhiDevice* device, RhiBuffer* instanceBuffer, DeletionQueue& deletionQueue, uint64_t frame) -> void;
+    // Every pipeline uses the geometry pass's set layout: the scene tables and the geometry pool the task and mesh shaders read.
+    auto init(PipelineRegistry& pipelines, RhiFormat depthFormat, RhiDescriptorSetLayout* geometrySetLayout) -> bool;
 
     // One atlas texture of atlasExtent; each cascade draws into its tile with its own
     // viewport, scissor and light matrix. Cascade c draws DrawLists::cascadeRegion(c, *)
-    // indirectly; its cutout buckets discard where the opacity is below the threshold
-    // (shadowcutout.vert, cutout.frag) and bind the geometry set.
+    // indirectly, its meshlets culled against the cascade (meshlet.task); its cutout buckets discard where the opacity is below the
+    // threshold (shadowcutout.mesh, cutout.frag).
     auto addPass(
         FrameGraph& fg,
         RhiExtent2D atlasExtent,
@@ -45,15 +39,13 @@ public:
         const DrawLists& lists,
         DrawLists::Handles drawHandles,
         const GpuScene& scene,
-        RhiDescriptorSet* geometrySet) -> const ShadowPassData&;
+        RhiDescriptorSet* geometrySet,
+        FgTextureHandle hzb) -> const ShadowPassData&;
 
     // Whether its pipelines have been created; until then the frame leaves the pass out.
     auto ready() -> bool;
 
 private:
-    RhiDescriptorSetLayout* descSetLayout = nullptr; // binding 0: instance buffer
-    RhiDescriptorPool* descPool = nullptr;
-    RhiDescriptorSet* descSet = nullptr;
     PipelineRegistry* registry = nullptr;
     // By bucket (DrawLists::bucket): single-sided, double-sided, then the same two cutout.
     std::array<PipelineHandle, DrawLists::bucketCount> pipelines = {};

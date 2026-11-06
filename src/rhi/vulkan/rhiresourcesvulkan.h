@@ -2,6 +2,7 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include "rhitypes.h"
 
@@ -20,6 +21,7 @@ struct RhiTextureVulkan : public RhiTexture {
     VkImage image = VK_NULL_HANDLE;
     VkDeviceMemory memory = VK_NULL_HANDLE;
     VkImageView view = VK_NULL_HANDLE;
+    std::vector<VkImageView> mipViews; // one per level, for a storage texture with mips
     VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
     uint32_t mipLevels = 1;
     uint32_t arrayLayers = 1;

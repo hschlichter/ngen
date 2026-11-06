@@ -1,0 +1,35 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+#extension GL_GOOGLE_include_directive : require
+
+// The shadow pass: one meshlet the task shader kept, positions only, into the cascade the push constants name.
+
+layout(local_size_x = 64) in;
+layout(triangles, max_vertices = 64, max_primitives = 124) out;
+
+#include "meshlet.glsl"
+
+layout(push_constant) uniform Push {
+    uint region;
+    uint flags;
+    uint pad0;
+    uint pad1;
+    mat4 lightViewProj;
+} push;
+
+void main() {
+    MeshletDraw draw = meshletDraw(gl_WorkGroupID.x);
+    Meshlet meshlet = draw.meshlet;
+    uint vertexCount = meshletVertexCount(meshlet);
+    uint triangleCount = meshletTriangleCount(meshlet);
+    SetMeshOutputsEXT(vertexCount, triangleCount);
+    mat4 model = instances.data[draw.instance].model;
+    uint v = gl_LocalInvocationIndex;
+    if (v < vertexCount) {
+        uint vertex = meshletPoolVertex(meshlet, draw.vertexOffset, v);
+        gl_MeshVerticesEXT[v].gl_Position = push.lightViewProj * model * vec4(poolPosition(vertex), 1.0);
+    }
+    for (uint t = v; t < triangleCount; t += 64u) {
+        gl_PrimitiveTriangleIndicesEXT[t] = meshletTriangle(meshlet, t);
+    }
+}

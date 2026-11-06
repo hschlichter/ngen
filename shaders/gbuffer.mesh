@@ -1,0 +1,61 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+#extension GL_GOOGLE_include_directive : require
+
+// The geometry pass: one meshlet the task shader kept (meshlet.task), its vertices pulled from the pool, to gbuffer.frag or
+// gbuffercutout.frag. The position expression is depth.mesh's, with gl_Position invariant in both, so the Equal test after the depth
+// prepass matches exactly.
+
+layout(local_size_x = 64) in;
+layout(triangles, max_vertices = 64, max_primitives = 124) out;
+
+#include "meshlet.glsl"
+
+layout(push_constant) uniform Push {
+    uint region;
+    uint flags;
+} push;
+
+out gl_MeshPerVertexEXT {
+    invariant vec4 gl_Position;
+} gl_MeshVerticesEXT[];
+
+layout(location = 0) out vec3 fragNormal[];
+layout(location = 1) out vec3 fragColor[];
+layout(location = 2) out vec2 fragTexCoord[];
+// One value per draw, so the fragment shader's array index is dynamically uniform.
+layout(location = 3) flat out uint fragTexture[];
+// The instance index + 1, for the id target picking reads; 0 is nothing drawn.
+layout(location = 4) flat out uint fragInstance[];
+// x: the drawn LOD level + 1 of the LOD root above it, 0 under none, with its group's flags (lodTag), and 128 per LOD root it is under
+// (lodTagDepth, at most 15), for the LOD level view and the pop flash. y: the instance's share of a render-LOD fade as float bits
+// (lodfade.glsl), for the cutout fragment shader; lodCoverAll when its group isn't fading. One output, so the opaque fragment shader, which
+// reads only x, still takes it.
+layout(location = 5) flat out uvec2 fragLod[];
+
+void main() {
+    MeshletDraw draw = meshletDraw(gl_WorkGroupID.x);
+    Meshlet meshlet = draw.meshlet;
+    uint vertexCount = meshletVertexCount(meshlet);
+    uint triangleCount = meshletTriangleCount(meshlet);
+    SetMeshOutputsEXT(vertexCount, triangleCount);
+    Instance inst = instances.data[draw.instance];
+    uint depth = min(inst.lodDepth, 15u);
+    uvec2 lod = uvec2(lodTag(inst.lodGroup, inst.lodLevel) + (depth * lodTagDepth), floatBitsToUint(lodCoverage(inst.lodGroup, inst.lodLevel)));
+    uint v = gl_LocalInvocationIndex;
+    if (v < vertexCount) {
+        uint vertex = meshletPoolVertex(meshlet, draw.vertexOffset, v);
+        gl_MeshVerticesEXT[v].gl_Position = ubo.proj * ubo.view * inst.model * vec4(poolPosition(vertex), 1.0);
+        // Normalise here: the model matrix carries the scene's unit scale (Kitchen_set is authored in cm under a 0.01 root scale), which
+        // would leave a near-zero normal for the fragment shader's zero guard to swallow.
+        fragNormal[v] = normalize(mat3(inst.model) * poolNormal(vertex));
+        fragColor[v] = poolColor(vertex);
+        fragTexCoord[v] = poolTexCoord(vertex);
+        fragTexture[v] = materials.data[inst.material].baseColorTexture;
+        fragInstance[v] = draw.instance + 1u;
+        fragLod[v] = lod;
+    }
+    for (uint t = v; t < triangleCount; t += 64u) {
+        gl_PrimitiveTriangleIndicesEXT[t] = meshletTriangle(meshlet, t);
+    }
+}

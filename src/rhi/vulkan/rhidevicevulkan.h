@@ -93,6 +93,8 @@ private:
     PFN_vkCmdEndDebugUtilsLabelEXT cmdEndLabelFn = nullptr;
     VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;
     PFN_vkGetCalibratedTimestampsEXT getCalibratedTimestampsFn = nullptr;
+    PFN_vkCmdDrawMeshTasksIndirectCountEXT cmdDrawMeshTasksIndirectCountFn = nullptr;
+    PFN_vkCmdDrawMeshTasksIndirectEXT cmdDrawMeshTasksIndirectFn = nullptr;
     uint64_t validationErrors = 0;
     uint64_t validationWarnings = 0;
     RhiMessageHandler messageHandler;

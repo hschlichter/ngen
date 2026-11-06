@@ -63,11 +63,6 @@ public:
 
     auto wantsQuit() const -> bool { return requestQuit; }
 
-    auto setShadowCullStats(uint32_t cascades, const std::array<uint32_t, maxShadowCascades>& culled, const std::array<uint32_t, maxShadowCascades>& drawn) -> void {
-        shadowCascadeCount = cascades;
-        shadowCulledStats = culled;
-        shadowDrawnStats = drawn;
-    }
     auto introspection() -> IntrospectionFlags& { return introspectionFlags; }
     // Whether any open window reads the render debug snapshot.
     auto wantsRenderDebug() const -> bool { return showRenderDebugWindow || introspectionFlags.memory; }
@@ -81,17 +76,8 @@ public:
     auto onCaptureResult(CaptureResult result) -> void;
     auto wantsCounters() const -> bool { return introspectionFlags.counters; }
     auto onCounters(GpuCounters counters) -> void { addCountersFrame(countersState, std::move(counters)); }
-    // This frame's cull result, for the Culling window.
-    auto setCullStats(uint32_t instances, uint32_t culled, uint32_t lodLevelNotDrawn) -> void {
-        cullStatInstances = instances;
-        cullStatCulled = culled;
-        cullStatLodNotDrawn = lodLevelNotDrawn;
-    }
-    auto setCullTriangles(uint64_t drawn, uint64_t scene, const std::array<uint64_t, maxShadowCascades>& cascades) -> void {
-        cullTrianglesDrawn = drawn;
-        cullTrianglesScene = scene;
-        cullTrianglesCascades = cascades;
-    }
+    // The latest cull result, for the Culling and GPU Scene windows; the caller keeps it alive while the UI draws.
+    auto setCullResult(const CullResult& cull) -> void { cullResult = &cull; }
 
     // The windows view.window opens and closes, by name.
     static constexpr std::array windowNames = {"memory", "capture", "framedebugger", "gpuscene", "counters", "shaders", "culling", "assets", "lod", "streaming", "camera", "renderdebug", "framegraph", "performance", "config"};
@@ -166,9 +152,6 @@ private:
     bool deselectRequested = false;
     bool selectParentRequested = false;
     bool frameSelectedRequested = false;
-    uint32_t shadowCascadeCount = 0;
-    std::array<uint32_t, maxShadowCascades> shadowCulledStats = {};
-    std::array<uint32_t, maxShadowCascades> shadowDrawnStats = {};
     bool showFrameGraphWindow = false;
     bool showPerformanceWindow = false;
     bool showConfigWindow = false;
@@ -187,12 +170,8 @@ private:
     CameraModesState* cameraModes = nullptr;
     std::vector<AssetLogEntry> assetLog;
     AssetsWindowState assetsState;
-    uint32_t cullStatInstances = 0;
-    uint32_t cullStatCulled = 0;
-    uint32_t cullStatLodNotDrawn = 0;
-    uint64_t cullTrianglesDrawn = 0;
-    uint64_t cullTrianglesScene = 0;
-    std::array<uint64_t, maxShadowCascades> cullTrianglesCascades = {};
+    static inline const CullResult noCullResult = {};
+    const CullResult* cullResult = &noCullResult;
     bool screenshotRequested = false;
     CameraWindowState cameraState;
     bool requestQuit = false;

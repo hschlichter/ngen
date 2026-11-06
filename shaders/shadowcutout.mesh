@@ -1,0 +1,44 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+#extension GL_GOOGLE_include_directive : require
+
+// The shadow pass for cutout materials and render-LOD fades: shadow.mesh's positions, and the texture coordinate, material and fade
+// coverage cutout.frag tests with.
+
+layout(local_size_x = 64) in;
+layout(triangles, max_vertices = 64, max_primitives = 124) out;
+
+#include "meshlet.glsl"
+
+layout(push_constant) uniform Push {
+    uint region;
+    uint flags;
+    uint pad0;
+    uint pad1;
+    mat4 lightViewProj;
+} push;
+
+layout(location = 0) out vec2 fragTexCoord[];
+layout(location = 1) flat out uint fragMaterial[];
+layout(location = 2) flat out float fragLodCoverage[]; // its share of a render-LOD fade (lodfade.glsl)
+
+void main() {
+    MeshletDraw draw = meshletDraw(gl_WorkGroupID.x);
+    Meshlet meshlet = draw.meshlet;
+    uint vertexCount = meshletVertexCount(meshlet);
+    uint triangleCount = meshletTriangleCount(meshlet);
+    SetMeshOutputsEXT(vertexCount, triangleCount);
+    Instance inst = instances.data[draw.instance];
+    float coverage = lodCoverage(inst.lodGroup, inst.lodLevel);
+    uint v = gl_LocalInvocationIndex;
+    if (v < vertexCount) {
+        uint vertex = meshletPoolVertex(meshlet, draw.vertexOffset, v);
+        gl_MeshVerticesEXT[v].gl_Position = push.lightViewProj * inst.model * vec4(poolPosition(vertex), 1.0);
+        fragTexCoord[v] = poolTexCoord(vertex);
+        fragMaterial[v] = inst.material;
+        fragLodCoverage[v] = coverage;
+    }
+    for (uint t = v; t < triangleCount; t += 64u) {
+        gl_PrimitiveTriangleIndicesEXT[t] = meshletTriangle(meshlet, t);
+    }
+}

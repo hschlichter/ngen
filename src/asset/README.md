@@ -183,7 +183,12 @@ file alone, so editing one file of a scene repacks that file only. A file's outp
   `/asset{shape=a}Geom`), nested variants included.
 - **A mesh pack per prim the file defines with geometry** (`def` of `Mesh`, `Cube`, `Sphere`, `Cylinder`, `Cone`): triangles with position,
   normal, display colour and texture coordinate (44-byte vertices), 32-bit indices, one submesh per `GeomSubset` (named by its path) and one for
-  the faces no subset holds, the display colour, and the bounds.
+  the faces no subset holds, the display colour, and the bounds. Then its meshlets (`pack/meshletbuild.cpp`, meshoptimizer, vendored): vertices
+  bitwise identical are welded into one, each submesh's triangles are ordered for the vertex cache and split into meshlets of at most 64 vertices
+  and 124 triangles, a submesh's meshlets a range of the mesh's, so a meshlet never mixes materials. A meshlet is its vertex indices (32-bit,
+  into the mesh's vertices), its triangles (one 32-bit word each, three meshlet-local indices in the low bytes), a bounding sphere and a normal
+  cone (meshoptimizer's 8-bit form). The renderer draws and culls meshlets (`src/renderer/README.md`, "Meshlets"); the index list stays for the
+  CPU. Both steps are deterministic: a repack gives the same bytes.
 - **A material pack per `def Material` that authors its surface network** (one whose network comes through a reference to another file is that file's
   material, as a mesh is the file's that defines it): the `UsdPreviewSurface` diffuse colour, constant or from a `UsdUVTexture` file (an asset id),
   and, when `opacityThreshold > 0`, the cutout opacity: a constant, or the texture file with the channel its output names (`r`, `g`, `b`, `a`; `rgb`

@@ -29,58 +29,69 @@ struct GpuInstance {
     MaterialHandle material;
     uint32_t prim = 0; // PrimHandle::index of the source prim, for the render debugger
     glm::mat4 transform;
-    // Submesh index range within the mesh; primFirst marks the first submesh
-    // instance of a prim (the shadow pass draws the whole mesh once, there).
+    // Submesh index range and meshlets within the mesh: every view draws the submesh.
     uint32_t indexOffset = 0;
     uint32_t indexCount = 0;
-    bool primFirst = true;
-    bool doubleSided = false;   // drawn with the cull-none pipeline
-    bool cutout = false;        // its material is cutout: drawn by the cutout pipelines
-    bool primHasCutout = false; // some submesh of its prim is cutout: the shadow pass draws the prim per submesh
-    uint32_t lodLevel = 0;      // the drawn level + 1 of the LOD root above it, 0 under none (RenderMeshInstance::lodLevel)
-    uint32_t lodDepth = 0;      // RenderMeshInstance::lodDepth, for the LOD level view
-    uint32_t lodGroup = 0;      // its render-LOD group + 1, 0 for none: drawn while the group picks lodLevel - 1
-    uint32_t streamRoot = 0;    // RenderMeshInstance::streamRoot, for the streaming view
-    AABB worldBounds;           // culling input; invalid bounds are always visible
-    bool alive = false;         // a dead slot is never drawn
+    uint32_t meshletOffset = 0;
+    uint32_t meshletCount = 0;
+    bool doubleSided = false; // drawn with the cull-none pipeline
+    bool cutout = false;      // its material is cutout: drawn by the cutout pipelines
+    uint32_t lodLevel = 0;    // the drawn level + 1 of the LOD root above it, 0 under none (RenderMeshInstance::lodLevel)
+    uint32_t lodDepth = 0;    // RenderMeshInstance::lodDepth, for the LOD level view
+    uint32_t lodGroup = 0;    // its render-LOD group + 1, 0 for none: drawn while the group picks lodLevel - 1
+    uint32_t streamRoot = 0;  // RenderMeshInstance::streamRoot, for the streaming view
+    AABB worldBounds;         // culling input, the submesh's box; invalid bounds are always visible
+    bool alive = false;       // a dead slot is never drawn
 };
 
-// Flags in GpuInstanceRecord::flags.
-inline constexpr uint32_t gpuInstancePrimFirst = 1u << 0;     // drawn by the shadow pass (whole mesh)
-inline constexpr uint32_t gpuInstanceDoubleSided = 1u << 1;   // cull-none pipeline bucket
-inline constexpr uint32_t gpuInstanceBoundsValid = 1u << 2;   // otherwise never culled
-inline constexpr uint32_t gpuInstanceCutout = 1u << 3;        // cutout pipeline bucket
-inline constexpr uint32_t gpuInstancePrimHasCutout = 1u << 4; // shadows per submesh, not whole mesh
+// Flags in GpuInstanceRecord::flags (bits 0 and 4 are free).
+inline constexpr uint32_t gpuInstanceDoubleSided = 1u << 1; // cull-none pipeline bucket
+inline constexpr uint32_t gpuInstanceBoundsValid = 1u << 2; // otherwise never culled
+inline constexpr uint32_t gpuInstanceCutout = 1u << 3;      // cutout pipeline bucket
 
-// One entry of the GPU instance buffer (std430, stride 128), read by the vertex shaders at
-// gl_InstanceIndex and by the culling passes. material indexes
-// the material table, mesh the mesh table; indexOffset/indexCount are the submesh range.
+// One entry of the GPU instance buffer (std430, stride 128), read by the task and mesh shaders
+// and by the culling passes. material indexes the material table, mesh the mesh table;
+// meshletOffset (from the mesh's first) and meshletCount are the submesh's meshlets, triangleCount its triangles.
 struct GpuInstanceRecord {
     glm::mat4 model;
     uint32_t material = 0;
     uint32_t mesh = 0;
-    uint32_t indexOffset = 0;
-    uint32_t indexCount = 0;
+    uint32_t meshletOffset = 0;
+    uint32_t meshletCount = 0;
     glm::vec3 boundsMin = glm::vec3(0.0f);
     uint32_t flags = 0;
     glm::vec3 boundsMax = glm::vec3(0.0f);
     uint32_t lodLevel = 0;   // GpuInstance::lodLevel, for the LOD level view and the level test
     uint32_t lodGroup = 0;   // GpuInstance::lodGroup
+    uint32_t triangleCount = 0;
     uint32_t streamRoot = 0; // GpuInstance::streamRoot
     uint32_t lodDepth = 0;   // GpuInstance::lodDepth, for the LOD level view
-    uint32_t pad = 0;
 };
 static_assert(sizeof(GpuInstanceRecord) == 128);
 
-// One entry of the GPU mesh table (std430, stride 16), indexed by MeshHandle::index. A mesh
-// outside the pool has indexCount 0 and is never drawn.
+// One entry of the GPU mesh table (std430, stride 16), indexed by MeshHandle::index: where the mesh's vertices start in the vertex pools
+// (its meshlet vertex indices are mesh-local) and its meshlets in the meshlet pool. A mesh outside the pool has meshletCount 0 and is
+// never drawn.
 struct GpuMeshEntry {
-    uint32_t firstIndex = 0;
     int32_t vertexOffset = 0;
-    uint32_t indexCount = 0;
-    uint32_t pad = 0;
+    uint32_t meshletOffset = 0;
+    uint32_t meshletCount = 0;
+    uint32_t triangleCount = 0;
 };
 static_assert(sizeof(GpuMeshEntry) == 16);
+
+// One meshlet in the meshlet pool (std430, stride 32): its vertices at vertexOffset in the meshlet vertex pool and its triangles at
+// triangleOffset in the meshlet triangle pool (both pool positions), the counts as vertexCount | triangleCount << 8, the normal cone as four
+// signed bytes (axis xyz, cutoff), and the bounding sphere in the mesh's space.
+struct GpuMeshlet {
+    uint32_t vertexOffset = 0;
+    uint32_t triangleOffset = 0;
+    uint32_t counts = 0;
+    uint32_t cone = 0;
+    glm::vec3 center = glm::vec3(0.0f);
+    float radius = 0.0f;
+};
+static_assert(sizeof(GpuMeshlet) == 32);
 
 // One entry of the GPU material table (std430, stride 16). baseColorTexture is a slot in
 // the geometry descriptor set's texture array; slot 0 is the fallback texture. A cutout
@@ -106,14 +117,19 @@ struct GpuTextureInfo {
     uint32_t slot = 0; // in the texture array once every level has been copied; 0 until then
 };
 
-// Where one mesh lives in the geometry pool. Indices are mesh-local; vertexOffset rebases them.
+// Where one mesh lives in the geometry pool: its vertices, its meshlets, and their vertex indices and triangles. Meshlet vertex indices
+// are mesh-local; vertexOffset rebases them.
 struct GpuMeshRange {
-    uint32_t firstIndex = 0;
     int32_t vertexOffset = 0;
-    uint32_t indexCount = 0;
     uint32_t vertexCount = 0;
-    uint64_t vertexBytes = 0; // Vertex plus position stream, for the render debugger
-    uint64_t indexBytes = 0;
+    uint32_t meshletOffset = 0;
+    uint32_t meshletCount = 0;
+    uint32_t meshletVertexOffset = 0;
+    uint32_t meshletVertexCount = 0;
+    uint32_t meshletTriangleOffset = 0;
+    uint32_t meshletTriangleCount = 0; // the mesh's triangles
+    uint64_t vertexBytes = 0;          // Vertex plus position stream, for the render debugger
+    uint64_t meshletBytes = 0;         // meshlets, their vertex indices and triangles
 };
 
 // Ranges in a buffer measured in elements: first fit from a free list, neighbouring free ranges merged.
@@ -134,7 +150,8 @@ private:
 };
 
 // The scene's GPU tables (src/renderer/README.md), changed incrementally:
-//   - the geometry pool: a range per mesh, allocated and freed as meshes come and go, grown by copy;
+//   - the geometry pool: vertices, positions, meshlets, meshlet vertex indices and triangles; ranges per mesh, allocated and freed as
+//     meshes come and go, grown by copy;
 //   - the mesh table, indexed by MeshHandle::index, for the culling passes;
 //   - textures, one per TextureHandle, with a slot in the texture array once uploaded;
 //   - the material table, an entry per MaterialHandle;
@@ -176,14 +193,18 @@ public:
     // The most each geometry pool buffer may take, in bytes; 0 for the device's largest buffer. A mesh that doesn't fit waits, undrawn,
     // until meshes removed make room for it.
     auto setGeometryLimit(uint64_t bytes) -> void { geometryLimit = bytes; }
+    // Each pool in its elements: what the limit holds, the capacity, what is used.
+    struct PoolUse {
+        uint64_t limit = 0;
+        uint64_t capacity = 0;
+        uint64_t used = 0;
+    };
     struct GeometryPoolStats {
-        uint64_t limitBytes = 0;  // per pool buffer
-        uint64_t vertexLimit = 0; // the vertices and indices the limit holds
-        uint64_t indexLimit = 0;
-        uint64_t vertexCapacity = 0;
-        uint64_t vertexUsed = 0;
-        uint64_t indexCapacity = 0;
-        uint64_t indexUsed = 0;
+        uint64_t limitBytes = 0; // per pool buffer
+        PoolUse vertices;
+        PoolUse meshlets;
+        PoolUse meshletVertices;
+        PoolUse meshletTriangles;
         uint32_t waitingMeshes = 0; // didn't fit, not drawn
         uint64_t waitingBytes = 0;
     };
@@ -208,7 +229,12 @@ public:
     auto meshRanges() const -> const std::unordered_map<uint32_t, GpuMeshRange>& { return meshes; }
     auto vertexBuffer() const -> RhiBuffer* { return vertices.buffer; }
     auto positionBuffer() const -> RhiBuffer* { return positions.buffer; }
-    auto indexBuffer() const -> RhiBuffer* { return indices.buffer; }
+    auto meshletBuffer() const -> RhiBuffer* { return meshlets.buffer; }
+    auto meshletBytes() const -> uint64_t { return meshlets.bytes(); }
+    auto meshletVertexBuffer() const -> RhiBuffer* { return meshletVertices.buffer; }
+    auto meshletTriangleBuffer() const -> RhiBuffer* { return meshletTriangles.buffer; }
+    // Every pool buffer exists once a mesh has been placed: before that the mesh passes have nothing to draw.
+    auto poolReady() const -> bool;
     auto meshTableBuffer() const -> RhiBuffer* { return meshTable.buffer; }
     auto meshTableBytes() const -> uint64_t { return meshTable.bytes(); }
     auto poolVertexCapacity() const -> uint64_t { return vertexRanges.capacity(); }
@@ -257,7 +283,9 @@ private:
         enum class Kind : uint8_t {
             MeshVertices,
             MeshPositions,
-            MeshIndices,
+            MeshMeshlets,
+            MeshMeshletVertices,
+            MeshMeshletTriangles,
             MeshEntry,
             MaterialEntry,
             TextureLevel,
@@ -271,7 +299,18 @@ private:
     // Grows `target` to at least `bytes`, doubling, never past `maxBytes`. False when it didn't grow: it was big enough, or the bigger
     // buffer couldn't be made.
     auto ensureCapacity(GrowableBuffer& target, uint64_t bytes, uint64_t maxBytes = UINT64_MAX) -> bool;
-    auto growPool(uint64_t vertexCount, uint64_t indexCount) -> void;
+    // The pool's parts, each a range allocator over its buffers.
+    enum class Pool : uint8_t {
+        Vertices, // the vertex and position buffers, which share ranges
+        Meshlets,
+        MeshletVertices,
+        MeshletTriangles,
+    };
+    auto growPool(Pool pool, uint64_t count) -> void;
+    // A range of `count` elements in a pool, growing it within the limit; nullopt when it doesn't fit.
+    auto allocateIn(Pool pool, uint64_t count) -> std::optional<uint64_t>;
+    auto rangesOf(Pool pool) -> PoolAllocator&;
+    auto poolBuffers() -> std::array<GrowableBuffer*, 7>;
     // Ranges for a mesh in the pool, growing it within the limit, and its uploads queued; false when it doesn't fit.
     auto placeMesh(MeshHandle handle, const std::shared_ptr<const MeshDesc>& mesh) -> bool;
     // The waiting meshes that fit now, in arrival order.
@@ -297,10 +336,14 @@ private:
     // Geometry pool and mesh table
     GrowableBuffer vertices;
     GrowableBuffer positions;
-    GrowableBuffer indices;
+    GrowableBuffer meshlets;
+    GrowableBuffer meshletVertices;
+    GrowableBuffer meshletTriangles;
     GrowableBuffer meshTable;
     PoolAllocator vertexRanges;
-    PoolAllocator indexRanges;
+    PoolAllocator meshletRanges;
+    PoolAllocator meshletVertexRanges;
+    PoolAllocator meshletTriangleRanges;
     uint64_t geometryLimit = 0;
     // Meshes that didn't fit in the pool, in arrival order; placed when removals make room.
     struct WaitingMesh {

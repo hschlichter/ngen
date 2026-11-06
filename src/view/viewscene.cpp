@@ -1451,12 +1451,26 @@ auto ViewScene::mesh(const std::string& meshAsset) -> MeshHandle {
     desc->indices = meshPack.indices;
     desc->doubleSided = meshPack.doubleSided;
     for (const auto& submesh : meshPack.submeshes) {
-        desc->submeshes.push_back({.indexOffset = submesh.indexOffset, .indexCount = submesh.indexCount});
+        desc->submeshes.push_back({.indexOffset = submesh.indexOffset, .indexCount = submesh.indexCount, .meshletOffset = submesh.meshletOffset, .meshletCount = submesh.meshletCount});
     }
-    auto bounds = meshBounds(*desc);
-    auto handle = meshLibrary.add(meshAsset, std::move(desc));
-    meshBoundsOf[handle.index] = bounds;
-    return handle;
+    for (auto& submesh : desc->submeshes) {
+        submesh.bounds = subsetBounds(*desc, submesh);
+    }
+    desc->meshlets.reserve(meshPack.meshlets.size());
+    for (const auto& meshlet : meshPack.meshlets) {
+        desc->meshlets.push_back({
+            .vertexOffset = meshlet.vertexOffset,
+            .triangleOffset = meshlet.triangleOffset,
+            .vertexCount = meshlet.vertexCount,
+            .triangleCount = meshlet.triangleCount,
+            .center = meshlet.center,
+            .radius = meshlet.radius,
+            .cone = meshlet.cone,
+        });
+    }
+    desc->meshletVertices = meshPack.meshletVertices;
+    desc->meshletTriangles = meshPack.meshletTriangles;
+    return meshLibrary.add(meshAsset, std::move(desc));
 }
 
 // A material: by its asset id; with no material bound, one per display colour, shared (a scene of many unbound prims would otherwise
@@ -1611,7 +1625,6 @@ auto ViewScene::collectChanges(const std::set<uint32_t>& meshesNow, const std::s
     for (auto handle : dropMeshes) {
         auto asset = meshLibrary.key(handle);
         meshLibrary.remove(handle);
-        meshBoundsOf.erase(handle.index);
         if (!meshLibrary.find(asset) && !meshNames.contains(asset)) {
             if (auto pack = meshPacks.find(asset); pack != meshPacks.end()) {
                 releaseMeshPack(pack->second);

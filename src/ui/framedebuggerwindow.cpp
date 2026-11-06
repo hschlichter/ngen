@@ -7,6 +7,7 @@
 #include <cstring>
 #include <format>
 #include <imgui.h>
+#include <vector>
 
 namespace {
 
@@ -170,42 +171,43 @@ auto drawDraws(const FrameDebugPass& pass, FrameDebuggerState& state, const std:
         return;
     }
     ImGui::TextDisabled("Draw commands and counts captured on frame %llu.", (unsigned long long) commands->second.frame);
+    // The camera's passes draw its regions and, with occlusion, the late phase's; the shadow pass the cascades'.
     bool camera = pass.name != "ShadowPass";
-    uint32_t firstRegion = camera ? 0 : DrawLists::bucketCount;
-    uint32_t lastRegion = camera ? DrawLists::bucketCount : DrawLists::regionCount;
+    std::vector<uint32_t> passRegions;
+    for (uint32_t region = 0; region < DrawLists::regionCount; region++) {
+        auto view = region / DrawLists::bucketCount;
+        bool cameraRegion = view == 0 || view == DrawLists::lateView;
+        if (cameraRegion == camera) {
+            passRegions.push_back(region);
+        }
+    }
     const auto& bytes = *commands->second.bytes;
-    auto capacity = (uint32_t) (bytes.size() / sizeof(RhiDrawIndexedIndirectCommand) / DrawLists::regionCount);
-    for (uint32_t region = firstRegion; region < lastRegion; region++) {
+    auto capacity = (uint32_t) (bytes.size() / sizeof(DrawRecord) / DrawLists::regionCount);
+    for (auto region : passRegions) {
         uint32_t count = 0;
         std::memcpy(&count, counts->second.bytes->data() + (DrawLists::countOffset(region)), sizeof(uint32_t));
         if (!ImGui::TreeNode(std::format("region {} ({}): {} draws", region, regionName(region), count).c_str())) {
             continue;
         }
         auto flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY;
-        if (ImGui::BeginTable("##draws", 6, flags, ImVec2(0.0f, 260.0f))) {
+        if (ImGui::BeginTable("##draws", 4, flags, ImVec2(0.0f, 260.0f))) {
             ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 40.0f);
             ImGui::TableSetupColumn("Prim");
             ImGui::TableSetupColumn("Instance", ImGuiTableColumnFlags_WidthFixed, 70.0f);
-            ImGui::TableSetupColumn("Triangles", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-            ImGui::TableSetupColumn("firstIndex", ImGuiTableColumnFlags_WidthFixed, 90.0f);
-            ImGui::TableSetupColumn("vertexOffset", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+            ImGui::TableSetupColumn("Meshlets", ImGuiTableColumnFlags_WidthFixed, 110.0f);
             ImGui::TableHeadersRow();
             for (uint32_t i = 0; i < count && i < capacity; i++) {
-                RhiDrawIndexedIndirectCommand command;
+                DrawRecord command;
                 std::memcpy(&command, bytes.data() + (((size_t) region * capacity + i) * sizeof(command)), sizeof(command));
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
                 ImGui::Text("%u", i);
                 ImGui::TableSetColumnIndex(1);
-                ImGui::TextUnformatted(primPathOfInstance(command.firstInstance).c_str());
+                ImGui::TextUnformatted(primPathOfInstance(command.instance).c_str());
                 ImGui::TableSetColumnIndex(2);
-                ImGui::Text("%u", command.firstInstance);
+                ImGui::Text("%u", command.instance);
                 ImGui::TableSetColumnIndex(3);
-                ImGui::Text("%u", command.indexCount / 3);
-                ImGui::TableSetColumnIndex(4);
-                ImGui::Text("%u", command.firstIndex);
-                ImGui::TableSetColumnIndex(5);
-                ImGui::Text("%d", command.vertexOffset);
+                ImGui::Text("%u", command.meshletCount);
             }
             ImGui::EndTable();
         }

@@ -1,6 +1,7 @@
 #include "usdpacker.h"
 
 #include "assetid.h"
+#include "meshletbuild.h"
 #include "primshapemesh.h"
 
 #include <pxr/base/gf/matrix4d.h>
@@ -771,6 +772,8 @@ auto packMesh(const UsdPrim& prim, MeshPack& mesh) -> bool {
     if (!shapeMesh(prim, mesh) && !polygonMesh(prim, mesh)) {
         return false;
     }
+    weldMesh(mesh);
+    buildMeshlets(mesh);
     VtArray<GfVec3f> displayColors;
     if (UsdGeomGprim(prim).GetDisplayColorAttr().Get(&displayColors) && !displayColors.empty()) {
         mesh.hasDisplayColor = true;

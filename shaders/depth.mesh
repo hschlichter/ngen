@@ -1,0 +1,42 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+#extension GL_GOOGLE_include_directive : require
+
+// The depth prepass: one meshlet the task shader kept, positions only. gbuffer.mesh's position expression, with gl_Position invariant in
+// both, so the geometry pass's Equal test matches exactly; with meshletFlagCullCamera, the culling camera's, for occlusion culling's depth.
+
+layout(local_size_x = 64) in;
+layout(triangles, max_vertices = 64, max_primitives = 124) out;
+
+#include "meshlet.glsl"
+
+layout(push_constant) uniform Push {
+    uint region;
+    uint flags;
+} push;
+
+out gl_MeshPerVertexEXT {
+    invariant vec4 gl_Position;
+} gl_MeshVerticesEXT[];
+
+void main() {
+    MeshletDraw draw = meshletDraw(gl_WorkGroupID.x);
+    Meshlet meshlet = draw.meshlet;
+    uint vertexCount = meshletVertexCount(meshlet);
+    uint triangleCount = meshletTriangleCount(meshlet);
+    SetMeshOutputsEXT(vertexCount, triangleCount);
+    mat4 model = instances.data[draw.instance].model;
+    uint v = gl_LocalInvocationIndex;
+    if (v < vertexCount) {
+        uint vertex = meshletPoolVertex(meshlet, draw.vertexOffset, v);
+        // From the culling camera, into a depth of its own, while it isn't the rendered one; otherwise gbuffer.mesh's expression.
+        if ((push.flags & meshletFlagCullCamera) != 0u) {
+            gl_MeshVerticesEXT[v].gl_Position = ubo.cullViewProj * model * vec4(poolPosition(vertex), 1.0);
+        } else {
+            gl_MeshVerticesEXT[v].gl_Position = ubo.proj * ubo.view * model * vec4(poolPosition(vertex), 1.0);
+        }
+    }
+    for (uint t = v; t < triangleCount; t += 64u) {
+        gl_PrimitiveTriangleIndicesEXT[t] = meshletTriangle(meshlet, t);
+    }
+}
