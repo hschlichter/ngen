@@ -233,7 +233,8 @@ program can check.
   `RhiCommandStats` as commands are recorded.
 - **Object registry.** The device keeps every live allocation (for `allocations()`) and the writes of every descriptor
   set (for `describeDescriptorSet`); the resource structs keep their debug names.
-- **Swapchain.** FIFO present mode, an sRGB surface format when available; `recreate` rebuilds the images, which
+- **Swapchain.** FIFO present mode, an sRGB surface format (`B8G8R8A8_SRGB` or `R8G8B8A8_SRGB`, sRGB colour space) when the surface
+  offers one, else its first, so a window and a headless surface encode the same; `recreate` rebuilds the images, which
   invalidates earlier `image(i)` pointers.
 - **Validation.** Messages go to the message handler (stderr without one), prefixed `vulkan validation:`; errors and
   warnings are counted, and `validationErrorCount()` reports the errors.
@@ -317,12 +318,13 @@ VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json SDL_VIDEODRIVER=offscreen \
 ```
 
 Or, without installing anything, the exact package CI uses, from the Arch Linux Archive snapshot in `ARCH_SNAPSHOT`, extracted into a
-scratch folder with an ICD file that points at it:
+scratch folder with an ICD file that points at it. The version is the one the snapshot's `extra.db` lists (`tar -tzf extra.db | rg
+'^vulkan-swrast'`); it links the system's `libLLVM`, so the snapshot's LLVM major version has to be installed (`ldd` says when it isn't):
 
 ```sh
 dir=/tmp/lavapipe && mkdir -p $dir && cd $dir
 # Saved under a plain name: tar reads the epoch's ':' in the package's own name as host:path.
-curl -fL -o vulkan-swrast.pkg.tar.zst "https://archive.archlinux.org/repos/2026/10/02/extra/os/x86_64/vulkan-swrast-1:26.1.6-1-x86_64.pkg.tar.zst"
+curl -fL -o vulkan-swrast.pkg.tar.zst "https://archive.archlinux.org/repos/2026/10/02/extra/os/x86_64/vulkan-swrast-1:26.2.3-2-x86_64.pkg.tar.zst"
 tar --zstd -xf vulkan-swrast.pkg.tar.zst
 sed "s|\"library_path\": \"[^\"]*\"|\"library_path\": \"$dir/usr/lib/libvulkan_lvp.so\"|" \
   usr/share/vulkan/icd.d/lvp_icd.json > lvp_local.json

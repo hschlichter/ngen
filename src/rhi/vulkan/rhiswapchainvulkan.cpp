@@ -50,7 +50,16 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
         return std::unexpected(RhiError::Failed);
     }
 
+    // An sRGB format when the surface offers one, so what is written in linear colour is encoded for display the same in a window and
+    // headless; else the surface's first.
     auto format = formats[0];
+    for (const auto& candidate : formats) {
+        bool srgb = candidate.format == VK_FORMAT_B8G8R8A8_SRGB || candidate.format == VK_FORMAT_R8G8B8A8_SRGB;
+        if (srgb && candidate.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+            format = candidate;
+            break;
+        }
+    }
     rhiColorFormat = vkFormatToRhiFormat(format.format);
 
     ext = extent;
@@ -58,7 +67,7 @@ auto RhiSwapchainVulkan::init(VkPhysicalDevice physicalDevice, VkDevice device, 
     ext.width = std::min(ext.width, capabilities.maxImageExtent.width);
     ext.height = std::max(ext.height, capabilities.minImageExtent.height);
     ext.height = std::min(ext.height, capabilities.maxImageExtent.height);
-    rhiReport(messageHandler, RhiMessageSeverity::Info, std::format("swapchain extent: {}x{}", ext.width, ext.height));
+    rhiReport(messageHandler, RhiMessageSeverity::Info, std::format("swapchain extent: {}x{}, format {}", ext.width, ext.height, string_VkFormat(format.format)));
 
     imgCount = capabilities.minImageCount + 1;
     if (capabilities.maxImageCount > 0 && imgCount > capabilities.maxImageCount) {
