@@ -16,6 +16,7 @@ extern config::Bool bufferOverlay;
 extern config::Bool shadowOverlay;
 extern config::Vec3 ambientSky;
 extern config::Vec3 ambientGround;
+extern config::Bool skyOn; // render.sky.on: the dome light as sky and ambient
 // debugviewpass.cpp
 extern config::Enum debugView; // DebugView, by debugViewNames
 // renderer.cpp

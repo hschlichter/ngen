@@ -62,6 +62,8 @@ auto RhiDeviceVulkan::toVkFormat(RhiFormat format) -> VkFormat {
             return VK_FORMAT_R8G8_UNORM;
         case R16G16B16A16_SFLOAT:
             return VK_FORMAT_R16G16B16A16_SFLOAT;
+        case E5B9G9R9_UFLOAT:
+            return VK_FORMAT_E5B9G9R9_UFLOAT_PACK32;
         case D24_UNORM_S8_UINT:
             return VK_FORMAT_D24_UNORM_S8_UINT;
         case D32_SFLOAT_S8_UINT:

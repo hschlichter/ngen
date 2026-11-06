@@ -24,23 +24,24 @@
   <rect x="28" y="96" width="170" height="150" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
   <text x="44" y="122" class="h">Source files</text>
   <text x="44" y="146" class="t">USD layers and payloads</text>
-  <text x="44" y="166" class="t">textures (PNG, JPG)</text>
+  <text x="44" y="166" class="t">textures (PNG, JPG, EXR)</text>
   <text x="44" y="186" class="t">GLSL shaders</text>
   <text x="44" y="212" class="s">authored, never changed</text>
   <text x="44" y="228" class="s">by the engine</text>
 
   <!-- Asset server -->
-  <rect x="246" y="96" width="250" height="210" rx="10" fill="#fff7ed" stroke="#fb923c" stroke-width="1.5"/>
+  <rect x="246" y="96" width="250" height="227" rx="10" fill="#fff7ed" stroke="#fb923c" stroke-width="1.5"/>
   <text x="264" y="122" class="h mono">ngen-asset-server</text>
   <text x="264" y="146" class="t">packs on request, by asset id,</text>
   <text x="264" y="164" class="t">into a cache by content hash</text>
-  <rect x="264" y="178" width="214" height="78" rx="6" fill="#ffedd5"/>
+  <rect x="264" y="178" width="214" height="95" rx="6" fill="#ffedd5"/>
   <text x="276" y="198" class="s mono">ngen-packer-usd</text>
   <text x="276" y="215" class="s mono">ngen-packer-texture</text>
   <text x="276" y="232" class="s mono">ngen-packer-shader</text>
-  <text x="276" y="249" class="s mono">ngen-packer-copy</text>
-  <text x="264" y="280" class="t">notices source edits and</text>
-  <text x="264" y="297" class="t">tells the clients</text>
+  <text x="276" y="249" class="s mono">ngen-packer-exr</text>
+  <text x="276" y="266" class="s mono">ngen-packer-copy</text>
+  <text x="264" y="297" class="t">notices source edits and</text>
+  <text x="264" y="314" class="t">tells the clients</text>
 
   <line x1="198" y1="170" x2="242" y2="170" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
   <text x="203" y="160" class="edge">read</text>
@@ -89,7 +90,7 @@
   <line x1="198" y1="476" x2="242" y2="476" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
 
   <path d="M496,456 C600,456 640,440 660,400" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrowGrey)"/>
-  <path d="M370,424 L370,310" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrowGrey)"/>
+  <path d="M370,424 L370,327" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrowGrey)"/>
   <text x="512" y="490" class="edge">records · trace · methods</text>
   <text x="512" y="507" class="s">JSON-RPC, loopback TCP</text>
 

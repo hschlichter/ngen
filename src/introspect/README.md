@@ -26,6 +26,7 @@ records with `registerRpcRecords` (engine layer); the asset server answers the t
 | view | `lodtool`, `streamingtool` | the LOD and Streaming tools: the inspection of the root at or above the selection, and the tools' totals (the tools'; `src/tools/README.md`) |
 | view | `windows` | the UI's windows by name and whether each is open (the UI's) |
 | view | `scene` | layer stack, up axis and units, prims (instances expanded), prototypes, draws, lights, LOD levels set, point instancers and their points, prims with variant sets |
+| view | `environment` | the scene's sky: its dome light as authored (texture, format, pole axis, colour, intensity, exposure), whether its image is held and drawn, its irradiance's coefficients, and the light it casts facing up and facing down |
 | view | `instancers` | every PointInstancer reached while drawing: its points and those shown, its prototypes, the prims its points draw |
 | view | `variants` | every prim with variant sets reached while drawing: each set and the variant it composed to; per set, how many prims chose each variant |
 | view | `assets` | what the view asked the asset server for and received: totals, and per asset its state, packed or cached, size, request and arrival times and the server's time |

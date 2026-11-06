@@ -104,6 +104,11 @@ auto drawSceneTab(const RenderDebugSnapshot& s, const PrimPathOf& primPath, Rend
     } else {
         ImGui::Text("%u lights; no directional light, sun defaults to world up", s.lightCount);
     }
+    if (s.hasSky) {
+        ImGui::Text("Sky: the dome light's image, %s; mean radiance (%.3f %.3f %.3f) (the environment record has its light up and down)", s.skyDrawn ? "drawn and lighting" : "not drawn (loading, or render.sky.on off)", s.skyMeanRadiance.x, s.skyMeanRadiance.y, s.skyMeanRadiance.z);
+    } else {
+        ImGui::Text("Sky: none (no dome light); the clear colour and the hemisphere ambient (render.ambient.*)");
+    }
     ImGui::Separator();
 
     // Meshes, sortable.

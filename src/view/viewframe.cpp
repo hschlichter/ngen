@@ -373,6 +373,7 @@ auto ViewFrame::buildSnapshot() -> RenderSnapshot {
         .lodFlashFrames = (uint32_t) std::clamp(std::lround(0.5f / std::max(dt, 1e-4f)), 1L, 127L),
         .shadowSettings = renderconfig::shadowSettings(),
         .ambient = renderconfig::ambient(),
+        .sky = renderconfig::skyOn.get(),
         .cascadeCount = cascadeCount,
         .cascades = cascades,
         .cascadeCamera = &shadowCamera != cameras.view ? std::optional<std::pair<glm::vec3, glm::vec3>>({shadowCamera.position, shadowCamera.forward()}) : std::nullopt,

@@ -335,7 +335,7 @@ so early depth testing holds for everything else. The debug views discard in `de
 | `DepthPrepass` | Optional depth-only pass over the camera regions so the geometry pass can use an Equal depth test and shade each pixel once. `depthonly.vert` mirrors `gbuffer.vert`'s position expression with `invariant gl_Position`. |
 | `GeometryPass` | G-buffer: albedo (RGBA8, alpha carries the sampled mip level for the mip view), normals (RGBA16F), the instance id (`gbuffer.instance`, R32_UINT: instance index + 1, 0 where nothing is drawn), depth. Eight pipelines: opaque or cutout, cull back or none, Greater-with-write or Equal-without after the prepass. |
 | `DebugViewPass`, `DebugViewResolve` | Only while a debug view is on (`DebugView`): the camera regions drawn again through `debugview.vert/.geom/.frag` into an RGBA32F value target (`debugview.value`), then coloured by `debugview.comp` into `debugview.color`, which the blit takes instead of the AA result. The streaming view writes each draw's streaming root slot and colours it by that root's state (`StreamingRootState`), from `RenderSnapshot::streamingStates`, which the CPU writes into a mapped buffer per frame slot (`debugview.streaming.slot<n>`, 64 Ki roots), at half strength over the lit image (`sceneColor`, before AA; read only in that view, so the others still let the lighting pass be culled). |
-| `LightingPass` | Fullscreen deferred shading into a float scene-colour target: one directional light (the first shadow-enabled directional light, else the first directional), cascade selection by view depth, hardware-compare PCF, shadow tint, a hemisphere ambient (an engine sky colour on faces turned up and ground colour on faces turned down, as fractions of the light's radiance), and the debug views (`GBufferView`) and overlays. |
+| `LightingPass` | Fullscreen deferred shading into a float scene-colour target: one directional light (the first shadow-enabled directional light, else the first directional), cascade selection by view depth, hardware-compare PCF, shadow tint, and the ambient: with a sky (`RenderWorld::environment`, `render.sky.on`), the sky's irradiance at the normal (its 9 spherical-harmonic coefficients) × its scale ÷ π, and the sky's lat-long image where nothing is drawn in the lit view; without one, a hemisphere ambient (an engine sky colour on faces turned up and ground colour on faces turned down, as fractions of the light's radiance) and the clear colour. Then the debug views (`GBufferView`) and overlays. |
 | `AAPass` | FXAA as a compute pass, scene colour to a float storage image; falls back to a blit when the format cannot be a storage image. |
 | `BlitToBackbuffer` | Blits the AA result (or the debug view colours) to the sRGB backbuffer. |
 | `DebugLinePass` (`DebugRenderer`) | Debug lines from `DebugDrawData` (AABBs, frustum outlines, light gizmos), depth-tested against the scene depth. `DebugDraw` (`debugdraw.*`) is the renderer's debug-line input: lines, boxes, circles and spheres the main thread adds and the frame's `RenderSnapshot` carries. |
@@ -394,6 +394,17 @@ falling to 0 at infinity, so nothing is clipped at a distance and the 32-bit flo
 - **Frustum and rays.** `Frustum::fromViewProj(viewProj, reversedDepth)` keeps the plane order (4 near, 5 far) for the camera and the cascades; the
   camera's far plane has no normal and always passes. `Frustum::corners` takes the depths of its two planes, so the frozen-frustum overlay ends
   at the shadow distance. `Ray::fromCamera` unprojects depths 1 and 0.5 for the gizmos' mouse rays.
+
+## The sky
+
+A scene's dome light reaches the renderer as `RenderWorld::environment` (`SceneChanges::environment`): its image's texture handle, its scale,
+the rotation from world directions into the image's frame (pole +Z, UsdLux's lat-long) and the image's irradiance as 9 spherical-harmonic
+coefficients, computed when the image was packed. The image is an `E5B9G9R9_UFLOAT` texture (32 MiB for a 4096×2048 sky) uploaded and
+slotted as any texture; the lighting pass binds it on its own (binding 6, linear, wrapping around the longitude, clamped at the poles) once it
+has a slot. The lit view draws it where the depth is empty, along the view ray through the pixel; the ambient becomes its irradiance at the
+normal over π, a Lambert surface's share, in place of the hemisphere ambient. Without a dome, or with `render.sky.on` off, nothing changes:
+the clear colour and `render.ambient.*`. The `render` record and the Render Debug window say whether the frame drew it, with its mean radiance;
+the view's `environment` record has the rest.
 
 ## Extensions
 

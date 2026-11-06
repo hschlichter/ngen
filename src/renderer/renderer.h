@@ -59,6 +59,8 @@ struct RendererState {
     uint32_t lightCount = 0;
     bool hasSun = false; // the lighting's pick in the last frame
     LightingInputs sun;
+    bool skyDrawn = false;                          // the last frame drew the scene's dome light as its sky
+    const RenderEnvironment* environment = nullptr; // the scene's dome light; null without one
     RhiExtent2D shadowAtlasExtent = {};
     const ResourcePool* resourcePool = nullptr;
     std::span<const FgDrawRecord> drawLog; // the last frame read back's, while the draw log is on
@@ -155,6 +157,8 @@ private:
     // reason: geometry, sampler or instance_buffer (GeometryDescriptorsRebuilt observation).
     auto rebuildGeometryDescriptorSets() -> void;
     std::vector<RenderLight> lights;
+    std::optional<RenderEnvironment> environment; // the scene's dome light (RenderWorld::environment)
+    bool debugSky = false;                        // the last frame drew the sky
     RhiDescriptorPool* geometryDescriptorPool = nullptr;
     std::vector<RhiDescriptorSet*> geometryDescriptorSets;
 

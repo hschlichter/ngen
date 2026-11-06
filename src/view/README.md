@@ -173,6 +173,13 @@ do its draws: only where it is placed.
   aperture aren't read (the packer doesn't keep them), so the view's 45° field of view stays.
 - **The engine's light**: when the scene has no distant light, one is added, upper-front-right in the scene's frame (intensity 1, colour
   (1, 0.95, 0.88), angle 0.53).
+- **The sky**: a drawn dome light takes a prim as a distant light does, and its image is asked for as a material's texture is. After each
+  pass the first dome in prim order whose image is held as an HDR lat-long with its irradiance (`.exr`, `src/asset/README.md`) becomes
+  `RenderWorld::environment` (`collectEnvironment`): the image's texture handle, its scale (color × intensity × 2^exposure), the rotation from
+  world directions into the image's frame (the dome's own rotation, then its pole axis onto +Z: `Z`, `Y`, or the stage's up axis for
+  `scene`), and the irradiance. A second dome, a format other than `latlong`, or an image that isn't HDR is traced once
+  (`DomeLightIgnored`); a change of sky traces `EnvironmentChanged`. The `environment` record shows the dome as authored, its image, whether
+  the renderer drew it, and the light it casts on a surface facing up and facing down; `render.sky.on` turns it off.
 - **Changing what is drawn**: `setLodLevel` (the `lod` verb, `view.lod.set`), `resetLodLevel` (`lod-reset`, `view.lod.reset`: back to the
   root's default) and `setPurposeShown` are requests: the scene thread composes, fetches what the change needs and rebuilds, and the
   renderer uploads the changes over the next frames within its budget.

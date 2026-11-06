@@ -385,6 +385,9 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
     if (changes.lightsChanged) {
         lights = changes.lights;
     }
+    if (changes.environmentChanged) {
+        environment = changes.environment;
+    }
 
     static const uint32_t boundsZoneId = profile::registerName("SceneBounds");
     profile::beginZone(boundsZoneId);
@@ -483,6 +486,7 @@ auto Renderer::sceneGpuStats() const -> SceneGpuStats {
             .waitingMeshes = pool.waitingMeshes,
             .waitingBytes = pool.waitingBytes,
         },
+        .skyDrawn = debugSky,
     };
 }
 
@@ -788,6 +792,19 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         lighting.up = snapshot.worldUp;
         lighting.ambient = snapshot.ambient;
         lighting.cascadeCamera = snapshot.cascadeCamera;
+        // The sky once its image is on the GPU: a texture gets its slot when its last level is copied.
+        if (snapshot.sky && environment) {
+            const auto& textures = gpuScene.textures();
+            if (auto found = textures.find(environment->texture.index); found != textures.end() && found->second.slot != GpuScene::fallbackSlot) {
+                lighting.sky = LightingInputs::Sky{
+                    .texture = found->second.texture,
+                    .radiance = environment->radiance,
+                    .toImage = environment->toImage,
+                    .irradiance = environment->irradiance,
+                };
+            }
+        }
+        debugSky = lighting.sky.has_value();
         if (picked != nullptr) {
             auto raw = glm::vec3(picked->worldTransform[2]);
             lighting.direction = glm::dot(raw, raw) > 1e-6f ? glm::normalize(raw) : snapshot.worldUp;
@@ -879,7 +896,8 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
             cascades,
             snapshot.shadowSettings.pcf,
             atlasExtent,
-            previewFar);
+            previewFar,
+            fallbackTexture);
 
         // AA filters only the lit scene. Its output is blitted to the backbuffer and the
         // overlays (debug lines, gizmos, UI) draw on the backbuffer afterwards, so they are
@@ -1001,6 +1019,8 @@ auto Renderer::state() const -> RendererState {
         .lightCount = (uint32_t) lights.size(),
         .hasSun = debugHasSun,
         .sun = debugSun,
+        .skyDrawn = debugSky,
+        .environment = environment ? &*environment : nullptr,
         .shadowAtlasExtent = debugShadowExtent,
         .resourcePool = &resourcePool,
         .drawLog = lastDrawLog,

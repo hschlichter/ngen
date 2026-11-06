@@ -133,6 +133,7 @@ enum class RhiFormat {
     B8G8R8A8_SRGB,
     B8G8R8A8_UNORM,
     R16G16B16A16_SFLOAT,
+    E5B9G9R9_UFLOAT, // HDR colour: three 9-bit mantissas sharing a 5-bit exponent, 4 bytes; sampled only
     R32G32_SFLOAT,
     R32G32B32_SFLOAT,
     R32G32B32A32_SFLOAT,

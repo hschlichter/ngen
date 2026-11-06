@@ -1,8 +1,8 @@
 // ngen-packer-texture: packs an image as an engine-ready texture (src/asset/pack/packedtexture.h).
 //
-// Decodes the source with stb_image to RGBA8, builds the full mip chain with the filter the renderer uses (colour averaged
-// in linear space), and writes the packed texture: RGBA8 sRGB, every level, ready to upload. The view no longer decodes or
-// mip-maps. The depfile lists only the source.
+// Decodes the source (PNG, JPG) with stb_image to RGBA8, builds the full mip chain with the filter the renderer uses (colour averaged in
+// linear space), and writes the packed texture: RGBA8 sRGB, every level, ready to upload. The view no longer decodes or mip-maps. OpenEXR
+// images are ngen-packer-exr's. The depfile lists only the source.
 
 #include "mipchain.h"
 #include "packedtexture.h"
@@ -12,11 +12,34 @@
 #include <stb_image.h>
 
 #include <cstddef>
+#include <expected>
+#include <format>
 #include <fstream>
 #include <print>
 #include <span>
 #include <string>
 #include <vector>
+
+namespace {
+
+// An image's packed texture: RGBA8 sRGB with its mip chain.
+auto packImage(const std::vector<std::byte>& source, const std::string& name) -> std::expected<std::vector<std::byte>, std::string> {
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    auto* pixels = stbi_load_from_memory((const stbi_uc*) source.data(), (int) source.size(), &width, &height, &channels, 4);
+    if (pixels == nullptr) {
+        return std::unexpected(std::format("cannot decode {}: {}", name, stbi_failure_reason()));
+    }
+    auto level0 = std::span<const uint8_t>(pixels, (size_t) width * (size_t) height * 4);
+    auto chain = buildMipChain((uint32_t) width, (uint32_t) height, level0, true);
+    auto levels = packMipChain(level0, chain);
+    stbi_image_free(pixels);
+    auto mipLevels = mipLevelCount((uint32_t) width, (uint32_t) height);
+    return writePackedTexture(PackedTextureFormat::Rgba8Srgb, (uint32_t) width, (uint32_t) height, mipLevels, levels);
+}
+
+} // namespace
 
 auto main(int argc, char** argv) -> int {
     auto args = parsePackerArgs(argc, argv);
@@ -29,23 +52,14 @@ auto main(int argc, char** argv) -> int {
         std::println(stderr, "ngen-packer-texture: {}", source.error());
         return 1;
     }
-    int width = 0;
-    int height = 0;
-    int channels = 0;
-    auto* pixels = stbi_load_from_memory((const stbi_uc*) source->data(), (int) source->size(), &width, &height, &channels, 4);
-    if (pixels == nullptr) {
-        std::println(stderr, "ngen-packer-texture: cannot decode {}: {}", args->source, stbi_failure_reason());
+    auto packed = packImage(*source, args->source);
+    if (!packed) {
+        std::println(stderr, "ngen-packer-texture: {}", packed.error());
         return 1;
     }
-    auto level0 = std::span<const uint8_t>(pixels, (size_t) width * (size_t) height * 4);
-    auto chain = buildMipChain((uint32_t) width, (uint32_t) height, level0, true);
-    auto levels = packMipChain(level0, chain);
-    stbi_image_free(pixels);
-    auto mipLevels = mipLevelCount((uint32_t) width, (uint32_t) height);
-    auto packed = writePackedTexture(PackedTextureFormat::Rgba8Srgb, (uint32_t) width, (uint32_t) height, mipLevels, levels);
 
     std::ofstream out(args->out, std::ios::binary | std::ios::trunc);
-    out.write(reinterpret_cast<const char*>(packed.data()), (std::streamsize) packed.size());
+    out.write(reinterpret_cast<const char*>(packed->data()), (std::streamsize) packed->size());
     if (!out) {
         std::println(stderr, "ngen-packer-texture: cannot write {}", args->out);
         return 1;

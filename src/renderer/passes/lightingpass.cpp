@@ -19,14 +19,22 @@ auto LightingPass::init(RhiDevice* dev, PipelineRegistry& pipelines, uint32_t im
     registry = &pipelines;
     sceneColorFormat = colorFormat;
 
-    std::array<RhiDescriptorBinding, 6> bindings = {{
+    std::array<RhiDescriptorBinding, 7> bindings = {{
         {.binding = 0, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
         {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
         {.binding = 2, .type = UniformBuffer, .stage = RhiShaderStage::Fragment},
         {.binding = 3, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
         {.binding = 4, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment}, // shadow atlas, plain sampler (views, manual compare)
         {.binding = 5, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment}, // shadow atlas, compare sampler (PCF)
+        {.binding = 6, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment}, // the sky's lat-long image
     }};
+    skySampler = device->createSampler({
+        .mipmapMode = RhiMipmapMode::Nearest,
+        .addressU = RhiAddressMode::Repeat,
+        .addressV = RhiAddressMode::ClampToEdge,
+        .addressW = RhiAddressMode::ClampToEdge,
+        .debugName = "sampler.sky",
+    });
     descriptorSetLayout = device->createDescriptorSetLayout(bindings);
     device->setDebugName(descriptorSetLayout, "lighting.setlayout");
 
@@ -67,6 +75,7 @@ auto LightingPass::init(RhiDevice* dev, PipelineRegistry& pipelines, uint32_t im
 }
 
 auto LightingPass::destroy(RhiDevice* dev) -> void {
+    dev->destroySampler(skySampler);
     dev->freeDescriptorSets(descriptorPool, descriptorSets);
     dev->destroyDescriptorPool(descriptorPool);
     dev->destroyDescriptorSetLayout(descriptorSetLayout);
@@ -96,7 +105,8 @@ auto LightingPass::addPass(
     std::span<const ShadowCascade> cascades,
     bool pcf,
     RhiExtent2D atlasExtent,
-    float previewFar) -> const LightingPassData& {
+    float previewFar,
+    RhiTexture* noSky) -> const LightingPassData& {
     // Copied for the execute lambda; the snapshot the span points into may be gone by then.
     std::array<ShadowCascade, maxShadowCascades> cascadeCopy;
     uint32_t cascadeCount = (uint32_t) std::min(cascades.size(), (size_t) maxShadowCascades);
@@ -120,7 +130,7 @@ auto LightingPass::addPass(
             data.sceneColor = builder.write(builder.createTexture("sceneColor", sceneColorDesc), FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);
         },
-        [this, pipeline = registry->get(pipelineHandle), imageIndex, extent, sampler, lightInputs, viewMode, showOverlay, showShadowOverlay, lodFlash, lodColorByDepth, invViewProj, shadowSampler, cascadeCopy, cascadeCount, pcf, atlasExtent, previewFar](
+        [this, pipeline = registry->get(pipelineHandle), imageIndex, extent, sampler, lightInputs, viewMode, showOverlay, showShadowOverlay, lodFlash, lodColorByDepth, invViewProj, shadowSampler, cascadeCopy, cascadeCount, pcf, atlasExtent, previewFar, noSky](
             FrameGraphContext& ctx, const LightingPassData& data) {
             auto* cmd = ctx.cmd();
 
@@ -139,6 +149,13 @@ auto LightingPass::addPass(
                 lightUbo.cascadeEye = glm::vec4(lightInputs.cascadeCamera->first, 1.0f);
                 lightUbo.cascadeForward = glm::vec4(lightInputs.cascadeCamera->second, 0.0f);
             }
+            if (lightInputs.sky) {
+                lightUbo.skyRadiance = glm::vec4(lightInputs.sky->radiance, 1.0f);
+                lightUbo.skyToImage = glm::mat4(lightInputs.sky->toImage);
+                for (size_t i = 0; i < lightInputs.sky->irradiance.size(); i++) {
+                    lightUbo.skyIrradiance[i] = glm::vec4(lightInputs.sky->irradiance[i], 0.0f);
+                }
+            }
             for (uint32_t c = 0; c < maxShadowCascades; c++) {
                 const auto& cascade = cascadeCopy[c < cascadeCount ? c : 0];
                 lightUbo.cascadeViewProj[c] = cascade.viewProj;
@@ -149,7 +166,7 @@ auto LightingPass::addPass(
             }
             memcpy(uniformBuffersMapped[imageIndex], &lightUbo, sizeof(lightUbo));
 
-            std::array<RhiDescriptorWrite, 6> writes = {{
+            std::array<RhiDescriptorWrite, 7> writes = {{
                 {
                     .binding = 0,
                     .type = RhiDescriptorType::CombinedImageSampler,
@@ -185,6 +202,12 @@ auto LightingPass::addPass(
                     .type = RhiDescriptorType::CombinedImageSampler,
                     .texture = ctx.texture(data.shadowMap),
                     .sampler = shadowSampler,
+                },
+                {
+                    .binding = 6,
+                    .type = RhiDescriptorType::CombinedImageSampler,
+                    .texture = lightInputs.sky ? lightInputs.sky->texture : noSky,
+                    .sampler = skySampler,
                 },
             }};
             device->updateDescriptorSet(descriptorSets[imageIndex], writes);
@@ -253,6 +276,7 @@ config::Bool bufferOverlay{"render.overlay.buffer", false, "A strip of the G-buf
 config::Bool shadowOverlay{"render.overlay.shadow", false, "A strip of the shadow cascades' maps along the bottom of the view."};
 config::Vec3 ambientSky{"render.ambient.sky", toArray(AmbientSettings{}.sky), "The hemisphere ambient on faces turned up, as a fraction of the sun's radiance."};
 config::Vec3 ambientGround{"render.ambient.ground", toArray(AmbientSettings{}.ground), "The hemisphere ambient on faces turned down, as a fraction of the sun's radiance."};
+config::Bool skyOn{"render.sky.on", true, "The scene's dome light drawn as the sky and lighting the scene in place of the configured ambient; off, the clear colour and render.ambient.*."};
 
 auto ambient() -> AmbientSettings {
     return {.sky = toVec3(ambientSky.get()), .ground = toVec3(ambientGround.get())};

@@ -191,6 +191,62 @@ auto gpuSceneRecord(const ViewContext& view) -> Json {
     };
 }
 
+// The scene's sky: its dome light as authored, its image, and what the renderer lights with (the irradiance's coefficients, and the light
+// arriving at a surface facing straight up and straight down, as the lighting pass reflects it: E / π).
+auto environmentRecord(const ViewContext& view) -> Json {
+    const auto& environment = view.scene.snapshot().environment;
+    if (!environment) {
+        return {{"dome", nullptr}, {"drawn", false}};
+    }
+    auto vec = [](const glm::vec3& v) {
+        return Json::array({v.x, v.y, v.z});
+    };
+    Json out = {
+        {"dome", environment->prim},
+        {"texture", environment->texture},
+        {"textureFormat", environment->textureFormat},
+        {"poleAxis", environment->poleAxis},
+        {"color", vec(environment->color)},
+        {"intensity", environment->intensity},
+        {"exposure", environment->exposure},
+        {"imageHeld", environment->imageHeld},
+        {"size", Json::array({environment->width, environment->height})},
+        {"domesIgnored", environment->domesIgnored},
+        {"drawn", view.renderThread.latestSceneGpuStats().skyDrawn},
+    };
+    if (environment->placed) {
+        const auto& placed = *environment->placed;
+        auto coefficients = Json::array();
+        for (const auto& c : placed.irradiance) {
+            coefficients.push_back(vec(c));
+        }
+        // The irradiance at a world direction, through the image's frame (packedtexture.h's basis), as the lighting pass evaluates it.
+        auto reflected = [&placed](const glm::vec3& worldNormal) {
+            auto n = glm::normalize(placed.toImage * worldNormal);
+            std::array<float, 9> basis = {0.282095f,
+                                          0.488603f * n.y,
+                                          0.488603f * n.z,
+                                          0.488603f * n.x,
+                                          1.092548f * n.x * n.y,
+                                          1.092548f * n.y * n.z,
+                                          0.315392f * ((3.0f * n.z * n.z) - 1.0f),
+                                          1.092548f * n.x * n.z,
+                                          0.546274f * ((n.x * n.x) - (n.y * n.y))};
+            glm::vec3 e(0.0f);
+            for (size_t i = 0; i < basis.size(); i++) {
+                e += placed.irradiance[i] * basis[i];
+            }
+            return glm::max(e, glm::vec3(0.0f)) * placed.radiance / glm::pi<float>();
+        };
+        auto up = view.scene.worldUp();
+        out["radiance"] = vec(placed.radiance);
+        out["irradiance"] = coefficients;
+        out["lightUp"] = vec(reflected(up));
+        out["lightDown"] = vec(reflected(-up));
+    }
+    return out;
+}
+
 auto sceneRecord(const ViewContext& view) -> Json {
     const auto& snapshot = view.scene.snapshot();
     auto lodLevels = Json::object();
@@ -502,6 +558,9 @@ auto registerSceneCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& r
     });
     records.add("scene", "the open scene: its layer stack, up axis and units, prims (instances expanded), prototypes, draws, lights and LOD levels set", [&view](RpcResponder responder) {
         responder.respond(sceneRecord(view));
+    });
+    records.add("environment", "the scene's sky: its dome light, the image, whether it is drawn, and the light it casts (irradiance, up and down)", [&view](RpcResponder responder) {
+        responder.respond(environmentRecord(view));
     });
     records.add("scenethread", "the scene thread: requests, composes and placement passes, assets in flight and held, and residency (the script's hold, the load's longest frame)", [&view](RpcResponder responder) {
         responder.respond(sceneThreadRecord(view));

@@ -3,17 +3,27 @@
 #include "assetlibrary.h"
 #include "scenehandles.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <glm/glm.hpp>
+#include <optional>
 #include <vector>
 
-// A texture: RGBA8 sRGB, every mip level packed in order, level 0 first (as the texture packer writes it, or a generated 1x1).
+enum class TextureFormat : uint8_t {
+    Rgba8Srgb, // an image's colour
+    Rgb9e5,    // HDR linear radiance, shared exponent (a dome light's lat-long sky)
+};
+
+// A texture: 4-byte texels, every mip level packed in order, level 0 first (as the texture packer writes it, or a generated 1x1). An HDR
+// lat-long image carries its irradiance: 9 spherical-harmonic coefficients of the light it casts, in its own frame (packedtexture.h).
 struct TextureDesc {
     uint32_t width = 0;
     uint32_t height = 0;
     uint32_t mipLevels = 1;
+    TextureFormat format = TextureFormat::Rgba8Srgb;
     std::vector<std::byte> levels;
+    std::optional<std::array<glm::vec3, 9>> irradiance;
 };
 
 struct MaterialDesc {

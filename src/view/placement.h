@@ -205,6 +205,7 @@ struct Placement {
     uint32_t lodGroup = 0;
     uint32_t lodGroupLevel = 0;
     std::vector<RenderLight> lights;  // its distant lights
+    std::vector<uint32_t> domes;      // prim indices of its dome lights
     std::vector<std::string> waiting; // assets its prims want that aren't held: meshes, material packs, textures
     PlacementWait ownWait;            // `waiting` by kind
     PlacementWait wait;               // it and what is placed in it (PlacementWait): a level is ready to draw when this is 0

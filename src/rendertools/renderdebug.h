@@ -93,6 +93,10 @@ struct RenderDebugSnapshot {
     glm::vec3 sunRadiance = glm::vec3(0.0f);
     glm::vec3 sunShadowColor = glm::vec3(0.0f);
     RhiExtent2D shadowMapExtent = {};
+    // The scene's sky (its dome light): whether the frame drew it, and its mean radiance over the sphere (the irradiance's constant term).
+    bool hasSky = false;
+    bool skyDrawn = false;
+    glm::vec3 skyMeanRadiance = glm::vec3(0.0f);
 
     // Pipelines: every one the passes registered, with its shaders and state
     std::vector<PipelineInfo> pipelines;

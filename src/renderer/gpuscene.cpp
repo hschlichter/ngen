@@ -350,7 +350,7 @@ auto GpuScene::addTexture(TextureHandle handle, std::shared_ptr<const TextureDes
         .height = texture->height,
         .mipLevels = mipLevels,
         .bytes = texture->levels.size(),
-        .format = RhiFormat::R8G8B8A8_SRGB,
+        .format = texture->format == TextureFormat::Rgb9e5 ? RhiFormat::E5B9G9R9_UFLOAT : RhiFormat::R8G8B8A8_SRGB,
     };
     textureData[handle.index] = std::move(texture);
     levelsLeft[handle.index] = mipLevels;

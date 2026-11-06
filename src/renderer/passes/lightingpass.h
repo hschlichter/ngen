@@ -35,13 +35,16 @@ struct LightingUBO {
     glm::vec4 groundAmbient;                      // xyz = ambient on faces turned down, as a fraction of the light's radiance
     glm::vec4 cascadeEye;                         // xyz = the eye the cascades were fitted from, w = 1 when it isn't the camera rendered from
     glm::vec4 cascadeForward;                     // xyz = that camera's forward: a pixel's cascade depth is along it
+    glm::vec4 skyRadiance;                        // xyz = the sky's scale (the dome's color × intensity × 2^exposure), w = 1 when there is a sky
+    glm::mat4 skyToImage;                         // upper 3x3: a world direction into the sky image's frame (pole +Z)
+    glm::vec4 skyIrradiance[9];                   // xyz = the sky's irradiance, 9 spherical-harmonic coefficients in the image's frame
 };
 
 // Pre-resolved per-frame lighting inputs. The renderer picks one active light and flattens
 // it into this small struct so LightingPass doesn't have to re-run the selection logic or
 // deal with RenderLight's worldTransform.
-// The engine's ambient until scenes light it themselves (dome lights): a sky colour on faces turned up and a ground colour on faces turned
-// down, blended by how much a face turns up, as fractions of the sun's radiance. The defaults are a slightly blue sky and a darker, warm
+// The engine's ambient for a scene without a sky (a dome light; with one, the sky's irradiance lights instead): a sky colour on faces turned up
+// and a ground colour on faces turned down, blended by how much a face turns up, as fractions of the sun's radiance. The defaults are a slightly blue sky and a darker, warm
 // ground; a vertical face gets their average, about the constant 0.15 the view had before.
 struct AmbientSettings {
     glm::vec3 sky = glm::vec3(0.20f, 0.21f, 0.24f);
@@ -57,6 +60,15 @@ struct LightingInputs {
     glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);        // the scene's up axis, for the hemisphere ambient
     AmbientSettings ambient;
     std::optional<std::pair<glm::vec3, glm::vec3>> cascadeCamera; // RenderSnapshot::cascadeCamera
+    // The scene's sky (RenderEnvironment), drawn where nothing is and lighting in place of the hemisphere ambient; none while it loads,
+    // without a dome, or with `render.sky.on` off.
+    struct Sky {
+        RhiTexture* texture = nullptr; // Rgb9e5 lat-long
+        glm::vec3 radiance = glm::vec3(1.0f);
+        glm::mat3 toImage = glm::mat3(1.0f);
+        std::array<glm::vec3, 9> irradiance = {};
+    };
+    std::optional<Sky> sky;
 };
 
 // The buffer views by name, in GBufferView's order: the `render.view.buffer` configuration's choices.
@@ -108,7 +120,8 @@ public:
         std::span<const ShadowCascade> cascades,
         bool pcf,
         RhiExtent2D atlasExtent,
-        float previewFar) -> const LightingPassData&;
+        float previewFar,
+        RhiTexture* noSky) -> const LightingPassData&;
 
     // Whether its pipelines have been created; until then the frame leaves the pass out.
     auto ready() -> bool;
@@ -123,4 +136,5 @@ private:
     std::vector<RhiBuffer*> uniformBuffers;
     std::vector<void*> uniformBuffersMapped;
     RhiFormat sceneColorFormat = RhiFormat::Undefined;
+    RhiSampler* skySampler = nullptr; // linear; wraps around the longitude, clamps at the poles
 };

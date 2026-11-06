@@ -65,6 +65,7 @@ struct RenderSnapshot {
     // cascadeCount 0 means the renderer fits a single cascade itself.
     ShadowCascadeSettings shadowSettings;
     AmbientSettings ambient;
+    bool sky = true; // the scene's dome light, when it has one, drawn as the sky and lighting in place of `ambient`
     uint32_t cascadeCount = 0;
     std::array<ShadowCascade, maxShadowCascades> cascades;
     // The camera the cascades were fitted to, when it isn't the one rendered from (a debug camera watching the main camera): the lighting

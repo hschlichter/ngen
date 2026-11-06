@@ -42,4 +42,5 @@ struct SceneGpuStats {
     uint32_t materials = 0;
     RenderUploadStats uploads;
     RenderDebugGeometryPool geometryPool;
+    bool skyDrawn = false; // the frame drew the scene's dome light as its sky (its image on the GPU, render.sky.on)
 };

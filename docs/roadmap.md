@@ -45,7 +45,7 @@ the sections below.
 5. **Physics, minimal.** Jolt vendored; the packer reads UsdPhysics colliders and rigid bodies; bodies simulate in the game loop and drive their
    draws' transforms. New plan, on step 4's components.
 6. **Animation and skinning, minimal.** UsdSkel skeletons and skinned meshes, time-sampled playback, GPU skinning. New plan.
-7. **Rendering, minimal gaps.** HDR and tone mapping, point and spot lights, a dome light in place of the hemisphere ambient.
+7. **Rendering, minimal gaps.** HDR and tone mapping, point and spot lights. (The dome light landed: see Landed.)
 8. **A first game**, the integration test: a small game (walk Sponza, push physics boxes) built only through the engine's APIs and tools,
    ideally by an AI session over RPC and `ngen-cli` with a human steering in the editor. What it exposes is what the iterations after it work on.
 
@@ -136,8 +136,8 @@ Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's ma
 
 ## Rendering
 
-- **Multiple lights** — [plan_usd_lights.md](plan_usd_lights.md) not implemented: point/sphere lights, then spot, area, dome/IBL; clustered or
-  tiled light culling.
+- **Multiple lights** — [plan_usd_lights.md](plan_usd_lights.md) not implemented: point/sphere lights, then spot, area; clustered or tiled
+  light culling. The dome's diffuse light landed ([plan_sky.md](plan_sky.md)); its specular reflections wait for a specular term in shading.
 - **HDR lighting + tone mapping** (in the AA pass).
 - **Shadows**: spot/point light shadows; cascade blending / softer techniques. Trigger: a seam PCF doesn't hide.
 - **Culling**: meshlets, mesh shaders and occlusion (two-phase HZB) are vertical slice step 2 (above). Cluster LOD: the next item.
@@ -153,7 +153,8 @@ Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's ma
 - **Incremental GPU updates** for non-transform changes (part of the editor split).
 - **Lighting at kilometre scale** — one sun and a hemisphere ambient (an engine sky and ground colour blended by how much a face turns up,
   since 2026-10-13; it replaced a constant that made every face out of the sun one flat colour). Vertical faces out of the sun still look
-  alike whichever way they face; dome lights and IBL (under Multiple lights) replace the hemisphere. Shadows end at a shadow distance since
+  alike whichever way they face; a scene with a dome light is lit by its sky's irradiance instead ([plan_sky.md](plan_sky.md)). Shadows end
+  at a shadow distance since
   [plan_depth_range.md](plan_depth_range.md); a fade before it is deferred there.
 - **Framing Caldera** — framing the whole scene fits a large flat ground disc, so the map frames from about 60 km with the island small in the
   middle. Authored cameras are read (the Camera window, `--camera=/cameras/<name>`; Caldera authors 13, per district, none of the whole
@@ -201,6 +202,12 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 ## Landed
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
+
+- **The sky** — [plan_sky.md](plan_sky.md). A scene's dome light is drawn as its sky and lights the scene with its irradiance in place of the
+  hemisphere ambient. `ngen-packer-exr` reads OpenEXR (tinyexr) into an E5B9G9R9 texture packed with 9 spherical-harmonic coefficients of its
+  irradiance; the World keeps a dome's image, format and pole axis; placement makes `RenderWorld::environment`; the lighting pass draws the
+  lat-long where nothing is and evaluates the irradiance at the normal. The `environment` record, `render.sky.on`, the sky in the Render
+  Debug window, the inspector and `dump-texture`. Follow-ups: tone mapping (the sun's surroundings clip), specular from the dome.
 
 - **Streaming v2** — [plan_streaming_v2.md](plan_streaming_v2.md), on the streaming test world ([test_streaming_world.md](test_streaming_world.md)).
   Streaming simplified for a world authored to stream: a tree of placements of complete contents replaces whole-world extract and diff, so a

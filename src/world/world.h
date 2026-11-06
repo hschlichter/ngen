@@ -95,6 +95,11 @@ struct Light {
     float angle = 0.53f;
     bool shadowEnable = true;
     glm::vec3 shadowColor = glm::vec3(0.0f);
+    // A dome's image: its asset id (empty for none), how it maps directions (`inputs:texture:format`: automatic, latlong, mirroredBall,
+    // angular, cubeMapVerticalCross) and the axis its pole is on (DomeLight_1's `poleAxis`: scene, Y, Z; a DomeLight's is Y).
+    std::string texture;
+    std::string textureFormat = "automatic";
+    std::string poleAxis = "scene";
 };
 
 // A prim with LODRootAPI: its children are its levels, finest first. `loaded` holds the levels whose payloads are loaded in this content;

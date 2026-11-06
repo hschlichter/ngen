@@ -126,6 +126,7 @@ private:
         uint32_t texture = 0; // dumps
         uint32_t level = 0;
         bool screenshot = false;
+        bool hdr = false; // an Rgb9e5 texture, decoded for its PNG
     };
     std::vector<Readback> readbacks;
     std::optional<FrameDebugCapture> frameDebugCapture; // this frame's, published at endFrame

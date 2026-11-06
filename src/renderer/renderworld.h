@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -173,10 +174,23 @@ struct RenderLodGroup {
     auto operator==(const RenderLodGroup&) const -> bool = default;
 };
 
+// The scene's sky, from its dome light: drawn where nothing is, and lighting the scene with its irradiance in place of the hemisphere
+// ambient. Without one (or before its texture arrives) the renderer draws the clear colour and the configured ambient.
+struct RenderEnvironment {
+    TextureHandle texture;                    // an Rgb9e5 lat-long
+    glm::vec3 radiance = glm::vec3(1.0f);     // color × intensity × 2^exposure, scaling the image
+    glm::mat3 toImage = glm::mat3(1.0f);      // a world direction into the image's frame (its pole +Z, packedtexture.h)
+    std::array<glm::vec3, 9> irradiance = {}; // the image's, in its frame (TextureDesc::irradiance)
+    PrimHandle primHandle;
+
+    auto operator==(const RenderEnvironment&) const -> bool = default;
+};
+
 struct RenderWorld {
     ChunkedList<RenderMeshInstance> meshInstances; // by slot
     ChunkedList<RenderLodGroup> lodGroups;         // by group slot
     std::vector<RenderLight> lights;
+    std::optional<RenderEnvironment> environment;
 };
 
 // What changed in the renderer's inputs, in order. The view builds it by comparing what it draws with what it drew; the renderer applies
@@ -196,10 +210,12 @@ struct SceneChanges {
     uint32_t lodGroupCount = 0;
     bool lightsChanged = false;
     std::vector<RenderLight> lights;
+    bool environmentChanged = false;
+    std::optional<RenderEnvironment> environment;
 
     auto empty() const -> bool {
         return meshesAdded.empty() && meshesRemoved.empty() && texturesAdded.empty() && texturesRemoved.empty() && materialsChanged.empty() && materialsRemoved.empty() &&
-               instances.empty() && lodGroups.empty() && !lightsChanged;
+               instances.empty() && lodGroups.empty() && !lightsChanged && !environmentChanged;
     }
     // Appends `later`, which applies after this.
     auto append(SceneChanges later) -> void {
@@ -224,6 +240,10 @@ struct SceneChanges {
         if (later.lightsChanged) {
             lightsChanged = true;
             lights = std::move(later.lights);
+        }
+        if (later.environmentChanged) {
+            environmentChanged = true;
+            environment = std::move(later.environment);
         }
     }
 };

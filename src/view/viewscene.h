@@ -233,6 +233,23 @@ private:
 };
 
 // The scene as the scene thread last published it, for the main thread's queries. Immutable once published.
+// The scene's sky as placed (the first dome light), for the `environment` record and the Scene's readers: what the dome authors, its image,
+// and once the image is held, what the renderer lights with.
+struct SceneEnvironment {
+    std::string prim;
+    std::string texture; // asset id
+    std::string textureFormat;
+    std::string poleAxis;
+    glm::vec3 color = glm::vec3(1.0f);
+    float intensity = 1.0f;
+    float exposure = 0.0f;
+    bool imageHeld = false; // its pack arrived, as an HDR lat-long with its irradiance
+    uint32_t width = 0;
+    uint32_t height = 0;
+    std::optional<RenderEnvironment> placed; // RenderWorld::environment
+    uint32_t domesIgnored = 0;               // dome lights after it, or that can't be a sky (DomeLightIgnored)
+};
+
 struct SceneSnapshot {
     std::string id;
     uint64_t revision = 0;
@@ -259,6 +276,7 @@ struct SceneSnapshot {
     // Nothing queued, requested or waiting to be placed when it was published.
     bool idle = true;
     SceneThreadStats thread;
+    std::optional<SceneEnvironment> environment;
 };
 
 // The view's configuration values (src/config/README.md) for the scene: which purposes beyond the default it loads and draws.
@@ -574,6 +592,13 @@ private:
     // and material handle; the placements using each walk, and the placements naming each mesh asset (through their walks), whose packs are
     // held; the placements of each content (a placed content composed again makes the pass look at every placement); and the placements.
     std::map<uint32_t, RenderLight> lightsByPrim;
+    // The dome lights placed, by prim index: the first, in prim order, is the scene's environment.
+    struct PlacedDome {
+        Light light;
+        glm::mat4 worldTransform = glm::mat4(1.0f); // world metres
+    };
+    std::map<uint32_t, PlacedDome> domesByPrim;
+    std::set<uint32_t> domesWarned; // the domes DomeLightIgnored was traced for, so a pass doesn't trace it again
     bool lightsChanged = false;
     std::vector<uint32_t> meshUses; // by handle index: slots drawing it and undrawn placements holding it
     std::vector<uint32_t> materialUses;
@@ -719,6 +744,8 @@ private:
     auto wantMaterial(const std::string& key, Placement& node) -> void;
     // The distant lights, or the engine's light when there is none, after a pass that changed them.
     auto collectLights() -> void;
+    // The scene's environment, from its first dome light whose lat-long texture is held; none without one.
+    auto collectEnvironment() -> std::optional<RenderEnvironment>;
     // Whether a pass looks into a placement at this path that isn't pending: a gizmo moved, or a root changed its wanted level, under it.
     auto touched(const std::string& path) const -> bool;
     bool fullPass = false;                           // a placed content was composed again: the pass looks into every placement

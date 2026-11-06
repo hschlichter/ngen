@@ -352,6 +352,7 @@ auto main(int argc, char** argv) -> int {
     auto packerShader = cxx::program("ngen-packer-shader").sources({"src/apps/packershader.cpp"}).link(packer);
     auto packerCopy = cxx::program("ngen-packer-copy").sources({"src/apps/packercopy.cpp"}).link(packer);
     auto packerTexture = cxx::program("ngen-packer-texture").sources({"src/apps/packertexture.cpp"}).include({"external/stb"}).link(packer);
+    auto packerExr = cxx::program("ngen-packer-exr").sources({"src/apps/packerexr.cpp"}).include({"external/stb", "external/tinyexr"}).link(packer);
     // ngen-packdump: prints a scene pack, from a file or fetched from the asset server, as JSON.
     auto packDump = cxx::program("ngen-packdump")
                         .sources({"src/apps/packdump.cpp"})
@@ -452,6 +453,7 @@ auto main(int argc, char** argv) -> int {
             .depend_on(packerShader)
             .depend_on(packerCopy)
             .depend_on(packerTexture)
+            .depend_on(packerExr)
             .depend_on(packerUsd);
 
     auto view =
@@ -596,6 +598,7 @@ auto main(int argc, char** argv) -> int {
     p.target(packerShader);
     p.target(packerCopy);
     p.target(packerTexture);
+    p.target(packerExr);
     p.target(packerUsd);
     p.target(packDump);
     p.target(scenePack);

@@ -3,6 +3,7 @@
 #include "deletionqueue.h"
 #include "framegraph.h"
 #include "gpuscene.h"
+#include "packedtexture.h"
 #include "pipelineregistry.h"
 #include "previewtextures.h"
 #include "profile.h"
@@ -15,6 +16,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <format>
 #include <unordered_map>
@@ -159,6 +161,20 @@ auto RenderTools::afterSubmit(Renderer& renderer, const RenderFrame& frame) -> v
         std::memcpy(rgba.data(), mapped, count);
         context->device.unmapBuffer(readback.buffer);
         context->device.destroyBuffer(readback.buffer);
+        if (readback.hdr) {
+            // An HDR texture's PNG: its linear radiance clamped to 1 and encoded as sRGB.
+            for (size_t i = 0; i < count; i += 4) {
+                uint32_t texel = 0;
+                std::memcpy(&texel, &rgba[i], 4);
+                auto rgb = decodeRgb9e5(texel);
+                for (size_t c = 0; c < 3; c++) {
+                    float v = std::clamp(rgb[c], 0.0f, 1.0f);
+                    float encoded = v <= 0.0031308f ? v * 12.92f : (1.055f * std::pow(v, 1.0f / 2.4f)) - 0.055f;
+                    rgba[i + c] = (uint8_t) std::lround(encoded * 255.0f);
+                }
+                rgba[i + 3] = 255;
+            }
+        }
         if (!readback.screenshot) {
             bool ok = writeScreenshotPng(readback.path.c_str(), rgba, readback.width, readback.height);
             if (ok) {
@@ -330,6 +346,12 @@ auto RenderTools::buildRenderDebugSnapshot(const Renderer& renderer) const -> Re
     snap.sunRadiance = state.sun.radiance;
     snap.sunShadowColor = state.sun.shadowColor;
     snap.shadowMapExtent = state.shadowAtlasExtent;
+    if (state.environment != nullptr) {
+        // The constant term's basis value over π: E00 · 0.282095 / π is the image's mean radiance.
+        snap.hasSky = true;
+        snap.skyDrawn = state.skyDrawn;
+        snap.skyMeanRadiance = state.environment->irradiance[0] * (0.282095f / glm::pi<float>()) * state.environment->radiance;
+    }
 
     auto fg = buildFrameGraphDebugSnapshot(renderer);
     snap.passes.reserve(fg.executionOrder.size());
@@ -385,10 +407,11 @@ auto RenderTools::recordTextureInspect(const Renderer& renderer, RhiCommandBuffe
 
     if (texturePreview.texture == nullptr || texturePreview.width != ext.width || texturePreview.height != ext.height) {
         releaseTexturePreview(renderer.state().frame);
+        // An HDR texture (the sky) is blitted into a half-float preview: its own format can't be a blit's destination.
         RhiTextureDesc desc = {
             .width = ext.width,
             .height = ext.height,
-            .format = cached.format,
+            .format = cached.format == RhiFormat::E5B9G9R9_UFLOAT ? RhiFormat::R16G16B16A16_SFLOAT : cached.format,
             .usage = RhiTextureUsage::Sampled | RhiTextureUsage::TransferDst,
             .debugName = "inspector.preview",
         };
@@ -456,7 +479,7 @@ auto RenderTools::recordTextureDump(const Renderer& renderer, RhiCommandBuffer* 
         cmd->copyTextureToBuffer(cached.texture, buffer, {.width = width, .height = height, .mipLevel = dump.level});
         std::array<RhiTextureBarrierDesc, 1> toShader = {{{.texture = cached.texture, .oldState = RhiTextureState::TransferSrc, .newState = RhiTextureState::ShaderReadOnly}}};
         cmd->pipelineBarrier(toShader);
-        readbacks.push_back({.buffer = buffer, .width = width, .height = height, .path = std::move(dump.path), .texture = dump.texture, .level = dump.level});
+        readbacks.push_back({.buffer = buffer, .width = width, .height = height, .path = std::move(dump.path), .texture = dump.texture, .level = dump.level, .hdr = cached.format == RhiFormat::E5B9G9R9_UFLOAT});
     }
 }
 

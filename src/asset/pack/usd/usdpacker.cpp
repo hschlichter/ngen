@@ -97,6 +97,7 @@ auto isEngineAttribute(const std::string& name) -> bool {
         "protoIndices",
         "ids",
         "invisibleIds",
+        "poleAxis", // a DomeLight_1's: which axis its lat-long image's pole is on
     };
     return names.contains(name) || name.starts_with("xformOp:") || name.starts_with("lod:") || name.starts_with("streaming:") || name.starts_with("inputs:");
 }

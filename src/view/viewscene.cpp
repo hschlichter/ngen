@@ -42,7 +42,15 @@ auto textureDesc(std::span<const std::byte> bytes) -> std::shared_ptr<const Text
     desc->width = texture->width;
     desc->height = texture->height;
     desc->mipLevels = texture->mipLevels;
+    desc->format = texture->format == PackedTextureFormat::Rgb9e5 ? TextureFormat::Rgb9e5 : TextureFormat::Rgba8Srgb;
     desc->levels.assign(texture->levels.begin(), texture->levels.end());
+    if (texture->irradiance) {
+        std::array<glm::vec3, 9> irradiance;
+        for (size_t i = 0; i < irradiance.size(); i++) {
+            irradiance[i] = glm::vec3((*texture->irradiance)[i * 3], (*texture->irradiance)[(i * 3) + 1], (*texture->irradiance)[(i * 3) + 2]);
+        }
+        desc->irradiance = irradiance;
+    }
     return desc;
 }
 
@@ -1203,6 +1211,27 @@ auto ViewScene::publish() -> void {
     }
     snapshot->streaming = streamingPublished;
     snapshot->thread = stats;
+    snapshot->environment.reset();
+    if (!domesByPrim.empty()) {
+        const auto& [prim, dome] = *domesByPrim.begin();
+        SceneEnvironment environment{
+            .prim = primPaths[prim - 1],
+            .texture = dome.light.texture,
+            .textureFormat = dome.light.textureFormat,
+            .poleAxis = dome.light.poleAxis,
+            .color = dome.light.color,
+            .intensity = dome.light.intensity,
+            .exposure = dome.light.exposure,
+            .placed = drawn.environment,
+            .domesIgnored = (uint32_t) domesWarned.size(),
+        };
+        if (auto pack = texturePacks.find(dome.light.texture); pack != texturePacks.end()) {
+            environment.imageHeld = pack->second->format == TextureFormat::Rgb9e5 && pack->second->irradiance.has_value();
+            environment.width = pack->second->width;
+            environment.height = pack->second->height;
+        }
+        snapshot->environment = std::move(environment);
+    }
     for (const auto& [assetId, kind] : inFlight) {
         if (kind == AssetKind::Layer) {
             snapshot->thread.inFlightLayers++;

@@ -152,7 +152,8 @@ A packer with secondary outputs writes each to `secondaryOutputFile(out, fragmen
 | Program | Packs | Output |
 |---|---|---|
 | `ngen-packer-shader` | GLSL with `glslc`: `optimize` (0 = `-O0`, 1 = `-O`) and `debug_info` (1 = `-g`); glslc's depfile gives the `#include`s | SPIR-V |
-| `ngen-packer-texture` | `.png .jpg .jpeg`: decoded with stb_image, the full mip chain built with `pack/mipchain.h` (2×2 box filter, colour averaged in linear space), written as a packed texture (`pack/packedtexture.h`): a 24-byte `NGTX` header (version, format, width, height, mip levels) and every level, level 0 first, tightly packed | RGBA8 sRGB, all mips |
+| `ngen-packer-texture` | `.png .jpg .jpeg`: decoded with stb_image, the full mip chain built with `pack/mipchain.h` (2×2 box filter, colour averaged in linear space), written as a packed texture (`pack/packedtexture.h`): a 28-byte `NGTX` header (version 2, format, width, height, mip levels, irradiance floats) and every level, level 0 first, tightly packed | RGBA8 sRGB, all mips |
+| `ngen-packer-exr` | `.exr` (a dome light's lat-long sky): decoded with tinyexr (`external/tinyexr`, through stb's zlib; the only packer that links it) to linear RGB, written as a packed texture with one level and its irradiance as a lat-long dome: 9 spherical-harmonic coefficients per channel, convolved with the cosine lobe, in the image's frame (pole +Z, UsdLux's lat-long), in the header's irradiance block | `Rgb9e5` (HDR, Vulkan's E5B9G9R9), one level, irradiance |
 | `ngen-packer-usd` | `.usda .usdc .usd`, one job per file (below) | a layer pack, and a mesh or material pack per prim that defines one |
 | `ngen-packer-copy` | `.hdr`: the source's bytes, unchanged, for assets the engine still reads in their source format. A clone (`FICLONE`) where the filesystem has one (btrfs, XFS), so the cache shares the source's blocks; a byte copy elsewhere | the source |
 

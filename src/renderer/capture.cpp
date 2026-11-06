@@ -3,6 +3,7 @@
 #include "deletionqueue.h"
 #include "framegraphdebug.h"
 #include "gpuuploader.h"
+#include "packedtexture.h"
 #include "previewtextures.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
@@ -36,6 +37,7 @@ auto captureTexelBytes(RhiFormat format) -> uint32_t {
         case RhiFormat::B8G8R8A8_SRGB:
         case RhiFormat::D32_SFLOAT:
         case RhiFormat::R32_UINT:
+        case RhiFormat::E5B9G9R9_UFLOAT:
             return 4;
         case RhiFormat::R16G16B16A16_SFLOAT:
         case RhiFormat::R32G32_SFLOAT:
@@ -59,6 +61,7 @@ auto captureChannelCount(RhiFormat format) -> uint32_t {
         case RhiFormat::R32G32_SFLOAT:
             return 2;
         case RhiFormat::R32G32B32_SFLOAT:
+        case RhiFormat::E5B9G9R9_UFLOAT:
             return 3;
         default:
             return 4;
@@ -96,6 +99,12 @@ auto decodeTexel(RhiFormat format, const std::byte* texel) -> glm::vec4 {
             uint64_t packed = 0;
             std::memcpy(&packed, texel, 8);
             return glm::unpackHalf4x16(packed);
+        }
+        case RhiFormat::E5B9G9R9_UFLOAT: {
+            uint32_t packed = 0;
+            std::memcpy(&packed, texel, 4);
+            auto rgb = decodeRgb9e5(packed);
+            return {rgb[0], rgb[1], rgb[2], 1.0f};
         }
         case RhiFormat::R32G32_SFLOAT:
             return {f32(0), f32(1), 0.0f, 1.0f};

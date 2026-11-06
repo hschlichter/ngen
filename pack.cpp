@@ -24,6 +24,14 @@ auto packRules(const std::string& config) -> std::vector<PackRule> {
         .extensions = {".png", ".jpg", ".jpeg"},
         .packer = "ngen-packer-texture",
         .params = {},
+        .version = 2,
+    });
+    // OpenEXR images (a dome light's lat-long sky) become HDR textures, Rgb9e5, packed with the irradiance they cast.
+    rules.push_back(PackRule{
+        .name = "exr",
+        .extensions = {".exr"},
+        .packer = "ngen-packer-exr",
+        .params = {},
         .version = 1,
     });
     // USD files become scene packs, one job per file: the opinions the file authors as a layer pack, and each mesh and material
@@ -33,7 +41,7 @@ auto packRules(const std::string& config) -> std::vector<PackRule> {
         .extensions = {".usda", ".usdc", ".usd"},
         .packer = "ngen-packer-usd",
         .params = {},
-        .version = 9,
+        .version = 10,
     });
     // Assets the engine still reads in their source format, until a packer for their engine-ready format exists: the packed
     // asset is the source's bytes.

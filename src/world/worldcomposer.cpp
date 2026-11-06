@@ -1174,6 +1174,17 @@ struct WorldComposer::Impl {
             l.angle = (float) number(attribute("inputs:angle"), l.angle);
             l.shadowEnable = number(attribute("inputs:shadow:enable"), 1.0) != 0.0;
             l.shadowColor = color(attribute("inputs:shadow:color"), l.shadowColor);
+            if (l.shape == LightShape::Dome) {
+                l.texture = token(attribute("inputs:texture:file"));
+                if (auto format = token(attribute("inputs:texture:format")); !format.empty()) {
+                    l.textureFormat = format;
+                }
+                if (typeName == "DomeLight") {
+                    l.poleAxis = "Y";
+                } else if (auto pole = token(attribute("poleAxis")); !pole.empty()) {
+                    l.poleAxis = pole;
+                }
+            }
             content.lights[id] = l;
         }
         if (typeName == "PointInstancer") {

@@ -13,7 +13,7 @@ tool, so a program without the UI keeps every record and dump it serves.
 | Frame graph debug snapshot and previews | `framegraphpreviews.h/.cpp` | the Frame Graph and Capture windows: every pass and resource, and a thumbnail of each texture after each pass |
 | Frame debugger | `framedebug.h/.cpp` | one frame recorded with the command log: per pass its barriers (with the backend's stages, accesses and layouts), commands and descriptor sets: `dump-frame`, `introspect.frame`, the Frame Debugger window |
 | GPU counters | `gpucounters.h/.cpp` | every GPU zone of a frame and, while on, each pass's pipeline statistics: the `counters` record and the Counters window |
-| Texture inspector and dumps | `rendertools.cpp` | one level of one material texture blitted into a preview, or written as PNG (`inspect`, `dump-texture`) |
+| Texture inspector and dumps | `rendertools.cpp` | one level of one texture blitted into a preview, or written as PNG (`inspect`, `dump-texture`); an HDR texture (the sky) previews as half float, and its PNG is its radiance clamped to 1 and encoded as sRGB |
 | Screenshots | `screenshot.h/.cpp` | the presented image as PNG (`screenshot`, `--screenshot`, F12), the UI left out unless `--show-ui` |
 | Capture files | `capturefiles.h/.cpp`, `gpuscenecapture.h/.cpp` | a capture written as PNG and JSON (`capture`, the Capture window's save); the GPU scene's tables joined per instance (`dump-gpuscene`, the GPU Scene window) |
 

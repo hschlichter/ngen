@@ -24,8 +24,9 @@ out and changes level around the camera as it moves.*
 **Rendering**
 - **GPU-driven only**: persistent GPU scene tables (instances, meshes, materials), one geometry pool, bindless material textures, GPU culling
   with ordered compaction into indirect draws, one call per bucket per view.
-- **Deferred shading**: a G-buffer, cascaded shadow maps in one atlas with hardware-compare PCF, a directional sun with a hemisphere ambient,
-  FXAA, reversed-Z with an infinite far plane.
+- **Deferred shading**: a G-buffer, cascaded shadow maps in one atlas with hardware-compare PCF, a directional sun, the scene's dome light as
+  its sky and its diffuse light (spherical-harmonic irradiance from an HDR lat-long; a hemisphere ambient without one), FXAA, reversed-Z with an
+  infinite far plane.
 - **A frame graph** orders the passes, derives every barrier, culls unused passes and pools transient textures.
 - **A render thread** fed by one snapshot a frame; a **scene thread** composes and places the world; the main thread never waits for either.
 - **Vulkan 1.3** behind a thin, backend-agnostic RHI, with dynamic rendering and synchronization2.
@@ -123,8 +124,9 @@ is in [`docs/adr/`](docs/adr/README.md).
 | [OpenUSD](https://github.com/PixarAnimationStudios/OpenUSD) | Reading USD when packing (`ngen-packer-usd`) and in `ngen-worldcheck` / `ngen-usdcheck`; `ngen-view` doesn't link it |
 | [nlohmann/json](https://github.com/nlohmann/json) | JSON for RPC, records and packs |
 | [concurrentqueue](https://github.com/cameron314/concurrentqueue) | Lock-free queues between threads |
+| [tinyexr](https://github.com/syoyo/tinyexr) | Reading OpenEXR in `ngen-packer-exr` (a dome light's HDR sky) |
 
-GLM, stb, Dear ImGui, OpenUSD, nlohmann/json and concurrentqueue are git submodules in `external/`. SDL3 and the Vulkan SDK must be installed on the system.
+GLM, stb, Dear ImGui, OpenUSD, nlohmann/json, concurrentqueue and tinyexr are git submodules in `external/`. SDL3 and the Vulkan SDK must be installed on the system.
 
 After cloning, initialize the submodules:
 

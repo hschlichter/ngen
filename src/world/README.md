@@ -27,7 +27,8 @@ the caller feeds the composer packs from the asset server.
   bound material as a key, `materialKey`: its pack's asset id and its inputs' values, `<asset>?<input>=<value>&…`, and
   `strongerThanDescendants`). A material that references another file's network and sets its inputs (a tile setting a library
   material's texture) is that file's pack with this one's values.
-- **Components** beside the entities, per content: lights (UsdLux's inputs, with UsdLux's fallbacks), LOD roots (levels, default index, loaded levels,
+- **Components** beside the entities, per content: lights (UsdLux's inputs, with UsdLux's fallbacks; a dome's image, its `texture:format` and its
+  pole axis, `Y` for a `DomeLight` and `poleAxis` for a `DomeLight_1`), LOD roots (levels, default index, loaded levels,
   and every heuristic it names, `LodRoot::heuristics`) point instancers (`PointInstancerData`: prototypes,
   and per point its prototype, its transform from `positions`, `orientations` and `scales` as UsdGeomPointInstancer composes them, and whether
   `invisibleIds` hides it; arrays not matching `protoIndices` make no points, as in USD) and payload placements (asset ids, loaded, `extentsHint`).

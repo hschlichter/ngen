@@ -19,10 +19,14 @@ layout(set = 0, binding = 2) uniform LightUBO {
     vec4 groundAmbient; // ambient on faces turned down
     vec4 cascadeEye;    // xyz = the eye the cascades were fitted from, w = 1 when it isn't the camera rendered from
     vec4 cascadeForward;
+    vec4 skyRadiance;      // xyz = the sky's scale, w = 1 when there is a sky
+    mat4 skyToImage;       // upper 3x3: a world direction into the sky image's frame (pole +Z)
+    vec4 skyIrradiance[9]; // the sky's irradiance: spherical-harmonic coefficients in the image's frame
 } light;
 layout(set = 0, binding = 3) uniform sampler2D gbufferDepth;
 layout(set = 0, binding = 4) uniform sampler2D shadowMap;          // atlas, plain reads
 layout(set = 0, binding = 5) uniform sampler2DShadow shadowMapCmp; // atlas, hardware compare
+layout(set = 0, binding = 6) uniform sampler2D skyImage;           // the sky: an HDR lat-long, pole +Z
 
 layout(push_constant) uniform Push {
     int viewMode;
@@ -51,6 +55,35 @@ float linearizeDepth(float d) {
 }
 
 const vec3 BACKGROUND_COLOR = vec3(0.12, 0.12, 0.15);
+const float PI = 3.14159265358979;
+
+bool hasSky() {
+    return light.skyRadiance.w > 0.5;
+}
+
+// The sky's radiance in a world direction: the lat-long image's frame has its pole on +Z, row 0 the zenith, column 0 longitude +π,
+// longitude 0 toward −Y and π/2 toward +X (UsdLux's lat-long).
+vec3 skyRadianceToward(vec3 worldDir) {
+    vec3 d = normalize(mat3(light.skyToImage) * worldDir);
+    float longitude = atan(d.x, -d.y);
+    vec2 uv = vec2((PI - longitude) / (2.0 * PI), acos(clamp(d.z, -1.0, 1.0)) / PI);
+    return texture(skyImage, uv).rgb * light.skyRadiance.rgb;
+}
+
+// The light the sky casts on a surface facing a world direction (irradiance), from its spherical harmonics.
+vec3 skyIrradianceToward(vec3 worldNormal) {
+    vec3 n = normalize(mat3(light.skyToImage) * worldNormal);
+    vec3 e = light.skyIrradiance[0].rgb * 0.282095;
+    e += light.skyIrradiance[1].rgb * (0.488603 * n.y);
+    e += light.skyIrradiance[2].rgb * (0.488603 * n.z);
+    e += light.skyIrradiance[3].rgb * (0.488603 * n.x);
+    e += light.skyIrradiance[4].rgb * (1.092548 * n.x * n.y);
+    e += light.skyIrradiance[5].rgb * (1.092548 * n.y * n.z);
+    e += light.skyIrradiance[6].rgb * (0.315392 * (3.0 * n.z * n.z - 1.0));
+    e += light.skyIrradiance[7].rgb * (1.092548 * n.x * n.z);
+    e += light.skyIrradiance[8].rgb * (0.546274 * (n.x * n.x - n.y * n.y));
+    return max(e, vec3(0.0)) * light.skyRadiance.rgb;
+}
 
 bool isBackground(vec2 uv) {
     return texture(gbufferDepth, uv).r <= 0.0;
@@ -166,7 +199,13 @@ vec3 sampleBuffer(int mode, vec2 uv) {
         // Raw shadow map visualization: screen UV → shadow map UV.
         return vec3(texture(shadowMap, uv).r);
     }
-    if (isBackground(uv)) return BACKGROUND_COLOR;
+    if (isBackground(uv)) {
+        // The lit view shows the sky where nothing is drawn: the view ray through the pixel, from two depths (the far plane is at infinity).
+        if (mode == 0 && hasSky()) {
+            return skyRadianceToward(reconstructWorld(uv, 0.5) - reconstructWorld(uv, 1.0));
+        }
+        return BACKGROUND_COLOR;
+    }
     vec4 albedoSample = texture(gbufferAlbedo, uv);
     vec3 albedo = albedoSample.rgb;
     if (mode == 1) return albedo;
@@ -222,6 +261,10 @@ vec3 sampleBuffer(int mode, vec2 uv) {
     vec3 ambient = mix(light.groundAmbient.rgb, light.skyAmbient.rgb, upness);
 
     vec3 lit = albedo * light.lightColor.rgb * (ambient + diff * shadowFactor);
+    if (hasSky()) {
+        // The sky lights in place of the hemisphere ambient: a Lambert surface reflects albedo · E / π of the irradiance E.
+        lit = albedo * (skyIrradianceToward(N) / PI + light.lightColor.rgb * diff * shadowFactor);
+    }
     if (mode == 10) {
         return mix(lit, lodLevelTint(int(normalSample.a + 0.5)), LAYER_OPACITY);
     }

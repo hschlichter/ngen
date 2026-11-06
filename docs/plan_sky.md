@@ -1,6 +1,6 @@
 # Sky: the dome light drawn and lighting the scene
 
-**Status. Draft.** Decisions locked 2026-11-05 (Henrik): EXR read through a vendored tinyexr; the first plan covers the visible sky and its diffuse
+**Status. Landed.** Built 2026-11-06. Decisions locked 2026-11-05 (Henrik): EXR read through a vendored tinyexr; the first plan covers the visible sky and its diffuse
 light, with specular and tone mapping deferred. 2026-11-06 (Henrik): the sky on the GPU is RGB9E5 at full size, 4096×2048 in 32 MiB (every
 Vulkan 1.3 device samples it; RGBA16F would take 64 MiB, a 2048×1024 sky 8 MiB with visibly softer clouds).
 
@@ -92,9 +92,42 @@ ngen-view draws none of it; the background is the lighting pass's clear colour, 
 - With `render.sky.on false` the village image matches today's.
 - The `memory` record shows the sky texture; no warnings or errors in the trace.
 
+## Results
+
+Built 2026-11-06, every step as planned.
+- tinyexr v3.3.0 as `external/tinyexr`, through stb's zlib (`TINYEXR_USE_STB_ZLIB`): stb is already vendored, and miniz would be the build's
+  only C source. The sky is ZIP-compressed, which stb's zlib reads.
+- The EXR path was first in `ngen-packer-texture`, then split into its own program the same day (Henrik): `ngen-packer-exr`, rule `exr`
+  (version 1). Its dependency stays in its own process, and since the cache hashes a packer's binary, a change to EXR packing repacks only EXR
+  images (ADR 38). The split packer writes the sky's pack byte-identical to the merged one's.
+- The texture pack is version 2: a 28-byte header with an irradiance count, the 27-float block, then the levels (`PackedTextureFormat::Rgb9e5`,
+  `encodeRgb9e5`/`decodeRgb9e5` beside it). The texture rule's version went to 2 with the header; the `exr` rule takes `.exr`; the USD rule keeps `poleAxis` (version 10).
+- `sky.exr` packs in half a second to 32 MiB plus the block. The irradiance's constant term gives a mean radiance over the sphere of
+  (0.2161, 0.2738, 0.3554), against (0.2158, 0.2736, 0.3552) averaged from the packed texels by solid angle: within 0.15%.
+- `RhiFormat::E5B9G9R9_UFLOAT`; `TextureDesc` carries its format and irradiance; the GPU scene uploads and slots it as any texture (one
+  level, within the 64 MiB upload budget).
+- The World's `Light` holds a dome's texture, format and pole axis; placement keeps domes by prim (`domesByPrim`) and makes the environment in
+  `collectEnvironment`; `EnvironmentChanged` and `DomeLightIgnored` trace.
+- The lighting pass binds the sky at binding 6 with its own sampler; the shader draws it in the lit view's empty pixels and replaces the
+  hemisphere ambient with the irradiance over π. A scene without a dome takes the old expression unchanged.
+- Visibility: the `environment` record; `render.sky.on`; `skyDrawn` in `SceneGpuStats`; the Render Debug window and the `render` record show
+  the sky and its mean radiance; the inspector previews an HDR texture as half float, and `dump-texture` writes it as sRGB.
+- Checks: the 8 reference images byte-identical. At the village the `environment` record shows `/Environment/Sky`, image held (4096×2048),
+  drawn, intensity 0.9, pole Z, light facing up (0.25, 0.34, 0.56) and down (0.11, 0.13, 0.09); turned to the sun's direction, the brightest
+  pixels' centroid is (1278.8, 718.7) at the screen's centre (1279.5, 719.5); with `render.sky.on false` the background is the clear colour
+  again and `drawn` false; the `memory` record lists the sky as a 33,554,432-byte `E5B9G9R9_UFLOAT` texture; the inspector and `dump-texture`
+  run on it under validation; the debug build runs with the Render Debug window open.
+- Not checked as planned: "the village image with `render.sky.on false` matches today's". The binary before this plan can't read the
+  repacked textures (pack version 2) the server now serves; the no-sky shader path is the one the 8 reference images check unchanged.
+- Found on the way, not changed: headless runs get the surface's first format, `R8G8B8A8_UNORM` (`rhiswapchainvulkan.cpp:53` takes
+  `formats[0]`), so every headless image, the reference images among them, is written without the sRGB encoding a window's
+  `B8G8R8A8_SRGB` swapchain gives: the sky and everything else look darker headless than in a window.
+- Shadowed faces at the village are darker than with the hemisphere ambient: the sky's authored irradiance (about 0.25 to 0.56 facing up) is
+  below the configured ambient's 0.2 of the sun's radiance.
+
 ## Open questions
 
-None.
+None. The decisions are recorded in [ADR 79](adr/0079_dome_light_sky_and_irradiance.md).
 
 ## Deferred / follow-ups
 

@@ -100,7 +100,7 @@ auto gatherRecords(const Placement& tree) -> PlacementRecords {
                 out.lodRoots.push_back(root.row);
             }
         }
-        uint64_t primsDrawn = node.prims.size() - node.lights.size();
+        uint64_t primsDrawn = node.prims.size() - node.lights.size() - node.domes.size();
         for (const auto& child : node.children) {
             primsDrawn += visit(*child);
         }
@@ -424,7 +424,7 @@ auto ViewScene::freePrim(uint32_t prim) -> void {
     if (assetsByPrim[prim - 1]) {
         assetsByPrim.edit(prim - 1).reset();
     }
-    if (lightsByPrim.erase(prim) > 0) {
+    if (lightsByPrim.erase(prim) > 0 || domesByPrim.erase(prim) > 0) {
         lightsChanged = true;
     }
     freePrims.insert(prim);
@@ -914,6 +914,7 @@ auto ViewScene::undrawPlacement(const std::shared_ptr<Placement>& node, bool min
     out->prims.clear();
     out->lodGroups.clear();
     out->lights.clear();
+    out->domes.clear();
     out->cameras.clear();
     out->payloads.clear();
     out->variantPrims.clear();
@@ -997,6 +998,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
     node->slots.clear();
     node->prims.clear();
     node->lights.clear();
+    node->domes.clear();
     node->waiting.clear();
     node->ownWait = {};
     node->heldMeshes.clear();
@@ -1028,7 +1030,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
             if (primPaths[prim - 1] != path) {
                 primPaths.edit(prim - 1) = path;
             }
-            if (lightsByPrim.erase(prim) > 0) {
+            if (lightsByPrim.erase(prim) > 0 || domesByPrim.erase(prim) > 0) {
                 lightsChanged = true;
             }
             return prim;
@@ -1262,6 +1264,20 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                     node->lights.push_back(placed);
                     lightsByPrim[prim] = placed;
                     lightsChanged = true;
+                } else if (light.shape == LightShape::Dome) {
+                    // A dome is the scene's sky: its image is asked for as a material's texture is, and the pass that holds it makes the
+                    // environment (collectEnvironment).
+                    auto prim = takePrim(path);
+                    node->prims.push_back(prim);
+                    node->domes.push_back(prim);
+                    if (assetsByPrim[prim - 1]) {
+                        assetsByPrim.edit(prim - 1).reset();
+                    }
+                    domesByPrim[prim] = PlacedDome{.light = light, .worldTransform = unitScale * world};
+                    lightsChanged = true;
+                    if (!light.texture.empty() && !texturePacks.contains(light.texture)) {
+                        wantAsset(*node, light.texture, AssetKind::Texture);
+                    }
                 }
             }
             const auto& entity = *item.entity;
@@ -1588,6 +1604,18 @@ auto ViewScene::place() -> void {
             changes.lightsChanged = true;
             changes.lights = drawn.lights;
         }
+        if (auto environment = collectEnvironment(); environment != drawn.environment) {
+            drawn.environment = environment;
+            changes.environmentChanged = true;
+            changes.environment = environment;
+            if (environment) {
+                TRACE_EVENT("Scene", "EnvironmentChanged", primPaths[environment->primHandle.index - 1])
+                    .text(std::format("the sky is {}'s image", primPaths[environment->primHandle.index - 1]))
+                    .field("radiance", (double) glm::length(environment->radiance));
+            } else {
+                TRACE_EVENT("Scene", "EnvironmentChanged", "(none)").text("no sky: the clear colour and the configured ambient");
+            }
+        }
     }
     // Library entries first, so the draws below name only what the renderer has been told about.
     std::set<uint32_t> meshesNow;
@@ -1597,6 +1625,9 @@ auto ViewScene::place() -> void {
         if (meshUses[index] > 0) {
             meshesNow.insert(index);
         }
+    }
+    if (drawn.environment) {
+        texturesNow.insert(drawn.environment->texture.index);
     }
     for (uint32_t index = 0; index < materialUses.size(); index++) {
         if (materialUses[index] == 0) {
@@ -1726,6 +1757,58 @@ auto ViewScene::place() -> void {
         .field("removed", (int64_t) removed)
         .field("updated", (int64_t) updated)
         .field("ms", ms);
+}
+
+// The first dome light, in prim order, whose image is an HDR lat-long the asset server packed with its irradiance; a dome that can't be
+// one is traced once (DomeLightIgnored). The image's frame has its pole on +Z (packedtexture.h): a world direction goes into the dome's own
+// space, then its pole axis (Z, Y, or the stage's up axis for "scene") onto +Z.
+auto ViewScene::collectEnvironment() -> std::optional<RenderEnvironment> {
+    const auto& w = composer->world();
+    std::optional<RenderEnvironment> environment;
+    auto ignore = [this](uint32_t prim, const std::string& why) {
+        if (domesWarned.insert(prim).second) {
+            TRACE_WARNING("Scene", "DomeLightIgnored", primPaths[prim - 1]).text(std::format("dome light {} ignored: {}", primPaths[prim - 1], why));
+        }
+    };
+    for (const auto& [prim, dome] : domesByPrim) {
+        const auto& light = dome.light;
+        if (environment) {
+            ignore(prim, "the scene has a dome light before it; one sky is drawn");
+            continue;
+        }
+        if (light.textureFormat != "latlong" && light.textureFormat != "automatic") {
+            ignore(prim, std::format("its texture format is {}; only latlong is read", light.textureFormat));
+            continue;
+        }
+        if (light.texture.empty()) {
+            ignore(prim, "it has no texture");
+            continue;
+        }
+        auto handle = texture(light.texture);
+        const auto* desc = handle ? textureLibrary.get(handle) : nullptr;
+        if (desc == nullptr) {
+            continue; // its image is on its way
+        }
+        if (desc->format != TextureFormat::Rgb9e5 || !desc->irradiance) {
+            ignore(prim, std::format("{} isn't an HDR image (OpenEXR)", light.texture));
+            continue;
+        }
+        glm::mat3 rotation;
+        for (int axis = 0; axis < 3; axis++) {
+            rotation[axis] = glm::normalize(glm::vec3(dome.worldTransform[axis]));
+        }
+        bool poleY = light.poleAxis == "Y" || (light.poleAxis == "scene" && w.upAxis != "Z");
+        // Y onto +Z: (x, y, z) to (x, -z, y), which keeps the frame right-handed.
+        glm::mat3 pole = poleY ? glm::mat3(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, -1.0f, 0.0f)) : glm::mat3(1.0f);
+        environment = RenderEnvironment{
+            .texture = handle,
+            .radiance = light.color * (light.intensity * std::exp2(light.exposure)),
+            .toImage = pole * glm::transpose(rotation),
+            .irradiance = *desc->irradiance,
+            .primHandle = PrimHandle{prim},
+        };
+    }
+    return environment;
 }
 
 // The distant lights in prim order, or the engine's light when the scene has none: upper-front-right in the scene's own frame, as it
