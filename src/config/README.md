@@ -4,6 +4,8 @@ The engine's settings, in one system: each setting is a typed value declared in 
 dotted name, a default and a description. The library (`config`) is standard library only and sits beside `profile` and `trace`: any
 library may declare values, and nothing in it knows the engine.
 
+![The Configuration window: every value by group with an editor for its type](../../screenshots/config_hero.png)
+
 ![A value declared in code registers by name; the config record, the config RPC methods and verbs and the windows read and set it on the main thread, and ViewFrame hands what the render thread needs to it on a change or in the RenderSnapshot](../../screenshots/config_value_flow.svg)
 
 ## Declaring a value

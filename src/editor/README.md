@@ -4,6 +4,8 @@ The USD editor code, kept here unchanged and unbuilt until `ngen-editor` is buil
 as a USD stage, and its editor windows edited it in process. The view now renders from packs and links no OpenUSD (`src/view/README.md`),
 so this code has no program; nothing in `build.cpp` compiles it.
 
+![The editor as it was when it was last built, in ngen-view: the scene tree, properties, layers and undo history, and the translate gizmo on the Kitchen set's refrigerator](../../screenshots/engine_editor_v2.png)
+
 | Folder | What |
 |---|---|
 | `scene/` | `USDScene` (the stage, its layers, prim records, transforms, lights, meshes and materials), `USDRenderExtractor` (the stage to `RenderWorld`), `NgenAssetResolver` and its plugin metadata (`usdplugins/`, every asset read through the asset server), USD diagnostics into the trace, `SceneUpdater` and `UndoStack` (edits with undo), `SceneQuerySystem`, `SpatialIndex` and `BoundsCache` (CPU picking and bounds) |

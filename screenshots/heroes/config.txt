@@ -1,0 +1,4 @@
+# The config hero: the Configuration window over the castle. Paths are relative to the repository root.
+10 window config on
+40 screenshot _out/heroes/config/shot.png
+50 quit

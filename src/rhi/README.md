@@ -5,6 +5,8 @@
 (`vulkan/`, later `d3d12/`, `metal/`) and is the only code that includes that API's headers. The build links exactly
 one backend per platform.
 
+![Every RHI example's last frame: one program per feature, each checking its own pixels](../../screenshots/rhi_hero.png)
+
 This file states the principles the interface is built on, how the interface is organised, how the Vulkan backend
 implements it, and what an integrator (an engine, an app, a test harness) is expected to provide. Read it before adding
 to the interface or writing code on top of it.

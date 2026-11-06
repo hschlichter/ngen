@@ -4,6 +4,8 @@
 records, their traces merged by time, and their methods. It has a window for humans and a command line for agents and scripts; both are RPC clients
 and nothing else. The processes don't know about the tool: it finds them through `.ngen-discovery/` in its working directory and connects to each.
 
+![ngen-introspect's Records tab: the asset server's and ngen-view's records, and the view's assets record as a table](../../screenshots/introspect_hero.png)
+
 ngen-view keeps its own windows. The tool shows what any process gives as records, and doesn't look into GPU buffers, textures or captures; those
 stay in the view (`introspect.frame`, `introspect.gpuscene`, `capture.request`).
 

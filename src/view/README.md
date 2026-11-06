@@ -8,6 +8,8 @@ modes (`ground.*`), "go to asset" (`assetgoto.*`), and the frame (`viewframe.*`)
 `viewcommands` library ("Commands", below). The program's `main` is `src/apps/view.cpp`: arguments, wiring, the window's input and the loop;
 its UI is `ViewUI` (`src/ui/viewui.*`). The tools' sections below (the LOD and Streaming tools, the debug camera) describe code in `src/tools`.
 
+![A flight over the streaming test world in the LOD level view: each LOD root's drawn level colours what it draws, finer near the camera, as levels load and switch](../../screenshots/view_hero.gif)
+
 ## The frame
 
 ![ViewFrame's steps in the order the main loop calls them, with the ViewHooks points between them and the tools and the UI joining at each](../../screenshots/view_frame_hooks.svg)

@@ -5,6 +5,8 @@ builds a frame graph every frame, draws the scene with GPU-driven indirect draws
 file describes how the renderer is structured, how its components fit together, and the rules the code relies on. Read it before adding a pass or
 changing how scene data reaches the GPU.
 
+![The lit castle in the streaming test world, and under it what the passes made before it: albedo, normals, depth, the shadow cascades and the instance ids](../../screenshots/renderer_hero.png)
+
 ## Principles
 
 - **GPU-driven is the only path.** Scene data lives in persistent GPU tables; visibility and draw lists are produced on the GPU; the mesh passes issue one

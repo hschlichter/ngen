@@ -1,0 +1,8 @@
+# The tools hero: the debug camera above the castle, watching the main camera, with the streaming roots' bounds and the Streaming window.
+10 debug-camera on
+11 camera 1000,1560,320,-60,-35 debug
+12 window streaming on
+13 streaming-show bounds on
+14 wait-resident
+80 screenshot _out/heroes/tools/shot.png
+90 quit

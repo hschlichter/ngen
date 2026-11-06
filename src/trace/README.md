@@ -5,6 +5,8 @@ what happened and in what order (a process started, a scene opened, a file was w
 `ngen-introspect` subscribes to every process in its directory and merges their events by time: in its Trace tab, or as JSON lines from
 `ngen-introspect trace` (`src/introspect/README.md`).
 
+![ngen-introspect's Trace tab: ngen-view's and the asset server's events merged by time, warnings in yellow](../../screenshots/trace_hero.png)
+
 **The trace is not for data.** Counts, statistics, timings, pass lists, what is resident on the GPU, the camera: anything that can be asked
 for is a record (`src/rpc/README.md`, "Records"), read when it is needed with `ngen-introspect get`, or at an exact frame with the `record`
 script verb. Nothing is traced every frame. A steady state is silent: a frame that runs like the last one adds nothing to the trace.

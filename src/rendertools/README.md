@@ -4,6 +4,8 @@ The `rendertools` library: the renderer's instrumentation, apart from its core (
 render extension (`RenderTools`, "Extensions" in the renderer's README), and nothing of it runs unless asked for. It includes no ImGui and no
 tool, so a program without the UI keeps every record and dump it serves.
 
+![The Frame Graph window: every pass and resource of a frame, the lighting pass selected with what it reads and a preview of its output](../../screenshots/engine_eldermark_framegraph_01.png)
+
 ## What is here
 
 | What | Files | Serves |
