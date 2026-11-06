@@ -56,6 +56,7 @@ Current truth for the build framework is [`../src/build/README.md`](../src/build
 - [plan_async_scene.md](plan_async_scene.md) — ngen-view never waits for its scene: a scene thread composes and diffs, identity by asset, an incremental GPU scene (pool suballocator, texture slots, instance slots), non-blocking uploads within a per-frame budget, placeholders, scripts count frames from when the scene is resident (landed)
 - [plan_imgui_integration.md](plan_imgui_integration.md) — ImGui as a frame-graph pass (landed)
 - [debug_renderer_implementation_plan.md](debug_renderer_implementation_plan.md) — debug line rendering (landed)
+- [plan_sky.md](plan_sky.md) — the dome light drawn and lighting the scene: EXR through tinyexr, RGB9E5, SH irradiance from the dome replacing the hemisphere ambient (draft)
 
 ## Scene and USD
 
