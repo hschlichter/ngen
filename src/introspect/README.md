@@ -20,7 +20,7 @@ records with `registerRpcRecords` (engine layer); the asset server answers the t
 
 | Process | Record | What it holds |
 |---|---|---|
-| view | `status` | frame counter, scene, selection, the main camera, the camera modes (the follow mode's ground hit, the orbit's pivot) |
+| view | `status` | frame counter, scene, selection, the main camera, the camera modes (the follow mode's ground hit, the orbit's pivot), whether the camera still frames the scene as it arrives (`framing`) and the start camera not placed yet (`startCamera`) |
 | view | `config` | every configuration value with its type, value, default, description and range or choices (`src/config/README.md`) |
 | view | `debugcamera` | the debug camera's pose and the main camera's trail (the tools'; its switches are `config`'s `tools.debugcamera.*`) |
 | view | `lodtool`, `streamingtool` | the LOD and Streaming tools: the inspection of the root at or above the selection, and the tools' totals (the tools'; `src/tools/README.md`) |

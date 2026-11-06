@@ -44,7 +44,9 @@ culled from, fitted to by the cascades. Each is the main camera (`ViewFrame::cam
 after the commands, so a command that turns the debug camera on shows the frame it runs, and one from the UI the next.
 
 **The script's clock** (`ScriptClock`, `viewcommands.h`): a script's frames count only while nothing holds it (the first residency, a method
-answering on residency, a flight); `--frames` quits after the last. The `scenethread` record shows it (`scriptHeld`, `scriptFrame`).
+answering on residency, a flight); `--frames` quits after the last. The `scenethread` record shows it (`scriptHeld`, `scriptFrame`). A
+script line that moves the camera doesn't hold it: what the new view needs streams in while the frames count, so a script that wants it
+loaded follows the move with `wait-resident`.
 
 ## Commands
 
@@ -92,7 +94,10 @@ cutout whose opacity texture is still uploading draws opaque. A material that ha
 `ViewFrame::updateResidency` checks once a frame, and traces `SceneResident` when it becomes true, with the time since start and the longest frame while
 loading.
 
-Until the scene is first resident the camera frames what has arrived, unless it is moved by hand. Script frames, `--frames` and `--screenshot`
+Until the scene is first resident the camera frames what has arrived (`--camera-frame=/prim`: what is drawn at and under that prim, once
+something is), unless it is moved by hand. The start camera, `--camera`, isn't a script line: a pose is set before the first frame, and a
+camera the scene authors as soon as the scene names it (`StartCameraPlaced`; `StartCameraNotFound` at the first residency when it never
+does), so what loads first is what that camera sees (`ViewFrame::startCamera`, the `status` record's `startCamera` and `framing`). Script frames, `--frames` and `--screenshot`
 count only while nothing waits for residency, so a script sees the scene loaded:
 - **The start.** Counting starts when the scene is first resident; `--no-wait-resident` counts from start-up instead, to measure loading.
 - **Methods that change what is drawn** (`view.lod.set`, `view.purposes`, `view.repack`) answer once the scene is resident again, and a script

@@ -196,6 +196,8 @@ auto main(int argc, char* argv[]) -> int {
     bool waitForResident = true;
     SessionScript session;
     std::string sessionError;
+    std::string startCamera;
+    std::string startFrameTarget;
     auto flagValue = [](std::string_view arg, std::string_view flag) -> std::string {
         return std::string(arg.substr(flag.size()));
     };
@@ -222,11 +224,11 @@ auto main(int argc, char* argv[]) -> int {
         } else if (arg.starts_with("--frames=")) {
             maxFrames = std::stoull(flagValue(arg, "--frames="));
         } else if (arg.starts_with("--camera=")) {
-            // A pose, or the path of a camera the scene authors.
-            auto value = flagValue(arg, "--camera=");
-            session.add(0, value.starts_with("/") ? "camera-use" : "camera", value);
+            // A pose, or the path of a camera the scene authors; either before the scene loads, outside the script's clock.
+            startCamera = flagValue(arg, "--camera=");
         } else if (arg.starts_with("--camera-frame=")) {
-            session.add(0, "camera-frame", flagValue(arg, "--camera-frame="));
+            // What the camera frames while the scene arrives: the scene, or what is drawn at and under a prim.
+            startFrameTarget = flagValue(arg, "--camera-frame=");
         } else if (arg.starts_with("--select=")) {
             session.add(0, "select", flagValue(arg, "--select="));
         } else if (arg.starts_with("--view=")) {
@@ -483,6 +485,8 @@ auto main(int argc, char* argv[]) -> int {
         .lodPops = frame.lodPops,
         .flight = frame.flight,
         .cameraModes = frame.cameraModes,
+        .startCamera = frame.startCamera,
+        .autoFrame = frame.autoFrame,
         .sceneLabel = positional.size() >= 2 ? std::string(positional[1]) : std::string("(new scene)"),
     };
     // Each layer adds its methods, script verbs and records: the engine's, the tools', the UI's.
@@ -501,6 +505,18 @@ auto main(int argc, char* argv[]) -> int {
 #else
     (void) rpcEnabled;
 #endif
+
+    // The start camera: a pose at once, a camera the scene authors when the scene names it (ViewFrame::startCamera). Either ends the
+    // framing, so the scene loads what that camera sees and the script's clock starts there.
+    if (startCamera.starts_with("/")) {
+        frame.startCamera = startCamera;
+    } else if (!startCamera.empty()) {
+        verbs.run(registry, "camera", startCamera);
+        frame.autoFrame = false;
+    }
+    if (startFrameTarget != "scene") {
+        frame.frameTarget = startFrameTarget;
+    }
 
     // Main loop: the engine's steps in order, the commands after the scene update, the hooks between the steps.
     profile::registerThread("Main");

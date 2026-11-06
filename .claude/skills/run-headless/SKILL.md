@@ -75,7 +75,7 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   level 7+; cascades: red, green, blue, yellow near to far; lodlevel: at half strength over the lit image, the drawn level of the nearest LOD root, red level 0,
   orange 1, yellow 2, green 3, … white 7+ (an index within that root), or with `lod-show color depth` how many LOD roots deep it is (1 blue,
   2 green, 3 orange, 4+ magenta), grey under none; shadowmap shows the cascade atlas), `--overlay=grid=on,aabbs=off,...`
-  (grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa), `--camera=x,y,z,yaw,pitch` or `--camera=/camera/prim` (a camera the scene authors; Caldera has 13 under `/cameras`), `--camera-frame=scene|/prim` (what is drawn at and under the prim), `--select=/prim` (full path, instances expanded).
+  (grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa), `--camera=x,y,z,yaw,pitch` or `--camera=/camera/prim` (a camera the scene authors; Caldera has 13 under `/cameras`; placed before the scene loads, so the first residency is at that camera), `--camera-frame=scene|/prim` (what the camera frames while the scene arrives), `--select=/prim` (full path, instances expanded).
 - Records at a frame go to a file: a script line `120 record render /tmp/records.jsonl` appends the render debug record (meshes, textures,
   passes with draw counters and GPU time, culled passes, draw log with prim paths) as one JSON line, `value` holding the record,
   `requested_frame` the frame asked for and `frame` the frame it was ready (GPU readbacks take a few). Any record works: `render`, `memory`,

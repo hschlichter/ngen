@@ -86,7 +86,9 @@ struct ViewContext {
     const float& viewAspect; // the view's width over height, as the LOD heuristic and the GPU's pick measure it
     const uint64_t& lodPops; // render-LOD pops (a drawn level changed without a fade) counted over the readbacks seen
     CameraFlight& flight;
-    CameraModesState& cameraModes; // the camera modes' state (ground.h)
+    CameraModesState& cameraModes;  // the camera modes' state (ground.h)
+    const std::string& startCamera; // the start camera not placed yet (ViewFrame::startCamera); empty once placed
+    const bool& autoFrame;          // the camera follows the scene as it arrives, until it is first resident or moved
     std::string sceneLabel;
     // The camera a `camera: "debug"` parameter moves: the tools' debug camera while it is on; unset (or null) without one.
     std::function<Camera*()> debugCamera;

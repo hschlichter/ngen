@@ -107,6 +107,8 @@ auto statusRecord(const ViewContext& view) -> Json {
         {"selected", view.selectedPath},
         {"camera", {{"position", Json(view.cam.position)}, {"yaw", view.cam.yaw}, {"pitch", view.cam.pitch}, {"speed", view.cam.speed}}},
         {"cameraModes", cameraModesJson(view.cameraModes)},
+        {"framing", view.autoFrame},
+        {"startCamera", view.startCamera},
     };
 }
 

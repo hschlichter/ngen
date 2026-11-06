@@ -45,8 +45,9 @@ auto ViewFrame::updateScene() -> void {
         PROFILE_ZONE("SceneInputs");
         snapshotsTaken++;
         cam.worldUp = scene.worldUp();
+        placeStartCamera();
         if (autoFrame) {
-            frameScene();
+            frameArrived();
         }
     }
     poseBeforeCommands = cam.position;
@@ -134,8 +135,13 @@ auto ViewFrame::updateResidency() -> void {
     if (resident && !residency.resident) {
         if (!residency.everResident) {
             residency.everResident = true;
+            if (!startCamera.empty()) {
+                TRACE_WARNING("Scene", "StartCameraNotFound", startCamera)
+                    .text(std::format("the scene authors no camera at {}; the view starts framing the scene", startCamera));
+                startCamera.clear();
+            }
             if (autoFrame) {
-                frameScene();
+                frameArrived();
             }
             autoFrame = false;
         }
@@ -242,6 +248,40 @@ auto ViewFrame::frameScene() -> void {
     }
     if (bounds.valid()) {
         cam.frame(bounds, glm::radians(45.0f));
+    }
+}
+
+auto ViewFrame::frameArrived() -> void {
+    if (!frameTarget.empty()) {
+        auto bb = scene.bounds(frameTarget);
+        if (bb.valid()) {
+            cam.frame(bb, glm::radians(45.0f));
+            return;
+        }
+    }
+    frameScene();
+}
+
+auto ViewFrame::placeStartCamera() -> void {
+    if (startCamera.empty()) {
+        return;
+    }
+    if (!autoFrame) {
+        TRACE_EVENT("Scene", "StartCameraDropped", startCamera).text(std::format("start camera {} dropped: the camera was moved first", startCamera));
+        startCamera.clear();
+        return;
+    }
+    for (const auto& camera : scene.cameras()) {
+        if (camera.path == startCamera) {
+            cam.place(camera.worldTransform);
+            autoFrame = false;
+            TRACE_EVENT("Scene", "StartCameraPlaced", startCamera)
+                .text(std::format("start camera {} placed at frame {}, {:.0f} ms after start", startCamera, frameCounter, trace::msSinceStart()))
+                .field("frame", (int64_t) frameCounter)
+                .field("since_start_ms", trace::msSinceStart());
+            startCamera.clear();
+            return;
+        }
     }
 }
 

@@ -95,6 +95,8 @@ public:
     auto frameSelected() -> void;
     // Frames every draw of the scene.
     auto frameScene() -> void;
+    // What the following frames: the frame target once something of it is drawn, else the whole scene.
+    auto frameArrived() -> void;
     // The keys as a camera move, after the input: orbiting ends when `orbitHeld` is released; following the ground sets the eye's height.
     auto moveCamera(const CameraMove& move, bool orbitHeld) -> void;
 
@@ -127,6 +129,12 @@ public:
     FrameCameras cameras;
     // Until the scene is first resident the camera follows it, framing what has arrived, unless it is moved by hand.
     bool autoFrame = true;
+    // The camera the view starts at (`--camera=/path`): a camera the scene authors, placed as soon as the scene names it, before the scene is
+    // first resident, so what loads first is what it sees. Empty once placed, or dropped when the camera was moved by hand first.
+    std::string startCamera;
+    // What the following frames until the scene is first resident (`--camera-frame=/prim`): what is drawn at and under a prim; empty for
+    // the whole scene.
+    std::string frameTarget;
     CameraModesState cameraModes;
     CameraFlight flight;
     AssetGoToState goTo;
@@ -175,4 +183,7 @@ private:
     uint64_t lodPopsFrame = 0;
     std::vector<CaptureWatch> sentWatches;
     bool watchesChanged = false; // since the last snapshot
+
+    // The start camera, placed once the scene names it, unless the camera was moved first.
+    auto placeStartCamera() -> void;
 };
