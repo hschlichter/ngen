@@ -282,4 +282,4 @@ Every window is under **Windows**; the overlays, purposes and camera modes under
 |---|---|
 | `assets/three_cubes.usda` | In the repository: three cubes on a fourth flattened into the ground; it authors no light, so the engine adds its default sun |
 | Intel's New Sponza | Not in the repository: `assets/main_sponza/NewSponza_Main_USD_Zup_003.usda` |
-| Eldermark | Not in the repository: a generated 10 km × 10 km world (about 24 GB), every cell a UsdLod root with payloaded levels, eleven authored cameras and a flight path; `assets/streamtest-world/world/root.usda` |
+| Eldermark | Not in the repository: a generated 10 km × 10 km world (about 24 GB), every cell a UsdLod root with payloaded levels, eleven authored cameras and a flight path, made by [world-generator](https://github.com/hschlichter/world-generator); `assets/streamtest-world/world/root.usda` |
