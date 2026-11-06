@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="664" viewBox="0 0 1000 664" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 15px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .m { font-size: 11px; fill: #334155; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .b { font-size: 12.5px; fill: #1f2733; font-weight: 700; }
+    .edge { font-size: 11.5px; fill: #334155; font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="arrowGrey" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="664" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">RPC: who talks to whom</text>
+  <text x="28" y="62" class="s" style="font-size:12px">One endpoint per long-running process, found through a file in the shared working directory; clients connect to it over loopback TCP.</text>
+
+  <!-- Clients -->
+  <rect x="28" y="92" width="236" height="172" rx="10" fill="#fdf2f8" stroke="#db2777" stroke-opacity="0.45"/>
+  <text x="40" y="116" class="lib">ngen-introspect</text>
+  <text x="40" y="134" class="s">an RPC client and nothing else</text>
+
+  <rect x="40" y="146" width="212" height="56" rx="7" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="52" y="165" class="b">Command line</text>
+  <text x="146" y="165" class="s">agents, scripts</text>
+  <text x="52" y="187" class="m">./ngen-cli introspect …</text>
+
+  <rect x="40" y="210" width="212" height="44" rx="7" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="52" y="228" class="b">Window</text>
+  <text x="104" y="228" class="s">humans</text>
+  <text x="52" y="245" class="s">records, traces by time, calls</text>
+
+  <rect x="28" y="352" width="236" height="68" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="40" y="376" class="lib">AssetClient</text>
+  <text x="40" y="394" class="s">ngen-view's: connects out only,</text>
+  <text x="40" y="409" class="s">asks for assets, gets packed bytes</text>
+
+  <!-- Wire -->
+  <text x="440" y="104" class="edge" text-anchor="middle">JSON-RPC 2.0, loopback TCP</text>
+  <text x="440" y="120" class="s" text-anchor="middle">requests and responses either way, notifications</text>
+
+  <line x1="268" y1="174" x2="612" y2="174" stroke="#475569" stroke-width="1.6" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <line x1="268" y1="232" x2="612" y2="356" stroke="#475569" stroke-width="1.6" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <line x1="268" y1="392" x2="612" y2="392" stroke="#475569" stroke-width="1.6" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="440" y="164" class="s" text-anchor="middle">describe, call, read records, subscribe to the trace</text>
+  <text x="440" y="382" class="s" text-anchor="middle"><tspan class="m">asset.request</tspan>; packed bytes and change notices back</text>
+
+  <!-- ngen-view endpoint -->
+  <rect x="616" y="92" width="356" height="226" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="628" y="116" class="lib">ngen-view</text>
+  <text x="708" y="116" class="s"><tspan class="m">RpcEndpoint</tspan>, run on the main thread</text>
+
+  <rect x="628" y="128" width="332" height="40" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="640" y="145" class="b">Methods</text>
+  <text x="640" y="160" class="s"><tspan class="m">view.camera.set</tspan>, …; <tspan class="m">rpc.describe</tspan> lists them</text>
+
+  <rect x="628" y="174" width="332" height="40" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="640" y="191" class="b">Records</text>
+  <text x="640" y="206" class="s"><tspan class="m">introspect.list</tspan>, <tspan class="m">introspect.get</tspan></text>
+
+  <rect x="628" y="220" width="332" height="40" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="640" y="237" class="b">Script verbs</text>
+  <text x="640" y="252" class="s">a <tspan class="m">--script</tspan> line runs the same method, in process</text>
+
+  <rect x="628" y="266" width="332" height="40" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="640" y="283" class="b">Trace</text>
+  <text x="640" y="298" class="s"><tspan class="m">trace.subscribe</tspan>, then <tspan class="m">trace.events</tspan> as they happen</text>
+
+  <!-- asset server endpoint -->
+  <rect x="616" y="334" width="356" height="86" rx="10" fill="#fdf2f8" stroke="#db2777" stroke-opacity="0.45"/>
+  <text x="628" y="358" class="lib">ngen-asset-server</text>
+  <text x="784" y="358" class="s">the core's <tspan class="m">RpcServer</tspan></text>
+  <text x="628" y="380" class="s"><tspan class="m">asset.request</tspan>, <tspan class="m">asset.delay.set</tspan>, records, trace;</text>
+  <text x="628" y="396" class="s">its own dispatch, no <tspan class="m">rpc.describe</tspan></text>
+
+  <!-- Discovery -->
+  <rect x="300" y="446" width="280" height="76" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="314" y="468" class="m" font-weight="700">.ngen-discovery/</text>
+  <text x="314" y="486" class="m">view-41207.json  asset-41180.json</text>
+  <text x="314" y="506" class="s">kind, pid, port, label; in the working directory</text>
+
+  <path d="M794,420 L794,484 L586,484" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrowGrey)"/>
+  <text x="690" y="476" class="s" text-anchor="middle">each endpoint writes one</text>
+  <text x="690" y="500" class="s" text-anchor="middle">once it listens</text>
+  <path d="M296,484 L146,484 L146,426" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrowGrey)"/>
+  <text x="156" y="450" class="s">clients find the port</text>
+  <text x="156" y="465" class="s">in the same directory</text>
+
+  <!-- Core and engine layer -->
+  <rect x="28" y="546" width="452" height="94" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="40" y="570" class="b">Core</text>
+  <text x="82" y="570" class="m">src/rpc/core</text>
+  <text x="196" y="570" class="s">standard library and nlohmann/json, no engine code</text>
+  <text x="40" y="592" class="s">frames, JSON-RPC messages, loopback sockets, <tspan class="m">RpcServer</tspan> and its I/O thread,</text>
+  <text x="40" y="608" class="s"><tspan class="m">RpcClient</tspan>, discovery files, <tspan class="m">RpcRecords</tspan>, <tspan class="m">RpcResponder</tspan></text>
+  <text x="40" y="628" class="s">used by ngen-introspect, the asset server and <tspan class="m">AssetClient</tspan></text>
+
+  <line x1="520" y1="593" x2="484" y2="593" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="502" y="583" class="s" text-anchor="middle">uses</text>
+
+  <rect x="524" y="546" width="448" height="94" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="536" y="570" class="b">Engine layer</text>
+  <text x="626" y="570" class="m">src/rpc</text>
+  <text x="696" y="570" class="s">built on the core and the trace</text>
+  <text x="536" y="592" class="s"><tspan class="m">RpcRegistry</tspan>: methods, parameter schemas, <tspan class="m">rpc.*</tspan> builtins</text>
+  <text x="536" y="608" class="s"><tspan class="m">RpcVerbs</tspan>: script lines to parameters; <tspan class="m">RpcEndpoint</tspan>: dispatch, trace</text>
+  <text x="536" y="628" class="s">used by ngen-view</text>
+</svg>

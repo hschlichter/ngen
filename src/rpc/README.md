@@ -3,6 +3,8 @@
 How ngen processes talk to each other and to agents: JSON-RPC 2.0 over TCP on loopback, one endpoint per long-running process, found through
 discovery files.
 
+![ngen-introspect (command line and window) and ngen-view's AssetClient talking JSON-RPC over loopback TCP to the ngen-view and ngen-asset-server endpoints, found through .ngen-discovery/, with what ngen-view's endpoint serves and the split between the core and the engine layer.](../../screenshots/rpc_overview.svg)
+
 ## Layout
 
 | Part | Files | Depends on |
@@ -11,7 +13,7 @@ discovery files.
 | Engine layer | `rpcregistry.*` (methods, parameter schemas, `rpc.*` builtins, records as methods), `rpcverbs.*` (script verbs: a line's text to a method's parameters), `rpcendpoint.*` (server + discovery + main-thread dispatch, the trace stream) | the core, `src/trace` |
 | Tool | `ngen-introspect` (`src/introspect/`) | the core |
 
-The core stays free of engine code, so the build server (`src/build/`) can use it as well. Only `.cpp` files include `nlohmann/json.hpp`; headers
+The core stays free of engine code, so a process that isn't the engine uses it alone: the asset server serves its methods and records on the core's `RpcServer` and `RpcRecords` with a dispatch of its own (and so has no `rpc.describe`), and `ngen-introspect` is a client on it. Only `.cpp` files include `nlohmann/json.hpp`; headers
 use `json_fwd.hpp`, with one exception: `rpcclient.h`, whose users are command-line tools that handle JSON anyway.
 
 ## Protocol

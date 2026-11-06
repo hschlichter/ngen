@@ -3,6 +3,8 @@
 The asset system gets engine-ready data to the engine. Something requests an asset by id from `ngen-asset-server`; the server packs it if its cached
 packed form is out of date, and streams the packed bytes over RPC to whoever asked. No client reads the server's files.
 
+![Source files in the server's working directory, each packed by the packer its extension's rule names into the cache, streamed over RPC to the clients' AssetClients, with change notices back when a source changes; asset ids are paths and versions content hashes.](../../screenshots/asset_overview.svg)
+
 **Packing** is the process inside it: one packer program per asset type turns a source file (shaders, textures, USD files) into its engine-ready
 form, under the rules in the root `pack.cpp`.
 

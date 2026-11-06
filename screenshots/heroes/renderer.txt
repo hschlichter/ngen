@@ -1,0 +1,14 @@
+# The renderer's hero: the lit castle and what the passes made before it. Paths are relative to the repository root.
+90 screenshot _out/heroes/renderer/lit.png
+100 view albedo
+110 screenshot _out/heroes/renderer/albedo.png
+120 view normals
+130 screenshot _out/heroes/renderer/normals.png
+140 view depth
+150 screenshot _out/heroes/renderer/depth.png
+160 view cascades
+170 screenshot _out/heroes/renderer/cascades.png
+180 view lit
+190 debugview instance
+270 screenshot _out/heroes/renderer/instance.png
+280 quit

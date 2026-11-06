@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="480" viewBox="0 0 1000 480" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .m { font-size: 11px; fill: #334155; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .edge { font-size: 11.5px; fill: #334155; font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="480" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">Build: a C++ project graph to binaries</text>
+  <text x="28" y="62" class="s" style="font-size:12px">The project is described in C++, frozen into a binary IR per variant, and executed by a parallel runner. No ninja, no make.</text>
+
+  <!-- Entry points -->
+  <rect x="28" y="92" width="200" height="64" rx="10" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="44" y="116" class="lib">./ngen-cli build</text>
+  <text x="44" y="138" class="s">fills in the set variant</text>
+
+  <line x1="228" y1="124" x2="264" y2="124" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <rect x="268" y="92" width="704" height="64" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="284" y="116" class="lib">ngen-build</text>
+  <text x="378" y="116" class="m">-p &lt;platform&gt; -c &lt;config&gt; [targets]</text>
+  <text x="284" y="138" class="s">orchestrates: rebuilds ngen-build-graph and ngen-build-run when their sources change, then runs them</text>
+
+  <line x1="368" y1="156" x2="368" y2="196" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="378" y="181" class="edge">runs</text>
+  <line x1="850" y1="156" x2="850" y2="196" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="860" y="181" class="edge">runs</text>
+
+  <!-- build.cpp -->
+  <rect x="28" y="200" width="200" height="164" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="44" y="224" class="lib">build.cpp</text>
+  <text x="128" y="224" class="s">project root</text>
+  <text x="44" y="246" class="t">platforms, configs,</text>
+  <text x="44" y="264" class="t">targets</text>
+  <rect x="40" y="280" width="176" height="70" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="52" y="298" class="m">src/build/framework/</text>
+  <text x="52" y="316" class="s">header-only: Project,</text>
+  <text x="52" y="331" class="s">Target, build::cxx, Tool</text>
+
+  <line x1="228" y1="282" x2="264" y2="282" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="246" y="272" class="s" text-anchor="middle">built</text>
+  <text x="246" y="300" class="s" text-anchor="middle">into</text>
+
+  <!-- graph stage -->
+  <rect x="268" y="200" width="200" height="164" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="284" y="224" class="lib">ngen-build-graph</text>
+  <text x="284" y="246" class="t">walks the Project,</text>
+  <text x="284" y="264" class="t">emits the IR</text>
+  <text x="284" y="292" class="s">every command baked into</text>
+  <text x="284" y="307" class="s">a shell string, with its</text>
+  <text x="284" y="322" class="s">inputs and outputs</text>
+
+  <line x1="468" y1="282" x2="504" y2="282" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- IR per variant -->
+  <rect x="520" y="232" width="160" height="40" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <rect x="514" y="224" width="160" height="40" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <rect x="508" y="216" width="160" height="40" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="520" y="234" class="m" font-weight="700">build.ngenir</text>
+  <text x="520" y="249" class="s">a binary IR per variant</text>
+  <text x="508" y="300" class="s">variant: platform × config</text>
+  <text x="508" y="318" class="m">linux-vulkan ×</text>
+  <text x="508" y="334" class="m">debug release gamerelease</text>
+
+  <line x1="686" y1="282" x2="732" y2="282" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- runner -->
+  <rect x="736" y="200" width="236" height="164" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="752" y="224" class="lib">ngen-build-run</text>
+  <text x="752" y="246" class="t">executes one variant's IR</text>
+  <text x="752" y="272" class="s">dirty by content hash</text>
+  <text x="752" y="288" class="s">headers from depfiles</text>
+  <text x="752" y="304" class="s">a parallel scheduler</text>
+  <text x="752" y="320" class="s">a build log of what it ran</text>
+
+  <line x1="850" y1="364" x2="850" y2="400" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- outputs -->
+  <rect x="268" y="404" width="704" height="52" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="284" y="427" class="m" font-weight="700">_out/&lt;platform&gt;/&lt;config&gt;/</text>
+  <text x="284" y="444" class="s">the variant's binaries</text>
+  <text x="500" y="436" class="m">ngen-view  ngen-asset-server  ngen-packer-*  ngen-cli  …</text>
+</svg>

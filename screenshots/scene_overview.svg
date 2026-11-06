@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="520" viewBox="0 0 760 520" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .m { font-size: 11px; fill: #334155; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .mb { font-size: 11.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .b { font-size: 12.5px; fill: #1f2733; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="760" height="520" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">Scene types: what ngen-view hands the renderer</text>
+  <text x="28" y="62" class="s" style="font-size:12px">Plain types with no USD in them: descriptions held by handle, and the vocabulary both sides use.</text>
+
+  <!-- ViewScene's libraries -->
+  <rect x="28" y="92" width="236" height="300" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="40" y="116" class="lib">ViewScene</text>
+  <text x="124" y="116" class="s">ngen-view's scene</text>
+
+  <rect x="40" y="130" width="212" height="50" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="52" y="150" class="mb">MeshLibrary</text>
+  <text x="52" y="168" class="m">MeshHandle → MeshDesc</text>
+
+  <rect x="40" y="188" width="212" height="50" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="52" y="208" class="mb">MaterialLibrary</text>
+  <text x="52" y="226" class="m">MaterialHandle → MaterialDesc</text>
+
+  <rect x="40" y="246" width="212" height="50" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="52" y="266" class="mb">TextureLibrary</text>
+  <text x="52" y="284" class="m">TextureHandle → TextureDesc</text>
+
+  <text x="40" y="318" class="s">each an <tspan class="m">AssetLibrary</tspan>: entries by asset</text>
+  <text x="40" y="334" class="s">id, immutable; a handle is never</text>
+  <text x="40" y="350" class="s">reused, so new content is a new</text>
+  <text x="40" y="366" class="s">entry with a new handle</text>
+
+  <line x1="264" y1="242" x2="296" y2="242" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- SceneChanges -->
+  <rect x="300" y="92" width="244" height="300" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="312" y="116" class="lib">SceneChanges</text>
+  <text x="428" y="116" class="s">what changed</text>
+  <text x="312" y="134" class="s">against what <tspan class="m">RenderWorld</tspan> drew before</text>
+
+  <rect x="312" y="146" width="220" height="44" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="324" y="164" class="m">meshesAdded, …Removed</text>
+  <text x="324" y="180" class="s">MeshHandle and its MeshDesc</text>
+
+  <rect x="312" y="196" width="220" height="44" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="324" y="214" class="m">materialsChanged, …Removed</text>
+  <text x="324" y="230" class="s">MaterialHandle and its MaterialDesc</text>
+
+  <rect x="312" y="246" width="220" height="44" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="324" y="264" class="m">texturesAdded, …Removed</text>
+  <text x="324" y="280" class="s">TextureHandle and its TextureDesc</text>
+
+  <rect x="312" y="296" width="220" height="80" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="324" y="314" class="m">instances, lights</text>
+  <text x="324" y="330" class="s">draws by slot: MeshHandle,</text>
+  <text x="324" y="345" class="s">MaterialHandle, the prim's index;</text>
+  <text x="324" y="360" class="s">lights by PrimHandle</text>
+
+  <line x1="544" y1="242" x2="576" y2="242" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- Renderer -->
+  <rect x="580" y="172" width="152" height="140" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-opacity="0.45"/>
+  <text x="592" y="196" class="lib">renderer</text>
+  <text x="592" y="218" class="t">applies them to</text>
+  <text x="592" y="236" class="t">the GPU scene</text>
+  <text x="592" y="260" class="s">keeps a description</text>
+  <text x="592" y="275" class="s">while its upload is</text>
+  <text x="592" y="290" class="s">pending</text>
+
+  <!-- Vocabulary -->
+  <rect x="28" y="412" width="704" height="84" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="40" y="436" class="b">Shared vocabulary</text>
+  <text x="160" y="436" class="m">scenetypes.h</text>
+
+  <rect x="40" y="446" width="164" height="38" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="52" y="462" class="mb">Transform</text>
+  <text x="52" y="477" class="s">as the gizmos edit it</text>
+
+  <rect x="212" y="446" width="164" height="38" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="224" y="462" class="mb">AABB</text>
+  <text x="224" y="477" class="s">a draw's world bounds</text>
+
+  <rect x="384" y="446" width="164" height="38" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="396" y="462" class="mb">Frustum</text>
+  <text x="396" y="477" class="s">culling, the overlays</text>
+
+  <rect x="556" y="446" width="164" height="38" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="568" y="462" class="mb">Ray</text>
+  <text x="568" y="477" class="s">the gizmos' mouse rays</text>
+</svg>

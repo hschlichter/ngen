@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="540" viewBox="0 0 1000 540" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
+    .h { font-size: 15px; font-weight: 700; fill: #1f2733; }
+    .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .m { font-size: 11px; fill: #334155; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
+    .s { font-size: 11px; fill: #5a6575; }
+    .t { font-size: 12.5px; fill: #3a4452; }
+    .edge { font-size: 11.5px; fill: #334155; font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="540" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="28" y="40" class="title">World: USD files to the runtime scene</text>
+  <text x="28" y="62" class="s" style="font-size:12px">Packed USD layers composed as USD composes a stage, with no OpenUSD; checked against OpenUSD line by line. Files from assets/layered.</text>
+
+  <!-- USD source files -->
+  <rect x="28" y="92" width="200" height="300" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
+  <text x="40" y="116" class="h">USD source files</text>
+
+  <rect x="40" y="128" width="176" height="42" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="52" y="145" class="m">root.usda</text>
+  <text x="52" y="161" class="s">the root layer</text>
+
+  <rect x="40" y="178" width="176" height="42" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="52" y="195" class="m">override.usda, base.usda</text>
+  <text x="52" y="211" class="s">its sublayers</text>
+
+  <rect x="40" y="228" width="176" height="42" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="52" y="245" class="m">model.usda</text>
+  <text x="52" y="261" class="s">referenced, and instanced</text>
+
+  <rect x="40" y="278" width="176" height="42" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="52" y="295" class="m">tree_lod{0,1}.usda</text>
+  <text x="52" y="311" class="s">a payload per LOD level</text>
+
+  <rect x="40" y="328" width="176" height="42" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="52" y="345" class="m">variants.usda</text>
+  <text x="52" y="361" class="s">variant sets: shape, base</text>
+
+  <line x1="228" y1="242" x2="260" y2="242" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- Asset server: packing -->
+  <rect x="264" y="92" width="160" height="300" rx="10" fill="#fdf2f8" stroke="#db2777" stroke-opacity="0.45"/>
+  <text x="276" y="116" class="lib">ngen-asset-server</text>
+  <text x="276" y="134" class="s">packs a file when asked</text>
+
+  <rect x="276" y="148" width="136" height="64" rx="7" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="288" y="168" class="m">ngen-packer-usd</text>
+  <text x="288" y="185" class="s">one file at a time: its</text>
+  <text x="288" y="200" class="s">opinions as written</text>
+
+  <line x1="344" y1="212" x2="344" y2="240" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <rect x="288" y="260" width="124" height="40" rx="7" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <rect x="282" y="252" width="124" height="40" rx="7" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <rect x="276" y="244" width="124" height="40" rx="7" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
+  <text x="288" y="262" class="t" font-weight="700">layer packs</text>
+  <text x="288" y="277" class="s">one per file</text>
+  <text x="276" y="326" class="s">asset id: the file's path;</text>
+  <text x="276" y="342" class="s">references, payloads and</text>
+  <text x="276" y="358" class="s">sublayers named by id</text>
+
+  <!-- packs <-> composer -->
+  <line x1="424" y1="224" x2="486" y2="224" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="455" y="214" class="edge" text-anchor="middle">addPack</text>
+  <line x1="486" y1="262" x2="428" y2="262" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="455" y="282" class="s" text-anchor="middle">ids it lacks</text>
+
+  <!-- WorldComposer -->
+  <rect x="490" y="140" width="170" height="204" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="502" y="164" class="lib">WorldComposer</text>
+  <text x="502" y="186" class="t">composes as USD</text>
+  <text x="502" y="203" class="t">composes a stage</text>
+  <text x="502" y="226" class="s">prim indexes as Pcp builds</text>
+  <text x="502" y="241" class="s">them: sublayers, references,</text>
+  <text x="502" y="256" class="s">payloads, variants, instances</text>
+  <text x="502" y="282" class="s">compose() in rounds, until</text>
+  <text x="502" y="297" class="s">no pack it names is missing</text>
+  <text x="502" y="324" class="t" font-weight="700">no OpenUSD</text>
+
+  <line x1="660" y1="242" x2="692" y2="242" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- World -->
+  <rect x="696" y="92" width="276" height="300" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
+  <text x="708" y="116" class="lib">World</text>
+  <text x="762" y="116" class="s">every composed prim is an entity</text>
+
+  <rect x="708" y="126" width="252" height="104" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="720" y="144" class="m" font-weight="700">World::stage</text>
+  <text x="720" y="162" class="m">/World</text>
+  <text x="736" y="180" class="m">ModelB</text>
+  <text x="846" y="180" class="s">instance: a prototype</text>
+  <text x="736" y="198" class="m">Tree/lod</text>
+  <text x="846" y="198" class="s">LOD root</text>
+  <text x="752" y="216" class="m">lod0 lod1</text>
+  <text x="846" y="216" class="s">a stand-in per level</text>
+
+  <rect x="708" y="238" width="252" height="66" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="720" y="256" class="m" font-weight="700">World::contents</text>
+  <text x="720" y="274" class="s">prototypes: instanced content, kept once</text>
+  <text x="720" y="291" class="s">LOD level contents, loaded or not</text>
+
+  <text x="708" y="324" class="s">components, beside the entities:</text>
+  <rect x="708" y="332" width="50" height="22" rx="6" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="716" y="347" class="m">Light</text>
+  <rect x="764" y="332" width="64" height="22" rx="6" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="772" y="347" class="m">LodRoot</text>
+  <rect x="834" y="332" width="124" height="22" rx="6" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="842" y="347" class="m">PayloadPlacement</text>
+  <rect x="708" y="360" width="138" height="22" rx="6" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="716" y="375" class="m">PointInstancerData</text>
+
+  <!-- Readers -->
+  <line x1="834" y1="392" x2="834" y2="428" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M720,392 L720,410 L510,410 L510,428" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="128" y1="392" x2="128" y2="428" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <rect x="696" y="432" width="276" height="80" rx="10" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="712" y="456" class="lib">ngen-view</text>
+  <text x="792" y="456" class="s">its placement</text>
+  <text x="712" y="478" class="t">walks the stage and the contents</text>
+  <text x="712" y="496" class="t">it links to, into draws</text>
+
+  <rect x="380" y="432" width="260" height="80" rx="10" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
+  <text x="396" y="456" class="lib">ngen-worldcheck</text>
+  <text x="396" y="478" class="t">World::visit: every prim, instances</text>
+  <text x="396" y="496" class="t">expanded; prints its fingerprint</text>
+
+  <rect x="28" y="432" width="236" height="80" rx="10" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
+  <text x="44" y="456" class="lib">ngen-usdcheck</text>
+  <text x="44" y="478" class="t">opens the same files with</text>
+  <text x="44" y="496" class="t">OpenUSD; prints its fingerprint</text>
+
+  <line x1="268" y1="472" x2="376" y2="472" stroke="#475569" stroke-width="1.6" stroke-dasharray="5 4" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="322" y="462" class="edge" text-anchor="middle">cmp</text>
+  <text x="322" y="490" class="s" text-anchor="middle">the same lines</text>
+</svg>

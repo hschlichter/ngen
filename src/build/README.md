@@ -10,6 +10,8 @@ executes that graph in parallel. Three top-level directories under `src/build/`,
 - **`run/`** — the executor library (`ngen::run::execute()`) and its standalone CLI (`ngen-build-run`). Dirty detection, scheduler, depfile parsing, build
   log.
 
+![./ngen-cli build drives ngen-build, which runs ngen-build-graph (build.cpp written against the header-only framework) to emit a binary IR per variant and ngen-build-run to execute it into the variant's folder under _out/.](../../screenshots/build_overview.svg)
+
 Every file under `src/build/` carries a prose header explaining what it solves, what it exports, and how it fits in. **This document is the high-level
 architecture and usage; the file headers are the details.** When you want to know how a specific type works or what a class's invariants are, open the
 corresponding `.hpp`.

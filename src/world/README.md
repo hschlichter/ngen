@@ -1,8 +1,10 @@
 # World
 
 The World is the runtime scene: every prim of a scene, composed from its scene packs (`src/asset/README.md`, "Scene packs"), with no USD
-in it. `WorldComposer` composes it as USD composes a stage, for what the engine composes; `World::visit` walks it. Nothing here fetches:
+in it. `WorldComposer` composes it as USD composes a stage, for what the engine composes; `World::visit` walks it with every entity's full path and resolved state (ngen-worldcheck's fingerprint); ngen-view walks the stage and the contents itself, by their links, to place them (`src/view/README.md`, "The placement tree"). Nothing here fetches:
 the caller feeds the composer packs from the asset server.
+
+![USD files (a root layer, its sublayers, a referenced asset, a payload per LOD level, variant sets) packed by ngen-packer-usd into layer packs, composed by WorldComposer into a World of entities and components, read by ngen-view's placement and by ngen-worldcheck, whose fingerprint is compared with ngen-usdcheck's from OpenUSD.](../../screenshots/world_overview.svg)
 
 | Files | What |
 |---|---|
