@@ -43,7 +43,7 @@ Alternatives considered:
   [src/build/README.md](../../src/build/README.md).
 - Code:
   - `build.cpp:43-87`: the platform, the three configurations and their registration.
-  - `build.cpp:586`: `p.default_target(view)`.
+  - `build.cpp:587`: `p.target(view)`; a build without targets builds every registered target ([ADR 80](0080_build_without_targets_builds_everything.md)).
   - `src/build/framework/configuration.hpp:8`: `variant.out_dir = root / platform / config`.
   - The `Makefile` no longer exists.
 - Differs from plan:

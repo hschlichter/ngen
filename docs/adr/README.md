@@ -32,7 +32,7 @@ locked; **Superseded by N** — replaced, kept as a record.
 | [15](0015_custom_runner_and_binary_ir.md) | 2026-05-03 | A custom runner fed by a binary IR replaces Ninja | Accepted |
 | [16](0016_fuzzy_target_matching.md) | 2026-05-03 | Targets resolved by exact name, then fuzzy substring | Accepted |
 | [17](0017_one_runner_one_command_seed.md) | 2026-05-13 | One runner for self-build and project build, one `c++` seed | Accepted |
-| [18](0018_no_project_defaults_in_build_system.md) | 2026-05-18 | No project defaults: platform and config always required | Accepted |
+| [18](0018_no_project_defaults_in_build_system.md) | 2026-05-18 | No project defaults: platform and config always required | Superseded by 80 |
 | [19](0019_rhi_executes_engine_schedules.md) | 2026-09-19 | The RHI executes, the engine schedules | Accepted |
 | [20](0020_no_window_layer_in_rhi.md) | 2026-09-19 | No window layer in the RHI (`RhiWindow`) | Accepted |
 | [21](0021_rhi_example_programs.md) | 2026-09-19 | The RHI is verified by example programs with analytic checks | Accepted |
@@ -94,6 +94,7 @@ locked; **Superseded by N** — replaced, kept as a record.
 | [77](0077_record_architecture_decisions.md) | 2026-11-04 | Record architecture decisions | Accepted |
 | [78](0078_render_extensions.md) | 2026-11-05 | Render extensions: what isn't the renderer's core joins its frame | Accepted |
 | [79](0079_dome_light_sky_and_irradiance.md) | 2026-11-05 | The dome light as the sky, its irradiance computed when packed | Accepted |
+| [80](0080_build_without_targets_builds_everything.md) | 2026-11-07 | No project defaults; a build without targets builds everything | Accepted |
 
 ## By area
 

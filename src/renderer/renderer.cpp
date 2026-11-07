@@ -659,8 +659,8 @@ auto Renderer::cullResult() const -> CullResult {
         .cameraCulled = drawLists.cameraCulled(),
         .cameraInstanceTriangles = trianglesIn(drawLists, 0) + trianglesIn(drawLists, DrawLists::lateView),
         .cascadeCount = drawLists.cascadeCount(),
-        .viewBits = drawLists.viewBits(),
         .regionOverflow = drawLists.regionOverflow(),
+        .viewBits = drawLists.viewBits(),
         .lodDropped = drawLists.lodDropped(),
         .lodFadingInstances = drawLists.fadingInstances(),
     };

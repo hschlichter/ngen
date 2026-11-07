@@ -4,7 +4,7 @@ Date: 2026-05-18
 
 ## Status
 
-Accepted
+Superseded by [ADR 80](0080_build_without_targets_builds_everything.md)
 
 ## Context
 

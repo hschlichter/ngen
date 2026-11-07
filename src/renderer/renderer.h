@@ -77,8 +77,8 @@ public:
     Renderer() = default;
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
-    Renderer(Renderer&&) = default;
-    Renderer& operator=(Renderer&&) = default;
+    Renderer(Renderer&&) = delete;
+    Renderer& operator=(Renderer&&) = delete;
     ~Renderer() = default;
 
     // What joins the frame from outside the core (renderextension.h), called in the order added; and where previews are shown. Both

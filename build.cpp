@@ -318,7 +318,9 @@ auto main(int argc, char** argv) -> int {
             .public_include({
                 "external/imgui",
                 "external/imgui/backends",
-            });
+            })
+            // Vendored: the Vulkan backend sets a flag it reads only when it loads Vulkan's functions itself.
+            .for_source("external/imgui/backends/imgui_impl_vulkan.cpp", [](cxx::ObjectFile& file) { file.warning_off("unused-but-set-global"); });
 
     auto ui =
         cxx::static_library("ui")
