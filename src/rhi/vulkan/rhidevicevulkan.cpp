@@ -489,8 +489,14 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
 
     // maintenance4 (core and required in 1.3): SPIR-V 1.6 shaders, the task and mesh shaders among them, declare their workgroup size as
     // LocalSizeId.
+    // shaderDemoteToHelperInvocation (core and required in 1.3): `discard` in a SPIR-V 1.6 fragment shader demotes the invocation.
+    VkPhysicalDeviceShaderDemoteToHelperInvocationFeatures demoteFeatures = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES,
+        .shaderDemoteToHelperInvocation = VK_TRUE,
+    };
     VkPhysicalDeviceMaintenance4Features maintenance4Features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES,
+        .pNext = &demoteFeatures,
         .maintenance4 = VK_TRUE,
     };
 
@@ -583,6 +589,12 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
     VkPhysicalDeviceDriverProperties driverProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES, .pNext = &vulkan11Properties};
     VkPhysicalDeviceProperties2 properties2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &driverProperties};
     vkGetPhysicalDeviceProperties2(physicalDevice, &properties2);
+    // Subgroup arithmetic in compute shaders (the culling's prefix sums): not guaranteed by Vulkan, present on every driver ngen runs on.
+    auto subgroupOps = VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_ARITHMETIC_BIT;
+    if ((vulkan11Properties.subgroupSupportedOperations & subgroupOps) != subgroupOps || (vulkan11Properties.subgroupSupportedStages & VK_SHADER_STAGE_COMPUTE_BIT) == 0) {
+        report(RhiMessageSeverity::Error, "Vulkan device lacks subgroup arithmetic in compute shaders");
+        return std::unexpected(RhiError::Failed);
+    }
     deviceLimits = {
         .minUniformBufferOffsetAlignment = properties.limits.minUniformBufferOffsetAlignment,
         .maxPushConstantSize = properties.limits.maxPushConstantsSize,

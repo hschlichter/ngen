@@ -22,6 +22,15 @@ struct GeometryPassData {
     FgTextureHandle depth;
 };
 
+// Which of occlusion's phases a geometry pass draws. Both: every camera region, after a depth prepass that ran both phases (the meshlets
+// tested against the pyramid of its whole depth), or without occlusion. First: the regions of what was visible last frame, clearing the
+// targets, no pyramid test (it is built from this pass's depth). Second: what the pyramid newly shows, onto the first pass's targets.
+enum class GeometryPhase {
+    Both,
+    First,
+    Second,
+};
+
 class GeometryPass {
 public:
     auto init(RhiDevice* device, PipelineRegistry& pipelines, RhiExtent2D extent, RhiFormat depthFormat) -> bool;
@@ -45,7 +54,9 @@ public:
         RhiDescriptorSet* descriptorSet,
         bool depthPrepassed,
         FgTextureHandle hzb,
-        bool occlusion) -> const GeometryPassData&;
+        bool occlusion,
+        GeometryPhase phase,
+        const GeometryPassData* first) -> const GeometryPassData&;
 
     auto normalFormat() const -> RhiFormat { return normalTargetFormat; }
 

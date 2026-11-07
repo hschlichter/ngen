@@ -410,6 +410,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
         sceneTriangles += gpuInstances[slot].indexCount / 3;
         changedSlots.push_back(slot);
     }
+    drawLists.updateGroupBounds(gpuInstances, changedSlots);
     profile::endZone();
     if (changes.lightsChanged) {
         lights = changes.lights;
@@ -840,12 +841,15 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
 
     // The lit path needs its pipelines, which come as their shaders arrive: until then the frame is the clear colour and the UI. The
     // instance records wait too, so their upload isn't lost to a frame that doesn't draw them.
-    // Occlusion culling runs the depth prepass in two phases; it waits for its pipeline, and is skipped while culling is off. While the
-    // culling camera isn't the rendered one (a debug camera, a frozen frustum) its phases draw from the culling camera into a depth buffer
-    // of their own, and the rendered camera gets no prepass: the geometry pass tests and writes depth itself.
+    // Occlusion culling runs in two phases, skipped while culling is off: by default the geometry pass draws the first (what was visible
+    // last frame), the pyramid is built from its depth, and a second geometry pass draws what the pyramid newly shows. With the depth
+    // prepass on, the prepass runs the two phases instead and the geometry pass draws both behind its Equal test. While the culling camera
+    // isn't the rendered one (a debug camera, a frozen frustum) the prepass's phases draw from the culling camera into a depth buffer of
+    // their own, and the rendered camera gets no prepass: the geometry pass tests and writes depth itself.
     bool occlusion = snapshot.occlusion && snapshot.cullEnabled && depthPyramid.ready() && depthPrepass.ready();
     bool occlusionApart = occlusion && snapshot.cullCameraSeparate;
-    bool prepass = (snapshot.depthPrepass || occlusion) && !occlusionApart;
+    bool prepass = snapshot.depthPrepass && !occlusionApart;
+    bool occlusionInGeometry = occlusion && !prepass && !occlusionApart;
     lastOcclusion = occlusion;
     bool litReady = instanceCullPass.ready() && lodSelectPass.ready() && shadowPass.ready() && geometryPass.ready() && (!prepass || depthPrepass.ready()) && lightingPass.ready() &&
                     aaPass.ready();
@@ -964,13 +968,24 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         // Occlusion's second phase: the pyramid from the first phase's depth, every frustum-visible instance against it, and the depth of
         // the ones that show and weren't drawn. Then the pyramid again from the whole depth: the geometry pass tests every meshlet of both
         // phases against it, so it shades only meshlets that show.
-        if (occlusion) {
+        if (occlusion && !occlusionInGeometry) {
             depthPyramid.addBuildPass(frameGraph, "HzbBuild", occlusionSource, occlusionDepth, hzbHandle);
             instanceCullPass.addLatePasses(frameGraph, drawHandles, instanceHandle, hzbHandle, cullGroups, currentFrame);
             depthPrepass.addPass(frameGraph, occlusionDepth, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, hzbHandle, true, occlusionApart);
             depthPyramid.addBuildPass(frameGraph, "HzbBuildFinal", occlusionSource, occlusionDepth, hzbHandle);
         }
-        const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, prepass, hzbHandle, occlusion);
+        // Occlusion in the geometry pass: the first phase draws the G-buffer, the pyramid comes from its depth, the second phase draws what
+        // the pyramid newly shows, its meshlets tested against it.
+        const GeometryPassData* geometryResult = nullptr;
+        if (occlusionInGeometry) {
+            const auto& firstPhase = geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, false, hzbHandle, occlusion, GeometryPhase::First, nullptr);
+            depthPyramid.addBuildPass(frameGraph, "HzbBuild", DepthPyramid::Source::View, firstPhase.depth, hzbHandle);
+            instanceCullPass.addLatePasses(frameGraph, drawHandles, instanceHandle, hzbHandle, cullGroups, currentFrame);
+            geometryResult = &geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, false, hzbHandle, occlusion, GeometryPhase::Second, &firstPhase);
+        } else {
+            geometryResult = &geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, prepass, hzbHandle, occlusion, GeometryPhase::Both, nullptr);
+        }
+        const auto& geomData = *geometryResult;
 
         drawLists.addReadbackPass(frameGraph, drawHandles, currentFrame, snapshot.readVisibility, drawLogEnabled, m_frameIndex);
         lodGroups.addReadbackPass(frameGraph, lodHandles, currentFrame, snapshot.readLodStates, lodCamera.eye, lodCamera.windowArea);

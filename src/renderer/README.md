@@ -240,11 +240,22 @@ Tables:
 - **Visibility.** Each instance's world bounds are tested against six normalized planes per view (`Frustum::fromViewProj`, computed on the CPU into the
   slot's parameter buffer) with the positive-corner test. Instances without valid bounds are always visible, and with culling off every instance is. A
   frozen frustum is only a different camera matrix in the snapshot (`CullState`).
+- **What culling reads.** The culling passes read a 48-byte culling record per slot (`GpuCullRecord`: bounds, flags, LOD level and group, mesh,
+  meshlet range, triangles), kept in the instance buffer after the 128-byte draw records (`GpuScene::cullRecordsOffset`) and uploaded with
+  them; only the task and mesh shaders read the draw record. Visiting 3 million slots several times a frame is bound by memory: reading the
+  draw record there cost the test world 4 to 7 ms a frame.
+- **Group boxes.** Each workgroup of 256 slots has a box around its live slots' bounds (`GroupBox`, `DrawLists::updateGroupBounds`, recomputed
+  for the groups whose slots changed, copied into the slot's `cull.groupbounds` each frame). `InstanceCull` tests it first: a group outside every
+  view writes its slots' visibility and cull codes (the group's rejecting plane per view) without reading them, and counts them culled. The test is
+  monotonic in the box, so a slot it skips is one its own test would have culled. Render-LOD slots in a skipped group count as culled, not as
+  levels not drawn, and don't mark their residency (no view sees them).
 - **Ordered compaction (reduce-then-scan).** `InstanceCull` counts, per workgroup of 256 instances, how many commands each region gets.
-  `InstanceCullScan` turns the per-workgroup counts into start offsets and totals. `InstanceCullScatter` writes each command at its workgroup's offset
-  plus its position in a shared-memory prefix sum. Commands stay in instance order, so draw order and depth-tie resolution match run to run. Atomic
-  appends would be simpler but make the order depend on scheduling. The scan loops over workgroups on one thread per counter, so it stays cheap into the
-  millions of instances.
+  `InstanceCullScan` turns the per-workgroup counts into start offsets and totals, one workgroup per counter, 256 workgroups at a time with
+  subgroup prefix sums (`workgroupExclusiveSum`); `InstanceCullLayout` then lays the regions out in the work items from the totals.
+  `InstanceCullScatter` writes each command at its workgroup's offset plus its position in a shared-memory prefix sum; it skips a region its
+  workgroup has nothing in (the workgroup's own counters say), a workgroup with nothing in any, and the instance reads of slots not drawn. Commands
+  stay in instance order, so draw order and depth-tie resolution match run to run. Atomic appends would be simpler but make the order depend on
+  scheduling.
 - **Draws.** A region is one draw over its *work items*: every drawn instance's meshlets as `{instance, meshlet}` (`MeshletWorkItem`), in
   instance order, in the frame slot's one work item buffer (`cull.workitems`). The scan lays the regions out in it one after another and writes
   each region's draw (`RegionWork`: the task workgroups, 32 meshlets each, wrapping into y past 32,768, and the range); a task workgroup takes
@@ -271,8 +282,12 @@ indexed.
 
 ## Occlusion culling
 
-Two phases, in the depth prepass (which runs whenever occlusion is on; from the culling camera when it isn't the rendered one, below), against a depth pyramid built from the first (`DepthPyramid`,
-`depthpyramid.*`; `InstanceCullPass::addLatePasses`; `shaders/hzbbuild.comp`, `hzb.glsl`):
+Two phases against a depth pyramid built from the first (`DepthPyramid`, `depthpyramid.*`; `InstanceCullPass::addLatePasses`;
+`shaders/hzbbuild.comp`, `hzb.glsl`). By default they run in the geometry pass (`GeometryPhase`): `GeometryPass` draws the first phase into the
+G-buffer, `HzbBuild` builds the pyramid from its depth, the second phase's culling runs, and `GeometryPassLate` draws what the pyramid newly shows
+onto the same targets, its meshlets tested against the pyramid. The first phase's meshlets aren't tested. Drawing every visible instance twice
+(prepass, then geometry) cost more than occlusion saved: at the test world's overlook the prepass phases took 11.5 ms. With the depth prepass on
+(`render.prepass`), the phases run in the prepass instead, as follows:
 1. **First phase.** The cull pass puts in the camera's regions only the frustum-visible instances the camera saw last frame: the *history*, a
    word per instance slot kept across frames (`cull.history`, cleared when it is made). `DepthPrepass` draws them.
 2. **The pyramid.** `HzbBuild` reduces that depth, `R32_SFLOAT`, mip 0 the depth's size rounded down to powers of two (every depth texel a mip-0
@@ -317,12 +332,23 @@ meshoptimizer; `src/asset/README.md`). Every mesh pass draws them with task and 
   frustum planes (from the culling parameters); for the camera's single-sided buckets the normal cone, when every triangle faces away from the
   culling camera (skipped for an instance whose model scales unevenly); with `meshletFlagOcclusion` the sphere's box against the depth
   pyramid. The survivors are compacted in meshlet order with a prefix over the workgroup (no atomics, no subgroup operations: the order
-  never depends on scheduling), and a mesh workgroup is launched for each. Classifying (`meshletFlagClassify`, the `meshletcull` debug
-  view) every meshlet survives with the test that would cull it in the payload (`meshletFlagHiddenOnly`: only the ones depth hides).
-- **Mesh shaders** (64 threads, a vertex and up to two triangles each): `gbuffer.mesh`, `depth.mesh`, `depthcutout.mesh`, `shadow.mesh`,
-  `shadowcutout.mesh` pull their vertices from the pool; `gbuffer.mesh` and `depth.mesh` share the position expression with `gl_Position`
-  invariant. `debugview.mesh` takes half a meshlet per workgroup (`meshletFlagSplit`) and gives every triangle vertices of its own, for the
-  wireframe's edges, the triangle's size and its index, in place of a geometry shader.
+  never depends on scheduling). Classifying (`meshletFlagClassify`, the `meshletcull` debug view) every meshlet survives with the test that
+  would cull it in the payload (`meshletFlagHiddenOnly`: only the ones depth hides).
+- **Packs.** The survivors are packed in order, as many consecutive meshlets per mesh workgroup as fit in 64 vertices and 124 triangles
+  (`packMaxVertices`, `packMaxTriangles`): a full meshlet takes a workgroup of its own, up to 32 small ones share one. The task shader writes the
+  packs into the payload with each survivor's starts in its pack and its pool offsets, so a mesh lane reads neither the meshlet nor the mesh
+  table. Grass and pebbles are meshlets of about 20 triangles, and a mesh workgroup each cost the geometry and shadow passes more than their
+  triangles did. A pack of one meshlet reads the payload and its instance at uniform addresses; a pack of several copies its meshlets' words
+  into shared memory once (`loadPackShared`), and each lane finds its meshlet by a binary search there (the payload lives in memory, not on
+  chip, so per-lane payload reads cost more than the packing saved). Primitive order is the meshlets', so the image is the same.
+- **Mesh shaders** (64 threads, a vertex and up to two triangles each, a pack per workgroup): `gbuffer.mesh`, `depth.mesh`, `depthcutout.mesh`,
+  `shadow.mesh`, `shadowcutout.mesh` pull their vertices from the pool; `gbuffer.mesh` and `depth.mesh` share the position expression with
+  `gl_Position` invariant. `debugview.mesh` takes half a meshlet per workgroup (`meshletFlagSplit`, no packs) and gives every triangle vertices
+  of its own, for the wireframe's edges, the triangle's size and its index, in place of a geometry shader.
+- **Tried and left out** (measured on the test world, AMD 890M): culling triangles in the mesh shaders (back faces and those covering no pixel
+  centre; exact with a half-pixel margin, but the barrier and prefix it needs cost 1 to 3 ms more than the rasterizer saved); 32-thread mesh
+  workgroups; subgroup counters in the task shader; 64 meshlets per task workgroup; packs of 128 vertices and 256 triangles (larger cascade
+  meshlets left half the lanes idle); the normal cone in the shadow cascades (not what the rasterizer culls there to the pixel, for 0.2 ms).
 - **Order.** Commands are in instance order and meshlets in meshlet order, and mesh shading rasterizes in draw, workgroup and primitive order, so a
   frame draws the same way every run. Against the indexed draws it replaced, Sponza differed by 2 or 3 pixels of 3.7 million, by at most 3 levels: depth
   ties resolved in a different order.
@@ -436,7 +462,7 @@ Overlays and the UI draw on the backbuffer after the AA blit, so they are never 
 | Set | Used by | Bindings |
 |---|---|---|
 | Geometry, one per frame slot | every mesh pass: `GeometryPass`, `DepthPrepass`, `ShadowPass`, `DebugViewPass` | 0 view UBO, 1 `sampler2D textures[1024]`, 2 instance buffer, 3 material table, 4-9 the geometry pool (vertices, positions, meshlets, meshlet vertices, meshlet triangles, mesh table), 10-12 the slot's meshlet work items, culling parameters and meshlet counts, 13 the depth pyramid, 14 the slot's region draws, 15 the render-LOD state (fades and the LOD tag) |
-| Culling, one per frame slot | the three cull passes | params, instances, mesh table, visibility, counters, offsets, commands, counts |
+| Culling, one per frame slot | the cull passes | params, the instance buffer's culling records (an offset binding), mesh table, visibility, counters, offsets, commands, counts, render-LOD state and residency, meshlet counts, depth pyramid, history, region draws, work items, group boxes |
 | Debug view resolve, one per frame slot | `DebugViewResolve` | 0 the value target, 1 the colour image, 2 the streaming view's root states, 3 the lit image (the streaming view; the value target again in the others) |
 | Lighting, AA, debug lines | their passes | per-slot UBOs and the G-buffer, shadow and scene-colour textures |
 
@@ -557,8 +583,9 @@ points of `Renderer::render`, in the order added; each hook does nothing unless 
 ## Device requirements
 
 A Vulkan 1.3 device, and from the RHI beyond the basics: `shaderSampledImageArrayDynamicIndexing`, `multiDrawIndirect`, `drawIndirectFirstInstance`,
-`drawIndirectCount`, `shaderSampledImageArrayNonUniformIndexing` and mesh shading (`VK_EXT_mesh_shader`, task and mesh shaders,
-`shaderDrawParameters`; all required by the Vulkan backend's `init`), timestamps for GPU timings (optional), an RGBA16F format usable as a storage image for the compute AA (optional, blit fallback) and
+`drawIndirectCount`, `shaderSampledImageArrayNonUniformIndexing`, mesh shading (`VK_EXT_mesh_shader`, task and mesh shaders,
+`shaderDrawParameters`), subgroup arithmetic in compute shaders (the culling's prefix sums) and `shaderDemoteToHelperInvocation` (every shader
+is SPIR-V 1.6, where `discard` demotes); all required by the Vulkan backend's `init`, timestamps for GPU timings (optional), an RGBA16F format usable as a storage image for the compute AA (optional, blit fallback) and
 pipeline statistics for the counters (optional; they count no mesh shading work: RADV has no mesh shader queries).
 
 ## Known gaps
@@ -570,5 +597,6 @@ pipeline statistics for the counters (optional; they count no mesh shading work:
 - The texture array is fixed at 1024 slots; materials past it use the fallback texture and a warning is printed.
 - Occlusion culling is for the camera only, and meshlets of instances drawn in the first phase aren't tested against the pyramid (no
   per-meshlet history); the shadow cascades cull by frustum.
-- A small instance still takes a draw record and its items; the culling passes visit every slot (render LOD's levels included) every frame.
+- A small instance still takes a draw record and its items; the culling passes visit every slot (render LOD's levels included) every frame,
+  though a workgroup of slots outside every view only tests its box. Culling by authored streaming chunk would skip most of them.
 - Everything runs on one graphics queue; the cull passes are separate graph passes so a multi-queue scheduler could move them.

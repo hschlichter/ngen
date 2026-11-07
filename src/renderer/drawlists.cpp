@@ -24,7 +24,7 @@ auto DrawLists::destroy() -> void {
     }
     for (auto& slot : slots) {
         for (auto* buffer :
-             {slot.params, slot.visibility, slot.cullPlanes, slot.groupCounters, slot.groupOffsets, slot.commands, slot.counts, slot.meshletStats, slot.regionWork, slot.workItems, slot.readback, slot.commandsReadback}) {
+             {slot.params, slot.groupBounds, slot.visibility, slot.cullPlanes, slot.groupCounters, slot.groupOffsets, slot.commands, slot.counts, slot.meshletStats, slot.regionWork, slot.workItems, slot.readback, slot.commandsReadback}) {
             if (buffer != nullptr) {
                 device->destroyBuffer(buffer);
             }
@@ -66,6 +66,62 @@ auto DrawLists::countInstance(const GpuInstance& instance, int delta) -> void {
     }
 }
 
+auto DrawLists::updateGroupBounds(std::span<const GpuInstance> instances, std::span<const uint32_t> changedSlots) -> void {
+    auto groups = groupCountFor((uint32_t) instances.size());
+    std::vector<uint8_t> dirty(groups, 0);
+    // A change in the slot count moves which slots the last groups hold.
+    if (instances.size() != groupSlotCount) {
+        auto from = std::min(instances.size(), groupSlotCount) / groupSize;
+        for (size_t g = from; g < groups; g++) {
+            dirty[g] = 1;
+        }
+    }
+    if (groupBoxes.size() != groups) {
+        for (size_t g = std::min(groupBoxes.size(), (size_t) groups); g < groups; g++) {
+            dirty[g] = 1;
+        }
+        groupBoxes.resize(groups);
+    }
+    for (auto slot : changedSlots) {
+        if (slot < instances.size()) {
+            dirty[slot / groupSize] = 1;
+        }
+    }
+    groupSlotCount = instances.size();
+    for (uint32_t g = 0; g < groups; g++) {
+        if (dirty[g] == 0) {
+            continue;
+        }
+        AABB box = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
+        bool unbounded = false;
+        bool live = false;
+        auto end = std::min<size_t>(((size_t) g + 1) * groupSize, instances.size());
+        for (size_t m = (size_t) g * groupSize; m < end; m++) {
+            const auto& instance = instances[m];
+            if (!instance.alive) {
+                continue;
+            }
+            live = true;
+            if (!instance.worldBounds.valid()) {
+                unbounded = true;
+                continue;
+            }
+            box.min = glm::min(box.min, instance.worldBounds.min);
+            box.max = glm::max(box.max, instance.worldBounds.max);
+        }
+        float kind = groupBoxTested;
+        if (!live) {
+            kind = groupBoxEmpty;
+        } else if (unbounded || !box.valid()) {
+            kind = groupBoxUnbounded;
+        }
+        groupBoxes[g] = {
+            .min = glm::vec4(box.valid() ? box.min : glm::vec3(0.0f), kind),
+            .max = glm::vec4(box.valid() ? box.max : glm::vec3(0.0f), 0.0f),
+        };
+    }
+}
+
 auto DrawLists::commandsNeeded() const -> uint64_t {
     uint64_t live = 0;
     for (uint32_t b = 0; b < bucketCount; b++) {
@@ -104,6 +160,9 @@ auto DrawLists::ensureCapacity(uint32_t instanceCount, uint64_t commandCount, ui
             }
             slot.params = device->createBuffer({.size = sizeof(CullParams), .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "cull.params"});
             slot.paramsMapped = device->mapBuffer(slot.params);
+            retire(slot.groupBounds);
+            slot.groupBounds = device->createBuffer({.size = (uint64_t) groups * sizeof(GroupBox), .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "cull.groupbounds"});
+            slot.groupBoundsMapped = device->mapBuffer(slot.groupBounds);
             slot.visibility = storage((uint64_t) capacity * sizeof(uint32_t), RhiBufferUsage::TransferSrc, "cull.visibility");
             slot.cullPlanes = storage((uint64_t) capacity * sizeof(uint32_t), {}, "cull.planes");
             slot.groupCounters = storage((uint64_t) groups * counterCount * sizeof(uint32_t), {}, "cull.groupcounters");
@@ -194,6 +253,11 @@ auto DrawLists::writeParams(uint32_t frameSlot, uint32_t instanceCount, const gl
         params.planes[(lateView * 6) + p] = params.planes[p];
     }
     std::memcpy(slots[frameSlot].paramsMapped, &params, sizeof(params));
+    // The groups' boxes as the slots are now; a group past the boxes computed (none yet) is tested slot by slot.
+    auto* boxes = static_cast<GroupBox*>(slots[frameSlot].groupBoundsMapped);
+    for (uint32_t g = 0; g < params.groupCount; g++) {
+        boxes[g] = g < groupBoxes.size() ? groupBoxes[g] : GroupBox{.min = glm::vec4(0.0f, 0.0f, 0.0f, groupBoxUnbounded)};
+    }
     slots[frameSlot].instanceCount = instanceCount;
     slots[frameSlot].viewCount = params.viewCount;
     slots[frameSlot].occlusion = occlusion.enabled;
@@ -209,6 +273,7 @@ auto DrawLists::import(FrameGraph& fg, uint32_t frameSlot) -> Handles {
     auto groups = groupCountFor(capacity);
     return {
         .params = fg.importBuffer("cullParams", slot.params, {.size = sizeof(CullParams), .usage = RhiBufferUsage::Storage}),
+        .groupBounds = fg.importBuffer("cullGroupBounds", slot.groupBounds, {.size = (uint64_t) groups * sizeof(GroupBox), .usage = RhiBufferUsage::Storage}),
         .visibility = fg.importBuffer("cullVisibility", slot.visibility, {.size = (uint64_t) capacity * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}),
         .cullPlanes = fg.importBuffer("cullPlanes", slot.cullPlanes, {.size = (uint64_t) capacity * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}),
         .groupCounters = fg.importBuffer("cullGroupCounters", slot.groupCounters, {.size = (uint64_t) groups * counterCount * sizeof(uint32_t), .usage = RhiBufferUsage::Storage}),
@@ -344,6 +409,7 @@ auto DrawLists::slotBuffers(uint32_t frameSlot) const -> SlotBuffers {
     const auto& slot = slots[frameSlot];
     return {
         .params = slot.params,
+        .groupBounds = slot.groupBounds,
         .visibility = slot.visibility,
         .cullPlanes = slot.cullPlanes,
         .groupCounters = slot.groupCounters,

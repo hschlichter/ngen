@@ -16,7 +16,7 @@ auto packRules(const std::string& config) -> std::vector<PackRule> {
             {"optimize", config == "debug" ? "0" : "1"},
             {"debug_info", config == "gamerelease" ? "0" : "1"},
         },
-        .version = 2,
+        .version = 3,
     });
     // Images become engine-ready textures: RGBA8 sRGB with the full mip chain, decoded and mip-mapped once, here.
     rules.push_back(PackRule{

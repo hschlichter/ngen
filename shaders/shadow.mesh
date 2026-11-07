@@ -2,11 +2,9 @@
 #extension GL_EXT_mesh_shader : require
 #extension GL_GOOGLE_include_directive : require
 
-// The shadow pass: one meshlet the task shader kept, positions only, into the cascade the push constants name.
+// The shadow pass: a pack of meshlets the task shader kept, positions only, into the cascade the push constants name.
 
-layout(local_size_x = 64) in;
-layout(triangles, max_vertices = 64, max_primitives = 124) out;
-
+#define MESHLET_MESH_SHADER
 #include "meshlet.glsl"
 
 layout(push_constant) uniform Push {
@@ -17,19 +15,36 @@ layout(push_constant) uniform Push {
     mat4 lightViewProj;
 } push;
 
+
+// Per meshlet of the pack: its instance's model, loaded once.
+shared mat4 packModels[meshletsPerTask];
+
 void main() {
-    MeshletDraw draw = meshletDraw(gl_WorkGroupID.x);
-    Meshlet meshlet = draw.meshlet;
-    uint vertexCount = meshletVertexCount(meshlet);
-    uint triangleCount = meshletTriangleCount(meshlet);
+    uint pack = gl_WorkGroupID.x;
+    uint vertexCount = payload.packVertices[pack];
+    uint triangleCount = payload.packTriangles[pack];
     SetMeshOutputsEXT(vertexCount, triangleCount);
-    mat4 model = instances.data[draw.instance].model;
+    // A pack of one meshlet (most packs of large meshlets) loads its model as a uniform value; a pack of several, each meshlet's model once
+    // by one lane, into shared memory.
+    PackInfo info = packInfo(pack);
+    bool single = info.count == 1u;
+    mat4 singleModel = mat4(1.0);
+    if (single) {
+        singleModel = instances.data[payload.instances[info.first]].model;
+    } else {
+        loadPackShared(info);
+        if (gl_LocalInvocationIndex < info.count) {
+            packModels[gl_LocalInvocationIndex] = instances.data[payload.instances[info.first + gl_LocalInvocationIndex]].model;
+        }
+        barrier();
+    }
     uint v = gl_LocalInvocationIndex;
     if (v < vertexCount) {
-        uint vertex = meshletPoolVertex(meshlet, draw.vertexOffset, v);
-        gl_MeshVerticesEXT[v].gl_Position = push.lightViewProj * model * vec4(poolPosition(vertex), 1.0);
+        PackedVertex packed = packedVertex(info, v);
+        mat4 model = single ? singleModel : packModels[packed.meshlet];
+        gl_MeshVerticesEXT[v].gl_Position = push.lightViewProj * model * vec4(poolPosition(packed.vertex), 1.0);
     }
-    for (uint t = v; t < triangleCount; t += 64u) {
-        gl_PrimitiveTriangleIndicesEXT[t] = meshletTriangle(meshlet, t);
+    for (uint t = v; t < triangleCount; t += packThreads) {
+        gl_PrimitiveTriangleIndicesEXT[t] = packedTriangle(info, t);
     }
 }

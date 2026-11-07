@@ -175,12 +175,31 @@ const uint meshletCulledFrustum = 1;
 const uint meshletCulledCone = 2;
 const uint meshletCulledOccluded = 3;
 
+// Packs: the mesh passes (but the debug views') draw the survivors of a task workgroup packed in order, as many consecutive meshlets per
+// mesh workgroup as fit in packMaxVertices and packMaxTriangles (two full meshlets, or up to 32 small ones), a vertex and up to two
+// triangles a thread. Small meshlets (grass, pebbles: about 20 triangles) would otherwise each take a workgroup of their own. The
+// primitive order is the meshlets', so the image is the same.
+const uint packThreads = 64;
+const uint packMaxVertices = 64;
+const uint packMaxTriangles = 124;
+
 // What a task workgroup hands its mesh workgroups: the meshlets that survived, each with its instance and, classifying, why it would be
-// culled.
+// culled; and their packs: pack p holds survivors packFirst[p] .. packFirst[p + 1], with packVertices[p] vertices and packTriangles[p]
+// triangles, each survivor's first vertex and triangle in its pack at vertexStarts and triangleStarts.
 struct MeshletPayload {
     uint meshlets[meshletsPerTask];
     uint instances[meshletsPerTask];
     uint reasons[meshletsPerTask];
+    uint vertexStarts[meshletsPerTask];
+    uint triangleStarts[meshletsPerTask];
+    uint packFirst[meshletsPerTask + 1];
+    uint packVertices[meshletsPerTask];
+    uint packTriangles[meshletsPerTask];
+    // Per survivor, so a mesh lane reads neither the meshlet nor the mesh table: where its vertex indices and triangles start in their
+    // pools, and its mesh's first vertex in the vertex pools.
+    uint vertexIndexBases[meshletsPerTask];
+    uint triangleBases[meshletsPerTask];
+    int poolVertexOffsets[meshletsPerTask];
 };
 
 // The task shader writes it, its mesh workgroups read it.
@@ -242,6 +261,102 @@ uvec3 meshletTriangle(Meshlet meshlet, uint triangle) {
     uint packed = meshletTriangles.data[meshlet.triangleOffset + triangle];
     return uvec3(packed & 0xFFu, (packed >> 8) & 0xFFu, (packed >> 16) & 0xFFu);
 }
+
+// A pack in a mesh shader: its first survivor in the payload and how many it holds. The payload lives in memory, not on chip: a pack of
+// one meshlet reads it at uniform addresses; a pack of several copies its meshlets' words to shared memory once (loadPackShared) and its
+// lanes search there.
+struct PackInfo {
+    uint first;
+    uint count;
+};
+
+shared uint packVertexStarts[meshletsPerTask];
+shared uint packTriangleStarts[meshletsPerTask];
+shared uint packVertexBases[meshletsPerTask];
+shared uint packTriangleBases[meshletsPerTask];
+shared int packPoolOffsets[meshletsPerTask];
+shared uint packInstances[meshletsPerTask];
+
+PackInfo packInfo(uint pack) {
+    PackInfo info;
+    info.first = payload.packFirst[pack];
+    info.count = payload.packFirst[pack + 1u] - info.first;
+    return info;
+}
+
+// For a pack of several meshlets, by the lanes below its count; the caller's barrier makes it visible.
+void loadPackShared(PackInfo info) {
+    uint i = gl_LocalInvocationIndex;
+    if (i < info.count) {
+        uint slot = info.first + i;
+        packVertexStarts[i] = payload.vertexStarts[slot];
+        packTriangleStarts[i] = payload.triangleStarts[slot];
+        packVertexBases[i] = payload.vertexIndexBases[slot];
+        packTriangleBases[i] = payload.triangleBases[slot];
+        packPoolOffsets[i] = payload.poolVertexOffsets[slot];
+        packInstances[i] = payload.instances[slot];
+    }
+}
+
+// The meshlet of a several-meshlet pack whose range holds the pack's vertex (or triangle) `index`: the last whose start is at most it.
+// Starts rise strictly (a meshlet has at least one vertex and one triangle).
+uint packMeshletOf(PackInfo info, uint index, bool byTriangle) {
+    uint low = 0u;
+    uint high = info.count - 1u;
+    while (low < high) {
+        uint middle = (low + high + 1u) / 2u;
+        uint start = byTriangle ? packTriangleStarts[middle] : packVertexStarts[middle];
+        if (start <= index) {
+            low = middle;
+        } else {
+            high = middle - 1u;
+        }
+    }
+    return low;
+}
+
+// A pack's vertex: its meshlet's place in the pack (to index what the mesh shader keeps per meshlet), its instance and its pool index.
+struct PackedVertex {
+    uint meshlet;
+    uint instance;
+    uint vertex;
+};
+
+PackedVertex packedVertex(PackInfo info, uint v) {
+    PackedVertex packed;
+    if (info.count == 1u) {
+        packed.meshlet = 0u;
+        packed.instance = payload.instances[info.first];
+        packed.vertex = uint(int(meshletVertices.data[payload.vertexIndexBases[info.first] + v]) + payload.poolVertexOffsets[info.first]);
+        return packed;
+    }
+    uint m = packMeshletOf(info, v, false);
+    packed.meshlet = m;
+    packed.instance = packInstances[m];
+    packed.vertex = uint(int(meshletVertices.data[packVertexBases[m] + (v - packVertexStarts[m])]) + packPoolOffsets[m]);
+    return packed;
+}
+
+// A pack's triangle, its corners as the pack's vertices.
+uvec3 packedTriangle(PackInfo info, uint t) {
+    uint word = 0u;
+    uint vertexStart = 0u;
+    if (info.count == 1u) {
+        word = meshletTriangles.data[payload.triangleBases[info.first] + t];
+    } else {
+        uint m = packMeshletOf(info, t, true);
+        word = meshletTriangles.data[packTriangleBases[m] + (t - packTriangleStarts[m])];
+        vertexStart = packVertexStarts[m];
+    }
+    return uvec3(word & 0xFFu, (word >> 8) & 0xFFu, (word >> 16) & 0xFFu) + uvec3(vertexStart);
+}
+
+#ifdef MESHLET_MESH_SHADER
+// The mesh passes' workgroups: a pack, a vertex and up to two triangles a lane.
+layout(local_size_x = packThreads) in;
+layout(triangles, max_vertices = packMaxVertices, max_primitives = packMaxTriangles) out;
+
+#endif
 
 bool cameraView(uint view) {
     return view == 0u || view == lateView;

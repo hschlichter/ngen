@@ -917,9 +917,10 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
     if (upload.empty()) {
         return handle;
     }
-    // Only the changed records, packed: the slot's staging when they fit in it (grown up to stagingLimit), else a buffer of their own
-    // for this frame, freed once the frame is done.
-    auto bytes = (uint64_t) upload.size() * sizeof(GpuInstanceRecord);
+    // Only the changed records, packed (the draw records, then the culling records): the slot's staging when they fit in it (grown up to
+    // stagingLimit), else a buffer of their own for this frame, freed once the frame is done.
+    auto recordBytes = (uint64_t) upload.size() * sizeof(GpuInstanceRecord);
+    auto bytes = recordBytes + ((uint64_t) upload.size() * sizeof(GpuCullRecord));
     RhiBuffer* buffer = nullptr;
     void* mapped = nullptr;
     if (bytes <= stagingLimit) {
@@ -942,7 +943,9 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
         deletionQueue->deferBuffer(currentFrame, buffer);
     }
     auto* dst = static_cast<GpuInstanceRecord*>(mapped);
+    auto* cullDst = reinterpret_cast<GpuCullRecord*>(static_cast<std::byte*>(mapped) + recordBytes);
     std::vector<RhiBufferCopy> regions;
+    std::vector<RhiBufferCopy> cullRegions;
     for (size_t i = 0; i < upload.size(); i++) {
         auto m = upload[i];
         const auto& inst = sceneInstances[m];
@@ -975,18 +978,32 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
                 .lodDepth = inst.lodDepth,
             };
         }
+        const auto& record = dst[i];
+        cullDst[i] = {
+            .boundsMin = record.boundsMin,
+            .flags = record.flags,
+            .boundsMax = record.boundsMax,
+            .lod = (record.lodLevel & 0xFFu) | (record.lodGroup << 8),
+            .mesh = record.mesh,
+            .meshletOffset = record.meshletOffset,
+            .meshletCount = record.meshletCount,
+            .triangleCount = record.triangleCount,
+        };
         // A run of consecutive slots is one region.
-        auto srcOffset = (uint64_t) i * sizeof(GpuInstanceRecord);
-        auto dstOffset = (uint64_t) m * sizeof(GpuInstanceRecord);
-        if (!regions.empty() && regions.back().srcOffset + regions.back().size == srcOffset && regions.back().dstOffset + regions.back().size == dstOffset) {
-            regions.back().size += sizeof(GpuInstanceRecord);
-        } else {
-            regions.push_back({.srcOffset = srcOffset, .dstOffset = dstOffset, .size = sizeof(GpuInstanceRecord)});
-        }
+        auto addRun = [](std::vector<RhiBufferCopy>& runs, uint64_t srcOffset, uint64_t dstOffset, uint64_t size) {
+            if (!runs.empty() && runs.back().srcOffset + runs.back().size == srcOffset && runs.back().dstOffset + runs.back().size == dstOffset) {
+                runs.back().size += size;
+            } else {
+                runs.push_back({.srcOffset = srcOffset, .dstOffset = dstOffset, .size = size});
+            }
+        };
+        addRun(regions, (uint64_t) i * sizeof(GpuInstanceRecord), (uint64_t) m * sizeof(GpuInstanceRecord), sizeof(GpuInstanceRecord));
+        addRun(cullRegions, recordBytes + ((uint64_t) i * sizeof(GpuCullRecord)), cullRecordsOffset() + ((uint64_t) m * sizeof(GpuCullRecord)), sizeof(GpuCullRecord));
     }
+    lastInstanceRegions = (uint32_t) regions.size();
+    regions.insert(regions.end(), cullRegions.begin(), cullRegions.end());
     auto stagingHandle = fg.importBuffer("instanceStaging", buffer, {.size = bytes, .usage = RhiBufferUsage::TransferSrc});
     lastInstanceUploads = (uint32_t) upload.size();
-    lastInstanceRegions = (uint32_t) regions.size();
     return addInstanceUploadPass(fg, stagingHandle, instanceImport, std::move(regions));
 }
 

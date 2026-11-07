@@ -92,6 +92,17 @@ struct DrawRecord {
 };
 static_assert(sizeof(DrawRecord) == 16);
 
+// The box around a culling workgroup's slots (DrawLists::groupSize of them), which the cull pass tests before the slots: a group outside
+// every view skips its instances. min.w: 0 a box to test, 1 a live slot without bounds (always tested slot by slot), 2 no live slot.
+struct GroupBox {
+    glm::vec4 min = glm::vec4(0.0f, 0.0f, 0.0f, 2.0f);
+    glm::vec4 max = glm::vec4(0.0f);
+};
+static_assert(sizeof(GroupBox) == 32);
+inline constexpr float groupBoxTested = 0.0f;
+inline constexpr float groupBoxUnbounded = 1.0f;
+inline constexpr float groupBoxEmpty = 2.0f;
+
 // One meshlet to draw (meshlet.glsl's work items): the instance and the meshlet's place in the meshlet pool.
 struct MeshletWorkItem {
     uint32_t instance = 0;
@@ -207,6 +218,9 @@ public:
     static auto bucketOf(const GpuInstance& instance) -> uint32_t;
     // Counts an instance in its bucket and its meshlets in the live meshlets (delta +1), or takes it out (-1); a dead one counts nowhere.
     auto countInstance(const GpuInstance& instance, int delta) -> void;
+    // Recomputes the boxes of the culling workgroups holding the changed slots (and of every group past a change in the slot count); the
+    // next writeParams copies them to the frame slot's buffer.
+    auto updateGroupBounds(std::span<const GpuInstance> instances, std::span<const uint32_t> changedSlots) -> void;
     // The draw records the buffer must hold for the instances counted: their buckets' sizes, once per view.
     auto commandsNeeded() const -> uint64_t;
     // Every live instance's meshlets, as counted.
@@ -237,6 +251,7 @@ public:
 
     struct Handles {
         FgBufferHandle params;
+        FgBufferHandle groupBounds;
         FgBufferHandle visibility;
         FgBufferHandle cullPlanes;
         FgBufferHandle groupCounters;
@@ -271,6 +286,7 @@ public:
     // Buffers for the culling passes' descriptor sets.
     struct SlotBuffers {
         RhiBuffer* params = nullptr;
+        RhiBuffer* groupBounds = nullptr;
         RhiBuffer* visibility = nullptr;
         RhiBuffer* cullPlanes = nullptr;
         RhiBuffer* groupCounters = nullptr;
@@ -327,6 +343,8 @@ private:
     struct Slot {
         RhiBuffer* params = nullptr; // CpuToGpu, mapped
         void* paramsMapped = nullptr;
+        RhiBuffer* groupBounds = nullptr; // CpuToGpu, mapped: GroupBox per culling workgroup
+        void* groupBoundsMapped = nullptr;
         RhiBuffer* visibility = nullptr;
         RhiBuffer* cullPlanes = nullptr;
         RhiBuffer* groupCounters = nullptr;
@@ -379,6 +397,8 @@ private:
     // Live instances per bucket and their meshlets; and this frame's region layout (writeParams).
     std::array<uint64_t, bucketCount> buckets = {};
     uint64_t liveMeshletCount = 0;
+    std::vector<GroupBox> groupBoxes; // per culling workgroup, as the slots are now
+    size_t groupSlotCount = 0;        // the slot count groupBoxes were last computed for
     std::array<uint32_t, regionCount> frameOffsets = {};
     std::array<uint32_t, regionCount> frameCapacities = {};
     std::vector<Slot> slots;

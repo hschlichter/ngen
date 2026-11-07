@@ -228,8 +228,9 @@ program can check.
 - **Device.** `RhiDeviceVulkan::init` creates the instance (with `VK_EXT_debug_utils` when available, and the
   Khronos validation layer when `RhiDeviceOptions::enableValidation` is set), picks the first physical device with a
   graphics queue that can present to the window's surface, and creates one queue and one command pool.
-- **Required features.** API 1.3 or newer (so `synchronization2`, `dynamicRendering` and `maintenance4` are core; `maintenance4` is enabled
-  because SPIR-V 1.6 shaders declare their workgroup size as `LocalSizeId`), plus `shaderSampledImageArrayDynamicIndexing`,
+- **Required features.** API 1.3 or newer (so `synchronization2`, `dynamicRendering`, `maintenance4` and `shaderDemoteToHelperInvocation` are
+  core; the last two are enabled because SPIR-V 1.6 shaders declare their workgroup size as `LocalSizeId` and demote on `discard`), subgroup
+  arithmetic in compute shaders (not guaranteed by Vulkan; every driver ngen runs on has it), plus `shaderSampledImageArrayDynamicIndexing`,
   `multiDrawIndirect`, `drawIndirectFirstInstance`, `drawIndirectCount`, `shaderSampledImageArrayNonUniformIndexing`, `shaderDrawParameters`
   and `VK_EXT_mesh_shader` with `taskShader`
   and `meshShader` (RADV, ANV, NVK and lavapipe have it); `init` fails with a message when one is missing. `wideLines`, `samplerAnisotropy`, `pipelineStatisticsQuery`, `geometryShader`, `VK_EXT_memory_budget` and

@@ -1,12 +1,15 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_arithmetic : require
 
 // GPU instance culling with ordered compaction (src/renderer/README.md, "Culling and draw lists"), in dispatches selected by push.mode:
 //
 //   0 cull       one thread per instance: frustum test against every view, visibility bits,
 //                per-workgroup counters (draws and primitives per region, culling stats)
-//   1 scan       one workgroup: per-region exclusive prefix over the workgroup counters gives
-//                each workgroup's start offset; totals become the draw counts and stats
+//   1 scan       one workgroup per counter (subgroup prefix sums): its exclusive prefix over the workgroups gives each
+//                workgroup's start offset; its total becomes a draw count or a statistic
+//   5 layout     one workgroup: the regions laid out in the work items, each region's draw
 //   2 scatter    one thread per instance: in-workgroup prefix per region, command written at
 //                the workgroup's offset plus the local prefix
 //   3 occlusion  one thread per instance, after the depth pyramid is built: the camera's frustum-visible instances against it; the
@@ -89,24 +92,49 @@ layout(std430, set = 0, binding = 0) readonly buffer Params {
     uint regionOffsets[regionCount];
 } params;
 
-struct Instance {
-    mat4 model;
-    uint material;
+// GpuCullRecord: what culling reads of an instance, a third of the draw record (the instance buffer's second part). lod: lodLevel in bits
+// 0-7, lodGroup in bits 8-31.
+struct CullRecord {
+    vec3 boundsMin;
+    uint flags;
+    vec3 boundsMax;
+    uint lod;
     uint mesh;
     uint meshletOffset; // the submesh's meshlets, from the mesh's first
+    uint meshletCount;
+    uint triangleCount; // the submesh's
+};
+layout(std430, set = 0, binding = 1) readonly buffer Instances {
+    CullRecord data[];
+} instances;
+
+// An instance as culling sees it.
+struct Instance {
+    uint mesh;
+    uint meshletOffset;
     uint meshletCount;
     vec3 boundsMin;
     uint flags;
     vec3 boundsMax;
-    uint lodLevel;      // the instance's level + 1 in its group
-    uint lodGroup;      // its render-LOD group + 1, 0 for none
-    uint triangleCount; // the submesh's
-    uint pad1;
-    uint pad2;
+    uint lodLevel; // the instance's level + 1 in its group
+    uint lodGroup; // its render-LOD group + 1, 0 for none
+    uint triangleCount;
 };
-layout(std430, set = 0, binding = 1) readonly buffer Instances {
-    Instance data[];
-} instances;
+
+Instance instanceAt(uint m) {
+    CullRecord record = instances.data[m];
+    Instance inst;
+    inst.mesh = record.mesh;
+    inst.meshletOffset = record.meshletOffset;
+    inst.meshletCount = record.meshletCount;
+    inst.boundsMin = record.boundsMin;
+    inst.flags = record.flags;
+    inst.boundsMax = record.boundsMax;
+    inst.lodLevel = record.lod & 0xFFu;
+    inst.lodGroup = record.lod >> 8;
+    inst.triangleCount = record.triangleCount;
+    return inst;
+}
 
 struct MeshEntry {
     int vertexOffset;
@@ -210,21 +238,29 @@ layout(std430, set = 0, binding = 15) writeonly buffer WorkItems {
     uvec2 data[];
 } workItems;
 
+// Per culling workgroup, the box around its slots (DrawLists::GroupBox): min, then max. min.w: 0 a box to test, 1 a slot without bounds
+// (tested slot by slot), 2 no live slot.
+layout(std430, set = 0, binding = 16) readonly buffer GroupBounds {
+    vec4 data[];
+} groupBounds;
+const float groupBoxTested = 0.0;
+const float groupBoxEmpty = 2.0;
+
 #include "hzb.glsl"
 
 shared uint sharedCounters[counterCount];
+shared uint groupSkip;   // the whole workgroup is outside every view (or holds no live slot): its slots aren't read
+shared uint groupPlanes; // then, per view, the plane that rejects the group's box (cullPlanes' 4-bit codes)
 shared uint scanData[256];
 shared uint scanItems[256];
 
 // Same test as Frustum::contains: the box corner furthest along each plane normal must not
 // be behind the plane. Evaluated in the CPU's order, without contraction. Returns the index of
 // the plane that rejects the box, or planeVisible.
-uint rejectingPlane(Instance inst, uint view) {
+uint rejectingPlaneOf(vec3 boundsMin, vec3 boundsMax, uint view) {
     for (uint p = 0; p < 6; p++) {
         vec4 plane = params.planes[view * 6 + p];
-        vec3 positive = vec3(plane.x >= 0.0 ? inst.boundsMax.x : inst.boundsMin.x,
-                             plane.y >= 0.0 ? inst.boundsMax.y : inst.boundsMin.y,
-                             plane.z >= 0.0 ? inst.boundsMax.z : inst.boundsMin.z);
+        vec3 positive = vec3(plane.x >= 0.0 ? boundsMax.x : boundsMin.x, plane.y >= 0.0 ? boundsMax.y : boundsMin.y, plane.z >= 0.0 ? boundsMax.z : boundsMin.z);
         precise float d = plane.x * positive.x;
         d = d + plane.y * positive.y;
         d = d + plane.z * positive.z;
@@ -234,6 +270,42 @@ uint rejectingPlane(Instance inst, uint view) {
         }
     }
     return planeVisible;
+}
+
+uint rejectingPlane(Instance inst, uint view) {
+    return rejectingPlaneOf(inst.boundsMin, inst.boundsMax, view);
+}
+
+// Whether the workgroup's box lies outside every view: then so does each of its slots' boxes, which it contains (the test is monotonic
+// in the box, evaluated the same way), and none of them needs reading. Sets groupSkip and groupPlanes; called by one thread.
+void testGroup() {
+    groupSkip = 0u;
+    groupPlanes = 0u;
+    if (params.cullEnabled == 0u) {
+        return;
+    }
+    vec4 boxMin = groupBounds.data[gl_WorkGroupID.x * 2u];
+    vec4 boxMax = groupBounds.data[gl_WorkGroupID.x * 2u + 1u];
+    if (boxMin.w == groupBoxEmpty) {
+        groupSkip = 1u;
+        for (uint v = 0; v < params.viewCount; v++) {
+            groupPlanes |= planeNotTested << (4 * v);
+        }
+        return;
+    }
+    if (boxMin.w != groupBoxTested) {
+        return;
+    }
+    uint planes = 0u;
+    for (uint v = 0; v < params.viewCount; v++) {
+        uint code = rejectingPlaneOf(boxMin.xyz, boxMax.xyz, v);
+        if (code == planeVisible) {
+            return;
+        }
+        planes |= code << (4 * v);
+    }
+    groupSkip = 1u;
+    groupPlanes = planes;
 }
 
 MeshEntry meshOf(Instance inst) {
@@ -301,10 +373,28 @@ void cull() {
     if (lid < counterCount) {
         sharedCounters[lid] = 0;
     }
+    if (lid == 0u) {
+        testGroup();
+    }
     barrier();
 
-    if (m < params.instanceCount) {
-        Instance inst = instances.data[m];
+    if (groupSkip != 0u) {
+        // Outside every view: nothing drawn, every slot culled by the group's plane in each view. Render-LOD slots in it count as culled,
+        // not as levels not drawn, and don't mark their residency (no view sees them).
+        if (m < params.instanceCount) {
+            visibility.bits[m] = 0u;
+            cullPlanes.codes[m] = groupPlanes;
+        }
+        if (lid == 0u) {
+            uint first = gl_WorkGroupID.x * gl_WorkGroupSize.x;
+            uint live = params.instanceCount > first ? min(gl_WorkGroupSize.x, params.instanceCount - first) : 0u;
+            sharedCounters[counterCameraCulled] = live;
+            for (uint c = 0; c + 1 < params.viewCount; c++) {
+                sharedCounters[counterCascadeCulled + c] = live;
+            }
+        }
+    } else if (m < params.instanceCount) {
+        Instance inst = instanceAt(m);
         uint bits = 0;
         uint planes = 0;
         // An instance of a level its group doesn't draw is in no view; its mesh's residency is noted for the next selection.
@@ -386,10 +476,11 @@ void occlusion() {
     barrier();
 
     if (m < params.instanceCount) {
-        Instance inst = instances.data[m];
+        // Only a camera-visible slot reads its instance: most slots are culled, and the record is 128 bytes.
         uint bits = visibility.bits[m];
         uint shows = 0u;
         if ((bits & 1u) != 0u) {
+            Instance inst = instanceAt(m);
             bool hidden = (inst.flags & flagBoundsValid) != 0u && params.cullEnabled != 0u && boxOccluded(inst.boundsMin, inst.boundsMax);
             if (hidden) {
                 bits &= ~1u;
@@ -402,18 +493,19 @@ void occlusion() {
                 }
             }
             visibility.bits[m] = bits;
-        }
-        history.bits[m] = shows;
-
-        MeshEntry mesh = meshOf(inst);
-        bool fading = fadingOf(inst);
-        for (uint r = lateRegion; r < regionCount; r++) {
-            if (drawnIn(inst, mesh, bits, r, fading)) {
-                atomicAdd(sharedCounters[counterDraws + r], 1u);
-                atomicAdd(sharedCounters[counterPrimitives + r], inst.triangleCount);
-                atomicAdd(sharedCounters[counterMeshlets + r], meshletsIn(inst));
+            if ((bits & bitLate) != 0u) {
+                MeshEntry mesh = meshOf(inst);
+                bool fading = fadingOf(inst);
+                for (uint r = lateRegion; r < regionCount; r++) {
+                    if (drawnIn(inst, mesh, bits, r, fading)) {
+                        atomicAdd(sharedCounters[counterDraws + r], 1u);
+                        atomicAdd(sharedCounters[counterPrimitives + r], inst.triangleCount);
+                        atomicAdd(sharedCounters[counterMeshlets + r], meshletsIn(inst));
+                    }
+                }
             }
         }
+        history.bits[m] = shows;
     }
     barrier();
 
@@ -423,32 +515,62 @@ void occlusion() {
     }
 }
 
+// An exclusive prefix of each thread's value over the workgroup, and the workgroup's total: sums within each subgroup, then the
+// subgroups' totals through shared memory. Integer sums, so the result doesn't depend on scheduling. Called in uniform control flow.
+uint workgroupExclusiveSum(uint value, out uint total) {
+    uint inclusive = subgroupInclusiveAdd(value);
+    if (gl_SubgroupInvocationID == gl_SubgroupSize - 1u) {
+        scanData[gl_SubgroupID] = inclusive;
+    }
+    barrier();
+    uint before = 0u;
+    total = 0u;
+    for (uint s = 0u; s < gl_NumSubgroups; s++) {
+        uint subgroupTotal = scanData[s];
+        if (s < gl_SubgroupID) {
+            before += subgroupTotal;
+        }
+        total += subgroupTotal;
+    }
+    barrier();
+    return before + inclusive - value;
+}
+
 void scan() {
-    // One thread per counter walks the workgroups in order; draw and work item counters also record each workgroup's start offset.
-    // Integer sums, so the result does not depend on scheduling.
+    // One workgroup per counter walks the workgroups 256 at a time; draw and work item counters also record each workgroup's start
+    // offset. The first phase sums every counter (the second phase's are zero until it runs), the second only its own.
+    uint t = gl_LocalInvocationID.x;
+    uint c = gl_WorkGroupID.x;
+    bool mine = c < counterCount && c != counterWorkOverflow && (push.phase == 0u || lateCounter(c));
+    if (!mine) {
+        return;
+    }
+    bool drawOffsets = c >= counterDraws && c < counterDraws + regionCount;
+    bool itemOffsets = c >= counterMeshlets && c < counterMeshlets + regionCount;
+    uint carry = 0u;
+    for (uint base = 0u; base < params.groupCount; base += 256u) {
+        uint g = base + t;
+        uint value = g < params.groupCount ? groupCounters.data[g * counterCount + c] : 0u;
+        uint total = 0u;
+        uint before = workgroupExclusiveSum(value, total);
+        if (g < params.groupCount && drawOffsets) {
+            groupOffsets.data[g * regionCount * 2u + (c - counterDraws)] = carry + before;
+        }
+        if (g < params.groupCount && itemOffsets) {
+            groupOffsets.data[g * regionCount * 2u + regionCount + (c - counterMeshlets)] = carry + before;
+        }
+        carry += total;
+    }
+    if (t == 0u) {
+        totals.data[c] = carry;
+    }
+}
+
+void layOutRegions() {
     uint t = gl_LocalInvocationID.x;
     if (push.phase == 0u && t < meshletCounterCount) {
         meshletStats.data[t] = 0u;
     }
-    // The first phase sums every counter (the second phase's are zero until it runs), the second only its own.
-    bool mine = t < counterCount && t != counterWorkOverflow && (push.phase == 0u || lateCounter(t));
-    if (mine) {
-        uint running = 0;
-        for (uint g = 0; g < params.groupCount; g++) {
-            uint value = groupCounters.data[g * counterCount + t];
-            if (t < regionCount) {
-                groupOffsets.data[g * regionCount * 2u + t] = running;
-            }
-            if (t >= counterMeshlets && t < counterMeshlets + regionCount) {
-                groupOffsets.data[g * regionCount * 2u + regionCount + (t - counterMeshlets)] = running;
-            }
-            running += value;
-        }
-        totals.data[t] = running;
-    }
-    memoryBarrierBuffer();
-    barrier();
-
     // The phase's regions laid out one after another in the work items, after the first phase's; what doesn't fit is counted, not drawn.
     if (t == 0u) {
         uint first = push.phase == 0u ? 0u : lateRegion;
@@ -475,22 +597,47 @@ void scan() {
 void scatter() {
     uint lid = gl_LocalInvocationID.x;
     uint m = gl_GlobalInvocationID.x;
+    uint first = push.phase == 0u ? 0u : lateRegion;
+    uint end = push.phase == 0u ? lateRegion : regionCount;
+
+    // The workgroup's draws per region, as its cull (or occlusion) counted them: regions it has nothing in are skipped whole, and so is a
+    // workgroup with nothing in any. The same value for every thread, so the barriers below stay in uniform control flow.
+    if (lid < regionCount) {
+        scanData[lid] = groupCounters.data[gl_WorkGroupID.x * counterCount + counterDraws + lid];
+    }
+    barrier();
+    uint groupMembers = 0u;
+    for (uint r = first; r < end; r++) {
+        groupMembers += scanData[r];
+    }
+    if (groupMembers == 0u) {
+        return;
+    }
+    uint regionMembers[regionCount];
+    for (uint r = 0; r < regionCount; r++) {
+        regionMembers[r] = scanData[r];
+    }
+    barrier();
+
+    // Only a slot drawn somewhere this phase reads its instance.
     bool live = m < params.instanceCount;
+    uint bits = live ? visibility.bits[m] : 0u;
+    uint phaseBits = push.phase == 0u ? (bits & ~bitLate) : (bits & bitLate);
     Instance inst;
     MeshEntry mesh = MeshEntry(0, 0u, 0u, 0u);
-    uint bits = 0;
     bool fading = false;
-    if (live) {
-        inst = instances.data[m];
+    bool reads = live && phaseBits != 0u;
+    if (reads) {
+        inst = instanceAt(m);
         mesh = meshOf(inst);
-        bits = visibility.bits[m];
         fading = fadingOf(inst);
     }
 
-    uint first = push.phase == 0u ? 0u : lateRegion;
-    uint end = push.phase == 0u ? lateRegion : regionCount;
     for (uint r = first; r < end; r++) {
-        uint member = (live && drawnIn(inst, mesh, bits, r, fading)) ? 1u : 0u;
+        if (regionMembers[r] == 0u) {
+            continue;
+        }
+        uint member = (reads && drawnIn(inst, mesh, bits, r, fading)) ? 1u : 0u;
         uint meshlets = member != 0u ? meshletsIn(inst) : 0u;
         // Inclusive Hillis-Steele scans across the workgroup: draw records and work items.
         scanData[lid] = member;
@@ -545,6 +692,8 @@ void main() {
         scatter();
     } else if (push.mode == 3) {
         occlusion();
+    } else if (push.mode == 5) {
+        layOutRegions();
     } else {
         clearHistory();
     }

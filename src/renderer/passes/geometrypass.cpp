@@ -101,7 +101,9 @@ auto GeometryPass::addPass(
     RhiDescriptorSet* descriptorSet,
     bool depthPrepassed,
     FgTextureHandle hzb,
-    bool occlusion) -> const GeometryPassData& {
+    bool occlusion,
+    GeometryPhase phase,
+    const GeometryPassData* first) -> const GeometryPassData& {
     FgTextureDesc albedoDesc = {
         .width = extent.width,
         .height = extent.height,
@@ -129,13 +131,22 @@ auto GeometryPass::addPass(
         }
     }
 
+    // The second phase draws onto the first's targets.
+    bool second = phase == GeometryPhase::Second && first != nullptr;
     return fg.addPass<GeometryPassData>(
-        "GeometryPass",
+        second ? "GeometryPassLate" : "GeometryPass",
         [&](FrameGraphBuilder& builder, GeometryPassData& data) {
-            data.albedo = builder.write(builder.createTexture("gbuffer.albedo", albedoDesc), FgAccessFlags::ColorAttachment);
-            data.normal = builder.write(builder.createTexture("gbuffer.normal", normalDesc), FgAccessFlags::ColorAttachment);
-            data.instance = builder.write(builder.createTexture("gbuffer.instance", instanceDesc), FgAccessFlags::ColorAttachment);
-            data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
+            if (second) {
+                data.albedo = builder.write(first->albedo, FgAccessFlags::ColorAttachment);
+                data.normal = builder.write(first->normal, FgAccessFlags::ColorAttachment);
+                data.instance = builder.write(first->instance, FgAccessFlags::ColorAttachment);
+                data.depth = builder.write(first->depth, FgAccessFlags::DepthAttachment);
+            } else {
+                data.albedo = builder.write(builder.createTexture("gbuffer.albedo", albedoDesc), FgAccessFlags::ColorAttachment);
+                data.normal = builder.write(builder.createTexture("gbuffer.normal", normalDesc), FgAccessFlags::ColorAttachment);
+                data.instance = builder.write(builder.createTexture("gbuffer.instance", instanceDesc), FgAccessFlags::ColorAttachment);
+                data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
+            }
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             // The task shaders read their draw's instance from the commands, and add to the meshlet counts.
             // One draw per region: its RegionWork is the draw's command and the task shaders' range of work items.
@@ -148,27 +159,27 @@ auto GeometryPass::addPass(
             }
             builder.setSideEffects(true);
         },
-        [bucketPipelines, depthPrepassed, extent, instances, &lists, drawHandles, &scene, descriptorSet, occlusion](FrameGraphContext& ctx, const GeometryPassData& data) {
+        [bucketPipelines, depthPrepassed, extent, instances, &lists, drawHandles, &scene, descriptorSet, occlusion, phase, second](FrameGraphContext& ctx, const GeometryPassData& data) {
             auto* cmd = ctx.cmd();
 
             std::array<RhiRenderingAttachmentInfo, 3> colorAtts = {{
                 {
                     .texture = ctx.texture(data.albedo),
                     .state = RhiTextureState::ColorAttachment,
-                    .clear = true,
+                    .clear = !second,
                     .clearColor = {0.0f, 0.0f, 0.0f, 1.0f},
                 },
                 {
                     .texture = ctx.texture(data.normal),
                     .state = RhiTextureState::ColorAttachment,
-                    .clear = true,
+                    .clear = !second,
                     .clearColor = {0.0f, 0.0f, 0.0f, 0.0f},
                 },
                 {
                     // Cleared to 0 (all bits zero, as an integer too): nothing drawn.
                     .texture = ctx.texture(data.instance),
                     .state = RhiTextureState::ColorAttachment,
-                    .clear = true,
+                    .clear = !second,
                     .clearColor = {0.0f, 0.0f, 0.0f, 0.0f},
                 },
             }};
@@ -176,7 +187,7 @@ auto GeometryPass::addPass(
             RhiRenderingAttachmentInfo depthAtt = {
                 .texture = ctx.texture(data.depth),
                 .state = RhiTextureState::DepthStencilAttachment,
-                .clear = !depthPrepassed,
+                .clear = !depthPrepassed && !second,
                 .clearDepth = 0.0f, // reversed-Z: 0 is infinitely far
             };
             RhiRenderingInfo renderInfo = {
@@ -193,8 +204,13 @@ auto GeometryPass::addPass(
             // occlusion every meshlet of both phases is tested against the pyramid of the prepass's whole depth (HzbBuildFinal): one it
             // hides lies behind the depth at every pixel it covers, so under the Equal test it would shade nothing.
             auto* regionWork = ctx.buffer(drawHandles.regionWork);
-            for (uint32_t phase = 0; phase < (occlusion ? 2u : 1u); phase++) {
-                bool late = phase == 1;
+            // Both: the first phase's regions, then with occlusion the second's. First and Second: one of them.
+            uint32_t firstPhase = phase == GeometryPhase::Second ? 1u : 0u;
+            uint32_t endPhase = phase == GeometryPhase::First ? 1u : (occlusion ? 2u : 1u);
+            // The pyramid test: every meshlet after a two-phase prepass (its whole depth), the second phase's without one.
+            bool testPyramid = occlusion && phase != GeometryPhase::First;
+            for (uint32_t drawPhase = firstPhase; drawPhase < endPhase; drawPhase++) {
+                bool late = drawPhase == 1;
                 for (uint32_t bucket = 0; bucket < DrawLists::bucketCount; bucket++) {
                     auto region = late ? DrawLists::cameraLateRegion(bucket % 2 != 0, bucket >= 2) : DrawLists::cameraRegion(bucket % 2 != 0, bucket >= 2);
                     // The GPU-written count decides how many commands draw; an empty region costs one call.
@@ -206,7 +222,7 @@ auto GeometryPass::addPass(
                     // One set for every draw: materials are indexed through the instance record, vertices pulled from the pool.
                     cmd->bindDescriptorSet(pip, 0, descriptorSet);
                     // The camera's meshlet counts come from this pass.
-                    MeshletPush push = {.region = region, .flags = meshletFlagCount | (occlusion ? meshletFlagOcclusion : 0u)};
+                    MeshletPush push = {.region = region, .flags = meshletFlagCount | (testPyramid ? meshletFlagOcclusion : 0u)};
                     cmd->pushConstants(pip, RhiShaderStage::Task | RhiShaderStage::Mesh, 0, sizeof(push), &push);
                     PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
                     DrawLists::drawRegion(cmd, regionWork, region);

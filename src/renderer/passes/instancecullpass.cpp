@@ -18,6 +18,7 @@ enum class CullMode : uint32_t {
     Scatter = 2,
     Occlusion = 3,
     ClearHistory = 4,
+    Layout = 5,
 };
 
 struct CullPush {
@@ -25,7 +26,7 @@ struct CullPush {
     uint32_t phase = 0; // scan and scatter: 0 the first phase, 1 the second
 };
 
-constexpr std::array<RhiDescriptorBinding, 16> cullBindings = {{
+constexpr std::array<RhiDescriptorBinding, 17> cullBindings = {{
     {.binding = 0, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // params
     {.binding = 1, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // instances
     {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // mesh table
@@ -42,6 +43,7 @@ constexpr std::array<RhiDescriptorBinding, 16> cullBindings = {{
     {.binding = 13, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},        // occlusion history
     {.binding = 14, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},        // the regions' draws
     {.binding = 15, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},        // meshlet work items
+    {.binding = 16, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},        // the workgroups' boxes
 }};
 
 struct CullPassData {
@@ -121,9 +123,10 @@ auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& li
     }
     for (uint32_t i = 0; i < slotCount; i++) {
         auto buffers = lists.slotBuffers(i);
-        std::array<RhiDescriptorWrite, 16> writes = {{
+        std::array<RhiDescriptorWrite, 17> writes = {{
             {.binding = 0, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.params},
-            {.binding = 1, .type = RhiDescriptorType::StorageBuffer, .buffer = scene.instanceBuffer()},
+            // The culling records, after the draw records.
+            {.binding = 1, .type = RhiDescriptorType::StorageBuffer, .buffer = scene.instanceBuffer(), .bufferOffset = scene.cullRecordsOffset(), .bufferRange = scene.cullRecordsBytes()},
             {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .buffer = scene.meshTableBuffer()},
             {.binding = 3, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.visibility},
             {.binding = 4, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.groupCounters},
@@ -138,6 +141,7 @@ auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& li
             {.binding = 13, .type = RhiDescriptorType::StorageBuffer, .buffer = lists.historyBuffer()},
             {.binding = 14, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.regionWork},
             {.binding = 15, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.workItems},
+            {.binding = 16, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.groupBounds},
         }};
         device->updateDescriptorSet(sets[i], writes);
     }
@@ -175,6 +179,7 @@ auto InstanceCullPass::addPasses(FrameGraph& fg, DrawLists& lists, const DrawLis
         "InstanceCull",
         [&](FrameGraphBuilder& builder, CullPassData& data) {
             builder.read(handles.params, FgAccessFlags::StorageRead);
+            builder.read(handles.groupBounds, FgAccessFlags::StorageRead);
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             builder.read(lodHandles.states, FgAccessFlags::StorageRead);
             builder.read(handles.history, FgAccessFlags::StorageRead);
@@ -186,7 +191,7 @@ auto InstanceCullPass::addPasses(FrameGraph& fg, DrawLists& lists, const DrawLis
         },
         [dispatchMode, groupCount](FrameGraphContext& ctx, const CullPassData&) { dispatchMode(ctx, CullMode::Cull, 0, groupCount); });
 
-    // 2. Exclusive prefix over the workgroups: start offsets, draw counts and statistics.
+    // 2. Exclusive prefix over the workgroups, a workgroup per counter: start offsets, draw counts and statistics.
     fg.addPass<ScanPassData>(
         "InstanceCullScan",
         [&](FrameGraphBuilder& builder, ScanPassData& data) {
@@ -195,10 +200,20 @@ auto InstanceCullPass::addPasses(FrameGraph& fg, DrawLists& lists, const DrawLis
             builder.read(hzb, FgAccessFlags::ShaderRead);
             data.groupOffsets = builder.write(handles.groupOffsets, FgAccessFlags::StorageWrite);
             data.counts = builder.write(handles.counts, FgAccessFlags::StorageWrite);
+        },
+        [dispatchMode](FrameGraphContext& ctx, const ScanPassData&) { dispatchMode(ctx, CullMode::Scan, 0, DrawLists::counterCount); });
+
+    // 2b. The regions laid out in the work items from the totals: each region's draw; the meshlet counts zeroed for the mesh passes.
+    fg.addPass<ScanPassData>(
+        "InstanceCullLayout",
+        [&](FrameGraphBuilder& builder, ScanPassData& data) {
+            builder.read(handles.params, FgAccessFlags::StorageRead);
+            builder.read(hzb, FgAccessFlags::ShaderRead);
+            data.counts = builder.write(handles.counts, FgAccessFlags::StorageWrite);
             data.meshletStats = builder.write(handles.meshletStats, FgAccessFlags::StorageWrite);
             data.regionWork = builder.write(handles.regionWork, FgAccessFlags::StorageWrite);
         },
-        [dispatchMode](FrameGraphContext& ctx, const ScanPassData&) { dispatchMode(ctx, CullMode::Scan, 0, 1); });
+        [dispatchMode](FrameGraphContext& ctx, const ScanPassData&) { dispatchMode(ctx, CullMode::Layout, 0, 1); });
 
     // 3. Ordered writes: each command lands at its workgroup's offset plus the local prefix.
     fg.addPass<ScatterPassData>(
@@ -253,9 +268,19 @@ auto InstanceCullPass::addLatePasses(FrameGraph& fg, const DrawLists::Handles& h
             builder.read(hzb, FgAccessFlags::ShaderRead);
             data.groupOffsets = builder.write(handles.groupOffsets, FgAccessFlags::StorageWrite);
             data.counts = builder.write(handles.counts, FgAccessFlags::StorageWrite);
+        },
+        [dispatchMode](FrameGraphContext& ctx, const ScanPassData&) { dispatchMode(ctx, CullMode::Scan, 1, DrawLists::counterCount); });
+
+    // 2b. The late regions laid out after the first phase's.
+    fg.addPass<ScanPassData>(
+        "InstanceCullLateLayout",
+        [&](FrameGraphBuilder& builder, ScanPassData& data) {
+            builder.read(handles.params, FgAccessFlags::StorageRead);
+            builder.read(hzb, FgAccessFlags::ShaderRead);
+            data.counts = builder.write(handles.counts, FgAccessFlags::StorageWrite);
             data.regionWork = builder.write(handles.regionWork, FgAccessFlags::StorageWrite);
         },
-        [dispatchMode](FrameGraphContext& ctx, const ScanPassData&) { dispatchMode(ctx, CullMode::Scan, 1, 1); });
+        [dispatchMode](FrameGraphContext& ctx, const ScanPassData&) { dispatchMode(ctx, CullMode::Layout, 1, 1); });
 
     // 3. The late regions' commands.
     fg.addPass<ScatterPassData>(

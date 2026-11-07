@@ -10,7 +10,8 @@
 //     model scales unevenly, which bends the cone);
 //   - with meshletFlagOcclusion: the sphere's box against the depth pyramid (hzb.glsl). The depth prepass's late phase tests against the
 //     pyramid of the first phase's depth; the geometry pass tests both phases against the pyramid of the prepass's whole depth.
-// The survivors are compacted with a prefix over the workgroup, not atomics, so the order never depends on scheduling.
+// The survivors are compacted with a prefix over the workgroup, not atomics, so the order never depends on scheduling; then packed in order
+// into mesh workgroups (meshlet.glsl, "Packs"), but for the debug views, which take two mesh workgroups per meshlet.
 // Classifying (meshletFlagClassify, the meshletcull debug view), every meshlet survives with the test that would cull it, or, with
 // meshletFlagHiddenOnly, only those the pyramid hides.
 
@@ -25,6 +26,7 @@ layout(push_constant) uniform Push {
 } push;
 
 shared uint survives[meshletsPerTask];
+shared uint packCount;
 shared uint counts[meshletCountersPerView];
 
 // Whether the sphere lies on the inner side of every plane of the view.
@@ -69,6 +71,11 @@ void main() {
     uint reason = meshletKept;
     uint meshletIndex = 0u;
     uint instanceIndex = 0u;
+    uint survivorVertices = 0u;
+    uint survivorVertexBase = 0u;
+    uint survivorTriangleBase = 0u;
+    int survivorPoolOffset = 0;
+    uint survivorTriangles = 0u;
     if (item < work.itemCount) {
         uvec2 workItem = workItems.data[work.firstItem + item];
         instanceIndex = workItem.x;
@@ -106,6 +113,11 @@ void main() {
             atomicAdd(counts[meshletCounterDrawn], 1u);
             atomicAdd(counts[meshletCounterTriangles], meshletTriangleCount(meshlet));
         }
+        survivorVertices = meshletVertexCount(meshlet);
+        survivorVertexBase = meshlet.vertexOffset;
+        survivorTriangleBase = meshlet.triangleOffset;
+        survivorPoolOffset = meshes.data[inst.mesh].vertexOffset;
+        survivorTriangles = meshletTriangleCount(meshlet);
     }
     survives[lid] = visible;
     barrier();
@@ -123,7 +135,46 @@ void main() {
         payload.meshlets[place] = meshletIndex;
         payload.instances[place] = instanceIndex;
         payload.reasons[place] = reason;
+        // Its counts for now; the packing below turns them into its starts in its pack.
+        payload.vertexStarts[place] = survivorVertices;
+        payload.triangleStarts[place] = survivorTriangles;
+        payload.vertexIndexBases[place] = survivorVertexBase;
+        payload.triangleBases[place] = survivorTriangleBase;
+        payload.poolVertexOffsets[place] = survivorPoolOffset;
     }
+    bool split = (push.flags & meshletFlagSplit) != 0u;
+    barrier();
+    // Packs, in order: a new one when the next survivor wouldn't fit.
+    if (lid == 0u && !split) {
+        uint packs = 0u;
+        uint packVertices = 0u;
+        uint packTriangles = 0u;
+        for (uint i = 0u; i < total; i++) {
+            uint vertexCount = payload.vertexStarts[i];
+            uint triangleCount = payload.triangleStarts[i];
+            if (i == 0u || packVertices + vertexCount > packMaxVertices || packTriangles + triangleCount > packMaxTriangles) {
+                if (packs > 0u) {
+                    payload.packVertices[packs - 1u] = packVertices;
+                    payload.packTriangles[packs - 1u] = packTriangles;
+                }
+                payload.packFirst[packs] = i;
+                packs++;
+                packVertices = 0u;
+                packTriangles = 0u;
+            }
+            payload.vertexStarts[i] = packVertices;
+            payload.triangleStarts[i] = packTriangles;
+            packVertices += vertexCount;
+            packTriangles += triangleCount;
+        }
+        if (packs > 0u) {
+            payload.packVertices[packs - 1u] = packVertices;
+            payload.packTriangles[packs - 1u] = packTriangles;
+        }
+        payload.packFirst[packs] = total;
+        packCount = packs;
+    }
+    barrier();
     if (lid == 0u && (push.flags & meshletFlagCount) != 0u) {
         uint base = view * meshletCountersPerView;
         for (uint c = 0; c < meshletCountersPerView; c++) {
@@ -132,6 +183,6 @@ void main() {
             }
         }
     }
-    uint groups = (push.flags & meshletFlagSplit) != 0u ? total * 2u : total;
+    uint groups = split ? total * 2u : packCount;
     EmitMeshTasksEXT(groups, 1u, 1u);
 }

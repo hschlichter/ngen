@@ -69,6 +69,21 @@ struct GpuInstanceRecord {
 };
 static_assert(sizeof(GpuInstanceRecord) == 128);
 
+// What the culling passes read of an instance (std430, stride 48), kept in the instance buffer after the draw records (GpuScene::
+// cullRecordsOffset): a third of the record, so the passes that visit every slot fetch a third of the memory. lod: lodLevel in bits 0-7,
+// lodGroup in bits 8-31.
+struct GpuCullRecord {
+    glm::vec3 boundsMin = glm::vec3(0.0f);
+    uint32_t flags = 0;
+    glm::vec3 boundsMax = glm::vec3(0.0f);
+    uint32_t lod = 0;
+    uint32_t mesh = 0;
+    uint32_t meshletOffset = 0;
+    uint32_t meshletCount = 0;
+    uint32_t triangleCount = 0;
+};
+static_assert(sizeof(GpuCullRecord) == 48);
+
 // One entry of the GPU mesh table (std430, stride 16), indexed by MeshHandle::index: where the mesh's vertices start in the vertex pools
 // (its meshlet vertex indices are mesh-local) and its meshlets in the meshlet pool. A mesh outside the pool has meshletCount 0 and is
 // never drawn.
@@ -261,7 +276,10 @@ public:
     auto afterExecute(const FrameGraph& fg) -> void;
     auto instanceBuffer() const -> RhiBuffer* { return instances; }
     auto instanceGeneration() const -> uint32_t { return generation; }
-    auto instanceBufferBytes() const -> uint64_t { return (uint64_t) instanceCapacity * sizeof(GpuInstanceRecord); }
+    // The draw records (GpuInstanceRecord) for every slot of the capacity, then the culling records (GpuCullRecord).
+    auto instanceBufferBytes() const -> uint64_t { return cullRecordsOffset() + cullRecordsBytes(); }
+    auto cullRecordsOffset() const -> uint64_t { return (uint64_t) instanceCapacity * sizeof(GpuInstanceRecord); }
+    auto cullRecordsBytes() const -> uint64_t { return (uint64_t) instanceCapacity * sizeof(GpuCullRecord); }
 
 private:
     // A GPU buffer that grows by copy: a bigger one replaces it, and the copy from the old one is recorded before this frame's uploads.
