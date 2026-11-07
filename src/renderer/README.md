@@ -472,8 +472,9 @@ so early depth testing holds for everything else. The debug views discard in `de
 | *the extensions' overlays* | On the backbuffer after the debug lines, in the order the extensions were added: `GizmoPass` (`src/tools`, the gizmos' lines), `EditorUIPass` (`src/ui`, ImGui). |
 | `PresentPass` | Moves the backbuffer to `PresentSrc`; no GPU work. |
 
-**Picking** reads the id target: a pick asks the capture service for the one texel of `gbuffer.instance` under a pixel, right after
-`GeometryPass`, and gets the instance index back a few frames later (ngen-view's `ViewPicking`, `src/view/README.md`). Nothing is read
+**Picking** reads the id target: a pick asks the capture service for the one texel of `gbuffer.instance` under a pixel, right after the
+pass that writes it last that frame (`CaptureWatch::afterLastWrite`: `GeometryPassLate` with occlusion in the geometry pass, else
+`GeometryPass`), so what the second phase draws is picked too, and gets the instance index back a few frames later (ngen-view's `ViewPicking`, `src/view/README.md`). Nothing is read
 back without a pick, and the target is never shown, so screenshots don't change.
 
 Overlays and the UI draw on the backbuffer after the AA blit, so they are never filtered.
@@ -584,7 +585,9 @@ points of `Renderer::render`, in the order added; each hook does nothing unless 
   state around the copy, and parses it after the slot's fence. Results carry the raw bytes, per-channel ranges and a preview (`PreviewTextures`).
   `gpuschema` describes every struct that crosses to the GPU (field, offset, type) so buffers decode into rows the same way in the UI and in dumps.
   Picking reads through it, so it is the core's; its file writers are the render tools'. The culling readback and the frame-graph previews
-  predate it and keep their own paths. The watches go with the snapshot, so the captures and the frame's other requests describe the same frame.
+  predate it and keep their own paths. A watch can also name no pass and ask for the resource after the pass that writes it last this frame
+  (`afterLastWrite`, `FgResource::lastWriteOrder`; `capture + <resource>`), its final contents whichever passes ran: the result names the pass.
+  The watches go with the snapshot, so the captures and the frame's other requests describe the same frame.
 - **GPU timings.** Every pass is a GPU zone, and every indirect call in the depth prepass, geometry and shadow passes is a nested zone named by its
   region (`DrawLists::regionName`). The zones of a slot are read after its fence and handed to the profiler's GPU lane on the CPU clock; the render
   tools make counters from them.

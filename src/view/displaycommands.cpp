@@ -74,7 +74,7 @@ auto parseCapture(const std::string& args) -> std::expected<Json, std::string> {
     int height = 0;
     in >> x >> y >> width >> height;
     if (path.empty()) {
-        return std::unexpected(std::format("expected '<pass|-> <resource> <path> [x y w h]', got '{}'", args));
+        return std::unexpected(std::format("expected '<pass|-|+> <resource> <path> [x y w h]', got '{}'", args));
     }
     Json params = {{"pass", pass}, {"resource", resource}, {"path", path}};
     if (width > 0) {
@@ -228,9 +228,10 @@ auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
     registry.add(
         {
             .name = "capture.request",
-            .summary = "Capture a frame-graph resource right after a pass (\"\" or \"-\" = end of frame, also static buffers).",
+            .summary = "Capture a frame-graph resource right after a pass (\"\" or \"-\" = end of frame, also static buffers; \"+\" = after "
+                       "the pass that writes it last this frame).",
             .params = {
-                requiredField("pass", RpcType::String, "pass name, \"\" or \"-\""),
+                requiredField("pass", RpcType::String, "pass name, \"\" or \"-\", or \"+\""),
                 requiredField("resource", RpcType::String, "resource name"),
                 optionalField("path", RpcType::String, "also write it: PNG plus .json for textures, rows JSON for buffers"),
                 optionalField("region", RpcType::Object, "{x, y, width, height} of a texture"),
@@ -239,7 +240,7 @@ auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
         },
         [&view](const Json& p, RpcResponder responder) {
             auto pass = p["pass"].get<std::string>();
-            CaptureWatch watch = {.pass = pass == "-" ? "" : pass, .resource = p["resource"].get<std::string>(), .trigger = 1};
+            CaptureWatch watch = {.pass = pass == "-" || pass == "+" ? "" : pass, .resource = p["resource"].get<std::string>(), .afterLastWrite = pass == "+", .trigger = 1};
             if (p.contains("region")) {
                 const auto& r = p["region"];
                 watch.regionX = r.value("x", 0u);

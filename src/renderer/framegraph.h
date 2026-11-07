@@ -43,11 +43,14 @@ struct FgCaptureSource {
 };
 
 // Runs `record` right after pass `pass` executes (before transients are released), or after
-// the last pass when `pass` is empty, if resource `resource` is alive then. `record` gets the
-// frame's command buffer and records whatever copies it needs.
+// the last pass when `pass` is empty, if resource `resource` is alive then. With afterLastWrite,
+// `pass` is ignored and it runs after whichever pass writes `resource` last this frame, so what
+// it copies is the frame's final contents whatever passes ran. `record` gets the frame's command
+// buffer and records whatever copies it needs.
 struct FgCaptureRequest {
     std::string pass;
     std::string resource;
+    bool afterLastWrite = false;
     std::function<void(RhiCommandBuffer*, const FgCaptureSource&)> record;
 };
 
@@ -134,7 +137,8 @@ private:
     ResourcePool* resourcePool = nullptr;
     FgDebugCaptureFn debugCaptureHook;
     std::vector<FgCaptureRequest> captureRequests;
-    auto runCaptures(RhiCommandBuffer* cmd, const char* passName, const std::vector<FgAccessFlags>& access) -> void;
+    // orderIdx: the pass's place in the execution order, UINT32_MAX after the last pass.
+    auto runCaptures(RhiCommandBuffer* cmd, const char* passName, uint32_t orderIdx, const std::vector<FgAccessFlags>& access) -> void;
 
     bool drawLogEnabled = false;
     bool commandLogEnabled = false;

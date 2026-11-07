@@ -172,6 +172,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         drawFrameGraphWindow(showFrameGraphWindow, fgLastSnapshot, fgSelectedPass, fgSelectedResource, captureRequest);
         if (captureRequest.has_value()) {
             captureWindowState.pass = captureRequest->pass;
+            captureWindowState.afterLastWrite = false;
             captureWindowState.resource = captureRequest->resource;
             captureWindowState.trigger++;
             introspectionFlags.capture = true;
@@ -228,6 +229,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         PROFILE_ZONE("FrameDebuggerWindow");
         auto openInCapture = [&](const std::string& pass, const std::string& resource) {
             captureWindowState.pass = pass;
+            captureWindowState.afterLastWrite = false;
             captureWindowState.resource = resource;
             captureWindowState.trigger++;
             introspectionFlags.capture = true;

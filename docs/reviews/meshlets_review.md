@@ -981,10 +981,16 @@ Done after review:
 - **READMEs:** meshlets are described as the renderer's geometry path in the root README and `src/renderer/README.md`, with a new
   pack-to-pixels diagram, the GPU tables, culling and frame-pass diagrams redrawn, meshlet screenshots, and the RHI hero with every example.
 
+- **Picking and the second phase:** `ViewPicking` captured `gbuffer.instance` and `depth` after `GeometryPass`, which with occlusion in the
+  geometry pass is only the first phase, so what `GeometryPassLate` drew (newly uncovered or just streamed in) wasn't picked that frame. A
+  capture watch can now ask for a resource after the pass that writes it last this frame (`CaptureWatch::afterLastWrite`,
+  `FgCaptureRequest::afterLastWrite`, `FgResource::lastWriteOrder`), and picking uses it. The `capture` verb and `capture.request` take `+`
+  as the pass for it, the Capture window lists "(after its last write)", and the result names the pass that ran. Checked on Sponza: a `+`
+  capture of `gbuffer.instance` ran after `GeometryPassLate` with occlusion on and after `GeometryPass` with it off, and a pick returned
+  the same prim either way, with no warnings or validation errors.
+
 Still open:
-1. **Picking misses the second phase:** `ViewPicking` captures `gbuffer.instance` and `depth` after `GeometryPass`, which with occlusion in
-   the geometry pass is only the first phase; what `GeometryPassLate` draws (newly uncovered or just streamed in) isn't picked that frame.
-2. **Review index:** this review is added to `docs/reviews/README.md` (uncommitted). It is Markdown, not the HTML page that README describes,
+1. **Review index:** this review is added to `docs/reviews/README.md` (uncommitted). It is Markdown, not the HTML page that README describes,
    at your request.
 
 ## Reviewer's decisions

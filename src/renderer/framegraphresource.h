@@ -66,4 +66,6 @@ struct FgResource {
     bool external = false;
     uint32_t firstUseOrder = UINT32_MAX;
     uint32_t lastUseOrder = 0;
+    // Execution order of the last pass that writes it this frame, imported resources too; UINT32_MAX when nothing does.
+    uint32_t lastWriteOrder = UINT32_MAX;
 };

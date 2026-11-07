@@ -196,8 +196,9 @@ auto CaptureService::requestsForFrame(uint32_t frameSlot, uint64_t frame) -> std
         requests.push_back({
             .pass = watch.pass,
             .resource = watch.resource,
+            .afterLastWrite = watch.afterLastWrite,
             .record = [this, watch, frameSlot](RhiCommandBuffer* cmd, const FgCaptureSource& source) {
-                Pending p = {.watch = watch, .frame = currentFrame};
+                Pending p = {.watch = watch, .pass = source.pass, .frame = currentFrame};
                 if (source.kind == FgResourceKind::Texture) {
                     recordTexture(cmd, source, p);
                 } else {
@@ -271,7 +272,8 @@ auto CaptureService::recordStatic(RhiCommandBuffer* cmd, uint32_t frameSlot, uin
     // Graph captures that never ran: the resource was not alive after that pass.
     for (const auto& watch : requestedThisFrame) {
         if (std::ranges::find(recordedThisFrame, watch.id) == recordedThisFrame.end()) {
-            Pending p = {.watch = watch, .frame = frame, .error = "resource not alive after this pass (or not accessed in this frame)"};
+            const char* error = watch.afterLastWrite ? "no pass wrote the resource this frame" : "resource not alive after this pass (or not accessed in this frame)";
+            Pending p = {.watch = watch, .pass = watch.pass, .frame = frame, .error = error};
             pending[frameSlot].push_back(std::move(p));
         }
     }
@@ -280,7 +282,7 @@ auto CaptureService::recordStatic(RhiCommandBuffer* cmd, uint32_t frameSlot, uin
         if (it == staticBuffers.end() || !wantsCapture(watch)) {
             continue;
         }
-        Pending p = {.watch = watch, .frame = frame};
+        Pending p = {.watch = watch, .pass = watch.pass, .frame = frame};
         if (it->second.buffer == nullptr) {
             p.error = "buffer does not exist yet";
         } else {
@@ -301,7 +303,7 @@ auto CaptureService::afterFence(uint32_t frameSlot) -> void {
         CaptureResult r = {
             .id = p.watch.id,
             .frame = p.frame,
-            .pass = p.watch.pass,
+            .pass = p.pass,
             .resource = p.watch.resource,
             .texture = p.texture,
             .width = p.width,

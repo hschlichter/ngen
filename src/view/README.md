@@ -263,7 +263,7 @@ do its draws: only where it is placed.
 - **Camera modes** (`ground.*`, their state `CameraModesState` held by the `ViewFrame`, the Camera window's mode section, the View menu): for the camera that has the controls.
   - *Orbit*: while Left Alt is held, right-drag turns around a pivot (yaw around the up axis through it, pitch around the camera's right,
     the distance kept, `Camera::orbit`) and the wheel moves toward it (`Camera::dolly`); WASD carry the pivot along. The pivot is the
-    surface under the cursor when Alt went down: a depth pick (`ViewPicking::requestDepth`, the `depth` texel after the geometry pass)
+    surface under the cursor when Alt went down: a depth pick (`ViewPicking::requestDepth`, the `depth` texel after the pass that writes it last)
     turned into a world point a few frames later, and until then (or over the sky) the point at the last pivot's distance along the cursor
     ray. `camera-orbit x,y,z yaw pitch [debug]` and `view.camera.orbit` turn a camera by angles.
   - *Following the ground* (G, `camera-follow on|off|height <m>`, the configuration values `view.camera.follow` and `view.camera.followHeight`): the eye kept a height (1.8 m by default) above the
@@ -436,11 +436,11 @@ its new version arrives; the `assets` record has `stale` and `changes`.
 
 The selection is a prim's full path (instances expanded), so a prim inside an instance is that instance's. A click picks on the GPU
 (`viewpicking.*`): the geometry pass writes each pixel's instance index + 1 into `gbuffer.instance`, the click asks for that one texel after the
-pass, and a few frames later the instance under the cursor maps to its prim (`instancePath`); nothing drawn there deselects. The `pick <x> <y>`
+last pass that writes it (the second phase's geometry pass with occlusion), and a few frames later the instance under the cursor maps to its prim (`instancePath`); nothing drawn there deselects. The `pick <x> <y>`
 verb and `view.pick` do the same at a framebuffer pixel and answer with the path; `select` and `view.select` select by path. Keys: Z
 deselects, R selects the parent, F frames the selection; the Edit menu has the same, and picks the tool (select, translate, rotate, scale).
 
-![Picking: a click's capture watch on gbuffer.instance after the geometry pass, read back a few frames later and mapped through instancePath to the selected prim](../../screenshots/view_picking.svg)
+![Picking: a click's capture watch on gbuffer.instance after the geometry pass that writes it last, read back a few frames later and mapped through instancePath to the selected prim](../../screenshots/view_picking.svg)
 
 The window and view toggles have keys too (`ViewUI::toggleShortcuts`), each pressed again to turn it off. Ctrl+D turns the debug camera on and
 off. They go through ImGui's shortcut routing, so they work with the cursor over a window, never while typing in a field, and a focused window's own chord wins (the Assets

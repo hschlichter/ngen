@@ -30,12 +30,15 @@ struct CaptureDisplay {
 };
 
 // A capture the main thread wants: resource `resource` right after pass `pass` ("" = after
-// the last pass, which is also where static scene buffers are captured). Captured when
-// `trigger` changes or every frame while `live`.
+// the last pass, which is also where static scene buffers are captured), or with
+// afterLastWrite right after whichever pass writes it last this frame (its final contents,
+// whichever passes ran; picking reads the id target so). Captured when `trigger` changes or
+// every frame while `live`.
 struct CaptureWatch {
     uint32_t id = 0;
     std::string pass;
     std::string resource;
+    bool afterLastWrite = false;
     bool live = false;
     uint32_t trigger = 0;
     CaptureDisplay display;
@@ -108,6 +111,7 @@ public:
 private:
     struct Pending {
         CaptureWatch watch;
+        std::string pass; // the pass it was captured after (the watch's, or the last writer's)
         uint64_t frame = 0;
         bool texture = false;
         uint32_t width = 0;

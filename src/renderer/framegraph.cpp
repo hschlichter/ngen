@@ -177,14 +177,17 @@ auto FrameGraph::bufferStateFor(FgAccessFlags access) -> RhiBufferState {
     return accessToBufferState(access);
 }
 
-auto FrameGraph::runCaptures(RhiCommandBuffer* cmd, const char* passName, const std::vector<FgAccessFlags>& access) -> void {
+auto FrameGraph::runCaptures(RhiCommandBuffer* cmd, const char* passName, uint32_t orderIdx, const std::vector<FgAccessFlags>& access) -> void {
     for (const auto& request : captureRequests) {
-        if (request.pass != passName) {
+        if (!request.afterLastWrite && request.pass != passName) {
             continue;
         }
         for (uint32_t resIdx = 0; resIdx < (uint32_t) resources.size(); resIdx++) {
             const auto& res = resources[resIdx];
             if (request.resource != res.name) {
+                continue;
+            }
+            if (request.afterLastWrite && (orderIdx == UINT32_MAX || res.lastWriteOrder != orderIdx)) {
                 continue;
             }
             FgCaptureSource source = {
@@ -322,6 +325,7 @@ auto FrameGraph::compile() -> void {
     for (auto& res : resources) {
         res.firstUseOrder = UINT32_MAX;
         res.lastUseOrder = 0;
+        res.lastWriteOrder = UINT32_MAX;
     }
 
     for (uint32_t orderIdx = 0; orderIdx < (uint32_t) passOrder.size(); orderIdx++) {
@@ -348,6 +352,7 @@ auto FrameGraph::compile() -> void {
         }
         for (const auto& w : passes[passIdx].writes) {
             updateLifetime(w.resourceIndex);
+            resources[w.resourceIndex].lastWriteOrder = orderIdx;
         }
     }
 }
@@ -499,7 +504,7 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
         cmd->endLabel();
 
         if (!captureRequests.empty()) {
-            runCaptures(cmd, passName, resourceAccess);
+            runCaptures(cmd, passName, orderIdx, resourceAccess);
         }
         if (commandLogEnabled) {
             auto log = cmd->commandLog();
@@ -520,7 +525,7 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
     }
 
     if (!captureRequests.empty()) {
-        runCaptures(cmd, "", resourceAccess);
+        runCaptures(cmd, "", UINT32_MAX, resourceAccess);
     }
 
     // Carry imported buffers' final access into the next frame (finalAccess).
