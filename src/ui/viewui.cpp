@@ -299,6 +299,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
                            .overlayView = culledView,
                            .showCascadeFrusta = cascadeFrusta,
                            .meshletCullView = meshletCullView,
+                           .depthPrepass = depthPrepass,
                            .cull = *cullResult});
         if (meshletCullView != meshletCullViewBefore) {
             (void) renderconfig::debugView.set(meshletCullView ? (size_t) DebugView::MeshletCull : (size_t) DebugView::None);

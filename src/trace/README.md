@@ -73,12 +73,12 @@ job system: 23 workers
 GPU: AMD Radeon 890M Graphics (RADV STRIX1) (…), Vulkan 1.4.354, validation off
 device features: timestamps yes, calibrated timestamps yes, …
 renderer initialized in 2 ms
-13 shaders requested: shaders/shadow.vert, shaders/shadow.frag, …
+13 shaders requested: shaders/meshlet.task, shaders/shadow.mesh, …
 scene assets/main_sponza/NewSponza_Main_USD_Zup_003.usda requested
 assets/main_sponza/NewSponza_Main_USD_Zup_003.usda composed: 1 layer packs in 1 rounds, 1170 prims, 0 prototypes in 3 ms
 115 meshes, 28 materials and 25 textures drawn; 168 fetched in 1246 ms
 draws built: 407 instances of 115 meshes, 28 materials, 1 lights in 408 ms
-loaded shader shaders/shadow.vert (70f3f74fed72fa1f)
+loaded shader shaders/shadow.mesh (70f3f74fed72fa1f)
 pipeline shadow.pipeline.cullback created
 start-up pipelines created after waiting 1 ms for their shaders
 scene on the GPU: 407 instances, 115 meshes, 28 textures in 1911 ms

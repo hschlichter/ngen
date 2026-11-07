@@ -8,8 +8,9 @@
 //   - every view: the meshlet's bounding sphere against the view's frustum planes;
 //   - the camera, single-sided buckets: the normal cone, when every triangle faces away from the camera (skipped for an instance whose
 //     model scales unevenly, which bends the cone);
-//   - with meshletFlagOcclusion: the sphere's box against the depth pyramid (hzb.glsl). The depth prepass's late phase tests against the
-//     pyramid of the first phase's depth; the geometry pass tests both phases against the pyramid of the prepass's whole depth.
+//   - with meshletFlagOcclusion: the sphere's box against the depth pyramid (hzb.glsl). By default the geometry pass's second phase tests
+//     against the pyramid of its first phase's depth, and the first phase isn't tested. With a depth prepass, its late phase tests against
+//     the pyramid of its first phase's depth, and the geometry pass tests both phases against the pyramid of the prepass's whole depth.
 // The survivors are compacted with a prefix over the workgroup, not atomics, so the order never depends on scheduling; then packed in order
 // into mesh workgroups (meshlet.glsl, "Packs"), but for the debug views, which take two mesh workgroups per meshlet.
 // Classifying (meshletFlagClassify, the meshletcull debug view), every meshlet survives with the test that would cull it, or, with

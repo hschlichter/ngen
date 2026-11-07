@@ -11,9 +11,10 @@ class FrameGraph;
 class RhiDevice;
 
 // The depth pyramid for occlusion culling (src/renderer/README.md, "Occlusion culling"): R32_SFLOAT, mip 0 the depth buffer's size rounded
-// down to powers of two, every level to 1x1, each texel the farthest depth (the minimum, reversed-Z) of what it covers. Built twice a frame
-// (shaders/hzbbuild.comp, a dispatch per level): HzbBuild from the depth prepass's first phase, for the second phase's occlusion tests, and
-// HzbBuildFinal from the prepass's whole depth, for the geometry pass's meshlets. It reads one of two depth buffers of the same size: the
+// down to powers of two, every level to 1x1, each texel the farthest depth (the minimum, reversed-Z) of what it covers. Built by
+// shaders/hzbbuild.comp, a dispatch per level: HzbBuild from occlusion's first phase, for the second phase's tests. By default that phase is
+// the geometry pass's and the pyramid is built once a frame; with a depth prepass it is the prepass's, and HzbBuildFinal rebuilds the
+// pyramid from the prepass's whole depth for the geometry pass's meshlets. It reads one of two depth buffers of the same size: the
 // rendered camera's, or the culling camera's own while that isn't the rendered one (a debug camera, a frozen frustum). Kept across frames
 // and remade with the depth buffers; imported into the graph each frame, so its contents start undefined.
 class DepthPyramid {

@@ -176,7 +176,7 @@ const uint meshletCulledCone = 2;
 const uint meshletCulledOccluded = 3;
 
 // Packs: the mesh passes (but the debug views') draw the survivors of a task workgroup packed in order, as many consecutive meshlets per
-// mesh workgroup as fit in packMaxVertices and packMaxTriangles (two full meshlets, or up to 32 small ones), a vertex and up to two
+// mesh workgroup as fit in packMaxVertices and packMaxTriangles (a full meshlet alone, or up to 32 small ones), a vertex and up to two
 // triangles a thread. Small meshlets (grass, pebbles: about 20 triangles) would otherwise each take a workgroup of their own. The
 // primitive order is the meshlets', so the image is the same.
 const uint packThreads = 64;

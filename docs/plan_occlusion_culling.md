@@ -1,8 +1,10 @@
 # Occlusion culling: two-phase, against a depth pyramid
 
-**Status. Draft.** Decisions 1–8 locked 2026-10-22, by the agent on the user's instruction ("make all the decisions"); the reasons are kept
+**Status. Landed.** Decisions 1–8 locked 2026-10-22, by the agent on the user's instruction ("make all the decisions"); the reasons are kept
 so each can be revisited. The second half of the roadmap's vertical slice step 2, after [plan_meshlets.md](plan_meshlets.md), whose task
-shaders this extends.
+shaders this extends. Built as planned, then two decisions changed: decision 1 (the phases draw in the geometry pass by default, since
+[plan_meshlet_performance.md](plan_meshlet_performance.md)) and decision 7 (a frozen frustum runs occlusion against its own depth). Each
+decision below says what changed and why; "As built" at the end lists what of Visibility wasn't built.
 
 ## Current state
 
@@ -41,10 +43,18 @@ Out:
   every pixel is shaded once.
 - **B. In the geometry pass**: two geometry passes, the second loading the G-buffer; no prepass.
 
-**Locked: A.** One geometry pass, which the lighting, debug view and picking code expect; the prepass exists already and shades nothing.
+**Locked: A. Deprecated: changed to B by default, see below.** One geometry pass, which the lighting, debug view and picking code expect; the prepass exists already and shades nothing.
 `occlusion on|off` is its own switch, on by default, and runs the prepass whatever the prepass switch says; `prepass` matters only with
 occlusion off. (The draft had `prepass off` turn occlusion off; two switches that each turn the other off read worse than one that
 implies the other, so it changed while building.)
+
+**Changed to B, by default** ([plan_meshlet_performance.md](plan_meshlet_performance.md), step 4). Once culling was cheap, the prepass drew
+every first-phase triangle twice: at the test world's overlook its phases took 11.5 ms. Without the depth prepass the geometry pass now draws
+the first phase into the G-buffer, `HzbBuild` builds the pyramid from its depth, and `GeometryPassLate` draws the second phase onto the same
+targets, its meshlets tested against that pyramid. `overlook` went from 41.5 to 29.6 ms and `flight_10` from 27.7 to 22.7 ms. The cost: the
+first phase's meshlets aren't tested against any pyramid, so the camera draws a few more triangles (`flight_10` 4.77 → 4.95 M,
+`dense_forest` 0.11 → 0.40 M). A. stays as the arrangement with `render.prepass` on, and `occlusion on|off` no longer turns the prepass on.
+The lighting, debug view and picking code needed nothing: the second phase loads and adds to the first phase's targets.
 
 ### 2. The pyramid
 
@@ -91,6 +101,12 @@ world show phase 1 drawing many occluded meshlets of large meshes.
 **Locked**: occlusion is skipped while the culling frustum is frozen (`cull freeze`); the pyramid comes from the live camera and the two
 don't mix. The `culling` record says so.
 
+**Changed**, with the debug camera's culling (the user's choice, "option 2"): while the culling camera isn't the rendered one (a frozen
+frustum, or a debug camera handed culling with `tools.debugcamera.cull`), both phases draw from the culling camera into a depth buffer of
+its own (`depth.cull`; `DepthPrepassCull`, `DepthPrepassCullLate`), the pyramid is built from it, and the rendered view draws without a
+prepass. So occlusion keeps running, and what is culled is what the culling camera would cull. The `culling` record's
+`occlusion.depthFrom` and the Culling window's "Occlusion depth" line say which depth fed it.
+
 ### 8. Regions
 
 **Locked**: phase 2's draws are a view of their own: view 5 "camera, phase 2", four buckets, 24 regions. Phase 1's scan writes the counts of
@@ -133,8 +149,23 @@ views 0–4, phase 2's those of view 5, so the two never overwrite each other an
 - **Cost, measured and recorded** (release): `HzbBuild`, both cull phases and the prepass phases' GPU zones; the geometry pass's time with
   occlusion on and off at the test world's viewpoints.
 
+## As built
+
+- **Not built**: the `hzb` buffer view (`--view=hzb`) and its `occlusion mip=<n>` switch. The pyramid shows in the Frame Graph window's
+  previews and through `capture HzbBuild hzb`, one mip at a time. Moved to Deferred.
+- **Not built**: the Engine Map entries. The Engine Map no longer exists ([ADR 63](adr/0063_engine_map_and_scene_flow_windows.md),
+  superseded by [ADR 62](adr/0062_runtime_access_and_visibility.md)); `src/renderer/README.md` "Occlusion culling" says where occlusion
+  sits in the frame.
+- **Barrier name**: the in-pass barrier is `FrameGraphContext::storageBarrier`, not `textureBarrier`.
+- **Verification**: Sponza with occlusion on and off is byte-identical at a still camera; the test world's `flight_10` differs in one pixel
+  by 6 levels (a depth tie). The cost is recorded in [plan_meshlet_performance.md](plan_meshlet_performance.md) and
+  [meshlets_learnings.md](meshlets_learnings.md). The frame after a camera cut wasn't measured.
+
 ## Deferred / follow-ups
 
 - **Per-meshlet history** (decision 6). Trigger as stated there.
 - **Cascade occlusion** (each cascade's own pyramid). Trigger: shadow pass time dominating at the test world's viewpoints.
-- **Single-pass pyramid build**. Trigger: `HzbBuild` above 0.2 ms on hardware.
+- **Single-pass pyramid build**. Trigger: `HzbBuild` above 0.2 ms on hardware. (It measures 0.43 ms at the test world's `flight_10` on the
+  AMD 890M, so the trigger has fired; the culling compute came first.)
+- **The `hzb` view** (`--view=hzb`, `occlusion mip=<n>`), from Visibility. Trigger: occlusion misbehaving in a way a capture of one mip
+  doesn't explain, or the next visibility pass over the renderer.

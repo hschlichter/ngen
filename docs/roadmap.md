@@ -25,17 +25,7 @@ breadth left two of the objective's three goals with nothing yet. In order; each
 the sections below.
 
 1. **Streaming, minimal.** Landed (see Landed). Its follow-ups are under Engine features, Streaming.
-2. **Meshlets, with occlusion culling.** The packer splits meshes into meshlets (meshoptimizer, vendored), each with a bounding sphere and a
-   normal cone; the mesh pack and the GPU scene gain a meshlet table; mesh shaders draw them, culling per meshlet (frustum, backface by cone)
-   after the per-instance stage, and two-phase occlusion culling against a depth pyramid (HZB) culls instances and meshlets hidden behind
-   others. A meshlet debug view, meshlet and occlusion counts in the `culling` record, nodes in the Engine Map. Before the rest because it
-   changes the mesh format and the GPU scene everything after builds on; the airfield at level 0 drew 106 M of 136 M triangles with culling
-   per instance only. New plan. Decided 2026-10-15:
-   - **Mesh shaders, required** (`VK_EXT_mesh_shader`, approved beyond the Vulkan 1.3 baseline; RADV has it): a device without them fails
-     at start-up with a clear message, as for any required feature. Whether CI's lavapipe has them is checked first in the plan; if not,
-     CI needs another answer there. A fallback path (no mesh shaders) is a possible topic later, not part of this step.
-   - **Occlusion culling is part of this step**: without it the savings in dense scenes don't show.
-   - **Cluster LOD (Nanite-style) later**, not in this step: UsdLod stays the only LOD. Under Rendering below, with its trigger.
+2. **Meshlets, with occlusion culling.** Landed (see Landed). Its follow-ups are under Rendering, Culling.
 3. **Editor, minimal.** `ngen-editor` as its own process: opens the USD stage (the code in `src/editor/`), selects, transforms and saves to a
    layer; the view takes the edit through the asset change notices that already exist. No deltas, live unsaved edits or cross-process undo yet.
    Every edit is an RPC call an AI can make too. [plan_editor_split.md](plan_editor_split.md), rewritten small.
@@ -140,7 +130,11 @@ Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's ma
   light culling. The dome's diffuse light landed ([plan_sky.md](plan_sky.md)); its specular reflections wait for a specular term in shading.
 - **HDR lighting + tone mapping** (in the AA pass).
 - **Shadows**: spot/point light shadows; cascade blending / softer techniques. Trigger: a seam PCF doesn't hide.
-- **Culling**: meshlets, mesh shaders and occlusion (two-phase HZB) are vertical slice step 2 (above). Cluster LOD: the next item.
+- **Culling**: meshlets, mesh shaders and two-phase occlusion landed (vertical slice step 2, under Landed). Follow-ups, each with its trigger
+  in its plan: per-meshlet history so the first phase's meshlets are tested too, occlusion for the shadow cascades, a single-pass pyramid
+  build ([plan_occlusion_culling.md](plan_occlusion_culling.md), Deferred); work items sized to the meshlets drawn rather than twice the live
+  ones, culling by authored streaming chunk ([plan_meshlet_performance.md](plan_meshlet_performance.md)); a path without mesh shaders, if a
+  target device needs one ([ADR 64](adr/0064_meshlets_on_mesh_shaders.md)); a measurement on an NVIDIA GPU. Cluster LOD: the next item.
 - **Cluster LOD** (Nanite-style): a pack-time hierarchy of simplified meshlet groups, chosen per cluster on the GPU, streamed by cluster.
   Deferred on purpose (2026-10-15). It would revisit [plan_streaming_lod.md](plan_streaming_lod.md) decisions 2 (UsdLod is the only LOD)
   and 3 (the streaming structure is authored, not computed). Trigger: much more of the engine in place, with games and other use cases built
@@ -202,6 +196,17 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 ## Landed
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
+
+- **Meshlets, with occlusion culling** (vertical slice step 2) — [plan_meshlets.md](plan_meshlets.md),
+  [plan_meshlet_culling_visibility.md](plan_meshlet_culling_visibility.md), [plan_occlusion_culling.md](plan_occlusion_culling.md),
+  [plan_meshlet_performance.md](plan_meshlet_performance.md); [ADR 64](adr/0064_meshlets_on_mesh_shaders.md). The USD packer splits meshes
+  into meshlets of at most 64 vertices and 124 triangles (meshoptimizer), each with a bounding sphere and a normal cone; every mesh pass draws
+  them with task and mesh shaders, one indirect call per region, and the vertex path is gone. Culling runs per instance (group boxes, frustum,
+  render LOD), then per meshlet (frustum, normal cone), and two-phase occlusion culls both against a depth pyramid, by default inside the
+  geometry pass. At the test world's `flight_10` the frame went from 48.8 ms to 15.2 ms (AMD 890M, 2560×1440) and the camera draws 4.95 M
+  triangles where whole instances drew 13.98 M. The `meshlet` and `meshletcull` debug views, meshlet and occlusion counts in the `culling`
+  record, the Culling window. The Engine Map nodes the step named weren't built: the Engine Map was removed
+  ([ADR 62](adr/0062_runtime_access_and_visibility.md)). What was learned: [meshlets_learnings.md](meshlets_learnings.md).
 
 - **The sky** — [plan_sky.md](plan_sky.md). A scene's dome light is drawn as its sky and lights the scene with its irradiance in place of the
   hemisphere ambient. `ngen-packer-exr` reads OpenEXR (tinyexr) into an E5B9G9R9 texture packed with 9 spherical-harmonic coefficients of its

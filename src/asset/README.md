@@ -20,7 +20,7 @@ else about assets.
 
 ## Asset ids
 
-An asset's id is its source path relative to the asset server's working directory, with forward slashes, as USD names assets: `shaders/gbuffer.vert`,
+An asset's id is its source path relative to the asset server's working directory, with forward slashes, as USD names assets: `shaders/gbuffer.mesh`,
 `assets/textures/brick.png`.
 A file can define more assets than itself: a packer may write **secondary outputs**, each its own asset with the id `<file>#<fragment>`, packed by
 the file's job. A USD file's meshes and materials are `assets/layered/base.usda#/World/Group/Own`: the file, `#`, the prim path in it.
@@ -38,7 +38,7 @@ auto packRules(const std::string& config) -> std::vector<PackRule> {
     std::vector<PackRule> rules;
     rules.push_back(PackRule{
         .name = "shader",
-        .extensions = {".vert", ".frag", ".comp", ".geom"},
+        .extensions = {".vert", ".frag", ".comp", ".geom", ".task", ".mesh"},
         .packer = "ngen-packer-shader",
         .params = {
             {"optimize", config == "debug" ? "0" : "1"},

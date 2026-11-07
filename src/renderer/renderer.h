@@ -170,7 +170,7 @@ private:
     InstanceCullPass instanceCullPass;   // GPU culling
     LodGroups lodGroups;                 // render-LOD groups: their table, the levels picked, the residency of their levels
     LodSelectPass lodSelectPass;         // the level each group draws, before culling
-    DepthPyramid depthPyramid;           // occlusion culling's depth pyramid, built from the prepass's first phase and from its whole depth
+    DepthPyramid depthPyramid;           // occlusion culling's depth pyramid, built from the first phase's depth (and after a prepass from its whole depth)
     bool lastOcclusion = false;          // whether the frame last built ran occlusion culling, for the culling result
     uint32_t reportedRegionOverflow = 0; // the region overflow last traced (CullRegionOverflow), so a steady one is said once
     CaptureService captureService;       // resource captures at pass boundaries

@@ -7,7 +7,8 @@
 //     touched; every one is taken, so nothing is lost.
 //   1 mip i from mip i - 1: the minimum of the 2x2 texels below it (one row or column where a side is already 1).
 //
-// Every level is written once a frame, after the depth prepass's first phase; the occlusion tests (instancecull.comp, meshlet.task) read it.
+// Every level is written after occlusion's first phase, from that phase's depth (the geometry pass's by default, the depth prepass's with
+// one), and with a prepass again from its whole depth; the occlusion tests (instancecull.comp, meshlet.task) read it.
 
 layout(local_size_x = 8, local_size_y = 8) in;
 

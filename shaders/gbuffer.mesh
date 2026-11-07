@@ -21,7 +21,8 @@ out gl_MeshPerVertexEXT {
 layout(location = 0) out vec3 fragNormal[];
 layout(location = 1) out vec3 fragColor[];
 layout(location = 2) out vec2 fragTexCoord[];
-// One value per draw, so the fragment shader's array index is dynamically uniform.
+// The texture slot of the primitive's instance. A pack can hold meshlets of several instances, so it varies within a draw and the
+// fragment shaders index the texture array with nonuniformEXT.
 layout(location = 3) flat out uint fragTexture[];
 // The instance index + 1, for the id target picking reads; 0 is nothing drawn.
 layout(location = 4) flat out uint fragInstance[];

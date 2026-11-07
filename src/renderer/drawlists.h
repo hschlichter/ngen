@@ -81,8 +81,8 @@ struct CullResult {
     std::vector<uint8_t> lodFlags;
 };
 
-// One instance drawn in a region (instancecull.comp's DrawRecord), in instance order: its meshlets there (the submesh's, or a cascade's whole
-// mesh) and where they start in the region's work items. What the draw log, the GPU Scene window and the frame debugger read; the draws
+// One instance drawn in a region (instancecull.comp's DrawRecord), in instance order: its meshlets there (its submesh's) and where they
+// start in the work item buffer (an index into the whole buffer, not the region). What the draw log, the GPU Scene window and the frame debugger read; the draws
 // themselves go through the work items.
 struct DrawRecord {
     uint32_t instance = 0;
@@ -130,7 +130,7 @@ struct MeshletPush {
 };
 inline constexpr uint32_t meshletFlagCount = 1u << 0;      // the pass adds to the meshlet counts (the camera's geometry pass, the shadow pass)
 inline constexpr uint32_t meshletFlagSplit = 1u << 1;      // two mesh workgroups per meshlet (the debug views)
-inline constexpr uint32_t meshletFlagOcclusion = 1u << 2;  // meshlets against the depth pyramid (the prepass's late phase, the geometry pass)
+inline constexpr uint32_t meshletFlagOcclusion = 1u << 2;  // meshlets against the depth pyramid (the second phase; after a prepass, the geometry pass)
 inline constexpr uint32_t meshletFlagClassify = 1u << 3;   // every meshlet kept, with the test that would cull it (the meshletcull debug view)
 inline constexpr uint32_t meshletFlagHiddenOnly = 1u << 4; // with meshletFlagClassify: only the meshlets the depth pyramid hides
 inline constexpr uint32_t meshletFlagCullCamera = 1u << 5; // the depth prepass draws from the culling camera, into its own depth

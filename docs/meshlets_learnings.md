@@ -478,7 +478,8 @@ Measured later on this branch: release, AMD Radeon 890M (RADV), the test world, 
 | main (indexed, no occlusion) | 49 | – | – |
 
 Drawn at the end: `flight_10` 4.95 M triangles (4.77 M before step 4, whose first phase isn't tested against the pyramid), `dense_forest`
-0.11 M, `overlook` 18.75 M; drawn instances and meshlets unchanged by every step. Lit images and shadow maps at `flight_10` and
+0.40 M (0.11 M before step 4), `overlook` 18.81 M (18.75 M); drawn instances unchanged by every step, meshlets and triangles changed only by
+step 4. Lit images and shadow maps at `flight_10` and
 `dense_forest` are byte-identical from step 4 on. The culling compute (cull, scan, layout, scatter, occlusion, late phase) fell from about
 50 ms at `dense_forest` to about 3 ms; what is left is drawing, at about 1.3 to 1.4 billion triangles a second.
 

@@ -58,6 +58,11 @@ Alternatives: per-meshlet history (a bit per meshlet, both phases per meshlet) r
 the meshlets drawn and a larger change to culling; deferred until the prepass's GPU time shows it. Leaving it as is was rejected: the counter
 reads 0 and the geometry pass draws hidden meshlets.
 
+**Deprecated: changed with the default arrangement** ([plan_meshlet_performance.md](plan_meshlet_performance.md), step 4;
+[plan_occlusion_culling.md](plan_occlusion_culling.md), decision 1). By default occlusion's phases draw in the geometry pass, with no prepass
+and no `HzbBuildFinal`: the second phase's meshlets are tested against the pyramid of the first phase's depth, and the first phase's aren't
+tested. This decision holds as written only with `render.prepass` on, or while the culling camera isn't the rendered one.
+
 ### 3. Seeing meshlet culling
 
 **Locked: `debugview meshletcull`.** The task shader runs every test and keeps every meshlet (`meshletFlagClassify`), handing the result to the

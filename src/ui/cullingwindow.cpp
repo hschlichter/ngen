@@ -36,9 +36,11 @@ void drawCullingWindow(bool& show, CullingWindowInputs in) {
     ImGui::Checkbox("Freeze frustum", &in.frozen);
     helpMarker("Keeps culling against the camera pose at the moment of freezing while the view moves on.\nThe frozen frustum is drawn in yellow.");
     ImGui::Checkbox("Occlusion culling", &in.occlusion);
-    helpMarker("Two phases in the depth prepass: what was visible last frame is drawn, a depth pyramid is built from it, and\n"
-               "everything else is tested against it. The geometry pass then tests every meshlet against a pyramid of the\n"
-               "frame's whole depth. Off while culling is off or the frustum is frozen.");
+    helpMarker("Two phases: what was visible last frame is drawn, a depth pyramid is built from its depth, and everything else\n"
+               "is tested against it and drawn if it shows. By default the geometry pass draws both phases; with the depth\n"
+               "prepass on, the prepass does, and the geometry pass tests every meshlet against a pyramid of its whole depth.\n"
+               "While the culling camera isn't the rendered one, the phases draw from it into a depth of their own.\n"
+               "Off while culling is off.");
     ImGui::Checkbox("Show culled", &in.showCulled);
     helpMarker("Every instance AABB: green drawn, red culled (frustum or occlusion) in the overlay view.");
 
@@ -103,13 +105,19 @@ void drawCullingWindow(bool& show, CullingWindowInputs in) {
     ImGui::Text("Meshlets culled: %u frustum, %u cone, %u depth", meshlets.frustumCulled, meshlets.coneCulled, meshlets.occluded);
     helpMarker("Up to 64 vertices and 124 triangles each, culled by the geometry pass's task shaders: the meshlet's sphere against\n"
                "the frustum; the normal cone, when every triangle faces away (single-sided surfaces); and with occlusion on, the\n"
-               "sphere's box against the depth pyramid of the frame's whole depth.");
+               "sphere's box against the depth pyramid (the second phase's meshlets, or every meshlet after a depth prepass).");
     if (!in.enabled) {
         ImGui::TextDisabled("Culling off: everything is drawn.");
     }
     if (cull.occlusion) {
         ImGui::Text("Occlusion: %u instances drawn first (visible last frame), %u second", cull.earlyDrawn, cull.lateDrawn);
-        ImGui::Text("Occlusion depth: %s", cull.occlusionCullCamera ? "the culling camera's own" : "the rendered camera's prepass");
+        const char* depthFrom = "the rendered camera's geometry pass";
+        if (cull.occlusionCullCamera) {
+            depthFrom = "the culling camera's own";
+        } else if (in.depthPrepass) {
+            depthFrom = "the rendered camera's depth prepass";
+        }
+        ImGui::Text("Occlusion depth: %s", depthFrom);
         helpMarker("While the culling camera isn't the rendered one (a debug camera, a frozen frustum), occlusion's depth is drawn from\n"
                    "the culling camera into a depth buffer of its own (depth.cull), so what is culled is what that camera would cull;\n"
                    "the rendered view then draws without a depth prepass.");

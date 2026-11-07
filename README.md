@@ -22,8 +22,12 @@ out and changes level around the camera as it moves.*
   never waits for them, and the asset server repacks what changed at its source and tells the view.
 
 **Rendering**
-- **GPU-driven only**: persistent GPU scene tables (instances, meshes, materials), one geometry pool, bindless material textures, GPU culling
-  with ordered compaction into indirect draws, one call per bucket per view.
+- **Meshlets on mesh shaders**: meshes are split into meshlets of at most 64 vertices and 124 triangles when they are packed
+  (meshoptimizer), and every pass draws them with task and mesh shaders. Culling runs per instance, then per meshlet (frustum, normal
+  cone), and two-phase occlusion culls both against a depth pyramid. At a test-world viewpoint the camera draws 4.95 M triangles where
+  culling whole instances drew 13.98 M, and the frame takes 15.2 ms instead of 48.8 (AMD Radeon 890M, 2560×1440).
+- **GPU-driven only**: persistent GPU scene tables (instances, meshes, meshlets, materials), one geometry pool, bindless material textures,
+  GPU culling with ordered compaction into meshlet work, one indirect call per bucket per view.
 - **Deferred shading**: a G-buffer, cascaded shadow maps in one atlas with hardware-compare PCF, a directional sun, the scene's dome light as
   its sky and its diffuse light (spherical-harmonic irradiance from an HDR lat-long; a hemisphere ambient without one), FXAA, reversed-Z with an
   infinite far plane.
@@ -32,8 +36,8 @@ out and changes level around the camera as it moves.*
 - **Vulkan 1.3** behind a thin, backend-agnostic RHI, with dynamic rendering and synchronization2.
 
 **Seeing inside**
-- **Debug views**: wireframe, triangle size, overdraw, instance, mesh, material and primitive ids, UVs, streaming state, LOD level, mip level,
-  shadow cascades and the G-buffer, each with a legend and a cursor readout.
+- **Debug views**: wireframe, triangle size, overdraw, instance, mesh, material and primitive ids, meshlets and meshlet culling, UVs,
+  streaming state, LOD level, mip level, shadow cascades and the G-buffer, each with a legend and a cursor readout.
 - **Tools**: the LOD and Streaming tools (every root's levels, measures, residency and findings, with viewport layers and a map), a debug camera
   that watches the main camera's frustum, culling and streaming from outside, camera modes (following the ground, orbiting), camera flights.
 - **Introspection**: the frame graph with live previews, a frame debugger (barriers, commands, descriptor sets), resource captures, GPU
@@ -54,6 +58,8 @@ out and changes level around the camera as it moves.*
 | **LOD Level view**: each draw coloured by the level it draws, finest to coarsest, across the world's nested LOD roots. | **The debug camera** watching the main camera, its frustum in orange: culling and streaming follow the main camera, so only what it draws is drawn. |
 | ![Overdraw view](screenshots/engine_eldermark_debug_overdraw_01.png) | ![Triangle Size view](screenshots/engine_eldermark_debug_trianglesize_01.png) |
 | **Overdraw**: fragments shaded per pixel without the depth test; the forest canopy is where the geometry pass spends its time. | **Triangle Size**: each triangle's screen area, log scale; red triangles cover a pixel or less. |
+| ![Meshlet view](screenshots/engine_eldermark_debug_meshlet_01.png) | ![Meshlet Culling view from above](screenshots/engine_eldermark_debug_meshletcull_01.png) |
+| **Meshlet view**: every meshlet in a colour of its own; the unit the renderer draws and culls. | **Meshlet Culling**, from a debug camera above the main camera: its meshlets coloured by the test that removes them, green drawn, red outside the frustum, blue facing away, magenta hidden by depth. |
 
 ![Frame Graph window, graph view](screenshots/engine_eldermark_framegraph_01.png)
 
@@ -87,8 +93,8 @@ join it through hooks at fixed points (`ViewHooks`), and join the renderer's fra
 Each library documents its design and rules in a README next to the code:
 
 - [`src/rhi/README.md`](src/rhi/README.md) — RHI principles, the integrator contract, the example programs, known gaps.
-- [`src/renderer/README.md`](src/renderer/README.md) — how a frame is built: GPU scene tables, GPU culling and indirect draws, descriptor sets, frame graph
-  rules, shadows, trace events.
+- [`src/renderer/README.md`](src/renderer/README.md) — how a frame is built: GPU scene tables, meshlets drawn by task and mesh shaders, GPU culling per
+  instance and per meshlet, occlusion culling, descriptor sets, frame graph rules, shadows, trace events.
 - [`src/rendertools/README.md`](src/rendertools/README.md) — the renderer's instrumentation, a render extension: debug snapshots, the frame
   debugger, GPU counters, the texture inspector and dumps, screenshots.
 - [`src/trace/README.md`](src/trace/README.md) — the trace: `TRACE_EVENT`, the always-on ring per process, streaming events over RPC, conventions.
@@ -99,7 +105,7 @@ Each library documents its design and rules in a README next to the code:
 - [`src/build/README.md`](src/build/README.md) — the self-hosted build system: framework, IR, runner, bootstrap.
 - [`src/scene/README.md`](src/scene/README.md) — the plain types the renderer and ngen-view share for what is drawn.
 - [`src/editor/README.md`](src/editor/README.md) — the USD editor code, unbuilt until `ngen-editor` is built from it.
-- [`src/asset/README.md`](src/asset/README.md) — the asset system: asset ids, `ngen-asset-server`, its cache and stream, `AssetClient`, and packing (`pack.cpp` rules, packers).
+- [`src/asset/README.md`](src/asset/README.md) — the asset system: asset ids, `ngen-asset-server`, its cache and stream, `AssetClient`, and packing (`pack.cpp` rules, packers, meshlet building).
 - [`src/view/README.md`](src/view/README.md) — ngen-view's scene: the World composed from packs and flattened into the renderer's inputs; its commands and dumps.
 - [`src/tools/README.md`](src/tools/README.md) — the tools: the LOD and Streaming tools and the debug camera, their data and state, apart from the UI that draws them.
 - [`src/world/README.md`](src/world/README.md) — the runtime scene: the World composed from scene packs as USD composes a stage, and `ngen-worldcheck` / `ngen-usdcheck` to compare the two.

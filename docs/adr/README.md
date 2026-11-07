@@ -78,7 +78,7 @@ locked; **Superseded by N** — replaced, kept as a record.
 | [61](0061_switch_when_complete.md) | 2026-10-15 | Switch only when the finer level is complete; no frustum in the heuristic | Accepted |
 | [62](0062_runtime_access_and_visibility.md) | 2026-10-15 | Runtime access and visibility as a standing rule | Accepted |
 | [63](0063_engine_map_and_scene_flow_windows.md) | 2026-10-15 | Engine Map and Scene Flow windows | Superseded by 62 |
-| [64](0064_meshlets_on_mesh_shaders.md) | 2026-10-15 | Meshlets on `VK_EXT_mesh_shader` with occlusion culling | Accepted, not implemented |
+| [64](0064_meshlets_on_mesh_shaders.md) | 2026-10-15 | Meshlets on `VK_EXT_mesh_shader` with occlusion culling | Accepted |
 | [65](0065_test_world_over_caldera.md) | 2026-10-16 | A test world authored to stream, over fitting Caldera | Accepted |
 | [66](0066_variants_and_pointinstancer.md) | 2026-10-16 | Variant sets and PointInstancer in the World | Accepted |
 | [67](0067_placement_tree.md) | 2026-10-16 | Streaming v2: a placement tree of immutable contents | Accepted |

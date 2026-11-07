@@ -200,9 +200,10 @@ auto GeometryPass::addPass(
             cmd->setScissor(extent);
 
             // One indirect call per pipeline bucket: single-sided instances under back-face
-            // culling first, then double-sided ones without it, then the same two cutout; with occlusion, then the late phase's. With
-            // occlusion every meshlet of both phases is tested against the pyramid of the prepass's whole depth (HzbBuildFinal): one it
-            // hides lies behind the depth at every pixel it covers, so under the Equal test it would shade nothing.
+            // culling first, then double-sided ones without it, then the same two cutout; with occlusion, then the late phase's. After a
+            // two-phase prepass every meshlet of both phases is tested against the pyramid of the prepass's whole depth (HzbBuildFinal): one
+            // it hides lies behind the depth at every pixel it covers, so under the Equal test it would shade nothing. Drawing the phases
+            // itself, the second phase's meshlets are tested against the pyramid of the first's depth, and the first's aren't tested.
             auto* regionWork = ctx.buffer(drawHandles.regionWork);
             // Both: the first phase's regions, then with occlusion the second's. First and Second: one of them.
             uint32_t firstPhase = phase == GeometryPhase::Second ? 1u : 0u;

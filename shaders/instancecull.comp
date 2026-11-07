@@ -17,8 +17,8 @@
 //   4 clear      one thread per instance slot: the history zeroed (a new history buffer)
 //
 // Two-phase occlusion (src/renderer/README.md, "Occlusion culling"): with params.occlusion on, the first phase's camera regions hold only
-// the instances visible last frame (the history); the depth prepass draws them, the depth pyramid is built from that depth, and mode 3
-// tests every frustum-visible instance against it. Scan and scatter run per phase (push.phase): the first over every counter and the views
+// the instances visible last frame (the history); the geometry pass draws them (the depth prepass, when it is on or the culling camera
+// isn't the rendered one), the depth pyramid is built from that depth, and mode 3 tests every frustum-visible instance against it. Scan and scatter run per phase (push.phase): the first over every counter and the views
 // 0..4, the second over the late regions (view 5) and the occlusion count.
 //
 // Output keeps instance order within a region, so it is deterministic. Per region: a draw record per drawn instance (for the tools), and
@@ -476,7 +476,7 @@ void occlusion() {
     barrier();
 
     if (m < params.instanceCount) {
-        // Only a camera-visible slot reads its instance: most slots are culled, and the record is 128 bytes.
+        // Only a camera-visible slot reads its culling record: most slots are culled, and the record is 48 bytes.
         uint bits = visibility.bits[m];
         uint shows = 0u;
         if ((bits & 1u) != 0u) {

@@ -53,7 +53,7 @@ record) and kept only if it won; instance, meshlet and triangle counts were chec
   against a pre-step-4 release image.
 - **Counts that change**: a group outside every view counts its slots as culled (render-LOD slots in it are not counted as levels not drawn),
   and dead slots in such a group count as culled. Drawn instances, meshlets and triangles are unchanged by every step but step 4 (triangles drawn
-  rise a little: 4.77 M → 4.95 M at `flight_10`).
+  rise: 4.77 M → 4.95 M at `flight_10`, 0.11 M → 0.40 M at `dense_forest`, 18.75 M → 18.81 M at `overlook`).
 - **Render-LOD residency** isn't marked for slots in a skipped group; no view sees them. A group turning into view could draw a level whose
   meshes aren't resident for one frame (not seen).
 

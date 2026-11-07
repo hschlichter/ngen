@@ -41,3 +41,7 @@ revisits the descriptor model), and splitting the set into per-frame and per-sce
 - Sources: [plan_bindless_materials.md](../plan_bindless_materials.md), [src/rhi/README.md](../../src/rhi/README.md) known gaps,
   [src/renderer/README.md](../../src/renderer/README.md) "Descriptor sets".
 - Code: `shaders/gbuffer.frag:4` (`textures[1024]`), `:19`; `src/renderer/gpuscene.h:90` (`GpuMaterial`), `:147` (`maxTextures = 1024`).
+- Since [ADR 64](0064_meshlets_on_mesh_shaders.md) (2026-11-07): the slot is no longer uniform per draw. One draw is a whole region and a
+  mesh workgroup can hold meshlets of several instances, so the mesh shaders pass the slot as a flat vertex output (one value per meshlet) and the fragment shaders index
+  `textures[nonuniformEXT(slot)]` (`shaders/gbuffer.frag:21`; `shaderSampledImageArrayNonUniformIndexing` is required). Code lines now:
+  `shaders/gbuffer.frag:5` (`textures[1024]`), `src/renderer/gpuscene.h:116` (`GpuMaterial`), `:179` (`maxTextures = 1024`).

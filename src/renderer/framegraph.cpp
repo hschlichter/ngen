@@ -237,7 +237,7 @@ auto FrameGraph::compile() -> void {
         }
 
         // For each reader, connect to the latest writer declared before it, and to the next writer after it: that writer must not
-        // overwrite what the reader reads (write after read, as the depth pyramid reads the prepass's first depth before its second).
+        // overwrite what the reader reads (write after read, as the depth pyramid reads the first phase's depth before the second phase writes it).
         for (uint32_t p = 0; p < passCount; p++) {
             for (const auto& r : passes[p].reads) {
                 if (r.resourceIndex == resIdx) {
