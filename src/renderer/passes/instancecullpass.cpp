@@ -223,6 +223,8 @@ auto InstanceCullPass::addPasses(FrameGraph& fg, DrawLists& lists, const DrawLis
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             builder.read(handles.visibility, FgAccessFlags::StorageRead);
             builder.read(handles.groupOffsets, FgAccessFlags::StorageRead);
+            // The workgroup's own counters: which regions it has nothing in.
+            builder.read(handles.groupCounters, FgAccessFlags::StorageRead);
             builder.read(hzb, FgAccessFlags::ShaderRead);
             builder.read(handles.regionWork, FgAccessFlags::StorageRead);
             data.commands = builder.write(handles.commands, FgAccessFlags::StorageWrite);
@@ -290,6 +292,8 @@ auto InstanceCullPass::addLatePasses(FrameGraph& fg, const DrawLists::Handles& h
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             builder.read(handles.visibility, FgAccessFlags::StorageRead);
             builder.read(handles.groupOffsets, FgAccessFlags::StorageRead);
+            // The workgroup's own counters: which regions it has nothing in.
+            builder.read(handles.groupCounters, FgAccessFlags::StorageRead);
             builder.read(hzb, FgAccessFlags::ShaderRead);
             builder.read(handles.regionWork, FgAccessFlags::StorageRead);
             data.commands = builder.write(handles.commands, FgAccessFlags::StorageWrite);

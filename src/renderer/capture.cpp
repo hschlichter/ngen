@@ -272,7 +272,7 @@ auto CaptureService::recordStatic(RhiCommandBuffer* cmd, uint32_t frameSlot, uin
     // Graph captures that never ran: the resource was not alive after that pass.
     for (const auto& watch : requestedThisFrame) {
         if (std::ranges::find(recordedThisFrame, watch.id) == recordedThisFrame.end()) {
-            const char* error = watch.afterLastWrite ? "no pass wrote the resource this frame" : "resource not alive after this pass (or not accessed in this frame)";
+            const char* error = watch.afterLastWrite ? "resource not alive after its last write (or not accessed in this frame)" : "resource not alive after this pass (or not accessed in this frame)";
             Pending p = {.watch = watch, .pass = watch.pass, .frame = frame, .error = error};
             pending[frameSlot].push_back(std::move(p));
         }

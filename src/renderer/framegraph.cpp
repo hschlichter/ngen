@@ -187,7 +187,8 @@ auto FrameGraph::runCaptures(RhiCommandBuffer* cmd, const char* passName, uint32
             if (request.resource != res.name) {
                 continue;
             }
-            if (request.afterLastWrite && (orderIdx == UINT32_MAX || res.lastWriteOrder != orderIdx)) {
+            // After its last write; one nothing writes this frame (an imported buffer only the CPU fills) after the last pass.
+            if (request.afterLastWrite && res.lastWriteOrder != orderIdx) {
                 continue;
             }
             FgCaptureSource source = {

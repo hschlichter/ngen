@@ -18,14 +18,18 @@ auto gpuSceneResourceOfWatch(uint32_t id) -> const std::string* {
     if (id < gpuSceneWatchBase || id >= gpuSceneWatchBase + captures.size()) {
         return nullptr;
     }
-    return &captures[id - gpuSceneWatchBase].second;
+    return &captures[id - gpuSceneWatchBase].resource;
 }
 
 auto gpuSceneWatches(const GpuSceneWindowState& state) -> std::vector<CaptureWatch> {
     std::vector<CaptureWatch> watches;
     const auto& captures = gpuSceneCaptures();
     for (uint32_t i = 0; i < captures.size(); i++) {
-        watches.push_back({.id = gpuSceneWatchBase + i, .pass = captures[i].first, .resource = captures[i].second, .live = state.live, .trigger = state.trigger});
+        auto watch = captures[i];
+        watch.id = gpuSceneWatchBase + i;
+        watch.live = state.live;
+        watch.trigger = state.trigger;
+        watches.push_back(std::move(watch));
     }
     return watches;
 }
@@ -199,8 +203,10 @@ auto drawGpuSceneWindow(bool& show,
             const auto* counts = capturedTable(state.results, "drawCounts");
             const auto* commands = capturedTable(state.results, "drawCommands");
             const auto* params = capturedTable(state.results, "cullParams");
-            // Per workgroup: each region's draw record offset, then its work item offset.
-            if (counters != nullptr && offsets != nullptr) {
+            // Per workgroup: each region's draw record offset, then its work item offset. The first phase's: the second overwrites them.
+            if (region / DrawLists::bucketCount == DrawLists::lateView) {
+                ImGui::TextDisabled("Per workgroup: the counters and offsets captured are the first phase's; the second phase's aren't kept.");
+            } else if (counters != nullptr && offsets != nullptr) {
                 auto groups = std::min(counters->bytes->size() / (DrawLists::counterCount * 4), offsets->bytes->size() / (DrawLists::regionCount * 2 * 4));
                 auto used = (rows.size() + DrawLists::groupSize - 1) / DrawLists::groupSize;
                 for (size_t g = 0; g < std::min(groups, std::max<size_t>(used, 1)); g++) {

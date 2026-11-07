@@ -125,10 +125,13 @@ auto ViewDumps::requestGpuScene(DumpTarget target) -> void {
     auto group = nextGpuSceneGroup++;
     auto dir = target.path;
     gpuSceneGroups[group] = {.target = std::move(target)};
-    for (const auto& [pass, resource] : gpuSceneCaptures()) {
+    for (const auto& capture : gpuSceneCaptures()) {
+        auto watch = capture;
+        watch.id = nextCaptureId++;
+        watch.trigger = 1;
         CaptureDump dump = {
-            .watch = {.id = nextCaptureId++, .pass = pass, .resource = resource, .trigger = 1},
-            .target = {.path = dir.empty() ? std::string{} : std::format("{}/{}.json", dir, resource)},
+            .watch = std::move(watch),
+            .target = {.path = dir.empty() ? std::string{} : std::format("{}/{}.json", dir, capture.resource)},
             .gpuSceneGroup = group,
         };
         captureDumps.push_back(std::move(dump));

@@ -31,8 +31,8 @@ struct CaptureDisplay {
 
 // A capture the main thread wants: resource `resource` right after pass `pass` ("" = after
 // the last pass, which is also where static scene buffers are captured), or with
-// afterLastWrite right after whichever pass writes it last this frame (its final contents,
-// whichever passes ran; picking reads the id target so). Captured when `trigger` changes or
+// afterLastWrite right after whichever pass writes it last this frame, or after the last pass
+// when none does (its final contents, whichever passes ran; picking reads the id target so). Captured when `trigger` changes or
 // every frame while `live`.
 struct CaptureWatch {
     uint32_t id = 0;

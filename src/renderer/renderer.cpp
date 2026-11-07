@@ -770,6 +770,12 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
                     .text(std::format("{} meshlets didn't fit the work items ({}): grown to {}", overflow, before, drawLists.workCapacity()))
                     .field("overflow", (int64_t) overflow)
                     .field("capacity", (int64_t) drawLists.workCapacity());
+            } else if (!reportedWorkFull) {
+                TRACE_WARNING("Render", "MeshletWorkFull", "cull.workitems")
+                    .text(std::format("{} meshlets didn't fit the work items ({}), already the largest buffer the device makes: they aren't drawn", overflow, before))
+                    .field("overflow", (int64_t) overflow)
+                    .field("capacity", (int64_t) before);
+                reportedWorkFull = true;
             }
         }
     }
@@ -850,7 +856,6 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     bool occlusionApart = occlusion && snapshot.cullCameraSeparate;
     bool prepass = snapshot.depthPrepass && !occlusionApart;
     bool occlusionInGeometry = occlusion && !prepass && !occlusionApart;
-    lastOcclusion = occlusion;
     bool litReady = instanceCullPass.ready() && lodSelectPass.ready() && shadowPass.ready() && geometryPass.ready() && (!prepass || depthPrepass.ready()) && lightingPass.ready() &&
                     aaPass.ready();
     if (!litReady) {

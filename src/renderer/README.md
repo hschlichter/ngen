@@ -258,7 +258,8 @@ scan, layout and scatter for every view, occlusion for the camera's second phase
   draw record there cost the test world 4 to 7 ms a frame.
 - **Group boxes.** Each workgroup of 256 slots has a box around its live slots' bounds (`GroupBox`, `DrawLists::updateGroupBounds`, recomputed
   for the groups whose slots changed, copied into the slot's `cull.groupbounds` each frame). `InstanceCull` tests it first: a group outside every
-  view writes its slots' visibility and cull codes (the group's rejecting plane per view) without reading them, and counts them culled. The test is
+  view writes its slots' visibility and cull codes (the group's rejecting plane per view) without reading them, and counts its live slots
+  culled (the box's `w`, a count the CPU keeps; a dead slot counts in no view's statistics, tested or not). The test is
   monotonic in the box, so a slot it skips is one its own test would have culled. Render-LOD slots in a skipped group count as culled, not as
   levels not drawn, and don't mark their residency (no view sees them).
 - **Ordered compaction (reduce-then-scan).** `InstanceCull` counts, per workgroup of 256 instances, how many commands each region gets.
@@ -590,7 +591,9 @@ points of `Renderer::render`, in the order added; each hook does nothing unless 
   `gpuschema` describes every struct that crosses to the GPU (field, offset, type) so buffers decode into rows the same way in the UI and in dumps.
   Picking reads through it, so it is the core's; its file writers are the render tools'. The culling readback and the frame-graph previews
   predate it and keep their own paths. A watch can also name no pass and ask for the resource after the pass that writes it last this frame
-  (`afterLastWrite`, `FgResource::lastWriteOrder`; `capture + <resource>`), its final contents whichever passes ran: the result names the pass.
+  (`afterLastWrite`, `FgResource::lastWriteOrder`; `capture + <resource>`), or at the end of the frame when no pass writes it (an imported
+  buffer only the CPU fills): its final contents whichever passes ran, and the result names the pass. Picking, the GPU Scene window's
+  tables and the Frame Debugger's draw records capture so.
   The watches go with the snapshot, so the captures and the frame's other requests describe the same frame.
 - **GPU timings.** Every pass is a GPU zone, and every indirect call in the depth prepass, geometry and shadow passes is a nested zone named by its
   region (`DrawLists::regionName`). The zones of a slot are read after its fence and handed to the profiler's GPU lane on the CPU clock; the render

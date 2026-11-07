@@ -179,6 +179,7 @@ layout(std430, set = 0, binding = 7) buffer Totals {
 const uint planeVisible = 0xEu;
 const uint planeNotTested = 0xFu;
 const uint planeLevelNotDrawn = 0xDu; // a render-LOD level its group doesn't draw, in every view
+const uint deadMesh = 0xFFFFFFFFu;     // a dead slot's mesh (GpuScene): past the mesh table, never drawn
 const uint planeOccluded = 0xCu;
 layout(std430, set = 0, binding = 8) buffer CullPlanes {
     uint codes[];
@@ -251,6 +252,7 @@ const float groupBoxEmpty = 2.0;
 shared uint sharedCounters[counterCount];
 shared uint groupSkip;   // the whole workgroup is outside every view (or holds no live slot): its slots aren't read
 shared uint groupPlanes; // then, per view, the plane that rejects the group's box (cullPlanes' 4-bit codes)
+shared uint groupLive;   // then, its live slots (the box's w), which it counts as culled
 shared uint scanData[256];
 shared uint scanItems[256];
 
@@ -281,11 +283,13 @@ uint rejectingPlane(Instance inst, uint view) {
 void testGroup() {
     groupSkip = 0u;
     groupPlanes = 0u;
+    groupLive = 0u;
     if (params.cullEnabled == 0u) {
         return;
     }
     vec4 boxMin = groupBounds.data[gl_WorkGroupID.x * 2u];
     vec4 boxMax = groupBounds.data[gl_WorkGroupID.x * 2u + 1u];
+    groupLive = uint(boxMax.w);
     if (boxMin.w == groupBoxEmpty) {
         groupSkip = 1u;
         for (uint v = 0; v < params.viewCount; v++) {
@@ -386,11 +390,9 @@ void cull() {
             cullPlanes.codes[m] = groupPlanes;
         }
         if (lid == 0u) {
-            uint first = gl_WorkGroupID.x * gl_WorkGroupSize.x;
-            uint live = params.instanceCount > first ? min(gl_WorkGroupSize.x, params.instanceCount - first) : 0u;
-            sharedCounters[counterCameraCulled] = live;
+            sharedCounters[counterCameraCulled] = groupLive;
             for (uint c = 0; c + 1 < params.viewCount; c++) {
-                sharedCounters[counterCascadeCulled + c] = live;
+                sharedCounters[counterCascadeCulled + c] = groupLive;
             }
         }
     } else if (m < params.instanceCount) {
@@ -443,11 +445,12 @@ void cull() {
                 atomicAdd(sharedCounters[counterMeshlets + r], meshletsIn(inst));
             }
         }
-        // Statistics: culling per view over every instance; a level not drawn counts as neither.
-        if ((bits & 1u) == 0 && !dropped) {
+        // Statistics: culling per view over every live instance; a level not drawn counts as neither, and a dead slot (no draw) in no view.
+        bool counted = !dropped && inst.mesh != deadMesh;
+        if ((bits & 1u) == 0 && counted) {
             atomicAdd(sharedCounters[counterCameraCulled], 1u);
         }
-        if (!dropped) {
+        if (counted) {
             for (uint c = 0; c + 1 < params.viewCount; c++) {
                 if ((bits & (1u << (c + 1))) != 0) {
                     atomicAdd(sharedCounters[counterCascadeDrawn + c], 1u);

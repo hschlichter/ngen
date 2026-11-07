@@ -987,6 +987,34 @@ Done after review:
   capture of `gbuffer.instance` ran after `GeometryPassLate` with occlusion on and after `GeometryPass` with it off, and a pick returned
   the same prim either way, with no warnings or validation errors.
 
+**Final pass** (2026-11-07, before the merge): a code review of `main...HEAD`, every finding checked against the code, and the
+checks re-run.
+- **Fixed:**
+  - **The Frame Debugger's Draws tab never showed**: it looked for passes reading `drawCommands`, which no mesh pass reads now. It finds
+    them by `cullRegionWork`, reads each region's draw records at `CullParams::regionOffsets` (they were read as if every region were
+    the same size), and captures the records and counts after their last write, so the second phase's regions are there too.
+  - **The GPU Scene window and `dump-gpuscene` captured before occlusion's second phase**: visibility, cull codes, counts and draw
+    records came from the first phase, so "hidden by the depth pyramid" always read 0 and view 5 was empty. They are captured after
+    their last write now (Sponza: 234 occluded, as the `culling` record says). The per-workgroup counters and offsets stay the first
+    phase's, and the window says so for view 5. A `+` capture of a resource no pass writes that frame now captures at the end of the
+    frame instead of failing.
+  - **Dead slots in the culling statistics**: a group outside every view counted every slot in its range as culled, dead ones too,
+    while the slot-by-slot path counted a dead slot as visible (and drawn for the cascades). The group box's `w` now carries its live
+    slot count, and a dead slot counts in no view. Drawing is unchanged; at `flight_10` every view's culled count fell by 311.
+  - **The work items at the device's largest buffer** were recreated at the same size, with the descriptor sets, on every overflow
+    readback. Now nothing is recreated and `MeshletWorkFull` (a warning) says once that meshlets aren't drawn.
+  - **The scatters read the workgroup counters without declaring it** to the frame graph; declared now (no order or barrier changes).
+  - **The culling records' offset** could fall 128 bytes off a 256-byte boundary (an odd instance capacity), past what some devices
+    allow for a storage buffer offset. The capacity is a multiple of 256 slots now.
+  - **Removed** `Renderer::lastOcclusion`, written and never read. Stale comments in `gpuscene.h` and `pipelineregistry.h`; three files
+    clang-formatted; `docs/README.md` listed `plan_meshlets.md` as in progress.
+- **Kept**: the work items sized for twice the live meshlets, growing after an overflow (the first frames of a scene may drop some
+  meshlets, cascade regions first, until the buffer grows): the sizing decision this review accepted.
+- **Checked**: release and debug builds; the 17 RHI examples with `--check --validation`; Sponza with validation through the default
+  arrangement, the prepass, occlusion off, a frozen frustum, the debug camera, every meshlet debug view and the `hzb` view, with no
+  warnings or validation errors and the lit image byte-identical with occlusion on and off and before and after the fixes; the test
+  world at `flight_10`: 15.3 ms, 4.95 M triangles, no warnings.
+
 Still open:
 1. **Review index:** this review is added to `docs/reviews/README.md` (uncommitted). It is Markdown, not the HTML page that README describes,
    at your request.

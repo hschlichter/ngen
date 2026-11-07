@@ -94,14 +94,14 @@ auto DrawLists::updateGroupBounds(std::span<const GpuInstance> instances, std::s
         }
         AABB box = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
         bool unbounded = false;
-        bool live = false;
+        uint32_t live = 0;
         auto end = std::min<size_t>(((size_t) g + 1) * groupSize, instances.size());
         for (size_t m = (size_t) g * groupSize; m < end; m++) {
             const auto& instance = instances[m];
             if (!instance.alive) {
                 continue;
             }
-            live = true;
+            live++;
             if (!instance.worldBounds.valid()) {
                 unbounded = true;
                 continue;
@@ -110,14 +110,14 @@ auto DrawLists::updateGroupBounds(std::span<const GpuInstance> instances, std::s
             box.max = glm::max(box.max, instance.worldBounds.max);
         }
         float kind = groupBoxTested;
-        if (!live) {
+        if (live == 0) {
             kind = groupBoxEmpty;
         } else if (unbounded || !box.valid()) {
             kind = groupBoxUnbounded;
         }
         groupBoxes[g] = {
             .min = glm::vec4(box.valid() ? box.min : glm::vec3(0.0f), kind),
-            .max = glm::vec4(box.valid() ? box.max : glm::vec3(0.0f), 0.0f),
+            .max = glm::vec4(box.valid() ? box.max : glm::vec3(0.0f), (float) live),
         };
     }
 }
@@ -199,7 +199,12 @@ auto DrawLists::ensureWorkCapacity(uint64_t items, uint64_t frame) -> bool {
     constexpr uint64_t minItems = 64 * 1024;
     auto grown = std::max({wanted, (uint64_t) workItemCapacity * 2, minItems});
     grown = std::min<uint64_t>(grown, device->limits().maxBufferBytes / sizeof(MeshletWorkItem));
-    workItemCapacity = (uint32_t) std::min<uint64_t>(grown, UINT32_MAX);
+    auto capacity = (uint32_t) std::min<uint64_t>(grown, UINT32_MAX);
+    if (slots[0].workItems != nullptr && capacity <= workItemCapacity) {
+        // Already the largest buffer the device makes: nothing to grow to (the caller reports it).
+        return false;
+    }
+    workItemCapacity = capacity;
     for (auto& slot : slots) {
         deletionQueue->deferBuffer(frame, slot.workItems);
         slot.workItems = device->createBuffer({

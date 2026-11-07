@@ -44,9 +44,9 @@ struct FgCaptureSource {
 
 // Runs `record` right after pass `pass` executes (before transients are released), or after
 // the last pass when `pass` is empty, if resource `resource` is alive then. With afterLastWrite,
-// `pass` is ignored and it runs after whichever pass writes `resource` last this frame, so what
-// it copies is the frame's final contents whatever passes ran. `record` gets the frame's command
-// buffer and records whatever copies it needs.
+// `pass` is ignored and it runs after whichever pass writes `resource` last this frame (after the
+// last pass when none does), so what it copies is the frame's final contents whatever passes ran.
+// `record` gets the frame's command buffer and records whatever copies it needs.
 struct FgCaptureRequest {
     std::string pass;
     std::string resource;

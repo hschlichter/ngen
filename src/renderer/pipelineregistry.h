@@ -40,7 +40,7 @@ enum class PipelineUse : uint8_t {
 };
 
 struct ShaderRef {
-    std::string id; // the shader's asset id, "shaders/gbuffer.vert"
+    std::string id; // the shader's asset id, "shaders/gbuffer.mesh"
     RhiShaderStage stage = RhiShaderStage::Vertex;
 };
 

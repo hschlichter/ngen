@@ -1,7 +1,7 @@
 #include "debugviewpass.h"
 
-#include "renderconfig.h"
 #include "profilegpu.h"
+#include "renderconfig.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "trace.h"

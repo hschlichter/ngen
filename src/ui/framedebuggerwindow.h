@@ -25,10 +25,11 @@ struct FrameDebuggerState {
 inline constexpr uint32_t frameDebuggerWatchBase = 1000;
 inline constexpr uint32_t frameDebuggerCommandsWatch = 900;
 inline constexpr uint32_t frameDebuggerCountsWatch = 901;
+inline constexpr uint32_t frameDebuggerParamsWatch = 902; // the culling parameters: where each region's draw records start
 
 // Pass by pass through one recorded frame: accesses, barriers with their backend details,
 // the command log, bound descriptor sets and their contents, the resources a pass writes
-// (before and after, through capture watches) and, for indirect passes, the draw commands.
+// (before and after, through capture watches) and, for the mesh passes, the draw records of the regions they draw.
 // primPathOfInstance resolves an instance index to its prim path.
 auto drawFrameDebuggerWindow(bool& show, FrameDebuggerState& state, const std::function<std::string(uint32_t)>& primPathOfInstance, std::function<void(const std::string&, const std::string&)> openInCapture) -> void;
 // Capture watches the window wants this frame.

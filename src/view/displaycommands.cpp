@@ -229,7 +229,7 @@ auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
         {
             .name = "capture.request",
             .summary = "Capture a frame-graph resource right after a pass (\"\" or \"-\" = end of frame, also static buffers; \"+\" = after "
-                       "the pass that writes it last this frame).",
+                       "the pass that writes it last this frame, or the end of the frame when none does).",
             .params = {
                 requiredField("pass", RpcType::String, "pass name, \"\" or \"-\", or \"+\""),
                 requiredField("resource", RpcType::String, "resource name"),

@@ -93,7 +93,8 @@ struct DrawRecord {
 static_assert(sizeof(DrawRecord) == 16);
 
 // The box around a culling workgroup's slots (DrawLists::groupSize of them), which the cull pass tests before the slots: a group outside
-// every view skips its instances. min.w: 0 a box to test, 1 a live slot without bounds (always tested slot by slot), 2 no live slot.
+// every view skips its instances. min.w: 0 a box to test, 1 a live slot without bounds (always tested slot by slot), 2 no live slot. max.w:
+// how many of its slots are live, which a skipped group counts as culled (a dead slot counts in no view).
 struct GroupBox {
     glm::vec4 min = glm::vec4(0.0f, 0.0f, 0.0f, 2.0f);
     glm::vec4 max = glm::vec4(0.0f);

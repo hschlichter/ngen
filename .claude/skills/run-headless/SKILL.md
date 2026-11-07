@@ -103,7 +103,7 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   below the device's limit, to exercise a full pool on a small scene (the `GeometryPoolFull` warning, the `memory` record's `geometryPool`). `--render-debug`: draw log on without the window.
 - Introspection verbs (debug and release builds; each writes when its data arrives, a few frames after the verb):
   - `capture <pass|-|+> <resource> <path> [x y w h]`: any frame-graph resource right after `<pass>` (`-` = end of frame, also `gpuscene.meshtable`,
-    `gpuscene.materials`; `+` = after the pass that writes it last this frame, named in the result). Buffers as JSON rows decoded with their schema; textures as PNG plus `<path>.json` (format, size, channel ranges, and the
+    `gpuscene.materials`; `+` = after the pass that writes it last this frame, or the end of the frame when none does; named in the result). Buffers as JSON rows decoded with their schema; textures as PNG plus `<path>.json` (format, size, channel ranges, and the
     texel values when the region is 64 texels or fewer).
   - `dump-frame DIR`: `DIR/frame.json` (every pass with barriers and their Vulkan stages/layouts, command log, descriptor contents) plus a capture of
     every resource each pass writes.

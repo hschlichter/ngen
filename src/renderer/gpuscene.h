@@ -61,8 +61,8 @@ struct GpuInstanceRecord {
     glm::vec3 boundsMin = glm::vec3(0.0f);
     uint32_t flags = 0;
     glm::vec3 boundsMax = glm::vec3(0.0f);
-    uint32_t lodLevel = 0;   // GpuInstance::lodLevel, for the LOD level view and the level test
-    uint32_t lodGroup = 0;   // GpuInstance::lodGroup
+    uint32_t lodLevel = 0; // GpuInstance::lodLevel, for the LOD level view and the level test
+    uint32_t lodGroup = 0; // GpuInstance::lodGroup
     uint32_t triangleCount = 0;
     uint32_t streamRoot = 0; // GpuInstance::streamRoot
     uint32_t lodDepth = 0;   // GpuInstance::lodDepth, for the LOD level view
@@ -394,8 +394,9 @@ private:
 
     std::deque<Upload> queue;
 
-    // Instance buffer: one GpuInstanceRecord per draw slot, read at gl_InstanceIndex. The access it was left in carries into the next
-    // frame's graph so the upload syncs with the previous frame's reads.
+    // Instance buffer: one GpuInstanceRecord per draw slot, which the task and mesh shaders read at the slot a work item names, then one
+    // GpuCullRecord per slot from cullRecordsOffset, which the culling passes read. The access it was left in carries into the next frame's
+    // graph so the upload syncs with the previous frame's reads.
     RhiBuffer* instances = nullptr;
     FgAccessFlags instanceAccess = FgAccessFlags::None;
     // Per frame slot, CpuToGpu, mapped: the changed records of the slot's frame, packed; made on first use, grown up to stagingLimit. An

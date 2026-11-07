@@ -871,8 +871,11 @@ auto GpuScene::ensureInstanceCapacity(uint32_t count, uint32_t liveCount, uint64
     // Frames in flight may still read the old buffer.
     deletionQueue->deferBuffer(frame, instances);
 
-    constexpr uint32_t minCapacity = 256;
-    instanceCapacity = std::max({count, instanceCapacity * 2, minCapacity});
+    // A multiple of 256 slots, so the culling records after the draw records start on a 32 KiB boundary: bound at that offset, they meet
+    // any device's storage buffer offset alignment (at most 256 bytes).
+    constexpr uint32_t slotGranule = 256;
+    auto wanted = std::max({count, instanceCapacity * 2, slotGranule});
+    instanceCapacity = (wanted + slotGranule - 1) / slotGranule * slotGranule;
     instances = device->createBuffer({
         .size = instanceBufferBytes(),
         .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferDst | RhiBufferUsage::TransferSrc,

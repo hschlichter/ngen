@@ -1,7 +1,7 @@
 #include "gpuscenecapture.h"
 
-#include "gpuscene.h"
 #include "drawlists.h"
+#include "gpuscene.h"
 #include "gpuschema.h"
 
 #include <algorithm>
@@ -31,19 +31,18 @@ auto gpuInstanceFlagText(uint32_t flags) -> std::string {
     return text;
 }
 
-auto gpuSceneCaptures() -> const std::vector<std::pair<std::string, std::string>>& {
-    // (pass, resource): each table where it is complete for the frame.
-    static const std::vector<std::pair<std::string, std::string>> captures = {
-        {"InstanceCullScatter", "instances"},
-        {"", "gpuscene.meshtable"},
-        {"", "gpuscene.materials"},
-        {"InstanceCull", "cullVisibility"},
-        {"InstanceCull", "cullPlanes"},
-        {"InstanceCull", "cullGroupCounters"},
-        {"InstanceCullScan", "cullGroupOffsets"},
-        {"InstanceCullScan", "drawCounts"},
-        {"InstanceCullScatter", "drawCommands"},
-        {"InstanceCull", "cullParams"},
+auto gpuSceneCaptures() -> const std::vector<CaptureWatch>& {
+    static const std::vector<CaptureWatch> captures = {
+        {.resource = "instances", .afterLastWrite = true},
+        {.resource = "gpuscene.meshtable"},
+        {.resource = "gpuscene.materials"},
+        {.resource = "cullVisibility", .afterLastWrite = true},
+        {.resource = "cullPlanes", .afterLastWrite = true},
+        {.pass = "InstanceCull", .resource = "cullGroupCounters"},
+        {.pass = "InstanceCullScan", .resource = "cullGroupOffsets"},
+        {.resource = "drawCounts", .afterLastWrite = true},
+        {.resource = "drawCommands", .afterLastWrite = true},
+        {.resource = "cullParams", .afterLastWrite = true},
     };
     return captures;
 }

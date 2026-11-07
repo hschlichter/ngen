@@ -15,8 +15,10 @@
 
 // The GPU scene's tables read back from captures and joined per instance: what introspect.gpuscene answers and the GPU Scene window shows.
 
-// The tables to capture, as (pass, resource): each where it is complete for the frame ("" is the end of the frame).
-auto gpuSceneCaptures() -> const std::vector<std::pair<std::string, std::string>>&;
+// The tables to capture, as watches without their id and trigger (the caller's): each where it is final for the frame, after its last
+// write (afterLastWrite, so after occlusion's second phase when it runs) or at the end of the frame (pass ""), but the per-workgroup
+// counters and offsets, which are the first phase's: the second phase overwrites them with its own.
+auto gpuSceneCaptures() -> const std::vector<CaptureWatch>&;
 
 // A captured table by resource name; null when it wasn't captured or the capture failed.
 auto capturedTable(const std::map<std::string, CaptureResult>& byResource, const char* resource) -> const CaptureResult*;
