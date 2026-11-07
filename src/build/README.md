@@ -161,8 +161,9 @@ Special flags:
 - `--dump-graph` — dump the IR as JSON (one object per variant) to stdout and exit.
 - `--clean` — remove `_out/<plat>/<cfg>/` for the chosen variant, then exit. Requires `-p` and `-c`.
   Bootstrap-level — no graph stage, no runner, just `std::filesystem::remove_all` on the variant dir.
-- `--rebuild` — same wipe as `--clean`, then fall through to the normal pipeline. Graph re-emits the IR;
-  the runner sees no build log and rebuilds every reachable edge. Requires `-p` and `-c`.
+- `--rebuild` — the normal pipeline with the runner's `--force`: every edge reachable from the requested targets (or the default targets) runs
+  again, up to date or not. Nothing is deleted, so other targets' outputs in the variant directory — the `ngen-cli` the repository-root link
+  points at, for one — stay where they are. Requires `-p` and `-c`; `--clean` is the way to start the variant from nothing.
 - `--compile-commands` — derive `compile_commands.json` from the on-disk IR for the chosen variant and write
   it to `_out/<plat>/<cfg>/compile_commands.json`, plus an updated merged top-level `_out/compile_commands.json`
   (union of every variant's IR currently on disk). Opt-in; the runner and emitter are unaware of this file.
@@ -177,8 +178,8 @@ Verbosity:
 
 `NO_COLOR=1` (or any non-empty value) suppresses ANSI escapes regardless of tty.
 
-The runner is also directly invokable: `./_out/ngen-build-run --ir <path> [-j N] [-k N] [-v|-vv] [target ...]`. `-j` defaults to `nproc`; `-k` defaults to 1
-(fail fast). See `src/build/run/main.cpp`.
+The runner is also directly invokable: `./_out/ngen-build-run --ir <path> [-j N] [-k N] [-v|-vv] [--force] [target ...]`. `-j` defaults to `nproc`; `-k` defaults to 1
+(fail fast); `--force` treats every reachable edge as dirty. See `src/build/run/main.cpp`.
 
 ---
 

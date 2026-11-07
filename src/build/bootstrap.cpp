@@ -151,7 +151,8 @@ auto print_help() -> void {
               << "  -p, --platform <name>   Build for this platform.    (required for builds)\n"
               << "  -c, --config <name>     Build with this config.     (required for builds)\n"
               << "      --clean             Remove the variant's build outputs (requires -p / -c); exit.\n"
-              << "      --rebuild           --clean, then build from scratch (requires -p / -c).\n"
+              << "      --rebuild           Run every step of the requested targets again, up to date or not\n"
+              << "                          (requires -p / -c). Other outputs are left alone.\n"
               << "      --compile-commands  Write compile_commands.json for the variant + merged top-level union\n"
               << "                          (requires -p / -c).\n"
               << "  -v, --verbose           One line per edge; same effect as TERM=dumb.\n"
@@ -251,15 +252,14 @@ auto main(int argc, char** argv) -> int {
         return 0;
     }
 
-    // --clean / --rebuild both wipe the variant directory and require explicit -p / -c. Handle them before the
-    // graph stage runs: --clean exits, --rebuild falls through to the regular pipeline which will re-emit the
-    // IR and rebuild everything from scratch.
-    if (args->clean || args->rebuild) {
+    // --clean wipes the variant directory and exits, before the graph stage runs; it requires explicit -p / -c.
+    // --rebuild deletes nothing: it runs the regular pipeline with the runner's --force, so only the edges reachable
+    // from the requested targets run again and the rest of the variant directory stays as it is.
+    if (args->clean) {
         if (args->platform.empty() || args->config.empty()) {
             print_help();
             std::cerr << "\n"
-                      << "Error: " << (args->clean ? "--clean" : "--rebuild")
-                      << " requires --platform and --config.\n";
+                      << "Error: --clean requires --platform and --config.\n";
             return 1;
         }
         auto safe = [](const std::string& s) {
@@ -276,9 +276,7 @@ auto main(int argc, char** argv) -> int {
             std::cerr << "Error: failed to remove " << variant_dir.string() << ": " << ec.message() << "\n";
             return 1;
         }
-        if (args->clean) {
-            return 0;
-        }
+        return 0;
     }
 
     auto graph_cmd = "./_out/ngen-build-graph" + graph_forward_args(argc, argv);
@@ -327,6 +325,9 @@ auto main(int argc, char** argv) -> int {
     }
     if (args->verbosity >= 2) {
         cmd += " -vv";
+    }
+    if (args->rebuild) {
+        cmd += " --force";
     }
     for (const auto& t : resolved_targets) {
         cmd += " " + shell_quote(t);

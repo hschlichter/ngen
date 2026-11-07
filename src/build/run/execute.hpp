@@ -11,7 +11,8 @@
 //      edge set.
 //   3. **Local dirty check per edge** via `compute_dirty`: no log entry, command hash differs, any tracked
 //      input / output content hash differs, or any output is missing → dirty. Phony edges
-//      (`kEdgeFlagPhony`) skip the output-existence check (their outputs are virtual stamps).
+//      (`kEdgeFlagPhony`) skip the output-existence check (their outputs are virtual stamps). With
+//      `RunOptions::force` every reachable edge is dirty; edges outside the reachable set are untouched.
 //   4. **Propagate dirty along the DAG.** A clean-looking edge whose dep is in the dirty set becomes dirty
 //      too — running the dep mutates this edge's input, which the pre-run hash hasn't seen yet.
 //   5. **Build a scheduler Plan** from the dirty subset: topological order, per-edge pending count,
@@ -63,6 +64,7 @@ struct RunOptions {
     int keep_going = 1;
     bool verbose = false;
     bool very_verbose = false;
+    bool force = false;               // every edge reachable from the targets is dirty, whatever the log says
     std::vector<std::string> targets; // empty = use IR's default_targets.
     build::Path ir_path;              // used to derive the build log path
 };
@@ -320,7 +322,7 @@ inline auto execute(const build::ir::IR& ir, const RunOptions& opts) -> std::exp
             return std::unexpected(check.error());
         }
         checks[i] = std::move(*check);
-        dirty[i] = checks[i].dirty;
+        dirty[i] = checks[i].dirty || opts.force;
         if (!dirty[i]) {
             // If any dep is dirty, this edge is dirty too — running deps will mutate its inputs.
             for (const auto& list : {edge.inputs, edge.implicit_deps}) {

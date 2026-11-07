@@ -67,6 +67,8 @@ auto parse(int argc, char** argv) -> std::expected<Args, build::Error> {
             args.options.verbose = true;
         } else if (arg == "-vv") {
             args.options.very_verbose = true;
+        } else if (arg == "--force") {
+            args.options.force = true;
         } else {
             args.options.targets.emplace_back(arg);
         }
