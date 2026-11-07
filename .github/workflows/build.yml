@@ -36,7 +36,7 @@ env:
     base-devel clang gcc git python cmake ninja pkgconf
     sdl3 vulkan-headers vulkan-icd-loader vulkan-utility-libraries shaderc
   # Every submodule but OpenUSD, which the OpenUSD job builds and caches.
-  SUBMODULES: glm stb cgltf imgui concurrentqueue json
+  SUBMODULES: glm stb imgui json tinyexr meshoptimizer
 
 jobs:
   format:
@@ -235,7 +235,7 @@ jobs:
       - name: Bootstrap ngen-build
         run: mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/bootstrap.cpp
 
-      # The default target (ngen-view, with the asset server and packers it depends on), the tools that aren't its
-      # dependencies, and the RHI examples.
+      # No target: every program the project registers (ngen-view, the tools, the packers, the RHI examples); format and
+      # tidy run only when named.
       - name: Build
-        run: ./_out/ngen-build -v -p linux-vulkan -c ${{ matrix.config }} ngen-view ngen-cli ngen-introspect examples
+        run: ./_out/ngen-build -v -p linux-vulkan -c ${{ matrix.config }}

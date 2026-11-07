@@ -134,10 +134,10 @@ is in [`docs/adr/`](docs/adr/README.md).
 | [Dear ImGui](https://github.com/ocornut/imgui) | The windows |
 | [OpenUSD](https://github.com/PixarAnimationStudios/OpenUSD) | Reading USD when packing (`ngen-packer-usd`) and in `ngen-worldcheck` / `ngen-usdcheck`; `ngen-view` doesn't link it |
 | [nlohmann/json](https://github.com/nlohmann/json) | JSON for RPC, records and packs |
-| [concurrentqueue](https://github.com/cameron314/concurrentqueue) | Lock-free queues between threads |
 | [tinyexr](https://github.com/syoyo/tinyexr) | Reading OpenEXR in `ngen-packer-exr` (a dome light's HDR sky) |
+| [meshoptimizer](https://github.com/zeux/meshoptimizer) | Welding and meshlets for the USD packer's meshes |
 
-GLM, stb, Dear ImGui, OpenUSD, nlohmann/json, concurrentqueue and tinyexr are git submodules in `external/`. SDL3 and the Vulkan SDK must be installed on the system.
+GLM, stb, Dear ImGui, OpenUSD, nlohmann/json, tinyexr and meshoptimizer are git submodules in `external/`. SDL3 and the Vulkan SDK must be installed on the system.
 
 After cloning, initialize the submodules:
 

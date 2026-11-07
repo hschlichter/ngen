@@ -486,11 +486,9 @@ auto main(int argc, char** argv) -> int {
                 "src/world",
                 "src/asset/pack",
                 "external/glm",
-                "external/cgltf",
                 "external/stb",
                 "external/imgui",
                 "external/imgui/backends",
-                "external/concurrentqueue",
                 "external/renderdoc", // renderdoc_app.h only; the library is dlopen'd at runtime
             })
             .link(traceLib)
