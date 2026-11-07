@@ -14,12 +14,14 @@ enum class DebugView : uint32_t {
     InstanceId = 4,   // value: instance index
     MeshId = 5,       // value: mesh table entry
     MaterialId = 6,   // value: material table entry
-    PrimitiveId = 7,  // value: triangle index within its draw
+    PrimitiveId = 7,  // value: triangle index in its mesh's meshlets (meshlet * 124 + triangle)
     Uv = 8,           // value: u, v
     Streaming = 9,    // value: the streaming root slot + 1 (RenderMeshInstance::streamRoot), coloured by that root's state (StreamingRootState)
+    Meshlet = 10,     // value: meshlet index in its mesh, instance index
+    MeshletCull = 11, // value: why the task shader culls it (0 kept, 1 frustum, 2 cone, 3 depth), instance index, meshlet index in its mesh
 };
 
-inline constexpr uint32_t debugViewCount = 10;
+inline constexpr uint32_t debugViewCount = 12;
 
 // A streaming root's state as the streaming view colours it (shaders/debugview.comp) and the Streaming tool names it, worst first when
 // several hold: drawing nothing, drawing coarser than selected, a budget granting a coarser level, a resident level still on its way, a
@@ -47,6 +49,8 @@ inline constexpr std::array<std::string_view, debugViewCount> debugViewNames = {
     "primitive",
     "uv",
     "streaming",
+    "meshlet",
+    "meshletcull",
 };
 
 inline constexpr std::array<const char*, debugViewCount> debugViewLabels = {
@@ -60,4 +64,6 @@ inline constexpr std::array<const char*, debugViewCount> debugViewLabels = {
     "Primitive ID",
     "UV Checker",
     "Streaming State",
+    "Meshlet",
+    "Meshlet Culling",
 };

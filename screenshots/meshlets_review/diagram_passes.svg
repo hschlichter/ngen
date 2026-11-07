@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1190 270" width="1190" height="270" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4a5462"/>
+    </marker>
+    <style>
+      .cull { fill: #fff4e0; stroke: #c98a1b; stroke-width: 1.3; }
+      .draw { fill: #e6f5ea; stroke: #3c9a55; stroke-width: 1.3; }
+      .occ { fill: #e3eeff; stroke: #2f6fd6; stroke-width: 1.6; }
+      .other { fill: #ffffff; stroke: #6b7684; stroke-width: 1.2; }
+      .name { font-size: 12.5px; font-weight: bold; fill: #1d232b; text-anchor: middle; }
+      .ms { font-size: 11px; fill: #4a5462; text-anchor: middle; }
+      .edge { stroke: #4a5462; stroke-width: 1.4; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect x="0" y="0" width="1190" height="270" fill="#ffffff"/>
+
+  <!-- Row 1, left to right -->
+  <rect class="other" x="10" y="20" width="170" height="44" rx="6"/>
+  <text class="name" x="95" y="38">LodSelect</text><text class="ms" x="95" y="54">0.42 ms</text>
+  <rect class="cull" x="210" y="20" width="170" height="44" rx="6"/>
+  <text class="name" x="295" y="38">InstanceCull</text><text class="ms" x="295" y="54">1.26 ms</text>
+  <rect class="cull" x="410" y="20" width="170" height="44" rx="6"/>
+  <text class="name" x="495" y="38">InstanceCullScan</text><text class="ms" x="495" y="54">0.12 ms</text>
+  <rect class="cull" x="610" y="20" width="170" height="44" rx="6"/>
+  <text class="name" x="695" y="38">InstanceCullLayout</text><text class="ms" x="695" y="54">under 0.05 ms</text>
+  <rect class="cull" x="810" y="20" width="170" height="44" rx="6"/>
+  <text class="name" x="895" y="38">InstanceCullScatter</text><text class="ms" x="895" y="54">0.75 ms</text>
+  <rect class="draw" x="1010" y="20" width="170" height="44" rx="6"/>
+  <text class="name" x="1095" y="38">ShadowPass</text><text class="ms" x="1095" y="54">4.20 ms</text>
+
+  <!-- Row 2, right to left -->
+  <rect class="draw" x="1010" y="100" width="170" height="44" rx="6"/>
+  <text class="name" x="1095" y="118">GeometryPass</text><text class="ms" x="1095" y="134">phase 1 · 7.09 ms</text>
+  <rect class="occ" x="810" y="100" width="170" height="44" rx="6"/>
+  <text class="name" x="895" y="118">HzbBuild</text><text class="ms" x="895" y="134">0.43 ms</text>
+  <rect class="occ" x="610" y="100" width="170" height="44" rx="6"/>
+  <text class="name" x="695" y="118">InstanceCullOcclusion</text><text class="ms" x="695" y="134">1.01 ms</text>
+  <rect class="occ" x="410" y="100" width="170" height="44" rx="6"/>
+  <text class="name" x="495" y="118">InstanceCullLateScan</text><text class="ms" x="495" y="134">0.08 ms</text>
+  <rect class="occ" x="210" y="100" width="170" height="44" rx="6"/>
+  <text class="name" x="295" y="118">InstanceCullLateLayout</text><text class="ms" x="295" y="134">under 0.05 ms</text>
+  <rect class="occ" x="10" y="100" width="170" height="44" rx="6"/>
+  <text class="name" x="95" y="118">InstanceCullLateScatter</text><text class="ms" x="95" y="134">under 0.05 ms</text>
+
+  <!-- Row 3, left to right -->
+  <rect class="occ" x="10" y="180" width="170" height="44" rx="6"/>
+  <text class="name" x="95" y="198">GeometryPassLate</text><text class="ms" x="95" y="214">phase 2 · under 0.05 ms</text>
+  <rect class="other" x="210" y="180" width="170" height="44" rx="6"/>
+  <text class="name" x="295" y="198">CullReadback</text><text class="ms" x="295" y="214">shows 7.4, costs 0.15</text>
+  <rect class="other" x="410" y="180" width="170" height="44" rx="6"/>
+  <text class="name" x="495" y="198">LightingPass</text><text class="ms" x="495" y="214">0.81 ms</text>
+  <rect class="other" x="610" y="180" width="170" height="44" rx="6"/>
+  <text class="name" x="695" y="198">AAPass</text><text class="ms" x="695" y="214">0.65 ms</text>
+
+  <!-- Edges -->
+  <path class="edge" d="M180,42 H208"/>
+  <path class="edge" d="M380,42 H408"/>
+  <path class="edge" d="M580,42 H608"/>
+  <path class="edge" d="M780,42 H808"/>
+  <path class="edge" d="M980,42 H1008"/>
+  <path class="edge" d="M1095,64 V98"/>
+  <path class="edge" d="M1010,122 H982"/>
+  <path class="edge" d="M810,122 H782"/>
+  <path class="edge" d="M610,122 H582"/>
+  <path class="edge" d="M410,122 H382"/>
+  <path class="edge" d="M210,122 H182"/>
+  <path class="edge" d="M95,144 V178"/>
+  <path class="edge" d="M180,202 H208"/>
+  <path class="edge" d="M380,202 H408"/>
+  <path class="edge" d="M580,202 H608"/>
+
+  <!-- Legend -->
+  <rect class="cull" x="820" y="186" width="20" height="13" rx="3"/>
+  <text x="848" y="197" font-size="11.5" fill="#333b45">culling compute</text>
+  <rect class="draw" x="970" y="186" width="20" height="13" rx="3"/>
+  <text x="998" y="197" font-size="11.5" fill="#333b45">drawing (task + mesh)</text>
+  <rect class="occ" x="820" y="208" width="20" height="13" rx="3"/>
+  <text x="848" y="219" font-size="11.5" fill="#333b45">occlusion, second phase (new)</text>
+  <text x="10" y="256" font-size="11" fill="#6b7684">GPU times at flight_10, release, AMD 890M. GPU zones overlap, so they are hints and don't sum to the 15.2 ms frame.</text>
+</svg>

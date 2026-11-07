@@ -1,0 +1,89 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+#extension GL_GOOGLE_include_directive : require
+
+// Debug views (DebugViewPass): half of a meshlet the task shader kept (it launches two mesh workgroups per meshlet, meshletFlagSplit), each
+// triangle with vertices of its own, so a triangle sees its screen-space size, the distance from each fragment to its edges (the
+// wireframe) and its index. Same position expression as gbuffer.mesh, so the GreaterOrEqual test (reversed-Z) against the frame's depth
+// keeps exactly the surfaces the geometry pass drew.
+
+const uint halfTriangles = 62; // meshletMaxTriangles / 2: three vertices each stays under the 256 a mesh workgroup may output
+
+layout(local_size_x = 64) in;
+layout(triangles, max_vertices = 186, max_primitives = 62) out;
+
+#include "meshlet.glsl"
+
+layout(push_constant) uniform Push {
+    uint region;
+    uint flags;
+    vec2 viewport; // pixels
+    uint mode;     // DebugView
+} push;
+
+out gl_MeshPerVertexEXT {
+    invariant vec4 gl_Position;
+} gl_MeshVerticesEXT[];
+
+layout(location = 0) out vec3 gNormal[];
+layout(location = 1) out vec2 gTexCoord[];
+layout(location = 2) flat out uvec4 gIds[]; // instance, mesh, material, streaming root slot + 1
+layout(location = 3) noperspective out vec3 gEdgeDistance[]; // pixels to the edge opposite each vertex
+layout(location = 4) flat out float gArea[];                 // pixels
+layout(location = 5) flat out uint gPrimitive[];             // the triangle's index in its mesh's meshlets (meshlet * 124 + triangle)
+layout(location = 6) flat out uint gMeshlet[];               // the meshlet's index in its mesh
+layout(location = 7) flat out uint gReason[];                // why the task shader would cull the meshlet (meshletKept, meshletCulled*)
+
+void main() {
+    MeshletDraw draw = meshletDraw(gl_WorkGroupID.x / 2u);
+    uint meshletIndex = draw.meshletIndex;
+    uint part = gl_WorkGroupID.x % 2u;
+    Meshlet meshlet = draw.meshlet;
+    uint total = meshletTriangleCount(meshlet);
+    uint first = part * halfTriangles;
+    uint count = total > first ? min(total - first, halfTriangles) : 0u;
+    SetMeshOutputsEXT(count * 3u, count);
+    Instance inst = instances.data[draw.instance];
+    uint meshletInMesh = meshletIndex - meshes.data[inst.mesh].meshletOffset;
+
+    uint t = gl_LocalInvocationIndex;
+    if (t >= count) {
+        return;
+    }
+    uvec3 corners = meshletTriangle(meshlet, first + t);
+    vec4 clip[3];
+    vec2 p[3];
+    bool behind = false;
+    for (uint i = 0; i < 3u; i++) {
+        uint vertex = meshletPoolVertex(meshlet, draw.vertexOffset, corners[i]);
+        clip[i] = ubo.proj * ubo.view * inst.model * vec4(poolPosition(vertex), 1.0);
+        if (clip[i].w <= 0.0) {
+            behind = true;
+        }
+        p[i] = clip[i].xy / max(clip[i].w, 1e-6) * 0.5 * push.viewport;
+    }
+    // Twice the signed area; the heights follow from area = base * height / 2.
+    float area2 = abs((p[1].x - p[0].x) * (p[2].y - p[0].y) - (p[2].x - p[0].x) * (p[1].y - p[0].y));
+    vec3 heights = vec3(area2 / max(length(p[2] - p[1]), 1e-6), area2 / max(length(p[2] - p[0]), 1e-6), area2 / max(length(p[1] - p[0]), 1e-6));
+    if (behind) {
+        // Crosses the camera plane: no meaningful screen size, and no edges to draw.
+        area2 = 2.0e6;
+        heights = vec3(1.0e6);
+    }
+    for (uint i = 0; i < 3u; i++) {
+        uint out_ = t * 3u + i;
+        uint vertex = meshletPoolVertex(meshlet, draw.vertexOffset, corners[i]);
+        gl_MeshVerticesEXT[out_].gl_Position = clip[i];
+        gNormal[out_] = normalize(mat3(inst.model) * poolNormal(vertex));
+        gTexCoord[out_] = poolTexCoord(vertex);
+        gIds[out_] = uvec4(draw.instance, inst.mesh, inst.material, inst.streamRoot);
+        vec3 edge = vec3(0.0);
+        edge[i] = heights[i];
+        gEdgeDistance[out_] = edge;
+        gArea[out_] = area2 * 0.5;
+        gPrimitive[out_] = meshletInMesh * 124u + first + t;
+        gMeshlet[out_] = meshletInMesh;
+        gReason[out_] = draw.reason;
+    }
+    gl_PrimitiveTriangleIndicesEXT[t] = uvec3(t * 3u, t * 3u + 1u, t * 3u + 2u);
+}

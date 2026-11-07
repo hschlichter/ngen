@@ -1,28 +1,22 @@
 #pragma once
 
-#include "shadowcascades.h"
+#include "drawlists.h"
 
-#include <array>
-#include <cstdint>
-
-// Culling window: the frustum culling toggle, the frozen frustum for inspecting what a
-// camera pose culls, the red/green AABB overlay, and the latest counts read back from
-// the GPU culling. The flags are the EditorUI's; session verbs write the same.
+// Culling window: the culling switches, the frozen frustum for inspecting what a camera pose culls, the red/green AABB overlay, the
+// meshlet culling debug view, and the latest counts read back from the GPU culling, in its steps: the scene, what instance culling
+// keeps, what meshlet culling draws. The flags are the UI's; session verbs write the same.
 struct CullingWindowInputs {
     bool& enabled;
     bool& frozen;
+    bool& occlusion;
     bool& showCulled;
     int& overlayView; // view the AABB overlay shows: 0 camera, 1.. cascades
     bool& showCascadeFrusta;
-    uint32_t instances = 0;
-    uint32_t culled = 0;
-    uint32_t lodLevelNotDrawn = 0; // slots of render-LOD levels their group doesn't draw: in no view, not culled
-    uint32_t cascades = 0;         // shadow cascades this frame
-    std::array<uint32_t, maxShadowCascades> shadowCulled = {};
-    std::array<uint32_t, maxShadowCascades> shadowDrawn = {};
-    uint64_t trianglesDrawn = 0; // camera, after culling
-    uint64_t trianglesScene = 0; // every instance
-    std::array<uint64_t, maxShadowCascades> shadowTriangles = {};
+    bool& meshletCullView; // the debug view colouring meshlets by the test that culls them
+    bool& pyramidView;     // the hzb buffer view: the depth pyramid at pyramidLevel
+    int& pyramidLevel;     // render.view.hzblevel
+    bool depthPrepass;     // render.prepass: occlusion's phases draw in the depth prepass, not the geometry pass
+    const CullResult& cull;
 };
 
 void drawCullingWindow(bool& show, CullingWindowInputs in);

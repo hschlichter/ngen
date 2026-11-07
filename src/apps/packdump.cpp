@@ -145,10 +145,40 @@ auto meshJson(const MeshPack& pack, bool vertices) -> Json {
     out["boundsMax"] = pack.boundsMax;
     auto submeshes = Json::array();
     for (const auto& submesh : pack.submeshes) {
-        submeshes.push_back({{"indexOffset", submesh.indexOffset}, {"indexCount", submesh.indexCount}, {"subset", submesh.subsetPath}});
+        submeshes.push_back({
+            {"indexOffset", submesh.indexOffset},
+            {"indexCount", submesh.indexCount},
+            {"subset", submesh.subsetPath},
+            {"meshletOffset", submesh.meshletOffset},
+            {"meshletCount", submesh.meshletCount},
+        });
     }
     out["submeshes"] = submeshes;
+    // Meshlets: how full they are says how well the mesh splits (at most meshletMaxVertices and meshletMaxTriangles each).
+    uint64_t meshletTriangles = 0;
+    uint64_t meshletVertices = 0;
+    for (const auto& meshlet : pack.meshlets) {
+        meshletTriangles += meshlet.triangleCount;
+        meshletVertices += meshlet.vertexCount;
+    }
+    out["meshlets"] = pack.meshlets.size();
+    out["meshletTriangles"] = meshletTriangles;
+    out["meshletVertexRefs"] = meshletVertices;
+    out["trianglesPerMeshlet"] = pack.meshlets.empty() ? 0.0 : (double) meshletTriangles / (double) pack.meshlets.size();
     if (vertices) {
+        auto meshlets = Json::array();
+        for (const auto& meshlet : pack.meshlets) {
+            meshlets.push_back({
+                {"vertexOffset", meshlet.vertexOffset},
+                {"vertexCount", meshlet.vertexCount},
+                {"triangleOffset", meshlet.triangleOffset},
+                {"triangleCount", meshlet.triangleCount},
+                {"center", meshlet.center},
+                {"radius", meshlet.radius},
+                {"cone", {meshlet.cone[0], meshlet.cone[1], meshlet.cone[2], meshlet.cone[3]}},
+            });
+        }
+        out["meshletData"] = meshlets;
         auto list = Json::array();
         for (const auto& vertex : pack.vertices) {
             list.push_back({{"position", vertex.position}, {"normal", vertex.normal}, {"color", vertex.color}, {"texCoord", vertex.texCoord}});

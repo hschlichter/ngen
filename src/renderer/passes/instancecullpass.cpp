@@ -1,6 +1,7 @@
 #include "instancecullpass.h"
 
 #include "deletionqueue.h"
+#include "depthpyramid.h"
 #include "gpuscene.h"
 #include "lodgroups.h"
 #include "rhicommandbuffer.h"
@@ -15,20 +16,34 @@ enum class CullMode : uint32_t {
     Cull = 0,
     Scan = 1,
     Scatter = 2,
+    Occlusion = 3,
+    ClearHistory = 4,
+    Layout = 5,
 };
 
-constexpr std::array<RhiDescriptorBinding, 11> cullBindings = {{
-    {.binding = 0, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // params
-    {.binding = 1, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // instances
-    {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // mesh table
-    {.binding = 3, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // visibility
-    {.binding = 4, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // group counters
-    {.binding = 5, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // group offsets
-    {.binding = 6, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // commands
-    {.binding = 7, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // totals / counts
-    {.binding = 8, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // cull reason per view
-    {.binding = 9, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},  // render-LOD states
-    {.binding = 10, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute}, // render-LOD residency
+struct CullPush {
+    uint32_t mode = 0;
+    uint32_t phase = 0; // scan and scatter: 0 the first phase, 1 the second
+};
+
+constexpr std::array<RhiDescriptorBinding, 17> cullBindings = {{
+    {.binding = 0, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // params
+    {.binding = 1, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // instances
+    {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // mesh table
+    {.binding = 3, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // visibility
+    {.binding = 4, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // group counters
+    {.binding = 5, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // group offsets
+    {.binding = 6, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // commands
+    {.binding = 7, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // totals / counts
+    {.binding = 8, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // cull reason per view
+    {.binding = 9, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // render-LOD states
+    {.binding = 10, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},        // render-LOD residency
+    {.binding = 11, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},        // meshlet counts, zeroed by the scan
+    {.binding = 12, .type = RhiDescriptorType::CombinedImageSampler, .stage = RhiShaderStage::Compute}, // depth pyramid
+    {.binding = 13, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},        // occlusion history
+    {.binding = 14, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},        // the regions' draws
+    {.binding = 15, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},        // meshlet work items
+    {.binding = 16, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},        // the workgroups' boxes
 }};
 
 struct CullPassData {
@@ -41,11 +56,25 @@ struct CullPassData {
 struct ScanPassData {
     FgBufferHandle groupOffsets;
     FgBufferHandle counts;
+    FgBufferHandle meshletStats;
+    FgBufferHandle regionWork;
 };
 
 struct ScatterPassData {
     FgBufferHandle commands;
     FgBufferHandle counts;
+    FgBufferHandle workItems;
+};
+
+struct ClearPassData {
+    FgBufferHandle history;
+};
+
+struct OcclusionPassData {
+    FgBufferHandle visibility;
+    FgBufferHandle cullPlanes;
+    FgBufferHandle groupCounters;
+    FgBufferHandle history;
 };
 
 } // namespace
@@ -57,7 +86,7 @@ auto InstanceCullPass::init(RhiDevice* device, PipelineRegistry& pipelines) -> b
     ComputePipelineRequest request = {
         .shader = {.id = "shaders/instancecull.comp", .stage = RhiShaderStage::Compute},
         .descriptorSetLayouts = {setLayout},
-        .pushConstant = {.stage = RhiShaderStage::Compute, .offset = 0, .size = sizeof(uint32_t)},
+        .pushConstant = {.stage = RhiShaderStage::Compute, .offset = 0, .size = sizeof(CullPush)},
     };
     pipelineHandle = pipelines.registerCompute("cull.pipeline", request, PipelineUse::AtStart);
     return true;
@@ -71,7 +100,8 @@ auto InstanceCullPass::destroy(RhiDevice* device) -> void {
     device->destroyDescriptorSetLayout(setLayout);
 }
 
-auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& lists, const GpuScene& scene, const LodGroups& lodGroups, DeletionQueue& deletionQueue, uint64_t frame) -> void {
+auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& lists, const GpuScene& scene, const LodGroups& lodGroups, const DepthPyramid& pyramid, DeletionQueue& deletionQueue, uint64_t frame)
+    -> void {
     if (pool != nullptr) {
         deletionQueue.defer(frame, [device, oldPool = pool, oldSets = sets] {
             device->freeDescriptorSets(oldPool, oldSets);
@@ -80,7 +110,7 @@ auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& li
         pool = nullptr;
         sets.clear();
     }
-    if (scene.instanceBuffer() == nullptr || scene.meshTableBuffer() == nullptr) {
+    if (scene.instanceBuffer() == nullptr || scene.meshTableBuffer() == nullptr || pyramid.texture() == nullptr) {
         return;
     }
     auto slotCount = lists.frameSlots();
@@ -93,9 +123,10 @@ auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& li
     }
     for (uint32_t i = 0; i < slotCount; i++) {
         auto buffers = lists.slotBuffers(i);
-        std::array<RhiDescriptorWrite, 11> writes = {{
+        std::array<RhiDescriptorWrite, 17> writes = {{
             {.binding = 0, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.params},
-            {.binding = 1, .type = RhiDescriptorType::StorageBuffer, .buffer = scene.instanceBuffer()},
+            // The culling records, after the draw records.
+            {.binding = 1, .type = RhiDescriptorType::StorageBuffer, .buffer = scene.instanceBuffer(), .bufferOffset = scene.cullRecordsOffset(), .bufferRange = scene.cullRecordsBytes()},
             {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .buffer = scene.meshTableBuffer()},
             {.binding = 3, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.visibility},
             {.binding = 4, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.groupCounters},
@@ -105,47 +136,84 @@ auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& li
             {.binding = 8, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.cullPlanes},
             {.binding = 9, .type = RhiDescriptorType::StorageBuffer, .buffer = lodGroups.stateBuffer()},
             {.binding = 10, .type = RhiDescriptorType::StorageBuffer, .buffer = lodGroups.residencyBuffer()},
+            {.binding = 11, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.meshletStats},
+            {.binding = 12, .type = RhiDescriptorType::CombinedImageSampler, .texture = pyramid.texture(), .sampler = pyramid.sampler()},
+            {.binding = 13, .type = RhiDescriptorType::StorageBuffer, .buffer = lists.historyBuffer()},
+            {.binding = 14, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.regionWork},
+            {.binding = 15, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.workItems},
+            {.binding = 16, .type = RhiDescriptorType::StorageBuffer, .buffer = buffers.groupBounds},
         }};
         device->updateDescriptorSet(sets[i], writes);
     }
 }
 
-auto InstanceCullPass::addPasses(FrameGraph& fg, const DrawLists::Handles& handles, const LodGroups::Handles& lodHandles, FgBufferHandle instanceBuffer, uint32_t groupCount, uint32_t frameSlot) -> void {
+auto InstanceCullPass::addPasses(FrameGraph& fg, DrawLists& lists, const DrawLists::Handles& handles, const LodGroups::Handles& lodHandles, FgBufferHandle instanceBuffer, FgTextureHandle hzb, uint32_t groupCount, uint32_t frameSlot)
+    -> void {
     auto* pip = registry->get(pipelineHandle);
     auto* set = frameSlot < sets.size() ? sets[frameSlot] : nullptr;
-    auto dispatchMode = [pip, set](FrameGraphContext& ctx, CullMode mode, uint32_t groups) {
+    auto dispatchMode = [pip, set](FrameGraphContext& ctx, CullMode mode, uint32_t phase, uint32_t groups) {
         auto* cmd = ctx.cmd();
         cmd->bindPipeline(pip);
         cmd->bindDescriptorSet(pip, 0, set);
-        auto value = (uint32_t) mode;
-        cmd->pushConstants(pip, RhiShaderStage::Compute, 0, sizeof(value), &value);
+        CullPush push = {.mode = (uint32_t) mode, .phase = phase};
+        cmd->pushConstants(pip, RhiShaderStage::Compute, 0, sizeof(push), &push);
         cmd->dispatch(groups, 1, 1);
     };
 
-    // 1. The render-LOD level test and frustum test per instance and view; per-workgroup counters.
+    // 0. A new history buffer starts cleared: nothing was seen last frame.
+    if (lists.historyNeedsClear()) {
+        auto historyGroups = DrawLists::groupCountFor(lists.instanceCapacity());
+        fg.addPass<ClearPassData>(
+            "CullHistoryClear",
+            [&](FrameGraphBuilder& builder, ClearPassData& data) {
+                builder.read(hzb, FgAccessFlags::ShaderRead);
+                data.history = builder.write(handles.history, FgAccessFlags::StorageWrite);
+                builder.setSideEffects(true);
+            },
+            [dispatchMode, historyGroups](FrameGraphContext& ctx, const ClearPassData&) { dispatchMode(ctx, CullMode::ClearHistory, 0, historyGroups); });
+        lists.historyCleared();
+    }
+
+    // 1. The render-LOD level test and frustum test per instance and view, the first phase from the history; per-workgroup counters.
     fg.addPass<CullPassData>(
         "InstanceCull",
         [&](FrameGraphBuilder& builder, CullPassData& data) {
             builder.read(handles.params, FgAccessFlags::StorageRead);
+            builder.read(handles.groupBounds, FgAccessFlags::StorageRead);
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             builder.read(lodHandles.states, FgAccessFlags::StorageRead);
+            builder.read(handles.history, FgAccessFlags::StorageRead);
+            builder.read(hzb, FgAccessFlags::ShaderRead);
             data.residency = builder.write(lodHandles.residency, FgAccessFlags::StorageWrite);
             data.visibility = builder.write(handles.visibility, FgAccessFlags::StorageWrite);
             data.cullPlanes = builder.write(handles.cullPlanes, FgAccessFlags::StorageWrite);
             data.groupCounters = builder.write(handles.groupCounters, FgAccessFlags::StorageWrite);
         },
-        [dispatchMode, groupCount](FrameGraphContext& ctx, const CullPassData&) { dispatchMode(ctx, CullMode::Cull, groupCount); });
+        [dispatchMode, groupCount](FrameGraphContext& ctx, const CullPassData&) { dispatchMode(ctx, CullMode::Cull, 0, groupCount); });
 
-    // 2. Exclusive prefix over the workgroups: start offsets, draw counts and statistics.
+    // 2. Exclusive prefix over the workgroups, a workgroup per counter: start offsets, draw counts and statistics.
     fg.addPass<ScanPassData>(
         "InstanceCullScan",
         [&](FrameGraphBuilder& builder, ScanPassData& data) {
             builder.read(handles.params, FgAccessFlags::StorageRead);
             builder.read(handles.groupCounters, FgAccessFlags::StorageRead);
+            builder.read(hzb, FgAccessFlags::ShaderRead);
             data.groupOffsets = builder.write(handles.groupOffsets, FgAccessFlags::StorageWrite);
             data.counts = builder.write(handles.counts, FgAccessFlags::StorageWrite);
         },
-        [dispatchMode](FrameGraphContext& ctx, const ScanPassData&) { dispatchMode(ctx, CullMode::Scan, 1); });
+        [dispatchMode](FrameGraphContext& ctx, const ScanPassData&) { dispatchMode(ctx, CullMode::Scan, 0, DrawLists::counterCount); });
+
+    // 2b. The regions laid out in the work items from the totals: each region's draw; the meshlet counts zeroed for the mesh passes.
+    fg.addPass<ScanPassData>(
+        "InstanceCullLayout",
+        [&](FrameGraphBuilder& builder, ScanPassData& data) {
+            builder.read(handles.params, FgAccessFlags::StorageRead);
+            builder.read(hzb, FgAccessFlags::ShaderRead);
+            data.counts = builder.write(handles.counts, FgAccessFlags::StorageWrite);
+            data.meshletStats = builder.write(handles.meshletStats, FgAccessFlags::StorageWrite);
+            data.regionWork = builder.write(handles.regionWork, FgAccessFlags::StorageWrite);
+        },
+        [dispatchMode](FrameGraphContext& ctx, const ScanPassData&) { dispatchMode(ctx, CullMode::Layout, 0, 1); });
 
     // 3. Ordered writes: each command lands at its workgroup's offset plus the local prefix.
     fg.addPass<ScatterPassData>(
@@ -155,11 +223,84 @@ auto InstanceCullPass::addPasses(FrameGraph& fg, const DrawLists::Handles& handl
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             builder.read(handles.visibility, FgAccessFlags::StorageRead);
             builder.read(handles.groupOffsets, FgAccessFlags::StorageRead);
+            // The workgroup's own counters: which regions it has nothing in.
+            builder.read(handles.groupCounters, FgAccessFlags::StorageRead);
+            builder.read(hzb, FgAccessFlags::ShaderRead);
+            builder.read(handles.regionWork, FgAccessFlags::StorageRead);
             data.commands = builder.write(handles.commands, FgAccessFlags::StorageWrite);
-            // The scan's totals, to which it adds the commands it dropped past their region's end.
+            // The scan's totals, to which it adds the draw records it dropped past their region's end.
+            data.counts = builder.write(handles.counts, FgAccessFlags::StorageWrite);
+            data.workItems = builder.write(handles.workItems, FgAccessFlags::StorageWrite);
+        },
+        [dispatchMode, groupCount](FrameGraphContext& ctx, const ScatterPassData&) { dispatchMode(ctx, CullMode::Scatter, 0, groupCount); });
+}
+
+auto InstanceCullPass::addLatePasses(FrameGraph& fg, const DrawLists::Handles& handles, FgBufferHandle instanceBuffer, FgTextureHandle hzb, uint32_t groupCount, uint32_t frameSlot) -> void {
+    auto* pip = registry->get(pipelineHandle);
+    auto* set = frameSlot < sets.size() ? sets[frameSlot] : nullptr;
+    auto dispatchMode = [pip, set](FrameGraphContext& ctx, CullMode mode, uint32_t phase, uint32_t groups) {
+        auto* cmd = ctx.cmd();
+        cmd->bindPipeline(pip);
+        cmd->bindDescriptorSet(pip, 0, set);
+        CullPush push = {.mode = (uint32_t) mode, .phase = phase};
+        cmd->pushConstants(pip, RhiShaderStage::Compute, 0, sizeof(push), &push);
+        cmd->dispatch(groups, 1, 1);
+    };
+
+    // 1. The camera's frustum-visible instances against the depth pyramid; the history for the next frame; the late phase's counters.
+    fg.addPass<OcclusionPassData>(
+        "InstanceCullOcclusion",
+        [&](FrameGraphBuilder& builder, OcclusionPassData& data) {
+            builder.read(handles.params, FgAccessFlags::StorageRead);
+            builder.read(instanceBuffer, FgAccessFlags::StorageRead);
+            builder.read(hzb, FgAccessFlags::ShaderRead);
+            data.visibility = builder.write(handles.visibility, FgAccessFlags::StorageWrite);
+            data.cullPlanes = builder.write(handles.cullPlanes, FgAccessFlags::StorageWrite);
+            data.groupCounters = builder.write(handles.groupCounters, FgAccessFlags::StorageWrite);
+            data.history = builder.write(handles.history, FgAccessFlags::StorageWrite);
+        },
+        [dispatchMode, groupCount](FrameGraphContext& ctx, const OcclusionPassData&) { dispatchMode(ctx, CullMode::Occlusion, 1, groupCount); });
+
+    // 2. The late phase's offsets, draw counts and occlusion count.
+    fg.addPass<ScanPassData>(
+        "InstanceCullLateScan",
+        [&](FrameGraphBuilder& builder, ScanPassData& data) {
+            builder.read(handles.params, FgAccessFlags::StorageRead);
+            builder.read(handles.groupCounters, FgAccessFlags::StorageRead);
+            builder.read(hzb, FgAccessFlags::ShaderRead);
+            data.groupOffsets = builder.write(handles.groupOffsets, FgAccessFlags::StorageWrite);
             data.counts = builder.write(handles.counts, FgAccessFlags::StorageWrite);
         },
-        [dispatchMode, groupCount](FrameGraphContext& ctx, const ScatterPassData&) { dispatchMode(ctx, CullMode::Scatter, groupCount); });
+        [dispatchMode](FrameGraphContext& ctx, const ScanPassData&) { dispatchMode(ctx, CullMode::Scan, 1, DrawLists::counterCount); });
+
+    // 2b. The late regions laid out after the first phase's.
+    fg.addPass<ScanPassData>(
+        "InstanceCullLateLayout",
+        [&](FrameGraphBuilder& builder, ScanPassData& data) {
+            builder.read(handles.params, FgAccessFlags::StorageRead);
+            builder.read(hzb, FgAccessFlags::ShaderRead);
+            data.counts = builder.write(handles.counts, FgAccessFlags::StorageWrite);
+            data.regionWork = builder.write(handles.regionWork, FgAccessFlags::StorageWrite);
+        },
+        [dispatchMode](FrameGraphContext& ctx, const ScanPassData&) { dispatchMode(ctx, CullMode::Layout, 1, 1); });
+
+    // 3. The late regions' commands.
+    fg.addPass<ScatterPassData>(
+        "InstanceCullLateScatter",
+        [&](FrameGraphBuilder& builder, ScatterPassData& data) {
+            builder.read(handles.params, FgAccessFlags::StorageRead);
+            builder.read(instanceBuffer, FgAccessFlags::StorageRead);
+            builder.read(handles.visibility, FgAccessFlags::StorageRead);
+            builder.read(handles.groupOffsets, FgAccessFlags::StorageRead);
+            // The workgroup's own counters: which regions it has nothing in.
+            builder.read(handles.groupCounters, FgAccessFlags::StorageRead);
+            builder.read(hzb, FgAccessFlags::ShaderRead);
+            builder.read(handles.regionWork, FgAccessFlags::StorageRead);
+            data.commands = builder.write(handles.commands, FgAccessFlags::StorageWrite);
+            data.counts = builder.write(handles.counts, FgAccessFlags::StorageWrite);
+            data.workItems = builder.write(handles.workItems, FgAccessFlags::StorageWrite);
+        },
+        [dispatchMode, groupCount](FrameGraphContext& ctx, const ScatterPassData&) { dispatchMode(ctx, CullMode::Scatter, 1, groupCount); });
 }
 
 auto InstanceCullPass::ready() -> bool {

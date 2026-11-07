@@ -38,7 +38,14 @@ auto PipelineRegistry::registerCompute(std::string name, ComputePipelineRequest 
 auto PipelineRegistry::shadersOf(const Entry& entry) -> std::vector<ShaderRef> {
     std::vector<ShaderRef> out;
     if (entry.graphics) {
-        out.push_back(entry.graphics->vertex);
+        if (!entry.graphics->vertex.id.empty()) {
+            out.push_back(entry.graphics->vertex);
+        }
+        for (const auto& stage : {entry.graphics->task, entry.graphics->mesh}) {
+            if (stage) {
+                out.push_back(*stage);
+            }
+        }
         out.push_back(entry.graphics->fragment);
         if (entry.graphics->geometry) {
             out.push_back(*entry.graphics->geometry);
@@ -103,17 +110,31 @@ auto PipelineRegistry::build(const Entry& entry, std::string& error) -> RhiPipel
     RhiPipeline* pipeline = nullptr;
     if (entry.graphics) {
         const auto& request = *entry.graphics;
-        auto* vertex = module(request.vertex, error);
-        auto* fragment = module(request.fragment, error);
-        RhiShaderModule* geometry = nullptr;
-        if (request.geometry) {
-            geometry = module(*request.geometry, error);
+        // Every shader the request names, made into a module; a missing one leaves the pipeline uncreated, with the error.
+        bool complete = true;
+        auto optionalModule = [&](const std::optional<ShaderRef>& shader) -> RhiShaderModule* {
+            if (!shader) {
+                return nullptr;
+            }
+            auto* made = module(*shader, error);
+            complete = complete && made != nullptr;
+            return made;
+        };
+        RhiShaderModule* vertex = nullptr;
+        if (!request.vertex.id.empty()) {
+            vertex = optionalModule(request.vertex);
         }
-        if (vertex != nullptr && fragment != nullptr && (!request.geometry || geometry != nullptr)) {
+        auto* fragment = optionalModule(request.fragment);
+        auto* geometry = optionalModule(request.geometry);
+        auto* task = optionalModule(request.task);
+        auto* mesh = optionalModule(request.mesh);
+        if (complete) {
             RhiGraphicsPipelineDesc desc = {
                 .vertexShader = vertex,
                 .fragmentShader = fragment,
                 .geometryShader = geometry,
+                .taskShader = task,
+                .meshShader = mesh,
                 .descriptorSetLayouts = request.descriptorSetLayouts,
                 .pushConstant = request.pushConstant,
                 .colorFormats = request.colorFormats,

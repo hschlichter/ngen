@@ -1,0 +1,75 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+#extension GL_GOOGLE_include_directive : require
+
+// The depth prepass for cutout materials and render-LOD fades: depth.mesh's positions, and the texture coordinate, material and fade
+// coverage cutout.frag tests with.
+
+#define MESHLET_MESH_SHADER
+#include "meshlet.glsl"
+
+layout(push_constant) uniform Push {
+    uint region;
+    uint flags;
+} push;
+
+out gl_MeshPerVertexEXT {
+    invariant vec4 gl_Position;
+} gl_MeshVerticesEXT[];
+
+layout(location = 0) out vec2 fragTexCoord[];
+layout(location = 1) flat out uint fragMaterial[];
+layout(location = 2) flat out float fragLodCoverage[]; // its share of a render-LOD fade (lodfade.glsl)
+
+
+// Per meshlet of the pack: its instance's model, material and fade coverage, loaded once.
+shared mat4 packModels[meshletsPerTask];
+shared uint packMaterials[meshletsPerTask];
+shared float packCoverages[meshletsPerTask];
+
+void main() {
+    uint pack = gl_WorkGroupID.x;
+    uint vertexCount = payload.packVertices[pack];
+    uint triangleCount = payload.packTriangles[pack];
+    SetMeshOutputsEXT(vertexCount, triangleCount);
+    // A pack of one meshlet loads its instance's values as uniform values; a pack of several, each meshlet's once by one lane, into shared
+    // memory.
+    PackInfo info = packInfo(pack);
+    bool single = info.count == 1u;
+    mat4 singleModel = mat4(1.0);
+    uint singleMaterial = 0u;
+    float singleCoverage = 0.0;
+    if (single) {
+        Instance inst = instances.data[payload.instances[info.first]];
+        singleModel = inst.model;
+        singleMaterial = inst.material;
+        singleCoverage = lodCoverage(inst.lodGroup, inst.lodLevel);
+    } else {
+        loadPackShared(info);
+        if (gl_LocalInvocationIndex < info.count) {
+            Instance inst = instances.data[payload.instances[info.first + gl_LocalInvocationIndex]];
+            packModels[gl_LocalInvocationIndex] = inst.model;
+            packMaterials[gl_LocalInvocationIndex] = inst.material;
+            packCoverages[gl_LocalInvocationIndex] = lodCoverage(inst.lodGroup, inst.lodLevel);
+        }
+        barrier();
+    }
+    uint v = gl_LocalInvocationIndex;
+    if (v < vertexCount) {
+        PackedVertex packed = packedVertex(info, v);
+        mat4 model = single ? singleModel : packModels[packed.meshlet];
+        uint vertex = packed.vertex;
+        // From the culling camera, into a depth of its own, while it isn't the rendered one; otherwise gbuffer.mesh's expression.
+        if ((push.flags & meshletFlagCullCamera) != 0u) {
+            gl_MeshVerticesEXT[v].gl_Position = ubo.cullViewProj * model * vec4(poolPosition(vertex), 1.0);
+        } else {
+            gl_MeshVerticesEXT[v].gl_Position = ubo.proj * ubo.view * model * vec4(poolPosition(vertex), 1.0);
+        }
+        fragTexCoord[v] = poolTexCoord(vertex);
+        fragMaterial[v] = single ? singleMaterial : packMaterials[packed.meshlet];
+        fragLodCoverage[v] = single ? singleCoverage : packCoverages[packed.meshlet];
+    }
+    for (uint t = v; t < triangleCount; t += packThreads) {
+        gl_PrimitiveTriangleIndicesEXT[t] = packedTriangle(info, t);
+    }
+}

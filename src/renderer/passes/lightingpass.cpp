@@ -19,7 +19,7 @@ auto LightingPass::init(RhiDevice* dev, PipelineRegistry& pipelines, uint32_t im
     registry = &pipelines;
     sceneColorFormat = colorFormat;
 
-    std::array<RhiDescriptorBinding, 7> bindings = {{
+    std::array<RhiDescriptorBinding, 8> bindings = {{
         {.binding = 0, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
         {.binding = 1, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment},
         {.binding = 2, .type = UniformBuffer, .stage = RhiShaderStage::Fragment},
@@ -27,6 +27,7 @@ auto LightingPass::init(RhiDevice* dev, PipelineRegistry& pipelines, uint32_t im
         {.binding = 4, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment}, // shadow atlas, plain sampler (views, manual compare)
         {.binding = 5, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment}, // shadow atlas, compare sampler (PCF)
         {.binding = 6, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment}, // the sky's lat-long image
+        {.binding = 7, .type = CombinedImageSampler, .stage = RhiShaderStage::Fragment}, // the depth pyramid (Hzb view), else the depth
     }};
     skySampler = device->createSampler({
         .mipmapMode = RhiMipmapMode::Nearest,
@@ -42,7 +43,7 @@ auto LightingPass::init(RhiDevice* dev, PipelineRegistry& pipelines, uint32_t im
         .vertex = {.id = "shaders/lighting.vert", .stage = RhiShaderStage::Vertex},
         .fragment = {.id = "shaders/lighting.frag", .stage = RhiShaderStage::Fragment},
         .descriptorSetLayouts = {descriptorSetLayout},
-        .pushConstant = {.stage = RhiShaderStage::Fragment, .offset = 0, .size = 5 * sizeof(int32_t)},
+        .pushConstant = {.stage = RhiShaderStage::Fragment, .offset = 0, .size = 6 * sizeof(int32_t)},
         .colorFormats = {colorFormat},
         .vertexStride = 0,
         .raster = {.cullMode = RhiCullMode::None},
@@ -96,6 +97,8 @@ auto LightingPass::addPass(
     RhiSampler* sampler,
     const LightingInputs& lightInputs,
     GBufferView viewMode,
+    FgTextureHandle hzbHandle,
+    int hzbLevel,
     bool showOverlay,
     bool showShadowOverlay,
     bool lodFlash,
@@ -127,10 +130,14 @@ auto LightingPass::addPass(
             data.normal = builder.read(geomData.normal, FgAccessFlags::ShaderRead);
             data.depth = builder.read(depthHandle, FgAccessFlags::ShaderRead);
             data.shadowMap = builder.read(shadowHandle, FgAccessFlags::ShaderRead);
+            // The pyramid is read only while its view is on, so every other frame's graph is unchanged; binding 7 then holds the depth.
+            if (viewMode == GBufferView::Hzb && hzbHandle.valid()) {
+                data.hzb = builder.read(hzbHandle, FgAccessFlags::ShaderRead);
+            }
             data.sceneColor = builder.write(builder.createTexture("sceneColor", sceneColorDesc), FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);
         },
-        [this, pipeline = registry->get(pipelineHandle), imageIndex, extent, sampler, lightInputs, viewMode, showOverlay, showShadowOverlay, lodFlash, lodColorByDepth, invViewProj, shadowSampler, cascadeCopy, cascadeCount, pcf, atlasExtent, previewFar, noSky](
+        [this, pipeline = registry->get(pipelineHandle), imageIndex, extent, sampler, lightInputs, viewMode, hzbLevel, showOverlay, showShadowOverlay, lodFlash, lodColorByDepth, invViewProj, shadowSampler, cascadeCopy, cascadeCount, pcf, atlasExtent, previewFar, noSky](
             FrameGraphContext& ctx, const LightingPassData& data) {
             auto* cmd = ctx.cmd();
 
@@ -166,7 +173,7 @@ auto LightingPass::addPass(
             }
             memcpy(uniformBuffersMapped[imageIndex], &lightUbo, sizeof(lightUbo));
 
-            std::array<RhiDescriptorWrite, 7> writes = {{
+            std::array<RhiDescriptorWrite, 8> writes = {{
                 {
                     .binding = 0,
                     .type = RhiDescriptorType::CombinedImageSampler,
@@ -209,6 +216,12 @@ auto LightingPass::addPass(
                     .texture = lightInputs.sky ? lightInputs.sky->texture : noSky,
                     .sampler = skySampler,
                 },
+                {
+                    .binding = 7,
+                    .type = RhiDescriptorType::CombinedImageSampler,
+                    .texture = data.hzb.valid() ? ctx.texture(data.hzb) : ctx.texture(data.depth),
+                    .sampler = sampler,
+                },
             }};
             device->updateDescriptorSet(descriptorSets[imageIndex], writes);
 
@@ -234,6 +247,7 @@ auto LightingPass::addPass(
                 int32_t showShadowOverlay;
                 int32_t lodFlash;
                 int32_t lodColorByDepth;
+                int32_t hzbLevel; // the Hzb view's level; -1 while the pyramid wasn't built this frame
             };
             LightingPush push = {
                 .viewMode = static_cast<int32_t>(viewMode),
@@ -241,6 +255,7 @@ auto LightingPass::addPass(
                 .showShadowOverlay = showShadowOverlay ? 1 : 0,
                 .lodFlash = lodFlash ? 1 : 0,
                 .lodColorByDepth = lodColorByDepth ? 1 : 0,
+                .hzbLevel = data.hzb.valid() ? hzbLevel : -1,
             };
             cmd->pushConstants(pipeline, RhiShaderStage::Fragment, 0, sizeof(push), &push);
 
@@ -272,6 +287,7 @@ config::Enum bufferView{"render.view.buffer",
                         std::vector<std::string>(gbufferViewNames.begin(), gbufferViewNames.end()),
                         0,
                         "What the lighting pass shows: the lit image, a G-buffer target, or a view of one of its inputs (shadows, mips, cascades, LOD levels)."};
+config::Int hzbLevel{"render.view.hzblevel", 0, "The level of the depth pyramid the hzb buffer view shows: 0 the finest; past the last, the last.", {.min = 0, .max = 15}};
 config::Bool bufferOverlay{"render.overlay.buffer", false, "A strip of the G-buffer targets (albedo, normals, depth, lit) along the bottom of the view."};
 config::Bool shadowOverlay{"render.overlay.shadow", false, "A strip of the shadow cascades' maps along the bottom of the view."};
 config::Vec3 ambientSky{"render.ambient.sky", toArray(AmbientSettings{}.sky), "The hemisphere ambient on faces turned up, as a fraction of the sun's radiance."};

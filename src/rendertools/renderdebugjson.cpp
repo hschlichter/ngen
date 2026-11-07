@@ -31,12 +31,12 @@ auto writeRenderDebugJson(FILE* f, const RenderDebugSnapshot& s, const std::func
     std::fprintf(f, "{\n  \"frame\": %llu,\n", (unsigned long long) s.frameIndex);
     std::fprintf(f, "  \"device\": {\"name\": \"%s\", \"driver\": \"%s\", \"validation\": %s, \"timestamps\": %s, \"calibratedTimestamps\": %s, \"maxPushConstantSize\": %u, \"minUniformBufferOffsetAlignment\": %llu},\n", escape(l.deviceName).c_str(), escape(l.driverName).c_str(), s.validation ? "true" : "false", l.timestamps ? "true" : "false", l.calibratedTimestamps ? "true" : "false", l.maxPushConstantSize, (unsigned long long) l.minUniformBufferOffsetAlignment);
     std::fprintf(f, "  \"swapchain\": {\"width\": %u, \"height\": %u, \"format\": \"%s\", \"images\": %u, \"slot\": %u},\n", s.swapchainExtent.width, s.swapchainExtent.height, toString(s.swapchainFormat), s.swapchainImages, s.currentSlot);
-    std::fprintf(f, "  \"inspect\": {\"valid\": %s, \"texture\": %u, \"level\": %u, \"mips\": %u, \"width\": %u, \"height\": %u},\n  \"scene\": {\"instances\": %u, \"culled\": %u, \"primFirstInstances\": %u, \"materials\": %u, \"materialsWithTexture\": %u, \"cutoutMaterials\": %u, \"cutoutInstances\": %u, \"lights\": %u, \"hasSun\": %s, \"sunDirection\": [%.4f, %.4f, %.4f], \"sunRadiance\": [%.4f, %.4f, %.4f], \"shadowMap\": [%u, %u], \"hasSky\": %s, \"skyDrawn\": %s, \"skyMeanRadiance\": [%.4f, %.4f, %.4f]},\n", s.inspect.valid ? "true" : "false", s.inspect.texture, s.inspect.level, s.inspect.mipLevels, s.inspect.levelWidth, s.inspect.levelHeight, s.instanceCount, s.culledInstances, s.primFirstInstances, s.materialCount, s.materialsWithTexture, s.cutoutMaterials, s.cutoutInstances, s.lightCount, s.hasSun ? "true" : "false", s.sunDirection.x, s.sunDirection.y, s.sunDirection.z, s.sunRadiance.x, s.sunRadiance.y, s.sunRadiance.z, s.shadowMapExtent.width, s.shadowMapExtent.height, s.hasSky ? "true" : "false", s.skyDrawn ? "true" : "false", s.skyMeanRadiance.x, s.skyMeanRadiance.y, s.skyMeanRadiance.z);
+    std::fprintf(f, "  \"inspect\": {\"valid\": %s, \"texture\": %u, \"level\": %u, \"mips\": %u, \"width\": %u, \"height\": %u},\n  \"scene\": {\"instances\": %u, \"culled\": %u, \"materials\": %u, \"materialsWithTexture\": %u, \"cutoutMaterials\": %u, \"cutoutInstances\": %u, \"lights\": %u, \"hasSun\": %s, \"sunDirection\": [%.4f, %.4f, %.4f], \"sunRadiance\": [%.4f, %.4f, %.4f], \"shadowMap\": [%u, %u], \"hasSky\": %s, \"skyDrawn\": %s, \"skyMeanRadiance\": [%.4f, %.4f, %.4f]},\n", s.inspect.valid ? "true" : "false", s.inspect.texture, s.inspect.level, s.inspect.mipLevels, s.inspect.levelWidth, s.inspect.levelHeight, s.instanceCount, s.culledInstances, s.materialCount, s.materialsWithTexture, s.cutoutMaterials, s.cutoutInstances, s.lightCount, s.hasSun ? "true" : "false", s.sunDirection.x, s.sunDirection.y, s.sunDirection.z, s.sunRadiance.x, s.sunRadiance.y, s.sunRadiance.z, s.shadowMapExtent.width, s.shadowMapExtent.height, s.hasSky ? "true" : "false", s.skyDrawn ? "true" : "false", s.skyMeanRadiance.x, s.skyMeanRadiance.y, s.skyMeanRadiance.z);
 
     std::fprintf(f, "  \"meshes\": [\n");
     for (size_t i = 0; i < s.meshes.size(); i++) {
         const auto& m = s.meshes[i];
-        std::fprintf(f, "    {\"mesh\": %u, \"triangles\": %u, \"vertices\": %u, \"vertexBytes\": %llu, \"indexBytes\": %llu, \"instances\": %u}%s\n", m.meshIndex, m.indexCount / 3, m.vertexCount, (unsigned long long) m.vertexBytes, (unsigned long long) m.indexBytes, m.instances, i + 1 < s.meshes.size() ? "," : "");
+        std::fprintf(f, "    {\"mesh\": %u, \"triangles\": %u, \"vertices\": %u, \"meshlets\": %u, \"vertexBytes\": %llu, \"meshletBytes\": %llu, \"instances\": %u}%s\n", m.meshIndex, m.triangleCount, m.vertexCount, m.meshletCount, (unsigned long long) m.vertexBytes, (unsigned long long) m.meshletBytes, m.instances, i + 1 < s.meshes.size() ? "," : "");
     }
     std::fprintf(f, "  ],\n  \"textures\": [\n");
     for (size_t i = 0; i < s.textures.size(); i++) {
@@ -57,7 +57,7 @@ auto writeRenderDebugJson(FILE* f, const RenderDebugSnapshot& s, const std::func
     std::fprintf(f, "  ]},\n  \"draws\": [\n");
     for (size_t i = 0; i < s.draws.size(); i++) {
         const auto& d = s.draws[i];
-        std::fprintf(f, "    {\"pass\": \"%s\", \"index\": %u, \"prim\": \"%s\", \"instance\": %u, \"mesh\": %u, \"material\": %u, \"indexOffset\": %u, \"indexCount\": %u}%s\n", escape(d.pass).c_str(), d.drawIndex, escape(primPath(d.prim)).c_str(), d.instance, d.mesh, d.material, d.indexOffset, d.indexCount, i + 1 < s.draws.size() ? "," : "");
+        std::fprintf(f, "    {\"pass\": \"%s\", \"index\": %u, \"prim\": \"%s\", \"instance\": %u, \"mesh\": %u, \"material\": %u, \"indexOffset\": %u, \"indexCount\": %u, \"meshlets\": %u}%s\n", escape(d.pass).c_str(), d.drawIndex, escape(primPath(d.prim)).c_str(), d.instance, d.mesh, d.material, d.indexOffset, d.indexCount, d.meshlets, i + 1 < s.draws.size() ? "," : "");
     }
     std::fprintf(f, "  ]\n}\n");
 }
@@ -89,14 +89,20 @@ auto writeMemoryJson(FILE* f, const RenderDebugSnapshot& s) -> void {
     }
     const auto& pool = s.geometryPool;
     std::fprintf(f,
-                 "  ],\n  \"geometryPool\": {\"limitBytes\": %llu, \"vertexLimit\": %llu, \"indexLimit\": %llu, \"vertexCapacity\": %llu, \"vertexUsed\": %llu, \"indexCapacity\": %llu, \"indexUsed\": %llu, \"waitingMeshes\": %u, \"waitingBytes\": %llu},\n  \"totalBytes\": %llu,\n  \"categories\": [\n",
+                 "  ],\n  \"geometryPool\": {\"limitBytes\": %llu, \"vertices\": {\"limit\": %llu, \"capacity\": %llu, \"used\": %llu}, \"meshlets\": {\"limit\": %llu, \"capacity\": %llu, \"used\": %llu}, \"meshletVertices\": {\"limit\": %llu, \"capacity\": %llu, \"used\": %llu}, \"meshletTriangles\": {\"limit\": %llu, \"capacity\": %llu, \"used\": %llu}, \"waitingMeshes\": %u, \"waitingBytes\": %llu},\n  \"totalBytes\": %llu,\n  \"categories\": [\n",
                  (unsigned long long) pool.limitBytes,
-                 (unsigned long long) pool.vertexLimit,
-                 (unsigned long long) pool.indexLimit,
-                 (unsigned long long) pool.vertexCapacity,
-                 (unsigned long long) pool.vertexUsed,
-                 (unsigned long long) pool.indexCapacity,
-                 (unsigned long long) pool.indexUsed,
+                 (unsigned long long) pool.vertices.limit,
+                 (unsigned long long) pool.vertices.capacity,
+                 (unsigned long long) pool.vertices.used,
+                 (unsigned long long) pool.meshlets.limit,
+                 (unsigned long long) pool.meshlets.capacity,
+                 (unsigned long long) pool.meshlets.used,
+                 (unsigned long long) pool.meshletVertices.limit,
+                 (unsigned long long) pool.meshletVertices.capacity,
+                 (unsigned long long) pool.meshletVertices.used,
+                 (unsigned long long) pool.meshletTriangles.limit,
+                 (unsigned long long) pool.meshletTriangles.capacity,
+                 (unsigned long long) pool.meshletTriangles.used,
                  pool.waitingMeshes,
                  (unsigned long long) pool.waitingBytes,
                  (unsigned long long) total);

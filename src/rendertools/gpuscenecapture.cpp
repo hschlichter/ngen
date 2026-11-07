@@ -1,5 +1,6 @@
 #include "gpuscenecapture.h"
 
+#include "drawlists.h"
 #include "gpuscene.h"
 #include "gpuschema.h"
 
@@ -13,14 +14,14 @@ auto capturedTable(const std::map<std::string, CaptureResult>& byResource, const
 }
 
 auto gpuSceneViewName(uint32_t view) -> std::string {
+    if (view == DrawLists::lateView) {
+        return "camera, second phase";
+    }
     return view == 0 ? std::string("camera") : std::format("cascade {}", view - 1);
 }
 
 auto gpuInstanceFlagText(uint32_t flags) -> std::string {
     std::string text;
-    if ((flags & gpuInstancePrimFirst) != 0) {
-        text += "primFirst ";
-    }
     if ((flags & gpuInstanceDoubleSided) != 0) {
         text += "doubleSided ";
     }
@@ -30,18 +31,18 @@ auto gpuInstanceFlagText(uint32_t flags) -> std::string {
     return text;
 }
 
-auto gpuSceneCaptures() -> const std::vector<std::pair<std::string, std::string>>& {
-    // (pass, resource): each table where it is complete for the frame.
-    static const std::vector<std::pair<std::string, std::string>> captures = {
-        {"InstanceCullScatter", "instances"},
-        {"", "gpuscene.meshtable"},
-        {"", "gpuscene.materials"},
-        {"InstanceCull", "cullVisibility"},
-        {"InstanceCull", "cullPlanes"},
-        {"InstanceCull", "cullGroupCounters"},
-        {"InstanceCullScan", "cullGroupOffsets"},
-        {"InstanceCullScan", "drawCounts"},
-        {"InstanceCullScatter", "drawCommands"},
+auto gpuSceneCaptures() -> const std::vector<CaptureWatch>& {
+    static const std::vector<CaptureWatch> captures = {
+        {.resource = "instances", .afterLastWrite = true},
+        {.resource = "gpuscene.meshtable"},
+        {.resource = "gpuscene.materials"},
+        {.resource = "cullVisibility", .afterLastWrite = true},
+        {.resource = "cullPlanes", .afterLastWrite = true},
+        {.pass = "InstanceCull", .resource = "cullGroupCounters"},
+        {.pass = "InstanceCullScan", .resource = "cullGroupOffsets"},
+        {.resource = "drawCounts", .afterLastWrite = true},
+        {.resource = "drawCommands", .afterLastWrite = true},
+        {.resource = "cullParams", .afterLastWrite = true},
     };
     return captures;
 }
@@ -81,15 +82,15 @@ auto buildGpuSceneRows(const std::map<std::string, CaptureResult>& byResource, s
             .prim = primOfInstance[m],
             .mesh = record.mesh,
             .material = record.material,
-            .indexOffset = record.indexOffset,
-            .indexCount = record.indexCount,
+            .meshletOffset = record.meshletOffset,
+            .meshletCount = record.meshletCount,
             .flags = record.flags,
             .boundsMin = record.boundsMin,
             .boundsMax = record.boundsMax,
         };
         row.primPath = primPath(row.prim);
         if (meshes != nullptr) {
-            row.meshIndexCount = capturedValue<GpuMeshEntry>(*meshes, (size_t) record.mesh * sizeof(GpuMeshEntry)).indexCount;
+            row.meshMeshletCount = capturedValue<GpuMeshEntry>(*meshes, (size_t) record.mesh * sizeof(GpuMeshEntry)).meshletCount;
         }
         if (materials != nullptr) {
             row.textureSlot = capturedValue<GpuMaterial>(*materials, (size_t) record.material * sizeof(GpuMaterial)).baseColorTexture;
@@ -109,7 +110,7 @@ auto writeGpuSceneJoinedJson(FILE* f, const std::vector<GpuSceneInstanceRow>& ro
     std::fprintf(f, "{\"views\": %u, \"instances\": [\n", viewCount);
     for (size_t i = 0; i < rows.size(); i++) {
         const auto& r = rows[i];
-        std::fprintf(f, "  {\"instance\": %u, \"prim\": \"%s\", \"mesh\": %u, \"meshInPool\": %s, \"material\": %u, \"textureSlot\": %u, \"indexOffset\": %u, \"indexCount\": %u, \"flags\": \"%s\", \"boundsMin\": [%g, %g, %g], \"boundsMax\": [%g, %g, %g], \"views\": [", r.index, r.primPath.c_str(), r.mesh, r.meshIndexCount > 0 ? "true" : "false", r.material, r.textureSlot, r.indexOffset, r.indexCount, gpuInstanceFlagText(r.flags).c_str(), r.boundsMin.x, r.boundsMin.y, r.boundsMin.z, r.boundsMax.x, r.boundsMax.y, r.boundsMax.z);
+        std::fprintf(f, "  {\"instance\": %u, \"prim\": \"%s\", \"mesh\": %u, \"meshInPool\": %s, \"material\": %u, \"textureSlot\": %u, \"meshletOffset\": %u, \"meshletCount\": %u, \"flags\": \"%s\", \"boundsMin\": [%g, %g, %g], \"boundsMax\": [%g, %g, %g], \"views\": [", r.index, r.primPath.c_str(), r.mesh, r.meshMeshletCount > 0 ? "true" : "false", r.material, r.textureSlot, r.meshletOffset, r.meshletCount, gpuInstanceFlagText(r.flags).c_str(), r.boundsMin.x, r.boundsMin.y, r.boundsMin.z, r.boundsMax.x, r.boundsMax.y, r.boundsMax.z);
         for (uint32_t v = 0; v < viewCount; v++) {
             std::fprintf(f, "%s{\"view\": \"%s\", \"visible\": %s, \"reason\": \"%s\"}", v > 0 ? ", " : "", gpuSceneViewName(v).c_str(), (r.visibleBits & (1u << v)) != 0 ? "true" : "false", cullPlaneName((r.cullPlanes >> (4 * v)) & 0xFu));
         }

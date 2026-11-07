@@ -117,7 +117,8 @@ present) after logging the native error.
   200 ms. `limits().maxBufferBytes` is the largest size `createBuffer` makes (one allocation and one buffer; in Vulkan the smaller of
   `maxMemoryAllocationSize` and `maxBufferSize`); a larger one is invalid (a validation error) and may fail, or work on one driver and not another.
 - **Textures.** `RhiTextureDesc { width, height, format, usage, mipLevels, arrayLayers, sampleCount, dimension }`;
-  dimensions `Texture2D`, `Texture2DArray`, `TextureCube`. Usage flags: `Sampled`, `ColorAttachment`, `DepthAttachment`,
+  dimensions `Texture2D`, `Texture2DArray`, `TextureCube`. A storage texture with mips is written and read one level at a time: a
+  `StorageImage` descriptor names its level (`RhiDescriptorWrite::mipLevel`); sampled descriptors see every level. Usage flags: `Sampled`, `ColorAttachment`, `DepthAttachment`,
   `Storage`, `TransferSrc`, `TransferDst`. Optional formats are checked with `supportsTextureFormat(format, usage)`.
   Textures are always device-local and filled with `copyBufferToTexture`.
 - **Samplers.** Filters, mip mode, address modes, anisotropy (ignored when `limits().samplerAnisotropy` is false),
@@ -149,7 +150,8 @@ A set must not be updated while a submitted command buffer still uses it.
 ### Pipelines
 
 `createGraphicsPipeline(RhiGraphicsPipelineDesc)`: vertex and fragment shaders, an optional geometry shader
-(`limits().geometryShaders`), set layouts, one push constant range,
+(`limits().geometryShaders`), or for mesh shading a mesh shader with an optional task shader in place of the vertex stage (no vertex input or
+topology; `limits()` has the mesh output and task payload limits), set layouts, one push constant range,
 colour and depth formats (dynamic rendering: no render pass objects), one vertex binding with a stride and attributes,
 topology (`TriangleList`, `LineList`), raster (cull mode, front face, line width), depth and one blend state.
 `createComputePipeline(RhiComputePipelineDesc)`: one shader, set layouts, one push constant range. Both return
@@ -166,6 +168,10 @@ clear values; draws happen inside, dispatches and copies outside. Commands:
   `drawIndexedIndirectCount(commands, offset, count, countOffset, maxDrawCount)` reading packed
   `RhiDrawIndexedIndirectCommand`s (layout of `VkDrawIndexedIndirectCommand` and `D3D12_DRAW_INDEXED_ARGUMENTS`), each
   with its own `firstInstance`
+- `drawMeshTasksIndirect(commands, offset, drawCount, stride)` and
+  `drawMeshTasksIndirectCount(commands, offset, stride, count, countOffset, maxDrawCount)` with a mesh pipeline: packed
+  `RhiDrawMeshTasksIndirectCommand`s (`VkDrawMeshTasksIndirectCommandEXT`, `D3D12_DISPATCH_MESH_ARGUMENTS`) `stride` bytes apart, so a caller
+  can put its own words after each command and read them in the task shader at `gl_DrawID`
 - `dispatch`
 - `copyBuffer`, `copyBufferToTexture`, `copyTextureToBuffer`, `blitTexture` (per-side mip level and filter)
 - `pipelineBarrier`
@@ -181,7 +187,8 @@ clear values; draws happen inside, dispatches and copies outside. Commands:
   binds, vertex/index buffer binds, indirect draw calls, copies and estimated primitives. Indirect calls count once; their
   draws and primitives are GPU-side and not counted.
 - **Pipeline statistics.** `beginPipelineStats(name)`/`endPipelineStats()` on a command buffer count the work between
-  them (input-assembly vertices and primitives, vertex, clipping, fragment and compute invocations);
+  them (fragment and compute invocations; no input-assembly, vertex shader or clipping counts, since such a query may not be active while a
+  mesh shader draws);
   `collectPipelineStats(cmd, out)` returns them after the fence. They don't nest and sit outside rendering. No-ops without
   `limits().pipelineStatistics`.
 - **Labels.** `beginLabel`/`endLabel` for RenderDoc and validation messages; no-ops without debug support.
@@ -221,9 +228,12 @@ program can check.
 - **Device.** `RhiDeviceVulkan::init` creates the instance (with `VK_EXT_debug_utils` when available, and the
   Khronos validation layer when `RhiDeviceOptions::enableValidation` is set), picks the first physical device with a
   graphics queue that can present to the window's surface, and creates one queue and one command pool.
-- **Required features.** API 1.3 or newer (so `synchronization2` and `dynamicRendering` are core), plus `shaderSampledImageArrayDynamicIndexing`,
-  `multiDrawIndirect`, `drawIndirectFirstInstance` and `drawIndirectCount`; `init` fails with a message when one is
-  missing. `wideLines`, `samplerAnisotropy`, `pipelineStatisticsQuery`, `geometryShader`, `VK_EXT_memory_budget` and
+- **Required features.** API 1.3 or newer (so `synchronization2`, `dynamicRendering`, `maintenance4` and `shaderDemoteToHelperInvocation` are
+  core; the last two are enabled because SPIR-V 1.6 shaders declare their workgroup size as `LocalSizeId` and demote on `discard`), subgroup
+  arithmetic in compute shaders (not guaranteed by Vulkan; every driver ngen runs on has it), plus `shaderSampledImageArrayDynamicIndexing`,
+  `multiDrawIndirect`, `drawIndirectFirstInstance`, `drawIndirectCount`, `shaderSampledImageArrayNonUniformIndexing`, `shaderDrawParameters`
+  and `VK_EXT_mesh_shader` with `taskShader`
+  and `meshShader` (RADV, ANV, NVK and lavapipe have it); `init` fails with a message when one is missing. `wideLines`, `samplerAnisotropy`, `pipelineStatisticsQuery`, `geometryShader`, `VK_EXT_memory_budget` and
   `VK_EXT_calibrated_timestamps` are enabled when present and reported in `limits()`.
 - **Memory.** One `vkAllocateMemory` per buffer and texture, device-local for `GpuOnly` and textures, host-visible and
   coherent for `CpuToGpu`, host-visible, coherent and cached for `GpuToCpu` (falling back to `CpuToGpu`'s type, with a
@@ -284,7 +294,7 @@ The whole set, after any RHI change (the default target builds only `ngen-view`,
 
 ```sh
 ./_out/ngen-build -p linux-vulkan -c debug examples
-for t in triangle quad texture uniforms depth rendertarget pushconstants blend lines mipcube compute timestamps gpuzones bindless indirect; do
+for t in triangle quad texture uniforms depth rendertarget pushconstants blend lines mipcube compute timestamps gpuzones bindless indirect meshshader mipchain; do
   SDL_VIDEODRIVER=offscreen ./_out/linux-vulkan/debug/ngen-example-$t --frames=10 --check --validation >/dev/null 2>&1; echo "$t=$?"
 done
 ```
@@ -363,8 +373,10 @@ Examples, each adding one concept to the previous:
 | `ngen-example-gpuzones` | nested `beginGpuZone`/`endGpuZone`, `collectGpuZones` depth, order and containment |
 | `ngen-example-indirect` | `drawIndexedIndirect` and `drawIndexedIndirectCount`, `RhiDrawIndexedIndirectCommand` with per-command `firstInstance`, a GPU count below `maxDrawCount`, `indirectDraws` stat |
 | `ngen-example-bindless` | array binding (`RhiDescriptorBinding::count`, `RhiDescriptorWrite::arrayElement`) indexed per draw through `firstInstance`, one descriptor bind for eight textures, `maxPerStageSampledImages` |
+| `ngen-example-mipchain` | a compute-written mip chain: `R32_SFLOAT`, single-level storage views (`RhiDescriptorWrite::mipLevel`), a `General` to `General` barrier between dispatches so one level's writes reach the next's reads, `texelFetch` of each level |
+| `ngen-example-meshshader` | a task and a mesh shader in place of the vertex shader, `drawMeshTasksIndirectCount` with a stride and the caller's word after each command read at `gl_DrawID`, culling in the task shader, a GPU count below the commands |
 
-Run them all: `for t in triangle quad texture uniforms depth rendertarget pushconstants blend lines mipcube compute timestamps gpuzones bindless indirect; do
+Run them all: `for t in triangle quad texture uniforms depth rendertarget pushconstants blend lines mipcube compute timestamps gpuzones bindless indirect meshshader mipchain; do
 SDL_VIDEODRIVER=offscreen ./_out/linux-vulkan/debug/ngen-example-$t --frames=10 --check --validation || echo "$t FAILED"; done`
 
 Rules for examples: include only headers under `src/rhi/` and `examples/common/` (plus `stb_image_write.h` for PNG);
@@ -405,7 +417,7 @@ Kept honest rather than papered over.
   not in `draws`/`primitives`. Callers that know them report them (ngen: `FrameGraphContext::addIndirectStats`).
 - Descriptor model is Vulkan-shaped (pool, layout, set, write). D3D12 and Metal can implement it, but it is not their
   native shape; revisit when a second backend exists.
-- Array bindings are fixed-size and must be fully written before binding; indexing must be dynamically uniform (one
-  value per draw). No runtime-sized arrays, partially bound sets, update-after-bind or non-uniform indexing: every draw
-  reads one material, so dynamically uniform indexing (a core 1.0 feature) covers bindless materials and multi-draw
-  indirect alike. Add descriptor indexing when textures stream or a scene outgrows a fixed array.
+- Array bindings are fixed-size and must be fully written before binding. Sampled-image arrays may be indexed non-uniformly
+  (`shaderSampledImageArrayNonUniformIndexing`, required; the shader marks the index `nonuniformEXT`): a renderer draw spans many
+  materials. No runtime-sized arrays, partially bound sets or update-after-bind. Add the rest of descriptor indexing when textures
+  stream or a scene outgrows a fixed array.

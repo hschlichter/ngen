@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1190 560" width="1190" height="560" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4a5462"/>
+    </marker>
+    <style>
+      .box { fill: #ffffff; stroke: #6b7684; stroke-width: 1.2; }
+      .new { fill: #e3eeff; stroke: #2f6fd6; stroke-width: 1.6; }
+      .title { font-size: 13px; font-weight: bold; fill: #1d232b; text-anchor: middle; }
+      .body { font-size: 11.5px; fill: #333b45; text-anchor: middle; }
+      .lane { font-size: 13px; font-weight: bold; fill: #4a5462; }
+      .label { font-size: 11px; fill: #4a5462; font-style: italic; }
+      .edge { stroke: #4a5462; stroke-width: 1.4; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect x="0" y="0" width="1190" height="560" fill="#ffffff"/>
+
+  <!-- Lanes -->
+  <rect x="0" y="10" width="1190" height="90" fill="#f3f5f8"/>
+  <rect x="0" y="110" width="1190" height="90" fill="#e9edf2"/>
+  <rect x="0" y="210" width="1190" height="90" fill="#f3f5f8"/>
+  <rect x="0" y="310" width="1190" height="190" fill="#e9edf2"/>
+  <text class="lane" x="16" y="50">Asset server</text>
+  <text class="lane" x="16" y="67" font-weight="normal">pack time</text>
+  <text class="lane" x="16" y="160">Scene thread</text>
+  <text class="lane" x="16" y="260">Render thread</text>
+  <text class="lane" x="16" y="405">GPU frame</text>
+
+  <!-- 1 Packing -->
+  <rect class="new" x="140" y="22" width="300" height="66" rx="6"/>
+  <text class="title" x="290" y="42">1 · weldMesh, buildMeshlets</text>
+  <text class="body" x="290" y="59">meshletbuild.cpp (meshoptimizer)</text>
+  <text class="body" x="290" y="75">PackMeshlet 36 B, sections 15–17</text>
+
+  <!-- 3 Scene -->
+  <rect class="box" x="140" y="122" width="300" height="66" rx="6"/>
+  <text class="title" x="290" y="142">3 · ViewScene::mesh, placement</text>
+  <text class="body" x="290" y="159">MeshDesc meshlets, SubMesh bounds</text>
+  <text class="body" x="290" y="175">RenderMeshInstance meshlet range</text>
+
+  <!-- Render thread -->
+  <rect class="box" x="140" y="222" width="310" height="66" rx="6"/>
+  <text class="title" x="295" y="242">3 · GpuScene upload</text>
+  <text class="body" x="295" y="259">5 pools: vertices, positions, meshlets, …</text>
+  <text class="body" x="295" y="275">InstanceRecord 128 B + CullRecord 48 B (new)</text>
+
+  <rect class="box" x="480" y="222" width="320" height="66" rx="6"/>
+  <text class="title" x="640" y="242">4 · DrawLists</text>
+  <text class="body" x="640" y="259">updateGroupBounds (new): box per 256 slots</text>
+  <text class="body" x="640" y="275">writeParams: planes, regionOffsets, capacity</text>
+
+  <rect class="box" x="830" y="222" width="220" height="66" rx="6"/>
+  <text class="title" x="940" y="242">8 · Renderer::render</text>
+  <text class="body" x="940" y="259">picks the occlusion</text>
+  <text class="body" x="940" y="275">arrangement</text>
+
+  <!-- GPU row a -->
+  <rect class="new" x="140" y="322" width="190" height="66" rx="6"/>
+  <text class="title" x="235" y="342">5 · InstanceCull</text>
+  <text class="body" x="235" y="359">group box, frustum,</text>
+  <text class="body" x="235" y="375">render LOD, history</text>
+
+  <rect class="new" x="350" y="322" width="190" height="66" rx="6"/>
+  <text class="title" x="445" y="342">5 · Scan + Layout</text>
+  <text class="body" x="445" y="359">offsets per workgroup,</text>
+  <text class="body" x="445" y="375">RegionWork per region</text>
+
+  <rect class="box" x="560" y="322" width="190" height="66" rx="6"/>
+  <text class="title" x="655" y="342">5 · Scatter</text>
+  <text class="body" x="655" y="359">DrawRecords +</text>
+  <text class="body" x="655" y="375">MeshletWorkItems (new)</text>
+
+  <rect class="box" x="770" y="322" width="190" height="66" rx="6"/>
+  <text class="title" x="865" y="342">6–7 · ShadowPass</text>
+  <text class="body" x="865" y="359">task + mesh shaders,</text>
+  <text class="body" x="865" y="375">four cascades</text>
+
+  <rect class="box" x="980" y="322" width="190" height="66" rx="6"/>
+  <text class="title" x="1075" y="342">6–7 · GeometryPass</text>
+  <text class="body" x="1075" y="359">phase 1, task + mesh</text>
+  <text class="body" x="1075" y="375">→ G-buffer</text>
+
+  <!-- GPU row b, right to left -->
+  <rect class="new" x="980" y="412" width="190" height="66" rx="6"/>
+  <text class="title" x="1075" y="432">9 · HzbBuild</text>
+  <text class="body" x="1075" y="449">depth pyramid from</text>
+  <text class="body" x="1075" y="465">phase 1's depth</text>
+
+  <rect class="new" x="770" y="412" width="190" height="66" rx="6"/>
+  <text class="title" x="865" y="432">5 · InstanceCullOcclusion</text>
+  <text class="body" x="865" y="449">+ late scan, layout,</text>
+  <text class="body" x="865" y="465">scatter (view 5)</text>
+
+  <rect class="new" x="560" y="412" width="190" height="66" rx="6"/>
+  <text class="title" x="655" y="432">6–7 · GeometryPassLate</text>
+  <text class="body" x="655" y="449">phase 2, meshlets tested</text>
+  <text class="body" x="655" y="465">against the pyramid</text>
+
+  <rect class="box" x="350" y="412" width="190" height="66" rx="6"/>
+  <text class="title" x="445" y="432">11 · CullReadback</text>
+  <text class="body" x="445" y="449">counts → the culling</text>
+  <text class="body" x="445" y="465">record, the windows</text>
+
+  <!-- Edges -->
+  <path class="edge" d="M290,88 V120"/>
+  <text class="label" x="300" y="108">mesh pack (format 5)</text>
+  <path class="edge" d="M290,188 V220"/>
+  <text class="label" x="300" y="208">RenderWorld instances</text>
+  <path class="edge" d="M450,255 H478"/>
+  <path class="edge" d="M800,255 H828"/>
+  <path class="edge" d="M940,288 V305 H235 V320"/>
+  <path class="edge" d="M330,355 H348"/>
+  <path class="edge" d="M540,355 H558"/>
+  <path class="edge" d="M750,355 H768"/>
+  <path class="edge" d="M960,355 H978"/>
+  <path class="edge" d="M1075,388 V410"/>
+  <path class="edge" d="M980,445 H962"/>
+  <path class="edge" d="M770,445 H752"/>
+  <path class="edge" d="M560,445 H542"/>
+
+  <!-- Legend -->
+  <rect class="new" x="140" y="522" width="22" height="14" rx="3"/>
+  <text x="170" y="534" font-size="12" fill="#333b45">new behaviour</text>
+  <rect class="box" x="300" y="522" width="22" height="14" rx="3"/>
+  <text x="330" y="534" font-size="12" fill="#333b45">changed shape (a vertex path became a meshlet path, a record changed fields)</text>
+  <text x="1170" y="534" font-size="12" fill="#6b7684" text-anchor="end">numbers: walkthrough stages</text>
+</svg>

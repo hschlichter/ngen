@@ -10,6 +10,7 @@ namespace {
 
 static_assert(std::endian::native == std::endian::little, "scene packs are little-endian and read in place");
 static_assert(sizeof(PackVertex) == 44, "PackVertex must match the engine's Vertex");
+static_assert(sizeof(PackMeshlet) == 36, "PackMeshlet is written as is");
 
 // Section ids, per kind.
 enum class Section : uint32_t {
@@ -21,6 +22,9 @@ enum class Section : uint32_t {
     MeshVertices = 12,
     MeshIndices = 13,
     MeshSubmeshes = 14,
+    MeshMeshlets = 15,
+    MeshMeshletVertices = 16,
+    MeshMeshletTriangles = 17,
     MaterialInfo = 21,
 };
 
@@ -403,8 +407,25 @@ auto writeMeshPack(const MeshPack& pack) -> std::vector<std::byte> {
         submeshes.u32(submesh.indexOffset);
         submeshes.u32(submesh.indexCount);
         submeshes.str(submesh.subsetPath);
+        submeshes.u32(submesh.meshletOffset);
+        submeshes.u32(submesh.meshletCount);
     }
     writer.add(Section::MeshSubmeshes, submeshes);
+
+    auto meshlets = writer.section();
+    meshlets.u64(pack.meshlets.size());
+    meshlets.raw(pack.meshlets.data(), pack.meshlets.size() * sizeof(PackMeshlet));
+    writer.add(Section::MeshMeshlets, meshlets);
+
+    auto meshletVertices = writer.section();
+    meshletVertices.u64(pack.meshletVertices.size());
+    meshletVertices.raw(pack.meshletVertices.data(), pack.meshletVertices.size() * sizeof(uint32_t));
+    writer.add(Section::MeshMeshletVertices, meshletVertices);
+
+    auto meshletTriangles = writer.section();
+    meshletTriangles.u64(pack.meshletTriangles.size());
+    meshletTriangles.raw(pack.meshletTriangles.data(), pack.meshletTriangles.size() * sizeof(uint32_t));
+    writer.add(Section::MeshMeshletTriangles, meshletTriangles);
 
     return writer.finish(ScenePackKind::Mesh);
 }
@@ -539,26 +560,71 @@ auto readMeshPack(std::span<const std::byte> bytes) -> std::expected<MeshPack, s
     indices.raw(pack.indices.data(), indexCount * sizeof(uint32_t));
 
     SectionReader submeshes(reader->section(Section::MeshSubmeshes), reader->strings);
-    auto submeshCount = submeshes.count64(12);
+    auto submeshCount = submeshes.count64(20);
     for (uint64_t i = 0; i < submeshCount && submeshes.ok(); i++) {
         PackSubmesh submesh;
         submesh.indexOffset = submeshes.u32();
         submesh.indexCount = submeshes.u32();
         submesh.subsetPath = submeshes.str();
+        submesh.meshletOffset = submeshes.u32();
+        submesh.meshletCount = submeshes.u32();
         pack.submeshes.push_back(std::move(submesh));
     }
 
-    if (!info.ok() || !vertices.ok() || !indices.ok() || !submeshes.ok()) {
+    SectionReader meshlets(reader->section(Section::MeshMeshlets), reader->strings);
+    auto meshletCount = meshlets.count64(sizeof(PackMeshlet));
+    pack.meshlets.resize(meshletCount);
+    meshlets.raw(pack.meshlets.data(), meshletCount * sizeof(PackMeshlet));
+
+    SectionReader meshletVertices(reader->section(Section::MeshMeshletVertices), reader->strings);
+    auto meshletVertexCount = meshletVertices.count64(sizeof(uint32_t));
+    pack.meshletVertices.resize(meshletVertexCount);
+    meshletVertices.raw(pack.meshletVertices.data(), meshletVertexCount * sizeof(uint32_t));
+
+    SectionReader meshletTriangles(reader->section(Section::MeshMeshletTriangles), reader->strings);
+    auto meshletTriangleCount = meshletTriangles.count64(sizeof(uint32_t));
+    pack.meshletTriangles.resize(meshletTriangleCount);
+    meshletTriangles.raw(pack.meshletTriangles.data(), meshletTriangleCount * sizeof(uint32_t));
+
+    if (!info.ok() || !vertices.ok() || !indices.ok() || !submeshes.ok() || !meshlets.ok() || !meshletVertices.ok() || !meshletTriangles.ok()) {
         return std::unexpected("a mesh pack section is cut short or names a string that isn't there");
     }
     for (const auto& submesh : pack.submeshes) {
         if (submesh.indexOffset > pack.indices.size() || submesh.indexCount > pack.indices.size() - submesh.indexOffset) {
             return std::unexpected("a submesh lies outside the index buffer");
         }
+        if (submesh.meshletOffset > pack.meshlets.size() || submesh.meshletCount > pack.meshlets.size() - submesh.meshletOffset) {
+            return std::unexpected("a submesh's meshlets lie outside the meshlets");
+        }
     }
     for (uint32_t index : pack.indices) {
         if (index >= pack.vertices.size()) {
             return std::unexpected("an index points past the vertices");
+        }
+    }
+    // The GPU reads meshlets as they are: every range and local index is checked here, so a broken pack never reaches a shader.
+    for (const auto& meshlet : pack.meshlets) {
+        if (meshlet.vertexCount > meshletMaxVertices || meshlet.triangleCount > meshletMaxTriangles) {
+            return std::unexpected("a meshlet has more vertices or triangles than a meshlet holds");
+        }
+        if (meshlet.vertexOffset > pack.meshletVertices.size() || meshlet.vertexCount > pack.meshletVertices.size() - meshlet.vertexOffset) {
+            return std::unexpected("a meshlet's vertices lie outside the meshlet vertices");
+        }
+        if (meshlet.triangleOffset > pack.meshletTriangles.size() || meshlet.triangleCount > pack.meshletTriangles.size() - meshlet.triangleOffset) {
+            return std::unexpected("a meshlet's triangles lie outside the meshlet triangles");
+        }
+        for (uint32_t t = 0; t < meshlet.triangleCount; t++) {
+            uint32_t triangle = pack.meshletTriangles[meshlet.triangleOffset + t];
+            for (uint32_t corner = 0; corner < 3; corner++) {
+                if (((triangle >> (8 * corner)) & 0xFFu) >= meshlet.vertexCount) {
+                    return std::unexpected("a meshlet triangle points past the meshlet's vertices");
+                }
+            }
+        }
+    }
+    for (uint32_t vertex : pack.meshletVertices) {
+        if (vertex >= pack.vertices.size()) {
+            return std::unexpected("a meshlet vertex points past the vertices");
         }
     }
     return pack;

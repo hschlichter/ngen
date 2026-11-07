@@ -84,6 +84,8 @@ auto RhiDeviceVulkan::toVkFormat(RhiFormat format) -> VkFormat {
             return VK_FORMAT_R32G32B32A32_SFLOAT;
         case R32_UINT:
             return VK_FORMAT_R32_UINT;
+        case R32_SFLOAT:
+            return VK_FORMAT_R32_SFLOAT;
         case D32_SFLOAT:
             return VK_FORMAT_D32_SFLOAT;
     }
@@ -104,15 +106,18 @@ auto RhiDeviceVulkan::toVkShaderStage(RhiShaderStageFlags stage) -> VkShaderStag
     if (stage.has(RhiShaderStage::Geometry)) {
         flags |= VK_SHADER_STAGE_GEOMETRY_BIT;
     }
+    if (stage.has(RhiShaderStage::Task)) {
+        flags |= VK_SHADER_STAGE_TASK_BIT_EXT;
+    }
+    if (stage.has(RhiShaderStage::Mesh)) {
+        flags |= VK_SHADER_STAGE_MESH_BIT_EXT;
+    }
     return flags;
 }
 
-// The counters behind RhiPipelineStats, in bit order (the order results are written in).
-static constexpr VkQueryPipelineStatisticFlags pipelineStatisticsFlags =
-    VK_QUERY_PIPELINE_STATISTIC_INPUT_ASSEMBLY_VERTICES_BIT | VK_QUERY_PIPELINE_STATISTIC_INPUT_ASSEMBLY_PRIMITIVES_BIT |
-    VK_QUERY_PIPELINE_STATISTIC_VERTEX_SHADER_INVOCATIONS_BIT | VK_QUERY_PIPELINE_STATISTIC_CLIPPING_INVOCATIONS_BIT |
-    VK_QUERY_PIPELINE_STATISTIC_CLIPPING_PRIMITIVES_BIT | VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT |
-    VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT;
+// The counters behind RhiPipelineStats, in bit order (the order results are written in). None of input assembly, the vertex shader or
+// clipping: a query with them may not be active while a mesh shader draws.
+static constexpr VkQueryPipelineStatisticFlags pipelineStatisticsFlags = VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT | VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT;
 
 static auto toVkDescriptorType(RhiDescriptorType type) -> VkDescriptorType {
     switch (type) {
@@ -448,6 +453,8 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
 
     // Optional: calibrated timestamps align GPU zones with the CPU clock for the profiler.
     bool calibratedTimestampsAvailable = false;
+    // Required: every mesh pass draws with task and mesh shaders.
+    bool meshShaderAvailable = false;
     {
         uint32_t availableCount = 0;
         vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &availableCount, nullptr);
@@ -461,6 +468,9 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
             if (strcmp(ext.extensionName, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) == 0) {
                 memoryBudgetAvailable = true;
             }
+            if (strcmp(ext.extensionName, VK_EXT_MESH_SHADER_EXTENSION_NAME) == 0) {
+                meshShaderAvailable = true;
+            }
         }
     }
     if (calibratedTimestampsAvailable) {
@@ -469,11 +479,30 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
     if (memoryBudgetAvailable) {
         deviceExtensions.push_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
     }
+    if (!meshShaderAvailable) {
+        report(RhiMessageSeverity::Error, "Vulkan device lacks VK_EXT_mesh_shader; mesh shading is required");
+        return std::unexpected(RhiError::Failed);
+    }
+    deviceExtensions.push_back(VK_EXT_MESH_SHADER_EXTENSION_NAME);
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memoryProperties);
     auto deviceExtensionCount = (uint32_t) deviceExtensions.size();
 
+    // maintenance4 (core and required in 1.3): SPIR-V 1.6 shaders, the task and mesh shaders among them, declare their workgroup size as
+    // LocalSizeId.
+    // shaderDemoteToHelperInvocation (core and required in 1.3): `discard` in a SPIR-V 1.6 fragment shader demotes the invocation.
+    VkPhysicalDeviceShaderDemoteToHelperInvocationFeatures demoteFeatures = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES,
+        .shaderDemoteToHelperInvocation = VK_TRUE,
+    };
+    VkPhysicalDeviceMaintenance4Features maintenance4Features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES,
+        .pNext = &demoteFeatures,
+        .maintenance4 = VK_TRUE,
+    };
+
     VkPhysicalDeviceSynchronization2Features sync2Features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
+        .pNext = &maintenance4Features,
         .synchronization2 = VK_TRUE,
     };
 
@@ -507,17 +536,42 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
     enabledFeatures.drawIndirectFirstInstance = VK_TRUE;
 
     // Vulkan 1.3 is the baseline (checked below); drawIndirectCount comes from the 1.2 feature struct.
-    VkPhysicalDeviceVulkan12Features supported12 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    // Mesh shading: task and mesh shaders, and gl_DrawID in them (shaderDrawParameters, 1.1).
+    VkPhysicalDeviceMeshShaderFeaturesEXT supportedMesh = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT};
+    VkPhysicalDeviceVulkan11Features supported11 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, .pNext = &supportedMesh};
+    VkPhysicalDeviceVulkan12Features supported12 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, .pNext = &supported11};
     VkPhysicalDeviceFeatures2 supported2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &supported12};
     vkGetPhysicalDeviceFeatures2(physicalDevice, &supported2);
     if (supported12.drawIndirectCount != VK_TRUE) {
         report(RhiMessageSeverity::Error, "Vulkan device lacks drawIndirectCount");
         return std::unexpected(RhiError::Failed);
     }
+    // A draw may span many materials (the renderer draws a region's meshlets, whatever their instance, in one draw): a sampled-image array
+    // indexed with a value that differs within a draw.
+    if (supported12.shaderSampledImageArrayNonUniformIndexing != VK_TRUE) {
+        report(RhiMessageSeverity::Error, "Vulkan device lacks shaderSampledImageArrayNonUniformIndexing");
+        return std::unexpected(RhiError::Failed);
+    }
+    if (supportedMesh.taskShader != VK_TRUE || supportedMesh.meshShader != VK_TRUE || supported11.shaderDrawParameters != VK_TRUE) {
+        report(RhiMessageSeverity::Error, "Vulkan device lacks task shaders, mesh shaders or shaderDrawParameters");
+        return std::unexpected(RhiError::Failed);
+    }
+    VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT,
+        .pNext = &dynamicRenderingFeatures,
+        .taskShader = VK_TRUE,
+        .meshShader = VK_TRUE,
+    };
+    VkPhysicalDeviceVulkan11Features vulkan11Features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+        .pNext = &meshShaderFeatures,
+        .shaderDrawParameters = VK_TRUE,
+    };
     VkPhysicalDeviceVulkan12Features vulkan12Features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-        .pNext = &dynamicRenderingFeatures,
+        .pNext = &vulkan11Features,
         .drawIndirectCount = VK_TRUE,
+        .shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
     };
 
     VkPhysicalDeviceProperties properties = {};
@@ -529,11 +583,18 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
         return std::unexpected(RhiError::Failed);
     }
     // The largest buffer: one allocation (maxMemoryAllocationSize, 1.1) and one buffer (maxBufferSize, 1.3).
-    VkPhysicalDeviceVulkan13Properties vulkan13Properties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES};
+    VkPhysicalDeviceMeshShaderPropertiesEXT meshShaderProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT};
+    VkPhysicalDeviceVulkan13Properties vulkan13Properties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES, .pNext = &meshShaderProperties};
     VkPhysicalDeviceVulkan11Properties vulkan11Properties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES, .pNext = &vulkan13Properties};
     VkPhysicalDeviceDriverProperties driverProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES, .pNext = &vulkan11Properties};
     VkPhysicalDeviceProperties2 properties2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &driverProperties};
     vkGetPhysicalDeviceProperties2(physicalDevice, &properties2);
+    // Subgroup arithmetic in compute shaders (the culling's prefix sums): not guaranteed by Vulkan, present on every driver ngen runs on.
+    auto subgroupOps = VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_ARITHMETIC_BIT;
+    if ((vulkan11Properties.subgroupSupportedOperations & subgroupOps) != subgroupOps || (vulkan11Properties.subgroupSupportedStages & VK_SHADER_STAGE_COMPUTE_BIT) == 0) {
+        report(RhiMessageSeverity::Error, "Vulkan device lacks subgroup arithmetic in compute shaders");
+        return std::unexpected(RhiError::Failed);
+    }
     deviceLimits = {
         .minUniformBufferOffsetAlignment = properties.limits.minUniformBufferOffsetAlignment,
         .maxPushConstantSize = properties.limits.maxPushConstantsSize,
@@ -546,6 +607,9 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
         .geometryShaders = supportedFeatures.geometryShader == VK_TRUE,
         .maxPerStageSampledImages = properties.limits.maxPerStageDescriptorSampledImages,
         .maxBufferBytes = std::min<uint64_t>(vulkan11Properties.maxMemoryAllocationSize, vulkan13Properties.maxBufferSize),
+        .maxMeshOutputVertices = meshShaderProperties.maxMeshOutputVertices,
+        .maxMeshOutputPrimitives = meshShaderProperties.maxMeshOutputPrimitives,
+        .maxTaskPayloadSize = meshShaderProperties.maxTaskPayloadSize,
     };
     std::snprintf(deviceLimits.deviceName, sizeof(deviceLimits.deviceName), "%s", properties.deviceName);
     std::snprintf(deviceLimits.driverName, sizeof(deviceLimits.driverName), "%s %s", driverProperties.driverName, driverProperties.driverInfo);
@@ -567,6 +631,12 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
     }
 
     vkGetDeviceQueue(device, queueFamilyIndex, 0, &graphicsQueue);
+    cmdDrawMeshTasksIndirectCountFn = (PFN_vkCmdDrawMeshTasksIndirectCountEXT) vkGetDeviceProcAddr(device, "vkCmdDrawMeshTasksIndirectCountEXT");
+    cmdDrawMeshTasksIndirectFn = (PFN_vkCmdDrawMeshTasksIndirectEXT) vkGetDeviceProcAddr(device, "vkCmdDrawMeshTasksIndirectEXT");
+    if (cmdDrawMeshTasksIndirectCountFn == nullptr || cmdDrawMeshTasksIndirectFn == nullptr) {
+        report(RhiMessageSeverity::Error, "vkCmdDrawMeshTasksIndirect(Count)EXT not found");
+        return std::unexpected(RhiError::Failed);
+    }
 
     if (calibratedTimestampsAvailable) {
         getCalibratedTimestampsFn = (PFN_vkGetCalibratedTimestampsEXT) vkGetDeviceProcAddr(device, "vkGetCalibratedTimestampsEXT");
@@ -847,6 +917,16 @@ auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {
             },
     };
     vkCreateImageView(device, &viewInfo, nullptr, &tex->view);
+    // A storage image view covers one level: one view per level for a storage texture with mips (RhiDescriptorWrite::mipLevel).
+    if (desc.usage.has(RhiTextureUsage::Storage) && desc.mipLevels > 1) {
+        tex->mipViews.resize(desc.mipLevels, VK_NULL_HANDLE);
+        for (uint32_t level = 0; level < desc.mipLevels; level++) {
+            auto mipInfo = viewInfo;
+            mipInfo.subresourceRange.baseMipLevel = level;
+            mipInfo.subresourceRange.levelCount = 1;
+            vkCreateImageView(device, &mipInfo, nullptr, &tex->mipViews[level]);
+        }
+    }
 
     registerAllocation(tex,
                        {
@@ -1020,35 +1100,30 @@ auto RhiDeviceVulkan::createComputePipeline(const RhiComputePipelineDesc& desc) 
 }
 
 auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc) -> RhiPipeline* {
-    auto* vertMod = static_cast<RhiShaderModuleVulkan*>(desc.vertexShader);
-    auto* fragMod = static_cast<RhiShaderModuleVulkan*>(desc.fragmentShader);
-
-    VkPipelineShaderStageCreateInfo stages[3] = {
-        {
-            // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    // Vertex, geometry and fragment; or task, mesh and fragment.
+    std::vector<VkPipelineShaderStageCreateInfo> stages;
+    auto addStage = [&](RhiShaderModule* module, VkShaderStageFlagBits stage) {
+        if (module == nullptr) {
+            return;
+        }
+        auto* vkModule = static_cast<RhiShaderModuleVulkan*>(module);
+        stages.push_back({
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .stage = VK_SHADER_STAGE_VERTEX_BIT,
-            .module = vertMod->module,
-            .pName = vertMod->entryPoint.c_str(),
-        },
-        {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = fragMod->module,
-            .pName = fragMod->entryPoint.c_str(),
-        },
-        {}};
-    uint32_t stageCount = 2;
-    if (desc.geometryShader != nullptr) {
-        auto* geomMod = static_cast<RhiShaderModuleVulkan*>(desc.geometryShader);
-        stages[2] = {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .stage = VK_SHADER_STAGE_GEOMETRY_BIT,
-            .module = geomMod->module,
-            .pName = geomMod->entryPoint.c_str(),
-        };
-        stageCount = 3;
+            .stage = stage,
+            .module = vkModule->module,
+            .pName = vkModule->entryPoint.c_str(),
+        });
+    };
+    bool meshShading = desc.meshShader != nullptr;
+    if (meshShading) {
+        addStage(desc.taskShader, VK_SHADER_STAGE_TASK_BIT_EXT);
+        addStage(desc.meshShader, VK_SHADER_STAGE_MESH_BIT_EXT);
+    } else {
+        addStage(desc.vertexShader, VK_SHADER_STAGE_VERTEX_BIT);
+        addStage(desc.geometryShader, VK_SHADER_STAGE_GEOMETRY_BIT);
     }
+    addStage(desc.fragmentShader, VK_SHADER_STAGE_FRAGMENT_BIT);
+    auto stageCount = (uint32_t) stages.size();
 
     VkVertexInputBindingDescription bindingDesc = {
         .binding = 0,
@@ -1165,9 +1240,10 @@ auto RhiDeviceVulkan::createGraphicsPipeline(const RhiGraphicsPipelineDesc& desc
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .pNext = &renderingInfo,
         .stageCount = stageCount,
-        .pStages = stages,
-        .pVertexInputState = &vertexInputState,
-        .pInputAssemblyState = &inputAssemblyState,
+        .pStages = stages.data(),
+        // A mesh pipeline has neither: the mesh shader makes its primitives.
+        .pVertexInputState = meshShading ? nullptr : &vertexInputState,
+        .pInputAssemblyState = meshShading ? nullptr : &inputAssemblyState,
         .pViewportState = &viewportState,
         .pRasterizationState = &rasterizationState,
         .pMultisampleState = &multisampleState,
@@ -1327,9 +1403,10 @@ auto RhiDeviceVulkan::updateDescriptorSet(RhiDescriptorSet* set, std::span<const
             }
             case RhiDescriptorType::StorageImage: {
                 auto* tex = static_cast<RhiTextureVulkan*>(writes[i].texture);
+                auto mip = writes[i].mipLevel;
                 imgInfos[i] = {
                     .sampler = VK_NULL_HANDLE,
-                    .imageView = tex->view,
+                    .imageView = mip < tex->mipViews.size() ? tex->mipViews[mip] : tex->view,
                     .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
                 };
                 vkWrites[i].pImageInfo = &imgInfos[i];
@@ -1460,7 +1537,7 @@ auto RhiDeviceVulkan::collectPipelineStats(RhiCommandBuffer* cmd, std::vector<Rh
         return true;
     }
     // Results come in the order of the flag bits (pipelineStatisticsFlags), then availability.
-    constexpr uint32_t valuesPerQuery = 8;
+    constexpr uint32_t valuesPerQuery = 3;
     auto count = (uint32_t) cb->statsZones.size();
     std::vector<uint64_t> raw((size_t) count * valuesPerQuery);
     auto result = vkGetQueryPoolResults(
@@ -1472,19 +1549,14 @@ auto RhiDeviceVulkan::collectPipelineStats(RhiCommandBuffer* cmd, std::vector<Rh
     out.reserve(count);
     for (uint32_t i = 0; i < count; i++) {
         const auto* v = raw.data() + (size_t) i * valuesPerQuery;
-        if (v[7] == 0) {
+        if (v[2] == 0) {
             return false;
         }
         out.push_back({
             .name = cb->statsZones[i],
             .stats = {
-                .iaVertices = v[0],
-                .iaPrimitives = v[1],
-                .vertexInvocations = v[2],
-                .clippingInvocations = v[3],
-                .clippingPrimitives = v[4],
-                .fragmentInvocations = v[5],
-                .computeInvocations = v[6],
+                .fragmentInvocations = v[0],
+                .computeInvocations = v[1],
             },
         });
     }
@@ -1507,6 +1579,8 @@ auto RhiDeviceVulkan::createCommandBuffer() -> RhiCommandBuffer* {
     }
     cb->beginLabelFn = cmdBeginLabelFn;
     cb->endLabelFn = cmdEndLabelFn;
+    cb->drawMeshTasksIndirectCountFn = cmdDrawMeshTasksIndirectCountFn;
+    cb->drawMeshTasksIndirectFn = cmdDrawMeshTasksIndirectFn;
 
     if (deviceLimits.timestamps) {
         VkQueryPoolCreateInfo poolInfo = {
@@ -1637,6 +1711,9 @@ auto RhiDeviceVulkan::destroyBuffer(RhiBuffer* buffer) -> void {
 auto RhiDeviceVulkan::destroyTexture(RhiTexture* texture) -> void {
     unregisterAllocation(texture);
     auto* t = static_cast<RhiTextureVulkan*>(texture);
+    for (auto* mipView : t->mipViews) {
+        vkDestroyImageView(device, mipView, nullptr);
+    }
     vkDestroyImageView(device, t->view, nullptr);
     vkDestroyImage(device, t->image, nullptr);
     vkFreeMemory(device, t->memory, nullptr);

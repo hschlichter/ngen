@@ -1,0 +1,52 @@
+#version 450
+
+// The depth pyramid (DepthPyramid, src/renderer/README.md "Occlusion culling"), one dispatch per level, by push.mode:
+//
+//   0 mip 0 from the depth buffer: each texel the farthest depth (the minimum, reversed-Z) of the depth texels its footprint touches. Mip 0
+//     is the depth's size rounded down to powers of two, so a texel covers between one and two depth texels a side, and up to three
+//     touched; every one is taken, so nothing is lost.
+//   1 mip i from mip i - 1: the minimum of the 2x2 texels below it (one row or column where a side is already 1).
+//
+// Every level is written after occlusion's first phase, from that phase's depth (the geometry pass's by default, the depth prepass's with
+// one), and with a prepass again from its whole depth; the occlusion tests (instancecull.comp, meshlet.task) read it.
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D depth;
+layout(set = 0, binding = 1, r32f) uniform readonly image2D source;
+layout(set = 0, binding = 2, r32f) uniform writeonly image2D target;
+
+layout(push_constant) uniform Push {
+    uint mode;
+    uint pad;
+    uvec2 targetSize;
+    uvec2 sourceSize; // the depth's size (mode 0) or the level below's
+} push;
+
+void main() {
+    uvec2 texel = gl_GlobalInvocationID.xy;
+    if (texel.x >= push.targetSize.x || texel.y >= push.targetSize.y) {
+        return;
+    }
+    float farthest = 1.0;
+    if (push.mode == 0u) {
+        // The footprint [texel, texel + 1) * scale in depth texels, every texel it touches.
+        vec2 scale = vec2(push.sourceSize) / vec2(push.targetSize);
+        uvec2 first = uvec2(floor(vec2(texel) * scale));
+        uvec2 last = min(uvec2(ceil(vec2(texel + 1u) * scale)) - 1u, push.sourceSize - 1u);
+        for (uint y = first.y; y <= last.y; y++) {
+            for (uint x = first.x; x <= last.x; x++) {
+                farthest = min(farthest, texelFetch(depth, ivec2(x, y), 0).r);
+            }
+        }
+    } else {
+        uvec2 first = texel * 2u;
+        uvec2 last = min(first + 1u, push.sourceSize - 1u);
+        for (uint y = first.y; y <= last.y; y++) {
+            for (uint x = first.x; x <= last.x; x++) {
+                farthest = min(farthest, imageLoad(source, ivec2(x, y)).r);
+            }
+        }
+    }
+    imageStore(target, ivec2(texel), vec4(farthest));
+}

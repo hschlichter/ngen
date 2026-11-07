@@ -93,7 +93,8 @@ auto RhiCommandBufferVulkan::stateToStageMask(RhiTextureState layout) -> VkPipel
         case RhiTextureState::DepthStencilAttachment:
             return VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
         case RhiTextureState::ShaderReadOnly:
-            return VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            return VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                   VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         case RhiTextureState::General:
             return VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         case RhiTextureState::TransferSrc:
@@ -260,6 +261,8 @@ auto RhiCommandBufferVulkan::bufferStateToAccessMask(RhiBufferState state) -> Vk
             return VK_ACCESS_2_TRANSFER_WRITE_BIT;
         case RhiBufferState::IndirectRead:
             return VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+        case RhiBufferState::IndirectStorageRead:
+            return VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
     }
     return VK_ACCESS_2_NONE;
 }
@@ -274,12 +277,15 @@ auto RhiCommandBufferVulkan::bufferStateToStageMask(RhiBufferState state) -> VkP
         case RhiBufferState::UniformRead:
         case RhiBufferState::StorageRead:
         case RhiBufferState::StorageWrite:
-            return VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            return VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                   VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         case RhiBufferState::TransferSrc:
         case RhiBufferState::TransferDst:
             return VK_PIPELINE_STAGE_2_TRANSFER_BIT;
         case RhiBufferState::IndirectRead:
             return VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+        case RhiBufferState::IndirectStorageRead:
+            return VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
     }
     return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 }
@@ -450,6 +456,12 @@ auto RhiCommandBufferVulkan::pushConstants(RhiPipeline* pipeline, RhiShaderStage
     if (stage.has(RhiShaderStage::Geometry)) {
         vkStage |= VK_SHADER_STAGE_GEOMETRY_BIT;
     }
+    if (stage.has(RhiShaderStage::Task)) {
+        vkStage |= VK_SHADER_STAGE_TASK_BIT_EXT;
+    }
+    if (stage.has(RhiShaderStage::Mesh)) {
+        vkStage |= VK_SHADER_STAGE_MESH_BIT_EXT;
+    }
     vkCmdPushConstants(cmd, p->layout, vkStage, offset, size, data);
 }
 
@@ -489,6 +501,25 @@ auto RhiCommandBufferVulkan::drawIndexedIndirectCount(RhiBuffer* commands, uint6
     auto* b = static_cast<RhiBufferVulkan*>(commands);
     auto* c = static_cast<RhiBufferVulkan*>(count);
     vkCmdDrawIndexedIndirectCount(cmd, b->buffer, offset, c->buffer, countOffset, maxDrawCount, sizeof(RhiDrawIndexedIndirectCommand));
+}
+
+auto RhiCommandBufferVulkan::drawMeshTasksIndirectCount(RhiBuffer* commands, uint64_t offset, uint32_t stride, RhiBuffer* count, uint64_t countOffset, uint32_t maxDrawCount) -> void {
+    if (logging) {
+        record(std::format("drawMeshTasksIndirectCount {} +{} stride {} count {} +{} max {}", nameOf(commands), offset, stride, nameOf(count), countOffset, maxDrawCount));
+    }
+    commandStats.indirectDraws++;
+    auto* b = static_cast<RhiBufferVulkan*>(commands);
+    auto* c = static_cast<RhiBufferVulkan*>(count);
+    drawMeshTasksIndirectCountFn(cmd, b->buffer, offset, c->buffer, countOffset, maxDrawCount, stride);
+}
+
+auto RhiCommandBufferVulkan::drawMeshTasksIndirect(RhiBuffer* commands, uint64_t offset, uint32_t drawCount, uint32_t stride) -> void {
+    if (logging) {
+        record(std::format("drawMeshTasksIndirect {} +{} draws {} stride {}", nameOf(commands), offset, drawCount, stride));
+    }
+    commandStats.indirectDraws++;
+    auto* b = static_cast<RhiBufferVulkan*>(commands);
+    drawMeshTasksIndirectFn(cmd, b->buffer, offset, drawCount, stride);
 }
 
 auto RhiCommandBufferVulkan::copyBuffer(RhiBuffer* src, RhiBuffer* dst, const RhiBufferCopy& region) -> void {

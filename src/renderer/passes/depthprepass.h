@@ -19,10 +19,13 @@ struct DepthPrepassData {
 };
 
 // Depth-only pass over the visible instances before the geometry pass, so the geometry
-// pass can run with an Equal depth test and shade each pixel once.
-// depthonly.vert mirrors gbuffer.vert's position
-// expression with gl_Position invariant, so the Equal test holds; no fragment work. Cutout
-// buckets draw from the full vertex stream (depthcutout.vert, the same position expression)
+// pass can run with an Equal depth test and shade each pixel once. With occlusion culling it runs twice: the first phase (what was visible
+// last frame) clears the depth and draws, the depth pyramid is built from it, and the late phase adds what the pyramid shows is visible.
+// depth.mesh mirrors gbuffer.mesh's position
+// expression with gl_Position invariant, so the Equal test holds; no fragment work. While the culling camera isn't the rendered one (a
+// debug camera, a frozen frustum), occlusion's phases draw from the culling camera instead (cullCamera), into its own depth buffer, which
+// only the depth pyramid reads. Cutout
+// buckets also pull the texture coordinate (depthcutout.mesh, the same position expression)
 // and discard where the material's opacity is below its threshold (cutout.frag).
 class DepthPrepass {
 public:
@@ -40,7 +43,10 @@ public:
         const DrawLists& lists,
         DrawLists::Handles drawHandles,
         const GpuScene& scene,
-        RhiDescriptorSet* descriptorSet) -> const DepthPrepassData&;
+        RhiDescriptorSet* descriptorSet,
+        FgTextureHandle hzb,
+        bool late,
+        bool cullCamera) -> const DepthPrepassData&;
 
     // Whether its pipelines have been created; until then the frame leaves the pass out.
     auto ready() -> bool;

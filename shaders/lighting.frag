@@ -27,6 +27,7 @@ layout(set = 0, binding = 3) uniform sampler2D gbufferDepth;
 layout(set = 0, binding = 4) uniform sampler2D shadowMap;          // atlas, plain reads
 layout(set = 0, binding = 5) uniform sampler2DShadow shadowMapCmp; // atlas, hardware compare
 layout(set = 0, binding = 6) uniform sampler2D skyImage;           // the sky: an HDR lat-long, pole +Z
+layout(set = 0, binding = 7) uniform sampler2D hzb;                // the depth pyramid in the Hzb view; else the depth, unread
 
 layout(push_constant) uniform Push {
     int viewMode;
@@ -34,6 +35,7 @@ layout(push_constant) uniform Push {
     int showShadowOverlay;
     int lodFlash;        // 1: tint the meshes of a render-LOD group flashing for a pop (the LOD tag's 64), over any view
     int lodColorByDepth; // the LOD Level view's colour: 0 by the drawn level, 1 by how many LOD roots deep
+    int hzbLevel;        // the Hzb view's pyramid level; -1 while the pyramid wasn't built this frame
 } push;
 
 layout(location = 0) in vec2 fragTexCoord;
@@ -185,15 +187,36 @@ vec3 lodLevelTint(int tag) {
     return color;
 }
 
+// A reversed-Z depth as the depth view shows it: white near, black at the preview's far end and where nothing is drawn, on a log scale.
+vec3 depthShade(float d) {
+    if (d <= 0.0) {
+        return vec3(0.0);
+    }
+    float near = light.depthParams.x;
+    float far = light.depthParams.y;
+    float lin = linearizeDepth(d);
+    float v = 1.0 - clamp(log(lin / near) / log(far / near), 0.0, 1.0);
+    return vec3(v);
+}
+
+// The Hzb view: the depth pyramid's texel under the pixel at the chosen level (the last one past it), each texel the farthest depth it
+// covers. The pyramid spans the whole view; its mip 0 is the depth's size rounded down to powers of two.
+vec3 sampleHzb(vec2 uv) {
+    if (push.hzbLevel < 0) {
+        return vec3(0.3, 0.0, 0.0);
+    }
+    int level = min(push.hzbLevel, textureQueryLevels(hzb) - 1);
+    ivec2 size = textureSize(hzb, level);
+    ivec2 texel = min(ivec2(uv * vec2(size)), size - 1);
+    return depthShade(texelFetch(hzb, texel, level).r);
+}
+
 vec3 sampleBuffer(int mode, vec2 uv) {
     if (mode == 3) {
-        float d = texture(gbufferDepth, uv).r;
-        if (d <= 0.0) return vec3(0.0);
-        float near = light.depthParams.x;
-        float far = light.depthParams.y;
-        float lin = linearizeDepth(d);
-        float v = 1.0 - clamp(log(lin / near) / log(far / near), 0.0, 1.0);
-        return vec3(v);
+        return depthShade(texture(gbufferDepth, uv).r);
+    }
+    if (mode == 11) {
+        return sampleHzb(uv);
     }
     if (mode == 5) {
         // Raw shadow map visualization: screen UV → shadow map UV.

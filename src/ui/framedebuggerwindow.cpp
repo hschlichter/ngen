@@ -4,9 +4,11 @@
 #include "gpuschema.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstring>
 #include <format>
 #include <imgui.h>
+#include <vector>
 
 namespace {
 
@@ -157,55 +159,74 @@ auto regionName(uint32_t region) -> std::string {
 }
 
 auto drawDraws(const FrameDebugPass& pass, FrameDebuggerState& state, const std::function<std::string(uint32_t)>& primPathOfInstance) -> void {
-    bool indirect = std::ranges::any_of(pass.reads, [](const FrameDebugAccess& a) { return a.resource == "drawCommands"; });
-    if (!indirect) {
-        ImGui::TextDisabled("Not an indirect pass: it reads no draw commands.");
+    // A mesh pass draws regions: one drawMeshTasksIndirect each, its command the region's RegionWork.
+    bool meshPass = std::ranges::any_of(pass.reads, [](const FrameDebugAccess& a) { return a.resource == "cullRegionWork"; });
+    if (!meshPass) {
+        ImGui::TextDisabled("Not a mesh pass: it draws no culling regions.");
         return;
     }
     state.watchDraws = true;
     auto commands = state.results.find(frameDebuggerCommandsWatch);
     auto counts = state.results.find(frameDebuggerCountsWatch);
-    if (commands == state.results.end() || counts == state.results.end() || !commands->second.bytes || !counts->second.bytes) {
-        ImGui::TextDisabled("Capturing draw commands...");
+    auto params = state.results.find(frameDebuggerParamsWatch);
+    bool captured = commands != state.results.end() && counts != state.results.end() && params != state.results.end();
+    if (!captured || !commands->second.bytes || !counts->second.bytes || !params->second.bytes) {
+        ImGui::TextDisabled("Capturing draw records...");
         return;
     }
-    ImGui::TextDisabled("Draw commands and counts captured on frame %llu.", (unsigned long long) commands->second.frame);
+    ImGui::TextDisabled("Draw records and counts captured on frame %llu, after their last write.", (unsigned long long) commands->second.frame);
+    // The camera's passes draw its regions and, with occlusion, the late phase's; the shadow pass the cascades'.
     bool camera = pass.name != "ShadowPass";
-    uint32_t firstRegion = camera ? 0 : DrawLists::bucketCount;
-    uint32_t lastRegion = camera ? DrawLists::bucketCount : DrawLists::regionCount;
+    std::vector<uint32_t> passRegions;
+    for (uint32_t region = 0; region < DrawLists::regionCount; region++) {
+        auto view = region / DrawLists::bucketCount;
+        bool cameraRegion = view == 0 || view == DrawLists::lateView;
+        if (cameraRegion == camera) {
+            passRegions.push_back(region);
+        }
+    }
     const auto& bytes = *commands->second.bytes;
-    auto capacity = (uint32_t) (bytes.size() / sizeof(RhiDrawIndexedIndirectCommand) / DrawLists::regionCount);
-    for (uint32_t region = firstRegion; region < lastRegion; region++) {
+    const auto& paramBytes = *params->second.bytes;
+    auto inBuffer = (uint32_t) (bytes.size() / sizeof(DrawRecord));
+    // The regions are packed one after another, each as large as its bucket: from its offset to the next region's (the last to
+    // commandsUsed).
+    auto paramWord = [&paramBytes](size_t offset) {
+        uint32_t value = 0;
+        if (offset + sizeof(value) <= paramBytes.size()) {
+            std::memcpy(&value, paramBytes.data() + offset, sizeof(value));
+        }
+        return value;
+    };
+    using P = DrawLists::CullParams;
+    for (auto region : passRegions) {
         uint32_t count = 0;
         std::memcpy(&count, counts->second.bytes->data() + (DrawLists::countOffset(region)), sizeof(uint32_t));
+        auto first = paramWord(offsetof(P, regionOffsets) + ((size_t) region * sizeof(uint32_t)));
+        auto end = region + 1 < DrawLists::regionCount ? paramWord(offsetof(P, regionOffsets) + ((size_t) (region + 1) * sizeof(uint32_t))) : paramWord(offsetof(P, commandsUsed));
+        end = std::min(end, inBuffer);
+        auto capacity = end > first ? end - first : 0u;
         if (!ImGui::TreeNode(std::format("region {} ({}): {} draws", region, regionName(region), count).c_str())) {
             continue;
         }
         auto flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY;
-        if (ImGui::BeginTable("##draws", 6, flags, ImVec2(0.0f, 260.0f))) {
+        if (ImGui::BeginTable("##draws", 4, flags, ImVec2(0.0f, 260.0f))) {
             ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 40.0f);
             ImGui::TableSetupColumn("Prim");
             ImGui::TableSetupColumn("Instance", ImGuiTableColumnFlags_WidthFixed, 70.0f);
-            ImGui::TableSetupColumn("Triangles", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-            ImGui::TableSetupColumn("firstIndex", ImGuiTableColumnFlags_WidthFixed, 90.0f);
-            ImGui::TableSetupColumn("vertexOffset", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+            ImGui::TableSetupColumn("Meshlets", ImGuiTableColumnFlags_WidthFixed, 110.0f);
             ImGui::TableHeadersRow();
             for (uint32_t i = 0; i < count && i < capacity; i++) {
-                RhiDrawIndexedIndirectCommand command;
-                std::memcpy(&command, bytes.data() + (((size_t) region * capacity + i) * sizeof(command)), sizeof(command));
+                DrawRecord command;
+                std::memcpy(&command, bytes.data() + (((size_t) first + i) * sizeof(command)), sizeof(command));
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
                 ImGui::Text("%u", i);
                 ImGui::TableSetColumnIndex(1);
-                ImGui::TextUnformatted(primPathOfInstance(command.firstInstance).c_str());
+                ImGui::TextUnformatted(primPathOfInstance(command.instance).c_str());
                 ImGui::TableSetColumnIndex(2);
-                ImGui::Text("%u", command.firstInstance);
+                ImGui::Text("%u", command.instance);
                 ImGui::TableSetColumnIndex(3);
-                ImGui::Text("%u", command.indexCount / 3);
-                ImGui::TableSetColumnIndex(4);
-                ImGui::Text("%u", command.firstIndex);
-                ImGui::TableSetColumnIndex(5);
-                ImGui::Text("%d", command.vertexOffset);
+                ImGui::Text("%u", command.meshletCount);
             }
             ImGui::EndTable();
         }
@@ -231,8 +252,10 @@ auto frameDebuggerWatches(const FrameDebuggerState& state) -> std::vector<Captur
         }
     }
     if (state.watchDraws) {
-        watches.push_back({.id = frameDebuggerCommandsWatch, .pass = "InstanceCullScatter", .resource = "drawCommands", .trigger = state.trigger});
-        watches.push_back({.id = frameDebuggerCountsWatch, .pass = "InstanceCullScan", .resource = "drawCounts", .trigger = state.trigger});
+        // After their last write: with occlusion, the second phase's scatter adds view 5's records and counts.
+        watches.push_back({.id = frameDebuggerCommandsWatch, .resource = "drawCommands", .afterLastWrite = true, .trigger = state.trigger});
+        watches.push_back({.id = frameDebuggerCountsWatch, .resource = "drawCounts", .afterLastWrite = true, .trigger = state.trigger});
+        watches.push_back({.id = frameDebuggerParamsWatch, .resource = "cullParams", .afterLastWrite = true, .trigger = state.trigger});
     }
     return watches;
 }

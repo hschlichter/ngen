@@ -22,7 +22,8 @@ bool cutAway(uint material, vec2 uv) {
     }
     uint info = materials.data[material].opacityInfo;
     uint channel = info & 3u;
-    float value = texture(textures[slot], uv)[channel];
+    // Non-uniform: a draw spans many materials (the includer enables GL_EXT_nonuniform_qualifier).
+    float value = texture(textures[nonuniformEXT(slot)], uv)[channel];
     if ((info & 4u) != 0u && channel != 3u) {
         value = cutoutEncodeSrgb(value);
     }

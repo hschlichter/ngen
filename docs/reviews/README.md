@@ -9,6 +9,10 @@ claude.ai artifact; the file here is its source, kept with the plan it reviews, 
   blend bands cross-faded with ordered dither (2026-10-25, for a Technical Director)
 - [lod_tool_review.html](lod_tool_review.html) — [plan_lod_tool.md](../plan_lod_tool.md): one list and inspector for both LOD kinds,
   view-local tuning, and the viewport layers (level view with state, labels, gizmo, pop flash) (2026-10-25, for a Technical Director)
+- [meshlets_review.md](meshlets_review.md) — [plan_meshlets.md](../plan_meshlets.md), [plan_occlusion_culling.md](../plan_occlusion_culling.md),
+  [plan_meshlet_performance.md](../plan_meshlet_performance.md) and the meshlet culling and subset-bounds plans: meshlets on task and mesh
+  shaders, two-phase occlusion, and the culling made cheap; 48.8 → 15.2 ms at `flight_10` (2026-11-07, for a Technical Director; Markdown on
+  request, screenshots in `screenshots/meshlets_review/`)
 - [streaming_domain_review.html](streaming_domain_review.html) — [plan_streaming_domain.md](../plan_streaming_domain.md): residency from the
   authored load and unload radii, no unload delay, every coarser level resident, honest fallbacks, streaming measured, `fly` (2026-10-30, for a
   Technical Director)

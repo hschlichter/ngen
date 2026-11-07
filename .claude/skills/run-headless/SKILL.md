@@ -71,7 +71,8 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
 
 - `--screenshot=PATH` writes the presented frame as PNG on the last frame of `--frames`; Read the PNG to see it. Screenshots leave the UI out
   (the menu bar, windows and the status bar, whose numbers change every run), so they compare byte for byte; `--show-ui` keeps it in.
-- `--view=lit|albedo|normals|depth|shadowfactor|shadowmap|shadowuv|worldpos|miplevel|cascades|lodlevel` (miplevel: red level 0 to white
+- `--view=lit|albedo|normals|depth|shadowfactor|shadowmap|shadowuv|worldpos|miplevel|cascades|lodlevel|hzb` (hzb: occlusion's depth pyramid at
+  the level `hzb-level <n>` sets, shaded as the depth view, dark red while occlusion is off; miplevel: red level 0 to white
   level 7+; cascades: red, green, blue, yellow near to far; lodlevel: at half strength over the lit image, the drawn level of the nearest LOD root, red level 0,
   orange 1, yellow 2, green 3, … white 7+ (an index within that root), or with `lod-show color depth` how many LOD roots deep it is (1 blue,
   2 green, 3 orange, 4+ magenta), grey under none; shadowmap shows the cascade atlas), `--overlay=grid=on,aabbs=off,...`
@@ -91,7 +92,7 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   `goto-asset <id> [all]` (move the camera to an asset's next draw, nearest first, and select it; `all` frames every draw),
   `assets-of [/prim]` (the assets drawn at or under a prim use, or the selection's; `view.assetsOf` answers with them),
   `lod <LOD root path> <level>` (the level a LOD root wants; loads it), `lod-reset <LOD root path>` (back to its default), `lod-heuristic on|off` (the LOD heuristic; on by default), `lod-prefer distance|screen|authored` (which heuristic a LOD root naming several measures by; distance first by default), the LOD tuning (view-local, never saved: `lod-thresholds <root> [h=<i>] <t>…` and `lod-blend-thresholds …` for every placement of that authored root, `lod-override-reset [<root>]`, `lod-bias <f>`, `lod-hysteresis <fraction>`, `lod-blending on|off`), `lod-show labels|gizmo|gizmo-all|flash on|off`, `lod-show color level|depth` (the LOD tool's layers; `view lodlevel` is the level view; the `lodtool` record inspects the root at or above the selection, `view.lod.inspect {root}` any root), `fly <camera path prefix> <speed m/s>` (fly the camera through the scene's cameras with that prefix, in path order: `fly /cameras/flight_ 30` on the streaming test world; the script holds while it flies; a measurement, its numbers depend on build, cache and machine), `fly-stop`, the debug camera (`debug-camera on|off|place`, `debug-camera control main|debug`, `debug-camera lod|cull|shadows main|debug`, `debug-camera trail on|off|clear`: the view renders from it while the main camera, which `camera`, `camera-use` and `fly` move, drives LOD and streaming, culling and the shadow cascades, each switchable to the debug camera; `camera x,y,z,yaw,pitch debug` places it; the `status` record's `debugCamera`), the camera modes (`camera-follow on|off`, `camera-follow height <m>`: the eye kept that height above the highest drawn surface under it; `camera-orbit x,y,z yaw pitch [debug]`; the `status` record's `cameraModes`), `streaming-reset` (zero the `streaming` record's measured totals), the Streaming tool (`window streaming`, `streaming-show bounds|rings|rings-all|labels on|off`, `debugview streaming`, `lod-unload-thresholds <root> [h=<i>] <t>…`; the `streamingtool` record inspects the streaming root at or above the selection, `view.streaming.inspect {root}` any root; `--show-ui` puts the windows in screenshots) and `cull on|off|freeze|unfreeze|show|hide`
-  (frustum culling toggle, frozen frustum, red/green AABB overlay), `prepass on|off` (depth prepass), `aa on|off` (anti-aliasing; off to compare images pixel for pixel, a LOD fade's dither unblurred) and
+  (frustum culling toggle, frozen frustum, red/green AABB overlay), `prepass on|off` (depth prepass), `occlusion on|off` (two-phase occlusion culling, on by default; runs the prepass, from the culling camera into its own depth while a debug camera renders or the frustum is frozen), `aa on|off` (anti-aliasing; off to compare images pixel for pixel, a LOD fade's dither unblurred) and
   `ambient sky=r,g,b ground=r,g,b|reset` (hemisphere ambient), `gpuscene budget=<MiB>,limit=<MiB>` (upload budget, geometry pool limit),
   `sampler aniso=8,bias=0,minlod=0,mip=linear|nearest` (material sampler), `shadow cascades=3,tile=1024,lambda=0.5,pcf=on|off,distance=200`
   (cascaded shadows) — these set configuration values; `config <name> <value>` sets any (`config render.shadow.cascades 1`),
@@ -101,14 +102,14 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
 - `--fail-on-validation`: exit code 2 if the validation layer reported anything. `--geometry-limit=<MiB>`: cap each geometry pool buffer
   below the device's limit, to exercise a full pool on a small scene (the `GeometryPoolFull` warning, the `memory` record's `geometryPool`). `--render-debug`: draw log on without the window.
 - Introspection verbs (debug and release builds; each writes when its data arrives, a few frames after the verb):
-  - `capture <pass|-> <resource> <path> [x y w h]`: any frame-graph resource right after `<pass>` (`-` = end of frame, also `gpuscene.meshtable`,
-    `gpuscene.materials`). Buffers as JSON rows decoded with their schema; textures as PNG plus `<path>.json` (format, size, channel ranges, and the
+  - `capture <pass|-|+> <resource> <path> [x y w h]`: any frame-graph resource right after `<pass>` (`-` = end of frame, also `gpuscene.meshtable`,
+    `gpuscene.materials`; `+` = after the pass that writes it last this frame, or the end of the frame when none does; named in the result). Buffers as JSON rows decoded with their schema; textures as PNG plus `<path>.json` (format, size, channel ranges, and the
     texel values when the region is 64 texels or fewer).
   - `dump-frame DIR`: `DIR/frame.json` (every pass with barriers and their Vulkan stages/layouts, command log, descriptor contents) plus a capture of
     every resource each pass writes.
   - `dump-gpuscene DIR`: the GPU scene tables and culling buffers, and `DIR/instances_joined.json` (per instance: prim, mesh, material, bounds,
     visibility and cull plane per view).
-  - `debugview off|wireframe|trianglesize|overdraw|instance|mesh|material|primitive|uv|streaming`: replaces the lit image; read raw values with
+  - `debugview off|wireframe|trianglesize|overdraw|instance|mesh|material|primitive|uv|streaming|meshlet|meshletcull`: replaces the lit image (meshletcull: each meshlet by the test that culls it, red value 0 kept, 1 frustum, 2 cone, 3 depth); read raw values with
     `capture DebugViewPass debugview.value <path> X Y W H`.
   - `cull view N`: colour the AABB overlay by view N's visibility (0 camera, 1+ cascades); `overlay cascadefrusta=on` draws the cascade frusta.
   - `window memory|capture|framedebugger|gpuscene|counters|shaders|culling|assets|lod|streaming|camera|renderdebug|framegraph|performance on|off`: open a window, to

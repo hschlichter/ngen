@@ -362,6 +362,8 @@ auto main(int argc, char** argv) -> int {
                         .link(rpccore);
     // ngen-pack: has the asset server pack everything a scene can reach, so a view opens it from a full cache.
     auto scenePack = cxx::program("ngen-pack").sources({"src/apps/pack.cpp"}).include({"src/asset", "src/asset/pack"}).link(packer).link(assetClient).link(rpccore);
+    // meshoptimizer: welding and meshlets for the USD packer's meshes.
+    auto meshoptimizer = cxx::static_library("meshoptimizer").sources(glob({.include = "external/meshoptimizer/src/*.cpp"})).public_include({"external/meshoptimizer/src"});
     // The USD packer (src/asset/README.md): one USD file to a layer pack plus its meshes and materials. It links OpenUSD; the USD half
     // builds as C++20, as OpenUSD's headers require.
     auto packerUsd =
@@ -370,6 +372,7 @@ auto main(int argc, char** argv) -> int {
                 "src/apps/packerusd.cpp",
                 "src/asset/pack/usd/usdpacker.cpp",
                 "src/asset/pack/usd/primshapemesh.cpp",
+                "src/asset/pack/meshletbuild.cpp",
             })
             .include({
                 "src",
@@ -380,6 +383,7 @@ auto main(int argc, char** argv) -> int {
                 "external/openusd_build/include",
                 "external/glm",
             })
+            .link(meshoptimizer)
             .warning_off("deprecated-declarations")
             .for_source("src/asset/pack/usd/usdpacker.cpp", [](cxx::ObjectFile& file) { file.std("c++20"); })
             .link(packer)
@@ -557,6 +561,8 @@ auto main(int argc, char** argv) -> int {
     auto exampleGpuZones = rhiExample("gpuzones");
     auto exampleBindless = rhiExample("bindless");
     auto exampleIndirect = rhiExample("indirect");
+    auto exampleMeshShader = rhiExample("meshshader");
+    auto exampleMipChain = rhiExample("mipchain");
 
     // One name for the whole RHI example set, so the sweep cannot run stale binaries.
     auto examples = phony("examples")
@@ -574,7 +580,9 @@ auto main(int argc, char** argv) -> int {
                         .depend_on(exampleTimestamps)
                         .depend_on(exampleGpuZones)
                         .depend_on(exampleBindless)
-                        .depend_on(exampleIndirect);
+                        .depend_on(exampleIndirect)
+                        .depend_on(exampleMeshShader)
+                        .depend_on(exampleMipChain);
 
     p.target(view);
     p.target(examples);
@@ -593,6 +601,8 @@ auto main(int argc, char** argv) -> int {
     p.target(exampleGpuZones);
     p.target(exampleBindless);
     p.target(exampleIndirect);
+    p.target(exampleMeshShader);
+    p.target(exampleMipChain);
     p.target(cli);
     p.target(introspectTool);
     p.target(packerShader);

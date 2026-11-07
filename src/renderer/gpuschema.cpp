@@ -4,6 +4,7 @@
 #include "gpuscene.h"
 #include "renderertypes.h"
 
+#include <array>
 #include <bitset>
 #include <cstring>
 #include <format>
@@ -20,13 +21,14 @@ auto makeInstanceSchema() -> GpuSchema {
             {"model", offsetof(R, model), GpuFieldType::Mat4},
             {"material", offsetof(R, material), GpuFieldType::U32},
             {"mesh", offsetof(R, mesh), GpuFieldType::U32},
-            {"indexOffset", offsetof(R, indexOffset), GpuFieldType::U32},
-            {"indexCount", offsetof(R, indexCount), GpuFieldType::U32},
+            {"meshletOffset", offsetof(R, meshletOffset), GpuFieldType::U32},
+            {"meshletCount", offsetof(R, meshletCount), GpuFieldType::U32},
             {"boundsMin", offsetof(R, boundsMin), GpuFieldType::Vec3},
             {"flags", offsetof(R, flags), GpuFieldType::Bits},
             {"boundsMax", offsetof(R, boundsMax), GpuFieldType::Vec3},
             {"lodLevel", offsetof(R, lodLevel), GpuFieldType::U32},
             {"lodGroup", offsetof(R, lodGroup), GpuFieldType::U32},
+            {"triangleCount", offsetof(R, triangleCount), GpuFieldType::U32},
             {"streamRoot", offsetof(R, streamRoot), GpuFieldType::U32},
             {"lodDepth", offsetof(R, lodDepth), GpuFieldType::U32},
         },
@@ -39,9 +41,10 @@ auto makeMeshSchema() -> GpuSchema {
         .name = "GpuMeshEntry",
         .stride = sizeof(M),
         .fields = {
-            {"firstIndex", offsetof(M, firstIndex), GpuFieldType::U32},
             {"vertexOffset", offsetof(M, vertexOffset), GpuFieldType::I32},
-            {"indexCount", offsetof(M, indexCount), GpuFieldType::U32},
+            {"meshletOffset", offsetof(M, meshletOffset), GpuFieldType::U32},
+            {"meshletCount", offsetof(M, meshletCount), GpuFieldType::U32},
+            {"triangleCount", offsetof(M, triangleCount), GpuFieldType::U32},
         },
     };
 }
@@ -55,16 +58,57 @@ auto makeMaterialSchema() -> GpuSchema {
 }
 
 auto makeCommandSchema() -> GpuSchema {
-    using C = RhiDrawIndexedIndirectCommand;
+    using C = DrawRecord;
     return {
-        .name = "RhiDrawIndexedIndirectCommand",
+        .name = "DrawRecord",
         .stride = sizeof(C),
         .fields = {
-            {"indexCount", offsetof(C, indexCount), GpuFieldType::U32},
-            {"instanceCount", offsetof(C, instanceCount), GpuFieldType::U32},
-            {"firstIndex", offsetof(C, firstIndex), GpuFieldType::U32},
-            {"vertexOffset", offsetof(C, vertexOffset), GpuFieldType::I32},
-            {"firstInstance", offsetof(C, firstInstance), GpuFieldType::U32},
+            {"instance", offsetof(C, instance), GpuFieldType::U32},
+            {"meshletCount", offsetof(C, meshletCount), GpuFieldType::U32},
+            {"firstItem", offsetof(C, firstItem), GpuFieldType::U32},
+        },
+    };
+}
+
+auto makeRegionWorkSchema() -> GpuSchema {
+    using W = RegionWork;
+    return {
+        .name = "RegionWork",
+        .stride = sizeof(W),
+        .fields = {
+            {"taskGroupsX", offsetof(W, tasks) + offsetof(RhiDrawMeshTasksIndirectCommand, groupCountX), GpuFieldType::U32},
+            {"taskGroupsY", offsetof(W, tasks) + offsetof(RhiDrawMeshTasksIndirectCommand, groupCountY), GpuFieldType::U32},
+            {"firstItem", offsetof(W, firstItem), GpuFieldType::U32},
+            {"itemCount", offsetof(W, itemCount), GpuFieldType::U32},
+        },
+    };
+}
+
+auto makeWorkItemSchema() -> GpuSchema {
+    using I = MeshletWorkItem;
+    return {
+        .name = "MeshletWorkItem",
+        .stride = sizeof(I),
+        .fields = {
+            {"instance", offsetof(I, instance), GpuFieldType::U32},
+            {"meshlet", offsetof(I, meshlet), GpuFieldType::U32},
+        },
+    };
+}
+
+auto makeMeshletSchema() -> GpuSchema {
+    using M = GpuMeshlet;
+    return {
+        .name = "GpuMeshlet",
+        .stride = sizeof(M),
+        .fields = {
+            {"vertexOffset", offsetof(M, vertexOffset), GpuFieldType::U32},
+            {"triangleOffset", offsetof(M, triangleOffset), GpuFieldType::U32},
+            {.name = "vertices", .offset = offsetof(M, counts), .type = GpuFieldType::Byte, .byte = 0},
+            {.name = "triangles", .offset = offsetof(M, counts), .type = GpuFieldType::Byte, .byte = 1},
+            {"cone", offsetof(M, cone), GpuFieldType::Cone},
+            {"center", offsetof(M, center), GpuFieldType::Vec3},
+            {"radius", offsetof(M, radius), GpuFieldType::F32},
         },
     };
 }
@@ -107,7 +151,12 @@ auto makeParamsSchema() -> GpuSchema {
             {"cullEnabled", offsetof(P, cullEnabled), GpuFieldType::U32},
             {"commandCapacity", offsetof(P, commandCapacity), GpuFieldType::U32},
             {"groupCount", offsetof(P, groupCount), GpuFieldType::U32},
+            {"occlusion", offsetof(P, occlusion), GpuFieldType::U32},
+            {"hzbWidth", offsetof(P, hzbWidth), GpuFieldType::U32},
+            {"hzbHeight", offsetof(P, hzbHeight), GpuFieldType::U32},
+            {"workCapacity", offsetof(P, workCapacity), GpuFieldType::U32},
             {"commandsUsed", offsetof(P, commandsUsed), GpuFieldType::U32},
+            {"cameraPosition", offsetof(P, cameraPosition), GpuFieldType::Vec4},
         },
     };
     for (uint32_t r = 0; r < DrawLists::regionCount; r++) {
@@ -141,6 +190,7 @@ auto makeViewUboSchema() -> GpuSchema {
         .fields = {
             {"view", offsetof(UniformBufferObject, view), GpuFieldType::Mat4},
             {"proj", offsetof(UniformBufferObject, proj), GpuFieldType::Mat4},
+            {"cullViewProj", offsetof(UniformBufferObject, cullViewProj), GpuFieldType::Mat4},
         },
     };
 }
@@ -163,6 +213,9 @@ auto schemaForResource(std::string_view resource) -> const GpuSchema& {
     static const GpuSchema mesh = makeMeshSchema();
     static const GpuSchema material = makeMaterialSchema();
     static const GpuSchema command = makeCommandSchema();
+    static const GpuSchema meshlet = makeMeshletSchema();
+    static const GpuSchema regionWork = makeRegionWorkSchema();
+    static const GpuSchema workItem = makeWorkItemSchema();
     static const GpuSchema totals = makeCounterSchema("CullTotals");
     static const GpuSchema groups = makeCounterSchema("CullGroupCounters");
     static const GpuSchema offsets = makeOffsetSchema();
@@ -182,6 +235,15 @@ auto schemaForResource(std::string_view resource) -> const GpuSchema& {
     }
     if (resource == "gpuscene.materials") {
         return material;
+    }
+    if (resource == "gpuscene.meshlets") {
+        return meshlet;
+    }
+    if (resource == "cullRegionWork") {
+        return regionWork;
+    }
+    if (resource == "cullWorkItems") {
+        return workItem;
     }
     if (resource == "drawCommands") {
         return command;
@@ -225,6 +287,10 @@ auto fieldTypeName(GpuFieldType type) -> const char* {
             return "mat4";
         case GpuFieldType::CullPlane:
             return "cullplane";
+        case GpuFieldType::Byte:
+            return "u8";
+        case GpuFieldType::Cone:
+            return "cone";
     }
     return "?";
 }
@@ -265,6 +331,19 @@ auto decodeField(const GpuField& field, std::span<const std::byte> row) -> std::
         }
         case GpuFieldType::CullPlane:
             return cullPlaneName((load<uint32_t>(row, field.offset) >> (4 * field.nibble)) & 0xFu);
+        case GpuFieldType::Byte:
+            return std::format("{}", (load<uint32_t>(row, field.offset) >> (8 * field.byte)) & 0xFFu);
+        case GpuFieldType::Cone: {
+            auto packed = load<uint32_t>(row, field.offset);
+            std::array<float, 4> c = {};
+            for (uint32_t i = 0; i < 4; i++) {
+                c[i] = (float) (int8_t) ((packed >> (8 * i)) & 0xFFu) / 127.0f;
+            }
+            if (c[3] >= 1.0f) {
+                return "none";
+            }
+            return std::format("axis ({:.2f}, {:.2f}, {:.2f}) cutoff {:.2f}", c[0], c[1], c[2], c[3]);
+        }
         case GpuFieldType::Mat4: {
             auto m = load<glm::mat4>(row, field.offset);
             // Rows of the matrix, as it reads mathematically (glm is column-major).
@@ -318,6 +397,8 @@ auto cullPlaneName(uint32_t code) -> const char* {
             return "near";
         case 5:
             return "far";
+        case 0xC:
+            return "occluded";
         case 0xD:
             return "LOD level not drawn";
         case 0xE:

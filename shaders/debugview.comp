@@ -27,6 +27,8 @@ const uint viewTriangleSize = 2;
 const uint viewOverdraw = 3;
 const uint viewUv = 8;
 const uint viewStreaming = 9;
+const uint viewMeshlet = 10;
+const uint viewMeshletCull = 11;
 
 const vec3 background = vec3(0.02);
 // How strongly the streaming view's colours cover the lit image.
@@ -84,6 +86,13 @@ void main() {
             color = heat(1.0 - clamp(log2(max(v.r, 1e-3)) / log2(1000.0), 0.0, 1.0));
         } else if (push.mode == viewOverdraw) {
             color = heat(v.r / push.overdrawMax);
+        } else if (push.mode == viewMeshlet) {
+            color = idColor(uint(v.r) * 2654435761u + uint(v.g));
+        } else if (push.mode == viewMeshletCull) {
+            // Kept green, frustum red, cone blue, hidden by depth magenta; each meshlet a shade of its own so their edges show.
+            const vec3 reasonColors[4] = vec3[4](vec3(0.2, 0.8, 0.25), vec3(0.95, 0.2, 0.15), vec3(0.2, 0.4, 1.0), vec3(1.0, 0.2, 0.9));
+            float shade = 0.7 + 0.3 * idColor(uint(v.b) * 2654435761u + uint(v.g)).r;
+            color = reasonColors[min(uint(v.r), 3u)] * shade;
         } else if (push.mode == viewUv) {
             vec2 uv = fract(v.rg);
             bool odd = (int(floor(v.r * 8.0)) + int(floor(v.g * 8.0))) % 2 != 0;

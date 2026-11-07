@@ -37,13 +37,20 @@ struct RenderSnapshot {
     int windowHeight = 0;
 
     GBufferView gbufferViewMode = GBufferView::Lit;
+    int hzbLevel = 0;                      // the depth pyramid level the Hzb buffer view shows
     DebugView debugView = DebugView::None; // replaces the lit image when on (DebugViewPass)
     // Per streaming root slot, its state (StreamingRootState, with streamingStateFinding), for the streaming view; empty while it is off.
     std::vector<uint32_t> streamingStates;
     bool showBufferOverlay = false;
     bool showShadowOverlay = false;
     bool antiAliasing = true;
-    bool depthPrepass = false; // off by default: costs more than it saves without heavy overdraw
+    bool depthPrepass = false; // off by default: costs more than it saves without heavy overdraw; with it on, occlusion's phases draw in it
+    // Two-phase occlusion culling of the camera's instances and meshlets against a depth pyramid (DepthPyramid): the geometry pass draws
+    // the two phases, or the depth prepass when it is on. Skipped while culling is off.
+    bool occlusion = true;
+    // The culling camera isn't the rendered one (a debug camera rendering while the main camera culls, a frozen culling frustum): occlusion's
+    // depth is drawn from the culling camera into a depth buffer of its own, and the geometry pass draws without the prepass's Equal test.
+    bool cullCameraSeparate = false;
     SamplerSettings sampler;
 
     // GPU culling inputs: the camera frustum to cull against (live,

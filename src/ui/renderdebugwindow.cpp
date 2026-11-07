@@ -87,9 +87,9 @@ auto drawSceneTab(const RenderDebugSnapshot& s, const PrimPathOf& primPath, Rend
     uint64_t vertices = 0;
     uint64_t meshBytes = 0;
     for (const auto& m : s.meshes) {
-        triangles += m.indexCount / 3;
+        triangles += m.triangleCount;
         vertices += m.vertexCount;
-        meshBytes += m.vertexBytes + m.indexBytes;
+        meshBytes += m.vertexBytes + m.meshletBytes;
     }
     uint64_t textureBytes = 0;
     for (const auto& t : s.textures) {
@@ -97,7 +97,7 @@ auto drawSceneTab(const RenderDebugSnapshot& s, const PrimPathOf& primPath, Rend
     }
     char buf[32];
     char buf2[32];
-    ImGui::Text("%u instances (%u culled, %u drawn by the shadow pass), %zu meshes, %llu triangles, %llu vertices, %s", s.instanceCount, s.culledInstances, s.primFirstInstances, s.meshes.size(), (unsigned long long) triangles, (unsigned long long) vertices, formatBytes(meshBytes, buf, sizeof(buf)));
+    ImGui::Text("%u instances (%u culled), %zu meshes, %llu triangles, %llu vertices, %s", s.instanceCount, s.culledInstances, s.meshes.size(), (unsigned long long) triangles, (unsigned long long) vertices, formatBytes(meshBytes, buf, sizeof(buf)));
     ImGui::Text("%u materials, %u with a texture, %u cutout (%u instances), %zu textures, %s", s.materialCount, s.materialsWithTexture, s.cutoutMaterials, s.cutoutInstances, s.textures.size(), formatBytes(textureBytes, buf2, sizeof(buf2)));
     if (s.hasSun) {
         ImGui::Text("%u lights; sun direction (%.2f %.2f %.2f) radiance (%.2f %.2f %.2f) shadow colour (%.2f %.2f %.2f); shadow map %ux%u", s.lightCount, s.sunDirection.x, s.sunDirection.y, s.sunDirection.z, s.sunRadiance.x, s.sunRadiance.y, s.sunRadiance.z, s.sunShadowColor.x, s.sunShadowColor.y, s.sunShadowColor.z, s.shadowMapExtent.width, s.shadowMapExtent.height);
@@ -113,12 +113,13 @@ auto drawSceneTab(const RenderDebugSnapshot& s, const PrimPathOf& primPath, Rend
 
     // Meshes, sortable.
     ImGui::TextUnformatted("Meshes");
-    if (ImGui::BeginTable("##meshes", 6, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Sortable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp, ImVec2(0, 220.0f))) {
+    if (ImGui::BeginTable("##meshes", 7, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Sortable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp, ImVec2(0, 220.0f))) {
         ImGui::TableSetupColumn("Mesh", ImGuiTableColumnFlags_WidthFixed, 60.0f);
         ImGui::TableSetupColumn("Triangles", ImGuiTableColumnFlags_DefaultSort | ImGuiTableColumnFlags_PreferSortDescending);
         ImGui::TableSetupColumn("Vertices");
+        ImGui::TableSetupColumn("Meshlets");
         ImGui::TableSetupColumn("Vertex bytes");
-        ImGui::TableSetupColumn("Index bytes");
+        ImGui::TableSetupColumn("Meshlet bytes");
         ImGui::TableSetupColumn("Instances");
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableHeadersRow();
@@ -137,13 +138,15 @@ auto drawSceneTab(const RenderDebugSnapshot& s, const PrimPathOf& primPath, Rend
                         case 0:
                             return m->meshIndex;
                         case 1:
-                            return m->indexCount / 3;
+                            return m->triangleCount;
                         case 2:
                             return m->vertexCount;
                         case 3:
-                            return m->vertexBytes;
+                            return m->meshletCount;
                         case 4:
-                            return m->indexBytes;
+                            return m->vertexBytes;
+                        case 5:
+                            return m->meshletBytes;
                         default:
                             return m->instances;
                     }
@@ -156,14 +159,16 @@ auto drawSceneTab(const RenderDebugSnapshot& s, const PrimPathOf& primPath, Rend
             ImGui::TableSetColumnIndex(0);
             ImGui::Text("%u", m->meshIndex);
             ImGui::TableSetColumnIndex(1);
-            ImGui::Text("%u", m->indexCount / 3);
+            ImGui::Text("%u", m->triangleCount);
             ImGui::TableSetColumnIndex(2);
             ImGui::Text("%u", m->vertexCount);
             ImGui::TableSetColumnIndex(3);
-            ImGui::TextUnformatted(formatBytes(m->vertexBytes, buf, sizeof(buf)));
+            ImGui::Text("%u", m->meshletCount);
             ImGui::TableSetColumnIndex(4);
-            ImGui::TextUnformatted(formatBytes(m->indexBytes, buf, sizeof(buf)));
+            ImGui::TextUnformatted(formatBytes(m->vertexBytes, buf, sizeof(buf)));
             ImGui::TableSetColumnIndex(5);
+            ImGui::TextUnformatted(formatBytes(m->meshletBytes, buf, sizeof(buf)));
+            ImGui::TableSetColumnIndex(6);
             ImGui::Text("%u", m->instances);
         }
         ImGui::EndTable();
@@ -341,7 +346,7 @@ auto drawFrameTab(const RenderDebugSnapshot& s) -> void {
 
 auto drawViewTab(RenderDebugViewFlags& view) -> void {
     ImGui::TextUnformatted("Buffer view");
-    static const char* modes[] = {"Lit", "Albedo", "Normals", "Depth", "Shadow factor", "Shadow map", "Shadow UV", "World position", "Mip level", "Cascades", "LOD level"};
+    static const char* modes[] = {"Lit", "Albedo", "Normals", "Depth", "Shadow factor", "Shadow map", "Shadow UV", "World position", "Mip level", "Cascades", "LOD level", "Depth pyramid"};
     for (int i = 0; i < (int) (sizeof(modes) / sizeof(modes[0])); i++) {
         if (i % 4 != 0) {
             ImGui::SameLine();

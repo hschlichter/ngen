@@ -101,9 +101,12 @@ auto GpuScene::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* qu
     staging.assign(frameSlots, nullptr);
     stagingMapped.assign(frameSlots, nullptr);
     stagingBytes.assign(frameSlots, 0);
-    vertices = {.usage = RhiBufferUsage::Vertex, .readState = RhiBufferState::VertexRead, .name = "gpuscene.pool.vertices"};
-    positions = {.usage = RhiBufferUsage::Vertex, .readState = RhiBufferState::VertexRead, .name = "gpuscene.pool.positions"};
-    indices = {.usage = RhiBufferUsage::Index, .readState = RhiBufferState::IndexRead, .name = "gpuscene.pool.indices"};
+    // The mesh shaders pull vertices and meshlets from storage buffers.
+    vertices = {.usage = RhiBufferUsage::Storage, .readState = RhiBufferState::StorageRead, .name = "gpuscene.pool.vertices"};
+    positions = {.usage = RhiBufferUsage::Storage, .readState = RhiBufferState::StorageRead, .name = "gpuscene.pool.positions"};
+    meshlets = {.usage = RhiBufferUsage::Storage, .readState = RhiBufferState::StorageRead, .name = "gpuscene.pool.meshlets"};
+    meshletVertices = {.usage = RhiBufferUsage::Storage, .readState = RhiBufferState::StorageRead, .name = "gpuscene.pool.meshletvertices"};
+    meshletTriangles = {.usage = RhiBufferUsage::Storage, .readState = RhiBufferState::StorageRead, .name = "gpuscene.pool.meshlettriangles"};
     meshTable = {.usage = RhiBufferUsage::Storage, .readState = RhiBufferState::StorageRead, .name = "gpuscene.meshtable", .zeroed = true};
     materialTable = {.usage = RhiBufferUsage::Storage, .readState = RhiBufferState::StorageRead, .name = "gpuscene.materials", .zeroed = true};
     // Never null, so every descriptor set has something to name.
@@ -113,7 +116,7 @@ auto GpuScene::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* qu
 }
 
 auto GpuScene::destroy() -> void {
-    for (auto* target : {&vertices, &positions, &indices, &meshTable, &materialTable}) {
+    for (auto* target : poolBuffers()) {
         // The pool's buffers exist once a mesh has been added.
         if (target->buffer != nullptr) {
             device->destroyBuffer(target->buffer);
@@ -194,26 +197,69 @@ auto GpuScene::poolLimitBytes() const -> uint64_t {
     return limit / granule * granule;
 }
 
-auto GpuScene::growPool(uint64_t vertexCount, uint64_t indexCount) -> void {
-    auto limit = poolLimitBytes();
-    if (vertexCount > 0) {
-        // The vertex stream reaches the limit first (a Vertex is larger than a position): it sets the vertex capacity of both.
-        auto maxVertices = limit / sizeof(Vertex);
-        auto capacity = std::min(std::max(vertexRanges.capacity() * 2, vertexRanges.capacity() + vertexCount), maxVertices);
-        ensureCapacity(vertices, capacity * sizeof(Vertex), maxVertices * sizeof(Vertex));
-        ensureCapacity(positions, capacity * sizeof(std::array<float, 3>), maxVertices * sizeof(std::array<float, 3>));
-        vertexRanges.grow(std::min(vertices.capacity / sizeof(Vertex), positions.capacity / sizeof(std::array<float, 3>)));
+auto GpuScene::poolBuffers() -> std::array<GrowableBuffer*, 7> {
+    return {&vertices, &positions, &meshlets, &meshletVertices, &meshletTriangles, &meshTable, &materialTable};
+}
+
+auto GpuScene::poolReady() const -> bool {
+    return vertices.buffer != nullptr && positions.buffer != nullptr && meshlets.buffer != nullptr && meshletVertices.buffer != nullptr && meshletTriangles.buffer != nullptr;
+}
+
+auto GpuScene::rangesOf(Pool pool) -> PoolAllocator& {
+    switch (pool) {
+        case Pool::Vertices:
+            return vertexRanges;
+        case Pool::Meshlets:
+            return meshletRanges;
+        case Pool::MeshletVertices:
+            return meshletVertexRanges;
+        case Pool::MeshletTriangles:
+            return meshletTriangleRanges;
     }
-    if (indexCount > 0) {
-        auto maxIndices = limit / sizeof(uint32_t);
-        auto capacity = std::min(std::max(indexRanges.capacity() * 2, indexRanges.capacity() + indexCount), maxIndices);
-        ensureCapacity(indices, capacity * sizeof(uint32_t), maxIndices * sizeof(uint32_t));
-        indexRanges.grow(indices.capacity / sizeof(uint32_t));
+    return vertexRanges;
+}
+
+auto GpuScene::growPool(Pool pool, uint64_t count) -> void {
+    auto limit = poolLimitBytes();
+    auto& ranges = rangesOf(pool);
+    auto grow = [&](GrowableBuffer& target, uint64_t elementBytes) {
+        auto maxElements = limit / elementBytes;
+        auto capacity = std::min(std::max(ranges.capacity() * 2, ranges.capacity() + count), maxElements);
+        ensureCapacity(target, capacity * elementBytes, maxElements * elementBytes);
+        return target.capacity / elementBytes;
+    };
+    switch (pool) {
+        case Pool::Vertices: {
+            // The vertex stream reaches the limit first (a Vertex is larger than a position): it sets the vertex capacity of both.
+            auto vertexCapacity = grow(vertices, sizeof(Vertex));
+            auto positionCapacity = grow(positions, sizeof(std::array<float, 3>));
+            ranges.grow(std::min(vertexCapacity, positionCapacity));
+            break;
+        }
+        case Pool::Meshlets:
+            ranges.grow(grow(meshlets, sizeof(GpuMeshlet)));
+            break;
+        case Pool::MeshletVertices:
+            ranges.grow(grow(meshletVertices, sizeof(uint32_t)));
+            break;
+        case Pool::MeshletTriangles:
+            ranges.grow(grow(meshletTriangles, sizeof(uint32_t)));
+            break;
     }
 }
 
+auto GpuScene::allocateIn(Pool pool, uint64_t count) -> std::optional<uint64_t> {
+    auto& ranges = rangesOf(pool);
+    auto first = ranges.allocate(count);
+    if (!first) {
+        growPool(pool, count);
+        first = ranges.allocate(count);
+    }
+    return first;
+}
+
 auto GpuScene::addMesh(MeshHandle handle, std::shared_ptr<const MeshDesc> mesh) -> void {
-    if (!handle || mesh == nullptr || mesh->vertices.empty() || mesh->indices.empty()) {
+    if (!handle || mesh == nullptr || mesh->vertices.empty() || mesh->meshlets.empty()) {
         return;
     }
     // The table entry exists either way: a mesh that waits has an empty one, and its draws draw nothing.
@@ -227,44 +273,50 @@ auto GpuScene::addMesh(MeshHandle handle, std::shared_ptr<const MeshDesc> mesh) 
             .text(std::format("the geometry pool is full ({} MiB per buffer): meshes that don't fit wait, undrawn, until removed meshes make room", limit / (1024 * 1024)))
             .field("limitBytes", (int64_t) limit)
             .field("vertexUsed", (int64_t) vertexRanges.used())
-            .field("indexUsed", (int64_t) indexRanges.used());
+            .field("meshletUsed", (int64_t) meshletRanges.used());
     }
     waitingMeshes.push_back({.handle = handle, .mesh = std::move(mesh)});
 }
 
 auto GpuScene::placeMesh(MeshHandle handle, const std::shared_ptr<const MeshDesc>& mesh) -> bool {
+    std::array<std::pair<Pool, uint64_t>, 4> wanted = {{
+        {Pool::Vertices, mesh->vertices.size()},
+        {Pool::Meshlets, mesh->meshlets.size()},
+        {Pool::MeshletVertices, mesh->meshletVertices.size()},
+        {Pool::MeshletTriangles, mesh->meshletTriangles.size()},
+    }};
+    std::array<uint64_t, 4> first = {};
+    for (size_t p = 0; p < wanted.size(); p++) {
+        auto range = allocateIn(wanted[p].first, wanted[p].second);
+        if (!range) {
+            // Doesn't fit: give back what it took.
+            for (size_t taken = 0; taken < p; taken++) {
+                rangesOf(wanted[taken].first).free(first[taken], wanted[taken].second);
+            }
+            return false;
+        }
+        first[p] = *range;
+    }
     uint64_t vertexCount = mesh->vertices.size();
-    uint64_t indexCount = mesh->indices.size();
-    auto vertexFirst = vertexRanges.allocate(vertexCount);
-    if (!vertexFirst) {
-        growPool(vertexCount, 0);
-        vertexFirst = vertexRanges.allocate(vertexCount);
-    }
-    if (!vertexFirst) {
-        return false;
-    }
-    auto indexFirst = indexRanges.allocate(indexCount);
-    if (!indexFirst) {
-        growPool(0, indexCount);
-        indexFirst = indexRanges.allocate(indexCount);
-    }
-    if (!indexFirst) {
-        vertexRanges.free(*vertexFirst, vertexCount);
-        return false;
-    }
     meshes[handle.index] = {
-        .firstIndex = (uint32_t) *indexFirst,
-        .vertexOffset = (int32_t) *vertexFirst,
-        .indexCount = (uint32_t) indexCount,
+        .vertexOffset = (int32_t) first[0],
         .vertexCount = (uint32_t) vertexCount,
+        .meshletOffset = (uint32_t) first[1],
+        .meshletCount = (uint32_t) mesh->meshlets.size(),
+        .meshletVertexOffset = (uint32_t) first[2],
+        .meshletVertexCount = (uint32_t) mesh->meshletVertices.size(),
+        .meshletTriangleOffset = (uint32_t) first[3],
+        .meshletTriangleCount = (uint32_t) mesh->meshletTriangles.size(),
         .vertexBytes = vertexCount * (sizeof(Vertex) + sizeof(std::array<float, 3>)),
-        .indexBytes = indexCount * sizeof(uint32_t),
+        .meshletBytes = (mesh->meshlets.size() * sizeof(GpuMeshlet)) + ((mesh->meshletVertices.size() + mesh->meshletTriangles.size()) * sizeof(uint32_t)),
     };
     meshData[handle.index] = mesh;
     // The data before the entry: a mesh is drawn once its entry says so.
     queue.push_back({.kind = Upload::Kind::MeshVertices, .handle = handle.index, .bytes = vertexCount * sizeof(Vertex)});
     queue.push_back({.kind = Upload::Kind::MeshPositions, .handle = handle.index, .bytes = vertexCount * sizeof(std::array<float, 3>)});
-    queue.push_back({.kind = Upload::Kind::MeshIndices, .handle = handle.index, .bytes = indexCount * sizeof(uint32_t)});
+    queue.push_back({.kind = Upload::Kind::MeshMeshlets, .handle = handle.index, .bytes = mesh->meshlets.size() * sizeof(GpuMeshlet)});
+    queue.push_back({.kind = Upload::Kind::MeshMeshletVertices, .handle = handle.index, .bytes = mesh->meshletVertices.size() * sizeof(uint32_t)});
+    queue.push_back({.kind = Upload::Kind::MeshMeshletTriangles, .handle = handle.index, .bytes = mesh->meshletTriangles.size() * sizeof(uint32_t)});
     queue.push_back({.kind = Upload::Kind::MeshEntry, .handle = handle.index, .bytes = sizeof(GpuMeshEntry)});
     return true;
 }
@@ -302,18 +354,19 @@ auto GpuScene::uploadStats() const -> UploadStats {
 }
 
 auto GpuScene::geometryPoolStats() const -> GeometryPoolStats {
+    auto limit = poolLimitBytes();
     GeometryPoolStats stats = {
-        .limitBytes = poolLimitBytes(),
-        .vertexLimit = poolLimitBytes() / sizeof(Vertex),
-        .indexLimit = poolLimitBytes() / sizeof(uint32_t),
-        .vertexCapacity = vertexRanges.capacity(),
-        .vertexUsed = vertexRanges.used(),
-        .indexCapacity = indexRanges.capacity(),
-        .indexUsed = indexRanges.used(),
+        .limitBytes = limit,
+        .vertices = {.limit = limit / sizeof(Vertex), .capacity = vertexRanges.capacity(), .used = vertexRanges.used()},
+        .meshlets = {.limit = limit / sizeof(GpuMeshlet), .capacity = meshletRanges.capacity(), .used = meshletRanges.used()},
+        .meshletVertices = {.limit = limit / sizeof(uint32_t), .capacity = meshletVertexRanges.capacity(), .used = meshletVertexRanges.used()},
+        .meshletTriangles = {.limit = limit / sizeof(uint32_t), .capacity = meshletTriangleRanges.capacity(), .used = meshletTriangleRanges.used()},
         .waitingMeshes = (uint32_t) waitingMeshes.size(),
     };
     for (const auto& waiting : waitingMeshes) {
-        stats.waitingBytes += waiting.mesh->vertices.size() * (sizeof(Vertex) + sizeof(std::array<float, 3>)) + waiting.mesh->indices.size() * sizeof(uint32_t);
+        const auto& mesh = *waiting.mesh;
+        stats.waitingBytes += (mesh.vertices.size() * (sizeof(Vertex) + sizeof(std::array<float, 3>))) + (mesh.meshlets.size() * sizeof(GpuMeshlet)) +
+                              ((mesh.meshletVertices.size() + mesh.meshletTriangles.size()) * sizeof(uint32_t));
     }
     return stats;
 }
@@ -331,7 +384,9 @@ auto GpuScene::removeMesh(MeshHandle handle) -> void {
     });
     // Its ranges can be written at once: the next copy's barrier orders it after every earlier frame's reads (one queue).
     vertexRanges.free((uint64_t) it->second.vertexOffset, it->second.vertexCount);
-    indexRanges.free(it->second.firstIndex, it->second.indexCount);
+    meshletRanges.free(it->second.meshletOffset, it->second.meshletCount);
+    meshletVertexRanges.free(it->second.meshletVertexOffset, it->second.meshletVertexCount);
+    meshletTriangleRanges.free(it->second.meshletTriangleOffset, it->second.meshletTriangleCount);
     poolRoomFreed = true;
     meshes.erase(it);
     meshData.erase(handle.index);
@@ -548,7 +603,8 @@ auto GpuScene::beginFrame(uint64_t frame) -> bool {
 }
 
 auto GpuScene::idle() const -> bool {
-    bool fresh = std::ranges::any_of(std::array{&vertices, &positions, &indices, &meshTable, &materialTable}, [](const GrowableBuffer* target) { return target->fresh; });
+    auto buffers = std::array{&vertices, &positions, &meshlets, &meshletVertices, &meshletTriangles, &meshTable, &materialTable};
+    bool fresh = std::ranges::any_of(buffers, [](const GrowableBuffer* target) { return target->fresh; });
     return queue.empty() && texturesCopied.empty() && !fresh;
 }
 
@@ -564,7 +620,7 @@ template <typename Retire>
 auto GpuScene::record(RhiCommandBuffer* cmd, uint64_t budget, const Retire& retire) -> void {
     // The buffers there are: the pool's exist once a mesh has been added.
     std::vector<GrowableBuffer*> targets;
-    for (auto* target : {&vertices, &positions, &indices, &meshTable, &materialTable}) {
+    for (auto* target : poolBuffers()) {
         if (target->buffer != nullptr) {
             targets.push_back(target);
         }
@@ -673,16 +729,50 @@ auto GpuScene::record(RhiCommandBuffer* cmd, uint64_t budget, const Retire& reti
                 cmd->copyBuffer(batch, positions.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) meshes.at(upload.handle).vertexOffset * sizeof(std::array<float, 3>), .size = upload.bytes});
                 break;
             }
-            case Upload::Kind::MeshIndices: {
+            case Upload::Kind::MeshMeshlets: {
+                // Offsets made pool positions, so a shader reads a meshlet without its mesh's ranges.
                 const auto& mesh = *meshData.at(upload.handle);
-                std::memcpy(dst, mesh.indices.data(), upload.bytes);
-                cmd->copyBuffer(batch, indices.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) meshes.at(upload.handle).firstIndex * sizeof(uint32_t), .size = upload.bytes});
+                const auto& range = meshes.at(upload.handle);
+                auto* out = reinterpret_cast<GpuMeshlet*>(dst);
+                for (size_t i = 0; i < mesh.meshlets.size(); i++) {
+                    const auto& meshlet = mesh.meshlets[i];
+                    uint32_t cone = 0;
+                    for (uint32_t c = 0; c < 4; c++) {
+                        cone |= (uint32_t) (uint8_t) meshlet.cone[c] << (8 * c);
+                    }
+                    out[i] = {
+                        .vertexOffset = range.meshletVertexOffset + meshlet.vertexOffset,
+                        .triangleOffset = range.meshletTriangleOffset + meshlet.triangleOffset,
+                        .counts = meshlet.vertexCount | (meshlet.triangleCount << 8),
+                        .cone = cone,
+                        .center = glm::vec3(meshlet.center[0], meshlet.center[1], meshlet.center[2]),
+                        .radius = meshlet.radius,
+                    };
+                }
+                cmd->copyBuffer(batch, meshlets.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) range.meshletOffset * sizeof(GpuMeshlet), .size = upload.bytes});
+                break;
+            }
+            case Upload::Kind::MeshMeshletVertices: {
+                const auto& mesh = *meshData.at(upload.handle);
+                std::memcpy(dst, mesh.meshletVertices.data(), upload.bytes);
+                cmd->copyBuffer(batch, meshletVertices.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) meshes.at(upload.handle).meshletVertexOffset * sizeof(uint32_t), .size = upload.bytes});
+                break;
+            }
+            case Upload::Kind::MeshMeshletTriangles: {
+                const auto& mesh = *meshData.at(upload.handle);
+                std::memcpy(dst, mesh.meshletTriangles.data(), upload.bytes);
+                cmd->copyBuffer(batch, meshletTriangles.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) meshes.at(upload.handle).meshletTriangleOffset * sizeof(uint32_t), .size = upload.bytes});
                 break;
             }
             case Upload::Kind::MeshEntry: {
                 GpuMeshEntry entry;
                 if (auto it = meshes.find(upload.handle); it != meshes.end()) {
-                    entry = {.firstIndex = it->second.firstIndex, .vertexOffset = it->second.vertexOffset, .indexCount = it->second.indexCount};
+                    entry = {
+                        .vertexOffset = it->second.vertexOffset,
+                        .meshletOffset = it->second.meshletOffset,
+                        .meshletCount = it->second.meshletCount,
+                        .triangleCount = it->second.meshletTriangleCount,
+                    };
                     // Every upload of the mesh is recorded by now: its data can go.
                     meshData.erase(upload.handle);
                 }
@@ -731,7 +821,7 @@ auto GpuScene::record(RhiCommandBuffer* cmd, uint64_t budget, const Retire& reti
 
 auto GpuScene::addUploadPass(FrameGraph& fg, uint64_t frame) -> void {
     currentFrame = frame;
-    bool moves = std::ranges::any_of(std::array{&vertices, &positions, &indices, &meshTable, &materialTable}, [](const GrowableBuffer* target) { return target->fresh; });
+    bool moves = std::ranges::any_of(poolBuffers(), [](const GrowableBuffer* target) { return target->fresh; });
     if (queue.empty() && !moves) {
         return;
     }
@@ -781,8 +871,11 @@ auto GpuScene::ensureInstanceCapacity(uint32_t count, uint32_t liveCount, uint64
     // Frames in flight may still read the old buffer.
     deletionQueue->deferBuffer(frame, instances);
 
-    constexpr uint32_t minCapacity = 256;
-    instanceCapacity = std::max({count, instanceCapacity * 2, minCapacity});
+    // A multiple of 256 slots, so the culling records after the draw records start on a 32 KiB boundary: bound at that offset, they meet
+    // any device's storage buffer offset alignment (at most 256 bytes).
+    constexpr uint32_t slotGranule = 256;
+    auto wanted = std::max({count, instanceCapacity * 2, slotGranule});
+    instanceCapacity = (wanted + slotGranule - 1) / slotGranule * slotGranule;
     instances = device->createBuffer({
         .size = instanceBufferBytes(),
         .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferDst | RhiBufferUsage::TransferSrc,
@@ -827,9 +920,10 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
     if (upload.empty()) {
         return handle;
     }
-    // Only the changed records, packed: the slot's staging when they fit in it (grown up to stagingLimit), else a buffer of their own
-    // for this frame, freed once the frame is done.
-    auto bytes = (uint64_t) upload.size() * sizeof(GpuInstanceRecord);
+    // Only the changed records, packed (the draw records, then the culling records): the slot's staging when they fit in it (grown up to
+    // stagingLimit), else a buffer of their own for this frame, freed once the frame is done.
+    auto recordBytes = (uint64_t) upload.size() * sizeof(GpuInstanceRecord);
+    auto bytes = recordBytes + ((uint64_t) upload.size() * sizeof(GpuCullRecord));
     RhiBuffer* buffer = nullptr;
     void* mapped = nullptr;
     if (bytes <= stagingLimit) {
@@ -852,14 +946,13 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
         deletionQueue->deferBuffer(currentFrame, buffer);
     }
     auto* dst = static_cast<GpuInstanceRecord*>(mapped);
+    auto* cullDst = reinterpret_cast<GpuCullRecord*>(static_cast<std::byte*>(mapped) + recordBytes);
     std::vector<RhiBufferCopy> regions;
+    std::vector<RhiBufferCopy> cullRegions;
     for (size_t i = 0; i < upload.size(); i++) {
         auto m = upload[i];
         const auto& inst = sceneInstances[m];
         uint32_t flags = 0;
-        if (inst.primFirst) {
-            flags |= gpuInstancePrimFirst;
-        }
         if (inst.doubleSided) {
             flags |= gpuInstanceDoubleSided;
         }
@@ -869,9 +962,6 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
         if (inst.cutout) {
             flags |= gpuInstanceCutout;
         }
-        if (inst.primHasCutout) {
-            flags |= gpuInstancePrimHasCutout;
-        }
         if (!inst.alive) {
             dst[i] = {.model = glm::mat4(1.0f), .mesh = deadMesh};
         } else {
@@ -879,29 +969,44 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
                 .model = inst.transform,
                 .material = materialEntry(inst.material),
                 .mesh = inst.mesh.index,
-                .indexOffset = inst.indexOffset,
-                .indexCount = inst.indexCount,
+                .meshletOffset = inst.meshletOffset,
+                .meshletCount = inst.meshletCount,
                 .boundsMin = inst.worldBounds.min,
                 .flags = flags,
                 .boundsMax = inst.worldBounds.max,
                 .lodLevel = inst.lodLevel,
                 .lodGroup = inst.lodGroup,
+                .triangleCount = inst.indexCount / 3,
                 .streamRoot = inst.streamRoot,
                 .lodDepth = inst.lodDepth,
             };
         }
+        const auto& record = dst[i];
+        cullDst[i] = {
+            .boundsMin = record.boundsMin,
+            .flags = record.flags,
+            .boundsMax = record.boundsMax,
+            .lod = (record.lodLevel & 0xFFu) | (record.lodGroup << 8),
+            .mesh = record.mesh,
+            .meshletOffset = record.meshletOffset,
+            .meshletCount = record.meshletCount,
+            .triangleCount = record.triangleCount,
+        };
         // A run of consecutive slots is one region.
-        auto srcOffset = (uint64_t) i * sizeof(GpuInstanceRecord);
-        auto dstOffset = (uint64_t) m * sizeof(GpuInstanceRecord);
-        if (!regions.empty() && regions.back().srcOffset + regions.back().size == srcOffset && regions.back().dstOffset + regions.back().size == dstOffset) {
-            regions.back().size += sizeof(GpuInstanceRecord);
-        } else {
-            regions.push_back({.srcOffset = srcOffset, .dstOffset = dstOffset, .size = sizeof(GpuInstanceRecord)});
-        }
+        auto addRun = [](std::vector<RhiBufferCopy>& runs, uint64_t srcOffset, uint64_t dstOffset, uint64_t size) {
+            if (!runs.empty() && runs.back().srcOffset + runs.back().size == srcOffset && runs.back().dstOffset + runs.back().size == dstOffset) {
+                runs.back().size += size;
+            } else {
+                runs.push_back({.srcOffset = srcOffset, .dstOffset = dstOffset, .size = size});
+            }
+        };
+        addRun(regions, (uint64_t) i * sizeof(GpuInstanceRecord), (uint64_t) m * sizeof(GpuInstanceRecord), sizeof(GpuInstanceRecord));
+        addRun(cullRegions, recordBytes + ((uint64_t) i * sizeof(GpuCullRecord)), cullRecordsOffset() + ((uint64_t) m * sizeof(GpuCullRecord)), sizeof(GpuCullRecord));
     }
+    lastInstanceRegions = (uint32_t) regions.size();
+    regions.insert(regions.end(), cullRegions.begin(), cullRegions.end());
     auto stagingHandle = fg.importBuffer("instanceStaging", buffer, {.size = bytes, .usage = RhiBufferUsage::TransferSrc});
     lastInstanceUploads = (uint32_t) upload.size();
-    lastInstanceRegions = (uint32_t) regions.size();
     return addInstanceUploadPass(fg, stagingHandle, instanceImport, std::move(regions));
 }
 

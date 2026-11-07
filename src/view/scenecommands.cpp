@@ -163,6 +163,10 @@ auto sceneThreadRecord(const ViewContext& view) -> Json {
     };
 }
 
+auto poolUseJson(const RenderDebugPoolUse& use) -> Json {
+    return {{"limit", use.limit}, {"capacity", use.capacity}, {"used", use.used}};
+}
+
 auto gpuSceneRecord(const ViewContext& view) -> Json {
     auto s = view.renderThread.latestSceneGpuStats();
     const auto& u = s.uploads;
@@ -182,12 +186,10 @@ auto gpuSceneRecord(const ViewContext& view) -> Json {
           {"lastInstanceUpload", {{"records", u.instanceRecords}, {"regions", u.instanceRegions}}}}},
         {"geometryPool",
          {{"limitBytes", p.limitBytes},
-          {"vertexLimit", p.vertexLimit},
-          {"indexLimit", p.indexLimit},
-          {"vertexCapacity", p.vertexCapacity},
-          {"vertexUsed", p.vertexUsed},
-          {"indexCapacity", p.indexCapacity},
-          {"indexUsed", p.indexUsed},
+          {"vertices", poolUseJson(p.vertices)},
+          {"meshlets", poolUseJson(p.meshlets)},
+          {"meshletVertices", poolUseJson(p.meshletVertices)},
+          {"meshletTriangles", poolUseJson(p.meshletTriangles)},
           {"waitingMeshes", p.waitingMeshes},
           {"waitingBytes", p.waitingBytes}}},
     };

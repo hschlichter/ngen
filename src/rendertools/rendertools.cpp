@@ -281,18 +281,7 @@ auto RenderTools::buildRenderDebugSnapshot(const Renderer& renderer) const -> Re
     snap.currentSlot = state.slot;
     state.device->allocations(snap.allocations);
     state.device->memoryHeaps(snap.heaps);
-    auto pool = gpuScene.geometryPoolStats();
-    snap.geometryPool = {
-        .limitBytes = pool.limitBytes,
-        .vertexLimit = pool.vertexLimit,
-        .indexLimit = pool.indexLimit,
-        .vertexCapacity = pool.vertexCapacity,
-        .vertexUsed = pool.vertexUsed,
-        .indexCapacity = pool.indexCapacity,
-        .indexUsed = pool.indexUsed,
-        .waitingMeshes = pool.waitingMeshes,
-        .waitingBytes = pool.waitingBytes,
-    };
+    snap.geometryPool = renderer.sceneGpuStats().geometryPool;
 
     snap.culledInstances = state.culledInstances;
     std::unordered_map<uint32_t, uint32_t> instancesPerMesh;
@@ -303,9 +292,6 @@ auto RenderTools::buildRenderDebugSnapshot(const Renderer& renderer) const -> Re
         }
         live++;
         instancesPerMesh[inst.mesh.index]++;
-        if (inst.primFirst) {
-            snap.primFirstInstances++;
-        }
         if (inst.cutout) {
             snap.cutoutInstances++;
         }
@@ -317,9 +303,10 @@ auto RenderTools::buildRenderDebugSnapshot(const Renderer& renderer) const -> Re
         snap.meshes.push_back({
             .meshIndex = index,
             .vertexCount = cached.vertexCount,
-            .indexCount = cached.indexCount,
+            .triangleCount = cached.meshletTriangleCount,
+            .meshletCount = cached.meshletCount,
             .vertexBytes = cached.vertexBytes,
-            .indexBytes = cached.indexBytes,
+            .meshletBytes = cached.meshletBytes,
             .instances = instancesPerMesh[index],
         });
     }

@@ -43,3 +43,7 @@ Rejected: keeping a CPU path (doubles every pass), 16-bit indices per mesh (doub
   [src/renderer/README.md](../../src/renderer/README.md) "Principles".
 - Code: `drawIndexedIndirectCount` at `src/renderer/passes/geometrypass.cpp:193`, `depthprepass.cpp:106`, `shadowpass.cpp:171`, `debugviewpass.cpp:241`;
   `shaders/gbuffer.vert:10` and `:69` (`instances.data[gl_InstanceIndex]`); `src/renderer/gpuscene.h:58` (`GpuInstanceRecord`), `:73` (128 bytes).
+- Since [ADR 64](0064_meshlets_on_mesh_shaders.md) (2026-11-07): the decision holds, the mechanism changed. The mesh passes draw meshlets
+  with task and mesh shaders, one `drawMeshTasksIndirect` per region (`DrawLists::drawRegion`, `src/renderer/drawlists.cpp:454`, called from
+  `geometrypass.cpp`, `depthprepass.cpp`, `shadowpass.cpp`, `debugviewpass.cpp`); there is no index buffer and no `gbuffer.vert`. The task and
+  mesh shaders read the instance record at the slot a meshlet work item names, and the culling passes read a 48-byte culling record beside it.

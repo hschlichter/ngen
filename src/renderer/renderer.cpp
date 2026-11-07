@@ -121,7 +121,7 @@ auto Renderer::init(RhiDevice* rhiDevice, AssetClient* shaders, RhiExtent2D wind
     if (!geometryPass.init(device, pipelineRegistry, ext, depthFmt)) {
         return std::unexpected(1);
     }
-    if (!shadowPass.init(device, pipelineRegistry, shadowExtent, depthFmt, geometryPass.descriptorSetLayout())) {
+    if (!shadowPass.init(pipelineRegistry, depthFmt, geometryPass.descriptorSetLayout())) {
         return std::unexpected(1);
     }
     if (!depthPrepass.init(pipelineRegistry, depthFmt, geometryPass.descriptorSetLayout())) {
@@ -133,6 +133,10 @@ auto Renderer::init(RhiDevice* rhiDevice, AssetClient* shaders, RhiExtent2D wind
     if (!lodSelectPass.init(device, pipelineRegistry)) {
         return std::unexpected(1);
     }
+    if (!depthPyramid.init(device, pipelineRegistry)) {
+        return std::unexpected(1);
+    }
+    depthPyramid.resize(ext, depthTexture, cullDepthTexture);
     if (!lightingPass.init(device, pipelineRegistry, imgCount, ext, colorFmt)) {
         return std::unexpected(1);
     }
@@ -152,7 +156,6 @@ auto Renderer::init(RhiDevice* rhiDevice, AssetClient* shaders, RhiExtent2D wind
     gpuScene.init(device, imgCount, &deletionQueue, fallbackTexture, pendingTexture);
     drawLists.init(device, imgCount, &deletionQueue);
     lodGroups.init(device, imgCount, &deletionQueue);
-    shadowPass.bindInstanceBuffer(device, gpuScene.instanceBuffer(), deletionQueue, m_frameIndex);
     boundInstanceGeneration = gpuScene.instanceGeneration();
 
     // Frame sync
@@ -227,11 +230,37 @@ auto Renderer::recreateDepthTexture(RhiExtent2D extent) -> void {
         .debugName = "renderer.depth",
     };
     depthTexture = device->createTexture(desc);
+    // Occlusion culling's depth while the culling camera isn't the rendered one: drawn from the culling camera, read only by the pyramid.
+    if (cullDepthTexture != nullptr) {
+        device->destroyTexture(cullDepthTexture);
+    }
+    desc.debugName = "renderer.depth.cull";
+    cullDepthTexture = device->createTexture(desc);
+    // The pyramid follows the depth buffers' size and reads them; made in init once its pipeline is registered.
+    if (depthPyramid.texture() != nullptr) {
+        depthPyramid.resize(extent, depthTexture, cullDepthTexture);
+        descriptorSetsDirty = true;
+    }
 }
 
 auto Renderer::requestShaders() -> size_t {
     pipelineRegistry.requestAtStart();
     return pipelineRegistry.atStartShaders().size();
+}
+
+static auto toRenderDebug(const GpuScene::GeometryPoolStats& pool) -> RenderDebugGeometryPool {
+    auto use = [](const GpuScene::PoolUse& part) {
+        return RenderDebugPoolUse{.limit = part.limit, .capacity = part.capacity, .used = part.used};
+    };
+    return {
+        .limitBytes = pool.limitBytes,
+        .vertices = use(pool.vertices),
+        .meshlets = use(pool.meshlets),
+        .meshletVertices = use(pool.meshletVertices),
+        .meshletTriangles = use(pool.meshletTriangles),
+        .waitingMeshes = pool.waitingMeshes,
+        .waitingBytes = pool.waitingBytes,
+    };
 }
 
 // Called once the slot's fence has signalled: the zones recorded on that slot's command
@@ -366,10 +395,10 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
             .transform = inst.worldTransform,
             .indexOffset = inst.indexOffset,
             .indexCount = inst.indexCount,
-            .primFirst = inst.primFirst,
+            .meshletOffset = inst.meshletOffset,
+            .meshletCount = inst.meshletCount,
             .doubleSided = inst.doubleSided,
             .cutout = inst.cutout,
-            .primHasCutout = inst.primHasCutout,
             .lodLevel = inst.lodLevel,
             .lodDepth = inst.lodDepth,
             .lodGroup = inst.lodGroup,
@@ -381,6 +410,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
         sceneTriangles += gpuInstances[slot].indexCount / 3;
         changedSlots.push_back(slot);
     }
+    drawLists.updateGroupBounds(gpuInstances, changedSlots);
     profile::endZone();
     if (changes.lightsChanged) {
         lights = changes.lights;
@@ -411,6 +441,11 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
         if (drawLists.ensureCapacity((uint32_t) gpuInstances.size(), drawLists.commandsNeeded(), m_frameIndex)) {
             descriptorSetsDirty = true;
         }
+        // The meshlet work items: room for every live instance's meshlets twice (the camera and the cascades see a part each), grown
+        // further if a frame overflows.
+        if (drawLists.ensureWorkCapacity(drawLists.liveMeshlets() * 2, m_frameIndex)) {
+            descriptorSetsDirty = true;
+        }
     }
     {
         PROFILE_ZONE("ApplyLodGroups");
@@ -419,7 +454,6 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
         }
     }
     if (gpuScene.instanceGeneration() != boundInstanceGeneration) {
-        shadowPass.bindInstanceBuffer(device, gpuScene.instanceBuffer(), deletionQueue, m_frameIndex);
         boundInstanceGeneration = gpuScene.instanceGeneration();
         descriptorSetsDirty = true;
     }
@@ -473,19 +507,7 @@ auto Renderer::sceneGpuStats() const -> SceneGpuStats {
             .instanceRecords = uploads.instanceRecords,
             .instanceRegions = uploads.instanceRegions,
         },
-        .geometryPool = {
-            .limitBytes = pool.limitBytes,
-            .vertexLimit = pool.vertexLimit,
-            .indexLimit = pool.indexLimit,
-            .vertexLimit = pool.vertexLimit,
-            .indexLimit = pool.indexLimit,
-            .vertexCapacity = pool.vertexCapacity,
-            .vertexUsed = pool.vertexUsed,
-            .indexCapacity = pool.indexCapacity,
-            .indexUsed = pool.indexUsed,
-            .waitingMeshes = pool.waitingMeshes,
-            .waitingBytes = pool.waitingBytes,
-        },
+        .geometryPool = toRenderDebug(pool),
         .skyDrawn = debugSky,
     };
 }
@@ -538,16 +560,16 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
     geometryDescriptorSets.clear();
 
     // The culling passes name the same instance buffer and mesh table, plus the draw-list and render-LOD buffers.
-    instanceCullPass.rebuildDescriptors(device, drawLists, gpuScene, lodGroups, deletionQueue, m_frameIndex);
+    instanceCullPass.rebuildDescriptors(device, drawLists, gpuScene, lodGroups, depthPyramid, deletionQueue, m_frameIndex);
     lodSelectPass.rebuildDescriptors(device, lodGroups, deletionQueue, m_frameIndex);
 
-    // Tables come from applySceneChanges; nothing to point at before the first one.
-    if (gpuInstances.empty() || gpuScene.materialBuffer() == nullptr) {
+    // Tables come from applySceneChanges, the pool's buffers with the first mesh; nothing to point at before them.
+    if (gpuInstances.empty() || gpuScene.materialBuffer() == nullptr || !gpuScene.poolReady()) {
         return;
     }
 
-    // One set per frame slot: the slot's UBO plus the scene
-    // tables. Every texture-array element is written: the slot's texture or the fallback.
+    // One set per frame slot: the slot's UBO and culling buffers plus the scene
+    // tables and the geometry pool. Every texture-array element is written: the slot's texture or the fallback.
     auto imgCount = swapchain->imageCount();
     auto bindings = GeometryPass::descriptorBindings();
     geometryDescriptorPool = device->createDescriptorPool(imgCount, bindings);
@@ -588,11 +610,24 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
             .type = StorageBuffer,
             .buffer = gpuScene.materialBuffer(),
         });
-        writes.push_back({
-            .binding = 4,
-            .type = StorageBuffer,
-            .buffer = lodGroups.stateBuffer(),
-        });
+        auto cull = drawLists.slotBuffers(i);
+        std::array<RhiBuffer*, 9> meshletBuffers = {
+            gpuScene.vertexBuffer(),
+            gpuScene.positionBuffer(),
+            gpuScene.meshletBuffer(),
+            gpuScene.meshletVertexBuffer(),
+            gpuScene.meshletTriangleBuffer(),
+            gpuScene.meshTableBuffer(),
+            cull.workItems,
+            cull.params,
+            cull.meshletStats,
+        };
+        for (uint32_t b = 0; b < meshletBuffers.size(); b++) {
+            writes.push_back({.binding = 4 + b, .type = StorageBuffer, .buffer = meshletBuffers[b]});
+        }
+        writes.push_back({.binding = 13, .type = CombinedImageSampler, .texture = depthPyramid.texture(), .sampler = depthPyramid.sampler()});
+        writes.push_back({.binding = 14, .type = StorageBuffer, .buffer = cull.regionWork});
+        writes.push_back({.binding = 15, .type = StorageBuffer, .buffer = lodGroups.stateBuffer()});
         device->updateDescriptorSet(geometryDescriptorSets[i], writes);
     }
 }
@@ -606,18 +641,54 @@ static auto trianglesIn(const DrawLists& drawLists, uint32_t view) -> uint64_t {
     return triangles;
 }
 
+static auto meshletCountsIn(const DrawLists& drawLists, uint32_t view) -> MeshletCounts {
+    return {
+        .tested = drawLists.meshletCount(view, DrawLists::meshletCounterTested),
+        .frustumCulled = drawLists.meshletCount(view, DrawLists::meshletCounterFrustum),
+        .coneCulled = drawLists.meshletCount(view, DrawLists::meshletCounterCone),
+        .occluded = drawLists.meshletCount(view, DrawLists::meshletCounterOccluded),
+        .drawn = drawLists.meshletCount(view, DrawLists::meshletCounterDrawn),
+        .triangles = drawLists.meshletCount(view, DrawLists::meshletCounterTriangles),
+    };
+}
+
 auto Renderer::cullResult() const -> CullResult {
     CullResult result = {
         .frame = drawLists.readbackFrame(),
         .instances = drawLists.instanceCount(),
         .cameraCulled = drawLists.cameraCulled(),
-        .cameraTriangles = trianglesIn(drawLists, 0),
+        .cameraInstanceTriangles = trianglesIn(drawLists, 0) + trianglesIn(drawLists, DrawLists::lateView),
         .cascadeCount = drawLists.cascadeCount(),
         .viewBits = drawLists.viewBits(),
         .regionOverflow = drawLists.regionOverflow(),
         .lodDropped = drawLists.lodDropped(),
         .lodFadingInstances = drawLists.fadingInstances(),
     };
+    // The camera's meshlets over both phases.
+    auto early = meshletCountsIn(drawLists, 0);
+    auto late = meshletCountsIn(drawLists, DrawLists::lateView);
+    result.cameraMeshlets = {
+        .tested = early.tested + late.tested,
+        .frustumCulled = early.frustumCulled + late.frustumCulled,
+        .coneCulled = early.coneCulled + late.coneCulled,
+        .occluded = early.occluded + late.occluded,
+        .drawn = early.drawn + late.drawn,
+        .triangles = early.triangles + late.triangles,
+    };
+    result.cameraTriangles = result.cameraMeshlets.triangles;
+    result.occlusion = drawLists.occlusionEnabled();
+    result.occlusionCullCamera = drawLists.occlusionCullCamera();
+    for (uint32_t region = 0; region < DrawLists::regionCount; region++) {
+        result.regionDraws.push_back(drawLists.drawsIn(region));
+        result.regionMeshlets.push_back(drawLists.meshletsIn(region));
+        result.regionTriangles.push_back(drawLists.primitivesIn(region));
+    }
+    result.occluded = drawLists.cameraOccluded();
+    for (uint32_t b = 0; b < DrawLists::bucketCount; b++) {
+        result.earlyDrawn += drawLists.drawsIn(b);
+        result.lateDrawn += drawLists.drawsIn((DrawLists::lateView * DrawLists::bucketCount) + b);
+    }
+    result.cameraDrawn = result.earlyDrawn + result.lateDrawn;
     const auto& lod = lodGroups.latest();
     result.lodFrame = lod.frame;
     result.lodGroups = lod.totals.groups;
@@ -638,9 +709,12 @@ auto Renderer::cullResult() const -> CullResult {
     for (uint32_t c = 0; c < result.cascadeCount; c++) {
         result.cascadeCulled[c] = drawLists.cascadeCulled(c);
         result.cascadeDrawn[c] = drawLists.cascadeDrawn(c);
-        result.cascadeTriangles[c] = trianglesIn(drawLists, 1 + c);
+        result.cascadeInstanceTriangles[c] = trianglesIn(drawLists, 1 + c);
+        result.cascadeMeshlets[c] = meshletCountsIn(drawLists, 1 + c);
+        result.cascadeTriangles[c] = result.cascadeMeshlets[c].triangles;
     }
     result.sceneTriangles = sceneTriangles;
+    result.sceneMeshlets = drawLists.liveMeshlets();
     return result;
 }
 
@@ -687,6 +761,23 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
             reportedRegionOverflow = overflow;
         }
         lodGroups.parseReadback(currentFrame, slotFrame[currentFrame]);
+        // Meshlets that didn't fit the work items weren't drawn: grow past them before the next frame builds.
+        if (auto overflow = drawLists.workOverflow(); overflow > 0) {
+            auto before = drawLists.workCapacity();
+            if (drawLists.ensureWorkCapacity(0, m_frameIndex)) {
+                descriptorSetsDirty = true;
+                TRACE_EVENT("Render", "MeshletWorkGrown", "cull.workitems")
+                    .text(std::format("{} meshlets didn't fit the work items ({}): grown to {}", overflow, before, drawLists.workCapacity()))
+                    .field("overflow", (int64_t) overflow)
+                    .field("capacity", (int64_t) drawLists.workCapacity());
+            } else if (!reportedWorkFull) {
+                TRACE_WARNING("Render", "MeshletWorkFull", "cull.workitems")
+                    .text(std::format("{} meshlets didn't fit the work items ({}), already the largest buffer the device makes: they aren't drawn", overflow, before))
+                    .field("overflow", (int64_t) overflow)
+                    .field("capacity", (int64_t) before);
+                reportedWorkFull = true;
+            }
+        }
     }
     captureService.afterFence(currentFrame);
     for (auto* extension : extensions) {
@@ -717,6 +808,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     UniformBufferObject ubo = {
         .view = snapshot.viewMatrix,
         .proj = snapshot.projMatrix,
+        .cullViewProj = snapshot.cullViewProj,
     };
     memcpy(uniformBuffersMapped[currentFrame], &ubo, sizeof(ubo));
 
@@ -755,7 +847,16 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
 
     // The lit path needs its pipelines, which come as their shaders arrive: until then the frame is the clear colour and the UI. The
     // instance records wait too, so their upload isn't lost to a frame that doesn't draw them.
-    bool litReady = instanceCullPass.ready() && lodSelectPass.ready() && shadowPass.ready() && geometryPass.ready() && (!snapshot.depthPrepass || depthPrepass.ready()) && lightingPass.ready() &&
+    // Occlusion culling runs in two phases, skipped while culling is off: by default the geometry pass draws the first (what was visible
+    // last frame), the pyramid is built from its depth, and a second geometry pass draws what the pyramid newly shows. With the depth
+    // prepass on, the prepass runs the two phases instead and the geometry pass draws both behind its Equal test. While the culling camera
+    // isn't the rendered one (a debug camera, a frozen frustum) the prepass's phases draw from the culling camera into a depth buffer of
+    // their own, and the rendered camera gets no prepass: the geometry pass tests and writes depth itself.
+    bool occlusion = snapshot.occlusion && snapshot.cullEnabled && depthPyramid.ready() && depthPrepass.ready();
+    bool occlusionApart = occlusion && snapshot.cullCameraSeparate;
+    bool prepass = snapshot.depthPrepass && !occlusionApart;
+    bool occlusionInGeometry = occlusion && !prepass && !occlusionApart;
+    bool litReady = instanceCullPass.ready() && lodSelectPass.ready() && shadowPass.ready() && geometryPass.ready() && (!prepass || depthPrepass.ready()) && lightingPass.ready() &&
                     aaPass.ready();
     if (!litReady) {
         addClearPass(frameGraph, colorHandle, ext);
@@ -844,22 +945,52 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
             .windowArea = 4.0f / std::max(1e-12f, std::abs(snapshot.projMatrix[0][0] * snapshot.projMatrix[1][1])),
         };
         lodSelectPass.addPasses(frameGraph, lodHandles, lodCamera, snapshot.lodHysteresis, snapshot.lodFlashFrames, lodGroups.groupCount(), currentFrame);
-        // GPU culling writes the indirect commands for every view; the passes below read them.
-        auto cullGroups = drawLists.writeParams(currentFrame, instanceCount, snapshot.cullViewProj, cascades, snapshot.cullEnabled);
+        // GPU culling writes the indirect commands for every view; the passes below read them. Every pass binding the geometry set reads
+        // the depth pyramid.
+        DrawLists::Occlusion occlusionParams = {.enabled = occlusion, .cullCamera = occlusionApart, .hzbWidth = depthPyramid.width(), .hzbHeight = depthPyramid.height()};
+        auto cullGroups = drawLists.writeParams(currentFrame, instanceCount, snapshot.cullViewProj, cascades, snapshot.cullEnabled, occlusionParams);
         auto drawHandles = drawLists.import(frameGraph, currentFrame);
         drawHandles.lodStates = lodHandles.states;
-        instanceCullPass.addPasses(frameGraph, drawHandles, lodHandles, instanceHandle, cullGroups, currentFrame);
+        auto hzbHandle = depthPyramid.import(frameGraph);
+        instanceCullPass.addPasses(frameGraph, drawLists, drawHandles, lodHandles, instanceHandle, hzbHandle, cullGroups, currentFrame);
         if (snapshot.sampler != materialSamplerSettings) {
             applySamplerSettings(snapshot.sampler);
         }
         auto* geometrySet = imageIdx < geometryDescriptorSets.size() ? geometryDescriptorSets[imageIdx] : nullptr;
-        const auto& shadowData = shadowPass.addPass(frameGraph, atlasExtent, depthFormat, cascades, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet);
+        const auto& shadowData = shadowPass.addPass(frameGraph, atlasExtent, depthFormat, cascades, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, hzbHandle);
 
         debugCulledInstances = drawLists.cameraCulled();
-        if (snapshot.depthPrepass) {
-            depthPrepass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet);
+        // Occlusion's depth: the rendered camera's, or the culling camera's own while that isn't the rendered one.
+        auto occlusionDepth = depthHandle;
+        auto occlusionSource = DepthPyramid::Source::View;
+        if (occlusionApart) {
+            occlusionDepth = frameGraph.importTexture("depth.cull", cullDepthTexture, {ext.width, ext.height, depthFormat, RhiTextureUsage::DepthAttachment | RhiTextureUsage::Sampled});
+            occlusionSource = DepthPyramid::Source::Culling;
         }
-        const auto& geomData = geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, snapshot.depthPrepass);
+        if (prepass || occlusionApart) {
+            depthPrepass.addPass(frameGraph, occlusionDepth, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, hzbHandle, false, occlusionApart);
+        }
+        // Occlusion's second phase: the pyramid from the first phase's depth, every frustum-visible instance against it, and the depth of
+        // the ones that show and weren't drawn. Then the pyramid again from the whole depth: the geometry pass tests every meshlet of both
+        // phases against it, so it shades only meshlets that show.
+        if (occlusion && !occlusionInGeometry) {
+            depthPyramid.addBuildPass(frameGraph, "HzbBuild", occlusionSource, occlusionDepth, hzbHandle);
+            instanceCullPass.addLatePasses(frameGraph, drawHandles, instanceHandle, hzbHandle, cullGroups, currentFrame);
+            depthPrepass.addPass(frameGraph, occlusionDepth, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, hzbHandle, true, occlusionApart);
+            depthPyramid.addBuildPass(frameGraph, "HzbBuildFinal", occlusionSource, occlusionDepth, hzbHandle);
+        }
+        // Occlusion in the geometry pass: the first phase draws the G-buffer, the pyramid comes from its depth, the second phase draws what
+        // the pyramid newly shows, its meshlets tested against it.
+        const GeometryPassData* geometryResult = nullptr;
+        if (occlusionInGeometry) {
+            const auto& firstPhase = geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, false, hzbHandle, occlusion, GeometryPhase::First, nullptr);
+            depthPyramid.addBuildPass(frameGraph, "HzbBuild", DepthPyramid::Source::View, firstPhase.depth, hzbHandle);
+            instanceCullPass.addLatePasses(frameGraph, drawHandles, instanceHandle, hzbHandle, cullGroups, currentFrame);
+            geometryResult = &geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, false, hzbHandle, occlusion, GeometryPhase::Second, &firstPhase);
+        } else {
+            geometryResult = &geometryPass.addPass(frameGraph, depthHandle, ext, gpuInstances, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, prepass, hzbHandle, occlusion, GeometryPhase::Both, nullptr);
+        }
+        const auto& geomData = *geometryResult;
 
         drawLists.addReadbackPass(frameGraph, drawHandles, currentFrame, snapshot.readVisibility, drawLogEnabled, m_frameIndex);
         lodGroups.addReadbackPass(frameGraph, lodHandles, currentFrame, snapshot.readLodStates, lodCamera.eye, lodCamera.windowArea);
@@ -887,6 +1018,8 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
             textureSampler,
             lighting,
             snapshot.gbufferViewMode,
+            occlusion ? hzbHandle : FgTextureHandle{},
+            snapshot.hzbLevel,
             snapshot.showBufferOverlay,
             snapshot.showShadowOverlay,
             snapshot.lodPopFlash,
@@ -909,7 +1042,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         auto finalImage = aaData.sceneColorAA;
         // Its pipelines come on first use: until they are ready the lit image shows.
         if (snapshot.debugView != DebugView::None && debugViewPass.available() && debugViewPass.ready()) {
-            const auto& debugViewData = debugViewPass.addPass(frameGraph, snapshot.debugView, geomData.depth, ext, imageIdx, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, snapshot.streamingStates, lightData.sceneColor);
+            const auto& debugViewData = debugViewPass.addPass(frameGraph, snapshot.debugView, geomData.depth, ext, imageIdx, instanceHandle, drawLists, drawHandles, gpuScene, geometrySet, hzbHandle, occlusion, snapshot.streamingStates, lightData.sceneColor);
             finalImage = debugViewData.color;
         }
         addBlitPass(frameGraph, "BlitToBackbuffer", finalImage, colorHandle, ext, ext);
@@ -931,6 +1064,9 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     frameGraph.setDrawLogEnabled(drawLogEnabled);
     captureService.setStaticBuffer("gpuscene.meshtable", gpuScene.meshTableBuffer(), gpuScene.meshTableBytes());
     captureService.setStaticBuffer("gpuscene.materials", gpuScene.materialBuffer(), gpuScene.materialTableBytes());
+    if (gpuScene.meshletBuffer() != nullptr) {
+        captureService.setStaticBuffer("gpuscene.meshlets", gpuScene.meshletBuffer(), gpuScene.meshletBytes());
+    }
     frameGraph.setCaptureRequests(captureService.requestsForFrame(currentFrame, frame));
     {
         PROFILE_ZONE("Compile");
@@ -955,6 +1091,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         }
         gpuScene.afterExecute(frameGraph);
         lodGroups.afterExecute(frameGraph);
+        drawLists.afterExecute(frameGraph);
         captureService.recordStatic(cmd, currentFrame, frame);
         cmd->end();
     }
@@ -1052,8 +1189,8 @@ auto Renderer::destroy() -> void {
 
     pipelineRegistry.destroy();
     instanceCullPass.destroy(device);
+    depthPyramid.destroy();
     lodSelectPass.destroy(device);
-    shadowPass.destroy(device);
     geometryPass.destroy(device);
     lightingPass.destroy(device);
     aaPass.destroy(device);
@@ -1072,6 +1209,8 @@ auto Renderer::destroy() -> void {
     device->destroyTexture(pendingTexture);
     device->destroyTexture(depthTexture);
     depthTexture = nullptr;
+    device->destroyTexture(cullDepthTexture);
+    cullDepthTexture = nullptr;
 
     for (uint32_t i = 0; i < swapchain->imageCount(); i++) {
         device->destroySemaphore(imageAvailableSemaphores[i]);

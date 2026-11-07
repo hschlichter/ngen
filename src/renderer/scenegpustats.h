@@ -2,15 +2,20 @@
 
 #include <cstdint>
 
+// One part of the geometry pool, in its elements: what the limit holds, the capacity, what is used.
+struct RenderDebugPoolUse {
+    uint64_t limit = 0;
+    uint64_t capacity = 0;
+    uint64_t used = 0;
+};
+
 // The geometry pool's buffers against their limit, and the meshes that didn't fit (GpuScene::geometryPoolStats).
 struct RenderDebugGeometryPool {
-    uint64_t limitBytes = 0;  // per pool buffer
-    uint64_t vertexLimit = 0; // the vertices and indices the limit holds
-    uint64_t indexLimit = 0;
-    uint64_t vertexCapacity = 0;
-    uint64_t vertexUsed = 0;
-    uint64_t indexCapacity = 0;
-    uint64_t indexUsed = 0;
+    uint64_t limitBytes = 0; // per pool buffer
+    RenderDebugPoolUse vertices;
+    RenderDebugPoolUse meshlets;
+    RenderDebugPoolUse meshletVertices;
+    RenderDebugPoolUse meshletTriangles;
     uint32_t waitingMeshes = 0;
     uint64_t waitingBytes = 0;
 };

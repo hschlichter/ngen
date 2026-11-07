@@ -113,6 +113,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     bool showProxies = proxies != nullptr && proxies->get();
     bool cullEnabled = renderconfig::cullingEnabled.get();
     bool cullFrozen = renderconfig::cullingFrozen.get();
+    bool occlusion = renderconfig::cullingOcclusion.get();
     bool showCulled = toolsconfig::overlayCulled.get();
     int culledView = (int) toolsconfig::overlayCulledView.get();
     bool cascadeFrusta = toolsconfig::overlayCascadeFrusta.get();
@@ -171,6 +172,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         drawFrameGraphWindow(showFrameGraphWindow, fgLastSnapshot, fgSelectedPass, fgSelectedResource, captureRequest);
         if (captureRequest.has_value()) {
             captureWindowState.pass = captureRequest->pass;
+            captureWindowState.afterLastWrite = false;
             captureWindowState.resource = captureRequest->resource;
             captureWindowState.trigger++;
             introspectionFlags.capture = true;
@@ -227,6 +229,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         PROFILE_ZONE("FrameDebuggerWindow");
         auto openInCapture = [&](const std::string& pass, const std::string& resource) {
             captureWindowState.pass = pass;
+            captureWindowState.afterLastWrite = false;
             captureWindowState.resource = resource;
             captureWindowState.trigger++;
             introspectionFlags.capture = true;
@@ -244,7 +247,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         };
         // Every instance's prim, built only while the window is open.
         auto primOfInstance = primOfEachInstance(renderWorld);
-        drawGpuSceneWindow(introspectionFlags.gpuScene, gpuSceneState, 1 + shadowCascadeCount, primOfInstance, namePrim, selectPrim);
+        drawGpuSceneWindow(introspectionFlags.gpuScene, gpuSceneState, 1 + cullResult->cascadeCount, primOfInstance, namePrim, selectPrim);
     }
     {
         PROFILE_ZONE("DebugViewWindow");
@@ -287,21 +290,32 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     }
     {
         PROFILE_ZONE("CullingWindow");
+        // The meshlet culling debug view is a debug view like any other; the window switches it.
+        bool meshletCullView = renderconfig::debugView.get() == (size_t) DebugView::MeshletCull;
+        bool meshletCullViewBefore = meshletCullView;
+        // So is the depth pyramid's buffer view, with its level.
+        bool pyramidView = renderconfig::bufferView.get() == (size_t) GBufferView::Hzb;
+        bool pyramidViewBefore = pyramidView;
+        int pyramidLevel = (int) renderconfig::hzbLevel.get();
         drawCullingWindow(showCullingWindow,
                           {.enabled = cullEnabled,
                            .frozen = cullFrozen,
+                           .occlusion = occlusion,
                            .showCulled = showCulled,
                            .overlayView = culledView,
                            .showCascadeFrusta = cascadeFrusta,
-                           .instances = cullStatInstances,
-                           .culled = cullStatCulled,
-                           .lodLevelNotDrawn = cullStatLodNotDrawn,
-                           .cascades = shadowCascadeCount,
-                           .shadowCulled = shadowCulledStats,
-                           .shadowDrawn = shadowDrawnStats,
-                           .trianglesDrawn = cullTrianglesDrawn,
-                           .trianglesScene = cullTrianglesScene,
-                           .shadowTriangles = cullTrianglesCascades});
+                           .meshletCullView = meshletCullView,
+                           .pyramidView = pyramidView,
+                           .pyramidLevel = pyramidLevel,
+                           .depthPrepass = depthPrepass,
+                           .cull = *cullResult});
+        if (meshletCullView != meshletCullViewBefore) {
+            (void) renderconfig::debugView.set(meshletCullView ? (size_t) DebugView::MeshletCull : (size_t) DebugView::None);
+        }
+        if (pyramidView != pyramidViewBefore) {
+            (void) renderconfig::bufferView.set(pyramidView ? (size_t) GBufferView::Hzb : (size_t) GBufferView::Lit);
+        }
+        (void) renderconfig::hzbLevel.set(pyramidLevel);
     }
     toolsconfig::overlayGrid.set(showGrid);
     toolsconfig::overlayOrigin.set(showOrigin);
@@ -317,6 +331,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     }
     renderconfig::cullingEnabled.set(cullEnabled);
     renderconfig::cullingFrozen.set(cullFrozen);
+    renderconfig::cullingOcclusion.set(occlusion);
     toolsconfig::overlayCulled.set(showCulled);
     (void) toolsconfig::overlayCulledView.set(culledView);
     toolsconfig::overlayCascadeFrusta.set(cascadeFrusta);

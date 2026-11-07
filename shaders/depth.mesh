@@ -1,0 +1,58 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+#extension GL_GOOGLE_include_directive : require
+
+// The depth prepass: a pack of meshlets the task shader kept, positions only. gbuffer.mesh's position expression, with gl_Position invariant in
+// both, so the geometry pass's Equal test matches exactly; with meshletFlagCullCamera, the culling camera's, for occlusion culling's depth.
+
+#define MESHLET_MESH_SHADER
+#include "meshlet.glsl"
+
+layout(push_constant) uniform Push {
+    uint region;
+    uint flags;
+} push;
+
+out gl_MeshPerVertexEXT {
+    invariant vec4 gl_Position;
+} gl_MeshVerticesEXT[];
+
+
+// Per meshlet of the pack: its instance's model, loaded once.
+shared mat4 packModels[meshletsPerTask];
+
+void main() {
+    uint pack = gl_WorkGroupID.x;
+    uint vertexCount = payload.packVertices[pack];
+    uint triangleCount = payload.packTriangles[pack];
+    SetMeshOutputsEXT(vertexCount, triangleCount);
+    // A pack of one meshlet (most packs of large meshlets) loads its model as a uniform value; a pack of several, each meshlet's model once
+    // by one lane, into shared memory.
+    PackInfo info = packInfo(pack);
+    bool single = info.count == 1u;
+    mat4 singleModel = mat4(1.0);
+    if (single) {
+        singleModel = instances.data[payload.instances[info.first]].model;
+    } else {
+        loadPackShared(info);
+        if (gl_LocalInvocationIndex < info.count) {
+            packModels[gl_LocalInvocationIndex] = instances.data[payload.instances[info.first + gl_LocalInvocationIndex]].model;
+        }
+        barrier();
+    }
+    uint v = gl_LocalInvocationIndex;
+    if (v < vertexCount) {
+        PackedVertex packed = packedVertex(info, v);
+        mat4 model = single ? singleModel : packModels[packed.meshlet];
+        uint vertex = packed.vertex;
+        // From the culling camera, into a depth of its own, while it isn't the rendered one; otherwise gbuffer.mesh's expression.
+        if ((push.flags & meshletFlagCullCamera) != 0u) {
+            gl_MeshVerticesEXT[v].gl_Position = ubo.cullViewProj * model * vec4(poolPosition(vertex), 1.0);
+        } else {
+            gl_MeshVerticesEXT[v].gl_Position = ubo.proj * ubo.view * model * vec4(poolPosition(vertex), 1.0);
+        }
+    }
+    for (uint t = v; t < triangleCount; t += packThreads) {
+        gl_PrimitiveTriangleIndicesEXT[t] = packedTriangle(info, t);
+    }
+}

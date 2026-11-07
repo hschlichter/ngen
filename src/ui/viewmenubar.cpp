@@ -66,6 +66,7 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::RadioButton("Mip Level (Ctrl+3)", &state.gbufferView, 8);
         ImGui::RadioButton("Cascades", &state.gbufferView, 9);
         ImGui::RadioButton("LOD Level (Ctrl+4)", &state.gbufferView, 10);
+        ImGui::RadioButton("Depth Pyramid (occlusion)", &state.gbufferView, 11);
         ImGui::RadioButton("Lit (Ctrl+5: everything off, again to restore)", &state.gbufferView, 0);
         ImGui::Separator();
         ImGui::Text("Debug View");

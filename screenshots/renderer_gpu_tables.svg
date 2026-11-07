@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="652" viewBox="0 0 1000 652" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="992" viewBox="0 0 1000 992" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
   <style>
     .title { font-size: 20px; font-weight: 700; fill: #1f2733; }
     .lib { font-size: 13.5px; font-weight: 700; fill: #1f2733; font-family: JetBrains Mono, Consolas, Menlo, monospace; }
@@ -14,36 +14,63 @@
     </marker>
   </defs>
 
-  <rect x="0" y="0" width="1000" height="652" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <rect x="0" y="0" width="1000" height="992" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
   <text x="28" y="40" class="title">Renderer: scene data on the GPU</text>
-  <text x="28" y="62" class="s" style="font-size:12px">An instance record names a material entry and a mesh entry; those name texture slots and ranges in the geometry pool.</text>
+  <text x="28" y="62" class="s" style="font-size:12px">An instance record names a material and a mesh; the mesh entry names its meshlets, each meshlet its vertex indices and triangles.</text>
 
-  <!-- Instance buffer -->
-  <rect x="28" y="88" width="240" height="282" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <!-- Instance buffer: draw records -->
+  <rect x="28" y="88" width="248" height="362" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
   <text x="42" y="112" class="lib">GpuInstanceRecord</text>
   <text x="42" y="130" class="s">gpuscene.instances: one per draw slot,</text>
-  <text x="42" y="145" class="s">128 bytes, read at gl_InstanceIndex</text>
-
-  <rect x="40" y="158" width="216" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
-  <text x="48" y="172" class="f">model</text>
-  <text x="248" y="172" class="fs" text-anchor="end">mat4</text>
-  <rect x="40" y="182" width="216" height="20" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
-  <text x="48" y="196" class="f" font-weight="700">material</text>
-  <text x="248" y="196" class="fs" text-anchor="end">entry</text>
-  <rect x="40" y="206" width="216" height="20" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
-  <text x="48" y="220" class="f" font-weight="700">mesh</text>
-  <text x="248" y="220" class="fs" text-anchor="end">MeshHandle</text>
-  <rect x="40" y="230" width="216" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
-  <text x="48" y="244" class="f">indexOffset, indexCount</text>
-  <rect x="40" y="254" width="216" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
-  <text x="48" y="268" class="f">boundsMin, boundsMax</text>
-  <rect x="40" y="278" width="216" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
-  <text x="48" y="292" class="f">flags</text>
-  <rect x="40" y="302" width="216" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
-  <text x="48" y="316" class="f">lodLevel, lodGroup</text>
-  <rect x="40" y="326" width="216" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
-  <text x="48" y="340" class="f">streamRoot, lodDepth</text>
-  <text x="42" y="362" class="s">world bounds; flags: primFirst, cutout…</text>
+  <text x="42" y="145" class="s">128 B, read by the task and mesh shaders</text>
+  <text x="42" y="160" class="s">at the slot a work item names</text>
+  <rect x="40" y="172" width="224" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="186" class="f">model</text>
+  <text x="256" y="186" class="fs" text-anchor="end">mat4</text>
+  <rect x="40" y="196" width="224" height="20" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="210" class="f" font-weight="700">material</text>
+  <text x="256" y="210" class="fs" text-anchor="end">entry</text>
+  <rect x="40" y="220" width="224" height="20" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="234" class="f" font-weight="700">mesh</text>
+  <text x="256" y="234" class="fs" text-anchor="end">MeshHandle</text>
+  <rect x="40" y="244" width="224" height="20" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="258" class="f" font-weight="700">meshletOffset</text>
+  <text x="256" y="258" class="fs" text-anchor="end">from mesh's first</text>
+  <rect x="40" y="268" width="224" height="20" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="282" class="f" font-weight="700">meshletCount</text>
+  <rect x="40" y="292" width="224" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="306" class="f">boundsMin, flags</text>
+  <rect x="40" y="316" width="224" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="330" class="f">boundsMax, lodLevel</text>
+  <rect x="40" y="340" width="224" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="354" class="f">lodGroup</text>
+  <rect x="40" y="364" width="224" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="378" class="f">triangleCount</text>
+  <rect x="40" y="388" width="224" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="402" class="f">streamRoot</text>
+  <rect x="40" y="412" width="224" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="426" class="f">lodDepth</text>
+  <text x="42" y="446" class="s">world bounds; flags: doubleSided, cutout…</text>
+  <!-- Instance buffer: cull records -->
+  <rect x="28" y="470" width="248" height="286" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="42" y="494" class="lib">GpuCullRecord</text>
+  <text x="42" y="512" class="s">48 B per slot, in the same buffer after</text>
+  <text x="42" y="527" class="s">the draw records (cullRecordsOffset).</text>
+  <text x="42" y="542" class="s">Culling visits every slot and reads only</text>
+  <text x="42" y="557" class="s">these: a third of the memory.</text>
+  <rect x="40" y="570" width="224" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="584" class="f">boundsMin, flags</text>
+  <rect x="40" y="594" width="224" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="608" class="f">boundsMax, lod</text>
+  <rect x="40" y="618" width="224" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="632" class="f">mesh</text>
+  <rect x="40" y="642" width="224" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="656" class="f">meshletOffset</text>
+  <rect x="40" y="666" width="224" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="680" class="f">meshletCount</text>
+  <rect x="40" y="690" width="224" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="48" y="704" class="f">triangleCount</text>
+  <text x="42" y="726" class="s">lod: level in bits 0-7, group in 8-31</text>
 
   <!-- Material table -->
   <rect x="316" y="88" width="276" height="196" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
@@ -95,7 +122,7 @@
   <text x="654" y="268" class="s">slots hold the fallback; freed slots are reused.</text>
 
   <!-- Mesh table -->
-  <rect x="316" y="316" width="276" height="170" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <rect x="316" y="316" width="276" height="196" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
   <text x="330" y="340" class="lib">GpuMeshEntry</text>
   <text x="330" y="358" class="s">gpuscene.meshtable: per MeshHandle, 16 B</text>
   <rect x="330" y="370" width="30" height="24" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
@@ -105,49 +132,113 @@
   <rect x="394" y="370" width="30" height="24" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
   <text x="409" y="386" class="c">2</text>
   <text x="440" y="386" class="c">…</text>
-  <rect x="330" y="406" width="248" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
-  <text x="338" y="420" class="f">firstIndex</text>
-  <rect x="330" y="430" width="248" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
-  <text x="338" y="444" class="f">vertexOffset</text>
+  <rect x="330" y="406" width="248" height="20" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="338" y="420" class="f" font-weight="700">vertexOffset</text>
+  <text x="570" y="420" class="fs" text-anchor="end">in the vertex pools</text>
+  <rect x="330" y="430" width="248" height="20" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="338" y="444" class="f" font-weight="700">meshletOffset</text>
+  <text x="570" y="444" class="fs" text-anchor="end">in the meshlet pool</text>
   <rect x="330" y="454" width="248" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
-  <text x="338" y="468" class="f">indexCount</text>
+  <text x="338" y="468" class="f">meshletCount</text>
   <text x="570" y="468" class="fs" text-anchor="end">0: not drawn</text>
+  <rect x="330" y="478" width="248" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="338" y="492" class="f">triangleCount</text>
+  <!-- Meshlet -->
+  <rect x="640" y="316" width="332" height="196" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="654" y="340" class="lib">GpuMeshlet</text>
+  <text x="654" y="358" class="s">one meshlet of gpuscene.pool.meshlets, 32 B:</text>
+  <text x="654" y="373" class="s">at most 64 vertices and 124 triangles</text>
+  <rect x="652" y="384" width="308" height="20" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="660" y="398" class="f" font-weight="700">vertexOffset</text>
+  <text x="952" y="398" class="fs" text-anchor="end">in meshlet vertices</text>
+  <rect x="652" y="408" width="308" height="20" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="660" y="422" class="f" font-weight="700">triangleOffset</text>
+  <text x="952" y="422" class="fs" text-anchor="end">in meshlet triangles</text>
+  <rect x="652" y="432" width="308" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="660" y="446" class="f">counts</text>
+  <text x="952" y="446" class="fs" text-anchor="end">vertices | triangles &lt;&lt; 8</text>
+  <rect x="652" y="456" width="308" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="660" y="470" class="f">cone</text>
+  <text x="952" y="470" class="fs" text-anchor="end">axis xyz, cutoff: 4 bytes</text>
+  <rect x="652" y="480" width="308" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="660" y="494" class="f">center, radius</text>
+  <text x="952" y="494" class="fs" text-anchor="end">bounding sphere, mesh space</text>
 
   <!-- Geometry pool -->
-  <rect x="640" y="316" width="332" height="270" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
-  <text x="654" y="340" class="t" font-weight="700">Geometry pool</text>
-  <text x="654" y="358" class="s">a first-fit range per mesh; grows by doubling</text>
-
-  <text x="654" y="384" class="f">gpuscene.pool.vertices</text>
-  <text x="956" y="384" class="fs" text-anchor="end">Vertex</text>
-  <rect x="654" y="390" width="302" height="22" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
-  <rect x="744" y="390" width="84" height="22" fill="#bbf7d0" stroke="#16a34a"/>
-
-  <line x1="744" y1="412" x2="744" y2="436" stroke="#16a34a" stroke-dasharray="3 3"/>
-  <line x1="828" y1="412" x2="828" y2="436" stroke="#16a34a" stroke-dasharray="3 3"/>
-  <text x="836" y="428" class="fs">same range:</text>
-  <text x="836" y="441" class="fs">vertexOffset</text>
-
-  <text x="654" y="450" class="f">gpuscene.pool.positions</text>
-  <rect x="654" y="456" width="302" height="22" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
-  <rect x="744" y="456" width="84" height="22" fill="#bbf7d0" stroke="#16a34a"/>
-  <text x="956" y="494" class="fs" text-anchor="end">12 B a vertex, depth-only</text>
-
-  <text x="654" y="514" class="f">gpuscene.pool.indices</text>
-  <text x="956" y="514" class="fs" text-anchor="end">uint32, mesh-local</text>
-  <rect x="654" y="520" width="302" height="22" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
-  <rect x="700" y="520" width="168" height="22" fill="#dcfce7" stroke="#16a34a"/>
-  <rect x="756" y="520" width="56" height="22" fill="#86efac" stroke="#16a34a"/>
-  <text x="700" y="558" class="fs">firstIndex</text>
-  <text x="868" y="558" class="fs" text-anchor="end">+ indexCount</text>
-  <text x="784" y="574" class="fs" text-anchor="middle">submesh: + indexOffset, its indexCount</text>
+  <rect x="316" y="540" width="656" height="392" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
+  <text x="330" y="564" class="t" font-weight="700">Geometry pool</text>
+  <text x="330" y="582" class="s">a first-fit range per mesh in each buffer;</text>
+  <text x="330" y="596" class="s">a buffer grows by doubling</text>
+  <text x="330" y="616" class="f">gpuscene.pool.meshlets</text>
+  <text x="958" y="616" class="fs" text-anchor="end">GpuMeshlet, 32 B each</text>
+  <text x="624" y="630" class="fs">meshletOffset</text>
+  <text x="856" y="630" class="fs" text-anchor="end">+ meshletCount</text>
+  <rect x="330" y="636" width="628" height="22" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <rect x="616" y="636" width="240" height="22" fill="#dcfce7" stroke="#16a34a"/>
+  <rect x="676" y="636" width="120" height="22" fill="#bbf7d0" stroke="#16a34a"/>
+  <line x1="636" y1="636" x2="636" y2="658" stroke="#16a34a" stroke-opacity="0.5"/>
+  <line x1="656" y1="636" x2="656" y2="658" stroke="#16a34a" stroke-opacity="0.5"/>
+  <line x1="676" y1="636" x2="676" y2="658" stroke="#16a34a" stroke-opacity="0.5"/>
+  <line x1="696" y1="636" x2="696" y2="658" stroke="#16a34a" stroke-opacity="0.5"/>
+  <line x1="716" y1="636" x2="716" y2="658" stroke="#16a34a" stroke-opacity="0.5"/>
+  <line x1="736" y1="636" x2="736" y2="658" stroke="#16a34a" stroke-opacity="0.5"/>
+  <line x1="756" y1="636" x2="756" y2="658" stroke="#16a34a" stroke-opacity="0.5"/>
+  <line x1="776" y1="636" x2="776" y2="658" stroke="#16a34a" stroke-opacity="0.5"/>
+  <line x1="796" y1="636" x2="796" y2="658" stroke="#16a34a" stroke-opacity="0.5"/>
+  <line x1="816" y1="636" x2="816" y2="658" stroke="#16a34a" stroke-opacity="0.5"/>
+  <line x1="836" y1="636" x2="836" y2="658" stroke="#16a34a" stroke-opacity="0.5"/>
+  <rect x="716" y="636" width="20" height="22" fill="#86efac" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="670" y="674" class="fs" text-anchor="end">submesh (instance record):</text>
+  <text x="670" y="688" class="fs" text-anchor="end">+ meshletOffset, meshletCount</text>
+  <text x="862" y="674" class="fs">one meshlet:</text>
+  <text x="862" y="688" class="fs">its record above</text>
+  <text x="330" y="714" class="f">gpuscene.pool.meshletvertices</text>
+  <rect x="330" y="720" width="306" height="22" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <rect x="560" y="720" width="60" height="22" fill="#86efac" stroke="#16a34a"/>
+  <text x="330" y="758" class="fs">32-bit vertex indices, mesh-local</text>
+  <text x="666" y="714" class="f">gpuscene.pool.meshlettriangles</text>
+  <rect x="666" y="720" width="292" height="22" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <rect x="880" y="720" width="60" height="22" fill="#86efac" stroke="#16a34a"/>
+  <text x="666" y="758" class="fs">one 32-bit word per triangle:</text>
+  <rect x="666" y="768" width="52" height="22" rx="3" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="692" y="783" class="c">i0</text>
+  <text x="692" y="804" class="c" style="font-size:10px;fill:#5a6575">bits 0-7</text>
+  <rect x="720" y="768" width="52" height="22" rx="3" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="746" y="783" class="c">i1</text>
+  <text x="746" y="804" class="c" style="font-size:10px;fill:#5a6575">8-15</text>
+  <rect x="774" y="768" width="52" height="22" rx="3" fill="#dcfce7" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="800" y="783" class="c">i2</text>
+  <text x="800" y="804" class="c" style="font-size:10px;fill:#5a6575">16-23</text>
+  <rect x="828" y="768" width="52" height="22" rx="3" fill="#f1f5f9" stroke="#16a34a" stroke-opacity="0.6"/>
+  <text x="854" y="783" class="c">0</text>
+  <text x="854" y="804" class="c" style="font-size:10px;fill:#5a6575">24-31</text>
+  <text x="666" y="826" class="fs">three meshlet-local 8-bit indices,</text>
+  <text x="666" y="840" class="fs">into the meshlet&#39;s vertex indices</text>
+  <text x="330" y="812" class="f">gpuscene.pool.vertices</text>
+  <text x="494" y="812" class="fs">Vertex, 44 B</text>
+  <rect x="330" y="818" width="306" height="22" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <rect x="540" y="818" width="90" height="22" fill="#bbf7d0" stroke="#16a34a"/>
+  <line x1="540" y1="840" x2="540" y2="878" stroke="#16a34a" stroke-dasharray="3 3"/>
+  <line x1="630" y1="840" x2="630" y2="878" stroke="#16a34a" stroke-dasharray="3 3"/>
+  <text x="646" y="866" class="fs">same range:</text>
+  <text x="646" y="880" class="fs">the mesh entry&#39;s vertexOffset</text>
+  <text x="330" y="872" class="f">gpuscene.pool.positions</text>
+  <rect x="330" y="878" width="306" height="22" rx="3" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
+  <rect x="540" y="878" width="90" height="22" fill="#bbf7d0" stroke="#16a34a"/>
+  <text x="330" y="916" class="fs">12 B a vertex, read alone by the depth-only passes</text>
 
   <!-- References -->
-  <path d="M256,192 H286 V154 H326" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <path d="M256,216 H300 V382 H326" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M264,206 H286 V154 H326" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M264,230 H300 V382 H326" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
   <path d="M578,188 H612 V176 H800 V170" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <line x1="578" y1="440" x2="636" y2="440" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M578,440 H616 V632" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="726" y1="636" x2="726" y2="514" stroke="#16a34a" stroke-dasharray="3 3"/>
+  <path d="M722,658 V700 H590 V716" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M730,658 V700 H910 V716" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M590,742 V814" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="582" y="784" class="fs" text-anchor="end">+ vertexOffset</text>
+  <text x="582" y="797" class="fs" text-anchor="end">(mesh entry)</text>
 
-  <text x="28" y="612" class="s">A draw is firstIndex (+ indexOffset for a submesh), vertexOffset and indexCount: what InstanceCullScatter writes into each command,</text>
-  <text x="28" y="628" class="s">with firstInstance = the slot. Removals apply first, so what is added reuses their pool ranges, table entries and texture slots.</text>
+  <text x="28" y="956" class="s">Culling reads every slot&#39;s cull record and writes work items {instance, meshlet}; the task shader culls each work item&#39;s meshlet and the mesh shader</text>
+  <text x="28" y="972" class="s">draws it. There is no index buffer. Removals apply first, so what is added reuses their pool ranges, table entries and texture slots.</text>
 </svg>

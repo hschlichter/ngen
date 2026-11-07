@@ -4,6 +4,7 @@
 #include "resourcepool.h"
 #include "rhicommandbuffer.h"
 
+#include <array>
 #include <format>
 #include <queue>
 #include <utility>
@@ -21,6 +22,20 @@ auto FrameGraphContext::logDraw(const FgDrawRecord& record) -> void {
 auto FrameGraphContext::addIndirectStats(uint32_t draws, uint64_t primitives) -> void {
     graph->executingIndirectDraws += draws;
     graph->executingIndirectPrimitives += primitives;
+}
+
+auto FrameGraphContext::storageBarrier(FgTextureHandle handle) -> void {
+    std::array<RhiTextureBarrierDesc, 1> barrier = {{
+        {.texture = graph->resources[handle.index].physical, .oldState = RhiTextureState::General, .newState = RhiTextureState::General},
+    }};
+    commandBuffer->pipelineBarrier(barrier);
+    graph->passes[graph->executingPassIndex].barriers.push_back({
+        .resourceIndex = handle.index,
+        .oldAccess = FgAccessFlags::StorageWrite,
+        .newAccess = FgAccessFlags::StorageWrite,
+        .oldTextureState = RhiTextureState::General,
+        .newTextureState = RhiTextureState::General,
+    });
 }
 
 auto FrameGraph::reset() -> void {
@@ -136,6 +151,9 @@ static auto accessToBufferState(FgAccessFlags access) -> RhiBufferState {
     if (access & FgAccessFlags::StorageWrite) {
         return RhiBufferState::StorageWrite;
     }
+    if ((access & FgAccessFlags::StorageRead) && (access & FgAccessFlags::IndirectRead)) {
+        return RhiBufferState::IndirectStorageRead;
+    }
     if (access & FgAccessFlags::StorageRead) {
         return RhiBufferState::StorageRead;
     }
@@ -159,14 +177,18 @@ auto FrameGraph::bufferStateFor(FgAccessFlags access) -> RhiBufferState {
     return accessToBufferState(access);
 }
 
-auto FrameGraph::runCaptures(RhiCommandBuffer* cmd, const char* passName, const std::vector<FgAccessFlags>& access) -> void {
+auto FrameGraph::runCaptures(RhiCommandBuffer* cmd, const char* passName, uint32_t orderIdx, const std::vector<FgAccessFlags>& access) -> void {
     for (const auto& request : captureRequests) {
-        if (request.pass != passName) {
+        if (!request.afterLastWrite && request.pass != passName) {
             continue;
         }
         for (uint32_t resIdx = 0; resIdx < (uint32_t) resources.size(); resIdx++) {
             const auto& res = resources[resIdx];
             if (request.resource != res.name) {
+                continue;
+            }
+            // After its last write; one nothing writes this frame (an imported buffer only the CPU fills) after the last pass.
+            if (request.afterLastWrite && res.lastWriteOrder != orderIdx) {
                 continue;
             }
             FgCaptureSource source = {
@@ -194,8 +216,10 @@ auto FrameGraph::runCaptures(RhiCommandBuffer* cmd, const char* passName, const 
 auto FrameGraph::compile() -> void {
     auto passCount = (uint32_t) passes.size();
 
-    // 1. Build adjacency from resource usage
+    // 1. Build adjacency from resource usage. orderAfter holds the write-after-read edges: they order passes but don't keep a reader alive
+    // (culling follows adj only).
     std::vector<std::vector<uint32_t>> adj(passCount);
+    std::vector<std::vector<uint32_t>> orderAfter(passCount);
     std::vector<uint32_t> inDegree(passCount, 0);
 
     for (uint32_t resIdx = 0; resIdx < (uint32_t) resources.size(); resIdx++) {
@@ -216,20 +240,29 @@ auto FrameGraph::compile() -> void {
             inDegree[writers[i]]++;
         }
 
-        // For each reader, connect to the latest writer declared before it
+        // For each reader, connect to the latest writer declared before it, and to the next writer after it: that writer must not
+        // overwrite what the reader reads (write after read, as the depth pyramid reads the first phase's depth before the second phase writes it).
         for (uint32_t p = 0; p < passCount; p++) {
             for (const auto& r : passes[p].reads) {
                 if (r.resourceIndex == resIdx) {
-                    // Find the latest writer with index < p
+                    // Find the latest writer with index < p and the first with index > p
                     uint32_t bestWriter = UINT32_MAX;
+                    uint32_t nextWriter = UINT32_MAX;
                     for (auto w : writers) {
                         if (w < p) {
                             bestWriter = w;
+                        }
+                        if (w > p && nextWriter == UINT32_MAX) {
+                            nextWriter = w;
                         }
                     }
                     if (bestWriter != UINT32_MAX) {
                         adj[bestWriter].push_back(p);
                         inDegree[p]++;
+                    }
+                    if (nextWriter != UINT32_MAX) {
+                        orderAfter[p].push_back(nextWriter);
+                        inDegree[nextWriter]++;
                     }
                     break;
                 }
@@ -249,9 +282,11 @@ auto FrameGraph::compile() -> void {
         auto cur = q.front();
         q.pop();
         passOrder.push_back(cur);
-        for (auto next : adj[cur]) {
-            if (--inDegree[next] == 0) {
-                q.push(next);
+        for (const auto* edges : {&adj[cur], &orderAfter[cur]}) {
+            for (auto next : *edges) {
+                if (--inDegree[next] == 0) {
+                    q.push(next);
+                }
             }
         }
     }
@@ -291,6 +326,7 @@ auto FrameGraph::compile() -> void {
     for (auto& res : resources) {
         res.firstUseOrder = UINT32_MAX;
         res.lastUseOrder = 0;
+        res.lastWriteOrder = UINT32_MAX;
     }
 
     for (uint32_t orderIdx = 0; orderIdx < (uint32_t) passOrder.size(); orderIdx++) {
@@ -317,6 +353,7 @@ auto FrameGraph::compile() -> void {
         }
         for (const auto& w : passes[passIdx].writes) {
             updateLifetime(w.resourceIndex);
+            resources[w.resourceIndex].lastWriteOrder = orderIdx;
         }
     }
 }
@@ -444,6 +481,7 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
             PROFILE_GPU_ZONE(cmd, passName);
             profile::ScopedZone recordZone(passes[passIdx].profileNameId);
             executingPass = passName;
+            executingPassIndex = passIdx;
             executingPassDraws = 0;
             executingIndirectDraws = 0;
             executingIndirectPrimitives = 0;
@@ -467,7 +505,7 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
         cmd->endLabel();
 
         if (!captureRequests.empty()) {
-            runCaptures(cmd, passName, resourceAccess);
+            runCaptures(cmd, passName, orderIdx, resourceAccess);
         }
         if (commandLogEnabled) {
             auto log = cmd->commandLog();
@@ -488,7 +526,7 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
     }
 
     if (!captureRequests.empty()) {
-        runCaptures(cmd, "", resourceAccess);
+        runCaptures(cmd, "", UINT32_MAX, resourceAccess);
     }
 
     // Carry imported buffers' final access into the next frame (finalAccess).

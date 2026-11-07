@@ -1,6 +1,8 @@
 #include "viewcommands.h"
 
 #include "culling.h"
+#include "drawlists.h"
+#include "renderconfig.h"
 #include "renderdoccapture.h"
 #include "renderer.h"
 #include "renderthread.h"
@@ -72,13 +74,40 @@ auto parseCapture(const std::string& args) -> std::expected<Json, std::string> {
     int height = 0;
     in >> x >> y >> width >> height;
     if (path.empty()) {
-        return std::unexpected(std::format("expected '<pass|-> <resource> <path> [x y w h]', got '{}'", args));
+        return std::unexpected(std::format("expected '<pass|-|+> <resource> <path> [x y w h]', got '{}'", args));
     }
     Json params = {{"pass", pass}, {"resource", resource}, {"path", path}};
     if (width > 0) {
         params["region"] = {{"x", x}, {"y", y}, {"width", width}, {"height", height}};
     }
     return params;
+}
+
+auto meshletCountsJson(const MeshletCounts& counts) -> Json {
+    return {
+        {"tested", counts.tested},
+        {"frustumCulled", counts.frustumCulled},
+        {"coneCulled", counts.coneCulled},
+        {"occluded", counts.occluded},
+        {"drawn", counts.drawn},
+        {"triangles", counts.triangles},
+    };
+}
+
+auto regionsJson(const CullResult& cull) -> Json {
+    auto regions = Json::array();
+    for (uint32_t region = 0; region < cull.regionDraws.size(); region++) {
+        if (cull.regionDraws[region] == 0) {
+            continue;
+        }
+        regions.push_back({
+            {"region", DrawLists::regionName(region)},
+            {"draws", cull.regionDraws[region]},
+            {"meshlets", region < cull.regionMeshlets.size() ? cull.regionMeshlets[region] : 0u},
+            {"instanceTriangles", cull.regionTriangles[region]},
+        });
+    }
+    return regions;
 }
 
 auto cullingRecord(const ViewContext& view) -> Json {
@@ -89,16 +118,34 @@ auto cullingRecord(const ViewContext& view) -> Json {
             {"cascade", i},
             {"drawn", cull.cascadeDrawn[i]},
             {"culled", cull.cascadeCulled[i]},
+            {"instanceTriangles", cull.cascadeInstanceTriangles[i]},
             {"triangles", cull.cascadeTriangles[i]},
+            {"meshlets", meshletCountsJson(cull.cascadeMeshlets[i])},
         });
     }
     return {
         {"frame", cull.frame},
         {"instances", cull.instances},
-        {"camera", {{"drawn", cull.instances - cull.cameraCulled - cull.lodDropped}, {"culled", cull.cameraCulled}, {"triangles", cull.cameraTriangles}}},
+        {"camera",
+         {{"drawn", cull.cameraDrawn},
+          {"culled", cull.cameraCulled},
+          {"occluded", cull.occluded},
+          {"instanceTriangles", cull.cameraInstanceTriangles},
+          {"triangles", cull.cameraTriangles},
+          {"meshlets", meshletCountsJson(cull.cameraMeshlets)}}},
+        {"regions", regionsJson(cull)},
+        {"occlusion",
+         {{"ran", cull.occlusion},
+          {"enabled", renderconfig::cullingOcclusion.get()},
+          {"frozen", renderconfig::cullingFrozen.get()},
+          {"depthFrom", cull.occlusionCullCamera ? "culling camera" : "rendered camera"},
+          {"drawnFirst", cull.earlyDrawn},
+          {"drawnSecond", cull.lateDrawn},
+          {"occluded", cull.occluded}}},
         {"lodLevelNotDrawn", cull.lodDropped},
         {"regionOverflow", cull.regionOverflow},
         {"sceneTriangles", cull.sceneTriangles},
+        {"sceneMeshlets", cull.sceneMeshlets},
         {"cascades", cascades},
     };
 }
@@ -181,9 +228,10 @@ auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
     registry.add(
         {
             .name = "capture.request",
-            .summary = "Capture a frame-graph resource right after a pass (\"\" or \"-\" = end of frame, also static buffers).",
+            .summary = "Capture a frame-graph resource right after a pass (\"\" or \"-\" = end of frame, also static buffers; \"+\" = after "
+                       "the pass that writes it last this frame, or the end of the frame when none does).",
             .params = {
-                requiredField("pass", RpcType::String, "pass name, \"\" or \"-\""),
+                requiredField("pass", RpcType::String, "pass name, \"\" or \"-\", or \"+\""),
                 requiredField("resource", RpcType::String, "resource name"),
                 optionalField("path", RpcType::String, "also write it: PNG plus .json for textures, rows JSON for buffers"),
                 optionalField("region", RpcType::Object, "{x, y, width, height} of a texture"),
@@ -192,7 +240,7 @@ auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
         },
         [&view](const Json& p, RpcResponder responder) {
             auto pass = p["pass"].get<std::string>();
-            CaptureWatch watch = {.pass = pass == "-" ? "" : pass, .resource = p["resource"].get<std::string>(), .trigger = 1};
+            CaptureWatch watch = {.pass = pass == "-" || pass == "+" ? "" : pass, .resource = p["resource"].get<std::string>(), .afterLastWrite = pass == "+", .trigger = 1};
             if (p.contains("region")) {
                 const auto& r = p["region"];
                 watch.regionX = r.value("x", 0u);
@@ -238,9 +286,12 @@ auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
     verbs.add("dump-gpuscene", "introspect.gpuscene", parseDir);
     verbs.add("renderdoc-capture", "renderdoc.capture", RpcVerbs::none);
 
-    records.add("culling", "GPU culling's latest readback: instances and triangles drawn and culled, per view", [&view](RpcResponder responder) {
-        responder.respond(cullingRecord(view));
-    });
+    records.add("culling",
+                "GPU culling's latest readback, per view: instances drawn and culled, meshlets tested and culled by frustum, cone and depth, triangles "
+                "drawn after meshlet culling (instanceTriangles: before it)",
+                [&view](RpcResponder responder) {
+                    responder.respond(cullingRecord(view));
+                });
     records.add("pipelines", "every pipeline the renderer registered: start-up or first use, state, shaders and their versions, the last error", [&view](RpcResponder responder) {
         responder.respond(pipelinesRecord(view));
     });

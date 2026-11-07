@@ -6,8 +6,8 @@
 auto ViewPicking::add(const char* resource, uint32_t x, uint32_t y, std::function<void(const CaptureResult&)> done) -> void {
     CaptureWatch watch = {
         .id = nextId++,
-        .pass = "GeometryPass",
         .resource = resource,
+        .afterLastWrite = true,
         .trigger = 1,
         .regionX = x,
         .regionY = y,

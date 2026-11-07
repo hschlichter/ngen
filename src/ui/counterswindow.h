@@ -16,7 +16,7 @@ struct CountersWindowState {
 };
 
 // Number of metrics: GPU time, then the RhiPipelineStats fields in order.
-inline constexpr int countersMetricCount = 8;
+inline constexpr int countersMetricCount = 3;
 auto countersMetricName(int metric) -> const char*;
 // A metric of a zone in one frame; false when the frame has no such zone or statistic.
 auto countersMetricValue(const GpuCounters& frame, const std::string& zone, int metric, double& out) -> bool;

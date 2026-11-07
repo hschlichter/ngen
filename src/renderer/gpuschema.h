@@ -14,11 +14,13 @@ enum class GpuFieldType : uint8_t {
     U32,
     I32,
     F32,
-    Bits, // u32 shown in binary
+    Bits, // u32 shown in binary, its low 8 bits
     Vec3,
     Vec4,
     Mat4,
-    CullPlane, // 4-bit cull reason `nibble` of a u32: plane name, "LOD level not drawn", "visible" or "-"
+    CullPlane, // 4-bit cull reason `nibble` of a u32: plane name, "occluded", "LOD level not drawn", "visible" or "-"
+    Byte,      // unsigned byte `byte` of a u32
+    Cone,      // a u32 of four signed bytes, each value * 127: the normal cone's axis xyz and cutoff (127: no cone)
 };
 
 struct GpuField {
@@ -26,6 +28,7 @@ struct GpuField {
     uint32_t offset = 0;
     GpuFieldType type = GpuFieldType::U32;
     uint32_t nibble = 0; // CullPlane: which 4-bit group
+    uint32_t byte = 0;   // Byte: which byte, 0 the lowest
 };
 
 // Name of a cull reason code written by instancecull.comp (0..5 planes, 0xE visible, 0xF not tested).

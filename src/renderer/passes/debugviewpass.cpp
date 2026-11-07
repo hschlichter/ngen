@@ -1,9 +1,7 @@
 #include "debugviewpass.h"
 
-#include "renderconfig.h"
-
-#include "mesh.h"
 #include "profilegpu.h"
+#include "renderconfig.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "trace.h"
@@ -17,11 +15,13 @@ namespace {
 constexpr auto valueFormat = RhiFormat::R32G32B32A32_SFLOAT;
 constexpr auto colorFormat = RhiFormat::R16G16B16A16_SFLOAT;
 
+// MeshletPush, then the viewport and the view (debugview.mesh and debugview.frag).
 struct DrawPush {
+    MeshletPush meshlet;
     float viewport[2];
     uint32_t mode;
-    uint32_t pad;
 };
+static_assert(offsetof(DrawPush, viewport) == 8);
 
 struct ResolvePush {
     uint32_t size[2];
@@ -36,31 +36,23 @@ auto DebugViewPass::init(RhiDevice* dev, PipelineRegistry& pipelineRegistry, uin
     using enum RhiFormat;
     device = dev;
     registry = &pipelineRegistry;
-    if (!device->limits().geometryShaders) {
-        TRACE_WARNING("Render", "DebugViewsOff", "DebugViewPass").text("no geometry shaders on this device; debug views are off");
-        return true;
-    }
+    depthTargetFormat = depthFormat;
     if (!device->supportsTextureFormat(valueFormat, RhiTextureUsage::ColorAttachment | RhiTextureUsage::Sampled | RhiTextureUsage::TransferSrc) ||
         !device->supportsTextureFormat(colorFormat, RhiTextureUsage::Storage | RhiTextureUsage::TransferSrc)) {
         TRACE_WARNING("Render", "DebugViewsOff", "DebugViewPass").text("value or colour format unsupported; debug views are off");
         return true;
     }
 
+    // The task shader culls as the geometry pass's does and launches two mesh workgroups per meshlet (meshletFlagSplit): debugview.mesh
+    // gives every triangle vertices of its own, for its size, edges and index.
     GraphicsPipelineRequest desc = {
-        .vertex = {.id = "shaders/debugview.vert", .stage = RhiShaderStage::Vertex},
         .fragment = {.id = "shaders/debugview.frag", .stage = RhiShaderStage::Fragment},
-        .geometry = ShaderRef{.id = "shaders/debugview.geom", .stage = RhiShaderStage::Geometry},
+        .task = ShaderRef{.id = "shaders/meshlet.task", .stage = RhiShaderStage::Task},
+        .mesh = ShaderRef{.id = "shaders/debugview.mesh", .stage = RhiShaderStage::Mesh},
         .descriptorSetLayouts = {geometrySetLayout},
-        .pushConstant = {.stage = RhiShaderStage::Geometry | RhiShaderStage::Fragment, .offset = 0, .size = sizeof(DrawPush)},
+        .pushConstant = {.stage = RhiShaderStage::Task | RhiShaderStage::Mesh | RhiShaderStage::Fragment, .offset = 0, .size = sizeof(DrawPush)},
         .colorFormats = {valueFormat},
         .depthFormat = depthFormat,
-        .vertexStride = sizeof(Vertex),
-        // The debug views read no vertex colour, so location 2 (the geometry pass's colour) is left out.
-        .vertexAttributes = {
-            {.location = 0, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, position)},
-            {.location = 1, .binding = 0, .format = R32G32B32_SFLOAT, .offset = offsetof(struct Vertex, normal)},
-            {.location = 3, .binding = 0, .format = R32G32_SFLOAT, .offset = offsetof(struct Vertex, texCoord)},
-        },
     };
     for (int doubleSided = 0; doubleSided < 2; doubleSided++) {
         const char* cull = doubleSided != 0 ? "cullnone" : "cullback";
@@ -83,6 +75,14 @@ auto DebugViewPass::init(RhiDevice* dev, PipelineRegistry& pipelineRegistry, uin
             .alphaOp = RhiBlendOp::Add,
         };
         overdrawPipelines[doubleSided] = registry->registerGraphics(std::format("debugview.overdraw.{}", cull), desc, PipelineUse::FirstUse);
+        // The meshlet culling view: every meshlet into a depth buffer of its own (the culled ones aren't in the frame's), then the x-ray,
+        // testing against it without writing and keeping what lies behind (Less, reversed-Z).
+        desc.depthFormat = depthFormat;
+        desc.blend = {};
+        desc.depth = {.testEnable = true, .writeEnable = true, .compareOp = RhiCompareOp::Greater};
+        classifyPipelines[doubleSided] = registry->registerGraphics(std::format("debugview.meshletcull.{}", cull), desc, PipelineUse::FirstUse);
+        desc.depth = {.testEnable = true, .writeEnable = false, .compareOp = RhiCompareOp::Less};
+        xrayPipelines[doubleSided] = registry->registerGraphics(std::format("debugview.meshletcull.xray.{}", cull), desc, PipelineUse::FirstUse);
     }
 
     std::array<RhiDescriptorBinding, 4> bindings = {{
@@ -138,7 +138,17 @@ auto DebugViewPass::ready() -> bool {
     if (!supported) {
         return false;
     }
-    std::array<PipelineHandle, 5> handles = {pipelines[0], pipelines[1], overdrawPipelines[0], overdrawPipelines[1], resolvePipeline};
+    std::array<PipelineHandle, 9> handles = {
+        pipelines[0],
+        pipelines[1],
+        overdrawPipelines[0],
+        overdrawPipelines[1],
+        classifyPipelines[0],
+        classifyPipelines[1],
+        xrayPipelines[0],
+        xrayPipelines[1],
+        resolvePipeline,
+    };
     return registry->ready(handles);
 }
 
@@ -153,6 +163,8 @@ auto DebugViewPass::addPass(
     DrawLists::Handles drawHandles,
     const GpuScene& scene,
     RhiDescriptorSet* geometrySet,
+    FgTextureHandle hzb,
+    bool occlusion,
     std::span<const uint32_t> streamingStates,
     FgTextureHandle litHandle) -> const DebugViewPassData& {
     FgTextureDesc valueDesc = {
@@ -167,9 +179,16 @@ auto DebugViewPass::addPass(
         .format = colorFormat,
         .usage = RhiTextureUsage::Storage | RhiTextureUsage::TransferSrc,
     };
+    FgTextureDesc depthDesc = {
+        .width = extent.width,
+        .height = extent.height,
+        .format = depthTargetFormat,
+        .usage = RhiTextureUsage::DepthAttachment,
+    };
     bool overdraw = view == DebugView::Overdraw;
     // The streaming view lays its colours over the lit image; the other views replace it, so the lit image isn't kept alive for them.
     bool overLit = view == DebugView::Streaming;
+    bool meshletCull = view == DebugView::MeshletCull;
     auto mode = (uint32_t) view;
 
     struct DrawData {
@@ -180,17 +199,21 @@ auto DebugViewPass::addPass(
         "DebugViewPass",
         [&](FrameGraphBuilder& builder, DrawData& data) {
             data.value = builder.write(builder.createTexture("debugview.value", valueDesc), FgAccessFlags::ColorAttachment);
-            if (!overdraw) {
+            if (meshletCull) {
+                data.depth = builder.write(builder.createTexture("debugview.depth", depthDesc), FgAccessFlags::DepthAttachment);
+            } else if (!overdraw) {
                 data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
             }
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
-            builder.read(drawHandles.commands, FgAccessFlags::IndirectRead);
-            builder.read(drawHandles.counts, FgAccessFlags::IndirectRead);
+            // One draw per region: its RegionWork is the draw's command and the task shaders' range of work items.
+            builder.read(drawHandles.regionWork, FgAccessFlags::IndirectRead | FgAccessFlags::StorageRead);
+            builder.read(drawHandles.workItems, FgAccessFlags::StorageRead);
+            builder.read(hzb, FgAccessFlags::ShaderRead);
             if (drawHandles.lodStates.valid()) {
                 builder.read(drawHandles.lodStates, FgAccessFlags::StorageRead);
             }
         },
-        [this, overdraw, mode, extent, &lists, drawHandles, &scene, geometrySet](FrameGraphContext& ctx, const DrawData& data) {
+        [this, overdraw, meshletCull, mode, extent, drawHandles, &scene, geometrySet, occlusion](FrameGraphContext& ctx, const DrawData& data) {
             auto* cmd = ctx.cmd();
             std::array<RhiRenderingAttachmentInfo, 1> colorAtts = {{
                 {
@@ -206,11 +229,12 @@ auto DebugViewPass::addPass(
                 .colorAttachments = {colorAtts.data(), colorAtts.size()},
             };
             if (!overdraw) {
-                // The geometry pass's depth, kept: the test selects its visible surfaces.
+                // The geometry pass's depth, kept: the test selects its visible surfaces. The meshlet culling view's own, cleared.
                 depthAtt = {
                     .texture = ctx.texture(data.depth),
                     .state = RhiTextureState::DepthStencilAttachment,
-                    .clear = false,
+                    .clear = meshletCull,
+                    .clearDepth = 0.0f, // reversed-Z: 0 is infinitely far
                 };
                 renderInfo.depthAttachment = &depthAtt;
             }
@@ -218,27 +242,43 @@ auto DebugViewPass::addPass(
             cmd->setViewport(extent);
             cmd->setScissor(extent);
             DrawPush push = {
+                .meshlet = {.flags = meshletFlagSplit},
                 .viewport = {(float) extent.width, (float) extent.height},
                 .mode = mode,
             };
-            auto* commands = ctx.buffer(drawHandles.commands);
-            auto* counts = ctx.buffer(drawHandles.counts);
+            auto* regionWork = ctx.buffer(drawHandles.regionWork);
             // Every camera bucket; debugview.frag discards cut-away texels itself, so the cutout
             // buckets draw with the same pipelines.
-            for (uint32_t bucket = 0; bucket < DrawLists::bucketCount; bucket++) {
-                if (scene.indexBuffer() == nullptr) {
-                    continue;
+            // Both of occlusion's phases, their meshlets tested as the geometry pass tests them. The meshlet culling view classifies
+            // instead of culling, then draws its x-ray: a second sweep keeping only the meshlets the depth pyramid hides.
+            uint32_t sweeps = meshletCull && occlusion ? 2u : 1u;
+            uint32_t phases = occlusion ? 2u : 1u;
+            for (uint32_t sweep = 0; sweep < sweeps; sweep++) {
+                bool xray = sweep == 1;
+                for (uint32_t index = 0; index < DrawLists::bucketCount * phases; index++) {
+                    if (!scene.poolReady() || geometrySet == nullptr) {
+                        continue;
+                    }
+                    uint32_t bucket = index % DrawLists::bucketCount;
+                    bool late = index >= DrawLists::bucketCount;
+                    bool doubleSided = bucket % 2 != 0;
+                    auto region = late ? DrawLists::cameraLateRegion(doubleSided, bucket >= 2) : DrawLists::cameraRegion(doubleSided, bucket >= 2);
+                    push.meshlet.flags = meshletFlagSplit | (occlusion ? meshletFlagOcclusion : 0u);
+                    PipelineHandle handle = pipelines[doubleSided ? 1 : 0];
+                    if (overdraw) {
+                        handle = overdrawPipelines[doubleSided ? 1 : 0];
+                    } else if (meshletCull) {
+                        push.meshlet.flags |= meshletFlagClassify | (xray ? meshletFlagHiddenOnly : 0u);
+                        handle = xray ? xrayPipelines[doubleSided ? 1 : 0] : classifyPipelines[doubleSided ? 1 : 0];
+                    }
+                    auto* pip = registry->get(handle);
+                    cmd->bindPipeline(pip);
+                    cmd->bindDescriptorSet(pip, 0, geometrySet);
+                    push.meshlet.region = region;
+                    cmd->pushConstants(pip, RhiShaderStage::Task | RhiShaderStage::Mesh | RhiShaderStage::Fragment, 0, sizeof(push), &push);
+                    PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
+                    DrawLists::drawRegion(cmd, regionWork, region);
                 }
-                bool doubleSided = bucket % 2 != 0;
-                auto region = DrawLists::cameraRegion(doubleSided, bucket >= 2);
-                auto* pip = registry->get(overdraw ? overdrawPipelines[doubleSided ? 1 : 0] : pipelines[doubleSided ? 1 : 0]);
-                cmd->bindPipeline(pip);
-                cmd->bindDescriptorSet(pip, 0, geometrySet);
-                cmd->bindVertexBuffer(scene.vertexBuffer());
-                cmd->bindIndexBuffer(scene.indexBuffer(), RhiIndexType::Uint32);
-                cmd->pushConstants(pip, RhiShaderStage::Geometry | RhiShaderStage::Fragment, 0, sizeof(push), &push);
-                PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
-                cmd->drawIndexedIndirectCount(commands, lists.commandOffset(region), counts, DrawLists::countOffset(region), lists.regionCapacity(region));
             }
             cmd->endRendering();
         });
@@ -289,6 +329,6 @@ config::Enum debugView{"render.view.debug",
                        std::vector<std::string>(debugViewNames.begin(), debugViewNames.end()),
                        0,
                        "A debug view drawn in place of the lit image: wireframe, triangle size, overdraw, instance, mesh, material and primitive IDs, UVs, "
-                       "streaming state."};
+                       "streaming state, meshlets and the test that culls each meshlet."};
 
 } // namespace renderconfig

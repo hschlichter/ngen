@@ -1,10 +1,13 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_nonuniform_qualifier : require
 
 // One raw value per pixel per debug view; debugview.comp turns it into a colour and the
 // readout reads it back as is. Alpha 1 marks covered pixels (background stays 0), and
 // counts fragments in the overdraw view, where blending adds.
 layout(push_constant) uniform Push {
+    uint region;
+    uint flags;
     vec2 viewport;
     uint mode; // DebugView
 } push;
@@ -30,6 +33,8 @@ layout(location = 2) flat in uvec4 gIds; // instance, mesh, material, streaming 
 layout(location = 3) noperspective in vec3 gEdgeDistance;
 layout(location = 4) flat in float gArea;
 layout(location = 5) flat in uint gPrimitive;
+layout(location = 6) flat in uint gMeshlet;
+layout(location = 7) flat in uint gReason;
 
 layout(location = 0) out vec4 outValue;
 
@@ -42,6 +47,8 @@ const uint viewMaterial = 6;
 const uint viewPrimitive = 7;
 const uint viewUv = 8;
 const uint viewStreaming = 9;
+const uint viewMeshlet = 10;
+const uint viewMeshletCull = 11;
 
 void main() {
     if (cutAway(gIds.z, gTexCoord)) {
@@ -68,6 +75,12 @@ void main() {
         outValue = vec4(gTexCoord, 0.0, 1.0);
     } else if (push.mode == viewStreaming) {
         outValue = vec4(float(gIds.w), 0.0, 0.0, 1.0);
+    } else if (push.mode == viewMeshlet) {
+        // The meshlet in its mesh, and the instance, so neighbouring instances' meshlets differ.
+        outValue = vec4(float(gMeshlet), float(gIds.x), 0.0, 1.0);
+    } else if (push.mode == viewMeshletCull) {
+        // Why the meshlet would be culled, the instance, and the meshlet in its mesh.
+        outValue = vec4(float(gReason), float(gIds.x), float(gMeshlet), 1.0);
     } else {
         outValue = vec4(0.0);
     }

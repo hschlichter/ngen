@@ -101,16 +101,16 @@ struct RenderMeshInstance {
     AABB worldBounds;
     // A prim's mesh expands to one instance per material submesh, all sharing
     // the same mesh buffers and transform. [indexOffset, indexOffset+indexCount)
-    // is this submesh's range in the mesh index buffer; primFirst marks the
-    // first instance of the prim so the shadow pass can draw the whole mesh once.
+    // is this submesh's range in the mesh index buffer, [meshletOffset, meshletOffset+meshletCount)
+    // its meshlets, which draw it in every view; worldBounds is the submesh's box.
     uint32_t indexOffset = 0;
     uint32_t indexCount = 0;
-    bool primFirst = true;
+    uint32_t meshletOffset = 0;
+    uint32_t meshletCount = 0;
     bool doubleSided = false;
-    bool cutout = false;        // its material is cutout: drawn by the cutout pipelines
-    bool primHasCutout = false; // some submesh of its prim is cutout: the shadow pass draws the prim per submesh
-    uint32_t lodLevel = 0;      // the drawn level + 1 of the nearest LOD root above its prim, 0 under none; for the LOD level view
-    uint32_t lodDepth = 0;      // how many LOD roots its prim is under, 0 under none; the LOD level view's hue
+    bool cutout = false;   // its material is cutout: drawn by the cutout pipelines
+    uint32_t lodLevel = 0; // the drawn level + 1 of the nearest LOD root above its prim, 0 under none; for the LOD level view
+    uint32_t lodDepth = 0; // how many LOD roots its prim is under, 0 under none; the LOD level view's hue
     // Its render-LOD group + 1, 0 for none: drawn only while the group picks its level (lodLevel - 1).
     uint32_t lodGroup = 0;
     // The slot + 1 of the nearest streaming LOD root above its prim, 0 under none: the streaming view colours it by that root's state.

@@ -40,16 +40,19 @@ enum class PipelineUse : uint8_t {
 };
 
 struct ShaderRef {
-    std::string id; // the shader's asset id, "shaders/gbuffer.vert"
+    std::string id; // the shader's asset id, "shaders/gbuffer.mesh"
     RhiShaderStage stage = RhiShaderStage::Vertex;
 };
 
 // RhiGraphicsPipelineDesc with shader ids for modules and owned arrays, so the registry can create it at any time. Descriptor set layouts
-// stay the passes', which outlive the registry's pipelines.
+// stay the passes', which outlive the registry's pipelines. A mesh pipeline names a mesh shader (and a task shader) and leaves the vertex
+// shader's id empty.
 struct GraphicsPipelineRequest {
     ShaderRef vertex;
     ShaderRef fragment;
     std::optional<ShaderRef> geometry;
+    std::optional<ShaderRef> task;
+    std::optional<ShaderRef> mesh;
     std::vector<RhiDescriptorSetLayout*> descriptorSetLayouts;
     RhiPushConstantRange pushConstant;
     std::vector<RhiFormat> colorFormats;

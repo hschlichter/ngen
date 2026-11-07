@@ -38,6 +38,7 @@ auto captureTexelBytes(RhiFormat format) -> uint32_t {
         case RhiFormat::D32_SFLOAT:
         case RhiFormat::R32_UINT:
         case RhiFormat::E5B9G9R9_UFLOAT:
+        case RhiFormat::R32_SFLOAT:
             return 4;
         case RhiFormat::R16G16B16A16_SFLOAT:
         case RhiFormat::R32G32_SFLOAT:
@@ -56,6 +57,7 @@ auto captureChannelCount(RhiFormat format) -> uint32_t {
         case RhiFormat::R8_UNORM:
         case RhiFormat::D32_SFLOAT:
         case RhiFormat::R32_UINT:
+        case RhiFormat::R32_SFLOAT:
             return 1;
         case RhiFormat::R8G8_UNORM:
         case RhiFormat::R32G32_SFLOAT:
@@ -89,6 +91,7 @@ auto decodeTexel(RhiFormat format, const std::byte* texel) -> glm::vec4 {
         case RhiFormat::B8G8R8A8_SRGB:
             return {u8(2), u8(1), u8(0), u8(3)};
         case RhiFormat::D32_SFLOAT:
+        case RhiFormat::R32_SFLOAT:
             return {f32(0), 0.0f, 0.0f, 1.0f};
         case RhiFormat::R32_UINT: {
             uint32_t v = 0;
@@ -193,8 +196,9 @@ auto CaptureService::requestsForFrame(uint32_t frameSlot, uint64_t frame) -> std
         requests.push_back({
             .pass = watch.pass,
             .resource = watch.resource,
+            .afterLastWrite = watch.afterLastWrite,
             .record = [this, watch, frameSlot](RhiCommandBuffer* cmd, const FgCaptureSource& source) {
-                Pending p = {.watch = watch, .frame = currentFrame};
+                Pending p = {.watch = watch, .pass = source.pass, .frame = currentFrame};
                 if (source.kind == FgResourceKind::Texture) {
                     recordTexture(cmd, source, p);
                 } else {
@@ -268,7 +272,8 @@ auto CaptureService::recordStatic(RhiCommandBuffer* cmd, uint32_t frameSlot, uin
     // Graph captures that never ran: the resource was not alive after that pass.
     for (const auto& watch : requestedThisFrame) {
         if (std::ranges::find(recordedThisFrame, watch.id) == recordedThisFrame.end()) {
-            Pending p = {.watch = watch, .frame = frame, .error = "resource not alive after this pass (or not accessed in this frame)"};
+            const char* error = watch.afterLastWrite ? "resource not alive after its last write (or not accessed in this frame)" : "resource not alive after this pass (or not accessed in this frame)";
+            Pending p = {.watch = watch, .pass = watch.pass, .frame = frame, .error = error};
             pending[frameSlot].push_back(std::move(p));
         }
     }
@@ -277,7 +282,7 @@ auto CaptureService::recordStatic(RhiCommandBuffer* cmd, uint32_t frameSlot, uin
         if (it == staticBuffers.end() || !wantsCapture(watch)) {
             continue;
         }
-        Pending p = {.watch = watch, .frame = frame};
+        Pending p = {.watch = watch, .pass = watch.pass, .frame = frame};
         if (it->second.buffer == nullptr) {
             p.error = "buffer does not exist yet";
         } else {
@@ -298,7 +303,7 @@ auto CaptureService::afterFence(uint32_t frameSlot) -> void {
         CaptureResult r = {
             .id = p.watch.id,
             .frame = p.frame,
-            .pass = p.watch.pass,
+            .pass = p.pass,
             .resource = p.watch.resource,
             .texture = p.texture,
             .width = p.width,

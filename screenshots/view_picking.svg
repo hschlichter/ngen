@@ -17,7 +17,7 @@
   </defs>
   <rect x="0" y="0" width="860" height="478" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
   <text x="28" y="40" class="title">ngen-view: picking</text>
-  <text x="28" y="62" class="s" style="font-size:12px">A click picks on the GPU: one texel of gbuffer.instance read back after the geometry pass, mapped to a prim path a few frames later.</text>
+  <text x="28" y="62" class="s" style="font-size:12px">A click picks on the GPU: one texel of gbuffer.instance read back after the pass that writes it last, mapped to a prim path a few frames later.</text>
   <rect x="28" y="92" width="804" height="112" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
   <text x="42" y="116" class="h" fill="#2563eb">main thread</text>
   <rect x="28" y="216" width="804" height="92" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-opacity="0.45"/>
@@ -30,7 +30,7 @@
   <text x="146" y="176" class="s">or view.pick</text>
   <rect x="292" y="126" width="156" height="62" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
   <text x="302" y="145" class="m">CaptureWatch</text>
-  <text x="302" y="162" class="s">GeometryPass, the 1×1</text>
+  <text x="302" y="162" class="s">after its last write, 1×1</text>
   <text x="302" y="176" class="s">gbuffer.instance texel</text>
   <rect x="468" y="126" width="150" height="62" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
   <text x="478" y="145" class="m">onCaptureResult</text>
@@ -49,7 +49,7 @@
   <text x="478" y="274" class="s">the texel copied after</text>
   <text x="478" y="288" class="s">the pass, read back</text>
   <rect x="292" y="342" width="326" height="62" rx="8" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
-  <text x="302" y="361" class="m">GeometryPass</text>
+  <text x="302" y="361" class="m">GeometryPass, GeometryPassLate</text>
   <text x="302" y="378" class="s">each pixel's instance index + 1 into</text>
   <text x="302" y="392" class="s">gbuffer.instance; 0 where nothing is drawn</text>
 

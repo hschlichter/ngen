@@ -1,4 +1,5 @@
 #version 450
+#extension GL_EXT_nonuniform_qualifier : require
 #extension GL_GOOGLE_include_directive : require
 
 // The geometry pass for cutout materials and render-LOD fades: gbuffer.frag's outputs where the opacity reaches the material's threshold
@@ -6,21 +7,21 @@
 
 layout(set = 0, binding = 1) uniform sampler2D textures[1024];
 
-// The instance buffer, for the instance's material (gbuffer.vert's Instance).
+// The instance buffer, for the instance's material (meshlet.glsl's Instance).
 struct Instance {
     mat4 model;
     uint material;
     uint mesh;
-    uint indexOffset;
-    uint indexCount;
+    uint meshletOffset;
+    uint meshletCount;
     vec3 boundsMin;
     uint flags;
     vec3 boundsMax;
     uint lodLevel;
     uint lodGroup; // its render-LOD group + 1, 0 for none
-    uint pad1;
-    uint pad2;
-    uint pad3;
+    uint triangleCount;
+    uint streamRoot;
+    uint lodDepth;
 };
 layout(std430, set = 0, binding = 2) readonly buffer Instances {
     Instance data[];
@@ -55,9 +56,9 @@ void main() {
     if (lodFadedAway(uintBitsToFloat(fragLod.y)) || cutAway(instances.data[fragInstance - 1u].material, fragTexCoord)) {
         discard;
     }
-    vec4 texColor = texture(textures[fragTexture], fragTexCoord);
+    vec4 texColor = texture(textures[nonuniformEXT(fragTexture)], fragTexCoord);
     // Alpha carries the mip level the sampler picked, for the mip level buffer view.
-    float lod = textureQueryLod(textures[fragTexture], fragTexCoord).x;
+    float lod = textureQueryLod(textures[nonuniformEXT(fragTexture)], fragTexCoord).x;
     outAlbedo = vec4(texColor.rgb * fragColor, clamp(lod / 16.0, 0.0, 1.0));
 
     vec3 n = fragNormal;

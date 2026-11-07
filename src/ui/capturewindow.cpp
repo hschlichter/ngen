@@ -18,9 +18,24 @@ auto passLabel(const std::string& pass) -> const char* {
     return pass.empty() ? "(after last pass)" : pass.c_str();
 }
 
-// Resources the target pass touches, or the imported and static ones after the last pass.
-auto resourcesFor(const FrameGraphDebugSnapshot& fg, const std::string& pass) -> std::vector<std::string> {
+auto targetLabel(const CaptureWindowState& state) -> const char* {
+    return state.afterLastWrite ? "(after its last write)" : passLabel(state.pass);
+}
+
+// Resources the target pass touches, every resource a pass writes when it is the last writer, or the imported and static ones after the
+// last pass.
+auto resourcesFor(const FrameGraphDebugSnapshot& fg, const std::string& pass, bool afterLastWrite) -> std::vector<std::string> {
     std::set<std::string> names;
+    if (afterLastWrite) {
+        for (const auto& p : fg.passes) {
+            for (const auto& a : p.writes) {
+                if (a.resourceIndex < fg.resources.size()) {
+                    names.insert(fg.resources[a.resourceIndex].name);
+                }
+            }
+        }
+        return {names.begin(), names.end()};
+    }
     if (pass.empty()) {
         for (const auto& r : fg.resources) {
             if (r.external) {
@@ -52,15 +67,21 @@ auto resourcesFor(const FrameGraphDebugSnapshot& fg, const std::string& pass) ->
 
 auto drawTarget(const std::optional<FrameGraphDebugSnapshot>& fg, CaptureWindowState& state) -> void {
     ImGui::SetNextItemWidth(220.0f);
-    if (ImGui::BeginCombo("Pass", passLabel(state.pass))) {
-        if (ImGui::Selectable("(after last pass)", state.pass.empty())) {
+    if (ImGui::BeginCombo("Pass", targetLabel(state))) {
+        if (ImGui::Selectable("(after last pass)", !state.afterLastWrite && state.pass.empty())) {
             state.pass.clear();
+            state.afterLastWrite = false;
+        }
+        if (ImGui::Selectable("(after its last write)", state.afterLastWrite)) {
+            state.pass.clear();
+            state.afterLastWrite = true;
         }
         if (fg.has_value()) {
             for (auto passIdx : fg->executionOrder) {
                 const auto& p = fg->passes[passIdx];
-                if (ImGui::Selectable(p.name.c_str(), p.name == state.pass)) {
+                if (ImGui::Selectable(p.name.c_str(), !state.afterLastWrite && p.name == state.pass)) {
                     state.pass = p.name;
+                    state.afterLastWrite = false;
                 }
             }
         }
@@ -70,7 +91,7 @@ auto drawTarget(const std::optional<FrameGraphDebugSnapshot>& fg, CaptureWindowS
     ImGui::SetNextItemWidth(220.0f);
     if (ImGui::BeginCombo("Resource", state.resource.empty() ? "(none)" : state.resource.c_str())) {
         if (fg.has_value()) {
-            for (const auto& name : resourcesFor(*fg, state.pass)) {
+            for (const auto& name : resourcesFor(*fg, state.pass, state.afterLastWrite)) {
                 if (ImGui::Selectable(name.c_str(), name == state.resource)) {
                     state.resource = name;
                 }
@@ -211,7 +232,7 @@ auto captureWindowWatch(const CaptureWindowState& state) -> std::optional<Captur
     if (state.resource.empty()) {
         return std::nullopt;
     }
-    return CaptureWatch{.id = captureWindowWatchId, .pass = state.pass, .resource = state.resource, .live = state.live, .trigger = state.trigger, .display = state.display};
+    return CaptureWatch{.id = captureWindowWatchId, .pass = state.pass, .resource = state.resource, .afterLastWrite = state.afterLastWrite, .live = state.live, .trigger = state.trigger, .display = state.display};
 }
 
 auto drawCaptureWindow(bool& show, const std::optional<FrameGraphDebugSnapshot>& fg, CaptureWindowState& state) -> void {

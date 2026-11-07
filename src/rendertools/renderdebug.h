@@ -16,10 +16,11 @@
 struct RenderDebugMesh {
     uint32_t meshIndex = 0;
     uint32_t vertexCount = 0;
-    uint32_t indexCount = 0;
+    uint32_t triangleCount = 0;
+    uint32_t meshletCount = 0;
     uint64_t vertexBytes = 0;
-    uint64_t indexBytes = 0;
-    uint32_t instances = 0; // GPU instances referencing this mesh (submeshes count separately)
+    uint64_t meshletBytes = 0; // meshlets, their vertex indices and triangles
+    uint32_t instances = 0;    // GPU instances referencing this mesh (submeshes count separately)
 };
 
 struct RenderDebugTexture {
@@ -78,8 +79,7 @@ struct RenderDebugSnapshot {
 
     // Scene
     uint32_t instanceCount = 0;
-    uint32_t primFirstInstances = 0; // what the shadow pass draws
-    uint32_t culledInstances = 0;    // skipped by the geometry pass this frame
+    uint32_t culledInstances = 0; // skipped by the geometry pass this frame
     uint32_t materialCount = 0;
     uint32_t materialsWithTexture = 0;
     uint32_t cutoutMaterials = 0; // drawn only where their opacity reaches the threshold

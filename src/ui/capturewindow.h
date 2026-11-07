@@ -9,7 +9,8 @@
 // Persistent state of the Capture window: the target (resource after a pass), how to show
 // it, and the last result.
 struct CaptureWindowState {
-    std::string pass; // "" = after the last pass
+    std::string pass;            // "" = after the last pass
+    bool afterLastWrite = false; // after the pass that writes the resource last this frame; pass is ignored
     std::string resource;
     bool live = false;
     uint32_t trigger = 0;
