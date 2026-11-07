@@ -169,7 +169,7 @@ Bootstrap `ngen-build` once (and again whenever `src/build/bootstrap.cpp` or the
 
 ```bash
 mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/bootstrap.cpp
-./_out/ngen-build -p linux-vulkan -c debug      # default target: ngen-view
+./_out/ngen-build -p linux-vulkan -c debug      # no target: every program, examples included (not format / tidy)
 ```
 
 `ngen-build` takes the platform (`-p`) and config (`-c`) on every call; configs are `debug`, `release` and `gamerelease`. Binaries land in
@@ -232,7 +232,8 @@ Forwarded tools replace the cli process, so their output, signals and exit code 
 - **The set variant is stored in `_out/set`**, one line such as `linux-vulkan/debug`. Tools of that variant are `_out/<that line>/<tool>`, which
   scripts can use too: `_out/$(cat _out/set)/ngen-view`.
 - **`view` does not build.** On a variant you haven't built yet, it says `ngen-view is not built` and names the command: `ngen-cli build`.
-- **The cli rebuilds only when asked.** The default target is `ngen-view`, so after changing `src/apps/cli.cpp` run `./ngen-cli build ngen-cli`.
+- **A build without a target builds everything.** `./ngen-cli build` builds every program of the variant, the cli and the examples included;
+  name a target to build less (`./ngen-cli build ngen-view`). `format` and `tidy` run only when named.
 - **Cleaning the set variant removes its cli too.** `./ngen-cli build --clean` is `ngen-build --clean`, and the cli lives in the variant's output
   directory, so `./ngen-cli` dangles afterwards. Recover with `./_out/ngen-build -p <platform> -c <config> ngen-cli`, or run the first-time setup
   again. To forget the set variant, delete `_out/set` and `./ngen-cli`.

@@ -617,7 +617,6 @@ auto main(int argc, char** argv) -> int {
     p.target(assetServer);
     p.target(format);
     p.target(tidy);
-    p.default_target(view);
 
     return ir::main(argc, argv, p);
 }

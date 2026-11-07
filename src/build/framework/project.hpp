@@ -4,7 +4,8 @@
 // configurations. The actual objects live in user code (typically `main()` locals in `build.cpp`); the Project
 // just records the set the build should consider.
 //
-// `target` and `default_target` add roots; `platform` and `config` register variant axes. All registration calls
+// `target` adds a root; `platform` and `config` register variant axes. A build without targets builds every root
+// except global tools (see `ir::Emitter`); there is no single default target. All registration calls
 // are idempotent — registering the same reference twice is a no-op, so user code can re-register through
 // multiple paths without bookkeeping.
 //
@@ -31,11 +32,6 @@ public:
         if (std::find(roots_.begin(), roots_.end(), &t) == roots_.end()) {
             roots_.push_back(&t);
         }
-    }
-
-    auto default_target(Target& t) -> void {
-        default_ = &t;
-        target(t);
     }
 
     auto platform(Platform& p) -> void {
@@ -94,15 +90,6 @@ public:
         return result;
     }
 
-    auto default_build() const -> std::vector<Target*> {
-        if (!default_) {
-            return {};
-        }
-        return reachable_from(*default_);
-    }
-
-    auto default_target() const -> Target* { return default_; }
-
     auto roots() const -> const std::vector<Target*>& { return roots_; }
 
     auto platforms() const -> const std::vector<Platform*>& { return platforms_; }
@@ -129,7 +116,6 @@ private:
     }
 
     std::vector<Target*> roots_;
-    Target* default_ = nullptr;
     std::vector<Platform*> platforms_;
     std::vector<Configuration*> configs_;
 };

@@ -31,7 +31,7 @@
 // platform or config on the user's behalf. When either flag is missing, the orchestrator invokes the graph
 // stage's `--list` (which prints registered platforms, configs, and top-level targets via
 // `build::print_summary`) and then reports the missing flag. Targets are positional and may be repeated;
-// empty means "use the IR's default_targets". Verbosity (`-v`, `-vv`) is forwarded to the runner; `--list`
+// empty means "use the IR's default_targets" (every registered target except global tools). Verbosity (`-v`, `-vv`) is forwarded to the runner; `--list`
 // and `--dump-graph` are forwarded to the graph stage.
 //
 // `std::system` is used to spawn the two subprocesses (graph and runner). It's marked with
@@ -161,7 +161,8 @@ auto print_help() -> void {
               << "      --dump-graph        Print the project IR as JSON to stdout; exit.\n"
               << "  -h, --help              Show this message.\n"
               << "\n"
-              << "Targets are positional and may repeat; empty means \"use the project's default_target\".\n"
+              << "Targets are positional and may repeat; empty means every target the project registers, except\n"
+              << "global tools (format, lint), which run only when named.\n"
               << "A target is matched first by exact edge name, then by case-insensitive substring against\n"
               << "ObjectFile source stems (every hit is built), then by substring against library / program /\n"
               << "tool / alias names. Unmatched queries are passed through and produce an unknown-target error.\n"

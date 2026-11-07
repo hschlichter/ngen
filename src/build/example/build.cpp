@@ -46,7 +46,6 @@ auto main(int argc, char** argv) -> int {
     auto hello = cxx::program("hello").sources({"src/main.cpp"});
 
     p.target(hello);
-    p.default_target(hello);
 
     // Hand off argv parsing + dispatch to the framework's graph-stage main.
     return ir::main(argc, argv, p);

@@ -49,7 +49,6 @@ inline auto describe_kind(const Target& t) -> std::string_view {
 }
 
 inline auto list_roots(const Project& project, std::ostream& out) -> void {
-    const auto* default_target = project.default_target();
     std::size_t name_width = 0;
     for (const auto* t : project.roots()) {
         name_width = std::max(name_width, t->name().size());
@@ -62,8 +61,8 @@ inline auto list_roots(const Project& project, std::ostream& out) -> void {
         }
 
         out << "  [" << describe_kind(*t) << "]";
-        if (t == default_target) {
-            out << "  (default)";
+        if (const auto* tool = t->extension<Tool>(); tool && tool->is_global) {
+            out << "  (only when named)";
         }
 
         out << '\n';

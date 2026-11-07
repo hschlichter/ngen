@@ -46,7 +46,7 @@ The `example-graph` binary also accepts `--list` and `--dump-graph` (since `ir::
 
 ```sh
 (cd src/build/example && ./_out/example-graph --list)
-# → Platforms: host  Configurations: debug, release  Targets: hello (default)
+# → Platforms: host  Configurations: debug, release  Targets: hello
 ```
 
 ## What `build.cpp` shows

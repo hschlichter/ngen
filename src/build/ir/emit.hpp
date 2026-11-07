@@ -219,8 +219,13 @@ public:
             }
         }
 
-        if (auto* def = project_.default_target()) {
-            if (auto it = name_to_edge_.find(def->name()); it != name_to_edge_.end()) {
+        // A build without targets builds every registered target, except global tools: those work on the source
+        // tree (formatting, linting) rather than produce the variant's outputs, so they run only when named.
+        for (auto* root : project_.roots()) {
+            if (auto* tool = root->extension<Tool>(); tool && tool->is_global) {
+                continue;
+            }
+            if (auto it = name_to_edge_.find(root->name()); it != name_to_edge_.end()) {
                 ir_.default_targets.push_back(it->second);
             }
         }

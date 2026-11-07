@@ -28,7 +28,7 @@
   <!-- Project and legend -->
   <rect x="44" y="140" width="368" height="58" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
   <text x="56" y="161" class="lib">build::Project</text>
-  <text x="56" y="179" class="s">entry targets, default target, platforms, configs,</text>
+  <text x="56" y="179" class="s">entry targets, platforms, configs,</text>
   <text x="56" y="192" class="s">by pointer to the core objects below</text>
   <rect x="588" y="140" width="368" height="58" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
   <line x1="630" y1="163" x2="602" y2="163" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>

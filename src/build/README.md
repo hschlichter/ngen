@@ -150,9 +150,10 @@ renderer` (exact) builds the library; `ngen-build -p X -c Y rhivu` falls through
 Resolution is silent; the runner's normal `[done/total] description` output makes which edges actually ran
 self-evident.
 
-When no positional target is given, the runner falls back to the project's `default_target()`. Internal
-targets that aren't registered as roots are not top-level invokable but are reached via traversal from
-registered entry points.
+When no positional target is given, the runner builds every target the project registers with `Project::target`, except global tools
+(`format`, `tidy`): they work on the source tree rather than produce the variant's outputs, so they run only when named, and `--list` marks them
+`(only when named)`. There is no single default target. Internal targets that aren't registered as roots are not top-level invokable but are
+reached via traversal from registered entry points.
 
 Special flags:
 

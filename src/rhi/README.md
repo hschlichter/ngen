@@ -290,7 +290,7 @@ Build and run unattended:
 SDL_VIDEODRIVER=offscreen ./_out/linux-vulkan/debug/ngen-example-triangle --frames=60 --check --validation
 ```
 
-The whole set, after any RHI change (the default target builds only `ngen-view`, so a sweep without this runs stale binaries):
+The whole set, after any RHI change (a build without a target builds them too; `examples` builds only them):
 
 ```sh
 ./_out/ngen-build -p linux-vulkan -c debug examples
