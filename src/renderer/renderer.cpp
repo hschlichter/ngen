@@ -1013,6 +1013,8 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
             textureSampler,
             lighting,
             snapshot.gbufferViewMode,
+            occlusion ? hzbHandle : FgTextureHandle{},
+            snapshot.hzbLevel,
             snapshot.showBufferOverlay,
             snapshot.showShadowOverlay,
             snapshot.lodPopFlash,

@@ -265,5 +265,5 @@
   <text x="28" y="1118" class="s">The graph orders passes by these accesses (Kahn sort) and inserts every barrier. Blit reads sceneColorAA, or debugview.color in a debug view; DebugViewResolve reads sceneColor in the streaming view only.</text>
   <text x="28" y="1136" class="s">With render.prepass on, the phases run depth-only before shading: DepthPrepass, HzbBuild, the late culling passes, DepthPrepassLate and HzbBuildFinal, then one GeometryPass draws both phases behind an Equal test.</text>
   <text x="28" y="1154" class="s">With a culling camera apart from the rendered one, DepthPrepassCull and DepthPrepassCullLate draw both phases from it into depth.cull, which HzbBuild and HzbBuildFinal read; GeometryPass then draws both phases with its own depth test.</text>
-  <text x="28" y="1172" class="s">Not drawn: cullParams and cullGroupBounds (written by the CPU, read by every culling pass), cullPlanes, lodResidency, lodGroupCounters and the staging buffers. Picking copies a texel of gbuffer.instance after GeometryPass.</text>
+  <text x="28" y="1172" class="s">Not drawn: cullParams and cullGroupBounds (written by the CPU, read by every culling pass), cullPlanes, lodResidency, lodGroupCounters and the staging buffers. Picking copies a texel of gbuffer.instance after the pass that writes it last (GeometryPassLate here).</text>
 </svg>

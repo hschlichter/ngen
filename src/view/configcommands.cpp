@@ -161,6 +161,10 @@ auto parseOcclusion(const std::string& args) -> std::expected<Json, std::string>
     return configValues({{"render.culling.occlusion", args}});
 }
 
+auto parseHzbLevel(const std::string& args) -> std::expected<Json, std::string> {
+    return configValues({{"render.view.hzblevel", args}});
+}
+
 auto parseAntiAliasing(const std::string& args) -> std::expected<Json, std::string> {
     return configValues({{"render.antialiasing", args}});
 }
@@ -347,6 +351,7 @@ auto registerConfigCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& 
     verbs.add("shadow", "config.set", parseShadow);
     verbs.add("prepass", "config.set", parsePrepass);
     verbs.add("occlusion", "config.set", parseOcclusion);
+    verbs.add("hzb-level", "config.set", parseHzbLevel);
     verbs.add("aa", "config.set", parseAntiAliasing);
     verbs.add("ambient", "config.set", parseAmbient);
     verbs.add("gpuscene", "config.set", parseGpuScene);

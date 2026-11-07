@@ -293,6 +293,10 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         // The meshlet culling debug view is a debug view like any other; the window switches it.
         bool meshletCullView = renderconfig::debugView.get() == (size_t) DebugView::MeshletCull;
         bool meshletCullViewBefore = meshletCullView;
+        // So is the depth pyramid's buffer view, with its level.
+        bool pyramidView = renderconfig::bufferView.get() == (size_t) GBufferView::Hzb;
+        bool pyramidViewBefore = pyramidView;
+        int pyramidLevel = (int) renderconfig::hzbLevel.get();
         drawCullingWindow(showCullingWindow,
                           {.enabled = cullEnabled,
                            .frozen = cullFrozen,
@@ -301,11 +305,17 @@ auto ViewUI::draw(const PrimPathOf& primPath,
                            .overlayView = culledView,
                            .showCascadeFrusta = cascadeFrusta,
                            .meshletCullView = meshletCullView,
+                           .pyramidView = pyramidView,
+                           .pyramidLevel = pyramidLevel,
                            .depthPrepass = depthPrepass,
                            .cull = *cullResult});
         if (meshletCullView != meshletCullViewBefore) {
             (void) renderconfig::debugView.set(meshletCullView ? (size_t) DebugView::MeshletCull : (size_t) DebugView::None);
         }
+        if (pyramidView != pyramidViewBefore) {
+            (void) renderconfig::bufferView.set(pyramidView ? (size_t) GBufferView::Hzb : (size_t) GBufferView::Lit);
+        }
+        (void) renderconfig::hzbLevel.set(pyramidLevel);
     }
     toolsconfig::overlayGrid.set(showGrid);
     toolsconfig::overlayOrigin.set(showOrigin);

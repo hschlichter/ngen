@@ -71,7 +71,8 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
 
 - `--screenshot=PATH` writes the presented frame as PNG on the last frame of `--frames`; Read the PNG to see it. Screenshots leave the UI out
   (the menu bar, windows and the status bar, whose numbers change every run), so they compare byte for byte; `--show-ui` keeps it in.
-- `--view=lit|albedo|normals|depth|shadowfactor|shadowmap|shadowuv|worldpos|miplevel|cascades|lodlevel` (miplevel: red level 0 to white
+- `--view=lit|albedo|normals|depth|shadowfactor|shadowmap|shadowuv|worldpos|miplevel|cascades|lodlevel|hzb` (hzb: occlusion's depth pyramid at
+  the level `hzb-level <n>` sets, shaded as the depth view, dark red while occlusion is off; miplevel: red level 0 to white
   level 7+; cascades: red, green, blue, yellow near to far; lodlevel: at half strength over the lit image, the drawn level of the nearest LOD root, red level 0,
   orange 1, yellow 2, green 3, … white 7+ (an index within that root), or with `lod-show color depth` how many LOD roots deep it is (1 blue,
   2 green, 3 orange, 4+ magenta), grey under none; shadowmap shows the cascade atlas), `--overlay=grid=on,aabbs=off,...`

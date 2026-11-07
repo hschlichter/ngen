@@ -72,7 +72,7 @@ struct LightingInputs {
 };
 
 // The buffer views by name, in GBufferView's order: the `render.view.buffer` configuration's choices.
-inline constexpr std::array<const char*, 11> gbufferViewNames = {"lit", "albedo", "normals", "depth", "shadowfactor", "shadowmap", "shadowuv", "worldpos", "miplevel", "cascades", "lodlevel"};
+inline constexpr std::array<const char*, 12> gbufferViewNames = {"lit", "albedo", "normals", "depth", "shadowfactor", "shadowmap", "shadowuv", "worldpos", "miplevel", "cascades", "lodlevel", "hzb"};
 
 enum class GBufferView : int {
     Lit = 0,
@@ -86,6 +86,9 @@ enum class GBufferView : int {
     MipLevel,
     Cascades,
     LodLevel,
+    // Occlusion's depth pyramid at one level (RenderSnapshot::hzbLevel), the farthest depth each texel covers, coloured as the depth view;
+    // dark red while occlusion didn't build it this frame.
+    Hzb,
 };
 
 struct LightingPassData {
@@ -93,6 +96,7 @@ struct LightingPassData {
     FgTextureHandle normal;
     FgTextureHandle depth;
     FgTextureHandle shadowMap;
+    FgTextureHandle hzb; // read only in the Hzb view
     FgTextureHandle sceneColor;
 };
 
@@ -111,6 +115,8 @@ public:
         RhiSampler* sampler,
         const LightingInputs& lightInputs,
         GBufferView viewMode,
+        FgTextureHandle hzbHandle,
+        int hzbLevel,
         bool showOverlay,
         bool showShadowOverlay,
         bool lodFlash,

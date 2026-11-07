@@ -124,6 +124,13 @@ void drawCullingWindow(bool& show, CullingWindowInputs in) {
     } else {
         ImGui::TextDisabled("Occlusion: off this frame");
     }
+    ImGui::Checkbox("Show depth pyramid", &in.pyramidView);
+    helpMarker("The hzb buffer view: occlusion's depth pyramid at one level, each texel the farthest depth it covers (white near,\n"
+               "black far or empty). Level 0 is the depth's size rounded down to powers of two, each next level half that; an\n"
+               "instance or meshlet is tested at the level where its screen rectangle covers at most 2x2 texels.");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::SliderInt("Level", &in.pyramidLevel, 0, 15);
 
     // The cascades: every instance (a prim's submesh), culled by its box, its meshlets frustum-tested by the shadow pass.
     ImGui::SeparatorText("Shadow cascades");

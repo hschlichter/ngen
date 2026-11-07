@@ -151,8 +151,10 @@ views 0–4, phase 2's those of view 5, so the two never overwrite each other an
 
 ## As built
 
-- **Not built**: the `hzb` buffer view (`--view=hzb`) and its `occlusion mip=<n>` switch. The pyramid shows in the Frame Graph window's
-  previews and through `capture HzbBuild hzb`, one mip at a time. Moved to Deferred.
+- **Built after review** (2026-11-07): the `hzb` buffer view (`view hzb`, `--view=hzb`), its level as `render.view.hzblevel` with the verb
+  `hzb-level <n>` (not `occlusion mip=<n>`: the level belongs to the view, and `occlusion` stays on/off), and in the Culling window "Show
+  depth pyramid" with a level slider. Before it the pyramid could only be captured (`capture HzbBuild hzb`): the Frame Graph window's
+  previews skip `R32_SFLOAT`.
 - **Not built**: the Engine Map entries. The Engine Map no longer exists ([ADR 63](adr/0063_engine_map_and_scene_flow_windows.md),
   superseded by [ADR 62](adr/0062_runtime_access_and_visibility.md)); `src/renderer/README.md` "Occlusion culling" says where occlusion
   sits in the frame.
@@ -167,5 +169,3 @@ views 0–4, phase 2's those of view 5, so the two never overwrite each other an
 - **Cascade occlusion** (each cascade's own pyramid). Trigger: shadow pass time dominating at the test world's viewpoints.
 - **Single-pass pyramid build**. Trigger: `HzbBuild` above 0.2 ms on hardware. (It measures 0.43 ms at the test world's `flight_10` on the
   AMD 890M, so the trigger has fired; the culling compute came first.)
-- **The `hzb` view** (`--view=hzb`, `occlusion mip=<n>`), from Visibility. Trigger: occlusion misbehaving in a way a capture of one mip
-  doesn't explain, or the next visibility pass over the renderer.

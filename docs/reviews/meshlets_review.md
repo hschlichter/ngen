@@ -952,16 +952,14 @@ Where the time goes now:
 | Kind | Added or changed |
 |---|---|
 | Records | `culling`: per view `meshlets {tested, frustumCulled, coneCulled, occluded, drawn, triangles}`, `instanceTriangles`, `triangles` (drawn); `regions[]` (draws, meshlets, instance triangles); `occlusion {ran, enabled, frozen, depthFrom, drawnFirst, drawnSecond, occluded}`; `sceneMeshlets`. `gpuscene`: the geometry pool by part (vertices, meshlets, meshlet vertices, meshlet triangles). `memory`: `gpuscene.pool.meshlets`, `…meshletvertices`, `…meshlettriangles`, `cull.workitems`, `cull.groupbounds`, `cull.history`, `hzb`. `render`: passes `InstanceCullLayout`, `InstanceCullOcclusion`, the late cull passes, `HzbBuild`, `HzbBuildFinal`, `GeometryPassLate`, `DepthPrepassLate`, `DepthPrepassCull`, `DepthPrepassCullLate`; meshes with meshlet counts and bytes; draws with their meshlets |
-| Configuration | `render.culling.occlusion` (on by default) |
-| Script verbs | `occlusion on\|off`; `debugview meshlet\|meshletcull` |
+| Configuration | `render.culling.occlusion` (on by default); `render.view.hzblevel` (the `hzb` view's level, added after review) |
+| Script verbs | `occlusion on\|off`; `debugview meshlet\|meshletcull`; `view hzb` and `hzb-level <n>` (after review); `capture + <resource>` (after review) |
 | RPC | none new: the verbs go through `config.set` and the existing debug-view method |
 | Trace | `MeshletWorkGrown` (work-item buffer grown after an overflow readback, with the overflow and new capacity) |
 | Windows | Culling: meshlet and occlusion rows, the occlusion switch, "Colour meshlets by culling". GPU Scene: meshlet columns, Draws tab reads `DrawRecord`s with "meshlets from work item". Frame Graph, frame debugger: the new passes and the pyramid's in-pass barriers. Debug View window: the two meshlet views |
 | Captures | `capture HzbBuild hzb` (the pyramid, as PNG + JSON); `gpuscene.meshlets` decoded with `counts` and `cone` as fields |
 
 **Gaps:**
-- **No pyramid view.** The occlusion plan promised `--view=hzb` and an `occlusion mip=<n>` switch; neither was built. The pyramid can only be
-  seen by capture, and only one mip at that.
 - **No capture schema** for `cull.groupbounds` or the culling records (`InstanceCull cullGroupBounds` shows raw words; a capture of
   `instances` shows the culling records as rows past the capacity).
 - **Mesh-shader pipeline statistics** aren't available on RADV (`meshShaderQueries` false), so the counters window has none for mesh passes.
@@ -1003,7 +1001,11 @@ Answered 2026-11-07:
 4. **Frozen frustum:** occlusion keeps running against the culling camera's own depth.
 5. **Other hardware:** an NVIDIA measurement will come later; not a merge blocker.
 6. **Memory:** about 650 MB of culling buffers on the test world is accepted.
-7. **Pyramid view:** build it only if it still brings meaning and performance (open, see the hand-off).
+7. **Pyramid view:** built. It brings meaning, not performance: the pyramid couldn't be seen in the UI at all (the Frame Graph window's
+   previews skip its `R32_SFLOAT` format, and the texture inspector only shows scene textures). Now the `hzb` buffer view shows it at a level
+   (`view hzb`, `--view=hzb`, `hzb-level <n>` / `render.view.hzblevel`, the View menu, and "Show depth pyramid" with a level slider in the
+   Culling window). Debug only: the lighting pass reads the pyramid only while the view is on, so every other frame's graph is unchanged.
+   Checked on Sponza: levels 0 and 4, dark red with occlusion off, no warnings or validation errors.
 8. **Camera cuts:** not measured; not needed.
 
 Decided with it: the meshlet system stays as built and the branch is prepared for merging into main.

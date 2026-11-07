@@ -37,6 +37,7 @@ struct RenderSnapshot {
     int windowHeight = 0;
 
     GBufferView gbufferViewMode = GBufferView::Lit;
+    int hzbLevel = 0;                      // the depth pyramid level the Hzb buffer view shows
     DebugView debugView = DebugView::None; // replaces the lit image when on (DebugViewPass)
     // Per streaming root slot, its state (StreamingRootState, with streamingStateFinding), for the streaming view; empty while it is off.
     std::vector<uint32_t> streamingStates;

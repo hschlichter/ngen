@@ -400,6 +400,7 @@ auto ViewFrame::buildSnapshot() -> RenderSnapshot {
         .windowWidth = width,
         .windowHeight = height,
         .gbufferViewMode = static_cast<GBufferView>(renderconfig::bufferView.get()),
+        .hzbLevel = (int) renderconfig::hzbLevel.get(),
         .debugView = static_cast<DebugView>(renderconfig::debugView.get()),
         .showBufferOverlay = renderconfig::bufferOverlay.get(),
         .showShadowOverlay = renderconfig::shadowOverlay.get(),

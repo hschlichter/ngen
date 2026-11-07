@@ -36,7 +36,7 @@ out and changes level around the camera as it moves.*
 - **Vulkan 1.3** behind a thin, backend-agnostic RHI, with dynamic rendering and synchronization2.
 
 **Seeing inside**
-- **Debug views**: wireframe, triangle size, overdraw, instance, mesh, material and primitive ids, meshlets and meshlet culling, UVs,
+- **Debug views**: wireframe, triangle size, overdraw, instance, mesh, material and primitive ids, meshlets and meshlet culling, occlusion's depth pyramid, UVs,
   streaming state, LOD level, mip level, shadow cascades and the G-buffer, each with a legend and a cursor readout.
 - **Tools**: the LOD and Streaming tools (every root's levels, measures, residency and findings, with viewport layers and a map), a debug camera
   that watches the main camera's frustum, culling and streaming from outside, camera modes (following the ground, orbiting), camera flights.

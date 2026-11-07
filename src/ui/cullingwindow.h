@@ -13,6 +13,8 @@ struct CullingWindowInputs {
     int& overlayView; // view the AABB overlay shows: 0 camera, 1.. cascades
     bool& showCascadeFrusta;
     bool& meshletCullView; // the debug view colouring meshlets by the test that culls them
+    bool& pyramidView;     // the hzb buffer view: the depth pyramid at pyramidLevel
+    int& pyramidLevel;     // render.view.hzblevel
     bool depthPrepass;     // render.prepass: occlusion's phases draw in the depth prepass, not the geometry pass
     const CullResult& cull;
 };
