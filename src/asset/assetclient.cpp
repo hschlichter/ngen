@@ -1,5 +1,6 @@
 #include "assetclient.h"
 
+#include "profile.h"
 #include "rpcdiscovery.h"
 
 #include "rpcprotocol.h"
@@ -76,6 +77,7 @@ struct AssetClient::State {
         if (rpc::messageKind(message) != rpc::MessageKind::Notification) {
             return;
         }
+        PROFILE_ZONE_DETAIL("AssetMessage", Assets);
         auto method = message["method"].get<std::string>();
         const auto& params = message["params"];
         auto id = params.value("id", std::string());
@@ -171,6 +173,7 @@ auto AssetClient::connect(const std::string& variant) -> std::expected<RpcEndpoi
     if (server == nullptr) {
         return std::unexpected(std::format("no asset server for {} is running in {}; start that variant's ngen-asset-server here", variant, std::filesystem::current_path().string()));
     }
+    state->rpc.setThreadName("Asset I/O");
     state->rpc.setRequestHandler([this](RpcServer::ConnectionId, const rpc::Json& message, std::vector<std::byte> attachment) {
         state->onMessage(message, std::move(attachment));
     });
@@ -199,6 +202,8 @@ auto AssetClient::connect(const std::string& variant) -> std::expected<RpcEndpoi
 }
 
 auto AssetClient::request(std::span<const std::string> ids, bool force) -> void {
+    PROFILE_ZONE_DETAIL("AssetRequest", Assets);
+    PROFILE_ZONE_VALUE(ids.size());
     rpc::Json list = rpc::Json::array();
     for (const auto& id : ids) {
         list.push_back(id);
@@ -271,6 +276,7 @@ auto AssetClient::find(const std::string& id) const -> std::shared_ptr<const Pac
 }
 
 auto AssetClient::take(const std::string& id) -> std::optional<PackedAsset> {
+    PROFILE_ZONE_DETAIL("AssetTake", Assets);
     std::lock_guard lock(state->mutex);
     auto it = state->ready.find(id);
     if (it == state->ready.end()) {

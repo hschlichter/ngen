@@ -1,5 +1,7 @@
 #include "packjobs.h"
 
+#include "profile.h"
+
 #include <array>
 #include <cerrno>
 #include <fcntl.h>
@@ -11,7 +13,7 @@ extern char** environ;
 
 PackJobs::PackJobs(unsigned workers) {
     for (unsigned i = 0; i < workers; i++) {
-        threads.emplace_back([this] { work(); });
+        threads.emplace_back([this, i] { work(i); });
     }
 }
 
@@ -44,12 +46,18 @@ auto PackJobs::queued() -> size_t {
     return tasks.size();
 }
 
-auto PackJobs::work() -> void {
+auto PackJobs::work(unsigned index) -> void {
+    auto name = "Pack " + std::to_string(index);
+    profile::registerThread(name.c_str());
     while (true) {
         std::function<void()> task;
         {
             std::unique_lock lock(mutex);
-            wake.wait(lock, [this] { return stopping || !tasks.empty(); });
+            bool woken = false;
+            while (!woken) {
+                PROFILE_ZONE_DETAIL("Idle", Wait);
+                woken = wake.wait_for(lock, profile::idleSlice, [this] { return stopping || !tasks.empty(); });
+            }
             if (stopping && tasks.empty()) {
                 return;
             }

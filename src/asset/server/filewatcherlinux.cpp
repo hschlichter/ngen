@@ -1,5 +1,7 @@
 #include "filewatcher.h"
 
+#include "profile.h"
+
 #include <array>
 #include <cerrno>
 #include <cstring>
@@ -194,6 +196,7 @@ auto FileWatcher::pollDirectories() -> void {
 }
 
 auto FileWatcher::run() -> void {
+    profile::registerThread("File Watcher");
     while (true) {
         std::array<pollfd, 2> fds = {{
             {.fd = wakeFd, .events = POLLIN, .revents = 0},

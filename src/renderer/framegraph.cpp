@@ -478,7 +478,7 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
         }
         {
             // Every pass is a GPU zone and a CPU record zone; passes may nest their own inside.
-            PROFILE_GPU_ZONE(cmd, passName);
+            profile::ScopedGpuZone gpuZone(cmd, passes[passIdx].profileNameId);
             profile::ScopedZone recordZone(passes[passIdx].profileNameId);
             executingPass = passName;
             executingPassIndex = passIdx;

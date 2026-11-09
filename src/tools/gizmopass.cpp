@@ -108,6 +108,7 @@ auto GizmoPass::addPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D fullE
 
     fg.addPass<GizmoPassData>(
         "GizmoPass",
+        profile::Group::Tools,
         [&](FrameGraphBuilder& builder, GizmoPassData& data) {
             data.color = builder.write(color, FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);

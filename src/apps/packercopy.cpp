@@ -5,6 +5,7 @@
 // the source's blocks until either is written; elsewhere the bytes are copied. The depfile lists only the source.
 
 #include "packer.h"
+#include "profile.h"
 
 #include <cerrno>
 #include <cstring>
@@ -51,6 +52,10 @@ auto copyBytes(int from, int to) -> bool {
 } // namespace
 
 auto main(int argc, char** argv) -> int {
+    // A packer runs for milliseconds: Tracy only when NGEN_TRACY=1 asks (its start-up alone takes 200 ms).
+    profile::startTracyIfAsked();
+    profile::registerThread("Main");
+    PROFILE_ZONE("PackerMain", Assets);
     auto args = parsePackerArgs(argc, argv);
     if (!args) {
         std::println(stderr, "ngen-packer-copy: {}", args.error());

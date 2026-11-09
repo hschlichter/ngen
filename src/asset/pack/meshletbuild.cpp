@@ -1,6 +1,7 @@
 #include "meshletbuild.h"
 
 #include "meshoptimizer.h"
+#include "profile.h"
 
 #include <span>
 
@@ -17,6 +18,7 @@ auto weldMesh(MeshPack& mesh) -> void {
 }
 
 auto buildMeshlets(MeshPack& mesh) -> void {
+    PROFILE_ZONE_DETAIL("BuildMeshlets", Assets);
     mesh.meshlets.clear();
     mesh.meshletVertices.clear();
     mesh.meshletTriangles.clear();

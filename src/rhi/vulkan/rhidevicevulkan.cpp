@@ -1522,6 +1522,7 @@ auto RhiDeviceVulkan::collectGpuZones(RhiCommandBuffer* cmd, std::vector<RhiGpuZ
         }
         out.push_back({
             .name = cb->zones[i].name,
+            .tag = cb->zones[i].tag,
             .depth = cb->zones[i].depth,
             .startNs = (uint64_t) ((double) raw[(i * 2) * 2] * periodNs),
             .endNs = (uint64_t) ((double) raw[(i * 2 + 1) * 2] * periodNs),

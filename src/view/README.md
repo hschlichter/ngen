@@ -36,6 +36,12 @@ the shadow cascades and the snapshot. `src/apps/view.cpp`'s loop calls its steps
 | | | `drawUi`: the windows drawn, and what they asked for carried out |
 | `buildSnapshot`, submit | the frame for the render thread; the render tools' requests added to it (`RenderTools::fillSnapshot`) | `fillSnapshot` (before submit): the tools' layers, the gizmos' lines and ImGui's draw data, each as its render extension's data |
 
+**In the profiler** (`src/profile/README.md`) the frame is `MainFrame` (group Frame) on the Main lane: each step is a zone of its own (the
+detail ones `AdvanceTime`, `ResetCameras`, `SendSceneInputs`, `CountLodPops`, `DrawCameraModes`, `ReadBack`), each hook call one named
+`Hooks.<hook>`, the readbacks together `Readbacks`, and the submit `SubmitSnapshot` (group Wait: it waits for a free render slot). The loop
+hands `profile.history.seconds` and `profile.gpu.detail` to the collector in `sendSceneInputs` when they change. The scene thread's loop is a
+`SceneBatch` with its requests, asset arrivals, compose, level evaluation and publish inside, and `Idle` slices while it waits.
+
 **The hooks.** `ViewHooks` (`viewhooks.h`) is how the layers above the engine join the frame, at the points above; each does nothing unless
 overridden. The tools implement them (`ToolsHooks`, `src/tools/README.md`) and the UI wraps the tools' (`UiHooks`, `src/ui/uihooks.*`), so the
 loop holds one. Without hooks the frame is the engine's alone: the main camera renders with nothing drawn over it but the camera modes, and

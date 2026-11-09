@@ -9,6 +9,7 @@
 
 #include "assetclient.h"
 #include "assetid.h"
+#include "profile.h"
 #include "scenepack.h"
 
 #include <algorithm>
@@ -56,6 +57,9 @@ struct Walk {
 } // namespace
 
 auto main(int argc, char** argv) -> int {
+    // A short-lived tool: Tracy only when NGEN_TRACY=1 asks (its start-up alone takes 200 ms).
+    profile::startTracyIfAsked();
+    profile::registerThread("Main");
     std::vector<std::string> scenes;
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];

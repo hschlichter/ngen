@@ -1,5 +1,7 @@
 #include "rpcregistry.h"
 
+#include "profile.h"
+
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -99,9 +101,10 @@ auto optionalField(std::string name, RpcType type, std::string description) -> R
     return {.name = std::move(name), .type = type, .required = false, .description = std::move(description)};
 }
 
-auto RpcRegistry::add(RpcMethodDesc desc, RpcHandler handler) -> void {
+auto RpcRegistry::add(RpcMethodDesc desc, RpcHandler handler, std::source_location location) -> void {
     auto name = desc.name;
-    methods[name] = Entry{.desc = std::move(desc), .handler = std::move(handler)};
+    auto profileNameId = profile::registerSite(name.c_str(), profile::Group::Io, profile::Level::Detail, location);
+    methods[name] = Entry{.desc = std::move(desc), .handler = std::move(handler), .profileNameId = profileNameId};
 }
 
 auto RpcRegistry::find(std::string_view name) const -> const RpcMethodDesc* {
@@ -119,6 +122,7 @@ auto RpcRegistry::invoke(std::string_view name, const rpc::Json& params, RpcResp
         responder.fail(rpc::invalidParams, *error);
         return;
     }
+    profile::ScopedZone zone(it->second.profileNameId);
     try {
         it->second.handler(params.is_null() ? rpc::Json::object() : params, responder);
     } catch (const rpc::Json::exception& e) {

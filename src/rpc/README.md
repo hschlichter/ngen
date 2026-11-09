@@ -41,7 +41,9 @@ process is gone, so a crashed process leaves nothing behind after the next listi
 ![The I/O thread reads frames and writes queued replies, answers trace subscriptions itself, and queues every other request for RpcEndpoint::drain() on the main thread, whose handlers answer through an RpcResponder now or later](../../screenshots/rpc_threading.svg)
 
 - **The I/O thread** (`RpcServer`) accepts connections, reads frames, and writes queued replies. Any thread may queue a message. A caller never
-  blocks on a slow client: a client whose unread replies pass 256 MB is dropped.
+  blocks on a slow client: a client whose unread replies pass 256 MB is dropped. The thread is a profiler lane, "RPC I/O" unless named with
+  `setThreadName` (ngen-view's `AssetClient`: "Asset I/O"); it polls in slices of `profile::idleSlice` (`RpcPoll`, group Wait) and each accept,
+  receive and send is a detail zone (group Io).
 - **Connecting out.** `connect(port)` opens a connection that the same I/O thread serves like an accepted one, so requests, notifications and
   responses work the same both ways. `startWithoutListening()` runs the thread with no listening socket, for a process that only connects out, such
   as ngen-view's `AssetClient`. `RpcClient` stays the blocking client for command-line tools.
@@ -49,6 +51,7 @@ process is gone, so a crashed process leaves nothing behind after the next listi
   thread after a write leaves a connection's queue at or below a threshold. The asset server streams packed data this way within a fixed window.
 - **Dispatch** (`RpcEndpoint`). Requests are queued by the I/O thread and run by `drain()` on the thread that owns the data. ngen-view calls it on
   the main thread, where session commands run. Each drain runs calls for at most 2 ms (and at least one call), so a flood can't starve the frame.
+  Every call `RpcRegistry::invoke` runs is a detail profiler zone named after its method (group Io).
 - **Responders.** A handler gets an `RpcResponder`. It either answers at once, or keeps a copy and completes it later: a screenshot after its
   fence, a capture when its result arrives, a dump when its data is in. The first answer wins. Replies go straight to the I/O thread.
 

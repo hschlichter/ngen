@@ -6,6 +6,7 @@
 // Every shader targets Vulkan 1.3: GL_EXT_mesh_shader needs SPIR-V 1.4, subgroup operations 1.3.
 
 #include "packer.h"
+#include "profile.h"
 
 #include <cstdlib>
 #include <print>
@@ -29,6 +30,10 @@ auto shellQuote(const std::string& value) -> std::string {
 } // namespace
 
 auto main(int argc, char** argv) -> int {
+    // A packer runs for milliseconds: Tracy only when NGEN_TRACY=1 asks (its start-up alone takes 200 ms).
+    profile::startTracyIfAsked();
+    profile::registerThread("Main");
+    PROFILE_ZONE("PackerMain", Assets);
     auto args = parsePackerArgs(argc, argv);
     if (!args) {
         std::println(stderr, "ngen-packer-shader: {}", args.error());

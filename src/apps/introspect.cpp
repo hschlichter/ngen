@@ -9,6 +9,7 @@
 #include "introspectcommands.h"
 #include "introspectsession.h"
 #include "introspectwindow.h"
+#include "profile.h"
 
 #include <SDL3/SDL.h>
 #include <imgui.h>
@@ -171,6 +172,9 @@ auto runWindow(const WindowOptions& options) -> int {
 } // namespace
 
 auto main(int argc, char** argv) -> int {
+    // A short-lived tool: Tracy only when NGEN_TRACY=1 asks (its start-up alone takes 200 ms).
+    profile::startTracyIfAsked();
+    profile::registerThread("Main");
     std::vector<std::string> args(argv + 1, argv + argc);
     if (!args.empty() && !args[0].starts_with("--")) {
         return runIntrospectCommand(args);

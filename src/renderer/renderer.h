@@ -83,7 +83,8 @@ public:
 
     // What joins the frame from outside the core (renderextension.h), called in the order added; and where previews are shown. Both
     // before init; the renderer holds references.
-    auto addExtension(RenderExtension& extension) -> void;
+    // `name` names the extension's hook zones in the profiler ("RenderTools.beginFrame", ...).
+    auto addExtension(RenderExtension& extension, const char* name) -> void;
     auto setPreviewTextures(PreviewTextures* previews) -> void { previewTextures = previews; }
     // Creates the passes, which register their pipelines, then inits the extensions; no pipeline exists yet. `shaders` is where they
     // come from.

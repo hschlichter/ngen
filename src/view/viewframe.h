@@ -180,6 +180,9 @@ private:
     int postedCameraHeight = 0;
     uint64_t uploadBudgetChanges = 0;
     uint64_t geometryLimitChanges = 0;
+    // The profiler's values, handed to the collector on a change; UINT64_MAX applies them on the first frame.
+    uint64_t profileHistoryChanges = UINT64_MAX;
+    uint64_t profileGpuDetailChanges = UINT64_MAX;
     uint64_t lodPopsFrame = 0;
     std::vector<CaptureWatch> sentWatches;
     bool watchesChanged = false; // since the last snapshot

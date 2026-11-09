@@ -807,6 +807,11 @@ auto drawnLevelOf(const LodRoot& lod, uint32_t wanted, const std::vector<const P
 } // namespace
 
 auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const PlacementSpec& spec, bool mine) -> std::shared_ptr<Placement> {
+    // The stage and each LOD level are zones of their own, following the World's structure; prototype instances and point instancers, tens of
+    // thousands in a full pass, count toward the level that holds them.
+    static const uint32_t syncStageSite = profile::registerSite("SyncStage", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t syncLevelSite = profile::registerSite("SyncLevel", profile::Group::Scene, profile::Level::Detail);
+    profile::ScopedZone zone(spec.kind == Placement::Kind::Stage ? syncStageSite : syncLevelSite, spec.kind == Placement::Kind::Stage || spec.kind == Placement::Kind::Level);
     // The scene thread's alone when no published tree holds it: then it changes in place, else as a copy.
     mine = mine && node && node.use_count() == 1;
     const auto& w = composer->world();
@@ -1037,6 +1042,16 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
         return allocPrim(path);
     };
 
+    // A stage or level placement's build in its stages; the tens of thousands of instance placements count toward their level.
+    bool zoned = spec.kind == Placement::Kind::Stage || spec.kind == Placement::Kind::Level;
+    static const uint32_t walksSite = profile::registerSite("PlacementWalks", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t segmentsSite = profile::registerSite("PlaceSegments", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t leftoversSite = profile::registerSite("FreeLeftovers", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t useSite = profile::registerSite("UseNode", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t rootsSite = profile::registerSite("SyncRoots", profile::Group::Scene, profile::Level::Detail);
+    if (zoned) {
+        profile::beginZone(walksSite);
+    }
     auto contentKind = placedContentKind(*node);
     const auto& content = contentOf(w, contentKind, spec.content);
     if (spec.kind == Placement::Kind::Instancer) {
@@ -1069,6 +1084,9 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
     } else {
         node->segments.push_back({.walk = walkOf(spec.kind, spec.content, content, spec.purpose, spec.material, spec.strong, spec.path), .path = spec.path, .world = spec.world});
     }
+    if (zoned) {
+        profile::endZone();
+    }
 
     std::unordered_map<std::string, size_t> previousByPath;
     for (size_t i = 0; i < previousChildren.size(); i++) {
@@ -1084,296 +1102,308 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
         node->children.push_back(syncPlacement(previous, childSpec, mine));
     };
 
-    for (uint32_t s = 0; s < node->segments.size(); s++) {
-        const auto& segment = node->segments[s];
-        const auto& items = segment.walk->items;
-        // The group slot + 1 of each render-LOD root item in this segment, as its item is reached (before its levels' items).
-        std::unordered_map<int32_t, uint32_t> groupOfItem;
-        if (spec.drawn) {
-            for (auto index : segment.walk->rowItems) {
-                const auto& item = items[index];
-                auto world = unitScale * (item.absolute ? item.world : segment.world * item.world);
-                auto path = primpath::join(segment.path, item.path);
-                if (item.camera) {
-                    node->cameras.push_back({.path = path, .worldTransform = world});
-                }
-                if (item.variants) {
-                    node->variantPrims.push_back({.path = path, .selections = item.entity->variantSelections});
-                }
-                if (!item.payload) {
-                } else if (auto payload = content.payloads.find(item.id); payload != content.payloads.end()) {
-                    ScenePayload placed = {.path = path, .assetIds = payload->second.assetIds, .loaded = payload->second.loaded};
-                    if (const auto& hint = payload->second.extentsHint) {
-                        placed.worldBounds = AABB{.min = (*hint)[0], .max = (*hint)[1]}.transformed(world);
+    {
+        profile::ScopedZone stageZone(segmentsSite, zoned);
+        for (uint32_t s = 0; s < node->segments.size(); s++) {
+            const auto& segment = node->segments[s];
+            const auto& items = segment.walk->items;
+            // The group slot + 1 of each render-LOD root item in this segment, as its item is reached (before its levels' items).
+            std::unordered_map<int32_t, uint32_t> groupOfItem;
+            if (spec.drawn) {
+                for (auto index : segment.walk->rowItems) {
+                    const auto& item = items[index];
+                    auto world = unitScale * (item.absolute ? item.world : segment.world * item.world);
+                    auto path = primpath::join(segment.path, item.path);
+                    if (item.camera) {
+                        node->cameras.push_back({.path = path, .worldTransform = world});
                     }
-                    node->payloads.push_back(std::move(placed));
+                    if (item.variants) {
+                        node->variantPrims.push_back({.path = path, .selections = item.entity->variantSelections});
+                    }
+                    if (!item.payload) {
+                    } else if (auto payload = content.payloads.find(item.id); payload != content.payloads.end()) {
+                        ScenePayload placed = {.path = path, .assetIds = payload->second.assetIds, .loaded = payload->second.loaded};
+                        if (const auto& hint = payload->second.extentsHint) {
+                            placed.worldBounds = AABB{.min = (*hint)[0], .max = (*hint)[1]}.transformed(world);
+                        }
+                        node->payloads.push_back(std::move(placed));
+                    }
                 }
             }
-        }
-        for (uint32_t i = 0; i < items.size(); i++) {
-            const auto& item = items[i];
-            auto world = item.absolute ? item.world : segment.world * item.world;
-            auto path = primpath::join(segment.path, item.path);
-            // The render-LOD group and level its draws are tagged with: its root's in this segment, else the one this placement is under.
-            uint32_t tagGroup = spec.lodGroup;
-            uint32_t tagLevel = spec.lodGroupLevel;
-            // How many LOD roots its draws are under: the placement's, and one more under a root in this segment.
-            uint32_t tagDepth = spec.lodDepth;
-            if (item.lodRootItem >= 0) {
-                auto group = groupOfItem.find(item.lodRootItem);
-                tagGroup = group != groupOfItem.end() ? group->second : 0;
-                tagLevel = item.lodLevel;
-                tagDepth = spec.lodDepth + 1;
-                if (tagLevel >= RenderLodGroup::maxLevels) {
-                    // A level past the group's: not drawn (the composer says so).
+            for (uint32_t i = 0; i < items.size(); i++) {
+                const auto& item = items[i];
+                auto world = item.absolute ? item.world : segment.world * item.world;
+                auto path = primpath::join(segment.path, item.path);
+                // The render-LOD group and level its draws are tagged with: its root's in this segment, else the one this placement is under.
+                uint32_t tagGroup = spec.lodGroup;
+                uint32_t tagLevel = spec.lodGroupLevel;
+                // How many LOD roots its draws are under: the placement's, and one more under a root in this segment.
+                uint32_t tagDepth = spec.lodDepth;
+                if (item.lodRootItem >= 0) {
+                    auto group = groupOfItem.find(item.lodRootItem);
+                    tagGroup = group != groupOfItem.end() ? group->second : 0;
+                    tagLevel = item.lodLevel;
+                    tagDepth = spec.lodDepth + 1;
+                    if (tagLevel >= RenderLodGroup::maxLevels) {
+                        // A level past the group's: not drawn (the composer says so).
+                        continue;
+                    }
+                }
+                if (item.kind == WalkItem::Kind::Instance) {
+                    adopt({.kind = Placement::Kind::Prototype,
+                           .content = item.content,
+                           .contentKind = Placement::Kind::Prototype,
+                           .path = path,
+                           .world = world,
+                           .purpose = item.purpose,
+                           .material = item.material,
+                           .strong = item.strongBinding,
+                           .lodTag = spec.lodTag,
+                           .lodDepth = tagDepth,
+                           .streamRoot = spec.streamRoot,
+                           .drawn = spec.drawn,
+                           .lodGroup = tagGroup,
+                           .lodGroupLevel = tagLevel});
                     continue;
                 }
-            }
-            if (item.kind == WalkItem::Kind::Instance) {
-                adopt({.kind = Placement::Kind::Prototype,
-                       .content = item.content,
-                       .contentKind = Placement::Kind::Prototype,
-                       .path = path,
-                       .world = world,
-                       .purpose = item.purpose,
-                       .material = item.material,
-                       .strong = item.strongBinding,
-                       .lodTag = spec.lodTag,
-                       .lodDepth = tagDepth,
-                       .streamRoot = spec.streamRoot,
-                       .drawn = spec.drawn,
-                       .lodGroup = tagGroup,
-                       .lodGroupLevel = tagLevel});
-                continue;
-            }
-            if (item.kind == WalkItem::Kind::PointInstancer) {
-                adopt({.kind = Placement::Kind::Instancer,
-                       .content = spec.content,
-                       .contentKind = contentKind,
-                       .instancer = item.id,
-                       .path = path,
-                       .world = world,
-                       .purpose = item.purpose,
-                       .material = item.material,
-                       .strong = item.strongBinding,
-                       .lodTag = spec.lodTag,
-                       .lodDepth = tagDepth,
-                       .streamRoot = spec.streamRoot,
-                       .drawn = spec.drawn,
-                       .lodGroup = tagGroup,
-                       .lodGroupLevel = tagLevel});
-                continue;
-            }
-            if (item.renderLodRoot && spec.drawn) {
-                // A group where the root is placed: its heuristics and transform, from which its record is made under the preference
-                // (lodGroupOf), its default and forced level.
-                const auto& lod = content.lodRoots.at(item.id);
-                LodGroupInfo info{
-                    .path = path,
-                    .defaultLevel = 0,
-                    .levelCount = (uint32_t) std::min<size_t>(lod.levels.size(), RenderLodGroup::maxLevels),
-                    .heuristics = lod.heuristics,
-                    .toWorld = unitScale * world,
-                    .key = lodRootKey(spec.content, content.path(item.id)),
-                };
-                if (info.levelCount > 0) {
-                    info.defaultLevel = std::min(lod.defaultIndex, info.levelCount - 1);
-                    auto group = lodGroupOf(info);
-                    auto slot = takeGroup();
-                    node->lodGroups.push_back(slot);
-                    if (auto stale = lodGroupByPath.find(lodGroupInfo[slot].path); stale != lodGroupByPath.end() && stale->second == slot && lodGroupInfo[slot].path != path) {
-                        lodGroupByPath.erase(stale);
-                    }
-                    lodGroupInfo[slot] = std::move(info);
-                    lodGroupByPath[path] = slot;
-                    if (lodGroupPaths[slot] != path) {
-                        lodGroupPaths.edit(slot) = path;
-                    }
-                    const auto& source = lodGroupSources[slot];
-                    if (source == nullptr || source->key != lodGroupInfo[slot].key || source->depth != tagDepth + 1 || source->heuristics != lod.heuristics ||
-                        source->levels.size() != lod.levels.size()) {
-                        auto made = std::make_shared<LodGroupSource>();
-                        made->key = lodGroupInfo[slot].key;
-                        made->depth = tagDepth + 1;
-                        made->heuristics = lod.heuristics;
-                        for (EntityId level : lod.levels) {
-                            made->levels.push_back(content.entities[level].name);
-                        }
-                        lodGroupSources.edit(slot) = std::move(made);
-                    }
-                    if (!(drawn.lodGroups[slot] == group)) {
-                        setLodGroup(slot, group);
-                    }
-                    groupOfItem[(int32_t) i] = slot + 1;
+                if (item.kind == WalkItem::Kind::PointInstancer) {
+                    adopt({.kind = Placement::Kind::Instancer,
+                           .content = spec.content,
+                           .contentKind = contentKind,
+                           .instancer = item.id,
+                           .path = path,
+                           .world = world,
+                           .purpose = item.purpose,
+                           .material = item.material,
+                           .strong = item.strongBinding,
+                           .lodTag = spec.lodTag,
+                           .lodDepth = tagDepth,
+                           .streamRoot = spec.streamRoot,
+                           .drawn = spec.drawn,
+                           .lodGroup = tagGroup,
+                           .lodGroupLevel = tagLevel});
+                    continue;
                 }
-            }
-            if (item.kind == WalkItem::Kind::Level) {
-                continue;
-            }
-            if (item.lodRoot) {
-                const auto& lod = content.lodRoots.at(item.id);
-                PlacedRoot root{.segment = s, .item = i, .path = path};
-                // A LOD root in a point's prototype ("<prototype>#<id>/…") draws its default level and isn't the heuristic's to choose.
-                root.listed = path.find('#') == std::string::npos;
-                root.levels.resize(lod.levels.size());
-                auto& row = root.row;
-                row.path = path;
-                for (EntityId level : lod.levels) {
-                    row.levels.push_back(content.entities[level].name);
-                    auto payload = content.payloads.find(level);
-                    row.levelPayloads.push_back(payload != content.payloads.end() ? payload->second.assetIds : std::vector<std::string>{});
-                }
-                row.heuristics = lod.heuristics;
-                row.key = lodRootKey(spec.content, content.path(item.id));
-                row.defaultIndex = lod.defaultIndex;
-                row.depth = tagDepth + 1;
-                row.worldTransform = unitScale * world;
-                auto previous = std::ranges::find(previousRoots, path, &PlacedRoot::path);
-                if (previous != previousRoots.end()) {
-                    root.drawn = previous->drawn;
-                    root.pending = previous->pending;
-                    for (size_t level = 0; level < root.levels.size() && level < previous->levels.size(); level++) {
-                        root.levels[level] = std::move(previous->levels[level]);
-                    }
-                }
-                if (spec.drawn && root.listed && (!wasDrawn || previous == previousRoots.end())) {
-                    passNewRoots = true;
-                }
-                node->roots.push_back(std::move(root));
-            }
-            if (item.light && spec.drawn) {
-                const auto& light = content.lights.at(item.id);
-                if (light.shape == LightShape::Distant) {
-                    auto prim = takePrim(path);
-                    node->prims.push_back(prim);
-                    if (assetsByPrim[prim - 1]) {
-                        assetsByPrim.edit(prim - 1).reset();
-                    }
-                    RenderLight placed{
-                        .type = LightType::Directional,
-                        .color = light.color,
-                        .intensity = light.intensity,
-                        .exposure = light.exposure,
-                        .angle = light.angle,
-                        .shadowEnable = light.shadowEnable,
-                        .shadowColor = light.shadowColor,
-                        .worldTransform = unitScale * world,
-                        .primHandle = PrimHandle{prim},
+                if (item.renderLodRoot && spec.drawn) {
+                    // A group where the root is placed: its heuristics and transform, from which its record is made under the preference
+                    // (lodGroupOf), its default and forced level.
+                    const auto& lod = content.lodRoots.at(item.id);
+                    LodGroupInfo info{
+                        .path = path,
+                        .defaultLevel = 0,
+                        .levelCount = (uint32_t) std::min<size_t>(lod.levels.size(), RenderLodGroup::maxLevels),
+                        .heuristics = lod.heuristics,
+                        .toWorld = unitScale * world,
+                        .key = lodRootKey(spec.content, content.path(item.id)),
                     };
-                    node->lights.push_back(placed);
-                    lightsByPrim[prim] = placed;
-                    lightsChanged = true;
-                } else if (light.shape == LightShape::Dome) {
-                    // A dome is the scene's sky: its image is asked for as a material's texture is, and the pass that holds it makes the
-                    // environment (collectEnvironment).
-                    auto prim = takePrim(path);
-                    node->prims.push_back(prim);
-                    node->domes.push_back(prim);
-                    if (assetsByPrim[prim - 1]) {
-                        assetsByPrim.edit(prim - 1).reset();
+                    if (info.levelCount > 0) {
+                        info.defaultLevel = std::min(lod.defaultIndex, info.levelCount - 1);
+                        auto group = lodGroupOf(info);
+                        auto slot = takeGroup();
+                        node->lodGroups.push_back(slot);
+                        if (auto stale = lodGroupByPath.find(lodGroupInfo[slot].path); stale != lodGroupByPath.end() && stale->second == slot && lodGroupInfo[slot].path != path) {
+                            lodGroupByPath.erase(stale);
+                        }
+                        lodGroupInfo[slot] = std::move(info);
+                        lodGroupByPath[path] = slot;
+                        if (lodGroupPaths[slot] != path) {
+                            lodGroupPaths.edit(slot) = path;
+                        }
+                        const auto& source = lodGroupSources[slot];
+                        if (source == nullptr || source->key != lodGroupInfo[slot].key || source->depth != tagDepth + 1 || source->heuristics != lod.heuristics ||
+                            source->levels.size() != lod.levels.size()) {
+                            auto made = std::make_shared<LodGroupSource>();
+                            made->key = lodGroupInfo[slot].key;
+                            made->depth = tagDepth + 1;
+                            made->heuristics = lod.heuristics;
+                            for (EntityId level : lod.levels) {
+                                made->levels.push_back(content.entities[level].name);
+                            }
+                            lodGroupSources.edit(slot) = std::move(made);
+                        }
+                        if (!(drawn.lodGroups[slot] == group)) {
+                            setLodGroup(slot, group);
+                        }
+                        groupOfItem[(int32_t) i] = slot + 1;
                     }
-                    domesByPrim[prim] = PlacedDome{.light = light, .worldTransform = unitScale * world};
-                    lightsChanged = true;
-                    if (!light.texture.empty() && !texturePacks.contains(light.texture)) {
-                        wantAsset(*node, light.texture, AssetKind::Texture);
+                }
+                if (item.kind == WalkItem::Kind::Level) {
+                    continue;
+                }
+                if (item.lodRoot) {
+                    const auto& lod = content.lodRoots.at(item.id);
+                    PlacedRoot root{.segment = s, .item = i, .path = path};
+                    // A LOD root in a point's prototype ("<prototype>#<id>/…") draws its default level and isn't the heuristic's to choose.
+                    root.listed = path.find('#') == std::string::npos;
+                    root.levels.resize(lod.levels.size());
+                    auto& row = root.row;
+                    row.path = path;
+                    for (EntityId level : lod.levels) {
+                        row.levels.push_back(content.entities[level].name);
+                        auto payload = content.payloads.find(level);
+                        row.levelPayloads.push_back(payload != content.payloads.end() ? payload->second.assetIds : std::vector<std::string>{});
+                    }
+                    row.heuristics = lod.heuristics;
+                    row.key = lodRootKey(spec.content, content.path(item.id));
+                    row.defaultIndex = lod.defaultIndex;
+                    row.depth = tagDepth + 1;
+                    row.worldTransform = unitScale * world;
+                    auto previous = std::ranges::find(previousRoots, path, &PlacedRoot::path);
+                    if (previous != previousRoots.end()) {
+                        root.drawn = previous->drawn;
+                        root.pending = previous->pending;
+                        for (size_t level = 0; level < root.levels.size() && level < previous->levels.size(); level++) {
+                            root.levels[level] = std::move(previous->levels[level]);
+                        }
+                    }
+                    if (spec.drawn && root.listed && (!wasDrawn || previous == previousRoots.end())) {
+                        passNewRoots = true;
+                    }
+                    node->roots.push_back(std::move(root));
+                }
+                if (item.light && spec.drawn) {
+                    const auto& light = content.lights.at(item.id);
+                    if (light.shape == LightShape::Distant) {
+                        auto prim = takePrim(path);
+                        node->prims.push_back(prim);
+                        if (assetsByPrim[prim - 1]) {
+                            assetsByPrim.edit(prim - 1).reset();
+                        }
+                        RenderLight placed{
+                            .type = LightType::Directional,
+                            .color = light.color,
+                            .intensity = light.intensity,
+                            .exposure = light.exposure,
+                            .angle = light.angle,
+                            .shadowEnable = light.shadowEnable,
+                            .shadowColor = light.shadowColor,
+                            .worldTransform = unitScale * world,
+                            .primHandle = PrimHandle{prim},
+                        };
+                        node->lights.push_back(placed);
+                        lightsByPrim[prim] = placed;
+                        lightsChanged = true;
+                    } else if (light.shape == LightShape::Dome) {
+                        // A dome is the scene's sky: its image is asked for as a material's texture is, and the pass that holds it makes the
+                        // environment (collectEnvironment).
+                        auto prim = takePrim(path);
+                        node->prims.push_back(prim);
+                        node->domes.push_back(prim);
+                        if (assetsByPrim[prim - 1]) {
+                            assetsByPrim.edit(prim - 1).reset();
+                        }
+                        domesByPrim[prim] = PlacedDome{.light = light, .worldTransform = unitScale * world};
+                        lightsChanged = true;
+                        if (!light.texture.empty() && !texturePacks.contains(light.texture)) {
+                            wantAsset(*node, light.texture, AssetKind::Texture);
+                        }
                     }
                 }
-            }
-            const auto& entity = *item.entity;
-            if (entity.meshAsset.empty() || !drawsPurpose(item.purpose)) {
-                continue;
-            }
-            // What it draws with: the mesh, its binding's material and the subsets' own, each asked for while it isn't held.
-            wantMaterial(item.material, *node);
-            if (item.subsets && !item.strongBinding) {
-                for (EntityId child : entity.children) {
-                    const auto& subset = content.entities[child];
-                    if (subset.binding) {
-                        wantMaterial(subset.binding->materialAsset, *node);
+                const auto& entity = *item.entity;
+                if (entity.meshAsset.empty() || !drawsPurpose(item.purpose)) {
+                    continue;
+                }
+                // What it draws with: the mesh, its binding's material and the subsets' own, each asked for while it isn't held.
+                wantMaterial(item.material, *node);
+                if (item.subsets && !item.strongBinding) {
+                    for (EntityId child : entity.children) {
+                        const auto& subset = content.entities[child];
+                        if (subset.binding) {
+                            wantMaterial(subset.binding->materialAsset, *node);
+                        }
                     }
                 }
-            }
-            if (!meshPacks.contains(entity.meshAsset)) {
-                wantAsset(*node, entity.meshAsset, AssetKind::Mesh);
-                continue;
-            }
-            auto meshHandle = mesh(entity.meshAsset);
-            if (!meshHandle) {
-                continue;
-            }
-            auto resolved = resolveDraw(entity.meshAsset, item.material, item.strongBinding, item.subsets ? &entity : nullptr, content);
-            if (!spec.drawn) {
-                // Not drawn: it holds the entries it would draw with, so drawing it (the root switching to it) uploads nothing.
-                node->heldMeshes.push_back(meshHandle.index);
-                for (auto material : resolved->materials) {
-                    node->heldMaterials.push_back(material.index);
+                if (!meshPacks.contains(entity.meshAsset)) {
+                    wantAsset(*node, entity.meshAsset, AssetKind::Mesh);
+                    continue;
                 }
+                auto meshHandle = mesh(entity.meshAsset);
+                if (!meshHandle) {
+                    continue;
+                }
+                auto resolved = resolveDraw(entity.meshAsset, item.material, item.strongBinding, item.subsets ? &entity : nullptr, content);
+                if (!spec.drawn) {
+                    // Not drawn: it holds the entries it would draw with, so drawing it (the root switching to it) uploads nothing.
+                    node->heldMeshes.push_back(meshHandle.index);
+                    for (auto material : resolved->materials) {
+                        node->heldMaterials.push_back(material.index);
+                    }
+                    continue;
+                }
+                const auto* meshData = meshLibrary.get(meshHandle);
+                auto worldTransform = unitScale * world;
+                auto prim = takePrim(path);
+                node->prims.push_back(prim);
+                if (assetsByPrim[prim - 1] != resolved->uses) {
+                    assetsByPrim.edit(prim - 1) = resolved->uses;
+                }
+                for (size_t sub = 0; sub < meshData->submeshes.size(); sub++) {
+                    const auto& submesh = meshData->submeshes[sub];
+                    auto slot = takeSlot();
+                    RenderMeshInstance instance{
+                        .mesh = meshHandle,
+                        .material = resolved->materials[sub],
+                        .prim = prim,
+                        .worldTransform = worldTransform,
+                        // Its own submesh's box: each draw is culled apart from the prim's other submeshes.
+                        .worldBounds = submesh.bounds.transformed(worldTransform),
+                        .indexOffset = submesh.indexOffset,
+                        .indexCount = submesh.indexCount,
+                        .meshletOffset = submesh.meshletOffset,
+                        .meshletCount = submesh.meshletCount,
+                        .doubleSided = meshData->doubleSided,
+                        .cutout = resolved->cutout[sub],
+                        .lodLevel = tagGroup != 0 ? tagLevel + 1 : spec.lodTag,
+                        .lodDepth = tagGroup != 0 || spec.lodTag != 0 ? tagDepth : 0,
+                        .lodGroup = tagGroup,
+                        .streamRoot = spec.streamRoot,
+                    };
+                    if (!(drawn.meshInstances[slot] == instance)) {
+                        setSlot(slot, instance);
+                    }
+                    node->slots.push_back(slot);
+                }
+            }
+        }
+    }
+    {
+        profile::ScopedZone stageZone(leftoversSite, zoned);
+        for (; slotCursor < oldSlots.size(); slotCursor++) {
+            freeSlot(oldSlots[slotCursor]);
+        }
+        for (; primCursor < oldPrims.size(); primCursor++) {
+            freePrim(oldPrims[primCursor]);
+        }
+        for (; groupCursor < oldGroups.size(); groupCursor++) {
+            freeLodGroup(oldGroups[groupCursor]);
+        }
+        for (size_t i = 0; i < previousChildren.size(); i++) {
+            if (!kept[i] && previousChildren[i]) {
+                releasePlacement(*previousChildren[i]);
+            }
+        }
+        for (const auto& previous : previousRoots) {
+            if (std::ranges::find(node->roots, previous.path, &PlacedRoot::path) != node->roots.end()) {
                 continue;
             }
-            const auto* meshData = meshLibrary.get(meshHandle);
-            auto worldTransform = unitScale * world;
-            auto prim = takePrim(path);
-            node->prims.push_back(prim);
-            if (assetsByPrim[prim - 1] != resolved->uses) {
-                assetsByPrim.edit(prim - 1) = resolved->uses;
-            }
-            for (size_t sub = 0; sub < meshData->submeshes.size(); sub++) {
-                const auto& submesh = meshData->submeshes[sub];
-                auto slot = takeSlot();
-                RenderMeshInstance instance{
-                    .mesh = meshHandle,
-                    .material = resolved->materials[sub],
-                    .prim = prim,
-                    .worldTransform = worldTransform,
-                    // Its own submesh's box: each draw is culled apart from the prim's other submeshes.
-                    .worldBounds = submesh.bounds.transformed(worldTransform),
-                    .indexOffset = submesh.indexOffset,
-                    .indexCount = submesh.indexCount,
-                    .meshletOffset = submesh.meshletOffset,
-                    .meshletCount = submesh.meshletCount,
-                    .doubleSided = meshData->doubleSided,
-                    .cutout = resolved->cutout[sub],
-                    .lodLevel = tagGroup != 0 ? tagLevel + 1 : spec.lodTag,
-                    .lodDepth = tagGroup != 0 || spec.lodTag != 0 ? tagDepth : 0,
-                    .lodGroup = tagGroup,
-                    .streamRoot = spec.streamRoot,
-                };
-                if (!(drawn.meshInstances[slot] == instance)) {
-                    setSlot(slot, instance);
+            for (const auto& level : previous.levels) {
+                if (level) {
+                    releasePlacement(*level);
                 }
-                node->slots.push_back(slot);
             }
         }
     }
-    for (; slotCursor < oldSlots.size(); slotCursor++) {
-        freeSlot(oldSlots[slotCursor]);
+    {
+        profile::ScopedZone stageZone(useSite, zoned);
+        useNode(*node, 1);
     }
-    for (; primCursor < oldPrims.size(); primCursor++) {
-        freePrim(oldPrims[primCursor]);
-    }
-    for (; groupCursor < oldGroups.size(); groupCursor++) {
-        freeLodGroup(oldGroups[groupCursor]);
-    }
-    for (size_t i = 0; i < previousChildren.size(); i++) {
-        if (!kept[i] && previousChildren[i]) {
-            releasePlacement(*previousChildren[i]);
-        }
-    }
-    for (const auto& previous : previousRoots) {
-        if (std::ranges::find(node->roots, previous.path, &PlacedRoot::path) != node->roots.end()) {
-            continue;
-        }
-        for (const auto& level : previous.levels) {
-            if (level) {
-                releasePlacement(*level);
-            }
-        }
-    }
-    useNode(*node, 1);
     auto edit = [&]() -> Placement& {
         return *node;
     };
-    syncRoots(*node, edit, mine, true);
+    {
+        profile::ScopedZone stageZone(rootsSite, zoned);
+        syncRoots(*node, edit, mine, true);
+    }
     node->pending = pendingOf(*node);
     node->wait = waitOf(*node);
     return node;
@@ -1521,7 +1551,7 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
 // One placement pass: the stage placed as the World is now, looking only where something changed; then the slots it touched as changes for
 // the renderer, the library entries the slots use, the lights, and the assets the placements want and lack asked for.
 auto ViewScene::place() -> void {
-    PROFILE_ZONE("Place");
+    PROFILE_ZONE("Place", Scene);
     placeNeeded = false;
     auto start = std::chrono::steady_clock::now();
     materialByAsset.clear();
@@ -1563,7 +1593,7 @@ auto ViewScene::place() -> void {
     PlacementSpec stage{.kind = Placement::Kind::Stage, .content = -1, .contentKind = Placement::Kind::Stage, .path = "/"};
     std::shared_ptr<Placement> next;
     {
-        PROFILE_ZONE("PlaceSync");
+        PROFILE_ZONE("PlaceSync", Scene);
         next = syncPlacement(tree, stage, true);
     }
     bool changed = next != tree || passBuilt > 0 || passEdited || !slotsBefore.empty() || drawn.meshInstances.size() != slotCountBefore || lightsChanged ||
@@ -1580,9 +1610,11 @@ auto ViewScene::place() -> void {
         return;
     }
 
-    PROFILE_ZONE("PlaceChanges");
+    PROFILE_ZONE("PlaceChanges", Scene);
     SceneChanges changes;
     if (changed) {
+        static const uint32_t dropStaleWalksSite = profile::registerSite("DropStaleWalks", profile::Group::Scene, profile::Level::Detail);
+        profile::beginZone(dropStaleWalksSite);
         // Kept walks of contents composed again since are dropped.
         std::erase_if(walks, [&](const auto& entry) {
             const auto& key = entry.first;
@@ -1595,6 +1627,7 @@ auto ViewScene::place() -> void {
             }
             return content == nullptr || content->version != entry.second->version;
         });
+        profile::endZone();
         // The engine's light follows the scene's up axis, known once the stage composed: the lights are gathered on every change.
         lightsChanged = false;
         auto previousLights = drawn.lights;
@@ -1616,6 +1649,8 @@ auto ViewScene::place() -> void {
             }
         }
     }
+    static const uint32_t libraryInUseSite = profile::registerSite("LibraryInUse", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(libraryInUseSite);
     // Library entries first, so the draws below name only what the renderer has been told about.
     std::set<uint32_t> meshesNow;
     std::set<uint32_t> materialsNow;
@@ -1641,7 +1676,10 @@ auto ViewScene::place() -> void {
             }
         }
     }
+    profile::endZone();
     collectChanges(meshesNow, materialsNow, texturesNow, changes);
+    static const uint32_t releaseUnusedPacksSite = profile::registerSite("ReleaseUnusedPacks", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(releaseUnusedPacksSite);
     // A pack no placement names and no library entry holds any more (its level unloaded after its entry went) is released.
     for (auto pack = meshPacks.begin(); pack != meshPacks.end();) {
         if (meshNames.contains(pack->first) || meshLibrary.find(pack->first)) {
@@ -1651,7 +1689,10 @@ auto ViewScene::place() -> void {
         releaseMeshPack(pack->second);
         pack = meshPacks.erase(pack);
     }
+    profile::endZone();
 
+    static const uint32_t slotChangesSite = profile::registerSite("SlotChanges", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(slotChangesSite);
     uint32_t added = 0;
     uint32_t removed = 0;
     uint32_t updated = 0;
@@ -1678,6 +1719,9 @@ auto ViewScene::place() -> void {
     slotsBefore.clear();
     slotCountBefore = (uint32_t) drawn.meshInstances.size();
     changes.slotCount = slotCountBefore;
+    profile::endZone();
+    static const uint32_t lodGroupChangesSite = profile::registerSite("LodGroupChanges", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(lodGroupChangesSite);
     // The groups touched, against what they held, and the new ones.
     auto groupChanges = changes.lodGroups.size();
     for (const auto& [group, before] : lodGroupsBefore.entries()) {
@@ -1692,7 +1736,11 @@ auto ViewScene::place() -> void {
     lodGroupCountBefore = (uint32_t) drawn.lodGroups.size();
     changes.lodGroupCount = lodGroupCountBefore;
     auto groupsChanged = (uint32_t) (changes.lodGroups.size() - groupChanges);
+    profile::endZone();
+    static const uint32_t addChangesSite = profile::registerSite("AddChanges", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(addChangesSite);
     addChanges(std::move(changes));
+    profile::endZone();
     if (!changed) {
         return;
     }
@@ -1707,6 +1755,8 @@ auto ViewScene::place() -> void {
         it = streamRootSlots.erase(it);
     }
 
+    static const uint32_t shareDrawsSite = profile::registerSite("ShareDraws", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(shareDrawsSite);
     // What the snapshots read: the lists are shared in chunks, so this copies only their chunk pointers.
     auto built = std::make_shared<SceneDraws>();
     built->drawn = drawn;
@@ -1716,6 +1766,7 @@ auto ViewScene::place() -> void {
     built->lodGroupPaths = lodGroupPaths;
     built->lodGroupSources = lodGroupSources;
     draws = std::move(built);
+    profile::endZone();
     inputsRevision++;
     if (passSwitchedFiner + passSwitchedCoarser > 0) {
         TRACE_EVENT("Scene", "LevelsSwitched", id)
@@ -1762,6 +1813,7 @@ auto ViewScene::place() -> void {
 // one is traced once (DomeLightIgnored). The image's frame has its pole on +Z (packedtexture.h): a world direction goes into the dome's own
 // space, then its pole axis (Z, Y, or the stage's up axis for "scene") onto +Z.
 auto ViewScene::collectEnvironment() -> std::optional<RenderEnvironment> {
+    PROFILE_ZONE_DETAIL("CollectEnvironment", Scene);
     const auto& w = composer->world();
     std::optional<RenderEnvironment> environment;
     auto ignore = [this](uint32_t prim, const std::string& why) {
@@ -1813,6 +1865,7 @@ auto ViewScene::collectEnvironment() -> std::optional<RenderEnvironment> {
 // The distant lights in prim order, or the engine's light when the scene has none: upper-front-right in the scene's own frame, as it
 // always was.
 auto ViewScene::collectLights() -> void {
+    PROFILE_ZONE_DETAIL("CollectLights", Scene);
     const auto& w = composer->world();
     drawn.lights.clear();
     for (const auto& [prim, light] : lightsByPrim) {

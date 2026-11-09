@@ -40,13 +40,13 @@ auto JobSystem::shutdown() -> void {
     stopping = false;
 }
 
-auto JobSystem::submit(JobFunc job, const char* name) -> JobFence {
+auto JobSystem::submit(JobFunc job, const char* name, std::source_location location) -> JobFence {
     auto done = std::make_shared<std::atomic<bool>>(false);
-    auto nameId = profile::registerName(name);
+    auto siteId = profile::registerSite(name, profile::Group::Jobs, profile::Level::Guide, location);
 
     {
         std::lock_guard lock(queueMutex);
-        queue.push_back({std::move(job), done, nameId});
+        queue.push_back({std::move(job), done, siteId});
     }
     queueCV.notify_one();
 
@@ -59,7 +59,7 @@ auto JobSystem::wait(const JobFence& fence) -> void {
     if (!fence.done) {
         return;
     }
-    PROFILE_ZONE("JobWait");
+    PROFILE_ZONE("JobWait", Wait);
 
     while (!fence.done->load(std::memory_order_acquire)) {
         if (!tryExecuteOne()) {
@@ -82,7 +82,11 @@ auto JobSystem::workerLoop(std::stop_token stopToken) -> void {
         Job job;
         {
             std::unique_lock lock(queueMutex);
-            queueCV.wait(lock, stopToken, [] { return !queue.empty() || stopping; });
+            bool woken = false;
+            while (!woken && !stopToken.stop_requested()) {
+                PROFILE_ZONE_DETAIL("Idle", Wait);
+                woken = queueCV.wait_for(lock, stopToken, profile::idleSlice, [] { return !queue.empty() || stopping; });
+            }
             if ((stopping || stopToken.stop_requested()) && queue.empty()) {
                 return;
             }

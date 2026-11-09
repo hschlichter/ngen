@@ -62,10 +62,13 @@ auto main(int argc, char** argv) -> int {
             .compile_flag("-g")
             .define("DEBUG=1")
             .define("NGEN_INTROSPECTION=1") // debugging and introspection tooling (RenderDoc, ...); not in gamerelease
-            // Tracy's client (src/profile/README.md): listens on loopback, records only while a Tracy server is connected.
+            // Tracy's client (src/profile/README.md): started by the program that wants it (profile::startTracy), listens on loopback,
+            // records only while a Tracy server is connected.
             .define("TRACY_ENABLE")
             .define("TRACY_ON_DEMAND")
-            .define("TRACY_ONLY_LOCALHOST");
+            .define("TRACY_ONLY_LOCALHOST")
+            .define("TRACY_MANUAL_LIFETIME")
+            .define("TRACY_DELAYED_INIT");
 
     auto release =
         cxx::configuration("release")
@@ -77,7 +80,9 @@ auto main(int argc, char** argv) -> int {
             .define("NGEN_INTROSPECTION=1")
             .define("TRACY_ENABLE")
             .define("TRACY_ON_DEMAND")
-            .define("TRACY_ONLY_LOCALHOST");
+            .define("TRACY_ONLY_LOCALHOST")
+            .define("TRACY_MANUAL_LIFETIME")
+            .define("TRACY_DELAYED_INIT");
 
     auto gamerelease =
         cxx::configuration("gamerelease")
@@ -96,6 +101,13 @@ auto main(int argc, char** argv) -> int {
     p.config(release);
     p.config(gamerelease);
 
+    // Configuration (src/config/README.md): the engine's settings, typed values declared in code by the system they configure. Standard
+    // library only, beside profile and trace.
+    auto config =
+        cxx::static_library("config")
+            .sources(glob({.include = "src/config/*.cpp"}))
+            .public_include({"src/config"});
+
     // Tracy's client, vendored at the version of the Tracy tools it talks to. Compiles to nothing in a configuration without TRACY_ENABLE
     // (gamerelease); programs that link profile link it too.
     auto tracy =
@@ -108,17 +120,11 @@ auto main(int argc, char** argv) -> int {
 
     auto profile =
         cxx::static_library("profile")
-            .sources(glob({.include = "src/profile/**/*.cpp"}))
+            .sources(glob({.include = "src/profile/*.cpp"}))
             .public_include({"src/profile"})
             .include({"src/rhi"})
-            .link(tracy);
-
-    // Configuration (src/config/README.md): the engine's settings, typed values declared in code by the system they configure. Standard
-    // library only, beside profile and trace.
-    auto config =
-        cxx::static_library("config")
-            .sources(glob({.include = "src/config/*.cpp"}))
-            .public_include({"src/config"});
+            .link(tracy)
+            .link(config);
 
     // RPC core: frames, JSON-RPC, TCP on loopback, discovery. The standard library plus header-only
     // nlohmann/json, so programs outside the engine, such as the asset server, use it too (src/rpc/README.md).
@@ -128,7 +134,8 @@ auto main(int argc, char** argv) -> int {
             .public_include({
                 "src/rpc/core",
                 "external/json/single_include",
-            });
+            })
+            .link(profile);
 
     // Trace (src/trace/README.md): structured events in an always-on ring per process, streamed to subscribers over
     // RPC. Every process that emits events links it, the asset server included.
@@ -136,7 +143,16 @@ auto main(int argc, char** argv) -> int {
         cxx::static_library("trace")
             .sources(glob({.include = "src/trace/*.cpp"}))
             .public_include({"src/trace"})
-            .link(rpccore);
+            .link(rpccore)
+            .link(profile);
+
+    // The profiler's records and dump (src/profile/README.md) for any process with an RPC endpoint: ngen-view and the asset server.
+    auto profileRpc =
+        cxx::static_library("profilerpc")
+            .sources(glob({.include = "src/profile/rpc/*.cpp"}))
+            .public_include({"src/profile/rpc"})
+            .link(rpccore)
+            .link(profile);
 
     // RPC engine layer: method registry with parameter schemas, responders, the endpoint that
     // dispatches calls onto the main thread.
@@ -186,7 +202,8 @@ auto main(int argc, char** argv) -> int {
                 "src/asset/pack/packedtexture.cpp",
                 "src/asset/pack/scenepack.cpp",
             })
-            .public_include({"src/asset/pack"});
+            .public_include({"src/asset/pack"})
+            .link(profile);
 
     // The runtime scene (src/world/README.md): the World, composed from scene packs. No OpenUSD.
     auto worldLib =
@@ -196,7 +213,8 @@ auto main(int argc, char** argv) -> int {
                 "src/world",
                 "external/glm",
             })
-            .link(packer);
+            .link(packer)
+            .link(profile);
 
     auto renderer =
         cxx::static_library("renderer")
@@ -303,6 +321,7 @@ auto main(int argc, char** argv) -> int {
             .link(assetClient)
             .link(config)
             .link(traceLib)
+            .link(profileRpc)
             .link(profile);
 
     // The tools (src/tools/README.md): the LOD and Streaming tools and the debug camera, their data built from the view's scene. No UI.
@@ -369,19 +388,22 @@ auto main(int argc, char** argv) -> int {
 
     // Assets (src/asset/README.md): one packer program per asset type, and ngen-asset-server, which packs on
     // request with the rules in the root pack.cpp and streams the results. Nothing here lists assets.
-    auto packerShader = cxx::program("ngen-packer-shader").sources({"src/apps/packershader.cpp"}).link(packer);
-    auto packerCopy = cxx::program("ngen-packer-copy").sources({"src/apps/packercopy.cpp"}).link(packer);
-    auto packerTexture = cxx::program("ngen-packer-texture").sources({"src/apps/packertexture.cpp"}).include({"external/stb"}).link(packer);
-    auto packerExr = cxx::program("ngen-packer-exr").sources({"src/apps/packerexr.cpp"}).include({"external/stb", "external/tinyexr"}).link(packer);
+    auto packerShader = cxx::program("ngen-packer-shader").sources({"src/apps/packershader.cpp"}).link(packer).link(profile).link(tracy).link(config);
+    auto packerCopy = cxx::program("ngen-packer-copy").sources({"src/apps/packercopy.cpp"}).link(packer).link(profile).link(tracy).link(config);
+    auto packerTexture = cxx::program("ngen-packer-texture").sources({"src/apps/packertexture.cpp"}).include({"external/stb"}).link(packer).link(profile).link(tracy).link(config);
+    auto packerExr = cxx::program("ngen-packer-exr").sources({"src/apps/packerexr.cpp"}).include({"external/stb", "external/tinyexr"}).link(packer).link(profile).link(tracy).link(config);
     // ngen-packdump: prints a scene pack, from a file or fetched from the asset server, as JSON.
     auto packDump = cxx::program("ngen-packdump")
                         .sources({"src/apps/packdump.cpp"})
                         .include({"src/asset", "src/asset/pack", "external/json/single_include"})
                         .link(packer)
                         .link(assetClient)
-                        .link(rpccore);
+                        .link(rpccore)
+                        .link(profile)
+                        .link(tracy)
+                        .link(config);
     // ngen-pack: has the asset server pack everything a scene can reach, so a view opens it from a full cache.
-    auto scenePack = cxx::program("ngen-pack").sources({"src/apps/pack.cpp"}).include({"src/asset", "src/asset/pack"}).link(packer).link(assetClient).link(rpccore);
+    auto scenePack = cxx::program("ngen-pack").sources({"src/apps/pack.cpp"}).include({"src/asset", "src/asset/pack"}).link(packer).link(assetClient).link(rpccore).link(profile).link(tracy).link(config);
     // meshoptimizer: welding and meshlets for the USD packer's meshes.
     auto meshoptimizer = cxx::static_library("meshoptimizer").sources(glob({.include = "external/meshoptimizer/src/*.cpp"})).public_include({"external/meshoptimizer/src"});
     // The USD packer (src/asset/README.md): one USD file to a layer pack plus its meshes and materials. It links OpenUSD; the USD half
@@ -407,6 +429,9 @@ auto main(int argc, char** argv) -> int {
             .warning_off("deprecated-declarations")
             .for_source("src/asset/pack/usd/usdpacker.cpp", [](cxx::ObjectFile& file) { file.std("c++20"); })
             .link(packer)
+            .link(profile)
+            .link(tracy)
+            .link(config)
             .lib_search("external/openusd_build/lib")
             .rpath((std::filesystem::current_path() / "external/openusd_build/lib").string())
             .link_flag("-lusd_usd")
@@ -429,7 +454,7 @@ auto main(int argc, char** argv) -> int {
             .link_flag("-ltbb");
     // ngen-worldcheck and ngen-usdcheck (src/world/README.md): a scene's fingerprint as the World composes it from packs, and as
     // OpenUSD composes it, to compare. ngen-usdcheck links OpenUSD and builds as C++20, as OpenUSD's headers require.
-    auto worldCheck = cxx::program("ngen-worldcheck").sources({"src/apps/worldcheck.cpp"}).include({"src/asset"}).link(worldLib).link(packer).link(assetClient).link(rpccore);
+    auto worldCheck = cxx::program("ngen-worldcheck").sources({"src/apps/worldcheck.cpp"}).include({"src/asset"}).link(worldLib).link(packer).link(assetClient).link(rpccore).link(profile).link(tracy).link(config);
     auto usdCheck =
         cxx::program("ngen-usdcheck")
             .sources({"src/apps/usdcheck.cpp"})
@@ -472,8 +497,12 @@ auto main(int argc, char** argv) -> int {
                 "src/asset/server",
             })
             .link(traceLib)
+            .link(profileRpc)
             .link(rpccore)
             .link(packer)
+            .link(profile)
+            .link(tracy)
+            .link(config)
             .depend_on(packerShader)
             .depend_on(packerCopy)
             .depend_on(packerTexture)
@@ -510,6 +539,7 @@ auto main(int argc, char** argv) -> int {
                 "external/renderdoc", // renderdoc_app.h only; the library is dlopen'd at runtime
             })
             .link(traceLib)
+            .link(profileRpc)
             .link(profile)
             .link(tracy)
             .link(config)
@@ -545,6 +575,9 @@ auto main(int argc, char** argv) -> int {
             .include({"external/stb"})
             .link(introspectLib)
             .link(rpccore)
+            .link(profile)
+            .link(tracy)
+            .link(config)
             .link(imgui)
             .link_flags(sdl3_libs);
 

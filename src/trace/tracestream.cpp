@@ -1,5 +1,6 @@
 #include "tracestream.h"
 
+#include "profile.h"
 #include "tracering.h"
 
 #include <nlohmann/json.hpp>
@@ -113,10 +114,15 @@ auto TraceStream::pump() -> bool {
 }
 
 auto TraceStream::loop() -> void {
+    profile::registerThread("Trace I/O");
     uint64_t sent = ring().head();
     while (running.load()) {
-        ring().waitFor(sent + batchEvents, batchInterval);
+        {
+            PROFILE_ZONE_DETAIL("TraceWait", Wait);
+            ring().waitFor(sent + batchEvents, batchInterval);
+        }
         sent = ring().head();
+        PROFILE_ZONE_DETAIL("TraceSend", Io);
         pump();
     }
 }

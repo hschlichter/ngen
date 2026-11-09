@@ -1,5 +1,6 @@
 #include "rpcserver.h"
 
+#include "profile.h"
 #include "rpcframe.h"
 #include "rpcsocket.h"
 
@@ -28,6 +29,10 @@ RpcServer::~RpcServer() {
 
 auto RpcServer::setRequestHandler(RequestHandler handler) -> void {
     requestHandler = std::move(handler);
+}
+
+auto RpcServer::setThreadName(std::string name) -> void {
+    threadName = std::move(name);
 }
 
 auto RpcServer::setConnectionHandler(ConnectionHandler handler) -> void {
@@ -212,6 +217,7 @@ auto RpcServer::handleFrame(ConnectionId id, std::string json, std::vector<std::
 }
 
 auto RpcServer::ioLoop() -> void {
+    profile::registerThread(threadName.c_str());
     std::array<std::byte, 64 * 1024> readBuffer = {};
     while (running) {
         std::vector<pollfd> fds;
@@ -237,7 +243,13 @@ auto RpcServer::ioLoop() -> void {
         for (auto id : toClose) {
             closeConnection(id);
         }
-        if (poll(fds.data(), (nfds_t) fds.size(), 1000) < 0) {
+        int polled = 0;
+        {
+            // Idle in slices, so an idle I/O thread has zones too (profile::idleSlice).
+            PROFILE_ZONE_DETAIL("RpcPoll", Wait);
+            polled = poll(fds.data(), (nfds_t) fds.size(), (int) profile::idleSlice.count());
+        }
+        if (polled < 0) {
             if (errno == EINTR) {
                 continue;
             }
@@ -248,6 +260,7 @@ auto RpcServer::ioLoop() -> void {
             [[maybe_unused]] auto consumed = read(wakeFd, &value, sizeof(value));
         }
         if ((fds[0].revents & POLLIN) != 0) {
+            PROFILE_ZONE_DETAIL("RpcAccept", Io);
             while (true) {
                 int fd = accept4(listenFd, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
                 if (fd < 0) {
@@ -270,6 +283,7 @@ auto RpcServer::ioLoop() -> void {
             auto id = ids[i];
             auto revents = fds[i + 2].revents;
             if ((revents & POLLOUT) != 0) {
+                PROFILE_ZONE_DETAIL("RpcSend", Io);
                 bool drained = false;
                 {
                     std::lock_guard lock(mutex);
@@ -298,6 +312,7 @@ auto RpcServer::ioLoop() -> void {
             if ((revents & (POLLIN | POLLHUP | POLLERR)) == 0) {
                 continue;
             }
+            PROFILE_ZONE_DETAIL("RpcReceive", Io);
             int fd = fds[i + 2].fd;
             auto received = recv(fd, readBuffer.data(), readBuffer.size(), 0);
             if (received == 0 || (received < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {

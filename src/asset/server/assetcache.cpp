@@ -1,6 +1,7 @@
 #include "assetcache.h"
 
 #include "assethash.h"
+#include "profile.h"
 
 #include <algorithm>
 #include <chrono>
@@ -29,6 +30,8 @@ auto stat(const std::string& path, int64_t& size, int64_t& mtimeNs) -> bool {
 
 // The file as it is now; nullopt when it can't be read.
 auto current(const std::string& path) -> std::optional<AssetCache::File> {
+    // One file of a job, hashed: the packer, its output, an input, a secondary output.
+    PROFILE_ZONE_DETAIL("HashFile", Io);
     AssetCache::File file;
     file.path = path;
     if (!stat(path, file.size, file.mtimeNs)) {
@@ -290,6 +293,7 @@ auto AssetCache::filesOf(const std::string& id) -> std::vector<std::string> {
 
 // Saves once a second at most while records change.
 auto AssetCache::saveLoop() -> void {
+    profile::registerThread("Cache Saver");
     for (;;) {
         {
             std::unique_lock lock(mutex);
@@ -308,6 +312,7 @@ auto AssetCache::saveLoop() -> void {
 }
 
 auto AssetCache::save() -> void {
+    PROFILE_ZONE("CacheSave", Io);
     std::lock_guard saving(saveMutex);
     std::unordered_map<std::string, Record> snapshot;
     fs::path path;

@@ -69,9 +69,14 @@ public:
     // Access the imported buffer is left in after execute(); initialAccess if no pass used it.
     auto finalAccess(FgBufferHandle handle) const -> FgAccessFlags { return resources[handle.index].currentAccess; }
 
+    // `group` is the pass's profile group: its colour, and the group of its CPU record zone and GPU zone.
     template <typename DataT>
-    auto addPass(const char* name, std::function<void(FrameGraphBuilder&, DataT&)> setup, std::function<void(FrameGraphContext&, const DataT&)> exec)
-        -> const DataT&;
+    // `location` is the caller's: the pass's zones point at its addPass call.
+    auto addPass(const char* name,
+                 profile::Group group,
+                 std::function<void(FrameGraphBuilder&, DataT&)> setup,
+                 std::function<void(FrameGraphContext&, const DataT&)> exec,
+                 std::source_location location = std::source_location::current()) -> const DataT&;
 
     auto compile() -> void;
     auto execute(RhiCommandBuffer* cmd) -> void;
@@ -152,8 +157,11 @@ private:
 };
 
 template <typename DataT>
-auto FrameGraph::addPass(const char* name, std::function<void(FrameGraphBuilder&, DataT&)> setup, std::function<void(FrameGraphContext&, const DataT&)> exec)
-    -> const DataT& {
+auto FrameGraph::addPass(const char* name,
+                         profile::Group group,
+                         std::function<void(FrameGraphBuilder&, DataT&)> setup,
+                         std::function<void(FrameGraphContext&, const DataT&)> exec,
+                         std::source_location location) -> const DataT& {
     auto passIndex = (uint32_t) passes.size();
 
     auto* data = new DataT{};
@@ -166,7 +174,8 @@ auto FrameGraph::addPass(const char* name, std::function<void(FrameGraphBuilder&
 
     passes.push_back({});
     passes.back().name = name;
-    passes.back().profileNameId = profile::registerName(name);
+    passes.back().profileGroup = group;
+    passes.back().profileNameId = profile::registerSite(name, group, profile::Level::Guide, location);
 
     FrameGraphBuilder builder(this, passIndex);
     setup(builder, *data);

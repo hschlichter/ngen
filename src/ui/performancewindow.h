@@ -11,6 +11,8 @@
 // over several seconds of history, Tracy-style.
 struct PerformanceWindowState {
     bool paused = false;
+    // Detail zones shown: off, the window is the guide (the guide zones, nested among themselves); everything is in Tracy and the dump.
+    bool showDetail = false;
     bool following = true; // view keeps its right edge on the newest frame
     uint64_t viewStartNs = 0;
     uint64_t viewEndNs = 0;

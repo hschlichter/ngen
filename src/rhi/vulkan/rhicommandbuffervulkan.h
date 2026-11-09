@@ -9,11 +9,12 @@
 
 class RhiCommandBufferVulkan : public RhiCommandBuffer {
 public:
-    static constexpr uint32_t maxGpuZones = 128;
+    static constexpr uint32_t maxGpuZones = 1024;
     static constexpr uint32_t maxPipelineStatsZones = 64;
 
     struct GpuZoneRecord {
         const char* name = "";
+        uint32_t tag = 0;
         uint16_t depth = 0;
         bool closed = false;
     };
@@ -54,7 +55,7 @@ public:
     auto copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void override;
     auto copyTextureToBuffer(RhiTexture* src, RhiBuffer* dst, const RhiBufferTextureCopy& region) -> void override;
     [[nodiscard]] auto stats() const -> const RhiCommandStats& override { return commandStats; }
-    auto beginGpuZone(const char* name) -> void override;
+    auto beginGpuZone(const char* name, uint32_t tag = 0) -> void override;
     auto endGpuZone() -> void override;
     auto beginPipelineStats(const char* name) -> void override;
     auto endPipelineStats() -> void override;

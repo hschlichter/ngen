@@ -86,7 +86,7 @@ struct WindowInput {
 // an event; then the view's controls. Z deselects, R selects the parent, F frames the selection, G toggles following the ground, Left Alt
 // starts orbiting, the right button looks, the wheel sets the fly speed, a left click picks. Then the keys held, as a camera move.
 auto pollInput(SDL_Window* window, ViewFrame& frame, ViewHooks& hooks, WindowInput& input) -> void {
-    static const uint32_t pollZoneId = profile::registerName("PollEvents");
+    static const uint32_t pollZoneId = profile::registerSite("PollEvents", profile::Group::Frame);
     profile::beginZone(pollZoneId);
     uint64_t polledEvents = 0;
     // A framebuffer pixel from a point in the window (they differ on high-density displays).
@@ -182,6 +182,8 @@ auto pollInput(SDL_Window* window, ViewFrame& frame, ViewHooks& hooks, WindowInp
 } // namespace
 
 auto main(int argc, char* argv[]) -> int {
+    // Tracy's client, on a background thread (its start-up takes 200 ms): ready to connect to while the view starts.
+    profile::startTracy();
     // Flags are parsed first; the rest of argv (the scene) is collected into `positional`.
     std::vector<const char*> positional;
     bool enableValidation = false;
@@ -392,9 +394,9 @@ auto main(int argc, char* argv[]) -> int {
     RenderTools renderTools;
     GizmoRender gizmoRender;
     UiRender uiRender(imguiBackend);
-    renderer.addExtension(renderTools);
-    renderer.addExtension(gizmoRender);
-    renderer.addExtension(uiRender);
+    renderer.addExtension(renderTools, "RenderTools");
+    renderer.addExtension(gizmoRender, "Gizmos");
+    renderer.addExtension(uiRender, "Ui");
     renderer.setPreviewTextures(&imguiBackend);
     renderTools.setValidationEnabled(enableValidation);
     renderTools.setScreenshotsShowUi(screenshotsShowUi);
@@ -524,13 +526,19 @@ auto main(int argc, char* argv[]) -> int {
     TRACE_EVENT("Engine", "MainLoopStarted", "view").text(std::format("main loop started, {:.0f} ms after start", trace::msSinceStart())).field("since_start_ms", trace::msSinceStart());
     while (!frame.quit) {
         PROFILE_FRAME_MARK();
-        PROFILE_ZONE("MainFrame");
+        PROFILE_ZONE("MainFrame", Frame);
         frame.updateScene();
-        hooks.afterScene(frame);
+        {
+            PROFILE_ZONE_DETAIL("Hooks.afterScene", Frame);
+            hooks.afterScene(frame);
+        }
         runFrameCommands(viewContext, session, registry, verbs, endpoint);
         frame.advanceTime(SDL_GetTicksNS());
         frame.resetCameras();
-        hooks.cameras(frame);
+        {
+            PROFILE_ZONE_DETAIL("Hooks.cameras", Frame);
+            hooks.cameras(frame);
+        }
 
         int width = 0;
         int height = 0;
@@ -538,37 +546,55 @@ auto main(int argc, char* argv[]) -> int {
         frame.setViewport(width, height);
         frame.sendSceneInputs();
         frame.updateResidency();
-        answerResidentWaiters(viewContext);
+        {
+            PROFILE_ZONE_DETAIL("AnswerResidentWaiters", Frame);
+            answerResidentWaiters(viewContext);
+        }
 
         pollInput(window, frame, hooks, input);
         frame.moveCamera(input.move, input.orbitHeld);
         frame.cull();
         // Render-LOD records answer once a readback carries every group's state; while one waits, the frames read them back.
-        frame.readLodStates = serviceRenderLodRequests(viewContext);
+        {
+            PROFILE_ZONE_DETAIL("ServiceRenderLodRequests", Frame);
+            frame.readLodStates = serviceRenderLodRequests(viewContext);
+        }
         frame.countLodPops();
         frame.fitCascades();
-        hooks.afterCamera(frame);
+        {
+            PROFILE_ZONE_DETAIL("Hooks.afterCamera", Frame);
+            hooks.afterCamera(frame);
+        }
 
         frame.debugDraw.newFrame();
-        hooks.debugDraw(frame);
+        {
+            PROFILE_ZONE_DETAIL("Hooks.debugDraw", Frame);
+            hooks.debugDraw(frame);
+        }
         frame.drawCameraModes();
 
-        frame.readbacks = {};
-        renderTools.startFrame();
-        renderTools.request().renderDebug = forceRenderDebug;
-        hooks.wantReadbacks(frame);
-        dumps.wantReadbacks(frame.readbacks, renderTools);
-        frame.readBack();
-        dumps.takeReadbacks(frame.readbacks, renderTools);
-        hooks.takeReadbacks(frame);
+        {
+            PROFILE_ZONE_DETAIL("Readbacks", Frame);
+            frame.readbacks = {};
+            renderTools.startFrame();
+            renderTools.request().renderDebug = forceRenderDebug;
+            hooks.wantReadbacks(frame);
+            dumps.wantReadbacks(frame.readbacks, renderTools);
+            frame.readBack();
+            dumps.takeReadbacks(frame.readbacks, renderTools);
+            hooks.takeReadbacks(frame);
+        }
 
         hooks.drawUi(frame);
 
         auto snapshot = frame.buildSnapshot();
-        renderTools.fillSnapshot(snapshot);
-        hooks.fillSnapshot(frame, snapshot);
         {
-            PROFILE_ZONE("SubmitSnapshot");
+            PROFILE_ZONE_DETAIL("Hooks.fillSnapshot", Frame);
+            renderTools.fillSnapshot(snapshot);
+            hooks.fillSnapshot(frame, snapshot);
+        }
+        {
+            PROFILE_ZONE("SubmitSnapshot", Wait);
             renderThread.submitSnapshot(std::move(snapshot));
         }
     }

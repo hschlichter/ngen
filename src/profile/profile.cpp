@@ -3,59 +3,189 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cassert>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <memory>
 #include <mutex>
+#include <pthread.h>
+#include <string_view>
+#include <thread>
+#include <unordered_map>
 
 #ifdef TRACY_ENABLE
 #include "common/TracyQueue.hpp"
 #include "tracy/TracyC.h"
-
-#include <cassert>
 #endif
 
 namespace profile {
 
 namespace {
 
-// One writer (the owning thread), any number of readers. The writer fills an
-// entry then publishes by advancing `head`; readers copy entries below `head`.
-// Entries older than ringSize are overwritten; the window only looks at the last
-// frame, so a torn entry can only appear far in the past.
+// A lane's zones live in blocks. The owning thread appends to the newest block without a lock and publishes each entry by
+// advancing `count`; readers copy entries below it. A block leaves the lane once its newest zone is older than the history
+// window, checked when the writer starts the next block.
+constexpr uint32_t blockZones = 4096;
+
+struct ZoneBlock {
+    std::array<Zone, blockZones> zones;
+    std::atomic<uint32_t> count = 0;
+    std::atomic<uint64_t> newestEndNs = 0;
+};
+
 struct Lane {
     std::atomic<bool> used = false;
+    // A thread writes the lane. When it exits the lane is free, and a thread registering the same name takes it over: threads started
+    // again and again (a pool per call) keep one lane per name instead of using up maxLanes.
+    std::atomic<bool> owned = false;
+    // Taken by the writer when it starts a block, by readers to copy the block list, and around the name.
+    std::mutex mutex;
     std::string name;
-    std::unique_ptr<std::array<Zone, ringSize>> ring; // allocated on first use; idle lanes cost nothing
-    std::atomic<uint64_t> head = 0;
+    std::vector<std::shared_ptr<ZoneBlock>> blocks; // oldest first; the last is the one being written
+    ZoneBlock* current = nullptr;                   // the owning thread only
 };
 
 struct ThreadState {
     Lane* lane = nullptr;
     const char* pendingName = nullptr; // from registerThread, applied when the lane is taken
     uint32_t depth = 0;
-    std::array<uint32_t, maxDepth> nameIds;
+    std::array<uint32_t, maxDepth> siteIds;
     std::array<uint64_t, maxDepth> starts;
     std::array<uint64_t, maxDepth> values;
     std::array<bool, maxDepth> hasValues;
 #ifdef TRACY_ENABLE
     std::array<TracyCZoneCtx, maxDepth> tracyZones;
 #endif
+
+    ThreadState() = default;
+    ThreadState(const ThreadState&) = delete;
+    auto operator=(const ThreadState&) -> ThreadState& = delete;
+    ~ThreadState() {
+        if (lane != nullptr) {
+            lane->owned.store(false, std::memory_order_release);
+        }
+    }
 };
 
 std::array<Lane, maxLanes> g_lanes;
 std::atomic<uint32_t> g_laneCount = 0;
 std::atomic<bool> g_paused = false;
+std::atomic<uint64_t> g_historyNs = 10'000'000'000ull;
+std::atomic<bool> g_gpuDetail = false;
 thread_local ThreadState t_state;
 
-std::mutex g_nameMutex;
-std::vector<std::string> g_names;
+// Sites: one per (file, line, name). The name is copied (a deque keeps every string where it is); the location's strings are static.
+// A site's info is written before the count that publishes its id, so readers and beginZone read it without the lock. Id 0 is no site.
+std::mutex g_siteMutex;
+std::deque<std::string> g_siteNames;
+std::unordered_map<std::string, uint32_t> g_siteIds; // "file:line:name"
+std::array<SiteInfo, maxNames + 1> g_sites;
+std::atomic<uint32_t> g_siteCount = 1;
+
+std::mutex g_frameMutex;
+std::deque<FrameInterval> g_intervals;
+std::deque<FrameStats> g_frames;
+uint64_t g_frameCount = 0;
+uint64_t g_frameStartNs = 0;
+
+struct GpuFrame {
+    uint64_t frameIndex = 0;
+    uint64_t submitNs = 0;
+    uint64_t newestEndNs = 0;
+    std::vector<Zone> zones;
+};
+
+std::mutex g_gpuMutex;
+std::deque<GpuFrame> g_gpuFrames;
+double g_gpuFrameMs = 0.0;
+
+constexpr std::array<uint32_t, groupCount> groupColors = {
+    0x3F7FD8, // Frame: blue
+    0x26A69A, // Scene: teal
+    0xF0A030, // Assets: orange
+    0x8E5BD9, // Jobs: purple
+    0xD05FA0, // Ui: magenta
+    0x8DB040, // Tools: olive
+    0x4DB6E8, // Render: light blue
+    0xE0D040, // Culling: yellow
+    0x50B050, // Geometry: green
+    0x6A6AD0, // Shadow: indigo
+    0xF07850, // Lighting: coral
+    0xC09060, // Post: tan
+    0xD04848, // Upload: red
+    0x40A0A0, // Io: dark cyan
+    0x808080, // Wait: grey
+};
+
+constexpr std::array<const char*, groupCount> groupNames = {
+    "Frame",
+    "Scene",
+    "Assets",
+    "Jobs",
+    "Ui",
+    "Tools",
+    "Render",
+    "Culling",
+    "Geometry",
+    "Shadow",
+    "Lighting",
+    "Post",
+    "Upload",
+    "Io",
+    "Wait",
+};
+
+auto shade(uint32_t color, int step) -> uint32_t {
+    uint32_t out = 0;
+    for (uint32_t shift = 0; shift <= 16; shift += 8) {
+        int channel = (int) ((color >> shift) & 0xFF) + step * 0x1C;
+        channel = std::clamp(channel, 0, 255);
+        out |= (uint32_t) channel << shift;
+    }
+    return out;
+}
+
+auto windowStart(uint64_t nowNs) -> uint64_t {
+    auto window = g_historyNs.load(std::memory_order_relaxed);
+    if (nowNs < window) {
+        return 0;
+    }
+    return nowNs - window;
+}
 
 #ifdef TRACY_ENABLE
-// Tracy, the second sink (src/profile/README.md). One source location per interned name, written before registerName returns
-// the id, so beginZone reads it without a lock. Tracy keeps the pointer, so the name is the caller's static string.
-constexpr uint32_t maxNames = 4096;
-std::array<___tracy_source_location_data, maxNames> g_tracySourceLocations;
+// Tracy's client runs from startTracy or startTracyIfAsked until exit. Every call into it checks this first.
+std::atomic<bool> g_tracyRunning = false;
+std::mutex g_tracyLifetimeMutex;
+bool g_tracyRequested = false;
+std::thread g_tracyStarter;
+
+auto tracyRunning() -> bool {
+    return g_tracyRunning.load(std::memory_order_acquire);
+}
+
+auto startTracyHere() -> void {
+    ___tracy_startup_profiler();
+    g_tracyRunning.store(true, std::memory_order_release);
+}
+
+// At exit, after main has returned and its threads are joined: the client flushes to a connected server and stops.
+auto stopTracyAtExit() -> void {
+    std::lock_guard lock(g_tracyLifetimeMutex);
+    if (g_tracyStarter.joinable()) {
+        g_tracyStarter.join();
+    }
+    if (g_tracyRunning.exchange(false)) {
+        ___tracy_shutdown_profiler();
+    }
+}
+
+// Tracy, the second sink (src/profile/README.md). One source location per interned name, written before the id is published,
+// so beginZone reads it without a lock; its strings are the interned copies, which never move.
+std::array<___tracy_source_location_data, maxNames + 1> g_tracySourceLocations;
 
 // The GPU lane's Tracy context. Touched only by the thread that submits GPU zones (the render thread).
 struct TracyGpu {
@@ -107,8 +237,16 @@ auto sendGpuZonesToTracy(std::span<const Zone> zones) -> void {
         }
         auto beginQueryId = g_tracyGpu.nextQueryId;
         g_tracyGpu.nextQueryId += 2;
-        const char* name = nameOf(zone.nameId);
-        auto sourceLocation = ___tracy_alloc_srcloc_name(0, "", 0, name, std::strlen(name), name, std::strlen(name), 0);
+        auto site = siteOf(zone.siteId);
+        auto color = groupColor(site.group, zone.siteId);
+        auto sourceLocation = ___tracy_alloc_srcloc_name(site.line,
+                                                         site.file,
+                                                         std::strlen(site.file),
+                                                         site.function,
+                                                         std::strlen(site.function),
+                                                         site.name,
+                                                         std::strlen(site.name),
+                                                         color);
         ___tracy_emit_gpu_zone_begin_alloc_serial({.srcloc = sourceLocation, .queryId = beginQueryId, .context = tracyGpuContext});
         ___tracy_emit_gpu_time_serial({.gpuTime = (int64_t) zone.startNs, .queryId = beginQueryId, .context = tracyGpuContext});
         open[openCount] = {.endQueryId = (uint16_t) (beginQueryId + 1), .endNs = zone.endNs};
@@ -120,27 +258,29 @@ auto sendGpuZonesToTracy(std::span<const Zone> zones) -> void {
 }
 #endif
 
-std::mutex g_frameMutex;
-std::array<FrameStats, frameHistorySize> g_frames;
-std::array<FrameInterval, frameHistorySize> g_intervals;
-uint64_t g_frameCount = 0;
-uint64_t g_frameStartNs = 0;
-
-struct GpuFrame {
-    uint64_t frameIndex = 0;
-    uint64_t submitNs = 0;
-    uint32_t count = 0;
-    std::array<Zone, maxGpuZonesPerFrame> zones;
-};
-
-std::mutex g_gpuMutex;
-std::array<GpuFrame, frameHistorySize> g_gpuFrames;
-uint64_t g_gpuFrameCount = 0;
-double g_gpuFrameMs = 0.0;
-
 auto laneForThread() -> Lane* {
     if (t_state.lane != nullptr) {
         return t_state.lane;
+    }
+    if (t_state.pendingName != nullptr) {
+        auto count = std::min(g_laneCount.load(), maxLanes);
+        for (uint32_t i = 0; i < count; i++) {
+            auto& lane = g_lanes[i];
+            if (!lane.used.load(std::memory_order_acquire) || lane.owned.load(std::memory_order_acquire)) {
+                continue;
+            }
+            {
+                std::lock_guard lock(lane.mutex);
+                if (lane.name != t_state.pendingName) {
+                    continue;
+                }
+            }
+            bool expected = false;
+            if (lane.owned.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+                t_state.lane = &lane;
+                return &lane;
+            }
+        }
     }
     auto index = g_laneCount.fetch_add(1);
     if (index >= maxLanes) {
@@ -148,15 +288,53 @@ auto laneForThread() -> Lane* {
         return nullptr;
     }
     auto& lane = g_lanes[index];
-    if (t_state.pendingName != nullptr) {
-        lane.name = t_state.pendingName;
-    } else {
-        lane.name = "thread " + std::to_string(index);
+    {
+        std::lock_guard lock(lane.mutex);
+        if (t_state.pendingName != nullptr) {
+            lane.name = t_state.pendingName;
+        } else {
+            lane.name = "thread " + std::to_string(index);
+        }
     }
-    lane.ring = std::make_unique<std::array<Zone, ringSize>>();
+    lane.owned.store(true, std::memory_order_relaxed);
     lane.used.store(true, std::memory_order_release);
     t_state.lane = &lane;
     return &lane;
+}
+
+// The writer's block is full (or the lane has none yet): blocks older than the window leave, one no reader holds is reused.
+auto startBlock(Lane& lane, uint64_t nowNs) -> ZoneBlock* {
+    std::lock_guard lock(lane.mutex);
+    auto oldest = windowStart(nowNs);
+    std::shared_ptr<ZoneBlock> reuse;
+    while (!lane.blocks.empty() && lane.blocks.front()->newestEndNs.load(std::memory_order_relaxed) < oldest) {
+        auto old = std::move(lane.blocks.front());
+        lane.blocks.erase(lane.blocks.begin());
+        if (reuse == nullptr && old.use_count() == 1) {
+            reuse = std::move(old);
+        }
+    }
+    if (reuse != nullptr) {
+        reuse->count.store(0, std::memory_order_relaxed);
+        reuse->newestEndNs.store(0, std::memory_order_relaxed);
+    } else {
+        reuse = std::make_shared<ZoneBlock>();
+    }
+    lane.current = reuse.get();
+    lane.blocks.push_back(std::move(reuse));
+    return lane.current;
+}
+
+auto blocksOf(uint32_t laneIndex) -> std::vector<std::shared_ptr<ZoneBlock>> {
+    if (laneIndex >= maxLanes) {
+        return {};
+    }
+    auto& lane = g_lanes[laneIndex];
+    if (!lane.used.load(std::memory_order_acquire)) {
+        return {};
+    }
+    std::lock_guard lock(lane.mutex);
+    return lane.blocks;
 }
 
 } // namespace
@@ -165,57 +343,164 @@ auto now() -> uint64_t {
     return (uint64_t) std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-auto registerName(const char* name) -> uint32_t {
-    std::lock_guard lock(g_nameMutex);
-    for (uint32_t i = 0; i < (uint32_t) g_names.size(); i++) {
-        if (g_names[i] == name) {
-            return i;
-        }
-    }
-    g_names.emplace_back(name);
-    auto id = (uint32_t) g_names.size() - 1;
+auto startTracy() -> void {
 #ifdef TRACY_ENABLE
-    assert(id < maxNames);
-    if (id < maxNames) {
-        g_tracySourceLocations[id] = {.name = name, .function = name, .file = "", .line = 0, .color = 0};
+    std::lock_guard lock(g_tracyLifetimeMutex);
+    if (g_tracyRequested) {
+        return;
     }
+    g_tracyRequested = true;
+    std::atexit(stopTracyAtExit);
+    g_tracyStarter = std::thread(startTracyHere);
 #endif
+}
+
+auto startTracyIfAsked() -> void {
+#ifdef TRACY_ENABLE
+    const char* asked = std::getenv("NGEN_TRACY");
+    if (asked == nullptr || std::string_view(asked) != "1") {
+        return;
+    }
+    std::lock_guard lock(g_tracyLifetimeMutex);
+    if (g_tracyRequested) {
+        return;
+    }
+    g_tracyRequested = true;
+    std::atexit(stopTracyAtExit);
+    startTracyHere();
+#endif
+}
+
+namespace {
+
+auto addSite(const std::string& key, const char* name, Group group, Level level, const char* file, const char* function, uint32_t line) -> uint32_t {
+    std::lock_guard lock(g_siteMutex);
+    if (auto found = g_siteIds.find(key); found != g_siteIds.end()) {
+        return found->second;
+    }
+    auto id = g_siteCount.load(std::memory_order_relaxed);
+    assert(id <= maxNames);
+    if (id > maxNames) {
+        return 0;
+    }
+    const auto& stored = g_siteNames.emplace_back(name);
+    g_siteIds.emplace(key, id);
+    g_sites[id] = {.name = stored.c_str(), .file = file, .function = function, .line = line, .group = group, .level = level};
+#ifdef TRACY_ENABLE
+    g_tracySourceLocations[id] = {.name = stored.c_str(), .function = function, .file = file, .line = line, .color = groupColor(group, id)};
+#endif
+    g_siteCount.store(id + 1, std::memory_order_release);
     return id;
 }
 
-auto nameOf(uint32_t id) -> const char* {
-    std::lock_guard lock(g_nameMutex);
-    if (id < g_names.size()) {
-        return g_names[id].c_str();
+} // namespace
+
+auto registerSite(const char* name, Group group, Level level, std::source_location location) -> uint32_t {
+    // Built in a reused buffer: GPU zones register every frame.
+    thread_local std::string key;
+    key.assign(location.file_name());
+    key += ':';
+    key += std::to_string(location.line());
+    key += ':';
+    key += name;
+    return addSite(key, name, group, level, location.file_name(), location.function_name(), location.line());
+}
+
+auto siteIdOf(const char* name) -> uint32_t {
+    thread_local std::string key;
+    key.assign("::");
+    key += name;
+    return addSite(key, name, Group::Render, Level::Guide, "", "", 0);
+}
+
+auto siteOf(uint32_t siteId) -> SiteInfo {
+    if (siteId != 0 && siteId < g_siteCount.load(std::memory_order_acquire)) {
+        return g_sites[siteId];
+    }
+    return {};
+}
+
+auto nameOf(uint32_t siteId) -> const char* {
+    if (siteId != 0 && siteId < g_siteCount.load(std::memory_order_acquire)) {
+        return g_sites[siteId].name;
     }
     return "?";
 }
 
+auto groupOf(uint32_t siteId) -> Group {
+    if (siteId != 0 && siteId < g_siteCount.load(std::memory_order_acquire)) {
+        return g_sites[siteId].group;
+    }
+    return Group::Render;
+}
+
+auto levelOf(uint32_t siteId) -> Level {
+    if (siteId != 0 && siteId < g_siteCount.load(std::memory_order_acquire)) {
+        return g_sites[siteId].level;
+    }
+    return Level::Guide;
+}
+
+auto groupName(Group group) -> const char* {
+    auto index = (uint32_t) group;
+    if (index < groupCount) {
+        return groupNames[index];
+    }
+    return "?";
+}
+
+auto groupColor(Group group, uint32_t siteId) -> uint32_t {
+    auto index = (uint32_t) group;
+    if (index >= groupCount) {
+        return 0x808080;
+    }
+    auto color = groupColors[index];
+    if (group == Group::Jobs) {
+        // Five shades, darker to lighter, picked by the site.
+        auto step = (int) ((siteId * 2654435761u) >> 16) % 5 - 2;
+        color = shade(color, step);
+    }
+    return color;
+}
+
 auto registerThread(const char* name) -> void {
 #ifdef TRACY_ENABLE
-    ___tracy_set_thread_name(name);
+    if (tracyRunning()) {
+        ___tracy_set_thread_name(name);
+    }
+#endif
+#ifdef __linux__
+    // The thread's name in the system (top, gdb), at most 15 characters. Tracy reads it for a thread named before its client
+    // started, which keeps names only from then on.
+    std::array<char, 16> systemName = {};
+    std::strncpy(systemName.data(), name, systemName.size() - 1);
+    pthread_setname_np(pthread_self(), systemName.data());
 #endif
     t_state.pendingName = name;
     if (t_state.lane != nullptr) {
+        std::lock_guard lock(t_state.lane->mutex);
         t_state.lane->name = name;
-        return;
+    } else {
+        // Take the lane now so a named thread shows up in the window and in dumps even before its first zone (workers idle until
+        // the first job).
+        laneForThread();
     }
-    // Take the lane now so a named thread shows up in the window and in dumps
-    // even before its first zone (workers idle until the first job).
-    laneForThread();
+    static const uint32_t startedId = registerSite("ThreadStarted", Group::Wait, Level::Detail);
+    beginZone(startedId);
+    endZone();
 }
 
-auto beginZone(uint32_t nameId) -> void {
+auto beginZone(uint32_t siteId) -> void {
     if (t_state.depth >= maxDepth) {
         t_state.depth++;
         return;
     }
-    t_state.nameIds[t_state.depth] = nameId;
+    t_state.siteIds[t_state.depth] = siteId;
     t_state.starts[t_state.depth] = now();
     t_state.hasValues[t_state.depth] = false;
 #ifdef TRACY_ENABLE
-    if (nameId < maxNames) {
-        t_state.tracyZones[t_state.depth] = ___tracy_emit_zone_begin(&g_tracySourceLocations[nameId], 1);
+    if (siteId != 0 && siteId <= maxNames && tracyRunning()) {
+        t_state.tracyZones[t_state.depth] = ___tracy_emit_zone_begin(&g_tracySourceLocations[siteId], 1);
     } else {
         t_state.tracyZones[t_state.depth] = {};
     }
@@ -230,7 +515,9 @@ auto zoneValue(uint64_t value) -> void {
     t_state.values[t_state.depth - 1] = value;
     t_state.hasValues[t_state.depth - 1] = true;
 #ifdef TRACY_ENABLE
-    ___tracy_emit_zone_value(t_state.tracyZones[t_state.depth - 1], value);
+    if (tracyRunning()) {
+        ___tracy_emit_zone_value(t_state.tracyZones[t_state.depth - 1], value);
+    }
 #endif
 }
 
@@ -240,8 +527,8 @@ auto endZone() -> void {
     }
     t_state.depth--;
 #ifdef TRACY_ENABLE
-    // Before the pause check: pausing the Performance window does not pause Tracy.
-    if (t_state.depth < maxDepth) {
+    // Before the pause check: pausing the Performance window does not pause Tracy. A zone begun before Tracy started is inactive.
+    if (t_state.depth < maxDepth && tracyRunning()) {
         ___tracy_emit_zone_end(t_state.tracyZones[t_state.depth]);
     }
 #endif
@@ -252,38 +539,66 @@ auto endZone() -> void {
     if (lane == nullptr) {
         return;
     }
-    auto head = lane->head.load(std::memory_order_relaxed);
-    auto& entry = (*lane->ring)[head % ringSize];
-    entry.nameId = t_state.nameIds[t_state.depth];
+    auto endNs = now();
+    auto* block = lane->current;
+    if (block == nullptr || block->count.load(std::memory_order_relaxed) == blockZones) {
+        block = startBlock(*lane, endNs);
+    }
+    auto index = block->count.load(std::memory_order_relaxed);
+    auto& entry = block->zones[index];
+    entry.siteId = t_state.siteIds[t_state.depth];
     entry.depth = (uint16_t) t_state.depth;
     entry.hasValue = t_state.hasValues[t_state.depth];
     entry.value = t_state.values[t_state.depth];
     entry.startNs = t_state.starts[t_state.depth];
-    entry.endNs = now();
-    lane->head.store(head + 1, std::memory_order_release);
+    entry.endNs = endNs;
+    block->newestEndNs.store(endNs, std::memory_order_relaxed);
+    block->count.store(index + 1, std::memory_order_release);
 }
 
 auto frameMark() -> void {
 #ifdef TRACY_ENABLE
-    ___tracy_emit_frame_mark(nullptr);
+    if (tracyRunning()) {
+        ___tracy_emit_frame_mark(nullptr);
+    }
 #endif
     if (g_paused.load(std::memory_order_relaxed)) {
         return;
     }
     auto t = now();
+    double gpuMs = 0.0;
+    {
+        std::lock_guard gpuLock(g_gpuMutex);
+        gpuMs = g_gpuFrameMs;
+    }
     std::lock_guard lock(g_frameMutex);
     if (g_frameStartNs != 0) {
-        auto slot = g_frameCount % frameHistorySize;
-        double gpuMs = 0.0;
-        {
-            std::lock_guard gpuLock(g_gpuMutex);
-            gpuMs = g_gpuFrameMs;
-        }
-        g_intervals[slot] = {.frameIndex = g_frameCount, .startNs = g_frameStartNs, .endNs = t};
-        g_frames[slot] = {.frameIndex = g_frameCount, .cpuMs = (double) (t - g_frameStartNs) * 1e-6, .gpuMs = gpuMs};
+        g_intervals.push_back({.frameIndex = g_frameCount, .startNs = g_frameStartNs, .endNs = t});
+        g_frames.push_back({.frameIndex = g_frameCount, .cpuMs = (double) (t - g_frameStartNs) * 1e-6, .gpuMs = gpuMs});
         g_frameCount++;
+        auto oldest = windowStart(t);
+        while (!g_intervals.empty() && g_intervals.front().endNs < oldest) {
+            g_intervals.pop_front();
+            g_frames.pop_front();
+        }
     }
     g_frameStartNs = t;
+}
+
+auto setHistorySeconds(double seconds) -> void {
+    g_historyNs.store((uint64_t) (std::max(seconds, 0.0) * 1e9), std::memory_order_relaxed);
+}
+
+auto historySeconds() -> double {
+    return (double) g_historyNs.load(std::memory_order_relaxed) * 1e-9;
+}
+
+auto setGpuDetail(bool enabled) -> void {
+    g_gpuDetail.store(enabled, std::memory_order_relaxed);
+}
+
+auto gpuDetail() -> bool {
+    return g_gpuDetail.load(std::memory_order_relaxed);
 }
 
 auto setPaused(bool paused) -> void {
@@ -301,25 +616,25 @@ auto isPaused() -> bool {
 
 auto submitGpuZones(uint64_t frameIndex, uint64_t submitNs, std::span<const Zone> zones) -> void {
 #ifdef TRACY_ENABLE
-    // Every zone, before the pause check and the per-frame cut below.
-    sendGpuZonesToTracy(zones);
+    // Before the pause check.
+    if (tracyRunning()) {
+        sendGpuZonesToTracy(zones);
+    }
 #endif
     if (g_paused.load(std::memory_order_relaxed)) {
         return;
     }
-    std::lock_guard lock(g_gpuMutex);
-    auto& frame = g_gpuFrames[g_gpuFrameCount % frameHistorySize];
-    frame.frameIndex = frameIndex;
-    frame.submitNs = submitNs;
-    frame.count = (uint32_t) std::min<size_t>(zones.size(), maxGpuZonesPerFrame);
-    std::copy_n(zones.begin(), frame.count, frame.zones.begin());
-    g_gpuFrameCount++;
-
     uint64_t minStart = UINT64_MAX;
     uint64_t maxEnd = 0;
     for (const auto& z : zones) {
         minStart = std::min(minStart, z.startNs);
         maxEnd = std::max(maxEnd, z.endNs);
+    }
+    std::lock_guard lock(g_gpuMutex);
+    g_gpuFrames.push_back({.frameIndex = frameIndex, .submitNs = submitNs, .newestEndNs = maxEnd, .zones = {zones.begin(), zones.end()}});
+    auto oldest = windowStart(now());
+    while (!g_gpuFrames.empty() && g_gpuFrames.front().newestEndNs < oldest) {
+        g_gpuFrames.pop_front();
     }
     g_gpuFrameMs = zones.empty() ? 0.0 : (double) (maxEnd - minStart) * 1e-6;
 }
@@ -328,10 +643,37 @@ auto lanes(std::vector<LaneInfo>& out) -> void {
     out.clear();
     auto count = std::min(g_laneCount.load(), maxLanes);
     for (uint32_t i = 0; i < count; i++) {
-        if (g_lanes[i].used.load(std::memory_order_acquire)) {
-            out.push_back({.index = i, .name = g_lanes[i].name});
+        auto& lane = g_lanes[i];
+        if (!lane.used.load(std::memory_order_acquire)) {
+            continue;
+        }
+        std::lock_guard lock(lane.mutex);
+        out.push_back({.index = i, .name = lane.name});
+    }
+}
+
+auto historyUsage(std::vector<LaneUsage>& out) -> void {
+    out.clear();
+    std::vector<LaneInfo> laneList;
+    lanes(laneList);
+    for (const auto& lane : laneList) {
+        auto blocks = blocksOf(lane.index);
+        LaneUsage usage = {.index = lane.index, .name = lane.name};
+        for (const auto& block : blocks) {
+            usage.zones += block->count.load(std::memory_order_acquire);
+            usage.bytes += sizeof(ZoneBlock);
+        }
+        out.push_back(std::move(usage));
+    }
+    LaneUsage gpu = {.index = UINT32_MAX, .name = "GPU"};
+    {
+        std::lock_guard lock(g_gpuMutex);
+        for (const auto& frame : g_gpuFrames) {
+            gpu.zones += frame.zones.size();
+            gpu.bytes += sizeof(GpuFrame) + frame.zones.capacity() * sizeof(Zone);
         }
     }
+    out.push_back(std::move(gpu));
 }
 
 auto lastFrame() -> std::optional<FrameInterval> {
@@ -340,18 +682,22 @@ auto lastFrame() -> std::optional<FrameInterval> {
 
 auto frameAt(uint64_t offset) -> std::optional<FrameInterval> {
     std::lock_guard lock(g_frameMutex);
-    if (g_frameCount == 0 || offset >= g_frameCount || offset >= frameHistorySize) {
+    if (offset >= g_intervals.size()) {
         return std::nullopt;
     }
-    return g_intervals[(g_frameCount - 1 - offset) % frameHistorySize];
+    return g_intervals[g_intervals.size() - 1 - offset];
 }
 
 auto frameByIndex(uint64_t frameIndex) -> std::optional<FrameInterval> {
     std::lock_guard lock(g_frameMutex);
-    if (frameIndex >= g_frameCount || g_frameCount - frameIndex > frameHistorySize) {
+    if (g_intervals.empty() || frameIndex < g_intervals.front().frameIndex) {
         return std::nullopt;
     }
-    const auto& interval = g_intervals[frameIndex % frameHistorySize];
+    auto position = frameIndex - g_intervals.front().frameIndex;
+    if (position >= g_intervals.size()) {
+        return std::nullopt;
+    }
+    const auto& interval = g_intervals[position];
     if (interval.frameIndex != frameIndex) {
         return std::nullopt;
     }
@@ -360,23 +706,24 @@ auto frameByIndex(uint64_t frameIndex) -> std::optional<FrameInterval> {
 
 auto zonesIn(uint32_t laneIndex, uint64_t startNs, uint64_t endNs, std::vector<Zone>& out) -> void {
     out.clear();
-    if (laneIndex >= maxLanes) {
-        return;
-    }
-    auto& lane = g_lanes[laneIndex];
-    if (!lane.used.load(std::memory_order_acquire)) {
-        return;
-    }
-    auto head = lane.head.load(std::memory_order_acquire);
-    auto count = std::min<uint64_t>(head, ringSize);
+    auto blocks = blocksOf(laneIndex);
     // Newest first; stop once entries end before the window (zones are appended in end order).
-    for (uint64_t i = 0; i < count; i++) {
-        const auto& z = (*lane.ring)[(head - 1 - i) % ringSize];
-        if (z.endNs < startNs) {
+    for (auto block = blocks.rbegin(); block != blocks.rend(); ++block) {
+        auto count = (*block)->count.load(std::memory_order_acquire);
+        if (count == 0) {
+            continue;
+        }
+        if ((*block)->newestEndNs.load(std::memory_order_relaxed) < startNs) {
             break;
         }
-        if (z.startNs <= endNs) {
-            out.push_back(z);
+        for (uint32_t i = count; i > 0; i--) {
+            const auto& z = (*block)->zones[i - 1];
+            if (z.endNs < startNs) {
+                return;
+            }
+            if (z.startNs <= endNs) {
+                out.push_back(z);
+            }
         }
     }
 }
@@ -384,11 +731,8 @@ auto zonesIn(uint32_t laneIndex, uint64_t startNs, uint64_t endNs, std::vector<Z
 auto gpuZonesIn(uint64_t startNs, uint64_t endNs, std::vector<Zone>& out) -> void {
     out.clear();
     std::lock_guard lock(g_gpuMutex);
-    auto count = std::min<uint64_t>(g_gpuFrameCount, frameHistorySize);
-    for (uint64_t i = 0; i < count; i++) {
-        const auto& frame = g_gpuFrames[(g_gpuFrameCount - 1 - i) % frameHistorySize];
-        for (uint32_t z = 0; z < frame.count; z++) {
-            const auto& zone = frame.zones[z];
+    for (auto frame = g_gpuFrames.rbegin(); frame != g_gpuFrames.rend(); ++frame) {
+        for (const auto& zone : frame->zones) {
             if (zone.endNs >= startNs && zone.startNs <= endNs) {
                 out.push_back(zone);
             }
@@ -399,28 +743,16 @@ auto gpuZonesIn(uint64_t startNs, uint64_t endNs, std::vector<Zone>& out) -> voi
 auto framesIn(uint64_t startNs, uint64_t endNs, std::vector<FrameInterval>& out) -> void {
     out.clear();
     std::lock_guard lock(g_frameMutex);
-    auto count = std::min<uint64_t>(g_frameCount, frameHistorySize);
-    for (uint64_t i = 0; i < count; i++) {
-        const auto& interval = g_intervals[(g_frameCount - 1 - i) % frameHistorySize];
-        if (interval.endNs < startNs) {
-            break;
-        }
-        if (interval.startNs <= endNs) {
+    for (const auto& interval : g_intervals) {
+        if (interval.endNs >= startNs && interval.startNs <= endNs) {
             out.push_back(interval);
         }
     }
-    std::reverse(out.begin(), out.end());
 }
 
 auto frameHistory(std::vector<FrameStats>& out) -> void {
-    out.clear();
     std::lock_guard lock(g_frameMutex);
-    auto count = std::min<uint64_t>(g_frameCount, frameHistorySize);
-    out.reserve(count);
-    for (uint64_t i = 0; i < count; i++) {
-        auto idx = g_frameCount - count + i;
-        out.push_back(g_frames[idx % frameHistorySize]);
-    }
+    out.assign(g_frames.begin(), g_frames.end());
 }
 
 } // namespace profile
@@ -449,54 +781,65 @@ auto statsFrom(std::vector<double>& samples) -> ZoneStats {
 
 } // namespace
 
-auto zoneStats(uint32_t laneIndex, uint32_t nameId) -> ZoneStats {
+auto zoneStats(uint32_t laneIndex, uint32_t siteId) -> ZoneStats {
     std::vector<double> samples;
     if (laneIndex == UINT32_MAX) {
         std::lock_guard lock(g_gpuMutex);
-        auto count = std::min<uint64_t>(g_gpuFrameCount, frameHistorySize);
-        for (uint64_t i = 0; i < count; i++) {
-            const auto& frame = g_gpuFrames[(g_gpuFrameCount - 1 - i) % frameHistorySize];
-            for (uint32_t z = 0; z < frame.count; z++) {
-                if (frame.zones[z].nameId == nameId) {
-                    samples.push_back((double) (frame.zones[z].endNs - frame.zones[z].startNs) * 1e-6);
+        for (const auto& frame : g_gpuFrames) {
+            for (const auto& zone : frame.zones) {
+                if (zone.siteId == siteId) {
+                    samples.push_back((double) (zone.endNs - zone.startNs) * 1e-6);
                 }
             }
         }
         return statsFrom(samples);
     }
-    if (laneIndex >= maxLanes) {
-        return {};
-    }
-    auto& lane = g_lanes[laneIndex];
-    if (!lane.used.load(std::memory_order_acquire)) {
-        return {};
-    }
-    auto head = lane.head.load(std::memory_order_acquire);
-    auto count = std::min<uint64_t>(head, ringSize);
-    for (uint64_t i = 0; i < count; i++) {
-        const auto& z = (*lane.ring)[(head - 1 - i) % ringSize];
-        if (z.nameId == nameId) {
-            samples.push_back((double) (z.endNs - z.startNs) * 1e-6);
+    auto blocks = blocksOf(laneIndex);
+    for (const auto& block : blocks) {
+        auto count = block->count.load(std::memory_order_acquire);
+        for (uint32_t i = 0; i < count; i++) {
+            const auto& z = block->zones[i];
+            if (z.siteId == siteId) {
+                samples.push_back((double) (z.endNs - z.startNs) * 1e-6);
+            }
         }
     }
     return statsFrom(samples);
 }
 
-} // namespace profile
-
-#include <cstdio>
-
-namespace profile {
-
-auto exportChromeTrace(const char* path) -> bool {
+auto exportChromeTrace(const char* path, const ExportOptions& options) -> bool {
     auto* f = std::fopen(path, "w");
     if (f == nullptr) {
         return false;
     }
+    uint64_t startNs = 0;
+    if (options.seconds > 0.0) {
+        auto t = now();
+        auto span = (uint64_t) (options.seconds * 1e9);
+        startNs = t > span ? t - span : 0;
+    }
     std::fprintf(f, "{\"displayTimeUnit\": \"ms\", \"traceEvents\": [\n");
     bool first = true;
-    auto emit = [&](const char* name, uint32_t tid, uint64_t startNs, uint64_t endNs, uint32_t depth, bool hasValue, uint64_t value) {
-        std::fprintf(f, "%s{\"name\": \"%s\", \"ph\": \"X\", \"pid\": 1, \"tid\": %u, \"ts\": %.3f, \"dur\": %.3f, \"args\": {\"depth\": %u, \"value\": %llu}}", first ? "" : ",\n", name, tid, (double) startNs * 1e-3, (double) (endNs - startNs) * 1e-3, depth, (unsigned long long) (hasValue ? value : 0));
+    auto emit = [&](const Zone& z, uint32_t tid) {
+        auto site = siteOf(z.siteId);
+        if (site.level == Level::Detail && !options.detail) {
+            return;
+        }
+        std::fprintf(f,
+                     "%s{\"name\": \"%s\", \"cat\": \"%s\", \"ph\": \"X\", \"pid\": 1, \"tid\": %u, \"ts\": %.3f, \"dur\": %.3f, \"args\": {\"depth\": %u, \"value\": %llu, "
+                     "\"group\": \"%s\", \"level\": \"%s\", \"file\": \"%s\", \"line\": %u}}",
+                     first ? "" : ",\n",
+                     site.name,
+                     groupName(site.group),
+                     tid,
+                     (double) z.startNs * 1e-3,
+                     (double) (z.endNs - z.startNs) * 1e-3,
+                     (uint32_t) z.depth,
+                     (unsigned long long) (z.hasValue ? z.value : 0),
+                     groupName(site.group),
+                     site.level == Level::Detail ? "detail" : "guide",
+                     site.file,
+                     site.line);
         first = false;
     };
     // Thread ids start at 100: viewers treat tid 0 and tid == pid as special (idle
@@ -521,24 +864,23 @@ auto exportChromeTrace(const char* path) -> bool {
         return {2, number};
     };
     std::stable_sort(laneList.begin(), laneList.end(), [&](const LaneInfo& a, const LaneInfo& b) { return laneRank(a) < laneRank(b); });
+    std::vector<Zone> zones;
     for (size_t rank = 0; rank < laneList.size(); rank++) {
         const auto& lane = laneList[rank];
         auto tid = firstCpuTid + (uint32_t) rank;
         std::fprintf(f, "%s{\"name\": \"thread_name\", \"ph\": \"M\", \"pid\": 1, \"tid\": %u, \"args\": {\"name\": \"%s\"}}", first ? "" : ",\n", tid, lane.name.c_str());
         first = false;
-        std::vector<Zone> zones;
-        zonesIn(lane.index, 0, UINT64_MAX, zones);
+        zonesIn(lane.index, startNs, UINT64_MAX, zones);
         for (const auto& z : zones) {
-            emit(nameOf(z.nameId), tid, z.startNs, z.endNs, z.depth, z.hasValue, z.value);
+            emit(z, tid);
         }
     }
     constexpr uint32_t gpuTid = 1000;
     std::fprintf(f, "%s{\"name\": \"thread_name\", \"ph\": \"M\", \"pid\": 1, \"tid\": %u, \"args\": {\"name\": \"GPU\"}}", first ? "" : ",\n", gpuTid);
     first = false;
-    std::vector<Zone> gpu;
-    gpuZonesIn(0, UINT64_MAX, gpu);
-    for (const auto& z : gpu) {
-        emit(nameOf(z.nameId), gpuTid, z.startNs, z.endNs, z.depth, false, 0);
+    gpuZonesIn(startNs, UINT64_MAX, zones);
+    for (const auto& z : zones) {
+        emit(z, gpuTid);
     }
     std::fprintf(f, "\n]}\n");
     std::fclose(f);

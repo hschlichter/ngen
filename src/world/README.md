@@ -165,6 +165,10 @@ nothing is needed; each round goes one level of arcs deeper. A pack the server c
 they weren't authored. `messages()` lists what the last compose couldn't compose: a reference to a file with no default prim, a target
 that isn't there, an arc cycle, a binding to a prim that isn't there.
 
+In the profiler (`src/profile/README.md`, group Scene, on the scene thread that calls it): `WorldCompose` and `WorldRelink`, and under them
+`ComposeOnce`, `Resolve` (a `ResolveLodRoot` per streamed LOD root reached), `UpdatePrototypeLevels`, `ComposePrototype`, `ResolveHeuristics`,
+`ResolvePrototypes`, `FinishCompose` (`GatherMessages`, `ResolveBindings`) and `ReleaseUnreached`.
+
 ## Checking a World against USD
 
 `ngen-worldcheck` (`src/apps/worldcheck.cpp`) composes a scene from its packs, fetched from its variant's asset server, and prints its

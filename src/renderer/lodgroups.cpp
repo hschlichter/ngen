@@ -187,6 +187,7 @@ auto LodGroups::import(FrameGraph& fg, uint32_t frameSlot) -> Handles {
         auto staging = fg.importBuffer("lodGroupStaging", slot.staging, {.size = (uint64_t) capacity * sizeof(GpuLodGroup), .usage = RhiBufferUsage::TransferSrc});
         const auto& data = fg.addPass<LodGroupUploadPassData>(
             "LodGroupUpload",
+            profile::Group::Upload,
             [&](FrameGraphBuilder& builder, LodGroupUploadPassData& pass) {
                 pass.staging = builder.read(staging, FgAccessFlags::TransferSrc);
                 pass.table = builder.write(handles.table, FgAccessFlags::TransferDst);
@@ -216,6 +217,7 @@ auto LodGroups::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t
     bool withStates = slot.readStates;
     fg.addPass<LodReadbackPassData>(
         "LodReadback",
+        profile::Group::Culling,
         [&](FrameGraphBuilder& builder, LodReadbackPassData& data) {
             data.totals = builder.read(handles.totals, FgAccessFlags::TransferSrc);
             if (withStates) {

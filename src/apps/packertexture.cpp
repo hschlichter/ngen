@@ -7,6 +7,7 @@
 #include "mipchain.h"
 #include "packedtexture.h"
 #include "packer.h"
+#include "profile.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -42,6 +43,10 @@ auto packImage(const std::vector<std::byte>& source, const std::string& name) ->
 } // namespace
 
 auto main(int argc, char** argv) -> int {
+    // A packer runs for milliseconds: Tracy only when NGEN_TRACY=1 asks (its start-up alone takes 200 ms).
+    profile::startTracyIfAsked();
+    profile::registerThread("Main");
+    PROFILE_ZONE("PackerMain", Assets);
     auto args = parsePackerArgs(argc, argv);
     if (!args) {
         std::println(stderr, "ngen-packer-texture: {}", args.error());

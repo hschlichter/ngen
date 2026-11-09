@@ -197,6 +197,7 @@ auto DebugViewPass::addPass(
     };
     const auto& drawData = fg.addPass<DrawData>(
         "DebugViewPass",
+        profile::Group::Geometry,
         [&](FrameGraphBuilder& builder, DrawData& data) {
             data.value = builder.write(builder.createTexture("debugview.value", valueDesc), FgAccessFlags::ColorAttachment);
             if (meshletCull) {
@@ -276,7 +277,7 @@ auto DebugViewPass::addPass(
                     cmd->bindDescriptorSet(pip, 0, geometrySet);
                     push.meshlet.region = region;
                     cmd->pushConstants(pip, RhiShaderStage::Task | RhiShaderStage::Mesh | RhiShaderStage::Fragment, 0, sizeof(push), &push);
-                    PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
+                    PROFILE_GPU_ZONE(cmd, DrawLists::drawName(region), Geometry);
                     DrawLists::drawRegion(cmd, regionWork, region);
                 }
             }
@@ -286,6 +287,7 @@ auto DebugViewPass::addPass(
     auto valueHandle = drawData.value;
     return fg.addPass<DebugViewPassData>(
         "DebugViewResolve",
+        profile::Group::Geometry,
         [&](FrameGraphBuilder& builder, DebugViewPassData& data) {
             data.value = builder.read(valueHandle, FgAccessFlags::ShaderRead);
             data.color = builder.write(builder.createTexture("debugview.color", colorDesc), FgAccessFlags::StorageWrite);

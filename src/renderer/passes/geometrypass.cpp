@@ -135,6 +135,7 @@ auto GeometryPass::addPass(
     bool second = phase == GeometryPhase::Second && first != nullptr;
     return fg.addPass<GeometryPassData>(
         second ? "GeometryPassLate" : "GeometryPass",
+        profile::Group::Geometry,
         [&](FrameGraphBuilder& builder, GeometryPassData& data) {
             if (second) {
                 data.albedo = builder.write(first->albedo, FgAccessFlags::ColorAttachment);
@@ -225,7 +226,7 @@ auto GeometryPass::addPass(
                     // The camera's meshlet counts come from this pass.
                     MeshletPush push = {.region = region, .flags = meshletFlagCount | (testPyramid ? meshletFlagOcclusion : 0u)};
                     cmd->pushConstants(pip, RhiShaderStage::Task | RhiShaderStage::Mesh, 0, sizeof(push), &push);
-                    PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
+                    PROFILE_GPU_ZONE(cmd, DrawLists::drawName(region), Geometry);
                     DrawLists::drawRegion(cmd, regionWork, region);
                     lists.report(ctx, region, instances);
                 }

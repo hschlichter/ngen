@@ -7,6 +7,7 @@
 // prints whole. Exit codes: 0 every pack printed, 1 one couldn't be read or fetched, 3 usage.
 
 #include "assetclient.h"
+#include "profile.h"
 #include "scenepack.h"
 
 #include <nlohmann/json.hpp>
@@ -257,6 +258,9 @@ auto readFile(const std::string& path) -> std::optional<std::vector<std::byte>> 
 } // namespace
 
 auto main(int argc, char** argv) -> int {
+    // A short-lived tool: Tracy only when NGEN_TRACY=1 asks (its start-up alone takes 200 ms).
+    profile::startTracyIfAsked();
+    profile::registerThread("Main");
     bool vertices = false;
     bool fromServer = false;
     std::vector<std::string> names;

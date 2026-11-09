@@ -641,6 +641,7 @@ struct RhiGraphicsPipelineDesc {
 // and read back with RhiDevice::collectGpuZones. Nanoseconds on the GPU's own clock.
 struct RhiGpuZone {
     const char* name = "";
+    uint32_t tag = 0; // the caller's number from beginGpuZone, returned as given
     uint16_t depth = 0;
     uint64_t startNs = 0;
     uint64_t endNs = 0;

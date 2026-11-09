@@ -9,6 +9,7 @@ auto EditorUIPass::addPass(FrameGraph& fg, FgTextureHandle colorHandle, RhiExten
 
     fg.addPass<EditorUIPassData>(
         "EditorUIPass",
+        profile::Group::Ui,
         [&](FrameGraphBuilder& builder, EditorUIPassData& data) {
             data.color = builder.write(colorHandle, FgAccessFlags::ColorAttachment);
             builder.setSideEffects(true);

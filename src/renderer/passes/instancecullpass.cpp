@@ -165,6 +165,7 @@ auto InstanceCullPass::addPasses(FrameGraph& fg, DrawLists& lists, const DrawLis
         auto historyGroups = DrawLists::groupCountFor(lists.instanceCapacity());
         fg.addPass<ClearPassData>(
             "CullHistoryClear",
+            profile::Group::Culling,
             [&](FrameGraphBuilder& builder, ClearPassData& data) {
                 builder.read(hzb, FgAccessFlags::ShaderRead);
                 data.history = builder.write(handles.history, FgAccessFlags::StorageWrite);
@@ -177,6 +178,7 @@ auto InstanceCullPass::addPasses(FrameGraph& fg, DrawLists& lists, const DrawLis
     // 1. The render-LOD level test and frustum test per instance and view, the first phase from the history; per-workgroup counters.
     fg.addPass<CullPassData>(
         "InstanceCull",
+        profile::Group::Culling,
         [&](FrameGraphBuilder& builder, CullPassData& data) {
             builder.read(handles.params, FgAccessFlags::StorageRead);
             builder.read(handles.groupBounds, FgAccessFlags::StorageRead);
@@ -194,6 +196,7 @@ auto InstanceCullPass::addPasses(FrameGraph& fg, DrawLists& lists, const DrawLis
     // 2. Exclusive prefix over the workgroups, a workgroup per counter: start offsets, draw counts and statistics.
     fg.addPass<ScanPassData>(
         "InstanceCullScan",
+        profile::Group::Culling,
         [&](FrameGraphBuilder& builder, ScanPassData& data) {
             builder.read(handles.params, FgAccessFlags::StorageRead);
             builder.read(handles.groupCounters, FgAccessFlags::StorageRead);
@@ -206,6 +209,7 @@ auto InstanceCullPass::addPasses(FrameGraph& fg, DrawLists& lists, const DrawLis
     // 2b. The regions laid out in the work items from the totals: each region's draw; the meshlet counts zeroed for the mesh passes.
     fg.addPass<ScanPassData>(
         "InstanceCullLayout",
+        profile::Group::Culling,
         [&](FrameGraphBuilder& builder, ScanPassData& data) {
             builder.read(handles.params, FgAccessFlags::StorageRead);
             builder.read(hzb, FgAccessFlags::ShaderRead);
@@ -218,6 +222,7 @@ auto InstanceCullPass::addPasses(FrameGraph& fg, DrawLists& lists, const DrawLis
     // 3. Ordered writes: each command lands at its workgroup's offset plus the local prefix.
     fg.addPass<ScatterPassData>(
         "InstanceCullScatter",
+        profile::Group::Culling,
         [&](FrameGraphBuilder& builder, ScatterPassData& data) {
             builder.read(handles.params, FgAccessFlags::StorageRead);
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
@@ -250,6 +255,7 @@ auto InstanceCullPass::addLatePasses(FrameGraph& fg, const DrawLists::Handles& h
     // 1. The camera's frustum-visible instances against the depth pyramid; the history for the next frame; the late phase's counters.
     fg.addPass<OcclusionPassData>(
         "InstanceCullOcclusion",
+        profile::Group::Culling,
         [&](FrameGraphBuilder& builder, OcclusionPassData& data) {
             builder.read(handles.params, FgAccessFlags::StorageRead);
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
@@ -264,6 +270,7 @@ auto InstanceCullPass::addLatePasses(FrameGraph& fg, const DrawLists::Handles& h
     // 2. The late phase's offsets, draw counts and occlusion count.
     fg.addPass<ScanPassData>(
         "InstanceCullLateScan",
+        profile::Group::Culling,
         [&](FrameGraphBuilder& builder, ScanPassData& data) {
             builder.read(handles.params, FgAccessFlags::StorageRead);
             builder.read(handles.groupCounters, FgAccessFlags::StorageRead);
@@ -276,6 +283,7 @@ auto InstanceCullPass::addLatePasses(FrameGraph& fg, const DrawLists::Handles& h
     // 2b. The late regions laid out after the first phase's.
     fg.addPass<ScanPassData>(
         "InstanceCullLateLayout",
+        profile::Group::Culling,
         [&](FrameGraphBuilder& builder, ScanPassData& data) {
             builder.read(handles.params, FgAccessFlags::StorageRead);
             builder.read(hzb, FgAccessFlags::ShaderRead);
@@ -287,6 +295,7 @@ auto InstanceCullPass::addLatePasses(FrameGraph& fg, const DrawLists::Handles& h
     // 3. The late regions' commands.
     fg.addPass<ScatterPassData>(
         "InstanceCullLateScatter",
+        profile::Group::Culling,
         [&](FrameGraphBuilder& builder, ScatterPassData& data) {
             builder.read(handles.params, FgAccessFlags::StorageRead);
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);

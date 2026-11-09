@@ -2,6 +2,7 @@
 
 #include "assetclient.h"
 #include "profile.h"
+#include "profileconfig.h"
 #include "projection.h"
 #include "renderconfig.h"
 #include "renderthread.h"
@@ -37,12 +38,12 @@ auto ViewFrame::updateScene() -> void {
         renderThread.reloadShaders(changed);
         scene.refresh(changed, false);
     }
-    static const uint32_t sceneUpdateZoneId = profile::registerName("SceneUpdate");
+    static const uint32_t sceneUpdateZoneId = profile::registerSite("SceneUpdate", profile::Group::Frame);
     profile::beginZone(sceneUpdateZoneId);
     bool sceneUpdated = scene.update();
     profile::endZone();
     if (sceneUpdated) {
-        PROFILE_ZONE("SceneInputs");
+        PROFILE_ZONE("SceneInputs", Frame);
         snapshotsTaken++;
         cam.worldUp = scene.worldUp();
         placeStartCamera();
@@ -56,6 +57,7 @@ auto ViewFrame::updateScene() -> void {
 }
 
 auto ViewFrame::advanceTime(uint64_t nowNs) -> void {
+    PROFILE_ZONE_DETAIL("AdvanceTime", Frame);
     // A script or an RPC call that moves the camera ends the following, as a hand on the controls does.
     if (cam.position != poseBeforeCommands || cam.yaw != yawBeforeCommands || cam.pitch != pitchBeforeCommands) {
         autoFrame = false;
@@ -76,6 +78,7 @@ auto ViewFrame::advanceTime(uint64_t nowNs) -> void {
 }
 
 auto ViewFrame::resetCameras() -> void {
+    PROFILE_ZONE_DETAIL("ResetCameras", Frame);
     cameras = {
         .view = &cam,
         .controlled = &cam,
@@ -93,6 +96,7 @@ auto ViewFrame::setViewport(int newWidth, int newHeight) -> void {
 }
 
 auto ViewFrame::sendSceneInputs() -> void {
+    PROFILE_ZONE_DETAIL("SendSceneInputs", Frame);
     // The camera for the LOD heuristic, when it moved: once it has been placed (by hand, a script, or the framing when the scene was first
     // resident), not while it follows what has arrived.
     bool cameraPlaced = residency.everResident || !autoFrame;
@@ -120,8 +124,17 @@ auto ViewFrame::sendSceneInputs() -> void {
         geometryLimitChanges = renderconfig::geometryLimitMiB.changes();
         renderThread.setGeometryLimit((uint64_t) renderconfig::geometryLimitMiB.get() * 1024 * 1024);
     }
+    // The profiler's history window and GPU detail: the collector reads them from any thread.
+    if (profileconfig::historySeconds.changes() != profileHistoryChanges) {
+        profileHistoryChanges = profileconfig::historySeconds.changes();
+        profile::setHistorySeconds(profileconfig::historySeconds.get());
+    }
+    if (profileconfig::gpuDetail.changes() != profileGpuDetailChanges) {
+        profileGpuDetailChanges = profileconfig::gpuDetail.changes();
+        profile::setGpuDetail(profileconfig::gpuDetail.get());
+    }
     // What changed in the scene since the last frame: the render thread applies it, uploads go out a budget per frame.
-    PROFILE_ZONE("TakeChanges");
+    PROFILE_ZONE("TakeChanges", Frame);
     if (auto changes = scene.takeChanges(); !changes.empty()) {
         groundMeshes.apply(changes);
         renderThread.submitSceneChanges(std::move(changes));
@@ -129,7 +142,7 @@ auto ViewFrame::sendSceneInputs() -> void {
 }
 
 auto ViewFrame::updateResidency() -> void {
-    static const uint32_t residencyZoneId = profile::registerName("Residency");
+    static const uint32_t residencyZoneId = profile::registerSite("Residency", profile::Group::Frame);
     profile::beginZone(residencyZoneId);
     bool resident = scene.idle() && renderThread.sceneDrawn();
     if (resident && !residency.resident) {
@@ -286,7 +299,7 @@ auto ViewFrame::placeStartCamera() -> void {
 }
 
 auto ViewFrame::moveCamera(const CameraMove& move, bool orbitHeld) -> void {
-    static const uint32_t cameraZoneId = profile::registerName("Camera");
+    static const uint32_t cameraZoneId = profile::registerSite("Camera", profile::Group::Frame);
     profile::beginZone(cameraZoneId);
     if (cameraModes.orbiting && !orbitHeld) {
         cameraModes.orbiting = false;
@@ -314,7 +327,7 @@ auto ViewFrame::moveCamera(const CameraMove& move, bool orbitHeld) -> void {
         cameraModes.ground.reset();
         cameraModes.groundPrim.clear();
     } else if (!cameraModes.orbiting && !flown) {
-        PROFILE_ZONE("GroundTest");
+        PROFILE_ZONE("GroundTest", Frame);
         auto start = std::chrono::steady_clock::now();
         auto up = controlled.worldUp;
         auto height = *controlled.followHeight;
@@ -343,7 +356,7 @@ auto ViewFrame::moveCamera(const CameraMove& move, bool orbitHeld) -> void {
 auto ViewFrame::cull() -> void {
     // Culling runs on the GPU: the snapshot carries the frustum to cull against (live, or frozen so the culled set can be inspected from
     // elsewhere), and the results come back a few frames later.
-    PROFILE_ZONE("Cull");
+    PROFILE_ZONE("Cull", Frame);
     cullState.enabled = renderconfig::cullingEnabled.get();
     cullState.frozen = renderconfig::cullingFrozen.get();
     cullViewProj = cullState.update(proj * cameras.cull->viewMatrix());
@@ -353,6 +366,7 @@ auto ViewFrame::cull() -> void {
 }
 
 auto ViewFrame::countLodPops() -> void {
+    PROFILE_ZONE_DETAIL("CountLodPops", Frame);
     if (latestCull.lodFrame != lodPopsFrame) {
         lodPopsFrame = latestCull.lodFrame;
         lodPops += latestCull.lodPopped;
@@ -360,9 +374,14 @@ auto ViewFrame::countLodPops() -> void {
 }
 
 auto ViewFrame::fitCascades() -> void {
-    PROFILE_ZONE("FitCascades");
-    auto bounds = sceneBounds.update(scene.renderWorld().meshInstances);
+    PROFILE_ZONE("FitCascades", Frame);
+    AABB bounds;
+    {
+        PROFILE_ZONE_DETAIL("UpdateSceneBounds", Frame);
+        bounds = sceneBounds.update(scene.renderWorld().meshInstances);
+    }
     auto lightDir = pickShadowLightDirection(scene.renderWorld().lights, cam.worldUp);
+    PROFILE_ZONE_DETAIL("FitShadowCascades", Frame);
     cascadeCount = fitShadowCascades(renderconfig::shadowSettings(), cameras.shadows->viewMatrix(), proj, projectionNear, lightDir, cam.worldUp, bounds, cascades);
     frozenCorners.reset();
     if (cullState.frozenActive) {
@@ -372,10 +391,12 @@ auto ViewFrame::fitCascades() -> void {
 }
 
 auto ViewFrame::drawCameraModes() -> void {
+    PROFILE_ZONE_DETAIL("DrawCameraModes", Frame);
     ::drawCameraModes(cameraModes, cameras.controlled->position, scene.lodMetersPerUnit(), debugDraw);
 }
 
 auto ViewFrame::readBack() -> void {
+    PROFILE_ZONE_DETAIL("ReadBack", Frame);
     picking.appendWatches(readbacks.watches);
     // Capture watches go with the snapshot when they change.
     if (readbacks.watches != sentWatches) {
@@ -389,7 +410,7 @@ auto ViewFrame::readBack() -> void {
 }
 
 auto ViewFrame::buildSnapshot() -> RenderSnapshot {
-    static const uint32_t snapshotFillZoneId = profile::registerName("SnapshotFill");
+    static const uint32_t snapshotFillZoneId = profile::registerSite("SnapshotFill", profile::Group::Frame);
     profile::beginZone(snapshotFillZoneId);
     const auto& shadowCamera = *cameras.shadows;
     RenderSnapshot snapshot = {
@@ -423,7 +444,7 @@ auto ViewFrame::buildSnapshot() -> RenderSnapshot {
     };
     profile::endZone();
     {
-        PROFILE_ZONE("TakeDebugLines");
+        PROFILE_ZONE("TakeDebugLines", Frame);
         snapshot.debugData = debugDraw.take();
     }
     if (std::exchange(watchesChanged, false)) {

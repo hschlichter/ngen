@@ -2,8 +2,9 @@
 //
 // Adds to timestamps: beginGpuZone/endGpuZone on the command buffer and
 // collectGpuZones after the fence. Three zones per frame: "frame" wrapping a
-// "compute" zone and a "draw" zone. --check asserts depth, ordering and
-// containment, which is what a profiler timeline relies on.
+// "compute" zone and a "draw" zone, each with its own tag. --check asserts depth,
+// ordering, containment and that each tag comes back, which is what a profiler
+// timeline relies on.
 //
 // Unattended run: SDL_VIDEODRIVER=offscreen ngen-example-gpuzones --frames=60 --check --validation
 
@@ -131,13 +132,13 @@ protected:
     auto record(RhiCommandBuffer* cmd, RhiTexture* backbuffer, RhiExtent2D extent) -> void override {
         recorded[frameSlot()] = true;
 
-        cmd->beginGpuZone("frame");
+        cmd->beginGpuZone("frame", 11);
 
         auto imageFrom = frameIndex() == 0 ? RhiTextureState::Undefined : RhiTextureState::ShaderReadOnly;
         std::array<RhiTextureBarrierDesc, 1> toGeneral = {{{.texture = image, .oldState = imageFrom, .newState = RhiTextureState::General}}};
         cmd->pipelineBarrier(toGeneral);
 
-        cmd->beginGpuZone("compute");
+        cmd->beginGpuZone("compute", 22);
         cmd->bindPipeline(computePipeline);
         cmd->bindDescriptorSet(computePipeline, 0, sets[0]);
         cmd->dispatch(imageSize / 8, imageSize / 8, 1);
@@ -146,7 +147,7 @@ protected:
         std::array<RhiTextureBarrierDesc, 1> toSampled = {{{.texture = image, .oldState = RhiTextureState::General, .newState = RhiTextureState::ShaderReadOnly}}};
         cmd->pipelineBarrier(toSampled);
 
-        cmd->beginGpuZone("draw");
+        cmd->beginGpuZone("draw", 33);
         std::array<RhiRenderingAttachmentInfo, 1> colorAttachments = {{
             {.texture = backbuffer, .state = RhiTextureState::ColorAttachment, .clear = true, .clearColor = clearColor},
         }};
@@ -180,6 +181,7 @@ protected:
         const auto& drawZone = lastZones[2];
         report("names-in-record-order", std::string_view(frameZone.name) == "frame" && std::string_view(computeZone.name) == "compute" && std::string_view(drawZone.name) == "draw");
         report("depths", frameZone.depth == 0 && computeZone.depth == 1 && drawZone.depth == 1);
+        report("tags-returned", frameZone.tag == 11 && computeZone.tag == 22 && drawZone.tag == 33);
         report("children-inside-parent", computeZone.startNs >= frameZone.startNs && drawZone.endNs <= frameZone.endNs);
         report("compute-before-draw", computeZone.endNs <= drawZone.startNs);
         report("durations-positive", frameZone.endNs > frameZone.startNs && computeZone.endNs > computeZone.startNs && drawZone.endNs > drawZone.startNs);

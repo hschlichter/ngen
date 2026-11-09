@@ -343,6 +343,7 @@ auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t
     }
     fg.addPass<CullReadbackPassData>(
         "CullReadback",
+        profile::Group::Culling,
         [&](FrameGraphBuilder& builder, CullReadbackPassData& data) {
             data.counts = builder.read(handles.counts, FgAccessFlags::TransferSrc);
             data.meshletStats = builder.read(handles.meshletStats, FgAccessFlags::TransferSrc);
@@ -458,6 +459,17 @@ auto DrawLists::report(FrameGraphContext& ctx, uint32_t region, std::span<const 
 
 auto DrawLists::drawRegion(RhiCommandBuffer* cmd, RhiBuffer* regionWork, uint32_t region) -> void {
     cmd->drawMeshTasksIndirect(regionWork, (uint64_t) region * sizeof(RegionWork), 1, sizeof(RegionWork));
+}
+
+auto DrawLists::drawName(uint32_t region) -> const char* {
+    // Every view's four regions are consecutive, in this order (regionName).
+    static constexpr std::array<const char*, 4> names = {
+        "Opaque",
+        "Opaque two-sided",
+        "Cutout",
+        "Cutout two-sided",
+    };
+    return names[region % names.size()];
 }
 
 auto DrawLists::regionName(uint32_t region) -> const char* {

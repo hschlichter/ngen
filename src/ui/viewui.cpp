@@ -159,15 +159,15 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         .requestQuit = requestQuit,
     };
     {
-        PROFILE_ZONE("MenuBar");
+        PROFILE_ZONE("MenuBar", Ui);
         drawViewMenuBar(menuState);
     }
     if (showStatusBar) {
-        PROFILE_ZONE("StatusBar");
+        PROFILE_ZONE("StatusBar", Ui);
         drawStatusBar(statusBarData);
     }
     {
-        PROFILE_ZONE("FrameGraphWindow");
+        PROFILE_ZONE("FrameGraphWindow", Ui);
         std::optional<FrameGraphCaptureRequest> captureRequest;
         drawFrameGraphWindow(showFrameGraphWindow, fgLastSnapshot, fgSelectedPass, fgSelectedResource, captureRequest);
         if (captureRequest.has_value()) {
@@ -179,15 +179,15 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         }
     }
     {
-        PROFILE_ZONE("PerformanceWindow");
+        PROFILE_ZONE("PerformanceWindow", Ui);
         drawPerformanceWindow(showPerformanceWindow, performanceState);
     }
     {
-        PROFILE_ZONE("ConfigWindow");
+        PROFILE_ZONE("ConfigWindow", Ui);
         drawConfigWindow(showConfigWindow, configState);
     }
     {
-        PROFILE_ZONE("RenderDebugWindow");
+        PROFILE_ZONE("RenderDebugWindow", Ui);
         RenderDebugViewFlags viewFlags = {
             .gbufferView = gbufferView,
             .sampler = sampler,
@@ -226,7 +226,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         return !path.empty() ? path : std::string("(unknown prim)");
     };
     if (introspectionFlags.frameDebugger) {
-        PROFILE_ZONE("FrameDebuggerWindow");
+        PROFILE_ZONE("FrameDebuggerWindow", Ui);
         auto openInCapture = [&](const std::string& pass, const std::string& resource) {
             captureWindowState.pass = pass;
             captureWindowState.afterLastWrite = false;
@@ -237,7 +237,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         drawFrameDebuggerWindow(introspectionFlags.frameDebugger, frameDebuggerState, instancePath, openInCapture);
     }
     if (introspectionFlags.gpuScene) {
-        PROFILE_ZONE("GpuSceneWindow");
+        PROFILE_ZONE("GpuSceneWindow", Ui);
         auto namePrim = [&](uint32_t prim) -> std::string {
             auto path = primPath(prim);
             return !path.empty() ? path : std::string("(unknown prim)");
@@ -250,46 +250,46 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         drawGpuSceneWindow(introspectionFlags.gpuScene, gpuSceneState, 1 + cullResult->cascadeCount, primOfInstance, namePrim, selectPrim);
     }
     {
-        PROFILE_ZONE("DebugViewWindow");
+        PROFILE_ZONE("DebugViewWindow", Ui);
         updateDebugViewCursor(debugViewState);
         drawDebugViewWindow(static_cast<DebugView>(renderconfig::debugView.get()), debugViewState, instancePath);
     }
     if (introspectionFlags.counters) {
-        PROFILE_ZONE("CountersWindow");
+        PROFILE_ZONE("CountersWindow", Ui);
         drawCountersWindow(introspectionFlags.counters, countersState);
     }
     if (introspectionFlags.capture) {
-        PROFILE_ZONE("CaptureWindow");
+        PROFILE_ZONE("CaptureWindow", Ui);
         drawCaptureWindow(introspectionFlags.capture, fgLastSnapshot, captureWindowState);
     }
     if (introspectionFlags.memory) {
-        PROFILE_ZONE("MemoryWindow");
+        PROFILE_ZONE("MemoryWindow", Ui);
         drawMemoryWindow(introspectionFlags.memory, renderDebugLast, memoryWindowState);
     }
     {
-        PROFILE_ZONE("CameraWindow");
+        PROFILE_ZONE("CameraWindow", Ui);
         if (tools != nullptr && cameraModes != nullptr) {
             drawCameraWindow(showCameraWindow, camera, cameraState, tools->debugCamera, *cameraModes);
         }
     }
     {
-        PROFILE_ZONE("AssetsWindow");
+        PROFILE_ZONE("AssetsWindow", Ui);
         drawAssetsWindow(showAssetsWindow, assetLog, assetsState);
     }
     {
-        PROFILE_ZONE("LodWindow");
+        PROFILE_ZONE("LodWindow", Ui);
         if (tools != nullptr) {
             drawLodWindow(showLodWindow, tools->lod, lodWindowState);
         }
     }
     {
-        PROFILE_ZONE("StreamingWindow");
+        PROFILE_ZONE("StreamingWindow", Ui);
         if (tools != nullptr) {
             drawStreamingWindow(showStreamingWindow, tools->streaming, streamingWindowState);
         }
     }
     {
-        PROFILE_ZONE("CullingWindow");
+        PROFILE_ZONE("CullingWindow", Ui);
         // The meshlet culling debug view is a debug view like any other; the window switches it.
         bool meshletCullView = renderconfig::debugView.get() == (size_t) DebugView::MeshletCull;
         bool meshletCullViewBefore = meshletCullView;

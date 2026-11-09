@@ -5,6 +5,7 @@
 
 #include "packedtexture.h"
 #include "packer.h"
+#include "profile.h"
 
 // tinyexr inflates through stb's zlib: stb_image's decoder, and stb_image_write's encoder, which it names but the packer never calls.
 #define STB_IMAGE_IMPLEMENTATION
@@ -109,6 +110,10 @@ auto packExr(const std::vector<std::byte>& source, const std::string& name) -> s
 } // namespace
 
 auto main(int argc, char** argv) -> int {
+    // A packer runs for milliseconds: Tracy only when NGEN_TRACY=1 asks (its start-up alone takes 200 ms).
+    profile::startTracyIfAsked();
+    profile::registerThread("Main");
+    PROFILE_ZONE("PackerMain", Assets);
     auto args = parsePackerArgs(argc, argv);
     if (!args) {
         std::println(stderr, "ngen-packer-exr: {}", args.error());

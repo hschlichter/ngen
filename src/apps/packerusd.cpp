@@ -2,6 +2,7 @@
 // material the file defines as a secondary output, "<asset>#<prim path>" (src/asset/README.md).
 
 #include "packer.h"
+#include "profile.h"
 #include "scenepack.h"
 #include "usdpacker.h"
 
@@ -25,6 +26,10 @@ namespace {
 } // namespace
 
 auto main(int argc, char** argv) -> int {
+    // A packer runs for milliseconds: Tracy only when NGEN_TRACY=1 asks (its start-up alone takes 200 ms).
+    profile::startTracyIfAsked();
+    profile::registerThread("Main");
+    PROFILE_ZONE("PackerMain", Assets);
     auto args = parsePackerArgs(argc, argv);
     if (!args) {
         std::println(stderr, "ngen-packer-usd: {}", args.error());

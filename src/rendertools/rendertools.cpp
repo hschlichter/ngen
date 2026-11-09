@@ -151,7 +151,7 @@ auto RenderTools::afterSubmit(Renderer& renderer, const RenderFrame& frame) -> v
     if (readbacks.empty()) {
         return;
     }
-    PROFILE_ZONE("ReadbackFiles");
+    PROFILE_ZONE("ReadbackFiles", Render);
     renderer.waitForFrame();
     auto format = renderer.state().swapchainFormat;
     for (auto& readback : readbacks) {

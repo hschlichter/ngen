@@ -309,8 +309,11 @@ public:
     static auto countOffset(uint32_t region) -> uint64_t { return (uint64_t) region * sizeof(uint32_t); }
     // Draws a region's meshlets with the bound mesh pipeline: one drawMeshTasksIndirect, its command the region's RegionWork.
     static auto drawRegion(RhiCommandBuffer* cmd, RhiBuffer* regionWork, uint32_t region) -> void;
-    // A region as text ("camera.single", "cascade0.double", ...); a literal, so it can name GPU zones.
+    // A region as text ("camera.single", "cascade0.double", ...): the draw log, the records, the windows.
     static auto regionName(uint32_t region) -> const char*;
+    // What a region draws ("Opaque", "Opaque two-sided", "Cutout", "Cutout two-sided"), whichever view: the name of its draw's GPU zone, under
+    // the pass and cascade zones that say whose view. A literal.
+    static auto drawName(uint32_t region) -> const char*;
 
     // Latest readback (one frame-slot cycle old).
     auto readbackFrame() const -> uint64_t { return latest.frame; }

@@ -23,7 +23,7 @@ public:
     auto queued() -> size_t;
 
 private:
-    auto work() -> void;
+    auto work(unsigned index) -> void;
 
     std::mutex mutex;
     std::condition_variable wake;

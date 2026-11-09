@@ -12,6 +12,7 @@ struct InstanceUploadPassData {
 auto addInstanceUploadPass(FrameGraph& fg, FgBufferHandle staging, FgBufferHandle instances, std::vector<RhiBufferCopy> regions) -> FgBufferHandle {
     const auto& data = fg.addPass<InstanceUploadPassData>(
         "InstanceUpload",
+        profile::Group::Upload,
         [&](FrameGraphBuilder& builder, InstanceUploadPassData& data) {
             data.staging = builder.read(staging, FgAccessFlags::TransferSrc);
             data.instances = builder.write(instances, FgAccessFlags::TransferDst);

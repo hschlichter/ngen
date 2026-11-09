@@ -96,6 +96,7 @@ locked; **Superseded by N** — replaced, kept as a record.
 | [79](0079_dome_light_sky_and_irradiance.md) | 2026-11-05 | The dome light as the sky, its irradiance computed when packed | Accepted |
 | [80](0080_build_without_targets_builds_everything.md) | 2026-11-07 | No project defaults; a build without targets builds everything | Accepted |
 | [81](0081_tracy_as_second_sink.md) | 2026-11-09 | Tracy as a second sink inside the profile collector | Accepted |
+| [82](0082_detailed_profiling.md) | 2026-11-09 | Detailed profiling: sites, history by time, profile as a foundation library | Accepted |
 
 ## By area
 

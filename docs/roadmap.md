@@ -176,6 +176,10 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
   the lavapipe push-constant bug to Mesa (offered, not done).
 - **Introspection follow-ups** ([plan_introspect_tool.md](plan_introspect_tool.md), "Deferred"): profiler zones on the trace stream, session
   recording in the windowed tool, structured asset server events (its messages are text lines today), `get --every` for a record over time.
+- **Profiling counters and frame images** ([plan_profile_counters.md](plan_profile_counters.md), [plan_tracy_frame_images.md](plan_tracy_frame_images.md);
+  drafts): plots of renderer stats, GPU usage and memory; frame images in Tracy. Also from the detail plan's findings: the render thread's two
+  per-frame loops over every instance (`SceneBounds`, `PackInstanceRecords`, about 10 ms a frame on the streaming test world), `CountEntities`
+  walking the World for a trace message, the asset server's deliveries waiting on `watchMutex`.
 - **Introspection extras**: GPU crash diagnostics (breadcrumbs, `VK_EXT_device_fault`); scene/USD provenance; per-pass GPU time column;
   zone statistics; a headless performance regression check; the GPU-driven debugging plan.
 - **Build system**: static libraries aren't passed on transitively (programs link each library directly); watch mode; Windows; deterministic
@@ -196,6 +200,12 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 ## Landed
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
+
+- **Detailed profiling** — [plan_profile_detail.md](plan_profile_detail.md); [ADR 82](adr/0082_detailed_profiling.md). Every zone is a site
+  with its file, line, group (its colour) and level; the collector keeps the last 10 seconds (configurable) of everything; `profile` is a
+  foundation library, so the asset server and the packers are profiled too, and every thread is visible. Zones reach down to loops and library
+  calls by a coverage rule (80% of every zone over 0.05 ms per frame, or 1 ms per call, accounted for by its children), the GPU to its draws,
+  named for what they draw. Tracy's client starts by hand: in the view and the asset server, and in short-lived tools with `NGEN_TRACY=1`.
 
 - **Tracy** — [plan_tracy.md](plan_tracy.md); [ADR 81](adr/0081_tracy_as_second_sink.md). Tracy is a second sink inside the profile
   collector: every existing CPU zone, zone value, frame mark and thread name, and the GPU lane from the zones the renderer already calibrates,
