@@ -1,6 +1,6 @@
 # Frame images in Tracy
 
-**Status. In progress.**
+**Status. Landed.**
 
 ## Current state
 
@@ -99,7 +99,7 @@ Results (2026-11-09, this machine) in **bold**.
   at connect and disconnect (Tracy's GUI shows them; Henrik's visual check that the image under a frame is that frame, by moving the camera with a
   script at a known frame). **Release Sponza, `tracy-capture` connected: the capture saved (6,989 frames; 8.3 MB), no instrumentation
   failure; the `zones` record at frame 600 has 60 `FrameImage` hand-offs in 60 frames, and the `memory` record five 320 × 180 R8G8B8A8_SRGB
-  targets with their readback buffers. Henrik's visual check pending.**
+  targets with their readback buffers. Henrik's visual check in Tracy: done.**
 - Without a server, `profile.gpu.detail` on: no frame-image GPU zone in the `zones` record, and no GPU memory in the `memory` record beyond the
   per-slot targets. **No `FrameImage` zone on any lane, with 43 detail GPU zones recorded; no `tracy.frameimage` allocation at all (made on
   first use).**
