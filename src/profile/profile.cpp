@@ -90,6 +90,10 @@ std::deque<FrameInterval> g_intervals;
 std::deque<FrameStats> g_frames;
 uint64_t g_frameCount = 0;
 uint64_t g_frameStartNs = 0;
+// Tracy's frame count and ours move together under this lock, so a frame image's offset, taken on another thread, is exact: Tracy fails
+// a capture that gets two images for one frame.
+std::mutex g_frameMarkMutex;
+uint64_t g_frameMarks = 0;
 
 struct GpuFrame {
     uint64_t frameIndex = 0;
@@ -575,11 +579,15 @@ auto endZone() -> void {
 }
 
 auto frameMark() -> void {
+    {
+        std::lock_guard markLock(g_frameMarkMutex);
 #ifdef TRACY_ENABLE
-    if (tracyRunning()) {
-        ___tracy_emit_frame_mark(nullptr);
-    }
+        if (tracyRunning()) {
+            ___tracy_emit_frame_mark(nullptr);
+        }
 #endif
+        g_frameMarks++;
+    }
     if (g_paused.load(std::memory_order_relaxed)) {
         return;
     }
@@ -684,6 +692,30 @@ auto tracyConnected() -> bool {
     return tracyRunning() && ___tracy_connected() != 0;
 #else
     return false;
+#endif
+}
+
+auto frameMarks() -> uint64_t {
+    std::lock_guard lock(g_frameMarkMutex);
+    return g_frameMarks;
+}
+
+auto frameImage(const uint8_t* rgba, uint16_t width, uint16_t height, uint64_t frame) -> void {
+#ifdef TRACY_ENABLE
+    if (!tracyConnected()) {
+        return;
+    }
+    // Tracy places the image `offset` marks before its own count, which moves with ours.
+    std::lock_guard lock(g_frameMarkMutex);
+    if (frame > g_frameMarks || g_frameMarks - frame > 255) {
+        return;
+    }
+    ___tracy_emit_frame_image(rgba, width, height, (uint8_t) (g_frameMarks - frame), 0);
+#else
+    (void) rgba;
+    (void) width;
+    (void) height;
+    (void) frame;
 #endif
 }
 

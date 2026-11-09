@@ -163,6 +163,12 @@ group's colour), zone value, frame mark and thread name goes to Tracy from `begi
   zone, `-g` every GPU zone. For the everyday numbers, the records above are simpler.
 - **GPU lane**: a Tracy GPU context named "GPU" whose clock is the profile clock, re-synchronised against Tracy's own every frame. Because the
   zones are sent when they are collected, Tracy's "CPU to GPU" delay of a GPU zone is meaningless; the zone's place on the GPU lane is right.
+- **Frame images**: while a server is connected, every presented frame (UI included) reaches Tracy as a 320-pixel-wide image under the
+  main-thread frame that built it (`profile::frameImage`; the render tools make them, `src/rendertools/README.md`). The frame is
+  `profile::frameMarks()` when its snapshot was filled; Tracy places an image by an offset from its own frame count, so `frameMark` moves
+  Tracy's count and ours under one lock and `frameImage` reads it under the same lock: Tracy fails a capture that gets two images for one
+  frame. `profile.tracy.frameImages` (default on) turns them off. The built-in collector keeps no images; `screenshot` is the way to see a
+  frame without Tracy.
 - **Thread names**: a thread named while Tracy runs gives Tracy its full name; one named before (at launch, while the client is still starting)
   shows under its system name, the first 15 characters, which `registerThread` sets too.
 - **Sampling and context switches** start with the client when the kernel lets it open `perf_event`s and read tracefs (see "Every thread

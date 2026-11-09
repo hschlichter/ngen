@@ -1,6 +1,6 @@
 # Frame images in Tracy
 
-**Status. Draft.**
+**Status. In progress.**
 
 ## Current state
 
@@ -68,6 +68,22 @@ Locked with Henrik on 2026-11-09.
 
 5. **Docs.** `src/rendertools/README.md` (frame images beside screenshots, where they sit in the frame), `src/profile/README.md` (Tracy section).
 
+## Built
+
+Where the code differs from the steps above:
+
+- **The frame number travels in `RenderToolsFrame`**, the render tools' own data in the snapshot, not in `RenderSnapshot` and `RenderFrame`:
+  `fillSnapshot` puts `profile::frameMarks()` and `profile.tracy.frameImages` there, so nothing outside `src/rendertools` changed. The
+  counter is `frameMarks` (every mark, paused or not), not `frameCount`, which stops while the Performance window is paused.
+- **One lock around Tracy's frame count and ours.** The first capture failed in Tracy ("Multiple frame images were sent for a single frame"):
+  `frameMark` moved Tracy's count, then ours, and the render thread could read between the two, placing an image one frame late, on the next
+  image's frame. `frameMark` now moves both under one lock and `frameImage` computes the offset and sends under it.
+- **Targets and buffers are made on first use**, when a server is connected, and remade when the swapchain's size changes: the deferred
+  "allocating only on first connect" came for free. Each slot keeps its own (the slot's fence has passed when it records again, so nothing is
+  deferred). The readback buffer is `GpuToCpu` (cached, for the CPU to read); the target is RGBA8, sRGB when the backbuffer is, and also
+  `Sampled`, because every RHI texture gets a view.
+- **Memory**: 476 KB a slot (a 320 × 180 target and its readback), five slots with this machine's swapchain, not 300 KB.
+
 ## Visibility
 
 - **Records**: `config` lists `profile.tracy.frameImages`. No other record: the images exist only in Tracy, and the engine's own screenshots
@@ -77,17 +93,27 @@ Locked with Henrik on 2026-11-09.
 
 ## Verification
 
+Results (2026-11-09, this machine) in **bold**.
+
 - With `tracy-capture` connected for 300 frames of Sponza, release: the capture holds one frame image per frame, give or take the frames in flight
   at connect and disconnect (Tracy's GUI shows them; Henrik's visual check that the image under a frame is that frame, by moving the camera with a
-  script at a known frame).
+  script at a known frame). **Release Sponza, `tracy-capture` connected: the capture saved (6,989 frames; 8.3 MB), no instrumentation
+  failure; the `zones` record at frame 600 has 60 `FrameImage` hand-offs in 60 frames, and the `memory` record five 320 × 180 R8G8B8A8_SRGB
+  targets with their readback buffers. Henrik's visual check pending.**
 - Without a server, `profile.gpu.detail` on: no frame-image GPU zone in the `zones` record, and no GPU memory in the `memory` record beyond the
-  per-slot targets.
+  per-slot targets. **No `FrameImage` zone on any lane, with 43 detail GPU zones recorded; no `tracy.frameimage` allocation at all (made on
+  first use).**
 - With a server: the RenderTools `afterFence` hook zone ([plan_profile_detail.md](plan_profile_detail.md), step 7) grows by less than 0.2 ms
-  per frame (`zones` record), and `WaitFence` does not grow.
-- `config profile.tracy.frameImages off`: the images stop at the next frame.
-- Trace: no warnings or errors; validation clean (`--fail-on-validation`).
+  per frame (`zones` record), and `WaitFence` does not grow. **`RenderTools.afterFence` 0.147 ms a frame with images (median 0.143 ms),
+  0.0003 ms with them off, almost all of it the hand-off (Tracy copying 230 KB); `RenderTools.afterExecute` 0.007 ms; `WaitFence` 0.0015 ms
+  with, 0.0014 ms off.**
+- `config profile.tracy.frameImages off`: the images stop at the next frame. **Set at frame 700: the `zones` record at frame 800 has no
+  `FrameImage` zone.**
+- Trace: no warnings or errors; validation clean (`--fail-on-validation`). **Debug three_cubes with `tracy-capture` connected: 60 images in
+  60 frames, validation clean (the first run found the target without a usage its view could serve; it is `Sampled` now); release runs' logs
+  have no warnings or errors.**
 
 ## Deferred / follow-ups
 
 - **Larger images on request** (a config value for the width). Trigger: 320 pixels too small to recognise a moment.
-- **Allocating the targets only on first connect.** Trigger: the per-slot targets' memory (about 300 KB per slot) matters.
+- ~~Allocating the targets only on first connect~~: built that way (see Built).

@@ -176,7 +176,7 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
   the lavapipe push-constant bug to Mesa (offered, not done).
 - **Introspection follow-ups** ([plan_introspect_tool.md](plan_introspect_tool.md), "Deferred"): profiler zones on the trace stream, session
   recording in the windowed tool, structured asset server events (its messages are text lines today), `get --every` for a record over time.
-- **Frame images in Tracy** ([plan_tracy_frame_images.md](plan_tracy_frame_images.md); draft).
+- **Frame images in Tracy** ([plan_tracy_frame_images.md](plan_tracy_frame_images.md); in progress).
 - **Profiling findings** from the detail plan: the render thread's two per-frame loops over every instance (`SceneBounds`,
   `PackInstanceRecords`, about 10 ms a frame on the streaming test world), `CountEntities` walking the World for a trace message, the asset
   server's deliveries waiting on `watchMutex`.

@@ -171,6 +171,12 @@ auto startTracyIfAsked() -> void;
 
 // True while a Tracy server is connected; false without TRACY_ENABLE or before the client started.
 auto tracyConnected() -> bool;
+// Frame marks so far, paused or not: a frame's number while it is open, for frameImage.
+auto frameMarks() -> uint64_t;
+// A small RGBA image of the frame that was open at frameMarks() == `frame`, shown under that frame in Tracy. Width and height are multiples
+// of 4; Tracy copies the pixels. Dropped without a connected server, or when the frame is more than 255 marks ago. Tracy only: the engine's
+// own screenshots are the way to see a frame without it.
+auto frameImage(const uint8_t* rgba, uint16_t width, uint16_t height, uint64_t frame) -> void;
 
 // Plots. A plot is its name: the group and format are those of its first registration. Any thread.
 auto registerPlot(const char* name, Group group, PlotFormat format) -> uint32_t;
