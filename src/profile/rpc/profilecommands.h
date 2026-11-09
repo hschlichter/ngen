@@ -10,11 +10,16 @@
 // them with its other records and methods, the asset server with its own.
 namespace profile {
 
-// `profile` (frame history, the history window and what it holds) and `zones` (where the time goes per lane and on the GPU).
+// `profile` (frame history, the history window and what it holds, GPU usage, resident memory), `zones` (where the time goes per lane and on
+// the GPU) and `plots` (every plot over the history window).
 auto registerProfileRecords(RpcRecords& records) -> void;
 
 // introspect.profile {path, seconds?, level?}: the history as a Chrome trace file; the last `seconds` (default all), level "guide" for
 // guide zones only (default everything). Answers {path}.
 auto dumpProfile(const rpc::Json& params) -> std::expected<rpc::Json, std::string>;
+
+// introspect.plot {name, seconds?}: one plot's samples over the last `seconds` (default the whole history), {name, group, format, samples:
+// [{ms, value}]} with ms before now.
+auto plotSamples(const rpc::Json& params) -> std::expected<rpc::Json, std::string>;
 
 } // namespace profile

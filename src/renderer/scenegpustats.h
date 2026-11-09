@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 // One part of the geometry pool, in its elements: what the limit holds, the capacity, what is used.
 struct RenderDebugPoolUse {
@@ -34,6 +35,28 @@ struct RenderUploadStats {
     uint32_t instanceRegions = 0;
 };
 
+// The last frame's commands, summed over the passes that ran (FrameGraph::frameStats): draws include the indirect draws the GPU counted, as
+// read back a few frames late.
+struct RenderFrameCommands {
+    uint64_t draws = 0;
+    uint64_t dispatches = 0;
+    uint64_t barriers = 0;
+    uint64_t pipelineBinds = 0;
+    uint64_t indirectDraws = 0;
+    uint64_t copies = 0;
+    uint64_t primitives = 0;
+};
+
+// One device memory heap (RhiDevice::memoryHeaps): its size, the driver's budget and usage (0 where it reports none), and what the engine's
+// allocations in it add up to.
+struct RenderHeapUse {
+    uint64_t size = 0;
+    uint64_t budget = 0;
+    uint64_t usage = 0;
+    uint64_t allocated = 0;
+    bool deviceLocal = false;
+};
+
 // The GPU scene's flow, published by the render thread after every frame, whatever window is open: the change lists it took from the main
 // thread, the upload queue, and the geometry pool.
 struct SceneGpuStats {
@@ -48,4 +71,6 @@ struct SceneGpuStats {
     RenderUploadStats uploads;
     RenderDebugGeometryPool geometryPool;
     bool skyDrawn = false; // the frame drew the scene's dome light as its sky (its image on the GPU, render.sky.on)
+    RenderFrameCommands frameCommands;
+    std::vector<RenderHeapUse> heaps;
 };

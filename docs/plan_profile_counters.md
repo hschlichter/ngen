@@ -1,6 +1,6 @@
 # Profile counters: renderer stats, GPU usage and memory over time
 
-**Status. Draft.**
+**Status. Landed.**
 
 ## Current state
 
@@ -111,6 +111,21 @@ Locked with Henrik on 2026-11-09.
 8. **Docs.** `src/profile/README.md` (plots, GPU usage sources, memory pool), `src/renderer/README.md` (`frameCommands` and `heaps` in
    `SceneGpuStats`), `src/rhi/README.md` (`allocationSerial`, the vendor and device IDs).
 
+## Built
+
+Where the code differs from the steps above:
+
+- **System readings** are in `src/profile/systemusage.cpp` (the driver's GPU busy figure and resident memory), not `gpuusage.cpp`; the portable
+  GPU busy figure is computed in `submitGpuZones` and plotted there.
+- **The frame's commands** come from `FrameGraph::frameStats()` (the passes that ran, summed), so their draws match the `render` record's per-pass
+  draws, indirect draws included.
+- **The GPU's allocations reach Tracy only while a server is connected**: `Renderer::reportGpuAllocations` reads `allocations()` when
+  `allocationSerial()` moved and a server is connected, and forgets what it reported when none is, so a server that connects later is told every
+  live allocation. Reading every allocation each frame without a server would cost for nothing.
+- **Culling plots are sampled when a readback arrives**, not every frame; the others once a frame.
+- **`introspect.plot {name, seconds?}`** is the method for one plot's samples (the asset server answers it too); the `plots` record lists them.
+- **The heaps** are in `SceneGpuStats` and the `gpuscene` record (`heaps`), with the frame's commands (`frameCommands`).
+
 ## Visibility
 
 - **Records**: `plots` (new), `profile` (GPU usage, resident memory), `gpuscene` (`frameCommands`, `heaps`). The culling plots' numbers are the
@@ -121,17 +136,29 @@ Locked with Henrik on 2026-11-09.
 
 ## Verification
 
+Results (2026-11-09, release, this machine) in **bold**.
+
 - Headless, release, Sponza, `record plots` and `record profile` at frame 600:
-  - Every plot listed in step 3 is present, with a sample per frame over the history window (count within 1% of the frames in it).
+  - Every plot listed in step 3 is present, with a sample per frame over the history window (count within 1% of the frames in it). **47
+    plots; 2,497 samples over 2,497 frames each; the culling plots 2,391, sampled per readback.**
   - `frameCommands.draws` equals the sum of the `render` record's per-pass draws on the same frame (recorded with `render` at that frame).
+    **619 and 619.**
   - The camera's instances-drawn plot at frame 600 equals the `culling` record's `camera.drawn` for the same readback frame; flying the camera
-    through Sponza (a `camera` verb every 60 frames) makes it change between samples.
-  - Live view: `introspect get view profile` and `/proc/<pid>/status` `VmRSS` read right after it agree within 5%.
+    through Sponza (a `camera` verb every 60 frames) makes it change between samples. **173 and 173; the plot's min and max over the flight
+    of the streaming test world differ (not run as a Sponza camera script).**
+  - Live view: `introspect get view profile` and `/proc/<pid>/status` `VmRSS` read right after it agree within 5%. **1.8% apart.**
   - On this machine (amdgpu) `gpuBusyDriverPercent` is a number; the portable `gpuBusyPercent` is within 15 points of it over 600 frames.
+    **Not met, and the criterion was wrong: 96% (driver, `/sys/class/drm/card1/device/gpu_busy_percent`) against 75% (portable). The GPU
+    frame's whole span, not only its zones, is 3.0 ms of a 4.0 ms frame — the same 75%. The driver's figure is the whole GPU over its own
+    window, other processes' work included; the portable one is this process's. The README says what each measures.**
 - A Tracy capture has every plot (`tracy-csvexport -u -p` lists them) and the GPU pool's total equals the `memory` record's allocated total at
-  the end of the run (±0).
-- The GPU heap usage plot matches the `memory` record's heaps on the same frame.
-- Trace: no warnings or errors. The Performance window's plots: Henrik's visual check.
+  the end of the run (±0). **All 47 plots. The pool's last total (Tracy's "GPU" plot) is 2,745,250,008 bytes, the heaps' allocated totals
+  added up 2,745,250,008.**
+- The GPU heap usage plot matches the `memory` record's heaps on the same frame. **The heap plots come from the same `memoryHeaps` call the
+  `gpuscene` record's `heaps` do; heap 1 (device): 2.77 GB used of a 10.8 GB budget, 2.69 GB allocated by the engine.**
+- Trace: no warnings or errors. The Performance window's plots: Henrik's visual check. **Checked by Henrik. Debug three_cubes run: no warnings or errors,
+  validation clean, 47 plots. All 17 RHI examples exit 0. Cost: `PlotFrame` 7 µs a frame (median; 0.4 ms when the 100 ms readings are
+  taken), `MemoryHeaps` 8 µs.**
 
 ## Deferred / follow-ups
 

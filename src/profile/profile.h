@@ -112,6 +112,32 @@ struct FrameStats {
     double gpuMs = 0.0; // most recent GPU frame known when the frame closed; 0 = unknown
 };
 
+// A plot: a value over time, sampled where it is produced (once a frame, or when it changes), kept for the history window beside the zones
+// and sent to Tracy.
+enum class PlotFormat : uint8_t {
+    Number,
+    Bytes,
+    Percent,
+};
+
+struct PlotSample {
+    uint64_t timeNs = 0;
+    double value = 0.0;
+};
+
+// A plot and its samples over the history window.
+struct PlotInfo {
+    uint32_t id = 0;
+    std::string name;
+    Group group = Group::Render;
+    PlotFormat format = PlotFormat::Number;
+    uint64_t samples = 0;
+    double latest = 0.0;
+    double min = 0.0;
+    double average = 0.0;
+    double max = 0.0;
+};
+
 // What the Chrome trace export writes: the last `seconds` of history (0: all of it), and detail zones or guide zones only.
 struct ExportOptions {
     double seconds = 0.0;
@@ -142,6 +168,31 @@ auto groupColor(Group group, uint32_t siteId) -> uint32_t;
 auto startTracy() -> void;
 // startTracyIfAsked: short-lived programs; starts on this thread when NGEN_TRACY=1 is set, so their whole run is captured.
 auto startTracyIfAsked() -> void;
+
+// True while a Tracy server is connected; false without TRACY_ENABLE or before the client started.
+auto tracyConnected() -> bool;
+
+// Plots. A plot is its name: the group and format are those of its first registration. Any thread.
+auto registerPlot(const char* name, Group group, PlotFormat format) -> uint32_t;
+auto plot(uint32_t plotId, double value) -> void;
+auto plotIdOf(const std::string& name) -> std::optional<uint32_t>;
+auto plots(std::vector<PlotInfo>& out) -> void;
+auto plotSamplesIn(uint32_t plotId, uint64_t startNs, uint64_t endNs, std::vector<PlotSample>& out) -> void;
+
+// GPU usage. Portable: the share of the time between two GPU frames' starts that the later frame's top-level zones cover, from the zones
+// submitGpuZones gets (also the plot "GPU busy"). The driver's: amdgpu's gpu_busy_percent for the card with these PCI vendor and device IDs,
+// read from sysfs at most every 100 ms; empty where there is none, and gpuDriverBusyStatus says why.
+auto gpuBusyPercent() -> double;
+auto setGpuDevice(uint32_t vendorId, uint32_t deviceId) -> void;
+auto gpuDriverBusyPercent() -> std::optional<double>;
+auto gpuDriverBusyStatus() -> std::string;
+// The process's resident memory (/proc/self/statm), read at most every 100 ms.
+auto residentBytes() -> uint64_t;
+
+// A named memory pool in Tracy's memory views (the GPU's allocations). `id` is the allocation's, unique while it lives. Tracy only: the
+// engine's own records list allocations (the memory record).
+auto memoryAlloc(const char* pool, uint64_t id, uint64_t bytes) -> void;
+auto memoryFree(const char* pool, uint64_t id) -> void;
 
 // Names the calling thread's lane and takes it, with a zero-length ThreadStarted zone so the thread shows from its start.
 auto registerThread(const char* name) -> void;
@@ -218,4 +269,12 @@ struct ScopedZone {
 #define PROFILE_ZONE_DETAIL(name, group) PROFILE_ZONE_LEVEL_(name, group, Detail)
 
 #define PROFILE_ZONE_VALUE(value) ::profile::zoneValue((uint64_t) (value))
+
+// A plot sample; the plot is registered once per call site. `group` and `format` are enumerators without their scope:
+// PROFILE_PLOT("Upload bytes", Upload, Bytes, bytes).
+#define PROFILE_PLOT(name, group, format, value)                                                                                                                \
+    do {                                                                                                                                                        \
+        static const uint32_t PROFILE_CONCAT(profilePlotId_, __LINE__) = ::profile::registerPlot(name, ::profile::Group::group, ::profile::PlotFormat::format); \
+        ::profile::plot(PROFILE_CONCAT(profilePlotId_, __LINE__), (double) (value));                                                                            \
+    } while (false)
 #define PROFILE_FRAME_MARK() ::profile::frameMark()

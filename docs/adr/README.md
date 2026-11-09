@@ -97,6 +97,7 @@ locked; **Superseded by N** — replaced, kept as a record.
 | [80](0080_build_without_targets_builds_everything.md) | 2026-11-07 | No project defaults; a build without targets builds everything | Accepted |
 | [81](0081_tracy_as_second_sink.md) | 2026-11-09 | Tracy as a second sink inside the profile collector | Accepted |
 | [82](0082_detailed_profiling.md) | 2026-11-09 | Detailed profiling: sites, history by time, profile as a foundation library | Accepted |
+| [83](0083_profile_plots_and_gpu_memory.md) | 2026-11-09 | Profile plots, GPU usage from two sources, GPU memory as a Tracy pool | Accepted |
 
 ## By area
 

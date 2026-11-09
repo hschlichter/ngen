@@ -612,6 +612,8 @@ auto RhiDeviceVulkan::init(const RhiWindow& window, const RhiDeviceOptions& opti
         .maxTaskPayloadSize = meshShaderProperties.maxTaskPayloadSize,
     };
     std::snprintf(deviceLimits.deviceName, sizeof(deviceLimits.deviceName), "%s", properties.deviceName);
+    deviceLimits.vendorId = properties.vendorID;
+    deviceLimits.deviceId = properties.deviceID;
     std::snprintf(deviceLimits.driverName, sizeof(deviceLimits.driverName), "%s %s", driverProperties.driverName, driverProperties.driverInfo);
 
     VkDeviceCreateInfo deviceCreateInfo = {
@@ -1865,11 +1867,14 @@ auto RhiDeviceVulkan::registerAllocation(const void* object, RhiAllocationInfo i
     std::lock_guard lock(registryMutex);
     info.sequence = nextAllocationSequence++;
     registry[object] = std::move(info);
+    registrySerial.fetch_add(1, std::memory_order_release);
 }
 
 auto RhiDeviceVulkan::unregisterAllocation(const void* object) -> void {
     std::lock_guard lock(registryMutex);
-    registry.erase(object);
+    if (registry.erase(object) > 0) {
+        registrySerial.fetch_add(1, std::memory_order_release);
+    }
 }
 
 auto RhiDeviceVulkan::allocations(std::vector<RhiAllocationInfo>& out) const -> void {

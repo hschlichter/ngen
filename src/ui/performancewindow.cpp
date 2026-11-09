@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <format>
 #include <string>
 #include <vector>
 
@@ -326,6 +327,57 @@ auto drawZoneDetails(const PerformanceWindowState& state) -> void {
     }
 }
 
+// A plot's latest value as text in its format.
+auto plotValueText(const profile::PlotInfo& info, double value) -> std::string {
+    if (info.format == profile::PlotFormat::Bytes) {
+        return std::format("{:.1f} MiB", value / (1024.0 * 1024.0));
+    }
+    if (info.format == profile::PlotFormat::Percent) {
+        return std::format("{:.0f}%", value);
+    }
+    return std::format("{:.0f}", value);
+}
+
+// The guide plots under the frame times: GPU busy, memory, uploads. Every plot is in Tracy and the plots record; these are the few that
+// say where a frame stands.
+auto drawGuidePlots() -> void {
+    std::vector<profile::PlotInfo> list;
+    profile::plots(list);
+    auto wanted = [](const std::string& name) {
+        return name == "GPU busy" || name == "GPU busy (driver)" || name == "Resident memory" || name == "Upload bytes" ||
+               (name.starts_with("GPU heap") && name.contains("(device)") && !name.ends_with("allocated"));
+    };
+    std::vector<profile::PlotSample> samples;
+    std::vector<float> values;
+    if (!ImGui::BeginTable("##guideplots", 3, ImGuiTableFlags_SizingStretchProp)) {
+        return;
+    }
+    ImGui::TableSetupColumn("plot", ImGuiTableColumnFlags_WidthFixed, 190.0f);
+    ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+    ImGui::TableSetupColumn("samples");
+    for (const auto& info : list) {
+        if (!wanted(info.name) || info.samples == 0) {
+            continue;
+        }
+        profile::plotSamplesIn(info.id, 0, UINT64_MAX, samples);
+        values.clear();
+        for (const auto& sample : samples) {
+            values.push_back((float) sample.value);
+        }
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted(info.name.c_str());
+        ImGui::TableSetColumnIndex(1);
+        ImGui::TextUnformatted(plotValueText(info, info.latest).c_str());
+        ImGui::TableSetColumnIndex(2);
+        auto scaleMax = info.format == profile::PlotFormat::Percent ? 100.0f : (float) std::max(info.max, 1.0);
+        ImGui::PushID((int) info.id);
+        ImGui::PlotLines("##plot", values.data(), (int) values.size(), 0, nullptr, 0.0f, scaleMax, ImVec2(ImGui::GetContentRegionAvail().x, 18.0f));
+        ImGui::PopID();
+    }
+    ImGui::EndTable();
+}
+
 auto setPaused(PerformanceWindowState& state, bool paused) -> void {
     state.paused = paused;
     profile::setPaused(paused);
@@ -440,6 +492,8 @@ void drawPerformanceWindow(bool& show, PerformanceWindowState& state) {
             }
         }
     }
+
+    drawGuidePlots();
 
     ImGui::Separator();
     ImGui::TextDisabled("Drag to pan, wheel to zoom, click a bar for details. All lanes share the CPU clock; the GPU lane is calibrated when the device allows, else anchored at submit.");

@@ -452,3 +452,83 @@ auto ViewFrame::buildSnapshot() -> RenderSnapshot {
     }
     return snapshot;
 }
+
+auto ViewFrame::plotFrame() -> void {
+    PROFILE_ZONE_DETAIL("PlotFrame", Frame);
+    // The frame times and GPU usage (the portable GPU busy figure is plotted by the profiler as GPU frames arrive).
+    if (auto frame = profile::lastFrame()) {
+        PROFILE_PLOT("CPU frame ms", Frame, Number, (double) (frame->endNs - frame->startNs) * 1e-6);
+    }
+    if (auto driverBusy = profile::gpuDriverBusyPercent()) {
+        PROFILE_PLOT("GPU busy (driver)", Frame, Percent, *driverBusy);
+    }
+    PROFILE_PLOT("Resident memory", Frame, Bytes, profile::residentBytes());
+
+    // The renderer: the GPU scene, the uploads, the frame's commands, the memory heaps.
+    auto gpu = renderThread.latestSceneGpuStats();
+    PROFILE_PLOT("Draw slots", Render, Number, gpu.drawSlots);
+    PROFILE_PLOT("Meshes", Render, Number, gpu.meshes);
+    PROFILE_PLOT("Textures", Render, Number, gpu.textures);
+    PROFILE_PLOT("Materials", Render, Number, gpu.materials);
+    PROFILE_PLOT("Change lists waiting", Render, Number, gpu.changeListsSubmitted - gpu.changeListsDrawn);
+    bool uploaded = gpu.uploads.lastFrame != plottedUploadFrame;
+    plottedUploadFrame = gpu.uploads.lastFrame;
+    PROFILE_PLOT("Upload bytes", Upload, Bytes, uploaded ? gpu.uploads.lastBytes : 0);
+    PROFILE_PLOT("Uploads", Upload, Number, uploaded ? gpu.uploads.lastUploads : 0);
+    PROFILE_PLOT("Upload queue", Upload, Bytes, gpu.uploads.queuedBytes);
+    PROFILE_PLOT("Geometry pool vertices", Upload, Number, gpu.geometryPool.vertices.used);
+    PROFILE_PLOT("Geometry pool meshlets", Upload, Number, gpu.geometryPool.meshlets.used);
+    PROFILE_PLOT("Draws", Render, Number, gpu.frameCommands.draws);
+    PROFILE_PLOT("Dispatches", Render, Number, gpu.frameCommands.dispatches);
+    PROFILE_PLOT("Barriers", Render, Number, gpu.frameCommands.barriers);
+    PROFILE_PLOT("Pipeline binds", Render, Number, gpu.frameCommands.pipelineBinds);
+    PROFILE_PLOT("Indirect draws", Render, Number, gpu.frameCommands.indirectDraws);
+    PROFILE_PLOT("Copies", Render, Number, gpu.frameCommands.copies);
+    PROFILE_PLOT("Primitives", Render, Number, gpu.frameCommands.primitives);
+    while (heapPlots.size() < gpu.heaps.size()) {
+        auto index = heapPlots.size();
+        auto kind = gpu.heaps[index].deviceLocal ? "device" : "host";
+        heapPlots.push_back({
+            .usage = profile::registerPlot(std::format("GPU heap {} ({}) usage", index, kind).c_str(), profile::Group::Render, profile::PlotFormat::Bytes),
+            .budget = profile::registerPlot(std::format("GPU heap {} ({}) budget", index, kind).c_str(), profile::Group::Render, profile::PlotFormat::Bytes),
+            .allocated = profile::registerPlot(std::format("GPU heap {} ({}) allocated", index, kind).c_str(), profile::Group::Render, profile::PlotFormat::Bytes),
+        });
+    }
+    for (size_t i = 0; i < gpu.heaps.size(); i++) {
+        profile::plot(heapPlots[i].usage, (double) gpu.heaps[i].usage);
+        profile::plot(heapPlots[i].budget, (double) gpu.heaps[i].budget);
+        profile::plot(heapPlots[i].allocated, (double) gpu.heaps[i].allocated);
+    }
+
+    // Culling, when a readback arrived: what the camera and each cascade drew and culled.
+    if (latestCull.frame != 0 && latestCull.frame != plottedCullFrame) {
+        plottedCullFrame = latestCull.frame;
+        PROFILE_PLOT("Camera instances drawn", Culling, Number, latestCull.cameraDrawn);
+        PROFILE_PLOT("Camera instances culled", Culling, Number, latestCull.cameraCulled);
+        PROFILE_PLOT("Camera instances occluded", Culling, Number, latestCull.occluded);
+        PROFILE_PLOT("Camera meshlets tested", Culling, Number, latestCull.cameraMeshlets.tested);
+        PROFILE_PLOT("Camera meshlets frustum culled", Culling, Number, latestCull.cameraMeshlets.frustumCulled);
+        PROFILE_PLOT("Camera meshlets cone culled", Culling, Number, latestCull.cameraMeshlets.coneCulled);
+        PROFILE_PLOT("Camera meshlets occluded", Culling, Number, latestCull.cameraMeshlets.occluded);
+        PROFILE_PLOT("Camera triangles drawn", Culling, Number, latestCull.cameraTriangles);
+        constexpr std::array<const char*, maxShadowCascades> drawnNames = {"Cascade 0 instances drawn", "Cascade 1 instances drawn", "Cascade 2 instances drawn", "Cascade 3 instances drawn"};
+        constexpr std::array<const char*, maxShadowCascades> trianglesNames = {"Cascade 0 triangles drawn", "Cascade 1 triangles drawn", "Cascade 2 triangles drawn", "Cascade 3 triangles drawn"};
+        for (uint32_t c = 0; c < latestCull.cascadeCount && c < maxShadowCascades; c++) {
+            profile::plot(profile::registerPlot(drawnNames[c], profile::Group::Culling, profile::PlotFormat::Number), latestCull.cascadeDrawn[c]);
+            profile::plot(profile::registerPlot(trianglesNames[c], profile::Group::Culling, profile::PlotFormat::Number), (double) latestCull.cascadeTriangles[c]);
+        }
+    }
+
+    // The scene thread, as of its latest snapshot.
+    const auto& thread = scene.snapshot().thread;
+    PROFILE_PLOT("Scene assets in flight", Scene, Number, thread.inFlightLayers + thread.inFlightMeshes + thread.inFlightMaterials + thread.inFlightTextures + thread.inFlightOther);
+    PROFILE_PLOT("Placements drawn", Scene, Number, thread.placementsDrawn);
+    PROFILE_PLOT("Contents reached", Scene, Number, thread.contentsReached);
+    PROFILE_PLOT("LOD groups", Scene, Number, thread.lodGroups);
+
+    // The asset client: what is asked for and not answered, and the bytes received this frame.
+    auto client = assets.stats();
+    PROFILE_PLOT("Asset requests in flight", Assets, Number, client.inFlight());
+    PROFILE_PLOT("Asset bytes received", Assets, Bytes, client.bytes - std::min(client.bytes, plottedAssetBytes));
+    plottedAssetBytes = client.bytes;
+}

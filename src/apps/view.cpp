@@ -407,6 +407,8 @@ auto main(int argc, char* argv[]) -> int {
         rhiDevice.waitIdle();
         return failAfterInit();
     }
+    // The GPU the driver's busy figure is read for (profile::gpuDriverBusyPercent).
+    profile::setGpuDevice(rhiDevice.limits().vendorId, rhiDevice.limits().deviceId);
     {
         auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - rendererInitStart).count();
         TRACE_EVENT("Render", "RendererInitialized", "renderer").text(std::format("renderer initialized in {:.0f} ms", ms)).field("ms", ms);
@@ -597,6 +599,7 @@ auto main(int argc, char* argv[]) -> int {
             PROFILE_ZONE("SubmitSnapshot", Wait);
             renderThread.submitSnapshot(std::move(snapshot));
         }
+        frame.plotFrame();
     }
 
     auto validationErrors = rhiDevice.validationErrorCount();

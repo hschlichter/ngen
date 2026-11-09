@@ -101,6 +101,24 @@ struct GpuFrame {
 std::mutex g_gpuMutex;
 std::deque<GpuFrame> g_gpuFrames;
 double g_gpuFrameMs = 0.0;
+// The portable GPU busy figure: the last GPU frame's first zone start, and the share of the time since the frame before's that it was busy.
+uint64_t g_lastGpuFrameStartNs = 0;
+std::atomic<double> g_gpuBusyPercent = 0.0;
+
+// Plots, in a fixed table so a sample finds its plot without the table's lock. A plot's samples are kept for the history window.
+constexpr uint32_t maxPlots = 512;
+struct Plot {
+    std::string name;
+    Group group = Group::Render;
+    PlotFormat format = PlotFormat::Number;
+    std::mutex mutex;
+    std::deque<PlotSample> samples;
+    std::atomic<bool> tracyConfigured = false;
+};
+std::mutex g_plotMutex;
+std::array<std::unique_ptr<Plot>, maxPlots> g_plots;
+std::unordered_map<std::string, uint32_t> g_plotIds;
+std::atomic<uint32_t> g_plotCount = 0;
 
 constexpr std::array<uint32_t, groupCount> groupColors = {
     0x3F7FD8, // Frame: blue
@@ -630,6 +648,28 @@ auto submitGpuZones(uint64_t frameIndex, uint64_t submitNs, std::span<const Zone
         minStart = std::min(minStart, z.startNs);
         maxEnd = std::max(maxEnd, z.endNs);
     }
+    // Busy: the union of the frame's top-level zones, over the time since the frame before started.
+    uint64_t busyNs = 0;
+    uint64_t coveredUntil = 0;
+    for (const auto& z : zones) {
+        if (z.depth != 0) {
+            continue;
+        }
+        auto from = std::max(z.startNs, coveredUntil);
+        if (z.endNs > from) {
+            busyNs += z.endNs - from;
+        }
+        coveredUntil = std::max(coveredUntil, z.endNs);
+    }
+    if (!zones.empty() && g_lastGpuFrameStartNs != 0 && minStart > g_lastGpuFrameStartNs) {
+        auto busy = std::min(100.0, (double) busyNs * 100.0 / (double) (minStart - g_lastGpuFrameStartNs));
+        g_gpuBusyPercent.store(busy, std::memory_order_relaxed);
+        static const uint32_t busyPlot = registerPlot("GPU busy", Group::Frame, PlotFormat::Percent);
+        plot(busyPlot, busy);
+    }
+    if (!zones.empty()) {
+        g_lastGpuFrameStartNs = minStart;
+    }
     std::lock_guard lock(g_gpuMutex);
     g_gpuFrames.push_back({.frameIndex = frameIndex, .submitNs = submitNs, .newestEndNs = maxEnd, .zones = {zones.begin(), zones.end()}});
     auto oldest = windowStart(now());
@@ -637,6 +677,135 @@ auto submitGpuZones(uint64_t frameIndex, uint64_t submitNs, std::span<const Zone
         g_gpuFrames.pop_front();
     }
     g_gpuFrameMs = zones.empty() ? 0.0 : (double) (maxEnd - minStart) * 1e-6;
+}
+
+auto tracyConnected() -> bool {
+#ifdef TRACY_ENABLE
+    return tracyRunning() && ___tracy_connected() != 0;
+#else
+    return false;
+#endif
+}
+
+auto registerPlot(const char* name, Group group, PlotFormat format) -> uint32_t {
+    std::lock_guard lock(g_plotMutex);
+    if (auto found = g_plotIds.find(name); found != g_plotIds.end()) {
+        return found->second;
+    }
+    auto id = g_plotCount.load(std::memory_order_relaxed);
+    assert(id < maxPlots);
+    if (id >= maxPlots) {
+        return maxPlots;
+    }
+    auto entry = std::make_unique<Plot>();
+    entry->name = name;
+    entry->group = group;
+    entry->format = format;
+    g_plots[id] = std::move(entry);
+    g_plotIds.emplace(name, id);
+    g_plotCount.store(id + 1, std::memory_order_release);
+    return id;
+}
+
+auto plot(uint32_t plotId, double value) -> void {
+    if (plotId >= g_plotCount.load(std::memory_order_acquire)) {
+        return;
+    }
+    auto& entry = *g_plots[plotId];
+#ifdef TRACY_ENABLE
+    // Configured once Tracy runs; Tracy keeps the configuration for every server that connects later.
+    if (tracyRunning()) {
+        if (!entry.tracyConfigured.exchange(true)) {
+            constexpr std::array<int32_t, 3> tracyFormats = {0, 1, 2}; // Number, Memory, Percentage
+            ___tracy_emit_plot_config(entry.name.c_str(), tracyFormats[(uint32_t) entry.format], 0, 1, groupColor(entry.group, 0));
+        }
+        ___tracy_emit_plot(entry.name.c_str(), value);
+    }
+#endif
+    if (g_paused.load(std::memory_order_relaxed)) {
+        return;
+    }
+    auto t = now();
+    std::lock_guard lock(entry.mutex);
+    entry.samples.push_back({.timeNs = t, .value = value});
+    auto oldest = windowStart(t);
+    while (!entry.samples.empty() && entry.samples.front().timeNs < oldest) {
+        entry.samples.pop_front();
+    }
+}
+
+auto plotIdOf(const std::string& name) -> std::optional<uint32_t> {
+    std::lock_guard lock(g_plotMutex);
+    if (auto found = g_plotIds.find(name); found != g_plotIds.end()) {
+        return found->second;
+    }
+    return std::nullopt;
+}
+
+auto plots(std::vector<PlotInfo>& out) -> void {
+    out.clear();
+    auto count = g_plotCount.load(std::memory_order_acquire);
+    for (uint32_t id = 0; id < count; id++) {
+        auto& entry = *g_plots[id];
+        PlotInfo info = {.id = id, .name = entry.name, .group = entry.group, .format = entry.format};
+        std::lock_guard lock(entry.mutex);
+        info.samples = entry.samples.size();
+        if (!entry.samples.empty()) {
+            info.latest = entry.samples.back().value;
+            info.min = entry.samples.front().value;
+            info.max = entry.samples.front().value;
+            double sum = 0.0;
+            for (const auto& sample : entry.samples) {
+                info.min = std::min(info.min, sample.value);
+                info.max = std::max(info.max, sample.value);
+                sum += sample.value;
+            }
+            info.average = sum / (double) entry.samples.size();
+        }
+        out.push_back(std::move(info));
+    }
+}
+
+auto plotSamplesIn(uint32_t plotId, uint64_t startNs, uint64_t endNs, std::vector<PlotSample>& out) -> void {
+    out.clear();
+    if (plotId >= g_plotCount.load(std::memory_order_acquire)) {
+        return;
+    }
+    auto& entry = *g_plots[plotId];
+    std::lock_guard lock(entry.mutex);
+    for (const auto& sample : entry.samples) {
+        if (sample.timeNs >= startNs && sample.timeNs <= endNs) {
+            out.push_back(sample);
+        }
+    }
+}
+
+auto gpuBusyPercent() -> double {
+    return g_gpuBusyPercent.load(std::memory_order_relaxed);
+}
+
+auto memoryAlloc(const char* pool, uint64_t id, uint64_t bytes) -> void {
+#ifdef TRACY_ENABLE
+    if (tracyRunning()) {
+        // The id stands for the address Tracy keys an allocation by.
+        ___tracy_emit_memory_alloc_named(reinterpret_cast<const void*>(id), bytes, pool);
+    }
+#else
+    (void) pool;
+    (void) id;
+    (void) bytes;
+#endif
+}
+
+auto memoryFree(const char* pool, uint64_t id) -> void {
+#ifdef TRACY_ENABLE
+    if (tracyRunning()) {
+        ___tracy_emit_memory_free_named(reinterpret_cast<const void*>(id), pool);
+    }
+#else
+    (void) pool;
+    (void) id;
+#endif
 }
 
 auto lanes(std::vector<LaneInfo>& out) -> void {
@@ -881,6 +1050,21 @@ auto exportChromeTrace(const char* path, const ExportOptions& options) -> bool {
     gpuZonesIn(startNs, UINT64_MAX, zones);
     for (const auto& z : zones) {
         emit(z, gpuTid);
+    }
+    // Plots as counter events, one series per plot.
+    std::vector<PlotInfo> plotList;
+    plots(plotList);
+    std::vector<PlotSample> samples;
+    for (const auto& info : plotList) {
+        plotSamplesIn(info.id, startNs, UINT64_MAX, samples);
+        for (const auto& sample : samples) {
+            std::fprintf(f,
+                         ",\n{\"name\": \"%s\", \"cat\": \"%s\", \"ph\": \"C\", \"pid\": 1, \"ts\": %.3f, \"args\": {\"value\": %.6g}}",
+                         info.name.c_str(),
+                         groupName(info.group),
+                         (double) sample.timeNs * 1e-3,
+                         sample.value);
+        }
     }
     std::fprintf(f, "\n]}\n");
     std::fclose(f);

@@ -69,5 +69,25 @@ auto registerProfileCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
 
     verbs.add("dump-profile", "introspect.profile", parseDump);
 
+    registry.add(
+        {
+            .name = "introspect.plot",
+            .summary = "One profiler plot's samples over the last `seconds` (default the whole history); the plots record lists the plots.",
+            .params =
+                {
+                    requiredField("name", RpcType::String, "the plot's name"),
+                    optionalField("seconds", RpcType::Float, "the last seconds of history"),
+                },
+            .result = "{name, group, format, samples: [{ms, value}]}, ms before now",
+        },
+        [](const Json& p, RpcResponder responder) {
+            auto result = profile::plotSamples(p);
+            if (!result) {
+                responder.fail(rpc::appError, result.error());
+                return;
+            }
+            responder.respond(*result);
+        });
+
     profile::registerProfileRecords(records);
 }

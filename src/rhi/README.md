@@ -204,7 +204,9 @@ Tools read the RHI's own view of its objects; the RHI never formats for a specif
   for the command log and descriptor contents.
 - **Allocations.** `allocations()` lists every live buffer and texture allocation (name, kind, size requested and
   allocated, memory usage, creation order); `memoryHeaps()` lists heaps with size and, where the device reports it,
-  usage and budget.
+  usage and budget. `allocationSerial()` moves whenever an allocation is added or removed, so a reader asks for
+  `allocations()` only when it changed. `limits()` carries the PCI `vendorId` and `deviceId`, which name the card to
+  the driver's own counters (sysfs).
 - **Barrier details.** `describeTransition(old, new)` for texture or buffer states returns the stage masks, access masks
   and layouts the backend records for that transition, as text, from the same functions it records barriers with.
 - **Command log.** `setCommandLog(true)` on a command buffer keeps one `RhiCommandRecord` of text per recorded command

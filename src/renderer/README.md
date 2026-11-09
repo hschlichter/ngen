@@ -218,7 +218,9 @@ Tables:
   goes). A texture's levels are separate uploads.
 - **Seen from outside.** After every frame the render thread publishes `SceneGpuStats` (`RenderThread::latestSceneGpuStats`): change lists
   submitted and drawn, the tables' sizes, the upload queue (`GpuScene::uploadStats`: queued, budget, the last pass, textures waiting for their
-  slot) and the geometry pool. The budget and the pool limit are runtime settings (`RenderThread::setUploadBudget`, `setGeometryLimit`), applied
+  slot), the geometry pool, the last frame's commands summed over the passes that ran (`frameCommands`, `FrameGraph::frameStats`) and the
+  device's memory heaps (`heaps`). Then it reports the device's allocations to Tracy's "GPU" memory pool while a Tracy server is connected
+  (`Renderer::reportGpuAllocations`, `src/profile/README.md`). The budget and the pool limit are runtime settings (`RenderThread::setUploadBudget`, `setGeometryLimit`), applied
   before the next frame.
 - **One staging buffer per frame's batch**, retired through the deletion queue.
 - **Barriers.** The copies are recorded in the frame's command buffer:

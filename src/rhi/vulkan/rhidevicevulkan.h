@@ -5,6 +5,7 @@
 #include "rhiresourcesvulkan.h"
 #include "rhiswapchainvulkan.h"
 
+#include <atomic>
 #include <mutex>
 #include <unordered_map>
 #include <vulkan/vulkan.h>
@@ -34,6 +35,7 @@ public:
     auto destroyQueryPool(RhiQueryPool* pool) -> void override;
     auto readTimestamps(RhiQueryPool* pool, uint32_t first, std::span<uint64_t> outTicks) -> bool override;
     auto collectGpuZones(RhiCommandBuffer* cmd, std::vector<RhiGpuZone>& out) -> bool override;
+    [[nodiscard]] auto allocationSerial() const -> uint64_t override { return registrySerial.load(std::memory_order_acquire); }
     auto collectPipelineStats(RhiCommandBuffer* cmd, std::vector<RhiPipelineStatsZone>& out) -> bool override;
     auto calibrateGpuClock(uint64_t& gpuNs, uint64_t& cpuNs) -> bool override;
     auto createSemaphore() -> RhiSemaphore* override;
@@ -107,6 +109,7 @@ private:
     mutable std::mutex registryMutex;
     std::unordered_map<const void*, RhiAllocationInfo> registry;
     uint64_t nextAllocationSequence = 1;
+    std::atomic<uint64_t> registrySerial = 0;
     auto nameVkObject(VkObjectType type, uint64_t handle, const char* name) -> void;
     auto registerAllocation(const void* object, RhiAllocationInfo info) -> void;
     auto unregisterAllocation(const void* object) -> void;

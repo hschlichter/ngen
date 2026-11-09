@@ -400,6 +400,8 @@ struct RhiCommandStats {
 struct RhiDeviceLimits {
     char deviceName[128] = "";
     char driverName[64] = "";
+    uint32_t vendorId = 0; // the PCI vendor and device IDs (Vulkan's VkPhysicalDeviceProperties): which card, for the driver's own counters
+    uint32_t deviceId = 0;
     uint64_t minUniformBufferOffsetAlignment = 0;
     uint32_t maxPushConstantSize = 0;
     float maxLineWidth = 1.0f;

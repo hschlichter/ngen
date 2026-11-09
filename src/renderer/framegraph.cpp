@@ -556,6 +556,25 @@ auto FrameGraph::passStats(std::string_view name) const -> const RhiCommandStats
     return nullptr;
 }
 
+auto FrameGraph::frameStats() const -> RhiCommandStats {
+    RhiCommandStats total;
+    for (const auto& pass : passes) {
+        if (pass.culled) {
+            continue;
+        }
+        total.draws += pass.stats.draws;
+        total.dispatches += pass.stats.dispatches;
+        total.barriers += pass.stats.barriers;
+        total.pipelineBinds += pass.stats.pipelineBinds;
+        total.descriptorBinds += pass.stats.descriptorBinds;
+        total.bufferBinds += pass.stats.bufferBinds;
+        total.indirectDraws += pass.stats.indirectDraws;
+        total.copies += pass.stats.copies;
+        total.primitives += pass.stats.primitives;
+    }
+    return total;
+}
+
 // --- Debug snapshot ---
 
 auto FrameGraph::buildDebugSnapshot() const -> FrameGraphDebugSnapshot {

@@ -35,6 +35,7 @@ the shadow cascades and the snapshot. `src/apps/view.cpp`'s loop calls its steps
 | `dumps.takeReadbacks` (`viewcommands`) | the dumps' captures and render-tools results | `takeReadbacks`: the windows' captures, the frame debug capture, the counters |
 | | | `drawUi`: the windows drawn, and what they asked for carried out |
 | `buildSnapshot`, submit | the frame for the render thread; the render tools' requests added to it (`RenderTools::fillSnapshot`) | `fillSnapshot` (before submit): the tools' layers, the gizmos' lines and ImGui's draw data, each as its render extension's data |
+| `plotFrame` | the frame's numbers as profiler plots (`src/profile/README.md`, "Plots") | |
 
 **In the profiler** (`src/profile/README.md`) the frame is `MainFrame` (group Frame) on the Main lane: each step is a zone of its own (the
 detail ones `AdvanceTime`, `ResetCameras`, `SendSceneInputs`, `CountLodPops`, `DrawCameraModes`, `ReadBack`), each hook call one named

@@ -89,6 +89,8 @@ public:
     auto buildDebugSnapshot() const -> FrameGraphDebugSnapshot;
     // Command stats of the named pass from the last execute; nullptr if absent or culled.
     auto passStats(std::string_view name) const -> const RhiCommandStats*;
+    // The last execute's command stats summed over the passes that ran.
+    auto frameStats() const -> RhiCommandStats;
 
     // Draw log for the render debugger: enabled per frame, records cleared by reset().
     auto setDrawLogEnabled(bool enabled) -> void { drawLogEnabled = enabled; }

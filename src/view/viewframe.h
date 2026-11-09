@@ -108,6 +108,9 @@ public:
     auto fitCascades() -> void;
     // The engine's own debug lines, after the hooks': the camera modes'.
     auto drawCameraModes() -> void;
+    // The frame's numbers as profiler plots (src/profile/README.md): the renderer's stats and commands, culling, the scene thread, the asset
+    // client, GPU usage and memory. Once a frame, last.
+    auto plotFrame() -> void;
     // The watches `readbacks` asks for go with the snapshot when they change; the captures that came back are filled in, picking's taken
     // first.
     auto readBack() -> void;
@@ -182,6 +185,16 @@ private:
     uint64_t geometryLimitChanges = 0;
     // The profiler's values, handed to the collector on a change; UINT64_MAX applies them on the first frame.
     uint64_t profileHistoryChanges = UINT64_MAX;
+    // plotFrame: what it plotted last, so per-frame plots count what is new; the heap plots' ids, one set per heap.
+    uint64_t plottedUploadFrame = 0;
+    uint64_t plottedAssetBytes = 0;
+    uint64_t plottedCullFrame = 0;
+    struct HeapPlots {
+        uint32_t usage = 0;
+        uint32_t budget = 0;
+        uint32_t allocated = 0;
+    };
+    std::vector<HeapPlots> heapPlots;
     uint64_t profileGpuDetailChanges = UINT64_MAX;
     uint64_t lodPopsFrame = 0;
     std::vector<CaptureWatch> sentWatches;

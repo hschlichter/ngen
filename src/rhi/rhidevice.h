@@ -85,6 +85,8 @@ public:
     virtual auto setDebugName(RhiDebugObject object, const char* name) -> void = 0;
     // Every live buffer and texture, in creation order.
     virtual auto allocations(std::vector<RhiAllocationInfo>& out) const -> void = 0;
+    // Moves on every allocation added or removed: allocations() changed since a reader last saw this value. Any thread.
+    [[nodiscard]] virtual auto allocationSerial() const -> uint64_t = 0;
     // Device memory heaps with driver budget when available.
     virtual auto memoryHeaps(std::vector<RhiMemoryHeapInfo>& out) const -> void = 0;
     // What a barrier between two states becomes in the backend (stages, accesses, layouts).

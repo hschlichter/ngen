@@ -507,6 +507,24 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
 auto Renderer::sceneGpuStats() const -> SceneGpuStats {
     auto uploads = gpuScene.uploadStats();
     auto pool = gpuScene.geometryPoolStats();
+    RenderFrameCommands frameCommands = {
+        .draws = lastFrameCommands.draws,
+        .dispatches = lastFrameCommands.dispatches,
+        .barriers = lastFrameCommands.barriers,
+        .pipelineBinds = lastFrameCommands.pipelineBinds,
+        .indirectDraws = lastFrameCommands.indirectDraws,
+        .copies = lastFrameCommands.copies,
+        .primitives = lastFrameCommands.primitives,
+    };
+    std::vector<RenderHeapUse> heaps;
+    {
+        PROFILE_ZONE_DETAIL("MemoryHeaps", Render);
+        std::vector<RhiMemoryHeapInfo> deviceHeaps;
+        device->memoryHeaps(deviceHeaps);
+        for (const auto& heap : deviceHeaps) {
+            heaps.push_back({.size = heap.size, .budget = heap.budget, .usage = heap.usage, .allocated = heap.allocated, .deviceLocal = heap.deviceLocal});
+        }
+    }
     return {
         .frame = m_frameIndex,
         .drawSlots = (uint32_t) gpuInstances.size(),
@@ -527,7 +545,38 @@ auto Renderer::sceneGpuStats() const -> SceneGpuStats {
         },
         .geometryPool = toRenderDebug(pool),
         .skyDrawn = debugSky,
+        .frameCommands = frameCommands,
+        .heaps = heaps,
     };
+}
+
+auto Renderer::reportGpuAllocations() -> void {
+    if (!profile::tracyConnected()) {
+        reportedAllocations.clear();
+        reportedAllocationSerial = UINT64_MAX;
+        return;
+    }
+    auto serial = device->allocationSerial();
+    if (serial == reportedAllocationSerial) {
+        return;
+    }
+    PROFILE_ZONE_DETAIL("ReportGpuAllocations", Render);
+    reportedAllocationSerial = serial;
+    device->allocations(allocationScratch);
+    std::unordered_map<uint64_t, uint64_t> live;
+    live.reserve(allocationScratch.size());
+    for (const auto& allocation : allocationScratch) {
+        live.emplace(allocation.sequence, allocation.bytes);
+        if (!reportedAllocations.contains(allocation.sequence)) {
+            profile::memoryAlloc("GPU", allocation.sequence, allocation.bytes);
+        }
+    }
+    for (const auto& [sequence, bytes] : reportedAllocations) {
+        if (!live.contains(sequence)) {
+            profile::memoryFree("GPU", sequence);
+        }
+    }
+    reportedAllocations = std::move(live);
 }
 
 auto Renderer::flushSceneUploads() -> void {
@@ -1122,6 +1171,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         {
             PROFILE_ZONE_DETAIL("ExecuteFrameGraph", Render);
             frameGraph.execute(cmd);
+            lastFrameCommands = frameGraph.frameStats();
         }
         // The extensions' copies after the frame (the frame debugger, the inspector, dumps, screenshots), the command log first off.
         for (auto* extension : extensions) {

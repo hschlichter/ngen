@@ -171,6 +171,10 @@ auto gpuSceneRecord(const ViewContext& view) -> Json {
     auto s = view.renderThread.latestSceneGpuStats();
     const auto& u = s.uploads;
     const auto& p = s.geometryPool;
+    auto heaps = Json::array();
+    for (const auto& heap : s.heaps) {
+        heaps.push_back({{"size", heap.size}, {"budget", heap.budget}, {"usage", heap.usage}, {"allocated", heap.allocated}, {"deviceLocal", heap.deviceLocal}});
+    }
     return {
         {"frame", s.frame},
         {"changeLists", {{"submitted", s.changeListsSubmitted}, {"drawn", s.changeListsDrawn}}},
@@ -192,6 +196,15 @@ auto gpuSceneRecord(const ViewContext& view) -> Json {
           {"meshletTriangles", poolUseJson(p.meshletTriangles)},
           {"waitingMeshes", p.waitingMeshes},
           {"waitingBytes", p.waitingBytes}}},
+        {"frameCommands",
+         {{"draws", s.frameCommands.draws},
+          {"dispatches", s.frameCommands.dispatches},
+          {"barriers", s.frameCommands.barriers},
+          {"pipelineBinds", s.frameCommands.pipelineBinds},
+          {"indirectDraws", s.frameCommands.indirectDraws},
+          {"copies", s.frameCommands.copies},
+          {"primitives", s.frameCommands.primitives}}},
+        {"heaps", heaps},
     };
 }
 
@@ -569,7 +582,7 @@ auto registerSceneCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& r
     records.add("scenethread", "the scene thread: requests, composes and placement passes, assets in flight and held, and residency (the script's hold, the load's longest frame)", [&view](RpcResponder responder) {
         responder.respond(sceneThreadRecord(view));
     });
-    records.add("gpuscene", "the GPU scene's flow: change lists taken and drawn, the upload queue and its budget, the geometry pool and what waits for room", [&view](RpcResponder responder) {
+    records.add("gpuscene", "the GPU scene's flow: change lists taken and drawn, the upload queue and its budget, the geometry pool and what waits for room, the last frame's commands summed over its passes, and the memory heaps", [&view](RpcResponder responder) {
         responder.respond(gpuSceneRecord(view));
     });
     records.add("instancers", "every PointInstancer reached while drawing: its points and those shown, its prototypes, and the prims its points draw", [&view](RpcResponder responder) {

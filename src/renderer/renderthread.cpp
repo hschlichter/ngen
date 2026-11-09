@@ -114,6 +114,7 @@ auto RenderThread::threadLoop() -> void {
             std::lock_guard lock(statsMutex);
             sceneStats = stats;
         }
+        renderer->reportGpuAllocations();
 
         {
             PROFILE_ZONE("TakeResults", Render);

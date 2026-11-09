@@ -239,6 +239,13 @@ auto AssetServer::onMessage(RpcServer::ConnectionId connection, const rpc::Json&
             traceLine("test aid: answers for {} are no longer held", pattern);
         }
         responder.respond(rpc::Json::object());
+    } else if (method == "introspect.plot") {
+        auto result = profile::plotSamples(params);
+        if (!result) {
+            responder.fail(rpc::appError, result.error());
+            return;
+        }
+        responder.respond(*result);
     } else if (method == "introspect.profile") {
         // The profiler's history as a Chrome trace, as ngen-view's method of the same name.
         auto result = profile::dumpProfile(params);

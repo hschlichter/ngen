@@ -40,10 +40,15 @@ auto profileRecord() -> Json {
         lanes.push_back({{"lane", lane.name}, {"zones", lane.zones}, {"bytes", lane.bytes}});
         historyBytes += lane.bytes;
     }
+    auto driverBusy = gpuDriverBusyPercent();
     return {
         {"frameCount", history.size()},
         {"cpuMsAverage", cpuAverage},
         {"gpuMsAverage", gpuAverage},
+        {"gpuBusyPercent", gpuBusyPercent()},
+        {"gpuBusyDriverPercent", driverBusy ? Json(*driverBusy) : Json(nullptr)},
+        {"gpuBusyDriverSource", gpuDriverBusyStatus()},
+        {"residentBytes", residentBytes()},
         {"historySeconds", historySeconds()},
         {"historyBytes", historyBytes},
         {"gpuDetail", gpuDetail()},
@@ -162,6 +167,37 @@ auto zonesRecord() -> Json {
     };
 }
 
+auto formatName(PlotFormat format) -> const char* {
+    switch (format) {
+        case PlotFormat::Bytes:
+            return "bytes";
+        case PlotFormat::Percent:
+            return "percent";
+        case PlotFormat::Number:
+            return "number";
+    }
+    return "number";
+}
+
+auto plotsRecord() -> Json {
+    std::vector<PlotInfo> list;
+    plots(list);
+    auto out = Json::array();
+    for (const auto& info : list) {
+        out.push_back({
+            {"name", info.name},
+            {"group", groupName(info.group)},
+            {"format", formatName(info.format)},
+            {"samples", info.samples},
+            {"latest", info.latest},
+            {"min", info.min},
+            {"average", info.average},
+            {"max", info.max},
+        });
+    }
+    return {{"historySeconds", historySeconds()}, {"plots", out}};
+}
+
 } // namespace
 
 auto registerProfileRecords(RpcRecords& records) -> void {
@@ -174,6 +210,39 @@ auto registerProfileRecords(RpcRecords& records) -> void {
                 [](RpcResponder responder) {
                     responder.respond(zonesRecord());
                 });
+    records.add("plots", "every profiler plot (renderer stats, culling, GPU usage, memory, uploads, assets) over the history window: group, format, samples, latest, min, average, max; introspect.plot {name} gives one plot's samples", [](RpcResponder responder) {
+        responder.respond(plotsRecord());
+    });
+}
+
+auto plotSamples(const rpc::Json& params) -> std::expected<rpc::Json, std::string> {
+    if (!params.contains("name") || !params["name"].is_string()) {
+        return std::unexpected("name: a string is required");
+    }
+    auto name = params["name"].get<std::string>();
+    auto id = plotIdOf(name);
+    if (!id) {
+        return std::unexpected(std::format("no plot named '{}' (the plots record lists them)", name));
+    }
+    auto t = now();
+    uint64_t startNs = 0;
+    if (params.contains("seconds")) {
+        if (!params["seconds"].is_number()) {
+            return std::unexpected("seconds: a number");
+        }
+        auto span = (uint64_t) (params["seconds"].get<double>() * 1e9);
+        startNs = t > span ? t - span : 0;
+    }
+    std::vector<PlotSample> samples;
+    plotSamplesIn(*id, startNs, t, samples);
+    std::vector<PlotInfo> list;
+    plots(list);
+    const auto& info = list[*id];
+    auto out = Json::array();
+    for (const auto& sample : samples) {
+        out.push_back({{"ms", -(double) (t - sample.timeNs) * 1e-6}, {"value", sample.value}});
+    }
+    return Json{{"name", info.name}, {"group", groupName(info.group)}, {"format", formatName(info.format)}, {"samples", out}};
 }
 
 auto dumpProfile(const rpc::Json& params) -> std::expected<rpc::Json, std::string> {

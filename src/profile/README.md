@@ -84,6 +84,34 @@ draw (`Opaque`, `Opaque two-sided`, `Cutout`, `Cutout two-sided`, `DrawLists::dr
 `Cascade N` zone per cascade. Detail GPU zones (the depth pyramid's levels, the upload batches) record only while `profile.gpu.detail` is on,
 off by default: a timestamp makes the GPU wait for earlier work at that point, so fine zones change the timings they measure.
 
+## Plots
+
+A plot is a value over time, sampled where it is produced, kept for the same history window as the zones and sent to Tracy (`TracyPlot`,
+coloured by group):
+
+```cpp
+PROFILE_PLOT("Upload bytes", Upload, Bytes, bytes);   // registered once per call site; formats Number, Bytes, Percent
+auto id = profile::registerPlot(name, group, format); // a name built at run time, kept and sampled with profile::plot(id, value)
+```
+
+ngen-view samples its plots once a frame, last in the frame (`ViewFrame::plotFrame`): the frame times, GPU busy from both sources, resident
+memory, the GPU scene's tables and uploads, the frame's commands (draws, dispatches, barriers, pipeline binds, indirect draws, copies,
+primitives), each GPU memory heap's usage, budget and allocation, culling (the camera's and each cascade's instances and triangles drawn, its
+meshlets tested and culled, when a readback arrives), the scene thread's assets in flight, placements and LOD groups, and the asset client's
+requests in flight and bytes received. Each plotted number is also in a record (`gpuscene`, `culling`, `scenethread`, `assets`, `profile`).
+
+- **GPU usage, two sources.** Portable (`profile::gpuBusyPercent`, the plot "GPU busy"): the share of the time between two GPU frames' starts
+  that the later frame's top-level zones cover, computed as GPU frames arrive. The driver's (`profile::gpuDriverBusyPercent`, "GPU busy
+  (driver)"): amdgpu's `gpu_busy_percent` in sysfs, for the DRM card whose PCI vendor and device IDs are the Vulkan device's
+  (`profile::setGpuDevice`), read at most every 100 ms; absent on other drivers, and `gpuBusyDriverSource` in the `profile` record says why.
+  They measure different things: the first, how much of the time this process's GPU work fills; the second, the whole GPU over the driver's
+  own window, other processes' work included (on Sponza, 75% against 96%).
+- **Resident memory** (`profile::residentBytes`): `/proc/self/statm`, read at most every 100 ms.
+- **GPU memory in Tracy.** The render thread reports the device's allocations as Tracy's "GPU" memory pool (`profile::memoryAlloc`,
+  `memoryFree`, keyed by each allocation's creation sequence), what changed since the last report when the device's allocation serial moved,
+  and only while a server is connected; a server that connects later is told every live allocation. Tracy's memory views (and its "GPU" plot of
+  the pool's total) show it. The engine keeps no allocation events of its own: the `memory` record lists every allocation.
+
 ## Where it sits in the frame
 
 - CPU zones are recorded on the thread that runs them, when they end. `PROFILE_FRAME_MARK` is in the main loop (`src/apps/view.cpp`), so a frame
@@ -94,18 +122,20 @@ off by default: a timestamp makes the GPU wait for earlier work at that point, s
 ## At runtime
 
 - **Records** (`src/profile/rpc`, the `profilerpc` library, registered by ngen-view and the asset server):
-  - `profile`: CPU and GPU time per frame over the history, `historySeconds`, `historyBytes`, `gpuDetail`, and the zones and bytes each lane
-    holds.
+  - `profile`: CPU and GPU time per frame over the history, `historySeconds`, `historyBytes`, `gpuDetail`, the zones and bytes each lane
+    holds, `gpuBusyPercent`, `gpuBusyDriverPercent` (null where there is none) and `gpuBusyDriverSource`, and `residentBytes`.
+  - `plots`: every plot over the history window with its group, format, sample count, latest, min, average and max.
   - `zones`: every zone site over the last 60 frames (a process without frames: the whole history) per lane and on the GPU, with its file,
     line, function, group, level, count, total, self time (`selfMs`), the share its children cover (`coveredShare`), per frame, median and
     longest time.
-- **Method and verb**: `introspect.profile {path, seconds?, level?}` / `dump-profile <path> [seconds] [guide|detail]`: the history as Chrome
+- **Methods and verb**: `introspect.plot {name, seconds?}`: one plot's samples (`ms` before now, `value`). `introspect.profile {path, seconds?, level?}` / `dump-profile <path> [seconds] [guide|detail]`: the history as Chrome
   trace JSON (Perfetto, `chrome://tracing`), the last `seconds` (default all), guide zones only or everything (default). An event's `cat` is its
   group; its `args` hold group, level, depth, value, file and line. Zones that overlap the window are included whole, so the first ones start before it.
-  The asset server answers the method too (`ngen-cli introspect call asset introspect.profile '{"path": …}'`).
+  Plots are counter events (`"ph": "C"`), one series per plot. The asset server answers both methods too (`ngen-cli introspect call asset introspect.profile '{"path": …}'`).
 - **Configuration**: `profile.history.seconds`, `profile.gpu.detail` (`config` record, `config` verb, Configuration window).
 - **Window**: Performance, the main, render, worker and GPU lanes on one clock in their group colours, with frame times, zone details (with the
   site's file, line and function, and self time) and statistics. It shows the guide zones, nested among themselves; Detail shows everything.
+  Under the frame times, the guide plots: GPU busy (both sources), resident memory, the device heap's usage and budget, upload bytes.
 
 ## Tracy
 

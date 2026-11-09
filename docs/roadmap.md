@@ -176,10 +176,13 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
   the lavapipe push-constant bug to Mesa (offered, not done).
 - **Introspection follow-ups** ([plan_introspect_tool.md](plan_introspect_tool.md), "Deferred"): profiler zones on the trace stream, session
   recording in the windowed tool, structured asset server events (its messages are text lines today), `get --every` for a record over time.
-- **Profiling counters and frame images** ([plan_profile_counters.md](plan_profile_counters.md), [plan_tracy_frame_images.md](plan_tracy_frame_images.md);
-  drafts): plots of renderer stats, GPU usage and memory; frame images in Tracy. Also from the detail plan's findings: the render thread's two
-  per-frame loops over every instance (`SceneBounds`, `PackInstanceRecords`, about 10 ms a frame on the streaming test world), `CountEntities`
-  walking the World for a trace message, the asset server's deliveries waiting on `watchMutex`.
+- **Frame images in Tracy** ([plan_tracy_frame_images.md](plan_tracy_frame_images.md); draft).
+- **Profiling findings** from the detail plan: the render thread's two per-frame loops over every instance (`SceneBounds`,
+  `PackInstanceRecords`, about 10 ms a frame on the streaming test world), `CountEntities` walking the World for a trace message, the asset
+  server's deliveries waiting on `watchMutex`.
+- **Profiling counters' follow-ups** ([plan_profile_counters.md](plan_profile_counters.md), "Deferred"): CPU heap tracking (trigger: a memory
+  growth question the resident plot can't answer); vendor GPU counters (trigger: a GPU-bound pass the zones and pipeline statistics can't
+  explain).
 - **Introspection extras**: GPU crash diagnostics (breadcrumbs, `VK_EXT_device_fault`); scene/USD provenance; per-pass GPU time column;
   zone statistics; a headless performance regression check; the GPU-driven debugging plan.
 - **Build system**: static libraries aren't passed on transitively (programs link each library directly); watch mode; Windows; deterministic
@@ -200,6 +203,12 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 ## Landed
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
+
+- **Profiling counters** — [plan_profile_counters.md](plan_profile_counters.md); [ADR 83](adr/0083_profile_plots_and_gpu_memory.md).
+  `PROFILE_PLOT` feeds the built-in collector (a time series for the history window, in the `plots` record, `introspect.plot` and the dump)
+  and Tracy. ngen-view plots 47 values a frame: frame times, GPU busy (portable, and amdgpu's driver figure), resident memory, the GPU scene's
+  tables and uploads, the frame's commands, each GPU heap, culling, streaming and the asset client. The GPU's allocations are Tracy's "GPU"
+  memory pool; the Performance window shows a few guide plots.
 
 - **Detailed profiling** — [plan_profile_detail.md](plan_profile_detail.md); [ADR 82](adr/0082_detailed_profiling.md). Every zone is a site
   with its file, line, group (its colour) and level; the collector keeps the last 10 seconds (configurable) of everything; `profile` is a
