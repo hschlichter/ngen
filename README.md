@@ -188,6 +188,9 @@ and configurations).
 `ngen-cli` is the front door to the engine's tools. You pick a platform and config once with `set`; after that, `build` and the tool commands use
 it, so you stop spelling out `-p`/`-c` and `_out/<platform>/<config>/` on every command.
 
+[`REFERENCE.md`](REFERENCE.md) is the quick reference for every tool's commands and flags, ngen-view's keys and script verbs, the RPC methods,
+the records and the configuration values.
+
 ### First-time setup
 
 With `ngen-build` bootstrapped (see Building), build the cli for one variant and set it:
