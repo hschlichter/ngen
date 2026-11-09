@@ -4,8 +4,9 @@
 //
 // Zones are cheap enough to leave in shipping code: a thread-local stack and a
 // per-thread ring buffer of finished zones, no locks and no allocation on the
-// hot path. Names are interned once per call site. A later Tracy integration
-// becomes a second expansion of the same macros; nothing that uses them changes.
+// hot path. Names are interned once per call site. In builds with TRACY_ENABLE the
+// collector's functions also feed Tracy; nothing that uses the macros knows about it
+// (src/profile/README.md).
 //
 //   PROFILE_ZONE("SceneUpdate");        // scoped CPU zone on the calling thread
 //   PROFILE_FRAME_MARK();               // once per frame on the main thread

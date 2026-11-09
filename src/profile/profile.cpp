@@ -8,6 +8,13 @@
 #include <memory>
 #include <mutex>
 
+#ifdef TRACY_ENABLE
+#include "common/TracyQueue.hpp"
+#include "tracy/TracyC.h"
+
+#include <cassert>
+#endif
+
 namespace profile {
 
 namespace {
@@ -31,6 +38,9 @@ struct ThreadState {
     std::array<uint64_t, maxDepth> starts;
     std::array<uint64_t, maxDepth> values;
     std::array<bool, maxDepth> hasValues;
+#ifdef TRACY_ENABLE
+    std::array<TracyCZoneCtx, maxDepth> tracyZones;
+#endif
 };
 
 std::array<Lane, maxLanes> g_lanes;
@@ -40,6 +50,75 @@ thread_local ThreadState t_state;
 
 std::mutex g_nameMutex;
 std::vector<std::string> g_names;
+
+#ifdef TRACY_ENABLE
+// Tracy, the second sink (src/profile/README.md). One source location per interned name, written before registerName returns
+// the id, so beginZone reads it without a lock. Tracy keeps the pointer, so the name is the caller's static string.
+constexpr uint32_t maxNames = 4096;
+std::array<___tracy_source_location_data, maxNames> g_tracySourceLocations;
+
+// The GPU lane's Tracy context. Touched only by the thread that submits GPU zones (the render thread).
+struct TracyGpu {
+    bool created = false;
+    uint16_t nextQueryId = 0;
+};
+TracyGpu g_tracyGpu;
+constexpr uint8_t tracyGpuContext = 0;
+
+// The GPU zones of one frame, already on the profile clock, as Tracy GPU zones on a context whose clock is the profile clock.
+// Begins and ends are sent in nesting order, each followed by its time. Tracy records the CPU side of each zone now, after
+// the frame's fence, not when the commands were recorded.
+auto sendGpuZonesToTracy(std::span<const Zone> zones) -> void {
+    if (!g_tracyGpu.created) {
+        ___tracy_emit_gpu_new_context_serial({
+            .gpuTime = (int64_t) now(),
+            .period = 1.0f,
+            .context = tracyGpuContext,
+            .flags = 0,
+            .type = (uint8_t) tracy::GpuContextType::Custom,
+        });
+        constexpr const char* gpuName = "GPU";
+        ___tracy_emit_gpu_context_name_serial({.context = tracyGpuContext, .name = gpuName, .len = (uint16_t) std::strlen(gpuName)});
+        g_tracyGpu.created = true;
+    }
+    if (___tracy_connected() == 0) {
+        return;
+    }
+    // Re-anchor the context on the profile clock (CLOCK_MONOTONIC) against Tracy's own every frame, so the two never drift apart.
+    ___tracy_emit_gpu_time_sync_serial({.gpuTime = (int64_t) now(), .context = tracyGpuContext});
+
+    struct Open {
+        uint16_t endQueryId = 0;
+        uint64_t endNs = 0;
+    };
+    std::array<Open, maxDepth> open;
+    uint32_t openCount = 0;
+    auto closeTop = [&]() {
+        openCount--;
+        ___tracy_emit_gpu_zone_end_serial({.queryId = open[openCount].endQueryId, .context = tracyGpuContext});
+        ___tracy_emit_gpu_time_serial({.gpuTime = (int64_t) open[openCount].endNs, .queryId = open[openCount].endQueryId, .context = tracyGpuContext});
+    };
+    for (const auto& zone : zones) {
+        if (zone.depth >= maxDepth) {
+            continue;
+        }
+        while (openCount > zone.depth) {
+            closeTop();
+        }
+        auto beginQueryId = g_tracyGpu.nextQueryId;
+        g_tracyGpu.nextQueryId += 2;
+        const char* name = nameOf(zone.nameId);
+        auto sourceLocation = ___tracy_alloc_srcloc_name(0, "", 0, name, std::strlen(name), name, std::strlen(name), 0);
+        ___tracy_emit_gpu_zone_begin_alloc_serial({.srcloc = sourceLocation, .queryId = beginQueryId, .context = tracyGpuContext});
+        ___tracy_emit_gpu_time_serial({.gpuTime = (int64_t) zone.startNs, .queryId = beginQueryId, .context = tracyGpuContext});
+        open[openCount] = {.endQueryId = (uint16_t) (beginQueryId + 1), .endNs = zone.endNs};
+        openCount++;
+    }
+    while (openCount > 0) {
+        closeTop();
+    }
+}
+#endif
 
 std::mutex g_frameMutex;
 std::array<FrameStats, frameHistorySize> g_frames;
@@ -94,7 +173,14 @@ auto registerName(const char* name) -> uint32_t {
         }
     }
     g_names.emplace_back(name);
-    return (uint32_t) g_names.size() - 1;
+    auto id = (uint32_t) g_names.size() - 1;
+#ifdef TRACY_ENABLE
+    assert(id < maxNames);
+    if (id < maxNames) {
+        g_tracySourceLocations[id] = {.name = name, .function = name, .file = "", .line = 0, .color = 0};
+    }
+#endif
+    return id;
 }
 
 auto nameOf(uint32_t id) -> const char* {
@@ -106,6 +192,9 @@ auto nameOf(uint32_t id) -> const char* {
 }
 
 auto registerThread(const char* name) -> void {
+#ifdef TRACY_ENABLE
+    ___tracy_set_thread_name(name);
+#endif
     t_state.pendingName = name;
     if (t_state.lane != nullptr) {
         t_state.lane->name = name;
@@ -124,6 +213,13 @@ auto beginZone(uint32_t nameId) -> void {
     t_state.nameIds[t_state.depth] = nameId;
     t_state.starts[t_state.depth] = now();
     t_state.hasValues[t_state.depth] = false;
+#ifdef TRACY_ENABLE
+    if (nameId < maxNames) {
+        t_state.tracyZones[t_state.depth] = ___tracy_emit_zone_begin(&g_tracySourceLocations[nameId], 1);
+    } else {
+        t_state.tracyZones[t_state.depth] = {};
+    }
+#endif
     t_state.depth++;
 }
 
@@ -133,6 +229,9 @@ auto zoneValue(uint64_t value) -> void {
     }
     t_state.values[t_state.depth - 1] = value;
     t_state.hasValues[t_state.depth - 1] = true;
+#ifdef TRACY_ENABLE
+    ___tracy_emit_zone_value(t_state.tracyZones[t_state.depth - 1], value);
+#endif
 }
 
 auto endZone() -> void {
@@ -140,6 +239,12 @@ auto endZone() -> void {
         return;
     }
     t_state.depth--;
+#ifdef TRACY_ENABLE
+    // Before the pause check: pausing the Performance window does not pause Tracy.
+    if (t_state.depth < maxDepth) {
+        ___tracy_emit_zone_end(t_state.tracyZones[t_state.depth]);
+    }
+#endif
     if (t_state.depth >= maxDepth || g_paused.load(std::memory_order_relaxed)) {
         return;
     }
@@ -159,6 +264,9 @@ auto endZone() -> void {
 }
 
 auto frameMark() -> void {
+#ifdef TRACY_ENABLE
+    ___tracy_emit_frame_mark(nullptr);
+#endif
     if (g_paused.load(std::memory_order_relaxed)) {
         return;
     }
@@ -192,6 +300,10 @@ auto isPaused() -> bool {
 }
 
 auto submitGpuZones(uint64_t frameIndex, uint64_t submitNs, std::span<const Zone> zones) -> void {
+#ifdef TRACY_ENABLE
+    // Every zone, before the pause check and the per-frame cut below.
+    sendGpuZonesToTracy(zones);
+#endif
     if (g_paused.load(std::memory_order_relaxed)) {
         return;
     }

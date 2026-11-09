@@ -140,6 +140,7 @@ Current truth for the build framework is [`../src/build/README.md`](../src/build
 - [plan_compute_aa_pass.md](plan_compute_aa_pass.md) — FXAA as the first frame-graph compute node, replacing the placeholder blit AA pass (landed)
 - [plan_gpu_timestamps.md](plan_gpu_timestamps.md) — GPU timestamp queries in the RHI, per-pass GPU time in the frame graph debugger (landed)
 - [plan_performance_window.md](plan_performance_window.md) — profiling marker API and Performance window with CPU/GPU timeline; Tracy deferred (landed)
+  - [plan_tracy.md](plan_tracy.md) — Tracy as a second sink inside the profile collector: every existing zone, frame, thread and the GPU lane, on demand in debug and release (landed)
 - [plan_render_debug_window.md](plan_render_debug_window.md) — Render Debug window: scene tables, per-pass draw counters, view modes, device info (landed)
 - [plan_agent_introspection.md](plan_agent_introspection.md) — screenshots, camera flags and window, scripted sessions, render debug and profile dumps (landed)
 - [plan_frustum_culling.md](plan_frustum_culling.md) — per-instance AABB frustum culling on the main thread, frozen-frustum debug overlay (landed; the CPU culling was replaced by plan_gpu_culling.md)

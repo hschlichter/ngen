@@ -61,7 +61,11 @@ auto main(int argc, char** argv) -> int {
             .compile_flag("-O0")
             .compile_flag("-g")
             .define("DEBUG=1")
-            .define("NGEN_INTROSPECTION=1"); // debugging and introspection tooling (RenderDoc, ...); not in gamerelease
+            .define("NGEN_INTROSPECTION=1") // debugging and introspection tooling (RenderDoc, ...); not in gamerelease
+            // Tracy's client (src/profile/README.md): listens on loopback, records only while a Tracy server is connected.
+            .define("TRACY_ENABLE")
+            .define("TRACY_ON_DEMAND")
+            .define("TRACY_ONLY_LOCALHOST");
 
     auto release =
         cxx::configuration("release")
@@ -70,7 +74,10 @@ auto main(int argc, char** argv) -> int {
             .compile_flag("-g")
             .compile_flag("-fno-omit-frame-pointer")
             .define("NDEBUG")
-            .define("NGEN_INTROSPECTION=1");
+            .define("NGEN_INTROSPECTION=1")
+            .define("TRACY_ENABLE")
+            .define("TRACY_ON_DEMAND")
+            .define("TRACY_ONLY_LOCALHOST");
 
     auto gamerelease =
         cxx::configuration("gamerelease")
@@ -89,11 +96,22 @@ auto main(int argc, char** argv) -> int {
     p.config(release);
     p.config(gamerelease);
 
+    // Tracy's client, vendored at the version of the Tracy tools it talks to. Compiles to nothing in a configuration without TRACY_ENABLE
+    // (gamerelease); programs that link profile link it too.
+    auto tracy =
+        cxx::static_library("tracy")
+            .sources({"external/tracy/public/TracyClient.cpp"})
+            .public_include({"external/tracy/public"})
+            // Vendored.
+            .warning_off("unused-variable")
+            .warning_off("unused-function");
+
     auto profile =
         cxx::static_library("profile")
             .sources(glob({.include = "src/profile/**/*.cpp"}))
             .public_include({"src/profile"})
-            .include({"src/rhi"});
+            .include({"src/rhi"})
+            .link(tracy);
 
     // Configuration (src/config/README.md): the engine's settings, typed values declared in code by the system they configure. Standard
     // library only, beside profile and trace.
@@ -493,6 +511,7 @@ auto main(int argc, char** argv) -> int {
             })
             .link(traceLib)
             .link(profile)
+            .link(tracy)
             .link(config)
             .link(session)
             .link(rhivulkan)

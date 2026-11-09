@@ -176,7 +176,7 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
   the lavapipe push-constant bug to Mesa (offered, not done).
 - **Introspection follow-ups** ([plan_introspect_tool.md](plan_introspect_tool.md), "Deferred"): profiler zones on the trace stream, session
   recording in the windowed tool, structured asset server events (its messages are text lines today), `get --every` for a record over time.
-- **Introspection extras**: Tracy; GPU crash diagnostics (breadcrumbs, `VK_EXT_device_fault`); scene/USD provenance; per-pass GPU time column;
+- **Introspection extras**: GPU crash diagnostics (breadcrumbs, `VK_EXT_device_fault`); scene/USD provenance; per-pass GPU time column;
   zone statistics; a headless performance regression check; the GPU-driven debugging plan.
 - **Build system**: static libraries aren't passed on transitively (programs link each library directly); watch mode; Windows; deterministic
   archives (`ar rcsD`); de-duplicated merged `compile_commands.json`.
@@ -190,12 +190,18 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 - Early-exit hang: a failed `Renderer::init` leaves the process stuck and ignoring SIGTERM ([notes.md](../notes.md)).
 - Stale docs: [usd_scene_system_status.md](usd_scene_system_status.md) says Phase 5 hasn't started (it has); the docs index calls
   [plan_usd_lights.md](plan_usd_lights.md) in progress (it isn't started); [plan_editor_split.md](plan_editor_split.md) says "build server".
-- Plans referenced but never written: `plan_gpu_driven_debugging.md`, `plan_tracy.md`, `plan_rhi_queues.md`, `plan_shader_introspection.md`.
+- Plans referenced but never written: `plan_gpu_driven_debugging.md`, `plan_rhi_queues.md`, `plan_shader_introspection.md`.
 - Headless runs started in the repo root write window layout to the developer's `imgui.ini`.
 
 ## Landed
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
+
+- **Tracy** — [plan_tracy.md](plan_tracy.md); [ADR 81](adr/0081_tracy_as_second_sink.md). Tracy is a second sink inside the profile
+  collector: every existing CPU zone, zone value, frame mark and thread name, and the GPU lane from the zones the renderer already calibrates,
+  with no call site changed. Debug and release, on demand (nothing recorded until a Tracy server connects, about 30 ns per zone until then);
+  not in gamerelease. The built-in collector stays the source of every record and window. Follow-ups (call-site source locations, plots,
+  locks, memory, the asset server, starting Tracy at runtime) are in the plan's Deferred section.
 
 - **Meshlets, with occlusion culling** (vertical slice step 2) — [plan_meshlets.md](plan_meshlets.md),
   [plan_meshlet_culling_visibility.md](plan_meshlet_culling_visibility.md), [plan_occlusion_culling.md](plan_occlusion_culling.md),
