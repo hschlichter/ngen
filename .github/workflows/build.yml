@@ -36,7 +36,7 @@ env:
     base-devel clang gcc git python cmake ninja pkgconf
     sdl3 vulkan-headers vulkan-icd-loader vulkan-utility-libraries shaderc
   # Every submodule but OpenUSD, which the OpenUSD job builds and caches.
-  SUBMODULES: glm stb imgui json tinyexr meshoptimizer
+  SUBMODULES: glm stb imgui json tinyexr meshoptimizer tracy
 
 jobs:
   format:
