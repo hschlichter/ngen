@@ -2,6 +2,8 @@
 
 #include "assethash.h"
 #include "packer.h"
+#include "profile.h"
+#include "profilecommands.h"
 #include "rpcdiscovery.h"
 
 #include <nlohmann/json.hpp>
@@ -237,6 +239,21 @@ auto AssetServer::onMessage(RpcServer::ConnectionId connection, const rpc::Json&
             traceLine("test aid: answers for {} are no longer held", pattern);
         }
         responder.respond(rpc::Json::object());
+    } else if (method == "introspect.plot") {
+        auto result = profile::plotSamples(params);
+        if (!result) {
+            responder.fail(rpc::appError, result.error());
+            return;
+        }
+        responder.respond(*result);
+    } else if (method == "introspect.profile") {
+        // The profiler's history as a Chrome trace, as ngen-view's method of the same name.
+        auto result = profile::dumpProfile(params);
+        if (!result) {
+            responder.fail(rpc::appError, result.error());
+            return;
+        }
+        responder.respond(*result);
     } else if (serveRecordsCall(records, method, params, responder)) {
         return;
     } else {
@@ -246,6 +263,7 @@ auto AssetServer::onMessage(RpcServer::ConnectionId connection, const rpc::Json&
 }
 
 auto AssetServer::onAssetRequest(RpcServer::ConnectionId connection, const rpc::Json& id, const rpc::Json& params) -> void {
+    PROFILE_ZONE_DETAIL("AssetRequest", Assets);
     if (!params.contains("ids") || !params["ids"].is_array()) {
         traceWarning("client {}: asset.request without an \"ids\" array", connection);
         rpc.send(connection, rpc::makeError(id, rpc::invalidParams, "asset.request needs \"ids\", an array of asset ids"));
@@ -286,6 +304,7 @@ auto AssetServer::onAssetRequest(RpcServer::ConnectionId connection, const rpc::
 }
 
 auto AssetServer::addRecords() -> void {
+    profile::registerProfileRecords(records);
     records.add("status", "pid, variant, directory, clients connected, pack tasks running and queued, packer runs", [this](RpcResponder responder) {
         responder.respond(status());
     });
@@ -475,6 +494,7 @@ auto AssetServer::subscribe(const std::string& id, Subscriber subscriber, int64_
 }
 
 auto AssetServer::pack(const std::string& id, int64_t forceRequest) -> Outcome {
+    PROFILE_ZONE("Pack", Assets);
     Outcome outcome;
     // "<file>#<fragment>" names a secondary output of <file>'s job: a mesh or material the file defines.
     auto hash = id.find('#');
@@ -492,6 +512,8 @@ auto AssetServer::pack(const std::string& id, int64_t forceRequest) -> Outcome {
         return outcome;
     }
     const auto& rule = rules[ruleIt->second];
+    // The pack task, named after its rule.
+    profile::ScopedZone ruleZone(profile::registerSite(rule.name.c_str(), profile::Group::Assets));
     std::error_code ec;
     if (!fs::is_regular_file(primary, ec)) {
         outcome.errors.push_back(std::format("{}: no such file", primary));
@@ -583,7 +605,12 @@ auto AssetServer::runPacker(const std::string& primary, const PackRule& rule, ui
     traceLine("  {}  packing with {}", primary, rule.packer);
     packerRuns++;
     auto started = std::chrono::steady_clock::now();
-    auto result = runProcess(argv);
+    ProcessResult result;
+    {
+        // The packer is a child process: this thread waits for it.
+        PROFILE_ZONE("PackerRun", Wait);
+        result = runProcess(argv);
+    }
     if (result.exitCode != 0) {
         outcome.errors = splitLines(result.output);
         outcome.errors.push_back(std::format("{} exited with {}", rule.packer, result.exitCode));
@@ -604,6 +631,7 @@ auto AssetServer::runPacker(const std::string& primary, const PackRule& rule, ui
         }
     }
     auto secondaries = readSecondaryOutputs(output);
+    PROFILE_ZONE_DETAIL("CacheRecord", Io);
     auto version = cache.record(primary, key, packer, inputs, output, secondaries);
     if (!version) {
         outcome.errors.push_back(std::format("{}: cannot hash the packer's inputs or outputs", primary));
@@ -631,6 +659,7 @@ auto AssetServer::runPacker(const std::string& primary, const PackRule& rule, ui
 }
 
 auto AssetServer::deliver(const std::string& id, const Outcome& outcome) -> void {
+    PROFILE_ZONE_DETAIL("Deliver", Io);
     std::vector<Subscriber> subscribers;
     {
         std::lock_guard lock(inFlightMutex);
@@ -656,6 +685,7 @@ auto AssetServer::deliver(const std::string& id, const Outcome& outcome) -> void
             continue;
         }
         if (!bytes) {
+            PROFILE_ZONE_DETAIL("ReadPacked", Io);
             auto read = readBytes(outcome.path);
             if (!read) {
                 rpc.send(subscriber.connection,
@@ -688,6 +718,7 @@ auto AssetServer::deliver(const std::string& id, const Outcome& outcome) -> void
 }
 
 auto AssetServer::pump(RpcServer::ConnectionId connection) -> void {
+    PROFILE_ZONE_DETAIL("Pump", Io);
     std::lock_guard lock(streamMutex);
     auto it = streams.find(connection);
     if (it == streams.end()) {
@@ -741,9 +772,19 @@ auto AssetServer::jobKeyFor(const std::string& id) const -> std::optional<uint64
 }
 
 auto AssetServer::received(RpcServer::ConnectionId connection, const std::string& id, bool failed) -> void {
-    auto files = cache.filesOf(id);
-    std::lock_guard lock(watchMutex);
+    PROFILE_ZONE_DETAIL("Received", Assets);
+    std::vector<std::string> files;
     {
+        PROFILE_ZONE_DETAIL("CacheFilesOf", Assets);
+        files = cache.filesOf(id);
+    }
+    std::unique_lock lock(watchMutex, std::defer_lock);
+    {
+        PROFILE_ZONE_DETAIL("WatchLock", Wait);
+        lock.lock();
+    }
+    {
+        PROFILE_ZONE_DETAIL("StreamLock", Wait);
         std::lock_guard streamLock(streamMutex);
         if (!connections.contains(connection)) {
             return;
@@ -779,6 +820,7 @@ auto AssetServer::forget(RpcServer::ConnectionId connection) -> void {
 }
 
 auto AssetServer::watchFiles(const std::string& id, std::vector<std::string> files) -> void {
+    PROFILE_ZONE_DETAIL("WatchFiles", Assets);
     std::ranges::sort(files);
     auto& current = filesOfAsset[id];
     std::vector<fs::path> added;
@@ -814,6 +856,7 @@ auto AssetServer::watchFiles(const std::string& id, std::vector<std::string> fil
 }
 
 auto AssetServer::onFilesChanged(std::vector<fs::path> files) -> void {
+    PROFILE_ZONE_DETAIL("FilesChanged", Assets);
     std::set<std::string> candidates;
     {
         std::lock_guard lock(watchMutex);

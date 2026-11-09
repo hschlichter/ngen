@@ -7,6 +7,7 @@
 
 #include "assetserver.h"
 #include "assettrace.h"
+#include "profile.h"
 
 #include <csignal>
 #include <cstdio>
@@ -21,6 +22,7 @@
 namespace fs = std::filesystem;
 
 auto main(int argc, char** argv) -> int {
+    profile::startTracy();
     bool pollOnly = false;
     std::vector<AssetServer::Options::Delay> delays;
     for (int i = 1; i < argc; i++) {
@@ -61,6 +63,7 @@ auto main(int argc, char** argv) -> int {
     options.pollOnly = pollOnly;
     options.delays = std::move(delays);
 
+    profile::registerThread("Main");
     AssetServer server;
     if (auto started = server.start(options); !started) {
         std::println(stderr, "ngen-asset-server: {}", started.error());

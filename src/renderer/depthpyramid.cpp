@@ -2,6 +2,7 @@
 
 #include "framegraph.h"
 #include "framegraphcontext.h"
+#include "profilegpu.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 
@@ -129,6 +130,7 @@ auto DepthPyramid::addBuildPass(FrameGraph& fg, const char* name, Source source,
     auto depthExtent = depthSize;
     fg.addPass<BuildPassData>(
         name,
+        profile::Group::Culling,
         [&](FrameGraphBuilder& builder, BuildPassData& data) {
             builder.read(depth, FgAccessFlags::ShaderRead);
             data.pyramid = builder.write(pyramidHandle, FgAccessFlags::StorageWrite);
@@ -138,11 +140,31 @@ auto DepthPyramid::addBuildPass(FrameGraph& fg, const char* name, Source source,
             cmd->bindPipeline(pip);
             RhiExtent2D source = depthExtent;
             RhiExtent2D target = pyramidSize;
+            // Static names: a GPU zone keeps its name until the frame is read back.
+            constexpr std::array<const char*, 16> levelNames = {
+                "HzbLevel0",
+                "HzbLevel1",
+                "HzbLevel2",
+                "HzbLevel3",
+                "HzbLevel4",
+                "HzbLevel5",
+                "HzbLevel6",
+                "HzbLevel7",
+                "HzbLevel8",
+                "HzbLevel9",
+                "HzbLevel10",
+                "HzbLevel11",
+                "HzbLevel12",
+                "HzbLevel13",
+                "HzbLevel14",
+                "HzbLevel15",
+            };
             for (uint32_t level = 0; level < levelSets.size(); level++) {
                 if (level > 0) {
                     // The level below is written: its texels are read next.
                     ctx.storageBarrier(data.pyramid);
                 }
+                PROFILE_GPU_ZONE_DETAIL(cmd, levelNames[std::min<size_t>(level, levelNames.size() - 1)], Culling);
                 BuildPush push = {
                     .mode = (uint32_t) (level == 0 ? BuildMode::FromDepth : BuildMode::FromLevel),
                     .targetSize = {target.width, target.height},

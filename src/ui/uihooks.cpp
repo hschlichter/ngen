@@ -27,7 +27,7 @@ auto UiHooks::afterScene(ViewFrame& frame) -> void {
     // The cameras the scene authors, as poses for the Camera window: built only while it is open, once per scene snapshot.
     if (ui.wantsCameraWindow() && cameraListSnapshot != frame.snapshotsTaken) {
         cameraListSnapshot = frame.snapshotsTaken;
-        PROFILE_ZONE("SceneWindowLists");
+        PROFILE_ZONE("SceneWindowLists", Ui);
         auto& sceneCameras = ui.cameraWindow().sceneCameras;
         sceneCameras.clear();
         for (const auto& authored : frame.scene.cameras()) {
@@ -45,7 +45,7 @@ auto UiHooks::cameras(ViewFrame& frame) -> void {
 
 auto UiHooks::event(ViewFrame& frame, const SDL_Event& event) -> bool {
     {
-        PROFILE_ZONE("ImGuiEvent");
+        PROFILE_ZONE("ImGuiEvent", Ui);
         if (imgui.processEvent(&event)) {
             return true;
         }
@@ -92,15 +92,15 @@ auto UiHooks::takeReadbacks(ViewFrame& frame) -> void {
 }
 
 auto UiHooks::drawUi(ViewFrame& frame) -> void {
-    static const uint32_t uiZoneId = profile::registerName("EditorUI");
+    static const uint32_t uiZoneId = profile::registerSite("EditorUI", profile::Group::Ui);
     profile::beginZone(uiZoneId);
     auto& scene = frame.scene;
     {
-        PROFILE_ZONE("ImGuiBeginFrame");
+        PROFILE_ZONE("ImGuiBeginFrame", Ui);
         imgui.beginFrame();
     }
     {
-        PROFILE_ZONE("StatusBarGather");
+        PROFILE_ZONE("StatusBarGather", Ui);
         auto statusBarData = statusBar.gather(device, frame.assets, frame.latestCull);
         statusBarData.cameraSpeed = (float) (frame.cameras.controlled->speed * scene.lodMetersPerUnit());
         ui.setStatusBar(statusBarData);
@@ -130,7 +130,7 @@ auto UiHooks::drawUi(ViewFrame& frame) -> void {
         scene.refresh(repack.ids, true);
     }
     {
-        PROFILE_ZONE("ViewUIDraw");
+        PROFILE_ZONE("ViewUIDraw", Ui);
         auto primPathOf = [&scene](uint32_t prim) -> std::string {
             return scene.primPath(prim);
         };
@@ -138,7 +138,7 @@ auto UiHooks::drawUi(ViewFrame& frame) -> void {
         ui.draw(primPathOf, !frame.selectedPath.empty(), scene.renderWorld(), frame.cam, std::move(results.frameGraph), std::move(results.renderDebug));
     }
     {
-        PROFILE_ZONE("LodLabels");
+        PROFILE_ZONE("LodLabels", Ui);
         const auto& io = ImGui::GetIO();
         auto viewProj = frame.proj * frame.cameras.view->viewMatrix();
         auto& state = tools.state();
@@ -199,7 +199,7 @@ auto UiHooks::drawUi(ViewFrame& frame) -> void {
     tools.state().activeTool = ui.activeTool();
     tools.drawUi(frame);
     {
-        PROFILE_ZONE("ImGuiRender");
+        PROFILE_ZONE("ImGuiRender", Ui);
         imguiSnapshot = imgui.endFrame();
     }
     if (ui.wantsQuit()) {

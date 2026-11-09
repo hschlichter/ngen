@@ -15,7 +15,7 @@ auto GizmoRender::addOverlayPasses(Renderer& /*renderer*/, RenderSnapshot& snaps
     if (gizmos == nullptr || !pass.ready()) {
         return;
     }
-    PROFILE_ZONE("GizmoUpdate");
+    PROFILE_ZONE("GizmoUpdate", Tools);
     // The requests point into the snapshot's vertices, which outlive the frame's recording.
     requests.clear();
     for (const auto& draw : gizmos->draws) {

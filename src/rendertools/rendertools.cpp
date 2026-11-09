@@ -7,6 +7,7 @@
 #include "pipelineregistry.h"
 #include "previewtextures.h"
 #include "profile.h"
+#include "profileconfig.h"
 #include "renderer.h"
 #include "rendersnapshot.h"
 #include "resourcepool.h"
@@ -57,6 +58,8 @@ auto RenderTools::fillSnapshot(RenderSnapshot& snapshot) -> void {
     frame->textureInspect = textureInspect;
     frame->textureDumps = std::exchange(pendingDumps, {});
     frame->screenshots = std::exchange(pendingScreenshots, {});
+    frame->frameImages = profileconfig::tracyFrameImages.get();
+    frame->profileFrame = profile::frameMarks();
     snapshot.setExtension(index(), std::move(frame));
     next = {};
 }
@@ -64,10 +67,12 @@ auto RenderTools::fillSnapshot(RenderSnapshot& snapshot) -> void {
 auto RenderTools::init(const RenderExtensionContext& extensionContext) -> bool {
     context.emplace(extensionContext);
     previews.init(&context->device, context->previews, context->textureSampler, &context->deletionQueue);
+    frameImages.init(&context->device, context->frameSlots);
     return true;
 }
 
 auto RenderTools::afterFence(Renderer& renderer, uint32_t slot) -> void {
+    frameImages.afterFence(slot);
     // GPU counters: the zones of the frame read back, and while on the pipeline statistics its passes gathered.
     auto state = renderer.state();
     if (!frameRequest.counters || state.gpuFrame == 0 || state.gpuFrame == countersFrame || state.gpuZones.empty()) {
@@ -145,13 +150,16 @@ auto RenderTools::afterExecute(Renderer& renderer, RhiCommandBuffer* cmd, const 
     recordTextureInspect(renderer, cmd);
     recordTextureDump(renderer, cmd);
     recordScreenshot(cmd, frame);
+    if (frameRequest.frameImages && profile::tracyConnected()) {
+        frameImages.record(cmd, frame, renderer.state().swapchainFormat, frameRequest.profileFrame);
+    }
 }
 
 auto RenderTools::afterSubmit(Renderer& renderer, const RenderFrame& frame) -> void {
     if (readbacks.empty()) {
         return;
     }
-    PROFILE_ZONE("ReadbackFiles");
+    PROFILE_ZONE("ReadbackFiles", Render);
     renderer.waitForFrame();
     auto format = renderer.state().swapchainFormat;
     for (auto& readback : readbacks) {
@@ -238,6 +246,7 @@ auto RenderTools::endFrame(Renderer& renderer) -> void {
 
 auto RenderTools::destroy() -> void {
     previews.shutdown();
+    frameImages.destroy();
     if (texturePreview.id != 0 && context->previews != nullptr) {
         context->previews->unregisterTexture(texturePreview.id);
     }

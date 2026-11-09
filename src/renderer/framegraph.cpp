@@ -478,7 +478,7 @@ auto FrameGraph::execute(RhiCommandBuffer* cmd) -> void {
         }
         {
             // Every pass is a GPU zone and a CPU record zone; passes may nest their own inside.
-            PROFILE_GPU_ZONE(cmd, passName);
+            profile::ScopedGpuZone gpuZone(cmd, passes[passIdx].profileNameId);
             profile::ScopedZone recordZone(passes[passIdx].profileNameId);
             executingPass = passName;
             executingPassIndex = passIdx;
@@ -554,6 +554,25 @@ auto FrameGraph::passStats(std::string_view name) const -> const RhiCommandStats
         }
     }
     return nullptr;
+}
+
+auto FrameGraph::frameStats() const -> RhiCommandStats {
+    RhiCommandStats total;
+    for (const auto& pass : passes) {
+        if (pass.culled) {
+            continue;
+        }
+        total.draws += pass.stats.draws;
+        total.dispatches += pass.stats.dispatches;
+        total.barriers += pass.stats.barriers;
+        total.pipelineBinds += pass.stats.pipelineBinds;
+        total.descriptorBinds += pass.stats.descriptorBinds;
+        total.bufferBinds += pass.stats.bufferBinds;
+        total.indirectDraws += pass.stats.indirectDraws;
+        total.copies += pass.stats.copies;
+        total.primitives += pass.stats.primitives;
+    }
+    return total;
 }
 
 // --- Debug snapshot ---

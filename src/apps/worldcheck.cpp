@@ -14,6 +14,7 @@
 
 #include "assetclient.h"
 #include "fingerprint.h"
+#include "profile.h"
 #include "worldcomposer.h"
 
 #include <algorithm>
@@ -68,6 +69,9 @@ auto countInstances(const World& world) -> size_t {
 } // namespace
 
 auto main(int argc, char** argv) -> int {
+    // A short-lived tool: Tracy only when NGEN_TRACY=1 asks (its start-up alone takes 200 ms).
+    profile::startTracyIfAsked();
+    profile::registerThread("Main");
     bool transforms = false;
     bool instancing = false;
     bool instancers = false;

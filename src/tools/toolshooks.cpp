@@ -21,7 +21,7 @@ auto ToolsHooks::afterScene(ViewFrame& frame) -> void {
     lodShown = tools.lod.windowOpen || toolsconfig::lodLabels.get() || toolsconfig::lodGizmo.get() || toolsconfig::lodGizmoAll.get();
     if (lodShown && lodRowsSnapshot != frame.snapshotsTaken) {
         lodRowsSnapshot = frame.snapshotsTaken;
-        PROFILE_ZONE("SceneWindowLists");
+        PROFILE_ZONE("SceneWindowLists", Ui);
         buildLodRows(frame.scene, tools.lod);
     }
     // The Streaming tool's rows (its window, its viewport layers and the streaming view's states), once per snapshot while any is shown.
@@ -30,7 +30,7 @@ auto ToolsHooks::afterScene(ViewFrame& frame) -> void {
                      toolsconfig::streamingLabels.get() || streamingView;
     if (streamingShown && streamingRowsSnapshot != frame.snapshotsTaken) {
         streamingRowsSnapshot = frame.snapshotsTaken;
-        PROFILE_ZONE("SceneWindowLists");
+        PROFILE_ZONE("SceneWindowLists", Ui);
         buildStreamingRows(frame.scene, tools.streaming);
     }
 }
@@ -149,7 +149,7 @@ auto ToolsHooks::debugDraw(ViewFrame& frame) -> void {
     // The culled overlay shows one view's GPU culling result, the camera or a cascade, from the visibility bits it has read back while on.
     std::vector<uint8_t> overlayVisible;
     if (toolsconfig::overlayCulled.get()) {
-        PROFILE_ZONE("CullOverlay");
+        PROFILE_ZONE("CullOverlay", Tools);
         const auto& cull = frame.latestCull;
         overlayVisible.resize(cull.viewBits.size());
         auto overlayBit = (uint8_t) (1u << std::clamp((int) toolsconfig::overlayCulledView.get(), 0, (int) maxShadowCascades));
@@ -163,7 +163,7 @@ auto ToolsHooks::debugDraw(ViewFrame& frame) -> void {
         selectedBoundsSnapshot = &frame.scene.snapshot();
         selectedBounds = selectedPath.empty() ? AABB{} : frame.scene.bounds(selectedPath);
     }
-    PROFILE_ZONE("DrawDebug");
+    PROFILE_ZONE("DrawDebug", Tools);
     auto& draw = frame.debugDraw;
     auto up = frame.cam.worldUp;
     auto metersPerUnit = frame.scene.lodMetersPerUnit();
@@ -188,7 +188,7 @@ auto ToolsHooks::drawUi(ViewFrame& frame) -> void {
 }
 
 auto ToolsHooks::syncLodTool(ViewFrame& frame) -> void {
-    PROFILE_ZONE("LodWindowSync");
+    PROFILE_ZONE("LodWindowSync", Tools);
     auto& scene = frame.scene;
     auto& lod = tools.lod;
     const auto& cull = frame.latestCull;
@@ -278,7 +278,7 @@ auto ToolsHooks::syncLodTool(ViewFrame& frame) -> void {
 }
 
 auto ToolsHooks::syncStreamingTool(ViewFrame& frame) -> void {
-    PROFILE_ZONE("StreamingWindowSync");
+    PROFILE_ZONE("StreamingWindowSync", Tools);
     auto& scene = frame.scene;
     auto& streaming = tools.streaming;
     // A sample for the chart, the cameras for the map, the flight for the controls.
@@ -357,7 +357,7 @@ auto ToolsHooks::syncStreamingTool(ViewFrame& frame) -> void {
 auto ToolsHooks::fillSnapshot(ViewFrame& frame, RenderSnapshot& snapshot) -> void {
     // The active tool's gizmo, on the selection when it takes a transform.
     if (frame.selectedPath != selectedTransformPath || &frame.scene.snapshot() != selectedTransformSnapshot) {
-        PROFILE_ZONE("SelectionTransform");
+        PROFILE_ZONE("SelectionTransform", Tools);
         selectedTransformPath = frame.selectedPath;
         selectedTransformSnapshot = &frame.scene.snapshot();
         selectedTransform = frame.selectedPath.empty() ? std::nullopt : frame.scene.transform(frame.selectedPath);
@@ -365,7 +365,7 @@ auto ToolsHooks::fillSnapshot(ViewFrame& frame, RenderSnapshot& snapshot) -> voi
     bool shown = selectedTransform && selectedTransform->xformable;
     auto anchor = shown ? gizmoAnchor(frame, *selectedTransform) : glm::vec3(0.0f);
     {
-        PROFILE_ZONE("Gizmos");
+        PROFILE_ZONE("Gizmos", Tools);
         auto extent = RhiExtent2D{.width = (uint32_t) frame.width, .height = (uint32_t) frame.height};
         const auto& camera = *frame.cameras.view;
         auto view = camera.viewMatrix();

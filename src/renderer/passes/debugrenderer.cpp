@@ -103,6 +103,7 @@ auto DebugRenderer::addPass(FrameGraph& fg, FgTextureHandle color, FgTextureHand
 
     fg.addPass<DebugLinePassData>(
         "DebugLinePass",
+        profile::Group::Post,
         [&](FrameGraphBuilder& builder, DebugLinePassData& passData) {
             passData.color = builder.write(color, FgAccessFlags::ColorAttachment);
             passData.depth = builder.write(depth, FgAccessFlags::DepthAttachment);

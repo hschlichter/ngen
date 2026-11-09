@@ -98,6 +98,8 @@ Each library documents its design and rules in a README next to the code:
 - [`src/rendertools/README.md`](src/rendertools/README.md) — the renderer's instrumentation, a render extension: debug snapshots, the frame
   debugger, GPU counters, the texture inspector and dumps, screenshots.
 - [`src/trace/README.md`](src/trace/README.md) — the trace: `TRACE_EVENT`, the always-on ring per process, streaming events over RPC, conventions.
+- [`src/profile/README.md`](src/profile/README.md) — profiling: the markers, the built-in collector and GPU lane behind the Performance window, and
+  Tracy as a second sink.
 - [`src/config/README.md`](src/config/README.md) — configuration: the engine's settings as typed values declared in code, their names, threads,
   changes, and how they are read and set at runtime.
 - [`src/rpc/README.md`](src/rpc/README.md) — how ngen processes and agents talk: JSON-RPC over loopback TCP, discovery, threading, adding a method, records.

@@ -3,6 +3,7 @@
 #include "framedebug.h"
 #include "framegraphdebug.h"
 #include "framegraphpreviews.h"
+#include "frameimage.h"
 #include "gpucounters.h"
 #include "renderdebug.h"
 #include "renderextension.h"
@@ -25,7 +26,8 @@ struct TextureDumpRequest {
 };
 
 // What the main thread asks of the render tools for one frame, carried in its snapshot: the frame graph's debug snapshot and previews, the
-// render debug snapshot (and the draw log), GPU counters, a frame debug capture, the texture inspector, a texture dump, a screenshot.
+// render debug snapshot (and the draw log), GPU counters, a frame debug capture, the texture inspector, a texture dump, a screenshot, and
+// whether Tracy's frame images are on.
 struct RenderToolsFrame : RenderExtensionData {
     bool frameGraphDebug = false;
     bool renderDebug = false;
@@ -34,6 +36,9 @@ struct RenderToolsFrame : RenderExtensionData {
     TextureInspectRequest textureInspect;
     std::vector<TextureDumpRequest> textureDumps;
     std::vector<std::string> screenshots; // paths
+    // Tracy's frame images: on (profile.tracy.frameImages), and the main thread's frame this snapshot is for (profile::frameMarks).
+    bool frameImages = false;
+    uint64_t profileFrame = 0;
 };
 
 // What came back from the render thread since the main thread last took it.
@@ -46,7 +51,7 @@ struct RenderToolsResults {
 };
 
 // The renderer's instrumentation (src/rendertools/README.md): the frame graph's debug snapshot and previews, the render debug snapshot, the
-// frame debugger, GPU counters, the texture inspector and dumps, screenshots. A render extension: it joins the renderer's frame at its hooks
+// frame debugger, GPU counters, the texture inspector and dumps, screenshots, Tracy's frame images. A render extension: it joins the renderer's frame at its hooks
 // on the render thread, and its main-thread side gathers each frame's requests into the snapshot and hands back what came back. Nothing runs
 // unless asked for.
 class RenderTools : public RenderExtension {
@@ -107,6 +112,7 @@ private:
     uint64_t countersFrame = 0; // the last GPU frame counters were made for
     std::vector<RhiPipelineStatsZone> pipelineStatsScratch;
     FrameGraphPreviews previews;
+    FrameImages frameImages;
     // Texture inspector: one level of one material texture blitted into a preview the UI draws; replaced when the request changes.
     struct TexturePreview {
         RhiTexture* texture = nullptr;

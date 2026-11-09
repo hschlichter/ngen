@@ -55,6 +55,7 @@ auto DepthPrepass::addPass(
 
     return fg.addPass<DepthPrepassData>(
         cullCamera ? (late ? "DepthPrepassCullLate" : "DepthPrepassCull") : (late ? "DepthPrepassLate" : "DepthPrepass"),
+        profile::Group::Geometry,
         [&](FrameGraphBuilder& builder, DepthPrepassData& data) {
             data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
             builder.read(hzb, FgAccessFlags::ShaderRead);
@@ -103,7 +104,7 @@ auto DepthPrepass::addPass(
                 }
                 MeshletPush push = {.region = region, .flags = flags};
                 cmd->pushConstants(pip, RhiShaderStage::Task | RhiShaderStage::Mesh, 0, sizeof(push), &push);
-                PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
+                PROFILE_GPU_ZONE(cmd, DrawLists::drawName(region), Geometry);
                 DrawLists::drawRegion(cmd, regionWork, region);
                 lists.report(ctx, region, instances);
             }

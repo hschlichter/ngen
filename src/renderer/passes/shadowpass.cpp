@@ -80,6 +80,7 @@ auto ShadowPass::addPass(
 
     return fg.addPass<ShadowPassData>(
         "ShadowPass",
+        profile::Group::Shadow,
         [&](FrameGraphBuilder& builder, ShadowPassData& data) {
             data.shadowMap = builder.write(builder.createTexture("shadowMap", desc), FgAccessFlags::DepthAttachment);
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
@@ -109,7 +110,9 @@ auto ShadowPass::addPass(
             };
             cmd->beginRendering(info);
 
+            constexpr std::array<const char*, 4> cascadeNames = {"Cascade 0", "Cascade 1", "Cascade 2", "Cascade 3"};
             for (uint32_t c = 0; c < cascadeCount; c++) {
+                PROFILE_GPU_ZONE(cmd, cascadeNames[std::min<size_t>(c, cascadeNames.size() - 1)], Shadow);
                 const auto& cascade = cascadeCopy[c];
                 // Tile viewport and scissor from the cascade's atlas rect.
                 int32_t tileX = (int32_t) (cascade.atlasRect.x * (float) atlasExtent.width);
@@ -134,7 +137,7 @@ auto ShadowPass::addPass(
                     cmd->bindDescriptorSet(pip, 0, geometrySet);
                     ShadowPush push = {.meshlet = {.region = region, .flags = meshletFlagCount}, .lightViewProj = cascade.viewProj};
                     cmd->pushConstants(pip, RhiShaderStage::Task | RhiShaderStage::Mesh, 0, sizeof(push), &push);
-                    PROFILE_GPU_ZONE(cmd, DrawLists::regionName(region));
+                    PROFILE_GPU_ZONE(cmd, DrawLists::drawName(region), Geometry);
                     DrawLists::drawRegion(cmd, ctx.buffer(drawHandles.regionWork), region);
                     lists.report(ctx, region, instances);
                 }

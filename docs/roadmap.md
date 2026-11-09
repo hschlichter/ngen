@@ -176,7 +176,15 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
   the lavapipe push-constant bug to Mesa (offered, not done).
 - **Introspection follow-ups** ([plan_introspect_tool.md](plan_introspect_tool.md), "Deferred"): profiler zones on the trace stream, session
   recording in the windowed tool, structured asset server events (its messages are text lines today), `get --every` for a record over time.
-- **Introspection extras**: Tracy; GPU crash diagnostics (breadcrumbs, `VK_EXT_device_fault`); scene/USD provenance; per-pass GPU time column;
+- **Profiling findings** from the detail plan: the render thread's two per-frame loops over every instance (`SceneBounds`,
+  `PackInstanceRecords`, about 10 ms a frame on the streaming test world), `CountEntities` walking the World for a trace message, the asset
+  server's deliveries waiting on `watchMutex`.
+- **Profiling counters' follow-ups** ([plan_profile_counters.md](plan_profile_counters.md), "Deferred"): CPU heap tracking (trigger: a memory
+  growth question the resident plot can't answer); vendor GPU counters (trigger: a GPU-bound pass the zones and pipeline statistics can't
+  explain).
+- **Frame images' follow-up** ([plan_tracy_frame_images.md](plan_tracy_frame_images.md), "Deferred"): larger images through a config value
+  for the width (trigger: 320 pixels too small to recognise a moment).
+- **Introspection extras**: GPU crash diagnostics (breadcrumbs, `VK_EXT_device_fault`); scene/USD provenance; per-pass GPU time column;
   zone statistics; a headless performance regression check; the GPU-driven debugging plan.
 - **Build system**: static libraries aren't passed on transitively (programs link each library directly); watch mode; Windows; deterministic
   archives (`ar rcsD`); de-duplicated merged `compile_commands.json`.
@@ -190,12 +198,35 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 - Early-exit hang: a failed `Renderer::init` leaves the process stuck and ignoring SIGTERM ([notes.md](../notes.md)).
 - Stale docs: [usd_scene_system_status.md](usd_scene_system_status.md) says Phase 5 hasn't started (it has); the docs index calls
   [plan_usd_lights.md](plan_usd_lights.md) in progress (it isn't started); [plan_editor_split.md](plan_editor_split.md) says "build server".
-- Plans referenced but never written: `plan_gpu_driven_debugging.md`, `plan_tracy.md`, `plan_rhi_queues.md`, `plan_shader_introspection.md`.
+- Plans referenced but never written: `plan_gpu_driven_debugging.md`, `plan_rhi_queues.md`, `plan_shader_introspection.md`.
 - Headless runs started in the repo root write window layout to the developer's `imgui.ini`.
 
 ## Landed
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
+
+- **Frame images in Tracy** — [plan_tracy_frame_images.md](plan_tracy_frame_images.md); [ADR 84](adr/0084_tracy_frame_images.md). While a
+  Tracy server is connected, every presented frame, UI included, shows under its main-thread frame in Tracy's timeline as a 320-pixel-wide
+  image, read back in its own frame and handed over at the slot's next fence, so nothing waits. Tracy only; `profile.tracy.frameImages` turns
+  them off.
+
+- **Profiling counters** — [plan_profile_counters.md](plan_profile_counters.md); [ADR 83](adr/0083_profile_plots_and_gpu_memory.md).
+  `PROFILE_PLOT` feeds the built-in collector (a time series for the history window, in the `plots` record, `introspect.plot` and the dump)
+  and Tracy. ngen-view plots 47 values a frame: frame times, GPU busy (portable, and amdgpu's driver figure), resident memory, the GPU scene's
+  tables and uploads, the frame's commands, each GPU heap, culling, streaming and the asset client. The GPU's allocations are Tracy's "GPU"
+  memory pool; the Performance window shows a few guide plots.
+
+- **Detailed profiling** — [plan_profile_detail.md](plan_profile_detail.md); [ADR 82](adr/0082_detailed_profiling.md). Every zone is a site
+  with its file, line, group (its colour) and level; the collector keeps the last 10 seconds (configurable) of everything; `profile` is a
+  foundation library, so the asset server and the packers are profiled too, and every thread is visible. Zones reach down to loops and library
+  calls by a coverage rule (80% of every zone over 0.05 ms per frame, or 1 ms per call, accounted for by its children), the GPU to its draws,
+  named for what they draw. Tracy's client starts by hand: in the view and the asset server, and in short-lived tools with `NGEN_TRACY=1`.
+
+- **Tracy** — [plan_tracy.md](plan_tracy.md); [ADR 81](adr/0081_tracy_as_second_sink.md). Tracy is a second sink inside the profile
+  collector: every existing CPU zone, zone value, frame mark and thread name, and the GPU lane from the zones the renderer already calibrates,
+  with no call site changed. Debug and release, on demand (nothing recorded until a Tracy server connects, about 30 ns per zone until then);
+  not in gamerelease. The built-in collector stays the source of every record and window. Follow-ups (call-site source locations, plots,
+  locks, memory, the asset server, starting Tracy at runtime) are in the plan's Deferred section.
 
 - **Meshlets, with occlusion culling** (vertical slice step 2) — [plan_meshlets.md](plan_meshlets.md),
   [plan_meshlet_culling_visibility.md](plan_meshlet_culling_visibility.md), [plan_occlusion_culling.md](plan_occlusion_culling.md),

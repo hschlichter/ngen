@@ -3,6 +3,7 @@
 #include "framegraphresource.h"
 #include "rhitypes.h"
 
+#include <array>
 #include <cstdint>
 
 class DeletionQueue;
@@ -89,5 +90,17 @@ public:
 
 private:
     friend class Renderer;
+    // The hooks the renderer times, one detail zone each, named "<extension>.<hook>" at addExtension.
+    enum Hook : uint32_t {
+        HookBeginFrame,
+        HookAfterFence,
+        HookAddOverlayPasses,
+        HookBeforeExecute,
+        HookAfterExecute,
+        HookAfterSubmit,
+        HookEndFrame,
+        HookCount,
+    };
     uint32_t extensionIndex = 0;
+    std::array<uint32_t, HookCount> hookZoneIds = {};
 };

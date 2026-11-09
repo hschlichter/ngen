@@ -3,6 +3,7 @@
 #include "assetid.h"
 #include "meshletbuild.h"
 #include "primshapemesh.h"
+#include "profile.h"
 
 #include <pxr/base/gf/matrix4d.h>
 #include <pxr/base/gf/quatd.h>
@@ -310,6 +311,7 @@ auto toPlacement(PlacementKind kind, const std::string& assetPath, const SdfPath
 // One prim spec's opinions into the layer pack, then its children's, then its variants' (each variant's prim spec and what is under it, at
 // their variant paths).
 auto packSpec(const SdfPrimSpecHandle& spec, const std::string& fileId, LayerPack& layer) -> void {
+    PROFILE_ZONE_DETAIL("PackSpec", Assets);
     PackPrim prim;
     prim.path = spec->GetPath().GetString();
     switch (spec->GetSpecifier()) {
@@ -769,6 +771,7 @@ auto polygonMesh(const UsdPrim& prim, MeshPack& mesh) -> bool {
 }
 
 auto packMesh(const UsdPrim& prim, MeshPack& mesh) -> bool {
+    PROFILE_ZONE_DETAIL("PackMesh", Assets);
     if (!shapeMesh(prim, mesh) && !polygonMesh(prim, mesh)) {
         return false;
     }
@@ -866,6 +869,7 @@ auto connectedTexture(const UsdShadeInput& input, const UsdPrim& material, const
 }
 
 auto packMaterial(const UsdPrim& prim, const std::string& fileId, MaterialPack& material, LayerPack& layer) -> bool {
+    PROFILE_ZONE_DETAIL("PackMaterial", Assets);
     UsdShadeMaterial shadeMaterial(prim);
     if (!shadeMaterial) {
         return false;
@@ -927,6 +931,7 @@ auto packMaterial(const UsdPrim& prim, const std::string& fileId, MaterialPack& 
 } // namespace
 
 auto packUsdFile(const std::string& assetId, const std::string& sourcePath) -> UsdPackResult {
+    PROFILE_ZONE("PackUsdFile", Assets);
     UsdPackResult result;
     auto layer = SdfLayer::FindOrOpen(sourcePath);
     if (!layer) {

@@ -1,4 +1,5 @@
 #include "packer.h"
+#include "profile.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -61,6 +62,7 @@ auto depfileEscape(const std::string& path) -> std::string {
 }
 
 auto readPackerFile(const std::string& path) -> std::expected<std::vector<std::byte>, std::string> {
+    PROFILE_ZONE_DETAIL("ReadInput", Io);
     std::ifstream in(path, std::ios::binary | std::ios::ate);
     if (!in) {
         return std::unexpected(std::format("cannot read {}", path));
@@ -76,6 +78,7 @@ auto readPackerFile(const std::string& path) -> std::expected<std::vector<std::b
 }
 
 auto writePackerFile(const std::string& path, std::span<const std::byte> bytes) -> std::expected<void, std::string> {
+    PROFILE_ZONE_DETAIL("WriteOutput", Io);
     std::error_code ec;
     std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
@@ -105,6 +108,7 @@ auto clearSecondaryOutputs(const std::string& out) -> void {
 }
 
 auto writeSecondaryOutputs(const std::string& out, const std::vector<std::pair<std::string, std::string>>& outputs) -> std::expected<void, std::string> {
+    PROFILE_ZONE_DETAIL("WriteSecondaryOutputs", Io);
     auto path = secondaryOutputsList(out);
     std::ofstream list(path, std::ios::trunc);
     for (const auto& [id, file] : outputs) {

@@ -83,7 +83,8 @@ public:
 
     // What joins the frame from outside the core (renderextension.h), called in the order added; and where previews are shown. Both
     // before init; the renderer holds references.
-    auto addExtension(RenderExtension& extension) -> void;
+    // `name` names the extension's hook zones in the profiler ("RenderTools.beginFrame", ...).
+    auto addExtension(RenderExtension& extension, const char* name) -> void;
     auto setPreviewTextures(PreviewTextures* previews) -> void { previewTextures = previews; }
     // Creates the passes, which register their pipelines, then inits the extensions; no pipeline exists yet. `shaders` is where they
     // come from.
@@ -119,6 +120,9 @@ public:
     auto setUploadBudget(uint64_t bytes) -> void { gpuScene.setUploadBudget(bytes); }
     // The GPU scene's draw slots, tables, upload queue and pool, after a frame (the change list counts are the render thread's).
     auto sceneGpuStats() const -> SceneGpuStats;
+    // The GPU's allocations as Tracy's "GPU" memory pool, while a Tracy server is connected: what changed since the last report. Without a
+    // server nothing is reported, and a server that connects later is told every live allocation. Render thread.
+    auto reportGpuAllocations() -> void;
     // Asset ids whose sources changed: the ones that are shaders are requested again and their pipelines recreated when they arrive.
     auto reloadShaders(std::span<const std::string> ids) -> void { pipelineRegistry.reload(ids); }
     // Latest GPU culling readback (one frame-slot cycle old), for the editor.
@@ -206,6 +210,11 @@ private:
     // when the slot's fence has signalled, so results lag by the number of frames in flight.
     std::vector<PassGpuTime> lastGpuTimes;
     std::vector<RhiGpuZone> gpuZoneScratch;
+    RhiCommandStats lastFrameCommands; // the last recorded frame's, summed over its passes (sceneGpuStats)
+    // What reportGpuAllocations last told Tracy: each allocation's sequence and bytes, and the registry's serial then.
+    std::unordered_map<uint64_t, uint64_t> reportedAllocations;
+    uint64_t reportedAllocationSerial = UINT64_MAX;
+    std::vector<RhiAllocationInfo> allocationScratch;
     // GPU clock -> CPU clock: cpuNs = gpuNs - gpuClockAtCalibration + cpuClockAtCalibration.
     // Refreshed periodically; when the device cannot calibrate, GPU work is anchored at submit time.
     bool gpuClockCalibrated = false;

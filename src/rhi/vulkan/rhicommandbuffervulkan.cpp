@@ -125,13 +125,13 @@ auto RhiCommandBufferVulkan::begin() -> void {
     }
 }
 
-auto RhiCommandBufferVulkan::beginGpuZone(const char* name) -> void {
+auto RhiCommandBufferVulkan::beginGpuZone(const char* name, uint32_t tag) -> void {
     if (zonePool == VK_NULL_HANDLE || zones.size() >= maxGpuZones) {
         zoneStack.push_back(UINT32_MAX); // keep the stack balanced for endGpuZone
         return;
     }
     auto index = (uint32_t) zones.size();
-    zones.push_back({.name = name, .depth = (uint16_t) zoneStack.size(), .closed = false});
+    zones.push_back({.name = name, .tag = tag, .depth = (uint16_t) zoneStack.size(), .closed = false});
     zoneStack.push_back(index);
     vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, zonePool, index * 2);
 }

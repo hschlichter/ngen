@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <format>
 #include <string>
 #include <vector>
 
@@ -14,8 +15,8 @@ constexpr uint32_t gpuLane = UINT32_MAX;
 
 auto isWorkerLane(const profile::LaneInfo& lane) -> bool;
 auto maxDepth(const std::vector<profile::Zone>& zones) -> uint32_t;
-constexpr double minSpanNs = 0.2e6;     // 0.2 ms
-constexpr double maxSpanNs = 20000.0e6; // 20 s
+auto keepGuideZones(std::vector<profile::Zone>& zones) -> void;
+constexpr double minSpanNs = 0.2e6; // 0.2 ms
 
 // Reads everything the view needs. History and the view position refresh only while
 // live; paused, the view stays where the user put it and the data underneath is frozen.
@@ -38,8 +39,14 @@ auto gather(PerformanceWindowState& state) -> void {
     state.laneZones.resize(state.lanes.size());
     for (size_t i = 0; i < state.lanes.size(); i++) {
         profile::zonesIn(state.lanes[i].index, state.viewStartNs, state.viewEndNs, state.laneZones[i]);
+        if (!state.showDetail) {
+            keepGuideZones(state.laneZones[i]);
+        }
     }
     profile::gpuZonesIn(state.viewStartNs, state.viewEndNs, state.gpuZones);
+    if (!state.showDetail) {
+        keepGuideZones(state.gpuZones);
+    }
     profile::framesIn(state.viewStartNs, state.viewEndNs, state.frames);
 
     // Workers are interchangeable, so they share one lane. Each worker's zones form a
@@ -102,15 +109,29 @@ auto isWorkerLane(const profile::LaneInfo& lane) -> bool {
     return lane.name.rfind("Worker ", 0) == 0;
 }
 
-// Stable colour per zone name.
-auto zoneColor(uint32_t nameId) -> ImU32 {
-    auto h = nameId * 2654435761u;
-    float hue = (float) (h % 360u) / 360.0f;
-    float r = 0.0f;
-    float g = 0.0f;
-    float b = 0.0f;
-    ImGui::ColorConvertHSVtoRGB(hue, 0.55f, 0.75f, r, g, b);
-    return IM_COL32((int) (r * 255), (int) (g * 255), (int) (b * 255), 255);
+// The zone's group colour, as in Tracy.
+auto zoneColor(uint32_t siteId) -> ImU32 {
+    auto rgb = profile::groupColor(profile::groupOf(siteId), siteId);
+    return IM_COL32((int) ((rgb >> 16) & 0xFF), (int) ((rgb >> 8) & 0xFF), (int) (rgb & 0xFF), 255);
+}
+
+// Drops detail zones and nests the guide zones among themselves: a guide zone inside a detail zone moves up a row.
+auto keepGuideZones(std::vector<profile::Zone>& zones) -> void {
+    std::erase_if(zones, [](const profile::Zone& z) { return profile::levelOf(z.siteId) == profile::Level::Detail; });
+    std::sort(zones.begin(), zones.end(), [](const profile::Zone& a, const profile::Zone& b) {
+        if (a.startNs != b.startNs) {
+            return a.startNs < b.startNs;
+        }
+        return a.depth < b.depth;
+    });
+    std::vector<uint64_t> openEnds;
+    for (auto& z : zones) {
+        while (!openEnds.empty() && openEnds.back() <= z.startNs) {
+            openEnds.pop_back();
+        }
+        z.depth = (uint16_t) openEnds.size();
+        openEnds.push_back(z.endNs);
+    }
 }
 
 auto maxDepth(const std::vector<profile::Zone>& zones) -> uint32_t {
@@ -176,27 +197,27 @@ auto drawLane(const char* label, uint32_t laneKey, const std::vector<profile::Zo
         }
         auto y0 = origin.y + rowHeight * (float) z.depth;
         auto y1 = y0 + rowHeight - 1.0f;
-        bool selected = state.hasSelection && state.selectedLane == zoneLane && state.selectedZone.startNs == z.startNs && state.selectedZone.nameId == z.nameId;
-        draw->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), zoneColor(z.nameId));
+        bool selected = state.hasSelection && state.selectedLane == zoneLane && state.selectedZone.startNs == z.startNs && state.selectedZone.siteId == z.siteId;
+        draw->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), zoneColor(z.siteId));
         if (selected) {
             draw->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(255, 255, 255, 255), 0.0f, 0, 2.0f);
         }
 
         auto ms = (double) (z.endNs - z.startNs) * 1e-6;
         char text[96];
-        std::snprintf(text, sizeof(text), "%s %.2f ms", profile::nameOf(z.nameId), ms);
+        std::snprintf(text, sizeof(text), "%s %.2f ms", profile::nameOf(z.siteId), ms);
         auto textWidth = ImGui::CalcTextSize(text).x;
         if (x1 - x0 > textWidth + 6.0f) {
             draw->AddText(ImVec2(x0 + 3.0f, y0 + 1.0f), IM_COL32(15, 15, 15, 255), text);
         } else if (x1 - x0 > 24.0f) {
             draw->PushClipRect(ImVec2(x0, y0), ImVec2(x1, y1), true);
-            draw->AddText(ImVec2(x0 + 3.0f, y0 + 1.0f), IM_COL32(15, 15, 15, 255), profile::nameOf(z.nameId));
+            draw->AddText(ImVec2(x0 + 3.0f, y0 + 1.0f), IM_COL32(15, 15, 15, 255), profile::nameOf(z.siteId));
             draw->PopClipRect();
         }
         bool hovered = mouse.x >= x0 && mouse.x <= x1 && mouse.y >= y0 && mouse.y <= y1;
         if (hovered) {
             double startMs = (double) ((int64_t) z.startNs - (int64_t) axis.startNs) * 1e-6;
-            ImGui::SetTooltip("%s\n%.3f ms\nat %.3f ms in view\nclick for details", profile::nameOf(z.nameId), ms, startMs);
+            ImGui::SetTooltip("%s\n%.3f ms\nat %.3f ms in view\nclick for details", profile::nameOf(z.siteId), ms, startMs);
             if (clicked) {
                 state.hasSelection = true;
                 state.selectedLane = zoneLane;
@@ -255,16 +276,20 @@ auto drawZoneDetails(const PerformanceWindowState& state) -> void {
         }
     }
 
-    ImGui::Text("%s", profile::nameOf(zone.nameId));
+    ImGui::Text("%s", profile::nameOf(zone.siteId));
     ImGui::SameLine();
     ImGui::TextDisabled("on %s", laneName);
+    auto site = profile::siteOf(zone.siteId);
+    if (site.line != 0) {
+        ImGui::TextDisabled("%s:%u   %s", site.file, site.line, site.function);
+    }
     if (!ancestors.empty()) {
         std::string chain;
         for (const auto* a : ancestors) {
-            chain += profile::nameOf(a->nameId);
+            chain += profile::nameOf(a->siteId);
             chain += " > ";
         }
-        chain += profile::nameOf(zone.nameId);
+        chain += profile::nameOf(zone.siteId);
         ImGui::TextDisabled("%s", chain.c_str());
     }
     if (frameMs > 0.0) {
@@ -276,7 +301,7 @@ auto drawZoneDetails(const PerformanceWindowState& state) -> void {
         ImGui::Text("Value %llu", (unsigned long long) zone.value);
     }
 
-    auto stats = profile::zoneStats(state.selectedLane, zone.nameId);
+    auto stats = profile::zoneStats(state.selectedLane, zone.siteId);
     if (stats.count > 0) {
         ImGui::Text("History (%u samples): min %.3f   avg %.3f   p99 %.3f   max %.3f ms", stats.count, stats.minMs, stats.avgMs, stats.p99Ms, stats.maxMs);
     }
@@ -291,7 +316,7 @@ auto drawZoneDetails(const PerformanceWindowState& state) -> void {
                 auto ms = (double) (c->endNs - c->startNs) * 1e-6;
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
-                ImGui::TextUnformatted(profile::nameOf(c->nameId));
+                ImGui::TextUnformatted(profile::nameOf(c->siteId));
                 ImGui::TableSetColumnIndex(1);
                 ImGui::Text("%.3f", ms);
                 ImGui::TableSetColumnIndex(2);
@@ -300,6 +325,57 @@ auto drawZoneDetails(const PerformanceWindowState& state) -> void {
             ImGui::EndTable();
         }
     }
+}
+
+// A plot's latest value as text in its format.
+auto plotValueText(const profile::PlotInfo& info, double value) -> std::string {
+    if (info.format == profile::PlotFormat::Bytes) {
+        return std::format("{:.1f} MiB", value / (1024.0 * 1024.0));
+    }
+    if (info.format == profile::PlotFormat::Percent) {
+        return std::format("{:.0f}%", value);
+    }
+    return std::format("{:.0f}", value);
+}
+
+// The guide plots under the frame times: GPU busy, memory, uploads. Every plot is in Tracy and the plots record; these are the few that
+// say where a frame stands.
+auto drawGuidePlots() -> void {
+    std::vector<profile::PlotInfo> list;
+    profile::plots(list);
+    auto wanted = [](const std::string& name) {
+        return name == "GPU busy" || name == "GPU busy (driver)" || name == "Resident memory" || name == "Upload bytes" ||
+               (name.starts_with("GPU heap") && name.contains("(device)") && !name.ends_with("allocated"));
+    };
+    std::vector<profile::PlotSample> samples;
+    std::vector<float> values;
+    if (!ImGui::BeginTable("##guideplots", 3, ImGuiTableFlags_SizingStretchProp)) {
+        return;
+    }
+    ImGui::TableSetupColumn("plot", ImGuiTableColumnFlags_WidthFixed, 190.0f);
+    ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+    ImGui::TableSetupColumn("samples");
+    for (const auto& info : list) {
+        if (!wanted(info.name) || info.samples == 0) {
+            continue;
+        }
+        profile::plotSamplesIn(info.id, 0, UINT64_MAX, samples);
+        values.clear();
+        for (const auto& sample : samples) {
+            values.push_back((float) sample.value);
+        }
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted(info.name.c_str());
+        ImGui::TableSetColumnIndex(1);
+        ImGui::TextUnformatted(plotValueText(info, info.latest).c_str());
+        ImGui::TableSetColumnIndex(2);
+        auto scaleMax = info.format == profile::PlotFormat::Percent ? 100.0f : (float) std::max(info.max, 1.0);
+        ImGui::PushID((int) info.id);
+        ImGui::PlotLines("##plot", values.data(), (int) values.size(), 0, nullptr, 0.0f, scaleMax, ImVec2(ImGui::GetContentRegionAvail().x, 18.0f));
+        ImGui::PopID();
+    }
+    ImGui::EndTable();
 }
 
 auto setPaused(PerformanceWindowState& state, bool paused) -> void {
@@ -345,8 +421,17 @@ void drawPerformanceWindow(bool& show, PerformanceWindowState& state) {
     auto latest = state.history.empty() ? profile::FrameStats{} : state.history.back();
     auto fps = avgCpu > 0.0 ? 1000.0 / avgCpu : 0.0;
 
-    ImGui::Text("%.1f FPS   frame %.2f ms (avg %.2f, max %.2f)   GPU %.2f ms%s", fps, latest.cpuMs, avgCpu, maxCpu, latest.gpuMs, state.paused ? "   [paused]" : "");
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 130.0f);
+    ImGui::Text("%.1f FPS   frame %.2f ms (avg %.2f, max %.2f)   GPU %.2f ms   history %.0f s%s",
+                fps,
+                latest.cpuMs,
+                avgCpu,
+                maxCpu,
+                latest.gpuMs,
+                profile::historySeconds(),
+                state.paused ? "   [paused]" : "");
+    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 200.0f);
+    ImGui::Checkbox("Detail", &state.showDetail);
+    ImGui::SameLine();
     if (ImGui::Button(state.paused ? "Live" : "Pause")) {
         if (state.paused) {
             setPaused(state, false);
@@ -386,7 +471,7 @@ void drawPerformanceWindow(bool& show, PerformanceWindowState& state) {
                 if (interval.has_value()) {
                     setPaused(state, true);
                     auto frameSpan = (double) (interval->endNs - interval->startNs);
-                    state.viewSpanNs = std::clamp(frameSpan * 3.0, minSpanNs, maxSpanNs);
+                    state.viewSpanNs = std::clamp(frameSpan * 3.0, minSpanNs, std::max(minSpanNs, profile::historySeconds() * 1e9));
                     auto centre = (double) interval->startNs + frameSpan * 0.5;
                     state.viewStartNs = (uint64_t) std::max(0.0, centre - state.viewSpanNs * 0.5);
                     state.viewEndNs = state.viewStartNs + (uint64_t) state.viewSpanNs;
@@ -407,6 +492,8 @@ void drawPerformanceWindow(bool& show, PerformanceWindowState& state) {
             }
         }
     }
+
+    drawGuidePlots();
 
     ImGui::Separator();
     ImGui::TextDisabled("Drag to pan, wheel to zoom, click a bar for details. All lanes share the CPU clock; the GPU lane is calibrated when the device allows, else anchored at submit.");
@@ -460,7 +547,7 @@ void drawPerformanceWindow(bool& show, PerformanceWindowState& state) {
             // Zoom around the cursor; zooming pauses so the view does not run away.
             auto mouseNs = (double) axis.startNs + (double) (io.MousePos.x - axis.left) * axis.nsPerPixel;
             auto factor = io.MouseWheel > 0.0f ? 0.8 : 1.25;
-            auto newSpan = std::clamp((double) (state.viewEndNs - state.viewStartNs) * factor, minSpanNs, maxSpanNs);
+            auto newSpan = std::clamp((double) (state.viewEndNs - state.viewStartNs) * factor, minSpanNs, std::max(minSpanNs, profile::historySeconds() * 1e9));
             auto frac = (double) (io.MousePos.x - axis.left) / (double) axis.width;
             auto newStart = mouseNs - newSpan * frac;
             state.viewStartNs = (uint64_t) std::max(0.0, newStart);

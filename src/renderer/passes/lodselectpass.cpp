@@ -109,6 +109,7 @@ auto LodSelectPass::addPasses(FrameGraph& fg, const LodGroups::Handles& handles,
     // 1. The level each group wants and draws; the residency mask cleared; per-workgroup counters.
     fg.addPass<SelectPassData>(
         "LodSelect",
+        profile::Group::Culling,
         [&](FrameGraphBuilder& builder, SelectPassData& data) {
             builder.read(handles.table, FgAccessFlags::StorageRead);
             data.states = builder.write(handles.states, FgAccessFlags::StorageWrite);
@@ -120,6 +121,7 @@ auto LodSelectPass::addPasses(FrameGraph& fg, const LodGroups::Handles& handles,
     // 2. The counters summed in workgroup order into the totals the readback copies.
     fg.addPass<SumPassData>(
         "LodSelectSum",
+        profile::Group::Culling,
         [&](FrameGraphBuilder& builder, SumPassData& data) {
             builder.read(handles.groupCounters, FgAccessFlags::StorageRead);
             data.totals = builder.write(handles.totals, FgAccessFlags::StorageWrite);

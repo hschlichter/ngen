@@ -9,6 +9,7 @@
 #include "instanceuploadpass.h"
 #include "mesh.h"
 #include "profile.h"
+#include "profilegpu.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "trace.h"
@@ -156,7 +157,7 @@ auto GpuScene::ensureCapacity(GrowableBuffer& target, uint64_t bytes, uint64_t m
     if (bytes > maxBytes) {
         return false;
     }
-    PROFILE_ZONE("GrowBuffer");
+    PROFILE_ZONE("GrowBuffer", Upload);
     PROFILE_ZONE_VALUE(bytes);
     auto capacity = std::min(std::max({bytes, target.capacity * 2, minimumBufferBytes}), maxBytes);
     auto* grown = device->createBuffer({
@@ -648,7 +649,7 @@ auto GpuScene::record(RhiCommandBuffer* cmd, uint64_t budget, const Retire& reti
     RhiBuffer* batch = nullptr;
     std::byte* mapped = nullptr;
     if (stagingBytes > 0) {
-        PROFILE_ZONE("UploadStaging");
+        PROFILE_ZONE("UploadStaging", Upload);
         batch = device->createBuffer({.size = stagingBytes, .usage = RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "gpuscene.upload.staging"});
         mapped = static_cast<std::byte*>(device->mapBuffer(batch));
         std::memset(mapped + takenBytes, 0, zeroBytes);
@@ -665,6 +666,7 @@ auto GpuScene::record(RhiCommandBuffer* cmd, uint64_t budget, const Retire& reti
     cmd->bufferBarrier(before);
 
     // Grown buffers: the old contents first, then zeros past them for the tables.
+    PROFILE_GPU_ZONE_DETAIL(cmd, "UploadBatch", Upload);
     for (auto* target : targets) {
         if (target->moveFrom != nullptr) {
             cmd->copyBuffer(target->moveFrom, target->buffer, {.size = target->moveBytes});
@@ -691,7 +693,7 @@ auto GpuScene::record(RhiCommandBuffer* cmd, uint64_t budget, const Retire& reti
     for (size_t i = 0; i < taken; i++) {
         const auto& upload = queue[i];
         if (upload.kind == Upload::Kind::TextureLevel && upload.level == 0) {
-            PROFILE_ZONE("CreateTexture");
+            PROFILE_ZONE("CreateTexture", Upload);
             auto& info = gpuTextures.at(upload.handle);
             auto name = std::format("texture.{}", upload.handle);
             info.texture = device->createTexture({
@@ -709,98 +711,103 @@ auto GpuScene::record(RhiCommandBuffer* cmd, uint64_t budget, const Retire& reti
     if (!toTransfer.empty()) {
         cmd->pipelineBarrier(toTransfer);
     }
-    for (size_t i = 0; i < taken; i++) {
-        const auto& upload = queue[i];
-        auto* dst = mapped + offset;
-        switch (upload.kind) {
-            case Upload::Kind::MeshVertices: {
-                const auto& mesh = *meshData.at(upload.handle);
-                std::memcpy(dst, mesh.vertices.data(), upload.bytes);
-                cmd->copyBuffer(batch, vertices.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) meshes.at(upload.handle).vertexOffset * sizeof(Vertex), .size = upload.bytes});
-                break;
-            }
-            case Upload::Kind::MeshPositions: {
-                // Depth-only passes read the position stream alone: 12 bytes against the 44-byte Vertex.
-                const auto& mesh = *meshData.at(upload.handle);
-                auto* positionsOut = reinterpret_cast<std::array<float, 3>*>(dst);
-                for (size_t v = 0; v < mesh.vertices.size(); v++) {
-                    positionsOut[v] = mesh.vertices[v].position;
+    {
+        // The uploads' bytes packed into the batch (CPU) and their copies (GPU, with profile.gpu.detail).
+        PROFILE_ZONE_DETAIL("UploadCopies", Upload);
+        PROFILE_GPU_ZONE_DETAIL(cmd, "UploadCopies", Upload);
+        for (size_t i = 0; i < taken; i++) {
+            const auto& upload = queue[i];
+            auto* dst = mapped + offset;
+            switch (upload.kind) {
+                case Upload::Kind::MeshVertices: {
+                    const auto& mesh = *meshData.at(upload.handle);
+                    std::memcpy(dst, mesh.vertices.data(), upload.bytes);
+                    cmd->copyBuffer(batch, vertices.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) meshes.at(upload.handle).vertexOffset * sizeof(Vertex), .size = upload.bytes});
+                    break;
                 }
-                cmd->copyBuffer(batch, positions.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) meshes.at(upload.handle).vertexOffset * sizeof(std::array<float, 3>), .size = upload.bytes});
-                break;
-            }
-            case Upload::Kind::MeshMeshlets: {
-                // Offsets made pool positions, so a shader reads a meshlet without its mesh's ranges.
-                const auto& mesh = *meshData.at(upload.handle);
-                const auto& range = meshes.at(upload.handle);
-                auto* out = reinterpret_cast<GpuMeshlet*>(dst);
-                for (size_t i = 0; i < mesh.meshlets.size(); i++) {
-                    const auto& meshlet = mesh.meshlets[i];
-                    uint32_t cone = 0;
-                    for (uint32_t c = 0; c < 4; c++) {
-                        cone |= (uint32_t) (uint8_t) meshlet.cone[c] << (8 * c);
+                case Upload::Kind::MeshPositions: {
+                    // Depth-only passes read the position stream alone: 12 bytes against the 44-byte Vertex.
+                    const auto& mesh = *meshData.at(upload.handle);
+                    auto* positionsOut = reinterpret_cast<std::array<float, 3>*>(dst);
+                    for (size_t v = 0; v < mesh.vertices.size(); v++) {
+                        positionsOut[v] = mesh.vertices[v].position;
                     }
-                    out[i] = {
-                        .vertexOffset = range.meshletVertexOffset + meshlet.vertexOffset,
-                        .triangleOffset = range.meshletTriangleOffset + meshlet.triangleOffset,
-                        .counts = meshlet.vertexCount | (meshlet.triangleCount << 8),
-                        .cone = cone,
-                        .center = glm::vec3(meshlet.center[0], meshlet.center[1], meshlet.center[2]),
-                        .radius = meshlet.radius,
-                    };
+                    cmd->copyBuffer(batch, positions.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) meshes.at(upload.handle).vertexOffset * sizeof(std::array<float, 3>), .size = upload.bytes});
+                    break;
                 }
-                cmd->copyBuffer(batch, meshlets.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) range.meshletOffset * sizeof(GpuMeshlet), .size = upload.bytes});
-                break;
-            }
-            case Upload::Kind::MeshMeshletVertices: {
-                const auto& mesh = *meshData.at(upload.handle);
-                std::memcpy(dst, mesh.meshletVertices.data(), upload.bytes);
-                cmd->copyBuffer(batch, meshletVertices.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) meshes.at(upload.handle).meshletVertexOffset * sizeof(uint32_t), .size = upload.bytes});
-                break;
-            }
-            case Upload::Kind::MeshMeshletTriangles: {
-                const auto& mesh = *meshData.at(upload.handle);
-                std::memcpy(dst, mesh.meshletTriangles.data(), upload.bytes);
-                cmd->copyBuffer(batch, meshletTriangles.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) meshes.at(upload.handle).meshletTriangleOffset * sizeof(uint32_t), .size = upload.bytes});
-                break;
-            }
-            case Upload::Kind::MeshEntry: {
-                GpuMeshEntry entry;
-                if (auto it = meshes.find(upload.handle); it != meshes.end()) {
-                    entry = {
-                        .vertexOffset = it->second.vertexOffset,
-                        .meshletOffset = it->second.meshletOffset,
-                        .meshletCount = it->second.meshletCount,
-                        .triangleCount = it->second.meshletTriangleCount,
-                    };
-                    // Every upload of the mesh is recorded by now: its data can go.
-                    meshData.erase(upload.handle);
+                case Upload::Kind::MeshMeshlets: {
+                    // Offsets made pool positions, so a shader reads a meshlet without its mesh's ranges.
+                    const auto& mesh = *meshData.at(upload.handle);
+                    const auto& range = meshes.at(upload.handle);
+                    auto* out = reinterpret_cast<GpuMeshlet*>(dst);
+                    for (size_t i = 0; i < mesh.meshlets.size(); i++) {
+                        const auto& meshlet = mesh.meshlets[i];
+                        uint32_t cone = 0;
+                        for (uint32_t c = 0; c < 4; c++) {
+                            cone |= (uint32_t) (uint8_t) meshlet.cone[c] << (8 * c);
+                        }
+                        out[i] = {
+                            .vertexOffset = range.meshletVertexOffset + meshlet.vertexOffset,
+                            .triangleOffset = range.meshletTriangleOffset + meshlet.triangleOffset,
+                            .counts = meshlet.vertexCount | (meshlet.triangleCount << 8),
+                            .cone = cone,
+                            .center = glm::vec3(meshlet.center[0], meshlet.center[1], meshlet.center[2]),
+                            .radius = meshlet.radius,
+                        };
+                    }
+                    cmd->copyBuffer(batch, meshlets.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) range.meshletOffset * sizeof(GpuMeshlet), .size = upload.bytes});
+                    break;
                 }
-                std::memcpy(dst, &entry, sizeof(entry));
-                cmd->copyBuffer(batch, meshTable.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) upload.handle * sizeof(GpuMeshEntry), .size = sizeof(entry)});
-                break;
-            }
-            case Upload::Kind::MaterialEntry: {
-                auto record = materialRecord(MaterialHandle{upload.handle});
-                std::memcpy(dst, &record, sizeof(record));
-                cmd->copyBuffer(batch, materialTable.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) entryOf.at(upload.handle) * sizeof(GpuMaterial), .size = sizeof(record)});
-                break;
-            }
-            case Upload::Kind::TextureLevel: {
-                const auto& data = *textureData.at(upload.handle);
-                const auto& info = gpuTextures.at(upload.handle);
-                std::memcpy(dst, data.levels.data() + levelOffset(info.width, info.height, upload.level), upload.bytes);
-                cmd->copyBufferToTexture(batch, info.texture, {.bufferOffset = offset, .width = std::max(1u, info.width >> upload.level), .height = std::max(1u, info.height >> upload.level), .mipLevel = upload.level});
-                if (--levelsLeft.at(upload.handle) == 0) {
-                    toShader.push_back({.texture = info.texture, .oldState = RhiTextureState::TransferDst, .newState = RhiTextureState::ShaderReadOnly});
-                    texturesCopied.push_back(upload.handle);
-                    textureData.erase(upload.handle);
-                    levelsLeft.erase(upload.handle);
+                case Upload::Kind::MeshMeshletVertices: {
+                    const auto& mesh = *meshData.at(upload.handle);
+                    std::memcpy(dst, mesh.meshletVertices.data(), upload.bytes);
+                    cmd->copyBuffer(batch, meshletVertices.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) meshes.at(upload.handle).meshletVertexOffset * sizeof(uint32_t), .size = upload.bytes});
+                    break;
                 }
-                break;
+                case Upload::Kind::MeshMeshletTriangles: {
+                    const auto& mesh = *meshData.at(upload.handle);
+                    std::memcpy(dst, mesh.meshletTriangles.data(), upload.bytes);
+                    cmd->copyBuffer(batch, meshletTriangles.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) meshes.at(upload.handle).meshletTriangleOffset * sizeof(uint32_t), .size = upload.bytes});
+                    break;
+                }
+                case Upload::Kind::MeshEntry: {
+                    GpuMeshEntry entry;
+                    if (auto it = meshes.find(upload.handle); it != meshes.end()) {
+                        entry = {
+                            .vertexOffset = it->second.vertexOffset,
+                            .meshletOffset = it->second.meshletOffset,
+                            .meshletCount = it->second.meshletCount,
+                            .triangleCount = it->second.meshletTriangleCount,
+                        };
+                        // Every upload of the mesh is recorded by now: its data can go.
+                        meshData.erase(upload.handle);
+                    }
+                    std::memcpy(dst, &entry, sizeof(entry));
+                    cmd->copyBuffer(batch, meshTable.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) upload.handle * sizeof(GpuMeshEntry), .size = sizeof(entry)});
+                    break;
+                }
+                case Upload::Kind::MaterialEntry: {
+                    auto record = materialRecord(MaterialHandle{upload.handle});
+                    std::memcpy(dst, &record, sizeof(record));
+                    cmd->copyBuffer(batch, materialTable.buffer, {.srcOffset = offset, .dstOffset = (uint64_t) entryOf.at(upload.handle) * sizeof(GpuMaterial), .size = sizeof(record)});
+                    break;
+                }
+                case Upload::Kind::TextureLevel: {
+                    const auto& data = *textureData.at(upload.handle);
+                    const auto& info = gpuTextures.at(upload.handle);
+                    std::memcpy(dst, data.levels.data() + levelOffset(info.width, info.height, upload.level), upload.bytes);
+                    cmd->copyBufferToTexture(batch, info.texture, {.bufferOffset = offset, .width = std::max(1u, info.width >> upload.level), .height = std::max(1u, info.height >> upload.level), .mipLevel = upload.level});
+                    if (--levelsLeft.at(upload.handle) == 0) {
+                        toShader.push_back({.texture = info.texture, .oldState = RhiTextureState::TransferDst, .newState = RhiTextureState::ShaderReadOnly});
+                        texturesCopied.push_back(upload.handle);
+                        textureData.erase(upload.handle);
+                        levelsLeft.erase(upload.handle);
+                    }
+                    break;
+                }
             }
+            offset += upload.bytes;
         }
-        offset += upload.bytes;
     }
     queue.erase(queue.begin(), queue.begin() + (std::ptrdiff_t) taken);
     if (batch != nullptr) {
@@ -828,15 +835,16 @@ auto GpuScene::addUploadPass(FrameGraph& fg, uint64_t frame) -> void {
     struct SceneUploadData {};
     fg.addPass<SceneUploadData>(
         "SceneUpload",
+        profile::Group::Upload,
         [](FrameGraphBuilder& builder, SceneUploadData&) { builder.setSideEffects(true); },
         [this, frame](FrameGraphContext& ctx, const SceneUploadData&) {
-            PROFILE_ZONE("SceneUpload");
+            PROFILE_ZONE("SceneUpload", Upload);
             record(ctx.cmd(), uploadBudget, [this, frame](RhiBuffer* staging) { deletionQueue->deferBuffer(frame, staging); });
         });
 }
 
 auto GpuScene::flushUploads(GpuUploader& uploader, uint64_t frame) -> void {
-    PROFILE_ZONE("SceneUploadFlush");
+    PROFILE_ZONE("SceneUploadFlush", Upload);
     currentFrame = frame;
     uploader.begin();
     // Textures finished here take their slots, which queues their materials' entries: record again until nothing is left.
@@ -901,6 +909,7 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
     // The slots to upload, in order, each once.
     std::vector<uint32_t> upload;
     auto count = (uint32_t) sceneInstances.size();
+    PROFILE_ZONE_DETAIL("DirtySlots", Upload);
     if (allDirty) {
         upload.resize(count);
         for (uint32_t m = 0; m < count; m++) {
@@ -926,6 +935,7 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
     auto bytes = recordBytes + ((uint64_t) upload.size() * sizeof(GpuCullRecord));
     RhiBuffer* buffer = nullptr;
     void* mapped = nullptr;
+    PROFILE_ZONE_DETAIL("InstanceStaging", Upload);
     if (bytes <= stagingLimit) {
         if (stagingBytes[frameSlot] < bytes) {
             deletionQueue->deferBuffer(currentFrame, staging[frameSlot]);
@@ -949,6 +959,8 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
     auto* cullDst = reinterpret_cast<GpuCullRecord*>(static_cast<std::byte*>(mapped) + recordBytes);
     std::vector<RhiBufferCopy> regions;
     std::vector<RhiBufferCopy> cullRegions;
+    PROFILE_ZONE_DETAIL("PackInstanceRecords", Upload);
+    PROFILE_ZONE_VALUE(upload.size());
     for (size_t i = 0; i < upload.size(); i++) {
         auto m = upload[i];
         const auto& inst = sceneInstances[m];

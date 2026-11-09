@@ -95,6 +95,10 @@ locked; **Superseded by N** — replaced, kept as a record.
 | [78](0078_render_extensions.md) | 2026-11-05 | Render extensions: what isn't the renderer's core joins its frame | Accepted |
 | [79](0079_dome_light_sky_and_irradiance.md) | 2026-11-05 | The dome light as the sky, its irradiance computed when packed | Accepted |
 | [80](0080_build_without_targets_builds_everything.md) | 2026-11-07 | No project defaults; a build without targets builds everything | Accepted |
+| [81](0081_tracy_as_second_sink.md) | 2026-11-09 | Tracy as a second sink inside the profile collector | Accepted |
+| [82](0082_detailed_profiling.md) | 2026-11-09 | Detailed profiling: sites, history by time, profile as a foundation library | Accepted |
+| [83](0083_profile_plots_and_gpu_memory.md) | 2026-11-09 | Profile plots, GPU usage from two sources, GPU memory as a Tracy pool | Accepted |
+| [84](0084_tracy_frame_images.md) | 2026-11-09 | Frame images in Tracy only, from the render tools | Accepted |
 
 ## By area
 

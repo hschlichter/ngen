@@ -26,8 +26,21 @@
 #include <limits>
 #include <span>
 
-auto Renderer::addExtension(RenderExtension& extension) -> void {
+auto Renderer::addExtension(RenderExtension& extension, const char* name) -> void {
     extension.extensionIndex = (uint32_t) extensions.size();
+    constexpr std::array<const char*, RenderExtension::HookCount> hookNames = {
+        "beginFrame",
+        "afterFence",
+        "addOverlayPasses",
+        "beforeExecute",
+        "afterExecute",
+        "afterSubmit",
+        "endFrame",
+    };
+    for (uint32_t hook = 0; hook < RenderExtension::HookCount; hook++) {
+        auto zoneName = std::format("{}.{}", name, hookNames[hook]);
+        extension.hookZoneIds[hook] = profile::registerSite(zoneName.c_str(), profile::Group::Render, profile::Level::Detail);
+    }
     extensions.push_back(&extension);
 }
 
@@ -305,7 +318,7 @@ auto Renderer::readGpuTimings(uint32_t slot) -> void {
     std::vector<profile::Zone> profileZones;
     profileZones.reserve(gpuZoneScratch.size());
     for (const auto& zone : gpuZoneScratch) {
-        profileZones.push_back({.nameId = profile::registerName(zone.name), .depth = zone.depth, .startNs = toCpu(zone.startNs), .endNs = toCpu(zone.endNs)});
+        profileZones.push_back({.siteId = zone.tag != 0 ? zone.tag : profile::siteIdOf(zone.name), .depth = zone.depth, .startNs = toCpu(zone.startNs), .endNs = toCpu(zone.endNs)});
     }
     profile::submitGpuZones(lastGpuFrame, slotSubmitNs[slot], profileZones);
 }
@@ -317,6 +330,7 @@ static auto addClearPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D exte
     };
     fg.addPass<ClearData>(
         "ClearBackbuffer",
+        profile::Group::Post,
         [&](FrameGraphBuilder& builder, ClearData& data) { data.color = builder.write(color, FgAccessFlags::ColorAttachment); },
         [extent](FrameGraphContext& ctx, const ClearData& data) {
             std::array<RhiRenderingAttachmentInfo, 1> attachments = {{
@@ -345,7 +359,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
     // Removals first: their pool ranges, table entries and slots are free for what is added (a repacked scene reuses them instead of
     // growing the pool). Nothing draws between here and the draws below, which stop naming what was removed.
     {
-        PROFILE_ZONE("RemoveEntries");
+        PROFILE_ZONE("RemoveEntries", Render);
         for (auto handle : changes.materialsRemoved) {
             gpuScene.removeMaterial(handle);
         }
@@ -358,13 +372,13 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
     }
     // Textures and meshes before the materials and draws that name them.
     {
-        PROFILE_ZONE("AddTextures");
+        PROFILE_ZONE("AddTextures", Render);
         for (const auto& [handle, texture] : changes.texturesAdded) {
             gpuScene.addTexture(handle, texture, m_frameIndex);
         }
     }
     {
-        PROFILE_ZONE("AddMeshes");
+        PROFILE_ZONE("AddMeshes", Render);
         for (const auto& [handle, mesh] : changes.meshesAdded) {
             gpuScene.addMesh(handle, mesh);
         }
@@ -372,7 +386,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
     for (const auto& [handle, material] : changes.materialsChanged) {
         gpuScene.setMaterial(handle, material);
     }
-    static const uint32_t copyZoneId = profile::registerName("CopyInstances");
+    static const uint32_t copyZoneId = profile::registerSite("CopyInstances", profile::Group::Render);
     profile::beginZone(copyZoneId);
     // Slots past the new count leave the bucket counts with them (the slot list doesn't shrink today).
     for (size_t slot = changes.slotCount; slot < gpuInstances.size(); slot++) {
@@ -419,7 +433,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
         environment = changes.environment;
     }
 
-    static const uint32_t boundsZoneId = profile::registerName("SceneBounds");
+    static const uint32_t boundsZoneId = profile::registerSite("SceneBounds", profile::Group::Render);
     profile::beginZone(boundsZoneId);
     sceneBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
     for (const auto& inst : gpuInstances) {
@@ -433,22 +447,26 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
 
     // A grown instance buffer or grown draw lists are new buffers: the descriptor sets naming them are rewritten at the next frame.
     {
-        PROFILE_ZONE("UpdateInstances");
+        PROFILE_ZONE("UpdateInstances", Render);
         gpuScene.updateInstances(gpuInstances, changedSlots, m_frameIndex);
     }
     {
-        PROFILE_ZONE("GrowDrawLists");
-        if (drawLists.ensureCapacity((uint32_t) gpuInstances.size(), drawLists.commandsNeeded(), m_frameIndex)) {
-            descriptorSetsDirty = true;
+        PROFILE_ZONE("GrowDrawLists", Render);
+        {
+            PROFILE_ZONE_DETAIL("GrowInstanceLists", Render);
+            if (drawLists.ensureCapacity((uint32_t) gpuInstances.size(), drawLists.commandsNeeded(), m_frameIndex)) {
+                descriptorSetsDirty = true;
+            }
         }
         // The meshlet work items: room for every live instance's meshlets twice (the camera and the cascades see a part each), grown
         // further if a frame overflows.
+        PROFILE_ZONE_DETAIL("GrowMeshletWork", Render);
         if (drawLists.ensureWorkCapacity(drawLists.liveMeshlets() * 2, m_frameIndex)) {
             descriptorSetsDirty = true;
         }
     }
     {
-        PROFILE_ZONE("ApplyLodGroups");
+        PROFILE_ZONE("ApplyLodGroups", Render);
         if (lodGroups.apply(changes.lodGroups, changes.lodGroupCount, m_frameIndex)) {
             descriptorSetsDirty = true;
         }
@@ -489,6 +507,24 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
 auto Renderer::sceneGpuStats() const -> SceneGpuStats {
     auto uploads = gpuScene.uploadStats();
     auto pool = gpuScene.geometryPoolStats();
+    RenderFrameCommands frameCommands = {
+        .draws = lastFrameCommands.draws,
+        .dispatches = lastFrameCommands.dispatches,
+        .barriers = lastFrameCommands.barriers,
+        .pipelineBinds = lastFrameCommands.pipelineBinds,
+        .indirectDraws = lastFrameCommands.indirectDraws,
+        .copies = lastFrameCommands.copies,
+        .primitives = lastFrameCommands.primitives,
+    };
+    std::vector<RenderHeapUse> heaps;
+    {
+        PROFILE_ZONE_DETAIL("MemoryHeaps", Render);
+        std::vector<RhiMemoryHeapInfo> deviceHeaps;
+        device->memoryHeaps(deviceHeaps);
+        for (const auto& heap : deviceHeaps) {
+            heaps.push_back({.size = heap.size, .budget = heap.budget, .usage = heap.usage, .allocated = heap.allocated, .deviceLocal = heap.deviceLocal});
+        }
+    }
     return {
         .frame = m_frameIndex,
         .drawSlots = (uint32_t) gpuInstances.size(),
@@ -509,7 +545,38 @@ auto Renderer::sceneGpuStats() const -> SceneGpuStats {
         },
         .geometryPool = toRenderDebug(pool),
         .skyDrawn = debugSky,
+        .frameCommands = frameCommands,
+        .heaps = heaps,
     };
+}
+
+auto Renderer::reportGpuAllocations() -> void {
+    if (!profile::tracyConnected()) {
+        reportedAllocations.clear();
+        reportedAllocationSerial = UINT64_MAX;
+        return;
+    }
+    auto serial = device->allocationSerial();
+    if (serial == reportedAllocationSerial) {
+        return;
+    }
+    PROFILE_ZONE_DETAIL("ReportGpuAllocations", Render);
+    reportedAllocationSerial = serial;
+    device->allocations(allocationScratch);
+    std::unordered_map<uint64_t, uint64_t> live;
+    live.reserve(allocationScratch.size());
+    for (const auto& allocation : allocationScratch) {
+        live.emplace(allocation.sequence, allocation.bytes);
+        if (!reportedAllocations.contains(allocation.sequence)) {
+            profile::memoryAlloc("GPU", allocation.sequence, allocation.bytes);
+        }
+    }
+    for (const auto& [sequence, bytes] : reportedAllocations) {
+        if (!live.contains(sequence)) {
+            profile::memoryFree("GPU", sequence);
+        }
+    }
+    reportedAllocations = std::move(live);
 }
 
 auto Renderer::flushSceneUploads() -> void {
@@ -548,7 +615,7 @@ auto Renderer::applySamplerSettings(const SamplerSettings& settings) -> void {
 
 auto Renderer::rebuildGeometryDescriptorSets() -> void {
     using enum RhiDescriptorType;
-    PROFILE_ZONE("DescriptorSets");
+    PROFILE_ZONE("DescriptorSets", Render);
     // Sets and pool may still be bound by frames in flight: free and destroy together, later.
     if (geometryDescriptorPool) {
         deletionQueue.defer(m_frameIndex, [dev = device, pool = geometryDescriptorPool, sets = geometryDescriptorSets] {
@@ -721,6 +788,7 @@ auto Renderer::cullResult() const -> CullResult {
 auto Renderer::render(RenderSnapshot& snapshot) -> void {
     renderFrame(snapshot);
     for (auto* extension : extensions) {
+        profile::ScopedZone hookZone(extension->hookZoneIds[RenderExtension::HookEndFrame]);
         extension->endFrame(*this);
     }
 }
@@ -735,21 +803,22 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         .slot = currentFrame,
     };
     for (auto* extension : extensions) {
+        profile::ScopedZone hookZone(extension->hookZoneIds[RenderExtension::HookBeginFrame]);
         extension->beginFrame(*this, snapshot, current);
     }
 
     {
-        PROFILE_ZONE("WaitFence");
+        PROFILE_ZONE("WaitFence", Wait);
         device->waitForFence(inflightFences[currentFrame]);
     }
     // This slot's previous frame is done, and so is everything submitted before it.
     deletionQueue.flush(slotFrame[currentFrame]);
     {
-        PROFILE_ZONE("ReadGpuTimings");
+        PROFILE_ZONE("ReadGpuTimings", Render);
         readGpuTimings(currentFrame);
     }
     {
-        PROFILE_ZONE("ParseReadback");
+        PROFILE_ZONE("ParseReadback", Render);
         drawLists.parseReadback(currentFrame, slotFrame[currentFrame]);
         // Commands dropped past their region's end mean the CPU's bucket counts disagree with the cull shader's rule: draws are missing.
         if (auto overflow = drawLists.regionOverflow(); overflow != reportedRegionOverflow) {
@@ -781,12 +850,13 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     }
     captureService.afterFence(currentFrame);
     for (auto* extension : extensions) {
+        profile::ScopedZone hookZone(extension->hookZoneIds[RenderExtension::HookAfterFence]);
         extension->afterFence(*this, currentFrame);
     }
 
     std::expected<uint32_t, RhiError> index;
     {
-        PROFILE_ZONE("Acquire");
+        PROFILE_ZONE("Acquire", Wait);
         index = swapchain->acquireNextImage(imageAvailableSemaphores[currentFrame]);
     }
     if (!index) {
@@ -814,12 +884,12 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
 
     // Pipelines whose shaders arrived since the last frame, a few at a time; none change while the frame records.
     {
-        PROFILE_ZONE("PipelineUpdate");
+        PROFILE_ZONE("PipelineUpdate", Render);
         pipelineRegistry.update(m_frameIndex);
     }
 
     // Build frame graph
-    static const uint32_t buildZoneId = profile::registerName("BuildFrameGraph");
+    static const uint32_t buildZoneId = profile::registerSite("BuildFrameGraph", profile::Group::Render);
     profile::beginZone(buildZoneId);
     auto ext = swapchain->extent();
     frameGraph.reset();
@@ -832,7 +902,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     current.depth = depthHandle;
 
     // Textures uploaded in earlier frames take their slots; then this frame's scene uploads, before anything reads the tables.
-    static const uint32_t sceneFrameZoneId = profile::registerName("GpuSceneBeginFrame");
+    static const uint32_t sceneFrameZoneId = profile::registerSite("GpuSceneBeginFrame", profile::Group::Render);
     profile::beginZone(sceneFrameZoneId);
     if (gpuScene.beginFrame(m_frameIndex) || descriptorSetsDirty) {
         rebuildGeometryDescriptorSets();
@@ -861,12 +931,12 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     if (!litReady) {
         addClearPass(frameGraph, colorHandle, ext);
     } else {
-        static const uint32_t instanceUploadZoneId = profile::registerName("InstanceUpload");
+        static const uint32_t instanceUploadZoneId = profile::registerSite("InstanceUpload", profile::Group::Upload);
         profile::beginZone(instanceUploadZoneId);
         auto instanceHandle = gpuScene.addInstanceUploadPasses(frameGraph, gpuInstances, currentFrame);
         profile::endZone();
 
-        static const uint32_t shadowSetupZoneId = profile::registerName("ShadowSetup");
+        static const uint32_t shadowSetupZoneId = profile::registerSite("ShadowSetup", profile::Group::Shadow);
         profile::beginZone(shadowSetupZoneId);
         // Pick a shadow-casting directional light: first directional with shadowEnable,
         // else first directional. USDScene authors a session-layer UsdLuxDistantLight when
@@ -936,6 +1006,8 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         auto invViewProj = glm::inverse(snapshot.projMatrix * snapshot.viewMatrix);
 
         profile::endZone(); // ShadowSetup
+        static const uint32_t addCullPassesSite = profile::registerSite("AddCullPasses", profile::Group::Render, profile::Level::Detail);
+        profile::beginZone(addCullPassesSite);
         // Render LOD picks each group's level from the live main camera (not a frozen culling frustum, nor a debug camera rendered from):
         // its position, and the view window's area at depth 1 from the projection (2 / |proj[0][0]| wide, 2 / |proj[1][1]| high), as the
         // view's heuristic measures.
@@ -953,6 +1025,9 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         drawHandles.lodStates = lodHandles.states;
         auto hzbHandle = depthPyramid.import(frameGraph);
         instanceCullPass.addPasses(frameGraph, drawLists, drawHandles, lodHandles, instanceHandle, hzbHandle, cullGroups, currentFrame);
+        profile::endZone();
+        static const uint32_t addGeometryPassesSite = profile::registerSite("AddGeometryPasses", profile::Group::Render, profile::Level::Detail);
+        profile::beginZone(addGeometryPassesSite);
         if (snapshot.sampler != materialSamplerSettings) {
             applySamplerSettings(snapshot.sampler);
         }
@@ -995,6 +1070,9 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         drawLists.addReadbackPass(frameGraph, drawHandles, currentFrame, snapshot.readVisibility, drawLogEnabled, m_frameIndex);
         lodGroups.addReadbackPass(frameGraph, lodHandles, currentFrame, snapshot.readLodStates, lodCamera.eye, lodCamera.windowArea);
 
+        profile::endZone();
+        static const uint32_t addLightingPassesSite = profile::registerSite("AddLightingPasses", profile::Group::Render, profile::Level::Detail);
+        profile::beginZone(addLightingPassesSite);
         // The depth preview's far end: the camera has no far plane, so the farthest corner of the scene.
         float previewFar = projectionNear * 10.0f;
         if (sceneBounds.valid()) {
@@ -1046,6 +1124,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
             finalImage = debugViewData.color;
         }
         addBlitPass(frameGraph, "BlitToBackbuffer", finalImage, colorHandle, ext, ext);
+        profile::endZone();
     }
 
     if (debugRenderer.ready()) {
@@ -1054,6 +1133,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
 
     // The extensions' overlays: the tools' gizmos, the UI.
     for (auto* extension : extensions) {
+        profile::ScopedZone hookZone(extension->hookZoneIds[RenderExtension::HookAddOverlayPasses]);
         extension->addOverlayPasses(*this, snapshot, current);
     }
 
@@ -1069,7 +1149,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     }
     frameGraph.setCaptureRequests(captureService.requestsForFrame(currentFrame, frame));
     {
-        PROFILE_ZONE("Compile");
+        PROFILE_ZONE("Compile", Render);
         frameGraph.compile();
     }
 
@@ -1077,23 +1157,38 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     // belongs to the swapchain image, since present consumes it per image.
     auto* cmd = cmdBuffers[currentFrame];
     {
-        PROFILE_ZONE("Record");
+        PROFILE_ZONE("Record", Render);
         PROFILE_ZONE_VALUE(frameGraph.passCount() - frameGraph.culledCount());
         for (auto* extension : extensions) {
+            profile::ScopedZone hookZone(extension->hookZoneIds[RenderExtension::HookBeforeExecute]);
             extension->beforeExecute(*this, cmd, current);
         }
-        cmd->reset();
-        cmd->begin();
-        frameGraph.execute(cmd);
+        {
+            PROFILE_ZONE_DETAIL("BeginCommandBuffer", Render);
+            cmd->reset();
+            cmd->begin();
+        }
+        {
+            PROFILE_ZONE_DETAIL("ExecuteFrameGraph", Render);
+            frameGraph.execute(cmd);
+            lastFrameCommands = frameGraph.frameStats();
+        }
         // The extensions' copies after the frame (the frame debugger, the inspector, dumps, screenshots), the command log first off.
         for (auto* extension : extensions) {
+            profile::ScopedZone hookZone(extension->hookZoneIds[RenderExtension::HookAfterExecute]);
             extension->afterExecute(*this, cmd, current);
         }
-        gpuScene.afterExecute(frameGraph);
-        lodGroups.afterExecute(frameGraph);
-        drawLists.afterExecute(frameGraph);
-        captureService.recordStatic(cmd, currentFrame, frame);
-        cmd->end();
+        {
+            PROFILE_ZONE_DETAIL("AfterExecute", Render);
+            gpuScene.afterExecute(frameGraph);
+            lodGroups.afterExecute(frameGraph);
+            drawLists.afterExecute(frameGraph);
+            captureService.recordStatic(cmd, currentFrame, frame);
+        }
+        {
+            PROFILE_ZONE_DETAIL("EndCommandBuffer", Render);
+            cmd->end();
+        }
     }
     slotDrawLogs[currentFrame] = frameGraph.drawLog();
     RhiSubmitInfo submitInfo = {
@@ -1102,18 +1197,19 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         .fence = inflightFences[currentFrame],
     };
     {
-        PROFILE_ZONE("Submit");
+        PROFILE_ZONE("Submit", Render);
         device->submitCommandBuffer(cmd, submitInfo);
     }
     slotFrame[currentFrame] = frame;
     slotSubmitNs[currentFrame] = profile::now();
 
     for (auto* extension : extensions) {
+        profile::ScopedZone hookZone(extension->hookZoneIds[RenderExtension::HookAfterSubmit]);
         extension->afterSubmit(*this, current);
     }
     std::expected<void, RhiError> presented;
     {
-        PROFILE_ZONE("Present");
+        PROFILE_ZONE("Present", Wait);
         presented = device->present(swapchain, renderFinishedSemaphores[*index], *index);
     }
     if (!presented) {

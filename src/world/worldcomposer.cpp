@@ -1,6 +1,7 @@
 #include "worldcomposer.h"
 
 #include "primpath.h"
+#include "profile.h"
 #include "scenepack.h"
 #include "xformops.h"
 
@@ -1296,6 +1297,7 @@ struct WorldComposer::Impl {
     // A root's heuristics, every lod:heuristics target found in its content, in authored order, each with its bounds resolved as UsdLod's
     // queries read them and why the engine doesn't read it when it doesn't. Which one measures the root is the reader's choice.
     auto resolveHeuristics(const std::vector<PendingTarget>& pending) -> void {
+        PROFILE_ZONE_DETAIL("ResolveHeuristics", Scene);
         std::set<std::pair<const WorldContent*, EntityId>> cleared;
         for (const auto& target : pending) {
             auto& root = target.content->lodRoots.at(target.entity);
@@ -1397,6 +1399,7 @@ struct WorldComposer::Impl {
 
     // An instancer's prototypes, once its content is composed: each target in order, noEntity for one not in the content.
     auto resolvePrototypes(const std::vector<PendingTarget>& pending, std::vector<std::string>& messagesOut) -> void {
+        PROFILE_ZONE_DETAIL("ResolvePrototypes", Scene);
         for (const auto& target : pending) {
             auto& data = target.content->pointInstancers.at(target.entity);
             auto found = target.outside ? target.content->byPath.end() : target.content->byPath.find(target.path);
@@ -1539,6 +1542,7 @@ struct WorldComposer::Impl {
     }
 
     auto composePrototype(int32_t id, std::shared_ptr<const Node> kept, const std::string& key, const std::string& composedPath, bool loadPayloads) -> void {
+        PROFILE_ZONE_DETAIL("ComposePrototype", Scene);
         auto& content = world.contents[(size_t) id];
         auto& info = contentInfo[(size_t) id];
         auto first = firstGenerationOf(info);
@@ -1579,6 +1583,8 @@ struct WorldComposer::Impl {
         if (linked >= 0 && !contentInfo[(size_t) linked].released) {
             return linked;
         }
+        // A level not composed yet: composed here, one zone per level.
+        PROFILE_ZONE_DETAIL("ComposeLevel", Scene);
         // The level's own window: what its index misses is the level's gap, not its root's.
         windows.emplace_back();
         auto index = childIndex(*slot.rootIndex, slot.name, slot.composedPath, loads);
@@ -1626,6 +1632,7 @@ struct WorldComposer::Impl {
     // From the stage down: every LOD root's loaded levels linked to their contents, and every content reached composed when it isn't
     // complete. What a compose draws is what this reaches.
     auto resolve() -> void {
+        PROFILE_ZONE_DETAIL("Resolve", Scene);
         reached.clear();
         std::vector<Reach> pending = {Reach{.content = &world.stage, .info = &stageInfo, .base = "/", .sharedKey = {}, .ownerPath = "/"}};
         std::unordered_set<const WorldContent*> seen;
@@ -1636,6 +1643,12 @@ struct WorldComposer::Impl {
                 continue;
             }
             reached.push_back(at.info);
+            // A content with LOD roots: its roots' loaded levels and linked contents, one zone per content (the value: its roots).
+            static const uint32_t contentSite = profile::registerSite("ResolveContent", profile::Group::Scene, profile::Level::Detail);
+            profile::ScopedZone contentZone(contentSite, !at.content->lodRoots.empty());
+            if (!at.content->lodRoots.empty()) {
+                PROFILE_ZONE_VALUE(at.content->lodRoots.size());
+            }
             for (int32_t id : at.info->prototypesUsed) {
                 auto& info = contentInfo[(size_t) id];
                 pending.push_back(Reach{.content = &world.contents[(size_t) id], .info = &info, .base = info.base, .sharedKey = info.key, .ownerPath = "/"});
@@ -1677,12 +1690,17 @@ struct WorldComposer::Impl {
 
     // Every reached content's material bindings, in it or anywhere in the World, and the messages of what was reached.
     auto finishCompose() -> void {
-        messages = stageMessages;
-        for (const auto* info : reached) {
-            if (info != &stageInfo) {
-                messages.insert(messages.end(), info->messages.begin(), info->messages.end());
+        PROFILE_ZONE_DETAIL("FinishCompose", Scene);
+        {
+            PROFILE_ZONE_DETAIL("GatherMessages", Scene);
+            messages = stageMessages;
+            for (const auto* info : reached) {
+                if (info != &stageInfo) {
+                    messages.insert(messages.end(), info->messages.begin(), info->messages.end());
+                }
             }
         }
+        PROFILE_ZONE_DETAIL("ResolveBindings", Scene);
         for (auto* info : reached) {
             for (const auto& pending : info->bindings) {
                 const WorldContent* lookIn = pending.content;
@@ -1783,6 +1801,7 @@ struct WorldComposer::Impl {
 
     // Levels wanted or kept on roots inside prototypes, for the next resolution; true when they add a level a prototype doesn't load yet.
     auto updatePrototypeLevels() -> bool {
+        PROFILE_ZONE_DETAIL("UpdatePrototypeLevels", Scene);
         bool changed = false;
         auto add = [&](const std::string& path, uint32_t level) {
             auto located = locate(path);
@@ -1808,6 +1827,7 @@ struct WorldComposer::Impl {
     // composed again if reached. What is being composed (incomplete, composed this round) and the prototypes it uses yet are held too, so
     // a level that waits for packs doesn't compose its prototypes again every round. The stage's are never kept, so never let go.
     auto releaseUnreached() -> void {
+        PROFILE_ZONE_DETAIL("ReleaseUnreached", Scene);
         std::unordered_set<const ContentInfo*> held(reached.begin(), reached.end());
         std::vector<const ContentInfo*> pending(reached.begin(), reached.end());
         for (const auto& info : contentInfo) {
@@ -1846,6 +1866,7 @@ struct WorldComposer::Impl {
     }
 
     auto composeOnce() -> void {
+        PROFILE_ZONE_DETAIL("ComposeOnce", Scene);
         generation++;
         missing.clear();
         // Stacks that missed a sublayer (or all, after a pack changed) are rebuilt in place; a root layer that wasn't held is asked for again.
@@ -1928,6 +1949,7 @@ WorldComposer::WorldComposer(std::string rootAssetId)
 WorldComposer::~WorldComposer() = default;
 
 auto WorldComposer::addPack(const std::string& assetId, std::span<const std::byte> bytes) -> std::optional<std::string> {
+    PROFILE_ZONE_DETAIL("AddLayerPack", Scene);
     auto pack = readLayerPack(bytes);
     if (!pack) {
         m_impl->failed.insert(assetId);
@@ -1950,6 +1972,7 @@ auto WorldComposer::markFailed(const std::string& assetId) -> void {
 }
 
 auto WorldComposer::compose() -> std::vector<std::string> {
+    PROFILE_ZONE("WorldCompose", Scene);
     // A level set inside a prototype is only found once the prototype is composed: resolve again while that adds levels to load.
     m_impl->stats = {};
     m_impl->composeOnce();
@@ -1962,6 +1985,7 @@ auto WorldComposer::compose() -> std::vector<std::string> {
 }
 
 auto WorldComposer::relink() -> std::vector<std::string> {
+    PROFILE_ZONE("WorldRelink", Scene);
     m_impl->stats = {};
     m_impl->missing.clear();
     m_impl->world.lodLevels = m_impl->lodLevels;

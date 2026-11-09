@@ -2,6 +2,7 @@
 
 #include "assetclient.h"
 #include "profile.h"
+#include "profileconfig.h"
 #include "projection.h"
 #include "renderconfig.h"
 #include "renderthread.h"
@@ -37,12 +38,12 @@ auto ViewFrame::updateScene() -> void {
         renderThread.reloadShaders(changed);
         scene.refresh(changed, false);
     }
-    static const uint32_t sceneUpdateZoneId = profile::registerName("SceneUpdate");
+    static const uint32_t sceneUpdateZoneId = profile::registerSite("SceneUpdate", profile::Group::Frame);
     profile::beginZone(sceneUpdateZoneId);
     bool sceneUpdated = scene.update();
     profile::endZone();
     if (sceneUpdated) {
-        PROFILE_ZONE("SceneInputs");
+        PROFILE_ZONE("SceneInputs", Frame);
         snapshotsTaken++;
         cam.worldUp = scene.worldUp();
         placeStartCamera();
@@ -56,6 +57,7 @@ auto ViewFrame::updateScene() -> void {
 }
 
 auto ViewFrame::advanceTime(uint64_t nowNs) -> void {
+    PROFILE_ZONE_DETAIL("AdvanceTime", Frame);
     // A script or an RPC call that moves the camera ends the following, as a hand on the controls does.
     if (cam.position != poseBeforeCommands || cam.yaw != yawBeforeCommands || cam.pitch != pitchBeforeCommands) {
         autoFrame = false;
@@ -76,6 +78,7 @@ auto ViewFrame::advanceTime(uint64_t nowNs) -> void {
 }
 
 auto ViewFrame::resetCameras() -> void {
+    PROFILE_ZONE_DETAIL("ResetCameras", Frame);
     cameras = {
         .view = &cam,
         .controlled = &cam,
@@ -93,6 +96,7 @@ auto ViewFrame::setViewport(int newWidth, int newHeight) -> void {
 }
 
 auto ViewFrame::sendSceneInputs() -> void {
+    PROFILE_ZONE_DETAIL("SendSceneInputs", Frame);
     // The camera for the LOD heuristic, when it moved: once it has been placed (by hand, a script, or the framing when the scene was first
     // resident), not while it follows what has arrived.
     bool cameraPlaced = residency.everResident || !autoFrame;
@@ -120,8 +124,17 @@ auto ViewFrame::sendSceneInputs() -> void {
         geometryLimitChanges = renderconfig::geometryLimitMiB.changes();
         renderThread.setGeometryLimit((uint64_t) renderconfig::geometryLimitMiB.get() * 1024 * 1024);
     }
+    // The profiler's history window and GPU detail: the collector reads them from any thread.
+    if (profileconfig::historySeconds.changes() != profileHistoryChanges) {
+        profileHistoryChanges = profileconfig::historySeconds.changes();
+        profile::setHistorySeconds(profileconfig::historySeconds.get());
+    }
+    if (profileconfig::gpuDetail.changes() != profileGpuDetailChanges) {
+        profileGpuDetailChanges = profileconfig::gpuDetail.changes();
+        profile::setGpuDetail(profileconfig::gpuDetail.get());
+    }
     // What changed in the scene since the last frame: the render thread applies it, uploads go out a budget per frame.
-    PROFILE_ZONE("TakeChanges");
+    PROFILE_ZONE("TakeChanges", Frame);
     if (auto changes = scene.takeChanges(); !changes.empty()) {
         groundMeshes.apply(changes);
         renderThread.submitSceneChanges(std::move(changes));
@@ -129,7 +142,7 @@ auto ViewFrame::sendSceneInputs() -> void {
 }
 
 auto ViewFrame::updateResidency() -> void {
-    static const uint32_t residencyZoneId = profile::registerName("Residency");
+    static const uint32_t residencyZoneId = profile::registerSite("Residency", profile::Group::Frame);
     profile::beginZone(residencyZoneId);
     bool resident = scene.idle() && renderThread.sceneDrawn();
     if (resident && !residency.resident) {
@@ -286,7 +299,7 @@ auto ViewFrame::placeStartCamera() -> void {
 }
 
 auto ViewFrame::moveCamera(const CameraMove& move, bool orbitHeld) -> void {
-    static const uint32_t cameraZoneId = profile::registerName("Camera");
+    static const uint32_t cameraZoneId = profile::registerSite("Camera", profile::Group::Frame);
     profile::beginZone(cameraZoneId);
     if (cameraModes.orbiting && !orbitHeld) {
         cameraModes.orbiting = false;
@@ -314,7 +327,7 @@ auto ViewFrame::moveCamera(const CameraMove& move, bool orbitHeld) -> void {
         cameraModes.ground.reset();
         cameraModes.groundPrim.clear();
     } else if (!cameraModes.orbiting && !flown) {
-        PROFILE_ZONE("GroundTest");
+        PROFILE_ZONE("GroundTest", Frame);
         auto start = std::chrono::steady_clock::now();
         auto up = controlled.worldUp;
         auto height = *controlled.followHeight;
@@ -343,7 +356,7 @@ auto ViewFrame::moveCamera(const CameraMove& move, bool orbitHeld) -> void {
 auto ViewFrame::cull() -> void {
     // Culling runs on the GPU: the snapshot carries the frustum to cull against (live, or frozen so the culled set can be inspected from
     // elsewhere), and the results come back a few frames later.
-    PROFILE_ZONE("Cull");
+    PROFILE_ZONE("Cull", Frame);
     cullState.enabled = renderconfig::cullingEnabled.get();
     cullState.frozen = renderconfig::cullingFrozen.get();
     cullViewProj = cullState.update(proj * cameras.cull->viewMatrix());
@@ -353,6 +366,7 @@ auto ViewFrame::cull() -> void {
 }
 
 auto ViewFrame::countLodPops() -> void {
+    PROFILE_ZONE_DETAIL("CountLodPops", Frame);
     if (latestCull.lodFrame != lodPopsFrame) {
         lodPopsFrame = latestCull.lodFrame;
         lodPops += latestCull.lodPopped;
@@ -360,9 +374,14 @@ auto ViewFrame::countLodPops() -> void {
 }
 
 auto ViewFrame::fitCascades() -> void {
-    PROFILE_ZONE("FitCascades");
-    auto bounds = sceneBounds.update(scene.renderWorld().meshInstances);
+    PROFILE_ZONE("FitCascades", Frame);
+    AABB bounds;
+    {
+        PROFILE_ZONE_DETAIL("UpdateSceneBounds", Frame);
+        bounds = sceneBounds.update(scene.renderWorld().meshInstances);
+    }
     auto lightDir = pickShadowLightDirection(scene.renderWorld().lights, cam.worldUp);
+    PROFILE_ZONE_DETAIL("FitShadowCascades", Frame);
     cascadeCount = fitShadowCascades(renderconfig::shadowSettings(), cameras.shadows->viewMatrix(), proj, projectionNear, lightDir, cam.worldUp, bounds, cascades);
     frozenCorners.reset();
     if (cullState.frozenActive) {
@@ -372,10 +391,12 @@ auto ViewFrame::fitCascades() -> void {
 }
 
 auto ViewFrame::drawCameraModes() -> void {
+    PROFILE_ZONE_DETAIL("DrawCameraModes", Frame);
     ::drawCameraModes(cameraModes, cameras.controlled->position, scene.lodMetersPerUnit(), debugDraw);
 }
 
 auto ViewFrame::readBack() -> void {
+    PROFILE_ZONE_DETAIL("ReadBack", Frame);
     picking.appendWatches(readbacks.watches);
     // Capture watches go with the snapshot when they change.
     if (readbacks.watches != sentWatches) {
@@ -389,7 +410,7 @@ auto ViewFrame::readBack() -> void {
 }
 
 auto ViewFrame::buildSnapshot() -> RenderSnapshot {
-    static const uint32_t snapshotFillZoneId = profile::registerName("SnapshotFill");
+    static const uint32_t snapshotFillZoneId = profile::registerSite("SnapshotFill", profile::Group::Frame);
     profile::beginZone(snapshotFillZoneId);
     const auto& shadowCamera = *cameras.shadows;
     RenderSnapshot snapshot = {
@@ -423,11 +444,91 @@ auto ViewFrame::buildSnapshot() -> RenderSnapshot {
     };
     profile::endZone();
     {
-        PROFILE_ZONE("TakeDebugLines");
+        PROFILE_ZONE("TakeDebugLines", Frame);
         snapshot.debugData = debugDraw.take();
     }
     if (std::exchange(watchesChanged, false)) {
         snapshot.captureWatches = sentWatches;
     }
     return snapshot;
+}
+
+auto ViewFrame::plotFrame() -> void {
+    PROFILE_ZONE_DETAIL("PlotFrame", Frame);
+    // The frame times and GPU usage (the portable GPU busy figure is plotted by the profiler as GPU frames arrive).
+    if (auto frame = profile::lastFrame()) {
+        PROFILE_PLOT("CPU frame ms", Frame, Number, (double) (frame->endNs - frame->startNs) * 1e-6);
+    }
+    if (auto driverBusy = profile::gpuDriverBusyPercent()) {
+        PROFILE_PLOT("GPU busy (driver)", Frame, Percent, *driverBusy);
+    }
+    PROFILE_PLOT("Resident memory", Frame, Bytes, profile::residentBytes());
+
+    // The renderer: the GPU scene, the uploads, the frame's commands, the memory heaps.
+    auto gpu = renderThread.latestSceneGpuStats();
+    PROFILE_PLOT("Draw slots", Render, Number, gpu.drawSlots);
+    PROFILE_PLOT("Meshes", Render, Number, gpu.meshes);
+    PROFILE_PLOT("Textures", Render, Number, gpu.textures);
+    PROFILE_PLOT("Materials", Render, Number, gpu.materials);
+    PROFILE_PLOT("Change lists waiting", Render, Number, gpu.changeListsSubmitted - gpu.changeListsDrawn);
+    bool uploaded = gpu.uploads.lastFrame != plottedUploadFrame;
+    plottedUploadFrame = gpu.uploads.lastFrame;
+    PROFILE_PLOT("Upload bytes", Upload, Bytes, uploaded ? gpu.uploads.lastBytes : 0);
+    PROFILE_PLOT("Uploads", Upload, Number, uploaded ? gpu.uploads.lastUploads : 0);
+    PROFILE_PLOT("Upload queue", Upload, Bytes, gpu.uploads.queuedBytes);
+    PROFILE_PLOT("Geometry pool vertices", Upload, Number, gpu.geometryPool.vertices.used);
+    PROFILE_PLOT("Geometry pool meshlets", Upload, Number, gpu.geometryPool.meshlets.used);
+    PROFILE_PLOT("Draws", Render, Number, gpu.frameCommands.draws);
+    PROFILE_PLOT("Dispatches", Render, Number, gpu.frameCommands.dispatches);
+    PROFILE_PLOT("Barriers", Render, Number, gpu.frameCommands.barriers);
+    PROFILE_PLOT("Pipeline binds", Render, Number, gpu.frameCommands.pipelineBinds);
+    PROFILE_PLOT("Indirect draws", Render, Number, gpu.frameCommands.indirectDraws);
+    PROFILE_PLOT("Copies", Render, Number, gpu.frameCommands.copies);
+    PROFILE_PLOT("Primitives", Render, Number, gpu.frameCommands.primitives);
+    while (heapPlots.size() < gpu.heaps.size()) {
+        auto index = heapPlots.size();
+        auto kind = gpu.heaps[index].deviceLocal ? "device" : "host";
+        heapPlots.push_back({
+            .usage = profile::registerPlot(std::format("GPU heap {} ({}) usage", index, kind).c_str(), profile::Group::Render, profile::PlotFormat::Bytes),
+            .budget = profile::registerPlot(std::format("GPU heap {} ({}) budget", index, kind).c_str(), profile::Group::Render, profile::PlotFormat::Bytes),
+            .allocated = profile::registerPlot(std::format("GPU heap {} ({}) allocated", index, kind).c_str(), profile::Group::Render, profile::PlotFormat::Bytes),
+        });
+    }
+    for (size_t i = 0; i < gpu.heaps.size(); i++) {
+        profile::plot(heapPlots[i].usage, (double) gpu.heaps[i].usage);
+        profile::plot(heapPlots[i].budget, (double) gpu.heaps[i].budget);
+        profile::plot(heapPlots[i].allocated, (double) gpu.heaps[i].allocated);
+    }
+
+    // Culling, when a readback arrived: what the camera and each cascade drew and culled.
+    if (latestCull.frame != 0 && latestCull.frame != plottedCullFrame) {
+        plottedCullFrame = latestCull.frame;
+        PROFILE_PLOT("Camera instances drawn", Culling, Number, latestCull.cameraDrawn);
+        PROFILE_PLOT("Camera instances culled", Culling, Number, latestCull.cameraCulled);
+        PROFILE_PLOT("Camera instances occluded", Culling, Number, latestCull.occluded);
+        PROFILE_PLOT("Camera meshlets tested", Culling, Number, latestCull.cameraMeshlets.tested);
+        PROFILE_PLOT("Camera meshlets frustum culled", Culling, Number, latestCull.cameraMeshlets.frustumCulled);
+        PROFILE_PLOT("Camera meshlets cone culled", Culling, Number, latestCull.cameraMeshlets.coneCulled);
+        PROFILE_PLOT("Camera meshlets occluded", Culling, Number, latestCull.cameraMeshlets.occluded);
+        PROFILE_PLOT("Camera triangles drawn", Culling, Number, latestCull.cameraTriangles);
+        constexpr std::array<const char*, maxShadowCascades> drawnNames = {"Cascade 0 instances drawn", "Cascade 1 instances drawn", "Cascade 2 instances drawn", "Cascade 3 instances drawn"};
+        constexpr std::array<const char*, maxShadowCascades> trianglesNames = {"Cascade 0 triangles drawn", "Cascade 1 triangles drawn", "Cascade 2 triangles drawn", "Cascade 3 triangles drawn"};
+        for (uint32_t c = 0; c < latestCull.cascadeCount && c < maxShadowCascades; c++) {
+            profile::plot(profile::registerPlot(drawnNames[c], profile::Group::Culling, profile::PlotFormat::Number), latestCull.cascadeDrawn[c]);
+            profile::plot(profile::registerPlot(trianglesNames[c], profile::Group::Culling, profile::PlotFormat::Number), (double) latestCull.cascadeTriangles[c]);
+        }
+    }
+
+    // The scene thread, as of its latest snapshot.
+    const auto& thread = scene.snapshot().thread;
+    PROFILE_PLOT("Scene assets in flight", Scene, Number, thread.inFlightLayers + thread.inFlightMeshes + thread.inFlightMaterials + thread.inFlightTextures + thread.inFlightOther);
+    PROFILE_PLOT("Placements drawn", Scene, Number, thread.placementsDrawn);
+    PROFILE_PLOT("Contents reached", Scene, Number, thread.contentsReached);
+    PROFILE_PLOT("LOD groups", Scene, Number, thread.lodGroups);
+
+    // The asset client: what is asked for and not answered, and the bytes received this frame.
+    auto client = assets.stats();
+    PROFILE_PLOT("Asset requests in flight", Assets, Number, client.inFlight());
+    PROFILE_PLOT("Asset bytes received", Assets, Bytes, client.bytes - std::min(client.bytes, plottedAssetBytes));
+    plottedAssetBytes = client.bytes;
 }

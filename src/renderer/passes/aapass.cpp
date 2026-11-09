@@ -74,6 +74,7 @@ auto AAPass::addPass(FrameGraph& fg, FgTextureHandle input, RhiExtent2D extent, 
         };
         return fg.addPass<AAPassData>(
             "AAPass",
+            profile::Group::Post,
             [&](FrameGraphBuilder& builder, AAPassData& data) {
                 data.sceneColor = builder.read(input, FgAccessFlags::TransferSrc);
                 data.sceneColorAA = builder.write(builder.createTexture("sceneColorAA", desc), FgAccessFlags::TransferDst);
@@ -91,6 +92,7 @@ auto AAPass::addPass(FrameGraph& fg, FgTextureHandle input, RhiExtent2D extent, 
     };
     return fg.addPass<AAPassData>(
         "AAPass",
+        profile::Group::Post,
         [&](FrameGraphBuilder& builder, AAPassData& data) {
             data.sceneColor = builder.read(input, FgAccessFlags::ShaderRead);
             data.sceneColorAA = builder.write(builder.createTexture("sceneColorAA", desc), FgAccessFlags::StorageWrite);

@@ -90,7 +90,7 @@ auto runFrameCommands(ViewContext& view, SessionScript& session, const RpcRegist
         session.takeDue(script.frame, due);
     }
     {
-        PROFILE_ZONE("Commands");
+        PROFILE_ZONE("Commands", Frame);
         for (const auto& command : due) {
             verbs.run(registry, command.verb, command.args);
         }

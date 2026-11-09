@@ -1,9 +1,11 @@
 #include "mipchain.h"
+#include "profile.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -110,7 +112,12 @@ auto downsample(uint32_t srcW, uint32_t srcH, std::span<const uint8_t> src, bool
         if (rowBegin >= rowEnd) {
             break;
         }
-        workers.emplace_back([&, rowBegin, rowEnd] { downsampleRows(srcW, srcH, src, out, rowBegin, rowEnd, srgb); });
+        workers.emplace_back([&, t, rowBegin, rowEnd] {
+            auto name = "Mip " + std::to_string(t);
+            profile::registerThread(name.c_str());
+            PROFILE_ZONE_DETAIL("DownsampleRows", Assets);
+            downsampleRows(srcW, srcH, src, out, rowBegin, rowEnd, srgb);
+        });
     }
     workers.clear(); // joins
     return out;

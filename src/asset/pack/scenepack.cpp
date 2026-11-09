@@ -1,4 +1,5 @@
 #include "scenepack.h"
+#include "profile.h"
 
 #include <bit>
 #include <cstring>
@@ -450,6 +451,7 @@ auto writeMaterialPack(const MaterialPack& pack) -> std::vector<std::byte> {
 }
 
 auto readLayerPack(std::span<const std::byte> bytes) -> std::expected<LayerPack, std::string> {
+    PROFILE_ZONE_DETAIL("ReadLayerPack", Assets);
     auto reader = openPack(bytes, ScenePackKind::Layer);
     if (!reader) {
         return std::unexpected(reader.error());
@@ -530,6 +532,7 @@ auto readLayerPack(std::span<const std::byte> bytes) -> std::expected<LayerPack,
 }
 
 auto readMeshPack(std::span<const std::byte> bytes) -> std::expected<MeshPack, std::string> {
+    PROFILE_ZONE_DETAIL("ReadMeshPack", Assets);
     auto reader = openPack(bytes, ScenePackKind::Mesh);
     if (!reader) {
         return std::unexpected(reader.error());
@@ -631,6 +634,7 @@ auto readMeshPack(std::span<const std::byte> bytes) -> std::expected<MeshPack, s
 }
 
 auto readMaterialPack(std::span<const std::byte> bytes) -> std::expected<MaterialPack, std::string> {
+    PROFILE_ZONE_DETAIL("ReadMaterialPack", Assets);
     auto reader = openPack(bytes, ScenePackKind::Material);
     if (!reader) {
         return std::unexpected(reader.error());

@@ -12,6 +12,7 @@ struct BlitPassData {
 void addBlitPass(FrameGraph& fg, const char* name, FgTextureHandle src, FgTextureHandle dst, RhiExtent2D srcExtent, RhiExtent2D dstExtent) {
     fg.addPass<BlitPassData>(
         name,
+        profile::Group::Post,
         [&](FrameGraphBuilder& builder, BlitPassData& data) {
             data.src = builder.read(src, FgAccessFlags::TransferSrc);
             data.dst = builder.write(dst, FgAccessFlags::TransferDst);

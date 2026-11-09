@@ -180,8 +180,9 @@ clear values; draws happen inside, dispatches and copies outside. Commands:
 
 - **Timestamps.** `createQueryPool`, `resetQueryPool`/`writeTimestamp` on a command buffer, `readTimestamps` after the
   fence; `limits().timestampPeriodNs` converts ticks.
-- **GPU zones.** `beginGpuZone(name)`/`endGpuZone()` nest on a command buffer; `collectGpuZones(cmd, out)` returns them
-  with depth and start/end in nanoseconds once the fence has passed. `calibrateGpuClock` samples the GPU and CPU clocks
+- **GPU zones.** `beginGpuZone(name, tag)`/`endGpuZone()` nest on a command buffer; `collectGpuZones(cmd, out)` returns them
+  with depth and start/end in nanoseconds once the fence has passed, and the `tag` each was begun with: a number for the caller (the profiler's
+  site id), which the RHI keeps and does not read. `calibrateGpuClock` samples the GPU and CPU clocks
   together so zones can be placed on the CPU timeline.
 - **Command stats.** `RhiCommandStats` counts, since `begin()`: draws, dispatches, barriers, pipeline binds, descriptor
   binds, vertex/index buffer binds, indirect draw calls, copies and estimated primitives. Indirect calls count once; their
@@ -203,7 +204,9 @@ Tools read the RHI's own view of its objects; the RHI never formats for a specif
   for the command log and descriptor contents.
 - **Allocations.** `allocations()` lists every live buffer and texture allocation (name, kind, size requested and
   allocated, memory usage, creation order); `memoryHeaps()` lists heaps with size and, where the device reports it,
-  usage and budget.
+  usage and budget. `allocationSerial()` moves whenever an allocation is added or removed, so a reader asks for
+  `allocations()` only when it changed. `limits()` carries the PCI `vendorId` and `deviceId`, which name the card to
+  the driver's own counters (sysfs).
 - **Barrier details.** `describeTransition(old, new)` for texture or buffer states returns the stage masks, access masks
   and layouts the backend records for that transition, as text, from the same functions it records barriers with.
 - **Command log.** `setCommandLog(true)` on a command buffer keeps one `RhiCommandRecord` of text per recorded command
@@ -240,7 +243,7 @@ program can check.
   warning, on a device without one). There is no suballocator.
 - **Barriers.** `pipelineBarrier` maps each state to a layout (textures), stage mask and access mask and records one
   `vkCmdPipelineBarrier2` for all texture and buffer barriers.
-- **Command buffers.** Each `RhiCommandBufferVulkan` owns a timestamp query pool for up to 128 GPU zones, reset at
+- **Command buffers.** Each `RhiCommandBufferVulkan` owns a timestamp query pool for up to 1,024 GPU zones, reset at
   `begin()`, and a pipeline statistics pool for up to 64 queries, reset on its first use in a recording. It counts
   `RhiCommandStats` as commands are recorded.
 - **Object registry.** The device keeps every live allocation (for `allocations()`) and the writes of every descriptor

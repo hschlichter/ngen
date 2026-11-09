@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <source_location>
 #include <string>
 #include <vector>
 
@@ -48,7 +49,8 @@ using RpcHandler = std::function<void(const rpc::Json& params, RpcResponder resp
 
 class RpcRegistry {
 public:
-    auto add(RpcMethodDesc desc, RpcHandler handler) -> void;
+    // `location` is the caller's: each call's profiler zone points at where the method was added.
+    auto add(RpcMethodDesc desc, RpcHandler handler, std::source_location location = std::source_location::current()) -> void;
     auto find(std::string_view name) const -> const RpcMethodDesc*;
     // Checks params against the method's schema, then runs the handler. Unknown methods fail
     // with methodNotFound, schema mismatches with invalidParams naming the field. A handler
@@ -60,6 +62,7 @@ private:
     struct Entry {
         RpcMethodDesc desc;
         RpcHandler handler;
+        uint32_t profileNameId = 0; // each call is a detail zone named after the method (group Io)
     };
     std::map<std::string, Entry, std::less<>> methods;
 };

@@ -400,6 +400,8 @@ struct RhiCommandStats {
 struct RhiDeviceLimits {
     char deviceName[128] = "";
     char driverName[64] = "";
+    uint32_t vendorId = 0; // the PCI vendor and device IDs (Vulkan's VkPhysicalDeviceProperties): which card, for the driver's own counters
+    uint32_t deviceId = 0;
     uint64_t minUniformBufferOffsetAlignment = 0;
     uint32_t maxPushConstantSize = 0;
     float maxLineWidth = 1.0f;
@@ -641,6 +643,7 @@ struct RhiGraphicsPipelineDesc {
 // and read back with RhiDevice::collectGpuZones. Nanoseconds on the GPU's own clock.
 struct RhiGpuZone {
     const char* name = "";
+    uint32_t tag = 0; // the caller's number from beginGpuZone, returned as given
     uint16_t depth = 0;
     uint64_t startNs = 0;
     uint64_t endNs = 0;

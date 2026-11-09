@@ -108,7 +108,8 @@ the task shader culls meshlets and the mesh shader emits their triangles. The se
 `FrameGraph`, `ResourcePool`, `DeletionQueue`, `GpuUploader` and the texture cache. Its entry points:
 
 - `init`: swapchain, samplers, fallback texture, every pass's pipelines, `GpuScene` and `DrawLists` (the instance buffer exists from here on), frame
-  sync, the capture service, then each extension (`addExtension`, before `init`).
+  sync, the capture service, then each extension (`addExtension(extension, name)`, before `init`; the name labels the extension's hook
+  zones in the profiler, `RenderTools.beginFrame` and so on, one detail zone per hook call).
 - `applySceneChanges`: what changed in the scene (`SceneChanges`, the render thread's `submitSceneChanges`) applied to the GPU scene piece by
   piece, its uploads queued ("Scene data on the GPU", below); `flushSceneUploads` records them all and waits, for the first frame.
 - `render`: one frame (below).
@@ -134,7 +135,8 @@ image, because present consumes it per image.
 ## The frame graph
 
 - **`FrameGraph`** holds the passes and resources of one frame. `reset()` clears it, `importTexture`/`importBuffer` add external resources,
-  `addPass<Data>(name, setup, execute)` adds a pass, `compile()` orders and culls, `execute(cmd)` records.
+  `addPass<Data>(name, group, setup, execute)` adds a pass, `compile()` orders and culls, `execute(cmd)` records. `group` is the pass's profile
+  group (`src/profile/README.md`): the colour of its CPU record zone and its GPU zone.
 - **`FrameGraphBuilder`** is what a pass's setup sees: `createTexture`, `read`/`write` for texture and buffer handles with an `FgAccessFlags` value
   (`ColorAttachment`, `DepthAttachment`, `ShaderRead`, `StorageRead`, `StorageWrite`, `TransferSrc`, `TransferDst`, `IndirectRead`, `Present`), and
   `setSideEffects`.
@@ -216,7 +218,9 @@ Tables:
   goes). A texture's levels are separate uploads.
 - **Seen from outside.** After every frame the render thread publishes `SceneGpuStats` (`RenderThread::latestSceneGpuStats`): change lists
   submitted and drawn, the tables' sizes, the upload queue (`GpuScene::uploadStats`: queued, budget, the last pass, textures waiting for their
-  slot) and the geometry pool. The budget and the pool limit are runtime settings (`RenderThread::setUploadBudget`, `setGeometryLimit`), applied
+  slot), the geometry pool, the last frame's commands summed over the passes that ran (`frameCommands`, `FrameGraph::frameStats`) and the
+  device's memory heaps (`heaps`). Then it reports the device's allocations to Tracy's "GPU" memory pool while a Tracy server is connected
+  (`Renderer::reportGpuAllocations`, `src/profile/README.md`). The budget and the pool limit are runtime settings (`RenderThread::setUploadBudget`, `setGeometryLimit`), applied
   before the next frame.
 - **One staging buffer per frame's batch**, retired through the deletion queue.
 - **Barriers.** The copies are recorded in the frame's command buffer:

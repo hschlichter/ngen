@@ -39,8 +39,10 @@ public:
     auto operator=(const RpcServer&) -> RpcServer& = delete;
     ~RpcServer();
 
-    // Handlers must be set before start().
+    // Handlers and the thread name must be set before start().
     auto setRequestHandler(RequestHandler handler) -> void;
+    // The I/O thread's name in the profiler and Tracy ("RPC I/O" unless set).
+    auto setThreadName(std::string name) -> void;
     auto setConnectionHandler(ConnectionHandler handler) -> void;
     // Called on the I/O thread after bytes were written to a connection whose queue is then at or
     // below `threshold` bytes. A sender that paces itself sends more from here.
@@ -73,6 +75,7 @@ private:
     ConnectionHandler connectionHandler;
     DrainHandler drainHandler;
     size_t drainThreshold = 0;
+    std::string threadName = "RPC I/O";
     int listenFd = -1;
     int wakeFd = -1;
     std::atomic<bool> running{false};

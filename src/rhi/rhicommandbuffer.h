@@ -43,7 +43,8 @@ public:
     // GPU timing zones, nestable. Backend owns the queries; results via RhiDevice::collectGpuZones
     // once the submit's fence has passed. `name` must outlive execution (literals do). No-ops when
     // the device has no timestamp support or the per-command-buffer zone budget is exhausted.
-    virtual auto beginGpuZone(const char* name) -> void = 0;
+    // `tag` is the caller's: the RHI keeps it with the zone and hands it back in RhiGpuZone, without reading it.
+    virtual auto beginGpuZone(const char* name, uint32_t tag = 0) -> void = 0;
     virtual auto endGpuZone() -> void = 0;
     // Pipeline statistics over the commands between begin and end; results via
     // RhiDevice::collectPipelineStats after the fence. Not nestable, and both calls sit outside

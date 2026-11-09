@@ -1,5 +1,7 @@
 #pragma once
 
+#include "profile.h"
+
 #include "framegraphresource.h"
 #include "rhitypes.h"
 
@@ -28,6 +30,7 @@ struct FgBarrierRecord {
 struct PassNode {
     const char* name = nullptr;
     uint32_t profileNameId = 0; // interned pass name for the CPU record zone
+    profile::Group profileGroup = profile::Group::Render;
     std::vector<FgResourceAccess> reads;
     std::vector<FgResourceAccess> writes;
     bool hasSideEffects = false;

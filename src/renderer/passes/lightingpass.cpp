@@ -125,6 +125,7 @@ auto LightingPass::addPass(
 
     return fg.addPass<LightingPassData>(
         "LightingPass",
+        profile::Group::Lighting,
         [&](FrameGraphBuilder& builder, LightingPassData& data) {
             data.albedo = builder.read(geomData.albedo, FgAccessFlags::ShaderRead);
             data.normal = builder.read(geomData.normal, FgAccessFlags::ShaderRead);

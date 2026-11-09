@@ -1,5 +1,7 @@
 #include "rpcframe.h"
 
+#include "profile.h"
+
 #include <cstring>
 #include <format>
 
@@ -45,6 +47,7 @@ auto RpcFrameReader::append(std::span<const std::byte> bytes) -> void {
 }
 
 auto RpcFrameReader::next(std::string& error) -> std::optional<RpcFrame> {
+    PROFILE_ZONE_DETAIL("ParseFrame", Io);
     if (failed) {
         return std::nullopt;
     }

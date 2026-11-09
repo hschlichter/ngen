@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <source_location>
 #include <span>
 #include <thread>
 #include <vector>
@@ -28,7 +29,8 @@ public:
     static auto workerCount() -> uint32_t { return (uint32_t) workers.size(); }
 
     // `name` labels the job in the profiler; must be a string literal or otherwise outlive the job.
-    static auto submit(JobFunc job, const char* name = "Job") -> JobFence;
+    // `location` is the caller's: the job's zone points at its submit.
+    static auto submit(JobFunc job, const char* name = "Job", std::source_location location = std::source_location::current()) -> JobFence;
 
     static auto wait(const JobFence& fence) -> void;
     static auto waitAll(std::span<const JobFence> fences) -> void;
