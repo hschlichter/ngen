@@ -99,6 +99,7 @@ locked; **Superseded by N** — replaced, kept as a record.
 | [82](0082_detailed_profiling.md) | 2026-11-09 | Detailed profiling: sites, history by time, profile as a foundation library | Accepted |
 | [83](0083_profile_plots_and_gpu_memory.md) | 2026-11-09 | Profile plots, GPU usage from two sources, GPU memory as a Tracy pool | Accepted |
 | [84](0084_tracy_frame_images.md) | 2026-11-09 | Frame images in Tracy only, from the render tools | Accepted |
+| [85](0085_frame_budget_overlay.md) | 2026-11-11 | A frame budget overlay from the profiler's numbers; ImGui textures uploaded under a lock | Accepted |
 
 ## By area
 
@@ -108,7 +109,7 @@ locked; **Superseded by N** — replaced, kept as a record.
 - **Scene, USD and world:** 1, 3, 4, 6, 9, 52, 53, 54, 58, 66
 - **Tools, RPC and assets:** 34, 35, 36, 37, 38, 39, 42, 43, 44, 45, 57
 - **Streaming, LOD and camera:** 49, 50, 51, 59, 60, 61, 65, 67, 69, 70, 71, 72, 73
-- **Observability, configuration and layering:** 10, 23, 24, 31, 46, 47, 48, 62, 63, 74, 75, 76, 78
+- **Observability, configuration and layering:** 10, 23, 24, 31, 46, 47, 48, 62, 63, 74, 75, 76, 78, 81, 82, 83, 84, 85
 
 ## Adding a record
 

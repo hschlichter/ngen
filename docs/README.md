@@ -144,7 +144,7 @@ Current truth for the build framework is [`../src/build/README.md`](../src/build
   - [plan_profile_detail.md](plan_profile_detail.md) — history kept by time (10 s, configurable), zone groups as colours and guide/detail levels, the instrumentation pass on CPU and GPU, every thread visible; `profile` a foundation library linked by every program, the asset server and packers profiled; round 2: zones as sites with file and line, draws named for what they draw, coverage down to the code (landed)
   - [plan_profile_counters.md](plan_profile_counters.md) — plots through the profile system: renderer stats, GPU usage, process and GPU memory, the GPU allocations as a Tracy memory pool (landed)
   - [plan_tracy_frame_images.md](plan_tracy_frame_images.md) — a small image of every frame in Tracy while connected, from a per-slot downscale and readback in rendertools (landed)
-  - [plan_pass_budget_overlay.md](plan_pass_budget_overlay.md) — a viewport overlay for content developers: the frame graph's passes by group as bars against a frame budget (in progress)
+  - [plan_pass_budget_overlay.md](plan_pass_budget_overlay.md) — a viewport overlay for content developers: the frame graph's passes by group as bars against a frame budget (landed)
 - [plan_render_debug_window.md](plan_render_debug_window.md) — Render Debug window: scene tables, per-pass draw counters, view modes, device info (landed)
 - [plan_agent_introspection.md](plan_agent_introspection.md) — screenshots, camera flags and window, scripted sessions, render debug and profile dumps (landed)
 - [plan_frustum_culling.md](plan_frustum_culling.md) — per-instance AABB frustum culling on the main thread, frozen-frustum debug overlay (landed; the CPU culling was replaced by plan_gpu_culling.md)
