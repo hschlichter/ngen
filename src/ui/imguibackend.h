@@ -24,7 +24,8 @@ struct ImGuiFrameSnapshot {
     float framebufferScaleX = 0;
     float framebufferScaleY = 0;
     std::vector<ImDrawList*> cmdLists;
-    ImVector<ImTextureData*>* textures = nullptr;
+    ImVector<ImTextureData*>* textures = nullptr; // ImGui's live texture list, shared with the main thread
+    bool texturesChanged = false;                 // a texture wanted creating, updating or destroying when the frame was built
 
     ImGuiFrameSnapshot() = default;
     ImGuiFrameSnapshot(const ImGuiFrameSnapshot&) = delete;

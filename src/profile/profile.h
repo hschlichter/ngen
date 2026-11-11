@@ -239,6 +239,20 @@ auto gpuZonesIn(uint64_t startNs, uint64_t endNs, std::vector<Zone>& out) -> voi
 // Main-thread frame intervals intersecting [startNs, endNs], oldest first.
 auto framesIn(uint64_t startNs, uint64_t endNs, std::vector<FrameInterval>& out) -> void;
 auto frameHistory(std::vector<FrameStats>& out) -> void;
+
+// The GPU's top-level zones (the frame graph's passes) over the last `frames` main-thread frames: each site's milliseconds per frame, in the
+// order they were recorded (the newest frame's, with passes that ran only in older frames after their predecessor there), with the frames' average interval and GPU frame time. The zones record's GPU lane over the same window.
+struct GpuPassTime {
+    uint32_t siteId = 0;
+    double msPerFrame = 0.0;
+};
+struct GpuPassTimes {
+    uint32_t frames = 0;
+    double frameMs = 0.0; // the main thread's frame interval
+    double gpuFrameMs = 0.0;
+    std::vector<GpuPassTime> passes;
+};
+auto gpuPassTimes(uint32_t frames, GpuPassTimes& out) -> void;
 // Statistics for every recorded zone of this site on a CPU lane, or on the GPU lane when laneIndex is UINT32_MAX.
 auto zoneStats(uint32_t laneIndex, uint32_t siteId) -> ZoneStats;
 // History as Chrome trace event JSON (Perfetto, chrome://tracing, any JSON parser).

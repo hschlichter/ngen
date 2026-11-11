@@ -4,6 +4,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include <mutex>
+
 union SDL_Event;
 struct SDL_Window;
 
@@ -27,4 +29,9 @@ private:
     VkDevice vkDevice = VK_NULL_HANDLE;
     VkDescriptorPool imguiPool = VK_NULL_HANDLE;
     bool srgbTarget = false; // imgui's sRGB colours are linearised for an sRGB target
+    // ImGui's textures (the font atlas) are built on the main thread and uploaded on the render thread. The main thread holds the lock from
+    // beginFrame to endFrame, while ImGui may add glyphs; the render thread takes it to upload a frame's texture changes, only for a frame
+    // that had some. Without it, glyphs added during an upload were marked uploaded with it and never drawn.
+    std::mutex textureMutex;
+    std::unique_lock<std::mutex> frameLock;
 };

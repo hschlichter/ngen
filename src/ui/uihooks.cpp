@@ -1,6 +1,7 @@
 #include "uihooks.h"
 
 #include "assetclient.h"
+#include "budgetoverlay.h"
 #include "imguibackendvulkan.h"
 #include "profile.h"
 #include "renderdoccapture.h"
@@ -144,6 +145,10 @@ auto UiHooks::drawUi(ViewFrame& frame) -> void {
         auto& state = tools.state();
         drawLodLabels(state.lod, viewProj, glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
         drawStreamingLabels(state.streaming, viewProj, glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
+    }
+    if (uiconfig::budgetOverlay.get()) {
+        PROFILE_ZONE("BudgetOverlay", Ui);
+        drawBudgetOverlay(frame.renderThread.latestSceneGpuStats().frameCommands);
     }
     switch (ui.takeEditRequest()) {
         case ViewEditRequest::Deselect:

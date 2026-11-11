@@ -45,6 +45,7 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::MenuItem("Show AABBs", nullptr, &state.showAABBs);
         ImGui::MenuItem("Show Selected AABB", nullptr, &state.showSelectedAABB);
         ImGui::MenuItem("Show Light Gizmos", nullptr, &state.showLightGizmos);
+        configMenuItem("Frame Budget", "Ctrl+B", "ui.overlay.budget");
         ImGui::Separator();
         ImGui::MenuItem("Depth Prepass", nullptr, &state.depthPrepass);
         ImGui::MenuItem("Show Buffer Overlay", "Ctrl+1", &state.showBufferOverlay);

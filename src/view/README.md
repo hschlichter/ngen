@@ -453,7 +453,7 @@ The window and view toggles have keys too (`ViewUI::toggleShortcuts`), each pres
 off. They go through ImGui's shortcut routing, so they work with the cursor over a window, never while typing in a field, and a focused window's own chord wins (the Assets
 window's Ctrl+A selects all there). Ctrl+P, Ctrl+C, Ctrl+S, Ctrl+L and Ctrl+A open and close the Performance, Camera, Streaming, LOD and
 Assets windows; 1 to 5 the wireframe, triangle size, overdraw, instance and streaming debug views; Ctrl+1 and Ctrl+2 the buffer and shadow
-overlays; Ctrl+3 and Ctrl+4 the mip level and LOD level views; Ctrl+5 turns every view and overlay off for the plain lit image, and pressed
+overlays; Ctrl+B the frame budget overlay (`src/profile/README.md`, "At runtime"); Ctrl+3 and Ctrl+4 the mip level and LOD level views; Ctrl+5 turns every view and overlay off for the plain lit image, and pressed
 again restores them. The menus show each key. The camera's keys are in "Camera modes" and "The debug camera" (G, C, Left Alt).
 
 A gizmo drag is the view's own opinion on the prim's local transform (`setLocalTransform`), kept until the view closes and never saved: the

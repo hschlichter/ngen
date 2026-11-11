@@ -132,10 +132,17 @@ requests in flight and bytes received. Each plotted number is also in a record (
   trace JSON (Perfetto, `chrome://tracing`), the last `seconds` (default all), guide zones only or everything (default). An event's `cat` is its
   group; its `args` hold group, level, depth, value, file and line. Zones that overlap the window are included whole, so the first ones start before it.
   Plots are counter events (`"ph": "C"`), one series per plot. The asset server answers both methods too (`ngen-cli introspect call asset introspect.profile '{"path": …}'`).
-- **Configuration**: `profile.history.seconds`, `profile.gpu.detail` (`config` record, `config` verb, Configuration window).
+- **Configuration**: `profile.history.seconds`, `profile.gpu.detail`, `profile.tracy.frameImages`, and `profile.budget.frameMs`: the frame time
+  content is measured against (default 16.7 ms, 60 frames a second) (`config` record, `config` verb, Configuration window).
 - **Window**: Performance, the main, render, worker and GPU lanes on one clock in their group colours, with frame times, zone details (with the
   site's file, line and function, and self time) and statistics. It shows the guide zones, nested among themselves; Detail shows everything.
   Under the frame times, the guide plots: GPU busy (both sources), resident memory, the device heap's usage and budget, upload bytes.
+- **Overlay**: the frame budget overlay (`src/ui/budgetoverlay.*`, View › Frame Budget, Ctrl+B, `ui.overlay.budget`), for content
+  developers: the GPU's passes summed by group in plain words (Shadows, Geometry, Lighting, Post-processing, …), each group's passes beneath,
+  as bars against `profile.budget.frameMs`, with the whole frame and the GPU frame in the header, green, yellow from 80% and red more than
+  5% over budget (a frame locked to the display's rate sits on a budget of that rate), and the frame's draws and triangles (K, M). Its
+  numbers come from `profile::gpuPassTimes(60, …)`: each top-level GPU zone's (each pass's) milliseconds per frame over the last 60 frames,
+  in the frame graph's recording order, the `zones` record's GPU lane over the same window.
 
 ## Tracy
 

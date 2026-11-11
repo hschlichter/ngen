@@ -48,7 +48,8 @@ ImGuiFrameSnapshot::ImGuiFrameSnapshot(ImGuiFrameSnapshot&& other) noexcept
     , framebufferScaleX(other.framebufferScaleX)
     , framebufferScaleY(other.framebufferScaleY)
     , cmdLists(std::move(other.cmdLists))
-    , textures(other.textures) {
+    , textures(other.textures)
+    , texturesChanged(other.texturesChanged) {
     other.valid = false;
     other.textures = nullptr;
 }
@@ -69,6 +70,7 @@ ImGuiFrameSnapshot& ImGuiFrameSnapshot::operator=(ImGuiFrameSnapshot&& other) no
         framebufferScaleY = other.framebufferScaleY;
         cmdLists = std::move(other.cmdLists);
         textures = other.textures;
+        texturesChanged = other.texturesChanged;
         other.valid = false;
         other.textures = nullptr;
     }
@@ -103,6 +105,14 @@ void ImGuiFrameSnapshot::cloneFrom(const ImDrawData* drawData, bool linearizeCol
     framebufferScaleY = drawData->FramebufferScale.y;
 
     textures = drawData->Textures;
+    texturesChanged = false;
+    if (textures != nullptr) {
+        for (const auto* tex : *textures) {
+            if (tex->Status != ImTextureStatus_OK) {
+                texturesChanged = true;
+            }
+        }
+    }
 
     cmdLists.reserve(drawData->CmdLists.Size);
     for (int i = 0; i < drawData->CmdLists.Size; i++) {
@@ -126,5 +136,6 @@ void ImGuiFrameSnapshot::fillDrawData(ImDrawData& out) const {
     out.DisplaySize = ImVec2(displaySizeX, displaySizeY);
     out.FramebufferScale = ImVec2(framebufferScaleX, framebufferScaleY);
     out.OwnerViewport = nullptr;
-    out.Textures = textures;
+    // The backend applies texture changes itself, under the atlas lock (ImGuiBackendVulkan::renderDrawData).
+    out.Textures = nullptr;
 }

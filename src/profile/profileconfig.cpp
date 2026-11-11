@@ -18,4 +18,10 @@ config::Bool tracyFrameImages{"profile.tracy.frameImages",
                               "While a Tracy server is connected, send it a 320-pixel-wide image of every presented frame, shown under that frame. A "
                               "blit and a small readback a frame; nothing without a server."};
 
+config::Float frameBudgetMs{"profile.budget.frameMs",
+                            16.667,
+                            "The frame time content is measured against, in milliseconds: 16.7 is 60 frames a second, 33.3 is 30. The frame budget "
+                            "overlay draws the passes against it.",
+                            {.min = 1.0, .max = 1000.0}};
+
 } // namespace profileconfig

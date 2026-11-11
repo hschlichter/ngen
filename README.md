@@ -70,6 +70,12 @@ selected pass's GPU time, reads and writes.*
 
 *The Performance window: the main, render and GPU lanes on one clock, frame by frame; here the geometry pass, split by bucket.*
 
+![Frame budget overlay](screenshots/engine_eldermark_budget_overlay_03.png)
+
+*The frame budget overlay (Ctrl+B), for content developers: the GPU's passes summed by group in plain words, each group's passes beneath,
+as bars against the frame budget (`profile.budget.frameMs`, 60 fps by default), with the frame's draws and triangles. Here, in the forest,
+the GPU uses all of its 16.7 ms: shadows take 6.0 ms, geometry 4.9 and culling 3.8, for 306.5K draws and 9.2M triangles.*
+
 ![Streaming window, map tab, with the debug camera watching the main camera fly](screenshots/engine_eldermark_streaming_map_01.png)
 
 *The Streaming window's map during a flight: every streaming root from above in its state's colour, finer tiles around the camera, the
@@ -284,6 +290,7 @@ running view; `src/view/README.md` has them by domain.
 | Ctrl+1, Ctrl+2 | The G-buffer and shadow overlays |
 | Ctrl+3, Ctrl+4, Ctrl+5 | The mip level and LOD level views; back to the plain lit image |
 | Ctrl+P, Ctrl+C, Ctrl+S, Ctrl+L, Ctrl+A | The Performance, Camera, Streaming, LOD and Assets windows |
+| Ctrl+B | The frame budget overlay: the GPU's passes by group against the frame budget |
 | F12 | Screenshot |
 
 Every window is under **Windows**; the overlays, purposes and camera modes under **View**.

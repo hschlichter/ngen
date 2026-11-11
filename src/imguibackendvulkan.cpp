@@ -1,4 +1,5 @@
 #include "imguibackendvulkan.h"
+#include "profile.h"
 #include "rhicommandbuffervulkan.h"
 #include "rhidevicevulkan.h"
 #include "rhiresourcesvulkan.h"
@@ -66,6 +67,7 @@ auto ImGuiBackendVulkan::processEvent(const SDL_Event* event) -> bool {
 }
 
 auto ImGuiBackendVulkan::beginFrame() -> void {
+    frameLock = std::unique_lock(textureMutex);
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
@@ -75,12 +77,22 @@ auto ImGuiBackendVulkan::endFrame() -> ImGuiFrameSnapshot {
     ImGui::Render();
     ImGuiFrameSnapshot snapshot;
     snapshot.cloneFrom(ImGui::GetDrawData(), srgbTarget);
+    frameLock.unlock();
     return snapshot;
 }
 
 auto ImGuiBackendVulkan::renderDrawData(RhiCommandBuffer* cmd, ImGuiFrameSnapshot& snapshot) -> void {
     if (!snapshot.valid) {
         return;
+    }
+    if (snapshot.texturesChanged && snapshot.textures != nullptr) {
+        PROFILE_ZONE("ImGuiTextureUpload", Ui);
+        std::lock_guard lock(textureMutex);
+        for (auto* tex : *snapshot.textures) {
+            if (tex->Status != ImTextureStatus_OK) {
+                ImGui_ImplVulkan_UpdateTexture(tex);
+            }
+        }
     }
     ImDrawData drawData;
     snapshot.fillDrawData(drawData);

@@ -956,6 +956,69 @@ auto frameHistory(std::vector<FrameStats>& out) -> void {
     out.assign(g_frames.begin(), g_frames.end());
 }
 
+auto gpuPassTimes(uint32_t frames, GpuPassTimes& out) -> void {
+    out.frames = 0;
+    out.frameMs = 0.0;
+    out.gpuFrameMs = 0.0;
+    out.passes.clear();
+    uint64_t startNs = 0;
+    uint64_t endNs = 0;
+    {
+        std::lock_guard lock(g_frameMutex);
+        auto count = std::min<size_t>(frames, g_intervals.size());
+        if (count == 0) {
+            return;
+        }
+        startNs = g_intervals[g_intervals.size() - count].startNs;
+        endNs = g_intervals.back().endNs;
+        out.frames = (uint32_t) count;
+        out.frameMs = (double) (endNs - startNs) * 1e-6 / (double) count;
+        // A frame's GPU time is 0 until a GPU frame is known.
+        double gpuSum = 0.0;
+        uint32_t gpuCount = 0;
+        for (size_t i = g_frames.size() - std::min(count, g_frames.size()); i < g_frames.size(); i++) {
+            if (g_frames[i].gpuMs > 0.0) {
+                gpuSum += g_frames[i].gpuMs;
+                gpuCount++;
+            }
+        }
+        out.gpuFrameMs = gpuCount > 0 ? gpuSum / gpuCount : 0.0;
+    }
+    // The order is the frames' recording order, the frame graph's, not their timestamps: zero-length passes tie, and timing moves. The newest
+    // frame gives the order; a pass that ran only in an older frame goes right after the pass recorded before it there.
+    thread_local std::unordered_map<uint32_t, uint64_t> totalNs;
+    thread_local std::vector<uint32_t> order;
+    totalNs.clear();
+    order.clear();
+    {
+        // Newest GPU frame first, stopping at the window's start: the history holds seconds of frames, the window a few dozen.
+        std::lock_guard lock(g_gpuMutex);
+        for (auto frame = g_gpuFrames.rbegin(); frame != g_gpuFrames.rend(); ++frame) {
+            if (frame->newestEndNs < startNs) {
+                break;
+            }
+            auto previous = order.end();
+            bool hasPrevious = false;
+            for (const auto& zone : frame->zones) {
+                if (zone.depth != 0 || zone.endNs < startNs || zone.startNs > endNs) {
+                    continue;
+                }
+                totalNs[zone.siteId] += zone.endNs - zone.startNs;
+                auto found = std::ranges::find(order, zone.siteId);
+                if (found == order.end()) {
+                    auto at = hasPrevious ? previous + 1 : order.begin();
+                    found = order.insert(at, zone.siteId);
+                }
+                previous = found;
+                hasPrevious = true;
+            }
+        }
+    }
+    for (auto siteId : order) {
+        out.passes.push_back({.siteId = siteId, .msPerFrame = (double) totalNs[siteId] * 1e-6 / (double) out.frames});
+    }
+}
+
 } // namespace profile
 
 namespace profile {

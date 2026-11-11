@@ -34,6 +34,11 @@ auto ViewUI::toggleShortcuts() -> void {
             debugCamera->set(!debugCamera->get());
         }
     }
+    if (pressed(ImGuiMod_Ctrl | ImGuiKey_B)) {
+        if (auto* budgetOverlay = configBool("ui.overlay.budget")) {
+            budgetOverlay->set(!budgetOverlay->get());
+        }
+    }
     std::array<std::pair<ImGuiKey, DebugView>, 5> debugViews = {{
         {ImGuiKey_1, DebugView::Wireframe},
         {ImGuiKey_2, DebugView::TriangleSize},

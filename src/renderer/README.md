@@ -579,7 +579,10 @@ points of `Renderer::render`, in the order added; each hook does nothing unless 
   inspector's. The UI's ImGui backend implements it; without one, none are made.
 - **The three in ngen-view**, added in this order: `RenderTools` (`src/rendertools`: debug snapshots, the frame debugger, counters, the texture
   inspector and dumps, screenshots, which leave the UI out unless `--show-ui`), `GizmoRender` (`src/tools`: the gizmos' lines, made on the main thread
-  with the axis gizmo, which is hit-tested there too) and `UiRender` (`src/ui`: the ImGui backend set up, ImGui drawn last).
+  with the axis gizmo, which is hit-tested there too) and `UiRender` (`src/ui`: the ImGui backend set up, ImGui drawn last). ImGui's
+  textures (the font atlas, which gains glyphs as new text is drawn) are built on the main thread and uploaded on the render thread: the
+  backend holds a lock while the main thread builds the UI, and the render thread takes it to upload a frame's texture changes, only for a
+  frame that had some (`ImGuiFrameSnapshot::texturesChanged`).
 
 ## Debugging and introspection
 
