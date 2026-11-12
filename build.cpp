@@ -177,7 +177,8 @@ auto main(int argc, char** argv) -> int {
             .public_include({"src/session"});
 
     // src/rhi is header-only: the backend-agnostic interface. Consumers add the
-    // include path directly; only backends are libraries.
+    // include path directly; only backends are libraries. A backend links profile for
+    // its CPU zones around the driver's allocation calls.
     auto rhivulkan =
         cxx::static_library("rhivulkan")
             .sources(glob({.include = "src/rhi/vulkan/**/*.cpp"}))
@@ -188,6 +189,7 @@ auto main(int argc, char** argv) -> int {
             .include({
                 "src",
             })
+            .link(profile)
             .only_on({"linux-vulkan"});
 
     auto rhi_backend = alias("rhi-backend").select("platform", "linux-vulkan", rhivulkan.owner());
@@ -595,6 +597,10 @@ auto main(int argc, char** argv) -> int {
                 "external/stb", // screenshot PNG writer; the one third-party header examples may use
             })
             .link(rhi_backend)
+            // The backend's zones around the driver's allocation calls.
+            .link(profile)
+            .link(tracy)
+            .link(config)
             .link("shaderc_shared")
             .link_flags(sdl3_libs);
     };

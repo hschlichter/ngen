@@ -240,6 +240,9 @@ auto readU32At(std::span<const std::byte> bytes, size_t offset) -> uint32_t {
 }
 
 auto openPack(std::span<const std::byte> bytes, ScenePackKind expected) -> std::expected<PackReader, std::string> {
+    // The header and the string table; the value: the pack's bytes.
+    PROFILE_ZONE_DETAIL("OpenPack", Assets);
+    PROFILE_ZONE_VALUE(bytes.size());
     auto kind = scenePackKind(bytes);
     if (!kind) {
         return std::unexpected(kind.error());
@@ -466,8 +469,10 @@ auto readLayerPack(std::span<const std::byte> bytes) -> std::expected<LayerPack,
     SectionReader sublayers(reader->section(Section::LayerSublayers), reader->strings);
     pack.sublayers = sublayers.strings();
 
+    PROFILE_ZONE_DETAIL("ReadLayerPrims", Assets);
     SectionReader prims(reader->section(Section::LayerPrims), reader->strings);
     auto primCount = prims.count64(8);
+    PROFILE_ZONE_VALUE(primCount);
     pack.prims.reserve(primCount);
     for (uint64_t i = 0; i < primCount && prims.ok(); i++) {
         PackPrim prim;

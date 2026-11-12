@@ -41,7 +41,13 @@ auto RenderThread::submitSnapshot(RenderSnapshot snapshot) -> void {
 }
 
 auto RenderThread::submitSceneChanges(SceneChanges changes) -> void {
-    std::lock_guard lock(uploadMutex);
+    PROFILE_ZONE_DETAIL("SubmitSceneChanges", Frame);
+    // The render thread holds the lock while it applies the changes before these.
+    std::unique_lock lock(uploadMutex, std::defer_lock);
+    {
+        PROFILE_ZONE_DETAIL("WaitSceneChangesApplied", Wait);
+        lock.lock();
+    }
     submitted.fetch_add(1, std::memory_order_acq_rel);
     if (pendingChanges) {
         pendingChanges->append(std::move(changes));

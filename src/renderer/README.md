@@ -211,7 +211,8 @@ Tables:
   - **Uploads.** Only the changed records go up: packed in the slot's staging buffer (grown up to 4 MiB; a larger upload, as a tile switch's or
     after the buffer grew, takes a staging buffer of its own for its frame), and copied by the `InstanceUpload` pass in one copy with a region per
     run of consecutive slots (`RhiCommandBuffer::copyBufferRegions`). The `gpuscene` record has the last upload's records and regions. The buffer
-    grows by recreation.
+    grows by recreation, to twice its slots, and every record is uploaded again: `InstanceBufferGrown` in the trace, and the
+    `PackInstanceRecords` zone's value the records packed.
 
 **Uploads** (`GpuScene::addUploadPass`, the `SceneUpload` pass, before the culling passes):
 - **Per frame.** Each frame takes queued uploads in order, up to `uploadBudget` bytes (64 MiB; at least one upload, so a large texture level still

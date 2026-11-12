@@ -650,8 +650,11 @@ auto GpuScene::record(RhiCommandBuffer* cmd, uint64_t budget, const Retire& reti
     std::byte* mapped = nullptr;
     if (stagingBytes > 0) {
         PROFILE_ZONE("UploadStaging", Upload);
+        PROFILE_ZONE_VALUE(stagingBytes);
         batch = device->createBuffer({.size = stagingBytes, .usage = RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "gpuscene.upload.staging"});
         mapped = static_cast<std::byte*>(device->mapBuffer(batch));
+        PROFILE_ZONE_DETAIL("ZeroGrownTables", Upload);
+        PROFILE_ZONE_VALUE(zeroBytes);
         std::memset(mapped + takenBytes, 0, zeroBytes);
     }
 
@@ -714,6 +717,7 @@ auto GpuScene::record(RhiCommandBuffer* cmd, uint64_t budget, const Retire& reti
     {
         // The uploads' bytes packed into the batch (CPU) and their copies (GPU, with profile.gpu.detail).
         PROFILE_ZONE_DETAIL("UploadCopies", Upload);
+        PROFILE_ZONE_VALUE(takenBytes);
         PROFILE_GPU_ZONE_DETAIL(cmd, "UploadCopies", Upload);
         for (size_t i = 0; i < taken; i++) {
             const auto& upload = queue[i];
@@ -876,6 +880,7 @@ auto GpuScene::ensureInstanceCapacity(uint32_t count, uint32_t liveCount, uint64
     if (instances != nullptr && count <= instanceCapacity) {
         return;
     }
+    bool grown = instances != nullptr;
     // Frames in flight may still read the old buffer.
     deletionQueue->deferBuffer(frame, instances);
 
@@ -895,6 +900,12 @@ auto GpuScene::ensureInstanceCapacity(uint32_t count, uint32_t liveCount, uint64
     generation++;
     allDirty = liveCount > 0;
     dirtySlots.clear();
+    if (grown) {
+        TRACE_EVENT("Render", "InstanceBufferGrown", "gpuscene.instances")
+            .text(std::format("instance buffer grown to {} slots for {}; every instance is uploaded again", instanceCapacity, count))
+            .field("capacity", (int64_t) instanceCapacity)
+            .field("instances", (int64_t) count);
+    }
 }
 
 auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstance> sceneInstances, uint32_t frameSlot) -> FgBufferHandle {

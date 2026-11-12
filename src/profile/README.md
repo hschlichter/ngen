@@ -2,7 +2,7 @@
 
 Where the time goes, on every thread and on the GPU: markers that bracket a piece of work, a built-in collector that keeps the last seconds of
 them in memory, and Tracy as a second sink for whole sessions. The library (`profile`) is standard library only apart from Tracy's client and
-`config`, and is a foundation library like `trace`: `rpccore`, `trace` and `packer` link it, so every program does — ngen-view, the asset server,
+`config`, and is a foundation library like `trace`: `rpccore`, `trace`, `packer` and the RHI backend link it, so every program does — ngen-view, the asset server,
 the packers and the tools.
 
 The built-in collector is the source of every profile number the engine shows or answers with: the Performance window, the `profile` and
@@ -49,6 +49,10 @@ one root's LOD evaluation) or a library or driver call (`vkQueueSubmit`, freeing
 Some zones come by themselves, from a name the engine already has: each frame-graph pass (a CPU record zone and a GPU zone, in the group
 `addPass` gives it), each RPC method call (`RpcRegistry::invoke`, group Io), each render extension hook (`RenderTools.beginFrame`, …), each job
 (the name given to `JobSystem::submit`), each pack task in the asset server (the rule's name).
+The RHI backend's driver calls that can be slow have zones of their own (`RhiCreateBuffer`, `RhiCreateTexture`, `vkAllocateMemory`,
+`vkMapMemory`, `RhiDestroyBuffer`, `RhiDestroyTexture`; `src/rhi/README.md`), so a zone that grows a buffer is covered down to the driver.
+A thread that blocks on a lock another thread holds while it works has a Wait zone for the wait (`WaitSceneChangesApplied`: the main thread
+handing the render thread scene changes while it still applies the ones before), so a frame's time reads as waiting, not working.
 
 ## The built-in collector
 

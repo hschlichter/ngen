@@ -3,6 +3,7 @@
 #include "deletionqueue.h"
 #include "framegraph.h"
 #include "framegraphcontext.h"
+#include "profile.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 
@@ -118,6 +119,8 @@ auto LodGroups::apply(std::span<const std::pair<uint32_t, RenderLodGroup>> chang
     groups.resize(count);
     serials.resize(count, 0);
     bool replaced = ensureCapacity(count, frame);
+    PROFILE_ZONE_DETAIL("CopyLodGroups", Render);
+    PROFILE_ZONE_VALUE(changes.size());
     for (const auto& [slot, group] : changes) {
         if (slot >= count) {
             continue;

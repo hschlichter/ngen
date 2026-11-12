@@ -383,19 +383,29 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
             gpuScene.addMesh(handle, mesh);
         }
     }
-    for (const auto& [handle, material] : changes.materialsChanged) {
-        gpuScene.setMaterial(handle, material);
+    {
+        PROFILE_ZONE("SetMaterials", Render);
+        PROFILE_ZONE_VALUE(changes.materialsChanged.size());
+        for (const auto& [handle, material] : changes.materialsChanged) {
+            gpuScene.setMaterial(handle, material);
+        }
     }
     static const uint32_t copyZoneId = profile::registerSite("CopyInstances", profile::Group::Render);
     profile::beginZone(copyZoneId);
-    // Slots past the new count leave the bucket counts with them (the slot list doesn't shrink today).
+    // Slots past the new count leave the bucket counts with them (the slot list doesn't shrink today); the list is resized to the count.
+    static const uint32_t resizeSlotsZoneId = profile::registerSite("ResizeSlots", profile::Group::Render, profile::Level::Detail);
+    profile::beginZone(resizeSlotsZoneId);
     for (size_t slot = changes.slotCount; slot < gpuInstances.size(); slot++) {
         drawLists.countInstance(gpuInstances[slot], -1);
         sceneTriangles -= gpuInstances[slot].indexCount / 3;
     }
     gpuInstances.resize(changes.slotCount);
+    profile::endZone();
     std::vector<uint32_t> changedSlots;
     changedSlots.reserve(changes.instances.size());
+    static const uint32_t copyChangedZoneId = profile::registerSite("CopyChangedSlots", profile::Group::Render, profile::Level::Detail);
+    profile::beginZone(copyChangedZoneId);
+    profile::zoneValue(changes.instances.size());
     for (const auto& [slot, inst] : changes.instances) {
         if (slot >= gpuInstances.size()) {
             continue;
@@ -424,7 +434,11 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
         sceneTriangles += gpuInstances[slot].indexCount / 3;
         changedSlots.push_back(slot);
     }
-    drawLists.updateGroupBounds(gpuInstances, changedSlots);
+    profile::endZone();
+    {
+        PROFILE_ZONE_DETAIL("UpdateGroupBounds", Render);
+        drawLists.updateGroupBounds(gpuInstances, changedSlots);
+    }
     profile::endZone();
     if (changes.lightsChanged) {
         lights = changes.lights;
@@ -627,8 +641,14 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
     geometryDescriptorSets.clear();
 
     // The culling passes name the same instance buffer and mesh table, plus the draw-list and render-LOD buffers.
-    instanceCullPass.rebuildDescriptors(device, drawLists, gpuScene, lodGroups, depthPyramid, deletionQueue, m_frameIndex);
-    lodSelectPass.rebuildDescriptors(device, lodGroups, deletionQueue, m_frameIndex);
+    {
+        PROFILE_ZONE_DETAIL("CullDescriptors", Render);
+        instanceCullPass.rebuildDescriptors(device, drawLists, gpuScene, lodGroups, depthPyramid, deletionQueue, m_frameIndex);
+    }
+    {
+        PROFILE_ZONE_DETAIL("LodSelectDescriptors", Render);
+        lodSelectPass.rebuildDescriptors(device, lodGroups, deletionQueue, m_frameIndex);
+    }
 
     // Tables come from applySceneChanges, the pool's buffers with the first mesh; nothing to point at before them.
     if (gpuInstances.empty() || gpuScene.materialBuffer() == nullptr || !gpuScene.poolReady()) {
@@ -637,6 +657,7 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
 
     // One set per frame slot: the slot's UBO and culling buffers plus the scene
     // tables and the geometry pool. Every texture-array element is written: the slot's texture or the fallback.
+    PROFILE_ZONE_DETAIL("GeometryDescriptors", Render);
     auto imgCount = swapchain->imageCount();
     auto bindings = GeometryPass::descriptorBindings();
     geometryDescriptorPool = device->createDescriptorPool(imgCount, bindings);

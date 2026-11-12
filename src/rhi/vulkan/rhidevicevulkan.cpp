@@ -1,5 +1,7 @@
 #include "rhidevicevulkan.h"
 
+#include "profile.h"
+
 #include <vulkan/vk_enum_string_helper.h>
 
 #include <algorithm>
@@ -707,6 +709,8 @@ auto RhiDeviceVulkan::createSwapchain(RhiExtent2D extent) -> RhiSwapchain* {
 }
 
 auto RhiDeviceVulkan::createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* {
+    PROFILE_ZONE_DETAIL("RhiCreateBuffer", Render);
+    PROFILE_ZONE_VALUE(desc.size);
     VkBufferCreateInfo bufferInfo = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = desc.size,
@@ -742,7 +746,10 @@ auto RhiDeviceVulkan::createBuffer(const RhiBufferDesc& desc) -> RhiBuffer* {
         .allocationSize = memReqs.size,
         .memoryTypeIndex = memTypeIndex,
     };
-    result = vkAllocateMemory(device, &allocInfo, nullptr, &buf->memory);
+    {
+        PROFILE_ZONE_DETAIL("vkAllocateMemory", Render);
+        result = vkAllocateMemory(device, &allocInfo, nullptr, &buf->memory);
+    }
     if (result != VK_SUCCESS) {
         report(RhiMessageSeverity::Error, std::format("vkAllocateMemory failed: {}({})", string_VkResult(result), (int) result));
         vkDestroyBuffer(device, buf->buffer, nullptr);
@@ -862,6 +869,7 @@ auto RhiDeviceVulkan::supportsTextureFormat(RhiFormat format, RhiTextureUsageFla
 }
 
 auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {
+    PROFILE_ZONE_DETAIL("RhiCreateTexture", Render);
     auto* tex = new RhiTextureVulkan();
     tex->aspect = formatAspect(desc.format);
     tex->mipLevels = desc.mipLevels;
@@ -901,7 +909,11 @@ auto RhiDeviceVulkan::createTexture(const RhiTextureDesc& desc) -> RhiTexture* {
         .allocationSize = memReqs.size,
         .memoryTypeIndex = memTypeIndex,
     };
-    vkAllocateMemory(device, &allocInfo, nullptr, &tex->memory);
+    {
+        PROFILE_ZONE_DETAIL("vkAllocateMemory", Render);
+        PROFILE_ZONE_VALUE(memReqs.size);
+        vkAllocateMemory(device, &allocInfo, nullptr, &tex->memory);
+    }
     vkBindImageMemory(device, tex->image, tex->memory, 0);
 
     VkImageViewCreateInfo viewInfo = {
@@ -1692,6 +1704,7 @@ auto RhiDeviceVulkan::present(RhiSwapchain* swapchain, RhiSemaphore* waitSemapho
 }
 
 auto RhiDeviceVulkan::mapBuffer(RhiBuffer* buffer) -> void* {
+    PROFILE_ZONE_DETAIL("vkMapMemory", Render);
     auto* buf = static_cast<RhiBufferVulkan*>(buffer);
     void* data = nullptr;
     vkMapMemory(device, buf->memory, 0, VK_WHOLE_SIZE, 0, &data);
@@ -1704,6 +1717,7 @@ auto RhiDeviceVulkan::unmapBuffer(RhiBuffer* buffer) -> void {
 }
 
 auto RhiDeviceVulkan::destroyBuffer(RhiBuffer* buffer) -> void {
+    PROFILE_ZONE_DETAIL("RhiDestroyBuffer", Render);
     unregisterAllocation(buffer);
     auto* b = static_cast<RhiBufferVulkan*>(buffer);
     vkDestroyBuffer(device, b->buffer, nullptr);
@@ -1712,6 +1726,7 @@ auto RhiDeviceVulkan::destroyBuffer(RhiBuffer* buffer) -> void {
 }
 
 auto RhiDeviceVulkan::destroyTexture(RhiTexture* texture) -> void {
+    PROFILE_ZONE_DETAIL("RhiDestroyTexture", Render);
     unregisterAllocation(texture);
     auto* t = static_cast<RhiTextureVulkan*>(texture);
     for (auto* mipView : t->mipViews) {

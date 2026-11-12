@@ -201,7 +201,12 @@ auto ViewScene::idle() const -> bool {
 }
 
 auto ViewScene::takeChanges() -> SceneChanges {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex, std::defer_lock);
+    {
+        PROFILE_ZONE_DETAIL("WaitSceneLock", Wait);
+        lock.lock();
+    }
+    PROFILE_ZONE_DETAIL("TakeSceneChanges", Frame);
     auto changes = std::move(pending);
     pending = {};
     pending.slotCount = changes.slotCount;
@@ -1307,6 +1312,7 @@ auto ViewScene::publish() -> void {
         }
         ids.insert(failedAssets.begin(), failedAssets.end());
         assetIdList = std::make_shared<std::vector<std::string>>(ids.begin(), ids.end());
+        PROFILE_ZONE_VALUE(ids.size());
     }
     snapshot->assetIds = assetIdList;
     if (composer) {

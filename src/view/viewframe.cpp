@@ -136,7 +136,10 @@ auto ViewFrame::sendSceneInputs() -> void {
     // What changed in the scene since the last frame: the render thread applies it, uploads go out a budget per frame.
     PROFILE_ZONE("TakeChanges", Frame);
     if (auto changes = scene.takeChanges(); !changes.empty()) {
-        groundMeshes.apply(changes);
+        {
+            PROFILE_ZONE_DETAIL("GroundMeshes", Frame);
+            groundMeshes.apply(changes);
+        }
         renderThread.submitSceneChanges(std::move(changes));
     }
 }
@@ -465,7 +468,11 @@ auto ViewFrame::plotFrame() -> void {
     PROFILE_PLOT("Resident memory", Frame, Bytes, profile::residentBytes());
 
     // The renderer: the GPU scene, the uploads, the frame's commands, the memory heaps.
-    auto gpu = renderThread.latestSceneGpuStats();
+    SceneGpuStats gpu;
+    {
+        PROFILE_ZONE_DETAIL("LatestSceneGpuStats", Frame);
+        gpu = renderThread.latestSceneGpuStats();
+    }
     PROFILE_PLOT("Draw slots", Render, Number, gpu.drawSlots);
     PROFILE_PLOT("Meshes", Render, Number, gpu.meshes);
     PROFILE_PLOT("Textures", Render, Number, gpu.textures);

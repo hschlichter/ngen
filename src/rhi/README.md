@@ -241,6 +241,11 @@ program can check.
 - **Memory.** One `vkAllocateMemory` per buffer and texture, device-local for `GpuOnly` and textures, host-visible and
   coherent for `CpuToGpu`, host-visible, coherent and cached for `GpuToCpu` (falling back to `CpuToGpu`'s type, with a
   warning, on a device without one). There is no suballocator.
+- **CPU zones.** The backend links `profile` (`src/profile/README.md`, the foundation library every ngen program links) for detail zones
+  around what the driver can make slow: `RhiCreateBuffer` (value: the bytes asked for) and `RhiCreateTexture`, each with a `vkAllocateMemory`
+  zone inside (a texture's value: the bytes allocated), `vkMapMemory`, `RhiDestroyBuffer` and `RhiDestroyTexture`. They sit inside the caller's
+  zone, so growing a buffer shows the driver's allocation under the zone that grew it. The interface headers stay free of it; a program
+  that links the backend links `profile`, `tracy` and `config` too.
 - **Barriers.** `pipelineBarrier` maps each state to a layout (textures), stage mask and access mask and records one
   `vkCmdPipelineBarrier2` for all texture and buffer barriers.
 - **Command buffers.** Each `RhiCommandBufferVulkan` owns a timestamp query pool for up to 1,024 GPU zones, reset at
