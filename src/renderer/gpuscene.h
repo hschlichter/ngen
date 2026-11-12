@@ -3,6 +3,7 @@
 #include "framegraphresource.h"
 #include "material.h"
 #include "mesh.h"
+#include "renderworld.h"
 #include "rhitypes.h"
 #include "scenehandles.h"
 #include "scenetypes.h"
@@ -269,9 +270,9 @@ public:
 
     // The instance buffer: a record per draw slot. updateInstances grows it to `slotCount` and marks the changed slots for upload; a grown
     // buffer is a new one (instanceGeneration() changes) and every slot is uploaded.
-    auto updateInstances(std::span<const GpuInstance> instances, std::span<const uint32_t> changedSlots, uint64_t frame) -> void;
+    auto updateInstances(const ChunkedList<GpuInstance>& instances, std::span<const uint32_t> changedSlots, uint64_t frame) -> void;
     // Imports the instance buffer and, if anything is dirty, adds the InstanceUpload pass. Returns the handle the draw passes read.
-    auto addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstance> instances, uint32_t frameSlot) -> FgBufferHandle;
+    auto addInstanceUploadPasses(FrameGraph& fg, const ChunkedList<GpuInstance>& instances, uint32_t frameSlot) -> FgBufferHandle;
     // Stores the access the instance buffer is left in for the next frame's import.
     auto afterExecute(const FrameGraph& fg) -> void;
     auto instanceBuffer() const -> RhiBuffer* { return instances; }
@@ -407,8 +408,13 @@ private:
     std::vector<uint64_t> stagingBytes;
     uint32_t instanceCapacity = 0;
     uint32_t generation = 0;
-    // The slots changed since the last upload (unsorted, maybe repeated), or every live slot after the buffer was replaced. They wait for
-    // a frame that uploads them.
+    // The buffer a growth replaced, until the next instance upload copies its contents into the new one on the GPU (the InstanceMove pass):
+    // its slots' draw records and culling records (the latter to the new cullRecordsOffset), with the access it was left in.
+    RhiBuffer* instanceMoveFrom = nullptr;
+    uint32_t instanceMoveSlots = 0;
+    FgAccessFlags instanceMoveAccess = FgAccessFlags::None;
+    // The slots changed since the last upload (unsorted, maybe repeated), or every live slot when the buffer holds nothing to keep (its first
+    // contents). They wait for a frame that uploads them.
     std::vector<uint32_t> dirtySlots;
     bool allDirty = false;
     uint32_t lastInstanceUploads = 0; // records and copy regions of the last instance upload

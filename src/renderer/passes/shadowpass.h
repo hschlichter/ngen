@@ -34,7 +34,7 @@ public:
         RhiExtent2D atlasExtent,
         RhiFormat depthFormat,
         std::span<const ShadowCascade> cascades,
-        std::span<const GpuInstance> instances,
+        const ChunkedList<GpuInstance>& instances,
         FgBufferHandle instanceBuffer,
         const DrawLists& lists,
         DrawLists::Handles drawHandles,

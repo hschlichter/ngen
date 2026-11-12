@@ -138,6 +138,8 @@ a decision they cover.
   registry, endpoint). Protocol and how to add a method in `src/rpc/README.md`.
 - `src/introspect/` — `ngen-introspect`, the tool that shows every running process's records and trace, and calls their methods: a window
   (SDL renderer and Dear ImGui) and a command line. Records and the tool in `src/introspect/README.md`.
+- `src/jobs/` — the job system: workers running frame jobs (waited for, `parallelFor`) and background jobs (polled, never waited for on the
+  main or render thread). Rules in `src/jobs/README.md`.
 - `src/trace/` — the trace: structured events (`TRACE_EVENT`) in an always-on ring per process, streamed over RPC. Conventions in
   `src/trace/README.md`.
 - `src/view/` — ngen-view's runtime (the `view` library: `viewscene.*`, the World composed from packs and flattened into the renderer's inputs;

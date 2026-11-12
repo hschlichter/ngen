@@ -68,6 +68,27 @@ public:
         chunks.clear();
         count = 0;
     }
+    // Grown with default elements, or cut from the end; growing adds chunks and moves none of the elements already in it.
+    auto resize(size_t newCount) -> void {
+        if (newCount < count) {
+            chunks.resize((newCount + chunkSize - 1) / chunkSize);
+            if (newCount % chunkSize != 0) {
+                own(chunks.size() - 1)->resize(newCount % chunkSize);
+            }
+            count = newCount;
+            return;
+        }
+        while (count < newCount) {
+            if (count % chunkSize == 0) {
+                chunks.push_back(std::make_shared<std::vector<T>>());
+                chunks.back()->reserve(chunkSize);
+            }
+            auto fill = std::min(chunkSize - (count % chunkSize), newCount - count);
+            auto* last = own(chunks.size() - 1);
+            last->resize(last->size() + fill);
+            count += fill;
+        }
+    }
     // Each chunk as a contiguous span, in order.
     auto chunkCount() const -> size_t { return chunks.size(); }
     auto chunk(size_t index) const -> std::span<const T> { return *chunks[index]; }

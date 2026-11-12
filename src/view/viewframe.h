@@ -164,6 +164,8 @@ public:
     uint32_t cascadeCount = 0;
     std::optional<std::array<glm::vec3, 8>> frozenCorners; // the frozen frustum, drawn out to the shadow distance
 
+    // Everything drawn, as of the last cascade fit: the cascades are fitted to it and the renderer is handed it.
+    AABB sceneWorldBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
     // The scene's bounds by chunk of draws, for the cascades and the ground test, read again only for the chunks that changed.
     SceneBoundsCache sceneBounds;
     DebugDraw debugDraw;

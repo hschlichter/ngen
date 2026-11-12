@@ -55,8 +55,8 @@ struct RendererState {
     RhiFormat swapchainFormat = RhiFormat::Undefined;
     uint32_t swapchainImages = 0;
     const GpuScene* gpuScene = nullptr;
-    std::span<const GpuInstance> instances; // by draw slot
-    uint32_t culledInstances = 0;           // by the camera, from the latest readback the last frame used
+    const ChunkedList<GpuInstance>* instances = nullptr; // by draw slot
+    uint32_t culledInstances = 0;                        // by the camera, from the latest readback the last frame used
     uint32_t lightCount = 0;
     bool hasSun = false; // the lighting's pick in the last frame
     LightingInputs sun;
@@ -149,10 +149,9 @@ private:
     std::vector<void*> uniformBuffersMapped;
 
     // Scene GPU resources
-    std::vector<GpuInstance> gpuInstances; // by draw slot
+    ChunkedList<GpuInstance> gpuInstances; // by draw slot; chunks, so growing moves none
     uint64_t sceneTriangles = 0;           // every draw slot's triangles, culled or not: kept as the slots change, not summed each frame
     bool descriptorSetsDirty = false;      // a buffer they name was replaced; rewritten at the next frame
-    AABB sceneBounds;                      // union of instance world bounds, refreshed with gpuInstances
     uint32_t debugCulledInstances = 0;     // from the last snapshot, for the debug window
     RhiSampler* materialSampler = nullptr;
     RhiSampler* shadowSampler = nullptr; // compare sampler for the cascade atlas

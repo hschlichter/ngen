@@ -51,8 +51,8 @@ Some zones come by themselves, from a name the engine already has: each frame-gr
 (the name given to `JobSystem::submit`), each pack task in the asset server (the rule's name).
 The RHI backend's driver calls that can be slow have zones of their own (`RhiCreateBuffer`, `RhiCreateTexture`, `vkAllocateMemory`,
 `vkMapMemory`, `RhiDestroyBuffer`, `RhiDestroyTexture`; `src/rhi/README.md`), so a zone that grows a buffer is covered down to the driver.
-A thread that blocks on a lock another thread holds while it works has a Wait zone for the wait (`WaitSceneChangesApplied`: the main thread
-handing the render thread scene changes while it still applies the ones before), so a frame's time reads as waiting, not working.
+A thread that blocks on a lock another thread may hold has a Wait zone for the wait (`WaitSceneChangesLock`: the main thread handing the
+render thread scene changes), so a frame's time reads as waiting, not working.
 
 ## The built-in collector
 

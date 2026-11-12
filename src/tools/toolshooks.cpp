@@ -158,11 +158,7 @@ auto ToolsHooks::debugDraw(ViewFrame& frame) -> void {
         }
     }
     const auto& selectedPath = frame.selectedPath;
-    if (selectedPath != selectedBoundsPath || &frame.scene.snapshot() != selectedBoundsSnapshot) {
-        selectedBoundsPath = selectedPath;
-        selectedBoundsSnapshot = &frame.scene.snapshot();
-        selectedBounds = selectedPath.empty() ? AABB{} : frame.scene.bounds(selectedPath);
-    }
+    const auto& boundsOfSelection = selectionBounds(frame);
     PROFILE_ZONE("DrawDebug", Tools);
     auto& draw = frame.debugDraw;
     auto up = frame.cam.worldUp;
@@ -174,7 +170,7 @@ auto ToolsHooks::debugDraw(ViewFrame& frame) -> void {
                  overlayVisible,
                  frame.frozenCorners,
                  std::span<const ShadowCascade>(frame.cascades.data(), frame.cascadeCount),
-                 selectedPath.empty() ? nullptr : &selectedBounds);
+                 selectedPath.empty() ? nullptr : &boundsOfSelection);
     drawLodGizmos(tools.lod, draw, up, lodWindowArea(glm::radians(cameraFovDegrees), frame.viewAspect));
     drawStreamingOverlays(tools.streaming, draw, up);
     if (toolsconfig::debugCamera.get()) {
@@ -401,9 +397,19 @@ auto ToolsHooks::fillSnapshot(ViewFrame& frame, RenderSnapshot& snapshot) -> voi
     snapshot.setExtension(gizmos.index(), std::move(gizmoFrame));
 }
 
-auto ToolsHooks::gizmoAnchor(const ViewFrame& frame, const ViewScene::PrimTransform& transform) const -> glm::vec3 {
+auto ToolsHooks::selectionBounds(const ViewFrame& frame) -> const AABB& {
+    if (frame.selectedPath != selectedBoundsPath || &frame.scene.snapshot() != selectedBoundsSnapshot) {
+        PROFILE_ZONE("SelectionBounds", Tools);
+        selectedBoundsPath = frame.selectedPath;
+        selectedBoundsSnapshot = &frame.scene.snapshot();
+        selectedBounds = frame.selectedPath.empty() ? AABB{} : frame.scene.bounds(frame.selectedPath);
+    }
+    return selectedBounds;
+}
+
+auto ToolsHooks::gizmoAnchor(const ViewFrame& frame, const ViewScene::PrimTransform& transform) -> glm::vec3 {
     auto anchor = glm::vec3(transform.world[3]);
-    auto bb = frame.scene.bounds(frame.selectedPath);
+    const auto& bb = selectionBounds(frame);
     if (bb.valid() && !bb.contains(anchor)) {
         anchor = (bb.min + bb.max) * 0.5f;
     }

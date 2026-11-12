@@ -93,11 +93,12 @@ the task shader culls meshlets and the mesh shader emits their triangles. The se
 
 - **`RenderSnapshot`** (main to render, every frame): view and projection, world up, window size, view mode and overlay toggles, AA and depth
   prepass switches, material sampler settings, the culling frustum (`cullViewProj`, live or frozen) and `cullEnabled`, shadow settings and the fitted
-  cascades, debug line data, the capture watches when they changed, and each extension's data for the frame (`extensions`: the render tools'
+  cascades and the scene's bounds they were fitted to, debug line data, the capture watches when they changed, and each extension's data for the frame (`extensions`: the render tools'
   requests, the gizmos' lines, the cloned ImGui draw data). One slot with back-pressure: the main thread blocks if the render thread has not taken
   the previous snapshot.
 - **`SceneChanges`** (main to render, on scene changes): what changed, with the added meshes' and textures' data shared, applied at the start of the
-  next render frame. Lists submitted between two frames are appended and applied together, in order.
+  next render frame. Lists submitted between two frames are appended and applied together, in order. The render thread holds the lock only
+  to take them, so the main thread submits the next list while it applies.
 - **Back to the main thread**, non-blocking: `CullResult` (latest-only, every new readback), the capture results, and what the extensions hand
   back on their own (the render tools' snapshots, counters and screenshots).
 - **Settings** go to the `RenderThread` under a lock, applied before the next frame: the upload budget, the geometry limit, shaders to reload.
@@ -208,11 +209,13 @@ Tables:
   - **Slots.** A draw keeps its slot while it exists. A removed one is dead (mesh index past the table, so culling never draws it) until a new draw
     takes it.
   - **Reading it.** The task and mesh shaders read it at the slot their draw command names.
-  - **Uploads.** Only the changed records go up: packed in the slot's staging buffer (grown up to 4 MiB; a larger upload, as a tile switch's or
-    after the buffer grew, takes a staging buffer of its own for its frame), and copied by the `InstanceUpload` pass in one copy with a region per
-    run of consecutive slots (`RhiCommandBuffer::copyBufferRegions`). The `gpuscene` record has the last upload's records and regions. The buffer
-    grows by recreation, to twice its slots, and every record is uploaded again: `InstanceBufferGrown` in the trace, and the
-    `PackInstanceRecords` zone's value the records packed.
+  - **Uploads.** Only the changed records go up: packed in the slot's staging buffer (grown up to 4 MiB; a larger upload, as a tile switch's,
+    takes a staging buffer of its own for its frame), and copied by the `InstanceUpload` pass in one copy with a region per
+    run of consecutive slots (`RhiCommandBuffer::copyBufferRegions`). The `gpuscene` record has the last upload's records and regions.
+  - **Growth.** The buffer grows by recreation, to twice its slots. What the old one holds is copied into the new one on the GPU by the
+    `InstanceMove` pass before the next upload (the culling records move to the new culling offset), and only the slots changed since are
+    packed: `InstanceBufferGrown` in the trace, with the slots copied. Only a buffer with nothing to keep yet (its first contents) has every
+    live slot uploaded.
 
 **Uploads** (`GpuScene::addUploadPass`, the `SceneUpload` pass, before the culling passes):
 - **Per frame.** Each frame takes queued uploads in order, up to `uploadBudget` bytes (64 MiB; at least one upload, so a large texture level still
@@ -234,7 +237,8 @@ Tables:
 - **Descriptor sets.** When the texture slots change or a table or buffer is replaced, the descriptor sets naming them are rewritten at the next frame
   (`Renderer::rebuildGeometryDescriptorSets`, which also rebuilds the culling sets; the old sets are retired).
 
-`GpuInstance` is the CPU mirror the renderer keeps (`Renderer::gpuInstances`), by draw slot.
+`GpuInstance` is the CPU mirror the renderer keeps (`Renderer::gpuInstances`), by draw slot, in a `ChunkedList` (chunks of 4,096 that never
+move), so a growing slot count adds chunks and copies none.
 
 ## Culling and draw lists
 
@@ -466,6 +470,7 @@ so early depth testing holds for everything else. The debug views discard in `de
 | Pass | What it does |
 |---|---|
 | `SceneUpload` | `GpuScene`'s queued uploads (geometry pool, tables, textures), within the upload budget; records its own barriers ("Scene data on the GPU"). Added only when uploads are queued. |
+| `InstanceUploadPass` (`InstanceMove`) | After the instance buffer grew: copies the buffer it replaced into it, the draw records to the start and the culling records to the new culling offset. Added only in the frame after a growth, before `InstanceUpload`. |
 | `InstanceUploadPass` (`InstanceUpload`) | Copies the changed instance and culling records from the slot's staging buffer into the instance buffer. Added only when something changed. |
 | `LodSelectPass` | `LodSelect` and `LodSelectSum`, the render-LOD pick above; left out when there are no groups. `LodGroups` adds `LodGroupUpload` when groups changed and `LodReadback`. |
 | `InstanceCullPass` | `InstanceCull`, `InstanceCullScan`, `InstanceCullLayout`, `InstanceCullScatter` ("Culling and draw lists"): every view's regions, draw records and meshlet work items; the cull pass also drops the slots of render-LOD levels not drawn and marks levels not resident. With occlusion, the second phase after the pyramid: `InstanceCullOcclusion`, `InstanceCullLateScan`, `InstanceCullLateLayout`, `InstanceCullLateScatter` (view 5). `CullHistoryClear` zeroes a new history buffer. |

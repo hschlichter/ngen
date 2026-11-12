@@ -66,7 +66,7 @@ auto DrawLists::countInstance(const GpuInstance& instance, int delta) -> void {
     }
 }
 
-auto DrawLists::updateGroupBounds(std::span<const GpuInstance> instances, std::span<const uint32_t> changedSlots) -> void {
+auto DrawLists::updateGroupBounds(const ChunkedList<GpuInstance>& instances, std::span<const uint32_t> changedSlots) -> void {
     auto groups = groupCountFor((uint32_t) instances.size());
     std::vector<uint8_t> dirty(groups, 0);
     // A change in the slot count moves which slots the last groups hold.
@@ -436,7 +436,7 @@ auto DrawLists::commandCount() const -> uint32_t {
     return total;
 }
 
-auto DrawLists::report(FrameGraphContext& ctx, uint32_t region, std::span<const GpuInstance> instances) const -> void {
+auto DrawLists::report(FrameGraphContext& ctx, uint32_t region, const ChunkedList<GpuInstance>& instances) const -> void {
     // Every region draws each instance's submesh.
     for (const auto& command : latest.commands[region]) {
         auto m = command.instance;

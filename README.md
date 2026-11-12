@@ -106,6 +106,8 @@ Each library documents its design and rules in a README next to the code:
 - [`src/trace/README.md`](src/trace/README.md) — the trace: `TRACE_EVENT`, the always-on ring per process, streaming events over RPC, conventions.
 - [`src/profile/README.md`](src/profile/README.md) — profiling: the markers, the built-in collector and GPU lane behind the Performance window, and
   Tracy as a second sink.
+- [`src/jobs/README.md`](src/jobs/README.md) — the job system: the workers, frame jobs (waited for, parallel loops) and background jobs
+  (polled), who may wait for what.
 - [`src/config/README.md`](src/config/README.md) — configuration: the engine's settings as typed values declared in code, their names, threads,
   changes, and how they are read and set at runtime.
 - [`src/rpc/README.md`](src/rpc/README.md) — how ngen processes and agents talk: JSON-RPC over loopback TCP, discovery, threading, adding a method, records.
@@ -129,7 +131,8 @@ is in [`docs/adr/`](docs/adr/README.md).
   and the changes for the renderer. Nothing waits for it.
 - **Render thread**: takes one snapshot a frame (the main thread is at most one frame ahead), applies the scene's changes within an upload
   budget, builds and records the frame graph, submits and presents.
-- **Workers** (`JobSystem`) for parallel work; the asset client receives on its own thread.
+- **Workers** (`JobSystem`, [`src/jobs/README.md`](src/jobs/README.md)): frame jobs the main and render threads split work into and wait
+  for, and background jobs nothing waits for; the asset client receives on its own thread.
 
 ## Dependencies
 

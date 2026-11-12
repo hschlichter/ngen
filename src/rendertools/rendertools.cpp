@@ -295,7 +295,7 @@ auto RenderTools::buildRenderDebugSnapshot(const Renderer& renderer) const -> Re
     snap.culledInstances = state.culledInstances;
     std::unordered_map<uint32_t, uint32_t> instancesPerMesh;
     uint32_t live = 0;
-    for (const auto& inst : state.instances) {
+    for (const auto& inst : *state.instances) {
         if (!inst.alive) {
             continue;
         }

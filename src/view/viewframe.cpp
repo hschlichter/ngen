@@ -378,14 +378,13 @@ auto ViewFrame::countLodPops() -> void {
 
 auto ViewFrame::fitCascades() -> void {
     PROFILE_ZONE("FitCascades", Frame);
-    AABB bounds;
     {
         PROFILE_ZONE_DETAIL("UpdateSceneBounds", Frame);
-        bounds = sceneBounds.update(scene.renderWorld().meshInstances);
+        sceneWorldBounds = sceneBounds.update(scene.renderWorld().meshInstances);
     }
     auto lightDir = pickShadowLightDirection(scene.renderWorld().lights, cam.worldUp);
     PROFILE_ZONE_DETAIL("FitShadowCascades", Frame);
-    cascadeCount = fitShadowCascades(renderconfig::shadowSettings(), cameras.shadows->viewMatrix(), proj, projectionNear, lightDir, cam.worldUp, bounds, cascades);
+    cascadeCount = fitShadowCascades(renderconfig::shadowSettings(), cameras.shadows->viewMatrix(), proj, projectionNear, lightDir, cam.worldUp, sceneWorldBounds, cascades);
     frozenCorners.reset();
     if (cullState.frozenActive) {
         // The frozen frustum has no far plane: drawn out to the shadow distance.
@@ -444,6 +443,7 @@ auto ViewFrame::buildSnapshot() -> RenderSnapshot {
         .cascadeCount = cascadeCount,
         .cascades = cascades,
         .cascadeCamera = &shadowCamera != cameras.view ? std::optional<std::pair<glm::vec3, glm::vec3>>({shadowCamera.position, shadowCamera.forward()}) : std::nullopt,
+        .sceneBounds = sceneWorldBounds,
     };
     profile::endZone();
     {

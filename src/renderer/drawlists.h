@@ -221,7 +221,7 @@ public:
     auto countInstance(const GpuInstance& instance, int delta) -> void;
     // Recomputes the boxes of the culling workgroups holding the changed slots (and of every group past a change in the slot count); the
     // next writeParams copies them to the frame slot's buffer.
-    auto updateGroupBounds(std::span<const GpuInstance> instances, std::span<const uint32_t> changedSlots) -> void;
+    auto updateGroupBounds(const ChunkedList<GpuInstance>& instances, std::span<const uint32_t> changedSlots) -> void;
     // The draw records the buffer must hold for the instances counted: their buckets' sizes, once per view.
     auto commandsNeeded() const -> uint64_t;
     // Every live instance's meshlets, as counted.
@@ -341,7 +341,7 @@ public:
 
     // For a pass that just issued `region` indirectly: folds the region's draws and primitives
     // from the latest readback into the pass stats and logs its read-back commands.
-    auto report(FrameGraphContext& ctx, uint32_t region, std::span<const GpuInstance> instances) const -> void;
+    auto report(FrameGraphContext& ctx, uint32_t region, const ChunkedList<GpuInstance>& instances) const -> void;
 
 private:
     struct Slot {

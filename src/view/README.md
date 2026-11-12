@@ -27,7 +27,7 @@ the shadow cascades and the snapshot. `src/apps/view.cpp`'s loop calls its steps
 | `updateResidency`, `answerResidentWaiters` (`viewcommands`) | resident or not, `SceneResident`; the methods waiting for it answered | |
 | input (`view.cpp`) | SDL's events, each to the hooks first (`event`: ImGui, F12, the gizmos, C), then to the view's controls (`look`, `wheel`, `startOrbit`, `pick`, Z, R, F, G) | |
 | `moveCamera` | the keys as a camera move; orbiting; following the ground | |
-| `cull`, `serviceRenderLodRequests` (`viewcommands`), `countLodPops`, `fitCascades` | culling's frustum and latest readback, the render-LOD records it answers, the shadow cascades | `afterCamera`: the debug camera's trail, the LOD rows' live state, the Culling window's numbers |
+| `cull`, `serviceRenderLodRequests` (`viewcommands`), `countLodPops`, `fitCascades` | culling's frustum and latest readback, the render-LOD records it answers, the shadow cascades and the scene's bounds they are fitted to (`SceneBoundsCache`, handed to the renderer in the snapshot) | `afterCamera`: the debug camera's trail, the LOD rows' live state, the Culling window's numbers |
 | `drawCameraModes` | the camera modes' lines, after the hooks' | `debugDraw` (before it): the overlays and the tools' layers |
 | `renderTools.startFrame` (`rendertools`) | what the render tools handed back since the last frame into `results()`, and a new `request()` (`src/rendertools/README.md`) | `wantReadbacks`: the windows' capture watches and render-tools requests |
 | `dumps.wantReadbacks` (`viewcommands`) | the dumps' capture watches and render-tools requests | |
@@ -189,6 +189,10 @@ do its draws: only where it is placed.
   camera's up is the scene's up axis. A prim's transform for the queries (`transform`, selection, the gizmo) is found in the published tree
   (`findTransform`): the deepest drawn placement at or above the path that holds it, the prim's transform in its walk, placed. A gizmo's
   move is the view's local opinion of the prim; the placements holding it are built again in the same batch, and what is under it moves.
+  A path's bounds (`bounds`: the selection's box and gizmo, framing, go-to) walk the published tree down to the path, not every draw:
+  each placement's whole bounds are kept from one snapshot to the next (`PlacementBounds`), since a node once published is never changed in
+  place, so while the camera moves only the placements a snapshot replaced are walked again. On Eldermark with `/World/Regions` selected:
+  10 ms for the first walk, under 0.2 ms for each snapshot after.
 - **Cameras**: every `Camera` prim reached while drawing, by full path with its world transform (`cameras()`). The Camera window lists them
   and moves the view to one on a click; `--camera=/path`, the `camera-use` verb and `view.camera.use` do the same, and `view.camera.list`
   lists them with their poses. The view takes a camera's position and the direction it looks (its local -Z); roll, focal length and

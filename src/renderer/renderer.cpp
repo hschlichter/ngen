@@ -412,7 +412,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
         }
         drawLists.countInstance(gpuInstances[slot], -1);
         sceneTriangles -= gpuInstances[slot].indexCount / 3;
-        gpuInstances[slot] = {
+        gpuInstances.edit(slot) = {
             .mesh = inst.mesh,
             .material = inst.material,
             .prim = inst.prim,
@@ -446,18 +446,6 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
     if (changes.environmentChanged) {
         environment = changes.environment;
     }
-
-    static const uint32_t boundsZoneId = profile::registerSite("SceneBounds", profile::Group::Render);
-    profile::beginZone(boundsZoneId);
-    sceneBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
-    for (const auto& inst : gpuInstances) {
-        if (inst.alive && inst.worldBounds.valid()) {
-            sceneBounds.min = glm::min(sceneBounds.min, inst.worldBounds.min);
-            sceneBounds.max = glm::max(sceneBounds.max, inst.worldBounds.max);
-        }
-    }
-
-    profile::endZone();
 
     // A grown instance buffer or grown draw lists are new buffers: the descriptor sets naming them are rewritten at the next frame.
     {
@@ -1015,7 +1003,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         if (snapshot.cascadeCount == 0) {
             ShadowCascadeSettings single = snapshot.shadowSettings;
             single.count = 1;
-            auto count = fitShadowCascades(single, snapshot.viewMatrix, snapshot.projMatrix, projectionNear, lighting.direction, snapshot.worldUp, sceneBounds, fallbackCascades);
+            auto count = fitShadowCascades(single, snapshot.viewMatrix, snapshot.projMatrix, projectionNear, lighting.direction, snapshot.worldUp, snapshot.sceneBounds, fallbackCascades);
             cascades = std::span<const ShadowCascade>(fallbackCascades.data(), count);
         }
         auto atlasExtent = shadowAtlasExtent(snapshot.shadowSettings);
@@ -1096,6 +1084,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         profile::beginZone(addLightingPassesSite);
         // The depth preview's far end: the camera has no far plane, so the farthest corner of the scene.
         float previewFar = projectionNear * 10.0f;
+        const auto& sceneBounds = snapshot.sceneBounds;
         if (sceneBounds.valid()) {
             auto eye = glm::vec3(glm::inverse(snapshot.viewMatrix)[3]);
             for (int i = 0; i < 8; i++) {
@@ -1268,7 +1257,7 @@ auto Renderer::state() const -> RendererState {
         .swapchainFormat = swapchain->colorFormat(),
         .swapchainImages = swapchain->imageCount(),
         .gpuScene = &gpuScene,
-        .instances = gpuInstances,
+        .instances = &gpuInstances,
         .culledInstances = debugCulledInstances,
         .lightCount = (uint32_t) lights.size(),
         .hasSun = debugHasSun,

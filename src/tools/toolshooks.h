@@ -39,7 +39,9 @@ private:
     // The Streaming window's requests carried out, and what it shows refreshed: the chart, the cameras, the flight, the inspector.
     auto syncStreamingTool(ViewFrame& frame) -> void;
     // Where the gizmo of the selection sits: its pivot, or its bounds' centre when the pivot lies outside what it draws.
-    auto gizmoAnchor(const ViewFrame& frame, const ViewScene::PrimTransform& transform) const -> glm::vec3;
+    auto gizmoAnchor(const ViewFrame& frame, const ViewScene::PrimTransform& transform) -> glm::vec3;
+    // The selection's bounds, walked again only when the selection or the scene snapshot changes: bounds() walks every draw.
+    auto selectionBounds(const ViewFrame& frame) -> const AABB&;
 
     ToolsState& tools;
     const GizmoRender& gizmos;

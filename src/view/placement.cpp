@@ -38,6 +38,102 @@ auto placedContentKind(const Placement& node) -> Placement::Kind {
 
 } // namespace
 
+namespace {
+
+auto emptyBounds() -> AABB {
+    return AABB{.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
+}
+
+auto grow(AABB& out, const AABB& bounds) -> void {
+    if (!bounds.valid()) {
+        return;
+    }
+    out.min = glm::min(out.min, bounds.min);
+    out.max = glm::max(out.max, bounds.max);
+}
+
+} // namespace
+
+auto PlacementBounds::under(const std::shared_ptr<const Placement>& tree, const RenderWorld& drawn, const ChunkedList<std::string>& primPaths, const std::string& path) -> AABB {
+    PROFILE_ZONE("PlacementBounds", Scene);
+    auto out = emptyBounds();
+    if (tree) {
+        part(tree, drawn, primPaths, path, out);
+    }
+    letGo();
+    return out;
+}
+
+auto PlacementBounds::whole(const std::shared_ptr<const Placement>& node, const RenderWorld& drawn) -> AABB {
+    auto it = kept.find(node.get());
+    if (it != kept.end() && !it->second.node.expired()) {
+        return it->second.bounds;
+    }
+    auto out = emptyBounds();
+    // Not drawn: nor is anything in it, and it owns no slots.
+    if (node->drawn) {
+        for (auto slot : node->slots) {
+            const auto& instance = drawn.meshInstances[slot];
+            if (instance.alive) {
+                grow(out, instance.worldBounds);
+            }
+        }
+        for (const auto& child : node->children) {
+            grow(out, whole(child, drawn));
+        }
+        for (const auto& root : node->roots) {
+            for (const auto& level : root.levels) {
+                if (level) {
+                    grow(out, whole(level, drawn));
+                }
+            }
+        }
+    }
+    kept.insert_or_assign(node.get(), Kept{.node = node, .bounds = out});
+    return out;
+}
+
+auto PlacementBounds::part(const std::shared_ptr<const Placement>& node, const RenderWorld& drawn, const ChunkedList<std::string>& primPaths, const std::string& path, AABB& out) -> void {
+    if (!node->drawn) {
+        return;
+    }
+    if (primpath::isAtOrUnder(node->path, path)) {
+        grow(out, whole(node, drawn));
+        return;
+    }
+    if (!primpath::isAtOrUnder(path, node->path)) {
+        return;
+    }
+    // The path is a prim in this content: its own draws there, by their prims' paths, and what is placed at or above it.
+    for (auto slot : node->slots) {
+        const auto& instance = drawn.meshInstances[slot];
+        if (!instance.alive || instance.prim == 0 || instance.prim > primPaths.size()) {
+            continue;
+        }
+        if (primpath::isAtOrUnder(primPaths[instance.prim - 1], path)) {
+            grow(out, instance.worldBounds);
+        }
+    }
+    for (const auto& child : node->children) {
+        part(child, drawn, primPaths, path, out);
+    }
+    for (const auto& root : node->roots) {
+        for (const auto& level : root.levels) {
+            if (level) {
+                part(level, drawn, primPaths, path, out);
+            }
+        }
+    }
+}
+
+auto PlacementBounds::letGo() -> void {
+    if (kept.size() < (keptAfterLetGo * 2) + 1024) {
+        return;
+    }
+    std::erase_if(kept, [](const auto& entry) { return entry.second.node.expired(); });
+    keptAfterLetGo = kept.size();
+}
+
 auto findTransform(const Placement& tree, const std::string& path) -> std::optional<EntityTransform> {
     // The deepest drawn placement at or above the path that holds it: a prim is in the content placed nearest above it. A PointInstancer's
     // points aren't looked into: the instancer prim itself is in the content holding it.

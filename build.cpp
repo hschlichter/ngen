@@ -146,6 +146,14 @@ auto main(int argc, char** argv) -> int {
             .link(rpccore)
             .link(profile);
 
+    // The job system (src/jobs/README.md): workers that run frame jobs (waited for, parallel loops) and background jobs (polled, large
+    // allocations). Standard library and profile only.
+    auto jobs =
+        cxx::static_library("jobs")
+            .sources({"src/jobs/jobsystem.cpp"})
+            .public_include({"src/jobs"})
+            .link(profile);
+
     // The profiler's records and dump (src/profile/README.md) for any process with an RPC endpoint: ngen-view and the asset server.
     auto profileRpc =
         cxx::static_library("profilerpc")
@@ -240,6 +248,7 @@ auto main(int argc, char** argv) -> int {
             })
             .link(traceLib)
             .link(profile)
+            .link(jobs)
             .link(config)
             .link(assetClient)
             .link(packer)
@@ -290,6 +299,7 @@ auto main(int argc, char** argv) -> int {
             .link(packer)
             .link(config)
             .link(traceLib)
+            .link(jobs)
             .link(profile);
 
     // The view's commands (src/view/README.md): every engine method, script verb and record, by domain, and the dumps that answer frames later.
@@ -324,6 +334,7 @@ auto main(int argc, char** argv) -> int {
             .link(config)
             .link(traceLib)
             .link(profileRpc)
+            .link(jobs)
             .link(profile);
 
     // The tools (src/tools/README.md): the LOD and Streaming tools and the debug camera, their data built from the view's scene. No UI.
@@ -515,7 +526,6 @@ auto main(int argc, char** argv) -> int {
         cxx::program("ngen-view")
             .sources({
                 "src/apps/view.cpp",
-                "src/jobsystem.cpp",
                 "src/imguibackendvulkan.cpp",
                 "src/renderdoccapture.cpp",
             })
@@ -543,6 +553,7 @@ auto main(int argc, char** argv) -> int {
             .link(traceLib)
             .link(profileRpc)
             .link(profile)
+            .link(jobs)
             .link(tracy)
             .link(config)
             .link(session)

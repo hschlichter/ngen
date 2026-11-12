@@ -868,7 +868,7 @@ auto GpuScene::meshRange(uint32_t meshIndex) const -> const GpuMeshRange* {
     return &it->second;
 }
 
-auto GpuScene::updateInstances(std::span<const GpuInstance> sceneInstances, std::span<const uint32_t> changedSlots, uint64_t frame) -> void {
+auto GpuScene::updateInstances(const ChunkedList<GpuInstance>& sceneInstances, std::span<const uint32_t> changedSlots, uint64_t frame) -> void {
     auto count = (uint32_t) sceneInstances.size();
     ensureInstanceCapacity(count, count, frame);
     if (!allDirty) {
@@ -880,9 +880,18 @@ auto GpuScene::ensureInstanceCapacity(uint32_t count, uint32_t liveCount, uint64
     if (instances != nullptr && count <= instanceCapacity) {
         return;
     }
-    bool grown = instances != nullptr;
-    // Frames in flight may still read the old buffer.
-    deletionQueue->deferBuffer(frame, instances);
+    // What the old buffer holds is kept: copied into the new one on the GPU before the next upload, with the slots changed since still dirty.
+    // A buffer with nothing to keep yet (made at init, or replaced before its first full upload) goes, and every live slot is uploaded.
+    bool keep = instances != nullptr && !allDirty;
+    if (keep && instanceMoveFrom == nullptr) {
+        instanceMoveFrom = instances;
+        instanceMoveSlots = instanceCapacity;
+        instanceMoveAccess = instanceAccess;
+    } else {
+        // Frames in flight may still read the old buffer. Grown twice before an upload: the first replacement was never written, and the
+        // move still comes from the buffer before it.
+        deletionQueue->deferBuffer(frame, instances);
+    }
 
     // A multiple of 256 slots, so the culling records after the draw records start on a 32 KiB boundary: bound at that offset, they meet
     // any device's storage buffer offset alignment (at most 256 bytes).
@@ -895,20 +904,23 @@ auto GpuScene::ensureInstanceCapacity(uint32_t count, uint32_t liveCount, uint64
         .memory = RhiMemoryUsage::GpuOnly,
         .debugName = "gpuscene.instances",
     });
-    // New contents: no earlier access to sync with, and every instance needs uploading.
+    // A new buffer: no earlier access to sync with.
     instanceAccess = FgAccessFlags::None;
     generation++;
-    allDirty = liveCount > 0;
-    dirtySlots.clear();
-    if (grown) {
+    if (!keep) {
+        allDirty = liveCount > 0;
+        dirtySlots.clear();
+    }
+    if (keep) {
         TRACE_EVENT("Render", "InstanceBufferGrown", "gpuscene.instances")
-            .text(std::format("instance buffer grown to {} slots for {}; every instance is uploaded again", instanceCapacity, count))
+            .text(std::format("instance buffer grown to {} slots for {}; the {} slots before are copied on the GPU", instanceCapacity, count, instanceMoveSlots))
             .field("capacity", (int64_t) instanceCapacity)
-            .field("instances", (int64_t) count);
+            .field("instances", (int64_t) count)
+            .field("copied", (int64_t) instanceMoveSlots);
     }
 }
 
-auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstance> sceneInstances, uint32_t frameSlot) -> FgBufferHandle {
+auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, const ChunkedList<GpuInstance>& sceneInstances, uint32_t frameSlot) -> FgBufferHandle {
     // Imported with the access the previous frame left it in, so this frame's upload waits for last frame's reads.
     FgBufferDesc desc = {
         .size = instanceBufferBytes(),
@@ -917,6 +929,20 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
     instanceImport = fg.importBuffer("instances", instances, desc, instanceAccess);
     instanceImported = true;
     auto handle = instanceImport;
+    if (instanceMoveFrom != nullptr) {
+        // The buffer a growth replaced: its draw records to the start, its culling records to the new culling offset, before any upload.
+        auto oldDrawBytes = (uint64_t) instanceMoveSlots * sizeof(GpuInstanceRecord);
+        auto oldCullBytes = (uint64_t) instanceMoveSlots * sizeof(GpuCullRecord);
+        auto from = fg.importBuffer("instancesBefore", instanceMoveFrom, {.size = oldDrawBytes + oldCullBytes, .usage = RhiBufferUsage::TransferSrc}, instanceMoveAccess);
+        std::vector<RhiBufferCopy> moves = {
+            {.srcOffset = 0, .dstOffset = 0, .size = oldDrawBytes},
+            {.srcOffset = oldDrawBytes, .dstOffset = cullRecordsOffset(), .size = oldCullBytes},
+        };
+        handle = addInstanceUploadPass(fg, from, handle, std::move(moves), "InstanceMove");
+        deletionQueue->deferBuffer(currentFrame, instanceMoveFrom);
+        instanceMoveFrom = nullptr;
+        instanceMoveSlots = 0;
+    }
     // The slots to upload, in order, each once.
     std::vector<uint32_t> upload;
     auto count = (uint32_t) sceneInstances.size();
@@ -985,10 +1011,12 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
         if (inst.cutout) {
             flags |= gpuInstanceCutout;
         }
+        // Built here and written once: the staging buffer is CpuToGpu memory, not CPU-cached, so reading it back is slow.
+        GpuInstanceRecord record;
         if (!inst.alive) {
-            dst[i] = {.model = glm::mat4(1.0f), .mesh = deadMesh};
+            record = {.model = glm::mat4(1.0f), .mesh = deadMesh};
         } else {
-            dst[i] = {
+            record = {
                 .model = inst.transform,
                 .material = materialEntry(inst.material),
                 .mesh = inst.mesh.index,
@@ -1004,7 +1032,7 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
                 .lodDepth = inst.lodDepth,
             };
         }
-        const auto& record = dst[i];
+        dst[i] = record;
         cullDst[i] = {
             .boundsMin = record.boundsMin,
             .flags = record.flags,
@@ -1030,7 +1058,7 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, std::span<const GpuInstan
     regions.insert(regions.end(), cullRegions.begin(), cullRegions.end());
     auto stagingHandle = fg.importBuffer("instanceStaging", buffer, {.size = bytes, .usage = RhiBufferUsage::TransferSrc});
     lastInstanceUploads = (uint32_t) upload.size();
-    return addInstanceUploadPass(fg, stagingHandle, instanceImport, std::move(regions));
+    return addInstanceUploadPass(fg, stagingHandle, handle, std::move(regions), "InstanceUpload");
 }
 
 auto GpuScene::afterExecute(const FrameGraph& fg) -> void {

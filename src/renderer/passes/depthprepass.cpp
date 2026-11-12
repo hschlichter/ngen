@@ -39,7 +39,7 @@ auto DepthPrepass::addPass(
     FrameGraph& fg,
     FgTextureHandle depthHandle,
     RhiExtent2D extent,
-    std::span<const GpuInstance> instances,
+    const ChunkedList<GpuInstance>& instances,
     FgBufferHandle instanceBuffer,
     const DrawLists& lists,
     DrawLists::Handles drawHandles,
@@ -68,7 +68,7 @@ auto DepthPrepass::addPass(
             }
             builder.setSideEffects(true);
         },
-        [bucketPipelines, extent, instances, &lists, drawHandles, &scene, descriptorSet, late, cullCamera](FrameGraphContext& ctx, const DepthPrepassData& data) {
+        [bucketPipelines, extent, instances = &instances, &lists, drawHandles, &scene, descriptorSet, late, cullCamera](FrameGraphContext& ctx, const DepthPrepassData& data) {
             auto* cmd = ctx.cmd();
 
             RhiRenderingAttachmentInfo depthAtt = {
@@ -106,7 +106,7 @@ auto DepthPrepass::addPass(
                 cmd->pushConstants(pip, RhiShaderStage::Task | RhiShaderStage::Mesh, 0, sizeof(push), &push);
                 PROFILE_GPU_ZONE(cmd, DrawLists::drawName(region), Geometry);
                 DrawLists::drawRegion(cmd, regionWork, region);
-                lists.report(ctx, region, instances);
+                lists.report(ctx, region, *instances);
             }
 
             cmd->endRendering();
