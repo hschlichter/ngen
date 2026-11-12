@@ -87,13 +87,14 @@ inline auto link_command(const Toolchain& tc, const LinkInputs& in, bool shared)
     for (const auto& o : in.objects) {
         c.argv.push_back(o.string());
     }
-    if (!in.archives.empty()) {
+    bool group = tc.archive_groups() && !in.archives.empty();
+    if (group) {
         c.argv.emplace_back("-Wl,--start-group");
     }
     for (const auto& a : in.archives) {
         c.argv.push_back(a.string());
     }
-    if (!in.archives.empty()) {
+    if (group) {
         c.argv.emplace_back("-Wl,--end-group");
     }
     c.argv.emplace_back("-o");
@@ -101,8 +102,10 @@ inline auto link_command(const Toolchain& tc, const LinkInputs& in, bool shared)
     for (const auto& dir : in.lib_search) {
         c.argv.push_back("-L" + dir.string());
     }
-    for (const auto& r : in.rpaths) {
-        c.argv.push_back("-Wl,-rpath," + r);
+    if (tc.rpaths()) {
+        for (const auto& r : in.rpaths) {
+            c.argv.push_back("-Wl,-rpath," + r);
+        }
     }
     for (const auto& flag : in.link_flags) {
         c.argv.push_back(flag);

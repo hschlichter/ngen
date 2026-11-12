@@ -4,6 +4,7 @@
 #include "ground.h"
 #include "imguibackendvulkan.h"
 #include "jobsystem.h"
+#include "os.h"
 #include "profile.h"
 #include "renderconfig.h"
 #include "renderdoccapture.h"
@@ -45,7 +46,6 @@
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <unistd.h>
 #include <vector>
 
 // Build the RhiWindow contract from an SDL window. This is the only place where the
@@ -266,8 +266,8 @@ auto main(int argc, char* argv[]) -> int {
         }
     }
     TRACE_EVENT("Engine", "ProcessStarted", "view")
-        .text(std::format("ngen-view started, pid {}", getpid()))
-        .field("pid", (int64_t) getpid())
+        .text(std::format("ngen-view started, pid {}", os::processId()))
+        .field("pid", (int64_t) os::processId())
         .field("scene", positional.size() >= 2 ? positional[1] : "");
     if (!session.empty()) {
         TRACE_EVENT("Engine", "ScriptLoaded", "view")
@@ -282,8 +282,7 @@ auto main(int argc, char* argv[]) -> int {
     // just before the renderer needs the shaders, so packing overlaps loading the scene. The scene's packs, meshes,
     // materials and textures come through the same client, by asset id.
     AssetClient assetClient;
-    std::error_code binError;
-    auto binDirectory = std::filesystem::canonical("/proc/self/exe", binError).parent_path();
+    auto binDirectory = os::executablePath().value_or(std::filesystem::path()).parent_path();
     {
         auto variant = binDirectory.parent_path().filename().string() + "/" + binDirectory.filename().string();
         auto connected = assetClient.connect(variant);

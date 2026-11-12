@@ -11,6 +11,10 @@
 #include <utility>
 #include <vector>
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
 auto RhiDeviceVulkan::toVkBufferUsage(RhiBufferUsageFlags usage) -> VkBufferUsageFlags {
     using enum RhiBufferUsage;
     VkBufferUsageFlags flags = 0;
@@ -1482,9 +1486,15 @@ auto RhiDeviceVulkan::calibrateGpuClock(uint64_t& gpuNs, uint64_t& cpuNs) -> boo
     if (getCalibratedTimestampsFn == nullptr) {
         return false;
     }
+    // The CPU domain is the clock std::chrono::steady_clock reads: CLOCK_MONOTONIC on Linux, QueryPerformanceCounter on Windows.
+#if defined(_WIN32)
+    constexpr VkTimeDomainEXT cpuDomain = VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_EXT;
+#else
+    constexpr VkTimeDomainEXT cpuDomain = VK_TIME_DOMAIN_CLOCK_MONOTONIC_EXT;
+#endif
     std::array<VkCalibratedTimestampInfoEXT, 2> infos = {{
         {.sType = VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, .timeDomain = VK_TIME_DOMAIN_DEVICE_EXT},
-        {.sType = VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, .timeDomain = VK_TIME_DOMAIN_CLOCK_MONOTONIC_EXT},
+        {.sType = VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT, .timeDomain = cpuDomain},
     }};
     std::array<uint64_t, 2> timestamps = {};
     std::array<uint64_t, 2> deviations = {};
@@ -1493,7 +1503,17 @@ auto RhiDeviceVulkan::calibrateGpuClock(uint64_t& gpuNs, uint64_t& cpuNs) -> boo
         return false;
     }
     gpuNs = (uint64_t) ((double) timestamps[0] * (double) deviceLimits.timestampPeriodNs);
-    cpuNs = timestamps[1]; // CLOCK_MONOTONIC is what std::chrono::steady_clock reads on Linux
+#if defined(_WIN32)
+    // Performance-counter ticks to nanoseconds, split as steady_clock does so the product does not overflow.
+    LARGE_INTEGER frequency = {};
+    QueryPerformanceFrequency(&frequency);
+    auto ticksPerSecond = (uint64_t) frequency.QuadPart;
+    auto whole = (timestamps[1] / ticksPerSecond) * 1'000'000'000ull;
+    auto part = (timestamps[1] % ticksPerSecond) * 1'000'000'000ull / ticksPerSecond;
+    cpuNs = whole + part;
+#else
+    cpuNs = timestamps[1];
+#endif
     return true;
 }
 

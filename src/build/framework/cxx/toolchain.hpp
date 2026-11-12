@@ -36,6 +36,21 @@ public:
         return *this;
     }
 
+    // Whether a program's archives are wrapped in `-Wl,--start-group` / `--end-group`. GNU-style linkers resolve
+    // archives in command-line order and need the group; lld-link (the MSVC-ABI linker) searches every archive
+    // until nothing resolves and rejects the flags.
+    auto archive_groups(bool enabled) -> Toolchain& {
+        archive_groups_ = enabled;
+        return *this;
+    }
+
+    // Whether a target's `rpath`s reach the link line (`-Wl,-rpath,`). Windows has no rpath: a program finds its
+    // DLLs beside itself or on PATH.
+    auto rpaths(bool enabled) -> Toolchain& {
+        rpaths_ = enabled;
+        return *this;
+    }
+
     auto compiler() const -> const std::string& { return compiler_; }
 
     auto archiver() const -> const std::string& { return archiver_; }
@@ -44,11 +59,17 @@ public:
 
     auto default_std() const -> const std::string& { return default_std_; }
 
+    auto archive_groups() const -> bool { return archive_groups_; }
+
+    auto rpaths() const -> bool { return rpaths_; }
+
 private:
     std::string compiler_;
     std::string archiver_;
     std::string linker_;
     std::string default_std_ = "c++23";
+    bool archive_groups_ = true;
+    bool rpaths_ = true;
 };
 
 inline auto toolchain() -> Toolchain {

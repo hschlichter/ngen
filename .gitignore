@@ -54,6 +54,9 @@ dkms.conf
 _out/
 /ngen-cli
 /.ngen-cli.link
+# Windows: the root copy of the cli moved aside while a build relinks it (ngen-cli.exe itself is covered by *.exe)
+/.ngen-cli.old.exe
+*.exe.old
 .cache/
 compile_commands.json
 *.spv
@@ -72,6 +75,9 @@ assets/streamtest-world
 
 # The local OpenUSD build, made from the external/openusd submodule
 external/openusd_build/
+
+# The local SDL3 build (Windows), made from the external/sdl submodule
+external/sdl3_build/
 
 # Codex's local state
 .codex

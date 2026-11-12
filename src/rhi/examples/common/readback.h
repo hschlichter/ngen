@@ -4,6 +4,7 @@
 #include "rhidevice.h"
 #include "rhitypes.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>

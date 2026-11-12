@@ -380,6 +380,9 @@ private:
         std::vector<Path> objects;
         objects.reserve(target.objects_data.size());
         for (const auto& child : target.objects_data) {
+            if (!child->owner().enabled_for(variant_.platform->name(), variant_.config->name())) {
+                continue;
+            }
             auto it = primary_output_.find(child->owner().name());
             if (it == primary_output_.end() || it->second.empty()) {
                 return std::unexpected(Error{"object " + child->owner().name() + " not emitted before " + target.owner().name()});

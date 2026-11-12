@@ -1,14 +1,15 @@
 #include "profile.h"
 
+#include "os.h"
+
 #include <charconv>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <string>
-#include <unistd.h>
 
-// What the system reports about the process and the GPU, read from /proc and sysfs at most every 100 ms: the readings change slowly and a
-// read is a file open.
+// What the system reports about the process and the GPU, read at most every 100 ms: the readings change slowly and a read is a file open
+// or a system call. The GPU driver's readings come from Linux's sysfs; on Windows there is no such file and they read as unknown.
 
 namespace profile {
 
@@ -133,13 +134,7 @@ auto residentBytes() -> uint64_t {
         return g_resident.bytes;
     }
     g_resident.readNs = t;
-    // statm: total size, then resident, in pages.
-    std::ifstream in("/proc/self/statm");
-    uint64_t size = 0;
-    uint64_t resident = 0;
-    if (in >> size >> resident) {
-        g_resident.bytes = resident * (uint64_t) sysconf(_SC_PAGESIZE);
-    }
+    g_resident.bytes = os::residentBytes();
     return g_resident.bytes;
 }
 

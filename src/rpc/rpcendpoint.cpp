@@ -1,5 +1,6 @@
 #include "rpcendpoint.h"
 
+#include "os.h"
 #include "rpcdiscovery.h"
 #include "trace.h"
 
@@ -7,7 +8,6 @@
 
 #include <chrono>
 #include <format>
-#include <unistd.h>
 
 namespace {
 
@@ -33,7 +33,7 @@ auto RpcEndpoint::start(const RpcRegistry* methods, std::string endpointKind, st
     registry = methods;
     kind = std::move(endpointKind);
     server = std::make_unique<RpcServer>();
-    traceStream = std::make_unique<trace::TraceStream>(*server, std::format("{}:{}", kind, getpid()));
+    traceStream = std::make_unique<trace::TraceStream>(*server, std::format("{}:{}", kind, os::processId()));
     server->setRequestHandler([this](RpcServer::ConnectionId connection, const rpc::Json& message, std::vector<std::byte> attachment) {
         if (traceStream->handle(connection, message)) {
             return;
@@ -59,7 +59,7 @@ auto RpcEndpoint::start(const RpcRegistry* methods, std::string endpointKind, st
     boundPort = *port;
     RpcEndpointInfo info = {
         .kind = kind,
-        .pid = (int) getpid(),
+        .pid = (int) os::processId(),
         .port = boundPort,
         .label = std::move(label),
         .protocol = rpc::protocolVersion,

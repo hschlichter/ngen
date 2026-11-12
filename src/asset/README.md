@@ -101,7 +101,7 @@ is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own c
 - **Change notices.** For every asset a connection was answered for (sent, held or failed), the server watches the files it was packed from:
   the record's packer and inputs, the source and its depfile's files. It watches their directories (`server/filewatcher.h`, inotify on Linux),
   so a save through a rename is seen; a directory inotify can't watch (out of watches) is polled once a second, and `--watch=poll` polls them
-  all. Changes are gathered for 100 ms and checked with the cache's up-to-date test, so a touch or a save of the same bytes says nothing.
+  all. On Windows every directory is polled (`server/filewatcherwindows.cpp`). Packers run as child processes through `os::runProcess`. Changes are gathered for 100 ms and checked with the cache's up-to-date test, so a touch or a save of the same bytes says nothing.
   Each connection holding an asset that is out of date gets one `asset.changed` with those ids, every id of the file it holds (a USD file's
   layer pack, meshes and materials together). A connection whose last answer for an id was a failure is also told when the source goes back to
   what the cache holds (a broken edit undone). The server packs nothing for a notice: a client that still wants the asset requests it. A

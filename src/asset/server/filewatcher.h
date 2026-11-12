@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -16,8 +17,9 @@
 // is seen, and many files in one directory cost one watch. Only the files asked for are reported.
 //
 // Linux: inotify on each directory; a directory inotify can't watch (out of watches) is polled instead, by the size and modification time of
-// its files once a second. Changes are collected for `settle` after the first one and reported together, so an editor's truncate, write and
-// rename is one report. Thread-safe; `changed` is called on the watcher's own thread, never with the watcher's lock held.
+// its files once a second. Windows: every directory is polled (filewatcherwindows.cpp). Changes are collected for `settle` after the first
+// one and reported together, so an editor's truncate, write and rename is one report. Thread-safe; `changed` is called on the watcher's own
+// thread, never with the watcher's lock held.
 class FileWatcher {
 public:
     using Changed = std::function<void(std::vector<std::filesystem::path> files)>;
@@ -42,6 +44,8 @@ public:
 
     auto watchedDirectories() const -> size_t;
     auto polledDirectories() const -> size_t;
+    // Whether every directory is polled: asked for, inotify unavailable, or Windows. Valid after start().
+    auto pollsOnly() const -> bool { return pollOnly; }
 
 private:
     struct Stamp {
@@ -67,9 +71,15 @@ private:
     Changed changed;
     Warned warned;
     bool pollOnly = false;
+    std::thread thread;
+#if defined(_WIN32)
+    // stop() sets stopRequested under the lock and notifies, so the thread's wait returns.
+    std::condition_variable stopSignal;
+    bool stopRequested = false;
+#else
     int inotifyFd = -1;
     int wakeFd = -1; // an eventfd that stop() writes, so the thread's poll() returns
-    std::thread thread;
+#endif
 
     mutable std::mutex mutex;
     std::unordered_map<std::string, Directory> directories; // by directory path

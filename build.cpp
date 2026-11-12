@@ -7,8 +7,10 @@
 #include "src/build/framework/tool.hpp"
 #include "src/build/ir/main.hpp"
 
+#include <cstdlib>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 using namespace build;
 
@@ -31,13 +33,21 @@ auto main(int argc, char** argv) -> int {
             }))
             .command({"clang-tidy", "$in", "--", "-std=c++23", "-Isrc/build/framework"});
 
+    // SDL3: on Linux the system's, found with pkg-config; on Windows the build of the external/sdl submodule in external/sdl3_build, whose
+    // include and library paths the windows-vulkan platform carries. A host builds its own OS's platform only, so a Windows host asks
+    // pkg-config nothing.
+#if defined(_WIN32)
+    std::vector<std::string> sdl3_cflags;
+    std::vector<std::string> sdl3_libs = {"-lSDL3"};
+#else
     auto sdl3_cflags = capture_tokens({"pkg-config", "--cflags", "sdl3"});
     auto sdl3_libs = capture_tokens({"pkg-config", "--libs", "sdl3"});
+#endif
 
     auto clang = cxx::toolchain()
-        .compiler("clang++")
-        .archiver("ar")
-        .default_std("c++23");
+                     .compiler("clang++")
+                     .archiver("ar")
+                     .default_std("c++23");
 
     auto linux_vulkan =
         cxx::platform("linux-vulkan")
@@ -54,6 +64,48 @@ auto main(int argc, char** argv) -> int {
             .define("GLM_FORCE_DEPTH_ZERO_TO_ONE")
             .system_lib("vulkan")
             .system_lib("m");
+
+    // Windows: clang++ targeting the MSVC ABI, linked by lld-link, so the MSVC-built OpenUSD and SDL3 link in. One C runtime everywhere,
+    // the dynamic release one (-fms-runtime-lib=dll), as OpenUSD is built release with /MD. The Vulkan SDK is the one the installer
+    // names in VULKAN_SDK.
+    const char* vulkan_sdk_env = std::getenv("VULKAN_SDK");
+    std::string vulkan_sdk = vulkan_sdk_env != nullptr ? vulkan_sdk_env : "";
+    auto clang_msvc = cxx::toolchain()
+                          .compiler("clang++")
+                          .archiver("llvm-ar")
+                          .default_std("c++23")
+                          .archive_groups(false)
+                          .rpaths(false);
+
+    auto windows_vulkan =
+        cxx::platform("windows-vulkan")
+            .os("windows")
+            .graphics_api("vulkan")
+            .exe_suffix(".exe")
+            .toolchain(clang_msvc)
+            .compile_flag("-Wall")
+            .compile_flag("-fms-runtime-lib=dll")
+            .compile_flag("-I" + vulkan_sdk + "/Include")
+            .compile_flag("-Iexternal/sdl3_build/include")
+            .define("NGEN_PLATFORM_WINDOWS")
+            .define("NGEN_GFX_VULKAN")
+            .define("GLM_FORCE_RADIANS")
+            .define("GLM_FORCE_DEPTH_ZERO_TO_ONE")
+            .define("NOMINMAX")
+            .define("WIN32_LEAN_AND_MEAN")
+            .define("_CRT_SECURE_NO_WARNINGS")
+            .link_flag("-fuse-ld=lld")
+            .link_flag("-fms-runtime-lib=dll")
+            .link_flag("-g")
+            .link_flag("-L" + vulkan_sdk + "/Lib")
+            .link_flag("-Lexternal/sdl3_build/lib")
+            .system_lib("vulkan-1")
+            .system_lib("ws2_32")
+            .system_lib("dbghelp")
+            .system_lib("advapi32")
+            .system_lib("user32")
+            .system_lib("ole32")
+            .system_lib("shell32");
 
     auto debug =
         cxx::configuration("debug")
@@ -97,9 +149,19 @@ auto main(int argc, char** argv) -> int {
 
     Project p;
     p.platform(linux_vulkan);
+    p.platform(windows_vulkan);
     p.config(debug);
     p.config(release);
     p.config(gamerelease);
+
+    // What the engine asks of the operating system (src/os/README.md): the process, thread names, stop signals, child processes. One
+    // implementation file per OS, each compiled only on its platforms.
+    auto osLib =
+        cxx::static_library("os")
+            .sources(glob({.include = "src/os/*.cpp"}))
+            .public_include({"src/os"})
+            .for_source("src/os/oslinux.cpp", [](cxx::ObjectFile& file) { file.only_on({"linux-vulkan"}); })
+            .for_source("src/os/oswindows.cpp", [](cxx::ObjectFile& file) { file.only_on({"windows-vulkan"}); });
 
     // Configuration (src/config/README.md): the engine's settings, typed values declared in code by the system they configure. Standard
     // library only, beside profile and trace.
@@ -124,13 +186,16 @@ auto main(int argc, char** argv) -> int {
             .public_include({"src/profile"})
             .include({"src/rhi"})
             .link(tracy)
-            .link(config);
+            .link(config)
+            .link(osLib);
 
     // RPC core: frames, JSON-RPC, TCP on loopback, discovery. The standard library plus header-only
     // nlohmann/json, so programs outside the engine, such as the asset server, use it too (src/rpc/README.md).
     auto rpccore =
         cxx::static_library("rpccore")
             .sources(glob({.include = "src/rpc/core/*.cpp"}))
+            .for_source("src/rpc/core/rpcsocketlinux.cpp", [](cxx::ObjectFile& file) { file.only_on({"linux-vulkan"}); })
+            .for_source("src/rpc/core/rpcsocketwindows.cpp", [](cxx::ObjectFile& file) { file.only_on({"windows-vulkan"}); })
             .public_include({
                 "src/rpc/core",
                 "external/json/single_include",
@@ -188,9 +253,9 @@ auto main(int argc, char** argv) -> int {
             .include({
                 "src",
             })
-            .only_on({"linux-vulkan"});
+            .only_on({"linux-vulkan", "windows-vulkan"});
 
-    auto rhi_backend = alias("rhi-backend").select("platform", "linux-vulkan", rhivulkan.owner());
+    auto rhi_backend = alias("rhi-backend").select("platform", "linux-vulkan", rhivulkan.owner()).select("platform", "windows-vulkan", rhivulkan.owner());
 
     // What packers share (the packer contract, the packed texture format, the mip filter). The renderer uses the mip
     // filter and the packed texture format too.
@@ -386,12 +451,33 @@ auto main(int argc, char** argv) -> int {
             .link(session)
             .link(imgui);
 
+    // Windows has no rpath: the DLLs the programs load (SDL3, OpenUSD and its usd/ plugin folder, oneTBB) are copied beside them, into
+    // _out/windows-vulkan/<config>/, so a program runs from any directory without PATH changes. The Vulkan SDK's are on PATH from its installer.
+    auto runtimeDlls =
+        tool("runtime-dlls")
+            .for_each(concat({
+                          glob({.include = "external/sdl3_build/bin/*.dll"}),
+                          glob({.include = "external/openusd_build/lib/*.dll"}),
+                          glob({.include = "external/openusd_build/bin/*.dll"}),
+                          glob({.include = "external/openusd_build/lib/usd/**"}),
+                      }),
+                      [](const BuildVariant& variant, const Path& input) {
+                          auto source = input.string();
+                          auto plugins = std::string("external/openusd_build/lib/usd/");
+                          if (source.starts_with(plugins)) {
+                              return variant.out_dir / "usd" / source.substr(plugins.size());
+                          }
+                          return variant.out_dir / input.filename();
+                      })
+            .command({"cmake", "-E", "copy", "$in", "$out"});
+    runtimeDlls.owner().only_on({"windows-vulkan"});
+
     // Assets (src/asset/README.md): one packer program per asset type, and ngen-asset-server, which packs on
     // request with the rules in the root pack.cpp and streams the results. Nothing here lists assets.
-    auto packerShader = cxx::program("ngen-packer-shader").sources({"src/apps/packershader.cpp"}).link(packer).link(profile).link(tracy).link(config);
-    auto packerCopy = cxx::program("ngen-packer-copy").sources({"src/apps/packercopy.cpp"}).link(packer).link(profile).link(tracy).link(config);
-    auto packerTexture = cxx::program("ngen-packer-texture").sources({"src/apps/packertexture.cpp"}).include({"external/stb"}).link(packer).link(profile).link(tracy).link(config);
-    auto packerExr = cxx::program("ngen-packer-exr").sources({"src/apps/packerexr.cpp"}).include({"external/stb", "external/tinyexr"}).link(packer).link(profile).link(tracy).link(config);
+    auto packerShader = cxx::program("ngen-packer-shader").sources({"src/apps/packershader.cpp"}).link(packer).link(profile).link(tracy).link(config).link(osLib);
+    auto packerCopy = cxx::program("ngen-packer-copy").sources({"src/apps/packercopy.cpp"}).link(packer).link(profile).link(tracy).link(config).link(osLib);
+    auto packerTexture = cxx::program("ngen-packer-texture").sources({"src/apps/packertexture.cpp"}).include({"external/stb"}).link(packer).link(profile).link(tracy).link(config).link(osLib);
+    auto packerExr = cxx::program("ngen-packer-exr").sources({"src/apps/packerexr.cpp"}).include({"external/stb", "external/tinyexr"}).link(packer).link(profile).link(tracy).link(config).link(osLib);
     // ngen-packdump: prints a scene pack, from a file or fetched from the asset server, as JSON.
     auto packDump = cxx::program("ngen-packdump")
                         .sources({"src/apps/packdump.cpp"})
@@ -401,9 +487,10 @@ auto main(int argc, char** argv) -> int {
                         .link(rpccore)
                         .link(profile)
                         .link(tracy)
+                        .link(osLib)
                         .link(config);
     // ngen-pack: has the asset server pack everything a scene can reach, so a view opens it from a full cache.
-    auto scenePack = cxx::program("ngen-pack").sources({"src/apps/pack.cpp"}).include({"src/asset", "src/asset/pack"}).link(packer).link(assetClient).link(rpccore).link(profile).link(tracy).link(config);
+    auto scenePack = cxx::program("ngen-pack").sources({"src/apps/pack.cpp"}).include({"src/asset", "src/asset/pack"}).link(packer).link(assetClient).link(rpccore).link(profile).link(tracy).link(config).link(osLib);
     // meshoptimizer: welding and meshlets for the USD packer's meshes.
     auto meshoptimizer = cxx::static_library("meshoptimizer").sources(glob({.include = "external/meshoptimizer/src/*.cpp"})).public_include({"external/meshoptimizer/src"});
     // The USD packer (src/asset/README.md): one USD file to a layer pack plus its meshes and materials. It links OpenUSD; the USD half
@@ -431,6 +518,7 @@ auto main(int argc, char** argv) -> int {
             .link(packer)
             .link(profile)
             .link(tracy)
+            .link(osLib)
             .link(config)
             .lib_search("external/openusd_build/lib")
             .rpath((std::filesystem::current_path() / "external/openusd_build/lib").string())
@@ -451,10 +539,11 @@ auto main(int argc, char** argv) -> int {
             .link_flag("-lusd_ts")
             .link_flag("-lusd_pegtl")
             .link_flag("-lusd_kind")
-            .link_flag("-ltbb");
+            .link_flag("-ltbb")
+            .depend_on(runtimeDlls.owner());
     // ngen-worldcheck and ngen-usdcheck (src/world/README.md): a scene's fingerprint as the World composes it from packs, and as
     // OpenUSD composes it, to compare. ngen-usdcheck links OpenUSD and builds as C++20, as OpenUSD's headers require.
-    auto worldCheck = cxx::program("ngen-worldcheck").sources({"src/apps/worldcheck.cpp"}).include({"src/asset"}).link(worldLib).link(packer).link(assetClient).link(rpccore).link(profile).link(tracy).link(config);
+    auto worldCheck = cxx::program("ngen-worldcheck").sources({"src/apps/worldcheck.cpp"}).include({"src/asset"}).link(worldLib).link(packer).link(assetClient).link(rpccore).link(profile).link(tracy).link(config).link(osLib);
     auto usdCheck =
         cxx::program("ngen-usdcheck")
             .sources({"src/apps/usdcheck.cpp"})
@@ -483,7 +572,8 @@ auto main(int argc, char** argv) -> int {
             .link_flag("-lusd_ts")
             .link_flag("-lusd_pegtl")
             .link_flag("-lusd_kind")
-            .link_flag("-ltbb");
+            .link_flag("-ltbb")
+            .depend_on(runtimeDlls.owner());
     auto assetServer =
         cxx::program("ngen-asset-server")
             .sources({
@@ -491,6 +581,8 @@ auto main(int argc, char** argv) -> int {
                 "pack.cpp",
             })
             .sources(glob({.include = "src/asset/server/*.cpp"}))
+            .for_source("src/asset/server/filewatcherlinux.cpp", [](cxx::ObjectFile& file) { file.only_on({"linux-vulkan"}); })
+            .for_source("src/asset/server/filewatcherwindows.cpp", [](cxx::ObjectFile& file) { file.only_on({"windows-vulkan"}); })
             .include({
                 "src/asset",
                 "src/asset/pack",
@@ -502,6 +594,7 @@ auto main(int argc, char** argv) -> int {
             .link(packer)
             .link(profile)
             .link(tracy)
+            .link(osLib)
             .link(config)
             .depend_on(packerShader)
             .depend_on(packerCopy)
@@ -542,6 +635,7 @@ auto main(int argc, char** argv) -> int {
             .link(profileRpc)
             .link(profile)
             .link(tracy)
+            .link(osLib)
             .link(config)
             .link(session)
             .link(rhivulkan)
@@ -559,7 +653,8 @@ auto main(int argc, char** argv) -> int {
             .link(packer)
             .link_flags(sdl3_libs)
             .depend_on(assetServer)
-            .depend_on(scenePack);
+            .depend_on(scenePack)
+            .depend_on(runtimeDlls.owner());
 
     // ngen-introspect (src/introspect/README.md): sees into and calls the running processes, as a window drawn with
     // SDL's renderer and Dear ImGui, or from the command line. An RPC client only; nothing of the engine.
@@ -577,12 +672,14 @@ auto main(int argc, char** argv) -> int {
             .link(rpccore)
             .link(profile)
             .link(tracy)
+            .link(osLib)
             .link(config)
             .link(imgui)
-            .link_flags(sdl3_libs);
+            .link_flags(sdl3_libs)
+            .depend_on(runtimeDlls.owner());
 
-    // ngen-cli: one front door to the tools of the set variant (src/apps/cli.cpp). Standard library only.
-    auto cli = cxx::program("ngen-cli").sources({"src/apps/cli.cpp"});
+    // ngen-cli: one front door to the tools of the set variant (src/apps/cli.cpp). The standard library and os.
+    auto cli = cxx::program("ngen-cli").sources({"src/apps/cli.cpp"}).link(osLib);
 
     // RHI examples: one program per feature, reaching only into src/rhi/. See src/rhi/README.md, "Examples".
     auto rhiExample = [&](const std::string& name) {
@@ -596,7 +693,8 @@ auto main(int argc, char** argv) -> int {
             })
             .link(rhi_backend)
             .link("shaderc_shared")
-            .link_flags(sdl3_libs);
+            .link_flags(sdl3_libs)
+            .depend_on(runtimeDlls.owner());
     };
     auto exampleTriangle = rhiExample("triangle");
     auto exampleQuad = rhiExample("quad");

@@ -9,7 +9,7 @@
 #include <vector>
 
 // A fixed number of worker threads running pack tasks in submission order. A task checks the cache, runs the
-// packer through runProcess when needed, and reports its result on the worker thread.
+// packer through os::runProcess when needed, and reports its result on the worker thread.
 class PackJobs {
 public:
     explicit PackJobs(unsigned workers);
@@ -32,12 +32,3 @@ private:
     size_t active = 0;
     bool stopping = false;
 };
-
-struct ProcessResult {
-    int exitCode = -1;
-    // stdout and stderr together, in the order written.
-    std::string output;
-};
-
-// Runs a program with arguments, no shell, and waits for it.
-auto runProcess(const std::vector<std::string>& argv) -> ProcessResult;

@@ -140,6 +140,9 @@ a decision they cover.
   (SDL renderer and Dear ImGui) and a command line. Records and the tool in `src/introspect/README.md`.
 - `src/trace/` — the trace: structured events (`TRACE_EVENT`) in an always-on ring per process, streamed over RPC. Conventions in
   `src/trace/README.md`.
+- `src/os/` — what the engine asks of the operating system (process, thread names, stop signals, child processes): `os.h` with one implementation
+  per OS (`oslinux.cpp`, `oswindows.cpp`). Other OS-specific code stays in its library, split the same way (`*linux.cpp` / `*windows.cpp`, gated per
+  source in `build.cpp`). `src/os/README.md`.
 - `src/view/` — ngen-view's runtime (the `view` library: `viewscene.*`, the World composed from packs and flattened into the renderer's inputs;
   the camera, its flight and modes; picking; the frame, `ViewFrame`, whose steps the main loop calls in order, and the hooks the tools and the
   UI join it by, `viewhooks.h`) and its engine commands (the `viewcommands` library: RPC methods, script verbs and records by domain in
@@ -173,6 +176,10 @@ Then build the cli and set a variant (once per clone; skip if `./ngen-cli` alrea
 ```sh
 ./_out/ngen-build -p linux-vulkan -c debug ngen-cli && ./_out/linux-vulkan/debug/ngen-cli set linux-vulkan debug
 ```
+
+On Windows the platform is `windows-vulkan`, the bootstrap compiler is `clang++` (no `-pthread`, add `-D_CRT_SECURE_NO_WARNINGS`, output
+`_out/ngen-build.exe`), and the dependencies are set up as the README's "Building on Windows" describes. `./ngen-cli` is then a copy (`ngen-cli.exe`),
+refreshed by `set`; the view and the RHI examples open a window even for scripted runs, as the Windows drivers have no headless surface.
 
 **`./ngen-cli` is the entry point, for humans and agents alike**, so the tool flow is exercised on every build and run. The README's "ngen-cli"
 section documents it:

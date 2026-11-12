@@ -106,7 +106,8 @@ requests in flight and bytes received. Each plotted number is also in a record (
   (`profile::setGpuDevice`), read at most every 100 ms; absent on other drivers, and `gpuBusyDriverSource` in the `profile` record says why.
   They measure different things: the first, how much of the time this process's GPU work fills; the second, the whole GPU over the driver's
   own window, other processes' work included (on Sponza, 75% against 96%).
-- **Resident memory** (`profile::residentBytes`): `/proc/self/statm`, read at most every 100 ms.
+- **Resident memory** (`profile::residentBytes`): `os::residentBytes` (`/proc/self/statm` on Linux, the working set on Windows), read at most
+  every 100 ms. The driver's GPU busy reading is Linux's sysfs; on Windows it is absent.
 - **GPU memory in Tracy.** The render thread reports the device's allocations as Tracy's "GPU" memory pool (`profile::memoryAlloc`,
   `memoryFree`, keyed by each allocation's creation sequence), what changed since the last report when the device's allocation serial moved,
   and only while a server is connected; a server that connects later is told every live allocation. Tracy's memory views (and its "GPU" plot of

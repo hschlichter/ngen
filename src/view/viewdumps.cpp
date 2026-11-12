@@ -21,6 +21,22 @@ namespace {
 
 // Runs a FILE* writer into memory and parses what it wrote.
 auto writerJson(const std::function<void(FILE*)>& write) -> std::optional<rpc::Json> {
+#if defined(_WIN32)
+    // No open_memstream: write to an anonymous temporary file and read it back.
+    FILE* f = std::tmpfile();
+    if (f == nullptr) {
+        return std::nullopt;
+    }
+    write(f);
+    std::fflush(f);
+    std::rewind(f);
+    std::string text;
+    char chunk[4096];
+    while (auto count = std::fread(chunk, 1, sizeof(chunk), f)) {
+        text.append(chunk, count);
+    }
+    std::fclose(f);
+#else
     char* buffer = nullptr;
     size_t size = 0;
     FILE* f = open_memstream(&buffer, &size);
@@ -31,6 +47,7 @@ auto writerJson(const std::function<void(FILE*)>& write) -> std::optional<rpc::J
     std::fclose(f);
     std::string text(buffer, size);
     std::free(buffer);
+#endif
     auto json = rpc::Json::parse(text, nullptr, false);
     if (json.is_discarded()) {
         return std::nullopt;

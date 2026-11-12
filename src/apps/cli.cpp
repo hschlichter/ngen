@@ -9,14 +9,18 @@
 //   ngen-cli pack <scene>...           the set variant's ngen-pack: the asset server packs everything the scenes can reach
 //
 // The set variant lives in `_out/set` as one line, `<platform>/<config>`: the same two components as the variant's output directory, so a
-// tool of the set variant is `_out/<that line>/<tool>`. `set` also points the repository-root symlink `ngen-cli` at the set variant's own
-// cli, building it first so the link never points at a missing binary.
+// tool of the set variant is `_out/<that line>/<tool>`. `set` also points the repository-root `ngen-cli` at the set variant's own cli,
+// building it first so it never points at a missing binary. On Linux that is a symlink; on Windows, where a symlink needs administrator
+// rights or Developer Mode, it is a copy, `ngen-cli.exe`.
 //
 // ngen-cli is an ordinary build target, built per variant. First use on a fresh clone, after bootstrapping ngen-build:
 //
 //     ./_out/ngen-build -p linux-vulkan -c debug ngen-cli && ./_out/linux-vulkan/debug/ngen-cli set linux-vulkan debug
 //
-// Forwarded tools replace this process (execv): they run in the caller's working directory and environment, and their exit code is ours.
+// Forwarded tools run in the caller's working directory and environment, and their exit code is ours. On Linux they replace this process
+// (execv); Windows has no exec, so there the cli starts them with its own console and waits.
+
+#include "os.h"
 
 #include <algorithm>
 #include <array>
@@ -32,9 +36,11 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <sys/wait.h>
-#include <unistd.h>
 #include <vector>
+
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -64,13 +70,23 @@ constexpr std::array<ToolCommand, 4> toolCommands = {{
     {.command = "pack", .binary = "ngen-pack", .summary = "pack everything a scene can reach, so the viewer opens it from the cache"},
 }};
 
-// This binary is <root>/_out/<platform>/<config>/ngen-cli; the root link resolves to it too.
+// This binary is <root>/_out/<platform>/<config>/ngen-cli; the root link resolves to it too. The root copy on Windows sits in the root
+// itself, beside _out/.
 auto repoRoot() -> fs::path {
-    return fs::canonical("/proc/self/exe").parent_path().parent_path().parent_path().parent_path();
+    auto directory = os::executablePath().value_or(fs::path()).parent_path();
+    std::error_code ec;
+    if (fs::is_directory(directory / "_out", ec)) {
+        return directory;
+    }
+    return directory.parent_path().parent_path().parent_path();
+}
+
+auto programName(std::string_view stem) -> std::string {
+    return std::string(stem) + std::string(os::executableSuffix);
 }
 
 auto buildTool(const fs::path& root) -> fs::path {
-    return root / "_out" / "ngen-build";
+    return root / "_out" / programName("ngen-build");
 }
 
 auto variantPath(const Variant& v) -> std::string {
@@ -98,16 +114,17 @@ auto writeSet(const fs::path& root, const Variant& v) -> bool {
 
 // The platform and configuration sections of `ngen-build -l`: a header line, then one indented name per line.
 auto listVariants(const fs::path& root) -> std::expected<VariantNames, std::string> {
-    auto command = "'" + buildTool(root).string() + "' -l 2>/dev/null";
-    auto* pipe = popen(command.c_str(), "r"); // NOLINT(bugprone-command-processor): fixed path, no user input
-    if (pipe == nullptr) {
-        return std::unexpected("cannot run " + buildTool(root).string());
+    auto listed = os::runProcess({buildTool(root).string(), "-l"});
+    if (listed.exitCode != 0) {
+        return std::unexpected("cannot run " + buildTool(root).string() + " -l");
     }
     VariantNames names;
     std::vector<std::string>* section = nullptr;
-    std::array<char, 512> buffer = {};
-    while (std::fgets(buffer.data(), (int) buffer.size(), pipe) != nullptr) {
-        std::string_view line(buffer.data());
+    std::string_view rest = listed.output;
+    while (!rest.empty()) {
+        auto newline = rest.find('\n');
+        std::string_view line = rest.substr(0, newline);
+        rest = newline == std::string_view::npos ? std::string_view() : rest.substr(newline + 1);
         while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
             line.remove_suffix(1);
         }
@@ -123,8 +140,7 @@ auto listVariants(const fs::path& root) -> std::expected<VariantNames, std::stri
             section->emplace_back(line.substr(start, end - start));
         }
     }
-    auto status = pclose(pipe);
-    if (status != 0 || names.platforms.empty() || names.configs.empty()) {
+    if (names.platforms.empty() || names.configs.empty()) {
         return std::unexpected(buildTool(root).string() + " -l did not list platforms and configurations");
     }
     return names;
@@ -163,57 +179,115 @@ auto resolveName(std::string_view query, std::span<const std::string> names, std
     return std::unexpected(std::format("ambiguous {} '{}'; matches: {}", what, query, joined(matches)));
 }
 
-// execv takes char* const[]; it does not write through them.
-auto toArgv(const fs::path& program, std::span<const std::string> args) -> std::vector<char*> {
+// Runs a tool as a child and returns its exit code.
+auto runTool(const fs::path& program, std::span<const std::string> args) -> int {
+    auto code = os::runProcessInteractive(program, args);
+    if (code == 127 && !fs::exists(program)) {
+        std::println(stderr, "ngen-cli: cannot run {}", program.string());
+    }
+    return code;
+}
+
+#if defined(_WIN32)
+// No exec on Windows: the tool runs as a child on this console, and its exit code is returned.
+auto execTool(const fs::path& program, std::span<const std::string> args) -> int {
+    return runTool(program, args);
+}
+
+// A running program's file cannot be overwritten on Windows, so a build that relinks this cli would fail. It can be renamed: while a build
+// runs, this file is moved aside, and put back if the build did not write a new one. The moved-aside copy is deleted once it is not running.
+class SelfAside {
+public:
+    SelfAside() {
+        auto exe = os::executablePath();
+        if (!exe) {
+            return;
+        }
+        self = *exe;
+        aside = self;
+        aside += ".old";
+        std::error_code ec;
+        fs::remove(aside, ec);
+        fs::rename(self, aside, ec);
+        if (ec) {
+            self.clear();
+        }
+    }
+    SelfAside(const SelfAside&) = delete;
+    auto operator=(const SelfAside&) -> SelfAside& = delete;
+    ~SelfAside() {
+        if (self.empty()) {
+            return;
+        }
+        std::error_code ec;
+        if (!fs::exists(self, ec)) {
+            fs::rename(aside, self, ec);
+        }
+    }
+
+private:
+    fs::path self;
+    fs::path aside;
+};
+#else
+// Linux replaces a running program's file without trouble.
+class SelfAside {
+public:
+    SelfAside() {}
+};
+
+// Replaces this process. Returns only on failure.
+auto execTool(const fs::path& program, std::span<const std::string> args) -> int {
     std::vector<char*> argv;
+    // execv takes char* const[]; it does not write through them.
     argv.push_back(const_cast<char*>(program.c_str())); // NOLINT(cppcoreguidelines-pro-type-const-cast)
     for (const auto& arg : args) {
         argv.push_back(const_cast<char*>(arg.c_str())); // NOLINT(cppcoreguidelines-pro-type-const-cast)
     }
     argv.push_back(nullptr);
-    return argv;
-}
-
-// Replaces this process. Returns only on failure.
-auto execTool(const fs::path& program, std::span<const std::string> args) -> int {
-    auto argv = toArgv(program, args);
     execv(program.c_str(), argv.data());
     std::println(stderr, "ngen-cli: cannot run {}: {}", program.string(), std::strerror(errno));
     return 127;
 }
-
-// Runs a tool as a child and returns its exit code.
-auto runTool(const fs::path& program, std::span<const std::string> args) -> int {
-    auto argv = toArgv(program, args);
-    auto pid = fork();
-    if (pid < 0) {
-        std::println(stderr, "ngen-cli: fork failed: {}", std::strerror(errno));
-        return 127;
-    }
-    if (pid == 0) {
-        execv(program.c_str(), argv.data());
-        std::println(stderr, "ngen-cli: cannot run {}: {}", program.string(), std::strerror(errno));
-        _exit(127);
-    }
-    int status = 0;
-    if (waitpid(pid, &status, 0) < 0) {
-        return 127;
-    }
-    if (WIFEXITED(status)) {
-        return WEXITSTATUS(status);
-    }
-    return 128 + WTERMSIG(status);
-}
+#endif
 
 auto requireBuildTool(const fs::path& root) -> bool {
     if (fs::exists(buildTool(root))) {
         return true;
     }
     std::println(stderr, "ngen-cli: {} is missing; bootstrap it first:", buildTool(root).string());
+#if defined(_WIN32)
+    std::println(stderr, "  mkdir -p _out && clang++ -std=c++23 -O0 -g -D_CRT_SECURE_NO_WARNINGS -o _out/ngen-build.exe src/build/bootstrap.cpp");
+#else
     std::println(stderr, "  mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/bootstrap.cpp");
+#endif
     return false;
 }
 
+#if defined(_WIN32)
+// Copies the variant's cli to <root>/ngen-cli.exe. A running program's file cannot be overwritten or deleted on Windows, but it can be
+// renamed: the old copy (perhaps this very process) moves aside first and is deleted the next time it is not running.
+auto linkRoot(const fs::path& root, const Variant& v) -> bool {
+    auto link = root / programName("ngen-cli");
+    auto aside = root / ".ngen-cli.old.exe";
+    std::error_code ec;
+    fs::remove(aside, ec);
+    if (fs::exists(link, ec)) {
+        fs::rename(link, aside, ec);
+        if (ec) {
+            std::println(stderr, "ngen-cli: cannot move {} aside: {}", link.string(), ec.message());
+            return false;
+        }
+    }
+    fs::copy_file(root / "_out" / v.platform / v.config / programName("ngen-cli"), link, fs::copy_options::overwrite_existing, ec);
+    if (ec) {
+        std::println(stderr, "ngen-cli: cannot copy the cli to {}: {}", link.string(), ec.message());
+        return false;
+    }
+    fs::remove(aside, ec);
+    return true;
+}
+#else
 // Points <root>/ngen-cli at the variant's cli, replacing the old link in one rename.
 auto linkRoot(const fs::path& root, const Variant& v) -> bool {
     auto link = root / "ngen-cli";
@@ -237,6 +311,7 @@ auto linkRoot(const fs::path& root, const Variant& v) -> bool {
     }
     return true;
 }
+#endif
 
 auto commandSet(const fs::path& root, std::span<const std::string> args) -> int {
     if (args.empty()) {
@@ -274,7 +349,11 @@ auto commandSet(const fs::path& root, std::span<const std::string> args) -> int 
     Variant variant = {.platform = *platform, .config = *config};
     // The variant's own cli first, so the root link never points at a missing binary.
     std::vector<std::string> buildArgs = {"-p", variant.platform, "-c", variant.config, "ngen-cli"};
-    auto code = runTool(buildTool(root), buildArgs);
+    int code = 0;
+    {
+        SelfAside aside;
+        code = runTool(buildTool(root), buildArgs);
+    }
     if (code != 0) {
         std::println(stderr, "ngen-cli: building ngen-cli for {} failed; set variant unchanged", variantPath(variant));
         return code;
@@ -320,6 +399,7 @@ auto commandBuild(const fs::path& root, std::span<const std::string> args) -> in
         }
     }
     forwarded.insert(forwarded.end(), args.begin(), args.end());
+    SelfAside aside;
     return execTool(buildTool(root), forwarded);
 }
 
@@ -329,7 +409,7 @@ auto commandTool(const fs::path& root, const ToolCommand& tool, std::span<const 
         std::println(stderr, "ngen-cli: no variant set; run: ngen-cli set <platform> <config>");
         return 1;
     }
-    auto program = root / "_out" / set->platform / set->config / tool.binary;
+    auto program = root / "_out" / set->platform / set->config / programName(tool.binary);
     if (!fs::exists(program)) {
         std::println(stderr, "ngen-cli: {} is not built for {}; run: ngen-cli build {}", tool.binary, variantPath(*set), tool.binary);
         return 1;
@@ -355,7 +435,7 @@ auto printHelp(const fs::path& root) -> void {
     }
     std::println("set variant: {}", variantPath(*set));
     for (const auto& tool : toolCommands) {
-        auto built = fs::exists(root / "_out" / set->platform / set->config / tool.binary);
+        auto built = fs::exists(root / "_out" / set->platform / set->config / programName(tool.binary));
         std::println("  {}: {}", tool.binary, built ? "built" : "not built");
     }
 }

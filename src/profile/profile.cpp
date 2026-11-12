@@ -1,5 +1,7 @@
 #include "profile.h"
 
+#include "os.h"
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -11,7 +13,6 @@
 #include <deque>
 #include <memory>
 #include <mutex>
-#include <pthread.h>
 #include <string_view>
 #include <thread>
 #include <unordered_map>
@@ -491,13 +492,9 @@ auto registerThread(const char* name) -> void {
         ___tracy_set_thread_name(name);
     }
 #endif
-#ifdef __linux__
-    // The thread's name in the system (top, gdb), at most 15 characters. Tracy reads it for a thread named before its client
-    // started, which keeps names only from then on.
-    std::array<char, 16> systemName = {};
-    std::strncpy(systemName.data(), name, systemName.size() - 1);
-    pthread_setname_np(pthread_self(), systemName.data());
-#endif
+    // The thread's name in the system (top, gdb, Visual Studio). Tracy reads it for a thread named before its client started, which keeps
+    // names only from then on.
+    os::setThreadName(name);
     t_state.pendingName = name;
     if (t_state.lane != nullptr) {
         std::lock_guard lock(t_state.lane->mutex);

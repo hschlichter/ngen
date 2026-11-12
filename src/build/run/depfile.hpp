@@ -1,8 +1,12 @@
 // Parse a Make-format depfile (the output of `-MMD -MF $out.d`).
 //
 // Returns the list of dependency paths after the first `:`. Handles `\`-line continuations (the common shape —
-// clang produces these for long header lists), `\space` escapes (paths with spaces), and `#` comments. The
+// clang produces these for long header lists), `\space` and `\#` escapes (paths with spaces), and `#` comments. The
 // "target" portion before `:` is discarded; only the deps matter to us.
+//
+// A backslash escapes only a space, a tab or a `#`; anywhere else it is part of the path. That is what compilers
+// write: on Windows clang's paths use `\` as the separator (`src\os\os.h`), and on Linux a backslash in a file
+// name is too rare to matter.
 //
 // Called by `execute.hpp` after each compile edge runs successfully: the parsed paths become
 // `LogEntry::discovered_headers` and get hashed on every subsequent dirty check. Missing or empty files return
@@ -24,6 +28,18 @@
 #include <vector>
 
 namespace ngen::run {
+
+namespace detail {
+
+inline auto depfile_escape_at(const std::string& text, std::size_t i) -> bool {
+    if (text[i] != '\\' || i + 1 >= text.size()) {
+        return false;
+    }
+    char next = text[i + 1];
+    return next == ' ' || next == '\t' || next == '#';
+}
+
+} // namespace detail
 
 inline auto parse_depfile(const build::Path& path) -> std::expected<std::vector<std::string>, build::Error> {
     std::ifstream in(path.string(), std::ios::binary);
@@ -60,16 +76,22 @@ inline auto parse_depfile(const build::Path& path) -> std::expected<std::vector<
         std::string line = joined.substr(pos, eol == std::string::npos ? std::string::npos : eol - pos);
         pos = eol == std::string::npos ? joined.size() : eol + 1;
 
-        // Strip comments. Make depfiles rarely contain '#' in real paths from
-        // compiler output, so a naive find is fine.
-        if (auto hash = line.find('#'); hash != std::string::npos) {
-            line.resize(hash);
+        // Strip comments: the first `#` that is not escaped.
+        for (std::size_t i = 0; i < line.size(); ++i) {
+            if (detail::depfile_escape_at(line, i)) {
+                ++i;
+                continue;
+            }
+            if (line[i] == '#') {
+                line.resize(i);
+                break;
+            }
         }
 
         // Find the first unescaped colon to separate targets from deps.
         std::size_t colon = std::string::npos;
         for (std::size_t i = 0; i < line.size(); ++i) {
-            if (line[i] == '\\' && i + 1 < line.size()) {
+            if (detail::depfile_escape_at(line, i)) {
                 ++i;
                 continue;
             }
@@ -93,7 +115,7 @@ inline auto parse_depfile(const build::Path& path) -> std::expected<std::vector<
         };
         for (std::size_t i = 0; i < rhs.size(); ++i) {
             char ch = rhs[i];
-            if (ch == '\\' && i + 1 < rhs.size()) {
+            if (detail::depfile_escape_at(rhs, i)) {
                 token += rhs[i + 1];
                 ++i;
                 continue;

@@ -30,6 +30,7 @@ Current truth for the build framework is [`../src/build/README.md`](../src/build
 - [plan_per_source_target_phase4.md](plan_per_source_target_phase4.md) — user-facing API for per-source flags
 - [plan_fuzzy_target_matching.md](plan_fuzzy_target_matching.md) — fuzzy CLI target matching (landed)
 - [plan_build_documentation.md](plan_build_documentation.md) — plan for writing `build/build_system.md` (landed)
+- [plan_windows_port.md](plan_windows_port.md) — the `windows-vulkan` platform: clang targeting MSVC, the build system and the engine on Windows (in progress)
 - [build_concept.md](build_concept.md) — early concept sketch (historical)
 - [build_system_design_target_graph_project_model.md](build_system_design_target_graph_project_model.md) — concept explainer: Target / Graph / Project model
 - [build_system_extension_type.md](build_system_extension_type.md) — concept explainer: the extension type

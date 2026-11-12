@@ -14,6 +14,7 @@
 
 #include "assetclient.h"
 #include "fingerprint.h"
+#include "os.h"
 #include "profile.h"
 #include "worldcomposer.h"
 
@@ -112,8 +113,7 @@ auto main(int argc, char** argv) -> int {
     }
 
     // The variant is the folder the binary is in, _out/<platform>/<config>/, as for ngen-view.
-    std::error_code ec;
-    auto bin = std::filesystem::canonical("/proc/self/exe", ec).parent_path();
+    auto bin = os::executablePath().value_or(std::filesystem::path()).parent_path();
     auto variant = bin.parent_path().filename().string() + "/" + bin.filename().string();
     AssetClient client;
     if (auto connected = client.connect(variant); !connected) {

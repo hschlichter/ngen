@@ -7,6 +7,7 @@
 // prints whole. Exit codes: 0 every pack printed, 1 one couldn't be read or fetched, 3 usage.
 
 #include "assetclient.h"
+#include "os.h"
 #include "profile.h"
 #include "scenepack.h"
 
@@ -285,8 +286,7 @@ auto main(int argc, char** argv) -> int {
     AssetClient client;
     if (fromServer) {
         // The variant is the folder the binary is in, _out/<platform>/<config>/, as for ngen-view.
-        std::error_code ec;
-        auto bin = std::filesystem::canonical("/proc/self/exe", ec).parent_path();
+        auto bin = os::executablePath().value_or(std::filesystem::path()).parent_path();
         auto variant = bin.parent_path().filename().string() + "/" + bin.filename().string();
         if (auto connected = client.connect(variant); !connected) {
             std::println(stderr, "ngen-packdump: {}", connected.error());

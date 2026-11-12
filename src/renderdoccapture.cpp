@@ -6,30 +6,70 @@
 
 #ifdef NGEN_INTROSPECTION
 
-#include <dlfcn.h>
 #include <filesystem>
 #include <renderdoc_app.h>
+
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
 
 namespace {
 auto rdoc(void* api) -> RENDERDOC_API_1_6_0* {
     return static_cast<RENDERDOC_API_1_6_0*>(api);
 }
+
+#if defined(_WIN32)
+constexpr const char* libraryName = "renderdoc.dll";
+
+// Injected by RenderDoc already? GetModuleHandle only finds a library that is loaded.
+auto findLibrary(bool forceLoad, std::string& error) -> void* {
+    HMODULE library = GetModuleHandleA(libraryName);
+    if (library == nullptr && forceLoad) {
+        library = LoadLibraryA(libraryName);
+        if (library == nullptr) {
+            error = std::format("error {}", GetLastError());
+        }
+    }
+    return (void*) library;
+}
+
+auto findSymbol(void* library, const char* name) -> void* {
+    return (void*) GetProcAddress((HMODULE) library, name);
+}
+#else
+constexpr const char* libraryName = "librenderdoc.so";
+
+// Injected by RenderDoc already? RTLD_NOLOAD only finds a library that is loaded.
+auto findLibrary(bool forceLoad, std::string& error) -> void* {
+    void* library = dlopen(libraryName, RTLD_NOW | RTLD_NOLOAD);
+    if (library == nullptr && forceLoad) {
+        library = dlopen(libraryName, RTLD_NOW);
+        if (library == nullptr) {
+            error = dlerror();
+        }
+    }
+    return library;
+}
+
+auto findSymbol(void* library, const char* name) -> void* {
+    return dlsym(library, name);
+}
+#endif
 } // namespace
 
 auto RenderDocCapture::load(bool forceLoad) -> void {
-    // Injected by RenderDoc already? RTLD_NOLOAD only finds a library that is loaded.
-    void* library = dlopen("librenderdoc.so", RTLD_NOW | RTLD_NOLOAD);
-    if (library == nullptr && forceLoad) {
-        library = dlopen("librenderdoc.so", RTLD_NOW);
-        if (library == nullptr) {
-            TRACE_WARNING("Engine", "RenderDocUnavailable", "renderdoc").text(std::format("RenderDoc: cannot load librenderdoc.so: {}", dlerror()));
-            return;
-        }
+    std::string error;
+    void* library = findLibrary(forceLoad, error);
+    if (library == nullptr && !error.empty()) {
+        TRACE_WARNING("Engine", "RenderDocUnavailable", "renderdoc").text(std::format("RenderDoc: cannot load {}: {}", libraryName, error));
+        return;
     }
     if (library == nullptr) {
         return;
     }
-    auto getApi = (pRENDERDOC_GetAPI) dlsym(library, "RENDERDOC_GetAPI");
+    auto getApi = (pRENDERDOC_GetAPI) findSymbol(library, "RENDERDOC_GetAPI");
     if (getApi == nullptr) {
         TRACE_WARNING("Engine", "RenderDocUnavailable", "renderdoc").text("RenderDoc: RENDERDOC_GetAPI not found");
         return;

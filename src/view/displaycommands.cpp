@@ -2,6 +2,7 @@
 
 #include "culling.h"
 #include "drawlists.h"
+#include "os.h"
 #include "renderconfig.h"
 #include "renderdoccapture.h"
 #include "renderer.h"
@@ -15,7 +16,6 @@
 #include <filesystem>
 #include <format>
 #include <sstream>
-#include <unistd.h>
 
 // The renderer's display and captures: the texture inspector and dumps, screenshots, frame-graph resource captures, the frame debug and GPU
 // scene dumps, RenderDoc; and the records of culling, the pipelines, the render debug snapshot, memory and the GPU counters.
@@ -220,7 +220,7 @@ auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
         [&view](const Json& p, RpcResponder responder) {
             auto path = p.value("path", std::string{});
             if (path.empty()) {
-                path = (std::filesystem::current_path() / std::format("screenshot-{}-{}.png", (int) getpid(), view.frameCounter)).string();
+                path = (std::filesystem::current_path() / std::format("screenshot-{}-{}.png", (int) os::processId(), view.frameCounter)).string();
             }
             view.renderTools.requestScreenshot(path);
             view.dumps.trackScreenshot(path, responder, p.value("inline", false));

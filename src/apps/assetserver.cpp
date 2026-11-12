@@ -7,16 +7,14 @@
 
 #include "assetserver.h"
 #include "assettrace.h"
+#include "os.h"
 #include "profile.h"
 
-#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <print>
-#include <pthread.h>
 #include <string_view>
-#include <unistd.h>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -42,20 +40,15 @@ auto main(int argc, char** argv) -> int {
             return 2;
         }
     }
-    // Signals are waited for on the main thread; every other thread starts with them blocked.
-    sigset_t signals;
-    sigemptyset(&signals);
-    sigaddset(&signals, SIGINT);
-    sigaddset(&signals, SIGTERM);
-    pthread_sigmask(SIG_BLOCK, &signals, nullptr);
+    // Stop requests are waited for on the main thread; every other thread starts with them blocked.
+    os::blockStopSignals();
 
-    std::error_code ec;
-    auto exe = fs::canonical("/proc/self/exe", ec);
-    auto bin = exe.parent_path();
-    if (ec) {
-        std::println(stderr, "ngen-asset-server: cannot find its own executable: {}", ec.message());
+    auto exe = os::executablePath();
+    if (!exe) {
+        std::println(stderr, "ngen-asset-server: cannot find its own executable: {}", exe.error());
         return 1;
     }
+    auto bin = exe->parent_path();
     AssetServer::Options options;
     options.binDirectory = bin;
     options.config = bin.filename().string();
@@ -69,11 +62,10 @@ auto main(int argc, char** argv) -> int {
         std::println(stderr, "ngen-asset-server: {}", started.error());
         return 1;
     }
-    traceLine("ngen-asset-server {} in {} on 127.0.0.1:{}, pid {}, ready {:.0f} ms after start", server.variant(), fs::current_path().string(), server.port(), getpid(), trace::msSinceStart());
+    traceLine("ngen-asset-server {} in {} on 127.0.0.1:{}, pid {}, ready {:.0f} ms after start", server.variant(), fs::current_path().string(), server.port(), os::processId(), trace::msSinceStart());
 
-    int received = 0;
-    sigwait(&signals, &received);
-    traceLine("{}: stopping", received == SIGINT ? "SIGINT" : "SIGTERM");
+    auto received = os::waitForStopSignal();
+    traceLine("{}: stopping", received);
     server.stop();
     traceLine("stopped");
     return 0;

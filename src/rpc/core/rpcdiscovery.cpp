@@ -1,10 +1,10 @@
 #include "rpcdiscovery.h"
 
+#include "os.h"
+
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
-#include <cerrno>
-#include <csignal>
 #include <format>
 #include <fstream>
 #include <sstream>
@@ -14,7 +14,7 @@ namespace fs = std::filesystem;
 namespace {
 
 auto processAlive(int pid) -> bool {
-    return pid > 0 && (kill(pid, 0) == 0 || errno == EPERM);
+    return os::processAlive(pid);
 }
 
 } // namespace

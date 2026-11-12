@@ -24,6 +24,7 @@
 #include "../path.hpp"
 #include "../target.hpp"
 
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -85,6 +86,18 @@ public:
 
     auto std(std::string_view value) -> ObjectFile& {
         std_data = std::string(value);
+        return *this;
+    }
+
+    // Variant gating for one source: a platform-specific file (`foolinux.cpp` beside `foowindows.cpp`) compiles
+    // only on its platforms, and its target links without it elsewhere.
+    auto only_on(std::initializer_list<std::string_view> names) -> ObjectFile& {
+        base_->only_on(names);
+        return *this;
+    }
+
+    auto except_on(std::initializer_list<std::string_view> names) -> ObjectFile& {
+        base_->except_on(names);
         return *this;
     }
 

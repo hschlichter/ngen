@@ -2,6 +2,7 @@
 
 #include "assetclient.h"
 #include "drawlists.h"
+#include "os.h"
 #include "rhidevice.h"
 
 #include <imgui.h>
@@ -10,17 +11,11 @@
 #include <cstdio>
 #include <fstream>
 #include <string>
-#include <unistd.h>
 
 namespace {
 
-// The process's resident set, from /proc/self/statm (pages).
 auto residentBytes() -> uint64_t {
-    std::ifstream statm("/proc/self/statm");
-    uint64_t size = 0;
-    uint64_t resident = 0;
-    statm >> size >> resident;
-    return resident * (uint64_t) sysconf(_SC_PAGESIZE);
+    return os::residentBytes();
 }
 
 auto bytesText(uint64_t bytes) -> std::string {

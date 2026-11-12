@@ -81,6 +81,20 @@ inline std::atomic<bool>& sigint_flag() {
     return flag;
 }
 
+#if defined(_WIN32)
+// Windows has no sigaction; the C runtime's signal() delivers Ctrl+C as SIGINT.
+using SigintHandler = void (*)(int);
+
+inline auto install_sigint_handler() -> SigintHandler {
+    return std::signal(SIGINT, [](int) {
+        sigint_flag().store(true, std::memory_order_relaxed);
+    });
+}
+
+inline auto restore_sigint_handler(SigintHandler prev) -> void {
+    std::signal(SIGINT, prev);
+}
+#else
 inline auto install_sigint_handler() -> struct ::sigaction {
     struct ::sigaction prev{};
     struct ::sigaction sa{};
@@ -97,6 +111,7 @@ inline auto
 restore_sigint_handler(const struct ::sigaction& prev) -> void {
     ::sigaction(SIGINT, &prev, nullptr);
 }
+#endif
 
 } // namespace detail
 

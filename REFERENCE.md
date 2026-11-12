@@ -48,7 +48,7 @@ After changing `src/apps/cli.cpp`: `./ngen-cli build ngen-cli`.
 
 ## ngen-build
 
-`./_out/ngen-build -p <platform> -c <config> [options] [target...]`. Platforms: `linux-vulkan`. Configs: `debug`, `release`, `gamerelease`
+`./_out/ngen-build -p <platform> -c <config> [options] [target...]`. Platforms: `linux-vulkan`, `windows-vulkan`. Configs: `debug`, `release`, `gamerelease`
 (no RPC, no introspection).
 
 | Option | Does |
@@ -246,7 +246,7 @@ or `src/asset/server/`.
 
 | Flag | Does |
 |---|---|
-| `--watch=inotify` | Watch sources with inotify (default). |
+| `--watch=inotify` | Watch sources with inotify (default on Linux; Windows always polls). |
 | `--watch=poll` | Poll the sources of what clients received once a second. |
 | `--delay=<id pattern>:<ms>` | Test aid: hold answers for matching ids (`*` matches anything) that long after packing. Repeatable. |
 

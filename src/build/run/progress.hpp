@@ -28,7 +28,14 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+
+#if defined(_WIN32)
+#include "win32.hpp"
+
+#include <io.h>
+#else
 #include <unistd.h>
+#endif
 
 namespace ngen::run {
 
@@ -41,7 +48,19 @@ enum class Verbosity {
 class Progress {
 public:
     Progress(std::size_t total, Verbosity v) : total_(total), verbosity_(v) {
+#if defined(_WIN32)
+        // A console takes ANSI sequences (\r overwrite, \e[K, colour) once virtual terminal processing is on.
+        is_tty_ = ::_isatty(_fileno(stdout)) != 0;
+        if (is_tty_) {
+            HANDLE console = ::GetStdHandle(STD_OUTPUT_HANDLE);
+            DWORD mode = 0;
+            if (::GetConsoleMode(console, &mode)) {
+                ::SetConsoleMode(console, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+            }
+        }
+#else
         is_tty_ = ::isatty(STDOUT_FILENO) != 0;
+#endif
         const char* no_color = std::getenv("NO_COLOR");
         color_ = is_tty_ && (no_color == nullptr || no_color[0] == '\0');
         // \r-overwrite only makes sense for default-mode + tty. Otherwise stream

@@ -102,6 +102,8 @@ Each library documents its design and rules in a README next to the code:
   Tracy as a second sink.
 - [`src/config/README.md`](src/config/README.md) — configuration: the engine's settings as typed values declared in code, their names, threads,
   changes, and how they are read and set at runtime.
+- [`src/os/README.md`](src/os/README.md) — what the engine asks of the operating system (process, thread names, stop signals, child processes), one
+  implementation per OS.
 - [`src/rpc/README.md`](src/rpc/README.md) — how ngen processes and agents talk: JSON-RPC over loopback TCP, discovery, threading, adding a method, records.
 - [`src/introspect/README.md`](src/introspect/README.md) — `ngen-introspect`: every running process's records in a window or on the command line, and calling their methods.
 - [`src/build/README.md`](src/build/README.md) — the self-hosted build system: framework, IR, runner, bootstrap.
@@ -139,7 +141,8 @@ is in [`docs/adr/`](docs/adr/README.md).
 | [tinyexr](https://github.com/syoyo/tinyexr) | Reading OpenEXR in `ngen-packer-exr` (a dome light's HDR sky) |
 | [meshoptimizer](https://github.com/zeux/meshoptimizer) | Welding and meshlets for the USD packer's meshes |
 
-GLM, stb, Dear ImGui, OpenUSD, nlohmann/json, tinyexr and meshoptimizer are git submodules in `external/`. SDL3 and the Vulkan SDK must be installed on the system.
+GLM, stb, Dear ImGui, OpenUSD, nlohmann/json, tinyexr and meshoptimizer are git submodules in `external/`. On Linux, SDL3 and the Vulkan SDK must be
+installed on the system. On Windows the Vulkan SDK comes from winget and SDL3 is built from the `external/sdl` submodule (see Building on Windows).
 
 After cloning, initialize the submodules:
 
@@ -185,6 +188,50 @@ use, `ngen-cli` (next section) remembers the platform and config for you.
 See [src/build/README.md](src/build/README.md) for the build system internals (framework layout, extension model, IR and runner, adding platforms
 and configurations).
 
+### Building on Windows
+
+The `windows-vulkan` platform builds with `clang++` targeting the MSVC ABI (so it links the MSVC-built OpenUSD and SDL3), `llvm-ar` and `lld`, and
+uses the dynamic release C runtime in every configuration, as OpenUSD does. `debug` and `release` build; `gamerelease`'s link flags are GNU ld's and
+do not yet work on Windows. Install the tools and the Vulkan SDK with winget (from an administrator terminal, or accept the installers' elevation
+prompts), then open a new terminal so `PATH` and `VULKAN_SDK` are set:
+
+```powershell
+winget install LLVM.LLVM                           # clang++, llvm-ar, lld-link, clang-format
+winget install Kitware.CMake                       # builds SDL3 and OpenUSD
+winget install Python.Python.3.13                  # runs OpenUSD's build script
+winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive"
+winget install KhronosGroup.VulkanSDK              # Vulkan headers and loader, glslc, shaderc, validation layers; sets VULKAN_SDK
+```
+
+Visual Studio 2022 (or its Build Tools) provides the Windows SDK and C++ libraries clang links against, and the compiler CMake builds SDL3 and OpenUSD
+with. Winget's SDL3 package installs only the runtime DLL, so SDL3 is the `external/sdl` submodule, built once into `external/sdl3_build`:
+
+```bash
+cmake -S external/sdl -B external/sdl3_build/_cmake -G "Visual Studio 17 2022" -A x64 \
+  -DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX=external/sdl3_build
+cmake --build external/sdl3_build/_cmake --config Release --parallel
+cmake --install external/sdl3_build/_cmake --config Release
+```
+
+OpenUSD builds with the same script and options as on Linux (see Building OpenUSD), with `python` for `python3` and the core count for `$(nproc)`;
+it finds Visual Studio itself. Then bootstrap and build — from Git Bash, as below, or PowerShell:
+
+```bash
+mkdir -p _out && clang++ -std=c++23 -O0 -g -D_CRT_SECURE_NO_WARNINGS -o _out/ngen-build.exe src/build/bootstrap.cpp
+./_out/ngen-build -p windows-vulkan -c debug ngen-cli
+./_out/windows-vulkan/debug/ngen-cli set windows-vulkan debug
+./ngen-cli build
+```
+
+The build copies the DLLs the programs load (SDL3, OpenUSD and its `usd/` plugin folder, oneTBB) beside them in `_out/windows-vulkan/<config>/`;
+the Vulkan SDK's are found through `PATH`. Programs run from any directory. What is different from Linux:
+
+- `set` puts a copy of the cli in the root, `ngen-cli.exe`, not a symlink (a symlink needs administrator rights or Developer Mode). `set` refreshes
+  it, so run `./ngen-cli set` again after changing `src/apps/cli.cpp`.
+- The asset server polls the sources it watches once a second (`--watch=poll` on Linux); there is no inotify.
+- The Vulkan drivers on Windows have no `VK_EXT_headless_surface`, so `SDL_VIDEODRIVER=offscreen` cannot make a surface: the view and the RHI examples
+  open a window, also for `--frames`, `--script` and `--screenshot` runs.
+
 ## ngen-cli
 
 `ngen-cli` is the front door to the engine's tools. You pick a platform and config once with `set`; after that, `build` and the tool commands use
@@ -202,8 +249,8 @@ With `ngen-build` bootstrapped (see Building), build the cli for one variant and
 ./_out/linux-vulkan/debug/ngen-cli set linux-vulkan debug
 ```
 
-`set` creates `./ngen-cli` in the repository root, a symlink to the set variant's cli. From then on use `./ngen-cli` (or put the repository root
-on your `PATH`). It works from any directory: `../ngen-cli` from `src/` behaves the same.
+`set` creates `./ngen-cli` in the repository root, a symlink to the set variant's cli (on Windows a copy, `ngen-cli.exe`). From then on use
+`./ngen-cli` (or put the repository root on your `PATH`). It works from any directory: `../ngen-cli` from `src/` behaves the same.
 
 ### Commands
 
@@ -218,7 +265,8 @@ on your `PATH`). It works from any directory: `../ngen-cli` from `src/` behaves 
 | `ngen-cli pack <scene>...` | Run the set variant's `ngen-pack`: the asset server packs everything the scenes can reach (every LOD level and variant), so a view opens them from a full cache (`src/asset/README.md`). |
 | `ngen-cli help` | The commands, the set variant, and which tools are built for it. |
 
-Forwarded tools replace the cli process, so their output, signals and exit code are exactly those of running the tool directly.
+Forwarded tools replace the cli process, so their output, signals and exit code are exactly those of running the tool directly. Windows has no
+exec: there the cli runs the tool on its console, waits, and exits with its exit code.
 
 ### Examples
 

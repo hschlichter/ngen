@@ -7,14 +7,9 @@
 #include <nlohmann/json.hpp>
 
 #include <array>
-#include <cerrno>
-#include <poll.h>
-#include <sys/eventfd.h>
-#include <sys/socket.h>
-#include <unistd.h>
 
 struct RpcServer::Connection {
-    int fd = -1;
+    rpc::Socket fd = rpc::invalidSocket;
     RpcFrameReader reader;
     std::vector<std::byte> outgoing; // guarded by RpcServer::mutex
     size_t outgoingOffset = 0;
@@ -45,7 +40,7 @@ auto RpcServer::setDrainHandler(DrainHandler handler, size_t threshold) -> void 
 }
 
 auto RpcServer::startWithoutListening() -> void {
-    wakeFd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    waker.open();
     running = true;
     ioThread = std::thread([this] { ioLoop(); });
 }
@@ -86,9 +81,9 @@ auto RpcServer::start(uint16_t port) -> std::expected<uint16_t, std::string> {
     if (!fd) {
         return std::unexpected(fd.error());
     }
-    listenFd = *fd;
-    rpc::setNonBlocking(listenFd);
-    wakeFd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    listenSocket = *fd;
+    rpc::setNonBlocking(listenSocket);
+    waker.open();
     running = true;
     ioThread = std::thread([this] { ioLoop(); });
     return bound;
@@ -112,17 +107,13 @@ auto RpcServer::stop() -> void {
     for (auto id : ids) {
         closeConnection(id);
     }
-    rpc::closeSocket(listenFd);
-    rpc::closeSocket(wakeFd);
-    listenFd = -1;
-    wakeFd = -1;
+    rpc::closeSocket(listenSocket);
+    listenSocket = rpc::invalidSocket;
+    waker.close();
 }
 
 auto RpcServer::wake() -> void {
-    if (wakeFd >= 0) {
-        uint64_t one = 1;
-        [[maybe_unused]] auto written = write(wakeFd, &one, sizeof(one));
-    }
+    waker.signal();
 }
 
 auto RpcServer::send(ConnectionId id, const rpc::Json& message, std::span<const std::byte> attachment) -> void {
@@ -219,11 +210,16 @@ auto RpcServer::handleFrame(ConnectionId id, std::string json, std::vector<std::
 auto RpcServer::ioLoop() -> void {
     profile::registerThread(threadName.c_str());
     std::array<std::byte, 64 * 1024> readBuffer = {};
+    // The poll set: the waker, the listener when there is one, then one entry per connection.
+    bool listening = listenSocket != rpc::invalidSocket;
+    size_t firstConnection = listening ? 2 : 1;
     while (running) {
-        std::vector<pollfd> fds;
+        std::vector<rpc::PollEntry> fds;
         std::vector<ConnectionId> ids;
-        fds.push_back({.fd = listenFd, .events = POLLIN, .revents = 0});
-        fds.push_back({.fd = wakeFd, .events = POLLIN, .revents = 0});
+        fds.push_back({.socket = waker.socket(), .wantRead = true});
+        if (listening) {
+            fds.push_back({.socket = listenSocket, .wantRead = true});
+        }
         std::vector<ConnectionId> toClose;
         {
             std::lock_guard lock(mutex);
@@ -232,11 +228,8 @@ auto RpcServer::ioLoop() -> void {
                     toClose.push_back(id);
                     continue;
                 }
-                short events = POLLIN;
-                if (connection->outgoingOffset < connection->outgoing.size()) {
-                    events |= POLLOUT;
-                }
-                fds.push_back({.fd = connection->fd, .events = events, .revents = 0});
+                bool wantWrite = connection->outgoingOffset < connection->outgoing.size();
+                fds.push_back({.socket = connection->fd, .wantRead = true, .wantWrite = wantWrite});
                 ids.push_back(id);
             }
         }
@@ -247,23 +240,22 @@ auto RpcServer::ioLoop() -> void {
         {
             // Idle in slices, so an idle I/O thread has zones too (profile::idleSlice).
             PROFILE_ZONE_DETAIL("RpcPoll", Wait);
-            polled = poll(fds.data(), (nfds_t) fds.size(), (int) profile::idleSlice.count());
+            polled = rpc::pollSockets(fds, (int) profile::idleSlice.count());
         }
         if (polled < 0) {
-            if (errno == EINTR) {
+            if (rpc::lastErrorInterrupted()) {
                 continue;
             }
             break;
         }
-        if ((fds[1].revents & POLLIN) != 0) {
-            uint64_t value = 0;
-            [[maybe_unused]] auto consumed = read(wakeFd, &value, sizeof(value));
+        if (fds[0].readable) {
+            waker.drain();
         }
-        if ((fds[0].revents & POLLIN) != 0) {
+        if (listening && fds[1].readable) {
             PROFILE_ZONE_DETAIL("RpcAccept", Io);
             while (true) {
-                int fd = accept4(listenFd, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
-                if (fd < 0) {
+                auto fd = rpc::acceptConnection(listenSocket);
+                if (fd == rpc::invalidSocket) {
                     break;
                 }
                 ConnectionId id = 0;
@@ -281,8 +273,8 @@ auto RpcServer::ioLoop() -> void {
         }
         for (size_t i = 0; i < ids.size(); i++) {
             auto id = ids[i];
-            auto revents = fds[i + 2].revents;
-            if ((revents & POLLOUT) != 0) {
+            const auto& entry = fds[i + firstConnection];
+            if (entry.writable) {
                 PROFILE_ZONE_DETAIL("RpcSend", Io);
                 bool drained = false;
                 {
@@ -291,7 +283,7 @@ auto RpcServer::ioLoop() -> void {
                     if (it != connections.end()) {
                         auto& connection = *it->second;
                         auto pending = connection.outgoing.size() - connection.outgoingOffset;
-                        auto written = ::send(connection.fd, connection.outgoing.data() + connection.outgoingOffset, pending, MSG_NOSIGNAL);
+                        auto written = rpc::sendSome(connection.fd, connection.outgoing.data() + connection.outgoingOffset, pending);
                         if (written > 0) {
                             connection.outgoingOffset += (size_t) written;
                             if (connection.outgoingOffset == connection.outgoing.size()) {
@@ -299,7 +291,7 @@ auto RpcServer::ioLoop() -> void {
                                 connection.outgoingOffset = 0;
                             }
                             drained = connection.outgoing.size() - connection.outgoingOffset <= drainThreshold;
-                        } else if (written < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+                        } else if (written < 0 && !rpc::lastErrorWouldBlock()) {
                             connection.closing = true;
                         }
                     }
@@ -309,13 +301,12 @@ auto RpcServer::ioLoop() -> void {
                     drainHandler(id);
                 }
             }
-            if ((revents & (POLLIN | POLLHUP | POLLERR)) == 0) {
+            if (!entry.readable && !entry.closed) {
                 continue;
             }
             PROFILE_ZONE_DETAIL("RpcReceive", Io);
-            int fd = fds[i + 2].fd;
-            auto received = recv(fd, readBuffer.data(), readBuffer.size(), 0);
-            if (received == 0 || (received < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
+            auto received = rpc::receiveSome(entry.socket, readBuffer.data(), readBuffer.size());
+            if (received == 0 || (received < 0 && !rpc::lastErrorWouldBlock())) {
                 closeConnection(id);
                 continue;
             }

@@ -9,7 +9,8 @@
 //   - `shell_quote`, `split_ws`, `capture_tokens`, `repo_root`, `concat`, `concat_tokens`, `write_if_changed` —
 //     small helpers used by the emitter, by tool substitution, and by command builders. `capture_tokens` is
 //     `popen`-based and intended for fixed args like `pkg-config --cflags <lib>`; it is not safe for arbitrary
-//     user input.
+//     user input. `shell_quote` quotes for the host's command runner: POSIX `sh` on Linux, the Windows
+//     command-line rules (no shell) on Windows.
 //   - `build::Error` — the framework's error type, threaded through every `std::expected<T, Error>` return.
 //     Living here means callers that need `Error` don't pay an extra include.
 
@@ -38,6 +39,36 @@ struct Error {
     std::string message;
 };
 
+#if defined(_WIN32)
+// Windows has no shell between the runner and the program: the command line goes to `CreateProcessW` as is, and the
+// program's C runtime splits it back into argv (the `CommandLineToArgvW` rules). Quote a token in double quotes when it
+// is empty or holds whitespace or a quote; inside the quotes a run of backslashes is doubled before a quote (escaped as
+// `\"`) and at the end, and left alone anywhere else.
+inline auto shell_quote(const std::string& value) -> std::string {
+    if (!value.empty() && value.find_first_of(" \t\n\v\"") == std::string::npos) {
+        return value;
+    }
+    std::string out = "\"";
+    std::size_t backslashes = 0;
+    for (char ch : value) {
+        if (ch == '\\') {
+            backslashes++;
+            continue;
+        }
+        if (ch == '"') {
+            out.append(backslashes * 2 + 1, '\\');
+            out += '"';
+        } else {
+            out.append(backslashes, '\\');
+            out += ch;
+        }
+        backslashes = 0;
+    }
+    out.append(backslashes * 2, '\\');
+    out += '"';
+    return out;
+}
+#else
 inline auto shell_quote(const std::string& value) -> std::string {
     if (value.empty()) {
         return "''";
@@ -63,6 +94,7 @@ inline auto shell_quote(const std::string& value) -> std::string {
     out += "'";
     return out;
 }
+#endif
 
 inline auto split_ws(const std::string& text) -> std::vector<std::string> {
     std::istringstream in(text);
@@ -206,14 +238,22 @@ inline auto capture_tokens(std::initializer_list<std::string> argv) -> std::vect
     }
     std::array<char, 256> buffer{};
     std::string output;
+#if defined(_WIN32)
+    FILE* pipe = _popen(command.c_str(), "r");
+#else
     FILE* pipe = popen(command.c_str(), "r");
+#endif
     if (!pipe) {
         return {};
     }
     while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe)) {
         output += buffer.data();
     }
+#if defined(_WIN32)
+    auto rc = _pclose(pipe);
+#else
     auto rc = pclose(pipe);
+#endif
     if (rc != 0) {
         return {};
     }

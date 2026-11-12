@@ -1,6 +1,7 @@
 #include "assetserver.h"
 
 #include "assethash.h"
+#include "os.h"
 #include "packer.h"
 #include "profile.h"
 #include "profilecommands.h"
@@ -16,7 +17,6 @@
 #include <print>
 #include <set>
 #include <thread>
-#include <unistd.h>
 
 namespace fs = std::filesystem;
 
@@ -141,8 +141,8 @@ auto AssetServer::start(const Options& startOptions) -> std::expected<void, std:
 
     addRecords();
     watcher.start([this](std::vector<fs::path> files) { onFilesChanged(std::move(files)); }, [](const std::string& message) { traceWarning("watch: {}", message); }, options.pollOnly);
-    traceLine("watching the sources of what clients receive, {}", options.pollOnly ? "polled once a second" : "through inotify");
-    traceStream = std::make_unique<trace::TraceStream>(rpc, std::format("asset:{}", getpid()));
+    traceLine("watching the sources of what clients receive, {}", watcher.pollsOnly() ? "polled once a second" : "through inotify");
+    traceStream = std::make_unique<trace::TraceStream>(rpc, std::format("asset:{}", os::processId()));
     rpc.setRequestHandler([this](RpcServer::ConnectionId connection, const rpc::Json& message, std::vector<std::byte>) {
         onMessage(connection, message);
     });
@@ -169,7 +169,7 @@ auto AssetServer::start(const Options& startOptions) -> std::expected<void, std:
 
     RpcEndpointInfo info;
     info.kind = "asset";
-    info.pid = getpid();
+    info.pid = os::processId();
     info.port = boundPort;
     info.label = variant();
     info.protocol = rpc::protocolVersion;
@@ -338,7 +338,7 @@ auto AssetServer::status() -> rpc::Json {
         clients = connections.size();
     }
     return {
-        {"pid", getpid()},
+        {"pid", os::processId()},
         {"variant", variant()},
         {"directory", fs::current_path().string()},
         {"clients", clients},
@@ -578,7 +578,7 @@ auto AssetServer::pack(const std::string& id, int64_t forceRequest) -> Outcome {
 
 auto AssetServer::runPacker(const std::string& primary, const PackRule& rule, uint64_t key) -> Outcome {
     Outcome outcome;
-    auto packer = (options.binDirectory / rule.packer).string();
+    auto packer = (options.binDirectory / (rule.packer + std::string(os::executableSuffix))).string();
     auto output = (cacheDirectory / primary).string();
     auto depfile = output + ".d";
     std::vector<std::string> argv = {
@@ -605,11 +605,11 @@ auto AssetServer::runPacker(const std::string& primary, const PackRule& rule, ui
     traceLine("  {}  packing with {}", primary, rule.packer);
     packerRuns++;
     auto started = std::chrono::steady_clock::now();
-    ProcessResult result;
+    os::ProcessResult result;
     {
         // The packer is a child process: this thread waits for it.
         PROFILE_ZONE("PackerRun", Wait);
-        result = runProcess(argv);
+        result = os::runProcess(argv);
     }
     if (result.exitCode != 0) {
         outcome.errors = splitLines(result.output);

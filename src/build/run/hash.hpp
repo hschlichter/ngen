@@ -20,6 +20,7 @@
 
 #include "../framework/glob.hpp"
 #include "../framework/path.hpp"
+#include "win32.hpp"
 
 #include <array>
 #include <cerrno>
@@ -40,6 +41,22 @@ struct StatTuple {
     std::uint64_t ctime_ns = 0;
 };
 
+#if defined(_WIN32)
+// Windows: the last-write time (100 ns ticks) stands in for both times; the attribute-change time needs an open handle,
+// and the last-write time and size together catch every edit the runner cares about.
+inline auto stat_file(const std::string& path) -> std::expected<StatTuple, build::Error> {
+    WIN32_FILE_ATTRIBUTE_DATA data{};
+    if (!::GetFileAttributesExW(win32::widen(path).c_str(), GetFileExInfoStandard, &data)) {
+        return std::unexpected(build::Error{"stat failed for " + path + ": " + win32::last_error_text()});
+    }
+    StatTuple t;
+    t.size = (static_cast<std::uint64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
+    auto ticks = (static_cast<std::uint64_t>(data.ftLastWriteTime.dwHighDateTime) << 32) | data.ftLastWriteTime.dwLowDateTime;
+    t.mtime_ns = ticks * 100;
+    t.ctime_ns = t.mtime_ns;
+    return t;
+}
+#else
 inline auto stat_file(const std::string& path) -> std::expected<StatTuple, build::Error> {
     struct stat st{};
     if (::stat(path.c_str(), &st) != 0) {
@@ -51,6 +68,7 @@ inline auto stat_file(const std::string& path) -> std::expected<StatTuple, build
     t.ctime_ns = static_cast<std::uint64_t>(st.st_ctim.tv_sec) * 1'000'000'000ull + static_cast<std::uint64_t>(st.st_ctim.tv_nsec);
     return t;
 }
+#endif
 
 inline auto stat_matches(const StatTuple& a, const StatTuple& b) -> bool {
     return a.size == b.size && a.mtime_ns == b.mtime_ns && a.ctime_ns == b.ctime_ns;

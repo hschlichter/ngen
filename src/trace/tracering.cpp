@@ -58,7 +58,11 @@ auto printToConsole(const Event& event) -> void {
     auto seconds = std::chrono::system_clock::to_time_t(now);
     auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() % 1000;
     std::tm local = {};
+#if defined(_WIN32)
+    localtime_s(&local, &seconds);
+#else
     localtime_r(&seconds, &local);
+#endif
     auto message = event.text.empty() ? std::format("{} {}", event.type, event.name) : event.text;
     std::lock_guard lock(consoleMutex);
     switch (event.level) {

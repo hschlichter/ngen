@@ -34,9 +34,9 @@
 // empty means "use the IR's default_targets" (every registered target except global tools). Verbosity (`-v`, `-vv`) is forwarded to the runner; `--list`
 // and `--dump-graph` are forwarded to the graph stage.
 //
-// `std::system` is used to spawn the two subprocesses (graph and runner). It's marked with
-// `// NOLINT(bugprone-command-processor)` since this is the deliberate orchestration boundary; the in-process
-// self-build path uses the runner library directly without `std::system`.
+// The two subprocesses (graph and runner) are started with the runner's `Process` and the terminal as their
+// stdio, the same way on Linux (`/bin/sh -c`) and Windows (`CreateProcessW`, no shell). On Windows the
+// binaries are `_out/<name>.exe` and the self-build compiles with `clang++` (targeting the MSVC ABI).
 
 #include "ir/reader.hpp"
 #include "ir/resolve.hpp"
@@ -112,20 +112,42 @@ auto parse(int argc, char** argv) -> std::expected<Args, build::Error> {
     return args;
 }
 
-auto shell_quote(const std::string& value) -> std::string {
-    if (value.empty()) {
-        return "''";
+using build::shell_quote;
+
+#if defined(_WIN32)
+constexpr const char* kHostCompiler = "clang++";
+constexpr const char* kHostFlags = "-std=c++23 -O0 -g -Wall -Wextra -D_CRT_SECURE_NO_WARNINGS";
+constexpr const char* kHostExeSuffix = ".exe";
+#else
+constexpr const char* kHostCompiler = "c++";
+constexpr const char* kHostFlags = "-std=c++23 -O0 -g -Wall -Wextra -pthread";
+constexpr const char* kHostExeSuffix = "";
+#endif
+
+// The path a build-system binary under `_out/` has on disk.
+auto host_binary(const std::string& stem) -> std::string {
+    return "_out/" + stem + kHostExeSuffix;
+}
+
+// How a command line names a build-system binary under `_out/`: `./_out/<stem>` for sh, `_out\<stem>.exe` for
+// CreateProcess, which resolves a relative program path only with native separators.
+auto host_command(const std::string& stem) -> std::string {
+#if defined(_WIN32)
+    return "_out\\" + stem + kHostExeSuffix;
+#else
+    return "./_out/" + stem;
+#endif
+}
+
+// Runs a command with the terminal as its stdio and returns its exit code (1 when it could not start).
+auto run_inherited(const std::string& command) -> int {
+    std::string unused;
+    auto rc = ngen::run::Process::run(command, unused, true);
+    if (!rc) {
+        std::cerr << rc.error().message << "\n";
+        return 1;
     }
-    std::string out = "'";
-    for (char ch : value) {
-        if (ch == '\'') {
-            out += "'\\''";
-        } else {
-            out += ch;
-        }
-    }
-    out += "'";
-    return out;
+    return *rc;
 }
 
 auto graph_forward_args(int argc, char** argv) -> std::string {
@@ -170,7 +192,7 @@ auto print_help() -> void {
               << std::flush;
     // Shell out to the graph stage for the project-specific listing. `std::system` writes directly to fd 1
     // and does not see the iostream buffer, so flushing before the call is required to preserve order.
-    std::system("./_out/ngen-build-graph --list"); // NOLINT(bugprone-command-processor)
+    run_inherited(host_command("ngen-build-graph") + " --list");
 }
 
 // In-memory IR describing how to compile the two binaries that drive the rest
@@ -182,27 +204,29 @@ auto self_build_ir() -> build::ir::IR {
     ir.project_root = std::filesystem::current_path().string();
     ir.pools = build::ir::make_default_pools();
 
-    auto cxxflags = std::string("-std=c++23 -O0 -g -Wall -Wextra -pthread");
+    auto compile = std::string(kHostCompiler) + " " + kHostFlags;
+    auto graph = host_binary("ngen-build-graph");
+    auto runner = host_binary("ngen-build-run");
 
     {
         build::ir::Edge edge;
         edge.name = "ngen-build-graph";
-        edge.command = "c++ " + cxxflags + " -MMD -MF _out/ngen-build-graph.d -o _out/ngen-build-graph build.cpp";
+        edge.command = compile + " -MMD -MF _out/ngen-build-graph.d -o " + graph + " build.cpp";
         edge.inputs = {"build.cpp"};
-        edge.outputs = {"_out/ngen-build-graph"};
+        edge.outputs = {graph};
         edge.depfile = "_out/ngen-build-graph.d";
-        edge.description = "GRAPH _out/ngen-build-graph";
+        edge.description = "GRAPH " + graph;
         edge.pool = build::ir::kPoolDefault;
         ir.edges.push_back(std::move(edge));
     }
     {
         build::ir::Edge edge;
         edge.name = "ngen-build-run";
-        edge.command = "c++ " + cxxflags + " -MMD -MF _out/ngen-build-run.d -o _out/ngen-build-run src/build/run/main.cpp";
+        edge.command = compile + " -MMD -MF _out/ngen-build-run.d -o " + runner + " src/build/run/main.cpp";
         edge.inputs = {"src/build/run/main.cpp"};
-        edge.outputs = {"_out/ngen-build-run"};
+        edge.outputs = {runner};
         edge.depfile = "_out/ngen-build-run.d";
-        edge.description = "RUNNER _out/ngen-build-run";
+        edge.description = "RUNNER " + runner;
         edge.pool = build::ir::kPoolDefault;
         ir.edges.push_back(std::move(edge));
     }
@@ -280,8 +304,8 @@ auto main(int argc, char** argv) -> int {
         return 0;
     }
 
-    auto graph_cmd = "./_out/ngen-build-graph" + graph_forward_args(argc, argv);
-    if (std::system(graph_cmd.c_str()) != 0) { // NOLINT(bugprone-command-processor)
+    auto graph_cmd = host_command("ngen-build-graph") + graph_forward_args(argc, argv);
+    if (run_inherited(graph_cmd) != 0) {
         return 1;
     }
 
@@ -320,9 +344,13 @@ auto main(int argc, char** argv) -> int {
         }
     }
 
-    std::string cmd = "./_out/ngen-build-run --ir " + shell_quote(ir_path);
+    std::string cmd = host_command("ngen-build-run") + " --ir " + shell_quote(ir_path);
     if (args->verbosity == 1) {
+#if defined(_WIN32)
+        cmd += " -v";
+#else
         cmd = "TERM=dumb " + cmd + " -v";
+#endif
     }
     if (args->verbosity >= 2) {
         cmd += " -vv";
@@ -333,5 +361,5 @@ auto main(int argc, char** argv) -> int {
     for (const auto& t : resolved_targets) {
         cmd += " " + shell_quote(t);
     }
-    return std::system(cmd.c_str()) == 0 ? 0 : 1; // NOLINT(bugprone-command-processor)
+    return run_inherited(cmd) == 0 ? 0 : 1;
 }

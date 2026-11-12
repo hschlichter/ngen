@@ -5,29 +5,14 @@
 // otherwise the one the build used before shaders became packed assets, so the SPIR-V is byte for byte the same.
 // Every shader targets Vulkan 1.3: GL_EXT_mesh_shader needs SPIR-V 1.4, subgroup operations 1.3.
 
+#include "os.h"
 #include "packer.h"
 #include "profile.h"
 
-#include <cstdlib>
+#include <cstdio>
 #include <print>
 #include <string>
 #include <vector>
-
-namespace {
-
-auto shellQuote(const std::string& value) -> std::string {
-    std::string out = "'";
-    for (char ch : value) {
-        if (ch == '\'') {
-            out += "'\\''";
-        } else {
-            out += ch;
-        }
-    }
-    return out + "'";
-}
-
-} // namespace
 
 auto main(int argc, char** argv) -> int {
     // A packer runs for milliseconds: Tracy only when NGEN_TRACY=1 asks (its start-up alone takes 200 ms).
@@ -48,11 +33,13 @@ auto main(int argc, char** argv) -> int {
     glslc.emplace_back("-MD");
     glslc.emplace_back("-MF");
     glslc.push_back(args->depfile);
-    std::string command;
-    for (const auto& token : glslc) {
-        command += (command.empty() ? "" : " ") + shellQuote(token);
+    // glslc from PATH, no shell; what it prints is this packer's output, which the asset server reports.
+    auto result = os::runProcess(glslc);
+    std::fputs(result.output.c_str(), stderr);
+    if (!result.output.empty() && result.output.back() != '\n') {
+        std::fputs("\n", stderr);
     }
-    if (std::system(command.c_str()) != 0) { // NOLINT(bugprone-command-processor): fixed program, quoted arguments
+    if (result.exitCode != 0) {
         std::println(stderr, "ngen-packer-shader: glslc failed on {}", args->source);
         return 1;
     }

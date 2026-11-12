@@ -26,6 +26,12 @@ One C++ compile produces `_out/ngen-build`:
 mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/bootstrap.cpp
 ```
 
+On Windows, with clang targeting the MSVC ABI (no `c++`; the binaries take `.exe`):
+
+```sh
+mkdir -p _out && clang++ -std=c++23 -O0 -g -D_CRT_SECURE_NO_WARNINGS -o _out/ngen-build.exe src/build/bootstrap.cpp
+```
+
 From then on, `ngen-build` is the only entry point. It rebuilds `ngen-build-graph` and `ngen-build-run` on demand using the runner library, then drives them
 as subprocesses.
 
@@ -232,7 +238,8 @@ The framework is designed so that adding a new language module is purely additiv
    ```
 
    The branch builds a `Command` (argv list) via `<lang>::cmd::*` builders, bakes it into the edge's `command` string via `bake_command`, and pushes an
-   `ir::Edge` into the variant emitter. No language-specific knowledge bleeds into the runner — it just executes `/bin/sh -c <baked-command>`.
+   `ir::Edge` into the variant emitter. No language-specific knowledge bleeds into the runner — it just executes the baked command (see "Commands
+   on Linux and Windows").
 
 No edits to `build::Target`, `build::Project`, `build::Platform`, or `build::Configuration` are required.
 
@@ -261,6 +268,17 @@ System-level invariants worth knowing before changing the code. Implementation d
   top-level file at `_out/compile_commands.json` is the union of every variant's IR currently on disk. Naive
   concatenation; entries are not de-duplicated across variants.
 - **`-Wl,--start-group` / `--end-group`** wraps every program's archives at link time so over-linking works without curating transitive link order.
+  A toolchain whose linker resolves archives in any order turns it off with `archive_groups(false)` (lld-link, which also rejects the flags);
+  `rpaths(false)` drops `-Wl,-rpath` for an OS without rpath. Both are `cxx::Toolchain` settings, so `build.cpp` declares them per platform.
+- **Commands on Linux and Windows.** The runner starts every edge through `run/process.hpp`. On Linux that is `/bin/sh -c <command>` (fork, exec),
+  and `shell_quote` quotes for `sh`. On Windows there is no shell: the command line goes to `CreateProcessW` as is, and `shell_quote` quotes with
+  the rules the program's C runtime splits it back by. So a command may not use shell features (pipes, redirection, `&&`, environment
+  assignments); none of the emitted ones does. The host decides: a build runs the commands of its own OS's platforms.
+- **Platform-specific sources.** A library keeps its OS-specific files beside the portable ones (`foolinux.cpp`, `foowindows.cpp`) and gates each in
+  `build.cpp` with `for_source(path, [](cxx::ObjectFile& f) { f.only_on({"linux-vulkan"}); })`. A disabled object emits no edge, and its target
+  archives or links without it.
+- **Depfile backslashes.** A backslash in a depfile escapes only a space, a tab or `#`; anywhere else it is a path character, as clang writes
+  Windows paths (`src\os\os.h`).
 - **System build log location.** Self-build state lives at `_out/.system/.ngen-buildlog`. Same format as project-build logs. Deleting it forces a clean
   rebuild of `ngen-build-graph` and `ngen-build-run` on the next invocation.
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rpcprotocol.h"
+#include "rpcsocket.h"
 
 #include <atomic>
 #include <cstddef>
@@ -76,8 +77,8 @@ private:
     DrainHandler drainHandler;
     size_t drainThreshold = 0;
     std::string threadName = "RPC I/O";
-    int listenFd = -1;
-    int wakeFd = -1;
+    rpc::Socket listenSocket = rpc::invalidSocket;
+    rpc::Waker waker; // send() and call() signal it so the I/O thread's poll returns
     std::atomic<bool> running{false};
     std::thread ioThread;
 
