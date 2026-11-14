@@ -1,6 +1,14 @@
 # ngen
 
-## Response Style
+Read and follow these shared instructions before starting:
+- ~/.agents/instructions/response-style.md
+- ~/.agents/instructions/working-style.md
+- ~/.agents/instructions/tools.md
+- ~/.agents/instructions/git.md
+
+The rest of this file is specific to ngen. Where it differs from a shared instruction or skill, this file wins.
+
+## Questions are not action items
 
 When I ask a question about the codebase (e.g. "why is X done this way?", "shouldn't this be Y?"), 
 do the following:
@@ -12,31 +20,10 @@ do the following:
 Questions that start with "Why", "Shouldn't", "Is this correct", "What's the difference", "Does this make sense" 
 are analysis requests — treat them as discussion, not action items.
 
-## Working style
-
-I direct decisions up and down the decision tree. Work is a back-and-forth, not a handoff. This applies to
-every task, with or without a plan document — the plan format below is one expression of it, not the trigger
-for it.
-
-- At genuine decision forks — multiple defensible options, architecture or taste calls, scope changes —
-  stop and present the options with trade-offs and a recommendation, then wait for direction. Don't pick
-  one silently. Mechanical steps that follow from an already-made decision don't need a check-in; just do them.
-- Surface considerations I may not have thought of — risks, alternatives, interactions with other parts of
-  the engine — at the decision point, not after the work is done.
-- Check that we're still on track: when new information contradicts an assumption the current direction
-  rests on, say so and pause rather than silently adapting.
-- Don't jump ahead. Ground proposals in the existing project documentation and code — point to the plan,
-  doc, or code that supports a direction. If nothing does, flag it as a new assumption and ask.
-
 ## Tools
 
-For searching this codebase, prefer the built-in `Grep` and `Glob` tools — they already use ripgrep internally and are the fastest option.
-
-When shelling out via Bash, **never** run these commands:
-- `grep`, `egrep`, `fgrep` — use `rg` (ripgrep) instead.
-- `find` — use `fd` instead.
-
-This applies to every invocation: standalone, in pipelines (`… | grep foo`), and in compound commands (`cd src && find . -name '*.cpp'`). If you catch yourself typing `grep` or `find`, stop and rewrite with `rg` / `fd`. No exceptions, no "just this once."
+For searching this codebase, prefer the agent's built-in search tools (Claude Code's `Grep` and `Glob`) where it has them. The shell rule
+(`rg` and `fd`, never `grep` or `find`) is in the shared `tools.md`.
 
 ## Markdown style
 
@@ -93,6 +80,10 @@ order they were made: `NNNN_snake_case_title.md`. When a plan that makes an arch
 record and a row in `docs/adr/README.md`. A decision that replaces an earlier one gets a new record ("Supersedes N");
 the old record is kept, its status changed to "Superseded by N". Read the relevant records before proposing to change
 a decision they cover.
+
+The shared `adr` skill applies to writing records, with one exception: ngen keeps replaced records. Where the skill says
+to delete a replaced record, set its status to "Superseded by N" instead, and keep its row in the log. The new record
+says "Supersedes N" under its status, in place of the skill's "Replaces ADR N … last version at `<hash>`" line.
 
 ## C++ style
 
