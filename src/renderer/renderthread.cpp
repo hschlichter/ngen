@@ -64,6 +64,8 @@ auto RenderThread::latestCullResult() -> std::optional<CullResult> {
 auto RenderThread::threadLoop() -> void {
     profile::registerThread("Render");
     while (true) {
+        // An iteration is the render thread's frame: waiting for the snapshot, the scene changes, the frame and what follows it.
+        profile::laneFrameMark();
         RenderSnapshot snapshot;
         {
             PROFILE_ZONE("WaitSnapshot", Wait);

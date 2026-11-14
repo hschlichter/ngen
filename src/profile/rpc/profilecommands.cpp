@@ -53,6 +53,33 @@ auto profileRecord() -> Json {
         {"reported", watch.reported},
         {"current", current},
     };
+    OverBudget budget;
+    overBudget(budget);
+    auto t = now();
+    auto secondsAgo = [&](uint64_t ns) {
+        return (double) (t > ns ? t - ns : 0) * 1e-9;
+    };
+    auto budgetLanes = Json::array();
+    for (const auto& lane : budget.lanes) {
+        Json zone = nullptr;
+        if (lane.worstSiteId != 0) {
+            auto site = siteOf(lane.worstSiteId);
+            zone = {{"name", site.name}, {"file", site.file}, {"line", site.line}, {"ms", lane.worstZoneMs}};
+        }
+        budgetLanes.push_back({
+            {"lane", lane.lane},
+            {"frames", lane.frames},
+            {"over", lane.over},
+            {"worstMs", lane.worstMs},
+            {"worstSecondsAgo", lane.frames == 0 ? Json(nullptr) : Json(secondsAgo(lane.worstEndNs))},
+            {"worstZone", zone},
+        });
+    }
+    Json overBudgetJson = {
+        {"budgetMs", budget.budgetMs},
+        {"resetSecondsAgo", budget.resetNs == 0 ? Json(nullptr) : Json(secondsAgo(budget.resetNs))},
+        {"lanes", budgetLanes},
+    };
     return {
         {"frameCount", history.size()},
         {"cpuMsAverage", cpuAverage},
@@ -65,6 +92,7 @@ auto profileRecord() -> Json {
         {"historyBytes", historyBytes},
         {"gpuDetail", gpuDetail()},
         {"stalls", stalls},
+        {"overBudget", overBudgetJson},
         {"lanes", lanes},
         {"frames", frames},
     };
@@ -215,8 +243,10 @@ auto plotsRecord() -> Json {
 
 auto registerProfileRecords(RpcRecords& records) -> void {
     records.add("profile",
-                "the profiler: CPU and GPU time per frame over the history, the history window and the zones and bytes each lane holds, and the stall "
-                "watch: its threshold, the stalls reported and the threads stalled now with their open zones",
+                "the profiler: CPU and GPU time per frame over the history, the history window and the zones and bytes each lane holds, the stall "
+                "watch: its threshold, the stalls reported and the threads stalled now with their open zones, and overBudget: per thread that marks "
+                "frames (Main, Render), the frames since start or profile-reset whose own work (less waits) was over profile.budget.frameMs, the "
+                "worst and the zone that held it",
                 [](RpcResponder responder) {
                     responder.respond(profileRecord());
                 });

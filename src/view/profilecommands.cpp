@@ -91,6 +91,20 @@ auto registerProfileCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
             responder.respond(*result);
         });
 
+    registry.add(
+        {
+            .name = "profile.reset",
+            .summary = "Start the profile record's overBudget counts again: the frames over profile.budget.frameMs per thread, and the worst.",
+            .result = "{}",
+        },
+        [](const Json&, RpcResponder responder) {
+            profile::resetOverBudget();
+            TRACE_EVENT("Engine", "ProfileReset", "view").text("frames over budget counted from now");
+            responder.respond(Json::object());
+        });
+
+    verbs.add("profile-reset", "profile.reset", RpcVerbs::none);
+
     profile::registerProfileRecords(records);
 
     records.add("jobs", "the job system: workers, frame and background jobs queued, running and completed, the background job running longest", [](RpcResponder responder) {

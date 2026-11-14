@@ -77,7 +77,9 @@ auto JobSystem::wait(const JobFence& fence) -> void {
     if (!fence.done) {
         return;
     }
-    PROFILE_ZONE("JobWait", Wait);
+    // In the Jobs group, not Wait: a thread waiting for its own frame jobs (and running them) is doing its frame's work, which the
+    // profiler's overBudget counts.
+    PROFILE_ZONE("JobWait", Jobs);
 
     while (!fence.done->load(std::memory_order_acquire)) {
         if (!tryExecuteFrameJob()) {

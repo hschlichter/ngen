@@ -200,6 +200,7 @@ private:
     std::vector<HeapPlots> heapPlots;
     uint64_t profileGpuDetailChanges = UINT64_MAX;
     uint64_t profileStallChanges = UINT64_MAX;
+    uint64_t profileBudgetChanges = UINT64_MAX;
     uint64_t lodPopsFrame = 0;
     std::vector<CaptureWatch> sentWatches;
     bool watchesChanged = false; // since the last snapshot

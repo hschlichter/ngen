@@ -1,6 +1,6 @@
 # Plan: Spike-free streaming
 
-**Status. Draft.**
+**Status. Landed.**
 
 ## Current state
 
@@ -136,6 +136,7 @@ tmpfs). The numbers are recorded here. The full flight comes back once, at the e
 ### 2. Spikes measured in the engine
 
 Moved after step 6 (2026-11-12): the steps between are checked by short runs aimed at their pattern; this is what the final flight reads.
+The full flight was dropped (2026-11-14): a run of a few minutes shows what it would.
 
 The target is read from a record, not from a script over profile dumps:
 
@@ -145,6 +146,35 @@ The target is read from a record, not from a script over profile dumps:
 - Since start or `profile-reset` (a new verb and `profile.reset` method): the frames over `profile.budget.frameMs` per lane, the worst frame's own
   time, when, and its longest non-wait zone (name, `file:line`).
 - `profile` record: `overBudget: {lane: {frames, worstMs, worstAt, worstZone}}`. Performance window: the same, under the frame times.
+
+**Done 2026-11-14.** As built (`src/profile/README.md`, "Frames over budget"):
+
+- Each thread counts its Wait zones' time as they end (a few instructions per zone); `frameMark` (Main) and `profile::laneFrameMark`
+  (Render, at the top of its loop, so the frame is the whole iteration: the wait for the snapshot, the scene changes, `RenderFrame`, the stats
+  after) close the frame and add it to the lane's counts. A new worst frame is read back from the lane's history once, to name the innermost
+  zone holding at least half its own work.
+- `JobWait` moved from the Wait group to Jobs: a thread waiting for its own frame jobs runs them, which is its frame's work.
+- The record is `overBudget: {budgetMs, resetSecondsAgo, lanes: [{lane, frames, over, worstMs, worstSecondsAgo, worstZone: {name, file,
+  line, ms}}]}`: `frames` is every frame measured and `over` those over the budget, so a count reads as "5 of 879". `profile.reset` /
+  `profile-reset` and the window's Reset emit `ProfileReset`. The Performance window shows a line per lane under the frame times.
+- Checked against a profile dump of the same 15 seconds (reset at 60 s into the flight, record and dump at 75 s): the record's 5 of 879
+  render frames over 16.7 ms, worst 53.5 ms, are the dump's 5, worst 53.4 ms, by the script step 6 was measured with and by whole iterations.
+
+What it found: step 6's 0 frames over held for its 15 seconds, not for the flight. Over 210 seconds of flight from resident, Main 0 of
+14,724 frames over (worst 11.5 ms, `UpdateSceneBounds`), Render 57 of 14,724 (worst 85.5 ms, `CopyInstances` 45.7 ms of it). The render
+frames over are the change lists of 250k to 410k instances, two costs:
+
+- **`InstanceStaging` allocating on the render thread** (`vkAllocateMemory` 13 to 22 ms): a 400k-instance list's records are 69 to 72 MB,
+  over the kept staging's 64 MiB limit, so the frame makes a buffer of its own (decision 7's `OwnBuffer`).
+- **Work proportional to the list**: `SceneChanges` 19 to 21 ms (`CopyChangedSlots` 12 to 13 ms, of which the workers' `CopyChangedRange` is
+  5 to 6 ms and the rest the serial grouping by chunk; `UpdateGroupBounds` 3 to 4 ms) and `PackInstanceRecords` 7.5 ms. Without the
+  allocation such a frame is still about 30 ms. This is the trigger of the Deferred item on spreading a large change list over frames.
+
+Both runs ended at about four minutes, stopped by the memory guard the runs are wrapped in (it kills the view once the machine's used
+memory passes 25 GB), not by the machine running out. The machine's used memory includes about 9 GB of other programs and the compressed
+swap (12 GB of pages swapped out); the view's own resident memory went from 5.8 to 7.5 GB over the flight, and its GPU buffers (system memory
+on this APU) aren't in that figure. The machine's used memory rose from 19.7 to 21 GB over three and a half minutes, then jumped to 26 GB
+before the guard stopped the view; what made the jump isn't known.
 
 ### 3. The job system as a library, two kinds of job, a parallel loop
 
@@ -337,6 +367,16 @@ The flight, release build, from the repository root with the release asset serve
   trace message), `ComposeLevelPrims` (135 ms), `AssetReceive` (52 ms; layer and mesh packs could be decoded on workers before the scene
   thread takes them). Trigger: this plan landed.
 - **Spreading a large change list over frames.** Trigger: after step 6, a flight frame over 16.7 ms whose time is proportional to one change
-  list's size. Needs a way to keep a level switch whole ([ADR 61](adr/0061_switch_when_complete.md)).
+  list's size. Needs a way to keep a level switch whole ([ADR 61](adr/0061_switch_when_complete.md)). The trigger is met (step 2's results:
+  57 render frames of 14,724 over, on lists of 250k to 410k instances, worst 85.5 ms); landed as it is (2026-11-14), to revisit.
+- **A larger instance staging** (128 MiB per slot, about 200 MB more): the largest lists' records (69 to 72 MB) outgrow the 64 MiB staging and
+  the frame allocates 13 to 22 ms. Trigger: revisiting the item above.
+- **The serial part of `CopyChangedSlots`** (the grouping by chunk, about 7 ms on a 400k list). Trigger: revisiting the items above.
+- **Textures made on a background job** (`RhiCreateTexture` at most 6.6 ms on the render thread). Trigger: a frame over budget in it.
+- **`CullDescriptors` after a growth** (25 to 156 ms, seen while loading, under 0.2 ms in flight). Trigger: a frame over budget in it after
+  the world is resident.
+- **The world's memory**: about four minutes into the flight the machine's used memory jumped from 21 to 26 GB, which stopped two runs
+  at the runs' memory guard (25 GB). What made the jump isn't known (a table growth over a dense area would be one guess); the view's own
+  resident memory was 7.5 GB. Trigger: a run that needs the whole flight on this machine, or a smaller machine.
 - **A suballocator** (fewer, larger `vkAllocateMemory` calls). Trigger: background growth jobs too slow to keep up with streaming
   (`GrowthBehind` frequent on the flight).

@@ -102,6 +102,9 @@ the task shader culls meshlets and the mesh shader emits their triangles. The se
 - **Back to the main thread**, non-blocking: `CullResult` (latest-only, every new readback), the capture results, and what the extensions hand
   back on their own (the render tools' snapshots, counters and screenshots).
 - **Settings** go to the `RenderThread` under a lock, applied before the next frame: the upload budget, the geometry limit, shaders to reload.
+- **In the profiler** an iteration of the render thread's loop is its frame (`profile::laneFrameMark` at the top): waiting for the snapshot,
+  the scene changes, `RenderFrame` and what follows. The `profile` record's `overBudget` counts these frames' own work, less the waits
+  (`src/profile/README.md`, "Frames over budget").
 
 ### Renderer
 

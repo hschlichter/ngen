@@ -50,7 +50,8 @@ if (fence.ready()) {
 
 `JobSystem::init` starts the workers in `ngen-view`'s `main` (`src/apps/view.cpp`), one fewer than the hardware threads; `JobSystemStarted` in the
 trace says how many. Each worker has a lane in the profiler (`Worker N`), where its jobs show as zones in the Jobs group under their names, and
-an idle worker shows `Idle` slices. The main, render and scene threads submit; nothing else in the frame changes. The users:
+an idle worker shows `Idle` slices. A thread waiting in `wait` has a `JobWait` zone, in the Jobs group too: it waits for its own frame jobs
+and runs them, which is its frame's work (the profiler's frames over budget count it; `src/profile/README.md`). The main, render and scene threads submit; nothing else in the frame changes. The users:
 
 - `BufferGrowth` (`src/renderer/buffergrowth.*`): the GPU tables' next, larger buffers, as background jobs named `BufferGrowth`
   (`src/renderer/README.md`, "Growth").

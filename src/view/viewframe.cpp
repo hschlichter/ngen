@@ -143,6 +143,10 @@ auto ViewFrame::sendSceneInputs() -> void {
         profileStallChanges = profileconfig::stallSeconds.changes();
         profile::setStallSeconds(profileconfig::stallSeconds.get());
     }
+    if (profileconfig::frameBudgetMs.changes() != profileBudgetChanges) {
+        profileBudgetChanges = profileconfig::frameBudgetMs.changes();
+        profile::setFrameBudgetMs(profileconfig::frameBudgetMs.get());
+    }
     // What changed in the scene since the last frame: the render thread applies it, uploads go out a budget per frame.
     PROFILE_ZONE("TakeChanges", Frame);
     if (auto changes = scene.takeChanges(); !changes.empty()) {

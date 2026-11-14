@@ -10,7 +10,7 @@
 // them with its other records and methods, the asset server with its own.
 namespace profile {
 
-// `profile` (frame history, the history window and what it holds, GPU usage, resident memory), `zones` (where the time goes per lane and on
+// `profile` (frame history, the history window and what it holds, GPU usage, resident memory, the stall watch, frames over budget), `zones` (where the time goes per lane and on
 // the GPU) and `plots` (every plot over the history window).
 auto registerProfileRecords(RpcRecords& records) -> void;
 

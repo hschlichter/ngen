@@ -40,7 +40,8 @@ the shadow cascades and the snapshot. `src/apps/view.cpp`'s loop calls its steps
 **In the profiler** (`src/profile/README.md`) the frame is `MainFrame` (group Frame) on the Main lane: each step is a zone of its own (the
 detail ones `AdvanceTime`, `ResetCameras`, `SendSceneInputs`, `CountLodPops`, `DrawCameraModes`, `ReadBack`), each hook call one named
 `Hooks.<hook>`, the readbacks together `Readbacks`, and the submit `SubmitSnapshot` (group Wait: it waits for a free render slot). The loop
-hands `profile.history.seconds` and `profile.gpu.detail` to the collector in `sendSceneInputs` when they change. The scene thread's loop is a
+hands `profile.history.seconds`, `profile.gpu.detail`, `profile.stall.seconds` and `profile.budget.frameMs` to the collector in
+`sendSceneInputs` when they change. The scene thread's loop is a
 `SceneBatch` with its requests, asset arrivals, compose, level evaluation and publish inside, and `Idle` slices while it waits.
 
 **The hooks.** `ViewHooks` (`viewhooks.h`) is how the layers above the engine join the frame, at the points above; each does nothing unless
@@ -71,7 +72,7 @@ endpoint's calls; an answer that needs a readback or residency waits in `renderL
 | `lodcommands.cpp` | `view.lod.set/reset/heuristic/override/override.reset/tuning`, `view.renderlod`, `view.streaming.reset` | `lod`, `lod-*`, `streaming-reset` | `lod`, `streaming`, `renderlod` |
 | `configcommands.cpp` | `config.get/set/reset` | `config`, `config-reset` and the short forms (`view`, `debugview`, `overlay`, `cull`, `sampler`, `shadow`, `prepass`, `aa`, `ambient`, `gpuscene`) | `config` |
 | `displaycommands.cpp` | `view.inspect/dumpTexture/screenshot`, `capture.request`, `introspect.frame/gpuscene`, `renderdoc.capture` | `inspect`, `dump-texture`, `screenshot`, `capture`, `dump-frame`, `dump-gpuscene`, `renderdoc-capture` | `culling`, `pipelines`, `render`, `memory`, `counters` |
-| `profilecommands.cpp` | `introspect.profile` | `dump-profile` | `profile`, `zones` |
+| `profilecommands.cpp` | `introspect.profile`, `introspect.plot`, `profile.reset` | `dump-profile`, `profile-reset` | `profile`, `zones`, `plots`, `jobs` |
 | `viewcommands.cpp` | `introspect.record` | `record` | |
 
 The tools add theirs over the same context (`src/tools/toolcommands.*`: the debug camera, the LOD and Streaming inspections) and the UI its

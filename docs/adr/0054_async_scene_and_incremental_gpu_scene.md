@@ -9,6 +9,9 @@ Accepted
 Amended by [ADR 67](0067_placement_tree.md): changes are no longer found by diffing whole-world extracts; a placement tree of immutable contents
 gives them directly.
 
+Amended by [ADR 86](0086_allocations_off_the_render_thread.md): the pool and the other tables grow ahead on background jobs, half as large again,
+and what doesn't fit waits for them; uploads go through a staging ring per frame slot instead of a buffer per batch.
+
 ## Context
 
 `ViewScene::open` blocked: it composed in rounds and waited on `AssetClient` for each asset. Changing a LOD level, a purpose or refreshing froze the
