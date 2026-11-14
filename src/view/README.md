@@ -193,7 +193,8 @@ do its draws: only where it is placed.
   A path's bounds (`bounds`: the selection's box and gizmo, framing, go-to) walk the published tree down to the path, not every draw:
   each placement's whole bounds are kept from one snapshot to the next (`PlacementBounds`), since a node once published is never changed in
   place, so while the camera moves only the placements a snapshot replaced are walked again. On Eldermark with `/World/Regions` selected:
-  10 ms for the first walk, under 0.2 ms for each snapshot after.
+  10 ms for the first walk; flying at 30 m/s, typically under 0.2 ms for each snapshot after (median 0.09 ms), and a few ms for a snapshot
+  that streams in a lot (90th percentile 1.3 ms, 7 ms at most).
 - **Cameras**: every `Camera` prim reached while drawing, by full path with its world transform (`cameras()`). The Camera window lists them
   and moves the view to one on a click; `--camera=/path`, the `camera-use` verb and `view.camera.use` do the same, and `view.camera.list`
   lists them with their poses. The view takes a camera's position and the direction it looks (its local -Z); roll, focal length and

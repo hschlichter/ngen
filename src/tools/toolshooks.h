@@ -40,7 +40,8 @@ private:
     auto syncStreamingTool(ViewFrame& frame) -> void;
     // Where the gizmo of the selection sits: its pivot, or its bounds' centre when the pivot lies outside what it draws.
     auto gizmoAnchor(const ViewFrame& frame, const ViewScene::PrimTransform& transform) -> glm::vec3;
-    // The selection's bounds, walked again only when the selection or the scene snapshot changes: bounds() walks every draw.
+    // The selection's bounds, asked for again only when the selection or the scene snapshot changes: bounds() walks the placements a snapshot
+    // replaced.
     auto selectionBounds(const ViewFrame& frame) -> const AABB&;
 
     ToolsState& tools;
@@ -66,7 +67,7 @@ private:
     RotateGizmo rotateGizmo;
     ScaleGizmo scaleGizmo;
     // The selection's bounds (its box) and transform (its gizmo): again only when the selection or the scene snapshot changes, as bounds()
-    // walks every draw and transform() the placements.
+    // and transform() walk the placements.
     std::string selectedBoundsPath;
     const SceneSnapshot* selectedBoundsSnapshot = nullptr;
     AABB selectedBounds;
