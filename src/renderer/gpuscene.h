@@ -1,5 +1,6 @@
 #pragma once
 
+#include "buffergrowth.h"
 #include "framegraphresource.h"
 #include "material.h"
 #include "mesh.h"
@@ -198,7 +199,7 @@ public:
     // rewritten.
     auto beginFrame(uint64_t frame) -> bool;
     // Adds the SceneUpload pass when uploads are queued.
-    auto addUploadPass(FrameGraph& fg, uint64_t frame) -> void;
+    auto addUploadPass(FrameGraph& fg, uint64_t frame, uint32_t frameSlot) -> void;
     // Records every queued upload on the uploader's command buffer and waits. Start-up only.
     auto flushUploads(GpuUploader& uploader, uint64_t frame) -> void;
     auto pendingUploads() const -> size_t { return queue.size(); }
@@ -268,9 +269,14 @@ public:
     auto texturedMaterialCount() const -> uint32_t; // base colour from a texture bigger than 1x1
     auto cutoutMaterialCount() const -> uint32_t;
 
-    // The instance buffer: a record per draw slot. updateInstances grows it to `slotCount` and marks the changed slots for upload; a grown
-    // buffer is a new one (instanceGeneration() changes) and every slot is uploaded.
+    // The instance buffer: a record per draw slot. updateInstances marks the changed slots for upload. growInstances, each frame, grows it
+    // towards `count` slots (BufferGrowth): a grown buffer is a new one (instanceGeneration() changes) with the old records copied in.
+    // Slots past instanceSlots() wait, dirty and undrawn, until the growth is ready.
     auto updateInstances(const ChunkedList<GpuInstance>& instances, std::span<const uint32_t> changedSlots, uint64_t frame) -> void;
+    auto growInstances(uint32_t count, uint64_t frame) -> void { ensureInstanceCapacity(count, count, frame); }
+    auto instanceSlots() const -> uint32_t { return instanceCapacity; }
+    // The instance buffer's, the pool's and the tables' growths.
+    auto growthStatus() const -> std::vector<GrowthStatus>;
     // Imports the instance buffer and, if anything is dirty, adds the InstanceUpload pass. Returns the handle the draw passes read.
     auto addInstanceUploadPasses(FrameGraph& fg, const ChunkedList<GpuInstance>& instances, uint32_t frameSlot) -> FgBufferHandle;
     // Stores the access the instance buffer is left in for the next frame's import.
@@ -279,6 +285,7 @@ public:
     auto instanceGeneration() const -> uint32_t { return generation; }
     // The draw records (GpuInstanceRecord) for every slot of the capacity, then the culling records (GpuCullRecord).
     auto instanceBufferBytes() const -> uint64_t { return cullRecordsOffset() + cullRecordsBytes(); }
+    static auto instanceBufferBytesFor(uint64_t slots) -> uint64_t { return slots * (sizeof(GpuInstanceRecord) + sizeof(GpuCullRecord)); }
     auto cullRecordsOffset() const -> uint64_t { return (uint64_t) instanceCapacity * sizeof(GpuInstanceRecord); }
     auto cullRecordsBytes() const -> uint64_t { return (uint64_t) instanceCapacity * sizeof(GpuCullRecord); }
 
@@ -315,9 +322,10 @@ private:
         uint64_t bytes = 0;
     };
 
-    // Grows `target` to at least `bytes`, doubling, never past `maxBytes`. False when it didn't grow: it was big enough, or the bigger
-    // buffer couldn't be made.
-    auto ensureCapacity(GrowableBuffer& target, uint64_t bytes, uint64_t maxBytes = UINT64_MAX) -> bool;
+    // Grows a table to at least `bytes`, doubling (BufferGrowth: ahead on a background job, or now when it is needed before that is ready).
+    auto ensureTable(GrowableBuffer& target, BufferGrowth& growth, uint64_t bytes) -> void;
+    // Makes `buffer` of `bytes` the target's: the old one is copied from at the next record (or goes, if nothing wrote it yet).
+    auto swapIn(GrowableBuffer& target, RhiBuffer* buffer, uint64_t bytes) -> void;
     // The pool's parts, each a range allocator over its buffers.
     enum class Pool : uint8_t {
         Vertices, // the vertex and position buffers, which share ranges
@@ -325,7 +333,9 @@ private:
         MeshletVertices,
         MeshletTriangles,
     };
-    auto growPool(Pool pool, uint64_t count) -> void;
+    // Grows a pool's buffers to hold `needed` elements (BufferGrowth, as ensureTable), within the limit, and its ranges with them.
+    auto updatePool(Pool pool, uint64_t needed) -> bool;
+    auto growthOf(Pool pool) -> BufferGrowth&;
     // A range of `count` elements in a pool, growing it within the limit; nullopt when it doesn't fit.
     auto allocateIn(Pool pool, uint64_t count) -> std::optional<uint64_t>;
     auto rangesOf(Pool pool) -> PoolAllocator&;
@@ -338,9 +348,22 @@ private:
     auto materialRecord(MaterialHandle handle) const -> GpuMaterial;
     auto queueMaterialEntry(uint32_t materialIndex) -> void;
     // Records queued uploads, at most `budget` bytes (and at least one upload); staging goes to `retire`.
-    template <typename Retire>
-    auto record(RhiCommandBuffer* cmd, uint64_t budget, const Retire& retire) -> void;
+    // A batch's staging: the upload ring's slot, or a buffer of its own (`own`), which record unmaps and retires after.
+    struct Staging {
+        RhiBuffer* buffer = nullptr;
+        std::byte* mapped = nullptr;
+        bool own = false;
+    };
+    // Records queued uploads, at most `budget` bytes and at least one that fits `stagingCapacity`; `acquire(bytes)` gives the staging.
+    template <typename Acquire, typename Retire>
+    auto record(RhiCommandBuffer* cmd, uint64_t budget, uint64_t stagingCapacity, const Acquire& acquire, const Retire& retire) -> void;
+    // The upload ring: per frame slot, made at the upload budget, grown (on a background job) when the budget is raised or an upload is
+    // larger than it.
+    auto updateUploadRing() -> void;
+    // The instance records' staging, for an upload of `bytes` this frame (BufferGrowth, Behind::OwnBuffer).
+    auto updateInstanceStaging(uint64_t bytes) -> void;
     auto ensureInstanceCapacity(uint32_t count, uint32_t liveCount, uint64_t frame) -> void;
+    auto installInstances(uint32_t capacity, RhiBuffer* buffer, uint32_t count, uint32_t liveCount, uint64_t frame) -> void;
 
     RhiDevice* device = nullptr;
     DeletionQueue* deletionQueue = nullptr;
@@ -359,10 +382,17 @@ private:
     GrowableBuffer meshletVertices;
     GrowableBuffer meshletTriangles;
     GrowableBuffer meshTable;
+    BufferGrowth vertexGrowth{"gpuscene.pool.vertices"}; // the vertex and position buffers together
+    BufferGrowth meshletGrowth{"gpuscene.pool.meshlets"};
+    BufferGrowth meshletVertexGrowth{"gpuscene.pool.meshletvertices"};
+    BufferGrowth meshletTriangleGrowth{"gpuscene.pool.meshlettriangles"};
+    BufferGrowth meshTableGrowth{"gpuscene.meshtable", BufferGrowth::Behind::GrowNow};
     PoolAllocator vertexRanges;
     PoolAllocator meshletRanges;
     PoolAllocator meshletVertexRanges;
     PoolAllocator meshletTriangleRanges;
+    // Per pool, the capacity a mesh that didn't fit asked for: polled each frame until a growth gives it, then its meshes are placed.
+    std::array<uint64_t, 4> poolShort = {};
     uint64_t geometryLimit = 0;
     // Meshes that didn't fit in the pool, in arrival order; placed when removals make room.
     struct WaitingMesh {
@@ -370,7 +400,8 @@ private:
         std::shared_ptr<const MeshDesc> mesh;
     };
     std::vector<WaitingMesh> waitingMeshes;
-    bool poolRoomFreed = false; // a removal freed ranges since beginFrame last tried the waiting meshes
+    bool poolRoomFreed = false;    // a removal or a growth made room since beginFrame last tried the waiting meshes
+    bool poolFullReported = false; // GeometryPoolFull said, GeometryPoolFits not yet
     std::unordered_map<uint32_t, GpuMeshRange> meshes;
     std::unordered_map<uint32_t, std::shared_ptr<const MeshDesc>> meshData; // kept while its uploads are queued
 
@@ -387,6 +418,7 @@ private:
 
     // Material table
     GrowableBuffer materialTable;
+    BufferGrowth materialTableGrowth{"gpuscene.materials", BufferGrowth::Behind::GrowNow};
     std::unordered_map<uint32_t, MaterialDesc> materialEntries; // by material handle
     std::unordered_map<uint32_t, uint32_t> entryOf;             // material handle to its table entry
     std::set<uint32_t> freeEntries;
@@ -400,23 +432,36 @@ private:
     // graph so the upload syncs with the previous frame's reads.
     RhiBuffer* instances = nullptr;
     FgAccessFlags instanceAccess = FgAccessFlags::None;
-    // Per frame slot, CpuToGpu, mapped: the changed records of the slot's frame, packed; made on first use, grown up to stagingLimit. An
-    // upload larger than that takes a buffer of its own for its frame.
-    static constexpr uint64_t stagingLimit = 4ull * 1024 * 1024;
-    std::vector<RhiBuffer*> staging;
-    std::vector<void*> stagingMapped;
-    std::vector<uint64_t> stagingBytes;
+    // Per frame slot, CpuToGpu, mapped, kept: the changed records of the slot's frame, packed (updateInstanceStaging). Grown ahead on a
+    // background job up to instanceStagingLimit (about 380k records, a large streamed tile); an upload larger than it has (the first at
+    // load, a teleport) takes a buffer of its own, made that frame.
+    static constexpr uint64_t instanceStagingLimit = 64ull * 1024 * 1024;
+    static constexpr uint64_t instanceStagingMinimum = 1024ull * 1024;
+    std::vector<GrownBuffer> instanceStaging;
+    uint64_t instanceStagingBytes = 0;
+    BufferGrowth instanceStagingGrowth{"gpuscene.instances.staging", BufferGrowth::Behind::OwnBuffer};
+    uint64_t lastInstanceStagingNeed = 0;
+    // Per frame slot, CpuToGpu, mapped, kept: the SceneUpload pass's staging (updateUploadRing).
+    std::vector<GrownBuffer> uploadRing;
+    uint64_t uploadRingBytes = 0;
+    BufferGrowth uploadRingGrowth{"gpuscene.upload.staging", BufferGrowth::Behind::Wait, false};
     uint32_t instanceCapacity = 0;
+    uint32_t lastInstanceCount = 0; // the slots the last growInstances asked for
     uint32_t generation = 0;
+    // The instance buffer's next size, made on a background job once the slots pass render.growth.ahead of its capacity.
+    BufferGrowth instanceGrowth{"gpuscene.instances"};
     // The buffer a growth replaced, until the next instance upload copies its contents into the new one on the GPU (the InstanceMove pass):
     // its slots' draw records and culling records (the latter to the new cullRecordsOffset), with the access it was left in.
     RhiBuffer* instanceMoveFrom = nullptr;
     uint32_t instanceMoveSlots = 0;
     FgAccessFlags instanceMoveAccess = FgAccessFlags::None;
-    // The slots changed since the last upload (unsorted, maybe repeated), or every live slot when the buffer holds nothing to keep (its first
-    // contents). They wait for a frame that uploads them.
-    std::vector<uint32_t> dirtySlots;
+    // The slots changed since the last upload, a bit per slot, or every live slot when the buffer holds nothing to keep (its first contents).
+    // They wait for a frame that uploads them, which reads them in slot order by scanning the bits: no sort, and a slot changed twice is
+    // one bit.
+    std::vector<uint64_t> dirtyBits;
+    uint64_t dirtyMarked = 0; // bits set
     bool allDirty = false;
+    auto markDirty(uint32_t slot) -> void;
     uint32_t lastInstanceUploads = 0; // records and copy regions of the last instance upload
     uint32_t lastInstanceRegions = 0;
 

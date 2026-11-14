@@ -1,6 +1,7 @@
 #include "profilecommands.h"
 
 #include "profile.h"
+#include "stallwatch.h"
 
 #include <nlohmann/json.hpp>
 
@@ -41,6 +42,17 @@ auto profileRecord() -> Json {
         historyBytes += lane.bytes;
     }
     auto driverBusy = gpuDriverBusyPercent();
+    auto watch = stallWatchState();
+    auto current = Json::array();
+    for (const auto& stall : watch.current) {
+        current.push_back({{"lane", stall.lane}, {"zone", stall.zone}, {"seconds", stall.seconds}, {"stack", stall.stack}});
+    }
+    Json stalls = {
+        {"watching", watch.running},
+        {"thresholdSeconds", stallSeconds()},
+        {"reported", watch.reported},
+        {"current", current},
+    };
     return {
         {"frameCount", history.size()},
         {"cpuMsAverage", cpuAverage},
@@ -52,6 +64,7 @@ auto profileRecord() -> Json {
         {"historySeconds", historySeconds()},
         {"historyBytes", historyBytes},
         {"gpuDetail", gpuDetail()},
+        {"stalls", stalls},
         {"lanes", lanes},
         {"frames", frames},
     };
@@ -201,9 +214,12 @@ auto plotsRecord() -> Json {
 } // namespace
 
 auto registerProfileRecords(RpcRecords& records) -> void {
-    records.add("profile", "the profiler: CPU and GPU time per frame over the history, the history window and the zones and bytes each lane holds", [](RpcResponder responder) {
-        responder.respond(profileRecord());
-    });
+    records.add("profile",
+                "the profiler: CPU and GPU time per frame over the history, the history window and the zones and bytes each lane holds, and the stall "
+                "watch: its threshold, the stalls reported and the threads stalled now with their open zones",
+                [](RpcResponder responder) {
+                    responder.respond(profileRecord());
+                });
     records.add("zones",
                 "where the time goes over the last 60 frames (without frames: the whole history): every profiler zone site per thread lane and on the GPU, "
                 "its file, line, group and level, count, total, self time and the share its children cover, per frame, median and longest time",

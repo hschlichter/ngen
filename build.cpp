@@ -160,6 +160,7 @@ auto main(int argc, char** argv) -> int {
             .sources(glob({.include = "src/profile/rpc/*.cpp"}))
             .public_include({"src/profile/rpc"})
             .link(rpccore)
+            .link(traceLib)
             .link(profile);
 
     // RPC engine layer: method registry with parameter schemas, responders, the endpoint that

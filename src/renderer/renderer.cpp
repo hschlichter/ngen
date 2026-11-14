@@ -4,6 +4,7 @@
 
 #include "blitpass.h"
 #include "instanceuploadpass.h"
+#include "jobsystem.h"
 #include "material.h"
 #include "mesh.h"
 #include "mipchain.h"
@@ -354,6 +355,25 @@ static auto formatUploadBytes(uint64_t bytes) -> std::string {
     return std::format("{:.1f} MiB", (double) bytes / (1024.0 * 1024.0));
 }
 
+auto Renderer::growTables() -> void {
+    // Each frame, not only with a change list: a growth made on a background job is taken in the frame it is ready. Grown tables are new
+    // buffers: the descriptor sets naming them are rewritten this frame.
+    PROFILE_ZONE("GrowTables", Render);
+    gpuScene.growInstances((uint32_t) gpuInstances.size(), m_frameIndex);
+    {
+        PROFILE_ZONE_DETAIL("GrowInstanceLists", Render);
+        if (drawLists.ensureCapacity((uint32_t) gpuInstances.size(), drawLists.commandsNeeded(), m_frameIndex)) {
+            descriptorSetsDirty = true;
+        }
+    }
+    // The meshlet work items: room for every live instance's meshlets twice (the camera and the cascades see a part each), grown further
+    // if a frame overflows.
+    PROFILE_ZONE_DETAIL("GrowMeshletWork", Render);
+    if (drawLists.ensureWorkCapacity(drawLists.liveMeshlets() * 2, m_frameIndex)) {
+        descriptorSetsDirty = true;
+    }
+}
+
 auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
     auto start = std::chrono::steady_clock::now();
     // Removals first: their pool ranges, table entries and slots are free for what is added (a repacked scene reuses them instead of
@@ -406,33 +426,87 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
     static const uint32_t copyChangedZoneId = profile::registerSite("CopyChangedSlots", profile::Group::Render, profile::Level::Detail);
     profile::beginZone(copyChangedZoneId);
     profile::zoneValue(changes.instances.size());
-    for (const auto& [slot, inst] : changes.instances) {
-        if (slot >= gpuInstances.size()) {
-            continue;
+    {
+        // On the workers, whole chunks of slots each (ChunkedList chunks share no memory), every chunk's changes in list order: a slot changed
+        // twice in one list (lists are appended) ends as the last change says, as one loop would leave it. The changes are grouped by chunk
+        // first (a counting sort); the bucket counts and triangles are summed per range and added after.
+        constexpr size_t chunkSize = ChunkedList<GpuInstance>::chunkSize;
+        auto chunkCount = (gpuInstances.size() + chunkSize - 1) / chunkSize;
+        std::vector<uint32_t> chunkStart(chunkCount + 1, 0);
+        // The slots, read once into a compact list: the changes themselves are whole instances, too large to walk twice.
+        std::vector<uint32_t> listed(changes.instances.size());
+        for (size_t i = 0; i < changes.instances.size(); i++) {
+            auto slot = changes.instances[i].first;
+            listed[i] = slot;
+            if (slot < gpuInstances.size()) {
+                chunkStart[(slot / chunkSize) + 1]++;
+                changedSlots.push_back(slot);
+            }
         }
-        drawLists.countInstance(gpuInstances[slot], -1);
-        sceneTriangles -= gpuInstances[slot].indexCount / 3;
-        gpuInstances.edit(slot) = {
-            .mesh = inst.mesh,
-            .material = inst.material,
-            .prim = inst.prim,
-            .transform = inst.worldTransform,
-            .indexOffset = inst.indexOffset,
-            .indexCount = inst.indexCount,
-            .meshletOffset = inst.meshletOffset,
-            .meshletCount = inst.meshletCount,
-            .doubleSided = inst.doubleSided,
-            .cutout = inst.cutout,
-            .lodLevel = inst.lodLevel,
-            .lodDepth = inst.lodDepth,
-            .lodGroup = inst.lodGroup,
-            .streamRoot = inst.streamRoot,
-            .worldBounds = inst.worldBounds,
-            .alive = inst.alive,
+        for (size_t c = 0; c < chunkCount; c++) {
+            chunkStart[c + 1] += chunkStart[c];
+        }
+        std::vector<uint32_t> byChunk(changedSlots.size());
+        std::vector<uint32_t> touched;
+        {
+            auto next = chunkStart;
+            for (uint32_t i = 0; i < (uint32_t) listed.size(); i++) {
+                auto slot = listed[i];
+                if (slot < gpuInstances.size()) {
+                    byChunk[next[slot / chunkSize]++] = i;
+                }
+            }
+            for (uint32_t c = 0; c < (uint32_t) chunkCount; c++) {
+                if (chunkStart[c + 1] > chunkStart[c]) {
+                    touched.push_back(c);
+                }
+            }
+        }
+        constexpr size_t chunksPerRange = 1;
+        struct RangeSums {
+            DrawLists::Counts counts;
+            int64_t triangles = 0;
         };
-        drawLists.countInstance(gpuInstances[slot], 1);
-        sceneTriangles += gpuInstances[slot].indexCount / 3;
-        changedSlots.push_back(slot);
+        std::vector<RangeSums> sums((touched.size() + chunksPerRange - 1) / chunksPerRange);
+        JobSystem::parallelFor(
+            touched.size(),
+            chunksPerRange,
+            [&](size_t begin, size_t end) {
+                auto& sum = sums[begin / chunksPerRange];
+                for (size_t t = begin; t < end; t++) {
+                    auto c = touched[t];
+                    for (auto k = chunkStart[c]; k < chunkStart[c + 1]; k++) {
+                        const auto& [slot, inst] = changes.instances[byChunk[k]];
+                        DrawLists::countInto(gpuInstances[slot], -1, sum.counts);
+                        sum.triangles -= gpuInstances[slot].indexCount / 3;
+                        gpuInstances.edit(slot) = {
+                            .mesh = inst.mesh,
+                            .material = inst.material,
+                            .prim = inst.prim,
+                            .transform = inst.worldTransform,
+                            .indexOffset = inst.indexOffset,
+                            .indexCount = inst.indexCount,
+                            .meshletOffset = inst.meshletOffset,
+                            .meshletCount = inst.meshletCount,
+                            .doubleSided = inst.doubleSided,
+                            .cutout = inst.cutout,
+                            .lodLevel = inst.lodLevel,
+                            .lodDepth = inst.lodDepth,
+                            .lodGroup = inst.lodGroup,
+                            .streamRoot = inst.streamRoot,
+                            .worldBounds = inst.worldBounds,
+                            .alive = inst.alive,
+                        };
+                        DrawLists::countInto(gpuInstances[slot], 1, sum.counts);
+                        sum.triangles += gpuInstances[slot].indexCount / 3;
+                    }
+                }
+            },
+            "CopyChangedRange");
+        for (const auto& sum : sums) {
+            drawLists.addCounts(sum.counts);
+            sceneTriangles = (uint64_t) ((int64_t) sceneTriangles + sum.triangles);
+        }
     }
     profile::endZone();
     {
@@ -451,21 +525,6 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
     {
         PROFILE_ZONE("UpdateInstances", Render);
         gpuScene.updateInstances(gpuInstances, changedSlots, m_frameIndex);
-    }
-    {
-        PROFILE_ZONE("GrowDrawLists", Render);
-        {
-            PROFILE_ZONE_DETAIL("GrowInstanceLists", Render);
-            if (drawLists.ensureCapacity((uint32_t) gpuInstances.size(), drawLists.commandsNeeded(), m_frameIndex)) {
-                descriptorSetsDirty = true;
-            }
-        }
-        // The meshlet work items: room for every live instance's meshlets twice (the camera and the cascades see a part each), grown
-        // further if a frame overflows.
-        PROFILE_ZONE_DETAIL("GrowMeshletWork", Render);
-        if (drawLists.ensureWorkCapacity(drawLists.liveMeshlets() * 2, m_frameIndex)) {
-            descriptorSetsDirty = true;
-        }
     }
     {
         PROFILE_ZONE("ApplyLodGroups", Render);
@@ -527,6 +586,30 @@ auto Renderer::sceneGpuStats() const -> SceneGpuStats {
             heaps.push_back({.size = heap.size, .budget = heap.budget, .usage = heap.usage, .allocated = heap.allocated, .deviceLocal = heap.deviceLocal});
         }
     }
+    std::vector<RenderGrowthStats> growth;
+    {
+        auto add = [&growth](const GrowthStatus& status) {
+            growth.push_back({
+                .name = status.name,
+                .capacity = status.capacity,
+                .used = status.used,
+                .growing = status.growing,
+                .growingMs = status.growingMs,
+                .waiting = status.waiting,
+                .grownAhead = status.grownAhead,
+                .grownNow = status.grownNow,
+                .waits = status.waits,
+                .lastWaitMs = status.lastWaitMs,
+            });
+        };
+        for (const auto& status : gpuScene.growthStatus()) {
+            add(status);
+        }
+        for (const auto& status : drawLists.growthStatus()) {
+            add(status);
+        }
+        add(lodGroups.growthStatus());
+    }
     return {
         .frame = m_frameIndex,
         .drawSlots = (uint32_t) gpuInstances.size(),
@@ -549,6 +632,7 @@ auto Renderer::sceneGpuStats() const -> SceneGpuStats {
         .skyDrawn = debugSky,
         .frameCommands = frameCommands,
         .heaps = heaps,
+        .growth = std::move(growth),
     };
 }
 
@@ -831,7 +915,8 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         drawLists.parseReadback(currentFrame, slotFrame[currentFrame]);
         // Commands dropped past their region's end mean the CPU's bucket counts disagree with the cull shader's rule: draws are missing.
         if (auto overflow = drawLists.regionOverflow(); overflow != reportedRegionOverflow) {
-            if (overflow > 0) {
+            // While the draw records wait for a growth, the regions are cut to the capacity on purpose (GrowthBehind said so).
+            if (overflow > 0 && !drawLists.commandsWaiting()) {
                 TRACE_WARNING("Render", "CullRegionOverflow", "DrawLists")
                     .text(std::format("{} draw commands dropped past their region's end: the CPU's bucket counts are short of the cull shader's buckets, so those draws are missing", overflow))
                     .field("dropped", (int64_t) overflow);
@@ -848,7 +933,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
                     .text(std::format("{} meshlets didn't fit the work items ({}): grown to {}", overflow, before, drawLists.workCapacity()))
                     .field("overflow", (int64_t) overflow)
                     .field("capacity", (int64_t) drawLists.workCapacity());
-            } else if (!reportedWorkFull) {
+            } else if (!reportedWorkFull && !drawLists.workGrowing()) {
                 TRACE_WARNING("Render", "MeshletWorkFull", "cull.workitems")
                     .text(std::format("{} meshlets didn't fit the work items ({}), already the largest buffer the device makes: they aren't drawn", overflow, before))
                     .field("overflow", (int64_t) overflow)
@@ -913,16 +998,18 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     // Textures uploaded in earlier frames take their slots; then this frame's scene uploads, before anything reads the tables.
     static const uint32_t sceneFrameZoneId = profile::registerSite("GpuSceneBeginFrame", profile::Group::Render);
     profile::beginZone(sceneFrameZoneId);
+    growTables();
     if (gpuScene.beginFrame(m_frameIndex) || descriptorSetsDirty) {
         rebuildGeometryDescriptorSets();
         descriptorSetsDirty = false;
     }
-    gpuScene.addUploadPass(frameGraph, m_frameIndex);
+    gpuScene.addUploadPass(frameGraph, m_frameIndex, currentFrame);
     profile::endZone();
     // Per-frame resources (UBOs, descriptor sets, dynamic vertex buffers) are owned by
     // the frame slot whose fence guards them, not by the swapchain image.
     auto imageIdx = currentFrame;
-    auto instanceCount = (uint32_t) gpuInstances.size();
+    // The slots the GPU tables hold: past them, slots wait for a growth, undrawn.
+    auto instanceCount = std::min({(uint32_t) gpuInstances.size(), gpuScene.instanceSlots(), drawLists.instanceCapacity()});
 
     // The lit path needs its pipelines, which come as their shaders arrive: until then the frame is the clear colour and the UI. The
     // instance records wait too, so their upload isn't lost to a frame that doesn't draw them.

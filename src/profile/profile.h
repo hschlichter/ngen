@@ -216,6 +216,11 @@ auto historySeconds() -> double;
 auto setGpuDetail(bool enabled) -> void;
 auto gpuDetail() -> bool;
 
+// The stall watch's threshold (profile.stall.seconds, handed in by the main loop): a zone open this long is a stall. 0 turns the watch
+// off. Any thread.
+auto setStallSeconds(double seconds) -> void;
+auto stallSeconds() -> double;
+
 // Paused: zones, frame marks and GPU sets are dropped, so history stays exactly as it
 // was for as long as the pause lasts. Zone stacks keep balancing; Tracy keeps recording.
 auto setPaused(bool paused) -> void;
@@ -227,6 +232,18 @@ auto submitGpuZones(uint64_t frameIndex, uint64_t submitNs, std::span<const Zone
 
 // Readers, any thread. Copies out; never blocks writers for longer than a block switch.
 auto lanes(std::vector<LaneInfo>& out) -> void;
+// The zones each thread has open now, outermost first: where a thread is while it is in them, which the history only shows once they end.
+// Lanes whose thread is running; a thread outside any zone has none.
+struct OpenZone {
+    uint32_t siteId = 0;
+    uint64_t startNs = 0;
+};
+struct OpenZones {
+    uint32_t laneIndex = 0;
+    std::string lane;
+    std::vector<OpenZone> zones;
+};
+auto openZones(std::vector<OpenZones>& out) -> void;
 auto historyUsage(std::vector<LaneUsage>& out) -> void;
 auto lastFrame() -> std::optional<FrameInterval>;
 // Frame `offset` frames before the latest (0 = latest). Empty when out of history.

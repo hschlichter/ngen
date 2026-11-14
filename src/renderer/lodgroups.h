@@ -1,5 +1,6 @@
 #pragma once
 
+#include "buffergrowth.h"
 #include "framegraphresource.h"
 #include "renderworld.h"
 
@@ -68,6 +69,8 @@ public:
 
     auto init(RhiDevice* device, uint32_t frameSlots, DeletionQueue* deletionQueue) -> void;
     auto destroy() -> void;
+    // The table's growth (BufferGrowth), for the gpuscene record.
+    auto growthStatus() const -> GrowthStatus { return growth.statusOf(capacity, groups.size()); }
 
     // Applies a change list's groups: the table grows to `count` slots and the changed slots are uploaded at the next import. True when a
     // buffer was replaced, so the descriptor sets naming it are rewritten.
@@ -136,11 +139,14 @@ private:
         float windowArea = 1.0f;
     };
     auto ensureCapacity(uint32_t count, uint64_t frame) -> bool;
+    auto install(uint32_t grown, std::vector<GrownBuffer>& made, uint64_t frame) -> void;
     auto record(uint32_t slot) const -> GpuLodGroup;
 
     RhiDevice* device = nullptr;
     DeletionQueue* deletionQueue = nullptr;
     uint32_t capacity = 0;
+    // The next size, made on a background job once the groups pass render.growth.ahead of the capacity.
+    BufferGrowth growth{"gpuscene.lodgroups", BufferGrowth::Behind::GrowNow};
     std::vector<RenderLodGroup> groups; // by group slot, as the change lists left them
     std::vector<uint32_t> serials;      // by group slot
     RhiBuffer* table = nullptr;

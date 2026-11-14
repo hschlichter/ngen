@@ -160,6 +160,8 @@ private:
     static auto toSamplerDesc(const SamplerSettings& settings) -> RhiSamplerDesc;
     auto applySamplerSettings(const SamplerSettings& settings) -> void;
     // reason: geometry, sampler or instance_buffer (GeometryDescriptorsRebuilt observation).
+    // The GPU tables' growths, each frame (BufferGrowth).
+    auto growTables() -> void;
     auto rebuildGeometryDescriptorSets() -> void;
     std::vector<RenderLight> lights;
     std::optional<RenderEnvironment> environment; // the scene's dome light (RenderWorld::environment)

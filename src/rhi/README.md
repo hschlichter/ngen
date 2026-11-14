@@ -406,6 +406,20 @@ Before adding a method or field, ask:
 Header-only interface changes touch every backend and every pass. Prefer adding a field with a default over changing a
 signature.
 
+## Threads
+
+A device is driven from one thread (the render thread), with one exception: making resources.
+
+- **Safe from any thread**, at the same time as the render thread records and submits: `createBuffer`, `createTexture`, `mapBuffer` on a
+  buffer that thread made, and `destroyBuffer` / `destroyTexture` on a resource no other thread uses. Vulkan synchronises the device for these
+  (only the new object is externally synchronised); the allocation registry (`allocations()`) takes its own lock, and debug names are copied
+  into the resource. The renderer makes its large buffers on background jobs this way (`src/renderer/README.md`, "Growth").
+- **One thread at a time**: everything else: command buffers (`createCommandBuffer` uses the one command pool), descriptor pools and sets,
+  pipelines, submits, the swapchain, `waitIdle`.
+
+The RHI's messages (`RhiDeviceOptions::onMessage`) can come from the thread that made the resource; the handler is thread safe in ngen
+(the trace).
+
 ## Known gaps
 
 Kept honest rather than papered over.

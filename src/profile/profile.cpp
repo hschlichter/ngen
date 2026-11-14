@@ -46,6 +46,11 @@ struct Lane {
     std::string name;
     std::vector<std::shared_ptr<ZoneBlock>> blocks; // oldest first; the last is the one being written
     ZoneBlock* current = nullptr;                   // the owning thread only
+    // The owning thread's open zones, outermost first, published as they begin and end so another thread can see where this one is
+    // (openZones, the stall watch). A reader may catch an entry while it is rewritten; a thread that stays in one zone reads exactly.
+    std::array<std::atomic<uint32_t>, maxDepth> openSites;
+    std::array<std::atomic<uint64_t>, maxDepth> openStarts;
+    std::atomic<uint32_t> openDepth = 0;
 };
 
 struct ThreadState {
@@ -65,6 +70,7 @@ struct ThreadState {
     auto operator=(const ThreadState&) -> ThreadState& = delete;
     ~ThreadState() {
         if (lane != nullptr) {
+            lane->openDepth.store(0, std::memory_order_release);
             lane->owned.store(false, std::memory_order_release);
         }
     }
@@ -75,6 +81,7 @@ std::atomic<uint32_t> g_laneCount = 0;
 std::atomic<bool> g_paused = false;
 std::atomic<uint64_t> g_historyNs = 10'000'000'000ull;
 std::atomic<bool> g_gpuDetail = false;
+std::atomic<uint64_t> g_stallNs = 5'000'000'000ull;
 thread_local ThreadState t_state;
 
 // Sites: one per (file, line, name). The name is copied (a deque keeps every string where it is); the location's strings are static.
@@ -280,6 +287,16 @@ auto sendGpuZonesToTracy(std::span<const Zone> zones) -> void {
 }
 #endif
 
+// The zones the thread opened before it had a lane, published when it takes one.
+auto publishOpenZones(Lane& lane) -> void {
+    auto depth = std::min(t_state.depth, maxDepth);
+    for (uint32_t i = 0; i < depth; i++) {
+        lane.openSites[i].store(t_state.siteIds[i], std::memory_order_relaxed);
+        lane.openStarts[i].store(t_state.starts[i], std::memory_order_relaxed);
+    }
+    lane.openDepth.store(depth, std::memory_order_release);
+}
+
 auto laneForThread() -> Lane* {
     if (t_state.lane != nullptr) {
         return t_state.lane;
@@ -300,6 +317,7 @@ auto laneForThread() -> Lane* {
             bool expected = false;
             if (lane.owned.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
                 t_state.lane = &lane;
+                publishOpenZones(lane);
                 return &lane;
             }
         }
@@ -319,6 +337,7 @@ auto laneForThread() -> Lane* {
         }
     }
     lane.owned.store(true, std::memory_order_relaxed);
+    publishOpenZones(lane);
     lane.used.store(true, std::memory_order_release);
     t_state.lane = &lane;
     return &lane;
@@ -517,9 +536,15 @@ auto beginZone(uint32_t siteId) -> void {
         t_state.depth++;
         return;
     }
+    auto startNs = now();
     t_state.siteIds[t_state.depth] = siteId;
-    t_state.starts[t_state.depth] = now();
+    t_state.starts[t_state.depth] = startNs;
     t_state.hasValues[t_state.depth] = false;
+    if (t_state.lane != nullptr) {
+        t_state.lane->openSites[t_state.depth].store(siteId, std::memory_order_relaxed);
+        t_state.lane->openStarts[t_state.depth].store(startNs, std::memory_order_relaxed);
+        t_state.lane->openDepth.store(t_state.depth + 1, std::memory_order_release);
+    }
 #ifdef TRACY_ENABLE
     if (siteId != 0 && siteId <= maxNames && tracyRunning()) {
         t_state.tracyZones[t_state.depth] = ___tracy_emit_zone_begin(&g_tracySourceLocations[siteId], 1);
@@ -548,6 +573,9 @@ auto endZone() -> void {
         return;
     }
     t_state.depth--;
+    if (t_state.lane != nullptr && t_state.depth < maxDepth) {
+        t_state.lane->openDepth.store(t_state.depth, std::memory_order_release);
+    }
 #ifdef TRACY_ENABLE
     // Before the pause check: pausing the Performance window does not pause Tracy. A zone begun before Tracy started is inactive.
     if (t_state.depth < maxDepth && tracyRunning()) {
@@ -625,6 +653,14 @@ auto setGpuDetail(bool enabled) -> void {
 
 auto gpuDetail() -> bool {
     return g_gpuDetail.load(std::memory_order_relaxed);
+}
+
+auto setStallSeconds(double seconds) -> void {
+    g_stallNs.store((uint64_t) (std::max(seconds, 0.0) * 1e9), std::memory_order_relaxed);
+}
+
+auto stallSeconds() -> double {
+    return (double) g_stallNs.load(std::memory_order_relaxed) * 1e-9;
 }
 
 auto setPaused(bool paused) -> void {
@@ -850,6 +886,32 @@ auto lanes(std::vector<LaneInfo>& out) -> void {
         }
         std::lock_guard lock(lane.mutex);
         out.push_back({.index = i, .name = lane.name});
+    }
+}
+
+auto openZones(std::vector<OpenZones>& out) -> void {
+    out.clear();
+    auto count = std::min(g_laneCount.load(), maxLanes);
+    for (uint32_t i = 0; i < count; i++) {
+        auto& lane = g_lanes[i];
+        if (!lane.used.load(std::memory_order_acquire) || !lane.owned.load(std::memory_order_acquire)) {
+            continue;
+        }
+        OpenZones entry;
+        entry.laneIndex = i;
+        {
+            std::lock_guard lock(lane.mutex);
+            entry.lane = lane.name;
+        }
+        auto depth = std::min(lane.openDepth.load(std::memory_order_acquire), maxDepth);
+        entry.zones.reserve(depth);
+        for (uint32_t d = 0; d < depth; d++) {
+            entry.zones.push_back({
+                .siteId = lane.openSites[d].load(std::memory_order_relaxed),
+                .startNs = lane.openStarts[d].load(std::memory_order_relaxed),
+            });
+        }
+        out.push_back(std::move(entry));
     }
 }
 

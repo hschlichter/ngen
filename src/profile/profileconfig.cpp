@@ -24,4 +24,10 @@ config::Float frameBudgetMs{"profile.budget.frameMs",
                             "overlay draws the passes against it.",
                             {.min = 1.0, .max = 1000.0}};
 
+config::Float stallSeconds{"profile.stall.seconds",
+                           5.0,
+                           "How long a thread stays in one profiler zone before the stall watch reports it: a Stall warning in the trace with every "
+                           "zone the thread has open, and the profile record's stalls. 0 turns the watch off.",
+                           {.min = 0.0, .max = 600.0}};
+
 } // namespace profileconfig

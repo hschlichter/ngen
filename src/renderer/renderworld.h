@@ -15,7 +15,8 @@
 #include <vector>
 
 // A list kept in shared chunks, for a producer that publishes copies of a large list it keeps changing: a copy shares every chunk, and a
-// write copies only the chunk it changes, and only while a copy still shares it. One thread writes; copies are read anywhere.
+// write copies only the chunk it changes, and only while a copy still shares it. One thread writes; copies are read anywhere. A writer may
+// split its edits by chunk across threads (a parallel loop), never two threads in one chunk, and never while the list is resized.
 template <typename T>
 class ChunkedList {
 public:

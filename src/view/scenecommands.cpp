@@ -175,6 +175,22 @@ auto gpuSceneRecord(const ViewContext& view) -> Json {
     for (const auto& heap : s.heaps) {
         heaps.push_back({{"size", heap.size}, {"budget", heap.budget}, {"usage", heap.usage}, {"allocated", heap.allocated}, {"deviceLocal", heap.deviceLocal}});
     }
+    // The GPU tables' growths: capacity and use in each table's unit, a growth in flight, what waits for one.
+    auto growth = Json::array();
+    for (const auto& g : s.growth) {
+        growth.push_back({
+            {"name", g.name},
+            {"capacity", g.capacity},
+            {"used", g.used},
+            {"growing", g.growing},
+            {"growingMs", g.growingMs},
+            {"waiting", g.waiting},
+            {"grownAhead", g.grownAhead},
+            {"grownNow", g.grownNow},
+            {"waits", g.waits},
+            {"lastWaitMs", g.lastWaitMs},
+        });
+    }
     return {
         {"frame", s.frame},
         {"changeLists", {{"submitted", s.changeListsSubmitted}, {"drawn", s.changeListsDrawn}}},
@@ -205,6 +221,7 @@ auto gpuSceneRecord(const ViewContext& view) -> Json {
           {"copies", s.frameCommands.copies},
           {"primitives", s.frameCommands.primitives}}},
         {"heaps", heaps},
+        {"growth", growth},
     };
 }
 

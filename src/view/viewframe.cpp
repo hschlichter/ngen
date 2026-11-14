@@ -1,6 +1,7 @@
 #include "viewframe.h"
 
 #include "assetclient.h"
+#include "buffergrowth.h"
 #include "profile.h"
 #include "profileconfig.h"
 #include "projection.h"
@@ -124,6 +125,11 @@ auto ViewFrame::sendSceneInputs() -> void {
         geometryLimitChanges = renderconfig::geometryLimitMiB.changes();
         renderThread.setGeometryLimit((uint64_t) renderconfig::geometryLimitMiB.get() * 1024 * 1024);
     }
+    // How full a GPU table gets before it grows on a background job: the render thread reads it from any thread.
+    if (renderconfig::growthAhead.changes() != growthAheadChanges) {
+        growthAheadChanges = renderconfig::growthAhead.changes();
+        BufferGrowth::setAhead(renderconfig::growthAhead.get());
+    }
     // The profiler's history window and GPU detail: the collector reads them from any thread.
     if (profileconfig::historySeconds.changes() != profileHistoryChanges) {
         profileHistoryChanges = profileconfig::historySeconds.changes();
@@ -132,6 +138,10 @@ auto ViewFrame::sendSceneInputs() -> void {
     if (profileconfig::gpuDetail.changes() != profileGpuDetailChanges) {
         profileGpuDetailChanges = profileconfig::gpuDetail.changes();
         profile::setGpuDetail(profileconfig::gpuDetail.get());
+    }
+    if (profileconfig::stallSeconds.changes() != profileStallChanges) {
+        profileStallChanges = profileconfig::stallSeconds.changes();
+        profile::setStallSeconds(profileconfig::stallSeconds.get());
     }
     // What changed in the scene since the last frame: the render thread applies it, uploads go out a budget per frame.
     PROFILE_ZONE("TakeChanges", Frame);

@@ -3,6 +3,7 @@
 #include "deletionqueue.h"
 #include "framegraph.h"
 #include "framegraphcontext.h"
+#include "jobsystem.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 
@@ -18,6 +19,9 @@ auto DrawLists::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* q
 }
 
 auto DrawLists::destroy() -> void {
+    instanceGrowth.discard(device);
+    commandGrowth.discard(device);
+    workGrowth.discard(device);
     if (history != nullptr) {
         device->destroyBuffer(history);
         history = nullptr;
@@ -46,24 +50,30 @@ auto DrawLists::bucketOf(const GpuInstance& instance) -> uint32_t {
 
 // An instance of a render-LOD group counts in its cutout bucket as well as its own: while its group fades, the cull pass draws it there.
 auto DrawLists::countInstance(const GpuInstance& instance, int delta) -> void {
+    Counts counts;
+    countInto(instance, delta, counts);
+    addCounts(counts);
+}
+
+auto DrawLists::countInto(const GpuInstance& instance, int delta, Counts& counts) -> void {
     auto b = bucketOf(instance);
     if (b == noBucket) {
         return;
     }
-    bool mayFade = instance.lodGroup != 0 && b < 2;
-    if (delta > 0) {
-        buckets[b] += 1;
-        if (mayFade) {
-            buckets[b + 2] += 1;
-        }
-        liveMeshletCount += instance.meshletCount;
-    } else {
-        buckets[b] -= 1;
-        if (mayFade) {
-            buckets[b + 2] -= 1;
-        }
-        liveMeshletCount -= instance.meshletCount;
+    auto sign = delta > 0 ? 1 : -1;
+    counts.buckets[b] += sign;
+    // A render-LOD instance in an opaque bucket may fade: it is counted in the cutout bucket too.
+    if (instance.lodGroup != 0 && b < 2) {
+        counts.buckets[b + 2] += sign;
     }
+    counts.meshlets += sign * (int64_t) instance.meshletCount;
+}
+
+auto DrawLists::addCounts(const Counts& counts) -> void {
+    for (uint32_t b = 0; b < bucketCount; b++) {
+        buckets[b] = (uint64_t) ((int64_t) buckets[b] + counts.buckets[b]);
+    }
+    liveMeshletCount = (uint64_t) ((int64_t) liveMeshletCount + counts.meshlets);
 }
 
 auto DrawLists::updateGroupBounds(const ChunkedList<GpuInstance>& instances, std::span<const uint32_t> changedSlots) -> void {
@@ -88,38 +98,49 @@ auto DrawLists::updateGroupBounds(const ChunkedList<GpuInstance>& instances, std
         }
     }
     groupSlotCount = instances.size();
+    std::vector<uint32_t> dirtyGroups;
     for (uint32_t g = 0; g < groups; g++) {
-        if (dirty[g] == 0) {
-            continue;
+        if (dirty[g] != 0) {
+            dirtyGroups.push_back(g);
         }
-        AABB box = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
-        bool unbounded = false;
-        uint32_t live = 0;
-        auto end = std::min<size_t>(((size_t) g + 1) * groupSize, instances.size());
-        for (size_t m = (size_t) g * groupSize; m < end; m++) {
-            const auto& instance = instances[m];
-            if (!instance.alive) {
-                continue;
-            }
-            live++;
-            if (!instance.worldBounds.valid()) {
-                unbounded = true;
-                continue;
-            }
-            box.min = glm::min(box.min, instance.worldBounds.min);
-            box.max = glm::max(box.max, instance.worldBounds.max);
-        }
-        float kind = groupBoxTested;
-        if (live == 0) {
-            kind = groupBoxEmpty;
-        } else if (unbounded || !box.valid()) {
-            kind = groupBoxUnbounded;
-        }
-        groupBoxes[g] = {
-            .min = glm::vec4(box.valid() ? box.min : glm::vec3(0.0f), kind),
-            .max = glm::vec4(box.valid() ? box.max : glm::vec3(0.0f), (float) live),
-        };
     }
+    // On the workers: each group's box from its own slots.
+    JobSystem::parallelFor(
+        dirtyGroups.size(),
+        256,
+        [&](size_t begin, size_t end) {
+            for (size_t d = begin; d < end; d++) {
+                auto g = dirtyGroups[d];
+                AABB box = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
+                bool unbounded = false;
+                uint32_t live = 0;
+                auto slotEnd = std::min<size_t>(((size_t) g + 1) * groupSize, instances.size());
+                for (size_t m = (size_t) g * groupSize; m < slotEnd; m++) {
+                    const auto& instance = instances[m];
+                    if (!instance.alive) {
+                        continue;
+                    }
+                    live++;
+                    if (!instance.worldBounds.valid()) {
+                        unbounded = true;
+                        continue;
+                    }
+                    box.min = glm::min(box.min, instance.worldBounds.min);
+                    box.max = glm::max(box.max, instance.worldBounds.max);
+                }
+                float kind = groupBoxTested;
+                if (live == 0) {
+                    kind = groupBoxEmpty;
+                } else if (unbounded || !box.valid()) {
+                    kind = groupBoxUnbounded;
+                }
+                groupBoxes[g] = {
+                    .min = glm::vec4(box.valid() ? box.min : glm::vec3(0.0f), kind),
+                    .max = glm::vec4(box.valid() ? box.max : glm::vec3(0.0f), (float) live),
+                };
+            }
+        },
+        "GroupBoundsRange");
 }
 
 auto DrawLists::commandsNeeded() const -> uint64_t {
@@ -131,92 +152,177 @@ auto DrawLists::commandsNeeded() const -> uint64_t {
 }
 
 auto DrawLists::ensureCapacity(uint32_t instanceCount, uint64_t commandCount, uint64_t frame) -> bool {
-    bool instancesFit = slots[0].visibility != nullptr && instanceCount <= capacity;
-    bool commandsFit = slots[0].commands != nullptr && commandCount <= commandCapacity;
-    if (instancesFit && commandsFit) {
-        return false;
+    constexpr uint64_t minCapacity = 256;
+    bool replaced = false;
+
+    // Per instance: the history, and every slot's culling buffers, grown together. The parameters, counters and readback are made again
+    // with them.
+    auto instanceDescs = [this](uint64_t grown) -> std::vector<GrowthBufferDesc> {
+        auto groups = (uint64_t) groupCountFor((uint32_t) grown);
+        auto storage = [](uint64_t size, RhiBufferUsageFlags extra, const char* name) -> GrowthBufferDesc {
+            // TransferSrc on all of them: the capture service reads any of them back.
+            return {.desc = {.size = size, .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc | extra, .memory = RhiMemoryUsage::GpuOnly, .debugName = name}};
+        };
+        std::vector<GrowthBufferDesc> descs;
+        descs.push_back(storage(grown * sizeof(uint32_t), {}, "cull.history"));
+        for (size_t s = 0; s < slots.size(); s++) {
+            descs.push_back({.desc = {.size = sizeof(CullParams), .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "cull.params"},
+                             .mapped = true});
+            descs.push_back({.desc = {.size = groups * sizeof(GroupBox), .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "cull.groupbounds"},
+                             .mapped = true});
+            descs.push_back(storage(grown * sizeof(uint32_t), RhiBufferUsage::TransferSrc, "cull.visibility"));
+            descs.push_back(storage(grown * sizeof(uint32_t), {}, "cull.planes"));
+            descs.push_back(storage(groups * counterCount * sizeof(uint32_t), {}, "cull.groupcounters"));
+            // Per workgroup and region: where its draw records start, then where its work items start.
+            descs.push_back(storage(groups * regionCount * 2 * sizeof(uint32_t), {}, "cull.groupoffsets"));
+            descs.push_back(storage(counterCount * sizeof(uint32_t), RhiBufferUsage::Indirect | RhiBufferUsage::TransferSrc, "cull.counts"));
+            descs.push_back(storage(meshletCounterCount * sizeof(uint32_t), RhiBufferUsage::TransferSrc, "cull.meshletstats"));
+            descs.push_back(storage(regionCount * sizeof(RegionWork), RhiBufferUsage::Indirect, "cull.regionwork"));
+            descs.push_back({.desc = {.size = readbackBytesFor(grown), .usage = RhiBufferUsage::TransferDst | RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::GpuToCpu, .debugName = "cull.readback"},
+                             .mapped = true});
+        }
+        return descs;
+    };
+    auto grownInstances = [minCapacity](uint64_t needed) -> uint64_t {
+        return std::min<uint64_t>(std::max(needed, minCapacity), UINT32_MAX);
+    };
+    auto installInstancesNow = [&](uint64_t grown, std::vector<GrownBuffer>& made) {
+        installInstances((uint32_t) grown, made, frame);
+    };
+    if (slots[0].visibility == nullptr) {
+        auto grown = grownInstances(instanceCount);
+        auto made = BufferGrowth::makeNow(device, instanceDescs(grown));
+        installInstancesNow(grown, made);
+        replaced = true;
+    } else {
+        replaced |= instanceGrowth.update(device, instanceCount, capacity, grownInstances, instanceDescs, installInstancesNow);
     }
-    constexpr uint32_t minCapacity = 256;
+
+    // The draw records, every region's, per slot.
+    auto commandDescs = [this](uint64_t grown) -> std::vector<GrowthBufferDesc> {
+        std::vector<GrowthBufferDesc> descs;
+        for (size_t s = 0; s < slots.size(); s++) {
+            descs.push_back({.desc = {.size = grown * sizeof(DrawRecord),
+                                      .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc,
+                                      .memory = RhiMemoryUsage::GpuOnly,
+                                      .debugName = "cull.commands"}});
+        }
+        return descs;
+    };
+    auto grownCommands = [minCapacity](uint64_t needed) -> uint64_t {
+        return std::max(needed, minCapacity);
+    };
+    auto installCommandsNow = [&](uint64_t grown, std::vector<GrownBuffer>& made) {
+        installCommands(grown, made, frame);
+    };
+    if (slots[0].commands == nullptr) {
+        auto grown = grownCommands(commandCount);
+        auto made = BufferGrowth::makeNow(device, commandDescs(grown));
+        installCommandsNow(grown, made);
+        replaced = true;
+    } else {
+        replaced |= commandGrowth.update(device, commandCount, commandCapacity, grownCommands, commandDescs, installCommandsNow);
+    }
+    return replaced;
+}
+
+auto DrawLists::installInstances(uint32_t grown, std::vector<GrownBuffer>& made, uint64_t frame) -> void {
     // Frames in flight may still use the old buffers.
     auto retire = [&](RhiBuffer*& buffer) {
         deletionQueue->deferBuffer(frame, buffer);
         buffer = nullptr;
     };
-    auto storage = [&](uint64_t size, RhiBufferUsageFlags extra, const char* name) {
-        // TransferSrc on all of them: the capture service reads any of them back.
-        return device->createBuffer({.size = size, .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc | extra, .memory = RhiMemoryUsage::GpuOnly, .debugName = name});
+    size_t next = 0;
+    auto take = [&](RhiBuffer*& buffer) {
+        retire(buffer);
+        buffer = made[next].buffer;
+        return made[next++].mapped;
     };
-    if (!instancesFit) {
-        capacity = std::max({instanceCount, capacity * 2, minCapacity});
-        retire(history);
-        // A new history is undefined until the culling clears it; until then occlusion treats nothing as seen.
-        history = device->createBuffer({.size = (uint64_t) capacity * sizeof(uint32_t), .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::GpuOnly, .debugName = "cull.history"});
-        historyAccess = FgAccessFlags::None;
-        historyFresh = true;
-        auto groups = groupCountFor(capacity);
-        for (auto& slot : slots) {
-            for (auto* buffer : {&slot.params, &slot.visibility, &slot.cullPlanes, &slot.groupCounters, &slot.groupOffsets, &slot.counts, &slot.meshletStats, &slot.regionWork, &slot.readback}) {
-                retire(*buffer);
-            }
-            slot.params = device->createBuffer({.size = sizeof(CullParams), .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "cull.params"});
-            slot.paramsMapped = device->mapBuffer(slot.params);
-            retire(slot.groupBounds);
-            slot.groupBounds = device->createBuffer({.size = (uint64_t) groups * sizeof(GroupBox), .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "cull.groupbounds"});
-            slot.groupBoundsMapped = device->mapBuffer(slot.groupBounds);
-            slot.visibility = storage((uint64_t) capacity * sizeof(uint32_t), RhiBufferUsage::TransferSrc, "cull.visibility");
-            slot.cullPlanes = storage((uint64_t) capacity * sizeof(uint32_t), {}, "cull.planes");
-            slot.groupCounters = storage((uint64_t) groups * counterCount * sizeof(uint32_t), {}, "cull.groupcounters");
-            // Per workgroup and region: where its draw records start, then where its work items start.
-            slot.groupOffsets = storage((uint64_t) groups * regionCount * 2 * sizeof(uint32_t), {}, "cull.groupoffsets");
-            slot.counts = storage(counterCount * sizeof(uint32_t), RhiBufferUsage::Indirect | RhiBufferUsage::TransferSrc, "cull.counts");
-            slot.meshletStats = storage(meshletCounterCount * sizeof(uint32_t), RhiBufferUsage::TransferSrc, "cull.meshletstats");
-            slot.regionWork = storage(regionCount * sizeof(RegionWork), RhiBufferUsage::Indirect, "cull.regionwork");
-            slot.readback = device->createBuffer({.size = readbackBytes(), .usage = RhiBufferUsage::TransferDst | RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::GpuToCpu, .debugName = "cull.readback"});
-            slot.readbackMapped = device->mapBuffer(slot.readback);
-            slot.pending = false;
-        }
+    capacity = grown;
+    // A new history is undefined until the culling clears it; until then occlusion treats nothing as seen.
+    take(history);
+    historyAccess = FgAccessFlags::None;
+    historyFresh = true;
+    for (auto& slot : slots) {
+        slot.paramsMapped = take(slot.params);
+        slot.groupBoundsMapped = take(slot.groupBounds);
+        take(slot.visibility);
+        take(slot.cullPlanes);
+        take(slot.groupCounters);
+        take(slot.groupOffsets);
+        take(slot.counts);
+        take(slot.meshletStats);
+        take(slot.regionWork);
+        slot.readbackMapped = take(slot.readback);
+        slot.pending = false;
     }
-    if (!commandsFit) {
-        commandCapacity = std::max({commandCount, commandCapacity * 2, (uint64_t) minCapacity});
-        for (auto& slot : slots) {
-            retire(slot.commands);
-            // The commands readback is made again at the new size when the render debugger next asks.
-            retire(slot.commandsReadback);
-            slot.commandsReadbackMapped = nullptr;
-            slot.commands = storage(commandBytes(), RhiBufferUsage::TransferSrc, "cull.commands");
-            slot.pending = false;
-        }
+}
+
+auto DrawLists::installCommands(uint64_t grown, std::vector<GrownBuffer>& made, uint64_t frame) -> void {
+    commandCapacity = grown;
+    for (size_t s = 0; s < slots.size(); s++) {
+        auto& slot = slots[s];
+        deletionQueue->deferBuffer(frame, slot.commands);
+        // The commands readback is made again at the new size when the render debugger next asks.
+        deletionQueue->deferBuffer(frame, slot.commandsReadback);
+        slot.commandsReadback = nullptr;
+        slot.commandsReadbackMapped = nullptr;
+        slot.commands = made[s].buffer;
+        slot.pending = false;
     }
-    return true;
 }
 
 auto DrawLists::ensureWorkCapacity(uint64_t items, uint64_t frame) -> bool {
     // What the last readback couldn't hold: the frame drew without those meshlets, so grow past it.
-    auto wanted = std::max<uint64_t>(items, (uint64_t) workItemCapacity + latest.totals[counterWorkOverflow]);
-    if (slots[0].workItems != nullptr && wanted <= workItemCapacity) {
-        return false;
+    uint64_t wanted = items;
+    if (auto overflow = latest.totals[counterWorkOverflow]; overflow > 0) {
+        wanted = std::max<uint64_t>(wanted, (uint64_t) workItemCapacity + overflow);
     }
     constexpr uint64_t minItems = 64 * 1024;
-    auto grown = std::max({wanted, (uint64_t) workItemCapacity * 2, minItems});
-    grown = std::min<uint64_t>(grown, device->limits().maxBufferBytes / sizeof(MeshletWorkItem));
-    auto capacity = (uint32_t) std::min<uint64_t>(grown, UINT32_MAX);
-    if (slots[0].workItems != nullptr && capacity <= workItemCapacity) {
-        // Already the largest buffer the device makes: nothing to grow to (the caller reports it).
-        return false;
+    auto grownWork = [this, minItems](uint64_t needed) -> uint64_t {
+        auto grown = std::max(needed, minItems);
+        // At most the largest buffer the device makes: past it, nothing to grow to (the caller reports it).
+        grown = std::min<uint64_t>(grown, device->limits().maxBufferBytes / sizeof(MeshletWorkItem));
+        return std::min<uint64_t>(grown, UINT32_MAX);
+    };
+    auto workDescs = [this](uint64_t grown) -> std::vector<GrowthBufferDesc> {
+        std::vector<GrowthBufferDesc> descs;
+        for (size_t s = 0; s < slots.size(); s++) {
+            descs.push_back({.desc = {.size = grown * sizeof(MeshletWorkItem),
+                                      .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc,
+                                      .memory = RhiMemoryUsage::GpuOnly,
+                                      .debugName = "cull.workitems"}});
+        }
+        return descs;
+    };
+    auto installWorkNow = [&](uint64_t grown, std::vector<GrownBuffer>& made) {
+        installWork((uint32_t) grown, made, frame);
+    };
+    if (slots[0].workItems == nullptr) {
+        auto grown = grownWork(wanted);
+        auto made = BufferGrowth::makeNow(device, workDescs(grown));
+        installWorkNow(grown, made);
+        return true;
     }
-    workItemCapacity = capacity;
-    for (auto& slot : slots) {
-        deletionQueue->deferBuffer(frame, slot.workItems);
-        slot.workItems = device->createBuffer({
-            .size = (uint64_t) workItemCapacity * sizeof(MeshletWorkItem),
-            .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc,
-            .memory = RhiMemoryUsage::GpuOnly,
-            .debugName = "cull.workitems",
-        });
+    return workGrowth.update(device, wanted, workItemCapacity, grownWork, workDescs, installWorkNow);
+}
+
+auto DrawLists::installWork(uint32_t grown, std::vector<GrownBuffer>& made, uint64_t frame) -> void {
+    workItemCapacity = grown;
+    for (size_t s = 0; s < slots.size(); s++) {
+        deletionQueue->deferBuffer(frame, slots[s].workItems);
+        slots[s].workItems = made[s].buffer;
     }
     // The overflow is answered: don't grow for it again.
     latest.totals[counterWorkOverflow] = 0;
-    return true;
+}
+
+auto DrawLists::growthStatus() const -> std::array<GrowthStatus, 3> {
+    return {
+        instanceGrowth.statusOf(capacity, groupSlotCount),
+        commandGrowth.statusOf(commandCapacity, commandsNeeded()),
+        workGrowth.statusOf(workItemCapacity, liveMeshletCount * 2),
+    };
 }
 
 auto DrawLists::writeParams(uint32_t frameSlot, uint32_t instanceCount, const glm::mat4& cameraViewProj, std::span<const ShadowCascade> cascades, bool cullEnabled, Occlusion occlusion)
@@ -227,10 +333,18 @@ auto DrawLists::writeParams(uint32_t frameSlot, uint32_t instanceCount, const gl
     params.cullEnabled = cullEnabled ? 1 : 0;
     params.commandCapacity = (uint32_t) commandCapacity;
     params.groupCount = groupCountFor(instanceCount);
-    // The regions one after another, each as large as the instances of its bucket: every view sees an instance in the same bucket.
+    // The regions one after another, each as large as the instances of its bucket: every view sees an instance in the same bucket. While
+    // the commands wait for a growth, each region is cut to its share of the capacity; the cull drops (and counts) what doesn't fit.
+    uint64_t wanted = 0;
+    for (uint32_t r = 0; r < regionCount; r++) {
+        wanted += buckets[r % bucketCount];
+    }
     uint32_t next = 0;
     for (uint32_t r = 0; r < regionCount; r++) {
         auto size = (uint32_t) buckets[r % bucketCount];
+        if (wanted > commandCapacity) {
+            size = (uint32_t) ((uint64_t) size * commandCapacity / wanted);
+        }
         frameOffsets[r] = next;
         frameCapacities[r] = size;
         params.regionOffsets[r] = next;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 // One part of the geometry pool, in its elements: what the limit holds, the capacity, what is used.
@@ -57,6 +58,21 @@ struct RenderHeapUse {
     bool deviceLocal = false;
 };
 
+// One GPU table's growth (BufferGrowth): its capacity and use in its own unit (slots, records, items, elements, bytes), a growth in flight,
+// whether what it needs waits for one, and how it has grown.
+struct RenderGrowthStats {
+    std::string name;
+    uint64_t capacity = 0;
+    uint64_t used = 0;
+    uint64_t growing = 0; // the capacity a growth in flight makes; 0 none
+    double growingMs = 0.0;
+    bool waiting = false;
+    uint64_t grownAhead = 0;
+    uint64_t grownNow = 0;
+    uint64_t waits = 0;
+    double lastWaitMs = 0.0;
+};
+
 // The GPU scene's flow, published by the render thread after every frame, whatever window is open: the change lists it took from the main
 // thread, the upload queue, and the geometry pool.
 struct SceneGpuStats {
@@ -73,4 +89,5 @@ struct SceneGpuStats {
     bool skyDrawn = false; // the frame drew the scene's dome light as its sky (its image on the GPU, render.sky.on)
     RenderFrameCommands frameCommands;
     std::vector<RenderHeapUse> heaps;
+    std::vector<RenderGrowthStats> growth;
 };

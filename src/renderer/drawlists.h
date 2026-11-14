@@ -1,5 +1,6 @@
 #pragma once
 
+#include "buffergrowth.h"
 #include "framegraphresource.h"
 #include "gpuscene.h"
 #include "rhitypes.h"
@@ -219,6 +220,13 @@ public:
     static auto bucketOf(const GpuInstance& instance) -> uint32_t;
     // Counts an instance in its bucket and its meshlets in the live meshlets (delta +1), or takes it out (-1); a dead one counts nowhere.
     auto countInstance(const GpuInstance& instance, int delta) -> void;
+    // countInstance's sums gathered apart (a range of a parallel loop), then added with addCounts.
+    struct Counts {
+        std::array<int64_t, bucketCount> buckets = {};
+        int64_t meshlets = 0;
+    };
+    static auto countInto(const GpuInstance& instance, int delta, Counts& counts) -> void;
+    auto addCounts(const Counts& counts) -> void;
     // Recomputes the boxes of the culling workgroups holding the changed slots (and of every group past a change in the slot count); the
     // next writeParams copies them to the frame slot's buffer.
     auto updateGroupBounds(const ChunkedList<GpuInstance>& instances, std::span<const uint32_t> changedSlots) -> void;
@@ -237,6 +245,10 @@ public:
     // Grows every slot's work item buffer to `items` meshlets, and past what the last readback overflowed by. True when it was replaced.
     auto ensureWorkCapacity(uint64_t items, uint64_t frame) -> bool;
     auto workCapacity() const -> uint32_t { return workItemCapacity; }
+    // A growth is on its way: the draw records cut to the capacity until it comes, the work items grown past an overflow.
+    auto commandsWaiting() const -> bool { return commandGrowth.isWaiting(); }
+    auto workGrowing() const -> bool { return workGrowth.inFlight(); }
+    auto growthStatus() const -> std::array<GrowthStatus, 3>;
 
     // Fills the slot's parameter buffer: view 0 from cameraViewProj, views 1.. from the
     // cascades. Returns the workgroup count for the cull and scatter dispatches.
@@ -390,7 +402,11 @@ private:
     static auto readbackMeshletOffset() -> uint64_t { return counterCount * sizeof(uint32_t); }
     auto readbackVisibilityOffset() const -> uint64_t { return readbackMeshletOffset() + (meshletCounterCount * sizeof(uint32_t)); }
     auto importHistory(FrameGraph& fg) -> FgBufferHandle;
-    auto readbackBytes() const -> uint64_t { return readbackVisibilityOffset() + ((uint64_t) capacity * sizeof(uint32_t)); }
+    auto readbackBytes() const -> uint64_t { return readbackBytesFor(capacity); }
+    static auto readbackBytesFor(uint64_t instances) -> uint64_t { return readbackMeshletOffset() + (meshletCounterCount * sizeof(uint32_t)) + (instances * sizeof(uint32_t)); }
+    auto installInstances(uint32_t grown, std::vector<GrownBuffer>& made, uint64_t frame) -> void;
+    auto installCommands(uint64_t grown, std::vector<GrownBuffer>& made, uint64_t frame) -> void;
+    auto installWork(uint32_t grown, std::vector<GrownBuffer>& made, uint64_t frame) -> void;
     auto commandBytes() const -> uint64_t { return commandCapacity * sizeof(DrawRecord); }
 
     RhiDevice* device = nullptr;
@@ -398,6 +414,10 @@ private:
     uint32_t capacity = 0;         // instances
     uint64_t commandCapacity = 0;  // draw records, every region
     uint32_t workItemCapacity = 0; // meshlet work items per slot, every region together
+    // The next sizes, made on background jobs once use passes render.growth.ahead of the capacity.
+    BufferGrowth instanceGrowth{"cull.instances"};
+    BufferGrowth commandGrowth{"cull.commands"};
+    BufferGrowth workGrowth{"cull.workitems"};
     // Live instances per bucket and their meshlets; and this frame's region layout (writeParams).
     std::array<uint64_t, bucketCount> buckets = {};
     uint64_t liveMeshletCount = 0;

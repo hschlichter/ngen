@@ -214,6 +214,33 @@ render tools; the passes' lambdas hold a pointer, never a copy, which would make
   recorded); its levels stay in the queue until the image is ready.
 - Staging ring (decision 8): `GpuScene::record` writes into the frame slot's staging buffer, made once at the upload budget's size.
 
+**Done 2026-11-13** (but textures, deferred: `RhiCreateTexture` is at most 6.6 ms). As built:
+
+- `BufferGrowth` (`src/renderer/buffergrowth.*`), one per growable, not a keyed `GrowthJobs`: each frame `update(needed, capacity, …)` takes a
+  finished growth, starts one past `render.growth.ahead`, and handles a need past the capacity by its `Behind` policy. `Renderer::growTables`
+  and `GpuScene::beginFrame` call it every frame, not only with a change list, so a ready growth is taken at once.
+- **Decision 7 as written**, after a first version that grew on the render thread when a growth wasn't ready exhausted memory: the old buffer, that
+  growth and the background one at once, on a machine whose GPU shares system memory (oomd killed the session). Now only the old and the new
+  buffers exist. Exceptions: the mesh and material tables and the LOD groups grow at once (`GrowNow`, small); the instance staging makes a
+  buffer of its own for the frame (`OwnBuffer`: a record can't wait without drawing what held its slot before).
+- **Half as much again**, not doubling: with doubling plus growing ahead, `cull.commands` reached 52M records (2.5 GB over three frame slots)
+  on a short flight. A growth made while a table waits is sized with the ahead headroom, so it isn't full the frame it lands.
+- **Instance staging**: kept per slot, grown ahead to at most 64 MiB (about 380k records). The first change list at load (0.9–1.6M records,
+  159–288 MB) still makes a buffer of its own; a load cost, not a streaming one.
+- **The upload ring** (decision 8): 64 MiB per frame slot, kept; an upload larger than it waits for its growth.
+- Fixed on the way: the work items' need counted the capacity itself whenever there was no overflow, so they grew ahead every frame (to 268M
+  items, 6 GB, a device loss).
+
+Measured (release, one run at a time; the machine was 12 GB into swap after the memory exhaustion, so loads vary run to run):
+
+- Opening at `/cameras/flight_02`: no `UploadStaging` allocation (0 ms, was 44–88 ms); no growth on the render thread (was up to 286 ms in
+  `SceneChanges`). Left: the first change list's `InstanceStaging` (137–238 ms in three of four runs: packing 900k records, 98–140 ms, and
+  their staging buffer of its own, 20–44 ms), and `CullDescriptors` (25–156 ms after a growth; not looked into yet).
+- Fifteen seconds of `fly /cameras/flight_ 50` after the world is resident: main thread's own work at most 3.5 ms; render thread over 16.7
+  ms of its own work in 7 of 882 frames, all `InstanceUpload > DirtySlots` (sorting and packing changed records, up to 40 ms: step 6); no
+  `vkAllocateMemory` over 2 ms on the render thread. Frames over 16.7 ms otherwise are `Present` (the GPU, out of scope).
+- Screenshot at `/cameras/flight_02` byte-identical with `render.growth.ahead` 0 and 0.75; machine memory at most 19–20 GB loading (9 GB before).
+
 ### 6. Render-thread work on frame jobs (R8, and what steps 1–5 leave)
 
 Measured first: only what still shows over 2 ms in a flight frame moves. The candidates, each a `parallelFor` over independent items:
@@ -225,15 +252,40 @@ Measured first: only what still shows over 2 ms in a flight frame moves. The can
 
 Not moved: frees (`RhiDestroyBuffer` at most 1.6 ms), `CopyLodGroups` (1.6 ms), the frame graph's recording (one command buffer).
 
+**Done 2026-11-13.** Measured on 15 seconds of `fly /cameras/flight_ 50` from `/cameras/flight_02` once resident (the profile dumped over RPC
+mid-flight; `fly` holds a script until the whole flight ends), release, against the commit before step 5 under the same conditions:
+
+| Render thread, own work per frame (a change list it applied before the frame counted in) | Before step 5 | After step 6 |
+|---|---|---|
+| Frames over 16.7 ms | 10 of 846, worst 281 ms | 0 of 860, worst 13.5 ms |
+| `vkAllocateMemory`, worst | 107 ms | 0.1 ms |
+| `InstanceUpload` (dirty slots, staging, pack), worst | 33.7 ms | 2.9 ms |
+| `CopyInstances` (a change list's slots), worst | 11.1 ms | 7.1 ms |
+
+The main thread's own work stays under 3.6 ms. As built:
+
+- **`PackInstanceRecords`** on the workers, 16k slots a range (`PackInstanceRange`). It halves rather than scales (7.3 to 3.4 ms for about
+  300k records): it writes uncached mapped memory, which bandwidth limits.
+- **The dirty slots** became a bit per slot, read in order, instead of a sorted, de-duplicated list: `DirtySlots` 11 ms to 0.6 ms. Not in
+  the candidates; it showed once the pack was parallel.
+- **`CopyChangedSlots`** on the workers a chunk each (`CopyChangedRange`), grouped by chunk in list order (lists are appended, so a slot can
+  change twice in one); reading the slots into a compact list first matters as much as the workers (8.4 to 5.9 ms).
+- **`UpdateGroupBounds`** on the workers, a dirty group each (`GroupBoundsRange`): 3.1 to 1.5 ms.
+- `UploadCopies` stays on the render thread: at most 2.7 ms.
+- Checked: screenshot at `/cameras/flight_12` byte-identical between the commit before step 5 and this, and between two runs; the pack with
+  every slot its own range byte-identical on `three_cubes` and the layered scene.
+
 ## Visibility
 
 - **Records:** `profile` gains `overBudget` (step 2); a new `jobs` record (step 3); `gpuscene` gains `growth`: per growable its capacity, use,
   a growth in flight (bytes, since when) and what waits for it (slots, meshes, texture levels); `memory` lists the staging ring.
 - **RPC and verbs:** `profile.reset` and `profile-reset` (step 2). `render.growth.ahead` is a configuration value (`config` verb and record,
   Configuration window).
-- **Trace:** `InstanceBufferGrown` (now with what was copied), `GrowthBehind` (warning) and `GrowthReady`.
+- **Trace:** `InstanceBufferGrown` (now with what was copied), `GrowthBehind` (warning) and `GrowthReady`; as built also `BufferGrown`,
+  `GrowthOwnBuffer` and `BufferGrowthFailed` (an error), and the stall watch's `Stall` (warning) and `StallEnded`.
 - **Windows:** the Performance window shows `overBudget` per lane and the worker lanes with frame and background jobs in their group colours
-  (they are there today); the Memory window shows growths in flight and the staging ring.
+  (they are there today); the Memory window shows growths in flight and the staging ring. As built, the Memory window lists the ring and
+  the staging as buffers but not the growths in flight: a gap, named in `src/renderer/README.md`; the `gpuscene` record has them.
 - **Where it sits in the flow:** `src/jobs/README.md` (new), `src/renderer/README.md` ("Scene data on the GPU": growth, staging),
   `src/profile/README.md` (`overBudget`), `src/rhi/README.md` (which calls are safe from another thread).
 
@@ -274,8 +326,9 @@ The flight, release build, from the repository root with the release asset serve
    it leaves at that size, not at 1.6M. The `gpuscene` record's growth history will say.
 3. **Late switches after step 1** (see its results): this step, or the conditions it was measured in. Settled by a flight of each build under
    the same conditions, with the scene-thread plan.
-4. **The start-up hang** (step 1's results): where the render thread spins. It hides from a debugger and from hunting; the engine could say
-   itself, with a stall watchdog that traces the open profile zones of a thread that has been in one frame for seconds.
+4. **The start-up hang** (step 1's results): where the render thread spins. It hides from a debugger and from hunting. The stall watch now
+   says it (`src/profile/README.md`, "Stalls": a `Stall` warning with a stuck thread's open zones, `profile.stall.seconds`, the `profile`
+   record's `stalls`); about 31 loads since have not hung. The next hang names its zones.
 
 ## Deferred / follow-ups
 

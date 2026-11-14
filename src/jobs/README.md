@@ -14,7 +14,7 @@ Standard library and `profile` only.
 The rules:
 
 - **The main and render threads never wait for a background job.** A frame that needs one that isn't ready goes on without what depends on it,
-  and takes it in a later frame.
+  and takes it in a later frame. Only teardown waits (a renderer's `destroy` for a growth still in flight), never a frame.
 - **`wait` runs only frame jobs.** A thread waiting for its own loop that picked up a 200 ms allocation would make the long frame the
   background job was there to avoid.
 - **Workers take frame jobs first**, then background jobs: a frame waits on the first, nothing on the second.
@@ -50,7 +50,13 @@ if (fence.ready()) {
 
 `JobSystem::init` starts the workers in `ngen-view`'s `main` (`src/apps/view.cpp`), one fewer than the hardware threads; `JobSystemStarted` in the
 trace says how many. Each worker has a lane in the profiler (`Worker N`), where its jobs show as zones in the Jobs group under their names, and
-an idle worker shows `Idle` slices. The main, render and scene threads submit; nothing else in the frame changes.
+an idle worker shows `Idle` slices. The main, render and scene threads submit; nothing else in the frame changes. The users:
+
+- `BufferGrowth` (`src/renderer/buffergrowth.*`): the GPU tables' next, larger buffers, as background jobs named `BufferGrowth`
+  (`src/renderer/README.md`, "Growth").
+- The render thread's per-slot loops, as `parallelFor`: packing the changed instance records (`PackInstanceRange`), writing a change
+  list's slots a chunk each (`CopyChangedRange`) and the culling groups' boxes (`GroupBoundsRange`) (`src/renderer/README.md`, "Scene data
+  on the GPU").
 
 ## At runtime
 

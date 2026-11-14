@@ -40,6 +40,8 @@ extern config::Bool cullingOcclusion; // render.culling.occlusion: two-phase occ
 // gpuscene.cpp
 extern config::Int uploadBudgetMiB;
 extern config::Int geometryLimitMiB;
+// buffergrowth.cpp
+extern config::Float growthAhead; // render.growth.ahead
 
 // The groups the snapshot carries as structs, read from and written to their values (a window editing a group sets each value).
 auto shadowSettings() -> ShadowCascadeSettings;

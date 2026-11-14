@@ -45,6 +45,7 @@ auto LodGroups::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* q
 }
 
 auto LodGroups::destroy() -> void {
+    growth.discard(device);
     for (auto* buffer : {table, states, residency}) {
         if (buffer != nullptr) {
             device->destroyBuffer(buffer);
@@ -68,9 +69,42 @@ auto LodGroups::workgroupsFor(uint32_t count) -> uint32_t {
 }
 
 auto LodGroups::ensureCapacity(uint32_t count, uint64_t frame) -> bool {
-    if (table != nullptr && count <= capacity) {
-        return false;
+    constexpr uint64_t minCapacity = 256;
+    auto grownCapacity = [minCapacity](uint64_t needed) -> uint64_t {
+        return std::min<uint64_t>(std::max(needed, minCapacity), UINT32_MAX);
+    };
+    auto describe = [this](uint64_t grown) -> std::vector<GrowthBufferDesc> {
+        auto storage = [](uint64_t size, RhiBufferUsageFlags extra, const char* name) -> GrowthBufferDesc {
+            return {.desc = {.size = size, .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc | extra, .memory = RhiMemoryUsage::GpuOnly, .debugName = name}};
+        };
+        auto workgroups = (uint64_t) workgroupsFor((uint32_t) grown);
+        std::vector<GrowthBufferDesc> descs;
+        descs.push_back(storage(grown * sizeof(GpuLodGroup), RhiBufferUsage::TransferDst, "gpuscene.lodgroups"));
+        descs.push_back(storage(grown * stateBytes, {}, "gpuscene.lodstate"));
+        descs.push_back(storage(grown * sizeof(uint32_t), {}, "gpuscene.lodresidency"));
+        for (size_t s = 0; s < slots.size(); s++) {
+            descs.push_back({.desc = {.size = grown * sizeof(GpuLodGroup), .usage = RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "gpuscene.lodgroups.staging"},
+                             .mapped = true});
+            descs.push_back(storage(workgroups * counterCount * sizeof(uint32_t), {}, "lodselect.groupcounters"));
+            descs.push_back(storage(sizeof(LodSelectTotals), {}, "lodselect.totals"));
+            descs.push_back({.desc = {.size = sizeof(LodSelectTotals) + (grown * stateBytes), .usage = RhiBufferUsage::TransferDst, .memory = RhiMemoryUsage::GpuToCpu, .debugName = "lodselect.readback"},
+                             .mapped = true});
+        }
+        return descs;
+    };
+    auto installNow = [&](uint64_t grown, std::vector<GrownBuffer>& made) {
+        install((uint32_t) grown, made, frame);
+    };
+    if (table == nullptr) {
+        auto grown = grownCapacity(count);
+        auto made = BufferGrowth::makeNow(device, describe(grown));
+        installNow(grown, made);
+        return true;
     }
+    return growth.update(device, count, capacity, grownCapacity, describe, installNow);
+}
+
+auto LodGroups::install(uint32_t grown, std::vector<GrownBuffer>& made, uint64_t frame) -> void {
     // Frames in flight may still use the old buffers.
     for (auto* buffer : {table, states, residency}) {
         deletionQueue->deferBuffer(frame, buffer);
@@ -81,38 +115,24 @@ auto LodGroups::ensureCapacity(uint32_t count, uint64_t frame) -> bool {
         }
         slot = {};
     }
-    constexpr uint32_t minCapacity = 256;
-    capacity = std::max({count, capacity * 2, minCapacity});
-    auto storage = [&](uint64_t size, RhiBufferUsageFlags extra, const char* name) {
-        return device->createBuffer({.size = size, .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferSrc | extra, .memory = RhiMemoryUsage::GpuOnly, .debugName = name});
-    };
-    table = storage((uint64_t) capacity * sizeof(GpuLodGroup), RhiBufferUsage::TransferDst, "gpuscene.lodgroups");
-    states = storage((uint64_t) capacity * stateBytes, {}, "gpuscene.lodstate");
-    residency = storage((uint64_t) capacity * sizeof(uint32_t), {}, "gpuscene.lodresidency");
-    auto workgroups = workgroupsFor(capacity);
+    capacity = grown;
+    table = made[0].buffer;
+    states = made[1].buffer;
+    residency = made[2].buffer;
+    size_t next = 3;
     for (auto& slot : slots) {
-        slot.staging = device->createBuffer({
-            .size = (uint64_t) capacity * sizeof(GpuLodGroup),
-            .usage = RhiBufferUsage::TransferSrc,
-            .memory = RhiMemoryUsage::CpuToGpu,
-            .debugName = "gpuscene.lodgroups.staging",
-        });
-        slot.stagingMapped = device->mapBuffer(slot.staging);
-        slot.groupCounters = storage((uint64_t) workgroups * counterCount * sizeof(uint32_t), {}, "lodselect.groupcounters");
-        slot.totals = storage(sizeof(LodSelectTotals), {}, "lodselect.totals");
-        slot.readback = device->createBuffer({
-            .size = sizeof(LodSelectTotals) + ((uint64_t) capacity * stateBytes),
-            .usage = RhiBufferUsage::TransferDst,
-            .memory = RhiMemoryUsage::GpuToCpu,
-            .debugName = "lodselect.readback",
-        });
-        slot.readbackMapped = device->mapBuffer(slot.readback);
+        slot.staging = made[next].buffer;
+        slot.stagingMapped = made[next].mapped;
+        slot.groupCounters = made[next + 1].buffer;
+        slot.totals = made[next + 2].buffer;
+        slot.readback = made[next + 3].buffer;
+        slot.readbackMapped = made[next + 3].mapped;
+        next += 4;
     }
     // New contents: nothing to sync with, and every group is uploaded.
     access = {FgAccessFlags::None, FgAccessFlags::None, FgAccessFlags::None};
     dirtyFirst = 0;
     dirtyEnd = (uint32_t) groups.size();
-    return true;
 }
 
 auto LodGroups::apply(std::span<const std::pair<uint32_t, RenderLodGroup>> changes, uint32_t count, uint64_t frame) -> bool {
