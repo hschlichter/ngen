@@ -81,21 +81,30 @@ auto BufferGrowth::update(RhiDevice* device, uint64_t needed, uint64_t capacity,
         auto tookMs = (double) (profile::now() - startedNs) * 1e-6;
         bool complete = std::ranges::all_of(taken->made, [](const GrownBuffer& made) { return made.buffer != nullptr; });
         if (!complete) {
-            // The device couldn't make one of them (the reason is in the trace): keep the buffers there are, try again at the next need.
+            // The device couldn't make one of them (the reason is in the trace): keep the buffers there are, and try again once more is
+            // needed than now. Starting again at once would ask the device for the same buffers every time the job ends.
             destroyMade(device, *taken);
+            failedFor = std::max<uint64_t>(needed, 1);
             TRACE_ERROR("Render", "BufferGrowthFailed", status.name)
-                .text(std::format("{}: the buffers for {} couldn't all be made; it stays at {}", status.name, growingCapacity, capacity))
+                .text(std::format("{}: the buffers for {} couldn't all be made; it stays at {} until more than {} is needed", status.name, growingCapacity, capacity, failedFor))
                 .field("capacity", (int64_t) capacity)
                 .field("wanted", (int64_t) growingCapacity);
-        } else if (growingCapacity > capacity) {
+        } else if (growingCapacity > capacity || (policy == Behind::Sized && growingCapacity != capacity)) {
             install(growingCapacity, taken->made);
             TRACE_EVENT("Render", "BufferGrown", status.name)
-                .text(std::format("{} grown from {} to {} on a background job, started when {} were needed, ready {:.1f} ms after", status.name, capacity, growingCapacity, startedFor, tookMs))
+                .text(std::format("{} {} from {} to {} on a background job, started when {} were needed, ready {:.1f} ms after",
+                                  status.name,
+                                  growingCapacity > capacity ? "grown" : "made smaller",
+                                  capacity,
+                                  growingCapacity,
+                                  startedFor,
+                                  tookMs))
                 .field("startedFor", (int64_t) startedFor)
                 .field("capacity", (int64_t) growingCapacity)
                 .field("before", (int64_t) capacity)
                 .field("ms", tookMs);
             capacity = growingCapacity;
+            failedFor = 0;
             status.grownAhead++;
             replaced = true;
         } else {
@@ -123,8 +132,27 @@ auto BufferGrowth::update(RhiDevice* device, uint64_t needed, uint64_t capacity,
         growingCapacity = grown;
         startedNs = profile::now();
     };
+    // After a failed growth, the next starts only once more is needed than when it failed.
+    bool mayStart = state == nullptr && needed > failedFor;
     auto share = ahead();
-    if (needed > capacity) {
+    if (policy == Behind::Sized) {
+        // Made at the size needed, larger or smaller; none while nothing is needed. One in flight for another size lands first.
+        auto sized = grownCapacity(needed);
+        if (state == nullptr && sized != 0 && sized != capacity && needed != failedFor) {
+            start(sized);
+        }
+        if (needed > capacity && !waiting) {
+            // How it works, not a table that fell behind: no warning.
+            waiting = true;
+            waitingSinceNs = profile::now();
+            status.waits++;
+            TRACE_EVENT("Render", "GrowthOnNeed", status.name)
+                .text(std::format("{} needs {} and has {}: a buffer for {} is being made on a background job, and what needs it waits", status.name, needed, capacity, growingCapacity))
+                .field("needed", (int64_t) needed)
+                .field("capacity", (int64_t) capacity)
+                .field("growing", (int64_t) growingCapacity);
+        }
+    } else if (needed > capacity) {
         // Room for `needed` with the headroom growing ahead keeps, so the growth isn't full (and growing again) the frame it lands.
         auto roomy = share > 0.0 && aheadOn ? (uint64_t) ((double) needed / share) + 1 : needed;
         auto grown = grownCapacity(std::max(policy == Behind::GrowNow ? needed : roomy, step(capacity)));
@@ -147,19 +175,30 @@ auto BufferGrowth::update(RhiDevice* device, uint64_t needed, uint64_t capacity,
             }
         } else if (grown > capacity && policy == Behind::OwnBuffer) {
             // This frame makes do with a buffer of its own; the frames after get the growth.
-            if (state == nullptr) {
+            if (mayStart) {
                 start(grown);
+                mayStart = false;
             }
-            status.waits++;
-            TRACE_EVENT("Render", "GrowthOwnBuffer", status.name)
-                .text(std::format("{} needs {}, past its capacity of {}: this frame makes a buffer of its own, and a growth to {} is on its way", status.name, needed, capacity, growingCapacity))
-                .field("needed", (int64_t) needed)
-                .field("capacity", (int64_t) capacity)
-                .field("growing", (int64_t) growingCapacity);
+            // Once for the run of frames that need more, as a table that waits is reported once.
+            if (!waiting) {
+                waiting = true;
+                waitingSinceNs = profile::now();
+                status.waits++;
+                TRACE_EVENT("Render", "GrowthOwnBuffer", status.name)
+                    .text(std::format("{} needs {}, past its capacity of {}: its frames make a buffer of their own until it fits, and a growth to {} is on its way",
+                                      status.name,
+                                      needed,
+                                      capacity,
+                                      growingCapacity))
+                    .field("needed", (int64_t) needed)
+                    .field("capacity", (int64_t) capacity)
+                    .field("growing", (int64_t) growingCapacity);
+            }
         } else if (grown > capacity) {
             // What doesn't fit waits for the growth: the frame goes on without it.
-            if (state == nullptr) {
+            if (mayStart) {
                 start(grown);
+                mayStart = false;
             }
             if (!waiting) {
                 waiting = true;
@@ -177,12 +216,17 @@ auto BufferGrowth::update(RhiDevice* device, uint64_t needed, uint64_t capacity,
         waiting = false;
         status.lastWaitMs = (double) (profile::now() - waitingSinceNs) * 1e-6;
         TRACE_EVENT("Render", "GrowthReady", status.name)
-            .text(std::format("{} holds what it needs again ({} of {}), after waiting {:.1f} ms", status.name, needed, capacity, status.lastWaitMs))
+            .text(std::format("{} holds what it needs again ({} of {}), after {:.1f} ms {}",
+                              status.name,
+                              needed,
+                              capacity,
+                              status.lastWaitMs,
+                              policy == Behind::OwnBuffer ? "of frames making their own buffer" : "of waiting"))
             .field("needed", (int64_t) needed)
             .field("capacity", (int64_t) capacity)
             .field("ms", status.lastWaitMs);
     }
-    if (state == nullptr && aheadOn && share > 0.0 && (double) needed > (double) capacity * share) {
+    if (mayStart && aheadOn && share > 0.0 && (double) needed > (double) capacity * share) {
         auto grown = grownCapacity(std::max((uint64_t) ((double) needed / share) + 1, step(capacity)));
         if (grown > capacity) {
             start(grown);

@@ -360,6 +360,11 @@ auto Renderer::growTables() -> void {
     // buffers: the descriptor sets naming them are rewritten this frame.
     PROFILE_ZONE("GrowTables", Render);
     gpuScene.growInstances((uint32_t) gpuInstances.size(), m_frameIndex);
+    if (gpuScene.instanceGeneration() != boundInstanceGeneration) {
+        // A growth taken here, in a frame without a change list, is a new instance buffer as much as one taken with the changes.
+        boundInstanceGeneration = gpuScene.instanceGeneration();
+        descriptorSetsDirty = true;
+    }
     {
         PROFILE_ZONE_DETAIL("GrowInstanceLists", Render);
         if (drawLists.ensureCapacity((uint32_t) gpuInstances.size(), drawLists.commandsNeeded(), m_frameIndex)) {

@@ -31,10 +31,10 @@ struct GrowthStatus {
     uint64_t used = 0;
     uint64_t growing = 0;    // the capacity a growth in flight makes; 0 none
     double growingMs = 0.0;  // how long it has been in flight
-    bool waiting = false;    // it needs more than its capacity: what doesn't fit waits for the growth
+    bool waiting = false;    // it needs more than its capacity: what doesn't fit waits for the growth (Behind::OwnBuffer: its frames make their own)
     uint64_t grownAhead = 0; // growths taken from a background job
     uint64_t grownNow = 0;   // growths made on the render thread (Behind::GrowNow)
-    uint64_t waits = 0;      // times it needed more than it had before a growth was ready
+    uint64_t waits = 0;      // times it needed more than it had before a growth was ready: runs of frames, not frames
     double lastWaitMs = 0.0; // how long the last of those lasted
 };
 
@@ -49,6 +49,8 @@ public:
         Wait,      // what doesn't fit waits for the growth
         GrowNow,   // grown on the render thread: small enough not to be a spike
         OwnBuffer, // the frame that needs more makes a buffer of its own (staging): the growth is for the frames after
+        Sized,     // a buffer at the size needed (a setting, one large upload): made larger or smaller when that changes, never ahead; what
+                   // needs it waits, without a warning (GrowthOnNeed)
     };
 
     // The buffers for a capacity, in the order install receives them.
@@ -56,15 +58,15 @@ public:
     // Swaps in buffers made for `capacity`; the growable retires its old ones.
     using Install = std::function<void(uint64_t capacity, std::vector<GrownBuffer>& buffers)>;
 
-    // `growsAhead` false: a buffer sized to a setting (the upload ring) grows only when it needs to.
-    explicit BufferGrowth(const char* name, Behind behind = Behind::Wait, bool growsAhead = true) : policy(behind), aheadOn(growsAhead), status{.name = name} {}
+    explicit BufferGrowth(const char* name, Behind behind = Behind::Wait) : policy(behind), aheadOn(behind != Behind::Sized), status{.name = name} {}
     BufferGrowth(const BufferGrowth&) = delete;
     auto operator=(const BufferGrowth&) -> BufferGrowth& = delete;
     ~BufferGrowth();
 
     // Each frame, before the growable is used: takes a finished growth; when `needed` is over the capacity, starts a growth and waits for it
     // (or grows now, Behind::GrowNow); and starts the next growth once `needed` passes ahead() of the capacity. `grownCapacity(needed)` is
-    // the capacity a growth makes. Returns true when the buffers were replaced.
+    // the capacity a growth makes. Behind::Sized: starts buffers for `grownCapacity(needed)` whenever that differs from the capacity and
+    // isn't 0. Returns true when the buffers were replaced.
     auto update(RhiDevice* device, uint64_t needed, uint64_t capacity, const std::function<uint64_t(uint64_t)>& grownCapacity, const Describe& describe, const Install& install)
         -> bool;
 
@@ -102,6 +104,7 @@ private:
     uint64_t growingCapacity = 0;
     uint64_t startedNs = 0;
     uint64_t startedFor = 0; // what was needed when the growth in flight started
+    uint64_t failedFor = 0;  // what was needed when a growth last failed: no new one starts until more is; 0 none failed
     bool waiting = false;
     uint64_t waitingSinceNs = 0;
     GrowthStatus status;

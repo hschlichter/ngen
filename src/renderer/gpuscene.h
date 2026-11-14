@@ -335,6 +335,8 @@ private:
     };
     // Grows a pool's buffers to hold `needed` elements (BufferGrowth, as ensureTable), within the limit, and its ranges with them.
     auto updatePool(Pool pool, uint64_t needed) -> bool;
+    // After updatePool replaced the pool's buffers: the room asked for is there, the waiting meshes are placed at the next frame's start.
+    auto poolGrew(Pool pool) -> void;
     auto growthOf(Pool pool) -> BufferGrowth&;
     // A range of `count` elements in a pool, growing it within the limit; nullopt when it doesn't fit.
     auto allocateIn(Pool pool, uint64_t count) -> std::optional<uint64_t>;
@@ -360,6 +362,7 @@ private:
     // The upload ring: per frame slot, made at the upload budget, grown (on a background job) when the budget is raised or an upload is
     // larger than it.
     auto updateUploadRing() -> void;
+    auto updateLargeStaging() -> void;
     // The instance records' staging, for an upload of `bytes` this frame (BufferGrowth, Behind::OwnBuffer).
     auto updateInstanceStaging(uint64_t bytes) -> void;
     auto ensureInstanceCapacity(uint32_t count, uint32_t liveCount, uint64_t frame) -> void;
@@ -444,7 +447,13 @@ private:
     // Per frame slot, CpuToGpu, mapped, kept: the SceneUpload pass's staging (updateUploadRing).
     std::vector<GrownBuffer> uploadRing;
     uint64_t uploadRingBytes = 0;
-    BufferGrowth uploadRingGrowth{"gpuscene.upload.staging", BufferGrowth::Behind::Wait, false};
+    BufferGrowth uploadRingGrowth{"gpuscene.upload.staging", BufferGrowth::Behind::Sized};
+    // The staging for one upload larger than the ring (a texture level over the budget): made on a background job when that upload is
+    // next in the queue, which waits for it, and retired by the frame that copies from it.
+    GrownBuffer largeStaging;
+    uint64_t largeStagingBytes = 0;
+    BufferGrowth largeStagingGrowth{"gpuscene.upload.staging.large", BufferGrowth::Behind::Sized};
+    auto largeStagingNeed() const -> uint64_t;
     uint32_t instanceCapacity = 0;
     uint32_t lastInstanceCount = 0; // the slots the last growInstances asked for
     uint32_t generation = 0;

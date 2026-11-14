@@ -227,7 +227,7 @@ Tables:
 
 **Uploads** (`GpuScene::addUploadPass`, the `SceneUpload` pass, before the culling passes):
 - **Per frame.** Each frame takes queued uploads in order, up to `uploadBudget` bytes (64 MiB; at least one upload, so a large texture level still
-  goes, once it fits the staging ring). A texture's levels are separate uploads.
+  goes, once its own staging is made, below). A texture's levels are separate uploads.
 - **Seen from outside.** After every frame the render thread publishes `SceneGpuStats` (`RenderThread::latestSceneGpuStats`): change lists
   submitted and drawn, the tables' sizes, the upload queue (`GpuScene::uploadStats`: queued, budget, the last pass, textures waiting for their
   slot), the geometry pool, the last frame's commands summed over the passes that ran (`frameCommands`, `FrameGraph::frameStats`) and the
@@ -235,9 +235,13 @@ Tables:
   (`Renderer::reportGpuAllocations`, `src/profile/README.md`). The budget and the pool limit are runtime settings (`RenderThread::setUploadBudget`, `setGeometryLimit`), applied
   before the next frame.
 - **The staging ring.** A mapped buffer per frame slot at the upload budget's size (`gpuscene.upload.staging`, 64 MiB each), made at the first
-  upload and kept, so a frame's uploads make no buffer. Raising the budget, or an upload larger than the ring, grows it on a background job,
-  and that upload waits for it. Zeros for a grown table that don't fit beside the batch take a buffer of their own. Start-up
-  (`flushUploads`) makes a buffer per batch.
+  upload and kept, so a frame's uploads make no buffer. The ring is always the budget's size (`render.upload.budgetMiB`, 1 to 1024): raising or
+  lowering the budget makes a new ring on a background job (`BufferGrowth::Behind::Sized`), and the frames meanwhile take what the ring
+  there is holds. Zeros for a grown table that don't fit beside the batch take a buffer of their own. Start-up (`flushUploads`) makes a
+  buffer per batch.
+- **An upload larger than the ring** (a texture level over the budget) gets a staging buffer of its own (`gpuscene.upload.staging.large`),
+  made on a background job when it is next in the queue. The queue waits for it, in order (`GrowthOnNeed`, then `GrowthReady`), and the frame
+  that copies from it retires it: the ring stays the budget's size. The `gpuscene` record's `growth` lists it beside the ring.
 - **Barriers.** The copies are recorded in the frame's command buffer:
   - before them, a barrier from the tables' and pool's read states to transfer;
   - one between a grown buffer's move and the uploads, since copies in one command buffer may run in any order;
@@ -266,7 +270,13 @@ A table that outgrows its buffer gets a larger one, which takes hundreds of mill
   - The mesh and material tables and the render-LOD groups are small: they grow at once when they must (`Behind::GrowNow`, a few
     milliseconds), still ahead on a job otherwise.
   - The instance staging makes a buffer of its own for the frame that needs more (`Behind::OwnBuffer`, `GrowthOwnBuffer`), since an instance
-    record can't wait: a slot not uploaded would draw what held it before.
+    record can't wait: a slot not uploaded would draw what held it before. A run of such frames is reported once, as a wait is:
+    `GrowthOwnBuffer`, then `GrowthReady` with how long the run lasted.
+- **Sized to a need** (`Behind::Sized`: the upload ring, the staging of one large upload). Not a table that fills: its buffers are made at the
+  size needed, larger or smaller, when that changes, never ahead. What needs it waits, which is how it works, so `GrowthOnNeed` is not a
+  warning.
+- **A growth that fails** (`BufferGrowthFailed`, an error: the device couldn't make the buffers) isn't started again until the table needs more
+  than it did when the growth failed. The table keeps its buffers, and what doesn't fit keeps waiting.
 - **Seen from outside.** The `gpuscene` record's `growth` lists every growable: capacity and use in its own unit (slots, records, items,
   elements, bytes), a growth in flight and for how long, whether it waits, how often it grew ahead, grew at once and waited, and how long it
   last waited. `render.growth.ahead` is a configuration value (0 grows only when needed, still on a job). The jobs show in the Performance

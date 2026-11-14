@@ -146,8 +146,19 @@ auto GpuScene::destroy() -> void {
 
     device->destroyBuffer(instances);
     instances = nullptr;
+    if (instanceMoveFrom != nullptr) {
+        // The buffer before a growth, kept for a move that no frame came to make.
+        device->destroyBuffer(instanceMoveFrom);
+        instanceMoveFrom = nullptr;
+    }
     instanceStagingGrowth.discard(device);
     uploadRingGrowth.discard(device);
+    largeStagingGrowth.discard(device);
+    if (largeStaging.buffer != nullptr) {
+        device->destroyBuffer(largeStaging.buffer);
+    }
+    largeStaging = {};
+    largeStagingBytes = 0;
     for (auto& slot : instanceStaging) {
         if (slot.buffer != nullptr) {
             device->destroyBuffer(slot.buffer);
@@ -320,6 +331,13 @@ auto GpuScene::updatePool(Pool pool, uint64_t needed) -> bool {
     return growthOf(pool).update(device, needed, ranges.capacity(), grownCapacity, describe, install);
 }
 
+auto GpuScene::poolGrew(Pool pool) -> void {
+    // Wherever the growth was taken (the frame's start, or a mesh added after it): the room asked for is there, and the meshes that waited
+    // for it are placed at the next frame's start; one that still doesn't fit asks again.
+    poolShort[(size_t) pool] = 0;
+    poolRoomFreed = true;
+}
+
 auto GpuScene::allocateIn(Pool pool, uint64_t count) -> std::optional<uint64_t> {
     auto& ranges = rangesOf(pool);
     auto first = ranges.allocate(count);
@@ -327,7 +345,10 @@ auto GpuScene::allocateIn(Pool pool, uint64_t count) -> std::optional<uint64_t> 
         // No room (the ranges may be fragmented, so past the capacity, not the use): a growth that is ready is taken, else one is started
         // and the mesh waits for it.
         auto wanted = ranges.capacity() + count;
-        updatePool(pool, wanted);
+        bool grown = updatePool(pool, wanted);
+        if (grown) {
+            poolGrew(pool);
+        }
         first = ranges.allocate(count);
         if (!first) {
             auto& shortBy = poolShort[(size_t) pool];
@@ -336,7 +357,10 @@ auto GpuScene::allocateIn(Pool pool, uint64_t count) -> std::optional<uint64_t> 
     } else {
         // Taken a growth that is ready, or started one once the use passes render.growth.ahead of the capacity; a mesh that didn't fit
         // still asks for its room.
-        updatePool(pool, std::max(ranges.used(), poolShort[(size_t) pool]));
+        bool grown = updatePool(pool, std::max(ranges.used(), poolShort[(size_t) pool]));
+        if (grown) {
+            poolGrew(pool);
+        }
     }
     return first;
 }
@@ -450,7 +474,8 @@ auto GpuScene::growthStatus() const -> std::vector<GrowthStatus> {
         meshTableGrowth.statusOf(meshTable.capacity, meshTable.capacity),
         materialTableGrowth.statusOf(materialTable.capacity, materialTable.capacity),
         instanceStagingGrowth.statusOf(instanceStagingBytes, lastInstanceStagingNeed),
-        uploadRingGrowth.statusOf(uploadRingBytes, std::max(uploadBudget, queue.empty() ? 0 : queue.front().bytes)),
+        uploadRingGrowth.statusOf(uploadRingBytes, uploadBudget),
+        largeStagingGrowth.statusOf(largeStagingBytes, largeStagingNeed()),
     };
 }
 
@@ -671,13 +696,11 @@ auto GpuScene::beginFrame(uint64_t frame) -> bool {
     currentFrame = frame;
     // The pools' growths: one that is ready is taken, and its waiting meshes placed.
     for (auto pool : {Pool::Vertices, Pool::Meshlets, Pool::MeshletVertices, Pool::MeshletTriangles}) {
-        auto& shortBy = poolShort[(size_t) pool];
         if (rangesOf(pool).capacity() == 0) {
             continue;
         }
-        if (updatePool(pool, std::max(rangesOf(pool).used(), shortBy))) {
-            shortBy = 0;
-            poolRoomFreed = true;
+        if (updatePool(pool, std::max(rangesOf(pool).used(), poolShort[(size_t) pool]))) {
+            poolGrew(pool);
         }
     }
     // Meshes that waited for room, once a frame after removals or a growth made some.
@@ -738,7 +761,7 @@ auto GpuScene::record(RhiCommandBuffer* cmd, uint64_t budget, uint64_t stagingCa
         }
     }
 
-    // What this record takes: at most `budget` bytes, at least one upload that fits the staging (a larger one waits for it to grow).
+    // What this record takes: at most `budget` bytes, at least one upload that fits the staging (a larger one waits for a staging of its own).
     size_t taken = 0;
     uint64_t takenBytes = 0;
     while (taken < queue.size() && ((taken == 0 && queue[0].bytes <= stagingCapacity) || takenBytes + queue[taken].bytes <= budget)) {
@@ -943,9 +966,46 @@ auto GpuScene::record(RhiCommandBuffer* cmd, uint64_t budget, uint64_t stagingCa
     cmd->bufferBarrier(after);
 }
 
+auto GpuScene::largeStagingNeed() const -> uint64_t {
+    // The next upload, when it alone is larger than the ring (a texture level over the budget).
+    if (queue.empty() || queue.front().bytes <= uploadRingBytes) {
+        return 0;
+    }
+    return queue.front().bytes;
+}
+
+auto GpuScene::updateLargeStaging() -> void {
+    auto needed = largeStagingNeed();
+    if (needed == 0 && largeStaging.buffer != nullptr) {
+        // The upload it was made for has gone from the queue.
+        deletionQueue->deferBuffer(currentFrame, largeStaging.buffer);
+        largeStaging = {};
+        largeStagingBytes = 0;
+    }
+    auto describe = [](uint64_t bytes) -> std::vector<GrowthBufferDesc> {
+        return {{.desc = {.size = bytes, .usage = RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "gpuscene.upload.staging.large"}, .mapped = true}};
+    };
+    auto install = [this](uint64_t bytes, std::vector<GrownBuffer>& made) {
+        if (largeStaging.buffer != nullptr) {
+            deletionQueue->deferBuffer(currentFrame, largeStaging.buffer);
+        }
+        largeStaging = made[0];
+        largeStagingBytes = bytes;
+    };
+    auto grownCapacity = [this](uint64_t wanted) -> uint64_t {
+        // One already made that is large enough serves.
+        if (wanted != 0 && wanted <= largeStagingBytes) {
+            return largeStagingBytes;
+        }
+        return wanted;
+    };
+    largeStagingGrowth.update(device, needed, largeStagingBytes, grownCapacity, describe, install);
+}
+
 auto GpuScene::updateUploadRing() -> void {
-    // Room for the budget, and for the next upload when it alone is larger (a texture level over the budget): it waits for the growth.
-    auto needed = std::max(uploadBudget, queue.empty() ? 0 : queue.front().bytes);
+    // The ring is the budget's size: raising or lowering the budget makes a new ring on a background job, and the frames meanwhile take
+    // what the ring there is holds.
+    auto needed = uploadBudget;
     auto describe = [this](uint64_t bytes) -> std::vector<GrowthBufferDesc> {
         std::vector<GrowthBufferDesc> descs;
         for (size_t s = 0; s < uploadRing.size(); s++) {
@@ -1003,6 +1063,7 @@ auto GpuScene::updateInstanceStaging(uint64_t bytes) -> void {
 auto GpuScene::addUploadPass(FrameGraph& fg, uint64_t frame, uint32_t frameSlot) -> void {
     currentFrame = frame;
     updateUploadRing();
+    updateLargeStaging();
     bool moves = std::ranges::any_of(poolBuffers(), [](const GrowableBuffer* target) { return target->fresh; });
     if (queue.empty() && !moves) {
         return;
@@ -1018,11 +1079,20 @@ auto GpuScene::addUploadPass(FrameGraph& fg, uint64_t frame, uint32_t frameSlot)
                 if (frameSlot < uploadRing.size() && bytes <= uploadRingBytes && uploadRing[frameSlot].buffer != nullptr) {
                     return {.buffer = uploadRing[frameSlot].buffer, .mapped = static_cast<std::byte*>(uploadRing[frameSlot].mapped)};
                 }
-                // Larger than the ring (a grown table's zeros on top of the uploads): a buffer of its own, made here.
+                if (largeStaging.buffer != nullptr && bytes <= largeStagingBytes) {
+                    // The one upload larger than the ring: its own buffer, made for it on a background job, retired after this copy.
+                    Staging large = {.buffer = largeStaging.buffer, .mapped = static_cast<std::byte*>(largeStaging.mapped), .own = true};
+                    largeStaging = {};
+                    largeStagingBytes = 0;
+                    return large;
+                }
+                // Larger than both (a grown table's zeros on top of the uploads): a buffer of its own, made here.
                 auto* buffer = device->createBuffer({.size = bytes, .usage = RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "gpuscene.upload.staging.large"});
                 return {.buffer = buffer, .mapped = static_cast<std::byte*>(device->mapBuffer(buffer)), .own = true};
             };
-            record(ctx.cmd(), std::min(uploadBudget, uploadRingBytes), uploadRingBytes, acquire, [this, frame](RhiBuffer* staging) { deletionQueue->deferBuffer(frame, staging); });
+            record(ctx.cmd(), std::min(uploadBudget, uploadRingBytes), std::max(uploadRingBytes, largeStagingBytes), acquire, [this, frame](RhiBuffer* staging) {
+                deletionQueue->deferBuffer(frame, staging);
+            });
         });
 }
 
@@ -1320,8 +1390,9 @@ namespace renderconfig {
 
 config::Int uploadBudgetMiB{"render.upload.budgetMiB",
                             (int64_t) (GpuScene::defaultUploadBudget / (1024 * 1024)),
-                            "MiB the scene's uploads may copy per frame (the SceneUpload pass); the rest waits for the next frame.",
-                            {.min = 1}};
+                            "MiB the scene's uploads may copy per frame (the SceneUpload pass); the rest waits for the next frame. The staging ring "
+                            "holds this much, mapped, per frame slot.",
+                            {.min = 1, .max = 1024}};
 config::Int geometryLimitMiB{"render.geometry.limitMiB",
                              0,
                              "MiB each geometry pool buffer may grow to; 0 for the device's limit. Lowering it stops growth, it doesn't shrink the pool.",

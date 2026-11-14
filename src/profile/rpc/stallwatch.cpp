@@ -3,6 +3,7 @@
 #include "profile.h"
 #include "trace.h"
 
+#include <algorithm>
 #include <condition_variable>
 #include <format>
 #include <map>
@@ -58,6 +59,15 @@ auto check() -> void {
     auto nowNs = now();
     std::lock_guard lock(g_mutex);
     std::map<uint32_t, Reported> still;
+    auto ended = [nowNs](const Reported& reported) {
+        const auto& info = reported.info;
+        auto outerName = nameOf(reported.siteId);
+        TRACE_EVENT("Profile", "StallEnded", info.lane)
+            .text(std::format("{} left {} after about {:.1f} s", info.lane, outerName, seconds(reported.startNs, nowNs)))
+            .field("lane", info.lane)
+            .field("zone", outerName)
+            .field("seconds", seconds(reported.startNs, nowNs));
+    };
     for (const auto& stack : stacks) {
         // Zones over the threshold: the outermost is where the stall began, the innermost is where the thread is stuck, with whatever it
         // does inside.
@@ -77,13 +87,7 @@ auto check() -> void {
         bool same = previous != g_reported.end() && outermost != nullptr && previous->second.siteId == outermost->siteId &&
                     previous->second.startNs == outermost->startNs;
         if (previous != g_reported.end() && !same) {
-            const auto& info = previous->second.info;
-            auto outerName = nameOf(previous->second.siteId);
-            TRACE_EVENT("Profile", "StallEnded", info.lane)
-                .text(std::format("{} left {} after about {:.1f} s", info.lane, outerName, seconds(previous->second.startNs, nowNs)))
-                .field("lane", info.lane)
-                .field("zone", outerName)
-                .field("seconds", seconds(previous->second.startNs, nowNs));
+            ended(previous->second);
         }
         if (stuck == nullptr) {
             continue;
@@ -108,6 +112,13 @@ auto check() -> void {
             g_reportedCount++;
         }
         still[stack.laneIndex] = std::move(entry);
+    }
+    // A lane that is no longer listed (its thread has gone) left its zone too: every Stall has its StallEnded.
+    for (const auto& [laneIndex, reported] : g_reported) {
+        bool listed = std::ranges::any_of(stacks, [laneIndex](const OpenZones& stack) { return stack.laneIndex == laneIndex; });
+        if (!listed) {
+            ended(reported);
+        }
     }
     g_reported = std::move(still);
 }
