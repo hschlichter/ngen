@@ -67,11 +67,24 @@ public:
     // (or grows now, Behind::GrowNow); and starts the next growth once `needed` passes ahead() of the capacity. `grownCapacity(needed)` is
     // the capacity a growth makes. Behind::Sized: starts buffers for `grownCapacity(needed)` whenever that differs from the capacity and
     // isn't 0. Returns true when the buffers were replaced.
-    auto update(RhiDevice* device, uint64_t needed, uint64_t capacity, const std::function<uint64_t(uint64_t)>& grownCapacity, const Describe& describe, const Install& install)
-        -> bool;
+    // The callables are wrapped (std::function, which may allocate) only in a frame that has something to do: most frames return at quiet().
+    template <typename GrownCapacityFn, typename DescribeFn, typename InstallFn>
+    auto update(RhiDevice* device, uint64_t needed, uint64_t capacity, const GrownCapacityFn& grownCapacity, const DescribeFn& describe, const InstallFn& install) -> bool {
+        if (quiet(needed, capacity)) {
+            return false;
+        }
+        return updateNow(device, needed, capacity, grownCapacity, describe, install);
+    }
+
+    // True when update() has nothing to do: no growth in flight, nothing waiting, and `needed` neither over the capacity nor past the share
+    // that starts the next growth (Behind::Sized: nothing needed, or the capacity is what is needed).
+    auto quiet(uint64_t needed, uint64_t capacity) const -> bool;
 
     // A growable's first buffers, made on this thread (at init, or when it is first used): not a growth.
     static auto makeNow(RhiDevice* device, const std::vector<GrowthBufferDesc>& descs) -> std::vector<GrownBuffer>;
+    // Whether the device made every buffer asked for, and the way out when it didn't: what was made is destroyed, never having been used.
+    static auto complete(const std::vector<GrownBuffer>& made) -> bool;
+    static auto destroyBuffers(RhiDevice* device, std::vector<GrownBuffer>& made) -> void;
 
     // The share of its capacity a growable fills before its growth starts (render.growth.ahead, handed in by the main loop); 0 grows only
     // when needed, on the render thread. Any thread.
@@ -87,15 +100,21 @@ public:
 
 private:
     struct State {
+        // The debug names are copied: the job that makes the buffers may outlive the strings the descriptions point to.
+        explicit State(std::vector<GrowthBufferDesc> buffers);
+
         std::vector<GrowthBufferDesc> descs;
         std::vector<std::string> names;
         std::vector<GrownBuffer> made;
     };
 
+    auto updateNow(RhiDevice* device, uint64_t needed, uint64_t capacity, const std::function<uint64_t(uint64_t)>& grownCapacity, const Describe& describe, const Install& install)
+        -> bool;
+    // The device couldn't make a growth's buffers: reported, and no growth starts again until more is needed than now.
+    auto failed(uint64_t needed, uint64_t capacity, uint64_t wanted) -> void;
     static auto make(RhiDevice* device, State& state) -> void;
     static auto step(uint64_t capacity) -> uint64_t;
     static inline std::atomic<double> aheadShare = 0.75;
-    static auto destroyMade(RhiDevice* device, State& state) -> void;
 
     Behind policy;
     bool aheadOn;

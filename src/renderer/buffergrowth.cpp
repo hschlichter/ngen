@@ -28,13 +28,47 @@ auto BufferGrowth::make(RhiDevice* device, State& state) -> void {
     }
 }
 
-auto BufferGrowth::destroyMade(RhiDevice* device, State& state) -> void {
-    for (auto& made : state.made) {
-        if (made.buffer != nullptr) {
-            device->destroyBuffer(made.buffer);
+BufferGrowth::State::State(std::vector<GrowthBufferDesc> buffers) : descs(std::move(buffers)) {
+    for (const auto& desc : descs) {
+        names.emplace_back(desc.desc.debugName != nullptr ? desc.desc.debugName : "");
+    }
+}
+
+auto BufferGrowth::complete(const std::vector<GrownBuffer>& made) -> bool {
+    return std::ranges::all_of(made, [](const GrownBuffer& buffer) { return buffer.buffer != nullptr; });
+}
+
+auto BufferGrowth::destroyBuffers(RhiDevice* device, std::vector<GrownBuffer>& made) -> void {
+    for (auto& buffer : made) {
+        if (buffer.buffer != nullptr) {
+            device->destroyBuffer(buffer.buffer);
         }
     }
-    state.made.clear();
+    made.clear();
+}
+
+auto BufferGrowth::failed(uint64_t needed, uint64_t capacity, uint64_t wanted) -> void {
+    // The reason is in the trace, from the device. Starting again at once would ask it for the same buffers every frame.
+    failedFor = std::max<uint64_t>(needed, 1);
+    TRACE_ERROR("Render", "BufferGrowthFailed", status.name)
+        .text(std::format("{}: the buffers for {} couldn't all be made; it stays at {} until more than {} is needed", status.name, wanted, capacity, failedFor))
+        .field("capacity", (int64_t) capacity)
+        .field("wanted", (int64_t) wanted);
+}
+
+auto BufferGrowth::quiet(uint64_t needed, uint64_t capacity) const -> bool {
+    if (state != nullptr || waiting) {
+        return false;
+    }
+    if (policy == Behind::Sized) {
+        return needed == 0 || needed == capacity;
+    }
+    if (needed > capacity) {
+        return false;
+    }
+    auto share = ahead();
+    bool startsAhead = aheadOn && share > 0.0 && needed > failedFor && (double) needed > (double) capacity * share;
+    return !startsAhead;
 }
 
 namespace renderconfig {
@@ -48,11 +82,7 @@ config::Float growthAhead{"render.growth.ahead",
 } // namespace renderconfig
 
 auto BufferGrowth::makeNow(RhiDevice* device, const std::vector<GrowthBufferDesc>& descs) -> std::vector<GrownBuffer> {
-    State now;
-    now.descs = descs;
-    for (const auto& desc : now.descs) {
-        now.names.emplace_back(desc.desc.debugName != nullptr ? desc.desc.debugName : "");
-    }
+    State now(descs);
     make(device, now);
     return std::move(now.made);
 }
@@ -71,7 +101,7 @@ auto BufferGrowth::step(uint64_t capacity) -> uint64_t {
     return capacity + std::max<uint64_t>(capacity / 2, 1);
 }
 
-auto BufferGrowth::update(RhiDevice* device, uint64_t needed, uint64_t capacity, const std::function<uint64_t(uint64_t)>& grownCapacity, const Describe& describe, const Install& install)
+auto BufferGrowth::updateNow(RhiDevice* device, uint64_t needed, uint64_t capacity, const std::function<uint64_t(uint64_t)>& grownCapacity, const Describe& describe, const Install& install)
     -> bool {
     bool replaced = false;
     if (state != nullptr && fence.ready()) {
@@ -79,16 +109,10 @@ auto BufferGrowth::update(RhiDevice* device, uint64_t needed, uint64_t capacity,
         state = nullptr;
         fence = {};
         auto tookMs = (double) (profile::now() - startedNs) * 1e-6;
-        bool complete = std::ranges::all_of(taken->made, [](const GrownBuffer& made) { return made.buffer != nullptr; });
-        if (!complete) {
-            // The device couldn't make one of them (the reason is in the trace): keep the buffers there are, and try again once more is
-            // needed than now. Starting again at once would ask the device for the same buffers every time the job ends.
-            destroyMade(device, *taken);
-            failedFor = std::max<uint64_t>(needed, 1);
-            TRACE_ERROR("Render", "BufferGrowthFailed", status.name)
-                .text(std::format("{}: the buffers for {} couldn't all be made; it stays at {} until more than {} is needed", status.name, growingCapacity, capacity, failedFor))
-                .field("capacity", (int64_t) capacity)
-                .field("wanted", (int64_t) growingCapacity);
+        if (!complete(taken->made)) {
+            // The device couldn't make one of them: keep the buffers there are.
+            destroyBuffers(device, taken->made);
+            failed(needed, capacity, growingCapacity);
         } else if (growingCapacity > capacity || (policy == Behind::Sized && growingCapacity != capacity)) {
             install(growingCapacity, taken->made);
             TRACE_EVENT("Render", "BufferGrown", status.name)
@@ -109,17 +133,13 @@ auto BufferGrowth::update(RhiDevice* device, uint64_t needed, uint64_t capacity,
             replaced = true;
         } else {
             // A growth on this thread got there first and is larger.
-            destroyMade(device, *taken);
+            destroyBuffers(device, taken->made);
         }
         growingCapacity = 0;
     }
     auto start = [&](uint64_t grown) {
         startedFor = needed;
-        auto next = std::make_shared<State>();
-        next->descs = describe(grown);
-        for (const auto& desc : next->descs) {
-            next->names.emplace_back(desc.desc.debugName != nullptr ? desc.desc.debugName : "");
-        }
+        auto next = std::make_shared<State>(describe(grown));
         auto siteId = profile::registerSite(status.name, profile::Group::Upload);
         fence = JobSystem::submit(
             [device, next, siteId] {
@@ -157,20 +177,20 @@ auto BufferGrowth::update(RhiDevice* device, uint64_t needed, uint64_t capacity,
         auto roomy = share > 0.0 && aheadOn ? (uint64_t) ((double) needed / share) + 1 : needed;
         auto grown = grownCapacity(std::max(policy == Behind::GrowNow ? needed : roomy, step(capacity)));
         if (grown > capacity && policy == Behind::GrowNow) {
-            // Small enough to make here without a spike.
-            PROFILE_ZONE("GrowNow", Upload);
-            PROFILE_ZONE_VALUE(grown);
-            auto made = makeNow(device, describe(grown));
-            if (std::ranges::all_of(made, [](const GrownBuffer& buffer) { return buffer.buffer != nullptr; })) {
-                install(grown, made);
-                capacity = grown;
-                status.grownNow++;
-                replaced = true;
-            } else {
-                for (auto& buffer : made) {
-                    if (buffer.buffer != nullptr) {
-                        device->destroyBuffer(buffer.buffer);
-                    }
+            // Small enough to make here without a spike. One that failed isn't made again each frame.
+            if (needed > failedFor) {
+                PROFILE_ZONE("GrowNow", Upload);
+                PROFILE_ZONE_VALUE(grown);
+                auto made = makeNow(device, describe(grown));
+                if (complete(made)) {
+                    install(grown, made);
+                    capacity = grown;
+                    failedFor = 0;
+                    status.grownNow++;
+                    replaced = true;
+                } else {
+                    destroyBuffers(device, made);
+                    failed(needed, capacity, grown);
                 }
             }
         } else if (grown > capacity && policy == Behind::OwnBuffer) {
@@ -240,7 +260,7 @@ auto BufferGrowth::discard(RhiDevice* device) -> void {
         return;
     }
     JobSystem::wait(fence);
-    destroyMade(device, *state);
+    destroyBuffers(device, state->made);
     state = nullptr;
     fence = {};
     growingCapacity = 0;

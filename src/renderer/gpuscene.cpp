@@ -268,6 +268,10 @@ auto GpuScene::growthOf(Pool pool) -> BufferGrowth& {
 }
 
 auto GpuScene::updatePool(Pool pool, uint64_t needed) -> bool {
+    // Most frames: the pool has its buffers and no growth to take, start or wait for.
+    if (rangesOf(pool).capacity() > 0 && growthOf(pool).quiet(needed, rangesOf(pool).capacity())) {
+        return false;
+    }
     // The pool's buffers and their element sizes. The vertex stream reaches the limit first (a Vertex is larger than a position): it sets the
     // vertex capacity of both.
     std::vector<std::pair<GrowableBuffer*, uint64_t>> targets;
@@ -306,15 +310,6 @@ auto GpuScene::updatePool(Pool pool, uint64_t needed) -> bool {
     };
     auto install = [&](uint64_t elements, std::vector<GrownBuffer>& made) {
         for (size_t i = 0; i < targets.size(); i++) {
-            if (made[i].buffer == nullptr) {
-                // The device couldn't make it: the pool keeps its size, the rest of what was made goes.
-                for (auto& other : made) {
-                    deletionQueue->deferBuffer(currentFrame, other.buffer);
-                }
-                return;
-            }
-        }
-        for (size_t i = 0; i < targets.size(); i++) {
             swapIn(*targets[i].first, made[i].buffer, std::max(elements * targets[i].second, minimumBufferBytes));
         }
         ranges.grow(elements);
@@ -325,6 +320,11 @@ auto GpuScene::updatePool(Pool pool, uint64_t needed) -> bool {
             return false;
         }
         auto made = BufferGrowth::makeNow(device, describe(elements));
+        if (!BufferGrowth::complete(made)) {
+            // The device couldn't make them (the reason is in the trace): the pool stays without buffers, and its meshes wait.
+            BufferGrowth::destroyBuffers(device, made);
+            return false;
+        }
         install(elements, made);
         return true;
     }
