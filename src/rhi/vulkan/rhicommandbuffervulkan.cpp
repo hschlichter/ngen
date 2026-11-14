@@ -1,5 +1,6 @@
 #include "rhicommandbuffervulkan.h"
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <format>
@@ -548,15 +549,22 @@ auto RhiCommandBufferVulkan::copyBufferRegions(RhiBuffer* src, RhiBuffer* dst, s
         }
         record(std::format("copyBufferRegions {} -> {} ({} regions, {} bytes)", nameOf(src), nameOf(dst), regions.size(), bytes));
     }
-    commandStats.copies++;
     auto* srcBuf = static_cast<RhiBufferVulkan*>(src);
     auto* dstBuf = static_cast<RhiBufferVulkan*>(dst);
-    std::vector<VkBufferCopy> vkRegions;
-    vkRegions.reserve(regions.size());
-    for (const auto& region : regions) {
-        vkRegions.push_back({.srcOffset = region.srcOffset, .dstOffset = region.dstOffset, .size = region.size});
+    // A copy command per batch of regions, not one for all of them: the validation layer's checks of one command's regions grow far faster
+    // than their count, and a streamed tile's instance upload has hundreds of thousands (minutes in one vkCmdCopyBuffer). The copies are
+    // the same ones, and a few hundred commands cost nothing next to them.
+    constexpr size_t regionsPerCommand = 1024;
+    std::array<VkBufferCopy, regionsPerCommand> vkRegions;
+    for (size_t first = 0; first < regions.size(); first += regionsPerCommand) {
+        auto count = std::min(regionsPerCommand, regions.size() - first);
+        for (size_t i = 0; i < count; i++) {
+            const auto& region = regions[first + i];
+            vkRegions[i] = {.srcOffset = region.srcOffset, .dstOffset = region.dstOffset, .size = region.size};
+        }
+        commandStats.copies++;
+        vkCmdCopyBuffer(cmd, srcBuf->buffer, dstBuf->buffer, (uint32_t) count, vkRegions.data());
     }
-    vkCmdCopyBuffer(cmd, srcBuf->buffer, dstBuf->buffer, (uint32_t) vkRegions.size(), vkRegions.data());
 }
 
 auto RhiCommandBufferVulkan::copyBufferToTexture(RhiBuffer* src, RhiTexture* dst, const RhiBufferTextureCopy& region) -> void {
