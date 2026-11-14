@@ -114,6 +114,9 @@ a decision they cover.
 - The root `README.md` links the library READMEs. `docs/` is plans and design history: plans may reference code, code
   and library READMEs do not reference plans.
 - README assets (screenshots) live in `screenshots/`, not `docs/`.
+- `GLOSSARY.md` in the root defines the engine's terms and lists the words that mean different things in different libraries (*level*,
+  *pack*, *slot*, *group*, *view*, …). Read it when a term is unclear before guessing from one library's use of it.
+- When a change introduces or renames a term, add or update its entry in `GLOSSARY.md` in the same change.
 
 ## File naming
 - No snake_case in filenames. Use lowercase concatenated names (e.g. `sceneloader.cpp`, `devicevulkan.h`).

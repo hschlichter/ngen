@@ -1,6 +1,6 @@
 # Frame budget overlay: the frame graph's passes as bars
 
-**Status. In progress.**
+**Status. Landed.**
 
 ## Current state
 

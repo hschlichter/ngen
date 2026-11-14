@@ -184,6 +184,9 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
   explain).
 - **Frame images' follow-up** ([plan_tracy_frame_images.md](plan_tracy_frame_images.md), "Deferred"): larger images through a config value
   for the width (trigger: 320 pixels too small to recognise a moment).
+- **Frame budget overlay's follow-ups** ([plan_pass_budget_overlay.md](plan_pass_budget_overlay.md), "Deferred"): per-pass draws and
+  triangles (trigger: content developers ask which pass their meshes cost in); CPU groups as bars (trigger: content that costs mostly CPU);
+  the budget line in the Performance window's frame plot.
 - **Introspection extras**: GPU crash diagnostics (breadcrumbs, `VK_EXT_device_fault`); scene/USD provenance; per-pass GPU time column;
   zone statistics; a headless performance regression check; the GPU-driven debugging plan.
 - **Build system**: static libraries aren't passed on transitively (programs link each library directly); watch mode; Windows; deterministic
@@ -204,6 +207,11 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 ## Landed
 
 Moved here from the sections above when they landed, newest first; the plan holds what was built.
+
+- **Frame budget overlay** — [plan_pass_budget_overlay.md](plan_pass_budget_overlay.md); [ADR 85](adr/0085_frame_budget_overlay.md). A
+  draggable viewport overlay for content developers (View menu, Ctrl+B, `ui.overlay.budget`): the GPU's frame graph passes summed by group in
+  plain words, as bars against `profile.budget.frameMs`, each group's passes beneath, the whole frame and GPU frame in the header and the
+  frame's draws and triangles below. ImGui's font atlas changes are now uploaded under a lock, so glyphs added mid-run are no longer lost.
 
 - **Frame images in Tracy** — [plan_tracy_frame_images.md](plan_tracy_frame_images.md); [ADR 84](adr/0084_tracy_frame_images.md). While a
   Tracy server is connected, every presented frame, UI included, shows under its main-thread frame in Tracy's timeline as a 320-pixel-wide
