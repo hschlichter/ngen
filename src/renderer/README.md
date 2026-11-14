@@ -93,14 +93,18 @@ the task shader culls meshlets and the mesh shader emits their triangles. The se
 
 - **`RenderSnapshot`** (main to render, every frame): view and projection, world up, window size, view mode and overlay toggles, AA and depth
   prepass switches, material sampler settings, the culling frustum (`cullViewProj`, live or frozen) and `cullEnabled`, shadow settings and the fitted
-  cascades, debug line data, the capture watches when they changed, and each extension's data for the frame (`extensions`: the render tools'
+  cascades and the scene's bounds they were fitted to, debug line data, the capture watches when they changed, and each extension's data for the frame (`extensions`: the render tools'
   requests, the gizmos' lines, the cloned ImGui draw data). One slot with back-pressure: the main thread blocks if the render thread has not taken
   the previous snapshot.
 - **`SceneChanges`** (main to render, on scene changes): what changed, with the added meshes' and textures' data shared, applied at the start of the
-  next render frame. Lists submitted between two frames are appended and applied together, in order.
+  next render frame. Lists submitted between two frames are appended and applied together, in order. The render thread holds the lock only
+  to take them, so the main thread submits the next list while it applies.
 - **Back to the main thread**, non-blocking: `CullResult` (latest-only, every new readback), the capture results, and what the extensions hand
   back on their own (the render tools' snapshots, counters and screenshots).
 - **Settings** go to the `RenderThread` under a lock, applied before the next frame: the upload budget, the geometry limit, shaders to reload.
+- **In the profiler** an iteration of the render thread's loop is its frame (`profile::laneFrameMark` at the top): waiting for the snapshot,
+  the scene changes, `RenderFrame` and what follows. The `profile` record's `overBudget` counts these frames' own work, less the waits
+  (`src/profile/README.md`, "Frames over budget").
 
 ### Renderer
 
@@ -174,8 +178,8 @@ Tables:
   as a storage buffer. There is no index buffer: the meshlets draw every triangle.
   - **A range per mesh in each**, from a first-fit allocator (`PoolAllocator`) per buffer that merges neighbouring free ranges. A mesh is one mesh asset,
     shared by every prim that places it.
-  - **Growth.** When a range doesn't fit, a buffer twice the size replaces the old one. The old contents are copied on the GPU before this frame's
-    uploads, and the old buffer is retired.
+  - **Growth** ("Growth" below). Ahead of need, on a background job; a mesh that doesn't fit before the growth is ready waits for it, undrawn.
+    The old contents are copied on the GPU before the next frame's uploads, and the old buffer is retired.
   - **Limit.** No pool buffer grows past the device's largest buffer (`RhiDeviceLimits::maxBufferBytes`, whole MiBs), or a smaller limit
     (`setGeometryLimit`, ngen-view's `--geometry-limit=<MiB>`). The vertex stream reaches it before the position stream and sets the vertex capacity
     of both. A mesh that doesn't fit waits, with an empty mesh table entry, so its draws draw nothing while the rest of the scene draws; the
@@ -185,8 +189,8 @@ Tables:
     it); a meshlet's own offsets are made pool positions when it is uploaded.
   - **No compaction.**
 - **Mesh table.** `GpuMeshEntry` per `MeshHandle::index`: `vertexOffset`, `meshletOffset`, `meshletCount`, `triangleCount`. Handles are never reused.
-  A mesh whose data hasn't been copied yet, or was removed, has `meshletCount` 0 and isn't drawn. The table grows like the pool, and the part past the old contents is
-  zeroed.
+  A mesh whose data hasn't been copied yet, or was removed, has `meshletCount` 0 and isn't drawn. The table grows like the pool, except that it
+  grows at once when it must (it is small), and the part past the old contents is zeroed.
 - **Textures and slots.**
   - **One GPU texture per `TextureHandle`**: a texture asset, or a generated 1×1 of a constant colour, shared by the materials naming it.
   - **Created late.** It is created when its first level is copied, so creating large textures follows the upload budget.
@@ -208,21 +212,36 @@ Tables:
   - **Slots.** A draw keeps its slot while it exists. A removed one is dead (mesh index past the table, so culling never draws it) until a new draw
     takes it.
   - **Reading it.** The task and mesh shaders read it at the slot their draw command names.
-  - **Uploads.** Only the changed records go up: packed in the slot's staging buffer (grown up to 4 MiB; a larger upload, as a tile switch's or
-    after the buffer grew, takes a staging buffer of its own for its frame), and copied by the `InstanceUpload` pass in one copy with a region per
-    run of consecutive slots (`RhiCommandBuffer::copyBufferRegions`). The `gpuscene` record has the last upload's records and regions. The buffer
-    grows by recreation.
+  - **Uploads.** Only the changed records go up: packed in the slot's kept staging buffer (`gpuscene.instances.staging`, grown ahead up to 64
+    MiB, about 380k records, a large streamed tile; a larger upload, the first at load or a teleport, takes a staging buffer of its own,
+    made in its frame), and copied by the `InstanceUpload` pass in one copy with a region per
+    run of consecutive slots (`RhiCommandBuffer::copyBufferRegions`). The `gpuscene` record has the last upload's records and regions.
+    The changed slots are a bit per slot (`dirtyBits`), read in slot order: no sort, and a slot changed twice is uploaded once. The records
+    are packed on the job workers (`parallelFor`, `PackInstanceRange`), 16k slots a range, each range writing its own staging and its own
+    copy regions, joined in order after.
+  - **Growth** ("Growth" below). The buffer grows by recreation, ahead of need. Slots past its capacity wait, dirty and undrawn (the culling
+    passes' instance count is the capacity), until the growth is taken. What the old one holds is copied into the new one on the GPU by the
+    `InstanceMove` pass before the next upload (the culling records move to the new culling offset), and only the slots changed since are
+    packed: `InstanceBufferGrown` in the trace, with the slots copied. Only a buffer with nothing to keep yet (its first contents) has every
+    live slot uploaded.
 
 **Uploads** (`GpuScene::addUploadPass`, the `SceneUpload` pass, before the culling passes):
 - **Per frame.** Each frame takes queued uploads in order, up to `uploadBudget` bytes (64 MiB; at least one upload, so a large texture level still
-  goes). A texture's levels are separate uploads.
+  goes, once its own staging is made, below). A texture's levels are separate uploads.
 - **Seen from outside.** After every frame the render thread publishes `SceneGpuStats` (`RenderThread::latestSceneGpuStats`): change lists
   submitted and drawn, the tables' sizes, the upload queue (`GpuScene::uploadStats`: queued, budget, the last pass, textures waiting for their
   slot), the geometry pool, the last frame's commands summed over the passes that ran (`frameCommands`, `FrameGraph::frameStats`) and the
   device's memory heaps (`heaps`). Then it reports the device's allocations to Tracy's "GPU" memory pool while a Tracy server is connected
   (`Renderer::reportGpuAllocations`, `src/profile/README.md`). The budget and the pool limit are runtime settings (`RenderThread::setUploadBudget`, `setGeometryLimit`), applied
   before the next frame.
-- **One staging buffer per frame's batch**, retired through the deletion queue.
+- **The staging ring.** A mapped buffer per frame slot at the upload budget's size (`gpuscene.upload.staging`, 64 MiB each), made at the first
+  upload and kept, so a frame's uploads make no buffer. The ring is always the budget's size (`render.upload.budgetMiB`, 1 to 1024): raising or
+  lowering the budget makes a new ring on a background job (`BufferGrowth::Behind::Sized`), and the frames meanwhile take what the ring
+  there is holds. Zeros for a grown table that don't fit beside the batch take a buffer of their own. Start-up (`flushUploads`) makes a
+  buffer per batch.
+- **An upload larger than the ring** (a texture level over the budget) gets a staging buffer of its own (`gpuscene.upload.staging.large`),
+  made on a background job when it is next in the queue. The queue waits for it, in order (`GrowthOnNeed`, then `GrowthReady`), and the frame
+  that copies from it retires it: the ring stays the budget's size. The `gpuscene` record's `growth` lists it beside the ring.
 - **Barriers.** The copies are recorded in the frame's command buffer:
   - before them, a barrier from the tables' and pool's read states to transfer;
   - one between a grown buffer's move and the uploads, since copies in one command buffer may run in any order;
@@ -233,7 +252,41 @@ Tables:
 - **Descriptor sets.** When the texture slots change or a table or buffer is replaced, the descriptor sets naming them are rewritten at the next frame
   (`Renderer::rebuildGeometryDescriptorSets`, which also rebuilds the culling sets; the old sets are retired).
 
-`GpuInstance` is the CPU mirror the renderer keeps (`Renderer::gpuInstances`), by draw slot.
+### Growth
+
+A table that outgrows its buffer gets a larger one, which takes hundreds of milliseconds to make at the sizes streaming reaches (a
+`vkAllocateMemory` of hundreds of MB). The render thread doesn't make it (`BufferGrowth`, `buffergrowth.*`):
+
+- **Ahead, on a background job.** Each frame (`Renderer::growTables`, and `GpuScene::beginFrame` for the pool), a table passing
+  `render.growth.ahead` of its capacity (0.75) starts its growth: a `JobKind::Background` job (`src/jobs/README.md`) makes and maps the new
+  buffers while frames go on, and the render thread swaps them in the frame it finds them ready (`BufferGrown` in the trace, with what was
+  needed when it started and how long it took). The old buffers go through the deletion queue.
+- **Half as much again.** A growth makes at least 1.5 times the capacity, or room for the need with the ahead share's headroom. Doubling would
+  hold twice what a table needs; the tables kept per frame slot pay that three times.
+- **What doesn't fit waits** (`BufferGrowth::Behind`). When a table needs more than its capacity before its growth is ready, it starts one if
+  none is in flight, and what doesn't fit waits for it (`GrowthBehind`, a warning, then `GrowthReady` with how long it waited): instance
+  slots past the capacity aren't uploaded or drawn, the draw records' regions are cut to the capacity, meshlets past the work items aren't
+  drawn, meshes wait in the pool's waiting list. Only the old and the new buffers exist at once.
+  - The mesh and material tables and the render-LOD groups are small: they grow at once when they must (`Behind::GrowNow`, a few
+    milliseconds), still ahead on a job otherwise.
+  - The instance staging makes a buffer of its own for the frame that needs more (`Behind::OwnBuffer`, `GrowthOwnBuffer`), since an instance
+    record can't wait: a slot not uploaded would draw what held it before. A run of such frames is reported once, as a wait is:
+    `GrowthOwnBuffer`, then `GrowthReady` with how long the run lasted.
+- **Sized to a need** (`Behind::Sized`: the upload ring, the staging of one large upload). Not a table that fills: its buffers are made at the
+  size needed, larger or smaller, when that changes, never ahead. What needs it waits, which is how it works, so `GrowthOnNeed` is not a
+  warning.
+- **A growth that fails** (`BufferGrowthFailed`, an error: the device couldn't make the buffers) isn't started again until the table needs more
+  than it did when the growth failed. The table keeps its buffers, and what doesn't fit keeps waiting.
+- **Seen from outside.** The `gpuscene` record's `growth` lists every growable: capacity and use in its own unit (slots, records, items,
+  elements, bytes), a growth in flight and for how long, whether it waits, how often it grew ahead, grew at once and waited, and how long it
+  last waited. `render.growth.ahead` is a configuration value (0 grows only when needed, still on a job). The jobs show in the Performance
+  window's worker lanes as `BufferGrowth`, with the table's name inside. The Memory window lists the buffers, not the growths: a gap.
+
+`GpuInstance` is the CPU mirror the renderer keeps (`Renderer::gpuInstances`), by draw slot, in a `ChunkedList` (chunks of 4,096 that never
+move), so a growing slot count adds chunks and copies none. A change list's slots are written on the job workers a chunk each
+(`CopyChangedRange`): the changes are grouped by chunk first, in list order, so a slot changed twice in one list (lists are appended) ends
+as the last change says; the bucket counts and triangles are summed per range and added after. The culling groups' boxes
+(`DrawLists::updateGroupBounds`) are recomputed on the workers too (`GroupBoundsRange`), a dirty group each.
 
 ## Culling and draw lists
 
@@ -277,7 +330,8 @@ scan, layout and scatter for every view, occlusion for the camera's second phase
   instance order, in the frame slot's one work item buffer (`cull.workitems`). `InstanceCullLayout` lays the regions out in it one after another and
   writes each region's draw (`RegionWork`: the task workgroups, 32 meshlets each, wrapping into y past 32,768, and the range); a task workgroup takes
   any 32 consecutive items, whatever their instance. An instance's items are its submesh's meshlets. The buffer holds twice the live
-  instances' meshlets and grows when a frame's items didn't fit (`MeshletWorkGrown`; those meshlets weren't drawn that frame).
+  instances' meshlets, grows ahead of that ("Growth"), and past what a frame's items didn't fit (`MeshletWorkGrown`; those meshlets weren't drawn
+  that frame).
 - **Draw records.** Beside the items, one `DrawRecord` per drawn instance per region (instance, meshlets, first item), at the region's offset:
   what the draw log, the GPU Scene window and the frame debugger read. They come back to the CPU only while the render debugger asks, into a
   readback of their own (`cull.readback.commands`), let go the first frame it doesn't.
@@ -465,6 +519,7 @@ so early depth testing holds for everything else. The debug views discard in `de
 | Pass | What it does |
 |---|---|
 | `SceneUpload` | `GpuScene`'s queued uploads (geometry pool, tables, textures), within the upload budget; records its own barriers ("Scene data on the GPU"). Added only when uploads are queued. |
+| `InstanceUploadPass` (`InstanceMove`) | After the instance buffer grew: copies the buffer it replaced into it, the draw records to the start and the culling records to the new culling offset. Added only in the frame after a growth, before `InstanceUpload`. |
 | `InstanceUploadPass` (`InstanceUpload`) | Copies the changed instance and culling records from the slot's staging buffer into the instance buffer. Added only when something changed. |
 | `LodSelectPass` | `LodSelect` and `LodSelectSum`, the render-LOD pick above; left out when there are no groups. `LodGroups` adds `LodGroupUpload` when groups changed and `LodReadback`. |
 | `InstanceCullPass` | `InstanceCull`, `InstanceCullScan`, `InstanceCullLayout`, `InstanceCullScatter` ("Culling and draw lists"): every view's regions, draw records and meshlet work items; the cull pass also drops the slots of render-LOD levels not drawn and marks levels not resident. With occlusion, the second phase after the pyramid: `InstanceCullOcclusion`, `InstanceCullLateScan`, `InstanceCullLateLayout`, `InstanceCullLateScatter` (view 5). `CullHistoryClear` zeroes a new history buffer. |

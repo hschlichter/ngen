@@ -15,6 +15,7 @@
 #include "rpcregistry.h"
 #include "rpcverbs.h"
 #include "sessionscript.h"
+#include "stallwatch.h"
 #include "toolcommands.h"
 #include "toolshooks.h"
 #include "trace.h"
@@ -340,12 +341,16 @@ auto main(int argc, char* argv[]) -> int {
     JobSystem::init();
     TRACE_EVENT("Engine", "JobSystemStarted", "jobs").text(std::format("job system: {} workers", JobSystem::workerCount())).field("workers", (int64_t) JobSystem::workerCount());
 
+    // A thread that stays in one profiler zone longer than profile.stall.seconds is reported in the trace with the zones it has open.
+    profile::startStallWatch();
+
     // RHI device. The window layer (SDL) hands the backend what it needs through
     // hooks; the RHI never includes SDL.
     // Failure after this point must stop the workers and SDL explicitly: SDL3 turns
     // SIGTERM into a quit event that nobody would poll, and lingering threads keep the
     // process alive.
     auto failAfterInit = [&] -> int {
+        profile::stopStallWatch();
         JobSystem::shutdown();
         SDL_DestroyWindow(window);
         SDL_Quit();
@@ -605,6 +610,7 @@ auto main(int argc, char* argv[]) -> int {
     auto validationErrors = rhiDevice.validationErrorCount();
 
     renderThread.stop();
+    profile::stopStallWatch();
     JobSystem::shutdown();
     bool pipelinesFailed = renderer.pipelinesFailed();
     renderer.destroy();

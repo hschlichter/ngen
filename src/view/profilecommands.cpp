@@ -1,5 +1,6 @@
 #include "viewcommands.h"
 
+#include "jobsystem.h"
 #include "profilecommands.h"
 #include "trace.h"
 
@@ -10,7 +11,8 @@
 #include <format>
 #include <sstream>
 
-// The profiler's commands: its history written as a Chrome trace, and its records (src/profile/rpc, shared with the asset server).
+// The profiler's commands: its history written as a Chrome trace, and its records (src/profile/rpc, shared with the asset server); and the
+// job system's record, whose workers fill the profiler's worker lanes.
 
 namespace {
 
@@ -89,5 +91,32 @@ auto registerProfileCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
             responder.respond(*result);
         });
 
+    registry.add(
+        {
+            .name = "profile.reset",
+            .summary = "Start the profile record's overBudget counts again: the frames over profile.budget.frameMs per thread, and the worst.",
+            .result = "{}",
+        },
+        [](const Json&, RpcResponder responder) {
+            profile::resetOverBudget();
+            TRACE_EVENT("Engine", "ProfileReset", "view").text("frames over budget counted from now");
+            responder.respond(Json::object());
+        });
+
+    verbs.add("profile-reset", "profile.reset", RpcVerbs::none);
+
     profile::registerProfileRecords(records);
+
+    records.add("jobs", "the job system: workers, frame and background jobs queued, running and completed, the background job running longest", [](RpcResponder responder) {
+        auto stats = JobSystem::stats();
+        Json longest = nullptr;
+        if (!stats.longestBackground.empty()) {
+            longest = {{"name", stats.longestBackground}, {"ms", stats.longestBackgroundMs}};
+        }
+        responder.respond({
+            {"workers", stats.workers},
+            {"frame", {{"queued", stats.frameQueued}, {"running", stats.frameRunning}, {"completed", stats.frameCompleted}}},
+            {"background", {{"queued", stats.backgroundQueued}, {"running", stats.backgroundRunning}, {"completed", stats.backgroundCompleted}, {"longestRunning", longest}}},
+        });
+    });
 }

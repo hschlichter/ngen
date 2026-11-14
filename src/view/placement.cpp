@@ -38,6 +38,102 @@ auto placedContentKind(const Placement& node) -> Placement::Kind {
 
 } // namespace
 
+namespace {
+
+auto emptyBounds() -> AABB {
+    return AABB{.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
+}
+
+auto grow(AABB& out, const AABB& bounds) -> void {
+    if (!bounds.valid()) {
+        return;
+    }
+    out.min = glm::min(out.min, bounds.min);
+    out.max = glm::max(out.max, bounds.max);
+}
+
+} // namespace
+
+auto PlacementBounds::under(const std::shared_ptr<const Placement>& tree, const RenderWorld& drawn, const ChunkedList<std::string>& primPaths, const std::string& path) -> AABB {
+    PROFILE_ZONE("PlacementBounds", Scene);
+    auto out = emptyBounds();
+    if (tree) {
+        part(tree, drawn, primPaths, path, out);
+    }
+    letGo();
+    return out;
+}
+
+auto PlacementBounds::whole(const std::shared_ptr<const Placement>& node, const RenderWorld& drawn) -> AABB {
+    auto it = kept.find(node.get());
+    if (it != kept.end() && !it->second.node.expired()) {
+        return it->second.bounds;
+    }
+    auto out = emptyBounds();
+    // Not drawn: nor is anything in it, and it owns no slots.
+    if (node->drawn) {
+        for (auto slot : node->slots) {
+            const auto& instance = drawn.meshInstances[slot];
+            if (instance.alive) {
+                grow(out, instance.worldBounds);
+            }
+        }
+        for (const auto& child : node->children) {
+            grow(out, whole(child, drawn));
+        }
+        for (const auto& root : node->roots) {
+            for (const auto& level : root.levels) {
+                if (level) {
+                    grow(out, whole(level, drawn));
+                }
+            }
+        }
+    }
+    kept.insert_or_assign(node.get(), Kept{.node = node, .bounds = out});
+    return out;
+}
+
+auto PlacementBounds::part(const std::shared_ptr<const Placement>& node, const RenderWorld& drawn, const ChunkedList<std::string>& primPaths, const std::string& path, AABB& out) -> void {
+    if (!node->drawn) {
+        return;
+    }
+    if (primpath::isAtOrUnder(node->path, path)) {
+        grow(out, whole(node, drawn));
+        return;
+    }
+    if (!primpath::isAtOrUnder(path, node->path)) {
+        return;
+    }
+    // The path is a prim in this content: its own draws there, by their prims' paths, and what is placed at or above it.
+    for (auto slot : node->slots) {
+        const auto& instance = drawn.meshInstances[slot];
+        if (!instance.alive || instance.prim == 0 || instance.prim > primPaths.size()) {
+            continue;
+        }
+        if (primpath::isAtOrUnder(primPaths[instance.prim - 1], path)) {
+            grow(out, instance.worldBounds);
+        }
+    }
+    for (const auto& child : node->children) {
+        part(child, drawn, primPaths, path, out);
+    }
+    for (const auto& root : node->roots) {
+        for (const auto& level : root.levels) {
+            if (level) {
+                part(level, drawn, primPaths, path, out);
+            }
+        }
+    }
+}
+
+auto PlacementBounds::letGo() -> void {
+    if (kept.size() < (keptAfterLetGo * 2) + 1024) {
+        return;
+    }
+    std::erase_if(kept, [](const auto& entry) { return entry.second.node.expired(); });
+    keptAfterLetGo = kept.size();
+}
+
 auto findTransform(const Placement& tree, const std::string& path) -> std::optional<EntityTransform> {
     // The deepest drawn placement at or above the path that holds it: a prim is in the content placed nearest above it. A PointInstancer's
     // points aren't looked into: the instancer prim itself is in the content holding it.
@@ -807,11 +903,16 @@ auto drawnLevelOf(const LodRoot& lod, uint32_t wanted, const std::vector<const P
 } // namespace
 
 auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const PlacementSpec& spec, bool mine) -> std::shared_ptr<Placement> {
-    // The stage and each LOD level are zones of their own, following the World's structure; prototype instances and point instancers, tens of
-    // thousands in a full pass, count toward the level that holds them.
+    // The stage, each LOD level and each point instancer are zones of their own, following the World's structure (an instancer's value: its
+    // points placed); prototype instances, tens of thousands in a full pass, count toward the level or instancer that holds them.
     static const uint32_t syncStageSite = profile::registerSite("SyncStage", profile::Group::Scene, profile::Level::Detail);
     static const uint32_t syncLevelSite = profile::registerSite("SyncLevel", profile::Group::Scene, profile::Level::Detail);
-    profile::ScopedZone zone(spec.kind == Placement::Kind::Stage ? syncStageSite : syncLevelSite, spec.kind == Placement::Kind::Stage || spec.kind == Placement::Kind::Level);
+    static const uint32_t syncInstancerSite = profile::registerSite("SyncInstancer", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t syncChildrenSite = profile::registerSite("SyncChildren", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t syncKeptRootsSite = profile::registerSite("SyncRoots", profile::Group::Scene, profile::Level::Detail);
+    bool zoned = spec.kind == Placement::Kind::Stage || spec.kind == Placement::Kind::Level;
+    profile::ScopedZone zone(spec.kind == Placement::Kind::Stage ? syncStageSite : syncLevelSite, zoned);
+    profile::ScopedZone instancerZone(syncInstancerSite, spec.kind == Placement::Kind::Instancer);
     // The scene thread's alone when no published tree holds it: then it changes in place, else as a copy.
     mine = mine && node && node.use_count() == 1;
     const auto& w = composer->world();
@@ -842,6 +943,8 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
                  !std::ranges::any_of(node->waiting, [this](const std::string& asset) { return arrived.contains(asset); });
     }
     if (undraw) {
+        static const uint32_t undrawSite = profile::registerSite("Undraw", profile::Group::Scene, profile::Level::Detail);
+        profile::ScopedZone undrawZone(undrawSite, zoned);
         return undrawPlacement(node, mine);
     }
     if (rebuild) {
@@ -856,32 +959,38 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
         return *out;
     };
     // A child that waits for nothing, with no root changed and no gizmo move under it, stays as it is.
-    for (size_t i = 0; i < node->children.size(); i++) {
-        const auto& child = node->children[i];
-        if (!fullPass && child->pending == 0 && !touched(child->path)) {
-            continue;
-        }
-        PlacementSpec childSpec{.kind = child->kind,
-                                .content = child->content,
-                                .contentKind = child->contentKind,
-                                .instancer = child->instancer,
-                                .path = child->path,
-                                .world = child->world,
-                                .purpose = child->purpose,
-                                .material = child->material,
-                                .strong = child->strong,
-                                .lodTag = child->lodTag,
-                                .lodDepth = child->lodDepth,
-                                .streamRoot = child->streamRoot,
-                                .drawn = child->drawn,
-                                .lodGroup = child->lodGroup,
-                                .lodGroupLevel = child->lodGroupLevel};
-        auto next = syncPlacement(child, childSpec, mine);
-        if (next != child) {
-            edit().children[i] = next;
+    {
+        profile::ScopedZone childrenZone(syncChildrenSite, zoned);
+        for (size_t i = 0; i < node->children.size(); i++) {
+            const auto& child = node->children[i];
+            if (!fullPass && child->pending == 0 && !touched(child->path)) {
+                continue;
+            }
+            PlacementSpec childSpec{.kind = child->kind,
+                                    .content = child->content,
+                                    .contentKind = child->contentKind,
+                                    .instancer = child->instancer,
+                                    .path = child->path,
+                                    .world = child->world,
+                                    .purpose = child->purpose,
+                                    .material = child->material,
+                                    .strong = child->strong,
+                                    .lodTag = child->lodTag,
+                                    .lodDepth = child->lodDepth,
+                                    .streamRoot = child->streamRoot,
+                                    .drawn = child->drawn,
+                                    .lodGroup = child->lodGroup,
+                                    .lodGroupLevel = child->lodGroupLevel};
+            auto next = syncPlacement(child, childSpec, mine);
+            if (next != child) {
+                edit().children[i] = next;
+            }
         }
     }
-    syncRoots(*node, edit, mine, false);
+    {
+        profile::ScopedZone rootsZone(syncKeptRootsSite, zoned);
+        syncRoots(*node, edit, mine, false);
+    }
     const auto& now = out ? *out : *node;
     auto pending = pendingOf(now);
     if (pending != now.pending) {
@@ -963,7 +1072,11 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
     std::vector<std::shared_ptr<Placement>> previousChildren;
     std::vector<PlacedRoot> previousRoots;
     bool wasDrawn = old && old->drawn;
+    // A stage or level placement's build in its stages; the tens of thousands of instance placements count toward their level.
+    bool zoned = spec.kind == Placement::Kind::Stage || spec.kind == Placement::Kind::Level;
     if (old) {
+        static const uint32_t unuseSite = profile::registerSite("UnuseOld", profile::Group::Scene, profile::Level::Detail);
+        profile::ScopedZone unuseZone(unuseSite, zoned);
         oldSlots = old->slots;
         oldPrims = old->prims;
         oldGroups = old->lodGroups;
@@ -1042,13 +1155,13 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
         return allocPrim(path);
     };
 
-    // A stage or level placement's build in its stages; the tens of thousands of instance placements count toward their level.
-    bool zoned = spec.kind == Placement::Kind::Stage || spec.kind == Placement::Kind::Level;
     static const uint32_t walksSite = profile::registerSite("PlacementWalks", profile::Group::Scene, profile::Level::Detail);
     static const uint32_t segmentsSite = profile::registerSite("PlaceSegments", profile::Group::Scene, profile::Level::Detail);
     static const uint32_t leftoversSite = profile::registerSite("FreeLeftovers", profile::Group::Scene, profile::Level::Detail);
     static const uint32_t useSite = profile::registerSite("UseNode", profile::Group::Scene, profile::Level::Detail);
     static const uint32_t rootsSite = profile::registerSite("SyncRoots", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t indexSite = profile::registerSite("IndexPrevious", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t rowsSite = profile::registerSite("PlaceRows", profile::Group::Scene, profile::Level::Detail);
     if (zoned) {
         profile::beginZone(walksSite);
     }
@@ -1081,6 +1194,8 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
         if (spec.drawn) {
             node->instancerRow = SceneInstancer{.path = spec.path, .points = (uint32_t) data.protoIndices.size(), .visiblePoints = (uint32_t) node->segments.size(), .prototypes = prototypePaths};
         }
+        // The SyncInstancer zone syncPlacement opened: the points this instancer places.
+        profile::zoneValue(node->segments.size());
     } else {
         node->segments.push_back({.walk = walkOf(spec.kind, spec.content, content, spec.purpose, spec.material, spec.strong, spec.path), .path = spec.path, .world = spec.world});
     }
@@ -1089,8 +1204,11 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
     }
 
     std::unordered_map<std::string, size_t> previousByPath;
-    for (size_t i = 0; i < previousChildren.size(); i++) {
-        previousByPath[previousChildren[i]->path] = i;
+    {
+        profile::ScopedZone indexZone(indexSite, zoned);
+        for (size_t i = 0; i < previousChildren.size(); i++) {
+            previousByPath[previousChildren[i]->path] = i;
+        }
     }
     std::vector<bool> kept(previousChildren.size(), false);
     auto adopt = [&](const PlacementSpec& childSpec) {
@@ -1104,29 +1222,35 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
 
     {
         profile::ScopedZone stageZone(segmentsSite, zoned);
+        // The value: the walk items placed, over every segment.
+        uint64_t itemsPlaced = 0;
         for (uint32_t s = 0; s < node->segments.size(); s++) {
             const auto& segment = node->segments[s];
             const auto& items = segment.walk->items;
+            itemsPlaced += items.size();
             // The group slot + 1 of each render-LOD root item in this segment, as its item is reached (before its levels' items).
             std::unordered_map<int32_t, uint32_t> groupOfItem;
-            if (spec.drawn) {
-                for (auto index : segment.walk->rowItems) {
-                    const auto& item = items[index];
-                    auto world = unitScale * (item.absolute ? item.world : segment.world * item.world);
-                    auto path = primpath::join(segment.path, item.path);
-                    if (item.camera) {
-                        node->cameras.push_back({.path = path, .worldTransform = world});
-                    }
-                    if (item.variants) {
-                        node->variantPrims.push_back({.path = path, .selections = item.entity->variantSelections});
-                    }
-                    if (!item.payload) {
-                    } else if (auto payload = content.payloads.find(item.id); payload != content.payloads.end()) {
-                        ScenePayload placed = {.path = path, .assetIds = payload->second.assetIds, .loaded = payload->second.loaded};
-                        if (const auto& hint = payload->second.extentsHint) {
-                            placed.worldBounds = AABB{.min = (*hint)[0], .max = (*hint)[1]}.transformed(world);
+            {
+                profile::ScopedZone rowsZone(rowsSite, zoned && spec.drawn);
+                if (spec.drawn) {
+                    for (auto index : segment.walk->rowItems) {
+                        const auto& item = items[index];
+                        auto world = unitScale * (item.absolute ? item.world : segment.world * item.world);
+                        auto path = primpath::join(segment.path, item.path);
+                        if (item.camera) {
+                            node->cameras.push_back({.path = path, .worldTransform = world});
                         }
-                        node->payloads.push_back(std::move(placed));
+                        if (item.variants) {
+                            node->variantPrims.push_back({.path = path, .selections = item.entity->variantSelections});
+                        }
+                        if (!item.payload) {
+                        } else if (auto payload = content.payloads.find(item.id); payload != content.payloads.end()) {
+                            ScenePayload placed = {.path = path, .assetIds = payload->second.assetIds, .loaded = payload->second.loaded};
+                            if (const auto& hint = payload->second.extentsHint) {
+                                placed.worldBounds = AABB{.min = (*hint)[0], .max = (*hint)[1]}.transformed(world);
+                            }
+                            node->payloads.push_back(std::move(placed));
+                        }
                     }
                 }
             }
@@ -1364,6 +1488,9 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                     node->slots.push_back(slot);
                 }
             }
+        }
+        if (zoned) {
+            profile::zoneValue(itemsPlaced);
         }
     }
     {
@@ -1615,6 +1742,7 @@ auto ViewScene::place() -> void {
     if (changed) {
         static const uint32_t dropStaleWalksSite = profile::registerSite("DropStaleWalks", profile::Group::Scene, profile::Level::Detail);
         profile::beginZone(dropStaleWalksSite);
+        profile::zoneValue(walks.size());
         // Kept walks of contents composed again since are dropped.
         std::erase_if(walks, [&](const auto& entry) {
             const auto& key = entry.first;
@@ -1696,6 +1824,9 @@ auto ViewScene::place() -> void {
     uint32_t added = 0;
     uint32_t removed = 0;
     uint32_t updated = 0;
+    static const uint32_t changedSlotsSite = profile::registerSite("ChangedSlots", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(changedSlotsSite);
+    profile::zoneValue(slotsBefore.entries().size());
     for (const auto& [slot, before] : slotsBefore.entries()) {
         const auto& now = drawn.meshInstances[slot];
         if (now == before) {
@@ -1710,13 +1841,21 @@ auto ViewScene::place() -> void {
             removed++;
         }
     }
+    profile::endZone();
+    static const uint32_t newSlotsSite = profile::registerSite("NewSlots", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(newSlotsSite);
+    profile::zoneValue(drawn.meshInstances.size() - std::min<size_t>(slotCountBefore, drawn.meshInstances.size()));
     for (auto slot = slotCountBefore; slot < drawn.meshInstances.size(); slot++) {
         changes.instances.emplace_back(slot, drawn.meshInstances[slot]);
         if (drawn.meshInstances[slot].alive) {
             added++;
         }
     }
+    profile::endZone();
+    static const uint32_t clearSlotsSite = profile::registerSite("ClearSlotsBefore", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(clearSlotsSite);
     slotsBefore.clear();
+    profile::endZone();
     slotCountBefore = (uint32_t) drawn.meshInstances.size();
     changes.slotCount = slotCountBefore;
     profile::endZone();

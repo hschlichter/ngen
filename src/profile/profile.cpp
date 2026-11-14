@@ -15,6 +15,7 @@
 #include <string_view>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 
 #ifdef TRACY_ENABLE
 #include "common/TracyQueue.hpp"
@@ -46,6 +47,14 @@ struct Lane {
     std::string name;
     std::vector<std::shared_ptr<ZoneBlock>> blocks; // oldest first; the last is the one being written
     ZoneBlock* current = nullptr;                   // the owning thread only
+    // The owning thread's open zones, outermost first, published as they begin and end so another thread can see where this one is
+    // (openZones, the stall watch). A reader may catch an entry while it is rewritten; a thread that stays in one zone reads exactly.
+    std::array<std::atomic<uint32_t>, maxDepth> openSites;
+    std::array<std::atomic<uint64_t>, maxDepth> openStarts;
+    std::atomic<uint32_t> openDepth = 0;
+    // The lane's frames over budget (overBudget), under the mutex: written once a frame by a thread that marks frames.
+    bool marksFrames = false;
+    LaneOverBudget overBudget;
 };
 
 struct ThreadState {
@@ -56,6 +65,12 @@ struct ThreadState {
     std::array<uint64_t, maxDepth> starts;
     std::array<uint64_t, maxDepth> values;
     std::array<bool, maxDepth> hasValues;
+    // Which open zones are in the Wait group, how many are open, and the outermost ones' time in the frame so far: what the frame's span
+    // less is its own work.
+    std::array<bool, maxDepth> waits;
+    uint32_t waitsOpen = 0;
+    uint64_t frameWaitNs = 0;
+    uint64_t frameStartNs = 0; // 0: no frame marked yet
 #ifdef TRACY_ENABLE
     std::array<TracyCZoneCtx, maxDepth> tracyZones;
 #endif
@@ -65,6 +80,7 @@ struct ThreadState {
     auto operator=(const ThreadState&) -> ThreadState& = delete;
     ~ThreadState() {
         if (lane != nullptr) {
+            lane->openDepth.store(0, std::memory_order_release);
             lane->owned.store(false, std::memory_order_release);
         }
     }
@@ -75,6 +91,9 @@ std::atomic<uint32_t> g_laneCount = 0;
 std::atomic<bool> g_paused = false;
 std::atomic<uint64_t> g_historyNs = 10'000'000'000ull;
 std::atomic<bool> g_gpuDetail = false;
+std::atomic<uint64_t> g_stallNs = 5'000'000'000ull;
+std::atomic<uint64_t> g_frameBudgetNs = 16'667'000ull;
+std::atomic<uint64_t> g_overBudgetResetNs = 0;
 thread_local ThreadState t_state;
 
 // Sites: one per (file, line, name). The name is copied (a deque keeps every string where it is); the location's strings are static.
@@ -280,6 +299,16 @@ auto sendGpuZonesToTracy(std::span<const Zone> zones) -> void {
 }
 #endif
 
+// The zones the thread opened before it had a lane, published when it takes one.
+auto publishOpenZones(Lane& lane) -> void {
+    auto depth = std::min(t_state.depth, maxDepth);
+    for (uint32_t i = 0; i < depth; i++) {
+        lane.openSites[i].store(t_state.siteIds[i], std::memory_order_relaxed);
+        lane.openStarts[i].store(t_state.starts[i], std::memory_order_relaxed);
+    }
+    lane.openDepth.store(depth, std::memory_order_release);
+}
+
 auto laneForThread() -> Lane* {
     if (t_state.lane != nullptr) {
         return t_state.lane;
@@ -300,6 +329,7 @@ auto laneForThread() -> Lane* {
             bool expected = false;
             if (lane.owned.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
                 t_state.lane = &lane;
+                publishOpenZones(lane);
                 return &lane;
             }
         }
@@ -319,6 +349,7 @@ auto laneForThread() -> Lane* {
         }
     }
     lane.owned.store(true, std::memory_order_relaxed);
+    publishOpenZones(lane);
     lane.used.store(true, std::memory_order_release);
     t_state.lane = &lane;
     return &lane;
@@ -357,6 +388,67 @@ auto blocksOf(uint32_t laneIndex) -> std::vector<std::shared_ptr<ZoneBlock>> {
     }
     std::lock_guard lock(lane.mutex);
     return lane.blocks;
+}
+
+// Where a frame's own work went: the innermost zone, outside every wait, that holds at least half of it, else the one holding the most.
+// A zone's own work is its time less the outermost Wait-group zones in it. Read from the lane's history after the frame ended; empty when
+// the history has none of it (paused).
+struct FrameZone {
+    uint32_t siteId = 0;
+    uint64_t ownNs = 0;
+};
+
+auto frameZoneOf(uint32_t laneIndex, uint64_t startNs, uint64_t endNs, uint64_t frameOwnNs) -> FrameZone {
+    std::vector<Zone> zones;
+    zonesIn(laneIndex, startNs, endNs, zones);
+    std::erase_if(zones, [&](const Zone& zone) {
+        return zone.startNs < startNs || zone.endNs > endNs;
+    });
+    std::ranges::sort(zones, [](const Zone& a, const Zone& b) {
+        if (a.startNs != b.startNs) {
+            return a.startNs < b.startNs;
+        }
+        return a.depth < b.depth;
+    });
+    // In start order a zone's parent is the innermost open zone above its depth; a wait's time leaves every zone it is in.
+    std::vector<uint64_t> waitNs(zones.size(), 0);
+    std::vector<bool> inWait(zones.size(), false);
+    std::vector<size_t> open;
+    for (size_t i = 0; i < zones.size(); i++) {
+        while (!open.empty() && zones[open.back()].depth >= zones[i].depth) {
+            open.pop_back();
+        }
+        bool parentInWait = !open.empty() && inWait[open.back()];
+        bool isWait = groupOf(zones[i].siteId) == Group::Wait;
+        inWait[i] = isWait || parentInWait;
+        if (isWait && !parentInWait) {
+            for (auto parent : open) {
+                waitNs[parent] += zones[i].endNs - zones[i].startNs;
+            }
+        }
+        open.push_back(i);
+    }
+    FrameZone holding;
+    uint16_t holdingDepth = 0;
+    FrameZone most;
+    for (size_t i = 0; i < zones.size(); i++) {
+        if (inWait[i]) {
+            continue;
+        }
+        auto durationNs = zones[i].endNs - zones[i].startNs;
+        auto ownNs = durationNs > waitNs[i] ? durationNs - waitNs[i] : 0;
+        if (ownNs * 2 >= frameOwnNs && (holding.siteId == 0 || zones[i].depth > holdingDepth)) {
+            holding = {.siteId = zones[i].siteId, .ownNs = ownNs};
+            holdingDepth = zones[i].depth;
+        }
+        if (ownNs > most.ownNs) {
+            most = {.siteId = zones[i].siteId, .ownNs = ownNs};
+        }
+    }
+    if (holding.siteId != 0) {
+        return holding;
+    }
+    return most;
 }
 
 } // namespace
@@ -517,9 +609,19 @@ auto beginZone(uint32_t siteId) -> void {
         t_state.depth++;
         return;
     }
+    auto startNs = now();
     t_state.siteIds[t_state.depth] = siteId;
-    t_state.starts[t_state.depth] = now();
+    t_state.starts[t_state.depth] = startNs;
     t_state.hasValues[t_state.depth] = false;
+    t_state.waits[t_state.depth] = groupOf(siteId) == Group::Wait;
+    if (t_state.waits[t_state.depth]) {
+        t_state.waitsOpen++;
+    }
+    if (t_state.lane != nullptr) {
+        t_state.lane->openSites[t_state.depth].store(siteId, std::memory_order_relaxed);
+        t_state.lane->openStarts[t_state.depth].store(startNs, std::memory_order_relaxed);
+        t_state.lane->openDepth.store(t_state.depth + 1, std::memory_order_release);
+    }
 #ifdef TRACY_ENABLE
     if (siteId != 0 && siteId <= maxNames && tracyRunning()) {
         t_state.tracyZones[t_state.depth] = ___tracy_emit_zone_begin(&g_tracySourceLocations[siteId], 1);
@@ -548,6 +650,15 @@ auto endZone() -> void {
         return;
     }
     t_state.depth--;
+    if (t_state.lane != nullptr && t_state.depth < maxDepth) {
+        t_state.lane->openDepth.store(t_state.depth, std::memory_order_release);
+    }
+    if (t_state.depth < maxDepth && t_state.waits[t_state.depth]) {
+        t_state.waitsOpen--;
+        if (t_state.waitsOpen == 0) {
+            t_state.frameWaitNs += now() - t_state.starts[t_state.depth];
+        }
+    }
 #ifdef TRACY_ENABLE
     // Before the pause check: pausing the Performance window does not pause Tracy. A zone begun before Tracy started is inactive.
     if (t_state.depth < maxDepth && tracyRunning()) {
@@ -579,6 +690,7 @@ auto endZone() -> void {
 }
 
 auto frameMark() -> void {
+    laneFrameMark();
     {
         std::lock_guard markLock(g_frameMarkMutex);
 #ifdef TRACY_ENABLE
@@ -611,6 +723,90 @@ auto frameMark() -> void {
     g_frameStartNs = t;
 }
 
+auto laneFrameMark() -> void {
+    auto* lane = laneForThread();
+    auto endNs = now();
+    auto startNs = std::exchange(t_state.frameStartNs, endNs);
+    auto waitNs = std::exchange(t_state.frameWaitNs, 0);
+    if (lane == nullptr || startNs == 0) {
+        return;
+    }
+    auto spanNs = endNs - startNs;
+    auto ownNs = spanNs > waitNs ? spanNs - waitNs : 0;
+    bool worst = false;
+    {
+        std::lock_guard lock(lane->mutex);
+        lane->marksFrames = true;
+        // Read under the lock: a reset clears the counts under it after moving this, so a frame from before it isn't counted after.
+        if (startNs < g_overBudgetResetNs.load(std::memory_order_relaxed)) {
+            return;
+        }
+        auto& counts = lane->overBudget;
+        counts.frames++;
+        if (ownNs > g_frameBudgetNs.load(std::memory_order_relaxed)) {
+            counts.over++;
+        }
+        if ((double) ownNs * 1e-6 > counts.worstMs) {
+            counts.worstMs = (double) ownNs * 1e-6;
+            counts.worstEndNs = endNs;
+            counts.worstSiteId = 0;
+            counts.worstZoneMs = 0.0;
+            worst = true;
+        }
+    }
+    if (!worst) {
+        return;
+    }
+    auto laneIndex = (uint32_t) (lane - g_lanes.data());
+    auto zone = frameZoneOf(laneIndex, startNs, endNs, ownNs);
+    std::lock_guard lock(lane->mutex);
+    if (lane->overBudget.worstEndNs == endNs) {
+        lane->overBudget.worstSiteId = zone.siteId;
+        lane->overBudget.worstZoneMs = (double) zone.ownNs * 1e-6;
+    }
+}
+
+auto setFrameBudgetMs(double ms) -> void {
+    g_frameBudgetNs.store((uint64_t) (std::max(ms, 0.0) * 1e6), std::memory_order_relaxed);
+}
+
+auto frameBudgetMs() -> double {
+    return (double) g_frameBudgetNs.load(std::memory_order_relaxed) * 1e-6;
+}
+
+auto overBudget(OverBudget& out) -> void {
+    out.budgetMs = frameBudgetMs();
+    out.resetNs = g_overBudgetResetNs.load(std::memory_order_relaxed);
+    out.lanes.clear();
+    auto count = std::min(g_laneCount.load(), maxLanes);
+    for (uint32_t i = 0; i < count; i++) {
+        auto& lane = g_lanes[i];
+        if (!lane.used.load(std::memory_order_acquire)) {
+            continue;
+        }
+        std::lock_guard lock(lane.mutex);
+        if (!lane.marksFrames) {
+            continue;
+        }
+        auto entry = lane.overBudget;
+        entry.lane = lane.name;
+        out.lanes.push_back(std::move(entry));
+    }
+}
+
+auto resetOverBudget() -> void {
+    g_overBudgetResetNs.store(now(), std::memory_order_relaxed);
+    auto count = std::min(g_laneCount.load(), maxLanes);
+    for (uint32_t i = 0; i < count; i++) {
+        auto& lane = g_lanes[i];
+        if (!lane.used.load(std::memory_order_acquire)) {
+            continue;
+        }
+        std::lock_guard lock(lane.mutex);
+        lane.overBudget = {};
+    }
+}
+
 auto setHistorySeconds(double seconds) -> void {
     g_historyNs.store((uint64_t) (std::max(seconds, 0.0) * 1e9), std::memory_order_relaxed);
 }
@@ -625,6 +821,14 @@ auto setGpuDetail(bool enabled) -> void {
 
 auto gpuDetail() -> bool {
     return g_gpuDetail.load(std::memory_order_relaxed);
+}
+
+auto setStallSeconds(double seconds) -> void {
+    g_stallNs.store((uint64_t) (std::max(seconds, 0.0) * 1e9), std::memory_order_relaxed);
+}
+
+auto stallSeconds() -> double {
+    return (double) g_stallNs.load(std::memory_order_relaxed) * 1e-9;
 }
 
 auto setPaused(bool paused) -> void {
@@ -850,6 +1054,32 @@ auto lanes(std::vector<LaneInfo>& out) -> void {
         }
         std::lock_guard lock(lane.mutex);
         out.push_back({.index = i, .name = lane.name});
+    }
+}
+
+auto openZones(std::vector<OpenZones>& out) -> void {
+    out.clear();
+    auto count = std::min(g_laneCount.load(), maxLanes);
+    for (uint32_t i = 0; i < count; i++) {
+        auto& lane = g_lanes[i];
+        if (!lane.used.load(std::memory_order_acquire) || !lane.owned.load(std::memory_order_acquire)) {
+            continue;
+        }
+        OpenZones entry;
+        entry.laneIndex = i;
+        {
+            std::lock_guard lock(lane.mutex);
+            entry.lane = lane.name;
+        }
+        auto depth = std::min(lane.openDepth.load(std::memory_order_acquire), maxDepth);
+        entry.zones.reserve(depth);
+        for (uint32_t d = 0; d < depth; d++) {
+            entry.zones.push_back({
+                .siteId = lane.openSites[d].load(std::memory_order_relaxed),
+                .startNs = lane.openStarts[d].load(std::memory_order_relaxed),
+            });
+        }
+        out.push_back(std::move(entry));
     }
 }
 

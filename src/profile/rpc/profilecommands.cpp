@@ -1,6 +1,7 @@
 #include "profilecommands.h"
 
 #include "profile.h"
+#include "stallwatch.h"
 
 #include <nlohmann/json.hpp>
 
@@ -41,6 +42,44 @@ auto profileRecord() -> Json {
         historyBytes += lane.bytes;
     }
     auto driverBusy = gpuDriverBusyPercent();
+    auto watch = stallWatchState();
+    auto current = Json::array();
+    for (const auto& stall : watch.current) {
+        current.push_back({{"lane", stall.lane}, {"zone", stall.zone}, {"seconds", stall.seconds}, {"stack", stall.stack}});
+    }
+    Json stalls = {
+        {"watching", watch.running},
+        {"thresholdSeconds", stallSeconds()},
+        {"reported", watch.reported},
+        {"current", current},
+    };
+    OverBudget budget;
+    overBudget(budget);
+    auto t = now();
+    auto secondsAgo = [&](uint64_t ns) {
+        return (double) (t > ns ? t - ns : 0) * 1e-9;
+    };
+    auto budgetLanes = Json::array();
+    for (const auto& lane : budget.lanes) {
+        Json zone = nullptr;
+        if (lane.worstSiteId != 0) {
+            auto site = siteOf(lane.worstSiteId);
+            zone = {{"name", site.name}, {"file", site.file}, {"line", site.line}, {"ms", lane.worstZoneMs}};
+        }
+        budgetLanes.push_back({
+            {"lane", lane.lane},
+            {"frames", lane.frames},
+            {"over", lane.over},
+            {"worstMs", lane.worstMs},
+            {"worstSecondsAgo", lane.frames == 0 ? Json(nullptr) : Json(secondsAgo(lane.worstEndNs))},
+            {"worstZone", zone},
+        });
+    }
+    Json overBudgetJson = {
+        {"budgetMs", budget.budgetMs},
+        {"resetSecondsAgo", budget.resetNs == 0 ? Json(nullptr) : Json(secondsAgo(budget.resetNs))},
+        {"lanes", budgetLanes},
+    };
     return {
         {"frameCount", history.size()},
         {"cpuMsAverage", cpuAverage},
@@ -52,6 +91,8 @@ auto profileRecord() -> Json {
         {"historySeconds", historySeconds()},
         {"historyBytes", historyBytes},
         {"gpuDetail", gpuDetail()},
+        {"stalls", stalls},
+        {"overBudget", overBudgetJson},
         {"lanes", lanes},
         {"frames", frames},
     };
@@ -201,9 +242,14 @@ auto plotsRecord() -> Json {
 } // namespace
 
 auto registerProfileRecords(RpcRecords& records) -> void {
-    records.add("profile", "the profiler: CPU and GPU time per frame over the history, the history window and the zones and bytes each lane holds", [](RpcResponder responder) {
-        responder.respond(profileRecord());
-    });
+    records.add("profile",
+                "the profiler: CPU and GPU time per frame over the history, the history window and the zones and bytes each lane holds, the stall "
+                "watch: its threshold, the stalls reported and the threads stalled now with their open zones, and overBudget: per thread that marks "
+                "frames (Main, Render), the frames since start or profile-reset whose own work (less waits) was over profile.budget.frameMs, the "
+                "worst and the zone that held it",
+                [](RpcResponder responder) {
+                    responder.respond(profileRecord());
+                });
     records.add("zones",
                 "where the time goes over the last 60 frames (without frames: the whole history): every profiler zone site per thread lane and on the GPU, "
                 "its file, line, group and level, count, total, self time and the share its children cover, per frame, median and longest time",

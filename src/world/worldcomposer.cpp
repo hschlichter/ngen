@@ -1587,7 +1587,11 @@ struct WorldComposer::Impl {
         PROFILE_ZONE_DETAIL("ComposeLevel", Scene);
         // The level's own window: what its index misses is the level's gap, not its root's.
         windows.emplace_back();
-        auto index = childIndex(*slot.rootIndex, slot.name, slot.composedPath, loads);
+        PrimIndex index;
+        {
+            PROFILE_ZONE_DETAIL("LevelIndex", Scene);
+            index = childIndex(*slot.rootIndex, slot.name, slot.composedPath, loads);
+        }
         auto key = std::format("{}{}", loads ? "1" : "0", nodeKey(index.root));
         int32_t id = -1;
         if (auto it = levelByKey.find(key); it != levelByKey.end()) {
@@ -1616,11 +1620,18 @@ struct WorldComposer::Impl {
         content.sourcePath = slot.composedPath;
         content.version = ++versions;
         ContentContext context{.content = &content, .base = slot.composedPath, .key = key, .info = &info};
-        composePrim(context, noEntity, slot.name, std::move(index), slot.composedPath, loads);
+        {
+            PROFILE_ZONE_DETAIL("ComposeLevelPrims", Scene);
+            composePrim(context, noEntity, slot.name, std::move(index), slot.composedPath, loads);
+            PROFILE_ZONE_VALUE(content.entities.size());
+        }
         if (!content.entities.empty()) {
             content.entities[0].lodItem = true;
         }
-        finishContent(context);
+        {
+            PROFILE_ZONE_DETAIL("FinishLevel", Scene);
+            finishContent(context);
+        }
         stats.levelsComposed++;
         if (!info.complete) {
             return -1;
@@ -1686,6 +1697,8 @@ struct WorldComposer::Impl {
                 }
             }
         }
+        // The contents reached; those without LOD roots have no zone of their own, their walk is Resolve's own time.
+        PROFILE_ZONE_VALUE(reached.size());
     }
 
     // Every reached content's material bindings, in it or anywhere in the World, and the messages of what was reached.
@@ -1700,8 +1713,11 @@ struct WorldComposer::Impl {
                 }
             }
         }
-        PROFILE_ZONE_DETAIL("ResolveBindings", Scene);
+        static const uint32_t bindingsSite = profile::registerSite("ResolveBindings", profile::Group::Scene, profile::Level::Detail);
+        profile::beginZone(bindingsSite);
+        size_t bindings = 0;
         for (auto* info : reached) {
+            bindings += info->bindings.size();
             for (const auto& pending : info->bindings) {
                 const WorldContent* lookIn = pending.content;
                 std::optional<EntityId> found;
@@ -1725,6 +1741,10 @@ struct WorldComposer::Impl {
                 pending.content->entities[pending.entity].binding->materialAsset = materialKey(lookIn->entities[*found]);
             }
         }
+        profile::zoneValue(bindings);
+        profile::endZone();
+        PROFILE_ZONE_DETAIL("CountHeld", Scene);
+        PROFILE_ZONE_VALUE(world.contents.size());
         // Held: composed and not released (a released content keeps its index, empty).
         auto held = [this](ContentKind kind) {
             uint32_t count = 0;
@@ -1828,6 +1848,8 @@ struct WorldComposer::Impl {
     // a level that waits for packs doesn't compose its prototypes again every round. The stage's are never kept, so never let go.
     auto releaseUnreached() -> void {
         PROFILE_ZONE_DETAIL("ReleaseUnreached", Scene);
+        static const uint32_t markSite = profile::registerSite("MarkHeld", profile::Group::Scene, profile::Level::Detail);
+        profile::beginZone(markSite);
         std::unordered_set<const ContentInfo*> held(reached.begin(), reached.end());
         std::vector<const ContentInfo*> pending(reached.begin(), reached.end());
         for (const auto& info : contentInfo) {
@@ -1845,6 +1867,10 @@ struct WorldComposer::Impl {
                 }
             }
         }
+        profile::zoneValue(held.size());
+        profile::endZone();
+        PROFILE_ZONE_DETAIL("ReleaseContents", Scene);
+        auto releasedBefore = stats.released;
         for (size_t i = 0; i < contentInfo.size(); i++) {
             auto& info = contentInfo[i];
             if (held.contains(&info) || info.released) {
@@ -1863,6 +1889,7 @@ struct WorldComposer::Impl {
             info.messages.clear();
             stats.released++;
         }
+        PROFILE_ZONE_VALUE(stats.released - releasedBefore);
     }
 
     auto composeOnce() -> void {

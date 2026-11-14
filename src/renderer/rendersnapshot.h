@@ -78,6 +78,9 @@ struct RenderSnapshot {
     // The camera the cascades were fitted to, when it isn't the one rendered from (a debug camera watching the main camera): the lighting
     // pass picks a pixel's cascade by its depth from this camera instead.
     std::optional<std::pair<glm::vec3, glm::vec3>> cascadeCamera; // eye, forward
+    // Everything drawn, from the main thread (invalid when nothing is): the single-cascade fallback is fitted to it, and the depth preview
+    // reaches its far corner.
+    AABB sceneBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
 
     DebugDrawData debugData;
     // The capture watches (picking's and the inspectors'), when they changed since the last snapshot that carried them.

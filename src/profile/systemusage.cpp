@@ -114,6 +114,7 @@ auto gpuDriverBusyPercent() -> std::optional<double> {
     auto t = now();
     if (t - g_gpuDriver.readNs >= readIntervalNs) {
         g_gpuDriver.readNs = t;
+        PROFILE_ZONE_DETAIL("ReadGpuBusyFile", Io);
         if (auto value = readNumber(g_gpuDriver.busyFile)) {
             g_gpuDriver.busy = (double) *value;
         }
@@ -133,6 +134,7 @@ auto residentBytes() -> uint64_t {
         return g_resident.bytes;
     }
     g_resident.readNs = t;
+    PROFILE_ZONE_DETAIL("ReadStatm", Io);
     // statm: total size, then resident, in pages.
     std::ifstream in("/proc/self/statm");
     uint64_t size = 0;

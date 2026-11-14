@@ -207,7 +207,12 @@ auto beginZone(uint32_t siteId) -> void;
 auto endZone() -> void;
 // Attach a number to the innermost open zone on this thread (draw count, bytes, ...).
 auto zoneValue(uint64_t value) -> void;
+// Once per frame on the main thread: the frame history (frameHistory, the Performance window's frame times) and Tracy's frames, and the
+// main thread's frame for overBudget, as laneFrameMark.
 auto frameMark() -> void;
+// Once per iteration on another thread with a frame of its own (the render thread), outside any zone: closes the calling thread's frame for
+// overBudget and opens the next.
+auto laneFrameMark() -> void;
 
 // How long the history keeps zones, frames and GPU frames (profile.history.seconds, handed in by the main loop). Any thread.
 auto setHistorySeconds(double seconds) -> void;
@@ -215,6 +220,35 @@ auto historySeconds() -> double;
 // Whether detail GPU zones record (profile.gpu.detail). Any thread.
 auto setGpuDetail(bool enabled) -> void;
 auto gpuDetail() -> bool;
+
+// The stall watch's threshold (profile.stall.seconds, handed in by the main loop): a zone open this long is a stall. 0 turns the watch
+// off. Any thread.
+auto setStallSeconds(double seconds) -> void;
+auto stallSeconds() -> double;
+
+// Frames over budget, per thread that marks frames (frameMark, laneFrameMark). A frame's own work is its span less the outermost Wait-group
+// zones in it (waiting for the other thread, for the GPU, for a lock): what the thread itself spent on the frame. Counted since the
+// process started or the last resetOverBudget, paused or not, against the budget handed in (profile.budget.frameMs). The worst frame
+// names the innermost zone holding at least half its own work, else the zone holding the most; from the history, so a worst frame while
+// paused names none.
+auto setFrameBudgetMs(double ms) -> void;
+auto frameBudgetMs() -> double;
+struct LaneOverBudget {
+    std::string lane;
+    uint64_t frames = 0;      // frames measured
+    uint64_t over = 0;        // of them, over the budget
+    double worstMs = 0.0;     // the worst frame's own work
+    uint64_t worstEndNs = 0;  // when it ended
+    uint32_t worstSiteId = 0; // its zone; 0 when none was named
+    double worstZoneMs = 0.0; // that zone's own work in it
+};
+struct OverBudget {
+    double budgetMs = 0.0;
+    uint64_t resetNs = 0; // the last reset; 0: counted since the process started
+    std::vector<LaneOverBudget> lanes;
+};
+auto overBudget(OverBudget& out) -> void;
+auto resetOverBudget() -> void;
 
 // Paused: zones, frame marks and GPU sets are dropped, so history stays exactly as it
 // was for as long as the pause lasts. Zone stacks keep balancing; Tracy keeps recording.
@@ -227,6 +261,18 @@ auto submitGpuZones(uint64_t frameIndex, uint64_t submitNs, std::span<const Zone
 
 // Readers, any thread. Copies out; never blocks writers for longer than a block switch.
 auto lanes(std::vector<LaneInfo>& out) -> void;
+// The zones each thread has open now, outermost first: where a thread is while it is in them, which the history only shows once they end.
+// Lanes whose thread is running; a thread outside any zone has none.
+struct OpenZone {
+    uint32_t siteId = 0;
+    uint64_t startNs = 0;
+};
+struct OpenZones {
+    uint32_t laneIndex = 0;
+    std::string lane;
+    std::vector<OpenZone> zones;
+};
+auto openZones(std::vector<OpenZones>& out) -> void;
 auto historyUsage(std::vector<LaneUsage>& out) -> void;
 auto lastFrame() -> std::optional<FrameInterval>;
 // Frame `offset` frames before the latest (0 = latest). Empty when out of history.

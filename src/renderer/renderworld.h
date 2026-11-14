@@ -15,7 +15,8 @@
 #include <vector>
 
 // A list kept in shared chunks, for a producer that publishes copies of a large list it keeps changing: a copy shares every chunk, and a
-// write copies only the chunk it changes, and only while a copy still shares it. One thread writes; copies are read anywhere.
+// write copies only the chunk it changes, and only while a copy still shares it. One thread writes; copies are read anywhere. A writer may
+// split its edits by chunk across threads (a parallel loop), never two threads in one chunk, and never while the list is resized.
 template <typename T>
 class ChunkedList {
 public:
@@ -67,6 +68,27 @@ public:
     auto clear() -> void {
         chunks.clear();
         count = 0;
+    }
+    // Grown with default elements, or cut from the end; growing adds chunks and moves none of the elements already in it.
+    auto resize(size_t newCount) -> void {
+        if (newCount < count) {
+            chunks.resize((newCount + chunkSize - 1) / chunkSize);
+            if (newCount % chunkSize != 0) {
+                own(chunks.size() - 1)->resize(newCount % chunkSize);
+            }
+            count = newCount;
+            return;
+        }
+        while (count < newCount) {
+            if (count % chunkSize == 0) {
+                chunks.push_back(std::make_shared<std::vector<T>>());
+                chunks.back()->reserve(chunkSize);
+            }
+            auto fill = std::min(chunkSize - (count % chunkSize), newCount - count);
+            auto* last = own(chunks.size() - 1);
+            last->resize(last->size() + fill);
+            count += fill;
+        }
     }
     // Each chunk as a contiguous span, in order.
     auto chunkCount() const -> size_t { return chunks.size(); }

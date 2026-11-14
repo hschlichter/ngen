@@ -53,7 +53,7 @@ auto ShadowPass::addPass(
     RhiExtent2D atlasExtent,
     RhiFormat depthFormat,
     std::span<const ShadowCascade> cascades,
-    std::span<const GpuInstance> instances,
+    const ChunkedList<GpuInstance>& instances,
     FgBufferHandle instanceBuffer,
     const DrawLists& lists,
     DrawLists::Handles drawHandles,
@@ -95,7 +95,7 @@ auto ShadowPass::addPass(
                 builder.read(drawHandles.lodStates, FgAccessFlags::StorageRead);
             }
         },
-        [bucketPipelines, geometrySet, atlasExtent, cascadeCopy, cascadeCount, instances, &lists, drawHandles, &scene](FrameGraphContext& ctx, const ShadowPassData& data) {
+        [bucketPipelines, geometrySet, atlasExtent, cascadeCopy, cascadeCount, instances = &instances, &lists, drawHandles, &scene](FrameGraphContext& ctx, const ShadowPassData& data) {
             auto* cmd = ctx.cmd();
 
             RhiRenderingAttachmentInfo depthAtt = {
@@ -139,7 +139,7 @@ auto ShadowPass::addPass(
                     cmd->pushConstants(pip, RhiShaderStage::Task | RhiShaderStage::Mesh, 0, sizeof(push), &push);
                     PROFILE_GPU_ZONE(cmd, DrawLists::drawName(region), Geometry);
                     DrawLists::drawRegion(cmd, ctx.buffer(drawHandles.regionWork), region);
-                    lists.report(ctx, region, instances);
+                    lists.report(ctx, region, *instances);
                 }
             }
 

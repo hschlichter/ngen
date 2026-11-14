@@ -307,3 +307,27 @@ private:
 // A prim's transform in a published tree, world before the unit scale; none when no drawn placement holds it (inactive, invisible, in a
 // level not drawn).
 auto findTransform(const Placement& tree, const std::string& path) -> std::optional<EntityTransform>;
+
+// The world bounds of what published trees draw at or under a path, each placement's whole bounds kept from one tree to the next. A node once
+// published is never changed in place: the scene thread changes in place only a node nothing else holds, and the latest published snapshot
+// holds every node of the tree it works on. So a node seen before, still alive, has the bounds it had: a tree that changed in a few places is
+// walked again only there, and only under the path. The nodes are watched, not held (holding one would keep its old subtree alive), and those
+// gone are forgotten once the kept set has doubled. The main thread's.
+class PlacementBounds {
+public:
+    auto under(const std::shared_ptr<const Placement>& tree, const RenderWorld& drawn, const ChunkedList<std::string>& primPaths, const std::string& path) -> AABB;
+
+private:
+    // A placement's draws and everything drawn in it.
+    auto whole(const std::shared_ptr<const Placement>& node, const RenderWorld& drawn) -> AABB;
+    // What a placement draws at or under the path: all of it at or under, its prims there and what is placed there when the path is in it.
+    auto part(const std::shared_ptr<const Placement>& node, const RenderWorld& drawn, const ChunkedList<std::string>& primPaths, const std::string& path, AABB& out) -> void;
+    auto letGo() -> void;
+
+    struct Kept {
+        std::weak_ptr<const Placement> node; // expired: freed, and the address may hold another node
+        AABB bounds;
+    };
+    std::unordered_map<const Placement*, Kept> kept;
+    size_t keptAfterLetGo = 0;
+};

@@ -1,5 +1,7 @@
 #include "performancewindow.h"
 
+#include "trace.h"
+
 #include <imgui.h>
 
 #include <algorithm>
@@ -16,6 +18,7 @@ constexpr uint32_t gpuLane = UINT32_MAX;
 auto isWorkerLane(const profile::LaneInfo& lane) -> bool;
 auto maxDepth(const std::vector<profile::Zone>& zones) -> uint32_t;
 auto keepGuideZones(std::vector<profile::Zone>& zones) -> void;
+auto drawOverBudget() -> void;
 constexpr double minSpanNs = 0.2e6; // 0.2 ms
 
 // Reads everything the view needs. History and the view position refresh only while
@@ -116,6 +119,49 @@ auto zoneColor(uint32_t siteId) -> ImU32 {
 }
 
 // Drops detail zones and nests the guide zones among themselves: a guide zone inside a detail zone moves up a row.
+// Under the frame times: per thread that marks frames, the frames whose own work (less waits) was over the budget since start or the
+// last reset, and the worst with the zone that held it; the profile record's overBudget.
+auto drawOverBudget() -> void {
+    profile::OverBudget budget;
+    profile::overBudget(budget);
+    auto t = profile::now();
+    if (budget.resetNs == 0) {
+        ImGui::Text("Own work over %.1f ms since start:", budget.budgetMs);
+    } else {
+        ImGui::Text("Own work over %.1f ms since reset %.0f s ago:", budget.budgetMs, (double) (t - std::min(t, budget.resetNs)) * 1e-9);
+    }
+    for (const auto& lane : budget.lanes) {
+        ImGui::SameLine(0.0f, 16.0f);
+        auto zone = lane.worstSiteId != 0 ? std::string(profile::nameOf(lane.worstSiteId)) : std::string("no zone named");
+        auto text = std::format("{} {} of {} frames, worst {:.1f} ms ({})", lane.lane, lane.over, lane.frames, lane.worstMs, zone);
+        if (lane.over > 0) {
+            ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.35f, 1.0f), "%s", text.c_str());
+        } else {
+            ImGui::TextUnformatted(text.c_str());
+        }
+        if (ImGui::IsItemHovered() && lane.frames > 0) {
+            auto ago = (double) (t - std::min(t, lane.worstEndNs)) * 1e-9;
+            if (lane.worstSiteId != 0) {
+                auto site = profile::siteOf(lane.worstSiteId);
+                ImGui::SetTooltip("Worst frame %.0f s ago: %.1f ms of its own work, %.1f ms of it in %s\n%s:%u",
+                                  ago,
+                                  lane.worstMs,
+                                  lane.worstZoneMs,
+                                  site.name,
+                                  site.file,
+                                  site.line);
+            } else {
+                ImGui::SetTooltip("Worst frame %.0f s ago: %.1f ms of its own work", ago, lane.worstMs);
+            }
+        }
+    }
+    ImGui::SameLine(0.0f, 16.0f);
+    if (ImGui::SmallButton("Reset##overbudget")) {
+        profile::resetOverBudget();
+        TRACE_EVENT("Engine", "ProfileReset", "view").text("frames over budget counted from now");
+    }
+}
+
 auto keepGuideZones(std::vector<profile::Zone>& zones) -> void {
     std::erase_if(zones, [](const profile::Zone& z) { return profile::levelOf(z.siteId) == profile::Level::Detail; });
     std::sort(zones.begin(), zones.end(), [](const profile::Zone& a, const profile::Zone& b) {
@@ -493,6 +539,7 @@ void drawPerformanceWindow(bool& show, PerformanceWindowState& state) {
         }
     }
 
+    drawOverBudget();
     drawGuidePlots();
 
     ImGui::Separator();

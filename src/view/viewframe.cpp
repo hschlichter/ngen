@@ -1,6 +1,7 @@
 #include "viewframe.h"
 
 #include "assetclient.h"
+#include "buffergrowth.h"
 #include "profile.h"
 #include "profileconfig.h"
 #include "projection.h"
@@ -124,6 +125,11 @@ auto ViewFrame::sendSceneInputs() -> void {
         geometryLimitChanges = renderconfig::geometryLimitMiB.changes();
         renderThread.setGeometryLimit((uint64_t) renderconfig::geometryLimitMiB.get() * 1024 * 1024);
     }
+    // How full a GPU table gets before it grows on a background job: the render thread reads it from any thread.
+    if (renderconfig::growthAhead.changes() != growthAheadChanges) {
+        growthAheadChanges = renderconfig::growthAhead.changes();
+        BufferGrowth::setAhead(renderconfig::growthAhead.get());
+    }
     // The profiler's history window and GPU detail: the collector reads them from any thread.
     if (profileconfig::historySeconds.changes() != profileHistoryChanges) {
         profileHistoryChanges = profileconfig::historySeconds.changes();
@@ -133,10 +139,21 @@ auto ViewFrame::sendSceneInputs() -> void {
         profileGpuDetailChanges = profileconfig::gpuDetail.changes();
         profile::setGpuDetail(profileconfig::gpuDetail.get());
     }
+    if (profileconfig::stallSeconds.changes() != profileStallChanges) {
+        profileStallChanges = profileconfig::stallSeconds.changes();
+        profile::setStallSeconds(profileconfig::stallSeconds.get());
+    }
+    if (profileconfig::frameBudgetMs.changes() != profileBudgetChanges) {
+        profileBudgetChanges = profileconfig::frameBudgetMs.changes();
+        profile::setFrameBudgetMs(profileconfig::frameBudgetMs.get());
+    }
     // What changed in the scene since the last frame: the render thread applies it, uploads go out a budget per frame.
     PROFILE_ZONE("TakeChanges", Frame);
     if (auto changes = scene.takeChanges(); !changes.empty()) {
-        groundMeshes.apply(changes);
+        {
+            PROFILE_ZONE_DETAIL("GroundMeshes", Frame);
+            groundMeshes.apply(changes);
+        }
         renderThread.submitSceneChanges(std::move(changes));
     }
 }
@@ -375,14 +392,13 @@ auto ViewFrame::countLodPops() -> void {
 
 auto ViewFrame::fitCascades() -> void {
     PROFILE_ZONE("FitCascades", Frame);
-    AABB bounds;
     {
         PROFILE_ZONE_DETAIL("UpdateSceneBounds", Frame);
-        bounds = sceneBounds.update(scene.renderWorld().meshInstances);
+        sceneWorldBounds = sceneBounds.update(scene.renderWorld().meshInstances);
     }
     auto lightDir = pickShadowLightDirection(scene.renderWorld().lights, cam.worldUp);
     PROFILE_ZONE_DETAIL("FitShadowCascades", Frame);
-    cascadeCount = fitShadowCascades(renderconfig::shadowSettings(), cameras.shadows->viewMatrix(), proj, projectionNear, lightDir, cam.worldUp, bounds, cascades);
+    cascadeCount = fitShadowCascades(renderconfig::shadowSettings(), cameras.shadows->viewMatrix(), proj, projectionNear, lightDir, cam.worldUp, sceneWorldBounds, cascades);
     frozenCorners.reset();
     if (cullState.frozenActive) {
         // The frozen frustum has no far plane: drawn out to the shadow distance.
@@ -441,6 +457,7 @@ auto ViewFrame::buildSnapshot() -> RenderSnapshot {
         .cascadeCount = cascadeCount,
         .cascades = cascades,
         .cascadeCamera = &shadowCamera != cameras.view ? std::optional<std::pair<glm::vec3, glm::vec3>>({shadowCamera.position, shadowCamera.forward()}) : std::nullopt,
+        .sceneBounds = sceneWorldBounds,
     };
     profile::endZone();
     {
@@ -465,7 +482,11 @@ auto ViewFrame::plotFrame() -> void {
     PROFILE_PLOT("Resident memory", Frame, Bytes, profile::residentBytes());
 
     // The renderer: the GPU scene, the uploads, the frame's commands, the memory heaps.
-    auto gpu = renderThread.latestSceneGpuStats();
+    SceneGpuStats gpu;
+    {
+        PROFILE_ZONE_DETAIL("LatestSceneGpuStats", Frame);
+        gpu = renderThread.latestSceneGpuStats();
+    }
     PROFILE_PLOT("Draw slots", Render, Number, gpu.drawSlots);
     PROFILE_PLOT("Meshes", Render, Number, gpu.meshes);
     PROFILE_PLOT("Textures", Render, Number, gpu.textures);

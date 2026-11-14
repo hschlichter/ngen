@@ -146,12 +146,21 @@ auto main(int argc, char** argv) -> int {
             .link(rpccore)
             .link(profile);
 
+    // The job system (src/jobs/README.md): workers that run frame jobs (waited for, parallel loops) and background jobs (polled, large
+    // allocations). Standard library and profile only.
+    auto jobs =
+        cxx::static_library("jobs")
+            .sources({"src/jobs/jobsystem.cpp"})
+            .public_include({"src/jobs"})
+            .link(profile);
+
     // The profiler's records and dump (src/profile/README.md) for any process with an RPC endpoint: ngen-view and the asset server.
     auto profileRpc =
         cxx::static_library("profilerpc")
             .sources(glob({.include = "src/profile/rpc/*.cpp"}))
             .public_include({"src/profile/rpc"})
             .link(rpccore)
+            .link(traceLib)
             .link(profile);
 
     // RPC engine layer: method registry with parameter schemas, responders, the endpoint that
@@ -177,7 +186,8 @@ auto main(int argc, char** argv) -> int {
             .public_include({"src/session"});
 
     // src/rhi is header-only: the backend-agnostic interface. Consumers add the
-    // include path directly; only backends are libraries.
+    // include path directly; only backends are libraries. A backend links profile for
+    // its CPU zones around the driver's allocation calls.
     auto rhivulkan =
         cxx::static_library("rhivulkan")
             .sources(glob({.include = "src/rhi/vulkan/**/*.cpp"}))
@@ -188,6 +198,7 @@ auto main(int argc, char** argv) -> int {
             .include({
                 "src",
             })
+            .link(profile)
             .only_on({"linux-vulkan"});
 
     auto rhi_backend = alias("rhi-backend").select("platform", "linux-vulkan", rhivulkan.owner());
@@ -238,6 +249,7 @@ auto main(int argc, char** argv) -> int {
             })
             .link(traceLib)
             .link(profile)
+            .link(jobs)
             .link(config)
             .link(assetClient)
             .link(packer)
@@ -288,6 +300,7 @@ auto main(int argc, char** argv) -> int {
             .link(packer)
             .link(config)
             .link(traceLib)
+            .link(jobs)
             .link(profile);
 
     // The view's commands (src/view/README.md): every engine method, script verb and record, by domain, and the dumps that answer frames later.
@@ -322,6 +335,7 @@ auto main(int argc, char** argv) -> int {
             .link(config)
             .link(traceLib)
             .link(profileRpc)
+            .link(jobs)
             .link(profile);
 
     // The tools (src/tools/README.md): the LOD and Streaming tools and the debug camera, their data built from the view's scene. No UI.
@@ -513,7 +527,6 @@ auto main(int argc, char** argv) -> int {
         cxx::program("ngen-view")
             .sources({
                 "src/apps/view.cpp",
-                "src/jobsystem.cpp",
                 "src/imguibackendvulkan.cpp",
                 "src/renderdoccapture.cpp",
             })
@@ -541,6 +554,7 @@ auto main(int argc, char** argv) -> int {
             .link(traceLib)
             .link(profileRpc)
             .link(profile)
+            .link(jobs)
             .link(tracy)
             .link(config)
             .link(session)
@@ -595,6 +609,10 @@ auto main(int argc, char** argv) -> int {
                 "external/stb", // screenshot PNG writer; the one third-party header examples may use
             })
             .link(rhi_backend)
+            // The backend's zones around the driver's allocation calls.
+            .link(profile)
+            .link(tracy)
+            .link(config)
             .link("shaderc_shared")
             .link_flags(sdl3_libs);
     };

@@ -41,7 +41,13 @@ auto RenderThread::submitSnapshot(RenderSnapshot snapshot) -> void {
 }
 
 auto RenderThread::submitSceneChanges(SceneChanges changes) -> void {
-    std::lock_guard lock(uploadMutex);
+    PROFILE_ZONE_DETAIL("SubmitSceneChanges", Frame);
+    // The render thread holds the lock only while it takes the changes submitted so far.
+    std::unique_lock lock(uploadMutex, std::defer_lock);
+    {
+        PROFILE_ZONE_DETAIL("WaitSceneChangesLock", Wait);
+        lock.lock();
+    }
     submitted.fetch_add(1, std::memory_order_acq_rel);
     if (pendingChanges) {
         pendingChanges->append(std::move(changes));
@@ -58,6 +64,8 @@ auto RenderThread::latestCullResult() -> std::optional<CullResult> {
 auto RenderThread::threadLoop() -> void {
     profile::registerThread("Render");
     while (true) {
+        // An iteration is the render thread's frame: waiting for the snapshot, the scene changes, the frame and what follows it.
+        profile::laneFrameMark();
         RenderSnapshot snapshot;
         {
             PROFILE_ZONE("WaitSnapshot", Wait);
@@ -71,18 +79,20 @@ auto RenderThread::threadLoop() -> void {
         }
         slotAvailable.notify_one();
 
-        // Check for pending scene upload
+        // The scene changes submitted so far, taken under the lock and applied after it, so the main thread can submit the next ones meanwhile.
+        // What was taken is applied before this frame renders: appliedUpTo counts it.
         uint64_t appliedUpTo = 0;
+        std::optional<SceneChanges> changes;
         {
             std::lock_guard lock(uploadMutex);
             appliedUpTo = submitted.load(std::memory_order_acquire);
-            if (pendingChanges) {
-                auto changes = std::move(*pendingChanges);
-                pendingChanges.reset();
-                PROFILE_ZONE("SceneChanges", Render);
-                PROFILE_ZONE_VALUE(changes.instances.size());
-                renderer->applySceneChanges(changes);
-            }
+            changes = std::exchange(pendingChanges, std::nullopt);
+        }
+        if (changes) {
+            PROFILE_ZONE("SceneChanges", Render);
+            PROFILE_ZONE_VALUE(changes->instances.size());
+            renderer->applySceneChanges(*changes);
+            changes.reset();
         }
 
         if (auto budget = uploadBudgetWanted.exchange(0, std::memory_order_relaxed); budget > 0) {

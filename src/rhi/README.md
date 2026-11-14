@@ -37,8 +37,9 @@ Concretely:
 - `destroyX()` destroys now. If a frame in flight still references the resource, that is the caller's bug. The engine
   knows its frame pacing; the RHI does not. ngen keeps a `DeletionQueue` in `src/renderer/` that tags each pending
   destroy with a frame number and drains it once that frame's fence has signaled.
-- Uploads are commands. `RhiCommandBuffer::copyBuffer` (one region, or `copyBufferRegions` for many between the same two buffers, one
-  backend call) and `copyBufferToTexture` record into a command buffer the
+- Uploads are commands. `RhiCommandBuffer::copyBuffer` (one region, or `copyBufferRegions` for many between the same two buffers: one
+  call, which the Vulkan backend records as a command per 1,024 regions, since the validation layer's checks of one command's regions take
+  minutes at the hundreds of thousands a streamed tile's instance upload has) and `copyBufferToTexture` record into a command buffer the
   caller owns. Staging buffers, layout barriers, submission and the fence wait are the caller's. `RhiTextureDesc` has
   no `initialData`; `RhiDevice` has no `copyBuffer`. ngen's `GpuUploader` in `src/renderer/` shows the expected shape:
   one command buffer, N copies, one submit, one fence wait, then free staging.
@@ -241,6 +242,11 @@ program can check.
 - **Memory.** One `vkAllocateMemory` per buffer and texture, device-local for `GpuOnly` and textures, host-visible and
   coherent for `CpuToGpu`, host-visible, coherent and cached for `GpuToCpu` (falling back to `CpuToGpu`'s type, with a
   warning, on a device without one). There is no suballocator.
+- **CPU zones.** The backend links `profile` (`src/profile/README.md`, the foundation library every ngen program links) for detail zones
+  around what the driver can make slow: `RhiCreateBuffer` (value: the bytes asked for) and `RhiCreateTexture`, each with a `vkAllocateMemory`
+  zone inside (a texture's value: the bytes allocated), `vkMapMemory`, `RhiDestroyBuffer` and `RhiDestroyTexture`. They sit inside the caller's
+  zone, so growing a buffer shows the driver's allocation under the zone that grew it. The interface headers stay free of it; a program
+  that links the backend links `profile`, `tracy` and `config` too.
 - **Barriers.** `pipelineBarrier` maps each state to a layout (textures), stage mask and access mask and records one
   `vkCmdPipelineBarrier2` for all texture and buffer barriers.
 - **Command buffers.** Each `RhiCommandBufferVulkan` owns a timestamp query pool for up to 1,024 GPU zones, reset at
@@ -400,6 +406,20 @@ Before adding a method or field, ask:
 
 Header-only interface changes touch every backend and every pass. Prefer adding a field with a default over changing a
 signature.
+
+## Threads
+
+A device is driven from one thread (the render thread), with one exception: making resources.
+
+- **Safe from any thread**, at the same time as the render thread records and submits: `createBuffer`, `createTexture`, `mapBuffer` on a
+  buffer that thread made, and `destroyBuffer` / `destroyTexture` on a resource no other thread uses. Vulkan synchronises the device for these
+  (only the new object is externally synchronised); the allocation registry (`allocations()`) takes its own lock, and debug names are copied
+  into the resource. The renderer makes its large buffers on background jobs this way (`src/renderer/README.md`, "Growth").
+- **One thread at a time**: everything else: command buffers (`createCommandBuffer` uses the one command pool), descriptor pools and sets,
+  pipelines, submits, the swapchain, `waitIdle`.
+
+The RHI's messages (`RhiDeviceOptions::onMessage`) can come from the thread that made the resource; the handler is thread safe in ngen
+(the trace).
 
 ## Known gaps
 

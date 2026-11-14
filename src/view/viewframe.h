@@ -164,6 +164,8 @@ public:
     uint32_t cascadeCount = 0;
     std::optional<std::array<glm::vec3, 8>> frozenCorners; // the frozen frustum, drawn out to the shadow distance
 
+    // Everything drawn, as of the last cascade fit: the cascades are fitted to it and the renderer is handed it.
+    AABB sceneWorldBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
     // The scene's bounds by chunk of draws, for the cascades and the ground test, read again only for the chunks that changed.
     SceneBoundsCache sceneBounds;
     DebugDraw debugDraw;
@@ -183,6 +185,7 @@ private:
     int postedCameraHeight = 0;
     uint64_t uploadBudgetChanges = 0;
     uint64_t geometryLimitChanges = 0;
+    uint64_t growthAheadChanges = UINT64_MAX;
     // The profiler's values, handed to the collector on a change; UINT64_MAX applies them on the first frame.
     uint64_t profileHistoryChanges = UINT64_MAX;
     // plotFrame: what it plotted last, so per-frame plots count what is new; the heap plots' ids, one set per heap.
@@ -196,6 +199,8 @@ private:
     };
     std::vector<HeapPlots> heapPlots;
     uint64_t profileGpuDetailChanges = UINT64_MAX;
+    uint64_t profileStallChanges = UINT64_MAX;
+    uint64_t profileBudgetChanges = UINT64_MAX;
     uint64_t lodPopsFrame = 0;
     std::vector<CaptureWatch> sentWatches;
     bool watchesChanged = false; // since the last snapshot

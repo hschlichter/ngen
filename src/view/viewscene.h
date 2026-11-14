@@ -513,6 +513,7 @@ private:
     // The main thread's.
     std::shared_ptr<const SceneSnapshot> current = std::make_shared<SceneSnapshot>();
     std::set<Purpose> shownPurposes = {Purpose::Default, Purpose::Render};
+    mutable PlacementBounds placementBounds; // bounds(): each placement's, kept from one snapshot to the next
 
     // The scene thread's, from here on.
     std::string id;

@@ -201,7 +201,12 @@ auto ViewScene::idle() const -> bool {
 }
 
 auto ViewScene::takeChanges() -> SceneChanges {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex, std::defer_lock);
+    {
+        PROFILE_ZONE_DETAIL("WaitSceneLock", Wait);
+        lock.lock();
+    }
+    PROFILE_ZONE_DETAIL("TakeSceneChanges", Frame);
     auto changes = std::move(pending);
     pending = {};
     pending.slotCount = changes.slotCount;
@@ -1307,6 +1312,7 @@ auto ViewScene::publish() -> void {
         }
         ids.insert(failedAssets.begin(), failedAssets.end());
         assetIdList = std::make_shared<std::vector<std::string>>(ids.begin(), ids.end());
+        PROFILE_ZONE_VALUE(ids.size());
     }
     snapshot->assetIds = assetIdList;
     if (composer) {
@@ -1418,21 +1424,7 @@ auto ViewScene::primBounds(uint32_t prim) const -> AABB {
 }
 
 auto ViewScene::bounds(const std::string& path) const -> AABB {
-    AABB out = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
-    auto under = [&path](const std::string& candidate) {
-        if (path == "/") {
-            return true;
-        }
-        return candidate == path || (candidate.size() > path.size() && candidate.starts_with(path) && candidate[path.size()] == '/');
-    };
-    for (const auto& instance : current->draws->drawn.meshInstances) {
-        if (!instance.alive || !instance.worldBounds.valid() || !under(primPath(instance.prim))) {
-            continue;
-        }
-        out.min = glm::min(out.min, instance.worldBounds.min);
-        out.max = glm::max(out.max, instance.worldBounds.max);
-    }
-    return out;
+    return placementBounds.under(current->draws->placements, current->draws->drawn, current->draws->primPaths, path);
 }
 
 auto ViewScene::transform(const std::string& path) const -> std::optional<PrimTransform> {

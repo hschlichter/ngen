@@ -21,7 +21,13 @@ config::Bool tracyFrameImages{"profile.tracy.frameImages",
 config::Float frameBudgetMs{"profile.budget.frameMs",
                             16.667,
                             "The frame time content is measured against, in milliseconds: 16.7 is 60 frames a second, 33.3 is 30. The frame budget "
-                            "overlay draws the passes against it.",
+                            "overlay draws the passes against it; the profile record's overBudget counts the main and render threads' frames over it.",
                             {.min = 1.0, .max = 1000.0}};
+
+config::Float stallSeconds{"profile.stall.seconds",
+                           5.0,
+                           "How long a thread stays in one profiler zone before the stall watch reports it: a Stall warning in the trace with every "
+                           "zone the thread has open, and the profile record's stalls. 0 turns the watch off.",
+                           {.min = 0.0, .max = 600.0}};
 
 } // namespace profileconfig

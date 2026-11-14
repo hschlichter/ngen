@@ -2,7 +2,7 @@
 
 Where the time goes, on every thread and on the GPU: markers that bracket a piece of work, a built-in collector that keeps the last seconds of
 them in memory, and Tracy as a second sink for whole sessions. The library (`profile`) is standard library only apart from Tracy's client and
-`config`, and is a foundation library like `trace`: `rpccore`, `trace` and `packer` link it, so every program does — ngen-view, the asset server,
+`config`, and is a foundation library like `trace`: `rpccore`, `trace`, `packer` and the RHI backend link it, so every program does — ngen-view, the asset server,
 the packers and the tools.
 
 The built-in collector is the source of every profile number the engine shows or answers with: the Performance window, the `profile` and
@@ -49,6 +49,11 @@ one root's LOD evaluation) or a library or driver call (`vkQueueSubmit`, freeing
 Some zones come by themselves, from a name the engine already has: each frame-graph pass (a CPU record zone and a GPU zone, in the group
 `addPass` gives it), each RPC method call (`RpcRegistry::invoke`, group Io), each render extension hook (`RenderTools.beginFrame`, …), each job
 (the name given to `JobSystem::submit`), each pack task in the asset server (the rule's name).
+The RHI backend's driver calls that can be slow have zones of their own (`RhiCreateBuffer`, `RhiCreateTexture`, `vkAllocateMemory`,
+`vkMapMemory`, `RhiDestroyBuffer`, `RhiDestroyTexture`; `src/rhi/README.md`), so a zone that grows a buffer is covered down to the driver.
+A thread that blocks on a lock another thread may hold has a Wait zone for the wait (`WaitSceneChangesLock`: the main thread handing the
+render thread scene changes), so a frame's time reads as waiting, not working. A thread waiting for its own frame jobs (`JobWait`, where it
+also runs them) is working, so that zone is in the Jobs group.
 
 ## The built-in collector
 
@@ -112,6 +117,38 @@ requests in flight and bytes received. Each plotted number is also in a record (
   and only while a server is connected; a server that connects later is told every live allocation. Tracy's memory views (and its "GPU" plot of
   the pool's total) show it. The engine keeps no allocation events of its own: the `memory` record lists every allocation.
 
+### Stalls
+
+The history shows a zone once it ends, so a thread that never leaves one shows nowhere in it. Each lane therefore also publishes the zones its
+thread has open, outermost first, as they begin and end (`profile::openZones`; a few plain stores per zone, no lock). The stall watch
+(`src/profile/rpc/stallwatch.*`, `profile::startStallWatch`) is a thread that reads them every 250 ms. A thread that has been in one zone
+longer than `profile.stall.seconds` (default 5, 0 turns it off) is a stall:
+
+- a `Stall` warning in the trace (category Profile), once per stall: the lane, the innermost zone over the threshold with its file and line,
+  and every zone the thread has open with how long each has been: `Scene has been in SyncRoots for 5.3 s (src/view/placement.cpp:1162); open
+  zones, outermost first: SceneBatch 5.6 s > Place 5.3 s > … > SyncInstancer 0.0 s`.
+- `StallEnded` when the outermost zone over the threshold ends, with about how long it lasted (to the watch's 250 ms). Going deeper inside one
+  stall is the same stall.
+
+The trace streams on its own thread, so a report gets out while the main thread is the one stuck, when the records (answered on the main
+thread) no longer do. A thread spinning outside any zone, or below the innermost one, shows as the zones around it: a stall report says how
+deep the markers go there. ngen-view starts the watch after the job system and stops it before exit; the asset server doesn't run it, its pack
+workers stay in one zone for as long as a pack takes.
+
+### Frames over budget
+
+A thread's frame is the time between two of its frame marks: the main thread's `PROFILE_FRAME_MARK`, and `profile::laneFrameMark()` at the top
+of the render thread's loop (waiting for the snapshot, the scene changes, the frame and what follows it). The frame's own work is its span
+less the outermost Wait-group zones in it: what the thread spent on the frame itself, not waiting for the other thread, the GPU or a lock.
+Each thread counts it as it goes (a Wait zone's time is added when it ends, a few instructions), and at each mark the collector adds the frame
+to the lane's counts: frames measured, frames over `profile.budget.frameMs`, and the worst. A new worst frame is read back from the lane's
+history once, to name where its own work went: the innermost zone, outside every wait, holding at least half of it (`CopyChangedSlots`, not
+`RenderFrame`), else the zone holding the most.
+
+The counts run from the process's start, or from the last reset (`profile-reset`, the window's Reset), paused or not; a frame that began
+before the reset isn't counted. This is how a run checks the main and render threads against a frame budget (the `profile` record's
+`overBudget`) without dumping the history. Loading counts too, so a run that measures only the flight resets once the world is resident.
+
 ## Where it sits in the frame
 
 - CPU zones are recorded on the thread that runs them, when they end. `PROFILE_FRAME_MARK` is in the main loop (`src/apps/view.cpp`), so a frame
@@ -123,7 +160,10 @@ requests in flight and bytes received. Each plotted number is also in a record (
 
 - **Records** (`src/profile/rpc`, the `profilerpc` library, registered by ngen-view and the asset server):
   - `profile`: CPU and GPU time per frame over the history, `historySeconds`, `historyBytes`, `gpuDetail`, the zones and bytes each lane
-    holds, `gpuBusyPercent`, `gpuBusyDriverPercent` (null where there is none) and `gpuBusyDriverSource`, and `residentBytes`.
+    holds, `gpuBusyPercent`, `gpuBusyDriverPercent` (null where there is none) and `gpuBusyDriverSource`, and `residentBytes`; `stalls`: whether the
+    watch runs, `thresholdSeconds`, the stalls `reported` since start and the `current` ones (lane, innermost zone, seconds, the open zones);
+    `overBudget`: `budgetMs`, `resetSecondsAgo` (null: since start) and per lane that marks frames (Main, Render) the `frames` measured, the
+    `over` budget, `worstMs`, `worstSecondsAgo` and `worstZone` (name, file, line and its own `ms` in that frame; null when none was named).
   - `plots`: every plot over the history window with its group, format, sample count, latest, min, average and max.
   - `zones`: every zone site over the last 60 frames (a process without frames: the whole history) per lane and on the GPU, with its file,
     line, function, group, level, count, total, self time (`selfMs`), the share its children cover (`coveredShare`), per frame, median and
@@ -132,17 +172,26 @@ requests in flight and bytes received. Each plotted number is also in a record (
   trace JSON (Perfetto, `chrome://tracing`), the last `seconds` (default all), guide zones only or everything (default). An event's `cat` is its
   group; its `args` hold group, level, depth, value, file and line. Zones that overlap the window are included whole, so the first ones start before it.
   Plots are counter events (`"ph": "C"`), one series per plot. The asset server answers both methods too (`ngen-cli introspect call asset introspect.profile '{"path": …}'`).
-- **Configuration**: `profile.history.seconds`, `profile.gpu.detail`, `profile.tracy.frameImages`, and `profile.budget.frameMs`: the frame time
-  content is measured against (default 16.7 ms, 60 frames a second) (`config` record, `config` verb, Configuration window).
+  `profile.reset` / `profile-reset` (ngen-view): start `overBudget`'s counts again.
+- **Configuration**: `profile.history.seconds`, `profile.gpu.detail`, `profile.tracy.frameImages`, `profile.stall.seconds` (the stall watch's
+  threshold), and `profile.budget.frameMs`: the frame time content is measured against (default 16.7 ms, 60 frames a second), and what
+  `overBudget` counts against (`config` record,
+  `config` verb, Configuration window).
+- **Trace**: `Stall` (a warning) and `StallEnded`, category Profile, from the stall watch; `ProfileReset` (category Engine) when the counts
+  start again.
 - **Window**: Performance, the main, render, worker and GPU lanes on one clock in their group colours, with frame times, zone details (with the
   site's file, line and function, and self time) and statistics. It shows the guide zones, nested among themselves; Detail shows everything.
-  Under the frame times, the guide plots: GPU busy (both sources), resident memory, the device heap's usage and budget, upload bytes.
+  Under the frame times, `overBudget`: per lane the frames over the budget of those measured, the worst and its zone (red while any are over;
+  hover for when, its zone's share and `file:line`), and Reset. Then the guide plots: GPU busy (both sources), resident memory, the device
+  heap's usage and budget, upload bytes.
 - **Overlay**: the frame budget overlay (`src/ui/budgetoverlay.*`, View › Frame Budget, Ctrl+B, `ui.overlay.budget`), for content
   developers: the GPU's passes summed by group in plain words (Shadows, Geometry, Lighting, Post-processing, …), each group's passes beneath,
   as bars against `profile.budget.frameMs`, with the whole frame and the GPU frame in the header, green, yellow from 80% and red more than
   5% over budget (a frame locked to the display's rate sits on a budget of that rate), and the frame's draws and triangles (K, M). Its
   numbers come from `profile::gpuPassTimes(60, …)`: each top-level GPU zone's (each pass's) milliseconds per frame over the last 60 frames,
   in the frame graph's recording order, the `zones` record's GPU lane over the same window.
+- **Gap**: the Performance window draws zones once they end, so a stall shows there only after it; while it lasts it is in the trace window
+  (ngen-introspect) and the `profile` record.
 
 ## Tracy
 

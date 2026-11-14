@@ -46,7 +46,7 @@ public:
         FrameGraph& fg,
         FgTextureHandle depthHandle,
         RhiExtent2D extent,
-        std::span<const GpuInstance> instances,
+        const ChunkedList<GpuInstance>& instances,
         FgBufferHandle instanceBuffer,
         const DrawLists& lists,
         DrawLists::Handles drawHandles,
