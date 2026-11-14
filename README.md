@@ -118,6 +118,9 @@ Each library documents its design and rules in a README next to the code:
 - [`src/tools/README.md`](src/tools/README.md) — the tools: the LOD and Streaming tools and the debug camera, their data and state, apart from the UI that draws them.
 - [`src/world/README.md`](src/world/README.md) — the runtime scene: the World composed from scene packs as USD composes a stage, and `ngen-worldcheck` / `ngen-usdcheck` to compare the two.
 
+[`GLOSSARY.md`](GLOSSARY.md) defines the terms these READMEs use, in a line or two each, and lists the words that mean different things in
+different parts of the engine.
+
 `docs/` holds plans and design history; code and library READMEs do not depend on it. Why the engine is shaped as it is, decision by decision,
 is in [`docs/adr/`](docs/adr/README.md).
 
