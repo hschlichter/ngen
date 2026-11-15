@@ -152,7 +152,9 @@ live.
 | `camera-use /camera/prim` | `view.camera.use` | Move to a camera the scene authors. |
 | `camera-frame [scene\|/prim]` | `view.camera.frame` | Frame the scene or a prim. |
 | `camera-orbit x,y,z yaw pitch [debug]` | `view.camera.orbit` | Turn around a pivot by angles, the distance kept. |
-| `camera-move forward right up [yaw pitch] [debug]` | `view.camera.move` | Move and turn a camera from where it is: metres, then degrees. Stops a flight. |
+| `camera-move forward right up [yaw pitch] [debug]` | `view.camera.move` | The controls as a call: move and turn a camera from where it is, metres then degrees; the method also takes wheel steps and `camera: controlled`. Stops a flight. |
+| `orbit-start [x y]` | `view.camera.orbit.start` | Left Alt held, as a call: orbit around what is under a framebuffer pixel, for two seconds; without a pixel, hold an orbit that is on. |
+| `orbit-stop` | `view.camera.orbit.stop` | Left Alt released, as a call. |
 | `camera-follow on\|off`, `camera-follow height <m>` | `cvar.set` | Keep the eye a height above the highest drawn surface under it. |
 | `fly <path prefix> <m/s>` | `view.camera.fly` | Fly through the scene's cameras with that prefix, in path order. Holds the script while flying. |
 | `fly-stop` | `view.camera.fly.stop` | Stop the flight. |

@@ -319,7 +319,7 @@ auto ViewFrame::placeStartCamera() -> void {
 auto ViewFrame::moveCamera(const CameraMove& move, bool orbitHeld) -> void {
     static const uint32_t cameraZoneId = profile::registerSourceLocation("Camera", profile::Group::Frame);
     profile::beginZone(cameraZoneId);
-    if (cameraModes.orbiting && !orbitHeld) {
+    if (cameraModes.orbiting && !orbitHeld && profile::now() >= cameraModes.remoteOrbitUntilNs) {
         cameraModes.orbiting = false;
     }
     // Following the ground: the controlled camera moves across it, and its eye is set the height above the highest drawn surface under it.

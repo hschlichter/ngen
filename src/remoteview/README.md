@@ -130,10 +130,17 @@ It picks one of three layouts from the window's size:
 |---|---|---|
 | narrow | taller than wide (a phone upright) | the video on top, the panels under it; Panels puts them over the video |
 | landscape | wider than tall, and smaller than wide needs (a phone on its side) | the video fills the screen, the strip lies on it, the panels are a drawer |
-| wide | at least 900 × 500 (a desktop, a tablet) | the video left, the panels right, their width dragged; two panels side by side from 760 px |
+| wide | at least 900 × 500 (a desktop, a tablet) | the video in the middle and a dock around it: panels left, right and under the video, or floating over it |
+
+**The dock** (wide only). Each panel is in one of three areas, left, right and under the video, or is a window floating over the page.
+An area has its own tabs, so several panels show at once; an area with no panel takes no room. A panel is moved by dragging its tab, or
+its window's title: the places it can go light up, and it docks in the area it is dropped on, at the edge it is dropped near, or
+becomes a window where it is let go. The bars between the areas and the video resize them, a window resizes from its corner. The
+layout is remembered in the browser (`localStorage`), per browser, and **Reset layout** in the strip puts it back: the console under
+the video, the rest on the right. On a phone the panels are a sheet or a drawer, as before, and the dock's layout is left alone.
 
 The strip on top shows the connection, frames a second, the view's frame and GPU time (wide), the video's size, and has the video's
-height, a screenshot to download and full screen. The panels, with remote control on:
+height, a screenshot to download, Reset layout (wide) and full screen. The panels, with remote control on:
 
 | Panel | From | Does |
 |---|---|---|
@@ -144,23 +151,30 @@ height, a screenshot to download and full screen. The panels, with remote contro
 | Methods | `rpc.describe` | every method with a form made from its parameters, and its answer as a tree |
 | Records | `introspect.list`, `introspect.get` | every record as a tree, refreshed while open |
 
-On the video:
+On the video, **the mouse and the keys are the view's own controls** (`pollInput` in `src/apps/view.cpp`), so what is learned at the
+machine works in the browser. Touch has no buttons or keys and has gestures of its own:
 
-| | Touch | Mouse and keys |
+| | Mouse and keys, as in the view | Touch |
 |---|---|---|
-| Look | one finger drags | the left button drags |
-| Move sideways and up | two fingers drag | the middle or right button drags |
-| Forward and back | pinch | the wheel; W and S |
-| Fly | | W A S D, Q and E, Shift for five times the speed, while the video has the focus |
-| Pick | tap | click |
-| Frame the selection | double tap | double click, F |
-| Console | | a backtick |
+| Look | the right button held | one finger drags |
+| Fly | W A S D, Q and E, Shift for five times the speed | two fingers drag (sideways and up), pinch (forward and back) |
+| Fly speed | the wheel, 1.25 times a notch | |
+| Pick | the left button, as it goes down | tap |
+| Orbit | Left Alt held: around what is under the pointer; the wheel then moves toward it | |
+| Frame the selection | F | double tap |
+| Deselect, select the parent | Z, R | |
+| Follow the ground | G | |
+| Console | a backtick (the page's own) | |
 
-All of it becomes `view.camera.move` (what the gesture or the held keys added up to, once an animation frame, one call in flight at a
-time), `view.pick` at the frame's pixel under the pointer, and `view.camera.frame`.
+The keys go to the camera only while the video has the focus, and not with Ctrl held. All of it becomes calls: `view.camera.move` (what
+the pointer, the wheel and the held keys added up to, once an animation frame, one call in flight at a time, on the camera the view's
+own controls move), `view.pick` at the frame's pixel under the pointer, `view.camera.orbit.start` and `.stop` for Left Alt (the page
+asks again twice a second while it is held, so an orbit ends by itself if the page goes away), `view.select`, `view.camera.frame` and
+the `view.camera.follow` cvar.
 
 **The page tests itself** when opened at `<address>/#test`: it runs calls, a cvar set and read back, a failing call, the
-log, synthesized touch and mouse input against the camera, picking by both, a screenshot and a result over the message limit, and puts
+log, synthesized touch, mouse and key input against the camera (look, fly, the wheel's speed, orbiting, R and Z), picking by both, a screenshot, a result over the message limit and, in the
+wide layout, panels docked in each area, floated, dragged by tab and by title and remembered, and puts
 each check's result in its report. The `remoteview` record shows it as `page.test`, so an agent verifies the page with a headless
 browser and no way to touch it.
 
@@ -195,7 +209,8 @@ the bars' colours back, which shows whether the browser honoured the stream's co
 - **Methods and console commands**: `remoteview.keyframe` / `remoteview-keyframe`, `remoteview.disconnect` / `remoteview-disconnect`,
   `remoteview.grab {path}` / `remoteview-grab <path>` (what the watcher sees, after decoding, as a PNG), `remoteview.screenshot` /
   `remoteview-screenshot` (a screenshot the watch page downloads). Made for the page and useful to anyone: `console.run {line}`,
-  `view.camera.move` / `camera-move`.
+  `view.camera.move` / `camera-move`,
+  `view.camera.orbit.start` / `orbit-start`, `view.camera.orbit.stop` / `orbit-stop`.
 - **Window**: Remote View, under Windows > Introspection, or `window remoteview on`; its Control section has the switch, the channel,
   the calls and the last method.
 - **Log**, category `RemoteView`: `RemoteViewListening`, `RemoteViewStopped`, `RemoteViewEncoderStarted`, `RemoteViewWatcherConnected`,

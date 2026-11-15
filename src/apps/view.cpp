@@ -558,6 +558,12 @@ auto main(int argc, char* argv[]) -> int {
         .autoFrame = frame.autoFrame,
         .sceneLabel = positional.size() >= 2 ? std::string(positional[1]) : std::string("(new scene)"),
     };
+    viewContext.controlledCamera = [&frame] {
+        return frame.cameras.controlled;
+    };
+    viewContext.startOrbit = [&frame](glm::uvec2 pixel) {
+        frame.startOrbit(pixel);
+    };
     // Each layer adds its methods, console commands and records: the engine's, the tools', the UI's.
     ConsoleCommands console;
     RpcRecords records;

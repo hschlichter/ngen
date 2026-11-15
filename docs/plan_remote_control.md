@@ -235,6 +235,14 @@ Steps 1 to 6, on 2026-11-15. What differs from the steps above:
 - **Profiling the strip**: the view's frame and GPU time come from the `profile` record once a second, in the wide layout only (it is
   38 KB).
 - **`RemoteControlPaired` and the rest of the pairing went** with decision 1.
+- **The mouse and the keys are the view's own controls** (asked for by Henrik, 2026-11-15), where step 5 had invented a set: the right
+  button looks, the wheel sets the fly speed, the left button picks as it goes down, Left Alt orbits, Z, R, F and G do what they do in
+  the view. `view.camera.move` took wheel steps, turns around the pivot while orbiting and can move the controlled camera;
+  `view.camera.orbit.start` and `.stop` are Left Alt as calls, held by asking again. Touch keeps its gestures.
+- **The wide layout is a dock** (asked for by Henrik after using the page on a desktop, 2026-11-15: the fixed column left room unused).
+  Panels sit in areas left, right and under the video, or float; they are dragged by their tabs and titles, resized by the bars between,
+  remembered in `localStorage`, and reset from the strip. It replaces "two side by side when there is room". A panel is still one
+  panel: two records side by side needs panels opened more than once, which is not built.
 
 ## Results
 
@@ -244,8 +252,9 @@ Debug unless it says release; headless; Firefox 160 headless on this machine; th
 |---|---|
 | Off is free | **Passed.** `--remote-view` alone: the offer has no `m=application` section and `control` false; with `remoteview.control` set, one, and true. |
 | On | **Passed.** `RemoteControlOpened` once, `control.open` true, the self-test done with 18 of 18 passed. |
-| Both sizes | **Passed.** 18 of 18 at 1920 × 1080 (wide), at 500 × 758 (narrow) and at 844 × 390 (landscape), none overflowing. Firefox would not make a window narrower than 500 px, so the phone's own width is Henrik's check. |
-| Both inputs | **Passed** in each: touch drag 20° for 100 px, mouse drag 15°, pinch 4.00 m, wheel 2.00 m, right drag 2.50 m, a held W 1.5 m in 0.3 s, a key in a field nothing. |
+| The dock | **Passed.** In the wide layout the self-test docks Cvars left, under the video and right, floats it, drags Records left by its tab and the Cvars window under the video by its title, and reads the layout back from storage; a rearranged layout was also seen to survive a reload of the page. |
+| Both sizes | **Passed.** 19 of 19 at 1920 × 1080 (wide), 18 of 18 at 500 × 758 (narrow) and at 844 × 390 (landscape), none overflowing. Firefox would not make a window narrower than 500 px, so the phone's own width is Henrik's check. |
+| Both inputs | **Passed** in each: touch drag 20° for 100 px, pinch 4.00 m; the mouse's right drag 15° and its left drag nothing; the wheel 5 → 6.25 → 5 m/s; Left Alt orbiting at a constant distance from a picked pivot, the wheel then 15 % nearer, held for 2.5 s and ended on release; R and Z; a held W 1.5 m in 0.3 s, a key in a field nothing. |
 | Calls are the same calls | **Passed.** `remoteview.bitrateKbps` set from the page logs the encoder's restart at 3210 kbit/s; `console.run`, `view.camera.move` and `remoteview.screenshot` answer over loopback as on the channel. |
 | Picking | **Passed.** A tap and a click at the centre pick `/World/Cube_1`, and the Scene panel shows it. |
 | Log | **Passed.** The failing call's `RpcCallFailed` reaches the page; 85 to 177 lines arrived. |

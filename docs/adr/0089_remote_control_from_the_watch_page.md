@@ -30,7 +30,8 @@ accepted as recommended, with the second switch still his to overrule).
   `GET /file/<name>`).
 - **The log is sent from a cursor into the ring**, a bounded amount a frame, in the loopback stream's shape. Records are polled.
 - **The page's panels are made from what the engine describes**, and the page is three files built into the program with `#embed`.
-- **One page for a phone and a desktop**: its layout follows the window's size, its input goes through Pointer Events.
+- **One page for a phone and a desktop**: its layout follows the window's size, its input goes through Pointer Events. On a desktop the
+  panels are a dock around the video, moved by dragging and remembered by the browser.
 - **The camera is moved by a relative method**, `view.camera.move`, so the page keeps no camera of its own.
 - **The page tests itself** (`#test`) and reports the results, so an agent verifies it through the `remoteview` record.
 

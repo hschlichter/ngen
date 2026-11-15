@@ -92,6 +92,10 @@ struct ViewContext {
     std::string sceneLabel;
     // The camera a `camera: "debug"` parameter moves: the tools' debug camera while it is on; unset (or null) without one.
     std::function<Camera*()> debugCamera;
+    // The camera the keys and the mouse move this frame (FrameCameras::controlled): the main camera unless a tool took the controls.
+    std::function<Camera*()> controlledCamera;
+    // Starts orbiting around the surface under a framebuffer pixel (ViewFrame::startOrbit).
+    std::function<void(glm::uvec2)> startOrbit;
 };
 
 // Registers ngen-view's engine commands, each domain's methods, console commands and records: the camera (cameracommands.cpp), the scene

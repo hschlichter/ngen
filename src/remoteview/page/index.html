@@ -23,6 +23,7 @@
     <option value="view">view</option>
   </select>
   <button id="shotButton" class="control" title="Screenshot, downloaded as a PNG">Shot</button>
+  <button id="layoutButton" class="control wideonly" title="Put the panels back where they started">Reset layout</button>
   <button id="fullButton" title="Full screen">Full</button>
   <button id="sheetButton" class="control" title="Panels">Panels</button>
 </header>
@@ -31,7 +32,19 @@
   <div id="pad" tabindex="0" aria-label="The view: drag to look, tap to pick"></div>
   <div id="hint"></div>
 </main>
-<div id="splitter" title="Drag to resize"></div>
+<div id="dockLeft" class="dock" data-area="left"><nav class="docktabs"></nav><div class="dockbody"></div></div>
+<div id="splitLeft" class="split" data-area="left" title="Drag to resize"></div>
+<div id="dockRight" class="dock" data-area="right"><nav class="docktabs"></nav><div class="dockbody"></div></div>
+<div id="splitRight" class="split" data-area="right" title="Drag to resize"></div>
+<div id="dockBottom" class="dock" data-area="bottom"><nav class="docktabs"></nav><div class="dockbody"></div></div>
+<div id="splitBottom" class="split" data-area="bottom" title="Drag to resize"></div>
+<div id="floats"></div>
+<div id="dropzones">
+  <div class="zone" data-area="left">dock left</div>
+  <div class="zone" data-area="right">dock right</div>
+  <div class="zone" data-area="bottom">dock under the video</div>
+  <div class="zone" data-area="float">float</div>
+</div>
 <aside id="sheet">
   <nav id="tabs"></nav>
   <div id="panels">

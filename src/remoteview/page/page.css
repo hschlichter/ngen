@@ -13,7 +13,12 @@
   --bad: #ff6b6b;
   --good: #6bd68a;
   --hit: 28px;
-  --sheet-width: 460px;
+  --dock-left: 0px;
+  --dock-right: 460px;
+  --dock-bottom: 240px;
+  --split-left: 0px;
+  --split-right: 6px;
+  --split-bottom: 6px;
   color-scheme: dark;
 }
 
@@ -86,7 +91,7 @@ textarea { padding: 6px 10px; min-height: 60px; resize: vertical; font-family: u
 .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
 .dot.connected { background: var(--good); }
 .dot.failed { background: var(--bad); }
-body.nocontrol .control, body.nocontrol #sheet, body.nocontrol #splitter { display: none; }
+body.nocontrol .control, body.nocontrol #sheet, body.nocontrol .dock, body.nocontrol .split, body.nocontrol #floats { display: none; }
 body:not([data-layout="wide"]) .wideonly { display: none; }
 
 /* The stage: the video, and the pad over it that takes the pointer */
@@ -104,16 +109,53 @@ body.nocontrol #pad { cursor: default; }
 /* The sheet: tabs and panels */
 
 #sheet { grid-area: sheet; display: flex; flex-direction: column; background: var(--panel); min-width: 0; min-height: 0; }
-#splitter { grid-area: splitter; display: none; }
-#tabs { display: flex; gap: 2px; padding: 4px 6px 0; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; flex: none; }
-#tabs button { border: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--dim); border-bottom: 2px solid transparent; }
-#tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+#tabs, .docktabs { display: flex; gap: 2px; padding: 4px 6px 0; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; flex: none; }
+#tabs button, .docktabs button { border: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--dim); border-bottom: 2px solid transparent; }
+#tabs button.active, .docktabs button.active { color: var(--text); border-bottom-color: var(--accent); }
 #panels { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
-#sheet[data-columns="2"] #panels { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .panel { display: none; min-height: 0; min-width: 0; overflow: auto; padding: 8px; overscroll-behavior: contain; }
-.panel.active { display: block; grid-column: 1; grid-row: 1; }
-#sheet[data-columns="2"] .panel.second { display: block; grid-column: 2; grid-row: 1; border-left: 1px solid var(--line); }
-#panel-console.active, #sheet[data-columns="2"] #panel-console.second { display: flex; flex-direction: column; }
+#panels > .panel.active { display: block; grid-column: 1; grid-row: 1; }
+#panels > #panel-console.active { display: flex; flex-direction: column; }
+
+/* The dock (the wide layout): areas left, right and under the video, each with its tabs, and windows that float over it. page.js puts
+   each panel where the remembered layout has it. */
+
+.dock, .split, #floats, #dropzones { display: none; }
+.dock { flex-direction: column; background: var(--panel); min-width: 0; min-height: 0; overflow: hidden; }
+#dockLeft { grid-area: left; }
+#dockRight { grid-area: right; }
+#dockBottom { grid-area: bottom; }
+#splitLeft { grid-area: sl; cursor: col-resize; }
+#splitRight { grid-area: sr; cursor: col-resize; }
+#splitBottom { grid-area: sb; cursor: row-resize; }
+.split { background: var(--line); touch-action: none; }
+.split:hover { background: var(--accent); }
+.docktabs button { cursor: grab; touch-action: none; user-select: none; }
+.dockbody, .floatbody { flex: 1 1 auto; min-height: 0; min-width: 0; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); }
+.dockbody > .panel.shown, .floatbody > .panel.shown { display: block; }
+.dockbody > #panel-console.shown, .floatbody > #panel-console.shown { display: flex; flex-direction: column; }
+.float {
+  position: absolute; display: flex; flex-direction: column; pointer-events: auto;
+  min-width: 240px; min-height: 140px; max-width: 100vw; max-height: 100vh; resize: both; overflow: hidden;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px #000a;
+}
+.floattitle {
+  flex: none; display: flex; align-items: center; gap: 8px; min-height: var(--hit); padding: 0 10px;
+  background: var(--raised); border-bottom: 1px solid var(--line); cursor: grab; touch-action: none; user-select: none;
+}
+.zone {
+  position: absolute; display: flex; align-items: center; justify-content: center; text-align: center;
+  color: var(--dim); background: #4cc2ff14; border: 1px dashed #4cc2ff66; border-radius: 8px; font-size: 12px;
+}
+.zone.hot { color: var(--text); background: #4cc2ff40; border-color: var(--accent); }
+.zone[data-area="left"] { left: 6px; top: 6px; bottom: 6px; width: 84px; }
+.zone[data-area="right"] { right: 6px; top: 6px; bottom: 6px; width: 84px; }
+.zone[data-area="bottom"] { left: 96px; right: 96px; bottom: 6px; height: 84px; }
+.zone[data-area="float"] { left: 96px; right: 96px; top: 6px; bottom: 96px; border-style: none; background: none; align-items: flex-start; padding-top: 8px; }
+#dragghost {
+  position: fixed; z-index: 30; pointer-events: none; padding: 4px 10px; border-radius: 6px;
+  background: var(--accent); color: #001018; font-weight: 600; transform: translate(10px, 10px);
+}
 
 h3 { margin: 12px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
 h3:first-child { margin-top: 0; }
@@ -185,14 +227,25 @@ body[data-layout="landscape"] #sheet {
 }
 body[data-layout="landscape"].sheetup #sheet { display: flex; }
 
-/* Wide: a desktop or a tablet. The video left, the panels right, two side by side when there is room. */
+/* Wide: a desktop or a tablet. The video in the middle, the dock's areas around it, floating windows over it. */
 
 body[data-layout="wide"] {
-  grid-template: "strip strip strip" auto "stage splitter sheet" minmax(0, 1fr) / minmax(0, 1fr) 6px var(--sheet-width);
+  grid-template:
+    "strip strip strip strip strip" auto
+    "left sl stage sr right" minmax(0, 1fr)
+    "left sl sb sr right" var(--split-bottom)
+    "left sl bottom sr right" var(--dock-bottom)
+    / var(--dock-left) var(--split-left) minmax(0, 1fr) var(--split-right) var(--dock-right);
 }
+body[data-layout="wide"] #sheet { display: none; }
+body[data-layout="wide"] .dock { display: flex; }
+body[data-layout="wide"] .split { display: block; }
+body[data-layout="wide"] .dock.empty, body[data-layout="wide"] .split.empty { display: none; }
+body[data-layout="wide"] #floats { display: block; position: fixed; inset: 0; z-index: 10; pointer-events: none; }
+body[data-layout="wide"].dragging #dropzones { display: block; position: fixed; left: 0; right: 0; bottom: 0; top: var(--strip-height, 36px); z-index: 20; pointer-events: none; }
 body[data-layout="wide"].nocontrol { grid-template: "strip" auto "stage" minmax(0, 1fr) / minmax(0, 1fr); }
-body[data-layout="wide"] #splitter { display: block; cursor: col-resize; background: var(--line); touch-action: none; }
-body[data-layout="wide"] #splitter:hover { background: var(--accent); }
+body[data-layout="wide"].nocontrol .dock, body[data-layout="wide"].nocontrol .split, body[data-layout="wide"].nocontrol #floats { display: none; }
 body[data-layout="wide"] #sheetButton { display: none; }
 body.fullvideo[data-layout="wide"] { grid-template: "stage" minmax(0, 1fr) / minmax(0, 1fr); }
-body.fullvideo[data-layout="wide"] #strip, body.fullvideo[data-layout="wide"] #sheet, body.fullvideo[data-layout="wide"] #splitter { display: none; }
+body.fullvideo[data-layout="wide"] #strip, body.fullvideo[data-layout="wide"] .dock, body.fullvideo[data-layout="wide"] .split,
+body.fullvideo[data-layout="wide"] #floats { display: none; }
