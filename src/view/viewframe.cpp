@@ -177,7 +177,7 @@ auto ViewFrame::updateReadiness() -> void {
         }
         auto stats = assets.stats();
         LOG_EVENT("Scene", "SceneReady", scene.sceneId().empty() ? "(empty scene)" : scene.sceneId())
-            .text(std::format("scene ready at frame {}, {:.0f} ms after start: {} draws, {} assets received; longest of the {} frames before, {:.1f} ms",
+            .text(std::format("scene ready at frame {}, {:.0f} ms after start: {} instances, {} assets received; longest of the {} frames before, {:.1f} ms",
                               frameCounter,
                               logging::msSinceStart(),
                               std::ranges::count_if(scene.renderWorld().meshInstances,
@@ -360,7 +360,7 @@ auto ViewFrame::moveCamera(const CameraMove& move, bool orbitHeld) -> void {
             cameraModes.groundPrim.clear();
         }
         cameraModes.groundChunks = counts.chunks;
-        cameraModes.groundDraws = counts.draws;
+        cameraModes.groundInstances = counts.instances;
         cameraModes.groundTriangles = counts.triangles;
         cameraModes.groundMs = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - start).count();
     }

@@ -174,7 +174,7 @@ auto lodInspectionJson(const LodInspection& in, double metersPerUnit) -> Json {
             {"level", level},
             {"name", info.name},
             {"triangles", info.known ? Json(info.triangles) : Json(nullptr)},
-            {"draws", info.known ? Json(info.draws) : Json(nullptr)},
+            {"instances", info.known ? Json(info.instances) : Json(nullptr)},
             {"loaded", info.loaded},
         });
     }
@@ -209,8 +209,8 @@ auto lodToolRecord(const ViewContext& view, const ToolsState& tools) -> Json {
                 root = candidate.path;
             }
         }
-        const auto& draws = *view.scene.snapshot().draws;
-        for (const auto& candidate : draws.lodGroupPaths) {
+        const auto& placedScene = *view.scene.snapshot().placedScene;
+        for (const auto& candidate : placedScene.lodGroupPaths) {
             if (!candidate.empty() && primpath::isAtOrUnder(view.selectedPath, candidate) && candidate.size() > root.size()) {
                 root = candidate;
             }

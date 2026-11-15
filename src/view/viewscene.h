@@ -208,15 +208,15 @@ struct SceneThreadStats {
 
 // What the placement tree draws, for the renderer's copy and the main thread's queries, shared by every snapshot published until the tree
 // changes again. Immutable once published, but for the asset index the queries build on first use.
-struct SceneDraws {
+struct PlacedScene {
     RenderWorld drawn;
     std::shared_ptr<const Placement> placements;                               // the tree; queries walk it
     ChunkedList<std::string> primPaths;                                        // by prim index - 1; an index not in use keeps its last path
-    ChunkedList<std::shared_ptr<const std::vector<std::string>>> assetsByPrim; // by prim index - 1: the assets a drawn prim's draws use
+    ChunkedList<std::shared_ptr<const std::vector<std::string>>> assetsByPrim; // by prim index - 1: the assets a drawn prim's instances use
     ChunkedList<std::string> lodGroupPaths;                                    // by LOD group slot (RenderWorld::lodGroups): the root's full path; empty when free
     ChunkedList<std::shared_ptr<const LodGroupSource>> lodGroupSources;        // by LOD group slot: its root's levels and heuristics; null when free
     // Asset id to the prims whose instances use it, built from assetsByPrim on the first query.
-    auto drawsByAsset() const -> const std::unordered_map<std::string, std::vector<uint32_t>>&;
+    auto primsByAsset() const -> const std::unordered_map<std::string, std::vector<uint32_t>>&;
     // The drawn placements' cameras, LOD roots, payload placements, point instancers and prims with variant sets, in tree order, gathered
     // from the tree on the first query.
     auto records() const -> const PlacementRecords&;
@@ -253,7 +253,7 @@ struct SceneEnvironment {
 struct SceneSnapshot {
     std::string id;
     uint64_t revision = 0;
-    std::shared_ptr<const SceneDraws> draws = std::make_shared<SceneDraws>();
+    std::shared_ptr<const PlacedScene> placedScene = std::make_shared<PlacedScene>();
     std::shared_ptr<const SceneLodChoices> lodChoices = std::make_shared<SceneLodChoices>();
     bool lodHeuristic = true;
     LodPreference lodPreference = LodPreference::Distance;
@@ -357,34 +357,34 @@ public:
     // Queries over the snapshot update() took.
     auto sceneId() const -> const std::string& { return current->id; }
     auto snapshot() const -> const SceneSnapshot& { return *current; }
-    auto renderWorld() const -> const RenderWorld& { return current->draws->drawn; }
+    auto renderWorld() const -> const RenderWorld& { return current->placedScene->drawn; }
     // The cameras the scene authors, in visit order.
-    auto cameras() const -> const std::vector<SceneCamera>& { return current->draws->records().cameras; }
+    auto cameras() const -> const std::vector<SceneCamera>& { return current->placedScene->records().cameras; }
     // The scene thread's work as of the snapshot update() took, and the requests posted and applied now.
     auto threadStats() const -> const SceneThreadStats& { return current->thread; }
     auto requestCounts() const -> std::pair<uint64_t, uint64_t> { return {requestsPosted.load(), requestsApplied.load()}; }
     // The payload placements reached while drawing, in visit order.
-    auto payloads() const -> const std::vector<ScenePayload>& { return current->draws->records().payloads; }
+    auto payloads() const -> const std::vector<ScenePayload>& { return current->placedScene->records().payloads; }
     // The LOD roots reached while drawing, in visit order.
-    auto lodRoots() const -> const std::vector<SceneLodRoot>& { return current->draws->records().lodRoots; }
-    auto instancers() const -> const std::vector<SceneInstancer>& { return current->draws->records().instancers; }
-    auto variantPrims() const -> const std::vector<SceneVariantPrim>& { return current->draws->records().variantPrims; }
+    auto lodRoots() const -> const std::vector<SceneLodRoot>& { return current->placedScene->records().lodRoots; }
+    auto instancers() const -> const std::vector<SceneInstancer>& { return current->placedScene->records().instancers; }
+    auto variantPrims() const -> const std::vector<SceneVariantPrim>& { return current->placedScene->records().variantPrims; }
     // Moves on each time the renderer's inputs change.
     auto revision() const -> uint64_t { return current->revision; }
     // Every asset the scene uses: its layer packs, meshes, materials and textures.
     auto assetIds() const -> std::vector<std::string> { return *current->assetIds; }
     // The scene's up axis, as a vector.
     auto worldUp() const -> glm::vec3;
-    // The full path of the prim a draw instance or light names (RenderWorld's prim index); empty for none.
+    // The full path of the prim an instance or light names (RenderWorld's prim index); empty for none.
     auto primPath(uint32_t prim) const -> std::string;
-    // The full path of the prim a draw instance (a slot of RenderWorld::meshInstances) draws; empty for none.
+    // The full path of the prim an instance (a slot of RenderWorld::meshInstances) draws; empty for none.
     auto instancePath(uint32_t instance) const -> std::string;
     // The world bounds of what is drawn at or under a path; invalid when nothing is.
     auto bounds(const std::string& path) const -> AABB;
     // The instances (prim indices, for primPath and primBounds) that use an asset: a mesh's prims, a material's or a texture's users, the prims
     // drawing the meshes a USD file defines. Empty for an asset nothing draws (a shader, a file that only overrides or arranges others).
-    auto drawsOf(const std::string& assetId) const -> std::vector<uint32_t>;
-    auto drawCount(const std::string& assetId) const -> size_t;
+    auto primsUsing(const std::string& assetId) const -> std::vector<uint32_t>;
+    auto primCountUsing(const std::string& assetId) const -> size_t;
     // The world bounds of one drawn prim.
     auto primBounds(uint32_t prim) const -> AABB;
     // The assets used by what is drawn at or under a path: meshes, the USD files defining them, materials and their textures; sorted.
@@ -575,7 +575,7 @@ private:
     std::set<std::string> failedAssets;
 
     // The renderer's inputs. The libraries keep their entries across passes; a placement takes the lowest free slot and prim index for each
-    // draw it adds, and frees them when it goes.
+    // instance it adds, and frees them when it goes.
     RenderWorld drawn;
     MeshLibrary meshLibrary;
     MaterialLibrary materialLibrary;
@@ -627,9 +627,9 @@ private:
     auto useNode(const Placement& node, int delta) -> void;
     // The roots whose desired level or hand-set state changed since the last pass: a pass looks into the placements holding them.
     std::set<std::string> rootsToCheck;
-    bool passNewRoots = false;                                                // a pass drew roots not drawn before: the heuristic evaluates them
-    uint32_t defaultLightPrim = 0;                                            // the engine's light's prim index while the scene has no distant light, else 0
-    std::shared_ptr<const SceneDraws> draws = std::make_shared<SceneDraws>(); // the last pass's, as published
+    bool passNewRoots = false;                                                        // a pass drew roots not drawn before: the heuristic evaluates them
+    uint32_t defaultLightPrim = 0;                                                    // the engine's light's prim index while the scene has no distant light, else 0
+    std::shared_ptr<const PlacedScene> placedScene = std::make_shared<PlacedScene>(); // the last pass's, as published
     // Counted when the World is composed, not at every publish: a content's prims (as World::visit reaches them) kept by its version.
     size_t worldPrims = 0;
     std::unordered_map<const WorldContent*, std::pair<uint64_t, size_t>> primCounts;
@@ -730,13 +730,13 @@ private:
     std::vector<std::string> overridesMoved; // the gizmo's moves since the last pass: the placements holding them are built again
     // A mesh where it is drawn with a material binding: the materials of its submeshes, whether each cuts, and the assets its instances use (the
     // mesh, the file defining it, each material and its textures). Shared, this pass, by the prims drawing the same mesh and binding.
-    struct ResolvedDraw {
+    struct ResolvedBinding {
         std::vector<MaterialHandle> materials;
         std::vector<bool> cutout;
         std::shared_ptr<const std::vector<std::string>> uses;
     };
-    std::unordered_map<std::string, std::shared_ptr<const ResolvedDraw>> resolvedDraws;
-    auto resolveDraw(const std::string& meshAsset, const std::string& boundMaterial, bool strongBinding, const Prim* subsetsOf, const WorldContent& content) -> std::shared_ptr<const ResolvedDraw>;
+    std::unordered_map<std::string, std::shared_ptr<const ResolvedBinding>> resolvedBindings;
+    auto resolveBinding(const std::string& meshAsset, const std::string& boundMaterial, bool strongBinding, const Prim* subsetsOf, const WorldContent& content) -> std::shared_ptr<const ResolvedBinding>;
     // An asset a placement's prims want and lack, into its `waiting` and the pass's requests (once each; a failed one isn't waited for).
     auto wantAsset(Placement& node, const std::string& assetId, AssetKind kind) -> void;
     // The assets a material binding wants and lacks: its pack, or its textures once the pack is held.

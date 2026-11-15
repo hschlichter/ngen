@@ -216,7 +216,7 @@ auto gatherRecords(const Placement& tree) -> PlacementRecords {
     return out;
 }
 
-auto SceneDraws::records() const -> const PlacementRecords& {
+auto PlacedScene::records() const -> const PlacementRecords& {
     std::call_once(recordsGathered, [this] {
         if (placements) {
             gathered = gatherRecords(*placements);
@@ -225,7 +225,7 @@ auto SceneDraws::records() const -> const PlacementRecords& {
     return gathered;
 }
 
-auto SceneDraws::slotsByPrim() const -> const std::vector<std::vector<uint32_t>>& {
+auto PlacedScene::slotsByPrim() const -> const std::vector<std::vector<uint32_t>>& {
     std::call_once(primIndexBuilt, [this] {
         primSlots.resize(primPaths.size() + 1);
         for (size_t slot = 0; slot < drawn.meshInstances.size(); slot++) {
@@ -238,7 +238,7 @@ auto SceneDraws::slotsByPrim() const -> const std::vector<std::vector<uint32_t>>
     return primSlots;
 }
 
-auto SceneDraws::drawsByAsset() const -> const std::unordered_map<std::string, std::vector<uint32_t>>& {
+auto PlacedScene::primsByAsset() const -> const std::unordered_map<std::string, std::vector<uint32_t>>& {
     std::call_once(assetIndexBuilt, [this] {
         for (size_t i = 0; i < assetsByPrim.size(); i++) {
             if (!assetsByPrim[i]) {
@@ -452,7 +452,7 @@ auto ViewScene::touchSlot(uint32_t slot) -> void {
     }
 }
 
-// A slot's draw, with the uses of its mesh and material counted.
+// A slot's instance, with the uses of its mesh and material counted.
 auto ViewScene::setSlot(uint32_t slot, const RenderMeshInstance& instance) -> void {
     touchSlot(slot);
     const auto& before = drawn.meshInstances[slot];
@@ -774,17 +774,17 @@ auto ViewScene::wantMaterial(const std::string& key, Placement& node) -> void {
     }
 }
 
-auto ViewScene::resolveDraw(const std::string& meshAsset, const std::string& boundMaterial, bool strongBinding, const Prim* subsetsOf, const WorldContent& content)
-    -> std::shared_ptr<const ResolvedDraw> {
+auto ViewScene::resolveBinding(const std::string& meshAsset, const std::string& boundMaterial, bool strongBinding, const Prim* subsetsOf, const WorldContent& content)
+    -> std::shared_ptr<const ResolvedBinding> {
     // Prims of the same mesh bound to the same material share what they resolve to; a mesh with subset bindings resolves per prim.
     std::string key;
     if (subsetsOf == nullptr) {
         key = std::format("{}\n{}\n{}", meshAsset, boundMaterial, strongBinding ? 1 : 0);
-        if (auto it = resolvedDraws.find(key); it != resolvedDraws.end()) {
+        if (auto it = resolvedBindings.find(key); it != resolvedBindings.end()) {
             return it->second;
         }
     }
-    auto out = std::make_shared<ResolvedDraw>();
+    auto out = std::make_shared<ResolvedBinding>();
     const auto& meshPack = meshPacks.at(meshAsset);
     std::optional<std::array<float, 3>> displayColor;
     if (meshPack.hasDisplayColor) {
@@ -831,7 +831,7 @@ auto ViewScene::resolveDraw(const std::string& meshAsset, const std::string& bou
     uses->erase(last, end);
     out->uses = std::move(uses);
     if (!key.empty()) {
-        resolvedDraws[key] = out;
+        resolvedBindings[key] = out;
     }
     return out;
 }
@@ -1445,7 +1445,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                 if (!meshHandle) {
                     continue;
                 }
-                auto resolved = resolveDraw(worldPrim.meshAsset, item.material, item.strongBinding, item.subsets ? &worldPrim : nullptr, content);
+                auto resolved = resolveBinding(worldPrim.meshAsset, item.material, item.strongBinding, item.subsets ? &worldPrim : nullptr, content);
                 if (!spec.drawn) {
                     // Not drawn: it holds the entries it would draw with, so drawing it (the root switching to it) uploads nothing.
                     node->heldMeshes.push_back(meshHandle.index);
@@ -1469,7 +1469,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                         .material = resolved->materials[sub],
                         .prim = prim,
                         .worldTransform = worldTransform,
-                        // Its own submesh's box: each draw is culled apart from the prim's other submeshes.
+                        // Its own submesh's box: each instance is culled apart from the prim's other submeshes.
                         .worldBounds = submesh.bounds.transformed(worldTransform),
                         .indexOffset = submesh.indexOffset,
                         .indexCount = submesh.indexCount,
@@ -1682,7 +1682,7 @@ auto ViewScene::place() -> void {
     placeNeeded = false;
     auto start = std::chrono::steady_clock::now();
     materialByAsset.clear();
-    resolvedDraws.clear();
+    resolvedBindings.clear();
     passWanted.clear();
     passBuilt = 0;
     passEdited = false;
@@ -1897,14 +1897,14 @@ auto ViewScene::place() -> void {
     static const uint32_t shareDrawsLocation = profile::registerSourceLocation("ShareDraws", profile::Group::Scene, profile::Level::Detail);
     profile::beginZone(shareDrawsLocation);
     // What the snapshots read: the lists are shared in chunks, so this copies only their chunk pointers.
-    auto built = std::make_shared<SceneDraws>();
+    auto built = std::make_shared<PlacedScene>();
     built->drawn = drawn;
     built->placements = tree;
     built->primPaths = primPaths;
     built->assetsByPrim = assetsByPrim;
     built->lodGroupPaths = lodGroupPaths;
     built->lodGroupSources = lodGroupSources;
-    draws = std::move(built);
+    placedScene = std::move(built);
     profile::endZone();
     inputsRevision++;
     if (passSwitchedFiner + passSwitchedCoarser > 0) {

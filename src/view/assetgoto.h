@@ -16,7 +16,7 @@ struct AssetGoToState {
     uint64_t revision = 0;
 };
 
-// Where a go-to went: the prim selected, and where in the asset's draws it is; `error` is set when nothing draws the asset.
+// Where a go-to went: the prim selected, and where among the prims using the asset it is; `error` is set when nothing draws the asset.
 struct AssetGoToResult {
     std::string prim;
     size_t index = 0;

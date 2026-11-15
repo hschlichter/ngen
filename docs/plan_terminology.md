@@ -210,8 +210,10 @@ Where the code differs from the steps above:
   that hold one frame context's buffers are still named `slot` and `Slot`.
 - **Step 9.** `DrawLists::drawRegion` is `DrawLists::draw`; the log event `CullRegionOverflow` is `CullDrawListOverflow`.
 - **Step 10.** A draw slot is an *instance slot* (`instanceSlots`), not an instance index: the code's word for the index is slot
-  (`slotCount`). The view's own names for instances by the old word are left: `SceneDraws`, `drawsOf`, `drawCount(assetId)`, `ResolvedDraw`,
-  `groundDraws`, the Draws columns of the Assets, LOD and Render Debug windows, and the records' `draws` counts.
+  (`slotCount`). The view's own names followed in a later change, each by what it counts: `SceneDraws` is `PlacedScene`, `drawsOf` and
+  `drawCount(assetId)` are `primsUsing` and `primCountUsing` (they return prims; the Assets window's column is Prims), `ResolvedDraw` is
+  `ResolvedBinding`, and the ground test's and a LOD level's counts are `instances`. Counts of draw calls keep the word: `frameCommands.draws`,
+  the passes' `draws`, the draw log, a draw list's `draws`, and the Render Debug window's Draws column.
 - **Step 11.** Two commits: cvars, then console commands. The window name for `window` is `cvars`.
 - **Step 12.** The namespace is `logging`: `log` is the C library's function and can't name a namespace. The asset server's helpers are
   `logLine` and `logWarning` in `assetlog.h`.
@@ -237,8 +239,6 @@ eye, and the hero screenshots (`screenshots/log_hero.png` and `cvar_hero.png` st
   repository, not in ngen: the engine reads no level name. Trigger: the next time the world is generated again.
 - **The glossary's Cell entry against the test world.** The entry lists two levels per cell (`full` and `proxy`, `full` and `simplified`); the
   test world's design lists three, with `medium`. Check against the generated world when step 1 touches the entry.
-- **The view's names for instances.** `SceneDraws`, `drawsOf`, `ResolvedDraw`, the Draws columns and the records' `draws` counts still say
-  draw for an instance. Trigger: a decision on whether a count of things drawn is "draws" or "instances".
 - **A frame context's locals.** `slot` and nested `Slot` structs in `src/renderer`. Trigger: the next change to frame pacing.
 - **Diagrams and hero screenshots.** The diagrams' texts were renamed without being looked at; the two hero screenshots were not retaken.
   Trigger: the next run of `screenshots/heroes/make.sh`.

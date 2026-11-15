@@ -548,7 +548,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
     }
     auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
     LOG_EVENT("Render", "SceneChangesApplied", "RenderWorld")
-        .text(std::format("scene changes: {} draws, {} meshes added and {} removed, {} textures added and {} removed, {} materials set and {} removed; {} uploads ({}) queued, in {:.0f} ms",
+        .text(std::format("scene changes: {} instances, {} meshes added and {} removed, {} textures added and {} removed, {} materials set and {} removed; {} uploads ({}) queued, in {:.0f} ms",
                           changes.instances.size(),
                           changes.meshesAdded.size(),
                           changes.meshesRemoved.size(),
@@ -559,7 +559,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
                           gpuScene.pendingUploads(),
                           formatUploadBytes(gpuScene.pendingBytes()),
                           ms))
-        .field("draws", (int64_t) changes.instances.size())
+        .field("instances", (int64_t) changes.instances.size())
         .field("meshesAdded", (int64_t) changes.meshesAdded.size())
         .field("meshesRemoved", (int64_t) changes.meshesRemoved.size())
         .field("texturesAdded", (int64_t) changes.texturesAdded.size())

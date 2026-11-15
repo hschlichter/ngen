@@ -441,7 +441,7 @@ auto main(int argc, char* argv[]) -> int {
     if (positional.size() > 1) {
         viewUI.setBookmarkPath(std::string(positional[1]) + ".cameras.txt");
     }
-    viewUI.setAssetDrawCount([&scene](const std::string& assetId) { return scene.drawCount(assetId); });
+    viewUI.setAssetPrimCount([&scene](const std::string& assetId) { return scene.primCountUsing(assetId); });
     viewUI.bindTools(tools, frame.cameraModes);
     ToolsHooks toolsHooks(tools, gizmoRender);
     UiHooks uiHooks({

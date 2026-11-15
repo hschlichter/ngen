@@ -300,7 +300,7 @@ frames later; record them at steady state (frame 120 or later).
 |---|---|
 | `status` | Frame counter, scene, selection, main camera, camera modes. |
 | `cvars` | Every cvar: type, value, default, description, range or choices. |
-| `scene` | Layer stack, up axis and units, prims, prototypes, draws, lights, LOD levels set. |
+| `scene` | Layer stack, up axis and units, prims, prototypes, instances, lights, LOD levels set. |
 | `environment` | The dome light, its image and the light it casts. |
 | `scenethread` | Requests, composes, placement passes, assets in flight and held, readiness. |
 | `gpuscene` | Scene changes, upload queue and budget, geometry pool. |

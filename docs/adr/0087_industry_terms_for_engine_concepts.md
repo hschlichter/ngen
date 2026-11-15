@@ -48,8 +48,7 @@ stands); *streaming complete* for the ready scene (streaming never ends, the sta
 - Harder: plans, reviews and earlier records under `docs/` keep the words of their time, and their Verification sections name files and
   symbols as they were. The glossary is where the old word leads to the new.
 - Accepted: *instance* now needs "USD instance" where both could be meant, and a World `PrimId` sits beside the view's `PrimHandle`.
-- Open: the view still names some things by the old word for an instance (`SceneDraws`, `drawsOf`, the Draws columns, the records' `draws`
-  counts), and a frame context's local variables and nested structs are still `slot`.
+- Open: a frame context's local variables and nested structs are still `slot`.
 
 ## Verification
 

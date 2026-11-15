@@ -507,7 +507,7 @@ auto drawInspector(LodToolState& state, LodWindowState& window) -> void {
     if (ImGui::BeginTable("##levels", 5, flags)) {
         ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Triangles", ImGuiTableColumnFlags_WidthFixed, 90.0f);
-        ImGui::TableSetupColumn("Draws", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+        ImGui::TableSetupColumn("Instances", ImGuiTableColumnFlags_WidthFixed, 60.0f);
         ImGui::TableSetupColumn("vs finest", ImGuiTableColumnFlags_WidthFixed, 80.0f);
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 90.0f);
         ImGui::TableHeadersRow();
@@ -527,7 +527,7 @@ auto drawInspector(LodToolState& state, LodWindowState& window) -> void {
             }
             ImGui::TableSetColumnIndex(2);
             if (info.known) {
-                ImGui::Text("%u", info.draws);
+                ImGui::Text("%u", info.instances);
             } else {
                 ImGui::TextDisabled("-");
             }

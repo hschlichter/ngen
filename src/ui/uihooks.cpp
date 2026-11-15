@@ -120,9 +120,9 @@ auto UiHooks::drawUi(ViewFrame& frame) -> void {
         if (!result.error.empty()) {
             ui.setGoToStatus(result.error);
         } else if (goTo->all) {
-            ui.setGoToStatus(std::format("{}: all {} draws framed", goTo->id, result.count));
+            ui.setGoToStatus(std::format("{}: all {} prims framed", goTo->id, result.count));
         } else {
-            ui.setGoToStatus(std::format("{}: draw {} of {}, {}", goTo->id, result.index + 1, result.count, result.prim));
+            ui.setGoToStatus(std::format("{}: prim {} of {}, {}", goTo->id, result.index + 1, result.count, result.prim));
         }
     }
     if (auto repack = ui.takeRepackRequest(); repack.scene) {

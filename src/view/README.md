@@ -164,7 +164,7 @@ do its instances: only where it is placed.
   leaves the libraries and the renderer at once. A placement no longer drawn gives up its slots and holds their entries without being built
   again.
 - **Shared with the main thread.** The scene thread's tree and lists are shared with what it published: a placement or a chunk of slots
-  (`ChunkedList`) a published snapshot holds is copied before it changes, so publishing copies no slots. `SceneDraws` holds the slots, the
+  (`ChunkedList`) a published snapshot holds is copied before it changes, so publishing copies no slots. `PlacedScene` holds the slots, the
   tree, the prim paths and the assets per prim; what the queries derive from them (the records, the prims per asset, the slots per prim) is
   gathered from it on the first query. The rest a snapshot carries that seldom changes (the asset ids, the layer stack, the World's LOD
   levels, the hand-set levels, the tuning) is shared with the snapshot before until it changes, so a snapshot published for a camera move
@@ -186,7 +186,7 @@ do its instances: only where it is placed.
   (`resolveMaterial`), so one pack used with different inputs is one material instance per set of values. A mesh's bound material, and each `GeomSubset`'s own
   binding for its submesh, unless an ancestor's binding is `strongerThanDescendants`. A material's texture, else its base colour, else the mesh's
   display colour; a constant colour is a 1x1 texture. A mesh with no material bound gets one per display colour, shared. A cutout material's opacity
-  texture is fetched with its base colour texture and counts as used by its instances (`drawsOf`).
+  texture is fetched with its base colour texture and counts as used by its instances (`primsUsing`).
 - **Transforms**: in float, parent times local, then scaled to metres by the root layer's `metersPerUnit`, as the view always drew; the
   camera's up is the scene's up axis. A prim's transform for the queries (`transform`, selection, the gizmo) is found in the published tree
   (`findTransform`): the deepest drawn placement at or above the path that holds it, the prim's transform in its walk, placed. A gizmo's
@@ -288,7 +288,7 @@ do its instances: only where it is placed.
     are kept from `SceneChanges` as they pass to the renderer (`GroundMeshes`). Ground cover and roofs lift the camera, and every level of a
     LOD group counts; with nothing drawn under the camera it holds its height. `fly` suspends it for the main camera, orbiting for
     either. Ground from collision geometry waits for physics. The `status` record's `cameraModes` has the hit, its prim and what was tested
-    (chunks, draws, triangles, milliseconds); the overlay draws a line from the eye to the hit and the orbit's pivot.
+    (chunks, instances, triangles, milliseconds); the overlay draws a line from the eye to the hit and the orbit's pivot.
 - **Switching levels**: a root draws the finest loaded level, not finer than the one it desires, whose placement waits for nothing: linked,
   which the composer does only once it is complete, and every mesh, material pack and texture its prims want (under their own purpose)
   held or failed, through the instances and point instancers in it; a LOD root inside it counts by its coarsest level. Each placement
@@ -374,7 +374,7 @@ do its instances: only where it is placed.
   which the `lodlevel` view colours by. The LOD window lists the roots with a level picker per row, "Set shown" for every row its filter
   shows (default, coarsest or one level), a click to select a root and a double-click to frame it; it highlights the root at or above the
   selection, and marks a root still loading the level it wants.
-- **Names**: draw instances and lights carry a prim index; `primPath` turns it into the prim's full path, for the render debugger, the
+- **Names**: instances and lights carry a prim index; `primPath` turns it into the prim's full path, for the render debugger, the
   frame debugger, the GPU scene window and the dumps.
 
 The log shows the steps:
@@ -421,9 +421,9 @@ or served its cache, its size, and its times. Total is request to arrival; Serve
 it ran); Rest is the difference, waiting in the server's queue and streaming. A filter by id and by state, sorting by any column, and a
 failed asset's errors on hover. The `assets` record carries the same list next to the totals.
 
-**Going to an asset.** A double-click, or Go to in the row's menu, moves the camera to the asset's draws: the nearest first, then the next at
-each go-to ("draw 3 of 412"), each framed and its prim selected; Frame all frames every draw at once. An asset's draws are the prims whose
-draws use it (`ViewScene::drawsOf`, the Draws column): a mesh's prims, a material's or a texture's users, the prims drawing the meshes a USD
+**Going to an asset.** A double-click, or Go to in the row's menu, moves the camera to the prims using the asset: the nearest first, then the next
+at each go-to ("prim 3 of 412"), each framed and selected; Frame all frames every one at once. The prims using an asset are those whose
+instances use it (`ViewScene::primsUsing`, the Prims column): a mesh's prims, a material's or a texture's users, the prims drawing the meshes a USD
 file defines. A file that only overrides or arranges others, and a shader, draw nothing. The `goto-asset <id> [all]` console command and
 `view.gotoAsset` do the same and answer with the prim.
 

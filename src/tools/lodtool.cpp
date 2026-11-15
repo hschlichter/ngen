@@ -294,15 +294,15 @@ auto buildLodRows(const ViewScene& scene, LodToolState& state) -> void {
     }
     state.groupRowsSource = std::move(source);
     state.rootRowCount = rows.size();
-    const auto& draws = *snapshot.draws;
+    const auto& placedScene = *snapshot.placedScene;
     const auto& hand = scene.lodHandLevels();
-    for (uint32_t g = 0; g < draws.drawn.lodGroups.size(); g++) {
-        const auto& group = draws.drawn.lodGroups[g];
-        if (!group.alive || g >= draws.lodGroupSources.size() || draws.lodGroupSources[g] == nullptr) {
+    for (uint32_t g = 0; g < placedScene.drawn.lodGroups.size(); g++) {
+        const auto& group = placedScene.drawn.lodGroups[g];
+        if (!group.alive || g >= placedScene.lodGroupSources.size() || placedScene.lodGroupSources[g] == nullptr) {
             continue;
         }
-        const auto& source = *draws.lodGroupSources[g];
-        const auto& path = draws.lodGroupPaths[g];
+        const auto& source = *placedScene.lodGroupSources[g];
+        const auto& path = placedScene.lodGroupPaths[g];
         auto used = chooseLodHeuristic(source.heuristics, LodDomain::Imaging, preference);
         bool byHand = hand.contains(path);
         rows.push_back({
@@ -328,7 +328,7 @@ auto updateLodRows(const ViewScene& scene, const CullResult& cull, LodToolState&
     if (!cull.lodHasStates) {
         return;
     }
-    const auto& groups = scene.snapshot().draws->drawn.lodGroups;
+    const auto& groups = scene.snapshot().placedScene->drawn.lodGroups;
     double metersPerUnit = scene.lodMetersPerUnit();
     for (auto& row : state.rows) {
         if (row.group < 0) {
@@ -355,7 +355,7 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
     if (path.empty()) {
         return std::nullopt;
     }
-    const auto& draws = *scene.snapshot().draws;
+    const auto& placedScene = *scene.snapshot().placedScene;
     const auto& tuning = scene.lodTuning();
     auto preference = scene.lodPreference();
     double metersPerUnit = scene.lodMetersPerUnit();
@@ -365,12 +365,12 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
     const std::vector<LodHeuristic>* heuristics = nullptr;
     glm::mat4 toWorld(1.0f);
     std::vector<std::string> levelNames;
-    for (uint32_t g = 0; g < draws.lodGroupPaths.size(); g++) {
-        if (draws.lodGroupPaths[g] != path || g >= draws.drawn.lodGroups.size() || !draws.drawn.lodGroups[g].alive || draws.lodGroupSources[g] == nullptr) {
+    for (uint32_t g = 0; g < placedScene.lodGroupPaths.size(); g++) {
+        if (placedScene.lodGroupPaths[g] != path || g >= placedScene.drawn.lodGroups.size() || !placedScene.drawn.lodGroups[g].alive || placedScene.lodGroupSources[g] == nullptr) {
             continue;
         }
-        const auto& group = draws.drawn.lodGroups[g];
-        const auto& source = *draws.lodGroupSources[g];
+        const auto& group = placedScene.drawn.lodGroups[g];
+        const auto& source = *placedScene.lodGroupSources[g];
         out.isLodGroup = true;
         out.group = (int32_t) g;
         out.key = source.key;
@@ -462,7 +462,7 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
         }
     }
     // The instances: a group's slots by level; a streaming root's drawn level, its slots under the root's path.
-    for (const auto& instance : draws.drawn.meshInstances) {
+    for (const auto& instance : placedScene.drawn.meshInstances) {
         if (!instance.alive || instance.lodLevel == 0) {
             continue;
         }
@@ -471,12 +471,12 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
                 continue;
             }
             out.levels[instance.lodLevel - 1].triangles += instance.indexCount / 3;
-            out.levels[instance.lodLevel - 1].draws++;
+            out.levels[instance.lodLevel - 1].instances++;
         } else if (out.drawn >= 0 && instance.lodGroup == 0 && instance.lodLevel == (uint32_t) out.drawn + 1 && primpath::isAtOrUnder(scene.primPath(instance.prim), path)) {
             auto& level = out.levels[(size_t) out.drawn];
             level.known = true;
             level.triangles += instance.indexCount / 3;
-            level.draws++;
+            level.instances++;
         }
     }
     return out;
@@ -557,6 +557,6 @@ cvar::Bool lodLabels{"tools.lod.labels", false, "Over each LOD root the LOD wind
 cvar::Bool lodGizmo{"tools.lod.gizmo", false, "The selected LOD root's heuristic in the viewport: its centre or box, a ring at each threshold."};
 cvar::Bool lodGizmoAll{"tools.lod.gizmoAll", false, "The heuristic of every LOD root the LOD window lists."};
 cvar::Bool lodPopFlash{"tools.lod.popFlash", false, "A LOD-group root's meshes flash white for half a second when its level changes without a fade, over any view."};
-cvar::Bool lodColorByDepth{"tools.lod.colorByDepth", false, "The LOD Level view coloured by how many LOD roots deep a draw is instead of by its drawn level."};
+cvar::Bool lodColorByDepth{"tools.lod.colorByDepth", false, "The LOD Level view coloured by how many LOD roots deep an instance is instead of by its drawn level."};
 
 } // namespace toolscvars

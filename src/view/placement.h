@@ -318,7 +318,7 @@ public:
     auto under(const std::shared_ptr<const Placement>& tree, const RenderWorld& drawn, const ChunkedList<std::string>& primPaths, const std::string& path) -> AABB;
 
 private:
-    // A placement's draws and everything drawn in it.
+    // A placement's instances and everything drawn in it.
     auto whole(const std::shared_ptr<const Placement>& node, const RenderWorld& drawn) -> AABB;
     // What a placement draws at or under the path: all of it at or under, its prims there and what is placed there when the path is in it.
     auto part(const std::shared_ptr<const Placement>& node, const RenderWorld& drawn, const ChunkedList<std::string>& primPaths, const std::string& path, AABB& out) -> void;

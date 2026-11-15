@@ -95,7 +95,7 @@ auto cameraModesJson(const CameraModesState& modes) -> Json {
     return {
         {"follow",
          {{"ground", ground},
-          {"tested", {{"chunks", modes.groundChunks}, {"draws", modes.groundDraws}, {"triangles", modes.groundTriangles}, {"ms", modes.groundMs}}}}},
+          {"tested", {{"chunks", modes.groundChunks}, {"instances", modes.groundInstances}, {"triangles", modes.groundTriangles}, {"ms", modes.groundMs}}}}},
         {"orbit", modes.orbiting ? Json{{"pivot", Json(modes.pivot)}, {"picked", modes.pivotPicked}} : Json(nullptr)},
     };
 }
@@ -537,7 +537,7 @@ auto registerSceneCommands(RpcRegistry& registry, ConsoleCommands& console, RpcR
     registry.add(
         {
             .name = "view.gotoAsset",
-            .summary = "Move the camera to an asset's draws: the next of them (the nearest first), framed and selected, or all of them framed.",
+            .summary = "Move the camera to the prims using an asset: the next of them (the nearest first), framed and selected, or all of them framed.",
             .params = {
                 requiredField("id", RpcType::String, "asset id: a mesh, material, texture or USD file"),
                 optionalField("all", RpcType::Bool, "frame every instance together"),
@@ -590,7 +590,7 @@ auto registerSceneCommands(RpcRegistry& registry, ConsoleCommands& console, RpcR
     records.add("status", "frame counter, scene, selection, the main camera and the camera modes; the render settings are the cvars record's, the debug camera's the debugcamera record", [&view](RpcResponder responder) {
         responder.respond(statusRecord(view));
     });
-    records.add("scene", "the open scene: its layer stack, up axis and units, prims (instances expanded), prototypes, draws, lights and LOD levels set", [&view](RpcResponder responder) {
+    records.add("scene", "the open scene: its layer stack, up axis and units, prims (instances expanded), prototypes, instances, lights and LOD levels set", [&view](RpcResponder responder) {
         responder.respond(sceneRecord(view));
     });
     records.add("environment", "the scene's sky: its dome light, the image, whether it is drawn, and the light it casts (irradiance, up and down)", [&view](RpcResponder responder) {

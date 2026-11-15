@@ -115,7 +115,7 @@ auto drawCameraModes(CameraModesState& modes) -> void {
         } else {
             ImGui::TextDisabled("No drawn surface under the camera: the height is held.");
         }
-        ImGui::Text("Tested %u chunks, %u draws, %llu triangles in %.2f ms", modes.groundChunks, modes.groundDraws, (unsigned long long) modes.groundTriangles, modes.groundMs);
+        ImGui::Text("Tested %u chunks, %u instances, %llu triangles in %.2f ms", modes.groundChunks, modes.groundInstances, (unsigned long long) modes.groundTriangles, modes.groundMs);
     }
     if (modes.orbiting) {
         ImGui::Text("Orbiting %.2f, %.2f, %.2f%s", modes.pivot.x, modes.pivot.y, modes.pivot.z, modes.pivotPicked ? "" : " (the cursor's depth on its way)");

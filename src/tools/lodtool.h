@@ -91,7 +91,7 @@ struct LodInspection {
     struct Level {
         std::string name;
         uint64_t triangles = 0; // of its instances; for a streaming root, only the drawn level's are known
-        uint32_t draws = 0;
+        uint32_t instances = 0;
         bool known = false; // its instances are counted
         bool loaded = false;
     };
@@ -124,7 +124,7 @@ struct LodToolState {
     bool onlyNotDrawingDesired = false;
     bool onlyFading = false;
     std::vector<LodRow> rows; // set by the application when the scene changes; LOD-group rows' live state each frame
-    // What the LOD group rows (after the LOD roots' rows in `rows`) were built from: the snapshot's draws (their revision), the tuning
+    // What the LOD group rows (after the LOD roots' rows in `rows`) were built from: the snapshot's placed scene (its revision), the tuning
     // and the hand-set levels (held, so a new one can't take a freed one's address), the preference and the heuristic's state. A snapshot
     // that changes none of them (a camera move) rebuilds only the roots' rows.
     struct GroupRowsSource {

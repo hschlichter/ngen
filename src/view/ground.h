@@ -24,7 +24,7 @@ struct CameraModesState {
     std::optional<glm::vec3> ground;
     std::string groundPrim;
     uint32_t groundChunks = 0;
-    uint32_t groundDraws = 0;
+    uint32_t groundInstances = 0;
     uint64_t groundTriangles = 0;
     float groundMs = 0.0f;
     // Orbiting: the pivot, from the depth under the cursor when Alt went down (a few frames later), and until then the point at the last
@@ -37,16 +37,16 @@ struct CameraModesState {
 
 // The ground under a camera, for following it (src/view/README.md, "Camera modes"): the render geometry the main thread holds, tested
 // naively: the chunks of instances whose bounds (SceneBoundsCache, kept for the shadow cascades) hold the camera across the up axis, in them the
-// draws whose bounds do, every triangle of theirs.
+// instances whose bounds do, every triangle of theirs.
 
 struct GroundHit {
     glm::vec3 point = glm::vec3(0.0f); // world
-    uint32_t prim = 0;                 // ViewScene::primPath index of the draw it hit
+    uint32_t prim = 0;                 // ViewScene::primPath index of the instance it hit
 };
 
 struct GroundTestCounts {
     uint32_t chunks = 0;    // chunks of instances whose bounds held the camera
-    uint32_t draws = 0;     // draws whose bounds held the camera
+    uint32_t instances = 0; // instances whose bounds held the camera
     uint64_t triangles = 0; // their triangles, tested
 };
 
@@ -60,7 +60,7 @@ private:
     std::vector<std::shared_ptr<const MeshDesc>> meshes;
 };
 
-// The highest surface below `origin` along -up: the triangles of every alive draw whose world bounds hold `origin` across the up axis, in
+// The highest surface below `origin` along -up: the triangles of every alive instance whose world bounds hold `origin` across the up axis, in
 // the chunks whose bounds (`chunkBounds`, updated for `world` this frame) do.
 auto groundBelow(const RenderWorld& world, const SceneBoundsCache& chunkBounds, const GroundMeshes& meshes, const glm::vec3& origin, const glm::vec3& up, GroundTestCounts& counts)
     -> std::optional<GroundHit>;

@@ -381,11 +381,11 @@ auto expectedLevels(const RenderLodGroup& group, const glm::vec3& eye, float win
 // and that pick checked against the view's heuristic at the camera the pick measured from; with `path`, every group under it. The view's
 // own heuristic measures the same window (2 tan(fovY / 2) high, times the aspect wide).
 auto lodGroupsRecord(const ViewContext& view, const std::optional<std::string>& path) -> Json {
-    const auto& draws = *view.scene.snapshot().draws;
-    const auto& groups = draws.drawn.lodGroups;
+    const auto& placedScene = *view.scene.snapshot().placedScene;
+    const auto& groups = placedScene.drawn.lodGroups;
     const auto& cull = view.latestCull;
     std::array<uint64_t, RenderLodGroup::maxLevels> placedSlots = {};
-    for (const auto& instance : draws.drawn.meshInstances) {
+    for (const auto& instance : placedScene.drawn.meshInstances) {
         if (instance.alive && instance.lodGroup != 0 && instance.lodLevel >= 1 && instance.lodLevel <= RenderLodGroup::maxLevels) {
             placedSlots[instance.lodLevel - 1]++;
         }
@@ -432,7 +432,7 @@ auto lodGroupsRecord(const ViewContext& view, const std::optional<std::string>& 
         }
         // The stage's units for a distance, as its thresholds are authored.
         float unit = group.kind == RenderLodKind::Distance ? (float) view.scene.lodMetersPerUnit() : 1.0f;
-        const auto& groupPath = g < draws.lodGroupPaths.size() ? draws.lodGroupPaths[g] : std::string();
+        const auto& groupPath = g < placedScene.lodGroupPaths.size() ? placedScene.lodGroupPaths[g] : std::string();
         if (read) {
             compared++;
             if (drawn != desired) {
@@ -483,7 +483,7 @@ auto lodGroupsRecord(const ViewContext& view, const std::optional<std::string>& 
                 {"expectedFade", expected.blend},
                 {"forcedFlag", read ? Json((flags & LodStateFlags::forced) != 0) : Json(nullptr)},
                 {"flashing", read ? Json((flags & LodStateFlags::flashing) != 0) : Json(nullptr)},
-                {"key", g < draws.lodGroupSources.size() && draws.lodGroupSources[g] != nullptr ? Json(draws.lodGroupSources[g]->key) : Json(nullptr)},
+                {"key", g < placedScene.lodGroupSources.size() && placedScene.lodGroupSources[g] != nullptr ? Json(placedScene.lodGroupSources[g]->key) : Json(nullptr)},
             };
             if (group.kind == RenderLodKind::Distance) {
                 entry["center"] = Json(group.point);

@@ -99,7 +99,7 @@ public:
     // A "go to" the Assets window asked for this frame, once; the answer shows in the window.
     auto takeGoToRequest() -> std::optional<AssetsWindowState::GoTo> { return std::exchange(assetsState.goToRequested, std::nullopt); }
     auto setGoToStatus(std::string status) -> void { assetsState.goToStatus = std::move(status); }
-    auto setAssetDrawCount(std::function<size_t(const std::string&)> drawCount) -> void { assetsState.drawCount = std::move(drawCount); }
+    auto setAssetPrimCount(std::function<size_t(const std::string&)> primCount) -> void { assetsState.primCount = std::move(primCount); }
     // Whether the view has a prim selected, for the Assets window's "Selected prim's assets"; and that button's press, once.
     auto setHasPrimSelected(bool selected) -> void { assetsState.hasPrimSelected = selected; }
     auto takeFindSelectedRequest() -> bool { return std::exchange(assetsState.findSelectedRequested, false); }

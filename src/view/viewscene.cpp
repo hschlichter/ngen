@@ -166,10 +166,10 @@ auto ViewScene::refresh(const std::vector<std::string>& ids, bool force) -> void
 }
 
 auto ViewScene::setLocalTransform(const std::string& path, const glm::mat4& local) -> bool {
-    if (!current->draws->placements) {
+    if (!current->placedScene->placements) {
         return false;
     }
-    auto found = findTransform(*current->draws->placements, path);
+    auto found = findTransform(*current->placedScene->placements, path);
     if (!found || !found->xformable) {
         return false;
     }
@@ -1220,7 +1220,7 @@ auto ViewScene::publish() -> void {
     auto snapshot = std::make_shared<SceneSnapshot>();
     snapshot->id = id;
     snapshot->revision = inputsRevision;
-    snapshot->draws = draws;
+    snapshot->placedScene = placedScene;
     snapshot->lodChoices = choices;
     snapshot->lodHeuristic = heuristicOn;
     snapshot->lodPreference = lodPreferenceNow;
@@ -1360,30 +1360,30 @@ auto ViewScene::worldUp() const -> glm::vec3 {
 }
 
 auto ViewScene::primPath(uint32_t prim) const -> std::string {
-    if (prim == 0 || prim > current->draws->primPaths.size()) {
+    if (prim == 0 || prim > current->placedScene->primPaths.size()) {
         return {};
     }
-    return current->draws->primPaths[prim - 1];
+    return current->placedScene->primPaths[prim - 1];
 }
 
 auto ViewScene::instancePath(uint32_t instance) const -> std::string {
-    const auto& instances = current->draws->drawn.meshInstances;
+    const auto& instances = current->placedScene->drawn.meshInstances;
     if (instance >= instances.size() || !instances[instance].alive) {
         return {};
     }
     return primPath(instances[instance].prim);
 }
 
-auto ViewScene::drawsOf(const std::string& assetId) const -> std::vector<uint32_t> {
-    const auto& byAsset = current->draws->drawsByAsset();
+auto ViewScene::primsUsing(const std::string& assetId) const -> std::vector<uint32_t> {
+    const auto& byAsset = current->placedScene->primsByAsset();
     if (auto it = byAsset.find(assetId); it != byAsset.end()) {
         return it->second;
     }
     return {};
 }
 
-auto ViewScene::drawCount(const std::string& assetId) const -> size_t {
-    const auto& byAsset = current->draws->drawsByAsset();
+auto ViewScene::primCountUsing(const std::string& assetId) const -> size_t {
+    const auto& byAsset = current->placedScene->primsByAsset();
     if (auto it = byAsset.find(assetId); it != byAsset.end()) {
         return it->second.size();
     }
@@ -1392,13 +1392,13 @@ auto ViewScene::drawCount(const std::string& assetId) const -> size_t {
 
 auto ViewScene::assetsUnder(const std::string& path) const -> std::vector<std::string> {
     std::set<std::string> out;
-    const auto& byPrim = current->draws->assetsByPrim;
+    const auto& byPrim = current->placedScene->assetsByPrim;
     for (size_t i = 0; i < byPrim.size(); i++) {
         const auto& uses = byPrim[i];
         if (!uses) {
             continue;
         }
-        const auto& candidate = current->draws->primPaths[i];
+        const auto& candidate = current->placedScene->primPaths[i];
         bool under = path == "/" || candidate == path || (candidate.size() > path.size() && candidate.starts_with(path) && candidate[path.size()] == '/');
         if (under) {
             out.insert(uses->begin(), uses->end());
@@ -1409,12 +1409,12 @@ auto ViewScene::assetsUnder(const std::string& path) const -> std::vector<std::s
 
 auto ViewScene::primBounds(uint32_t prim) const -> AABB {
     AABB out = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
-    const auto& byPrim = current->draws->slotsByPrim();
+    const auto& byPrim = current->placedScene->slotsByPrim();
     if (prim >= byPrim.size()) {
         return out;
     }
     for (auto i : byPrim[prim]) {
-        const auto& bounds = current->draws->drawn.meshInstances[i].worldBounds;
+        const auto& bounds = current->placedScene->drawn.meshInstances[i].worldBounds;
         if (bounds.valid()) {
             out.min = glm::min(out.min, bounds.min);
             out.max = glm::max(out.max, bounds.max);
@@ -1424,14 +1424,14 @@ auto ViewScene::primBounds(uint32_t prim) const -> AABB {
 }
 
 auto ViewScene::bounds(const std::string& path) const -> AABB {
-    return placementBounds.under(current->draws->placements, current->draws->drawn, current->draws->primPaths, path);
+    return placementBounds.under(current->placedScene->placements, current->placedScene->drawn, current->placedScene->primPaths, path);
 }
 
 auto ViewScene::transform(const std::string& path) const -> std::optional<PrimTransform> {
-    if (!current->draws->placements) {
+    if (!current->placedScene->placements) {
         return std::nullopt;
     }
-    auto found = findTransform(*current->draws->placements, path);
+    auto found = findTransform(*current->placedScene->placements, path);
     if (!found) {
         return std::nullopt;
     }
