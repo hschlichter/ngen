@@ -74,5 +74,9 @@ assets/streamtest-world
 # The local OpenUSD build, made from the external/openusd submodule
 external/openusd_build/
 
+# The local libdatachannel and OpenH264 builds, made from their submodules (the remote view)
+external/libdatachannel_build/
+external/openh264_build/
+
 # Codex's local state
 .codex

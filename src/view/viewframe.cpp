@@ -14,6 +14,7 @@
 #include <chrono>
 #include <format>
 #include <limits>
+#include <thread>
 #include <utility>
 
 ViewFrame::ViewFrame(ViewScene& scene, Renderer& renderer, RenderThread& renderThread, AssetClient& assets)
@@ -468,6 +469,37 @@ auto ViewFrame::buildSnapshot() -> RenderSnapshot {
         snapshot.captureWatches = sentWatches;
     }
     return snapshot;
+}
+
+namespace viewcvars {
+
+cvar::Int frameLimit{"view.frameLimit",
+                     60,
+                     "Frames a second at most for a view that nothing else paces: a headless run that goes on until it is stopped, such as one "
+                     "watched through the remote view. 0: no limit. A window is paced by its display, and a run with --frames is not limited.",
+                     {.min = 0, .max = 1000}};
+
+} // namespace viewcvars
+
+auto ViewFrame::limitFrameRate() -> void {
+    int64_t limit = viewcvars::frameLimit.get();
+    if (!selfPaced || limit <= 0) {
+        nextFrameNs = 0;
+        return;
+    }
+    uint64_t interval = 1'000'000'000ull / (uint64_t) limit;
+    uint64_t now = profile::now();
+    if (nextFrameNs > now) {
+        // A zone of its own, in the Wait group, so the frame's time shows how much of it was this.
+        PROFILE_ZONE("FrameLimit", Wait);
+        std::this_thread::sleep_for(std::chrono::nanoseconds(nextFrameNs - now));
+        now = profile::now();
+    }
+    // From when this frame was due, so the rate holds over many frames; from now when the frame came late, so it doesn't catch up in a burst.
+    nextFrameNs = std::max(nextFrameNs + interval, now + interval / 2);
+    if (nextFrameNs > now + interval) {
+        nextFrameNs = now + interval;
+    }
 }
 
 auto ViewFrame::plotFrame() -> void {

@@ -111,6 +111,9 @@ public:
     // The frame's numbers as profiler plots (src/profile/README.md): the renderer's stats and commands, culling, the scene thread, the asset
     // client, GPU usage and memory. Once a frame, last.
     auto plotFrame() -> void;
+    // The end of a frame that nothing else paces (`selfPaced`): waits until 1/view.frameLimit seconds after the last frame's wait ended,
+    // so a headless view that goes on until stopped doesn't draw as fast as the machine can. Does nothing otherwise, or with the limit at 0.
+    auto limitFrameRate() -> void;
     // The watches `readbacks` asks for go with the snapshot when they change; the captures that came back are filled in, picking's taken
     // first.
     auto readBack() -> void;
@@ -126,6 +129,10 @@ public:
     uint64_t snapshotsTaken = 0; // scene snapshots taken; the tools rebuild their lists once per snapshot
     float dt = 0.0f;
     bool quit = false;
+    // Nothing paces this view but itself: it has no display (a headless run) and no last frame (it goes on until stopped). Set by the
+    // program. A window is paced by its display, and a run that ends at a frame is left to go as fast as it can.
+    bool selfPaced = false;
+    uint64_t nextFrameNs = 0; // when the next self-paced frame may start (profile::now)
 
     // The main camera: everything that places the camera moves it; the cameras the frame uses.
     Camera cam;
@@ -208,3 +215,7 @@ private:
     // The start camera, placed once the scene names it, unless the camera was moved first.
     auto placeStartCamera() -> void;
 };
+
+namespace viewcvars {
+extern cvar::Int frameLimit; // view.frameLimit
+} // namespace viewcvars

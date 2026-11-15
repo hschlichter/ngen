@@ -23,3 +23,9 @@
 [submodule "external/tracy"]
 	path = external/tracy
 	url = https://github.com/wolfpld/tracy
+[submodule "external/libdatachannel"]
+	path = external/libdatachannel
+	url = https://github.com/paullouisageneau/libdatachannel.git
+[submodule "external/openh264"]
+	path = external/openh264
+	url = https://github.com/cisco/openh264.git

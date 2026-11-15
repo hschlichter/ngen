@@ -52,6 +52,11 @@ from `./ngen-cli introspect list`).
   same lines, so `./ngen-cli view … 2>&1 | less` reads a run without the tool; for a slow start, look at which step's `ms` is large.
 - `ngen-cli view` replaces itself with the set variant's `ngen-view`, so `timeout`, signals and exit codes behave exactly as with the binary.
   Prefer `--frames` to a `timeout` kill, so the view exits cleanly and its last events are sent.
+- A headless run with `--frames` goes as fast as the machine can. One without (driven live over RPC until `view.quit`) limits itself to
+  `view.frameLimit`, 60 frames a second, and its frame times include that wait (the `FrameLimit` zone): to time frames in such a run, set
+  `cvar view.frameLimit 0` first, or start with `--cvar view.frameLimit=0`.
+- `--cvar <name>=<value>` sets any cvar from the start (repeatable). `--remote-view` turns the remote view on, so a person can watch the
+  run in a browser (`src/remoteview/README.md`); the log's `RemoteViewListening` event has the address.
 - Write the log to `/tmp` or the session scratchpad, not into the repo.
 - The view's first frame comes at once; the scene arrives while it runs. `--frames`, `--screenshot` and script frame numbers count from when
   the scene is first ready (everything it wants loaded, uploaded and drawn; the log's `SceneReady`), so a script sees the loaded

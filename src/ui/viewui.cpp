@@ -259,6 +259,10 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         updateDebugViewCursor(debugViewState);
         drawDebugViewWindow(static_cast<DebugView>(rendercvars::debugView.get()), debugViewState, instancePath);
     }
+    if (introspectionFlags.remoteView) {
+        PROFILE_ZONE("RemoteViewWindow", Ui);
+        drawRemoteViewWindow(introspectionFlags.remoteView, remoteViewStatus);
+    }
     if (introspectionFlags.counters) {
         PROFILE_ZONE("CountersWindow", Ui);
         drawCountersWindow(introspectionFlags.counters, countersState);
@@ -368,6 +372,8 @@ auto ViewUI::windowFlag(std::string_view name) -> bool* {
         return &introspectionFlags.counters;
     } else if (name == "shaders") {
         return &introspectionFlags.shaders;
+    } else if (name == "remoteview") {
+        return &introspectionFlags.remoteView;
     } else if (name == "culling") {
         return &showCullingWindow;
     } else if (name == "assets") {

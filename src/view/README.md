@@ -36,6 +36,7 @@ the shadow cascades and the snapshot. `src/apps/view.cpp`'s loop calls its steps
 | | | `drawUi`: the windows drawn, and what they asked for carried out |
 | `buildSnapshot`, submit | the frame for the render thread; the render tools' requests added to it (`RenderTools::fillSnapshot`) | `fillSnapshot` (before submit): the tools' layers, the gizmos' lines and ImGui's draw data, each as its render extension's data |
 | `plotFrame` | the frame's numbers as profiler plots (`src/profile/README.md`, "Plots") | |
+| `limitFrameRate` | a view that nothing else paces waits here until its next frame is due (`view.frameLimit`, 60 a second; 0 for none): a headless run with no `--frames`, which goes on until stopped. A window is paced by its display; a run with `--frames` goes as fast as it can, so scripted runs and their timings are as before. The wait is the `FrameLimit` zone (group Wait) and is part of that frame's time; `FrameRateLimited` is logged at start | |
 
 **In the profiler** (`src/profile/README.md`) the frame is `MainFrame` (group Frame) on the Main track: each step is a zone of its own (the
 detail ones `AdvanceTime`, `ResetCameras`, `SendSceneInputs`, `CountLodPops`, `DrawCameraModes`, `ReadBack`), each hook call one named

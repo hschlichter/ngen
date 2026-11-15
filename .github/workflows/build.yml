@@ -8,11 +8,12 @@
 # The host is pinned (ubuntu-24.04) rather than ubuntu-latest, so it only changes when this file does; every job runs in the
 # container anyway, so the host provides little more than Docker.
 #
-# Jobs: format first; then OpenUSD and the examples in parallel (the examples don't use OpenUSD); then the build of every
-# configuration, which needs OpenUSD.
+# Jobs: format first; then OpenUSD, the remote view's libraries and the examples in parallel (the examples use neither); then
+# the build of every configuration, which needs both.
 #
 # OpenUSD is a submodule but is built outside the build system, into external/openusd_build. Its job builds it once and
-# caches it, keyed by the submodule's commit and OPENUSD_BUILD; the build jobs restore it.
+# caches it, keyed by the submodule's commit and OPENUSD_BUILD; the build jobs restore it. The remote view's two libraries
+# (libdatachannel, OpenH264) are built and cached the same way by their own job, keyed by both commits and REMOTEVIEW_BUILD.
 
 name: build
 
@@ -31,11 +32,13 @@ env:
   ARCH_SNAPSHOT: 2026/10/02
   # Bump when the OpenUSD build step changes (its flags, or the packages it builds with), so the cache is rebuilt.
   OPENUSD_BUILD: v1
+  # Bump when the libdatachannel or OpenH264 build step changes, so the cache is rebuilt.
+  REMOTEVIEW_BUILD: v1
   # Everything the build and the OpenUSD build need.
   PACKAGES: >-
-    base-devel clang gcc git python cmake ninja pkgconf
+    base-devel clang gcc git python cmake ninja pkgconf nasm openssl
     sdl3 vulkan-headers vulkan-icd-loader vulkan-utility-libraries shaderc
-  # Every submodule but OpenUSD, which the OpenUSD job builds and caches.
+  # Every submodule but OpenUSD, libdatachannel and OpenH264, which their jobs build and cache.
   SUBMODULES: glm stb imgui json tinyexr meshoptimizer tracy
 
 jobs:
@@ -120,6 +123,64 @@ jobs:
           # Sources and intermediate files aren't needed to link against it; keep the cache small.
           rm -rf external/openusd_build/src external/openusd_build/build
 
+  remoteview:
+    name: Remote view libraries
+    needs: format
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - name: Install packages
+        run: |
+          echo "Server = https://archive.archlinux.org/repos/${ARCH_SNAPSHOT}/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
+          pacman -Syyuu --noconfirm --needed $PACKAGES
+
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Cache key
+        id: key
+        run: |
+          git config --global --add safe.directory '*'
+          datachannel=$(git ls-tree HEAD external/libdatachannel | awk '{print $3}')
+          openh264=$(git ls-tree HEAD external/openh264 | awk '{print $3}')
+          echo "key=remoteview-${REMOTEVIEW_BUILD}-${datachannel}-${openh264}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the libraries
+        id: cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            external/libdatachannel_build
+            external/openh264_build
+          key: ${{ steps.key.outputs.key }}
+
+      - name: Check out libdatachannel and OpenH264
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git submodule update --init --depth 1 external/libdatachannel external/openh264
+          git -C external/libdatachannel submodule update --init --depth 1 deps/libjuice deps/usrsctp deps/libsrtp deps/plog
+
+      # The same commands as the README's "Building the remote view's libraries": static, no WebSocket, examples or tests.
+      - name: Build libdatachannel
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          cmake -S external/libdatachannel -B external/libdatachannel_build/build \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DNO_WEBSOCKET=ON -DNO_EXAMPLES=ON -DNO_TESTS=ON \
+            -DCMAKE_INSTALL_PREFIX="$PWD/external/libdatachannel_build"
+          cmake --build external/libdatachannel_build/build -j"$(nproc)"
+          cmake --install external/libdatachannel_build/build
+          # Intermediate files aren't needed to link against it; keep the cache small.
+          rm -rf external/libdatachannel_build/build
+
+      - name: Build OpenH264
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          make -C external/openh264 -j"$(nproc)" BUILDTYPE=Release libopenh264.a
+          make -C external/openh264 PREFIX="$PWD/external/openh264_build" SHARED= install-static
+
   examples:
     name: RHI examples
     needs: format
@@ -202,7 +263,7 @@ jobs:
 
   build:
     name: ${{ matrix.config }}
-    needs: openusd
+    needs: [openusd, remoteview]
     runs-on: ubuntu-24.04
     container: archlinux:latest
     strategy:
@@ -230,6 +291,15 @@ jobs:
         with:
           path: external/openusd_build
           key: ${{ needs.openusd.outputs.key }}
+          fail-on-cache-miss: true
+
+      - name: Restore the remote view's libraries
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            external/libdatachannel_build
+            external/openh264_build
+          key: ${{ needs.remoteview.outputs.key }}
           fail-on-cache-miss: true
 
       - name: Bootstrap ngen-build

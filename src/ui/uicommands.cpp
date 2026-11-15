@@ -26,7 +26,7 @@ auto registerUiCommands(RpcRegistry& registry, ConsoleCommands& console, RpcReco
             .name = "view.window",
             .summary = "Open or close a window.",
             .params = {
-                requiredField("name", RpcType::String, "a window: memory, capture, framedebugger, gpuscene, counters, shaders, culling, assets, lod, streaming, camera, renderdebug, framegraph, performance, cvars"),
+                requiredField("name", RpcType::String, "a window: memory, capture, framedebugger, gpuscene, counters, shaders, remoteview, culling, assets, lod, streaming, camera, renderdebug, framegraph, performance, cvars"),
                 optionalField("open", RpcType::Bool, "default true"),
             },
             .result = "{}",

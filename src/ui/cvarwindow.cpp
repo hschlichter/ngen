@@ -5,6 +5,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <array>
 #include <format>
 #include <string>
 #include <string_view>
@@ -88,6 +89,17 @@ auto drawEditor(cvar::Value& value) -> void {
             auto v = typed.get();
             if (ImGui::DragFloat3(label.c_str(), v.data(), 0.005f, 0.0f, 0.0f, "%.3f")) {
                 typed.set(v);
+            }
+            break;
+        }
+        case cvar::Type::String: {
+            // Set when Enter is pressed, so a value half typed is never acted on.
+            auto& typed = static_cast<cvar::String&>(value);
+            std::array<char, 256> buffer = {};
+            auto length = std::min(typed.get().size(), buffer.size() - 1);
+            std::copy_n(typed.get().data(), length, buffer.data());
+            if (ImGui::InputText(label.c_str(), buffer.data(), buffer.size(), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                typed.set(buffer.data());
             }
             break;
         }
@@ -189,6 +201,21 @@ auto cvarBool(std::string_view name) -> cvar::Bool* {
 auto cvarFloat(std::string_view name) -> cvar::Float* {
     auto* value = cvar::find(name);
     return value != nullptr && value->type() == cvar::Type::Float ? static_cast<cvar::Float*>(value) : nullptr;
+}
+
+auto cvarEditor(const char* label, std::string_view name) -> void {
+    auto* value = cvar::find(name);
+    if (value == nullptr) {
+        ImGui::TextDisabled("%s", label);
+        return;
+    }
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+        ImGui::SetTooltip("%s\n\n%s", value->description().c_str(), value->name().c_str());
+    }
+    ImGui::SameLine(140.0f);
+    drawEditor(*value);
 }
 
 auto cvarCheckbox(const char* label, std::string_view name) -> bool {

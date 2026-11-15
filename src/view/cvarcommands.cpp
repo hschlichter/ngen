@@ -188,6 +188,8 @@ auto cvarValueJson(const cvar::Value& value) -> Json {
             };
             return Json::array({number(v[0]), number(v[1]), number(v[2])});
         }
+        case cvar::Type::String:
+            return static_cast<const cvar::String&>(value).get();
     }
     return nullptr;
 }

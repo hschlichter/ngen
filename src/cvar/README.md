@@ -29,6 +29,7 @@ so the order translation units construct their values in doesn't matter; a name 
 | `cvar::Float` | a `double`, an optional range | a number in the range |
 | `cvar::Enum` | one of named choices, as its index | a choice's name |
 | `cvar::Vec3` | three floats: a colour or a vector | `x,y,z` |
+| `cvar::String` | text: an address, a name | the text, without the space around it |
 
 `set` checks the range and the choices and leaves the value unchanged on an error, which says why; `setText` parses first. Every value has
 `text()`, `defaultText()`, `reset()`, `isDefault()` and its description, which is what the record, RPC and the window read.
@@ -59,6 +60,8 @@ There are no callbacks, so nothing runs inside a `set`.
   choices.
 - **RPC**: `cvar.get {name?}` (one value by name, or every one under a prefix), `cvar.set {name, value}` or `{values: {name: value}}`
   (checked together: nothing is set when one fails; `reset` names values put back to their defaults first), `cvar.reset {name?}`.
+- **At start**: ngen-view's `--cvar <name>=<value>` (or `--cvar=<name>=<value>`), any number of times, sets values before the first frame
+  as `setText` takes them; an unknown name or a value that doesn't parse stops the program with why.
 - **Console commands**: `cvar <name> <value>`, `cvar-reset [<name or prefix>]`. Older console commands that set settings (`view`, `debugview`, `shadow`,
   `sampler`, `ambient`, `prepass`, `aa`, `gpuscene`, `cull`, `overlay`, `purposes`, `lod-show`, `streaming-show`, `camera-follow`,
   `debug-camera`) are kept as short forms that set the matching values.

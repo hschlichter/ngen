@@ -16,6 +16,7 @@
 #include "memorywindow.h"
 #include "overlays.h"
 #include "performancewindow.h"
+#include "remoteviewwindow.h"
 #include "renderdebugwindow.h"
 #include "statusbar.h"
 #include "streamingwindow.h"
@@ -78,9 +79,11 @@ public:
     auto onCounters(GpuCounters counters) -> void { addCountersFrame(countersState, std::move(counters)); }
     // The latest cull result, for the Culling and GPU Scene windows; the caller keeps it alive while the UI draws.
     auto setCullResult(const CullResult& cull) -> void { cullResult = &cull; }
+    // The remote view's status, for the Remote View window; the caller keeps it alive. None: a program without a remote view.
+    auto setRemoteViewStatus(const RemoteViewStatus* status) -> void { remoteViewStatus = status; }
 
     // The windows view.window opens and closes, by name.
-    static constexpr std::array windowNames = {"memory", "capture", "framedebugger", "gpuscene", "counters", "shaders", "culling", "assets", "lod", "streaming", "camera", "renderdebug", "framegraph", "performance", "cvars"};
+    static constexpr std::array windowNames = {"memory", "capture", "framedebugger", "gpuscene", "counters", "shaders", "remoteview", "culling", "assets", "lod", "streaming", "camera", "renderdebug", "framegraph", "performance", "cvars"};
     // Whether a window is open, by its name in windowNames; null for an unknown name.
     auto windowFlag(std::string_view name) -> bool*;
     // Opens or closes a window by its name in windowNames; false for an unknown name.
@@ -187,6 +190,7 @@ private:
     FrameDebuggerState frameDebuggerState;
     GpuSceneWindowState gpuSceneState;
     CountersWindowState countersState;
+    const RemoteViewStatus* remoteViewStatus = nullptr;
     DebugViewWindowState debugViewState;
     RenderDebugDrawState renderDebugDraws;
 };

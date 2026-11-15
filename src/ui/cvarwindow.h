@@ -20,4 +20,6 @@ auto cvarBool(std::string_view name) -> cvar::Bool*;
 auto cvarFloat(std::string_view name) -> cvar::Float*;
 // A checkbox, and a menu item, over a Bool by name; drawn disabled when it doesn't exist. Return the value after the frame's click.
 auto cvarCheckbox(const char* label, std::string_view name) -> bool;
+// A cvar of any type by name, as a labelled row with the editor for its type; a disabled label when it doesn't exist.
+auto cvarEditor(const char* label, std::string_view name) -> void;
 auto cvarMenuItem(const char* label, const char* shortcut, std::string_view name, bool enabled = true) -> bool;
