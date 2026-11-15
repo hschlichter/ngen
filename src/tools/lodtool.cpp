@@ -68,7 +68,7 @@ auto shapeOf(const LodHeuristic& heuristic, const glm::mat4& toWorld, double met
     return shape;
 }
 
-// A render-LOD group's shape, from its record (thresholds already tuned, a distance's in metres).
+// A LOD group's shape, from its record (thresholds already tuned, a distance's in metres).
 auto shapeOf(const RenderLodGroup& group) -> LodShape {
     LodShape shape;
     shape.toWorld = group.toWorld;
@@ -237,7 +237,7 @@ auto buildLodRows(const ViewScene& scene, LodToolState& state) -> void {
         .preference = (int) snapshot.lodPreference,
         .heuristic = snapshot.lodHeuristic,
     };
-    // The LOD roots' rows change with every snapshot (their measures and choices follow the camera); the render-LOD groups' rows only with
+    // The LOD roots' rows change with every snapshot (their measures and choices follow the camera); the LOD groups' rows only with
     // what they are built from, and their live state comes from the GPU each frame (updateLodRows). The roots come with the instances, so
     // while the group rows are kept the roots' count is too, and their rows are replaced in place.
     bool groupsKept = source == state.groupRowsSource && state.rootRowCount == scene.lodRoots().size();
@@ -371,7 +371,7 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
         }
         const auto& group = draws.drawn.lodGroups[g];
         const auto& source = *draws.lodGroupSources[g];
-        out.renderLod = true;
+        out.isLodGroup = true;
         out.group = (int32_t) g;
         out.key = source.key;
         out.depth = source.depth;
@@ -391,7 +391,7 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
         break;
     }
     const SceneLodRoot* streaming = nullptr;
-    if (!out.renderLod) {
+    if (!out.isLodGroup) {
         for (const auto& root : scene.lodRoots()) {
             if (root.path == path) {
                 streaming = &root;
@@ -451,8 +451,8 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
     out.levels.resize(levelNames.size());
     for (size_t level = 0; level < levelNames.size(); level++) {
         out.levels[level].name = levelNames[level];
-        out.levels[level].known = out.renderLod;
-        out.levels[level].loaded = out.renderLod;
+        out.levels[level].known = out.isLodGroup;
+        out.levels[level].loaded = out.isLodGroup;
     }
     if (streaming != nullptr) {
         for (auto level : streaming->loaded) {
@@ -466,7 +466,7 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
         if (!instance.alive || instance.lodLevel == 0) {
             continue;
         }
-        if (out.renderLod) {
+        if (out.isLodGroup) {
             if (instance.lodGroup != (uint32_t) out.group + 1 || instance.lodLevel > out.levels.size()) {
                 continue;
             }
@@ -556,7 +556,7 @@ namespace toolscvars {
 cvar::Bool lodLabels{"tools.lod.labels", false, "Over each LOD root the LOD window lists: its name, drawn level (and the level fading in) and measure."};
 cvar::Bool lodGizmo{"tools.lod.gizmo", false, "The selected LOD root's heuristic in the viewport: its centre or box, a ring at each threshold."};
 cvar::Bool lodGizmoAll{"tools.lod.gizmoAll", false, "The heuristic of every LOD root the LOD window lists."};
-cvar::Bool lodPopFlash{"tools.lod.popFlash", false, "A render-LOD root's meshes flash white for half a second when its level changes without a fade, over any view."};
+cvar::Bool lodPopFlash{"tools.lod.popFlash", false, "A LOD-group root's meshes flash white for half a second when its level changes without a fade, over any view."};
 cvar::Bool lodColorByDepth{"tools.lod.colorByDepth", false, "The LOD Level view coloured by how many LOD roots deep a draw is instead of by its drawn level."};
 
 } // namespace toolscvars

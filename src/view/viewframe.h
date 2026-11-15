@@ -102,7 +102,7 @@ public:
 
     // GPU culling's frustum for this frame, and the latest readback.
     auto cull() -> void;
-    // The render-LOD pops of a readback not counted yet; after the render-LOD records it answers are given.
+    // The LOD-group pops of a readback not counted yet; after the LOD-group records it answers are given.
     auto countLodPops() -> void;
     // The shadow cascades, fitted to the shadow camera and the scene's bounds; the frozen frustum's corners.
     auto fitCascades() -> void;
@@ -157,8 +157,8 @@ public:
     CullState cullState;
     glm::mat4 cullViewProj = glm::mat4(1.0f);
     CullResult latestCull;      // GPU culling readback, a few frames old
-    uint64_t lodPops = 0;       // render-LOD pops (a drawn level changed without a fade) counted over the readbacks seen
-    bool readLodStates = false; // read every render-LOD group's state back with the culling readback
+    uint64_t lodPops = 0;       // LOD-group pops (a drawn level changed without a fade) counted over the readbacks seen
+    bool readLodStates = false; // read every LOD group's state back with the culling readback
 
     std::array<ShadowCascade, maxShadowCascades> cascades;
     uint32_t cascadeCount = 0;

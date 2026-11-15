@@ -48,7 +48,7 @@ auto DrawLists::bucketOf(const GpuInstance& instance) -> uint32_t {
     return bucket(instance.doubleSided, instance.cutout);
 }
 
-// An instance of a render-LOD group counts in its cutout bucket as well as its own: while its group fades, the cull pass draws it there.
+// An instance of a LOD group counts in its cutout bucket as well as its own: while its group fades, the cull pass draws it there.
 auto DrawLists::countInstance(const GpuInstance& instance, int delta) -> void {
     Counts counts;
     countInto(instance, delta, counts);
@@ -62,7 +62,7 @@ auto DrawLists::countInto(const GpuInstance& instance, int delta, Counts& counts
     }
     auto sign = delta > 0 ? 1 : -1;
     counts.buckets[b] += sign;
-    // A render-LOD instance in an opaque bucket may fade: it is counted in the cutout bucket too.
+    // A LOD-group instance in an opaque bucket may fade: it is counted in the cutout bucket too.
     if (instance.lodGroup != 0 && b < 2) {
         counts.buckets[b + 2] += sign;
     }

@@ -32,8 +32,8 @@ records with `registerRpcRecords` (engine layer); the asset server answers the t
 | view | `instancers` | every PointInstancer reached while drawing: its points and those shown, its prototypes, the prims its points draw |
 | view | `variants` | every prim with variant sets reached while drawing: each set and the variant it composed to; per set, how many prims chose each variant |
 | view | `assets` | what the view asked the asset server for and received: totals, and per asset its state, packed or cached, size, request and arrival times and the server's time |
-| view | `culling` | GPU culling's latest readback, camera and per cascade: instances drawn and culled, meshlets tested and culled (frustum, cone, depth), triangles drawn after meshlet culling and before it (`instanceTriangles`), slots of render-LOD levels not drawn |
-| view | `renderlod` | render LOD: groups placed, slots per level, what the GPU picked (groups drawing each level, falling back, forced) and that pick checked against the view's heuristic at the camera it measured from (next frames); `view.renderlod {path}` lists the groups under a path |
+| view | `culling` | GPU culling's latest readback, camera and per cascade: instances drawn and culled, meshlets tested and culled (frustum, cone, depth), triangles drawn after meshlet culling and before it (`instanceTriangles`), slots of LOD-group levels not drawn |
+| view | `lodgroups` | LOD groups: groups placed, slots per level, what the GPU picked (groups drawing each level, falling back, forced) and that pick checked against the view's heuristic at the camera it measured from (next frames); `view.lodgroups {path}` lists the groups under a path |
 | view | `profile` | the profiler's frame history, CPU and GPU time per frame |
 | view | `zones` | where the time goes over the last 60 frames: every profiler zone per thread track and on the GPU, its count, total, per frame, median and longest time |
 | view | `pipelines` | every pipeline the renderer registered: start-up or first use, state, shaders and hashes, the last error |

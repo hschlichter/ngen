@@ -149,14 +149,14 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
 ## LOD and streaming
 
 `src/world/README.md` ("Loading"), `src/view/README.md` (residency, switching, the LOD and Streaming tools), `src/renderer/README.md`
-("Render LOD").
+("LOD groups").
 
 A *level* in this section, and wherever the engine says level without another word before it, is a LOD level. The engine has no level in the
 sense of a map; that is a scene.
 
 - **Authoring contract** — what a streaming world's thresholds must satisfy (a threshold per level boundary, imaging threshold ≤ load radius ≤
   unload radius, a child inside its parent). Checked by `checkLodAuthoring`; a violation is a *finding*, reported, never corrected.
-- **Blend band / blend thresholds** — UsdLod's `blendThresholds`: a range past a threshold where a render-LOD group cross-fades to the next
+- **Blend band / blend thresholds** — UsdLod's `blendThresholds`: a range past a threshold where a LOD group cross-fades to the next
   level; a streaming root inside one wants the finer level.
 - **Bias** — a tuning factor: every root picks as if that many times closer.
 - **Cell** — the test world's word for a streaming root's area. **Region** (1 km, levels `full`, `medium` and `proxy`) and **tile** (250 m,
@@ -169,8 +169,8 @@ sense of a map; that is a scene.
 - **Domain** — what a heuristic decides: `imaging` (which level is drawn) or `streaming` (which levels are resident; the engine's own domain
   token).
 - **Drawn level** — the level a root actually draws: the finest loaded and *ready* level not finer than the desired one.
-- **Fade / dither** — a render-LOD group inside a blend band draws both levels, split per pixel by a 4×4 Bayer pattern.
-- **Forced level** — a render-LOD group's level set by hand (`lod`), or its default while the heuristic is off or unusable.
+- **Fade / dither** — a LOD group inside a blend band draws both levels, split per pixel by a 4×4 Bayer pattern.
+- **Forced level** — a LOD group's level set by hand (`lod`), or its default while the heuristic is off or unusable.
 - **Heuristic** — a `LODDistanceHeuristic` or `LODScreenSizeHeuristic` prim a root names in `lod:heuristics`, with thresholds and a domain.
 - **Hole** — a root that draws nothing because no loaded level at or coarser than the desired one is ready.
 - **Hysteresis** — a margin before going coarser at a threshold, so a camera on the boundary doesn't flip a root (20% by default). For
@@ -179,16 +179,16 @@ sense of a map; that is a scene.
   was desired.
 - **Load radius / unload radius** — a streaming heuristic's thresholds (load) and `streaming:unloadThresholds` (unload): a level becomes
   resident inside its load radius and stops past its unload radius.
+- **LOD group** — a LOD root whose levels are composed in place (no payloads), where it is placed: the GPU picks its level per placement
+  each frame (`RenderLodGroup`). Such a root is a *LOD-group root*. Unity's word for the same thing.
 - **LOD level** — one child of a LOD root, finest first; level 0 is the finest. Never a map: what other engines call a level is a scene here.
-- **LOD root** — a prim with `LODRootAPI`; its levels are its defined, active children. Either a *streaming root* or a *render-LOD root*,
+- **LOD root** — a prim with `LODRootAPI`; its levels are its defined, active children. Either a *streaming root* or a *LOD-group root*,
   decided by whether its levels have payloads.
 - **LOD tag** — the drawn level plus flags written to the normal target's alpha, which the LOD Level view colours.
 - **LOD tuning** — session opinions: threshold overrides, bias, hysteresis and blending (`view.lod.tuning`); kept until the view closes.
-- **Pop** — a render-LOD group's drawn level changing without a fade; counted and flashed white for half a second.
+- **Pop** — a LOD group's drawn level changing without a fade; counted and flashed white for half a second.
 - **Prefetched** — a finer level resident ahead of being drawn.
 - **Ready** — a level whose placement waits for nothing: linked, and every mesh, material and texture its prims want held or failed.
-- **Render LOD** — LOD roots whose levels are composed in place (no payloads); placed as a *render-LOD group* whose level the GPU picks per
-  placement each frame.
 - **Residency** (of a level) — whether a level is loaded, decided only by camera position and authored radii, never by time. The *streaming
   state* level and every coarser level are resident. Not the same as the scene being *resident* ([the view's runtime](#the-views-runtime)).
 - **Streaming root** — a LOD root whose levels are payloads; each level is a content of its own, loaded and released by residency.
@@ -273,7 +273,7 @@ sense of a map; that is a scene.
 - **Capture / capture watch** (`CaptureService`, `CaptureWatch`) — a copy of any frame-graph resource after a pass, read back after the fence;
   picking, the GPU Scene window and dumps use it.
 - **Cascades / shadow atlas** — cascaded shadow maps (three by default) as tiles of one atlas, fitted on the main thread.
-- **Cull code** — per instance and view, the frustum plane that rejected it, or `D` (render-LOD level not drawn), `E` (visible), `F` (not tested).
+- **Cull code** — per instance and view, the frustum plane that rejected it, or `D` (LOD-group level not drawn), `E` (visible), `F` (not tested).
 - **`CullResult`** — culling's readback handed to the main thread: counts per view, meshlet counts, triangles.
 - **Culling** — per instance (frustum, then occlusion), then per meshlet in the task shader (frustum, normal cone, occlusion).
 - **Cutout material** — a material with `opacityThreshold > 0`: drawn where its opacity reaches the threshold, through `discard`, no blending.
@@ -404,7 +404,7 @@ sense of a map; that is a scene.
 | component | a future gameplay component; a UI or software component in prose. The World's data beside its prims is its *tables* |
 | content | a World content (stage, prototype, level); "content developers" means the people authoring worlds |
 | frame | the main thread's `ViewFrame`; a render frame on a frame context; an RPC frame (length-prefixed message); a script's frame number |
-| group | a render-LOD group (GPU-picked LOD root); a profile group (zone colour); a cvar group (name prefix); a workgroup of 256 culling slots (group box) |
+| group | a LOD group (a LOD root placed, its level picked on the GPU); a profile group (zone colour); a cvar group (name prefix); a workgroup of 256 culling slots (group box) |
 | history | occlusion culling's per-instance visibility from last frame; the profiler's seconds of zones (`profile.history.seconds`) |
 | hooks | `ViewHooks` (main-thread frame steps); `RenderExtension` hooks (render-thread frame points) |
 | instance | a USD instance (shares a prototype); an instance the renderer draws (one prim's submesh, `RenderMeshInstance`) and its GPU record; a point of a PointInstancer is neither |
@@ -414,7 +414,7 @@ sense of a map; that is a scene.
 | pass | a frame-graph pass (GPU work); a placement pass (scene thread) |
 | phase | occlusion culling's first and second phase |
 | record | an RPC record (named JSON data); a GPU instance, culling or draw record; an asset cache record; the `record` console command |
-| residency | a LOD level's residency (asked for by the camera's position); a render-LOD group's residency mask (which levels' meshes are in the geometry pool) |
+| residency | a LOD level's residency (asked for by the camera's position); a LOD group's residency mask (which levels' meshes are in the geometry pool) |
 | resident | the scene being resident (everything loaded, uploaded, drawn); a LOD level being resident (loaded by residency) |
 | root | a LOD root; the root layer; the asset server's working directory (asset ids are relative to it) |
 | slot | an instance slot; a texture slot; a streaming root's slot (streaming view) |

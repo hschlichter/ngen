@@ -2,7 +2,7 @@
 #extension GL_EXT_mesh_shader : require
 #extension GL_GOOGLE_include_directive : require
 
-// The shadow pass for cutout materials and render-LOD fades: shadow.mesh's positions, and the texture coordinate, material and fade
+// The shadow pass for cutout materials and LOD-group fades: shadow.mesh's positions, and the texture coordinate, material and fade
 // coverage cutout.frag tests with.
 
 #define MESHLET_MESH_SHADER
@@ -18,7 +18,7 @@ layout(push_constant) uniform Push {
 
 layout(location = 0) out vec2 fragTexCoord[];
 layout(location = 1) flat out uint fragMaterial[];
-layout(location = 2) flat out float fragLodCoverage[]; // its share of a render-LOD fade (lodfade.glsl)
+layout(location = 2) flat out float fragLodCoverage[]; // its share of a LOD-group fade (lodfade.glsl)
 
 
 // Per meshlet of the pack: its instance's model, material and fade coverage, loaded once.

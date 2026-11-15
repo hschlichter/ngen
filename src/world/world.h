@@ -201,7 +201,7 @@ auto pickLodLevel(LodHeuristicKind kind, const std::vector<float>& thresholds, c
 struct LodRoot {
     std::vector<PrimId> levels;
     // A level is a payload (any of them): the root streams, each level a content of its own linked as it loads, the level chosen per root.
-    // Else its levels are render LOD: composed in place with the root's content, every one loaded, the level chosen per placement by the
+    // Else its levels are a LOD group's: composed in place with the root's content, every one loaded, the level chosen per placement by the
     // renderer.
     bool streams = true;
     uint32_t defaultIndex = 0; // lod:default:index, clamped to the levels

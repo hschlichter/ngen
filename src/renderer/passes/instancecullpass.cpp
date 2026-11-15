@@ -36,8 +36,8 @@ constexpr std::array<RhiDescriptorBinding, 17> cullBindings = {{
     {.binding = 6, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // commands
     {.binding = 7, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // totals / counts
     {.binding = 8, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // cull reason per view
-    {.binding = 9, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // render-LOD states
-    {.binding = 10, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},        // render-LOD residency
+    {.binding = 9, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},         // LOD-group states
+    {.binding = 10, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},        // LOD-group residency
     {.binding = 11, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},        // meshlet counts, zeroed by the scan
     {.binding = 12, .type = RhiDescriptorType::CombinedImageSampler, .stage = RhiShaderStage::Compute}, // depth pyramid
     {.binding = 13, .type = RhiDescriptorType::StorageBuffer, .stage = RhiShaderStage::Compute},        // occlusion history
@@ -175,7 +175,7 @@ auto InstanceCullPass::addPasses(FrameGraph& fg, DrawLists& lists, const DrawLis
         lists.historyCleared();
     }
 
-    // 1. The render-LOD level test and frustum test per instance and view, the first phase from the history; per-workgroup counters.
+    // 1. The LOD-group level test and frustum test per instance and view, the first phase from the history; per-workgroup counters.
     fg.addPass<CullPassData>(
         "InstanceCull",
         profile::Group::Culling,

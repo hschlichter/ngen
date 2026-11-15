@@ -61,7 +61,7 @@ namespace toolscvars {
 
 cvar::Bool debugCamera{"tools.debugcamera.on", false, "Render from a second camera; the main camera (the player) keeps driving what is decided from a viewpoint (Ctrl+D)."};
 cvar::Bool debugControlMain{"tools.debugcamera.controlMain", false, "The keys and mouse move the main camera while the view stays on the debug camera (C)."};
-cvar::Bool debugLod{"tools.debugcamera.lod", false, "Measure the LOD heuristic, residency and render LOD from the debug camera instead of the player."};
+cvar::Bool debugLod{"tools.debugcamera.lod", false, "Measure the LOD heuristic, residency and LOD groups from the debug camera instead of the player."};
 cvar::Bool debugCull{"tools.debugcamera.cull", false, "Cull from the debug camera: draw what it sees instead of what the player sees."};
 cvar::Bool debugShadows{"tools.debugcamera.shadows", false, "Fit the shadow cascades to the debug camera's view instead of the player's."};
 cvar::Bool debugTrail{"tools.debugcamera.trail", true, "Draw the main camera's trail, a point every 2 m it moved."};

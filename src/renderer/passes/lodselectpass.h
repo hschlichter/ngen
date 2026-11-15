@@ -11,7 +11,7 @@
 class DeletionQueue;
 class RhiDevice;
 
-// Render LOD's level selection (src/renderer/README.md, "Render LOD"): two compute passes running shaders/lodselect.comp in its select and
+// LOD groups' level selection (src/renderer/README.md, "LOD groups"): two compute passes running shaders/lodselect.comp in its select and
 // sum modes, before the culling passes, which draw each group's instances of the level it picked.
 class LodSelectPass {
 public:

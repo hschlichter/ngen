@@ -118,7 +118,7 @@
   <text x="54" y="573" class="lib">InstanceCull</text>
   <text x="54" y="591" class="s">a box per 256 slots first, then</text>
   <text x="54" y="606" class="s">each box: 6 planes per view;</text>
-  <text x="54" y="621" class="s">render LOD; occlusion history</text>
+  <text x="54" y="621" class="s">LOD groups; occlusion history</text>
   <line x1="260" y1="593" x2="278" y2="593" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
 
   <rect x="280" y="554" width="220" height="78" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>

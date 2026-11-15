@@ -72,9 +72,9 @@
   <text x="44" y="504" class="s">Which levels load is decided after composing, by linking: changing a level</text>
   <text x="44" y="520" class="s">changes only which content its stand-in links to, never the root's content.</text>
 
-  <!-- Render-LOD root -->
+  <!-- LOD-group root -->
   <rect x="514" y="84" width="458" height="454" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
-  <text x="530" y="110" class="h">Render-LOD root</text>
+  <text x="530" y="110" class="h">LOD-group root</text>
   <text x="662" y="110" class="m">LodRoot::streams = false</text>
   <text x="530" y="130" class="s">no level has a payload: levels are references or inline</text>
 

@@ -2,7 +2,7 @@
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_GOOGLE_include_directive : require
 
-// The geometry pass for cutout materials and render-LOD fades: gbuffer.frag's outputs where the opacity reaches the material's threshold
+// The geometry pass for cutout materials and LOD-group fades: gbuffer.frag's outputs where the opacity reaches the material's threshold
 // and the fade keeps the pixel, nothing elsewhere (cutout.glsl, lodfade.glsl). Kept in step with gbuffer.frag.
 
 layout(set = 0, binding = 1) uniform sampler2D textures[1024];
@@ -18,7 +18,7 @@ struct Instance {
     uint flags;
     vec3 boundsMax;
     uint lodLevel;
-    uint lodGroup; // its render-LOD group + 1, 0 for none
+    uint lodGroup; // its LOD group + 1, 0 for none
     uint triangleCount;
     uint streamRoot;
     uint lodDepth;

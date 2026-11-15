@@ -206,7 +206,7 @@ Tables:
   - **Contents**: model matrix, material entry, mesh index, the submesh's meshlets (`meshletOffset` from the mesh's first, `meshletCount`) and
     `triangleCount`, world bounds (the submesh's box: `SubMesh::bounds`, from its triangles when the view loads the mesh), flags
     (`doubleSided`, `boundsValid`, `cutout`), the drawn LOD level + 1 of the LOD root above it (0 under none), which the geometry pass
-    writes to the normal target's alpha for the LOD level view (with its group's flags: "Render LOD", the LOD tag), its render-LOD group + 1
+    writes to the normal target's alpha for the LOD level view (with its group's flags: "LOD groups", the LOD tag), its LOD group + 1
     (0 for none), its streaming root's slot + 1 (`streamRoot`, 0 under none) for the streaming view, and how many LOD roots it is under
     (`lodDepth`, 0 under none) for the LOD level view.
   - **Slots.** An instance keeps its slot while it exists. A removed one is dead (mesh index past the table, so culling never draws it) until a new instance
@@ -267,7 +267,7 @@ A table that outgrows its buffer gets a larger one, which takes hundreds of mill
   none is in flight, and what doesn't fit waits for it (`GrowthBehind`, a warning, then `GrowthReady` with how long it waited): instance
   slots past the capacity aren't uploaded or drawn, the draw records' draw lists are cut to the capacity, meshlets past the work items aren't
   drawn, meshes wait in the pool's waiting list. Only the old and the new buffers exist at once.
-  - The mesh and material tables and the render-LOD groups are small: they grow at once when they must (`Behind::GrowNow`, a few
+  - The mesh and material tables and the LOD groups are small: they grow at once when they must (`Behind::GrowNow`, a few
     milliseconds), still ahead on a job otherwise.
   - The instance staging makes a buffer of its own for the frame that needs more (`Behind::OwnBuffer`, `GrowthOwnBuffer`), since an instance
     record can't wait: a slot not uploaded would draw what held it before. A run of such frames is reported once, as a wait is:
@@ -317,7 +317,7 @@ scan, layout and scatter for every view, occlusion for the camera's second phase
   for the groups whose slots changed, copied into the slot's `cull.groupbounds` each frame). `InstanceCull` tests it first: a group outside every
   view writes its slots' visibility and cull codes (the group's rejecting plane per view) without reading them, and counts its live slots
   culled (the box's `w`, a count the CPU keeps; a dead slot counts in no view's statistics, tested or not). The test is
-  monotonic in the box, so a slot it skips is one its own test would have culled. Render-LOD slots in a skipped group count as culled, not as
+  monotonic in the box, so a slot it skips is one its own test would have culled. LOD-group slots in a skipped group count as culled, not as
   levels not drawn, and don't mark their residency (no view sees them).
 - **Ordered compaction (reduce-then-scan).** `InstanceCull` counts, per workgroup of 256 instances, how many commands each draw list gets.
   `InstanceCullScan` turns the per-workgroup counts into start offsets and totals, one workgroup per counter, 256 workgroups at a time with
@@ -445,9 +445,9 @@ meshoptimizer; `src/asset/README.md`). Every mesh pass draws them with task and 
 - **Work items.** The buffer is sized for every live instance's meshlets twice and grows when a frame overflows; a readback from a frame
   built before the last growth reports no overflow (it was answered).
 
-## Render LOD
+## LOD groups
 
-A render-LOD root (a UsdLod root whose levels aren't payloads; `src/world/README.md` "Loading") where the view places it is a *group*
+A LOD-group root (a UsdLod root whose levels aren't payloads; `src/world/README.md` "Loading") where the view places it is a *group*
 (`RenderLodGroup`, slots in `SceneChanges::lodGroups` beside the instance slots): the heuristic the view's preference chose for it, in the GPU's
 units (`RenderLodKind`: a screen size, the bounding sphere of its extent in world metres; or a distance, the root's transform and its inverse,
 the heuristic's center and its bounding box, thresholds in metres), its thresholds and blend thresholds (up to 8 levels), its default and a
@@ -457,7 +457,7 @@ inside a blend band, that level and the next, cross-faded. `LodGroups` (`lodgrou
 (`passes/lodselectpass.*`, `shaders/lodselect.comp`) adds `LodSelect`, which runs before the culling passes, and `LodSelectSum`, which the
 frame graph orders in among them, as it orders every pass by what it reads and writes (`LodReadback` follows the sum).
 
-![The render-LOD pick along a distance axis, with a blend band where the next level fades in and the hysteresis margin at a boundary without one, and the 4×4 Bayer tile that splits a fade's pixels between the two levels](../../screenshots/renderer_lod_bands.svg)
+![The LOD-group pick along a distance axis, with a blend band where the next level fades in and the hysteresis margin at a boundary without one, and the 4×4 Bayer tile that splits a fade's pixels between the two levels](../../screenshots/renderer_lod_bands.svg)
 
 - **The table** (`gpuscene.lodgroups`, `GpuLodGroup`, 240 bytes): uploaded as groups change (`LodGroupUpload`, the changed span through the
   slot's staging, as the instance records). A slot taking a new group gets a new serial.
@@ -484,7 +484,7 @@ frame graph orders in among them, as it orders every pass by what it reads and w
   (`cutout.glsl`); their mesh shaders read the group's state from the geometry set (binding 15, declared as a read by the passes drawing the
   lists) and pass the instance's coverage flat, and the fragment stages discard by a 4×4 ordered (Bayer) pattern in screen space
   (`lodfade.glsl`): the level fading in keeps the pattern's values below the share, the level drawn the rest, so every pixel is covered once.
-  The depth prepass, the geometry pass and the shadow cascades dither alike. The CPU counts every render-LOD instance in its cutout bucket too
+  The depth prepass, the geometry pass and the shadow cascades dither alike. The CPU counts every LOD-group instance in its cutout bucket too
   (`DrawLists::countInstance`), so the draw lists hold a fade of any group. Opaque instances not fading keep the opaque pipelines and their early
   depth test. The pattern is fixed per pixel, so screenshots stay byte-identical; without temporal anti-aliasing it shows while a fade lasts.
 - **Residency** (`gpuscene.lodresidency`, a bit per level): the cull pass, which visits every alive slot, sets its level's bit when its mesh
@@ -514,15 +514,15 @@ so early depth testing holds for everything else. The debug views discard in `de
 
 ## Passes
 
-![Every pass of a lit frame in the order the frame graph ran them, from the uploads through render-LOD selection and the first culling phase, the shadow and first geometry pass, occlusion's second phase (pyramid build, the late culling passes, the late geometry pass), then readback, lighting, AA, the debug view and the blit to the overlays and present, against the buffers and textures each writes and reads](../../screenshots/renderer_frame_passes.svg)
+![Every pass of a lit frame in the order the frame graph ran them, from the uploads through LOD-group selection and the first culling phase, the shadow and first geometry pass, occlusion's second phase (pyramid build, the late culling passes, the late geometry pass), then readback, lighting, AA, the debug view and the blit to the overlays and present, against the buffers and textures each writes and reads](../../screenshots/renderer_frame_passes.svg)
 
 | Pass | What it does |
 |---|---|
 | `SceneUpload` | `GpuScene`'s queued uploads (geometry pool, tables, textures), within the upload budget; records its own barriers ("Scene data on the GPU"). Added only when uploads are queued. |
 | `InstanceUploadPass` (`InstanceMove`) | After the instance buffer grew: copies the buffer it replaced into it, the draw records to the start and the culling records to the new culling offset. Added only in the frame after a growth, before `InstanceUpload`. |
 | `InstanceUploadPass` (`InstanceUpload`) | Copies the changed instance and culling records from the slot's staging buffer into the instance buffer. Added only when something changed. |
-| `LodSelectPass` | `LodSelect` and `LodSelectSum`, the render-LOD pick above; left out when there are no groups. `LodGroups` adds `LodGroupUpload` when groups changed and `LodReadback`. |
-| `InstanceCullPass` | `InstanceCull`, `InstanceCullScan`, `InstanceCullLayout`, `InstanceCullScatter` ("Culling and draw lists"): every view's draw lists, draw records and meshlet work items; the cull pass also drops the slots of render-LOD levels not drawn and marks levels not resident. With occlusion, the second phase after the pyramid: `InstanceCullOcclusion`, `InstanceCullLateScan`, `InstanceCullLateLayout`, `InstanceCullLateScatter` (view 5). `CullHistoryClear` zeroes a new history buffer. |
+| `LodSelectPass` | `LodSelect` and `LodSelectSum`, the LOD-group pick above; left out when there are no groups. `LodGroups` adds `LodGroupUpload` when groups changed and `LodReadback`. |
+| `InstanceCullPass` | `InstanceCull`, `InstanceCullScan`, `InstanceCullLayout`, `InstanceCullScatter` ("Culling and draw lists"): every view's draw lists, draw records and meshlet work items; the cull pass also drops the slots of LOD-group levels not drawn and marks levels not resident. With occlusion, the second phase after the pyramid: `InstanceCullOcclusion`, `InstanceCullLateScan`, `InstanceCullLateLayout`, `InstanceCullLateScatter` (view 5). `CullHistoryClear` zeroes a new history buffer. |
 | `DepthPyramid` | `HzbBuild`: the depth pyramid from occlusion's first phase, a dispatch per level; `HzbBuildFinal` again from the prepass's whole depth when the prepass runs the phases ("Occlusion culling"). Only with occlusion. |
 | `ShadowPass` | Depth-only into the cascade atlas: per cascade, the tile's viewport and scissor, the cascade matrix in the push constants, one `drawMeshTasksIndirect` per bucket (the cascade's draw list), meshlets frustum-culled in the task shader and counted. Position pool only, except the cutout buckets. |
 | `DepthPrepass` | Optional depth-only pass over the camera draw lists (`render.prepass`) so the geometry pass can use an Equal depth test and shade each pixel once. With occlusion it draws the first phase and `DepthPrepassLate` the second. While the culling camera isn't the rendered one, `DepthPrepassCull` and `DepthPrepassCullLate` draw both phases from the culling camera into `depth.cull`, for occlusion only. `depth.mesh` mirrors `gbuffer.mesh`'s position expression with `invariant gl_Position`. |
@@ -547,8 +547,8 @@ Overlays and the UI draw on the backbuffer after the AA blit, so they are never 
 
 | Set | Used by | Bindings |
 |---|---|---|
-| Geometry, one per frame context | every mesh pass: `GeometryPass`, `DepthPrepass`, `ShadowPass`, `DebugViewPass` | 0 view UBO, 1 `sampler2D textures[1024]`, 2 instance buffer, 3 material table, 4-9 the geometry pool (vertices, positions, meshlets, meshlet vertices, meshlet triangles, mesh table), 10-12 the slot's meshlet work items, culling parameters and meshlet counts, 13 the depth pyramid, 14 the slot's draw list draws, 15 the render-LOD state (fades and the LOD tag) |
-| Culling, one per frame context | the cull passes | params, the instance buffer's culling records (an offset binding), mesh table, visibility, counters, offsets, commands, counts, render-LOD state and residency, meshlet counts, depth pyramid, history, draw list draws, work items, group boxes |
+| Geometry, one per frame context | every mesh pass: `GeometryPass`, `DepthPrepass`, `ShadowPass`, `DebugViewPass` | 0 view UBO, 1 `sampler2D textures[1024]`, 2 instance buffer, 3 material table, 4-9 the geometry pool (vertices, positions, meshlets, meshlet vertices, meshlet triangles, mesh table), 10-12 the slot's meshlet work items, culling parameters and meshlet counts, 13 the depth pyramid, 14 the slot's draw list draws, 15 the LOD-group state (fades and the LOD tag) |
+| Culling, one per frame context | the cull passes | params, the instance buffer's culling records (an offset binding), mesh table, visibility, counters, offsets, commands, counts, LOD-group state and residency, meshlet counts, depth pyramid, history, draw list draws, work items, group boxes |
 | Debug view resolve, one per frame context | `DebugViewResolve` | 0 the value target, 1 the colour image, 2 the streaming view's root states, 3 the lit image (the streaming view; the value target again in the others) |
 | Lighting, AA, debug lines | their passes | per-frame-context UBOs and the G-buffer, shadow and scene-colour textures |
 
@@ -661,7 +661,7 @@ points of `Renderer::render`, in the order added; each hook does nothing unless 
   draw list (`DrawLists::drawListName`). The zones of a slot are read after its fence and handed to the profiler's GPU track on the CPU clock; the render
   tools make counters from them.
 - **Culling introspection.** `instancecull.comp` writes, next to the visibility bits, the frustum plane that rejected each instance in each view
-  (`cullPlanes`, 4 bits per view: plane 0–5, `D` a render-LOD level its group doesn't draw, `E` visible, `F` not tested). The readback keeps every view's visibility bit (`CullResult::viewBits`) when it reads them.
+  (`cullPlanes`, 4 bits per view: plane 0–5, `D` a LOD-group level its group doesn't draw, `E` visible, `F` not tested). The readback keeps every view's visibility bit (`CullResult::viewBits`) when it reads them.
 - **The scene's triangles** (`CullResult::sceneTriangles`, the status bar and the `culling` record) are kept as instance slots change, never summed
   over the slots each frame (14 ms at 2.4 million).
 - **Log events** (Render category, conventions in `src/log/README.md`). The renderer logs flow and problems, never per-frame data:
@@ -692,6 +692,6 @@ pipeline statistics for the counters (optional; they count no mesh shading work:
   GPUs (before NVIDIA Turing, AMD RDNA2 and Intel Arc) and macOS through MoltenVK can't run the renderer.
 - Occlusion culling is for the camera only, and meshlets of instances drawn in the first phase aren't tested against the pyramid (no
   per-meshlet history); the shadow cascades cull by frustum.
-- A small instance still takes a draw record and its items; the culling passes visit every slot (render LOD's levels included) every frame,
+- A small instance still takes a draw record and its items; the culling passes visit every slot (LOD groups' levels included) every frame,
   though a workgroup of slots outside every view only tests its box. Culling by authored streaming chunk would skip most of them.
 - Everything runs on one graphics queue; the cull passes are separate graph passes so a multi-queue scheduler could move them.

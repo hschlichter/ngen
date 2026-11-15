@@ -132,9 +132,9 @@ struct WalkItem {
     bool subsets = false;  // its mesh's GeomSubsets may bind their own materials
     PrimId root = noPrim;  // a Level's LOD root, in the content
     uint32_t level = 0;
-    // Render LOD: the item is a render-LOD root (a group where it is placed), or is under one of its levels: the root's item in this
+    // LOD groups: the item is a LOD-group root (a group where it is placed), or is under one of its levels: the root's item in this
     // walk and the level (the nearest root's, for one inside another's level).
-    bool renderLodRoot = false;
+    bool lodGroupRoot = false;
     int32_t lodRootItem = -1;
     uint32_t lodLevel = 0;
 };
@@ -199,8 +199,8 @@ struct Placement {
     std::vector<PlacementSegment> segments;
     std::vector<uint32_t> slots;     // its instances
     std::vector<uint32_t> prims;     // prim indices of its drawn prims and lights
-    std::vector<uint32_t> lodGroups; // the render-LOD groups of the render-LOD roots in it, by group slot
-    // Under a level of a render-LOD root of the placement above (an instance in an asset's level): that group slot + 1 and the level, which
+    std::vector<uint32_t> lodGroups; // the LOD groups of the LOD-group roots in it, by group slot
+    // Under a level of a LOD-group root of the placement above (an instance in an asset's level): that group slot + 1 and the level, which
     // its instances are tagged with; 0 for none.
     uint32_t lodGroup = 0;
     uint32_t lodGroupLevel = 0;

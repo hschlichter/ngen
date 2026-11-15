@@ -964,7 +964,7 @@ struct WorldComposer::Impl {
         // loaded; here loading a level is the engine's, so a level counts loaded or not, and one defined only by its payload counts.) The
         // root streams when a level has payloads: a level is then a stand-in prim, linked at resolution to the level's own content (the
         // level prim and everything under it, loaded or not), so which level loads never changes the content the root is in. Without
-        // payloads its levels are render LOD, composed in place. Any other child is a prim of the root's content.
+        // payloads its levels are a LOD group's, composed in place. Any other child is a prim of the root's content.
         auto rootIndex = std::make_shared<const Node>(parentRoot);
         auto& content = *context.content;
         std::vector<bool> items;
@@ -1410,7 +1410,7 @@ struct WorldComposer::Impl {
             }
             data.prototypes.push_back(found->second);
             // Every point draws a prototype's streaming LOD roots at their default level (a level per point isn't loaded): said once per
-            // instancer. A render-LOD root's level is the renderer's, per point.
+            // instancer. A LOD-group root's level is the renderer's, per point.
             for (const auto& [rootId, root] : target.content->lodRoots) {
                 if (!root.streams) {
                     continue;
@@ -1666,7 +1666,7 @@ struct WorldComposer::Impl {
             }
             for (auto& [id, root] : at.content->lodRoots) {
                 if (!root.streams) {
-                    // Every render-LOD level is in the content already.
+                    // Every LOD-group level is in the content already.
                     continue;
                 }
                 auto relative = at.content->path(id);

@@ -40,7 +40,7 @@ struct GpuInstance {
     bool cutout = false;      // its material is cutout: drawn by the cutout pipelines
     uint32_t lodLevel = 0;    // the drawn level + 1 of the LOD root above it, 0 under none (RenderMeshInstance::lodLevel)
     uint32_t lodDepth = 0;    // RenderMeshInstance::lodDepth, for the LOD level view
-    uint32_t lodGroup = 0;    // its render-LOD group + 1, 0 for none: drawn while the group picks lodLevel - 1
+    uint32_t lodGroup = 0;    // its LOD group + 1, 0 for none: drawn while the group picks lodLevel - 1
     uint32_t streamRoot = 0;  // RenderMeshInstance::streamRoot, for the streaming view
     AABB worldBounds;         // culling input, the submesh's box; invalid bounds are always visible
     bool alive = false;       // a dead slot is never drawn

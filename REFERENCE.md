@@ -234,7 +234,7 @@ The asset server serves only its own methods (next section), and no `rpc.*`.
 | `view.transform` | A prim's local and world transform. |
 | `view.lod.inspect` | One LOD root as the LOD window's inspector shows it. |
 | `view.streaming.inspect` | One streaming root as the Streaming window shows it. |
-| `view.renderlod` | Render-LOD groups under a path, with what the GPU wants and draws (answers frames later). |
+| `view.lodgroups` | LOD groups under a path, with what the GPU wants and draws (answers frames later). |
 | `log.subscribe`, `log.unsubscribe` | Log stream (answered by the endpoint itself; not in `rpc.describe`). |
 
 Errors: `-32601` unknown method, `-32602` invalid params (names the field), `-32603` internal, `-32000` engine failure with a message.
@@ -317,7 +317,7 @@ frames later; record them at steady state (frame 120 or later).
 | `zones` | Every profiler zone over the last 60 frames: count, total, median, longest. |
 | `lod` | Every LOD root: levels, default, desired, drawn, loaded, set by hand. |
 | `streaming` | Per streaming root: desired level and why, radii, state, resident, late; measured totals. |
-| `renderlod` | Render-LOD groups, the GPU's pick and its check against the heuristic (next frames). |
+| `lodgroups` | LOD groups, the GPU's pick and its check against the heuristic (next frames). |
 | `lodtool` | The LOD tool's inspection of the root at or above the selection, tuning, layers, pops. |
 | `streamingtool` | The Streaming tool's inspection of the root at or above the selection, totals, map view. |
 | `debugcamera` | Debug camera position, yaw, pitch and the main camera's trail. |

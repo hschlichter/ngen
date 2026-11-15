@@ -107,8 +107,8 @@
   <circle cx="60" cy="533" r="4.5" fill="#2563eb"/>
   <rect x="84" y="556" width="452" height="30" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
   <rect x="84" y="562" width="3" height="18" rx="1.5" fill="#16a34a" stroke="#16a34a"/>
-  <text x="98" y="575.5" class="m">serviceRenderLodRequests()</text>
-  <text x="298.5" y="575.5" class="s">renderlod records answered</text>
+  <text x="98" y="575.5" class="m">serviceLodGroupRequests()</text>
+  <text x="298.5" y="575.5" class="s">lodgroups records answered</text>
   <circle cx="60" cy="571" r="4.5" fill="#16a34a"/>
   <rect x="84" y="594" width="452" height="30" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
   <rect x="84" y="600" width="3" height="18" rx="1.5" fill="#2563eb" stroke="#2563eb"/>

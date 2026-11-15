@@ -308,7 +308,7 @@ auto ViewScene::apply(Request& request) -> void {
             handLevels.erase(lod->root);
         }
         rootsToCheck.insert(lod->root);
-        // A render-LOD root's group takes the level as its forced one.
+        // A LOD-group root's group takes the level as its forced one.
         refreshLodGroups(lod->root);
         placeNeeded = true;
         evaluateNeeded = true;

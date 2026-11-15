@@ -180,7 +180,7 @@ auto lodInspectionJson(const LodInspection& in, double metersPerUnit) -> Json {
     }
     return {
         {"path", in.path},
-        {"kind", in.renderLod ? "render" : "streaming"},
+        {"kind", in.isLodGroup ? "group" : "streaming"},
         {"group", in.group >= 0 ? Json(in.group) : Json(nullptr)},
         {"key", in.key},
         {"default", in.defaultIndex},
@@ -278,16 +278,16 @@ auto registerToolCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRe
             .result = "the inspection",
         },
         [&view, &tools](const Json& p, RpcResponder responder) {
-            // Answered once a readback carries every group's state, as the renderlod record is.
+            // Answered once a readback carries every group's state, as the lodgroups record is.
             auto root = p["root"].get<std::string>();
-            view.renderLodRequests.push_back({.askedAt = view.latestCull.lodFrame, .answer = [&view, &tools, responder, root]() mutable {
-                                                  auto inspection = inspectLodRoot(view.scene, view.latestCull, root, lodInspectionCamera(view, tools));
-                                                  if (!inspection) {
-                                                      responder.fail(rpc::invalidParams, std::format("no LOD root placed at {}", root));
-                                                      return;
-                                                  }
-                                                  responder.respond(lodInspectionJson(*inspection, view.scene.lodMetersPerUnit()));
-                                              }});
+            view.lodGroupRequests.push_back({.askedAt = view.latestCull.lodFrame, .answer = [&view, &tools, responder, root]() mutable {
+                                                 auto inspection = inspectLodRoot(view.scene, view.latestCull, root, lodInspectionCamera(view, tools));
+                                                 if (!inspection) {
+                                                     responder.fail(rpc::invalidParams, std::format("no LOD root placed at {}", root));
+                                                     return;
+                                                 }
+                                                 responder.respond(lodInspectionJson(*inspection, view.scene.lodMetersPerUnit()));
+                                             }});
         });
     registry.add(
         {
@@ -339,6 +339,6 @@ auto registerToolCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRe
     records.add("lodtool",
                 "the LOD tool: the inspection of the LOD root at or above the selection (heuristics with their measures and picks, levels with triangles), the LOD tuning, the viewport's layers and the pops seen (next frames)",
                 [&view, &tools](RpcResponder responder) {
-                    view.renderLodRequests.push_back({.askedAt = view.latestCull.lodFrame, .answer = [&view, &tools, responder]() mutable { responder.respond(lodToolRecord(view, tools)); }});
+                    view.lodGroupRequests.push_back({.askedAt = view.latestCull.lodFrame, .answer = [&view, &tools, responder]() mutable { responder.respond(lodToolRecord(view, tools)); }});
                 });
 }

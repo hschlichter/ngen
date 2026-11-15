@@ -161,7 +161,7 @@ auto drawRow(const LodRow& row, LodToolState& state) -> void {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(row.group >= 0 ? "render" : "stream");
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip(row.group >= 0 ? "Render LOD: every level held, the GPU picks one per placement each frame and cross-fades inside a blend band."
+        ImGui::SetTooltip(row.group >= 0 ? "LOD group: every level held, the GPU picks one per placement each frame and cross-fades inside a blend band."
                                          : "Streaming: each level a payload, loaded when wanted; the CPU picks one per root.");
     }
 
@@ -260,7 +260,7 @@ auto drawControls(LodToolState& state) -> void {
         state.heuristicRequested = heuristic;
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("On: every root not set by hand wants the level its heuristic picks from the camera: inside an authored blend band it\ncross-fades to the next (render LOD); without one, going coarser waits for the hysteresis margin.\nOff: every root wants its default.");
+        ImGui::SetTooltip("On: every root not set by hand wants the level its heuristic picks from the camera: inside an authored blend band it\ncross-fades to the next (LOD groups); without one, going coarser waits for the hysteresis margin.\nOff: every root wants its default.");
     }
     ImGui::SameLine();
     ImGui::SetNextItemWidth(150.0f);
@@ -296,7 +296,7 @@ auto drawControls(LodToolState& state) -> void {
         state.blendingRequested = blending;
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Off drops every blend band: render-LOD roots switch levels without a fade (and pop), with the hysteresis everywhere.");
+        ImGui::SetTooltip("Off drops every blend band: LOD-group roots switch levels without a fade (and pop), with the hysteresis everywhere.");
     }
     ImGui::SameLine();
     ImGui::BeginDisabled(state.overrides == 0);
@@ -316,7 +316,7 @@ auto drawLayers(LodToolState& state) -> void {
         state.levelViewRequested = levelView;
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Over the lit image, at half strength: each mesh in its drawn level's colour, or in its LOD depth's (grey under no LOD root).\nA fade shows its two colours dithered together. Render-LOD roots at a forced level are striped, those drawing another level than they want\ncheckered.");
+        ImGui::SetTooltip("Over the lit image, at half strength: each mesh in its drawn level's colour, or in its LOD depth's (grey under no LOD root).\nA fade shows its two colours dithered together. LOD-group roots at a forced level are striped, those drawing another level than they want\ncheckered.");
     }
     ImGui::SameLine();
     auto* byDepth = cvarBool("tools.lod.colorByDepth");
@@ -389,7 +389,7 @@ auto drawInspector(LodToolState& state, LodWindowState& window) -> void {
     }
     ImGui::TextUnformatted(in.path.c_str());
     ImGui::SameLine();
-    ImGui::TextDisabled("%s, authored as %s", in.renderLod ? "render LOD" : "streaming", in.key.c_str());
+    ImGui::TextDisabled("%s, authored as %s", in.isLodGroup ? "LOD group" : "streaming", in.key.c_str());
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Threshold edits apply to every placement of this authored root: every instance of an instanceable asset shares one.");
     }
@@ -540,13 +540,13 @@ auto drawInspector(LodToolState& state, LodWindowState& window) -> void {
                 ImGui::TextUnformatted("drawn");
             } else if ((int32_t) level == in.fadeLevel) {
                 ImGui::TextUnformatted("fading in");
-            } else if (!in.renderLod && info.loaded) {
+            } else if (!in.isLodGroup && info.loaded) {
                 ImGui::TextDisabled("loaded");
             }
         }
         ImGui::EndTable();
     }
-    if (!in.renderLod) {
+    if (!in.isLodGroup) {
         ImGui::TextDisabled("A streaming root's triangles are counted for its drawn level only: the others aren't placed.");
     }
 }
@@ -566,14 +566,14 @@ auto drawLodWindow(bool& show, LodToolState& state, LodWindowState& window) -> v
     drawControls(state);
     drawLayers(state);
     {
-        const auto& lod = state.renderLod;
+        const auto& lod = state.groupCounts;
         std::string drawing;
         for (size_t level = 0; level < lod.drawing.size(); level++) {
             if (lod.drawing[level] > 0) {
                 drawing += std::format("{}{}: {}", drawing.empty() ? "" : ", ", level, lod.drawing[level]);
             }
         }
-        ImGui::TextDisabled("Render LOD: %u groups, drawing levels %s; %u forced, %u falling back, %u fading, %llu pops since the scene opened",
+        ImGui::TextDisabled("LOD groups: %u placed, drawing levels %s; %u forced, %u falling back, %u fading, %llu pops since the scene opened",
                             lod.groups,
                             drawing.empty() ? "-" : drawing.c_str(),
                             lod.forced,
@@ -598,7 +598,7 @@ auto drawLodWindow(bool& show, LodToolState& state, LodWindowState& window) -> v
     ImGui::InputTextWithHint("##filter", "filter by path", state.filter, sizeof(state.filter));
     ImGui::SameLine();
     ImGui::SetNextItemWidth(110.0f);
-    ImGui::Combo("##kind", &state.kindFilter, "every kind\0render LOD\0streaming\0");
+    ImGui::Combo("##kind", &state.kindFilter, "every kind\0LOD group\0streaming\0");
     ImGui::SameLine();
     ImGui::Checkbox("under selection", &state.onlyUnderSelection);
     ImGui::SameLine();

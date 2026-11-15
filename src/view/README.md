@@ -27,7 +27,7 @@ the shadow cascades and the snapshot. `src/apps/view.cpp`'s loop calls its steps
 | `updateResidency`, `answerResidentWaiters` (`viewcommands`) | resident or not, `SceneResident`; the methods waiting for it answered | |
 | input (`view.cpp`) | SDL's events, each to the hooks first (`event`: ImGui, F12, the gizmos, C), then to the view's controls (`look`, `wheel`, `startOrbit`, `pick`, Z, R, F, G) | |
 | `moveCamera` | the keys as a camera move; orbiting; following the ground | |
-| `cull`, `serviceRenderLodRequests` (`viewcommands`), `countLodPops`, `fitCascades` | culling's frustum and latest readback, the render-LOD records it answers, the shadow cascades and the scene's bounds they are fitted to (`SceneBoundsCache`, handed to the renderer in the snapshot) | `afterCamera`: the debug camera's trail, the LOD rows' live state, the Culling window's numbers |
+| `cull`, `serviceLodGroupRequests` (`viewcommands`), `countLodPops`, `fitCascades` | culling's frustum and latest readback, the LOD-group records it answers, the shadow cascades and the scene's bounds they are fitted to (`SceneBoundsCache`, handed to the renderer in the snapshot) | `afterCamera`: the debug camera's trail, the LOD rows' live state, the Culling window's numbers |
 | `drawCameraModes` | the camera modes' lines, after the hooks' | `debugDraw` (before it): the overlays and the tools' layers |
 | `renderTools.startFrame` (`rendertools`) | what the render tools handed back since the last frame into `results()`, and a new `request()` (`src/rendertools/README.md`) | `wantReadbacks`: the windows' capture watches and render-tools requests |
 | `dumps.wantReadbacks` (`viewcommands`) | the dumps' capture watches and render-tools requests | |
@@ -63,13 +63,13 @@ loaded follows the move with `wait-resident`.
 What an agent reaches without the tools or the UI: every method, console command and record of the engine, registered by domain over a
 `ViewContext` (`viewcommands.h`: references into the `ViewFrame` and to what the main loop owns) into the `RpcRegistry`, the `ConsoleCommands` table and the `RpcRecords`
 (`src/rpc/README.md`). They run at the top of each frame, before the camera moves: a script's due lines through `ConsoleCommands::run`, then the
-endpoint's calls; an answer that needs a readback or residency waits in `renderLodRequests` or `residentWaiters` and is given frames later.
+endpoint's calls; an answer that needs a readback or residency waits in `lodGroupRequests` or `residentWaiters` and is given frames later.
 
 | File | Methods | Console commands | Records |
 |---|---|---|---|
 | `cameracommands.cpp` | `view.camera.set/get/orbit/list/use/fly/fly.stop/frame` | `camera`, `camera-frame`, `camera-use`, `camera-orbit`, `camera-follow`, `fly`, `fly-stop` | |
 | `scenecommands.cpp` | `view.select/transform/translate/pick/purposes/waitResident/repack/gotoAsset/assetsOf/quit` | `select`, `translate`, `pick`, `purposes`, `repack`, `goto-asset`, `assets-of`, `wait-resident`, `quit` | `status`, `scene`, `scenethread`, `gpuscene`, `instancers`, `variants`, `payloads`, `assets` |
-| `lodcommands.cpp` | `view.lod.set/reset/heuristic/override/override.reset/tuning`, `view.renderlod`, `view.streaming.reset` | `lod`, `lod-*`, `streaming-reset` | `lod`, `streaming`, `renderlod` |
+| `lodcommands.cpp` | `view.lod.set/reset/heuristic/override/override.reset/tuning`, `view.lodgroups`, `view.streaming.reset` | `lod`, `lod-*`, `streaming-reset` | `lod`, `streaming`, `lodgroups` |
 | `cvarcommands.cpp` | `cvar.get/set/reset` | `cvar`, `cvar-reset` and the short forms (`view`, `debugview`, `overlay`, `cull`, `sampler`, `shadow`, `prepass`, `aa`, `ambient`, `gpuscene`) | `config` |
 | `displaycommands.cpp` | `view.inspect/dumpTexture/screenshot`, `capture.request`, `introspect.frame/gpuscene`, `renderdoc.capture` | `inspect`, `dump-texture`, `screenshot`, `capture`, `dump-frame`, `dump-gpuscene`, `renderdoc-capture` | `culling`, `pipelines`, `render`, `memory`, `counters` |
 | `profilecommands.cpp` | `introspect.profile`, `introspect.plot`, `profile.reset` | `dump-profile`, `profile-reset` | `profile`, `zones`, `plots`, `jobs` |
@@ -122,19 +122,19 @@ or a `PointInstancer`'s points. It owns the instances of its own prims and its c
 placement per loaded level of each LOD root in it, of which only the drawn level draws. A content never changes once linked, so neither
 do its instances: only where it is placed.
 
-![A worked placement tree: the stage, prototypes at USD instances, a render-LOD group, a streaming root with a drawn and an undrawn level, a point instancer, and the instance slots they take in RenderWorld](../../screenshots/view_placement_tree.svg)
+![A worked placement tree: the stage, prototypes at USD instances, a LOD group, a streaming root with a drawn and an undrawn level, a point instancer, and the instance slots they take in RenderWorld](../../screenshots/view_placement_tree.svg)
 
 - **LOD roots.** A streaming root (its levels are payloads; `src/world/README.md` "Loading") is a placed root with a placement per loaded
-  level, as below. A render-LOD root (levels in place) is a *group* where it is placed (`RenderLodGroup`, slots in `RenderWorld::lodGroups`
+  level, as below. A LOD-group root (levels in place) is a *group* where it is placed (`RenderLodGroup`, slots in `RenderWorld::lodGroups`
   taken and freed with its placement, as instance slots): the bounding sphere of its heuristic's extent placed by the root's transform, as the
   heuristic measures it, its thresholds (up to 8 levels; levels past them aren't drawn), its default, and a forced level (hand-set by its full
   path, else its default while the heuristic is off or it has no usable heuristic). Every level is walked and placed, its instances tagged with
   the group and their level, and a USD instance or point instancer under a level passes the tag to its instances; the renderer draws the level the
-  group picks each frame (`src/renderer/README.md`, "Render LOD"). A camera move changes nothing here. A render-LOD root has no placed root,
+  group picks each frame (`src/renderer/README.md`, "LOD groups"). A camera move changes nothing here. A LOD-group root has no placed root,
   no row in the `lod` and `streaming` records and no CPU evaluation; `lod` and `lod-reset` on its path and `lod-heuristic` change its group's
-  forced level. A level holding it is ready once every level's meshes are held, as all of them are placed. The `renderlod` record (next
+  forced level. A level holding it is ready once every level's meshes are held, as all of them are placed. The `lodgroups` record (next
   frames: it asks the renderer for every group's state) has the groups and their slots per level, what the GPU picked, and a check of every
-  pick against this heuristic at the camera the GPU measured from (`check.differ` 0 but on a threshold's edge); `view.renderlod {path}`
+  pick against this heuristic at the camera the GPU measured from (`check.differ` 0 but on a threshold's edge); `view.lodgroups {path}`
   lists the groups under a path. The LOD window lists every group beside the streaming roots ("The LOD tool" below); the Culling window
   counts the slots of levels not drawn.
 - **Walks.** A content is walked once per version and inherited state: the walk keeps, in walk order, the prims that draw, light, frame,
@@ -220,7 +220,7 @@ do its instances: only where it is placed.
   by default): a distance is UsdLod's, to the heuristic's center or the nearest point of its bounding box, in the stage's units like its
   thresholds; a screen size is its extent's bounding sphere over the view window at depth 1, as a fraction of the window, which unlike USD's
   reference query ignores the frustum, so what is near stays loaded whichever way the camera looks. Inside an authored blend band
-  (`blendThresholds`) a streaming root wants the finer level (render-LOD groups fade, src/renderer/README.md); at a boundary without one,
+  (`blendThresholds`) a streaming root wants the finer level (LOD groups fade, src/renderer/README.md); at a boundary without one,
   going coarser waits for a margin (`lodHysteresis`, 20% until the tuning changes it; for a distance the same margin, as a size falls with
   its square), so a camera at a threshold doesn't flip a root. The view's LOD tuning applies here and to the groups ("The LOD tool"). A level set by hand (`lod`, the LOD window) wins until `lod-reset`; with the heuristic off (`lod-heuristic off`,
   `view.lod.heuristic`, the LOD window's toggle) every other root wants its default; a root without a usable heuristic (`heuristicChosen`,
@@ -263,7 +263,7 @@ do its instances: only where it is placed.
 - **The debug camera** (`src/tools/debugcamera.*`, its state `DebugCameraState` in the tools' `ToolsState`, the Camera window's Debug camera section, `debug-camera on|off|place`, `view.camera.debug`): a
   second camera to watch the main camera from. `cam` stays the main camera (the player): everything that places the camera (`camera`,
   `camera-use`, `fly`, `--camera`, scene cameras and bookmarks) moves it, and it drives what is decided from a viewpoint: residency, the
-  LOD heuristic and render LOD (`RenderSnapshot::lodEye`; the LOD and Streaming inspectors and the Streaming map measure from the same
+  LOD heuristic and LOD groups (`RenderSnapshot::lodEye`; the LOD and Streaming inspectors and the Streaming map measure from the same
   camera, `lodCamera` in `debugcamera.h`), culling and the shadow cascades. While the debug camera is on, the view renders from it (and picks, drags gizmos
   and places labels through it; the lighting picks each pixel's shadow cascade by its depth from the shadow camera, not the one rendered
   from), and each of the three can be switched to it: `debug-camera lod|cull|shadows main|debug` (the cvars
@@ -286,7 +286,7 @@ do its instances: only where it is placed.
     the last frame is found) through the instances whose bounds hold the camera across the up axis, the chunks of 4,096 instances skipped by the
     bounds `SceneBoundsCache` keeps for the shadow cascades, and every triangle of the instances left, brute force (`groundBelow`); the meshes
     are kept from `SceneChanges` as they pass to the renderer (`GroundMeshes`). Ground cover and roofs lift the camera, and every level of a
-    render-LOD group counts; with nothing drawn under the camera it holds its height. `fly` suspends it for the main camera, orbiting for
+    LOD group counts; with nothing drawn under the camera it holds its height. `fly` suspends it for the main camera, orbiting for
     either. Ground from collision geometry waits for physics. The `status` record's `cameraModes` has the hit, its prim and what was tested
     (chunks, draws, triangles, milliseconds); the overlay draws a line from the eye to the hit and the orbit's pivot.
 - **Switching levels**: a root draws the finest loaded level, not finer than the one it desires, whose placement waits for nothing: linked,
@@ -311,7 +311,7 @@ do its instances: only where it is placed.
 
 - **The LOD tool** (`src/tools/lodtool.*`: its rows, inspection and requests in `LodToolState`, which the application owns in `ToolsState`
   and the tools' hooks fill; the LOD window `src/ui/lodwindow.*` draws it and keeps only its scroll and edit buffers): one place for LOD inspection, switching and tuning, both kinds.
-  - *The list*: every streaming root drawn and every render-LOD group placed (`buildLodRows` per snapshot: the roots' rows each time, the groups'
+  - *The list*: every streaming root drawn and every LOD group placed (`buildLodRows` per snapshot: the roots' rows each time, the groups'
     only when the instances, the tuning, the hand-set levels, the preference or the heuristic's state changed; a group's desired, drawn, fade
     and measure from the readback each frame while the window or a layer is shown, so the frames read every group's state back then: 16
     bytes a group). Filters by path, kind, under the selection, not drawing what it wants, fading. A level picker per row (`lod`,
@@ -328,16 +328,16 @@ do its instances: only where it is placed.
     hysteresis (`lod-hysteresis`, the GPU pick's push constant); blending (`lod-blending on|off`, off drops every band). All in
     `view.lod.tuning`, the window's header and fields. `tunedLodHeuristic` is what the CPU pick, the groups' records (`lodGroupOf`) and the
     records use. `LodTuningChanged` logs a change; `LodTuningRefused` a path with no root, a heuristic not there, thresholds out of order.
-    The `lod`, `streaming`, `renderlod` and `lodtool` records carry the tuning; rows say `tuned`.
+    The `lod`, `streaming`, `lodgroups` and `lodtool` records carry the tuning; rows say `tuned`.
   - *Layers* (the cvars `tools.lod.*`: `lod-show labels|gizmo|gizmo-all|flash on|off`, the window): the LOD Level view (`view lodlevel`: at
     half strength over the lit image, the drawn level of the nearest LOD root, or with `lod-show color depth` (`tools.lod.colorByDepth`)
     how many LOD roots deep it is, since a level's index means a different resolution at each depth (a region's `medium` and a tile's
-    `simplified` are both 5 m terrain); the window's swatches and labels follow, the gizmo and the inspector's levels stay by level; a render-LOD group at a forced level striped, one drawing another level than it wants checkered); labels over
+    `simplified` are both 5 m terrain); the window's swatches and labels follow, the gizmo and the inspector's levels stay by level; a LOD group at a forced level striped, one drawing another level than it wants checkered); labels over
     the roots (name, drawn level, fade, measure; a click selects); the heuristic gizmo of the selected or every shown root (`DebugDraw`: the
     distance's center or box, a ring per threshold at the distance it is reached, a screen size's from the view's window, in the colour of
     the level beyond it, a faint ring where a band ends); the pop flash (a group whose drawn level changed without a fade flashes white
-    for half a second, over any view: `src/renderer/README.md`, "Render LOD"; the `renderlod` record's `popped`, `flashing`, `popsSeen`).
-    A streaming root shows its level, label and gizmo; its flags and flash are render LOD's only, as its state is the CPU's.
+    for half a second, over any view: `src/renderer/README.md`, "LOD groups"; the `lodgroups` record's `popped`, `flashing`, `popsSeen`).
+    A streaming root shows its level, label and gizmo; its flags and flash are LOD groups' only, as its state is the CPU's.
 - **The Streaming tool** (`src/tools/streamingtool.*`: its rows, totals, inspection, history and requests in `StreamingToolState`, owned
   by the application in `ToolsState` and filled by the tools' hooks; the Streaming window `src/ui/streamingwindow.*`, `window streaming`, keeps its scroll, the map's pan and
   zoom, and edit buffers): residency seen and

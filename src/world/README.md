@@ -84,7 +84,7 @@ children UsdLod counts as LOD items: defined, active and not abstract (an `over`
 also asks them to be loaded; here loading a level is the engine's, so a level counts loaded or not, and a child defined only by its payload counts.
 `ngen-usdcheck` counts them the same way.
 
-![The two kinds of LOD root side by side: a streaming root whose levels are payloads, each a linked content of its own, and a render-LOD root whose levels are composed in place and picked per placement by the GPU.](../../screenshots/world_lod_root_kinds.svg)
+![The two kinds of LOD root side by side: a streaming root whose levels are payloads, each a linked content of its own, and a LOD-group root whose levels are composed in place and picked per placement by the GPU.](../../screenshots/world_lod_root_kinds.svg)
 
 **Two kinds of root, from what is authored** (`LodRoot::streams`):
 - **Streaming**: a level has a payload. A root wants a level, `lod:default:index` until `setLodLevel` sets one for its path, and loads the
@@ -92,7 +92,7 @@ also asks them to be loaded; here loading a level is the engine's, so a level co
   level not finer than the desired one, else the coarsest loaded one; a level the reader hasn't made resident isn't loaded, so it falls back to
   a coarser one. Whether a loaded level has everything it draws is the reader's to judge (ngen-view's, `src/view/README.md`, "Switching
   levels"). Each level is a content of its own (below).
-- **Render LOD**: no level has a payload (levels that are references or inline, as an asset's `lod0`… into its one geometry file). Every
+- **LOD groups**: no level has a payload (levels that are references or inline, as an asset's `lod0`… into its one geometry file). Every
   level is composed in place with the root's content, as USD composes it, and is loaded (`LodRoot::loaded` holds them all); which one draws
   is the renderer's, per placement, and `visit` walks them as children. Loading, linking, `setLodLevel` and the sections below concern
   streaming roots.

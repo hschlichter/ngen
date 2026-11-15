@@ -455,10 +455,10 @@ auto main(int argc, char* argv[]) -> int {
     });
     ViewHooks& hooks = uiHooks;
 
-    // Answers waiting for the scene to be resident (view.waitResident, view.lod.set, view.repack, view.purposes), and render-LOD records
+    // Answers waiting for the scene to be resident (view.waitResident, view.lod.set, view.repack, view.purposes), and LOD-group records
     // waiting for the groups' states to be read back.
     std::vector<ResidentWaiter> residentWaiters;
-    std::vector<RenderLodRequest> renderLodRequests;
+    std::vector<LodGroupRequest> lodGroupRequests;
     ScriptClock script = {.waitForResident = waitForResident, .lastFrame = maxFrames};
     // Dumps and captures that finish frames later, for console commands and RPC calls alike.
     ViewDumps dumps(
@@ -489,7 +489,7 @@ auto main(int argc, char* argv[]) -> int {
         .residentWaiters = residentWaiters,
         .residency = frame.residency,
         .script = script,
-        .renderLodRequests = renderLodRequests,
+        .lodGroupRequests = lodGroupRequests,
         .viewAspect = frame.viewAspect,
         .lodPops = frame.lodPops,
         .flight = frame.flight,
@@ -561,10 +561,10 @@ auto main(int argc, char* argv[]) -> int {
         pollInput(window, frame, hooks, input);
         frame.moveCamera(input.move, input.orbitHeld);
         frame.cull();
-        // Render-LOD records answer once a readback carries every group's state; while one waits, the frames read them back.
+        // LOD-group records answer once a readback carries every group's state; while one waits, the frames read them back.
         {
-            PROFILE_ZONE_DETAIL("ServiceRenderLodRequests", Frame);
-            frame.readLodStates = serviceRenderLodRequests(viewContext);
+            PROFILE_ZONE_DETAIL("ServiceLodGroupRequests", Frame);
+            frame.readLodStates = serviceLodGroupRequests(viewContext);
         }
         frame.countLodPops();
         frame.fitCascades();

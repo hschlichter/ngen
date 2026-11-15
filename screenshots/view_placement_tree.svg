@@ -44,7 +44,7 @@
   <rect x="70" y="234" width="530" height="60" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
   <text x="82" y="253" class="m">Prototype</text>
   <text x="157" y="253" class="sm">/World/Tree_1</text>
-  <text x="82" y="270" class="s">a render-LOD root in it: group 0 (its lodGroups); every</text>
+  <text x="82" y="270" class="s">a LOD-group root in it: group 0 (its lodGroups); every</text>
   <text x="82" y="285" class="s">level placed, its draws tagged with the group and level</text>
   <text x="588" y="253" class="tag" text-anchor="end" fill="#2563eb">slots 4–7</text>
   <rect x="70" y="306" width="530" height="60" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.6"/>
@@ -146,7 +146,7 @@
 
   <!-- RenderWorld::lodGroups -->
   <rect x="658" y="562" width="324" height="84" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
-  <text x="672" y="584" class="sm">lodGroups: a slot per render-LOD group</text>
+  <text x="672" y="584" class="sm">lodGroups: a slot per LOD group</text>
   <rect x="668" y="594" width="304" height="42" rx="5" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
   <text x="678" y="610" class="tag" fill="#64748b">0</text>
   <text x="700" y="610" class="s">Tree_1: sphere, thresholds,</text>

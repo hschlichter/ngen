@@ -173,7 +173,7 @@ private:
     GpuScene gpuScene;
     DrawLists drawLists;                   // per view and bucket, the draw records and meshlet work items, written by instanceCullPass
     InstanceCullPass instanceCullPass;     // GPU culling
-    LodGroups lodGroups;                   // render-LOD groups: their table, the levels picked, the residency of their levels
+    LodGroups lodGroups;                   // LOD groups: their table, the levels picked, the residency of their levels
     LodSelectPass lodSelectPass;           // the level each group draws, before culling
     DepthPyramid depthPyramid;             // occlusion culling's depth pyramid, built from the first phase's depth (and after a prepass from its whole depth)
     bool reportedWorkFull = false;         // MeshletWorkFull logged: the work items are at the device's largest buffer and still overflow

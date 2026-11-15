@@ -15,7 +15,7 @@ class FrameGraph;
 class RhiBuffer;
 class RhiDevice;
 
-// One entry of the render-LOD group table (std430, stride 240), read by shaders/lodselect.comp: RenderLodGroup, the distance's transforms as
+// One entry of the LOD group table (std430, stride 240), read by shaders/lodselect.comp: RenderLodGroup, the distance's transforms as
 // three rows each. serial changes each time the slot takes a new group, so the level picked for the group before isn't taken as this one's.
 struct GpuLodGroup {
     std::array<glm::vec4, 3> toWorld = {};
@@ -56,7 +56,7 @@ inline constexpr uint8_t forced = 1;   // at a forced level: hand-set, or the de
 inline constexpr uint8_t flashing = 2; // its drawn level changed without a fade within the last half second (the pop flash)
 } // namespace LodStateFlags
 
-// The render-LOD groups on the GPU (src/renderer/README.md, "Render LOD"): the group table, a record per group slot uploaded as groups
+// The LOD groups on the GPU (src/renderer/README.md, "LOD groups"): the group table, a record per group slot uploaded as groups
 // change; the state, per group the serial it was picked for, the level the heuristic wants, the level drawn, the level fading in and its
 // share, and the measure, which lodselect.comp writes each frame and the cull pass and the cutout pipelines read; and the residency mask, per group a bit per level with a mesh not in the pool, which the cull pass
 // sets and lodselect.comp reads and clears the next frame. The three persist across frames; a grown one is new, its contents undefined

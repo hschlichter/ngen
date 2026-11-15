@@ -24,7 +24,7 @@ public:
     auto destroy(RhiDevice* device) -> void;
 
     // Rewrites every frame context's descriptor set. Call whenever the instance buffer, the
-    // mesh table, the draw-list buffers or the render-LOD buffers are replaced; the old sets go
+    // mesh table, the draw-list buffers or the LOD-group buffers are replaced; the old sets go
     // through the deletion queue at `frame`.
     auto rebuildDescriptors(RhiDevice* device, const DrawLists& lists, const GpuScene& scene, const LodGroups& lodGroups, const DepthPyramid& pyramid, DeletionQueue& deletionQueue, uint64_t frame)
         -> void;

@@ -79,7 +79,7 @@ auto GeometryPass::descriptorBindings() -> std::array<RhiDescriptorBinding, 16> 
         {.binding = 13, .type = CombinedImageSampler, .stage = shaders},
         // The draw lists' draws and work item ranges.
         {.binding = 14, .type = StorageBuffer, .stage = shaders},
-        // The render-LOD state (lodselect.comp's): the cutout buckets' mesh shaders read a fading instance's share of the pattern, the geometry
+        // The LOD-group state (lodselect.comp's): the cutout buckets' mesh shaders read a fading instance's share of the pattern, the geometry
         // pass's its LOD tag (lodfade.glsl).
         {.binding = 15, .type = StorageBuffer, .stage = shaders},
     }};

@@ -1,6 +1,6 @@
 #version 450
 
-// Render LOD (src/renderer/README.md, "Render LOD"): the level each render-LOD group draws this frame, in two dispatches selected by
+// LOD groups (src/renderer/README.md, "LOD groups"): the level each LOD group draws this frame, in two dispatches selected by
 // push.mode:
 //
 //   0 select   one thread per group: the group's measure (UsdLod's distance or screen size, by the heuristic the view chose for it); the

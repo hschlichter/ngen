@@ -53,7 +53,7 @@
   <text x="210" y="336" class="code">inspection</text>
   <text x="210" y="352" class="code">heuristic, blending</text>
   <text x="210" y="368" class="code">levelView</text>
-  <text x="210" y="384" class="code">renderLod</text>
+  <text x="210" y="384" class="code">groupCounts</text>
   <text x="210" y="400" class="code">selectedRoot</text>
   <text x="410" y="300" class="t" font-weight="700">requests, by the window</text>
   <text x="410" y="320" class="code">levelRequests</text>

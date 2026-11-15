@@ -23,7 +23,7 @@ struct Instance {
     uint flags;
     vec3 boundsMax;
     uint lodLevel;   // drawn LOD level + 1, 0 under no LOD root
-    uint lodGroup;   // its render-LOD group + 1, 0 for none
+    uint lodGroup;   // its LOD group + 1, 0 for none
     uint triangleCount;
     uint streamRoot; // its streaming root's slot + 1, 0 under none
     uint lodDepth;   // how many LOD roots it is under, 0 under none
@@ -146,7 +146,7 @@ layout(std430, set = 0, binding = 14) readonly buffer DrawListWorks {
     DrawListWork data[];
 } drawListWork;
 
-// Per render-LOD group, lodselect.comp's state: the level fading in and its share (lodfade.glsl). The mesh shaders of the cutout buckets,
+// Per LOD group, lodselect.comp's state: the level fading in and its share (lodfade.glsl). The mesh shaders of the cutout buckets,
 // where a fading group's instances draw, pass an instance's share of the fade to the fragment shader; gbuffer.mesh its LOD tag.
 layout(std430, set = 0, binding = 15) readonly buffer LodStates {
     uvec4 data[];

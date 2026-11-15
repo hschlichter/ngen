@@ -51,7 +51,7 @@
   <rect x="28" y="234" width="1368" height="92" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
   <text x="40" y="250" class="band" fill="#16a34a">uploads</text>
   <rect x="28" y="334" width="1368" height="202" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
-  <text x="40" y="350" class="band" fill="#16a34a">render LOD and culling, first phase: what was visible last frame (compute)</text>
+  <text x="40" y="350" class="band" fill="#16a34a">LOD groups and culling, first phase: what was visible last frame (compute)</text>
   <rect x="28" y="544" width="1368" height="70" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
   <text x="40" y="560" class="band" fill="#16a34a">mesh-shader draws, first phase</text>
   <rect x="28" y="622" width="1368" height="158" rx="8" fill="#fffbeb" stroke="#d97706" stroke-opacity="0.45"/>

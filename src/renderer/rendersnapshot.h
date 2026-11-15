@@ -29,7 +29,7 @@ struct SamplerSettings {
 struct RenderSnapshot {
     glm::mat4 viewMatrix;
     glm::mat4 projMatrix;
-    // Where render LOD measures from: the main camera's eye, which a debug camera rendered from (viewMatrix) leaves where it is.
+    // Where LOD group selection measures from: the main camera's eye, which a debug camera rendered from (viewMatrix) leaves where it is.
     glm::vec3 lodEye = glm::vec3(0.0f);
     glm::vec3 worldUp = glm::vec3(0.0f, 1.0f, 0.0f); // stage's up axis (from USDScene::worldUp())
 
@@ -59,9 +59,9 @@ struct RenderSnapshot {
     glm::mat4 cullViewProj = glm::mat4(1.0f);
     // Read every instance's visibility bits per view back with the culling readback (CullResult::viewBits, the culled overlay).
     bool readVisibility = false;
-    // Read every render-LOD group's level drawn and desired back with the culling readback (for the `renderlod` record).
+    // Read every LOD group's level drawn and desired back with the culling readback (for the `lodgroups` record).
     bool readLodStates = false;
-    // Render LOD's tuning: the margin at a boundary without a blend band, as a fraction of a screen size (a distance's is the same margin
+    // LOD groups' tuning: the margin at a boundary without a blend band, as a fraction of a screen size (a distance's is the same margin
     // in the size: 1 / sqrt(1 - h) farther); and the pop flash, tinting a group's meshes after its level changed without a fade.
     float lodHysteresis = 0.2f;
     bool lodPopFlash = false;

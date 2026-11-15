@@ -19,7 +19,7 @@
 #include <sstream>
 
 // LOD and streaming's commands: the level a root wants, the heuristic and its preference, threshold overrides and the tuning; the records of
-// every LOD root, of residency per streaming root, and of render LOD (what the GPU picked, checked against the view's heuristic).
+// every LOD root, of residency per streaming root, and of LOD groups (what the GPU picked, checked against the view's heuristic).
 
 namespace {
 
@@ -282,7 +282,7 @@ auto streamingRecord(const ViewContext& view) -> Json {
           {"inFrustum", inFrustum},
           {"loading", loading},
           {"waiting", {{"meshes", waitingTotal.meshes}, {"materials", waitingTotal.materials}, {"textures", waitingTotal.textures}, {"composing", waitingTotal.composing}}},
-          {"renderLodGroups", view.scene.threadStats().lodGroups}}},
+          {"lodGroups", view.scene.threadStats().lodGroups}}},
         {"measured",
          {{"lateNow", streaming.lateNow},
           {"holesNow", streaming.holesNow},
@@ -377,10 +377,10 @@ auto expectedLevels(const RenderLodGroup& group, const glm::vec3& eye, float win
     return out;
 }
 
-// The render-LOD groups (src/renderer/README.md, "Render LOD"): what is placed, what the GPU picked at the latest readback with states,
+// The LOD groups (src/renderer/README.md, "LOD groups"): what is placed, what the GPU picked at the latest readback with states,
 // and that pick checked against the view's heuristic at the camera the pick measured from; with `path`, every group under it. The view's
 // own heuristic measures the same window (2 tan(fovY / 2) high, times the aspect wide).
-auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& path) -> Json {
+auto lodGroupsRecord(const ViewContext& view, const std::optional<std::string>& path) -> Json {
     const auto& draws = *view.scene.snapshot().draws;
     const auto& groups = draws.drawn.lodGroups;
     const auto& cull = view.latestCull;
@@ -555,10 +555,10 @@ auto lodTuningJson(const LodTuning& tuning) -> Json {
     return {{"bias", tuning.bias}, {"hysteresis", tuning.hysteresis}, {"blending", tuning.blending}, {"overrides", overrides}};
 }
 
-auto serviceRenderLodRequests(ViewContext& view) -> bool {
+auto serviceLodGroupRequests(ViewContext& view) -> bool {
     // The answers due are taken out before any runs, so an answer may ask for another readback.
     std::vector<std::function<void()>> due;
-    std::erase_if(view.renderLodRequests, [&](RenderLodRequest& request) {
+    std::erase_if(view.lodGroupRequests, [&](LodGroupRequest& request) {
         if (view.latestCull.lodFrame > request.askedAt && view.latestCull.lodHasStates) {
             due.push_back(std::move(request.answer));
             return true;
@@ -568,7 +568,7 @@ auto serviceRenderLodRequests(ViewContext& view) -> bool {
     for (auto& answer : due) {
         answer();
     }
-    return !view.renderLodRequests.empty();
+    return !view.lodGroupRequests.empty();
 }
 
 auto registerLodCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records, ViewContext& view) -> void {
@@ -622,7 +622,7 @@ auto registerLodCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRec
         {
             .name = "view.lod.override",
             .summary = "One heuristic's thresholds and blend thresholds in place of the authored ones, for the authored root of the LOD root at a path: every placement of it (every instance of an instanceable asset). A session opinion, never saved. Thresholds in the heuristic's unit (a distance in the stage's units, ascending; a screen size as a fraction of the view, descending). The LodTuningChanged log event says what changed; LodTuningRefused why nothing did.",
-            .params = {requiredField("root", RpcType::String, "a LOD root's full path (a streaming root or a render-LOD group)"),
+            .params = {requiredField("root", RpcType::String, "a LOD root's full path (a streaming root or a LOD group)"),
                        optionalField("heuristic", RpcType::Int, "which of its heuristics (an index in authored order); the one the preference uses when absent"),
                        optionalField("thresholds", RpcType::Array, "finest first"),
                        optionalField("blendThresholds", RpcType::Array, "where each band ends, finest first; [] for none"),
@@ -685,14 +685,14 @@ auto registerLodCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRec
         });
     registry.add(
         {
-            .name = "view.renderlod",
-            .summary = "The render-LOD groups under a path (each render-LOD root where it is placed): sphere, thresholds, default and forced level, the screen size, and the level the GPU wants and draws; with the `renderlod` record's totals and check. Answers frames later, once the states are read back.",
+            .name = "view.lodgroups",
+            .summary = "The LOD groups under a path (each LOD-group root where it is placed): sphere, thresholds, default and forced level, the screen size, and the level the GPU wants and draws; with the `lodgroups` record's totals and check. Answers frames later, once the states are read back.",
             .params = {requiredField("path", RpcType::String, "prim path; / for every group")},
-            .result = "the renderlod record, with groupsUnder",
+            .result = "the lodgroups record, with groupsUnder",
         },
         [&view](const Json& p, RpcResponder responder) {
             auto path = p["path"].get<std::string>();
-            view.renderLodRequests.push_back({.askedAt = view.latestCull.lodFrame, .answer = [&view, responder, path]() mutable { responder.respond(renderLodRecord(view, path)); }});
+            view.lodGroupRequests.push_back({.askedAt = view.latestCull.lodFrame, .answer = [&view, responder, path]() mutable { responder.respond(lodGroupsRecord(view, path)); }});
         });
     registry.add({.name = "view.streaming.reset", .summary = "Zeroes the streaming counters (late switches, root-seconds coarser, loads, reloads, leads, arrivals unwanted), for a run measured from a known start.", .result = "{}"},
                  [&view](const Json&, RpcResponder responder) {
@@ -719,9 +719,9 @@ auto registerLodCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRec
     records.add("streaming", "residency: per streaming root the level desired and why, its streaming radii and state, the levels resident and why, drawn, late, per level requested, loaded, ready and lead, authoring findings; streaming measured (late, holes, loads, reloads, lead)", [&view](RpcResponder responder) {
         responder.respond(streamingRecord(view));
     });
-    records.add("renderlod",
-                "render LOD: the groups placed and their slots per level, what the GPU picked (levels drawn, fallbacks, forced), and that pick checked against the view's heuristic at the view's camera (next frames)",
+    records.add("lodgroups",
+                "LOD groups: the groups placed and their slots per level, what the GPU picked (levels drawn, fallbacks, forced), and that pick checked against the view's heuristic at the view's camera (next frames)",
                 [&view](RpcResponder responder) {
-                    view.renderLodRequests.push_back({.askedAt = view.latestCull.lodFrame, .answer = [&view, responder]() mutable { responder.respond(renderLodRecord(view, std::nullopt)); }});
+                    view.lodGroupRequests.push_back({.askedAt = view.latestCull.lodFrame, .answer = [&view, responder]() mutable { responder.respond(lodGroupsRecord(view, std::nullopt)); }});
                 });
 }

@@ -23,7 +23,7 @@ struct MeshletCounts {
 };
 
 // GPU culling result for the editor (Culling window, AABB overlay), from DrawLists' readback.
-// Culling goes in steps: the scene, what instance culling keeps (frustum, occlusion, render LOD), and what the task shaders draw of it
+// Culling goes in steps: the scene, what instance culling keeps (frustum, occlusion, LOD groups), and what the task shaders draw of it
 // (meshlet culling). "Triangles" is what is drawn, after both; "instance triangles" what instance culling alone keeps.
 struct CullResult {
     uint64_t frame = 0; // 0: nothing read back yet
@@ -57,7 +57,7 @@ struct CullResult {
     // Per instance, bit v = visible in view v (0 camera, 1.. cascades); read back only for a frame whose snapshot asked (readVisibility),
     // empty otherwise.
     std::vector<uint8_t> viewBits;
-    // Render LOD: instances of a level their group doesn't draw (in no view), instances drawn in a fading group (both levels, in the cutout
+    // LOD groups: instances of a level their group doesn't draw (in no view), instances drawn in a fading group (both levels, in the cutout
     // buckets), and from the selection's readback the groups, those drawing each level, those falling back while the desired level isn't
     // resident, those at a forced level, those fading, those whose drawn level changed this frame without a fade (a pop); per group the
     // level drawn and desired (0xFF none), the level fading in (0xFF none) and its share, the measure, and its flags (LodStateFlags), when
@@ -176,7 +176,7 @@ public:
     // Draw records the scatters dropped past their draw list's end: the CPU's bucket counts (countInstance) undercounted a draw list. 0 unless the
     // CPU's bucket rule and the shader's disagree.
     static constexpr uint32_t counterDrawListOverflow = counterWorkOverflow + 1;
-    static constexpr uint32_t counterFading = counterDrawListOverflow + 1; // instances drawn in a fading render-LOD group
+    static constexpr uint32_t counterFading = counterDrawListOverflow + 1; // instances drawn in a fading LOD group
     static constexpr uint32_t counterCount = counterFading + 1;
     static constexpr uint32_t groupSize = 256;
     static constexpr uint32_t noBucket = UINT32_MAX;
@@ -276,7 +276,7 @@ public:
         FgBufferHandle history;
         FgBufferHandle drawListWork;
         FgBufferHandle workItems;
-        // Not the draw lists': the render-LOD state, which the cutout buckets' mesh shaders read for fades. Set by the renderer from
+        // Not the draw lists': the LOD-group state, which the cutout buckets' mesh shaders read for fades. Set by the renderer from
         // LodGroups::Handles, so the passes drawing these lists declare the read.
         FgBufferHandle lodStates;
     };

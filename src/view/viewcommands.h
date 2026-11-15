@@ -55,9 +55,9 @@ struct ScriptClock {
     uint64_t frame = 0;
 };
 
-// An answer waiting for a culling readback with every render-LOD group's state (frames later): the `renderlod` record, view.renderlod, and
+// An answer waiting for a culling readback with every LOD group's state (frames later): the `lodgroups` record, view.lodgroups, and
 // the LOD tool's inspection and record. `answer` runs once a readback taken after `askedAt` has arrived.
-struct RenderLodRequest {
+struct LodGroupRequest {
     uint64_t askedAt = 0;
     std::function<void()> answer;
 };
@@ -82,9 +82,9 @@ struct ViewContext {
     std::vector<ResidentWaiter>& residentWaiters;
     const ViewResidency& residency;
     ScriptClock& script;
-    std::vector<RenderLodRequest>& renderLodRequests;
+    std::vector<LodGroupRequest>& lodGroupRequests;
     const float& viewAspect; // the view's width over height, as the LOD heuristic and the GPU's pick measure it
-    const uint64_t& lodPops; // render-LOD pops (a drawn level changed without a fade) counted over the readbacks seen
+    const uint64_t& lodPops; // LOD-group pops (a drawn level changed without a fade) counted over the readbacks seen
     CameraFlight& flight;
     CameraModesState& cameraModes;  // the camera modes' state (ground.h)
     const std::string& startCamera; // the start camera not placed yet (ViewFrame::startCamera); empty once placed
@@ -114,9 +114,9 @@ auto runFrameCommands(ViewContext& view, SessionScript& session, const RpcRegist
 // Answers the methods waiting for the scene to be resident once it is; once a frame, after residency is updated.
 auto answerResidentWaiters(ViewContext& view) -> void;
 
-// Answers the render-LOD requests whose readback has arrived; once a frame, after the culling readback is taken. True while some still
+// Answers the LOD-group requests whose readback has arrived; once a frame, after the culling readback is taken. True while some still
 // wait, so the next frames read the states back.
-auto serviceRenderLodRequests(ViewContext& view) -> bool;
+auto serviceLodGroupRequests(ViewContext& view) -> bool;
 
 // The view's LOD tuning as the records give it: bias, hysteresis, blending, and every override by authored root and heuristic.
 auto lodTuningJson(const LodTuning& tuning) -> rpc::Json;

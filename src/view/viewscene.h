@@ -85,7 +85,7 @@ auto lodOverrideOf(const LodTuning& tuning, const std::string& rootKey, uint32_t
 // A heuristic as the view picks with it under the tuning: the override's thresholds, the bias applied to them, no bands with blending off.
 auto tunedLodHeuristic(const LodHeuristic& heuristic, const LodOverride* override, const LodTuning& tuning) -> LodHeuristic;
 
-// What the view knows of a render-LOD group's root, published with the instances for the inspector: its authored root (lodRootKey), its levels'
+// What the view knows of a LOD group's root, published with the instances for the inspector: its authored root (lodRootKey), its levels'
 // names finest first, and every heuristic it authors.
 struct LodGroupSource {
     std::string key;
@@ -171,7 +171,7 @@ struct SceneThreadStats {
     uint32_t placementsDrawn = 0;  // of them, drawn
     uint64_t walksBuilt = 0;       // content walks built (new, composed again, or with a gizmo's opinion in them), since the scene opened
     uint64_t walksKept = 0;        // kept now
-    uint32_t lodGroups = 0;        // render-LOD groups placed (drawn placements' render-LOD roots)
+    uint32_t lodGroups = 0;        // LOD groups placed (drawn placements' LOD-group roots)
     uint32_t lodGroupsChanged = 0; // of the last pass that changed something: groups added, changed or freed
     // The LOD heuristic's last evaluation: roots evaluated, levels it changed (finer, coarser), and its time.
     uint32_t lodRootsEvaluated = 0;
@@ -213,8 +213,8 @@ struct SceneDraws {
     std::shared_ptr<const Placement> placements;                               // the tree; queries walk it
     ChunkedList<std::string> primPaths;                                        // by prim index - 1; an index not in use keeps its last path
     ChunkedList<std::shared_ptr<const std::vector<std::string>>> assetsByPrim; // by prim index - 1: the assets a drawn prim's draws use
-    ChunkedList<std::string> lodGroupPaths;                                    // by render-LOD group slot (RenderWorld::lodGroups): the root's full path; empty when free
-    ChunkedList<std::shared_ptr<const LodGroupSource>> lodGroupSources;        // by render-LOD group slot: its root's levels and heuristics; null when free
+    ChunkedList<std::string> lodGroupPaths;                                    // by LOD group slot (RenderWorld::lodGroups): the root's full path; empty when free
+    ChunkedList<std::shared_ptr<const LodGroupSource>> lodGroupSources;        // by LOD group slot: its root's levels and heuristics; null when free
     // Asset id to the prims whose instances use it, built from assetsByPrim on the first query.
     auto drawsByAsset() const -> const std::unordered_map<std::string, std::vector<uint32_t>>&;
     // The drawn placements' cameras, LOD roots, payload placements, point instancers and prims with variant sets, in tree order, gathered
@@ -326,7 +326,7 @@ public:
     // Drops every override of the authored root of the LOD root at a path; an empty path drops them all.
     auto resetLodOverrides(const std::string& rootPath) -> void;
     auto lodTuning() const -> const LodTuning& { return *current->lodTuning; }
-    // The levels set by hand, by LOD root path (streaming roots and render-LOD groups alike).
+    // The levels set by hand, by LOD root path (streaming roots and LOD groups alike).
     auto lodHandLevels() const -> const std::unordered_map<std::string, uint32_t>& { return *current->lodHandLevels; }
     // Streaming measured (SceneStreaming), as of the snapshot update() took; resetStreamingCounters zeroes the totals, for a run measured
     // from a known start.
@@ -532,7 +532,7 @@ private:
     LodPreference lodPreferenceNow = LodPreference::Distance;
     std::shared_ptr<const LodTuning> tuning = std::make_shared<LodTuning>();
     auto applyTuning(const TuningRequest& request) -> void;
-    // The authored root (lodRootKey) of the LOD root at a path, and its heuristics: a render-LOD group's or a placed streaming root's.
+    // The authored root (lodRootKey) of the LOD root at a path, and its heuristics: a LOD group's or a placed streaming root's.
     auto authoredRootOf(const std::string& path) const -> std::optional<std::pair<std::string, const std::vector<LodHeuristic>*>>;
     bool evaluateNeeded = false;
     std::unordered_map<std::string, uint32_t> handLevels;
@@ -688,7 +688,7 @@ private:
     auto allocPrim(const std::string& path) -> uint32_t;
     auto freePrim(uint32_t prim) -> void;
     auto touchSlot(uint32_t slot) -> void;
-    // Render-LOD group slots (RenderWorld::lodGroups), taken and freed like instance slots, with what the view knows of each: the root's full
+    // LOD group slots (RenderWorld::lodGroups), taken and freed like instance slots, with what the view knows of each: the root's full
     // path, its default level, whether its heuristic is usable, and its level count; and by path.
     struct LodGroupInfo {
         std::string path;

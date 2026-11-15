@@ -100,7 +100,7 @@
   <text x="44" y="285" class="s">The group box first: a group outside</text>
   <text x="44" y="300" class="s">every view counts its slots culled</text>
   <text x="44" y="315" class="s">without reading them. Then per view:</text>
-  <text x="44" y="330" class="s">frustum, render-LOD level, history</text>
+  <text x="44" y="330" class="s">frustum, LOD-group level, history</text>
   <text x="44" y="345" class="s">(occlusion, first phase); the bucket</text>
   <text x="44" y="360" class="s">from the flags. Counts per workgroup</text>
   <text x="44" y="375" class="s">and draw list: draws, meshlets, triangles.</text>

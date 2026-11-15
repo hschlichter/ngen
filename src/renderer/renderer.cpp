@@ -717,7 +717,7 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
     }
     geometryDescriptorSets.clear();
 
-    // The culling passes name the same instance buffer and mesh table, plus the draw-list and render-LOD buffers.
+    // The culling passes name the same instance buffer and mesh table, plus the draw-list and LOD-group buffers.
     {
         PROFILE_ZONE_DETAIL("CullDescriptors", Render);
         instanceCullPass.rebuildDescriptors(device, drawLists, gpuScene, lodGroups, depthPyramid, deletionQueue, m_frameIndex);
@@ -1109,7 +1109,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         profile::endZone(); // ShadowSetup
         static const uint32_t addCullPassesLocation = profile::registerSourceLocation("AddCullPasses", profile::Group::Render, profile::Level::Detail);
         profile::beginZone(addCullPassesLocation);
-        // Render LOD picks each group's level from the live main camera (not a frozen culling frustum, nor a debug camera rendered from):
+        // LOD group selection picks each group's level from the live main camera (not a frozen culling frustum, nor a debug camera rendered from):
         // its position, and the view window's area at depth 1 from the projection (2 / |proj[0][0]| wide, 2 / |proj[1][1]| high), as the
         // view's heuristic measures.
         auto lodHandles = lodGroups.import(frameGraph, currentFrame);

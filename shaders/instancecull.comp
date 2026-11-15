@@ -29,10 +29,10 @@
 // is double-sided, bit 1 cutout. Every draw list holds the instances whose mesh is in the pool and that its view sees, each drawing its
 // submesh's meshlets: a prim draws one instance per submesh, in the camera and in the cascades alike, each culled by its submesh's box.
 //
-// Render LOD: an instance of a render-LOD group is drawn only when the group draws its level, or fades its level in (lodselect.comp ran
+// LOD groups: an instance of a LOD group is drawn only when the group draws its level, or fades its level in (lodselect.comp ran
 // before); one whose mesh isn't in the pool marks its level in the group's residency mask, which the next frame's selection reads. While a
 // group fades, both its levels' instances draw in the cutout buckets, whose pipelines dither them (lodfade.glsl); the CPU counts every
-// render-LOD instance in its cutout bucket too (DrawLists::countInstance), so the draw lists hold them.
+// LOD-group instance in its cutout bucket too (DrawLists::countInstance), so the draw lists hold them.
 
 layout(local_size_x = 256) in;
 
@@ -117,7 +117,7 @@ struct Instance {
     uint flags;
     vec3 boundsMax;
     uint lodLevel; // the instance's level + 1 in its group
-    uint lodGroup; // its render-LOD group + 1, 0 for none
+    uint lodGroup; // its LOD group + 1, 0 for none
     uint triangleCount;
 };
 
@@ -178,21 +178,21 @@ layout(std430, set = 0, binding = 7) buffer Totals {
 // visible, 0xF not tested (culling off or no bounds).
 const uint planeVisible = 0xEu;
 const uint planeNotTested = 0xFu;
-const uint planeLevelNotDrawn = 0xDu; // a render-LOD level its group doesn't draw, in every view
+const uint planeLevelNotDrawn = 0xDu; // a LOD-group level its group doesn't draw, in every view
 const uint deadMesh = 0xFFFFFFFFu;     // a dead slot's mesh (GpuScene): past the mesh table, never drawn
 const uint planeOccluded = 0xCu;
 layout(std430, set = 0, binding = 8) buffer CullPlanes {
     uint codes[];
 } cullPlanes;
 
-// Per render-LOD group (lodselect.comp): x its serial, y the level desired (bits 0-7), drawn (bits 8-15) and fading in (bits 16-23, 0xFF for
+// Per LOD group (lodselect.comp): x its serial, y the level desired (bits 0-7), drawn (bits 8-15) and fading in (bits 16-23, 0xFF for
 // none), z the fade's share, w the measure.
 layout(std430, set = 0, binding = 9) readonly buffer LodStates {
     uvec4 data[];
 } lodStates;
 const uint noLevel = 0xFFu;
 
-// Whether the instance's render-LOD group is fading: both its levels draw, in the cutout buckets.
+// Whether the instance's LOD group is fading: both its levels draw, in the cutout buckets.
 bool fadingOf(Instance inst) {
     if (inst.lodGroup == 0 || inst.lodGroup > uint(lodStates.data.length())) {
         return false;
@@ -200,7 +200,7 @@ bool fadingOf(Instance inst) {
     return ((lodStates.data[inst.lodGroup - 1].y >> 16) & 0xFFu) != noLevel;
 }
 
-// Per render-LOD group, a bit per level with an instance whose mesh isn't in the pool.
+// Per LOD group, a bit per level with an instance whose mesh isn't in the pool.
 layout(std430, set = 0, binding = 10) buffer LodResidency {
     uint bits[];
 } lodResidency;
@@ -383,7 +383,7 @@ void cull() {
     barrier();
 
     if (groupSkip != 0u) {
-        // Outside every view: nothing drawn, every slot culled by the group's plane in each view. Render-LOD slots in it count as culled,
+        // Outside every view: nothing drawn, every slot culled by the group's plane in each view. LOD-group slots in it count as culled,
         // not as levels not drawn, and don't mark their residency (no view sees them).
         if (m < params.instanceCount) {
             visibility.bits[m] = 0u;

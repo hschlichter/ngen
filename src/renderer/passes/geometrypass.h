@@ -37,7 +37,7 @@ public:
 
     // Set 0, one set per frame context, for every mesh pass: 0 view UBO, 1 material texture array (GpuScene::maxTextures), 2 instance buffer,
     // 3 material table, 4-9 the geometry pool (vertices, positions, meshlets, meshlet vertices, meshlet triangles, mesh table), 10-12 the
-    // slot's meshlet work items, culling parameters and meshlet counts, 13 the depth pyramid, 14 the slot's draw list draws, 15 the render-LOD
+    // slot's meshlet work items, culling parameters and meshlet counts, 13 the depth pyramid, 14 the slot's draw list draws, 15 the LOD-group
     // state (shaders/meshlet.glsl).
     static auto descriptorBindings() -> std::array<RhiDescriptorBinding, 16>;
     auto destroy(RhiDevice* device) -> void;

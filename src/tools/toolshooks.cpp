@@ -138,7 +138,7 @@ auto ToolsHooks::afterCamera(ViewFrame& frame) -> void {
     if (toolscvars::debugCamera.get()) {
         extendDebugCameraTrail(tools.debugCamera, frame.cam.position, frame.scene.lodMetersPerUnit());
     }
-    // While the LOD tool is shown, the frames read every render-LOD group's state back, and its rows take them.
+    // While the LOD tool is shown, the frames read every LOD group's state back, and its rows take them.
     frame.readLodStates = frame.readLodStates || lodShown;
     if (lodShown) {
         updateLodRows(frame.scene, frame.latestCull, tools.lod);
@@ -196,15 +196,15 @@ auto ToolsHooks::syncLodTool(ViewFrame& frame) -> void {
             scene.resetLodLevel(request.root);
         }
     }
-    // Render LOD: the GPU's counts.
-    lod.renderLod.groups = scene.threadStats().lodGroups;
-    lod.renderLod.drawing = cull.lodPicked;
-    lod.renderLod.fallbacks = cull.lodFallbacks;
-    lod.renderLod.forced = cull.lodForced;
-    lod.renderLod.fading = cull.lodFading;
-    lod.renderLod.popped = cull.lodPopped;
-    lod.renderLod.pops = frame.lodPops;
-    lod.renderLod.slotsNotDrawn = cull.lodDropped;
+    // LOD groups: the GPU's counts.
+    lod.groupCounts.groups = scene.threadStats().lodGroups;
+    lod.groupCounts.drawing = cull.lodPicked;
+    lod.groupCounts.fallbacks = cull.lodFallbacks;
+    lod.groupCounts.forced = cull.lodForced;
+    lod.groupCounts.fading = cull.lodFading;
+    lod.groupCounts.popped = cull.lodPopped;
+    lod.groupCounts.pops = frame.lodPops;
+    lod.groupCounts.slotsNotDrawn = cull.lodDropped;
     // The tuning, and what the window asked to change.
     const auto& tuning = scene.lodTuning();
     lod.bias = tuning.bias;

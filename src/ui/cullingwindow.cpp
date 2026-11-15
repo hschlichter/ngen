@@ -100,7 +100,7 @@ void drawCullingWindow(bool& show, CullingWindowInputs in) {
     }
     ImGui::Text("Instances culled: %u frustum, %u occluded, %u LOD level not drawn", cull.cameraCulled, cull.occluded, cull.lodDropped);
     helpMarker("Frustum: outside the camera's frustum. Occluded: hidden by the depth pyramid in occlusion's second phase (one drawn\n"
-               "in the first phase, visible last frame, counts as drawn too). LOD level not drawn: slots of render-LOD levels\n"
+               "in the first phase, visible last frame, counts as drawn too). LOD level not drawn: slots of LOD-group levels\n"
                "their group doesn't draw this frame (the GPU picked another level); in no view.");
     ImGui::Text("Meshlets culled: %u frustum, %u cone, %u depth", meshlets.frustumCulled, meshlets.coneCulled, meshlets.occluded);
     helpMarker("Up to 64 vertices and 124 triangles each, culled by the geometry pass's task shaders: the meshlet's sphere against\n"

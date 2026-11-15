@@ -274,7 +274,7 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
         Purpose purpose = Purpose::Default;
         std::string material;
         bool strong = false;
-        int32_t lodRootItem = -1; // under a level of a render-LOD root: the root's item and the level
+        int32_t lodRootItem = -1; // under a level of a LOD-group root: the root's item and the level
         uint32_t lodLevel = 0;
     };
     std::function<void(PrimId, const State&)> walk = [&](PrimId id, const State& parent) {
@@ -328,7 +328,7 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
                       .lodRoot = content.lodRoots.contains(id) && content.lodRoots.at(id).streams,
                       .light = content.lights.contains(id),
                       .variants = !worldPrim.variantSelections.empty(),
-                      .renderLodRoot = content.lodRoots.contains(id) && !content.lodRoots.at(id).streams,
+                      .lodGroupRoot = content.lodRoots.contains(id) && !content.lodRoots.at(id).streams,
                       .lodRootItem = state.lodRootItem,
                       .lodLevel = state.lodLevel};
         bool drawsMesh = !worldPrim.meshAsset.empty();
@@ -336,7 +336,7 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
             prim.subsets = std::ranges::any_of(worldPrim.children, [&](PrimId child) { return content.prims[child].binding.has_value(); });
         }
         int32_t primItem = -1;
-        if (drawsMesh || prim.camera || prim.payload || prim.lodRoot || prim.light || prim.variants || prim.renderLodRoot) {
+        if (drawsMesh || prim.camera || prim.payload || prim.lodRoot || prim.light || prim.variants || prim.lodGroupRoot) {
             auto index = (uint32_t) out->items.size();
             primItem = (int32_t) index;
             if (drawsMesh) {
@@ -376,7 +376,7 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
             return;
         }
         if (auto lod = content.lodRoots.find(id); lod != content.lodRoots.end() && !lod->second.streams) {
-            // A render-LOD root's levels are walked like its other children, what is under a level tagged with the root's item and the
+            // A LOD-group root's levels are walked like its other children, what is under a level tagged with the root's item and the
             // level: the renderer draws the level the root's group picks.
             for (PrimId child : worldPrim.children) {
                 auto level = std::ranges::find(lod->second.levels, child);
@@ -1228,7 +1228,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
             const auto& segment = node->segments[s];
             const auto& items = segment.walk->items;
             itemsPlaced += items.size();
-            // The group slot + 1 of each render-LOD root item in this segment, as its item is reached (before its levels' items).
+            // The group slot + 1 of each LOD-group root item in this segment, as its item is reached (before its levels' items).
             std::unordered_map<int32_t, uint32_t> groupOfItem;
             {
                 profile::ScopedZone rowsZone(rowsLocation, zoned && spec.drawn);
@@ -1258,7 +1258,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                 const auto& item = items[i];
                 auto world = item.absolute ? item.world : segment.world * item.world;
                 auto path = primpath::join(segment.path, item.path);
-                // The render-LOD group and level its instances are tagged with: its root's in this segment, else the one this placement is under.
+                // The LOD group and level its instances are tagged with: its root's in this segment, else the one this placement is under.
                 uint32_t tagGroup = spec.lodGroup;
                 uint32_t tagLevel = spec.lodGroupLevel;
                 // How many LOD roots its instances are under: the placement's, and one more under a root in this segment.
@@ -1308,7 +1308,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                            .lodGroupLevel = tagLevel});
                     continue;
                 }
-                if (item.renderLodRoot && spec.drawn) {
+                if (item.lodGroupRoot && spec.drawn) {
                     // A group where the root is placed: its heuristics and transform, from which its record is made under the preference
                     // (lodGroupOf), its default and forced level.
                     const auto& lod = content.lodRoots.at(item.id);
