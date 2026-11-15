@@ -6,7 +6,7 @@
 #include "renderworld.h"
 #include "viewmenubar.h"
 
-#include "renderconfig.h"
+#include "rendercvars.h"
 
 #include <imgui.h>
 
@@ -30,12 +30,12 @@ auto ViewUI::toggleShortcuts() -> void {
         }
     }
     if (pressed(ImGuiMod_Ctrl | ImGuiKey_D)) {
-        if (auto* debugCamera = configBool("tools.debugcamera.on")) {
+        if (auto* debugCamera = cvarBool("tools.debugcamera.on")) {
             debugCamera->set(!debugCamera->get());
         }
     }
     if (pressed(ImGuiMod_Ctrl | ImGuiKey_B)) {
-        if (auto* budgetOverlay = configBool("ui.overlay.budget")) {
+        if (auto* budgetOverlay = cvarBool("ui.overlay.budget")) {
             budgetOverlay->set(!budgetOverlay->get());
         }
     }
@@ -48,37 +48,37 @@ auto ViewUI::toggleShortcuts() -> void {
     }};
     for (auto [key, view] : debugViews) {
         if (pressed(key)) {
-            (void) renderconfig::debugView.set(renderconfig::debugView.get() == (size_t) view ? (size_t) DebugView::None : (size_t) view);
+            (void) rendercvars::debugView.set(rendercvars::debugView.get() == (size_t) view ? (size_t) DebugView::None : (size_t) view);
         }
     }
     if (pressed(ImGuiMod_Ctrl | ImGuiKey_1)) {
-        renderconfig::bufferOverlay.set(!renderconfig::bufferOverlay.get());
+        rendercvars::bufferOverlay.set(!rendercvars::bufferOverlay.get());
     }
     if (pressed(ImGuiMod_Ctrl | ImGuiKey_2)) {
-        renderconfig::shadowOverlay.set(!renderconfig::shadowOverlay.get());
+        rendercvars::shadowOverlay.set(!rendercvars::shadowOverlay.get());
     }
-    std::array<std::pair<ImGuiKeyChord, GBufferView>, 2> bufferViews = {{
-        {ImGuiMod_Ctrl | ImGuiKey_3, GBufferView::MipLevel},
-        {ImGuiMod_Ctrl | ImGuiKey_4, GBufferView::LodLevel},
+    std::array<std::pair<ImGuiKeyChord, ViewMode>, 2> viewModes = {{
+        {ImGuiMod_Ctrl | ImGuiKey_3, ViewMode::MipLevel},
+        {ImGuiMod_Ctrl | ImGuiKey_4, ViewMode::LodLevel},
     }};
-    for (auto [chord, view] : bufferViews) {
+    for (auto [chord, view] : viewModes) {
         if (pressed(chord)) {
-            (void) renderconfig::bufferView.set(renderconfig::bufferView.get() == (size_t) view ? (size_t) GBufferView::Lit : (size_t) view);
+            (void) rendercvars::viewMode.set(rendercvars::viewMode.get() == (size_t) view ? (size_t) ViewMode::Lit : (size_t) view);
         }
     }
     if (pressed(ImGuiMod_Ctrl | ImGuiKey_5)) {
         PlainLit now = {
-            .gbufferView = (int) renderconfig::bufferView.get(),
-            .debugView = (int) renderconfig::debugView.get(),
-            .bufferOverlay = renderconfig::bufferOverlay.get(),
-            .shadowOverlay = renderconfig::shadowOverlay.get(),
+            .viewMode = (int) rendercvars::viewMode.get(),
+            .debugView = (int) rendercvars::debugView.get(),
+            .bufferOverlay = rendercvars::bufferOverlay.get(),
+            .shadowOverlay = rendercvars::shadowOverlay.get(),
         };
-        bool plain = now.gbufferView == (int) GBufferView::Lit && now.debugView == (int) DebugView::None && !now.bufferOverlay && !now.shadowOverlay;
+        bool plain = now.viewMode == (int) ViewMode::Lit && now.debugView == (int) DebugView::None && !now.bufferOverlay && !now.shadowOverlay;
         auto apply = [](const PlainLit& views) {
-            (void) renderconfig::bufferView.set((size_t) views.gbufferView);
-            (void) renderconfig::debugView.set((size_t) views.debugView);
-            renderconfig::bufferOverlay.set(views.bufferOverlay);
-            renderconfig::shadowOverlay.set(views.shadowOverlay);
+            (void) rendercvars::viewMode.set((size_t) views.viewMode);
+            (void) rendercvars::debugView.set((size_t) views.debugView);
+            rendercvars::bufferOverlay.set(views.bufferOverlay);
+            rendercvars::shadowOverlay.set(views.shadowOverlay);
         };
         if (!plain) {
             beforePlainLit = now;
@@ -103,33 +103,33 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         renderDebugLast = std::move(freshRenderDebugSnap);
     }
     toggleShortcuts();
-    // The render settings the menu and the Render Debug window edit: their configuration values, copied here and written back after
+    // The render settings the menu and the Render Debug window edit: their cvars, copied here and written back after
     // both have drawn (a value written back unchanged doesn't count as a change).
-    bool depthPrepass = renderconfig::depthPrepass.get();
-    bool showGrid = toolsconfig::overlayGrid.get();
-    bool showOrigin = toolsconfig::overlayOrigin.get();
-    bool showGizmo = toolsconfig::overlayGizmos.get();
-    bool showAabbs = toolsconfig::overlayAabbs.get();
-    bool showSelectedAabb = toolsconfig::overlaySelectedAabb.get();
-    bool showLightGizmos = toolsconfig::overlayLightGizmos.get();
-    auto* guides = configBool("scene.purposes.guide");
-    auto* proxies = configBool("scene.purposes.proxy");
+    bool depthPrepass = rendercvars::depthPrepass.get();
+    bool showGrid = toolscvars::overlayGrid.get();
+    bool showOrigin = toolscvars::overlayOrigin.get();
+    bool showGizmo = toolscvars::overlayGizmos.get();
+    bool showAabbs = toolscvars::overlayAabbs.get();
+    bool showSelectedAabb = toolscvars::overlaySelectedAabb.get();
+    bool showLightGizmos = toolscvars::overlayLightGizmos.get();
+    auto* guides = cvarBool("scene.purposes.guide");
+    auto* proxies = cvarBool("scene.purposes.proxy");
     bool showGuides = guides != nullptr && guides->get();
     bool showProxies = proxies != nullptr && proxies->get();
-    bool cullEnabled = renderconfig::cullingEnabled.get();
-    bool cullFrozen = renderconfig::cullingFrozen.get();
-    bool occlusion = renderconfig::cullingOcclusion.get();
-    bool showCulled = toolsconfig::overlayCulled.get();
-    int culledView = (int) toolsconfig::overlayCulledView.get();
-    bool cascadeFrusta = toolsconfig::overlayCascadeFrusta.get();
-    int gbufferView = (int) renderconfig::bufferView.get();
-    int debugView = (int) renderconfig::debugView.get();
-    bool bufferOverlay = renderconfig::bufferOverlay.get();
-    bool shadowOverlay = renderconfig::shadowOverlay.get();
-    bool antiAliasing = renderconfig::antiAliasing.get();
-    auto sampler = renderconfig::samplerSettings();
-    auto shadow = renderconfig::shadowSettings();
-    auto ambient = renderconfig::ambient();
+    bool cullEnabled = rendercvars::cullingEnabled.get();
+    bool cullFrozen = rendercvars::cullingFrozen.get();
+    bool occlusion = rendercvars::cullingOcclusion.get();
+    bool showCulled = toolscvars::overlayCulled.get();
+    int culledView = (int) toolscvars::overlayCulledView.get();
+    bool cascadeFrusta = toolscvars::overlayCascadeFrusta.get();
+    int viewMode = (int) rendercvars::viewMode.get();
+    int debugView = (int) rendercvars::debugView.get();
+    bool bufferOverlay = rendercvars::bufferOverlay.get();
+    bool shadowOverlay = rendercvars::shadowOverlay.get();
+    bool antiAliasing = rendercvars::antiAliasing.get();
+    auto sampler = rendercvars::samplerSettings();
+    auto shadow = rendercvars::shadowSettings();
+    auto ambient = rendercvars::ambient();
     ViewMenuBarState menuState{
         .hasSelection = hasSelection,
         .tool = toolIndex,
@@ -145,14 +145,14 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         .showGuides = showGuides,
         .showProxies = showProxies,
         .depthPrepass = depthPrepass,
-        .gbufferView = gbufferView,
+        .viewMode = viewMode,
         .debugView = debugView,
         .showBufferOverlay = bufferOverlay,
         .showShadowOverlay = shadowOverlay,
         .antiAliasing = antiAliasing,
         .showFrameGraph = showFrameGraphWindow,
         .showPerformance = showPerformanceWindow,
-        .showConfig = showConfigWindow,
+        .showCvars = showCvarWindow,
         .showStatusBar = showStatusBar,
         .showRenderDebug = showRenderDebugWindow,
         .showCamera = showCameraWindow,
@@ -188,13 +188,13 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         drawPerformanceWindow(showPerformanceWindow, performanceState);
     }
     {
-        PROFILE_ZONE("ConfigWindow", Ui);
-        drawConfigWindow(showConfigWindow, configState);
+        PROFILE_ZONE("CvarWindow", Ui);
+        drawCvarWindow(showCvarWindow, cvarState);
     }
     {
         PROFILE_ZONE("RenderDebugWindow", Ui);
         RenderDebugViewFlags viewFlags = {
-            .gbufferView = gbufferView,
+            .viewMode = viewMode,
             .sampler = sampler,
             .shadow = shadow,
             .ambient = ambient,
@@ -211,15 +211,15 @@ auto ViewUI::draw(const PrimPathOf& primPath,
             screenshotRequested = true;
         }
     }
-    renderconfig::depthPrepass.set(depthPrepass);
-    (void) renderconfig::bufferView.set((size_t) gbufferView);
-    (void) renderconfig::debugView.set((size_t) debugView);
-    renderconfig::bufferOverlay.set(bufferOverlay);
-    renderconfig::shadowOverlay.set(shadowOverlay);
-    renderconfig::antiAliasing.set(antiAliasing);
-    renderconfig::setSamplerSettings(sampler);
-    renderconfig::setShadowSettings(shadow);
-    renderconfig::setAmbient(ambient);
+    rendercvars::depthPrepass.set(depthPrepass);
+    (void) rendercvars::viewMode.set((size_t) viewMode);
+    (void) rendercvars::debugView.set((size_t) debugView);
+    rendercvars::bufferOverlay.set(bufferOverlay);
+    rendercvars::shadowOverlay.set(shadowOverlay);
+    rendercvars::antiAliasing.set(antiAliasing);
+    rendercvars::setSamplerSettings(sampler);
+    rendercvars::setShadowSettings(shadow);
+    rendercvars::setAmbient(ambient);
     // An instance's prim path, looked up when a window names one: a table of every instance's prim costs milliseconds a frame in a large
     // scene.
     auto instancePath = [&](uint32_t instance) -> std::string {
@@ -257,7 +257,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     {
         PROFILE_ZONE("DebugViewWindow", Ui);
         updateDebugViewCursor(debugViewState);
-        drawDebugViewWindow(static_cast<DebugView>(renderconfig::debugView.get()), debugViewState, instancePath);
+        drawDebugViewWindow(static_cast<DebugView>(rendercvars::debugView.get()), debugViewState, instancePath);
     }
     if (introspectionFlags.counters) {
         PROFILE_ZONE("CountersWindow", Ui);
@@ -296,12 +296,12 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     {
         PROFILE_ZONE("CullingWindow", Ui);
         // The meshlet culling debug view is a debug view like any other; the window switches it.
-        bool meshletCullView = renderconfig::debugView.get() == (size_t) DebugView::MeshletCull;
+        bool meshletCullView = rendercvars::debugView.get() == (size_t) DebugView::MeshletCull;
         bool meshletCullViewBefore = meshletCullView;
-        // So is the depth pyramid's buffer view, with its level.
-        bool pyramidView = renderconfig::bufferView.get() == (size_t) GBufferView::Hzb;
+        // So is the depth pyramid's view mode, with its level.
+        bool pyramidView = rendercvars::viewMode.get() == (size_t) ViewMode::Hzb;
         bool pyramidViewBefore = pyramidView;
-        int pyramidLevel = (int) renderconfig::hzbLevel.get();
+        int pyramidLevel = (int) rendercvars::hzbLevel.get();
         drawCullingWindow(showCullingWindow,
                           {.enabled = cullEnabled,
                            .frozen = cullFrozen,
@@ -315,31 +315,31 @@ auto ViewUI::draw(const PrimPathOf& primPath,
                            .depthPrepass = depthPrepass,
                            .cull = *cullResult});
         if (meshletCullView != meshletCullViewBefore) {
-            (void) renderconfig::debugView.set(meshletCullView ? (size_t) DebugView::MeshletCull : (size_t) DebugView::None);
+            (void) rendercvars::debugView.set(meshletCullView ? (size_t) DebugView::MeshletCull : (size_t) DebugView::None);
         }
         if (pyramidView != pyramidViewBefore) {
-            (void) renderconfig::bufferView.set(pyramidView ? (size_t) GBufferView::Hzb : (size_t) GBufferView::Lit);
+            (void) rendercvars::viewMode.set(pyramidView ? (size_t) ViewMode::Hzb : (size_t) ViewMode::Lit);
         }
-        (void) renderconfig::hzbLevel.set(pyramidLevel);
+        (void) rendercvars::hzbLevel.set(pyramidLevel);
     }
-    toolsconfig::overlayGrid.set(showGrid);
-    toolsconfig::overlayOrigin.set(showOrigin);
-    toolsconfig::overlayGizmos.set(showGizmo);
-    toolsconfig::overlayAabbs.set(showAabbs);
-    toolsconfig::overlaySelectedAabb.set(showSelectedAabb);
-    toolsconfig::overlayLightGizmos.set(showLightGizmos);
+    toolscvars::overlayGrid.set(showGrid);
+    toolscvars::overlayOrigin.set(showOrigin);
+    toolscvars::overlayGizmos.set(showGizmo);
+    toolscvars::overlayAabbs.set(showAabbs);
+    toolscvars::overlaySelectedAabb.set(showSelectedAabb);
+    toolscvars::overlayLightGizmos.set(showLightGizmos);
     if (guides != nullptr) {
         guides->set(showGuides);
     }
     if (proxies != nullptr) {
         proxies->set(showProxies);
     }
-    renderconfig::cullingEnabled.set(cullEnabled);
-    renderconfig::cullingFrozen.set(cullFrozen);
-    renderconfig::cullingOcclusion.set(occlusion);
-    toolsconfig::overlayCulled.set(showCulled);
-    (void) toolsconfig::overlayCulledView.set(culledView);
-    toolsconfig::overlayCascadeFrusta.set(cascadeFrusta);
+    rendercvars::cullingEnabled.set(cullEnabled);
+    rendercvars::cullingFrozen.set(cullFrozen);
+    rendercvars::cullingOcclusion.set(occlusion);
+    toolscvars::overlayCulled.set(showCulled);
+    (void) toolscvars::overlayCulledView.set(culledView);
+    toolscvars::overlayCascadeFrusta.set(cascadeFrusta);
 }
 
 auto ViewUI::takeEditRequest() -> ViewEditRequest {
@@ -384,8 +384,8 @@ auto ViewUI::windowFlag(std::string_view name) -> bool* {
         return &showFrameGraphWindow;
     } else if (name == "performance") {
         return &showPerformanceWindow;
-    } else if (name == "config") {
-        return &showConfigWindow;
+    } else if (name == "cvars") {
+        return &showCvarWindow;
     }
     return nullptr;
 }
@@ -416,7 +416,7 @@ auto ViewUI::captureWatches() const -> std::vector<CaptureWatch> {
             watches.push_back(std::move(watch));
         }
     }
-    if (auto watch = debugViewReadoutWatchFor(debugViewState, static_cast<DebugView>(renderconfig::debugView.get())); watch.has_value()) {
+    if (auto watch = debugViewReadoutWatchFor(debugViewState, static_cast<DebugView>(rendercvars::debugView.get())); watch.has_value()) {
         watches.push_back(*watch);
     }
     return watches;

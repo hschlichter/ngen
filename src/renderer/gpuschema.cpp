@@ -70,10 +70,10 @@ auto makeCommandSchema() -> GpuSchema {
     };
 }
 
-auto makeRegionWorkSchema() -> GpuSchema {
-    using W = RegionWork;
+auto makeDrawListWorkSchema() -> GpuSchema {
+    using W = DrawListWork;
     return {
-        .name = "RegionWork",
+        .name = "DrawListWork",
         .stride = sizeof(W),
         .fields = {
             {"taskGroupsX", offsetof(W, tasks) + offsetof(RhiDrawMeshTasksIndirectCommand, groupCountX), GpuFieldType::U32},
@@ -116,10 +116,10 @@ auto makeMeshletSchema() -> GpuSchema {
 // The culling counters (DrawLists::counter*): per workgroup in cullGroupCounters, totals in drawCounts.
 auto makeCounterSchema(const char* name) -> GpuSchema {
     GpuSchema schema = {.name = name, .stride = DrawLists::counterCount * sizeof(uint32_t)};
-    for (uint32_t r = 0; r < DrawLists::regionCount; r++) {
+    for (uint32_t r = 0; r < DrawLists::drawListCount; r++) {
         schema.fields.push_back({std::format("draws.r{}", r), (DrawLists::counterDraws + r) * 4, GpuFieldType::U32});
     }
-    for (uint32_t r = 0; r < DrawLists::regionCount; r++) {
+    for (uint32_t r = 0; r < DrawLists::drawListCount; r++) {
         schema.fields.push_back({std::format("primitives.r{}", r), (DrawLists::counterPrimitives + r) * 4, GpuFieldType::U32});
     }
     schema.fields.push_back({"cameraCulled", DrawLists::counterCameraCulled * 4, GpuFieldType::U32});
@@ -133,8 +133,8 @@ auto makeCounterSchema(const char* name) -> GpuSchema {
 }
 
 auto makeOffsetSchema() -> GpuSchema {
-    GpuSchema schema = {.name = "GroupOffsets", .stride = DrawLists::regionCount * sizeof(uint32_t)};
-    for (uint32_t r = 0; r < DrawLists::regionCount; r++) {
+    GpuSchema schema = {.name = "GroupOffsets", .stride = DrawLists::drawListCount * sizeof(uint32_t)};
+    for (uint32_t r = 0; r < DrawLists::drawListCount; r++) {
         schema.fields.push_back({std::format("offset.r{}", r), r * 4, GpuFieldType::U32});
     }
     return schema;
@@ -159,8 +159,8 @@ auto makeParamsSchema() -> GpuSchema {
             {"cameraPosition", offsetof(P, cameraPosition), GpuFieldType::Vec4},
         },
     };
-    for (uint32_t r = 0; r < DrawLists::regionCount; r++) {
-        schema.fields.push_back({std::format("regionOffset.{}", DrawLists::regionName(r)), (uint32_t) (offsetof(P, regionOffsets) + (r * sizeof(uint32_t))), GpuFieldType::U32});
+    for (uint32_t r = 0; r < DrawLists::drawListCount; r++) {
+        schema.fields.push_back({std::format("drawListOffset.{}", DrawLists::drawListName(r)), (uint32_t) (offsetof(P, drawListOffsets) + (r * sizeof(uint32_t))), GpuFieldType::U32});
     }
     for (uint32_t v = 0; v < DrawLists::viewCount; v++) {
         for (uint32_t p = 0; p < 6; p++) {
@@ -214,7 +214,7 @@ auto schemaForResource(std::string_view resource) -> const GpuSchema& {
     static const GpuSchema material = makeMaterialSchema();
     static const GpuSchema command = makeCommandSchema();
     static const GpuSchema meshlet = makeMeshletSchema();
-    static const GpuSchema regionWork = makeRegionWorkSchema();
+    static const GpuSchema drawListWork = makeDrawListWorkSchema();
     static const GpuSchema workItem = makeWorkItemSchema();
     static const GpuSchema totals = makeCounterSchema("CullTotals");
     static const GpuSchema groups = makeCounterSchema("CullGroupCounters");
@@ -239,8 +239,8 @@ auto schemaForResource(std::string_view resource) -> const GpuSchema& {
     if (resource == "gpuscene.meshlets") {
         return meshlet;
     }
-    if (resource == "cullRegionWork") {
-        return regionWork;
+    if (resource == "cullDrawListWork") {
+        return drawListWork;
     }
     if (resource == "cullWorkItems") {
         return workItem;

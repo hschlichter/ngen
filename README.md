@@ -42,13 +42,13 @@ out and changes level around the camera as it moves.*
   that watches the main camera's frustum, culling and streaming from outside, camera modes (following the ground, orbiting), camera flights.
 - **Introspection**: the frame graph with live previews, a frame debugger (barriers, commands, descriptor sets), resource captures, GPU
   counters, a GPU scene inspector, the memory of every allocation, a CPU and GPU profiler, and RenderDoc.
-- **For agents**: every window's data is also a record, every action an RPC method and a script verb. `ngen-view` runs headless with a script
-  (`--script`, `--screenshot`), and `ngen-introspect` lists, reads and calls any running process, and streams its trace.
+- **For agents**: every window's data is also a record, every action an RPC method and a console command. `ngen-view` runs headless with a script
+  (`--script`, `--screenshot`), and `ngen-introspect` lists, reads and calls any running process, and streams its log.
 
 **Tooling**
 - **A self-hosted build system**, `ngen-build`: the project is a C++ program (`build.cpp`) against a reusable framework; no CMake, no Ninja.
 - **`ngen-cli`**, the front door: build, run the view and the asset server, introspect.
-- **Configuration**: every engine setting is a typed value declared by its owner, readable and settable at runtime (`config.*`).
+- **Cvars**: every engine setting is a typed value declared by its owner, readable and settable at runtime (`cvar.*`).
 
 ## Screenshots
 
@@ -68,7 +68,7 @@ selected pass's GPU time, reads and writes.*
 
 ![Performance window](screenshots/engine_eldermark_performance_01.png)
 
-*The Performance window: the main, render and GPU lanes on one clock, frame by frame; here the geometry pass, split by bucket.*
+*The Performance window: the main, render and GPU tracks on one clock, frame by frame; here the geometry pass, split by bucket.*
 
 ![Frame budget overlay](screenshots/engine_eldermark_budget_overlay_03.png)
 
@@ -87,7 +87,7 @@ next ones prefetched ahead of it; behind, the debug camera watches the main came
 
 `ngen-asset-server` packs the authored files on request into engine-ready packs and streams them to `ngen-view` by asset id. The view composes
 them on its scene thread, steps its frame on the main thread and renders on its own thread. `ngen-introspect`, scripts and agents read every
-running process's records and trace and call its methods.
+running process's records and log and call its methods.
 
 ![The code's layers: Foundation, Engine, Instrumentation, Tools, UI and the program, each linking only the layers below it](screenshots/architecture_layers.svg)
 
@@ -100,15 +100,15 @@ Each library documents its design and rules in a README next to the code:
 
 - [`src/rhi/README.md`](src/rhi/README.md) — RHI principles, the integrator contract, the example programs, known gaps.
 - [`src/renderer/README.md`](src/renderer/README.md) — how a frame is built: GPU scene tables, meshlets drawn by task and mesh shaders, GPU culling per
-  instance and per meshlet, occlusion culling, descriptor sets, frame graph rules, shadows, trace events.
+  instance and per meshlet, occlusion culling, descriptor sets, frame graph rules, shadows, log events.
 - [`src/rendertools/README.md`](src/rendertools/README.md) — the renderer's instrumentation, a render extension: debug snapshots, the frame
   debugger, GPU counters, the texture inspector and dumps, screenshots.
-- [`src/trace/README.md`](src/trace/README.md) — the trace: `TRACE_EVENT`, the always-on ring per process, streaming events over RPC, conventions.
-- [`src/profile/README.md`](src/profile/README.md) — profiling: the markers, the built-in collector and GPU lane behind the Performance window, and
+- [`src/log/README.md`](src/log/README.md) — the log: `LOG_EVENT`, the always-on ring per process, streaming events over RPC, conventions.
+- [`src/profile/README.md`](src/profile/README.md) — profiling: the markers, the built-in collector and GPU track behind the Performance window, and
   Tracy as a second sink.
 - [`src/jobs/README.md`](src/jobs/README.md) — the job system: the workers, frame jobs (waited for, parallel loops) and background jobs
   (polled), who may wait for what.
-- [`src/config/README.md`](src/config/README.md) — configuration: the engine's settings as typed values declared in code, their names, threads,
+- [`src/cvar/README.md`](src/cvar/README.md) — cvars: the engine's settings as typed values declared in code, their names, threads,
   changes, and how they are read and set at runtime.
 - [`src/rpc/README.md`](src/rpc/README.md) — how ngen processes and agents talk: JSON-RPC over loopback TCP, discovery, threading, adding a method, records.
 - [`src/introspect/README.md`](src/introspect/README.md) — `ngen-introspect`: every running process's records in a window or on the command line, and calling their methods.
@@ -202,8 +202,8 @@ and configurations).
 `ngen-cli` is the front door to the engine's tools. You pick a platform and config once with `set`; after that, `build` and the tool commands use
 it, so you stop spelling out `-p`/`-c` and `_out/<platform>/<config>/` on every command.
 
-[`REFERENCE.md`](REFERENCE.md) is the quick reference for every tool's commands and flags, ngen-view's keys and script verbs, the RPC methods,
-the records and the configuration values.
+[`REFERENCE.md`](REFERENCE.md) is the quick reference for every tool's commands and flags, ngen-view's keys and console commands, the RPC methods,
+the records and the cvars.
 
 ### First-time setup
 
@@ -270,14 +270,14 @@ Forwarded tools replace the cli process, so their output, signals and exit code 
 | `--camera=<pose or /path>` | Start at a pose (`x,y,z,yaw,pitch`) or a camera the scene authors |
 | `--view=<lit, albedo, normals, …>` | The G-buffer or debug view to show |
 | `--overlay=<name=on/off,…>` | Overlays: grid, origin, gizmo, aabbs, lightgizmos, cascadefrusta, buffer, shadow, aa |
-| `--script=<file>` | Script lines: `<frame> <verb> <args>`, frames counted once the scene is resident |
+| `--script=<file>` | Script lines: `<frame> <command> <args>`, frames counted once the scene is ready |
 | `--screenshot=<file>`, `--frames=<n>` | A PNG of the last frame, and quit after `n` frames |
 | `--validation`, `--fail-on-validation` | Vulkan validation; with the second, exit nonzero on any validation error |
 | `--show-ui` | Keep the UI in screenshots |
-| `--no-wait-resident` | Count script frames from start-up instead of from the scene being resident |
+| `--no-wait-ready` | Count script frames from start-up instead of from the scene being ready |
 | `--renderdoc`, `--no-rpc`, `--render-debug`, `--geometry-limit=<MiB>`, `--select=<path>`, `--camera-frame=<path>` | RenderDoc capture, no endpoint, the render debug snapshot always on, the geometry pool's limit, a selection, framing a prim |
 
-`SDL_VIDEODRIVER=offscreen` runs it without a window. The verbs, records and methods are listed by `./ngen-cli introspect describe` against a
+`SDL_VIDEODRIVER=offscreen` runs it without a window. The console commands, records and methods are listed by `./ngen-cli introspect describe` against a
 running view; `src/view/README.md` has them by domain.
 
 ### Controls

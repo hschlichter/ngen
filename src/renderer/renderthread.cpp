@@ -1,15 +1,15 @@
 #include "renderthread.h"
 #include "framegraph.h"
+#include "log.h"
 #include "profile.h"
 #include "renderer.h"
-#include "trace.h"
 
 #include <utility>
 
 auto RenderThread::start(Renderer* r) -> void {
     renderer = r;
     thread = std::jthread([this] { threadLoop(); });
-    TRACE_EVENT("Render", "RenderThreadStart", "RenderThread").text("render thread started");
+    LOG_EVENT("Render", "RenderThreadStart", "RenderThread").text("render thread started");
 }
 
 auto RenderThread::stop() -> void {
@@ -21,7 +21,7 @@ auto RenderThread::stop() -> void {
     if (thread.joinable()) {
         thread.join();
     }
-    TRACE_EVENT("Render", "RenderThreadStop", "RenderThread").text("render thread stopped");
+    LOG_EVENT("Render", "RenderThreadStop", "RenderThread").text("render thread stopped");
 }
 
 auto RenderThread::submitSnapshot(RenderSnapshot snapshot) -> void {
@@ -65,7 +65,7 @@ auto RenderThread::threadLoop() -> void {
     profile::registerThread("Render");
     while (true) {
         // An iteration is the render thread's frame: waiting for the snapshot, the scene changes, the frame and what follows it.
-        profile::laneFrameMark();
+        profile::trackFrameMark();
         RenderSnapshot snapshot;
         {
             PROFILE_ZONE("WaitSnapshot", Wait);
@@ -112,14 +112,14 @@ auto RenderThread::threadLoop() -> void {
             PROFILE_ZONE("RenderFrame", Render);
             renderer->render(snapshot);
         }
-        // What this frame drew: published after it, so the main thread sees residency only once it is on screen.
+        // What this frame drew: published after it, so the main thread sees the scene ready only once it is on screen.
         gpuIdle.store(renderer->sceneGpuIdle(), std::memory_order_release);
         drawnUpTo.store(appliedUpTo, std::memory_order_release);
         {
             PROFILE_ZONE("SceneGpuStats", Render);
             auto stats = renderer->sceneGpuStats();
-            stats.changeListsSubmitted = submitted.load(std::memory_order_acquire);
-            stats.changeListsDrawn = appliedUpTo;
+            stats.sceneChangesSubmitted = submitted.load(std::memory_order_acquire);
+            stats.sceneChangesDrawn = appliedUpTo;
             stats.gpuIdle = renderer->sceneGpuIdle();
             std::lock_guard lock(statsMutex);
             sceneStats = stats;

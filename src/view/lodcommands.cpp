@@ -19,7 +19,7 @@
 #include <sstream>
 
 // LOD and streaming's commands: the level a root wants, the heuristic and its preference, threshold overrides and the tuning; the records of
-// every LOD root, of residency per streaming root, and of render LOD (what the GPU picked, checked against the view's heuristic).
+// every LOD root, of residency per streaming root, and of LOD groups (what the GPU picked, checked against the view's heuristic).
 
 namespace {
 
@@ -181,7 +181,7 @@ auto streamingRecord(const ViewContext& view) -> Json {
             inFrustum++;
         }
         auto waiting = Json(nullptr);
-        if (root.drawn && *root.drawn != root.wanted) {
+        if (root.drawn && *root.drawn != root.desired) {
             loading++;
         }
         if (root.waiting) {
@@ -247,7 +247,7 @@ auto streamingRecord(const ViewContext& view) -> Json {
             {"kind", measuredImaging ? Json(choice->second.kind == LodHeuristicKind::Distance ? "distance" : "screen") : Json(nullptr)},
             {"measure", measuredImaging ? Json(choice->second.measure) : Json(nullptr)},
             {"inFrustum", visible},
-            {"selected", evaluated ? Json(choice->second.level) : Json(nullptr)},
+            {"desired", evaluated ? Json(choice->second.level) : Json(nullptr)},
             {"why", evaluated ? Json(choice->second.reason) : Json("not evaluated yet")},
             {"thresholds", tuned.thresholds},
             {"blendThresholds", tuned.blendThresholds},
@@ -282,7 +282,7 @@ auto streamingRecord(const ViewContext& view) -> Json {
           {"inFrustum", inFrustum},
           {"loading", loading},
           {"waiting", {{"meshes", waitingTotal.meshes}, {"materials", waitingTotal.materials}, {"textures", waitingTotal.textures}, {"composing", waitingTotal.composing}}},
-          {"renderLodGroups", view.scene.threadStats().lodGroups}}},
+          {"lodGroups", view.scene.threadStats().lodGroups}}},
         {"measured",
          {{"lateNow", streaming.lateNow},
           {"holesNow", streaming.holesNow},
@@ -313,7 +313,7 @@ auto lodRecord(const ViewContext& view) -> Json {
             {"levelPayloads", root.levelPayloads},
             {"heuristics", heuristicsJson(root.heuristics, view.scene.lodPreference())},
             {"default", root.defaultIndex},
-            {"wanted", root.wanted},
+            {"desired", root.desired},
             {"drawn", root.drawn ? Json(*root.drawn) : Json(nullptr)},
             {"loaded", root.loaded},
             {"setByHand", root.setByHand},
@@ -326,7 +326,7 @@ auto lodRecord(const ViewContext& view) -> Json {
 
 // The levels the view's heuristic may want for a group at a camera, as pickLodLevel picks them (src/world/world.cpp): from the level it
 // keeps going coarser (wanting the finest before) to the level it goes finer to (wanting the coarsest before); which it keeps depends on the
-// level it wanted before. Inside a band the two agree and `blend` is the next level's share. The measure is the GPU's: a distance in
+// level it desired before. Inside a band the two agree and `blend` is the next level's share. The measure is the GPU's: a distance in
 // metres, or a screen size. onEdge when the measure is within 1e-4 of a threshold, a band's edge or a hysteresis edge, where float order
 // may differ between the CPU and the GPU.
 struct ExpectedLevels {
@@ -377,15 +377,15 @@ auto expectedLevels(const RenderLodGroup& group, const glm::vec3& eye, float win
     return out;
 }
 
-// The render-LOD groups (src/renderer/README.md, "Render LOD"): what is placed, what the GPU picked at the latest readback with states,
+// The LOD groups (src/renderer/README.md, "LOD groups"): what is placed, what the GPU picked at the latest readback with states,
 // and that pick checked against the view's heuristic at the camera the pick measured from; with `path`, every group under it. The view's
 // own heuristic measures the same window (2 tan(fovY / 2) high, times the aspect wide).
-auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& path) -> Json {
-    const auto& draws = *view.scene.snapshot().draws;
-    const auto& groups = draws.drawn.lodGroups;
+auto lodGroupsRecord(const ViewContext& view, const std::optional<std::string>& path) -> Json {
+    const auto& placedScene = *view.scene.snapshot().placedScene;
+    const auto& groups = placedScene.drawn.lodGroups;
     const auto& cull = view.latestCull;
     std::array<uint64_t, RenderLodGroup::maxLevels> placedSlots = {};
-    for (const auto& instance : draws.drawn.meshInstances) {
+    for (const auto& instance : placedScene.drawn.meshInstances) {
         if (instance.alive && instance.lodGroup != 0 && instance.lodLevel >= 1 && instance.lodLevel <= RenderLodGroup::maxLevels) {
             placedSlots[instance.lodLevel - 1]++;
         }
@@ -420,8 +420,8 @@ auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& 
             expected.blend = 0.0f;
             expected.onEdge = false;
         }
-        bool read = cull.lodHasStates && g < cull.lodWanted.size();
-        uint32_t wanted = read ? cull.lodWanted[g] : 0xFFu;
+        bool read = cull.lodHasStates && g < cull.lodDesired.size();
+        uint32_t desired = read ? cull.lodDesired[g] : 0xFFu;
         uint32_t drawn = read ? cull.lodDrawn[g] : 0xFFu;
         uint32_t fadeLevel = read && g < cull.lodFadeLevel.size() ? cull.lodFadeLevel[g] : 0xFFu;
         float fade = read && g < cull.lodFade.size() ? cull.lodFade[g] : 0.0f;
@@ -432,22 +432,22 @@ auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& 
         }
         // The stage's units for a distance, as its thresholds are authored.
         float unit = group.kind == RenderLodKind::Distance ? (float) view.scene.lodMetersPerUnit() : 1.0f;
-        const auto& groupPath = g < draws.lodGroupPaths.size() ? draws.lodGroupPaths[g] : std::string();
+        const auto& groupPath = g < placedScene.lodGroupPaths.size() ? placedScene.lodGroupPaths[g] : std::string();
         if (read) {
             compared++;
-            if (drawn != wanted) {
+            if (drawn != desired) {
                 fallbacks++;
             }
-            // A fade the GPU shows only when the next level is resident and the wanted one is drawn: compared where it does.
+            // A fade the GPU shows only when the next level is resident and the desired one is drawn: compared where it does.
             bool fadeDiffers = fadeLevel != 0xFFu && std::abs(fade - expected.blend) > 1e-3f;
             if (expected.onEdge) {
                 onEdge++;
-            } else if (wanted < expected.low || wanted > expected.high || fadeDiffers) {
+            } else if (desired < expected.low || desired > expected.high || fadeDiffers) {
                 differ++;
                 if (examples.size() < 10) {
                     examples.push_back({{"path", groupPath},
                                         {"measure", expected.measure / unit},
-                                        {"wanted", wanted},
+                                        {"desired", desired},
                                         {"expected", {expected.low, expected.high}},
                                         {"fade", fade},
                                         {"expectedFade", expected.blend},
@@ -476,14 +476,14 @@ auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& 
                 {"forced", group.forcedLevel},
                 {"measure", expected.measure / unit},
                 {"gpuMeasure", read ? Json(gpuMeasure / unit) : Json(nullptr)},
-                {"wanted", read ? Json(wanted) : Json(nullptr)},
+                {"desired", read ? Json(desired) : Json(nullptr)},
                 {"drawn", read ? Json(drawn) : Json(nullptr)},
                 {"fadeLevel", read && fadeLevel != 0xFFu ? Json(fadeLevel) : Json(nullptr)},
                 {"fade", read ? Json(fade) : Json(nullptr)},
                 {"expectedFade", expected.blend},
                 {"forcedFlag", read ? Json((flags & LodStateFlags::forced) != 0) : Json(nullptr)},
                 {"flashing", read ? Json((flags & LodStateFlags::flashing) != 0) : Json(nullptr)},
-                {"key", g < draws.lodGroupSources.size() && draws.lodGroupSources[g] != nullptr ? Json(draws.lodGroupSources[g]->key) : Json(nullptr)},
+                {"key", g < placedScene.lodGroupSources.size() && placedScene.lodGroupSources[g] != nullptr ? Json(placedScene.lodGroupSources[g]->key) : Json(nullptr)},
             };
             if (group.kind == RenderLodKind::Distance) {
                 entry["center"] = Json(group.point);
@@ -555,10 +555,10 @@ auto lodTuningJson(const LodTuning& tuning) -> Json {
     return {{"bias", tuning.bias}, {"hysteresis", tuning.hysteresis}, {"blending", tuning.blending}, {"overrides", overrides}};
 }
 
-auto serviceRenderLodRequests(ViewContext& view) -> bool {
+auto serviceLodGroupRequests(ViewContext& view) -> bool {
     // The answers due are taken out before any runs, so an answer may ask for another readback.
     std::vector<std::function<void()>> due;
-    std::erase_if(view.renderLodRequests, [&](RenderLodRequest& request) {
+    std::erase_if(view.lodGroupRequests, [&](LodGroupRequest& request) {
         if (view.latestCull.lodFrame > request.askedAt && view.latestCull.lodHasStates) {
             due.push_back(std::move(request.answer));
             return true;
@@ -568,14 +568,14 @@ auto serviceRenderLodRequests(ViewContext& view) -> bool {
     for (auto& answer : due) {
         answer();
     }
-    return !view.renderLodRequests.empty();
+    return !view.lodGroupRequests.empty();
 }
 
-auto registerLodCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view) -> void {
+auto registerLodCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.lod.set",
-            .summary = "The level a LOD root wants, by its full path (instances expanded); loads it. Answers once the scene is resident with it drawn.",
+            .summary = "The level a LOD root wants, by its full path (instances expanded); loads it. Answers once the scene is ready with it drawn.",
             .params = {
                 requiredField("root", RpcType::String, "the path of the prim with LODRootAPI"),
                 requiredField("level", RpcType::Int, "0 is the finest"),
@@ -584,18 +584,18 @@ auto registerLodCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& rec
         },
         [&view](const Json& p, RpcResponder responder) {
             view.scene.setLodLevel(p["root"].get<std::string>(), (uint32_t) std::max(0, p["level"].get<int>()));
-            view.residentWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
+            view.readyWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
         });
     registry.add(
         {
             .name = "view.lod.reset",
-            .summary = "Puts a LOD root back to its default level (lod:default:index). Answers once the scene is resident with it drawn.",
+            .summary = "Puts a LOD root back to its default level (lod:default:index). Answers once the scene is ready with it drawn.",
             .params = {requiredField("root", RpcType::String, "the path of the prim with LODRootAPI")},
             .result = "{}",
         },
         [&view](const Json& p, RpcResponder responder) {
             view.scene.resetLodLevel(p["root"].get<std::string>());
-            view.residentWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
+            view.readyWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
         });
     registry.add(
         {
@@ -621,8 +621,8 @@ auto registerLodCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& rec
     registry.add(
         {
             .name = "view.lod.override",
-            .summary = "One heuristic's thresholds and blend thresholds in place of the authored ones, for the authored root of the LOD root at a path: every placement of it (every instance of an instanceable asset). A view-local opinion, never saved. Thresholds in the heuristic's unit (a distance in the stage's units, ascending; a screen size as a fraction of the view, descending). The LodTuningChanged trace event says what changed; LodTuningRefused why nothing did.",
-            .params = {requiredField("root", RpcType::String, "a LOD root's full path (a streaming root or a render-LOD group)"),
+            .summary = "One heuristic's thresholds and blend thresholds in place of the authored ones, for the authored root of the LOD root at a path: every placement of it (every instance of an instanceable asset). A session opinion, never saved. Thresholds in the heuristic's unit (a distance in the stage's units, ascending; a screen size as a fraction of the view, descending). The LodTuningChanged log event says what changed; LodTuningRefused why nothing did.",
+            .params = {requiredField("root", RpcType::String, "a LOD root's full path (a streaming root or a LOD group)"),
                        optionalField("heuristic", RpcType::Int, "which of its heuristics (an index in authored order); the one the preference uses when absent"),
                        optionalField("thresholds", RpcType::Array, "finest first"),
                        optionalField("blendThresholds", RpcType::Array, "where each band ends, finest first; [] for none"),
@@ -685,14 +685,14 @@ auto registerLodCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& rec
         });
     registry.add(
         {
-            .name = "view.renderlod",
-            .summary = "The render-LOD groups under a path (each render-LOD root where it is placed): sphere, thresholds, default and forced level, the screen size, and the level the GPU wants and draws; with the `renderlod` record's totals and check. Answers frames later, once the states are read back.",
+            .name = "view.lodgroups",
+            .summary = "The LOD groups under a path (each LOD-group root where it is placed): sphere, thresholds, default and forced level, the screen size, and the level the GPU wants and draws; with the `lodgroups` record's totals and check. Answers frames later, once the states are read back.",
             .params = {requiredField("path", RpcType::String, "prim path; / for every group")},
-            .result = "the renderlod record, with groupsUnder",
+            .result = "the lodgroups record, with groupsUnder",
         },
         [&view](const Json& p, RpcResponder responder) {
             auto path = p["path"].get<std::string>();
-            view.renderLodRequests.push_back({.askedAt = view.latestCull.lodFrame, .answer = [&view, responder, path]() mutable { responder.respond(renderLodRecord(view, path)); }});
+            view.lodGroupRequests.push_back({.askedAt = view.latestCull.lodFrame, .answer = [&view, responder, path]() mutable { responder.respond(lodGroupsRecord(view, path)); }});
         });
     registry.add({.name = "view.streaming.reset", .summary = "Zeroes the streaming counters (late switches, root-seconds coarser, loads, reloads, leads, arrivals unwanted), for a run measured from a known start.", .result = "{}"},
                  [&view](const Json&, RpcResponder responder) {
@@ -700,28 +700,28 @@ auto registerLodCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& rec
                      responder.respond(Json::object());
                  });
 
-    verbs.add("lod", "view.lod.set", parseLod);
-    verbs.add("lod-reset", "view.lod.reset", parseLodRoot);
-    verbs.add("lod-heuristic", "view.lod.heuristic", parseOnOff);
-    verbs.add("lod-prefer", "view.lod.heuristic", parseLodPreference);
-    verbs.add("lod-thresholds", "view.lod.override", parseLodThresholdList);
-    verbs.add("lod-blend-thresholds", "view.lod.override", parseLodBlendList);
-    verbs.add("lod-unload-thresholds", "view.lod.override", parseLodUnloadList);
-    verbs.add("lod-override-reset", "view.lod.override.reset", parseLodOverrideReset);
-    verbs.add("lod-bias", "view.lod.tuning", parseLodBias);
-    verbs.add("lod-hysteresis", "view.lod.tuning", parseLodHysteresis);
-    verbs.add("lod-blending", "view.lod.tuning", parseLodBlending);
-    verbs.add("streaming-reset", "view.streaming.reset", RpcVerbs::none);
+    console.add("lod", "view.lod.set", parseLod);
+    console.add("lod-reset", "view.lod.reset", parseLodRoot);
+    console.add("lod-heuristic", "view.lod.heuristic", parseOnOff);
+    console.add("lod-prefer", "view.lod.heuristic", parseLodPreference);
+    console.add("lod-thresholds", "view.lod.override", parseLodThresholdList);
+    console.add("lod-blend-thresholds", "view.lod.override", parseLodBlendList);
+    console.add("lod-unload-thresholds", "view.lod.override", parseLodUnloadList);
+    console.add("lod-override-reset", "view.lod.override.reset", parseLodOverrideReset);
+    console.add("lod-bias", "view.lod.tuning", parseLodBias);
+    console.add("lod-hysteresis", "view.lod.tuning", parseLodHysteresis);
+    console.add("lod-blending", "view.lod.tuning", parseLodBlending);
+    console.add("streaming-reset", "view.streaming.reset", ConsoleCommands::none);
 
     records.add("lod", "every LOD root drawn: its levels, the level it defaults to, wants and draws, the levels loaded, and whether set by hand", [&view](RpcResponder responder) {
         responder.respond(lodRecord(view));
     });
-    records.add("streaming", "residency: per streaming root the level selected to draw and why, its streaming radii and state, the levels resident and why, drawn, late, per level requested, loaded, ready and lead, authoring findings; streaming measured (late, holes, loads, reloads, lead)", [&view](RpcResponder responder) {
+    records.add("streaming", "residency: per streaming root the level desired and why, its streaming radii and state, the levels resident and why, drawn, late, per level requested, loaded, ready and lead, authoring findings; streaming measured (late, holes, loads, reloads, lead)", [&view](RpcResponder responder) {
         responder.respond(streamingRecord(view));
     });
-    records.add("renderlod",
-                "render LOD: the groups placed and their slots per level, what the GPU picked (levels drawn, fallbacks, forced), and that pick checked against the view's heuristic at the view's camera (next frames)",
+    records.add("lodgroups",
+                "LOD groups: the groups placed and their slots per level, what the GPU picked (levels drawn, fallbacks, forced), and that pick checked against the view's heuristic at the view's camera (next frames)",
                 [&view](RpcResponder responder) {
-                    view.renderLodRequests.push_back({.askedAt = view.latestCull.lodFrame, .answer = [&view, responder]() mutable { responder.respond(renderLodRecord(view, std::nullopt)); }});
+                    view.lodGroupRequests.push_back({.askedAt = view.latestCull.lodFrame, .answer = [&view, responder]() mutable { responder.respond(lodGroupsRecord(view, std::nullopt)); }});
                 });
 }

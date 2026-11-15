@@ -1,6 +1,6 @@
-#include "configwindow.h"
+#include "cvarwindow.h"
 
-#include "config.h"
+#include "cvar.h"
 
 #include <imgui.h>
 
@@ -22,20 +22,20 @@ auto groupOf(const std::string& name) -> std::string_view {
     return std::string_view(name).substr(0, second == std::string::npos ? first : second);
 }
 
-auto drawEditor(config::Value& value) -> void {
+auto drawEditor(cvar::Value& value) -> void {
     auto label = std::format("##{}", value.name());
     ImGui::SetNextItemWidth(-FLT_MIN);
     switch (value.type()) {
-        case config::Type::Bool: {
-            auto& typed = static_cast<config::Bool&>(value);
+        case cvar::Type::Bool: {
+            auto& typed = static_cast<cvar::Bool&>(value);
             bool on = typed.get();
             if (ImGui::Checkbox(label.c_str(), &on)) {
                 typed.set(on);
             }
             break;
         }
-        case config::Type::Int: {
-            auto& typed = static_cast<config::Int&>(value);
+        case cvar::Type::Int: {
+            auto& typed = static_cast<cvar::Int&>(value);
             int64_t number = typed.get();
             const auto& range = typed.range();
             bool edited = false;
@@ -51,8 +51,8 @@ auto drawEditor(config::Value& value) -> void {
             }
             break;
         }
-        case config::Type::Float: {
-            auto& typed = static_cast<config::Float&>(value);
+        case cvar::Type::Float: {
+            auto& typed = static_cast<cvar::Float&>(value);
             double number = typed.get();
             const auto& range = typed.range();
             bool edited = false;
@@ -70,8 +70,8 @@ auto drawEditor(config::Value& value) -> void {
             }
             break;
         }
-        case config::Type::Enum: {
-            auto& typed = static_cast<config::Enum&>(value);
+        case cvar::Type::Enum: {
+            auto& typed = static_cast<cvar::Enum&>(value);
             if (ImGui::BeginCombo(label.c_str(), typed.choice().c_str())) {
                 const auto& choices = typed.choices();
                 for (size_t i = 0; i < choices.size(); i++) {
@@ -83,8 +83,8 @@ auto drawEditor(config::Value& value) -> void {
             }
             break;
         }
-        case config::Type::Vec3: {
-            auto& typed = static_cast<config::Vec3&>(value);
+        case cvar::Type::Vec3: {
+            auto& typed = static_cast<cvar::Vec3&>(value);
             auto v = typed.get();
             if (ImGui::DragFloat3(label.c_str(), v.data(), 0.005f, 0.0f, 0.0f, "%.3f")) {
                 typed.set(v);
@@ -96,12 +96,12 @@ auto drawEditor(config::Value& value) -> void {
 
 } // namespace
 
-auto drawConfigWindow(bool& show, ConfigWindowState& state) -> void {
+auto drawCvarWindow(bool& show, CvarWindowState& state) -> void {
     if (!show) {
         return;
     }
     ImGui::SetNextWindowSize(ImVec2(620, 520), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Configuration", &show)) {
+    if (!ImGui::Begin("Cvars", &show)) {
         ImGui::End();
         return;
     }
@@ -110,28 +110,28 @@ auto drawConfigWindow(bool& show, ConfigWindowState& state) -> void {
     ImGui::SameLine();
     ImGui::Checkbox("changed only", &state.onlyChanged);
     ImGui::SameLine();
-    ImGui::TextDisabled("%zu values", config::all().size());
+    ImGui::TextDisabled("%zu values", cvar::all().size());
 
     std::string_view filter(state.filter.data());
     // Groups in name order, each value under its own group: two-part names ("render.prepass") sort between three-part groups.
     std::vector<std::string_view> groups;
-    for (auto* value : config::all()) {
+    for (auto* value : cvar::all()) {
         auto group = groupOf(value->name());
         if (std::ranges::find(groups, group) == groups.end()) {
             groups.push_back(group);
         }
     }
     std::ranges::sort(groups);
-    if (ImGui::BeginTable("##config", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY)) {
+    if (ImGui::BeginTable("##cvars", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY)) {
         ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 0.45f);
         ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 0.45f);
         ImGui::TableSetupColumn("reset", ImGuiTableColumnFlags_WidthFixed, 50.0f);
         for (auto group : groups) {
-            auto shown = [&](const config::Value* value) {
+            auto shown = [&](const cvar::Value* value) {
                 const auto& name = value->name();
                 return groupOf(name) == group && (filter.empty() || name.find(filter) != std::string::npos) && (!state.onlyChanged || !value->isDefault());
             };
-            if (std::ranges::none_of(config::all(), shown)) {
+            if (std::ranges::none_of(cvar::all(), shown)) {
                 continue;
             }
             ImGui::TableNextRow();
@@ -139,7 +139,7 @@ auto drawConfigWindow(bool& show, ConfigWindowState& state) -> void {
             bool open = ImGui::TreeNodeEx(std::string(group).c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAllColumns | ImGuiTreeNodeFlags_NoTreePushOnOpen);
             ImGui::TableSetColumnIndex(2);
             if (ImGui::SmallButton(std::format("all##{}", group).c_str())) {
-                for (auto* value : config::all()) {
+                for (auto* value : cvar::all()) {
                     if (groupOf(value->name()) == group) {
                         value->reset();
                     }
@@ -151,7 +151,7 @@ auto drawConfigWindow(bool& show, ConfigWindowState& state) -> void {
             if (!open) {
                 continue;
             }
-            for (auto* value : config::all()) {
+            for (auto* value : cvar::all()) {
                 if (!shown(value)) {
                     continue;
                 }
@@ -166,7 +166,7 @@ auto drawConfigWindow(bool& show, ConfigWindowState& state) -> void {
                     ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.35f, 1.0f), "* %.*s", (int) shortName.size(), shortName.data());
                 }
                 if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("%s\n\n%s (%s), default %s", value->description().c_str(), name.c_str(), config::typeName(value->type()), value->defaultText().c_str());
+                    ImGui::SetTooltip("%s\n\n%s (%s), default %s", value->description().c_str(), name.c_str(), cvar::typeName(value->type()), value->defaultText().c_str());
                 }
                 ImGui::TableSetColumnIndex(1);
                 drawEditor(*value);
@@ -181,18 +181,18 @@ auto drawConfigWindow(bool& show, ConfigWindowState& state) -> void {
     ImGui::End();
 }
 
-auto configBool(std::string_view name) -> config::Bool* {
-    auto* value = config::find(name);
-    return value != nullptr && value->type() == config::Type::Bool ? static_cast<config::Bool*>(value) : nullptr;
+auto cvarBool(std::string_view name) -> cvar::Bool* {
+    auto* value = cvar::find(name);
+    return value != nullptr && value->type() == cvar::Type::Bool ? static_cast<cvar::Bool*>(value) : nullptr;
 }
 
-auto configFloat(std::string_view name) -> config::Float* {
-    auto* value = config::find(name);
-    return value != nullptr && value->type() == config::Type::Float ? static_cast<config::Float*>(value) : nullptr;
+auto cvarFloat(std::string_view name) -> cvar::Float* {
+    auto* value = cvar::find(name);
+    return value != nullptr && value->type() == cvar::Type::Float ? static_cast<cvar::Float*>(value) : nullptr;
 }
 
-auto configCheckbox(const char* label, std::string_view name) -> bool {
-    auto* value = configBool(name);
+auto cvarCheckbox(const char* label, std::string_view name) -> bool {
+    auto* value = cvarBool(name);
     bool on = value != nullptr && value->get();
     ImGui::BeginDisabled(value == nullptr);
     if (ImGui::Checkbox(label, &on) && value != nullptr) {
@@ -205,8 +205,8 @@ auto configCheckbox(const char* label, std::string_view name) -> bool {
     return on;
 }
 
-auto configMenuItem(const char* label, const char* shortcut, std::string_view name, bool enabled) -> bool {
-    auto* value = configBool(name);
+auto cvarMenuItem(const char* label, const char* shortcut, std::string_view name, bool enabled) -> bool {
+    auto* value = cvarBool(name);
     bool on = value != nullptr && value->get();
     if (ImGui::MenuItem(label, shortcut, &on, enabled && value != nullptr) && value != nullptr) {
         value->set(on);

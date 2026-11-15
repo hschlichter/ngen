@@ -13,7 +13,7 @@
 
 // Editor flags the View tab edits in place; the menu edits the same flags.
 struct RenderDebugViewFlags {
-    int& gbufferView;
+    int& viewMode;
     SamplerSettings& sampler;
     ShadowCascadeSettings& shadow;
     AmbientSettings& ambient;

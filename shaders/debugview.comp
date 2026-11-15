@@ -43,7 +43,7 @@ vec3 heat(float t) {
     return vec3(r, g, b);
 }
 
-// The streaming view's colours, as the Streaming window's legend (streamingStateColor): no root grey, drawn as selected green, prefetched
+// The streaming view's colours, as the Streaming window's legend (streamingStateColor): no root grey, drawn as desired green, prefetched
 // teal, requested blue, refused by a budget violet, late orange, a hole red. A root breaking the authoring contract is striped yellow.
 vec3 streamingColor(uint slot, uvec2 pixel) {
     if (slot == 0u || slot > push.streamingRoots) {

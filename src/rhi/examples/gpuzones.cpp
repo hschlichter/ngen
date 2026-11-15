@@ -130,7 +130,7 @@ protected:
     }
 
     auto record(RhiCommandBuffer* cmd, RhiTexture* backbuffer, RhiExtent2D extent) -> void override {
-        recorded[frameSlot()] = true;
+        recorded[frameContext()] = true;
 
         cmd->beginGpuZone("frame", 11);
 

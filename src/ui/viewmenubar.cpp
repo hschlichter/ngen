@@ -1,6 +1,6 @@
 #include "viewmenubar.h"
 
-#include "configwindow.h"
+#include "cvarwindow.h"
 #include "debugview.h"
 
 #include <imgui.h>
@@ -45,30 +45,30 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::MenuItem("Show AABBs", nullptr, &state.showAABBs);
         ImGui::MenuItem("Show Selected AABB", nullptr, &state.showSelectedAABB);
         ImGui::MenuItem("Show Light Gizmos", nullptr, &state.showLightGizmos);
-        configMenuItem("Frame Budget", "Ctrl+B", "ui.overlay.budget");
+        cvarMenuItem("Frame Budget", "Ctrl+B", "ui.overlay.budget");
         ImGui::Separator();
         ImGui::MenuItem("Depth Prepass", nullptr, &state.depthPrepass);
         ImGui::MenuItem("Show Buffer Overlay", "Ctrl+1", &state.showBufferOverlay);
         ImGui::MenuItem("Show Shadow Overlay", "Ctrl+2", &state.showShadowOverlay);
         ImGui::MenuItem("Anti-Aliasing (FXAA)", nullptr, &state.antiAliasing);
         ImGui::Separator();
-        configMenuItem("Follow Ground", "G", "view.camera.follow");
-        bool debugCamera = configMenuItem("Debug Camera", "Ctrl+D", "tools.debugcamera.on");
-        configMenuItem("Controls Move Main Camera", "C", "tools.debugcamera.controlMain", debugCamera);
+        cvarMenuItem("Follow Ground", "G", "view.camera.follow");
+        bool debugCamera = cvarMenuItem("Debug Camera", "Ctrl+D", "tools.debugcamera.on");
+        cvarMenuItem("Controls Move Main Camera", "C", "tools.debugcamera.controlMain", debugCamera);
         ImGui::Separator();
-        ImGui::Text("Fullscreen Buffer View");
-        ImGui::RadioButton("Albedo", &state.gbufferView, 1);
-        ImGui::RadioButton("Normals", &state.gbufferView, 2);
-        ImGui::RadioButton("Depth", &state.gbufferView, 3);
-        ImGui::RadioButton("Shadow Factor", &state.gbufferView, 4);
-        ImGui::RadioButton("Shadow Map", &state.gbufferView, 5);
-        ImGui::RadioButton("Shadow UV", &state.gbufferView, 6);
-        ImGui::RadioButton("World Pos", &state.gbufferView, 7);
-        ImGui::RadioButton("Mip Level (Ctrl+3)", &state.gbufferView, 8);
-        ImGui::RadioButton("Cascades", &state.gbufferView, 9);
-        ImGui::RadioButton("LOD Level (Ctrl+4)", &state.gbufferView, 10);
-        ImGui::RadioButton("Depth Pyramid (occlusion)", &state.gbufferView, 11);
-        ImGui::RadioButton("Lit (Ctrl+5: everything off, again to restore)", &state.gbufferView, 0);
+        ImGui::Text("View Mode");
+        ImGui::RadioButton("Albedo", &state.viewMode, 1);
+        ImGui::RadioButton("Normals", &state.viewMode, 2);
+        ImGui::RadioButton("Depth", &state.viewMode, 3);
+        ImGui::RadioButton("Shadow Factor", &state.viewMode, 4);
+        ImGui::RadioButton("Shadow Map", &state.viewMode, 5);
+        ImGui::RadioButton("Shadow UV", &state.viewMode, 6);
+        ImGui::RadioButton("World Pos", &state.viewMode, 7);
+        ImGui::RadioButton("Mip Level (Ctrl+3)", &state.viewMode, 8);
+        ImGui::RadioButton("Cascades", &state.viewMode, 9);
+        ImGui::RadioButton("LOD Level (Ctrl+4)", &state.viewMode, 10);
+        ImGui::RadioButton("Depth Pyramid (occlusion)", &state.viewMode, 11);
+        ImGui::RadioButton("Lit (Ctrl+5: everything off, again to restore)", &state.viewMode, 0);
         ImGui::Separator();
         ImGui::Text("Debug View");
         // The views with a key (ViewUI::toggleShortcuts) show it.
@@ -102,7 +102,7 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::Separator();
         ImGui::MenuItem("Frame Graph", nullptr, &state.showFrameGraph);
         ImGui::MenuItem("Performance", "Ctrl+P", &state.showPerformance);
-        ImGui::MenuItem("Configuration", nullptr, &state.showConfig);
+        ImGui::MenuItem("Cvars", nullptr, &state.showCvars);
         ImGui::MenuItem("Status Bar", nullptr, &state.showStatusBar);
         ImGui::MenuItem("Render Debug", nullptr, &state.showRenderDebug);
         ImGui::MenuItem("Camera", "Ctrl+C", &state.showCamera);

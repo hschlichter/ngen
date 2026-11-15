@@ -89,11 +89,11 @@ auto convertCaptureForDisplay(const CaptureResult& result, const CaptureDisplay&
 auto captureStaticBufferNames() -> std::span<const char* const>;
 
 // Records copies of frame-graph resources at capture points and reads them back after the
-// frame slot's fence (docs in src/renderer/README.md, "Debugging and introspection").
+// frame context's fence (docs in src/renderer/README.md, "Debugging and introspection").
 class CaptureService {
 public:
     // `previews` shows the previews; none makes no preview textures (the previews' pixels are still kept for dumps).
-    auto init(RhiDevice* device, PreviewTextures* previews, DeletionQueue* deletionQueue, GpuUploader* uploader, uint32_t frameSlots) -> void;
+    auto init(RhiDevice* device, PreviewTextures* previews, DeletionQueue* deletionQueue, GpuUploader* uploader, uint32_t frameContexts) -> void;
     auto destroy() -> void;
 
     auto setWatches(std::vector<CaptureWatch> watches) -> void;
@@ -101,11 +101,11 @@ public:
 
     // Capture points for this frame; the frame graph runs them. Call once per frame, after
     // the graph is built and before it executes.
-    auto requestsForFrame(uint32_t frameSlot, uint64_t frame) -> std::vector<FgCaptureRequest>;
+    auto requestsForFrame(uint32_t frameContext, uint64_t frame) -> std::vector<FgCaptureRequest>;
     // Copies of static buffers watched this frame; after the graph executed.
-    auto recordStatic(RhiCommandBuffer* cmd, uint32_t frameSlot, uint64_t frame) -> void;
+    auto recordStatic(RhiCommandBuffer* cmd, uint32_t frameContext, uint64_t frame) -> void;
     // Once the slot's fence has passed: parse its copies into results.
-    auto afterFence(uint32_t frameSlot) -> void;
+    auto afterFence(uint32_t frameContext) -> void;
     auto takeResults() -> std::vector<CaptureResult>;
 
 private:
@@ -149,7 +149,7 @@ private:
         uint64_t size = 0;
     };
     std::unordered_map<std::string, StaticBuffer> staticBuffers;
-    std::vector<std::vector<Pending>> pending;    // per frame slot
+    std::vector<std::vector<Pending>> pending;    // per frame context
     std::vector<CaptureWatch> requestedThisFrame; // graph captures asked for; unmatched ones become errors
     std::vector<uint32_t> recordedThisFrame;
     std::unordered_map<uint32_t, Kept> kept; // last result per watch

@@ -22,7 +22,7 @@ struct VisitState {
 
 } // namespace
 
-auto materialKey(const Entity& material) -> std::string {
+auto materialInstanceKey(const Prim& material) -> std::string {
     if (material.materialInputs.empty() || material.materialAsset.empty()) {
         return material.materialAsset;
     }
@@ -37,7 +37,7 @@ auto materialKey(const Entity& material) -> std::string {
     return key;
 }
 
-auto parseMaterialKey(const std::string& key) -> MaterialUse {
+auto parseMaterialInstanceKey(const std::string& key) -> MaterialUse {
     MaterialUse use;
     auto query = key.find('?');
     use.asset = key.substr(0, query);
@@ -69,12 +69,12 @@ auto MaterialUse::input(const std::string& name) const -> std::optional<std::str
     return std::nullopt;
 }
 
-auto WorldContent::isInstancerPrototype(EntityId id) const -> bool {
+auto WorldContent::isInstancerPrototype(PrimId id) const -> bool {
     for (const auto& [instancer, data] : pointInstancers) {
         if (std::ranges::find(data.prototypes, id) == data.prototypes.end()) {
             continue;
         }
-        for (EntityId at = entities[id].parent; at != noEntity; at = entities[at].parent) {
+        for (PrimId at = prims[id].parent; at != noPrim; at = prims[at].parent) {
             if (at == instancer) {
                 return true;
             }
@@ -83,13 +83,13 @@ auto WorldContent::isInstancerPrototype(EntityId id) const -> bool {
     return false;
 }
 
-auto WorldContent::path(EntityId id) const -> std::string {
+auto WorldContent::path(PrimId id) const -> std::string {
     if (id == 0) {
         return "/";
     }
     std::vector<const std::string*> names;
-    for (EntityId at = id; at != 0 && at != noEntity; at = entities[at].parent) {
-        names.push_back(&entities[at].name);
+    for (PrimId at = id; at != 0 && at != noPrim; at = prims[at].parent) {
+        names.push_back(&prims[at].name);
     }
     std::string out;
     for (auto it = names.rbegin(); it != names.rend(); ++it) {
@@ -99,7 +99,7 @@ auto WorldContent::path(EntityId id) const -> std::string {
     return out;
 }
 
-auto World::wantedLevel(const std::string& rootPath, const LodRoot& root) const -> uint32_t {
+auto World::desiredLevel(const std::string& rootPath, const LodRoot& root) const -> uint32_t {
     if (auto it = lodLevels.find(rootPath); it != lodLevels.end()) {
         if (!root.levels.empty()) {
             return std::min(it->second, (uint32_t) root.levels.size() - 1);
@@ -113,11 +113,11 @@ auto World::drawnLevel(const std::string& rootPath, const LodRoot& root) const -
     if (root.loaded.empty()) {
         return std::nullopt;
     }
-    uint32_t wanted = wantedLevel(rootPath, root);
-    // Levels are finest first: the finest loaded level at or after the wanted one; when none is, the coarsest loaded one before it.
+    uint32_t desired = desiredLevel(rootPath, root);
+    // Levels are finest first: the finest loaded level at or after the desired one; when none is, the coarsest loaded one before it.
     std::optional<uint32_t> best;
     for (uint32_t level : root.loaded) {
-        if (level >= wanted && (!best || level < *best)) {
+        if (level >= desired && (!best || level < *best)) {
             best = level;
         }
     }
@@ -131,37 +131,37 @@ auto World::prototypeCount() const -> size_t {
     return (size_t) std::ranges::count_if(contents, [](const WorldContent& content) { return content.kind == ContentKind::Prototype; });
 }
 
-auto World::visit(const std::function<bool(const VisitedEntity&)>& visitor) const -> void {
-    std::function<void(const WorldContent&, EntityId, const VisitState&)> visitChildren;
+auto World::visit(const std::function<bool(const VisitedPrim&)>& visitor) const -> void {
+    std::function<void(const WorldContent&, PrimId, const VisitState&)> visitChildren;
 
-    auto visitEntity = [&](const WorldContent& content, EntityId id, const VisitState& parent) -> void {
-        const auto& entity = content.entities[id];
+    auto visitPrim = [&](const WorldContent& content, PrimId id, const VisitState& parent) -> void {
+        const auto& prim = content.prims[id];
         VisitState state;
-        state.path = primpath::child(parent.path, entity.name);
+        state.path = primpath::child(parent.path, prim.name);
         state.worldTransform = parent.worldTransform;
-        if (entity.xformable) {
-            if (entity.resetsXformStack) {
-                state.worldTransform = entity.localTransform;
+        if (prim.xformable) {
+            if (prim.resetsXformStack) {
+                state.worldTransform = prim.localTransform;
             } else {
-                state.worldTransform = parent.worldTransform * entity.localTransform;
+                state.worldTransform = parent.worldTransform * prim.localTransform;
             }
         }
-        state.visible = parent.visible && (!entity.invisible || entity.lodItem);
-        state.purpose = entity.purpose.value_or(parent.purpose);
+        state.visible = parent.visible && (!prim.invisible || prim.lodItem);
+        state.purpose = prim.purpose.value_or(parent.purpose);
         state.materialAsset = parent.materialAsset;
         state.strongBinding = parent.strongBinding;
-        if (!parent.strongBinding && entity.binding) {
-            state.materialAsset = entity.binding->materialAsset;
-            state.strongBinding = entity.binding->strongerThanDescendants;
+        if (!parent.strongBinding && prim.binding) {
+            state.materialAsset = prim.binding->materialAsset;
+            state.strongBinding = prim.binding->strongerThanDescendants;
         }
         state.insideInstance = parent.insideInstance;
         state.inUndrawnLevel = parent.inUndrawnLevel;
         state.inInstancerPrototype = parent.inInstancerPrototype || (!content.pointInstancers.empty() && content.isInstancerPrototype(id));
 
-        VisitedEntity visited;
+        VisitedPrim visited;
         visited.content = &content;
         visited.id = id;
-        visited.entity = &entity;
+        visited.prim = &prim;
         visited.path = state.path;
         visited.worldTransform = state.worldTransform;
         visited.visible = state.visible;
@@ -174,27 +174,27 @@ auto World::visit(const std::function<bool(const VisitedEntity&)>& visitor) cons
         if (!visitor(visited)) {
             return;
         }
-        if (entity.prototype >= 0) {
+        if (prim.prototype >= 0) {
             VisitState inside = state;
             inside.insideInstance = true;
-            visitChildren(contents[(size_t) entity.prototype], 0, inside);
+            visitChildren(contents[(size_t) prim.prototype], 0, inside);
             return;
         }
         visitChildren(content, id, state);
     };
 
-    visitChildren = [&](const WorldContent& content, EntityId id, const VisitState& state) -> void {
-        const auto& entity = content.entities[id];
+    visitChildren = [&](const WorldContent& content, PrimId id, const VisitState& state) -> void {
+        const auto& prim = content.prims[id];
         std::optional<uint32_t> drawn;
         const LodRoot* lodRoot = nullptr;
         if (auto it = content.lodRoots.find(id); it != content.lodRoots.end() && it->second.streams) {
-            // A render-LOD root's levels are children like any other: which one draws is the renderer's, per placement.
+            // A LOD-group root's levels are children like any other: which one draws is the renderer's, per placement.
             lodRoot = &it->second;
             drawn = drawnLevel(state.path, *lodRoot);
         }
-        for (EntityId child : entity.children) {
+        for (PrimId child : prim.children) {
             if (lodRoot == nullptr) {
-                visitEntity(content, child, state);
+                visitPrim(content, child, state);
                 continue;
             }
             auto level = std::ranges::find(lodRoot->levels, child);
@@ -202,13 +202,13 @@ auto World::visit(const std::function<bool(const VisitedEntity&)>& visitor) cons
             if (level != lodRoot->levels.end() && (!drawn || (uint32_t) (level - lodRoot->levels.begin()) != *drawn)) {
                 childState.inUndrawnLevel = true;
             }
-            // A level is its content's entity 0, the level prim as composed (loaded or not), with everything under it; one still composing
+            // A level is its content's prim 0, the level prim as composed (loaded or not), with everything under it; one still composing
             // is its stand-in alone.
-            if (auto linked = content.entities[child].linkedContent; linked >= 0) {
-                visitEntity(contents[(size_t) linked], 0, childState);
+            if (auto linked = content.prims[child].linkedContent; linked >= 0) {
+                visitPrim(contents[(size_t) linked], 0, childState);
                 continue;
             }
-            visitEntity(content, child, childState);
+            visitPrim(content, child, childState);
         }
     };
 

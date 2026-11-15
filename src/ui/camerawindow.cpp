@@ -1,7 +1,7 @@
 #include "camerawindow.h"
 
 #include "camera.h"
-#include "configwindow.h"
+#include "cvarwindow.h"
 #include "sessionscript.h"
 
 #include <imgui.h>
@@ -49,9 +49,9 @@ auto applyPose(Camera& camera, const float pose[5]) -> void {
     camera.pitch = pose[4];
 }
 
-// Two radio buttons over a Bool configuration value by name: `off` for false, `on` for true.
+// Two radio buttons over a Bool cvar by name: `off` for false, `on` for true.
 auto boolRadios(const char* label, const char* id, std::string_view name, const char* off, const char* on) -> void {
-    auto* value = configBool(name);
+    auto* value = cvarBool(name);
     if (value == nullptr) {
         return;
     }
@@ -68,9 +68,9 @@ auto boolRadios(const char* label, const char* id, std::string_view name, const 
 }
 
 // The debug camera's section: the main camera is the pose above, which everything placing the camera moves. Its switches are
-// configuration values (tools.debugcamera.*).
+// cvars (tools.debugcamera.*).
 auto drawDebugCamera(DebugCameraState& debug) -> void {
-    bool on = configCheckbox("Debug camera", "tools.debugcamera.on");
+    bool on = cvarCheckbox("Debug camera", "tools.debugcamera.on");
     if (!on) {
         return;
     }
@@ -85,7 +85,7 @@ auto drawDebugCamera(DebugCameraState& debug) -> void {
     boolRadios("LOD and streaming", "lod", "tools.debugcamera.lod", "main", "debug");
     boolRadios("Culling", "cull", "tools.debugcamera.cull", "main", "debug");
     boolRadios("Shadows", "shadows", "tools.debugcamera.shadows", "main", "debug");
-    configCheckbox("Trail", "tools.debugcamera.trail");
+    cvarCheckbox("Trail", "tools.debugcamera.trail");
     ImGui::SameLine();
     ImGui::Text("%zu points", debug.trailPoints.size());
     ImGui::SameLine();
@@ -95,12 +95,12 @@ auto drawDebugCamera(DebugCameraState& debug) -> void {
 }
 
 // The camera modes' section: following the ground and orbiting, for the camera that has the controls. Following and its height are
-// configuration values (view.camera.follow*).
+// cvars (view.camera.follow*).
 auto drawCameraModes(CameraModesState& modes) -> void {
-    bool follow = configCheckbox("Follow ground", "view.camera.follow");
+    bool follow = cvarCheckbox("Follow ground", "view.camera.follow");
     ImGui::SameLine();
     ImGui::TextDisabled("(G)");
-    if (auto* height = configFloat("view.camera.followHeight")) {
+    if (auto* height = cvarFloat("view.camera.followHeight")) {
         ImGui::SameLine();
         ImGui::SetNextItemWidth(120.0f);
         auto metres = (float) height->get();
@@ -115,7 +115,7 @@ auto drawCameraModes(CameraModesState& modes) -> void {
         } else {
             ImGui::TextDisabled("No drawn surface under the camera: the height is held.");
         }
-        ImGui::Text("Tested %u chunks, %u draws, %llu triangles in %.2f ms", modes.groundChunks, modes.groundDraws, (unsigned long long) modes.groundTriangles, modes.groundMs);
+        ImGui::Text("Tested %u chunks, %u instances, %llu triangles in %.2f ms", modes.groundChunks, modes.groundInstances, (unsigned long long) modes.groundTriangles, modes.groundMs);
     }
     if (modes.orbiting) {
         ImGui::Text("Orbiting %.2f, %.2f, %.2f%s", modes.pivot.x, modes.pivot.y, modes.pivot.z, modes.pivotPicked ? "" : " (the cursor's depth on its way)");

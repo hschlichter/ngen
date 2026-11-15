@@ -1,31 +1,31 @@
 #pragma once
 
-#include "traceevent.h"
-#include "tracering.h"
+#include "logevent.h"
+#include "logring.h"
 
 #include <string>
 #include <string_view>
 #include <utility>
 
-// TRACE_EVENT(category, type, name).text(message).field(key, value);
-// TRACE_WARNING(category, type, name).text(message);
-// TRACE_ERROR(category, type, name).text(message);
+// LOG_EVENT(category, type, name).text(message).field(key, value);
+// LOG_WARNING(category, type, name).text(message);
+// LOG_ERROR(category, type, name).text(message);
 //
 // Builds one event and pushes it into the process's ring when the full expression ends (at the semicolon). Always
-// on: the ring is in memory, and whoever subscribes over RPC gets the events (src/trace/README.md). The trace is for
+// on: the ring is in memory, and whoever subscribes over RPC gets the events (src/log/README.md). The log is for
 // flow and messages: what happened, and what went wrong. Data that can be asked for is a record, not an event.
 //
 // Every event is also printed on the console, prefixed with the local time: info on stdout, warnings and errors on
-// stderr. Engine code says everything through the trace, so the console and the trace never differ.
+// stderr. Engine code says everything through the log, so the console and the log never differ.
 //
-// For an event whose fields are added in a loop, name the builder: trace::Builder event(trace::Level::Info, "Scene", "SceneOpened", path);
+// For an event whose fields are added in a loop, name the builder: logging::Builder event(logging::Severity::Info, "Scene", "SceneOpened", path);
 
-namespace trace {
+namespace logging {
 
 class Builder {
 public:
-    Builder(Level level, std::string_view category, std::string_view type, std::string_view name) {
-        event.level = level;
+    Builder(Severity severity, std::string_view category, std::string_view type, std::string_view name) {
+        event.severity = severity;
         event.category.assign(category);
         event.type.assign(type);
         event.name.assign(name);
@@ -66,17 +66,17 @@ private:
     Event event;
 };
 
-} // namespace trace
+} // namespace logging
 
-#define TRACE_EVENT(category, type, name)                \
-    ::trace::Builder {                                   \
-        ::trace::Level::Info, (category), (type), (name) \
+#define LOG_EVENT(category, type, name)                       \
+    ::logging::Builder {                                      \
+        ::logging::Severity::Info, (category), (type), (name) \
     }
-#define TRACE_WARNING(category, type, name)                 \
-    ::trace::Builder {                                      \
-        ::trace::Level::Warning, (category), (type), (name) \
+#define LOG_WARNING(category, type, name)                        \
+    ::logging::Builder {                                         \
+        ::logging::Severity::Warning, (category), (type), (name) \
     }
-#define TRACE_ERROR(category, type, name)                 \
-    ::trace::Builder {                                    \
-        ::trace::Level::Error, (category), (type), (name) \
+#define LOG_ERROR(category, type, name)                        \
+    ::logging::Builder {                                       \
+        ::logging::Severity::Error, (category), (type), (name) \
     }

@@ -366,9 +366,9 @@ auto color(const PackValue* value, glm::vec3 fallback) -> glm::vec3 {
 // Where a composed prim's binding or heuristic points, to resolve once the content is composed.
 struct PendingTarget {
     WorldContent* content = nullptr;
-    EntityId entity = noEntity;
+    PrimId prim = noPrim;
     std::string path;
-    bool outside = false; // the path is the stage's, outside the prototype holding the entity
+    bool outside = false; // the path is the stage's, outside the prototype holding the prim
 };
 
 struct ContentInfo;
@@ -404,8 +404,8 @@ struct ContentInfo {
     std::vector<PendingTarget> bindings; // its material bindings, resolved every compose (a target may be in another content)
     std::shared_ptr<const Node> index;   // a prototype's kept nodes, to compose it again
     bool loads = true;
-    std::unordered_map<EntityId, LevelSlot> slots; // its LOD roots' levels, by level entity
-    std::vector<int32_t> prototypesUsed;           // instances in it
+    std::unordered_map<PrimId, LevelSlot> slots; // its LOD roots' levels, by level prim
+    std::vector<int32_t> prototypesUsed;         // instances in it
 };
 
 // One content's composition in progress: the gaps it hit (packs named and not held), its messages and the targets to resolve once it is
@@ -486,7 +486,7 @@ struct WorldComposer::Impl {
     std::vector<ContentInfo*> reached; // what the last resolution reached, stage first
     std::vector<std::string> stageMessages;
     uint64_t gapEvents = 0; // every gap hit, for the prim index memo
-    // What a LOD heuristic prim authors, by its content and entity, for the roots that name it.
+    // What a LOD heuristic prim authors, by its content and prim, for the roots that name it.
     struct HeuristicData {
         std::string type;
         std::string path; // in its content
@@ -499,9 +499,9 @@ struct WorldComposer::Impl {
         std::vector<PendingTarget> boundingVolumes;
         LodProjection projection = LodProjection::Sphere;
     };
-    std::map<std::pair<const WorldContent*, EntityId>, HeuristicData> heuristics;
-    // Every other prim's authored extent, by its content and entity: the boundables a heuristic's boundingVolume may name.
-    std::map<std::pair<const WorldContent*, EntityId>, std::array<glm::vec3, 2>> extents;
+    std::map<std::pair<const WorldContent*, PrimId>, HeuristicData> heuristics;
+    // Every other prim's authored extent, by its content and prim: the boundables a heuristic's boundingVolume may name.
+    std::map<std::pair<const WorldContent*, PrimId>, std::array<glm::vec3, 2>> extents;
 
     World world;
 
@@ -884,7 +884,7 @@ struct WorldComposer::Impl {
         if (levelCount == 0) {
             return out;
         }
-        uint32_t wanted = std::min(defaultIndex, levelCount - 1);
+        uint32_t desired = std::min(defaultIndex, levelCount - 1);
         if (at.sharedKey.empty()) {
             auto path = primpath::join(at.base, relative);
             if (auto resident = residentLevels.find(path); resident != residentLevels.end() && !resident->second.empty()) {
@@ -894,7 +894,7 @@ struct WorldComposer::Impl {
                 return out;
             }
             if (auto it = lodLevels.find(path); it != lodLevels.end()) {
-                wanted = std::min(it->second, levelCount - 1);
+                desired = std::min(it->second, levelCount - 1);
             }
         } else if (auto proto = prototypeLevels.find(at.sharedKey); proto != prototypeLevels.end()) {
             if (auto levels = proto->second.find(primpath::join(at.ownerPath, relative)); levels != proto->second.end()) {
@@ -903,7 +903,7 @@ struct WorldComposer::Impl {
                 }
             }
         }
-        out.insert(wanted);
+        out.insert(desired);
         out.insert(levelCount - 1);
         return out;
     }
@@ -950,7 +950,7 @@ struct WorldComposer::Impl {
         return defined || !index.payloadIds.empty();
     }
 
-    auto composeChildren(ContentContext& context, EntityId parent, const Node& parentRoot, const std::string& composedPath, bool loadPayloads) -> void {
+    auto composeChildren(ContentContext& context, PrimId parent, const Node& parentRoot, const std::string& composedPath, bool loadPayloads) -> void {
         auto names = childNames(parentRoot);
         if (!context.content->lodRoots.contains(parent)) {
             // A prim with payloads is part of this content, loaded with it, as USD loads it (a LOD level is the content that streams).
@@ -962,9 +962,9 @@ struct WorldComposer::Impl {
         }
         // A LOD root's levels are its children UsdLod counts as LOD items: defined, active and not abstract. (UsdLod also asks them to be
         // loaded; here loading a level is the engine's, so a level counts loaded or not, and one defined only by its payload counts.) The
-        // root streams when a level has payloads: a level is then a stand-in entity, linked at resolution to the level's own content (the
+        // root streams when a level has payloads: a level is then a stand-in prim, linked at resolution to the level's own content (the
         // level prim and everything under it, loaded or not), so which level loads never changes the content the root is in. Without
-        // payloads its levels are render LOD, composed in place. Any other child is a prim of the root's content.
+        // payloads its levels are a LOD group's, composed in place. Any other child is a prim of the root's content.
         auto rootIndex = std::make_shared<const Node>(parentRoot);
         auto& content = *context.content;
         std::vector<bool> items;
@@ -982,7 +982,7 @@ struct WorldComposer::Impl {
                 streams = true;
             }
         }
-        std::vector<EntityId> levels;
+        std::vector<PrimId> levels;
         for (size_t i = 0; i < names.size(); i++) {
             const auto& name = names[i];
             auto path = childPath(composedPath, name);
@@ -993,23 +993,23 @@ struct WorldComposer::Impl {
                 windows.pop_back();
                 window().gaps += composed.gaps;
                 window().messages.insert(window().messages.end(), composed.messages.begin(), composed.messages.end());
-                auto id = (EntityId) content.entities.size();
+                auto id = (PrimId) content.prims.size();
                 composePrim(context, parent, name, std::move(index), path, loadPayloads);
-                if (items[i] && id < content.entities.size()) {
-                    content.entities[id].lodItem = true;
+                if (items[i] && id < content.prims.size()) {
+                    content.prims[id].lodItem = true;
                     levels.push_back(id);
                 }
                 continue;
             }
-            auto id = (EntityId) content.entities.size();
+            auto id = (PrimId) content.prims.size();
             levels.push_back(id);
-            Entity standIn;
+            Prim standIn;
             standIn.name = name;
             standIn.parent = parent;
             standIn.defined = true;
             standIn.lodItem = true;
-            content.entities.push_back(std::move(standIn));
-            content.entities[parent].children.push_back(id);
+            content.prims.push_back(std::move(standIn));
+            content.prims[parent].children.push_back(id);
             content.byPath[relativePath(context, path)] = id;
             context.info->slots[id] = LevelSlot{.rootIndex = rootIndex, .name = name, .composedPath = path, .parentLoads = loadPayloads};
         }
@@ -1027,7 +1027,7 @@ struct WorldComposer::Impl {
         }
     }
 
-    auto pendingTarget(const ContentContext& context, EntityId id, const RelationshipOpinion& opinion) -> std::optional<PendingTarget> {
+    auto pendingTarget(const ContentContext& context, PrimId id, const RelationshipOpinion& opinion) -> std::optional<PendingTarget> {
         if (opinion.relationship == nullptr || opinion.relationship->targets.empty()) {
             return std::nullopt;
         }
@@ -1035,7 +1035,7 @@ struct WorldComposer::Impl {
     }
 
     // Every target of a relationship, in authored order.
-    auto pendingTargets(const ContentContext& context, EntityId id, const RelationshipOpinion& opinion) -> std::vector<PendingTarget> {
+    auto pendingTargets(const ContentContext& context, PrimId id, const RelationshipOpinion& opinion) -> std::vector<PendingTarget> {
         std::vector<PendingTarget> targets;
         if (opinion.relationship == nullptr) {
             return targets;
@@ -1048,14 +1048,14 @@ struct WorldComposer::Impl {
         return targets;
     }
 
-    auto pendingTargetAt(const ContentContext& context, EntityId id, const std::string& authored, const Contribution& contribution) -> std::optional<PendingTarget> {
+    auto pendingTargetAt(const ContentContext& context, PrimId id, const std::string& authored, const Contribution& contribution) -> std::optional<PendingTarget> {
         auto mapped = mapToComposed(authored, contribution);
         if (!mapped) {
             return std::nullopt;
         }
         PendingTarget target;
         target.content = context.content;
-        target.entity = id;
+        target.prim = id;
         if (context.key.empty() || primpath::isAtOrUnder(*mapped, context.base)) {
             target.path = relativePath(context, *mapped);
         } else {
@@ -1065,13 +1065,13 @@ struct WorldComposer::Impl {
         return target;
     }
 
-    auto composePrim(ContentContext& context, EntityId parent, const std::string& name, PrimIndex index, const std::string& composedPath, bool loadPayloads) -> void {
+    auto composePrim(ContentContext& context, PrimId parent, const std::string& name, PrimIndex index, const std::string& composedPath, bool loadPayloads) -> void {
         auto contributing = contributions(index.root);
         auto specs = opinions(contributing);
 
-        Entity entity;
-        entity.name = name;
-        entity.parent = parent;
+        Prim prim;
+        prim.name = name;
+        prim.parent = parent;
         std::vector<std::string> apiSchemas;
         int32_t active = -1;
         int32_t instanceable = -1;
@@ -1082,16 +1082,16 @@ struct WorldComposer::Impl {
                     continue;
                 }
                 auto name = attribute.name.substr(7);
-                if (std::ranges::none_of(entity.materialInputs, [&name](const auto& input) { return input.first == name; })) {
-                    entity.materialInputs.emplace_back(name, valueText(attribute.value));
+                if (std::ranges::none_of(prim.materialInputs, [&name](const auto& input) { return input.first == name; })) {
+                    prim.materialInputs.emplace_back(name, valueText(attribute.value));
                 }
             }
-            if (!entity.defined && spec.specifier != PrimSpecifier::Over) {
-                entity.defined = true;
-                entity.abstract = spec.specifier == PrimSpecifier::Class;
+            if (!prim.defined && spec.specifier != PrimSpecifier::Over) {
+                prim.defined = true;
+                prim.abstract = spec.specifier == PrimSpecifier::Class;
             }
-            if (entity.typeName.empty()) {
-                entity.typeName = spec.typeName;
+            if (prim.typeName.empty()) {
+                prim.typeName = spec.typeName;
             }
             if (active < 0) {
                 active = spec.active;
@@ -1104,69 +1104,69 @@ struct WorldComposer::Impl {
                     apiSchemas.push_back(schema);
                 }
             }
-            if (entity.pointCount < 0 && spec.pointCount >= 0) {
-                entity.pointCount = spec.pointCount;
+            if (prim.pointCount < 0 && spec.pointCount >= 0) {
+                prim.pointCount = spec.pointCount;
             }
-            if (entity.meshAsset.empty()) {
-                entity.meshAsset = spec.meshAsset;
+            if (prim.meshAsset.empty()) {
+                prim.meshAsset = spec.meshAsset;
             }
-            if (entity.materialAsset.empty()) {
-                entity.materialAsset = spec.materialAsset;
+            if (prim.materialAsset.empty()) {
+                prim.materialAsset = spec.materialAsset;
             }
         }
         for (const auto& contribution : contributing) {
             for (const auto& set : authoredVariantSets(*contribution.node->stack, contribution.node->path)) {
-                if (std::ranges::none_of(entity.variantSelections, [&set](const auto& selection) { return selection.first == set; })) {
-                    entity.variantSelections.emplace_back(set, variantSelection(index.root, set));
+                if (std::ranges::none_of(prim.variantSelections, [&set](const auto& selection) { return selection.first == set; })) {
+                    prim.variantSelections.emplace_back(set, variantSelection(index.root, set));
                 }
             }
         }
-        entity.active = active != 0;
-        if (entity.typeName != "Material") {
+        prim.active = active != 0;
+        if (prim.typeName != "Material") {
             // inputs:* on anything else (a light's) aren't a material's interface.
-            entity.materialInputs.clear();
+            prim.materialInputs.clear();
         }
-        if (!pointBasedTypes.contains(entity.typeName)) {
-            entity.pointCount = -1;
-        } else if (entity.pointCount < 0) {
-            entity.pointCount = 0;
+        if (!pointBasedTypes.contains(prim.typeName)) {
+            prim.pointCount = -1;
+        } else if (prim.pointCount < 0) {
+            prim.pointCount = 0;
         }
 
         auto attribute = [&specs](const std::string& attributeName) -> const PackValue* {
             return findAttribute(specs, attributeName);
         };
-        entity.xformable = xformableTypes.contains(entity.typeName);
-        if (entity.xformable) {
+        prim.xformable = xformableTypes.contains(prim.typeName);
+        if (prim.xformable) {
             if (const PackValue* order = attribute("xformOpOrder")) {
-                entity.localTransform = evaluateXformOps(order->strings, attribute, entity.resetsXformStack);
+                prim.localTransform = evaluateXformOps(order->strings, attribute, prim.resetsXformStack);
             }
         }
-        entity.invisible = token(attribute("visibility")) == "invisible";
+        prim.invisible = token(attribute("visibility")) == "invisible";
         auto purpose = token(attribute("purpose"));
         if (purpose == "default") {
-            entity.purpose = Purpose::Default;
+            prim.purpose = Purpose::Default;
         } else if (purpose == "render") {
-            entity.purpose = Purpose::Render;
+            prim.purpose = Purpose::Render;
         } else if (purpose == "proxy") {
-            entity.purpose = Purpose::Proxy;
+            prim.purpose = Purpose::Proxy;
         } else if (purpose == "guide") {
-            entity.purpose = Purpose::Guide;
+            prim.purpose = Purpose::Guide;
         }
 
         auto& content = *context.content;
-        auto id = (EntityId) content.entities.size();
+        auto id = (PrimId) content.prims.size();
         auto binding = findRelationship(specs, "material:binding");
         if (auto target = pendingTarget(context, id, binding)) {
-            entity.binding = MaterialBinding{.targetPath = target->path, .materialAsset = {}, .strongerThanDescendants = binding.relationship->bindMaterialAs == "strongerThanDescendants"};
+            prim.binding = MaterialBinding{.targetPath = target->path, .materialAsset = {}, .strongerThanDescendants = binding.relationship->bindMaterialAs == "strongerThanDescendants"};
             context.info->bindings.push_back(*target);
         }
-        content.entities.push_back(std::move(entity));
-        if (parent != noEntity) {
-            content.entities[parent].children.push_back(id);
+        content.prims.push_back(std::move(prim));
+        if (parent != noPrim) {
+            content.prims[parent].children.push_back(id);
         }
         content.byPath[relativePath(context, composedPath)] = id;
 
-        const auto& typeName = content.entities[id].typeName;
+        const auto& typeName = content.prims[id].typeName;
         if (auto light = lightTypes.find(typeName); light != lightTypes.end()) {
             Light l;
             l.shape = light->second;
@@ -1208,7 +1208,7 @@ struct WorldComposer::Impl {
         const PackValue* authoredExtent = attribute("extent");
         if (const PackValue* values = attribute("thresholds")) {
             auto& heuristic = heuristics[{&content, id}];
-            heuristic.type = content.entities[id].typeName;
+            heuristic.type = content.prims[id].typeName;
             heuristic.path = content.path(id);
             heuristic.domain = token(attribute("lod:domain"));
             heuristic.boundingVolumes = pendingTargets(context, id, findRelationship(specs, "boundingVolume"));
@@ -1251,7 +1251,7 @@ struct WorldComposer::Impl {
             }
         }
 
-        if (!content.entities[id].active) {
+        if (!content.prims[id].active) {
             return;
         }
         if (instanceable == 1) {
@@ -1264,7 +1264,7 @@ struct WorldComposer::Impl {
                 }
                 // Linked once complete: until then the instance has no children here, and this content isn't complete either.
                 auto used = prototype(kept, composedPath, loadPayloads);
-                context.content->entities[id].prototype = used;
+                context.content->prims[id].prototype = used;
                 if (used >= 0) {
                     context.info->prototypesUsed.push_back(used);
                 }
@@ -1298,10 +1298,10 @@ struct WorldComposer::Impl {
     // queries read them and why the engine doesn't read it when it doesn't. Which one measures the root is the reader's choice.
     auto resolveHeuristics(const std::vector<PendingTarget>& pending) -> void {
         PROFILE_ZONE_DETAIL("ResolveHeuristics", Scene);
-        std::set<std::pair<const WorldContent*, EntityId>> cleared;
+        std::set<std::pair<const WorldContent*, PrimId>> cleared;
         for (const auto& target : pending) {
-            auto& root = target.content->lodRoots.at(target.entity);
-            if (cleared.insert({target.content, target.entity}).second) {
+            auto& root = target.content->lodRoots.at(target.prim);
+            if (cleared.insert({target.content, target.prim}).second) {
                 root.heuristics.clear();
             }
             if (target.outside) {
@@ -1322,11 +1322,11 @@ struct WorldComposer::Impl {
                 if (named.outside) {
                     continue;
                 }
-                auto entity = named.content->byPath.find(named.path);
-                if (entity == named.content->byPath.end()) {
+                auto prim = named.content->byPath.find(named.path);
+                if (prim == named.content->byPath.end()) {
                     continue;
                 }
-                auto extent = extents.find({named.content, entity->second});
+                auto extent = extents.find({named.content, prim->second});
                 if (extent != extents.end() && validBox(extent->second)) {
                     volume = extent->second;
                     break;
@@ -1397,31 +1397,31 @@ struct WorldComposer::Impl {
         }
     }
 
-    // An instancer's prototypes, once its content is composed: each target in order, noEntity for one not in the content.
+    // An instancer's prototypes, once its content is composed: each target in order, noPrim for one not in the content.
     auto resolvePrototypes(const std::vector<PendingTarget>& pending, std::vector<std::string>& messagesOut) -> void {
         PROFILE_ZONE_DETAIL("ResolvePrototypes", Scene);
         for (const auto& target : pending) {
-            auto& data = target.content->pointInstancers.at(target.entity);
+            auto& data = target.content->pointInstancers.at(target.prim);
             auto found = target.outside ? target.content->byPath.end() : target.content->byPath.find(target.path);
             if (found == target.content->byPath.end()) {
-                messagesOut.push_back(std::format("{}: a PointInstancer's prototype {} isn't in its content; its points aren't drawn", target.content->path(target.entity), target.path));
-                data.prototypes.push_back(noEntity);
+                messagesOut.push_back(std::format("{}: a PointInstancer's prototype {} isn't in its content; its points aren't drawn", target.content->path(target.prim), target.path));
+                data.prototypes.push_back(noPrim);
                 continue;
             }
             data.prototypes.push_back(found->second);
             // Every point draws a prototype's streaming LOD roots at their default level (a level per point isn't loaded): said once per
-            // instancer. A render-LOD root's level is the renderer's, per point.
+            // instancer. A LOD-group root's level is the renderer's, per point.
             for (const auto& [rootId, root] : target.content->lodRoots) {
                 if (!root.streams) {
                     continue;
                 }
                 bool under = false;
-                for (EntityId at = rootId; at != noEntity && !under; at = target.content->entities[at].parent) {
+                for (PrimId at = rootId; at != noPrim && !under; at = target.content->prims[at].parent) {
                     under = at == found->second;
                 }
                 if (under) {
                     messagesOut.push_back(std::format("{}: a PointInstancer's prototype {} has a LOD root ({}); every point draws its default level",
-                                                      target.content->path(target.entity),
+                                                      target.content->path(target.prim),
                                                       target.path,
                                                       target.content->path(rootId)));
                     break;
@@ -1551,9 +1551,9 @@ struct WorldComposer::Impl {
         info = ContentInfo{.key = key, .base = composedPath, .sharedKey = key, .ownerPath = "/", .generation = generation, .firstGeneration = first, .index = kept, .loads = loadPayloads};
         content.sourcePath = composedPath;
         content.version = ++versions;
-        Entity root;
+        Prim root;
         root.defined = true;
-        content.entities.push_back(root);
+        content.prims.push_back(root);
         content.byPath["/"] = 0;
         ContentContext context{.content = &content, .base = composedPath, .key = key, .info = &info};
         windows.emplace_back();
@@ -1576,7 +1576,7 @@ struct WorldComposer::Impl {
         return key;
     }
 
-    // The content of a LOD level, loaded or not: the level prim (its entity 0) and everything under it. Reused by its key, composed now
+    // The content of a LOD level, loaded or not: the level prim (its prim 0) and everything under it. Reused by its key, composed now
     // (again, in place, when the last time missed packs); its index once complete, else -1 (the stand-in links to nothing yet).
     auto linkedContent(LevelSlot& slot, bool loads, const Reach& at, const std::string& ownerPath) -> int32_t {
         auto& linked = slot.linked[loads ? 1 : 0];
@@ -1622,11 +1622,11 @@ struct WorldComposer::Impl {
         ContentContext context{.content = &content, .base = slot.composedPath, .key = key, .info = &info};
         {
             PROFILE_ZONE_DETAIL("ComposeLevelPrims", Scene);
-            composePrim(context, noEntity, slot.name, std::move(index), slot.composedPath, loads);
-            PROFILE_ZONE_VALUE(content.entities.size());
+            composePrim(context, noPrim, slot.name, std::move(index), slot.composedPath, loads);
+            PROFILE_ZONE_VALUE(content.prims.size());
         }
-        if (!content.entities.empty()) {
-            content.entities[0].lodItem = true;
+        if (!content.prims.empty()) {
+            content.prims[0].lodItem = true;
         }
         {
             PROFILE_ZONE_DETAIL("FinishLevel", Scene);
@@ -1655,8 +1655,8 @@ struct WorldComposer::Impl {
             }
             reached.push_back(at.info);
             // A content with LOD roots: its roots' loaded levels and linked contents, one zone per content (the value: its roots).
-            static const uint32_t contentSite = profile::registerSite("ResolveContent", profile::Group::Scene, profile::Level::Detail);
-            profile::ScopedZone contentZone(contentSite, !at.content->lodRoots.empty());
+            static const uint32_t contentLocation = profile::registerSourceLocation("ResolveContent", profile::Group::Scene, profile::Level::Detail);
+            profile::ScopedZone contentZone(contentLocation, !at.content->lodRoots.empty());
             if (!at.content->lodRoots.empty()) {
                 PROFILE_ZONE_VALUE(at.content->lodRoots.size());
             }
@@ -1666,7 +1666,7 @@ struct WorldComposer::Impl {
             }
             for (auto& [id, root] : at.content->lodRoots) {
                 if (!root.streams) {
-                    // Every render-LOD level is in the content already.
+                    // Every LOD-group level is in the content already.
                     continue;
                 }
                 auto relative = at.content->path(id);
@@ -1682,7 +1682,7 @@ struct WorldComposer::Impl {
                     auto levelRelative = at.content->path(standIn);
                     auto ownerPath = primpath::join(at.ownerPath, levelRelative);
                     auto linked = linkedContent(slot->second, loads, at, ownerPath);
-                    at.content->entities[standIn].linkedContent = linked;
+                    at.content->prims[standIn].linkedContent = linked;
                     if (linked < 0) {
                         at.content->payloads.erase(standIn);
                         continue;
@@ -1713,14 +1713,14 @@ struct WorldComposer::Impl {
                 }
             }
         }
-        static const uint32_t bindingsSite = profile::registerSite("ResolveBindings", profile::Group::Scene, profile::Level::Detail);
-        profile::beginZone(bindingsSite);
+        static const uint32_t bindingsLocation = profile::registerSourceLocation("ResolveBindings", profile::Group::Scene, profile::Level::Detail);
+        profile::beginZone(bindingsLocation);
         size_t bindings = 0;
         for (auto* info : reached) {
             bindings += info->bindings.size();
             for (const auto& pending : info->bindings) {
                 const WorldContent* lookIn = pending.content;
-                std::optional<EntityId> found;
+                std::optional<PrimId> found;
                 if (!pending.outside) {
                     if (auto it = pending.content->byPath.find(pending.path); it != pending.content->byPath.end()) {
                         found = it->second;
@@ -1735,10 +1735,10 @@ struct WorldComposer::Impl {
                     found = located->id;
                 }
                 if (!found) {
-                    messages.push_back(std::format("{}{}: material binding names {}, which isn't there", pending.content->sourcePath == "/" ? "" : pending.content->sourcePath + " ", pending.content->path(pending.entity), pending.path));
+                    messages.push_back(std::format("{}{}: material binding names {}, which isn't there", pending.content->sourcePath == "/" ? "" : pending.content->sourcePath + " ", pending.content->path(pending.prim), pending.path));
                     continue;
                 }
-                pending.content->entities[pending.entity].binding->materialAsset = materialKey(lookIn->entities[*found]);
+                pending.content->prims[pending.prim].binding->materialAsset = materialInstanceKey(lookIn->prims[*found]);
             }
         }
         profile::zoneValue(bindings);
@@ -1762,7 +1762,7 @@ struct WorldComposer::Impl {
 
     struct Located {
         WorldContent* content = nullptr;
-        EntityId id = 0;
+        PrimId id = 0;
         std::string sharedKey;   // the prototype it is in; empty for the stage's own
         std::string pathInOwner; // its path in that prototype
     };
@@ -1783,7 +1783,7 @@ struct WorldComposer::Impl {
         return locate(path);
     }
 
-    // The content and entity at a full path, stepping into prototypes at instances and into level contents at levels; from the stage, or
+    // The content and prim at a full path, stepping into prototypes at instances and into level contents at levels; from the stage, or
     // from a prototype's root with a path in it.
     auto locate(const std::string& path, std::optional<Located> from = std::nullopt) -> std::optional<Located> {
         Located at = from.value_or(Located{.content = &world.stage, .id = 0, .sharedKey = {}, .pathInOwner = "/"});
@@ -1794,20 +1794,20 @@ struct WorldComposer::Impl {
         while (true) {
             auto end = path.find('/', start);
             auto name = path.substr(start, end == std::string::npos ? std::string::npos : end - start);
-            if (auto proto = at.content->entities[at.id].prototype; proto >= 0) {
+            if (auto proto = at.content->prims[at.id].prototype; proto >= 0) {
                 at.content = &world.contents[(size_t) proto];
                 at.id = 0;
                 at.sharedKey = contentInfo[(size_t) proto].key;
                 at.pathInOwner = "/";
             }
-            const auto& children = at.content->entities[at.id].children;
-            auto child = std::ranges::find_if(children, [&](EntityId c) { return at.content->entities[c].name == name; });
+            const auto& children = at.content->prims[at.id].children;
+            auto child = std::ranges::find_if(children, [&](PrimId c) { return at.content->prims[c].name == name; });
             if (child == children.end()) {
                 return std::nullopt;
             }
             at.id = *child;
             at.pathInOwner = childPath(at.pathInOwner, name);
-            if (auto level = at.content->entities[at.id].linkedContent; level >= 0) {
+            if (auto level = at.content->prims[at.id].linkedContent; level >= 0) {
                 at.content = &world.contents[(size_t) level];
                 at.id = 0;
             }
@@ -1819,7 +1819,7 @@ struct WorldComposer::Impl {
         return at;
     }
 
-    // Levels wanted or kept on roots inside prototypes, for the next resolution; true when they add a level a prototype doesn't load yet.
+    // Levels desired or kept on roots inside prototypes, for the next resolution; true when they add a level a prototype doesn't load yet.
     auto updatePrototypeLevels() -> bool {
         PROFILE_ZONE_DETAIL("UpdatePrototypeLevels", Scene);
         bool changed = false;
@@ -1848,8 +1848,8 @@ struct WorldComposer::Impl {
     // a level that waits for packs doesn't compose its prototypes again every round. The stage's are never kept, so never let go.
     auto releaseUnreached() -> void {
         PROFILE_ZONE_DETAIL("ReleaseUnreached", Scene);
-        static const uint32_t markSite = profile::registerSite("MarkHeld", profile::Group::Scene, profile::Level::Detail);
-        profile::beginZone(markSite);
+        static const uint32_t markLocation = profile::registerSourceLocation("MarkHeld", profile::Group::Scene, profile::Level::Detail);
+        profile::beginZone(markLocation);
         std::unordered_set<const ContentInfo*> held(reached.begin(), reached.end());
         std::vector<const ContentInfo*> pending(reached.begin(), reached.end());
         for (const auto& info : contentInfo) {
@@ -1921,9 +1921,9 @@ struct WorldComposer::Impl {
         world.lodLevels = lodLevels;
         world.stage.sourcePath = "/";
         world.stage.version = ++versions;
-        Entity root;
+        Prim root;
         root.defined = true;
-        world.stage.entities.push_back(root);
+        world.stage.prims.push_back(root);
         world.stage.byPath["/"] = 0;
         stageInfo = ContentInfo{.key = {}, .base = "/", .sharedKey = {}, .ownerPath = "/", .generation = generation};
 

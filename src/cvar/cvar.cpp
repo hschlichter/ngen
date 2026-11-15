@@ -1,4 +1,4 @@
-#include "config.h"
+#include "cvar.h"
 
 #include <algorithm>
 #include <cassert>
@@ -7,7 +7,7 @@
 #include <format>
 #include <thread>
 
-namespace config {
+namespace cvar {
 
 namespace {
 
@@ -80,7 +80,7 @@ auto typeName(Type type) -> const char* {
 Value::Value(std::string name, std::string description) : valueName(std::move(name)), valueDescription(std::move(description)) {
     auto& values = registry();
     auto at = std::ranges::lower_bound(values, valueName, {}, &Value::name);
-    assert((at == values.end() || (*at)->name() != valueName) && "a configuration value's name is declared twice");
+    assert((at == values.end() || (*at)->name() != valueName) && "a cvar's name is declared twice");
     values.insert(at, this);
 }
 
@@ -93,7 +93,7 @@ auto Value::checkThread() const -> void {
 #ifndef NDEBUG
     // Values are the main thread's: the first thread to read or set one owns them all.
     static const std::thread::id owner = std::this_thread::get_id();
-    assert(std::this_thread::get_id() == owner && "configuration values are read and set on the main thread only");
+    assert(std::this_thread::get_id() == owner && "cvars are read and set on the main thread only");
 #endif
 }
 
@@ -337,4 +337,4 @@ auto under(std::string_view prefix) -> std::vector<Value*> {
     return out;
 }
 
-} // namespace config
+} // namespace cvar

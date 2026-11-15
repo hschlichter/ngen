@@ -120,12 +120,12 @@ auto decodeTexel(RhiFormat format, const std::byte* texel) -> glm::vec4 {
     }
 }
 
-auto CaptureService::init(RhiDevice* rhiDevice, PreviewTextures* previewTextures, DeletionQueue* queue, GpuUploader* gpuUploader, uint32_t frameSlots) -> void {
+auto CaptureService::init(RhiDevice* rhiDevice, PreviewTextures* previewTextures, DeletionQueue* queue, GpuUploader* gpuUploader, uint32_t frameContexts) -> void {
     device = rhiDevice;
     previews = previewTextures;
     deletionQueue = queue;
     uploader = gpuUploader;
-    pending.assign(frameSlots, {});
+    pending.assign(frameContexts, {});
     previewSampler = device->createSampler({.magFilter = RhiFilter::Nearest, .minFilter = RhiFilter::Linear, .addressU = RhiAddressMode::ClampToEdge, .addressV = RhiAddressMode::ClampToEdge, .debugName = "capture.preview.sampler"});
 }
 
@@ -183,7 +183,7 @@ auto CaptureService::wantsCapture(const CaptureWatch& watch) const -> bool {
     return it == capturedTrigger.end() ? watch.trigger != 0 : it->second != watch.trigger;
 }
 
-auto CaptureService::requestsForFrame(uint32_t frameSlot, uint64_t frame) -> std::vector<FgCaptureRequest> {
+auto CaptureService::requestsForFrame(uint32_t frameContext, uint64_t frame) -> std::vector<FgCaptureRequest> {
     currentFrame = frame;
     requestedThisFrame.clear();
     recordedThisFrame.clear();
@@ -197,7 +197,7 @@ auto CaptureService::requestsForFrame(uint32_t frameSlot, uint64_t frame) -> std
             .pass = watch.pass,
             .resource = watch.resource,
             .afterLastWrite = watch.afterLastWrite,
-            .record = [this, watch, frameSlot](RhiCommandBuffer* cmd, const FgCaptureSource& source) {
+            .record = [this, watch, frameContext](RhiCommandBuffer* cmd, const FgCaptureSource& source) {
                 Pending p = {.watch = watch, .pass = source.pass, .frame = currentFrame};
                 if (source.kind == FgResourceKind::Texture) {
                     recordTexture(cmd, source, p);
@@ -205,7 +205,7 @@ auto CaptureService::requestsForFrame(uint32_t frameSlot, uint64_t frame) -> std
                     recordBuffer(cmd, source.buffer, source.bufferDesc.size, source.bufferState, p);
                 }
                 recordedThisFrame.push_back(watch.id);
-                pending[frameSlot].push_back(std::move(p));
+                pending[frameContext].push_back(std::move(p));
             },
         });
     }
@@ -268,13 +268,13 @@ auto CaptureService::recordBuffer(RhiCommandBuffer* cmd, RhiBuffer* buffer, uint
     }
 }
 
-auto CaptureService::recordStatic(RhiCommandBuffer* cmd, uint32_t frameSlot, uint64_t frame) -> void {
+auto CaptureService::recordStatic(RhiCommandBuffer* cmd, uint32_t frameContext, uint64_t frame) -> void {
     // Graph captures that never ran: the resource was not alive after that pass.
     for (const auto& watch : requestedThisFrame) {
         if (std::ranges::find(recordedThisFrame, watch.id) == recordedThisFrame.end()) {
             const char* error = watch.afterLastWrite ? "resource not alive after its last write (or not accessed in this frame)" : "resource not alive after this pass (or not accessed in this frame)";
             Pending p = {.watch = watch, .pass = watch.pass, .frame = frame, .error = error};
-            pending[frameSlot].push_back(std::move(p));
+            pending[frameContext].push_back(std::move(p));
         }
     }
     for (const auto& watch : watches) {
@@ -289,7 +289,7 @@ auto CaptureService::recordStatic(RhiCommandBuffer* cmd, uint32_t frameSlot, uin
             // Static tables are only read after their blocking upload: no barrier needed.
             recordBuffer(cmd, it->second.buffer, it->second.size, RhiBufferState::Undefined, p);
         }
-        pending[frameSlot].push_back(std::move(p));
+        pending[frameContext].push_back(std::move(p));
     }
     for (const auto& watch : watches) {
         if (wantsCapture(watch)) {
@@ -298,8 +298,8 @@ auto CaptureService::recordStatic(RhiCommandBuffer* cmd, uint32_t frameSlot, uin
     }
 }
 
-auto CaptureService::afterFence(uint32_t frameSlot) -> void {
-    for (auto& p : pending[frameSlot]) {
+auto CaptureService::afterFence(uint32_t frameContext) -> void {
+    for (auto& p : pending[frameContext]) {
         CaptureResult r = {
             .id = p.watch.id,
             .frame = p.frame,
@@ -345,7 +345,7 @@ auto CaptureService::afterFence(uint32_t frameSlot) -> void {
         }
         ready.push_back(k.result);
     }
-    pending[frameSlot].clear();
+    pending[frameContext].clear();
 }
 
 auto convertCaptureForDisplay(const CaptureResult& r, const CaptureDisplay& d, uint32_t maxSide, uint32_t& outWidth, uint32_t& outHeight) -> std::vector<uint8_t> {

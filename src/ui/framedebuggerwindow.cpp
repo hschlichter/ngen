@@ -154,15 +154,15 @@ auto drawResources(const FrameDebugPass& pass, FrameDebuggerState& state, std::f
     }
 }
 
-auto regionName(uint32_t region) -> std::string {
-    return DrawLists::regionName(region);
+auto drawListName(uint32_t drawList) -> std::string {
+    return DrawLists::drawListName(drawList);
 }
 
 auto drawDraws(const FrameDebugPass& pass, FrameDebuggerState& state, const std::function<std::string(uint32_t)>& primPathOfInstance) -> void {
-    // A mesh pass draws regions: one drawMeshTasksIndirect each, its command the region's RegionWork.
-    bool meshPass = std::ranges::any_of(pass.reads, [](const FrameDebugAccess& a) { return a.resource == "cullRegionWork"; });
+    // A mesh pass draws draw lists: one drawMeshTasksIndirect each, its command the draw list's DrawListWork.
+    bool meshPass = std::ranges::any_of(pass.reads, [](const FrameDebugAccess& a) { return a.resource == "cullDrawListWork"; });
     if (!meshPass) {
-        ImGui::TextDisabled("Not a mesh pass: it draws no culling regions.");
+        ImGui::TextDisabled("Not a mesh pass: it draws no draw lists.");
         return;
     }
     state.watchDraws = true;
@@ -175,20 +175,20 @@ auto drawDraws(const FrameDebugPass& pass, FrameDebuggerState& state, const std:
         return;
     }
     ImGui::TextDisabled("Draw records and counts captured on frame %llu, after their last write.", (unsigned long long) commands->second.frame);
-    // The camera's passes draw its regions and, with occlusion, the late phase's; the shadow pass the cascades'.
+    // The camera's passes draw its draw lists and, with occlusion, the late phase's; the shadow pass the cascades'.
     bool camera = pass.name != "ShadowPass";
-    std::vector<uint32_t> passRegions;
-    for (uint32_t region = 0; region < DrawLists::regionCount; region++) {
-        auto view = region / DrawLists::bucketCount;
-        bool cameraRegion = view == 0 || view == DrawLists::lateView;
-        if (cameraRegion == camera) {
-            passRegions.push_back(region);
+    std::vector<uint32_t> passDrawLists;
+    for (uint32_t drawList = 0; drawList < DrawLists::drawListCount; drawList++) {
+        auto view = drawList / DrawLists::bucketCount;
+        bool cameraDrawList = view == 0 || view == DrawLists::lateView;
+        if (cameraDrawList == camera) {
+            passDrawLists.push_back(drawList);
         }
     }
     const auto& bytes = *commands->second.bytes;
     const auto& paramBytes = *params->second.bytes;
     auto inBuffer = (uint32_t) (bytes.size() / sizeof(DrawRecord));
-    // The regions are packed one after another, each as large as its bucket: from its offset to the next region's (the last to
+    // The draw lists are packed one after another, each as large as its bucket: from its offset to the next draw list's (the last to
     // commandsUsed).
     auto paramWord = [&paramBytes](size_t offset) {
         uint32_t value = 0;
@@ -198,14 +198,14 @@ auto drawDraws(const FrameDebugPass& pass, FrameDebuggerState& state, const std:
         return value;
     };
     using P = DrawLists::CullParams;
-    for (auto region : passRegions) {
+    for (auto drawList : passDrawLists) {
         uint32_t count = 0;
-        std::memcpy(&count, counts->second.bytes->data() + (DrawLists::countOffset(region)), sizeof(uint32_t));
-        auto first = paramWord(offsetof(P, regionOffsets) + ((size_t) region * sizeof(uint32_t)));
-        auto end = region + 1 < DrawLists::regionCount ? paramWord(offsetof(P, regionOffsets) + ((size_t) (region + 1) * sizeof(uint32_t))) : paramWord(offsetof(P, commandsUsed));
+        std::memcpy(&count, counts->second.bytes->data() + (DrawLists::countOffset(drawList)), sizeof(uint32_t));
+        auto first = paramWord(offsetof(P, drawListOffsets) + ((size_t) drawList * sizeof(uint32_t)));
+        auto end = drawList + 1 < DrawLists::drawListCount ? paramWord(offsetof(P, drawListOffsets) + ((size_t) (drawList + 1) * sizeof(uint32_t))) : paramWord(offsetof(P, commandsUsed));
         end = std::min(end, inBuffer);
         auto capacity = end > first ? end - first : 0u;
-        if (!ImGui::TreeNode(std::format("region {} ({}): {} draws", region, regionName(region), count).c_str())) {
+        if (!ImGui::TreeNode(std::format("draw list {} ({}): {} draws", drawList, drawListName(drawList), count).c_str())) {
             continue;
         }
         auto flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY;

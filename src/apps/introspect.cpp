@@ -1,10 +1,10 @@
 // ngen-introspect: sees into the running processes (ngen-view, ngen-asset-server, …) found through .ngen-discovery/
 // in the working directory, and calls them. See src/introspect/README.md.
 //
-//   ngen-introspect [--select=TARGET/RECORD] [--trace] [--frames=N] [--screenshot=PATH]
-//       the window; --select shows a record once its process is there, --trace opens the Trace tab, --frames stops
+//   ngen-introspect [--select=TARGET/RECORD] [--log] [--frames=N] [--screenshot=PATH]
+//       the window; --select shows a record once its process is there, --log opens the Log tab, --frames stops
 //       after N frames, --screenshot writes the last frame as a PNG
-//   ngen-introspect list | get | describe | call | trace …   the command line, for agents and scripts (no window)
+//   ngen-introspect list | get | describe | call | log …   the command line, for agents and scripts (no window)
 
 #include "introspectcommands.h"
 #include "introspectsession.h"
@@ -33,7 +33,7 @@ struct WindowOptions {
     std::string screenshot;
     std::string selectTarget;
     std::string selectRecord;
-    bool trace = false;
+    bool log = false;
 };
 
 auto parseWindowOptions(const std::vector<std::string>& args) -> std::expected<WindowOptions, std::string> {
@@ -54,8 +54,8 @@ auto parseWindowOptions(const std::vector<std::string>& args) -> std::expected<W
             }
             options.selectTarget = std::string(value.substr(0, slash));
             options.selectRecord = std::string(value.substr(slash + 1));
-        } else if (text == "--trace") {
-            options.trace = true;
+        } else if (text == "--log") {
+            options.log = true;
         } else if (text.starts_with("--screenshot=")) {
             options.screenshot = std::string(text.substr(std::string_view("--screenshot=").size()));
         } else {
@@ -113,10 +113,10 @@ auto runWindow(const WindowOptions& options) -> int {
 
     int status = 0;
     {
-        IntrospectSession session({.trace = true});
+        IntrospectSession session({.log = true});
         IntrospectWindow introspectWindow(session);
-        if (options.trace) {
-            introspectWindow.showTrace();
+        if (options.log) {
+            introspectWindow.showLog();
         }
         if (!options.selectTarget.empty()) {
             introspectWindow.selectWhenAvailable(options.selectTarget, options.selectRecord);

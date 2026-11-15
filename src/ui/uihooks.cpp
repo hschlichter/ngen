@@ -3,12 +3,12 @@
 #include "assetclient.h"
 #include "budgetoverlay.h"
 #include "imguibackendvulkan.h"
+#include "log.h"
 #include "profile.h"
 #include "renderdoccapture.h"
 #include "renderthread.h"
 #include "rendertools.h"
 #include "toolshooks.h"
-#include "trace.h"
 #include "uirender.h"
 #include "viewframe.h"
 #include "viewscene.h"
@@ -93,7 +93,7 @@ auto UiHooks::takeReadbacks(ViewFrame& frame) -> void {
 }
 
 auto UiHooks::drawUi(ViewFrame& frame) -> void {
-    static const uint32_t uiZoneId = profile::registerSite("EditorUI", profile::Group::Ui);
+    static const uint32_t uiZoneId = profile::registerSourceLocation("EditorUI", profile::Group::Ui);
     profile::beginZone(uiZoneId);
     auto& scene = frame.scene;
     {
@@ -120,9 +120,9 @@ auto UiHooks::drawUi(ViewFrame& frame) -> void {
         if (!result.error.empty()) {
             ui.setGoToStatus(result.error);
         } else if (goTo->all) {
-            ui.setGoToStatus(std::format("{}: all {} draws framed", goTo->id, result.count));
+            ui.setGoToStatus(std::format("{}: all {} prims framed", goTo->id, result.count));
         } else {
-            ui.setGoToStatus(std::format("{}: draw {} of {}, {}", goTo->id, result.index + 1, result.count, result.prim));
+            ui.setGoToStatus(std::format("{}: prim {} of {}, {}", goTo->id, result.index + 1, result.count, result.prim));
         }
     }
     if (auto repack = ui.takeRepackRequest(); repack.scene) {
@@ -146,7 +146,7 @@ auto UiHooks::drawUi(ViewFrame& frame) -> void {
         drawLodLabels(state.lod, viewProj, glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
         drawStreamingLabels(state.streaming, viewProj, glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
     }
-    if (uiconfig::budgetOverlay.get()) {
+    if (uicvars::budgetOverlay.get()) {
         PROFILE_ZONE("BudgetOverlay", Ui);
         drawBudgetOverlay(frame.renderThread.latestSceneGpuStats().frameCommands);
     }
@@ -179,11 +179,11 @@ auto UiHooks::drawUi(ViewFrame& frame) -> void {
         if (flags.renderDocOpenRequested) {
             flags.renderDocOpenRequested = false;
             if (!renderDoc.openInUi(renderDoc.lastCapture())) {
-                TRACE_WARNING("Engine", "RenderDocOpenFailed", "renderdoc").text("RenderDoc: no capture to open");
+                LOG_WARNING("Engine", "RenderDocOpenFailed", "renderdoc").text("RenderDoc: no capture to open");
             }
         }
         for (const auto& path : renderDoc.pollNewCaptures()) {
-            TRACE_EVENT("Engine", "RenderDocCapture", path).text(std::format("RenderDoc capture written: {}", path)).field("frame", (int64_t) frame.frameCounter);
+            LOG_EVENT("Engine", "RenderDocCapture", path).text(std::format("RenderDoc capture written: {}", path)).field("frame", (int64_t) frame.frameCounter);
         }
     }
     if (ui.takeScreenshotRequest()) {

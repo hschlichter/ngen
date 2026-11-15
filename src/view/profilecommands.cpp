@@ -1,8 +1,8 @@
 #include "viewcommands.h"
 
 #include "jobsystem.h"
+#include "log.h"
 #include "profilecommands.h"
-#include "trace.h"
 
 #include <nlohmann/json.hpp>
 
@@ -12,7 +12,7 @@
 #include <sstream>
 
 // The profiler's commands: its history written as a Chrome trace, and its records (src/profile/rpc, shared with the asset server); and the
-// job system's record, whose workers fill the profiler's worker lanes.
+// job system's record, whose workers fill the profiler's worker tracks.
 
 namespace {
 
@@ -45,7 +45,7 @@ auto parseDump(const std::string& args) -> std::expected<Json, std::string> {
 
 } // namespace
 
-auto registerProfileCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records) -> void {
+auto registerProfileCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records) -> void {
     registry.add(
         {
             .name = "introspect.profile",
@@ -65,11 +65,11 @@ auto registerProfileCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
                 return;
             }
             auto path = (*result)["path"].get<std::string>();
-            TRACE_EVENT("Engine", "ProfileWritten", path).text(std::format("profile trace written: {}", path));
+            LOG_EVENT("Engine", "ProfileWritten", path).text(std::format("profile trace written: {}", path));
             responder.respond(*result);
         });
 
-    verbs.add("dump-profile", "introspect.profile", parseDump);
+    console.add("dump-profile", "introspect.profile", parseDump);
 
     registry.add(
         {
@@ -99,11 +99,11 @@ auto registerProfileCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
         },
         [](const Json&, RpcResponder responder) {
             profile::resetOverBudget();
-            TRACE_EVENT("Engine", "ProfileReset", "view").text("frames over budget counted from now");
+            LOG_EVENT("Engine", "ProfileReset", "view").text("frames over budget counted from now");
             responder.respond(Json::object());
         });
 
-    verbs.add("profile-reset", "profile.reset", RpcVerbs::none);
+    console.add("profile-reset", "profile.reset", ConsoleCommands::none);
 
     profile::registerProfileRecords(records);
 

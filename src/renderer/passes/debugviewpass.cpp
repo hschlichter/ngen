@@ -1,10 +1,10 @@
 #include "debugviewpass.h"
 
+#include "log.h"
 #include "profilegpu.h"
-#include "renderconfig.h"
+#include "rendercvars.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "trace.h"
 
 #include <algorithm>
 #include <array>
@@ -39,7 +39,7 @@ auto DebugViewPass::init(RhiDevice* dev, PipelineRegistry& pipelineRegistry, uin
     depthTargetFormat = depthFormat;
     if (!device->supportsTextureFormat(valueFormat, RhiTextureUsage::ColorAttachment | RhiTextureUsage::Sampled | RhiTextureUsage::TransferSrc) ||
         !device->supportsTextureFormat(colorFormat, RhiTextureUsage::Storage | RhiTextureUsage::TransferSrc)) {
-        TRACE_WARNING("Render", "DebugViewsOff", "DebugViewPass").text("value or colour format unsupported; debug views are off");
+        LOG_WARNING("Render", "DebugViewsOff", "DebugViewPass").text("value or colour format unsupported; debug views are off");
         return true;
     }
 
@@ -157,7 +157,7 @@ auto DebugViewPass::addPass(
     DebugView view,
     FgTextureHandle depthHandle,
     RhiExtent2D extent,
-    uint32_t frameSlot,
+    uint32_t frameContext,
     FgBufferHandle instanceBuffer,
     const DrawLists& lists,
     DrawLists::Handles drawHandles,
@@ -206,8 +206,8 @@ auto DebugViewPass::addPass(
                 data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
             }
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
-            // One draw per region: its RegionWork is the draw's command and the task shaders' range of work items.
-            builder.read(drawHandles.regionWork, FgAccessFlags::IndirectRead | FgAccessFlags::StorageRead);
+            // One draw per draw list: its DrawListWork is the draw's command and the task shaders' range of work items.
+            builder.read(drawHandles.drawListWork, FgAccessFlags::IndirectRead | FgAccessFlags::StorageRead);
             builder.read(drawHandles.workItems, FgAccessFlags::StorageRead);
             builder.read(hzb, FgAccessFlags::ShaderRead);
             if (drawHandles.lodStates.valid()) {
@@ -247,7 +247,7 @@ auto DebugViewPass::addPass(
                 .viewport = {(float) extent.width, (float) extent.height},
                 .mode = mode,
             };
-            auto* regionWork = ctx.buffer(drawHandles.regionWork);
+            auto* drawListWork = ctx.buffer(drawHandles.drawListWork);
             // Every camera bucket; debugview.frag discards cut-away texels itself, so the cutout
             // buckets draw with the same pipelines.
             // Both of occlusion's phases, their meshlets tested as the geometry pass tests them. The meshlet culling view classifies
@@ -263,7 +263,7 @@ auto DebugViewPass::addPass(
                     uint32_t bucket = index % DrawLists::bucketCount;
                     bool late = index >= DrawLists::bucketCount;
                     bool doubleSided = bucket % 2 != 0;
-                    auto region = late ? DrawLists::cameraLateRegion(doubleSided, bucket >= 2) : DrawLists::cameraRegion(doubleSided, bucket >= 2);
+                    auto drawList = late ? DrawLists::cameraLateDrawList(doubleSided, bucket >= 2) : DrawLists::cameraDrawList(doubleSided, bucket >= 2);
                     push.meshlet.flags = meshletFlagSplit | (occlusion ? meshletFlagOcclusion : 0u);
                     PipelineHandle handle = pipelines[doubleSided ? 1 : 0];
                     if (overdraw) {
@@ -275,10 +275,10 @@ auto DebugViewPass::addPass(
                     auto* pip = registry->get(handle);
                     cmd->bindPipeline(pip);
                     cmd->bindDescriptorSet(pip, 0, geometrySet);
-                    push.meshlet.region = region;
+                    push.meshlet.drawList = drawList;
                     cmd->pushConstants(pip, RhiShaderStage::Task | RhiShaderStage::Mesh | RhiShaderStage::Fragment, 0, sizeof(push), &push);
-                    PROFILE_GPU_ZONE(cmd, DrawLists::drawName(region), Geometry);
-                    DrawLists::drawRegion(cmd, regionWork, region);
+                    PROFILE_GPU_ZONE(cmd, DrawLists::drawName(drawList), Geometry);
+                    DrawLists::draw(cmd, drawListWork, drawList);
                 }
             }
             cmd->endRendering();
@@ -295,21 +295,21 @@ auto DebugViewPass::addPass(
                 data.lit = builder.read(litHandle, FgAccessFlags::ShaderRead);
             }
         },
-        [this, mode, extent, frameSlot, streamingStates, overLit](FrameGraphContext& ctx, const DebugViewPassData& data) {
-            // The streaming view's root states, for this frame slot's buffer: what the GPU read from it last was this slot's previous frame.
+        [this, mode, extent, frameContext, streamingStates, overLit](FrameGraphContext& ctx, const DebugViewPassData& data) {
+            // The streaming view's root states, for this frame context's buffer: what the GPU read from it last was this slot's previous frame.
             auto count = (uint32_t) std::min<size_t>(streamingStates.size(), maxStreamingRoots);
             if (mode == (uint32_t) DebugView::Streaming) {
-                auto* states = static_cast<uint32_t*>(streamingMapped[frameSlot]);
+                auto* states = static_cast<uint32_t*>(streamingMapped[frameContext]);
                 std::copy_n(streamingStates.begin(), count, states);
             }
             auto* lit = overLit ? ctx.texture(data.lit) : ctx.texture(data.value);
             std::array<RhiDescriptorWrite, 4> writes = {{
                 {.binding = 0, .type = RhiDescriptorType::CombinedImageSampler, .texture = ctx.texture(data.value), .sampler = pointSampler},
                 {.binding = 1, .type = RhiDescriptorType::StorageImage, .texture = ctx.texture(data.color)},
-                {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .buffer = streamingBuffers[frameSlot], .bufferRange = (uint64_t) maxStreamingRoots * sizeof(uint32_t)},
+                {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .buffer = streamingBuffers[frameContext], .bufferRange = (uint64_t) maxStreamingRoots * sizeof(uint32_t)},
                 {.binding = 3, .type = RhiDescriptorType::CombinedImageSampler, .texture = lit, .sampler = pointSampler},
             }};
-            device->updateDescriptorSet(resolveSets[frameSlot], writes);
+            device->updateDescriptorSet(resolveSets[frameContext], writes);
             ResolvePush push = {
                 .size = {extent.width, extent.height},
                 .mode = mode,
@@ -319,18 +319,18 @@ auto DebugViewPass::addPass(
             auto* cmd = ctx.cmd();
             auto* resolve = registry->get(resolvePipeline);
             cmd->bindPipeline(resolve);
-            cmd->bindDescriptorSet(resolve, 0, resolveSets[frameSlot]);
+            cmd->bindDescriptorSet(resolve, 0, resolveSets[frameContext]);
             cmd->pushConstants(resolve, RhiShaderStage::Compute, 0, sizeof(push), &push);
             cmd->dispatch((extent.width + 7) / 8, (extent.height + 7) / 8, 1);
         });
 }
 
-namespace renderconfig {
+namespace rendercvars {
 
-config::Enum debugView{"render.view.debug",
-                       std::vector<std::string>(debugViewNames.begin(), debugViewNames.end()),
-                       0,
-                       "A debug view drawn in place of the lit image: wireframe, triangle size, overdraw, instance, mesh, material and primitive IDs, UVs, "
-                       "streaming state, meshlets and the test that culls each meshlet."};
+cvar::Enum debugView{"render.view.debug",
+                     std::vector<std::string>(debugViewNames.begin(), debugViewNames.end()),
+                     0,
+                     "A debug view drawn in place of the lit image: wireframe, triangle size, overdraw, instance, mesh, material and primitive IDs, UVs, "
+                     "streaming state, meshlets and the test that culls each meshlet."};
 
-} // namespace renderconfig
+} // namespace rendercvars

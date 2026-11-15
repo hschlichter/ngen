@@ -9,10 +9,10 @@
 #include <string_view>
 #include <vector>
 
-// Configuration (src/config/README.md): the engine's settings, each a typed value declared in code by the system it configures, with a
+// Cvars (src/cvar/README.md): the engine's settings, each a typed value declared in code by the system it configures, with a
 // dotted name, a default and a description. Read and set on the main thread only; a value counts its changes, so code that acts on one
 // compares the count it last saw.
-namespace config {
+namespace cvar {
 
 enum class Type : uint8_t {
     Bool,
@@ -29,7 +29,7 @@ struct Range {
     std::optional<double> max;
 };
 
-// What every value has, whatever its type: what the record, RPC and the Configuration window read. Declared values register themselves
+// What every value has, whatever its type: what the record, RPC and the Cvars window read. Declared values register themselves
 // by name when constructed and leave the registry when destroyed.
 class Value {
 public:
@@ -45,7 +45,7 @@ public:
     auto isDefault() const -> bool { return text() == defaultText(); }
 
     virtual auto type() const -> Type = 0;
-    // The value as the verb takes it and a file would hold it: true/false, a number, a choice's name, "x,y,z".
+    // The value as the console command takes it and a file would hold it: true/false, a number, a choice's name, "x,y,z".
     virtual auto text() const -> std::string = 0;
     virtual auto defaultText() const -> std::string = 0;
     // Parses and checks (range, choices); unchanged on an error, which says why.
@@ -162,4 +162,4 @@ auto find(std::string_view name) -> Value*;
 // The values whose names are `prefix` or start with `prefix` followed by a dot; every value for an empty prefix.
 auto under(std::string_view prefix) -> std::vector<Value*>;
 
-} // namespace config
+} // namespace cvar

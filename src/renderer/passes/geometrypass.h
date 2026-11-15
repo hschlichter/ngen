@@ -22,8 +22,8 @@ struct GeometryPassData {
     FgTextureHandle depth;
 };
 
-// Which of occlusion's phases a geometry pass draws. Both: every camera region, after a depth prepass that ran both phases (the meshlets
-// tested against the pyramid of its whole depth), or without occlusion. First: the regions of what was visible last frame, clearing the
+// Which of occlusion's phases a geometry pass draws. Both: every camera draw list, after a depth prepass that ran both phases (the meshlets
+// tested against the pyramid of its whole depth), or without occlusion. First: the draw lists of what was visible last frame, clearing the
 // targets, no pyramid test (it is built from this pass's depth). Second: what the pyramid newly shows, onto the first pass's targets.
 enum class GeometryPhase {
     Both,
@@ -35,9 +35,9 @@ class GeometryPass {
 public:
     auto init(RhiDevice* device, PipelineRegistry& pipelines, RhiExtent2D extent, RhiFormat depthFormat) -> bool;
 
-    // Set 0, one set per frame slot, for every mesh pass: 0 view UBO, 1 material texture array (GpuScene::maxTextures), 2 instance buffer,
+    // Set 0, one set per frame context, for every mesh pass: 0 view UBO, 1 material texture array (GpuScene::maxTextures), 2 instance buffer,
     // 3 material table, 4-9 the geometry pool (vertices, positions, meshlets, meshlet vertices, meshlet triangles, mesh table), 10-12 the
-    // slot's meshlet work items, culling parameters and meshlet counts, 13 the depth pyramid, 14 the slot's region draws, 15 the render-LOD
+    // slot's meshlet work items, culling parameters and meshlet counts, 13 the depth pyramid, 14 the slot's draw list draws, 15 the LOD-group
     // state (shaders/meshlet.glsl).
     static auto descriptorBindings() -> std::array<RhiDescriptorBinding, 16>;
     auto destroy(RhiDevice* device) -> void;

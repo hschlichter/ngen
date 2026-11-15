@@ -279,7 +279,7 @@ auto drawDrawList(const RenderDebugSnapshot& s, const PrimPathOf& primPath, uint
 auto drawFrameTab(const RenderDebugSnapshot& s) -> void {
     const auto& t = s.frameTotals;
     ImGui::Text("Frame #%llu: %u draws, %u dispatches, %u barriers, %u pipeline binds, %u descriptor binds, %u copies, %llu primitives", (unsigned long long) s.frameIndex, t.draws, t.dispatches, t.barriers, t.pipelineBinds, t.descriptorBinds, t.copies, (unsigned long long) t.primitives);
-    ImGui::Text("Swapchain %ux%u %s, %u images, slot %u", s.swapchainExtent.width, s.swapchainExtent.height, toString(s.swapchainFormat), s.swapchainImages, s.currentSlot);
+    ImGui::Text("Swapchain %ux%u %s, %u images, slot %u", s.swapchainExtent.width, s.swapchainExtent.height, toString(s.swapchainFormat), s.swapchainImages, s.currentFrameContext);
     ImGui::Separator();
 
     if (ImGui::BeginTable("##passes", 8, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp)) {
@@ -345,13 +345,13 @@ auto drawFrameTab(const RenderDebugSnapshot& s) -> void {
 }
 
 auto drawViewTab(RenderDebugViewFlags& view) -> void {
-    ImGui::TextUnformatted("Buffer view");
+    ImGui::TextUnformatted("View mode");
     static const char* modes[] = {"Lit", "Albedo", "Normals", "Depth", "Shadow factor", "Shadow map", "Shadow UV", "World position", "Mip level", "Cascades", "LOD level", "Depth pyramid"};
     for (int i = 0; i < (int) (sizeof(modes) / sizeof(modes[0])); i++) {
         if (i % 4 != 0) {
             ImGui::SameLine();
         }
-        ImGui::RadioButton(modes[i], &view.gbufferView, i);
+        ImGui::RadioButton(modes[i], &view.viewMode, i);
     }
     ImGui::Separator();
     ImGui::TextUnformatted("Overlays");
@@ -456,7 +456,7 @@ auto pipelineStateName(PipelineState state) -> const char* {
     return "pending";
 }
 
-// Every pipeline the passes registered: when it is created (start-up or first use), its state, and its shaders with their versions.
+// Every pipeline the passes registered: when it is created (start-up or first use), its state, and its shaders with their hashes.
 auto drawPipelinesTab(const RenderDebugSnapshot& s) -> void {
     ImGui::Text("%zu pipelines", s.pipelines.size());
     if (!ImGui::BeginTable("##pipelines", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp, ImVec2(0, 360.0f))) {
@@ -477,8 +477,8 @@ auto drawPipelinesTab(const RenderDebugSnapshot& s) -> void {
         ImGui::TableSetColumnIndex(2);
         ImGui::TextUnformatted(pipelineStateName(p.state));
         ImGui::TableSetColumnIndex(3);
-        for (const auto& [id, version] : p.shaders) {
-            ImGui::Text("%s %s", id.c_str(), version.empty() ? "(not arrived)" : version.c_str());
+        for (const auto& [id, hash] : p.shaders) {
+            ImGui::Text("%s %s", id.c_str(), hash.empty() ? "(not arrived)" : hash.c_str());
         }
         if (!p.error.empty()) {
             ImGui::TextWrapped("%s", p.error.c_str());

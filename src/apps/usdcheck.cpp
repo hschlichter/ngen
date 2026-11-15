@@ -76,7 +76,7 @@ auto everyPrim() -> Usd_PrimFlagsPredicate {
     return UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate);
 }
 
-// The levels of a LOD root that load: the wanted one and the coarsest.
+// The levels of a LOD root that load: the desired one and the coarsest.
 auto loadedLevels(const UsdPrim& prim, size_t levelCount, const std::map<std::string, unsigned>& levels) -> std::set<size_t> {
     std::set<size_t> out;
     if (levelCount == 0) {
@@ -84,11 +84,11 @@ auto loadedLevels(const UsdPrim& prim, size_t levelCount, const std::map<std::st
     }
     int defaultIndex = 0;
     UsdLodRootAPI(prim).GetLodDefaultIndexAttr().Get(&defaultIndex);
-    size_t wanted = (size_t) std::max(defaultIndex, 0);
+    size_t desired = (size_t) std::max(defaultIndex, 0);
     if (auto it = levels.find(prim.GetPath().GetString()); it != levels.end()) {
-        wanted = it->second;
+        desired = it->second;
     }
-    out.insert(std::min(wanted, levelCount - 1));
+    out.insert(std::min(desired, levelCount - 1));
     out.insert(levelCount - 1);
     return out;
 }

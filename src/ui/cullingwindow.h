@@ -4,7 +4,7 @@
 
 // Culling window: the culling switches, the frozen frustum for inspecting what a camera pose culls, the red/green AABB overlay, the
 // meshlet culling debug view, and the latest counts read back from the GPU culling, in its steps: the scene, what instance culling
-// keeps, what meshlet culling draws. The flags are the UI's; session verbs write the same.
+// keeps, what meshlet culling draws. The flags are the UI's; console commands write the same.
 struct CullingWindowInputs {
     bool& enabled;
     bool& frozen;
@@ -13,7 +13,7 @@ struct CullingWindowInputs {
     int& overlayView; // view the AABB overlay shows: 0 camera, 1.. cascades
     bool& showCascadeFrusta;
     bool& meshletCullView; // the debug view colouring meshlets by the test that culls them
-    bool& pyramidView;     // the hzb buffer view: the depth pyramid at pyramidLevel
+    bool& pyramidView;     // the hzb view mode: the depth pyramid at pyramidLevel
     int& pyramidLevel;     // render.view.hzblevel
     bool depthPrepass;     // render.prepass: occlusion's phases draw in the depth prepass, not the geometry pass
     const CullResult& cull;

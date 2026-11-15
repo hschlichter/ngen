@@ -1,6 +1,6 @@
 #include "gpuscene.h"
 
-#include "renderconfig.h"
+#include "rendercvars.h"
 
 #include "deletionqueue.h"
 #include "framegraph.h"
@@ -8,12 +8,12 @@
 #include "gpuuploader.h"
 #include "instanceuploadpass.h"
 #include "jobsystem.h"
+#include "log.h"
 #include "mesh.h"
 #include "profile.h"
 #include "profilegpu.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "trace.h"
 
 #include <algorithm>
 #include <array>
@@ -95,14 +95,14 @@ auto PoolAllocator::grow(uint64_t capacity) -> void {
     free(first, added);
 }
 
-auto GpuScene::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* queue, RhiTexture* fallback, RhiTexture* pending) -> void {
+auto GpuScene::init(RhiDevice* rhiDevice, uint32_t frameContexts, DeletionQueue* queue, RhiTexture* fallback, RhiTexture* pending) -> void {
     device = rhiDevice;
     deletionQueue = queue;
     fallbackTexture = fallback;
     pendingTexture = pending;
     slots = {fallback, pending};
-    uploadRing.assign(frameSlots, {});
-    instanceStaging.assign(frameSlots, {});
+    uploadRing.assign(frameContexts, {});
+    instanceStaging.assign(frameContexts, {});
     // The mesh shaders pull vertices and meshlets from storage buffers.
     vertices = {.usage = RhiBufferUsage::Storage, .readState = RhiBufferState::StorageRead, .name = "gpuscene.pool.vertices"};
     positions = {.usage = RhiBufferUsage::Storage, .readState = RhiBufferState::StorageRead, .name = "gpuscene.pool.positions"};
@@ -321,7 +321,7 @@ auto GpuScene::updatePool(Pool pool, uint64_t needed) -> bool {
         }
         auto made = BufferGrowth::makeNow(device, describe(elements));
         if (!BufferGrowth::complete(made)) {
-            // The device couldn't make them (the reason is in the trace): the pool stays without buffers, and its meshes wait.
+            // The device couldn't make them (the reason is in the log): the pool stays without buffers, and its meshes wait.
             BufferGrowth::destroyBuffers(device, made);
             return false;
         }
@@ -369,7 +369,7 @@ auto GpuScene::addMesh(MeshHandle handle, std::shared_ptr<const MeshDesc> mesh) 
     if (!handle || mesh == nullptr || mesh->vertices.empty() || mesh->meshlets.empty()) {
         return;
     }
-    // The table entry exists either way: a mesh that waits has an empty one, and its draws draw nothing.
+    // The table entry exists either way: a mesh that waits has an empty one, and its instances draw nothing.
     ensureTable(meshTable, meshTableGrowth, ((uint64_t) handle.index + 1) * sizeof(GpuMeshEntry));
     if (placeMesh(handle, mesh)) {
         return;
@@ -380,7 +380,7 @@ auto GpuScene::addMesh(MeshHandle handle, std::shared_ptr<const MeshDesc> mesh) 
     if (!poolFullReported && !growing) {
         poolFullReported = true;
         auto limit = poolLimitBytes();
-        TRACE_WARNING("Render", "GeometryPoolFull", "gpuscene.pool")
+        LOG_WARNING("Render", "GeometryPoolFull", "gpuscene.pool")
             .text(std::format("the geometry pool is full ({} MiB per buffer): meshes that don't fit wait, undrawn, until removed meshes make room", limit / (1024 * 1024)))
             .field("limitBytes", (int64_t) limit)
             .field("vertexUsed", (int64_t) vertexRanges.used())
@@ -445,7 +445,7 @@ auto GpuScene::placeWaitingMeshes() -> void {
     bool emptied = stillWaiting.empty();
     waitingMeshes = std::move(stillWaiting);
     if (emptied && std::exchange(poolFullReported, false)) {
-        TRACE_EVENT("Render", "GeometryPoolFits", "gpuscene.pool").text("every mesh that waited for room in the geometry pool is in it");
+        LOG_EVENT("Render", "GeometryPoolFits", "gpuscene.pool").text("every mesh that waited for room in the geometry pool is in it");
     }
 }
 
@@ -721,7 +721,7 @@ auto GpuScene::beginFrame(uint64_t frame) -> bool {
             slots.push_back(fallbackTexture);
         } else {
             slotOverflow++;
-            TRACE_WARNING("Render", "TextureSlotsFull", "materials").text(std::format("texture {}: no slot left of {}; its materials use the fallback", index, maxTextures));
+            LOG_WARNING("Render", "TextureSlotsFull", "materials").text(std::format("texture {}: no slot left of {}; its materials use the fallback", index, maxTextures));
             continue;
         }
         slots[slot] = it->second.texture;
@@ -1060,7 +1060,7 @@ auto GpuScene::updateInstanceStaging(uint64_t bytes) -> void {
     instanceStagingGrowth.update(device, bytes, instanceStagingBytes, grownCapacity, describe, install);
 }
 
-auto GpuScene::addUploadPass(FrameGraph& fg, uint64_t frame, uint32_t frameSlot) -> void {
+auto GpuScene::addUploadPass(FrameGraph& fg, uint64_t frame, uint32_t frameContext) -> void {
     currentFrame = frame;
     updateUploadRing();
     updateLargeStaging();
@@ -1073,11 +1073,11 @@ auto GpuScene::addUploadPass(FrameGraph& fg, uint64_t frame, uint32_t frameSlot)
         "SceneUpload",
         profile::Group::Upload,
         [](FrameGraphBuilder& builder, SceneUploadData&) { builder.setSideEffects(true); },
-        [this, frame, frameSlot](FrameGraphContext& ctx, const SceneUploadData&) {
+        [this, frame, frameContext](FrameGraphContext& ctx, const SceneUploadData&) {
             PROFILE_ZONE("SceneUpload", Upload);
-            auto acquire = [this, frameSlot](uint64_t bytes) -> Staging {
-                if (frameSlot < uploadRing.size() && bytes <= uploadRingBytes && uploadRing[frameSlot].buffer != nullptr) {
-                    return {.buffer = uploadRing[frameSlot].buffer, .mapped = static_cast<std::byte*>(uploadRing[frameSlot].mapped)};
+            auto acquire = [this, frameContext](uint64_t bytes) -> Staging {
+                if (frameContext < uploadRing.size() && bytes <= uploadRingBytes && uploadRing[frameContext].buffer != nullptr) {
+                    return {.buffer = uploadRing[frameContext].buffer, .mapped = static_cast<std::byte*>(uploadRing[frameContext].mapped)};
                 }
                 if (largeStaging.buffer != nullptr && bytes <= largeStagingBytes) {
                     // The one upload larger than the ring: its own buffer, made for it on a background job, retired after this copy.
@@ -1195,7 +1195,7 @@ auto GpuScene::installInstances(uint32_t capacity, RhiBuffer* buffer, uint32_t c
         dirtyMarked = 0;
     }
     if (keep) {
-        TRACE_EVENT("Render", "InstanceBufferGrown", "gpuscene.instances")
+        LOG_EVENT("Render", "InstanceBufferGrown", "gpuscene.instances")
             .text(std::format("instance buffer grown to {} slots for {}; the {} slots before are copied on the GPU", instanceCapacity, count, instanceMoveSlots))
             .field("capacity", (int64_t) instanceCapacity)
             .field("instances", (int64_t) count)
@@ -1203,7 +1203,7 @@ auto GpuScene::installInstances(uint32_t capacity, RhiBuffer* buffer, uint32_t c
     }
 }
 
-auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, const ChunkedList<GpuInstance>& sceneInstances, uint32_t frameSlot) -> FgBufferHandle {
+auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, const ChunkedList<GpuInstance>& sceneInstances, uint32_t frameContext) -> FgBufferHandle {
     // Imported with the access the previous frame left it in, so this frame's upload waits for last frame's reads.
     FgBufferDesc desc = {
         .size = instanceBufferBytes(),
@@ -1276,9 +1276,9 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, const ChunkedList<GpuInst
     {
         PROFILE_ZONE_DETAIL("InstanceStaging", Upload);
         updateInstanceStaging(bytes);
-        if (bytes <= instanceStagingBytes && frameSlot < instanceStaging.size() && instanceStaging[frameSlot].buffer != nullptr) {
-            buffer = instanceStaging[frameSlot].buffer;
-            mapped = instanceStaging[frameSlot].mapped;
+        if (bytes <= instanceStagingBytes && frameContext < instanceStaging.size() && instanceStaging[frameContext].buffer != nullptr) {
+            buffer = instanceStaging[frameContext].buffer;
+            mapped = instanceStaging[frameContext].mapped;
         } else {
             buffer = device->createBuffer({.size = bytes, .usage = RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "gpuscene.instances.staging.large"});
             mapped = device->mapBuffer(buffer);
@@ -1386,16 +1386,16 @@ auto GpuScene::afterExecute(const FrameGraph& fg) -> void {
     instanceImported = false;
 }
 
-namespace renderconfig {
+namespace rendercvars {
 
-config::Int uploadBudgetMiB{"render.upload.budgetMiB",
-                            (int64_t) (GpuScene::defaultUploadBudget / (1024 * 1024)),
-                            "MiB the scene's uploads may copy per frame (the SceneUpload pass); the rest waits for the next frame. The staging ring "
-                            "holds this much, mapped, per frame slot.",
-                            {.min = 1, .max = 1024}};
-config::Int geometryLimitMiB{"render.geometry.limitMiB",
-                             0,
-                             "MiB each geometry pool buffer may grow to; 0 for the device's limit. Lowering it stops growth, it doesn't shrink the pool.",
-                             {.min = 0}};
+cvar::Int uploadBudgetMiB{"render.upload.budgetMiB",
+                          (int64_t) (GpuScene::defaultUploadBudget / (1024 * 1024)),
+                          "MiB the scene's uploads may copy per frame (the SceneUpload pass); the rest waits for the next frame. The staging ring "
+                          "holds this much, mapped, per frame context.",
+                          {.min = 1, .max = 1024}};
+cvar::Int geometryLimitMiB{"render.geometry.limitMiB",
+                           0,
+                           "MiB each geometry pool buffer may grow to; 0 for the device's limit. Lowering it stops growth, it doesn't shrink the pool.",
+                           {.min = 0}};
 
-} // namespace renderconfig
+} // namespace rendercvars

@@ -40,7 +40,7 @@ struct GpuInstance {
     bool cutout = false;      // its material is cutout: drawn by the cutout pipelines
     uint32_t lodLevel = 0;    // the drawn level + 1 of the LOD root above it, 0 under none (RenderMeshInstance::lodLevel)
     uint32_t lodDepth = 0;    // RenderMeshInstance::lodDepth, for the LOD level view
-    uint32_t lodGroup = 0;    // its render-LOD group + 1, 0 for none: drawn while the group picks lodLevel - 1
+    uint32_t lodGroup = 0;    // its LOD group + 1, 0 for none: drawn while the group picks lodLevel - 1
     uint32_t streamRoot = 0;  // RenderMeshInstance::streamRoot, for the streaming view
     AABB worldBounds;         // culling input, the submesh's box; invalid bounds are always visible
     bool alive = false;       // a dead slot is never drawn
@@ -172,7 +172,7 @@ private:
 //   - the mesh table, indexed by MeshHandle::index, for the culling passes;
 //   - textures, one per TextureHandle, with a slot in the texture array once uploaded;
 //   - the material table, an entry per MaterialHandle;
-//   - the instance buffer, a record per draw slot.
+//   - the instance buffer, a record per instance slot.
 // Changes queue uploads; recordUploads copies them in the frame's command buffer, within a byte budget, with barriers against the
 // frames before (on one queue, a barrier covers earlier submissions), so nothing waits. flushUploads does the same on the uploader's
 // command buffer and waits, for start-up.
@@ -184,7 +184,7 @@ public:
     static constexpr uint32_t pendingSlot = 1;
     static constexpr uint64_t defaultUploadBudget = 64ull * 1024 * 1024;
 
-    auto init(RhiDevice* device, uint32_t frameSlots, DeletionQueue* deletionQueue, RhiTexture* fallback, RhiTexture* pending) -> void;
+    auto init(RhiDevice* device, uint32_t frameContexts, DeletionQueue* deletionQueue, RhiTexture* fallback, RhiTexture* pending) -> void;
     auto destroy() -> void;
 
     auto addMesh(MeshHandle handle, std::shared_ptr<const MeshDesc> mesh) -> void;
@@ -199,7 +199,7 @@ public:
     // rewritten.
     auto beginFrame(uint64_t frame) -> bool;
     // Adds the SceneUpload pass when uploads are queued.
-    auto addUploadPass(FrameGraph& fg, uint64_t frame, uint32_t frameSlot) -> void;
+    auto addUploadPass(FrameGraph& fg, uint64_t frame, uint32_t frameContext) -> void;
     // Records every queued upload on the uploader's command buffer and waits. Start-up only.
     auto flushUploads(GpuUploader& uploader, uint64_t frame) -> void;
     auto pendingUploads() const -> size_t { return queue.size(); }
@@ -269,7 +269,7 @@ public:
     auto texturedMaterialCount() const -> uint32_t; // base colour from a texture bigger than 1x1
     auto cutoutMaterialCount() const -> uint32_t;
 
-    // The instance buffer: a record per draw slot. updateInstances marks the changed slots for upload. growInstances, each frame, grows it
+    // The instance buffer: a record per instance slot. updateInstances marks the changed slots for upload. growInstances, each frame, grows it
     // towards `count` slots (BufferGrowth): a grown buffer is a new one (instanceGeneration() changes) with the old records copied in.
     // Slots past instanceSlots() wait, dirty and undrawn, until the growth is ready.
     auto updateInstances(const ChunkedList<GpuInstance>& instances, std::span<const uint32_t> changedSlots, uint64_t frame) -> void;
@@ -278,7 +278,7 @@ public:
     // The instance buffer's, the pool's and the tables' growths.
     auto growthStatus() const -> std::vector<GrowthStatus>;
     // Imports the instance buffer and, if anything is dirty, adds the InstanceUpload pass. Returns the handle the draw passes read.
-    auto addInstanceUploadPasses(FrameGraph& fg, const ChunkedList<GpuInstance>& instances, uint32_t frameSlot) -> FgBufferHandle;
+    auto addInstanceUploadPasses(FrameGraph& fg, const ChunkedList<GpuInstance>& instances, uint32_t frameContext) -> FgBufferHandle;
     // Stores the access the instance buffer is left in for the next frame's import.
     auto afterExecute(const FrameGraph& fg) -> void;
     auto instanceBuffer() const -> RhiBuffer* { return instances; }
@@ -359,7 +359,7 @@ private:
     // Records queued uploads, at most `budget` bytes and at least one that fits `stagingCapacity`; `acquire(bytes)` gives the staging.
     template <typename Acquire, typename Retire>
     auto record(RhiCommandBuffer* cmd, uint64_t budget, uint64_t stagingCapacity, const Acquire& acquire, const Retire& retire) -> void;
-    // The upload ring: per frame slot, made at the upload budget, grown (on a background job) when the budget is raised or an upload is
+    // The upload ring: per frame context, made at the upload budget, grown (on a background job) when the budget is raised or an upload is
     // larger than it.
     auto updateUploadRing() -> void;
     auto updateLargeStaging() -> void;
@@ -430,12 +430,12 @@ private:
 
     std::deque<Upload> queue;
 
-    // Instance buffer: one GpuInstanceRecord per draw slot, which the task and mesh shaders read at the slot a work item names, then one
+    // Instance buffer: one GpuInstanceRecord per instance slot, which the task and mesh shaders read at the slot a work item names, then one
     // GpuCullRecord per slot from cullRecordsOffset, which the culling passes read. The access it was left in carries into the next frame's
     // graph so the upload syncs with the previous frame's reads.
     RhiBuffer* instances = nullptr;
     FgAccessFlags instanceAccess = FgAccessFlags::None;
-    // Per frame slot, CpuToGpu, mapped, kept: the changed records of the slot's frame, packed (updateInstanceStaging). Grown ahead on a
+    // Per frame context, CpuToGpu, mapped, kept: the changed records of the slot's frame, packed (updateInstanceStaging). Grown ahead on a
     // background job up to instanceStagingLimit (about 380k records, a large streamed tile); an upload larger than it has (the first at
     // load, a teleport) takes a buffer of its own, made that frame.
     static constexpr uint64_t instanceStagingLimit = 64ull * 1024 * 1024;
@@ -444,7 +444,7 @@ private:
     uint64_t instanceStagingBytes = 0;
     BufferGrowth instanceStagingGrowth{"gpuscene.instances.staging", BufferGrowth::Behind::OwnBuffer};
     uint64_t lastInstanceStagingNeed = 0;
-    // Per frame slot, CpuToGpu, mapped, kept: the SceneUpload pass's staging (updateUploadRing).
+    // Per frame context, CpuToGpu, mapped, kept: the SceneUpload pass's staging (updateUploadRing).
     std::vector<GrownBuffer> uploadRing;
     uint64_t uploadRingBytes = 0;
     BufferGrowth uploadRingGrowth{"gpuscene.upload.staging", BufferGrowth::Behind::Sized};

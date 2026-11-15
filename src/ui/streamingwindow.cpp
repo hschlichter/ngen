@@ -1,6 +1,6 @@
 #include "streamingwindow.h"
 
-#include "configwindow.h"
+#include "cvarwindow.h"
 
 #include <imgui.h>
 
@@ -91,7 +91,7 @@ auto drawOverview(StreamingToolState& state) -> void {
                 (unsigned long long) t.reloads,
                 (unsigned long long) t.released);
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("A late switch: a root selected a level that wasn't ready, and drew a coarser one meanwhile. A hole: a root drew nothing.\nA reload: a level loaded again after its root released it. Measured on the scene thread; nothing acts on them.");
+        ImGui::SetTooltip("A late switch: a root's desired level wasn't ready, and drew a coarser one meanwhile. A hole: a root drew nothing.\nA reload: a level loaded again after its root released it. Measured on the scene thread; nothing acts on them.");
     }
     ImGui::Text("Lead: %llu switches, shortest %.1f s, median %.1f s; %llu mesh packs arrived unwanted; %u authoring findings",
                 (unsigned long long) t.leads,
@@ -100,7 +100,7 @@ auto drawOverview(StreamingToolState& state) -> void {
                 (unsigned long long) t.arrivedUnwanted,
                 t.findings);
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Lead: seconds from a level being ready to it being selected, 0 when it wasn't ready. Both directions count.\nArrived unwanted: asked for by a level no longer resident when it arrived (requests aren't cancelled).\nFindings: roots breaking the streaming authoring contract, with the radii in force.");
+        ImGui::SetTooltip("Lead: seconds from a level being ready to it being desired, 0 when it wasn't ready. Both directions count.\nArrived unwanted: asked for by a level no longer resident when it arrived (requests aren't cancelled).\nFindings: roots breaking the streaming authoring contract, with the radii in force.");
     }
     ImGui::TextDisabled("States:");
     for (auto s : {StreamingRootState::Drawn, StreamingRootState::Prefetched, StreamingRootState::Requested, StreamingRootState::Refused, StreamingRootState::Late, StreamingRootState::Hole, StreamingRootState::None}) {
@@ -166,13 +166,13 @@ auto drawControls(StreamingToolState& state) -> void {
         ImGui::SetTooltip("Replaces the lit image: each mesh in the colour of its nearest streaming root's state (debugview streaming).");
     }
     ImGui::SameLine();
-    configCheckbox("Bounds", "tools.streaming.bounds");
+    cvarCheckbox("Bounds", "tools.streaming.bounds");
     ImGui::SameLine();
-    configCheckbox("Rings", "tools.streaming.rings");
+    cvarCheckbox("Rings", "tools.streaming.rings");
     ImGui::SameLine();
-    configCheckbox("of every root", "tools.streaming.ringsAll");
+    cvarCheckbox("of every root", "tools.streaming.ringsAll");
     ImGui::SameLine();
-    configCheckbox("Labels", "tools.streaming.labels");
+    cvarCheckbox("Labels", "tools.streaming.labels");
 }
 
 // One root of the list: click selects, double-click frames.
@@ -202,7 +202,7 @@ auto drawRow(const StreamingRow& row, StreamingToolState& state) -> void {
     ImGui::TableSetColumnIndex(1);
     ImGui::TextUnformatted(streamingStateName(row.rootState));
     ImGui::TableSetColumnIndex(2);
-    ImGui::TextUnformatted(levelName(row, row.selected).c_str());
+    ImGui::TextUnformatted(levelName(row, row.desired).c_str());
     ImGui::TableSetColumnIndex(3);
     ImGui::TextUnformatted(levelName(row, row.drawn).c_str());
     ImGui::TableSetColumnIndex(4);
@@ -249,7 +249,7 @@ auto drawInspector(StreamingToolState& state, StreamingWindowState& window) -> v
     ImGui::TextUnformatted(row.path.c_str());
     ImGui::SameLine();
     ImGui::TextDisabled("%s, authored as %s", streamingStateName(row.rootState), row.key.c_str());
-    ImGui::Text("Selects %s (%s), draws %s", levelName(row, row.selected).c_str(), row.why.c_str(), levelName(row, row.drawn).c_str());
+    ImGui::Text("Desired %s (%s), drawn %s", levelName(row, row.desired).c_str(), row.why.c_str(), levelName(row, row.drawn).c_str());
     ImGui::Text("State %d: %s", row.state, in.stateWhy.c_str());
     ImGui::Text("Resident: %s (%s)", residentText(row).c_str(), row.residentWhy.c_str());
     if (!in.parent.empty()) {
@@ -487,7 +487,7 @@ auto drawMap(StreamingToolState& state, StreamingWindowState& window) -> void {
             window.mapCenter -= glm::vec2(io.MouseDelta.x, -io.MouseDelta.y) / scale;
         }
         if (under != nullptr) {
-            ImGui::SetTooltip("%s\n%s: selects %s, draws %s, state %d, resident %s", under->path.c_str(), streamingStateName(under->rootState), levelName(*under, under->selected).c_str(), levelName(*under, under->drawn).c_str(), under->state, residentText(*under).c_str());
+            ImGui::SetTooltip("%s\n%s: desired %s, drawn %s, state %d, resident %s", under->path.c_str(), streamingStateName(under->rootState), levelName(*under, under->desired).c_str(), levelName(*under, under->drawn).c_str(), under->state, residentText(*under).c_str());
             if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) && ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f).x == 0.0f) {
                 state.selectRequested = under->path;
             }
@@ -535,7 +535,7 @@ auto drawRoots(StreamingToolState& state, StreamingWindowState& window) -> void 
     if (ImGui::BeginTable("##roots", 9, flags, ImVec2(0.0f, listHeight))) {
         ImGui::TableSetupColumn("Root", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-        ImGui::TableSetupColumn("Selected", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+        ImGui::TableSetupColumn("Desired", ImGuiTableColumnFlags_WidthFixed, 90.0f);
         ImGui::TableSetupColumn("Drawn", ImGuiTableColumnFlags_WidthFixed, 90.0f);
         ImGui::TableSetupColumn("Finest", ImGuiTableColumnFlags_WidthFixed, 45.0f);
         ImGui::TableSetupColumn("Resident", ImGuiTableColumnFlags_WidthFixed, 70.0f);
@@ -592,7 +592,7 @@ auto drawStreamingWindow(bool& show, StreamingToolState& state, StreamingWindowS
 }
 
 auto drawStreamingLabels(StreamingToolState& state, const glm::mat4& viewProj, glm::vec2 viewport) -> void {
-    if (auto* labels = configBool("tools.streaming.labels"); labels == nullptr || !labels->get()) {
+    if (auto* labels = cvarBool("tools.streaming.labels"); labels == nullptr || !labels->get()) {
         return;
     }
     // Under the windows, so a label never covers a window.
@@ -617,7 +617,7 @@ auto drawStreamingLabels(StreamingToolState& state, const glm::mat4& viewProj, g
         }
         // Vulkan's clip space has y down.
         ImVec2 at((ndc.x * 0.5f + 0.5f) * viewport.x, (ndc.y * 0.5f + 0.5f) * viewport.y);
-        auto text = std::format("{}  {}/{}  s{}  {}", row.name, row.drawn >= 0 ? std::format("{}", row.drawn) : std::string("-"), row.selected, row.state, streamingStateName(row.rootState));
+        auto text = std::format("{}  {}/{}  s{}  {}", row.name, row.drawn >= 0 ? std::format("{}", row.drawn) : std::string("-"), row.desired, row.state, streamingStateName(row.rootState));
         auto size = ImGui::CalcTextSize(text.c_str());
         ImVec2 min(at.x - (size.x * 0.5f) - 4.0f, at.y - (size.y * 0.5f) - 2.0f);
         ImVec2 max(at.x + (size.x * 0.5f) + 4.0f, at.y + (size.y * 0.5f) + 2.0f);

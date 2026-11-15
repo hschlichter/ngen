@@ -2,9 +2,9 @@
 
 #include "assetclient.h"
 #include "camera.h"
+#include "log.h"
 #include "renderthread.h"
 #include "renderworld.h"
-#include "trace.h"
 #include "viewpicking.h"
 #include "viewscene.h"
 
@@ -18,7 +18,7 @@
 #include <map>
 #include <sstream>
 
-// The scene's commands: selection, picking, a prim's transform, purposes, residency, repacking and the assets drawn; and the records of the
+// The scene's commands: selection, picking, a prim's transform, purposes, readiness, repacking and the assets drawn; and the records of the
 // scene, the scene thread and the GPU scene's flow, what drawing reached (instancers, variants, payloads) and the assets asked for.
 
 namespace {
@@ -78,7 +78,7 @@ auto parseGoToAsset(const std::string& args) -> std::expected<Json, std::string>
 
 auto parsePurposes(const std::string& args) -> std::expected<Json, std::string> {
     Json params = Json::object();
-    for (const auto& [key, value] : RpcVerbs::items(args)) {
+    for (const auto& [key, value] : ConsoleCommands::items(args)) {
         if ((key != "guide" && key != "proxy") || (value != "on" && value != "off")) {
             return std::unexpected(std::format("expected guide=on|off,proxy=on|off, got '{}={}'", key, value));
         }
@@ -95,7 +95,7 @@ auto cameraModesJson(const CameraModesState& modes) -> Json {
     return {
         {"follow",
          {{"ground", ground},
-          {"tested", {{"chunks", modes.groundChunks}, {"draws", modes.groundDraws}, {"triangles", modes.groundTriangles}, {"ms", modes.groundMs}}}}},
+          {"tested", {{"chunks", modes.groundChunks}, {"instances", modes.groundInstances}, {"triangles", modes.groundTriangles}, {"ms", modes.groundMs}}}}},
         {"orbit", modes.orbiting ? Json{{"pivot", Json(modes.pivot)}, {"picked", modes.pivotPicked}} : Json(nullptr)},
     };
 }
@@ -114,11 +114,11 @@ auto statusRecord(const ViewContext& view) -> Json {
 
 auto sceneThreadRecord(const ViewContext& view) -> Json {
     const auto& t = view.scene.threadStats();
-    const auto& r = view.residency;
+    const auto& r = view.readiness;
     auto [posted, applied] = view.scene.requestCounts();
     return {
         {"requests", {{"posted", posted}, {"applied", applied}}},
-        {"batches", t.batches},
+        {"updates", t.updates},
         {"compose",
          {{"count", t.composes},
           {"lastMs", t.lastComposeMs},
@@ -140,7 +140,7 @@ auto sceneThreadRecord(const ViewContext& view) -> Json {
           {"walksBuilt", t.walksBuilt},
           {"walksKept", t.walksKept},
           {"lodGroups", t.lodGroups},
-          {"last", {{"ms", t.lastPlaceMs}, {"built", t.placementsBuilt}, {"slotsAdded", t.slotsAdded}, {"slotsRemoved", t.slotsRemoved}, {"slotsUpdated", t.slotsUpdated}, {"lodGroupsChanged", t.lodGroupsChanged}}}}},
+          {"last", {{"ms", t.lastPlaceMs}, {"built", t.placementsBuilt}, {"instancesAdded", t.instancesAdded}, {"instancesRemoved", t.instancesRemoved}, {"instancesUpdated", t.instancesUpdated}, {"lodGroupsChanged", t.lodGroupsChanged}}}}},
         {"publishMs", t.publishMs},
         {"assetsReceived", t.assetsReceived},
         {"inFlight", {{"layers", t.inFlightLayers}, {"meshes", t.inFlightMeshes}, {"materials", t.inFlightMaterials}, {"textures", t.inFlightTextures}, {"other", t.inFlightOther}}},
@@ -154,12 +154,12 @@ auto sceneThreadRecord(const ViewContext& view) -> Json {
         {"sinceOpenMs", t.sinceOpenMs},
         {"idle", view.scene.idle()},
         {"renderThreadDrawn", view.renderThread.sceneDrawn()},
-        {"resident", r.resident},
-        {"everResident", r.everResident},
+        {"ready", r.ready},
+        {"everReady", r.everReady},
         {"scriptHeld", view.script.held},
         {"scriptFrame", view.script.frame},
         {"loading", {{"frames", r.loadingFrames}, {"longestFrameMs", r.longestLoadingFrameMs}}},
-        {"lastResident", {{"frame", r.lastResidentFrame}, {"ms", r.lastResidentMs}, {"loadFrames", r.lastLoadFrames}, {"longestFrameMs", r.lastLoadLongestMs}}},
+        {"lastReady", {{"frame", r.lastReadyFrame}, {"ms", r.lastReadyMs}, {"loadFrames", r.lastLoadFrames}, {"longestFrameMs", r.lastLoadLongestMs}}},
     };
 }
 
@@ -193,9 +193,9 @@ auto gpuSceneRecord(const ViewContext& view) -> Json {
     }
     return {
         {"frame", s.frame},
-        {"changeLists", {{"submitted", s.changeListsSubmitted}, {"drawn", s.changeListsDrawn}}},
+        {"sceneChanges", {{"submitted", s.sceneChangesSubmitted}, {"drawn", s.sceneChangesDrawn}}},
         {"gpuIdle", s.gpuIdle},
-        {"tables", {{"drawSlots", s.drawSlots}, {"meshes", s.meshes}, {"materials", s.materials}, {"textures", s.textures}}},
+        {"tables", {{"instanceSlots", s.instanceSlots}, {"meshes", s.meshes}, {"materials", s.materials}, {"textures", s.textures}}},
         {"uploads",
          {{"queued", u.queued},
           {"queuedBytes", u.queuedBytes},
@@ -369,7 +369,7 @@ auto assetsRecord(const ViewContext& view) -> Json {
             {"id", entry.id},
             {"state", state},
             {"packed", entry.packed},
-            {"version", entry.version},
+            {"hash", entry.hash},
             {"bytes", entry.bytes},
             {"requests", entry.requests},
             {"requestedMs", entry.requestedMs},
@@ -396,7 +396,7 @@ auto assetsRecord(const ViewContext& view) -> Json {
 
 } // namespace
 
-auto registerSceneCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view) -> void {
+auto registerSceneCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.select",
@@ -471,7 +471,7 @@ auto registerSceneCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& r
             auto y = (uint32_t) std::max(0, p["y"].get<int>());
             view.picking.request(x, y, [&view, responder](std::optional<uint32_t> instance) mutable {
                 view.selectedPath = instance ? view.scene.instancePath(*instance) : std::string();
-                TRACE_EVENT("Engine", "Picked", view.selectedPath.empty() ? "(nothing)" : view.selectedPath)
+                LOG_EVENT("Engine", "Picked", view.selectedPath.empty() ? "(nothing)" : view.selectedPath)
                     .text(view.selectedPath.empty() ? std::string("picked nothing") : std::format("picked {}", view.selectedPath))
                     .field("prim", view.selectedPath);
                 responder.respond({{"prim", view.selectedPath}});
@@ -489,29 +489,29 @@ auto registerSceneCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& r
         },
         [&view](const Json& p, RpcResponder responder) {
             if (p.contains("guide")) {
-                viewconfig::purposeGuide.set(p["guide"].get<bool>());
+                viewcvars::purposeGuide.set(p["guide"].get<bool>());
                 view.scene.setPurposeShown(Purpose::Guide, p["guide"].get<bool>());
             }
             if (p.contains("proxy")) {
-                viewconfig::purposeProxy.set(p["proxy"].get<bool>());
+                viewcvars::purposeProxy.set(p["proxy"].get<bool>());
                 view.scene.setPurposeShown(Purpose::Proxy, p["proxy"].get<bool>());
             }
-            view.residentWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
+            view.readyWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
         });
     registry.add(
         {
-            .name = "view.waitResident",
-            .summary = "Answers once the scene is resident: everything it wants loaded, uploaded and drawn. A script holds its frame count until then.",
+            .name = "view.waitReady",
+            .summary = "Answers once the scene is ready: everything it wants loaded, uploaded and drawn. A script holds its frame count until then.",
             .params = {},
             .result = "{}",
         },
         [&view](const Json&, RpcResponder responder) {
-            view.residentWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
+            view.readyWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
         });
     registry.add(
         {
             .name = "view.repack",
-            .summary = "Have the asset server repack assets even when its cache is up to date, and rebuild the scene from them. Answers once the scene is resident with them drawn.",
+            .summary = "Have the asset server repack assets even when its cache is up to date, and rebuild the scene from them. Answers once the scene is ready with them drawn.",
             .params = {
                 optionalField("ids", RpcType::Array, "asset ids"),
                 optionalField("scene", RpcType::Bool, "every asset of the scene"),
@@ -532,15 +532,15 @@ auto registerSceneCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& r
                 return;
             }
             view.scene.refresh(ids, true);
-            view.residentWaiters.push_back({.responder = std::move(responder), .result = {{"assets", ids.size()}}});
+            view.readyWaiters.push_back({.responder = std::move(responder), .result = {{"assets", ids.size()}}});
         });
     registry.add(
         {
             .name = "view.gotoAsset",
-            .summary = "Move the camera to an asset's draws: the next of them (the nearest first), framed and selected, or all of them framed.",
+            .summary = "Move the camera to the prims using an asset: the next of them (the nearest first), framed and selected, or all of them framed.",
             .params = {
                 requiredField("id", RpcType::String, "asset id: a mesh, material, texture or USD file"),
-                optionalField("all", RpcType::Bool, "frame every draw together"),
+                optionalField("all", RpcType::Bool, "frame every prim together"),
             },
             .result = "{prim, index, count}",
         },
@@ -569,7 +569,7 @@ auto registerSceneCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& r
                 return;
             }
             auto assets = view.scene.assetsUnder(path);
-            TRACE_EVENT("Engine", "AssetsOf", path).text(std::format("{} uses {} assets", path, assets.size())).field("assets", (int64_t) assets.size());
+            LOG_EVENT("Engine", "AssetsOf", path).text(std::format("{} uses {} assets", path, assets.size())).field("assets", (int64_t) assets.size());
             responder.respond({{"prim", path}, {"assets", assets}});
         });
     registry.add({.name = "view.quit", .summary = "Stop the view after this frame.", .result = "{}"}, [&view](const Json&, RpcResponder responder) {
@@ -577,29 +577,29 @@ auto registerSceneCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& r
         responder.respond(Json::object());
     });
 
-    verbs.add("select", "view.select", parsePrim);
-    verbs.add("translate", "view.translate", parseTranslate);
-    verbs.add("pick", "view.pick", parsePick);
-    verbs.add("purposes", "view.purposes", parsePurposes);
-    verbs.add("repack", "view.repack", parseRepack);
-    verbs.add("goto-asset", "view.gotoAsset", parseGoToAsset);
-    verbs.add("assets-of", "view.assetsOf", parsePrim);
-    verbs.add("wait-resident", "view.waitResident", RpcVerbs::none);
-    verbs.add("quit", "view.quit", RpcVerbs::none);
+    console.add("select", "view.select", parsePrim);
+    console.add("translate", "view.translate", parseTranslate);
+    console.add("pick", "view.pick", parsePick);
+    console.add("purposes", "view.purposes", parsePurposes);
+    console.add("repack", "view.repack", parseRepack);
+    console.add("goto-asset", "view.gotoAsset", parseGoToAsset);
+    console.add("assets-of", "view.assetsOf", parsePrim);
+    console.add("wait-ready", "view.waitReady", ConsoleCommands::none);
+    console.add("quit", "view.quit", ConsoleCommands::none);
 
-    records.add("status", "frame counter, scene, selection, the main camera and the camera modes; the render settings are the config record's, the debug camera's the debugcamera record", [&view](RpcResponder responder) {
+    records.add("status", "frame counter, scene, selection, the main camera and the camera modes; the render settings are the cvars record's, the debug camera's the debugcamera record", [&view](RpcResponder responder) {
         responder.respond(statusRecord(view));
     });
-    records.add("scene", "the open scene: its layer stack, up axis and units, prims (instances expanded), prototypes, draws, lights and LOD levels set", [&view](RpcResponder responder) {
+    records.add("scene", "the open scene: its layer stack, up axis and units, prims (instances expanded), prototypes, instances, lights and LOD levels set", [&view](RpcResponder responder) {
         responder.respond(sceneRecord(view));
     });
     records.add("environment", "the scene's sky: its dome light, the image, whether it is drawn, and the light it casts (irradiance, up and down)", [&view](RpcResponder responder) {
         responder.respond(environmentRecord(view));
     });
-    records.add("scenethread", "the scene thread: requests, composes and placement passes, assets in flight and held, and residency (the script's hold, the load's longest frame)", [&view](RpcResponder responder) {
+    records.add("scenethread", "the scene thread: requests, composes and placement passes, assets in flight and held, and readiness (the script's hold, the load's longest frame)", [&view](RpcResponder responder) {
         responder.respond(sceneThreadRecord(view));
     });
-    records.add("gpuscene", "the GPU scene's flow: change lists taken and drawn, the upload queue and its budget, the geometry pool and what waits for room, the last frame's commands summed over its passes, and the memory heaps", [&view](RpcResponder responder) {
+    records.add("gpuscene", "the GPU scene's flow: scene changes taken and drawn, the upload queue and its budget, the geometry pool and what waits for room, the last frame's commands summed over its passes, and the memory heaps", [&view](RpcResponder responder) {
         responder.respond(gpuSceneRecord(view));
     });
     records.add("instancers", "every PointInstancer reached while drawing: its points and those shown, its prototypes, and the prims its points draw", [&view](RpcResponder responder) {

@@ -17,7 +17,7 @@
   </defs>
   <rect x="0" y="0" width="1000" height="607" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
   <text x="28" y="40" class="title">ngen-view: how a scene reaches the screen</text>
-  <text x="28" y="62" class="s" style="font-size:12px">The five stages from the asset server's stream to a resident scene, the thread each runs on, and the record that shows it.</text>
+  <text x="28" y="62" class="s" style="font-size:12px">The five stages from the asset server's stream to a ready scene, the thread each runs on, and the record that shows it.</text>
 
   <!-- Stage 1: Asset client -->
   <rect x="28" y="96" width="176" height="437" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
@@ -96,7 +96,7 @@
   <rect x="420" y="485" width="160" height="38" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
   <text x="430" y="501" class="s">record</text>
   <text x="472" y="501" class="m">gpuscene</text>
-  <text x="430" y="516" class="s">changeLists</text>
+  <text x="430" y="516" class="s">sceneChanges</text>
 
   <!-- Stage 4: GPU scene -->
   <rect x="604" y="96" width="176" height="437" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-opacity="0.45"/>
@@ -105,8 +105,8 @@
   <text x="644" y="123" class="h" fill="#ea580c">GPU scene</text>
   <text x="618" y="144" class="s">the render thread</text>
   <rect x="612" y="158" width="160" height="60" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
-  <text x="622" y="178" class="b">change lists applied</text>
-  <text x="622" y="195" class="s">the tables: draw slots,</text>
+  <text x="622" y="178" class="b">scene changes applied</text>
+  <text x="622" y="195" class="s">the tables: instance slots,</text>
   <text x="622" y="210" class="s">meshes, materials, textures</text>
   <rect x="612" y="236" width="160" height="60" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
   <text x="622" y="256" class="b">upload queue</text>
@@ -124,12 +124,12 @@
   <text x="664" y="501" class="m">gpuscene</text>
   <text x="622" y="516" class="s">uploads, geometryPool</text>
 
-  <!-- Stage 5: Residency -->
+  <!-- Stage 5: Readiness -->
   <rect x="796" y="96" width="176" height="437" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
   <circle cx="818" cy="118" r="11" fill="#2563eb"/>
   <text x="818" y="122.5" class="tag" text-anchor="middle" fill="#ffffff">5</text>
-  <text x="836" y="123" class="h" fill="#2563eb">Residency</text>
-  <text x="810" y="144" class="s">ViewFrame::updateResidency</text>
+  <text x="836" y="123" class="h" fill="#2563eb">Readiness</text>
+  <text x="810" y="144" class="s">ViewFrame::updateReadiness</text>
   <rect x="804" y="158" width="160" height="75" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
   <text x="814" y="178" class="m">scene.idle()</text>
   <text x="814" y="195" class="s">nothing queued, requested</text>
@@ -137,20 +137,20 @@
   <text x="814" y="225" class="s">evaluated</text>
   <rect x="804" y="251" width="160" height="75" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
   <text x="814" y="271" class="m">sceneDrawn()</text>
-  <text x="814" y="288" class="s">every change list applied</text>
+  <text x="814" y="288" class="s">all scene changes applied</text>
   <text x="814" y="303" class="s">in a finished frame; no</text>
   <text x="814" y="318" class="s">upload or pipeline pending</text>
   <line x1="884" y1="234" x2="884" y2="249" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
   <rect x="804" y="344" width="160" height="75" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
-  <text x="814" y="364" class="m">SceneResident</text>
-  <text x="814" y="381" class="s">traced when both hold:</text>
+  <text x="814" y="364" class="m">SceneReady</text>
+  <text x="814" y="381" class="s">logged when both hold:</text>
   <text x="814" y="396" class="s">time since start, longest</text>
   <text x="814" y="411" class="s">frame while loading</text>
   <line x1="884" y1="327" x2="884" y2="342" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
   <rect x="804" y="485" width="160" height="38" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
   <text x="814" y="501" class="s">record</text>
   <text x="856" y="501" class="m">scenethread</text>
-  <text x="814" y="516" class="s">resident, loading</text>
+  <text x="814" y="516" class="s">ready, loading</text>
 
   <!-- The flow between the stages -->
   <path d="M198,329 H216 V203 H226" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
@@ -161,5 +161,5 @@
   <!-- The scene thread asks the client for what it lacks -->
   <path d="M226,374 H208 V251 H198" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
   <text x="28" y="569" class="s">Dashed: the scene thread asks the client for what it lacks (the packs a compose names, the meshes, materials and textures a placement wants).</text>
-  <text x="28" y="587" class="s">The upload budget and the pool's limit are configuration values (the gpuscene budget=…,limit=… verb), handed to the render thread when they change.</text>
+  <text x="28" y="587" class="s">The upload budget and the pool's limit are cvars (the gpuscene budget=…,limit=… console command), handed to the render thread when they change.</text>
 </svg>

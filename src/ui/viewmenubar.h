@@ -19,14 +19,14 @@ struct ViewMenuBarState {
     bool& showGuides;
     bool& showProxies;
     bool& depthPrepass;
-    int& gbufferView;
+    int& viewMode;
     int& debugView; // DebugView
     bool& showBufferOverlay;
     bool& showShadowOverlay;
     bool& antiAliasing;
     bool& showFrameGraph;
     bool& showPerformance;
-    bool& showConfig;
+    bool& showCvars;
     bool& showStatusBar;
     bool& showRenderDebug;
     bool& showCamera;

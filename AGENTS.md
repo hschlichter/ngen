@@ -36,12 +36,12 @@ break if wrapped.
 
 ngen is a learning and platform-building exercise as much as an engine. Two requirements hold for every change, planned or not:
 
-1. **Everything is reachable at runtime by an agent.** State is readable as records, and behaviour is drivable through RPC methods and script
-   verbs. A setting that only a launch flag or a constant in code reaches is a gap.
+1. **Everything is reachable at runtime by an agent.** State is readable as records, and behaviour is drivable through RPC methods and console
+   commands. A setting that only a launch flag or a constant in code reaches is a gap.
 2. **Everything is visible to a human in the UI.** A window, view or overlay shows what a part of the engine does and holds, so it can be
    understood, learned and debugged, and says where in the engine's flow it sits.
 
-When proposing or finishing a change, say what records, RPC methods, verbs and windows it adds or changes. A gap is named, not left silent.
+When proposing or finishing a change, say what records, RPC methods, console commands and windows it adds or changes. A gap is named, not left silent.
 A change says where in the engine's flow it sits in its library's README.
 Each vertical slice step on the roadmap ends with a visibility pass over what it touched.
 
@@ -63,9 +63,9 @@ Every plan has, in order:
 4. **Steps** — concrete: name the files, sketch the real structs/signatures. Prefer a short sequential step
    list sized to one iteration; use phases only when each phase ships something observable on its own.
 5. **Visibility** — what the change adds or changes for runtime access and for the UI ("Runtime access and visibility" above):
-   records, RPC methods and script verbs, and the window, view or overlay that shows it. "None" is stated with its reason, never
+   records, RPC methods and console commands, and the window, view or overlay that shows it. "None" is stated with its reason, never
    left out.
-6. **Verification** — observable, binary criteria: trace events to check, byte-identical outputs, what a
+6. **Verification** — observable, binary criteria: log events to check, byte-identical outputs, what a
    test scene should show, and the records and windows from Visibility. "Compiles" is not a criterion.
 
 Decisions in plans: when there are meaningful alternatives, list them with trade-offs and a recommendation
@@ -130,15 +130,15 @@ says "Supersedes N" under its status, in place of the skill's "Replaces ADR N �
   instancing, LOD loading and the `ngen-worldcheck` / `ngen-usdcheck` comparison in `src/world/README.md`.
 - `src/rpc/` — how processes and agents talk: the RPC core (`core/`, no engine code, shared with the build server) and the engine layer (method
   registry, endpoint). Protocol and how to add a method in `src/rpc/README.md`.
-- `src/introspect/` — `ngen-introspect`, the tool that shows every running process's records and trace, and calls their methods: a window
+- `src/introspect/` — `ngen-introspect`, the tool that shows every running process's records and log, and calls their methods: a window
   (SDL renderer and Dear ImGui) and a command line. Records and the tool in `src/introspect/README.md`.
 - `src/jobs/` — the job system: workers running frame jobs (waited for, `parallelFor`) and background jobs (polled, never waited for on the
   main or render thread). Rules in `src/jobs/README.md`.
-- `src/trace/` — the trace: structured events (`TRACE_EVENT`) in an always-on ring per process, streamed over RPC. Conventions in
-  `src/trace/README.md`.
+- `src/log/` — the log: structured events (`LOG_EVENT`) in an always-on ring per process, streamed over RPC. Conventions in
+  `src/log/README.md`.
 - `src/view/` — ngen-view's runtime (the `view` library: `viewscene.*`, the World composed from packs and flattened into the renderer's inputs;
   the camera, its flight and modes; picking; the frame, `ViewFrame`, whose steps the main loop calls in order, and the hooks the tools and the
-  UI join it by, `viewhooks.h`) and its engine commands (the `viewcommands` library: RPC methods, script verbs and records by domain in
+  UI join it by, `viewhooks.h`) and its engine commands (the `viewcommands` library: RPC methods, console commands and records by domain in
   `*commands.cpp`, and the dumps in `viewdumps.*`). The tools and the UI register their own commands. Design in `src/view/README.md`.
 - `src/tools/` — the tools (LOD and Streaming tools, the debug camera, the overlays, the gizmos): their data, state, viewport layers and their
   part of the frame (`ToolsHooks`; the gizmos' drawing as a render extension, `GizmoRender`), apart from the UI that draws them; nothing here
@@ -198,13 +198,13 @@ adding platforms/configurations).
 
 ## Verifying changes
 
-Verification runs headless — build, start `./ngen-cli introspect trace --until-exit=view --output=…`, run the view with a `--script` that
-records the values the change is about (`120 record render /tmp/records.jsonl`), then read both: the records for the numbers, the trace for the
+Verification runs headless — build, start `./ngen-cli introspect log --until-exit=view --output=…`, run the view with a `--script` that
+records the values the change is about (`120 record render /tmp/records.jsonl`), then read both: the records for the numbers, the log for the
 flow and for warnings and errors (none on a clean run). ngen-view needs its variant's asset server running (`./ngen-cli asset-server &` for the set variant,
 `./_out/<platform>/<config>/ngen-asset-server &` for another), started in the same directory as the view; without one it exits at start-up.
 Scenes and textures are assets too: a scene argument is an asset id, a path relative to that directory. The `run-headless` skill
-(`.claude/skills/run-headless/SKILL.md`) has the full procedure, test scenes, and machine constraints; `src/trace/README.md` documents the
-event conventions: the trace is flow and messages, data is a record. Events added for a change stay in the code — there is no "remove when done" step.
+(`.claude/skills/run-headless/SKILL.md`) has the full procedure, test scenes, and machine constraints; `src/log/README.md` documents the
+event conventions: the log is flow and messages, data is a record. Events added for a change stay in the code — there is no "remove when done" step.
 
 `ngen-view` also takes `--screenshot`, `--camera`, `--view` and `--script` (see the `run-headless` skill), so a change can be looked at
 through a PNG, and its numbers read from records the script writes to a file (`record render <file>`), without the window.

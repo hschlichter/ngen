@@ -3,10 +3,10 @@
 #include "assetswindow.h"
 #include "camerawindow.h"
 #include "capturewindow.h"
-#include "config.h"
-#include "configwindow.h"
 #include "counterswindow.h"
 #include "cullingwindow.h"
+#include "cvar.h"
+#include "cvarwindow.h"
 #include "debugviewwindow.h"
 #include "framedebuggerwindow.h"
 #include "framegraphdebug.h"
@@ -45,7 +45,7 @@ enum class ViewEditRequest : uint8_t {
 
 // ngen-view's UI: the menu bar (the overlays' switches among it), the status bar, the camera window and the introspection windows (frame graph,
 // performance, render debug, culling, capture, frame debugger, GPU scene, counters, memory). It edits the settings the view renders
-// with; the view reads them each frame. Prims are named by the path `primPath` gives for a draw's prim index.
+// with; the view reads them each frame. Prims are named by the path `primPath` gives for an instance's prim index.
 class ViewUI {
 public:
     // `hasSelection` enables the Edit menu's selection items.
@@ -80,7 +80,7 @@ public:
     auto setCullResult(const CullResult& cull) -> void { cullResult = &cull; }
 
     // The windows view.window opens and closes, by name.
-    static constexpr std::array windowNames = {"memory", "capture", "framedebugger", "gpuscene", "counters", "shaders", "culling", "assets", "lod", "streaming", "camera", "renderdebug", "framegraph", "performance", "config"};
+    static constexpr std::array windowNames = {"memory", "capture", "framedebugger", "gpuscene", "counters", "shaders", "culling", "assets", "lod", "streaming", "camera", "renderdebug", "framegraph", "performance", "cvars"};
     // Whether a window is open, by its name in windowNames; null for an unknown name.
     auto windowFlag(std::string_view name) -> bool*;
     // Opens or closes a window by its name in windowNames; false for an unknown name.
@@ -99,7 +99,7 @@ public:
     // A "go to" the Assets window asked for this frame, once; the answer shows in the window.
     auto takeGoToRequest() -> std::optional<AssetsWindowState::GoTo> { return std::exchange(assetsState.goToRequested, std::nullopt); }
     auto setGoToStatus(std::string status) -> void { assetsState.goToStatus = std::move(status); }
-    auto setAssetDrawCount(std::function<size_t(const std::string&)> drawCount) -> void { assetsState.drawCount = std::move(drawCount); }
+    auto setAssetPrimCount(std::function<size_t(const std::string&)> primCount) -> void { assetsState.primCount = std::move(primCount); }
     // Whether the view has a prim selected, for the Assets window's "Selected prim's assets"; and that button's press, once.
     auto setHasPrimSelected(bool selected) -> void { assetsState.hasPrimSelected = selected; }
     auto takeFindSelectedRequest() -> bool { return std::exchange(assetsState.findSelectedRequested, false); }
@@ -142,7 +142,7 @@ private:
     auto toggleShortcuts() -> void;
     // What Ctrl+5 turned off, restored when it is pressed again with nothing on since.
     struct PlainLit {
-        int gbufferView = 0;
+        int viewMode = 0;
         int debugView = 0;
         bool bufferOverlay = false;
         bool shadowOverlay = false;
@@ -154,8 +154,8 @@ private:
     bool frameSelectedRequested = false;
     bool showFrameGraphWindow = false;
     bool showPerformanceWindow = false;
-    bool showConfigWindow = false;
-    ConfigWindowState configState;
+    bool showCvarWindow = false;
+    CvarWindowState cvarState;
     bool showStatusBar = true;
     StatusBarData statusBarData;
     bool showRenderDebugWindow = false;
@@ -180,7 +180,7 @@ private:
     std::optional<uint32_t> fgSelectedResource;
     PerformanceWindowState performanceState;
     std::optional<RenderDebugSnapshot> renderDebugLast;
-    uint32_t renderDebugSelectedPrim = 0; // a draw picked in the Render Debug window's list
+    uint32_t renderDebugSelectedPrim = 0; // an instance picked in the Render Debug window's list
     IntrospectionFlags introspectionFlags;
     MemoryWindowState memoryWindowState;
     CaptureWindowState captureWindowState;

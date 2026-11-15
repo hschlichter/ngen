@@ -10,7 +10,7 @@
 #include "meshlet.glsl"
 
 layout(push_constant) uniform Push {
-    uint region;
+    uint drawList;
     uint flags;
 } push;
 
@@ -27,7 +27,7 @@ layout(location = 3) flat out uint fragTexture[];
 // The instance index + 1, for the id target picking reads; 0 is nothing drawn.
 layout(location = 4) flat out uint fragInstance[];
 // x: the drawn LOD level + 1 of the LOD root above it, 0 under none, with its group's flags (lodTag), and 128 per LOD root it is under
-// (lodTagDepth, at most 15), for the LOD level view and the pop flash. y: the instance's share of a render-LOD fade as float bits
+// (lodTagDepth, at most 15), for the LOD level view and the pop flash. y: the instance's share of a LOD-group fade as float bits
 // (lodfade.glsl), for the cutout fragment shader; lodCoverAll when its group isn't fading. One output, so the opaque fragment shader, which
 // reads only x, still takes it.
 layout(location = 5) flat out uvec2 fragLod[];

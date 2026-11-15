@@ -5,7 +5,7 @@
 #include "debugview.h"
 #include "drawlists.h"
 #include "primpath.h"
-#include "renderconfig.h"
+#include "rendercvars.h"
 #include "viewscene.h"
 
 #include <glm/glm.hpp>
@@ -55,7 +55,7 @@ auto parseLodShow(const std::string& args) -> std::expected<Json, std::string> {
     std::string state;
     in >> layer >> state;
     if (layer == "color" && (state == "level" || state == "depth")) {
-        return configValues({{"tools.lod.colorByDepth", state == "depth" ? "true" : "false"}});
+        return cvarValues({{"tools.lod.colorByDepth", state == "depth" ? "true" : "false"}});
     }
     static constexpr std::array<std::pair<std::string_view, const char*>, 4> layers = {{
         {"labels", "tools.lod.labels"},
@@ -67,7 +67,7 @@ auto parseLodShow(const std::string& args) -> std::expected<Json, std::string> {
     if (found == layers.end() || (state != "on" && state != "off")) {
         return std::unexpected(std::format("expected 'labels|gizmo|gizmo-all|flash on|off' or 'color level|depth', got '{}'", args));
     }
-    return configValues({{found->second, state}});
+    return cvarValues({{found->second, state}});
 }
 
 // `streaming-show bounds|rings|rings-all|labels on|off`.
@@ -86,10 +86,10 @@ auto parseStreamingShow(const std::string& args) -> std::expected<Json, std::str
     if (found == layers.end() || (state != "on" && state != "off")) {
         return std::unexpected(std::format("expected 'bounds|rings|rings-all|labels on|off', got '{}'", args));
     }
-    return configValues({{found->second, state}});
+    return cvarValues({{found->second, state}});
 }
 
-// The debug camera's state: its pose and the trail's length (its switches are the config record's tools.debugcamera.*).
+// The debug camera's state: its pose and the trail's length (its switches are the cvars record's tools.debugcamera.*).
 auto debugCameraJson(const DebugCameraState& debug) -> Json {
     return {
         {"position", Json(debug.camera.position)},
@@ -133,7 +133,7 @@ auto streamingInspectionJson(const StreamingInspection& in) -> Json {
         {"path", row.path},
         {"key", row.key},
         {"rootState", streamingStateName(row.rootState)},
-        {"selected", row.selected},
+        {"desired", row.desired},
         {"why", row.why},
         {"state", row.state},
         {"stateWhy", in.stateWhy},
@@ -174,17 +174,17 @@ auto lodInspectionJson(const LodInspection& in, double metersPerUnit) -> Json {
             {"level", level},
             {"name", info.name},
             {"triangles", info.known ? Json(info.triangles) : Json(nullptr)},
-            {"draws", info.known ? Json(info.draws) : Json(nullptr)},
+            {"instances", info.known ? Json(info.instances) : Json(nullptr)},
             {"loaded", info.loaded},
         });
     }
     return {
         {"path", in.path},
-        {"kind", in.renderLod ? "render" : "streaming"},
+        {"kind", in.isLodGroup ? "group" : "streaming"},
         {"group", in.group >= 0 ? Json(in.group) : Json(nullptr)},
         {"key", in.key},
         {"default", in.defaultIndex},
-        {"wanted", in.wanted >= 0 ? Json(in.wanted) : Json(nullptr)},
+        {"desired", in.desired >= 0 ? Json(in.desired) : Json(nullptr)},
         {"drawn", in.drawn >= 0 ? Json(in.drawn) : Json(nullptr)},
         {"fadeLevel", in.fadeLevel >= 0 ? Json(in.fadeLevel) : Json(nullptr)},
         {"fade", in.fade},
@@ -209,8 +209,8 @@ auto lodToolRecord(const ViewContext& view, const ToolsState& tools) -> Json {
                 root = candidate.path;
             }
         }
-        const auto& draws = *view.scene.snapshot().draws;
-        for (const auto& candidate : draws.lodGroupPaths) {
+        const auto& placedScene = *view.scene.snapshot().placedScene;
+        for (const auto& candidate : placedScene.lodGroupPaths) {
             if (!candidate.empty() && primpath::isAtOrUnder(view.selectedPath, candidate) && candidate.size() > root.size()) {
                 root = candidate;
             }
@@ -225,7 +225,7 @@ auto lodToolRecord(const ViewContext& view, const ToolsState& tools) -> Json {
         {"selectedRoot", root.empty() ? Json(nullptr) : Json(root)},
         {"inspection", inspection},
         {"tuning", lodTuningJson(view.scene.lodTuning())},
-        {"levelView", renderconfig::bufferView.get() == (size_t) GBufferView::LodLevel},
+        {"levelView", rendercvars::viewMode.get() == (size_t) ViewMode::LodLevel},
         {"pops", view.lodPops},
         {"windowRows", window.rows.size()},
     };
@@ -233,15 +233,15 @@ auto lodToolRecord(const ViewContext& view, const ToolsState& tools) -> Json {
 
 } // namespace
 
-auto registerToolCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view, ToolsState& tools) -> void {
+auto registerToolCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records, ViewContext& view, ToolsState& tools) -> void {
     view.debugCamera = [&tools]() -> Camera* {
-        return toolsconfig::debugCamera.get() ? &tools.debugCamera.camera : nullptr;
+        return toolscvars::debugCamera.get() ? &tools.debugCamera.camera : nullptr;
     };
 
     registry.add(
         {
             .name = "view.camera.debug",
-            .summary = "The debug camera's actions: place puts it 15 m behind and 10 m above the main camera, clearTrail forgets the main camera's trail. Its switches are configuration values (tools.debugcamera.on, controlMain, lod, cull, shadows, trail); the switches here set them, as the debug-camera verb does.",
+            .summary = "The debug camera's actions: place puts it 15 m behind and 10 m above the main camera, clearTrail forgets the main camera's trail. Its switches are cvars (tools.debugcamera.on, controlMain, lod, cull, shadows, trail); the switches here set them, as the debug-camera console command does.",
             .params = {optionalField("place", RpcType::Bool, "put it behind and above the main camera"),
                        optionalField("clearTrail", RpcType::Bool, "forget the trail"),
                        optionalField("on", RpcType::Bool, "tools.debugcamera.on"),
@@ -254,12 +254,12 @@ auto registerToolCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& re
         },
         [&tools](const Json& p, RpcResponder responder) {
             auto& debug = tools.debugCamera;
-            for (auto [field, value] : {std::pair{"on", &toolsconfig::debugCamera},
-                                        std::pair{"controlMain", &toolsconfig::debugControlMain},
-                                        std::pair{"lodFromDebug", &toolsconfig::debugLod},
-                                        std::pair{"cullFromDebug", &toolsconfig::debugCull},
-                                        std::pair{"shadowsFromDebug", &toolsconfig::debugShadows},
-                                        std::pair{"trail", &toolsconfig::debugTrail}}) {
+            for (auto [field, value] : {std::pair{"on", &toolscvars::debugCamera},
+                                        std::pair{"controlMain", &toolscvars::debugControlMain},
+                                        std::pair{"lodFromDebug", &toolscvars::debugLod},
+                                        std::pair{"cullFromDebug", &toolscvars::debugCull},
+                                        std::pair{"shadowsFromDebug", &toolscvars::debugShadows},
+                                        std::pair{"trail", &toolscvars::debugTrail}}) {
                 if (p.contains(field)) {
                     value->set(p[field].get<bool>());
                 }
@@ -273,26 +273,26 @@ auto registerToolCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& re
     registry.add(
         {
             .name = "view.lod.inspect",
-            .summary = "One LOD root as the LOD window's inspector shows it: kind, authored root, state (wanted, drawn, fade, why), every heuristic (used or why not, thresholds authored and in force, its measure from the camera now and the level it would pick) and every level (triangles, draws).",
+            .summary = "One LOD root as the LOD window's inspector shows it: kind, authored root, state (desired, drawn, fade, why), every heuristic (used or why not, thresholds authored and in force, its measure from the camera now and the level it would pick) and every level (triangles, instances).",
             .params = {requiredField("root", RpcType::String, "a LOD root's full path")},
             .result = "the inspection",
         },
         [&view, &tools](const Json& p, RpcResponder responder) {
-            // Answered once a readback carries every group's state, as the renderlod record is.
+            // Answered once a readback carries every group's state, as the lodgroups record is.
             auto root = p["root"].get<std::string>();
-            view.renderLodRequests.push_back({.askedAt = view.latestCull.lodFrame, .answer = [&view, &tools, responder, root]() mutable {
-                                                  auto inspection = inspectLodRoot(view.scene, view.latestCull, root, lodInspectionCamera(view, tools));
-                                                  if (!inspection) {
-                                                      responder.fail(rpc::invalidParams, std::format("no LOD root placed at {}", root));
-                                                      return;
-                                                  }
-                                                  responder.respond(lodInspectionJson(*inspection, view.scene.lodMetersPerUnit()));
-                                              }});
+            view.lodGroupRequests.push_back({.askedAt = view.latestCull.lodFrame, .answer = [&view, &tools, responder, root]() mutable {
+                                                 auto inspection = inspectLodRoot(view.scene, view.latestCull, root, lodInspectionCamera(view, tools));
+                                                 if (!inspection) {
+                                                     responder.fail(rpc::invalidParams, std::format("no LOD root placed at {}", root));
+                                                     return;
+                                                 }
+                                                 responder.respond(lodInspectionJson(*inspection, view.scene.lodMetersPerUnit()));
+                                             }});
         });
     registry.add(
         {
             .name = "view.streaming.inspect",
-            .summary = "One streaming root inspected, as the Streaming window shows it: its residency (selected, state and why, resident and why, drawn, its state's name), every heuristic it names by domain with its thresholds authored and in force and its measure from the camera, its levels (requested, loaded, ready, drawn, lead), its authoring findings, its parent and children.",
+            .summary = "One streaming root inspected, as the Streaming window shows it: its residency (desired, state and why, resident and why, drawn, its state's name), every heuristic it names by domain with its thresholds authored and in force and its measure from the camera, its levels (requested, loaded, ready, drawn, lead), its authoring findings, its parent and children.",
             .params = {requiredField("root", RpcType::String, "a streaming LOD root's full path")},
             .result = "the inspection",
         },
@@ -306,11 +306,11 @@ auto registerToolCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& re
             responder.respond(streamingInspectionJson(*inspection));
         });
 
-    verbs.add("debug-camera", "view.camera.debug", parseDebugCamera);
-    verbs.add("lod-show", "config.set", parseLodShow);
-    verbs.add("streaming-show", "config.set", parseStreamingShow);
+    console.add("debug-camera", "view.camera.debug", parseDebugCamera);
+    console.add("lod-show", "cvar.set", parseLodShow);
+    console.add("streaming-show", "cvar.set", parseStreamingShow);
 
-    records.add("debugcamera", "the debug camera: its position, yaw and pitch, and the main camera's trail points; its switches are the config record's tools.debugcamera.*", [&tools](RpcResponder responder) {
+    records.add("debugcamera", "the debug camera: its position, yaw and pitch, and the main camera's trail points; its switches are the cvars record's tools.debugcamera.*", [&tools](RpcResponder responder) {
         responder.respond(debugCameraJson(tools.debugCamera));
     });
     records.add("streamingtool",
@@ -339,6 +339,6 @@ auto registerToolCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& re
     records.add("lodtool",
                 "the LOD tool: the inspection of the LOD root at or above the selection (heuristics with their measures and picks, levels with triangles), the LOD tuning, the viewport's layers and the pops seen (next frames)",
                 [&view, &tools](RpcResponder responder) {
-                    view.renderLodRequests.push_back({.askedAt = view.latestCull.lodFrame, .answer = [&view, &tools, responder]() mutable { responder.respond(lodToolRecord(view, tools)); }});
+                    view.lodGroupRequests.push_back({.askedAt = view.latestCull.lodFrame, .answer = [&view, &tools, responder]() mutable { responder.respond(lodToolRecord(view, tools)); }});
                 });
 }

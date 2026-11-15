@@ -7,7 +7,7 @@
 auto GizmoRender::init(const RenderExtensionContext& context) -> bool {
     device = &context.device;
     frameGraph = &context.frameGraph;
-    return pass.init(device, context.pipelines, context.frameSlots, context.colorFormat);
+    return pass.init(device, context.pipelines, context.frameContexts, context.colorFormat);
 }
 
 auto GizmoRender::addOverlayPasses(Renderer& /*renderer*/, RenderSnapshot& snapshot, const RenderFrame& frame) -> void {
@@ -27,7 +27,7 @@ auto GizmoRender::addOverlayPasses(Renderer& /*renderer*/, RenderSnapshot& snaps
             .vpExtent = draw.vpExtent.width > 0 ? draw.vpExtent : frame.extent,
         });
     }
-    pass.addPass(*frameGraph, frame.color, frame.extent, requests, frame.slot);
+    pass.addPass(*frameGraph, frame.color, frame.extent, requests, frame.frameContext);
 }
 
 auto GizmoRender::destroy() -> void {

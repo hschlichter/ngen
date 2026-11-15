@@ -82,7 +82,7 @@
   <line x1="570" y1="364" x2="596" y2="364" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
   <text x="612" y="348" class="f">&lt;out&gt;.outputs</text>
   <text x="612" y="364" class="s mono">&lt;id&gt;\t&lt;out&gt;#.World.Group.Own</text>
-  <text x="612" y="380" class="s">the secondary outputs: one &lt;id&gt;\t&lt;file&gt; line each;</text>
+  <text x="612" y="380" class="s">the sub-assets: one &lt;id&gt;\t&lt;file&gt; line each;</text>
   <text x="612" y="394" class="s">the server records what it names, only that</text>
   <rect x="598" y="408" width="374" height="72" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
   <line x1="570" y1="444" x2="596" y2="444" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
@@ -90,5 +90,5 @@
   <text x="612" y="444" class="s mono">&lt;out&gt;: assets/layered/base.usda</text>
   <text x="612" y="460" class="s">the depfile names the file alone:</text>
   <text x="612" y="474" class="s">editing one file of a scene repacks that file only</text>
-  <text x="28" y="508" class="s">&lt;out&gt; is .ngen-assets/&lt;platform&gt;/&lt;config&gt;/assets/layered/base.usda; a secondary output's file is &lt;out&gt;#&lt;fragment&gt;, '/' written as '.'.</text>
+  <text x="28" y="508" class="s">&lt;out&gt; is .ngen-assets/&lt;platform&gt;/&lt;config&gt;/assets/layered/base.usda; a sub-asset's file is &lt;out&gt;#&lt;fragment&gt;, '/' written as '.'.</text>
 </svg>

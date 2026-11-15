@@ -23,7 +23,7 @@ enum class RpcType {
     Enum, // a string from enumValues
     Array,
     Object,
-    Any, // whatever JSON value; the handler checks it (a configuration value's)
+    Any, // whatever JSON value; the handler checks it (a cvar's)
 };
 
 struct RpcField {

@@ -15,7 +15,7 @@
 // Meshes with USD materialBind GeomSubsets produce one SubMesh per subset;
 // meshes with a single (or no) binding produce a single SubMesh covering the
 // whole index buffer. Always at least one entry when the mesh has geometry.
-// The material is the draw's, not the mesh's: a mesh shared by several prims
+// The material is the instance's, not the mesh's: a mesh shared by several prims
 // is drawn with each prim's bindings.
 struct SubMesh {
     uint32_t indexOffset = 0;
@@ -49,7 +49,7 @@ struct MeshDesc {
     bool doubleSided = false; // USD doubleSided: draw without back-face culling
 };
 
-// The bounds of the vertices a submesh's triangles use, in the mesh's space: each draw of the mesh is one submesh, culled by this box. A
+// The bounds of the vertices a submesh's triangles use, in the mesh's space: each instance of the mesh is one submesh, culled by this box. A
 // submesh without triangles gets the empty box at the origin (it draws nothing).
 inline auto subsetBounds(const MeshDesc& mesh, const SubMesh& submesh) -> AABB {
     AABB b = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};

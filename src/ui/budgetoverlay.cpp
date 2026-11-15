@@ -2,7 +2,7 @@
 
 #include "axis3dgizmo.h"
 #include "profile.h"
-#include "profileconfig.h"
+#include "profilecvars.h"
 #include "scenegpustats.h"
 
 #include <imgui.h>
@@ -129,7 +129,7 @@ auto drawBudgetOverlay(const RenderFrameCommands& commands) -> void {
     // Groups in the order the frame runs their first pass.
     groups.clear();
     for (const auto& pass : times.passes) {
-        auto group = profile::groupOf(pass.siteId);
+        auto group = profile::groupOf(pass.locationId);
         auto row = std::ranges::find_if(groups, [group](const GroupRow& r) { return r.group == group; });
         if (row == groups.end()) {
             groups.push_back({.group = group});
@@ -138,7 +138,7 @@ auto drawBudgetOverlay(const RenderFrameCommands& commands) -> void {
         row->ms += pass.msPerFrame;
         row->passes.push_back(pass);
     }
-    double budgetMs = profileconfig::frameBudgetMs.get();
+    double budgetMs = profilecvars::frameBudgetMs.get();
 
     const auto* viewport = ImGui::GetMainViewport();
     // First under the corner axis gizmo, which takes the viewport's top-right corner (in pixels from the window's top, as the gizmo is
@@ -157,7 +157,7 @@ auto drawBudgetOverlay(const RenderFrameCommands& commands) -> void {
     for (const auto& row : groups) {
         labelWidth = std::max(labelWidth, ImGui::CalcTextSize(groupLabel(row.group)).x);
         for (const auto& pass : row.passes) {
-            labelWidth = std::max(labelWidth, passIndent + ImGui::CalcTextSize(profile::nameOf(pass.siteId)).x);
+            labelWidth = std::max(labelWidth, passIndent + ImGui::CalcTextSize(profile::nameOf(pass.locationId)).x);
         }
     }
     labelWidth += labelGap;
@@ -175,7 +175,7 @@ auto drawBudgetOverlay(const RenderFrameCommands& commands) -> void {
         auto groupRgb = profile::groupColor(row.group, 0);
         barRow(groupLabel(row.group), labelWidth, row.ms, budgetMs, rgbToImGui(groupRgb, 230), groupBarHeight, 0.0f, false);
         for (const auto& pass : row.passes) {
-            barRow(profile::nameOf(pass.siteId), labelWidth, pass.msPerFrame, budgetMs, rgbToImGui(groupRgb, 140), passBarHeight, passIndent, true);
+            barRow(profile::nameOf(pass.locationId), labelWidth, pass.msPerFrame, budgetMs, rgbToImGui(groupRgb, 140), passBarHeight, passIndent, true);
         }
     }
     ImGui::Separator();
@@ -187,11 +187,11 @@ auto drawBudgetOverlay(const RenderFrameCommands& commands) -> void {
     ImGui::End();
 }
 
-namespace uiconfig {
+namespace uicvars {
 
-config::Bool budgetOverlay{"ui.overlay.budget",
-                           false,
-                           "The frame budget overlay: the GPU's passes by group as bars against profile.budget.frameMs, averaged over 60 frames "
-                           "(Ctrl+B)."};
+cvar::Bool budgetOverlay{"ui.overlay.budget",
+                         false,
+                         "The frame budget overlay: the GPU's passes by group as bars against profile.budget.frameMs, averaged over 60 frames "
+                         "(Ctrl+B)."};
 
-} // namespace uiconfig
+} // namespace uicvars

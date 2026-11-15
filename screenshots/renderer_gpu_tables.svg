@@ -21,7 +21,7 @@
   <!-- Instance buffer: draw records -->
   <rect x="28" y="88" width="248" height="362" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
   <text x="42" y="112" class="lib">GpuInstanceRecord</text>
-  <text x="42" y="130" class="s">gpuscene.instances: one per draw slot,</text>
+  <text x="42" y="130" class="s">gpuscene.instances: one per instance slot,</text>
   <text x="42" y="145" class="s">128 B, read by the task and mesh shaders</text>
   <text x="42" y="160" class="s">at the slot a work item names</text>
   <rect x="40" y="172" width="224" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>

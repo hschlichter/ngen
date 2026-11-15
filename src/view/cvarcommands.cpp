@@ -1,6 +1,6 @@
 #include "viewcommands.h"
 
-#include "config.h"
+#include "cvar.h"
 
 #include <nlohmann/json.hpp>
 
@@ -11,15 +11,15 @@
 #include <sstream>
 #include <string_view>
 
-// The configuration's commands (src/config/README.md): config.get, set and reset, the config record, and the verbs that set values,
-// `config` and the older short forms.
+// The cvars' commands (src/cvar/README.md): cvar.get, set and reset, the cvars record, and the console commands that set values,
+// `cvar` and the older short forms.
 
 namespace {
 
 using rpc::Json;
 
-// `config <name> <value>`.
-auto parseConfig(const std::string& args) -> std::expected<Json, std::string> {
+// `cvar <name> <value>`.
+auto parseCvar(const std::string& args) -> std::expected<Json, std::string> {
     auto space = args.find(' ');
     if (space == std::string::npos) {
         return std::unexpected(std::format("expected '<name> <value>', got '{}'", args));
@@ -27,17 +27,17 @@ auto parseConfig(const std::string& args) -> std::expected<Json, std::string> {
     return Json{{"name", args.substr(0, space)}, {"value", args.substr(space + 1)}};
 }
 
-// `config-reset [<name or prefix>]`.
-auto parseConfigReset(const std::string& args) -> std::expected<Json, std::string> {
+// `cvar-reset [<name or prefix>]`.
+auto parseCvarReset(const std::string& args) -> std::expected<Json, std::string> {
     return Json{{"name", args}};
 }
 
 auto parseViewMode(const std::string& args) -> std::expected<Json, std::string> {
-    return configValues({{"render.view.buffer", args}});
+    return cvarValues({{"render.view.mode", args}});
 }
 
 auto parseDebugView(const std::string& args) -> std::expected<Json, std::string> {
-    return configValues({{"render.view.debug", args}});
+    return cvarValues({{"render.view.debug", args}});
 }
 
 // `overlay name=on|off,…`: the viewport's overlays by their short names.
@@ -55,7 +55,7 @@ auto parseOverlay(const std::string& args) -> std::expected<Json, std::string> {
         {"aa", "render.antialiasing"},
     }};
     Json values = Json::object();
-    for (const auto& [name, state] : RpcVerbs::items(args)) {
+    for (const auto& [name, state] : ConsoleCommands::items(args)) {
         auto found = std::ranges::find(overlays, std::string_view(name), &std::pair<std::string_view, const char*>::first);
         if (found == overlays.end() || state.empty()) {
             return std::unexpected(std::format("expected name=on|off for grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa or cascadefrusta, got '{}'", name));
@@ -67,23 +67,23 @@ auto parseOverlay(const std::string& args) -> std::expected<Json, std::string> {
 
 auto parseCull(const std::string& args) -> std::expected<Json, std::string> {
     if (args == "on" || args == "off") {
-        return configValues({{"render.culling.enabled", args}});
+        return cvarValues({{"render.culling.enabled", args}});
     }
     if (args == "freeze" || args == "unfreeze") {
-        return configValues({{"render.culling.frozen", args == "freeze" ? "true" : "false"}});
+        return cvarValues({{"render.culling.frozen", args == "freeze" ? "true" : "false"}});
     }
     if (args == "show" || args == "hide") {
-        return configValues({{"tools.overlay.culled", args == "show" ? "true" : "false"}});
+        return cvarValues({{"tools.overlay.culled", args == "show" ? "true" : "false"}});
     }
     if (args.starts_with("view ")) {
-        return configValues({{"tools.overlay.culledView", args.substr(5)}});
+        return cvarValues({{"tools.overlay.culledView", args.substr(5)}});
     }
     return std::unexpected(std::format("unknown argument '{}'", args));
 }
 
 auto parseSampler(const std::string& args) -> std::expected<Json, std::string> {
     Json values = Json::object();
-    for (const auto& [key, value] : RpcVerbs::items(args)) {
+    for (const auto& [key, value] : ConsoleCommands::items(args)) {
         if (key == "aniso") {
             values["render.sampler.anisotropy"] = value;
         } else if (key == "bias") {
@@ -101,7 +101,7 @@ auto parseSampler(const std::string& args) -> std::expected<Json, std::string> {
 
 auto parseShadow(const std::string& args) -> std::expected<Json, std::string> {
     Json values = Json::object();
-    for (const auto& [key, value] : RpcVerbs::items(args)) {
+    for (const auto& [key, value] : ConsoleCommands::items(args)) {
         if (key == "cascades") {
             values["render.shadow.cascades"] = value;
         } else if (key == "tile") {
@@ -141,7 +141,7 @@ auto parseAmbient(const std::string& args) -> std::expected<Json, std::string> {
 
 auto parseGpuScene(const std::string& args) -> std::expected<Json, std::string> {
     Json values = Json::object();
-    for (const auto& [key, value] : RpcVerbs::items(args)) {
+    for (const auto& [key, value] : ConsoleCommands::items(args)) {
         if (key == "budget") {
             values["render.upload.budgetMiB"] = value;
         } else if (key == "limit") {
@@ -154,35 +154,35 @@ auto parseGpuScene(const std::string& args) -> std::expected<Json, std::string> 
 }
 
 auto parsePrepass(const std::string& args) -> std::expected<Json, std::string> {
-    return configValues({{"render.prepass", args}});
+    return cvarValues({{"render.prepass", args}});
 }
 
 auto parseOcclusion(const std::string& args) -> std::expected<Json, std::string> {
-    return configValues({{"render.culling.occlusion", args}});
+    return cvarValues({{"render.culling.occlusion", args}});
 }
 
 auto parseHzbLevel(const std::string& args) -> std::expected<Json, std::string> {
-    return configValues({{"render.view.hzblevel", args}});
+    return cvarValues({{"render.view.hzblevel", args}});
 }
 
 auto parseAntiAliasing(const std::string& args) -> std::expected<Json, std::string> {
-    return configValues({{"render.antialiasing", args}});
+    return cvarValues({{"render.antialiasing", args}});
 }
 
-// A configuration value as JSON: typed (a bool, a number, a choice's name, [x, y, z]).
-auto configValueJson(const config::Value& value) -> Json {
+// A cvar as JSON: typed (a bool, a number, a choice's name, [x, y, z]).
+auto cvarValueJson(const cvar::Value& value) -> Json {
     switch (value.type()) {
-        case config::Type::Bool:
-            return static_cast<const config::Bool&>(value).get();
-        case config::Type::Int:
-            return static_cast<const config::Int&>(value).get();
-        case config::Type::Float:
-            return static_cast<const config::Float&>(value).get();
-        case config::Type::Enum:
-            return static_cast<const config::Enum&>(value).choice();
-        case config::Type::Vec3: {
+        case cvar::Type::Bool:
+            return static_cast<const cvar::Bool&>(value).get();
+        case cvar::Type::Int:
+            return static_cast<const cvar::Int&>(value).get();
+        case cvar::Type::Float:
+            return static_cast<const cvar::Float&>(value).get();
+        case cvar::Type::Enum:
+            return static_cast<const cvar::Enum&>(value).choice();
+        case cvar::Type::Vec3: {
             // At float precision: 0.2, not 0.20000000298 (a float widened to double).
-            auto v = static_cast<const config::Vec3&>(value).get();
+            auto v = static_cast<const cvar::Vec3&>(value).get();
             auto number = [](float f) {
                 return std::stod(std::format("{}", f));
             };
@@ -192,22 +192,22 @@ auto configValueJson(const config::Value& value) -> Json {
     return nullptr;
 }
 
-auto configEntryJson(const config::Value& value) -> Json {
+auto cvarEntryJson(const cvar::Value& value) -> Json {
     Json out = {
         {"name", value.name()},
-        {"type", config::typeName(value.type())},
-        {"value", configValueJson(value)},
+        {"type", cvar::typeName(value.type())},
+        {"value", cvarValueJson(value)},
         {"default", value.defaultText()},
         {"isDefault", value.isDefault()},
         {"description", value.description()},
     };
-    const config::Range* range = nullptr;
-    if (value.type() == config::Type::Int) {
-        range = &static_cast<const config::Int&>(value).range();
-    } else if (value.type() == config::Type::Float) {
-        range = &static_cast<const config::Float&>(value).range();
-    } else if (value.type() == config::Type::Enum) {
-        out["choices"] = static_cast<const config::Enum&>(value).choices();
+    const cvar::Range* range = nullptr;
+    if (value.type() == cvar::Type::Int) {
+        range = &static_cast<const cvar::Int&>(value).range();
+    } else if (value.type() == cvar::Type::Float) {
+        range = &static_cast<const cvar::Float&>(value).range();
+    } else if (value.type() == cvar::Type::Enum) {
+        out["choices"] = static_cast<const cvar::Enum&>(value).choices();
     }
     if (range != nullptr && range->min) {
         out["min"] = *range->min;
@@ -219,23 +219,23 @@ auto configEntryJson(const config::Value& value) -> Json {
 }
 
 // The values a name names: the one value by that name, else those under it as a prefix (every value for an empty name).
-auto configNamed(const std::string& name) -> std::vector<config::Value*> {
-    if (auto* value = config::find(name)) {
+auto cvarNamed(const std::string& name) -> std::vector<cvar::Value*> {
+    if (auto* value = cvar::find(name)) {
         return {value};
     }
-    return config::under(name);
+    return cvar::under(name);
 }
 
-auto configRecord(const std::string& name) -> Json {
+auto cvarRecord(const std::string& name) -> Json {
     auto values = Json::array();
-    for (const auto* value : configNamed(name)) {
-        values.push_back(configEntryJson(*value));
+    for (const auto* value : cvarNamed(name)) {
+        values.push_back(cvarEntryJson(*value));
     }
     return {{"values", values}};
 }
 
-// A JSON value as the text a configuration value parses: true/false, a number, a name, "x,y,z".
-auto configText(const Json& value) -> std::string {
+// A JSON value as the text a cvar parses: true/false, a number, a name, "x,y,z".
+auto cvarText(const Json& value) -> std::string {
     if (value.is_string()) {
         return value.get<std::string>();
     }
@@ -245,7 +245,7 @@ auto configText(const Json& value) -> std::string {
     if (value.is_array()) {
         std::string out;
         for (const auto& item : value) {
-            out += (out.empty() ? "" : ",") + configText(item);
+            out += (out.empty() ? "" : ",") + cvarText(item);
         }
         return out;
     }
@@ -254,8 +254,8 @@ auto configText(const Json& value) -> std::string {
 
 } // namespace
 
-// The verbs that set configuration values (`view lit`, `prepass on`, …): their arguments as config.set's {values}.
-auto configValues(std::initializer_list<std::pair<const char*, std::string>> values) -> Json {
+// The console commands that set cvars (`view lit`, `prepass on`, …): their arguments as cvar.set's {values}.
+auto cvarValues(std::initializer_list<std::pair<const char*, std::string>> values) -> Json {
     Json out = Json::object();
     for (const auto& [name, value] : values) {
         out[name] = value;
@@ -263,34 +263,34 @@ auto configValues(std::initializer_list<std::pair<const char*, std::string>> val
     return Json{{"values", out}};
 }
 
-auto registerConfigCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records) -> void {
+auto registerCvarCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records) -> void {
     registry.add(
         {
-            .name = "config.get",
-            .summary = "Configuration values (src/config/README.md): the one by a name, or every one under a prefix (all without one); each with its type, value, default, description and range or choices.",
+            .name = "cvar.get",
+            .summary = "Cvars (src/cvar/README.md): the one by a name, or every one under a prefix (all without one); each with its type, value, default, description and range or choices.",
             .params = {optionalField("name", RpcType::String, "a value's name, or a prefix such as render.shadow")},
             .result = "{values: [{name, type, value, default, isDefault, description, min?, max?, choices?}]}",
         },
-        [](const Json& p, RpcResponder responder) { responder.respond(configRecord(p.value("name", std::string()))); });
+        [](const Json& p, RpcResponder responder) { responder.respond(cvarRecord(p.value("name", std::string()))); });
     registry.add(
         {
-            .name = "config.set",
-            .summary = "Set configuration values: one by name and value, or several as {values: {name: value}}; reset (a name or prefix) is put back to its defaults first. Values are checked (range, choices); nothing is set when one fails.",
+            .name = "cvar.set",
+            .summary = "Set cvars: one by name and value, or several as {values: {name: value}}; reset (a name or prefix) is put back to its defaults first. Values are checked (range, choices); nothing is set when one fails.",
             .params = {optionalField("name", RpcType::String, "a value's name"),
                        {.name = "value", .type = RpcType::Any, .required = false, .description = "its value: a bool, number, choice's name, [x, y, z] or their text"},
                        optionalField("values", RpcType::Object, "name to value, several at once"),
                        optionalField("reset", RpcType::String, "a name or prefix put back to its defaults first")},
-            .result = "{values: [the values set, as config.get]}",
+            .result = "{values: [the values set, as cvar.get]}",
         },
         [](const Json& p, RpcResponder responder) {
-            std::vector<std::pair<config::Value*, std::string>> sets;
+            std::vector<std::pair<cvar::Value*, std::string>> sets;
             auto add = [&](const std::string& name, const Json& value) -> bool {
-                auto* found = config::find(name);
+                auto* found = cvar::find(name);
                 if (found == nullptr) {
-                    responder.fail(rpc::invalidParams, std::format("no configuration value '{}'", name));
+                    responder.fail(rpc::invalidParams, std::format("no cvar '{}'", name));
                     return false;
                 }
-                sets.emplace_back(found, configText(value));
+                sets.emplace_back(found, cvarText(value));
                 return true;
             };
             if (p.contains("name") && !add(p["name"].get<std::string>(), p.contains("value") ? p["value"] : Json(""))) {
@@ -313,50 +313,50 @@ auto registerConfigCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& 
                 (void) value->setText(before);
             }
             if (p.contains("reset")) {
-                for (auto* value : configNamed(p["reset"].get<std::string>())) {
+                for (auto* value : cvarNamed(p["reset"].get<std::string>())) {
                     value->reset();
                 }
             }
             auto out = Json::array();
             for (auto& [value, text] : sets) {
                 (void) value->setText(text);
-                out.push_back(configEntryJson(*value));
+                out.push_back(cvarEntryJson(*value));
             }
             responder.respond({{"values", out}});
         });
     registry.add(
         {
-            .name = "config.reset",
-            .summary = "Put configuration values back to their defaults: the one by a name, or every one under a prefix (all without one).",
+            .name = "cvar.reset",
+            .summary = "Put cvars back to their defaults: the one by a name, or every one under a prefix (all without one).",
             .params = {optionalField("name", RpcType::String, "a value's name or a prefix")},
-            .result = "{values: [the values reset, as config.get]}",
+            .result = "{values: [the values reset, as cvar.get]}",
         },
         [](const Json& p, RpcResponder responder) {
-            auto values = configNamed(p.value("name", std::string()));
+            auto values = cvarNamed(p.value("name", std::string()));
             auto out = Json::array();
             for (auto* value : values) {
                 value->reset();
-                out.push_back(configEntryJson(*value));
+                out.push_back(cvarEntryJson(*value));
             }
             responder.respond({{"values", out}});
         });
 
-    verbs.add("config", "config.set", parseConfig);
-    verbs.add("config-reset", "config.reset", parseConfigReset);
-    verbs.add("view", "config.set", parseViewMode);
-    verbs.add("debugview", "config.set", parseDebugView);
-    verbs.add("overlay", "config.set", parseOverlay);
-    verbs.add("cull", "config.set", parseCull);
-    verbs.add("sampler", "config.set", parseSampler);
-    verbs.add("shadow", "config.set", parseShadow);
-    verbs.add("prepass", "config.set", parsePrepass);
-    verbs.add("occlusion", "config.set", parseOcclusion);
-    verbs.add("hzb-level", "config.set", parseHzbLevel);
-    verbs.add("aa", "config.set", parseAntiAliasing);
-    verbs.add("ambient", "config.set", parseAmbient);
-    verbs.add("gpuscene", "config.set", parseGpuScene);
+    console.add("cvar", "cvar.set", parseCvar);
+    console.add("cvar-reset", "cvar.reset", parseCvarReset);
+    console.add("view", "cvar.set", parseViewMode);
+    console.add("debugview", "cvar.set", parseDebugView);
+    console.add("overlay", "cvar.set", parseOverlay);
+    console.add("cull", "cvar.set", parseCull);
+    console.add("sampler", "cvar.set", parseSampler);
+    console.add("shadow", "cvar.set", parseShadow);
+    console.add("prepass", "cvar.set", parsePrepass);
+    console.add("occlusion", "cvar.set", parseOcclusion);
+    console.add("hzb-level", "cvar.set", parseHzbLevel);
+    console.add("aa", "cvar.set", parseAntiAliasing);
+    console.add("ambient", "cvar.set", parseAmbient);
+    console.add("gpuscene", "cvar.set", parseGpuScene);
 
-    records.add("config", "the configuration: every value with its type, value, default, description and range or choices", [](RpcResponder responder) {
-        responder.respond(configRecord(""));
+    records.add("cvars", "the cvars: every value with its type, value, default, description and range or choices", [](RpcResponder responder) {
+        responder.respond(cvarRecord(""));
     });
 }

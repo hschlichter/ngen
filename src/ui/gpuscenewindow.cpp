@@ -189,38 +189,38 @@ auto drawGpuSceneWindow(bool& show,
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Compaction")) {
-            ImGui::TextWrapped("Reduce-then-scan: each workgroup of %u instances counts its commands per region (InstanceCull); one scan turns the counts into "
+            ImGui::TextWrapped("Reduce-then-scan: each workgroup of %u instances counts its commands per draw list (InstanceCull); one scan turns the counts into "
                                "start offsets (InstanceCullScan); each command is written at its workgroup's offset plus its place in the workgroup "
                                "(InstanceCullScatter), so commands stay in instance order.",
                                DrawLists::groupSize);
             ImGui::SetNextItemWidth(120.0f);
-            ImGui::SliderInt("Region", &state.compactionRegion, 0, (int) DrawLists::regionCount - 1);
-            auto region = (uint32_t) state.compactionRegion;
+            ImGui::SliderInt("Draw list", &state.compactionDrawList, 0, (int) DrawLists::drawListCount - 1);
+            auto drawList = (uint32_t) state.compactionDrawList;
             ImGui::SameLine();
-            ImGui::TextDisabled("%s", DrawLists::regionName(region));
+            ImGui::TextDisabled("%s", DrawLists::drawListName(drawList));
             const auto* counters = capturedTable(state.results, "cullGroupCounters");
             const auto* offsets = capturedTable(state.results, "cullGroupOffsets");
             const auto* counts = capturedTable(state.results, "drawCounts");
             const auto* commands = capturedTable(state.results, "drawCommands");
             const auto* params = capturedTable(state.results, "cullParams");
-            // Per workgroup: each region's draw record offset, then its work item offset. The first phase's: the second overwrites them.
-            if (region / DrawLists::bucketCount == DrawLists::lateView) {
+            // Per workgroup: each draw list's draw record offset, then its work item offset. The first phase's: the second overwrites them.
+            if (drawList / DrawLists::bucketCount == DrawLists::lateView) {
                 ImGui::TextDisabled("Per workgroup: the counters and offsets captured are the first phase's; the second phase's aren't kept.");
             } else if (counters != nullptr && offsets != nullptr) {
-                auto groups = std::min(counters->bytes->size() / (DrawLists::counterCount * 4), offsets->bytes->size() / (DrawLists::regionCount * 2 * 4));
+                auto groups = std::min(counters->bytes->size() / (DrawLists::counterCount * 4), offsets->bytes->size() / (DrawLists::drawListCount * 2 * 4));
                 auto used = (rows.size() + DrawLists::groupSize - 1) / DrawLists::groupSize;
                 for (size_t g = 0; g < std::min(groups, std::max<size_t>(used, 1)); g++) {
-                    auto count = capturedValue<uint32_t>(*counters, (g * DrawLists::counterCount + DrawLists::counterDraws + region) * 4);
-                    auto offset = capturedValue<uint32_t>(*offsets, (g * DrawLists::regionCount * 2 + region) * 4);
+                    auto count = capturedValue<uint32_t>(*counters, (g * DrawLists::counterCount + DrawLists::counterDraws + drawList) * 4);
+                    auto offset = capturedValue<uint32_t>(*offsets, (g * DrawLists::drawListCount * 2 + drawList) * 4);
                     ImGui::BulletText("workgroup %zu (instances %zu..%zu): %u commands, written from offset %u", g, g * DrawLists::groupSize, (g + 1) * DrawLists::groupSize - 1, count, offset);
                 }
             }
             if (counts != nullptr && commands != nullptr && params != nullptr) {
-                // The region's records as the frame packed them: from its offset to the next region's (the last ends at commandsUsed).
+                // The draw list's records as the frame packed them: from its offset to the next draw list's (the last ends at commandsUsed).
                 using P = DrawLists::CullParams;
-                auto total = capturedValue<uint32_t>(*counts, DrawLists::countOffset(region));
-                auto first = capturedValue<uint32_t>(*params, offsetof(P, regionOffsets) + (region * 4));
-                auto end = region + 1 < DrawLists::regionCount ? capturedValue<uint32_t>(*params, offsetof(P, regionOffsets) + ((region + 1) * 4)) : capturedValue<uint32_t>(*params, offsetof(P, commandsUsed));
+                auto total = capturedValue<uint32_t>(*counts, DrawLists::countOffset(drawList));
+                auto first = capturedValue<uint32_t>(*params, offsetof(P, drawListOffsets) + (drawList * 4));
+                auto end = drawList + 1 < DrawLists::drawListCount ? capturedValue<uint32_t>(*params, offsetof(P, drawListOffsets) + ((drawList + 1) * 4)) : capturedValue<uint32_t>(*params, offsetof(P, commandsUsed));
                 auto inBuffer = (uint32_t) (commands->bytes->size() / sizeof(DrawRecord));
                 auto capacity = std::min(end, inBuffer) > first ? std::min(end, inBuffer) - first : 0u;
                 ImGui::SeparatorText(std::format("Final order: {} commands, from record {}, room for {}", total, first, capacity).c_str());

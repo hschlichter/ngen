@@ -2,7 +2,7 @@
 #extension GL_EXT_mesh_shader : require
 #extension GL_GOOGLE_include_directive : require
 
-// Meshlet culling, for every mesh pass. One draw is one region (view * 4 + bucket); each task workgroup takes 32 of its work items
+// Meshlet culling, for every mesh pass. One draw is one draw list (view * 4 + bucket); each task workgroup takes 32 of its work items
 // (meshlets with their instance, in instance order: instancecull.comp), tests them, and launches a mesh workgroup per meshlet that
 // survives, in order:
 //   - every view: the meshlet's bounding sphere against the view's frustum planes;
@@ -22,7 +22,7 @@ layout(local_size_x = 32) in;
 #include "hzb.glsl"
 
 layout(push_constant) uniform Push {
-    uint region;
+    uint drawList;
     uint flags; // meshletFlag*
 } push;
 
@@ -58,9 +58,9 @@ bool backFacing(Meshlet meshlet, vec3 center, float radius, mat3 model, float sc
 
 void main() {
     uint lid = gl_LocalInvocationIndex;
-    uint view = push.region / bucketCount;
-    uint bucket = push.region % bucketCount;
-    RegionWork work = regionWork.data[push.region];
+    uint view = push.drawList / bucketCount;
+    uint bucket = push.drawList % bucketCount;
+    DrawListWork work = drawListWork.data[push.drawList];
     uint item = ((gl_WorkGroupID.y * gl_NumWorkGroups.x) + gl_WorkGroupID.x) * meshletsPerTask + lid;
 
     if (lid < meshletCountersPerView) {

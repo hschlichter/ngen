@@ -48,14 +48,14 @@ struct PassGpuTime {
 
 // What the renderer holds and last did, for the instrumentation (src/rendertools): read on the render thread, between its hooks.
 struct RendererState {
-    uint64_t frame = 0; // the last frame recorded
-    uint32_t slot = 0;  // the frame slot being recorded, or recorded last
+    uint64_t frame = 0;        // the last frame recorded
+    uint32_t frameContext = 0; // the one being recorded, or recorded last
     const RhiDevice* device = nullptr;
     RhiExtent2D swapchainExtent = {};
     RhiFormat swapchainFormat = RhiFormat::Undefined;
     uint32_t swapchainImages = 0;
     const GpuScene* gpuScene = nullptr;
-    const ChunkedList<GpuInstance>* instances = nullptr; // by draw slot
+    const ChunkedList<GpuInstance>* instances = nullptr; // by instance slot
     uint32_t culledInstances = 0;                        // by the camera, from the latest readback the last frame used
     uint32_t lightCount = 0;
     bool hasSun = false; // the lighting's pick in the last frame
@@ -95,7 +95,7 @@ public:
     auto pipelinesFailed() const -> bool { return pipelineRegistry.anyFailed(); }
     // Thread-safe: every pipeline and its state, for the `pipelines` record.
     auto pipelineInfos() const -> std::vector<PipelineInfo> { return pipelineRegistry.infos(); }
-    // Applies what changed in the scene to the GPU scene: meshes, textures and materials added and removed, draw slots changed, lights.
+    // Applies what changed in the scene to the GPU scene: meshes, textures and materials added and removed, instance slots changed, lights.
     // Uploads are queued and recorded a budget per frame; nothing waits.
     auto applySceneChanges(const SceneChanges& changes) -> void;
     // Records every queued upload and waits for it.
@@ -112,20 +112,20 @@ public:
     auto setDrawLogEnabled(bool enabled) -> void { drawLogEnabled = enabled; }
     // Waits until the frame just submitted has finished on the GPU (an extension's afterSubmit).
     auto waitForFrame() -> void;
-    // A frame slot's command buffer: what its frame recorded, read after its fence (pipeline statistics).
+    // A frame context's command buffer: what its frame recorded, read after its fence (pipeline statistics).
     auto commandBuffer(uint32_t slot) const -> RhiCommandBuffer* { return cmdBuffers[slot]; }
     // The most each geometry pool buffer may take, in bytes; 0 for the device's largest buffer (GpuScene::setGeometryLimit). Before the
     // render thread starts.
     auto setGeometryLimit(uint64_t bytes) -> void { gpuScene.setGeometryLimit(bytes); }
     auto setUploadBudget(uint64_t bytes) -> void { gpuScene.setUploadBudget(bytes); }
-    // The GPU scene's draw slots, tables, upload queue and pool, after a frame (the change list counts are the render thread's).
+    // The GPU scene's instance slots, tables, upload queue and pool, after a frame (the scene change counts are the render thread's).
     auto sceneGpuStats() const -> SceneGpuStats;
     // The GPU's allocations as Tracy's "GPU" memory pool, while a Tracy server is connected: what changed since the last report. Without a
     // server nothing is reported, and a server that connects later is told every live allocation. Render thread.
     auto reportGpuAllocations() -> void;
     // Asset ids whose sources changed: the ones that are shaders are requested again and their pipelines recreated when they arrive.
     auto reloadShaders(std::span<const std::string> ids) -> void { pipelineRegistry.reload(ids); }
-    // Latest GPU culling readback (one frame-slot cycle old), for the editor.
+    // Latest GPU culling readback (one frame-context cycle old), for the editor.
     auto cullResult() const -> CullResult;
     // The capture results that came back (the watches arrive with the snapshot).
     auto takeCaptureResults() -> std::vector<CaptureResult> { return captureService.takeResults(); }
@@ -149,8 +149,8 @@ private:
     std::vector<void*> uniformBuffersMapped;
 
     // Scene GPU resources
-    ChunkedList<GpuInstance> gpuInstances; // by draw slot; chunks, so growing moves none
-    uint64_t sceneTriangles = 0;           // every draw slot's triangles, culled or not: kept as the slots change, not summed each frame
+    ChunkedList<GpuInstance> gpuInstances; // by instance slot; chunks, so growing moves none
+    uint64_t sceneTriangles = 0;           // every instance slot's triangles, culled or not: kept as the slots change, not summed each frame
     bool descriptorSetsDirty = false;      // a buffer they name was replaced; rewritten at the next frame
     uint32_t debugCulledInstances = 0;     // from the last snapshot, for the debug window
     RhiSampler* materialSampler = nullptr;
@@ -171,14 +171,14 @@ private:
 
     // Scene GPU tables and the GPU-driven draw path (src/renderer/README.md).
     GpuScene gpuScene;
-    DrawLists drawLists;                 // per view and bucket, the draw records and meshlet work items, written by instanceCullPass
-    InstanceCullPass instanceCullPass;   // GPU culling
-    LodGroups lodGroups;                 // render-LOD groups: their table, the levels picked, the residency of their levels
-    LodSelectPass lodSelectPass;         // the level each group draws, before culling
-    DepthPyramid depthPyramid;           // occlusion culling's depth pyramid, built from the first phase's depth (and after a prepass from its whole depth)
-    bool reportedWorkFull = false;       // MeshletWorkFull traced: the work items are at the device's largest buffer and still overflow
-    uint32_t reportedRegionOverflow = 0; // the region overflow last traced (CullRegionOverflow), so a steady one is said once
-    CaptureService captureService;       // resource captures at pass boundaries
+    DrawLists drawLists;                   // per view and bucket, the draw records and meshlet work items, written by instanceCullPass
+    InstanceCullPass instanceCullPass;     // GPU culling
+    LodGroups lodGroups;                   // LOD groups: their table, the levels picked, the residency of their levels
+    LodSelectPass lodSelectPass;           // the level each group draws, before culling
+    DepthPyramid depthPyramid;             // occlusion culling's depth pyramid, built from the first phase's depth (and after a prepass from its whole depth)
+    bool reportedWorkFull = false;         // MeshletWorkFull logged: the work items are at the device's largest buffer and still overflow
+    uint32_t reportedDrawListOverflow = 0; // the draw list overflow last logged (CullDrawListOverflow), so a steady one is said once
+    CaptureService captureService;         // resource captures at pass boundaries
     std::vector<RenderExtension*> extensions;
     PreviewTextures* previewTextures = nullptr; // owned by the UI
     auto nameSwapchainImages() -> void;
@@ -199,7 +199,7 @@ private:
     std::vector<RhiSemaphore*> renderFinishedSemaphores;
     std::vector<RhiFence*> inflightFences;
     // Monotonic frame number last submitted through each slot; 0 = never.
-    std::vector<uint64_t> slotFrame;
+    std::vector<uint64_t> contextFrame;
     std::vector<uint64_t> slotSubmitNs; // profile::now() at submit, matches GPU zones to CPU frames
     uint32_t currentFrame = 0;
 
@@ -238,7 +238,7 @@ private:
     bool drawLogEnabled = false;
     // The frame recorded by render(), its parts after the fence wait and the acquire.
     auto renderFrame(RenderSnapshot& snapshot) -> void;
-    std::vector<std::vector<FgDrawRecord>> slotDrawLogs; // per frame slot, joined with GPU zones after the fence
+    std::vector<std::vector<FgDrawRecord>> slotDrawLogs; // per frame context, joined with GPU zones after the fence
     std::vector<FgDrawRecord> lastDrawLog;
     // Last frame's lighting pick, kept for the debug snapshot.
     bool debugHasSun = false;

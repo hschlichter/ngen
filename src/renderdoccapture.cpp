@@ -1,6 +1,6 @@
 #include "renderdoccapture.h"
 
-#include "trace.h"
+#include "log.h"
 
 #include <format>
 
@@ -22,7 +22,7 @@ auto RenderDocCapture::load(bool forceLoad) -> void {
     if (library == nullptr && forceLoad) {
         library = dlopen("librenderdoc.so", RTLD_NOW);
         if (library == nullptr) {
-            TRACE_WARNING("Engine", "RenderDocUnavailable", "renderdoc").text(std::format("RenderDoc: cannot load librenderdoc.so: {}", dlerror()));
+            LOG_WARNING("Engine", "RenderDocUnavailable", "renderdoc").text(std::format("RenderDoc: cannot load librenderdoc.so: {}", dlerror()));
             return;
         }
     }
@@ -31,11 +31,11 @@ auto RenderDocCapture::load(bool forceLoad) -> void {
     }
     auto getApi = (pRENDERDOC_GetAPI) dlsym(library, "RENDERDOC_GetAPI");
     if (getApi == nullptr) {
-        TRACE_WARNING("Engine", "RenderDocUnavailable", "renderdoc").text("RenderDoc: RENDERDOC_GetAPI not found");
+        LOG_WARNING("Engine", "RenderDocUnavailable", "renderdoc").text("RenderDoc: RENDERDOC_GetAPI not found");
         return;
     }
     if (getApi(eRENDERDOC_API_Version_1_6_0, &api) != 1 || api == nullptr) {
-        TRACE_WARNING("Engine", "RenderDocUnavailable", "renderdoc").text("RenderDoc: API 1.6.0 not available");
+        LOG_WARNING("Engine", "RenderDocUnavailable", "renderdoc").text("RenderDoc: API 1.6.0 not available");
         api = nullptr;
         return;
     }
@@ -47,7 +47,7 @@ auto RenderDocCapture::load(bool forceLoad) -> void {
     int minor = 0;
     int patch = 0;
     rdoc(api)->GetAPIVersion(&major, &minor, &patch);
-    TRACE_EVENT("Engine", "RenderDocLoaded", "renderdoc").text(std::format("RenderDoc: API {}.{}.{} loaded, captures go to captures/", major, minor, patch));
+    LOG_EVENT("Engine", "RenderDocLoaded", "renderdoc").text(std::format("RenderDoc: API {}.{}.{} loaded, captures go to captures/", major, minor, patch));
 }
 
 auto RenderDocCapture::triggerCapture() -> bool {

@@ -1,4 +1,4 @@
-#include "introspecttrace.h"
+#include "introspectlog.h"
 
 #include "introspecttarget.h"
 
@@ -31,22 +31,22 @@ auto onSignal(int) -> void {
     stopRequested.store(true);
 }
 
-struct TraceOptions {
+struct LogOptions {
     std::string output;
     std::string untilExit;
     std::vector<std::string> processes;
     std::set<std::string> categories;
     std::set<std::string> types;
-    int minLevel = 0; // levelRank: 0 info, 1 warning, 2 error
+    int minSeverity = 0; // severityRank: 0 info, 1 warning, 2 error
     bool history = false;
 };
 
-// Levels in order, so --level=warning keeps warnings and errors.
-auto levelRank(std::string_view level) -> int {
-    if (level == "error") {
+// Severities in order, so --severity=warning keeps warnings and errors.
+auto severityRank(std::string_view severity) -> int {
+    if (severity == "error") {
         return 2;
     }
-    if (level == "warning") {
+    if (severity == "warning") {
         return 1;
     }
     return 0;
@@ -68,8 +68,8 @@ auto splitList(std::string_view text) -> std::vector<std::string> {
     return items;
 }
 
-auto parseOptions(std::span<const std::string> args) -> std::expected<TraceOptions, std::string> {
-    TraceOptions options;
+auto parseOptions(std::span<const std::string> args) -> std::expected<LogOptions, std::string> {
+    LogOptions options;
     auto value = [](std::string_view arg, std::string_view flag) {
         return arg.substr(flag.size());
     };
@@ -89,45 +89,45 @@ auto parseOptions(std::span<const std::string> args) -> std::expected<TraceOptio
             for (auto& item : splitList(value(text, "--type="))) {
                 options.types.insert(std::move(item));
             }
-        } else if (text.starts_with("--level=")) {
-            auto level = value(text, "--level=");
-            if (level != "info" && level != "warning" && level != "error") {
-                return std::unexpected("--level takes info, warning or error, not '" + std::string(level) + "'");
+        } else if (text.starts_with("--severity=")) {
+            auto severity = value(text, "--severity=");
+            if (severity != "info" && severity != "warning" && severity != "error") {
+                return std::unexpected("--severity takes info, warning or error, not '" + std::string(severity) + "'");
             }
-            options.minLevel = levelRank(level);
+            options.minSeverity = severityRank(severity);
         } else if (text == "--history") {
             options.history = true;
         } else {
-            return std::unexpected("unknown trace argument '" + arg + "'");
+            return std::unexpected("unknown log argument '" + arg + "'");
         }
     }
     return options;
 }
 
-auto passes(const TraceOptions& options, const rpc::Json& event) -> bool {
+auto passes(const LogOptions& options, const rpc::Json& event) -> bool {
     if (!options.categories.empty() && !options.categories.contains(event.value("category", ""))) {
         return false;
     }
     if (!options.types.empty() && !options.types.contains(event.value("type", ""))) {
         return false;
     }
-    return levelRank(event.value("level", "info")) >= options.minLevel;
+    return severityRank(event.value("severity", "info")) >= options.minSeverity;
 }
 
 struct Arrived {
     std::chrono::steady_clock::time_point at;
-    IntrospectSession::TraceEvent event;
+    IntrospectSession::LogEvent event;
 };
 
 } // namespace
 
-auto traceEventLine(const IntrospectSession::TraceEvent& event) -> std::string {
+auto logEventLine(const IntrospectSession::LogEvent& event) -> std::string {
     const auto& e = *event.event;
     nlohmann::ordered_json line;
     line["ts_ns"] = e.value("ts_ns", (uint64_t) 0);
     line["process"] = event.process;
     line["thread"] = e.value("thread", "");
-    line["level"] = e.value("level", "info");
+    line["severity"] = e.value("severity", "info");
     line["category"] = e.value("category", "");
     line["type"] = e.value("type", "");
     line["name"] = e.value("name", "");
@@ -136,7 +136,7 @@ auto traceEventLine(const IntrospectSession::TraceEvent& event) -> std::string {
     return line.dump();
 }
 
-auto runTraceCommand(std::span<const std::string> args) -> int {
+auto runLogCommand(std::span<const std::string> args) -> int {
     auto parsed = parseOptions(args);
     if (!parsed) {
         std::println(stderr, "ngen-introspect: {}", parsed.error());
@@ -155,10 +155,10 @@ auto runTraceCommand(std::span<const std::string> args) -> int {
     std::signal(SIGTERM, onSignal);
 
     auto startNs = (uint64_t) std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-    IntrospectSession session({.trace = true, .traceSinceNs = options.history ? 0 : startNs, .processes = options.processes});
+    IntrospectSession session({.log = true, .logSinceNs = options.history ? 0 : startNs, .processes = options.processes});
 
     std::vector<Arrived> waiting;
-    std::vector<IntrospectSession::TraceEvent> taken;
+    std::vector<IntrospectSession::LogEvent> taken;
     // With --output the whole run is sorted once at the end: a process that connects late brings history older than
     // what was already merged. Kept as finished lines.
     std::vector<std::pair<uint64_t, std::string>> collected;
@@ -172,7 +172,7 @@ auto runTraceCommand(std::span<const std::string> args) -> int {
         waiting.erase(due.begin(), due.end());
         std::ranges::stable_sort(ready, [](const Arrived& a, const Arrived& b) { return a.event.tsNs < b.event.tsNs; });
         for (const auto& item : ready) {
-            auto line = traceEventLine(item.event);
+            auto line = logEventLine(item.event);
             if (!options.output.empty()) {
                 collected.emplace_back(item.event.tsNs, std::move(line));
                 continue;
@@ -187,7 +187,7 @@ auto runTraceCommand(std::span<const std::string> args) -> int {
     while (true) {
         session.poll();
         taken.clear();
-        session.takeTraceEvents(taken);
+        session.takeLogEvents(taken);
         auto now = std::chrono::steady_clock::now();
         for (auto& event : taken) {
             if (passes(options, *event.event)) {
@@ -218,7 +218,7 @@ auto runTraceCommand(std::span<const std::string> args) -> int {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     taken.clear();
-    session.takeTraceEvents(taken);
+    session.takeLogEvents(taken);
     for (auto& event : taken) {
         if (passes(options, *event.event)) {
             waiting.push_back({.at = std::chrono::steady_clock::now(), .event = std::move(event)});
@@ -234,7 +234,7 @@ auto runTraceCommand(std::span<const std::string> args) -> int {
     if (out != stdout) {
         std::fclose(out);
     }
-    for (const auto& [process, count] : session.traceDropped()) {
+    for (const auto& [process, count] : session.logDropped()) {
         std::println(stderr, "ngen-introspect: {} dropped {} events (overwritten before they were sent)", process, count);
     }
     if (!options.output.empty()) {

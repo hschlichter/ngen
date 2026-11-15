@@ -37,10 +37,10 @@ auto rowsOf(const glm::mat4& m) -> std::array<glm::vec4, 3> {
 
 } // namespace
 
-auto LodGroups::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* queue) -> void {
+auto LodGroups::init(RhiDevice* rhiDevice, uint32_t frameContexts, DeletionQueue* queue) -> void {
     device = rhiDevice;
     deletionQueue = queue;
-    slots.assign(frameSlots, {});
+    slots.assign(frameContexts, {});
     ensureCapacity(0, 0);
 }
 
@@ -185,8 +185,8 @@ auto LodGroups::record(uint32_t slot) const -> GpuLodGroup {
     };
 }
 
-auto LodGroups::import(FrameGraph& fg, uint32_t frameSlot) -> Handles {
-    auto& slot = slots[frameSlot];
+auto LodGroups::import(FrameGraph& fg, uint32_t frameContext) -> Handles {
+    auto& slot = slots[frameContext];
     Handles handles;
     handles.table = fg.importBuffer("lodGroups", table, {.size = (uint64_t) capacity * sizeof(GpuLodGroup), .usage = RhiBufferUsage::Storage | RhiBufferUsage::TransferDst}, access[0]);
     handles.states = fg.importBuffer("lodStates", states, {.size = (uint64_t) capacity * stateBytes, .usage = RhiBufferUsage::Storage}, access[1]);
@@ -224,8 +224,8 @@ auto LodGroups::import(FrameGraph& fg, uint32_t frameSlot) -> Handles {
     return handles;
 }
 
-auto LodGroups::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool readStates, const glm::vec3& eye, float windowArea) -> void {
-    auto& slot = slots[frameSlot];
+auto LodGroups::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameContext, bool readStates, const glm::vec3& eye, float windowArea) -> void {
+    auto& slot = slots[frameContext];
     slot.pending = true;
     slot.eye = eye;
     slot.windowArea = windowArea;
@@ -258,14 +258,14 @@ auto LodGroups::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t
         });
 }
 
-auto LodGroups::parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void {
-    auto& slot = slots[frameSlot];
+auto LodGroups::parseReadback(uint32_t frameContext, uint64_t contextFrame) -> void {
+    auto& slot = slots[frameContext];
     if (!slot.pending || slot.readbackMapped == nullptr) {
         return;
     }
     slot.pending = false;
     const auto* bytes = static_cast<const std::byte*>(slot.readbackMapped);
-    read.frame = slotFrame;
+    read.frame = contextFrame;
     read.groupCount = slot.groupCount;
     read.eye = slot.eye;
     read.windowArea = slot.windowArea;
@@ -275,7 +275,7 @@ auto LodGroups::parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void {
     }
     read.hasStates = slot.readStates;
     read.drawn.clear();
-    read.wanted.clear();
+    read.desired.clear();
     read.fadeLevel.clear();
     read.fade.clear();
     read.measure.clear();
@@ -285,14 +285,14 @@ auto LodGroups::parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void {
     }
     const auto* state = reinterpret_cast<const uint32_t*>(bytes + sizeof(LodSelectTotals));
     read.drawn.resize(slot.groupCount);
-    read.wanted.resize(slot.groupCount);
+    read.desired.resize(slot.groupCount);
     read.fadeLevel.resize(slot.groupCount);
     read.fade.resize(slot.groupCount);
     read.measure.resize(slot.groupCount);
     read.flags.resize(slot.groupCount);
     for (uint32_t g = 0; g < slot.groupCount; g++) {
         auto levels = state[(4 * g) + 1];
-        read.wanted[g] = (uint8_t) (levels & 0xFFu);
+        read.desired[g] = (uint8_t) (levels & 0xFFu);
         read.drawn[g] = (uint8_t) ((levels >> 8) & 0xFFu);
         read.fadeLevel[g] = (uint8_t) ((levels >> 16) & 0xFFu);
         read.fade[g] = std::bit_cast<float>(state[(4 * g) + 2]);

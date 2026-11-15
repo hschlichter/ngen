@@ -3,7 +3,7 @@
 // Profiling markers and the built-in collector behind the Performance window, the profile records and the dump.
 //
 // Zones are cheap enough to leave in shipping code: a thread-local stack and per-thread blocks of finished zones,
-// no locks on the hot path. Every marker is a site: its name, file, line and function, a group (its colour) and
+// no locks on the hot path. Every marker is a source location: its name, file, line and function, a group (its colour) and
 // a level (guide or detail). The collector keeps the last profile.history.seconds of everything. In
 // builds with TRACY_ENABLE the collector's functions also feed Tracy; nothing that uses the macros knows about it
 // (src/profile/README.md).
@@ -11,7 +11,7 @@
 //   PROFILE_ZONE("SceneUpdate", Frame);          // scoped CPU zone on the calling thread, guide level
 //   PROFILE_ZONE_DETAIL("ComposeLayer", Scene);  // the same at detail level
 //   PROFILE_FRAME_MARK();                        // once per frame on the main thread
-//   profile::registerThread("Main");             // lane name, else "thread N"
+//   profile::registerThread("Main");             // track name, else "thread N"
 //
 // GPU zones go through the RHI (profilegpu.h) and arrive via submitGpuZones.
 
@@ -25,7 +25,7 @@
 
 namespace profile {
 
-constexpr uint32_t maxLanes = 64; // main, render, scene, job workers, I/O threads, pack workers
+constexpr uint32_t maxTracks = 64; // main, render, scene, job workers, I/O threads, pack workers
 constexpr uint32_t maxDepth = 32;
 constexpr uint32_t maxNames = 4096;
 // A thread that idles waits in slices this long, each an Idle zone, so an idle thread has zones (and a row in Tracy) within a slice
@@ -42,12 +42,12 @@ enum class Group : uint8_t {
     Tools,    // LOD and Streaming tools, the debug camera, gizmos
     Render,   // the render thread's CPU work
     Culling,  // GPU culling, LOD selection, the depth pyramid
-    Geometry, // depth prepass, geometry, debug views, draw regions
+    Geometry, // depth prepass, geometry, debug views, draw lists
     Shadow,
     Lighting, // lighting, sky
     Post,     // anti-aliasing, overlays, present passes
     Upload,   // uploads and copies, CPU and GPU
-    Io,       // RPC, trace stream, asset client I/O
+    Io,       // RPC, log stream, asset client I/O
     Wait,     // blocking: fences, snapshots, condition variables, idle
 };
 constexpr uint32_t groupCount = 15;
@@ -58,9 +58,9 @@ enum class Level : uint8_t {
     Detail,
 };
 
-// A marker site: where a zone kind is opened, with its name, group and level. Zones and the GPU lane carry the site's id; ids start at 1,
-// 0 is no site.
-struct SiteInfo {
+// A source location: where a zone kind is opened, with its name, group and level. Zones and the GPU track carry the source location's id; ids start at 1,
+// 0 is no source location.
+struct SourceLocationInfo {
     const char* name = "?";
     const char* file = "";     // as the compiler saw it: the path relative to the project root
     const char* function = ""; // the enclosing function's signature
@@ -70,7 +70,7 @@ struct SiteInfo {
 };
 
 struct Zone {
-    uint32_t siteId = 0;
+    uint32_t locationId = 0;
     uint16_t depth = 0;
     bool hasValue = false;
     uint64_t startNs = 0;
@@ -78,7 +78,7 @@ struct Zone {
     uint64_t value = 0; // optional payload set with PROFILE_ZONE_VALUE: a count, a byte size
 };
 
-// Duration statistics of one zone site over the history window.
+// Duration statistics of one source location over the history window.
 struct ZoneStats {
     uint32_t count = 0;
     double minMs = 0.0;
@@ -87,13 +87,13 @@ struct ZoneStats {
     double p99Ms = 0.0;
 };
 
-struct LaneInfo {
+struct TrackInfo {
     uint32_t index = 0;
     std::string name;
 };
 
-// What the history holds for one lane (laneIndex UINT32_MAX: the GPU).
-struct LaneUsage {
+// What the history holds for one track (trackIndex UINT32_MAX: the GPU).
+struct TrackUsage {
     uint32_t index = 0;
     std::string name;
     uint64_t zones = 0;
@@ -144,21 +144,21 @@ struct ExportOptions {
     bool detail = true;
 };
 
-// CLOCK_MONOTONIC nanoseconds, the same clock as trace events (shared by every process on the machine).
+// CLOCK_MONOTONIC nanoseconds, the same clock as log events (shared by every process on the machine).
 auto now() -> uint64_t;
 
-// A site per (file, line, name): the same arguments return the same id. The name is copied; `location` is the caller's line unless given
+// A source location per (file, line, name): the same arguments return the same id. The name is copied; `location` is the caller's line unless given
 // (a function that registers for its caller, such as FrameGraph::addPass, passes its own caller's).
-auto registerSite(const char* name, Group group, Level level = Level::Guide, std::source_location location = std::source_location::current()) -> uint32_t;
-// A GPU zone recorded without a profile marker (RhiCommandBuffer::beginGpuZone called directly): a site by name alone.
-auto siteIdOf(const char* name) -> uint32_t;
-auto siteOf(uint32_t siteId) -> SiteInfo;
-auto nameOf(uint32_t siteId) -> const char*;
-auto groupOf(uint32_t siteId) -> Group;
-auto levelOf(uint32_t siteId) -> Level;
+auto registerSourceLocation(const char* name, Group group, Level level = Level::Guide, std::source_location location = std::source_location::current()) -> uint32_t;
+// A GPU zone recorded without a profile marker (RhiCommandBuffer::beginGpuZone called directly): a source location by name alone.
+auto sourceLocationIdOf(const char* name) -> uint32_t;
+auto sourceLocationOf(uint32_t locationId) -> SourceLocationInfo;
+auto nameOf(uint32_t locationId) -> const char*;
+auto groupOf(uint32_t locationId) -> Group;
+auto levelOf(uint32_t locationId) -> Level;
 auto groupName(Group group) -> const char*;
-// 0xRRGGBB: the group's colour; Jobs zones a shade of it by site.
-auto groupColor(Group group, uint32_t siteId) -> uint32_t;
+// 0xRRGGBB: the group's colour; Jobs zones a shade of it by source location.
+auto groupColor(Group group, uint32_t locationId) -> uint32_t;
 
 // Tracy's client, in builds with TRACY_ENABLE, starts only when the program asks: its start-up sleeps 200 ms to calibrate its timer,
 // and its shutdown takes as long again, which a short-lived program must not pay. Until it has started, nothing goes to Tracy; the
@@ -200,19 +200,19 @@ auto residentBytes() -> uint64_t;
 auto memoryAlloc(const char* pool, uint64_t id, uint64_t bytes) -> void;
 auto memoryFree(const char* pool, uint64_t id) -> void;
 
-// Names the calling thread's lane and takes it, with a zero-length ThreadStarted zone so the thread shows from its start.
+// Names the calling thread's track and takes it, with a zero-length ThreadStarted zone so the thread shows from its start.
 auto registerThread(const char* name) -> void;
 
-auto beginZone(uint32_t siteId) -> void;
+auto beginZone(uint32_t locationId) -> void;
 auto endZone() -> void;
 // Attach a number to the innermost open zone on this thread (draw count, bytes, ...).
 auto zoneValue(uint64_t value) -> void;
 // Once per frame on the main thread: the frame history (frameHistory, the Performance window's frame times) and Tracy's frames, and the
-// main thread's frame for overBudget, as laneFrameMark.
+// main thread's frame for overBudget, as trackFrameMark.
 auto frameMark() -> void;
 // Once per iteration on another thread with a frame of its own (the render thread), outside any zone: closes the calling thread's frame for
 // overBudget and opens the next.
-auto laneFrameMark() -> void;
+auto trackFrameMark() -> void;
 
 // How long the history keeps zones, frames and GPU frames (profile.history.seconds, handed in by the main loop). Any thread.
 auto setHistorySeconds(double seconds) -> void;
@@ -226,26 +226,26 @@ auto gpuDetail() -> bool;
 auto setStallSeconds(double seconds) -> void;
 auto stallSeconds() -> double;
 
-// Frames over budget, per thread that marks frames (frameMark, laneFrameMark). A frame's own work is its span less the outermost Wait-group
+// Frames over budget, per thread that marks frames (frameMark, trackFrameMark). A frame's own work is its span less the outermost Wait-group
 // zones in it (waiting for the other thread, for the GPU, for a lock): what the thread itself spent on the frame. Counted since the
 // process started or the last resetOverBudget, paused or not, against the budget handed in (profile.budget.frameMs). The worst frame
 // names the innermost zone holding at least half its own work, else the zone holding the most; from the history, so a worst frame while
 // paused names none.
 auto setFrameBudgetMs(double ms) -> void;
 auto frameBudgetMs() -> double;
-struct LaneOverBudget {
-    std::string lane;
-    uint64_t frames = 0;      // frames measured
-    uint64_t over = 0;        // of them, over the budget
-    double worstMs = 0.0;     // the worst frame's own work
-    uint64_t worstEndNs = 0;  // when it ended
-    uint32_t worstSiteId = 0; // its zone; 0 when none was named
-    double worstZoneMs = 0.0; // that zone's own work in it
+struct TrackOverBudget {
+    std::string track;
+    uint64_t frames = 0;          // frames measured
+    uint64_t over = 0;            // of them, over the budget
+    double worstMs = 0.0;         // the worst frame's own work
+    uint64_t worstEndNs = 0;      // when it ended
+    uint32_t worstLocationId = 0; // its zone; 0 when none was named
+    double worstZoneMs = 0.0;     // that zone's own work in it
 };
 struct OverBudget {
     double budgetMs = 0.0;
     uint64_t resetNs = 0; // the last reset; 0: counted since the process started
-    std::vector<LaneOverBudget> lanes;
+    std::vector<TrackOverBudget> tracks;
 };
 auto overBudget(OverBudget& out) -> void;
 auto resetOverBudget() -> void;
@@ -255,41 +255,41 @@ auto resetOverBudget() -> void;
 auto setPaused(bool paused) -> void;
 auto isPaused() -> bool;
 
-// GPU lane: one set per completed GPU frame. Zone times must already be on the CPU clock
+// GPU track: one set per completed GPU frame. Zone times must already be on the CPU clock
 // (calibrated, or anchored at the submit time); submitNs is the CPU time of the submit.
 auto submitGpuZones(uint64_t frameIndex, uint64_t submitNs, std::span<const Zone> zones) -> void;
 
 // Readers, any thread. Copies out; never blocks writers for longer than a block switch.
-auto lanes(std::vector<LaneInfo>& out) -> void;
+auto tracks(std::vector<TrackInfo>& out) -> void;
 // The zones each thread has open now, outermost first: where a thread is while it is in them, which the history only shows once they end.
-// Lanes whose thread is running; a thread outside any zone has none.
+// Tracks whose thread is running; a thread outside any zone has none.
 struct OpenZone {
-    uint32_t siteId = 0;
+    uint32_t locationId = 0;
     uint64_t startNs = 0;
 };
 struct OpenZones {
-    uint32_t laneIndex = 0;
-    std::string lane;
+    uint32_t trackIndex = 0;
+    std::string track;
     std::vector<OpenZone> zones;
 };
 auto openZones(std::vector<OpenZones>& out) -> void;
-auto historyUsage(std::vector<LaneUsage>& out) -> void;
+auto historyUsage(std::vector<TrackUsage>& out) -> void;
 auto lastFrame() -> std::optional<FrameInterval>;
 // Frame `offset` frames before the latest (0 = latest). Empty when out of history.
 auto frameAt(uint64_t offset) -> std::optional<FrameInterval>;
 // Frame by absolute index, for a pinned selection that must not drift as frames arrive. Empty when evicted.
 auto frameByIndex(uint64_t frameIndex) -> std::optional<FrameInterval>;
-auto zonesIn(uint32_t laneIndex, uint64_t startNs, uint64_t endNs, std::vector<Zone>& out) -> void;
+auto zonesIn(uint32_t trackIndex, uint64_t startNs, uint64_t endNs, std::vector<Zone>& out) -> void;
 // GPU zones intersecting [startNs, endNs] on the CPU clock, from every GPU frame in history.
 auto gpuZonesIn(uint64_t startNs, uint64_t endNs, std::vector<Zone>& out) -> void;
 // Main-thread frame intervals intersecting [startNs, endNs], oldest first.
 auto framesIn(uint64_t startNs, uint64_t endNs, std::vector<FrameInterval>& out) -> void;
 auto frameHistory(std::vector<FrameStats>& out) -> void;
 
-// The GPU's top-level zones (the frame graph's passes) over the last `frames` main-thread frames: each site's milliseconds per frame, in the
-// order they were recorded (the newest frame's, with passes that ran only in older frames after their predecessor there), with the frames' average interval and GPU frame time. The zones record's GPU lane over the same window.
+// The GPU's top-level zones (the frame graph's passes) over the last `frames` main-thread frames: each source location's milliseconds per frame, in the
+// order they were recorded (the newest frame's, with passes that ran only in older frames after their predecessor there), with the frames' average interval and GPU frame time. The zones record's GPU track over the same window.
 struct GpuPassTime {
-    uint32_t siteId = 0;
+    uint32_t locationId = 0;
     double msPerFrame = 0.0;
 };
 struct GpuPassTimes {
@@ -299,16 +299,16 @@ struct GpuPassTimes {
     std::vector<GpuPassTime> passes;
 };
 auto gpuPassTimes(uint32_t frames, GpuPassTimes& out) -> void;
-// Statistics for every recorded zone of this site on a CPU lane, or on the GPU lane when laneIndex is UINT32_MAX.
-auto zoneStats(uint32_t laneIndex, uint32_t siteId) -> ZoneStats;
+// Statistics for every recorded zone of this source location on a CPU track, or on the GPU track when trackIndex is UINT32_MAX.
+auto zoneStats(uint32_t trackIndex, uint32_t locationId) -> ZoneStats;
 // History as Chrome trace event JSON (Perfetto, chrome://tracing, any JSON parser).
 auto exportChromeTrace(const char* path, const ExportOptions& options = {}) -> bool;
 
 // A zone for the scope; `active` false records nothing (a recursion zoned only near its top).
 struct ScopedZone {
-    explicit ScopedZone(uint32_t siteId, bool active = true) : active(active) {
+    explicit ScopedZone(uint32_t locationId, bool active = true) : active(active) {
         if (active) {
-            beginZone(siteId);
+            beginZone(locationId);
         }
     }
     ~ScopedZone() {
@@ -326,8 +326,8 @@ struct ScopedZone {
 #define PROFILE_CONCAT_(a, b) a##b
 #define PROFILE_CONCAT(a, b) PROFILE_CONCAT_(a, b)
 
-#define PROFILE_ZONE_LEVEL_(name, group, level)                                                                                                       \
-    static const uint32_t PROFILE_CONCAT(profileZoneId_, __LINE__) = ::profile::registerSite(name, ::profile::Group::group, ::profile::Level::level); \
+#define PROFILE_ZONE_LEVEL_(name, group, level)                                                                                                                 \
+    static const uint32_t PROFILE_CONCAT(profileZoneId_, __LINE__) = ::profile::registerSourceLocation(name, ::profile::Group::group, ::profile::Level::level); \
     ::profile::ScopedZone PROFILE_CONCAT(profileZone_, __LINE__)(PROFILE_CONCAT(profileZoneId_, __LINE__))
 
 // `group` is a profile::Group enumerator without its scope: PROFILE_ZONE("Upload", Upload).

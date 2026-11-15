@@ -1,10 +1,11 @@
 #include "renderer.h"
 
-#include "renderconfig.h"
+#include "rendercvars.h"
 
 #include "blitpass.h"
 #include "instanceuploadpass.h"
 #include "jobsystem.h"
+#include "log.h"
 #include "material.h"
 #include "mesh.h"
 #include "mipchain.h"
@@ -17,7 +18,6 @@
 #include "rhidevice.h"
 #include "rhiswapchain.h"
 #include "shadowpass.h"
-#include "trace.h"
 
 #include <algorithm>
 #include <array>
@@ -40,7 +40,7 @@ auto Renderer::addExtension(RenderExtension& extension, const char* name) -> voi
     };
     for (uint32_t hook = 0; hook < RenderExtension::HookCount; hook++) {
         auto zoneName = std::format("{}.{}", name, hookNames[hook]);
-        extension.hookZoneIds[hook] = profile::registerSite(zoneName.c_str(), profile::Group::Render, profile::Level::Detail);
+        extension.hookZoneIds[hook] = profile::registerSourceLocation(zoneName.c_str(), profile::Group::Render, profile::Level::Detail);
     }
     extensions.push_back(&extension);
 }
@@ -176,29 +176,29 @@ auto Renderer::init(RhiDevice* rhiDevice, AssetClient* shaders, RhiExtent2D wind
     cmdBuffers.resize(imgCount);
     for (uint32_t i = 0; i < imgCount; i++) {
         cmdBuffers[i] = device->createCommandBuffer();
-        device->setDebugName(cmdBuffers[i], std::format("frameslot{}.cmd", i).c_str());
+        device->setDebugName(cmdBuffers[i], std::format("framecontext{}.cmd", i).c_str());
     }
 
     imageAvailableSemaphores.resize(imgCount);
     renderFinishedSemaphores.resize(imgCount);
     inflightFences.resize(imgCount);
-    slotFrame.assign(imgCount, 0);
+    contextFrame.assign(imgCount, 0);
     slotSubmitNs.assign(imgCount, 0);
     slotDrawLogs.resize(imgCount);
     for (uint32_t i = 0; i < imgCount; i++) {
         imageAvailableSemaphores[i] = device->createSemaphore();
         renderFinishedSemaphores[i] = device->createSemaphore();
         inflightFences[i] = device->createFence(true);
-        device->setDebugName(imageAvailableSemaphores[i], std::format("frameslot{}.imageavailable", i).c_str());
+        device->setDebugName(imageAvailableSemaphores[i], std::format("framecontext{}.imageavailable", i).c_str());
         device->setDebugName(renderFinishedSemaphores[i], std::format("swapchainimage{}.renderfinished", i).c_str());
-        device->setDebugName(inflightFences[i], std::format("frameslot{}.inflight", i).c_str());
+        device->setDebugName(inflightFences[i], std::format("framecontext{}.inflight", i).c_str());
     }
 
     if (!device->limits().timestamps) {
-        TRACE_WARNING("Render", "TimestampsUnavailable", "device").text("GPU timestamps not supported on this device; pass timings disabled");
+        LOG_WARNING("Render", "TimestampsUnavailable", "device").text("GPU timestamps not supported on this device; pass timings disabled");
     } else {
-        TRACE_EVENT("Render", "GpuClockCalibration", "device")
-            .text(std::format("GPU clock calibration: {}", device->limits().calibratedTimestamps ? "available" : "unavailable, GPU lane anchored at submit"))
+        LOG_EVENT("Render", "GpuClockCalibration", "device")
+            .text(std::format("GPU clock calibration: {}", device->limits().calibratedTimestamps ? "available" : "unavailable, GPU track anchored at submit"))
             .field("available", device->limits().calibratedTimestamps);
     }
 
@@ -213,7 +213,7 @@ auto Renderer::init(RhiDevice* rhiDevice, AssetClient* shaders, RhiExtent2D wind
         .uploader = uploader,
         .textureSampler = textureSampler,
         .previews = previewTextures,
-        .frameSlots = imgCount,
+        .frameContexts = imgCount,
         .colorFormat = swapchain->colorFormat(),
     };
     for (auto* extension : extensions) {
@@ -281,7 +281,7 @@ static auto toRenderDebug(const GpuScene::GeometryPoolStats& pool) -> RenderDebu
 // buffer are complete. Top-level zones are the frame graph passes; nested ones belong to
 // whatever a pass timed inside itself.
 auto Renderer::readGpuTimings(uint32_t slot) -> void {
-    if (!device->limits().timestamps || slotFrame[slot] == 0) {
+    if (!device->limits().timestamps || contextFrame[slot] == 0) {
         return;
     }
     if (!device->collectGpuZones(cmdBuffers[slot], gpuZoneScratch) || gpuZoneScratch.empty()) {
@@ -298,11 +298,11 @@ auto Renderer::readGpuTimings(uint32_t slot) -> void {
         }
     }
     lastGpuFrameMs = (double) (maxEnd - minStart) * 1e-6;
-    lastGpuFrame = slotFrame[slot];
+    lastGpuFrame = contextFrame[slot];
 
     lastDrawLog = slotDrawLogs[slot];
 
-    // Hand the same zones to the profiler's GPU lane, on the CPU clock. Calibrated when the
+    // Hand the same zones to the profiler's GPU track, on the CPU clock. Calibrated when the
     // device supports it (true position of GPU work relative to the threads); otherwise
     // anchored so the first zone starts at the submit, a lower bound.
     if (device->limits().calibratedTimestamps && (!gpuClockCalibrated || framesSinceCalibration >= 120)) {
@@ -319,7 +319,7 @@ auto Renderer::readGpuTimings(uint32_t slot) -> void {
     std::vector<profile::Zone> profileZones;
     profileZones.reserve(gpuZoneScratch.size());
     for (const auto& zone : gpuZoneScratch) {
-        profileZones.push_back({.siteId = zone.tag != 0 ? zone.tag : profile::siteIdOf(zone.name), .depth = zone.depth, .startNs = toCpu(zone.startNs), .endNs = toCpu(zone.endNs)});
+        profileZones.push_back({.locationId = zone.tag != 0 ? zone.tag : profile::sourceLocationIdOf(zone.name), .depth = zone.depth, .startNs = toCpu(zone.startNs), .endNs = toCpu(zone.endNs)});
     }
     profile::submitGpuZones(lastGpuFrame, slotSubmitNs[slot], profileZones);
 }
@@ -347,7 +347,7 @@ static auto addClearPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D exte
         });
 }
 
-// A byte count for the trace: "812 B", "10.2 MiB".
+// A byte count for the log: "812 B", "10.2 MiB".
 static auto formatUploadBytes(uint64_t bytes) -> std::string {
     if (bytes < 1024 * 1024) {
         return std::format("{:.1f} KiB", (double) bytes / 1024.0);
@@ -356,12 +356,12 @@ static auto formatUploadBytes(uint64_t bytes) -> std::string {
 }
 
 auto Renderer::growTables() -> void {
-    // Each frame, not only with a change list: a growth made on a background job is taken in the frame it is ready. Grown tables are new
+    // Each frame, not only with scene changes: a growth made on a background job is taken in the frame it is ready. Grown tables are new
     // buffers: the descriptor sets naming them are rewritten this frame.
     PROFILE_ZONE("GrowTables", Render);
     gpuScene.growInstances((uint32_t) gpuInstances.size(), m_frameIndex);
     if (gpuScene.instanceGeneration() != boundInstanceGeneration) {
-        // A growth taken here, in a frame without a change list, is a new instance buffer as much as one taken with the changes.
+        // A growth taken here, in a frame without scene changes, is a new instance buffer as much as one taken with the changes.
         boundInstanceGeneration = gpuScene.instanceGeneration();
         descriptorSetsDirty = true;
     }
@@ -415,10 +415,10 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
             gpuScene.setMaterial(handle, material);
         }
     }
-    static const uint32_t copyZoneId = profile::registerSite("CopyInstances", profile::Group::Render);
+    static const uint32_t copyZoneId = profile::registerSourceLocation("CopyInstances", profile::Group::Render);
     profile::beginZone(copyZoneId);
     // Slots past the new count leave the bucket counts with them (the slot list doesn't shrink today); the list is resized to the count.
-    static const uint32_t resizeSlotsZoneId = profile::registerSite("ResizeSlots", profile::Group::Render, profile::Level::Detail);
+    static const uint32_t resizeSlotsZoneId = profile::registerSourceLocation("ResizeSlots", profile::Group::Render, profile::Level::Detail);
     profile::beginZone(resizeSlotsZoneId);
     for (size_t slot = changes.slotCount; slot < gpuInstances.size(); slot++) {
         drawLists.countInstance(gpuInstances[slot], -1);
@@ -428,7 +428,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
     profile::endZone();
     std::vector<uint32_t> changedSlots;
     changedSlots.reserve(changes.instances.size());
-    static const uint32_t copyChangedZoneId = profile::registerSite("CopyChangedSlots", profile::Group::Render, profile::Level::Detail);
+    static const uint32_t copyChangedZoneId = profile::registerSourceLocation("CopyChangedSlots", profile::Group::Render, profile::Level::Detail);
     profile::beginZone(copyChangedZoneId);
     profile::zoneValue(changes.instances.size());
     {
@@ -547,8 +547,8 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
         return;
     }
     auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-    TRACE_EVENT("Render", "SceneChangesApplied", "RenderWorld")
-        .text(std::format("scene changes: {} draws, {} meshes added and {} removed, {} textures added and {} removed, {} materials set and {} removed; {} uploads ({}) queued, in {:.0f} ms",
+    LOG_EVENT("Render", "SceneChangesApplied", "RenderWorld")
+        .text(std::format("scene changes: {} instances, {} meshes added and {} removed, {} textures added and {} removed, {} materials set and {} removed; {} uploads ({}) queued, in {:.0f} ms",
                           changes.instances.size(),
                           changes.meshesAdded.size(),
                           changes.meshesRemoved.size(),
@@ -559,7 +559,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
                           gpuScene.pendingUploads(),
                           formatUploadBytes(gpuScene.pendingBytes()),
                           ms))
-        .field("draws", (int64_t) changes.instances.size())
+        .field("instances", (int64_t) changes.instances.size())
         .field("meshesAdded", (int64_t) changes.meshesAdded.size())
         .field("meshesRemoved", (int64_t) changes.meshesRemoved.size())
         .field("texturesAdded", (int64_t) changes.texturesAdded.size())
@@ -617,7 +617,7 @@ auto Renderer::sceneGpuStats() const -> SceneGpuStats {
     }
     return {
         .frame = m_frameIndex,
-        .drawSlots = (uint32_t) gpuInstances.size(),
+        .instanceSlots = (uint32_t) gpuInstances.size(),
         .meshes = (uint32_t) gpuScene.meshRanges().size(),
         .textures = (uint32_t) gpuScene.textures().size(),
         .materials = gpuScene.materialCount(),
@@ -677,8 +677,8 @@ auto Renderer::flushSceneUploads() -> void {
     rebuildGeometryDescriptorSets();
     descriptorSetsDirty = false;
     auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-    TRACE_EVENT("Render", "SceneUploaded", "RenderWorld")
-        .text(std::format("scene on the GPU: {} draw slots, {} meshes, {} textures ({}) in {:.0f} ms", gpuInstances.size(), gpuScene.meshRanges().size(), gpuScene.textures().size(), formatUploadBytes(bytes), ms))
+    LOG_EVENT("Render", "SceneUploaded", "RenderWorld")
+        .text(std::format("scene on the GPU: {} instance slots, {} meshes, {} textures ({}) in {:.0f} ms", gpuInstances.size(), gpuScene.meshRanges().size(), gpuScene.textures().size(), formatUploadBytes(bytes), ms))
         .field("instances", (int64_t) gpuInstances.size())
         .field("meshes", (int64_t) gpuScene.meshRanges().size())
         .field("textures", (int64_t) gpuScene.textures().size())
@@ -717,7 +717,7 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
     }
     geometryDescriptorSets.clear();
 
-    // The culling passes name the same instance buffer and mesh table, plus the draw-list and render-LOD buffers.
+    // The culling passes name the same instance buffer and mesh table, plus the draw-list and LOD-group buffers.
     {
         PROFILE_ZONE_DETAIL("CullDescriptors", Render);
         instanceCullPass.rebuildDescriptors(device, drawLists, gpuScene, lodGroups, depthPyramid, deletionQueue, m_frameIndex);
@@ -732,7 +732,7 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
         return;
     }
 
-    // One set per frame slot: the slot's UBO and culling buffers plus the scene
+    // One set per frame context: the slot's UBO and culling buffers plus the scene
     // tables and the geometry pool. Every texture-array element is written: the slot's texture or the fallback.
     PROFILE_ZONE_DETAIL("GeometryDescriptors", Render);
     auto imgCount = swapchain->imageCount();
@@ -791,7 +791,7 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
             writes.push_back({.binding = 4 + b, .type = StorageBuffer, .buffer = meshletBuffers[b]});
         }
         writes.push_back({.binding = 13, .type = CombinedImageSampler, .texture = depthPyramid.texture(), .sampler = depthPyramid.sampler()});
-        writes.push_back({.binding = 14, .type = StorageBuffer, .buffer = cull.regionWork});
+        writes.push_back({.binding = 14, .type = StorageBuffer, .buffer = cull.drawListWork});
         writes.push_back({.binding = 15, .type = StorageBuffer, .buffer = lodGroups.stateBuffer()});
         device->updateDescriptorSet(geometryDescriptorSets[i], writes);
     }
@@ -824,7 +824,7 @@ auto Renderer::cullResult() const -> CullResult {
         .cameraCulled = drawLists.cameraCulled(),
         .cameraInstanceTriangles = trianglesIn(drawLists, 0) + trianglesIn(drawLists, DrawLists::lateView),
         .cascadeCount = drawLists.cascadeCount(),
-        .regionOverflow = drawLists.regionOverflow(),
+        .drawListOverflow = drawLists.drawListOverflow(),
         .viewBits = drawLists.viewBits(),
         .lodDropped = drawLists.lodDropped(),
         .lodFadingInstances = drawLists.fadingInstances(),
@@ -843,10 +843,10 @@ auto Renderer::cullResult() const -> CullResult {
     result.cameraTriangles = result.cameraMeshlets.triangles;
     result.occlusion = drawLists.occlusionEnabled();
     result.occlusionCullCamera = drawLists.occlusionCullCamera();
-    for (uint32_t region = 0; region < DrawLists::regionCount; region++) {
-        result.regionDraws.push_back(drawLists.drawsIn(region));
-        result.regionMeshlets.push_back(drawLists.meshletsIn(region));
-        result.regionTriangles.push_back(drawLists.primitivesIn(region));
+    for (uint32_t drawList = 0; drawList < DrawLists::drawListCount; drawList++) {
+        result.drawListDraws.push_back(drawLists.drawsIn(drawList));
+        result.drawListMeshlets.push_back(drawLists.meshletsIn(drawList));
+        result.drawListTriangles.push_back(drawLists.primitivesIn(drawList));
     }
     result.occluded = drawLists.cameraOccluded();
     for (uint32_t b = 0; b < DrawLists::bucketCount; b++) {
@@ -867,7 +867,7 @@ auto Renderer::cullResult() const -> CullResult {
     result.lodEye = lod.eye;
     result.lodWindowArea = lod.windowArea;
     result.lodDrawn = lod.drawn;
-    result.lodWanted = lod.wanted;
+    result.lodDesired = lod.desired;
     result.lodFadeLevel = lod.fadeLevel;
     result.lodFade = lod.fade;
     result.lodMeasure = lod.measure;
@@ -898,7 +898,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     }
     RenderFrame current = {
         .frame = frame,
-        .slot = currentFrame,
+        .frameContext = currentFrame,
     };
     for (auto* extension : extensions) {
         profile::ScopedZone hookZone(extension->hookZoneIds[RenderExtension::HookBeginFrame]);
@@ -910,36 +910,36 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         device->waitForFence(inflightFences[currentFrame]);
     }
     // This slot's previous frame is done, and so is everything submitted before it.
-    deletionQueue.flush(slotFrame[currentFrame]);
+    deletionQueue.flush(contextFrame[currentFrame]);
     {
         PROFILE_ZONE("ReadGpuTimings", Render);
         readGpuTimings(currentFrame);
     }
     {
         PROFILE_ZONE("ParseReadback", Render);
-        drawLists.parseReadback(currentFrame, slotFrame[currentFrame]);
-        // Commands dropped past their region's end mean the CPU's bucket counts disagree with the cull shader's rule: draws are missing.
-        if (auto overflow = drawLists.regionOverflow(); overflow != reportedRegionOverflow) {
-            // While the draw records wait for a growth, the regions are cut to the capacity on purpose (GrowthBehind said so).
+        drawLists.parseReadback(currentFrame, contextFrame[currentFrame]);
+        // Commands dropped past their draw list's end mean the CPU's bucket counts disagree with the cull shader's rule: draws are missing.
+        if (auto overflow = drawLists.drawListOverflow(); overflow != reportedDrawListOverflow) {
+            // While the draw records wait for a growth, the draw lists are cut to the capacity on purpose (GrowthBehind said so).
             if (overflow > 0 && !drawLists.commandsWaiting()) {
-                TRACE_WARNING("Render", "CullRegionOverflow", "DrawLists")
-                    .text(std::format("{} draw commands dropped past their region's end: the CPU's bucket counts are short of the cull shader's buckets, so those draws are missing", overflow))
+                LOG_WARNING("Render", "CullDrawListOverflow", "DrawLists")
+                    .text(std::format("{} draw commands dropped past their draw list's end: the CPU's bucket counts are short of the cull shader's buckets, so those draws are missing", overflow))
                     .field("dropped", (int64_t) overflow);
             }
-            reportedRegionOverflow = overflow;
+            reportedDrawListOverflow = overflow;
         }
-        lodGroups.parseReadback(currentFrame, slotFrame[currentFrame]);
+        lodGroups.parseReadback(currentFrame, contextFrame[currentFrame]);
         // Meshlets that didn't fit the work items weren't drawn: grow past them before the next frame builds.
         if (auto overflow = drawLists.workOverflow(); overflow > 0) {
             auto before = drawLists.workCapacity();
             if (drawLists.ensureWorkCapacity(0, m_frameIndex)) {
                 descriptorSetsDirty = true;
-                TRACE_EVENT("Render", "MeshletWorkGrown", "cull.workitems")
+                LOG_EVENT("Render", "MeshletWorkGrown", "cull.workitems")
                     .text(std::format("{} meshlets didn't fit the work items ({}): grown to {}", overflow, before, drawLists.workCapacity()))
                     .field("overflow", (int64_t) overflow)
                     .field("capacity", (int64_t) drawLists.workCapacity());
             } else if (!reportedWorkFull && !drawLists.workGrowing()) {
-                TRACE_WARNING("Render", "MeshletWorkFull", "cull.workitems")
+                LOG_WARNING("Render", "MeshletWorkFull", "cull.workitems")
                     .text(std::format("{} meshlets didn't fit the work items ({}), already the largest buffer the device makes: they aren't drawn", overflow, before))
                     .field("overflow", (int64_t) overflow)
                     .field("capacity", (int64_t) before);
@@ -960,9 +960,9 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     }
     if (!index) {
         if (index.error() == RhiError::OutOfDate) {
-            TRACE_EVENT("Render", "SwapchainRecreate", "swapchain").text("swapchain out of date at acquire; recreating").field("reason", "acquire_failed");
+            LOG_EVENT("Render", "SwapchainRecreate", "swapchain").text("swapchain out of date at acquire; recreating").field("reason", "acquire_failed");
             if (!swapchain->recreate({.width = (uint32_t) snapshot.windowWidth, .height = (uint32_t) snapshot.windowHeight})) {
-                TRACE_ERROR("Render", "SwapchainRecreateFailed", "swapchain").text("swapchain recreate failed after acquire");
+                LOG_ERROR("Render", "SwapchainRecreateFailed", "swapchain").text("swapchain recreate failed after acquire");
             } else {
                 recreateDepthTexture(swapchain->extent());
             }
@@ -988,7 +988,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     }
 
     // Build frame graph
-    static const uint32_t buildZoneId = profile::registerSite("BuildFrameGraph", profile::Group::Render);
+    static const uint32_t buildZoneId = profile::registerSourceLocation("BuildFrameGraph", profile::Group::Render);
     profile::beginZone(buildZoneId);
     auto ext = swapchain->extent();
     frameGraph.reset();
@@ -1001,7 +1001,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     current.depth = depthHandle;
 
     // Textures uploaded in earlier frames take their slots; then this frame's scene uploads, before anything reads the tables.
-    static const uint32_t sceneFrameZoneId = profile::registerSite("GpuSceneBeginFrame", profile::Group::Render);
+    static const uint32_t sceneFrameZoneId = profile::registerSourceLocation("GpuSceneBeginFrame", profile::Group::Render);
     profile::beginZone(sceneFrameZoneId);
     growTables();
     if (gpuScene.beginFrame(m_frameIndex) || descriptorSetsDirty) {
@@ -1011,7 +1011,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     gpuScene.addUploadPass(frameGraph, m_frameIndex, currentFrame);
     profile::endZone();
     // Per-frame resources (UBOs, descriptor sets, dynamic vertex buffers) are owned by
-    // the frame slot whose fence guards them, not by the swapchain image.
+    // the frame context whose fence guards them, not by the swapchain image.
     auto imageIdx = currentFrame;
     // The slots the GPU tables hold: past them, slots wait for a growth, undrawn.
     auto instanceCount = std::min({(uint32_t) gpuInstances.size(), gpuScene.instanceSlots(), drawLists.instanceCapacity()});
@@ -1032,12 +1032,12 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     if (!litReady) {
         addClearPass(frameGraph, colorHandle, ext);
     } else {
-        static const uint32_t instanceUploadZoneId = profile::registerSite("InstanceUpload", profile::Group::Upload);
+        static const uint32_t instanceUploadZoneId = profile::registerSourceLocation("InstanceUpload", profile::Group::Upload);
         profile::beginZone(instanceUploadZoneId);
         auto instanceHandle = gpuScene.addInstanceUploadPasses(frameGraph, gpuInstances, currentFrame);
         profile::endZone();
 
-        static const uint32_t shadowSetupZoneId = profile::registerSite("ShadowSetup", profile::Group::Shadow);
+        static const uint32_t shadowSetupZoneId = profile::registerSourceLocation("ShadowSetup", profile::Group::Shadow);
         profile::beginZone(shadowSetupZoneId);
         // Pick a shadow-casting directional light: first directional with shadowEnable,
         // else first directional. USDScene authors a session-layer UsdLuxDistantLight when
@@ -1107,9 +1107,9 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         auto invViewProj = glm::inverse(snapshot.projMatrix * snapshot.viewMatrix);
 
         profile::endZone(); // ShadowSetup
-        static const uint32_t addCullPassesSite = profile::registerSite("AddCullPasses", profile::Group::Render, profile::Level::Detail);
-        profile::beginZone(addCullPassesSite);
-        // Render LOD picks each group's level from the live main camera (not a frozen culling frustum, nor a debug camera rendered from):
+        static const uint32_t addCullPassesLocation = profile::registerSourceLocation("AddCullPasses", profile::Group::Render, profile::Level::Detail);
+        profile::beginZone(addCullPassesLocation);
+        // LOD group selection picks each group's level from the live main camera (not a frozen culling frustum, nor a debug camera rendered from):
         // its position, and the view window's area at depth 1 from the projection (2 / |proj[0][0]| wide, 2 / |proj[1][1]| high), as the
         // view's heuristic measures.
         auto lodHandles = lodGroups.import(frameGraph, currentFrame);
@@ -1127,8 +1127,8 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         auto hzbHandle = depthPyramid.import(frameGraph);
         instanceCullPass.addPasses(frameGraph, drawLists, drawHandles, lodHandles, instanceHandle, hzbHandle, cullGroups, currentFrame);
         profile::endZone();
-        static const uint32_t addGeometryPassesSite = profile::registerSite("AddGeometryPasses", profile::Group::Render, profile::Level::Detail);
-        profile::beginZone(addGeometryPassesSite);
+        static const uint32_t addGeometryPassesLocation = profile::registerSourceLocation("AddGeometryPasses", profile::Group::Render, profile::Level::Detail);
+        profile::beginZone(addGeometryPassesLocation);
         if (snapshot.sampler != materialSamplerSettings) {
             applySamplerSettings(snapshot.sampler);
         }
@@ -1172,8 +1172,8 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         lodGroups.addReadbackPass(frameGraph, lodHandles, currentFrame, snapshot.readLodStates, lodCamera.eye, lodCamera.windowArea);
 
         profile::endZone();
-        static const uint32_t addLightingPassesSite = profile::registerSite("AddLightingPasses", profile::Group::Render, profile::Level::Detail);
-        profile::beginZone(addLightingPassesSite);
+        static const uint32_t addLightingPassesLocation = profile::registerSourceLocation("AddLightingPasses", profile::Group::Render, profile::Level::Detail);
+        profile::beginZone(addLightingPassesLocation);
         // The depth preview's far end: the camera has no far plane, so the farthest corner of the scene.
         float previewFar = projectionNear * 10.0f;
         const auto& sceneBounds = snapshot.sceneBounds;
@@ -1197,7 +1197,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
             imageIdx,
             textureSampler,
             lighting,
-            snapshot.gbufferViewMode,
+            snapshot.viewMode,
             occlusion ? hzbHandle : FgTextureHandle{},
             snapshot.hzbLevel,
             snapshot.showBufferOverlay,
@@ -1255,7 +1255,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         frameGraph.compile();
     }
 
-    // Command buffer and fence belong to the frame slot; the render-finished semaphore
+    // Command buffer and fence belong to the frame context; the render-finished semaphore
     // belongs to the swapchain image, since present consumes it per image.
     auto* cmd = cmdBuffers[currentFrame];
     {
@@ -1302,7 +1302,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         PROFILE_ZONE("Submit", Render);
         device->submitCommandBuffer(cmd, submitInfo);
     }
-    slotFrame[currentFrame] = frame;
+    contextFrame[currentFrame] = frame;
     slotSubmitNs[currentFrame] = profile::now();
 
     for (auto* extension : extensions) {
@@ -1315,9 +1315,9 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         presented = device->present(swapchain, renderFinishedSemaphores[*index], *index);
     }
     if (!presented) {
-        TRACE_EVENT("Render", "SwapchainRecreate", "swapchain").text("swapchain out of date at present; recreating").field("reason", "present_failed");
+        LOG_EVENT("Render", "SwapchainRecreate", "swapchain").text("swapchain out of date at present; recreating").field("reason", "present_failed");
         if (!swapchain->recreate({.width = (uint32_t) snapshot.windowWidth, .height = (uint32_t) snapshot.windowHeight})) {
-            TRACE_ERROR("Render", "SwapchainRecreateFailed", "swapchain").text("swapchain recreate failed after present");
+            LOG_ERROR("Render", "SwapchainRecreateFailed", "swapchain").text("swapchain recreate failed after present");
         } else {
             recreateDepthTexture(swapchain->extent());
         }
@@ -1328,10 +1328,10 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
 
     if (!firstFramePresented) {
         firstFramePresented = true;
-        TRACE_EVENT("Render", "FirstFramePresented", "frame")
-            .text(std::format("first frame presented (frame {}), {:.0f} ms after start", frame, trace::msSinceStart()))
+        LOG_EVENT("Render", "FirstFramePresented", "frame")
+            .text(std::format("first frame presented (frame {}), {:.0f} ms after start", frame, logging::msSinceStart()))
             .field("frame", (int64_t) frame)
-            .field("since_start_ms", trace::msSinceStart());
+            .field("since_start_ms", logging::msSinceStart());
     }
     currentFrame = (currentFrame + 1) % swapchain->imageCount();
 }
@@ -1343,7 +1343,7 @@ auto Renderer::waitForFrame() -> void {
 auto Renderer::state() const -> RendererState {
     return {
         .frame = m_frameIndex,
-        .slot = currentFrame,
+        .frameContext = currentFrame,
         .device = device,
         .swapchainExtent = swapchain->extent(),
         .swapchainFormat = swapchain->colorFormat(),
@@ -1423,14 +1423,14 @@ auto Renderer::destroy() -> void {
     delete swapchain;
 }
 
-namespace renderconfig {
+namespace rendercvars {
 
-config::Bool antiAliasing{"render.antialiasing", true, "FXAA on the lit image; off shows it as the passes wrote it (a LOD fade's dither unblurred)."};
-config::Bool depthPrepass{"render.prepass", false, "A depth-only pass before the geometry pass; off by default, as it costs more than it saves without heavy overdraw."};
-config::Float samplerAnisotropy{"render.sampler.anisotropy", 8.0, "The material sampler's maximum anisotropy; 0 turns it off.", {.min = 0.0, .max = 16.0}};
-config::Float samplerLodBias{"render.sampler.lodBias", 0.0, "Added to the mip level the material sampler picks; positive is blurrier.", {.min = -16.0, .max = 16.0}};
-config::Float samplerMinLod{"render.sampler.minLod", 0.0, "The finest mip level the material sampler may use; raising it forces coarser levels.", {.min = 0.0, .max = 16.0}};
-config::Bool samplerNearestMip{"render.sampler.nearestMip", false, "The nearest mip level instead of a blend of the two nearest."};
+cvar::Bool antiAliasing{"render.antialiasing", true, "FXAA on the lit image; off shows it as the passes wrote it (a LOD fade's dither unblurred)."};
+cvar::Bool depthPrepass{"render.prepass", false, "A depth-only pass before the geometry pass; off by default, as it costs more than it saves without heavy overdraw."};
+cvar::Float samplerAnisotropy{"render.sampler.anisotropy", 8.0, "The material sampler's maximum anisotropy; 0 turns it off.", {.min = 0.0, .max = 16.0}};
+cvar::Float samplerLodBias{"render.sampler.lodBias", 0.0, "Added to the mip level the material sampler picks; positive is blurrier.", {.min = -16.0, .max = 16.0}};
+cvar::Float samplerMinLod{"render.sampler.minLod", 0.0, "The finest mip level the material sampler may use; raising it forces coarser levels.", {.min = 0.0, .max = 16.0}};
+cvar::Bool samplerNearestMip{"render.sampler.nearestMip", false, "The nearest mip level instead of a blend of the two nearest."};
 
 auto samplerSettings() -> SamplerSettings {
     return {
@@ -1448,4 +1448,4 @@ auto setSamplerSettings(const SamplerSettings& settings) -> void {
     samplerNearestMip.set(settings.nearestMip);
 }
 
-} // namespace renderconfig
+} // namespace rendercvars

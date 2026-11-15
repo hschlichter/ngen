@@ -84,8 +84,8 @@ auto ShadowPass::addPass(
         [&](FrameGraphBuilder& builder, ShadowPassData& data) {
             data.shadowMap = builder.write(builder.createTexture("shadowMap", desc), FgAccessFlags::DepthAttachment);
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
-            // One draw per region: its RegionWork is the draw's command and the task shaders' range of work items.
-            builder.read(drawHandles.regionWork, FgAccessFlags::IndirectRead | FgAccessFlags::StorageRead);
+            // One draw per draw list: its DrawListWork is the draw's command and the task shaders' range of work items.
+            builder.read(drawHandles.drawListWork, FgAccessFlags::IndirectRead | FgAccessFlags::StorageRead);
             builder.read(drawHandles.workItems, FgAccessFlags::StorageRead);
             // The cascades' meshlet counts come from this pass.
             builder.write(drawHandles.meshletStats, FgAccessFlags::StorageWrite);
@@ -127,19 +127,19 @@ auto ShadowPass::addPass(
                 // prims with a cutout submesh, which draw submesh by submesh.
                 for (uint32_t bucket = 0; bucket < DrawLists::bucketCount; bucket++) {
                     bool cutout = bucket >= 2;
-                    auto region = DrawLists::cascadeRegion(c, bucket % 2 != 0, cutout);
-                    // The GPU-written count decides how many commands draw; an empty region costs one call.
+                    auto drawList = DrawLists::cascadeDrawList(c, bucket % 2 != 0, cutout);
+                    // The GPU-written count decides how many commands draw; an empty draw list costs one call.
                     if (!scene.poolReady() || geometrySet == nullptr) {
                         continue;
                     }
                     auto* pip = bucketPipelines[bucket];
                     cmd->bindPipeline(pip);
                     cmd->bindDescriptorSet(pip, 0, geometrySet);
-                    ShadowPush push = {.meshlet = {.region = region, .flags = meshletFlagCount}, .lightViewProj = cascade.viewProj};
+                    ShadowPush push = {.meshlet = {.drawList = drawList, .flags = meshletFlagCount}, .lightViewProj = cascade.viewProj};
                     cmd->pushConstants(pip, RhiShaderStage::Task | RhiShaderStage::Mesh, 0, sizeof(push), &push);
-                    PROFILE_GPU_ZONE(cmd, DrawLists::drawName(region), Geometry);
-                    DrawLists::drawRegion(cmd, ctx.buffer(drawHandles.regionWork), region);
-                    lists.report(ctx, region, *instances);
+                    PROFILE_GPU_ZONE(cmd, DrawLists::drawName(drawList), Geometry);
+                    DrawLists::draw(cmd, ctx.buffer(drawHandles.drawListWork), drawList);
+                    lists.report(ctx, drawList, *instances);
                 }
             }
 

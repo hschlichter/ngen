@@ -30,7 +30,7 @@ auto stat(const std::string& path, int64_t& size, int64_t& mtimeNs) -> bool {
 
 // The file as it is now; nullopt when it can't be read.
 auto current(const std::string& path) -> std::optional<AssetCache::File> {
-    // One file of a job, hashed: the packer, its output, an input, a secondary output.
+    // One file of a job, hashed: the packer, its output, an input, a sub-asset.
     PROFILE_ZONE_DETAIL("HashFile", Io);
     AssetCache::File file;
     file.path = path;
@@ -105,10 +105,10 @@ auto AssetCache::load(const fs::path& path) -> void {
         std::lock_guard lock(mutex);
         file = path;
         records.clear();
-        secondaryOf.clear();
+        subAssetOf.clear();
         std::ifstream in(path);
         std::string line;
-        // Version 1 kept a record per secondary output; its records are dropped, and their assets packed again.
+        // Version 1 kept a record per sub-asset; its records are dropped, and their assets packed again.
         if (std::getline(in, line) && line == "ngen-assetcache 2") {
             Record* record = nullptr;
             std::string recordId;
@@ -133,8 +133,9 @@ auto AssetCache::load(const fs::path& path) -> void {
                 if (record == nullptr) {
                     continue;
                 }
-                std::string secondaryId;
-                if (tag == "secondary" && !std::getline(fields, secondaryId, '\t')) {
+                std::string subAssetId;
+                // "secondary" is the cache file's tag for a sub-asset, kept so caches written before the word changed still read.
+                if (tag == "secondary" && !std::getline(fields, subAssetId, '\t')) {
                     continue;
                 }
                 File entry;
@@ -148,8 +149,8 @@ auto AssetCache::load(const fs::path& path) -> void {
                 } else if (tag == "output") {
                     record->output = entry;
                 } else if (tag == "secondary") {
-                    record->secondaries.emplace_back(secondaryId, entry);
-                    secondaryOf[secondaryId] = recordId;
+                    record->subAssets.emplace_back(subAssetId, entry);
+                    subAssetOf[subAssetId] = recordId;
                 }
             }
         }
@@ -165,7 +166,7 @@ auto AssetCache::flush() -> void {
 
 auto AssetCache::size() -> size_t {
     std::lock_guard lock(mutex);
-    return records.size() + secondaryOf.size();
+    return records.size() + subAssetOf.size();
 }
 
 auto AssetCache::entries() -> std::vector<std::pair<std::string, Record>> {
@@ -182,14 +183,14 @@ auto AssetCache::find(const std::string& id) -> std::pair<const Record*, const F
     if (auto it = records.find(id); it != records.end()) {
         return {&it->second, &it->second.output};
     }
-    auto owner = secondaryOf.find(id);
-    if (owner == secondaryOf.end()) {
+    auto owner = subAssetOf.find(id);
+    if (owner == subAssetOf.end()) {
         return {nullptr, nullptr};
     }
     const Record& record = records.at(owner->second);
-    for (const auto& [secondaryId, secondaryFile] : record.secondaries) {
-        if (secondaryId == id) {
-            return {&record, &secondaryFile};
+    for (const auto& [subAssetId, subAssetFile] : record.subAssets) {
+        if (subAssetId == id) {
+            return {&record, &subAssetFile};
         }
     }
     return {nullptr, nullptr};
@@ -225,7 +226,7 @@ auto AssetCache::record(const std::string& id,
                         const std::string& packer,
                         const std::vector<std::string>& inputs,
                         const std::string& output,
-                        const std::vector<std::pair<std::string, std::string>>& secondaries) -> std::optional<uint64_t> {
+                        const std::vector<std::pair<std::string, std::string>>& subAssets) -> std::optional<uint64_t> {
     Record record;
     record.jobKey = jobKey;
     auto packerFile = current(packer);
@@ -242,29 +243,29 @@ auto AssetCache::record(const std::string& id,
         }
         record.inputs.push_back(*input);
     }
-    for (const auto& [secondaryId, secondaryFile] : secondaries) {
-        auto secondaryOutput = current(secondaryFile);
-        if (!secondaryOutput) {
+    for (const auto& [subAssetId, subAssetFile] : subAssets) {
+        auto subAsset = current(subAssetFile);
+        if (!subAsset) {
             return std::nullopt;
         }
-        record.secondaries.emplace_back(secondaryId, *secondaryOutput);
+        record.subAssets.emplace_back(subAssetId, *subAsset);
     }
-    auto version = record.output.hash;
+    auto hash = record.output.hash;
     {
         std::lock_guard lock(mutex);
         if (auto old = records.find(id); old != records.end()) {
-            for (const auto& [secondaryId, secondaryFile] : old->second.secondaries) {
-                secondaryOf.erase(secondaryId);
+            for (const auto& [subAssetId, subAssetFile] : old->second.subAssets) {
+                subAssetOf.erase(subAssetId);
             }
         }
-        for (const auto& [secondaryId, secondaryFile] : record.secondaries) {
-            secondaryOf[secondaryId] = id;
+        for (const auto& [subAssetId, subAssetFile] : record.subAssets) {
+            subAssetOf[subAssetId] = id;
         }
         records[id] = std::move(record);
         dirty = true;
     }
     changed.notify_all();
-    return version;
+    return hash;
 }
 
 auto AssetCache::outputPath(const std::string& id) -> std::optional<std::string> {
@@ -339,9 +340,9 @@ auto AssetCache::save() -> void {
                 writeFile(out, "input", input);
             }
             writeFile(out, "output", record.output);
-            for (const auto& [secondaryId, secondaryFile] : record.secondaries) {
-                out << "secondary\t" << secondaryId << '\t';
-                writeFields(out, secondaryFile);
+            for (const auto& [subAssetId, subAssetFile] : record.subAssets) {
+                out << "secondary\t" << subAssetId << '\t';
+                writeFields(out, subAssetFile);
             }
         }
         if (!out) {

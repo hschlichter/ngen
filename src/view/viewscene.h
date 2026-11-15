@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "cvar.h"
 
 #include "material.h"
 #include "mesh.h"
@@ -64,7 +64,7 @@ struct LodOverride {
     auto operator==(const LodOverride&) const -> bool = default;
 };
 
-// The view's LOD tuning: local opinions kept until the view closes, never saved (writing them to USD is the editor's).
+// The view's LOD tuning: session opinions kept until the view closes, never saved (writing them to USD is the editor's).
 // - bias: every root picks its level as if it were `bias` times closer (2: finer everywhere). Applied to the thresholds, the same pick: a
 //   distance's times the bias, a screen size's over its square; the measures shown stay what the camera sees.
 // - hysteresis: the margin at a boundary without a blend band, a fraction of a screen size.
@@ -85,7 +85,7 @@ auto lodOverrideOf(const LodTuning& tuning, const std::string& rootKey, uint32_t
 // A heuristic as the view picks with it under the tuning: the override's thresholds, the bias applied to them, no bands with blending off.
 auto tunedLodHeuristic(const LodHeuristic& heuristic, const LodOverride* override, const LodTuning& tuning) -> LodHeuristic;
 
-// What the view knows of a render-LOD group's root, published with the draws for the inspector: its authored root (lodRootKey), its levels'
+// What the view knows of a LOD group's root, published with the instances for the inspector: its authored root (lodRootKey), its levels'
 // names finest first, and every heuristic it authors.
 struct LodGroupSource {
     std::string key;
@@ -114,8 +114,8 @@ struct SceneLodChoice {
 using SceneLodChoices = std::unordered_map<std::string, SceneLodChoice>; // by the root's full path
 
 // Streaming measured, per placed streaming root: which levels are ready (placed and waiting for nothing, so they can be drawn), each level's
-// last lead (seconds from ready to selected, 0 when it was selected before it was ready; -1 never selected), whether it draws coarser than
-// selected (late) or nothing (a hole), and how often its levels were loaded again after being released. Time is measured here, never
+// last lead (seconds from ready to desired, 0 when it was desired before it was ready; -1 never desired), whether it draws coarser than
+// desired (late) or nothing (a hole), and how often its levels were loaded again after being released. Time is measured here, never
 // acted on.
 struct SceneStreamingRoot {
     std::vector<bool> ready;
@@ -125,8 +125,8 @@ struct SceneStreamingRoot {
     uint32_t reloads = 0;
 };
 
-// The totals since the scene opened or view.streaming.reset: roots late and holes now; switches of the selected level to a level not ready
-// (late switches), times a root started drawing nothing (holes), and the root-seconds drawn coarser than selected or nothing; levels added to roots' resident sets (loads), of them loaded
+// The totals since the scene opened or view.streaming.reset: roots late and holes now; switches of the desired level to a level not ready
+// (late switches), times a root started drawing nothing (holes), and the root-seconds drawn coarser than desired or nothing; levels added to roots' resident sets (loads), of them loaded
 // again after a release (reloads), and taken out (released); the leads of every switch; mesh packs that arrived with no placement naming
 // them any more (asked for a level no longer resident).
 struct SceneStreaming {
@@ -143,10 +143,10 @@ struct SceneStreaming {
     uint64_t arrivedUnwanted = 0;
     uint32_t findings = 0; // authoring findings over the placed roots, at the last evaluation
 };
-// The scene thread's work as of a snapshot: batches of requests and answers taken, composes (each composes with the packs held and asks for
+// The scene thread's work as of a snapshot: scene updates (the requests and answers one round took), composes (each composes with the packs held and asks for
 // those it names and lacks) and placement passes (the renderer's inputs placed from the World), the assets in flight by kind, and what it holds.
 struct SceneThreadStats {
-    uint64_t batches = 0;
+    uint64_t updates = 0;
     uint64_t composes = 0;
     double lastComposeMs = 0.0; // the last compose that had every layer pack it named
     // The last compose: contents composed and those kept from before (prototypes and LOD level contents), and how many it reached.
@@ -164,14 +164,14 @@ struct SceneThreadStats {
     uint64_t places = 0;
     double lastPlaceMs = 0.0;
     uint32_t placementsBuilt = 0;
-    uint32_t slotsAdded = 0;
-    uint32_t slotsRemoved = 0;
-    uint32_t slotsUpdated = 0;
+    uint32_t instancesAdded = 0;
+    uint32_t instancesRemoved = 0;
+    uint32_t instancesUpdated = 0;
     uint32_t placements = 0;       // in the tree, drawn or not
     uint32_t placementsDrawn = 0;  // of them, drawn
     uint64_t walksBuilt = 0;       // content walks built (new, composed again, or with a gizmo's opinion in them), since the scene opened
     uint64_t walksKept = 0;        // kept now
-    uint32_t lodGroups = 0;        // render-LOD groups placed (drawn placements' render-LOD roots)
+    uint32_t lodGroups = 0;        // LOD groups placed (drawn placements' LOD-group roots)
     uint32_t lodGroupsChanged = 0; // of the last pass that changed something: groups added, changed or freed
     // The LOD heuristic's last evaluation: roots evaluated, levels it changed (finer, coarser), and its time.
     uint32_t lodRootsEvaluated = 0;
@@ -208,15 +208,15 @@ struct SceneThreadStats {
 
 // What the placement tree draws, for the renderer's copy and the main thread's queries, shared by every snapshot published until the tree
 // changes again. Immutable once published, but for the asset index the queries build on first use.
-struct SceneDraws {
+struct PlacedScene {
     RenderWorld drawn;
     std::shared_ptr<const Placement> placements;                               // the tree; queries walk it
     ChunkedList<std::string> primPaths;                                        // by prim index - 1; an index not in use keeps its last path
-    ChunkedList<std::shared_ptr<const std::vector<std::string>>> assetsByPrim; // by prim index - 1: the assets a drawn prim's draws use
-    ChunkedList<std::string> lodGroupPaths;                                    // by render-LOD group slot (RenderWorld::lodGroups): the root's full path; empty when free
-    ChunkedList<std::shared_ptr<const LodGroupSource>> lodGroupSources;        // by render-LOD group slot: its root's levels and heuristics; null when free
-    // Asset id to the prims whose draws use it, built from assetsByPrim on the first query.
-    auto drawsByAsset() const -> const std::unordered_map<std::string, std::vector<uint32_t>>&;
+    ChunkedList<std::shared_ptr<const std::vector<std::string>>> assetsByPrim; // by prim index - 1: the assets a drawn prim's instances use
+    ChunkedList<std::string> lodGroupPaths;                                    // by LOD group slot (RenderWorld::lodGroups): the root's full path; empty when free
+    ChunkedList<std::shared_ptr<const LodGroupSource>> lodGroupSources;        // by LOD group slot: its root's levels and heuristics; null when free
+    // Asset id to the prims whose instances use it, built from assetsByPrim on the first query.
+    auto primsByAsset() const -> const std::unordered_map<std::string, std::vector<uint32_t>>&;
     // The drawn placements' cameras, LOD roots, payload placements, point instancers and prims with variant sets, in tree order, gathered
     // from the tree on the first query.
     auto records() const -> const PlacementRecords&;
@@ -253,7 +253,7 @@ struct SceneEnvironment {
 struct SceneSnapshot {
     std::string id;
     uint64_t revision = 0;
-    std::shared_ptr<const SceneDraws> draws = std::make_shared<SceneDraws>();
+    std::shared_ptr<const PlacedScene> placedScene = std::make_shared<PlacedScene>();
     std::shared_ptr<const SceneLodChoices> lodChoices = std::make_shared<SceneLodChoices>();
     bool lodHeuristic = true;
     LodPreference lodPreference = LodPreference::Distance;
@@ -279,18 +279,18 @@ struct SceneSnapshot {
     std::optional<SceneEnvironment> environment;
 };
 
-// The view's configuration values (src/config/README.md) for the scene: which purposes beyond the default it loads and draws.
-namespace viewconfig {
-extern config::Bool purposeGuide; // scene.purposes.guide
-extern config::Bool purposeProxy; // scene.purposes.proxy
-} // namespace viewconfig
+// The view's cvars (src/cvar/README.md) for the scene: which purposes beyond the default it loads and draws.
+namespace viewcvars {
+extern cvar::Bool purposeGuide; // scene.purposes.guide
+extern cvar::Bool purposeProxy; // scene.purposes.proxy
+} // namespace viewcvars
 
 // The scene ngen-view shows: its World, composed from the scene's packs, and the renderer's inputs placed from it: a tree of placements of
-// the World's contents (placement.h), whose draws are RenderWorld's slots (one per prim submesh), and the meshes, materials and textures they
+// the World's contents (placement.h), whose instances are RenderWorld's slots (one per prim submesh), and the meshes, materials and textures they
 // use, each kept by asset. Everything comes from the asset server; nothing of USD. See src/view/README.md.
 //
 // Nothing here waits. A scene thread owns the composer, the packs and the libraries: it takes requests (open, LOD, purposes, refresh,
-// transforms) and the assets that arrive, composes and places per batch, and publishes a SceneSnapshot and what changed for the
+// transforms) and the assets that arrive, composes and places per scene update, and publishes a SceneSnapshot and what changed for the
 // renderer (takeChanges). The main thread asks through the requests and reads the latest snapshot, taken once a frame by update().
 class ViewScene {
 public:
@@ -321,12 +321,12 @@ public:
     // clamped.
     auto setLodTuning(std::optional<float> bias, std::optional<float> hysteresis, std::optional<bool> blending) -> void;
     // Sets one heuristic's thresholds for the authored root of the LOD root at a path (every placement of it), the heuristic the
-    // preference uses when none is named; the lists not given keep what they had. A path with no LOD root placed is reported in the trace.
+    // preference uses when none is named; the lists not given keep what they had. A path with no LOD root placed is reported in the log.
     auto overrideLodThresholds(const std::string& rootPath, std::optional<uint32_t> heuristic, LodOverride thresholds) -> void;
     // Drops every override of the authored root of the LOD root at a path; an empty path drops them all.
     auto resetLodOverrides(const std::string& rootPath) -> void;
     auto lodTuning() const -> const LodTuning& { return *current->lodTuning; }
-    // The levels set by hand, by LOD root path (streaming roots and render-LOD groups alike).
+    // The levels set by hand, by LOD root path (streaming roots and LOD groups alike).
     auto lodHandLevels() const -> const std::unordered_map<std::string, uint32_t>& { return *current->lodHandLevels; }
     // Streaming measured (SceneStreaming), as of the snapshot update() took; resetStreamingCounters zeroes the totals, for a run measured
     // from a known start.
@@ -343,7 +343,7 @@ public:
     // changed at its source is packed again (a change notice), and ids that aren't the scene's are left alone. With it, an asset that isn't
     // the scene's (a shader) is repacked only on the server.
     auto refresh(const std::vector<std::string>& ids, bool force = true) -> void;
-    // Replaces a prim's local transform, as a gizmo drag does: a local opinion of the view, kept until it closes, never saved. Moves
+    // Replaces a prim's local transform, as a gizmo drag does: a session opinion of the view, kept until it closes, never saved. Moves
     // what is drawn under the prim; false for a prim that isn't there or takes no transform (as the current snapshot has it).
     auto setLocalTransform(const std::string& path, const glm::mat4& local) -> bool;
 
@@ -357,34 +357,34 @@ public:
     // Queries over the snapshot update() took.
     auto sceneId() const -> const std::string& { return current->id; }
     auto snapshot() const -> const SceneSnapshot& { return *current; }
-    auto renderWorld() const -> const RenderWorld& { return current->draws->drawn; }
+    auto renderWorld() const -> const RenderWorld& { return current->placedScene->drawn; }
     // The cameras the scene authors, in visit order.
-    auto cameras() const -> const std::vector<SceneCamera>& { return current->draws->records().cameras; }
+    auto cameras() const -> const std::vector<SceneCamera>& { return current->placedScene->records().cameras; }
     // The scene thread's work as of the snapshot update() took, and the requests posted and applied now.
     auto threadStats() const -> const SceneThreadStats& { return current->thread; }
     auto requestCounts() const -> std::pair<uint64_t, uint64_t> { return {requestsPosted.load(), requestsApplied.load()}; }
     // The payload placements reached while drawing, in visit order.
-    auto payloads() const -> const std::vector<ScenePayload>& { return current->draws->records().payloads; }
+    auto payloads() const -> const std::vector<ScenePayload>& { return current->placedScene->records().payloads; }
     // The LOD roots reached while drawing, in visit order.
-    auto lodRoots() const -> const std::vector<SceneLodRoot>& { return current->draws->records().lodRoots; }
-    auto instancers() const -> const std::vector<SceneInstancer>& { return current->draws->records().instancers; }
-    auto variantPrims() const -> const std::vector<SceneVariantPrim>& { return current->draws->records().variantPrims; }
+    auto lodRoots() const -> const std::vector<SceneLodRoot>& { return current->placedScene->records().lodRoots; }
+    auto instancers() const -> const std::vector<SceneInstancer>& { return current->placedScene->records().instancers; }
+    auto variantPrims() const -> const std::vector<SceneVariantPrim>& { return current->placedScene->records().variantPrims; }
     // Moves on each time the renderer's inputs change.
     auto revision() const -> uint64_t { return current->revision; }
     // Every asset the scene uses: its layer packs, meshes, materials and textures.
     auto assetIds() const -> std::vector<std::string> { return *current->assetIds; }
     // The scene's up axis, as a vector.
     auto worldUp() const -> glm::vec3;
-    // The full path of the entity a draw instance or light names (RenderWorld's prim index); empty for none.
+    // The full path of the prim an instance or light names (RenderWorld's prim index); empty for none.
     auto primPath(uint32_t prim) const -> std::string;
-    // The full path of the entity a draw instance (a slot of RenderWorld::meshInstances) draws; empty for none.
+    // The full path of the prim an instance (a slot of RenderWorld::meshInstances) draws; empty for none.
     auto instancePath(uint32_t instance) const -> std::string;
     // The world bounds of what is drawn at or under a path; invalid when nothing is.
     auto bounds(const std::string& path) const -> AABB;
-    // The draws (prim indices, for primPath and primBounds) that use an asset: a mesh's prims, a material's or a texture's users, the prims
+    // The instances (prim indices, for primPath and primBounds) that use an asset: a mesh's prims, a material's or a texture's users, the prims
     // drawing the meshes a USD file defines. Empty for an asset nothing draws (a shader, a file that only overrides or arranges others).
-    auto drawsOf(const std::string& assetId) const -> std::vector<uint32_t>;
-    auto drawCount(const std::string& assetId) const -> size_t;
+    auto primsUsing(const std::string& assetId) const -> std::vector<uint32_t>;
+    auto primCountUsing(const std::string& assetId) const -> size_t;
     // The world bounds of one drawn prim.
     auto primBounds(uint32_t prim) const -> AABB;
     // The assets used by what is drawn at or under a path: meshes, the USD files defining them, materials and their textures; sorted.
@@ -472,7 +472,7 @@ private:
     auto reportAssets() -> void;
     auto publish() -> void;
     auto drawsPurpose(Purpose purpose) const -> bool;
-    // A bound material (its key, World's materialKey): its pack, when held, and its textures with its inputs' values applied (a texture
+    // A bound material (its key, World's materialInstanceKey): its pack, when held, and its textures with its inputs' values applied (a texture
     // whose file comes from an input takes the input's value where the material is used).
     struct ResolvedMaterial {
         const MaterialPack* pack = nullptr;
@@ -492,7 +492,7 @@ private:
     auto collectChanges(const std::set<uint32_t>& meshesNow, const std::set<uint32_t>& materialsNow, const std::set<uint32_t>& texturesNow, SceneChanges& changes) -> void;
     auto addChanges(SceneChanges changes) -> void;
     // ContentComposed per content the last compose or relink completed.
-    auto traceCompleted() -> void;
+    auto logCompleted() -> void;
 
     AssetClient& assets;
 
@@ -501,7 +501,7 @@ private:
     std::condition_variable_any wake;
     std::deque<Request> requests;
     bool answered = false;                          // the asset client answered something since the scene thread last looked
-    bool working = false;                           // the scene thread took a batch and hasn't published its result yet
+    bool working = false;                           // the scene thread took a scene update and hasn't published its result yet
     std::shared_ptr<const SceneSnapshot> published; // the latest, for update()
     // Snapshots update() let go of: the scene thread frees them (their placements and lists only they held can take a while), so the main
     // thread only swaps a pointer.
@@ -532,7 +532,7 @@ private:
     LodPreference lodPreferenceNow = LodPreference::Distance;
     std::shared_ptr<const LodTuning> tuning = std::make_shared<LodTuning>();
     auto applyTuning(const TuningRequest& request) -> void;
-    // The authored root (lodRootKey) of the LOD root at a path, and its heuristics: a render-LOD group's or a placed streaming root's.
+    // The authored root (lodRootKey) of the LOD root at a path, and its heuristics: a LOD group's or a placed streaming root's.
     auto authoredRootOf(const std::string& path) const -> std::optional<std::pair<std::string, const std::vector<LodHeuristic>*>>;
     bool evaluateNeeded = false;
     std::unordered_map<std::string, uint32_t> handLevels;
@@ -548,7 +548,7 @@ private:
     struct RootTimes {
         std::vector<std::optional<std::chrono::steady_clock::time_point>> readySince;
         std::optional<std::chrono::steady_clock::time_point> lateSince;
-        std::optional<uint32_t> selected;
+        std::optional<uint32_t> desired;
     };
     std::unordered_map<std::string, RootTimes> rootTimes;
     std::unordered_map<std::string, std::set<uint32_t>> releasedOf;
@@ -558,24 +558,24 @@ private:
     uint64_t reportedReleasedContents = 0;
     uint64_t reportedReleasedMeshes = 0;
     uint64_t reportedReleasedBytes = 0;
-    // One LevelsUnloaded per batch that let something go.
+    // One LevelsUnloaded per scene update that let something go.
     auto reportReleases() -> void;
     std::shared_ptr<const SceneLodChoices> choices = std::make_shared<SceneLodChoices>();
-    bool composeReported = false; // PacksComposed traced since the scene opened or a pack last arrived
-    bool assetsReported = false;  // SceneAssetsReceived traced since the last asset was requested
+    bool composeReported = false; // PacksComposed logged since the scene opened or a pack last arrived
+    bool assetsReported = false;  // SceneAssetsReceived logged since the last asset was requested
     size_t assetsSinceReport = 0;
     std::chrono::steady_clock::time_point openedAt;
 
-    // Packed assets as they arrived, by asset id; a failed one is absent and listed in `failedAssets`. Versions, to keep a library entry
+    // Packed assets as they arrived, by asset id; a failed one is absent and listed in `failedAssets`. Hashes, to keep a library entry
     // whose asset arrives again unchanged.
     std::unordered_map<std::string, MeshPack> meshPacks;
     std::unordered_map<std::string, MaterialPack> materialPacks;
     std::unordered_map<std::string, std::shared_ptr<const TextureDesc>> texturePacks;
-    std::unordered_map<std::string, std::string> packVersions;
+    std::unordered_map<std::string, std::string> packHashes;
     std::set<std::string> failedAssets;
 
     // The renderer's inputs. The libraries keep their entries across passes; a placement takes the lowest free slot and prim index for each
-    // draw it adds, and frees them when it goes.
+    // instance it adds, and frees them when it goes.
     RenderWorld drawn;
     MeshLibrary meshLibrary;
     MaterialLibrary materialLibrary;
@@ -598,7 +598,7 @@ private:
         glm::mat4 worldTransform = glm::mat4(1.0f); // world metres
     };
     std::map<uint32_t, PlacedDome> domesByPrim;
-    std::set<uint32_t> domesWarned; // the domes DomeLightIgnored was traced for, so a pass doesn't trace it again
+    std::set<uint32_t> domesWarned; // the domes DomeLightIgnored was logged for, so a pass doesn't log it again
     bool lightsChanged = false;
     std::vector<uint32_t> meshUses; // by handle index: slots drawing it and undrawn placements holding it
     std::vector<uint32_t> materialUses;
@@ -625,11 +625,11 @@ private:
     uint32_t drawnPlacementCount = 0;
     auto setSlot(uint32_t slot, const RenderMeshInstance& instance) -> void;
     auto useNode(const Placement& node, int delta) -> void;
-    // The roots whose wanted level or hand-set state changed since the last pass: a pass looks into the placements holding them.
+    // The roots whose desired level or hand-set state changed since the last pass: a pass looks into the placements holding them.
     std::set<std::string> rootsToCheck;
-    bool passNewRoots = false;                                                // a pass drew roots not drawn before: the heuristic evaluates them
-    uint32_t defaultLightPrim = 0;                                            // the engine's light's prim index while the scene has no distant light, else 0
-    std::shared_ptr<const SceneDraws> draws = std::make_shared<SceneDraws>(); // the last pass's, as published
+    bool passNewRoots = false;                                                        // a pass drew roots not drawn before: the heuristic evaluates them
+    uint32_t defaultLightPrim = 0;                                                    // the default light's prim index while the scene has no distant light, else 0
+    std::shared_ptr<const PlacedScene> placedScene = std::make_shared<PlacedScene>(); // the last pass's, as published
     // Counted when the World is composed, not at every publish: a content's prims (as World::visit reaches them) kept by its version.
     size_t worldPrims = 0;
     std::unordered_map<const WorldContent*, std::pair<uint64_t, size_t>> primCounts;
@@ -641,12 +641,12 @@ private:
 
     // Content walks (placement.h), kept by content, version and inherited state.
     std::unordered_map<std::string, std::shared_ptr<const ContentWalk>> walks;
-    // A content's walk afresh; `overrideBase`, when set, is where it is placed, to apply the gizmo's local opinions. `root`, when given, walks
-    // that entity's subtree instead (a PointInstancer's prototype), the entity's path "/".
-    auto buildWalk(const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& overrideBase, EntityId root = noEntity)
+    // A content's walk afresh; `overrideBase`, when set, is where it is placed, to apply the gizmo's session opinions. `root`, when given, walks
+    // that prim's subtree instead (a PointInstancer's prototype), the prim's path "/".
+    auto buildWalk(const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& overrideBase, PrimId root = noPrim)
         -> std::shared_ptr<const ContentWalk>;
     // A content's kept walk, afresh when a gizmo's opinion is under where it is placed.
-    auto walkOf(Placement::Kind kind, int32_t index, const WorldContent& content, Purpose purpose, const std::string& material, bool strong, const std::string& usePath, EntityId root = noEntity)
+    auto walkOf(Placement::Kind kind, int32_t index, const WorldContent& content, Purpose purpose, const std::string& material, bool strong, const std::string& usePath, PrimId root = noPrim)
         -> std::shared_ptr<const ContentWalk>;
     auto overridesUnder(const std::string& usePath) const -> bool;
 
@@ -657,7 +657,7 @@ private:
         Placement::Kind kind = Placement::Kind::Stage;
         int32_t content = -1;
         Placement::Kind contentKind = Placement::Kind::Stage;
-        EntityId instancer = noEntity;
+        PrimId instancer = noPrim;
         std::string path;
         glm::mat4 world = glm::mat4(1.0f);
         Purpose purpose = Purpose::Default;
@@ -688,7 +688,7 @@ private:
     auto allocPrim(const std::string& path) -> uint32_t;
     auto freePrim(uint32_t prim) -> void;
     auto touchSlot(uint32_t slot) -> void;
-    // Render-LOD group slots (RenderWorld::lodGroups), taken and freed like draw slots, with what the view knows of each: the root's full
+    // LOD group slots (RenderWorld::lodGroups), taken and freed like instance slots, with what the view knows of each: the root's full
     // path, its default level, whether its heuristic is usable, and its level count; and by path.
     struct LodGroupInfo {
         std::string path;
@@ -699,7 +699,7 @@ private:
         std::string key;                     // its authored root (lodRootKey)
     };
     std::vector<LodGroupInfo> lodGroupInfo;
-    ChunkedList<std::string> lodGroupPaths; // published with the draws
+    ChunkedList<std::string> lodGroupPaths; // published with the instances
     ChunkedList<std::shared_ptr<const LodGroupSource>> lodGroupSources;
     std::unordered_map<std::string, uint32_t> lodGroupByPath;
     LowestFreeList freeLodGroups;
@@ -728,24 +728,24 @@ private:
     std::string passFirstSwitched;
     bool resetPlacements = false;            // the tree is released and placed afresh: a purpose shown or hidden, a mesh or material repacked
     std::vector<std::string> overridesMoved; // the gizmo's moves since the last pass: the placements holding them are built again
-    // A mesh where it is drawn with a material binding: the materials of its submeshes, whether each cuts, and the assets its draws use (the
+    // A mesh where it is drawn with a material binding: the materials of its submeshes, whether each cuts, and the assets its instances use (the
     // mesh, the file defining it, each material and its textures). Shared, this pass, by the prims drawing the same mesh and binding.
-    struct ResolvedDraw {
+    struct ResolvedBinding {
         std::vector<MaterialHandle> materials;
         std::vector<bool> cutout;
         std::shared_ptr<const std::vector<std::string>> uses;
     };
-    std::unordered_map<std::string, std::shared_ptr<const ResolvedDraw>> resolvedDraws;
-    auto resolveDraw(const std::string& meshAsset, const std::string& boundMaterial, bool strongBinding, const Entity* subsetsOf, const WorldContent& content) -> std::shared_ptr<const ResolvedDraw>;
+    std::unordered_map<std::string, std::shared_ptr<const ResolvedBinding>> resolvedBindings;
+    auto resolveBinding(const std::string& meshAsset, const std::string& boundMaterial, bool strongBinding, const Prim* subsetsOf, const WorldContent& content) -> std::shared_ptr<const ResolvedBinding>;
     // An asset a placement's prims want and lack, into its `waiting` and the pass's requests (once each; a failed one isn't waited for).
     auto wantAsset(Placement& node, const std::string& assetId, AssetKind kind) -> void;
     // The assets a material binding wants and lacks: its pack, or its textures once the pack is held.
     auto wantMaterial(const std::string& key, Placement& node) -> void;
-    // The distant lights, or the engine's light when there is none, after a pass that changed them.
+    // The distant lights, or the default light when there is none, after a pass that changed them.
     auto collectLights() -> void;
     // The scene's environment, from its first dome light whose lat-long texture is held; none without one.
     auto collectEnvironment() -> std::optional<RenderEnvironment>;
-    // Whether a pass looks into a placement at this path that isn't pending: a gizmo moved, or a root changed its wanted level, under it.
+    // Whether a pass looks into a placement at this path that isn't pending: a gizmo moved, or a root changed its desired level, under it.
     auto touched(const std::string& path) const -> bool;
     bool fullPass = false;                           // a placed content was composed again: the pass looks into every placement
     SceneThreadStats stats;                          // the counters; publish() fills in the rest

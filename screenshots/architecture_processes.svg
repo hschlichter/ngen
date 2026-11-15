@@ -78,20 +78,20 @@
   <rect x="246" y="424" width="250" height="104" rx="10" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.5"/>
   <text x="264" y="450" class="h mono">ngen-introspect</text>
   <text x="264" y="474" class="t">every running process's records</text>
-  <text x="264" y="492" class="t">and trace; calls their methods</text>
+  <text x="264" y="492" class="t">and log; calls their methods</text>
   <text x="264" y="512" class="s">a window, or the command line</text>
 
   <rect x="28" y="424" width="170" height="104" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
   <text x="44" y="450" class="h">Agents, scripts</text>
   <text x="44" y="474" class="t">read records, call</text>
-  <text x="44" y="492" class="t">methods, run verbs</text>
+  <text x="44" y="492" class="t">methods, run console commands</text>
   <text x="44" y="512" class="s mono">ngen-view --script</text>
 
   <line x1="198" y1="476" x2="242" y2="476" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
 
   <path d="M496,456 C600,456 640,440 660,400" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrowGrey)"/>
   <path d="M370,424 L370,327" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrowGrey)"/>
-  <text x="512" y="490" class="edge">records · trace · methods</text>
+  <text x="512" y="490" class="edge">records · log · methods</text>
   <text x="512" y="507" class="s">JSON-RPC, loopback TCP</text>
 
   <!-- cli -->

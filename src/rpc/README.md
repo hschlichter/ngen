@@ -10,7 +10,7 @@ discovery files.
 | Part | Files | Depends on |
 |---|---|---|
 | Core | `core/rpcframe.*` (frames), `core/rpcprotocol.*` (JSON-RPC messages, error codes), `core/rpcsocket.*` (loopback TCP), `core/rpcserver.*` (an endpoint with an I/O thread that listens, connects out, or both), `core/rpcclient.*` (blocking client), `core/rpcdiscovery.*` (discovery files), `core/rpcresponder.*` (replies that can complete later), `core/rpcrecords.*` (named records: `introspect.list`, `introspect.get`) | the standard library and header-only nlohmann/json (`external/json`) |
-| Engine layer | `rpcregistry.*` (methods, parameter schemas, `rpc.*` builtins, records as methods), `rpcverbs.*` (script verbs: a line's text to a method's parameters), `rpcendpoint.*` (server + discovery + main-thread dispatch, the trace stream) | the core, `src/trace` |
+| Engine layer | `rpcregistry.*` (methods, parameter schemas, `rpc.*` builtins, records as methods), `consolecommands.*` (console commands: a line's text to a method's parameters), `rpcendpoint.*` (server + discovery + main-thread dispatch, the log stream) | the core, `src/log` |
 | Tool | `ngen-introspect` (`src/introspect/`) | the core |
 
 The core stays free of engine code, so a process that isn't the engine uses it alone: the asset server serves its methods and records on the core's `RpcServer` and `RpcRecords` with a dispatch of its own (and so has no `rpc.describe`), and `ngen-introspect` is a client on it. Only `.cpp` files include `nlohmann/json.hpp`; headers
@@ -38,10 +38,10 @@ process is gone, so a crashed process leaves nothing behind after the next listi
 
 ## Threading
 
-![The I/O thread reads frames and writes queued replies, answers trace subscriptions itself, and queues every other request for RpcEndpoint::drain() on the main thread, whose handlers answer through an RpcResponder now or later](../../screenshots/rpc_threading.svg)
+![The I/O thread reads frames and writes queued replies, answers log subscriptions itself, and queues every other request for RpcEndpoint::drain() on the main thread, whose handlers answer through an RpcResponder now or later](../../screenshots/rpc_threading.svg)
 
 - **The I/O thread** (`RpcServer`) accepts connections, reads frames, and writes queued replies. Any thread may queue a message. A caller never
-  blocks on a slow client: a client whose unread replies pass 256 MB is dropped. The thread is a profiler lane, "RPC I/O" unless named with
+  blocks on a slow client: a client whose unread replies pass 256 MB is dropped. The thread is a profiler track, "RPC I/O" unless named with
   `setThreadName` (ngen-view's `AssetClient`: "Asset I/O"); it polls in slices of `profile::idleSlice` (`RpcPoll`, group Wait) and each accept,
   receive and send is a detail zone (group Io).
 - **Connecting out.** `connect(port)` opens a connection that the same I/O thread serves like an accepted one, so requests, notifications and
@@ -65,7 +65,7 @@ process is gone, so a crashed process leaves nothing behind after the next listi
    - a result description
 3. Write the handler: parameters are checked before it runs, so it can read them with `get<>()`. Answer through the responder; use
    `rpc::appError` with a message for engine failures.
-4. If it should also be a script verb, add it to the `RpcVerbs` table beside the method (`verbs.add(verb, method, parser)`), with a parser from
+4. If it should also be a console command, add it to the `ConsoleCommands` table beside the method (`console.add(name, method, parser)`), with a parser from
    the script's text to the parameters. Script lines and live calls then run the same code.
 5. `rpc.describe` lists the new method automatically.
 
@@ -91,19 +91,19 @@ Data a process gives for reading is a record, not a method: a name, a descriptio
 ./ngen-cli introspect call view:12345 view.camera.set '{"x": 5.3, "y": 11.3, "z": 1.2, "yaw": -169.8, "pitch": -0.2}'
 ```
 
-## Trace
+## Log
 
-`RpcEndpoint` answers `trace.subscribe` and `trace.unsubscribe` itself, on the I/O thread, and streams the process's trace to subscribers as
-`trace.events` notifications (protocol in [`src/trace/README.md`](../trace/README.md)). They are not registry methods, so `rpc.describe` doesn't
-list them. At exit, `finishTrace` sends the last events before `stop` closes the connections.
+`RpcEndpoint` answers `log.subscribe` and `log.unsubscribe` itself, on the I/O thread, and streams the process's log to subscribers as
+`log.events` notifications (protocol in [`src/log/README.md`](../log/README.md)). They are not registry methods, so `rpc.describe` doesn't
+list them. At exit, `finishLog` sends the last events before `stop` closes the connections.
 
 Engine category events: `RpcListening` (port, discovery file), `RpcConnected` and `RpcDisconnected` (connection id), and a warning
-`RpcCallFailed` (method, message, error code) for each call that fails. Calls that work aren't traced: their result goes to the caller.
+`RpcCallFailed` (method, message, error code) for each call that fails. Calls that work aren't logged: their result goes to the caller.
 Failing to listen or to write the discovery file are errors (`RpcListenFailed`, `RpcDiscoveryFailed`).
 
 ## Known gaps
 
 - Loopback only, no authentication: any local process can drive an endpoint.
-- The trace is the only subscription; records are polled.
+- The log is the only subscription; records are polled.
 - Bulk results (screenshots, captures) travel as base64 or as files, not yet as attachments.
 - `--no-rpc` turns ngen-view's endpoint off. It's compiled out of `gamerelease` (`NGEN_INTROSPECTION`).

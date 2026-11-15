@@ -1,11 +1,13 @@
 #include "assetclient.h"
 #include "assetid.h"
+#include "consolecommands.h"
 #include "gizmorender.h"
 #include "ground.h"
 #include "imguibackendvulkan.h"
 #include "jobsystem.h"
+#include "log.h"
 #include "profile.h"
-#include "renderconfig.h"
+#include "rendercvars.h"
 #include "renderdoccapture.h"
 #include "renderer.h"
 #include "renderthread.h"
@@ -13,12 +15,10 @@
 #include "rhidevicevulkan.h"
 #include "rpcendpoint.h"
 #include "rpcregistry.h"
-#include "rpcverbs.h"
 #include "sessionscript.h"
 #include "stallwatch.h"
 #include "toolcommands.h"
 #include "toolshooks.h"
-#include "trace.h"
 #include "uicommands.h"
 #include "uihooks.h"
 #include "uirender.h"
@@ -62,7 +62,7 @@ static auto makeRhiWindowSdl(SDL_Window* window) -> RhiWindow {
         auto instance = (VkInstance) nativeInstance;
         auto* surface = (VkSurfaceKHR*) nativeSurface;
         if (!SDL_Vulkan_CreateSurface(window, instance, nullptr, surface)) {
-            TRACE_ERROR("Engine", "SurfaceCreateFailed", "window").text(std::format("SDL_Vulkan_CreateSurface failed: {}", SDL_GetError()));
+            LOG_ERROR("Engine", "SurfaceCreateFailed", "window").text(std::format("SDL_Vulkan_CreateSurface failed: {}", SDL_GetError()));
             return false;
         }
         return true;
@@ -74,10 +74,10 @@ static auto makeRhiWindowSdl(SDL_Window* window) -> RhiWindow {
 namespace {
 
 // The window layer's input, as the view's controls take it: the right button held for mouse look, the keys as a camera move, Left Alt held
-// for orbiting, and the window's size as the trace last reported it.
+// for orbiting, and the window's size as the log last reported it.
 struct WindowInput {
-    int tracedWidth = 0;
-    int tracedHeight = 0;
+    int loggedWidth = 0;
+    int loggedHeight = 0;
     bool mouseLook = false;
     CameraMove move;
     bool orbitHeld = false;
@@ -87,7 +87,7 @@ struct WindowInput {
 // an event; then the view's controls. Z deselects, R selects the parent, F frames the selection, G toggles following the ground, Left Alt
 // starts orbiting, the right button looks, the wheel sets the fly speed, a left click picks. Then the keys held, as a camera move.
 auto pollInput(SDL_Window* window, ViewFrame& frame, ViewHooks& hooks, WindowInput& input) -> void {
-    static const uint32_t pollZoneId = profile::registerSite("PollEvents", profile::Group::Frame);
+    static const uint32_t pollZoneId = profile::registerSourceLocation("PollEvents", profile::Group::Frame);
     profile::beginZone(pollZoneId);
     uint64_t polledEvents = 0;
     // A framebuffer pixel from a point in the window (they differ on high-density displays).
@@ -102,15 +102,15 @@ auto pollInput(SDL_Window* window, ViewFrame& frame, ViewHooks& hooks, WindowInp
     while (SDL_PollEvent(&ev)) {
         polledEvents++;
         if (ev.type == SDL_EVENT_QUIT) {
-            TRACE_EVENT("Engine", "QuitRequested", "view").text("quitting");
+            LOG_EVENT("Engine", "QuitRequested", "view").text("quitting");
             frame.quit = true;
         }
         if (ev.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
-            bool sizeChanged = ev.window.data1 != input.tracedWidth || ev.window.data2 != input.tracedHeight;
+            bool sizeChanged = ev.window.data1 != input.loggedWidth || ev.window.data2 != input.loggedHeight;
             if (sizeChanged) {
-                input.tracedWidth = ev.window.data1;
-                input.tracedHeight = ev.window.data2;
-                TRACE_EVENT("Engine", "WindowResized", "window")
+                input.loggedWidth = ev.window.data1;
+                input.loggedHeight = ev.window.data2;
+                LOG_EVENT("Engine", "WindowResized", "window")
                     .text(std::format("window resized to {}x{} pixels", ev.window.data1, ev.window.data2))
                     .field("width", ev.window.data1)
                     .field("height", ev.window.data2);
@@ -134,7 +134,7 @@ auto pollInput(SDL_Window* window, ViewFrame& frame, ViewHooks& hooks, WindowInp
             continue;
         }
         if (plainKey && ev.key.key == SDLK_G) {
-            viewconfig::follow.set(!viewconfig::follow.get());
+            viewcvars::follow.set(!viewcvars::follow.get());
             continue;
         }
         if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.scancode == SDL_SCANCODE_LALT && !ev.key.repeat) {
@@ -195,8 +195,8 @@ auto main(int argc, char* argv[]) -> int {
     uint64_t maxFrames = 0;
     // --geometry-limit=<MiB>: the most each geometry pool buffer takes, below the device's limit; meshes past it wait, undrawn.
     bool rpcEnabled = true; // --no-rpc: no endpoint, no discovery file
-    // --no-wait-resident: script frames (and --frames, --screenshot) count from start-up instead of from the scene first being resident.
-    bool waitForResident = true;
+    // --no-wait-ready: script frames (and --frames, --screenshot) count from start-up instead of from the scene first being ready.
+    bool waitForReady = true;
     SessionScript session;
     std::string sessionError;
     std::string startCamera;
@@ -217,13 +217,13 @@ auto main(int argc, char* argv[]) -> int {
             forceRenderDebug = true;
         } else if (arg == "--show-ui") {
             screenshotsShowUi = true;
-        } else if (arg == "--no-wait-resident") {
-            waitForResident = false;
+        } else if (arg == "--no-wait-ready") {
+            waitForReady = false;
         } else if (arg == "--fail-on-validation") {
             failOnValidation = true;
             enableValidation = true;
         } else if (arg.starts_with("--geometry-limit=")) {
-            (void) renderconfig::geometryLimitMiB.set((int64_t) std::stoull(flagValue(arg, "--geometry-limit=")));
+            (void) rendercvars::geometryLimitMiB.set((int64_t) std::stoull(flagValue(arg, "--geometry-limit=")));
         } else if (arg.starts_with("--frames=")) {
             maxFrames = std::stoull(flagValue(arg, "--frames="));
         } else if (arg.starts_with("--camera=")) {
@@ -263,15 +263,15 @@ auto main(int argc, char* argv[]) -> int {
             keep.push_back(std::move(c));
         }
         for (auto& c : keep) {
-            session.add(c.frame, c.verb, c.args);
+            session.add(c.frame, c.name, c.args);
         }
     }
-    TRACE_EVENT("Engine", "ProcessStarted", "view")
+    LOG_EVENT("Engine", "ProcessStarted", "view")
         .text(std::format("ngen-view started, pid {}", getpid()))
         .field("pid", (int64_t) getpid())
         .field("scene", positional.size() >= 2 ? positional[1] : "");
     if (!session.empty()) {
-        TRACE_EVENT("Engine", "ScriptLoaded", "view")
+        LOG_EVENT("Engine", "ScriptLoaded", "view")
             .text(std::format("session script: {} commands, the last at frame {}", session.size(), session.lastFrame()))
             .field("commands", (int64_t) session.size())
             .field("last_frame", (int64_t) session.lastFrame());
@@ -292,7 +292,7 @@ auto main(int argc, char* argv[]) -> int {
             std::println(stderr, "ngen-view: {}", connected.error());
             return 1;
         }
-        TRACE_EVENT("Engine", "AssetServerConnected", connected->label)
+        LOG_EVENT("Engine", "AssetServerConnected", connected->label)
             .text(std::format("asset server {} connected: pid {}, port {}", connected->label, connected->pid, connected->port))
             .field("pid", (int64_t) connected->pid)
             .field("port", (int64_t) connected->port);
@@ -308,7 +308,7 @@ auto main(int argc, char* argv[]) -> int {
 
     // SDL init and window
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        TRACE_ERROR("Engine", "SdlInitFailed", "window").text(std::format("SDL_Init failed: {}", SDL_GetError()));
+        LOG_ERROR("Engine", "SdlInitFailed", "window").text(std::format("SDL_Init failed: {}", SDL_GetError()));
         return 1;
     }
 
@@ -320,28 +320,28 @@ auto main(int argc, char* argv[]) -> int {
     SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, 1);
     auto* window = SDL_CreateWindowWithProperties(windowProps);
     if (window == nullptr) {
-        TRACE_ERROR("Engine", "WindowCreateFailed", "window").text(std::format("SDL_CreateWindowWithProperties failed: {}", SDL_GetError()));
+        LOG_ERROR("Engine", "WindowCreateFailed", "window").text(std::format("SDL_CreateWindowWithProperties failed: {}", SDL_GetError()));
         return 1;
     }
     SDL_DestroyProperties(windowProps);
-    // The size the trace last reported; SDL also sends a size event for the size the window starts with.
-    int tracedWindowWidth = 0;
-    int tracedWindowHeight = 0;
+    // The size the log last reported; SDL also sends a size event for the size the window starts with.
+    int loggedWindowWidth = 0;
+    int loggedWindowHeight = 0;
     {
-        SDL_GetWindowSizeInPixels(window, &tracedWindowWidth, &tracedWindowHeight);
+        SDL_GetWindowSizeInPixels(window, &loggedWindowWidth, &loggedWindowHeight);
         const char* driver = SDL_GetCurrentVideoDriver();
-        TRACE_EVENT("Engine", "WindowCreated", "window")
-            .text(std::format("window created: {}x{} pixels, SDL video driver {}", tracedWindowWidth, tracedWindowHeight, driver != nullptr ? driver : "none"))
-            .field("width", tracedWindowWidth)
-            .field("height", tracedWindowHeight)
+        LOG_EVENT("Engine", "WindowCreated", "window")
+            .text(std::format("window created: {}x{} pixels, SDL video driver {}", loggedWindowWidth, loggedWindowHeight, driver != nullptr ? driver : "none"))
+            .field("width", loggedWindowWidth)
+            .field("height", loggedWindowHeight)
             .field("driver", driver != nullptr ? driver : "");
     }
 
     // Job system
     JobSystem::init();
-    TRACE_EVENT("Engine", "JobSystemStarted", "jobs").text(std::format("job system: {} workers", JobSystem::workerCount())).field("workers", (int64_t) JobSystem::workerCount());
+    LOG_EVENT("Engine", "JobSystemStarted", "jobs").text(std::format("job system: {} workers", JobSystem::workerCount())).field("workers", (int64_t) JobSystem::workerCount());
 
-    // A thread that stays in one profiler zone longer than profile.stall.seconds is reported in the trace with the zones it has open.
+    // A thread that stays in one profiler zone longer than profile.stall.seconds is reported in the log with the zones it has open.
     profile::startStallWatch();
 
     // RHI device. The window layer (SDL) hands the backend what it needs through
@@ -362,20 +362,20 @@ auto main(int argc, char* argv[]) -> int {
     renderDoc.load(loadRenderDoc);
 
     RhiDeviceVulkan rhiDevice;
-    // The device's diagnostics, validation messages among them, go into the trace.
+    // The device's diagnostics, validation messages among them, go into the log.
     RhiDeviceOptions deviceOptions = {
         .enableValidation = enableValidation,
         .onMessage =
             [](RhiMessageSeverity severity, std::string_view message) {
                 switch (severity) {
                     case RhiMessageSeverity::Info:
-                        TRACE_EVENT("Render", "RhiMessage", "rhi").text(message);
+                        LOG_EVENT("Render", "RhiMessage", "rhi").text(message);
                         break;
                     case RhiMessageSeverity::Warning:
-                        TRACE_WARNING("Render", "RhiMessage", "rhi").text(message);
+                        LOG_WARNING("Render", "RhiMessage", "rhi").text(message);
                         break;
                     case RhiMessageSeverity::Error:
-                        TRACE_ERROR("Render", "RhiMessage", "rhi").text(message);
+                        LOG_ERROR("Render", "RhiMessage", "rhi").text(message);
                         break;
                 }
             },
@@ -408,7 +408,7 @@ auto main(int argc, char* argv[]) -> int {
     StatusBarGatherer statusBar;
     auto rendererInitStart = std::chrono::steady_clock::now();
     if (!renderer.init(&rhiDevice, &assetClient, initialExtent)) {
-        TRACE_ERROR("Render", "RendererInitFailed", "renderer").text("renderer init failed");
+        LOG_ERROR("Render", "RendererInitFailed", "renderer").text("renderer init failed");
         rhiDevice.waitIdle();
         return failAfterInit();
     }
@@ -416,9 +416,9 @@ auto main(int argc, char* argv[]) -> int {
     profile::setGpuDevice(rhiDevice.limits().vendorId, rhiDevice.limits().deviceId);
     {
         auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - rendererInitStart).count();
-        TRACE_EVENT("Render", "RendererInitialized", "renderer").text(std::format("renderer initialized in {:.0f} ms", ms)).field("ms", ms);
+        LOG_EVENT("Render", "RendererInitialized", "renderer").text(std::format("renderer initialized in {:.0f} ms", ms)).field("ms", ms);
     }
-    renderer.setGeometryLimit((uint64_t) renderconfig::geometryLimitMiB.get() * 1024 * 1024);
+    renderer.setGeometryLimit((uint64_t) rendercvars::geometryLimitMiB.get() * 1024 * 1024);
 
     // The passes have registered their pipelines: their shaders go out in one request, and each pipeline is made when its shaders arrive.
     // Nothing waits for them: the frame is the clear colour and the UI until the lit path's pipelines are there.
@@ -432,7 +432,7 @@ auto main(int argc, char* argv[]) -> int {
     RenderThread renderThread;
     renderThread.start(&renderer);
 
-    // The engine's frame: the camera (its up axis the scene's), the selection, residency, culling, the snapshot.
+    // The engine's frame: the camera (its up axis the scene's), the selection, readiness, culling, the snapshot.
     ViewFrame frame(scene, renderer, renderThread, assetClient);
 
     // The tools and the UI join the frame through their hooks; the UI's windows draw and edit the tools' state and the camera modes'.
@@ -441,7 +441,7 @@ auto main(int argc, char* argv[]) -> int {
     if (positional.size() > 1) {
         viewUI.setBookmarkPath(std::string(positional[1]) + ".cameras.txt");
     }
-    viewUI.setAssetDrawCount([&scene](const std::string& assetId) { return scene.drawCount(assetId); });
+    viewUI.setAssetPrimCount([&scene](const std::string& assetId) { return scene.primCountUsing(assetId); });
     viewUI.bindTools(tools, frame.cameraModes);
     ToolsHooks toolsHooks(tools, gizmoRender);
     UiHooks uiHooks({
@@ -455,12 +455,12 @@ auto main(int argc, char* argv[]) -> int {
     });
     ViewHooks& hooks = uiHooks;
 
-    // Answers waiting for the scene to be resident (view.waitResident, view.lod.set, view.repack, view.purposes), and render-LOD records
+    // Answers waiting for the scene to be ready (view.waitReady, view.lod.set, view.repack, view.purposes), and LOD-group records
     // waiting for the groups' states to be read back.
-    std::vector<ResidentWaiter> residentWaiters;
-    std::vector<RenderLodRequest> renderLodRequests;
-    ScriptClock script = {.waitForResident = waitForResident, .lastFrame = maxFrames};
-    // Dumps and captures that finish frames later, for script verbs and RPC calls alike.
+    std::vector<ReadyWaiter> readyWaiters;
+    std::vector<LodGroupRequest> lodGroupRequests;
+    ScriptClock script = {.waitForReady = waitForReady, .lastFrame = maxFrames};
+    // Dumps and captures that finish frames later, for console commands and RPC calls alike.
     ViewDumps dumps(
         [&scene]() -> const RenderWorld& { return scene.renderWorld(); },
         [&scene](uint32_t prim) -> std::string { return scene.primPath(prim); },
@@ -486,10 +486,10 @@ auto main(int argc, char* argv[]) -> int {
         .frameSceneView = [&frame] { frame.frameScene(); },
         .quit = frame.quit,
         .frameCounter = frame.frameCounter,
-        .residentWaiters = residentWaiters,
-        .residency = frame.residency,
+        .readyWaiters = readyWaiters,
+        .readiness = frame.readiness,
         .script = script,
-        .renderLodRequests = renderLodRequests,
+        .lodGroupRequests = lodGroupRequests,
         .viewAspect = frame.viewAspect,
         .lodPops = frame.lodPops,
         .flight = frame.flight,
@@ -498,12 +498,12 @@ auto main(int argc, char* argv[]) -> int {
         .autoFrame = frame.autoFrame,
         .sceneLabel = positional.size() >= 2 ? std::string(positional[1]) : std::string("(new scene)"),
     };
-    // Each layer adds its methods, script verbs and records: the engine's, the tools', the UI's.
-    RpcVerbs verbs;
+    // Each layer adds its methods, console commands and records: the engine's, the tools', the UI's.
+    ConsoleCommands console;
     RpcRecords records;
-    registerViewCommands(registry, verbs, records, viewContext);
-    registerToolCommands(registry, verbs, records, viewContext, tools);
-    registerUiCommands(registry, verbs, records, viewUI);
+    registerViewCommands(registry, console, records, viewContext);
+    registerToolCommands(registry, console, records, viewContext, tools);
+    registerUiCommands(registry, console, records, viewUI);
     registerRpcRecords(registry, records);
     // The endpoint is tooling: debug and release only (NGEN_INTROSPECTION), off with --no-rpc.
     RpcEndpoint endpoint;
@@ -520,7 +520,7 @@ auto main(int argc, char* argv[]) -> int {
     if (startCamera.starts_with("/")) {
         frame.startCamera = startCamera;
     } else if (!startCamera.empty()) {
-        verbs.run(registry, "camera", startCamera);
+        console.run(registry, "camera", startCamera);
         frame.autoFrame = false;
     }
     if (startFrameTarget != "scene") {
@@ -529,8 +529,8 @@ auto main(int argc, char* argv[]) -> int {
 
     // Main loop: the engine's steps in order, the commands after the scene update, the hooks between the steps.
     profile::registerThread("Main");
-    WindowInput input = {.tracedWidth = tracedWindowWidth, .tracedHeight = tracedWindowHeight};
-    TRACE_EVENT("Engine", "MainLoopStarted", "view").text(std::format("main loop started, {:.0f} ms after start", trace::msSinceStart())).field("since_start_ms", trace::msSinceStart());
+    WindowInput input = {.loggedWidth = loggedWindowWidth, .loggedHeight = loggedWindowHeight};
+    LOG_EVENT("Engine", "MainLoopStarted", "view").text(std::format("main loop started, {:.0f} ms after start", logging::msSinceStart())).field("since_start_ms", logging::msSinceStart());
     while (!frame.quit) {
         PROFILE_FRAME_MARK();
         PROFILE_ZONE("MainFrame", Frame);
@@ -539,7 +539,7 @@ auto main(int argc, char* argv[]) -> int {
             PROFILE_ZONE_DETAIL("Hooks.afterScene", Frame);
             hooks.afterScene(frame);
         }
-        runFrameCommands(viewContext, session, registry, verbs, endpoint);
+        runFrameCommands(viewContext, session, registry, console, endpoint);
         frame.advanceTime(SDL_GetTicksNS());
         frame.resetCameras();
         {
@@ -552,19 +552,19 @@ auto main(int argc, char* argv[]) -> int {
         SDL_GetWindowSizeInPixels(window, &width, &height);
         frame.setViewport(width, height);
         frame.sendSceneInputs();
-        frame.updateResidency();
+        frame.updateReadiness();
         {
-            PROFILE_ZONE_DETAIL("AnswerResidentWaiters", Frame);
-            answerResidentWaiters(viewContext);
+            PROFILE_ZONE_DETAIL("AnswerReadyWaiters", Frame);
+            answerReadyWaiters(viewContext);
         }
 
         pollInput(window, frame, hooks, input);
         frame.moveCamera(input.move, input.orbitHeld);
         frame.cull();
-        // Render-LOD records answer once a readback carries every group's state; while one waits, the frames read them back.
+        // LOD-group records answer once a readback carries every group's state; while one waits, the frames read them back.
         {
-            PROFILE_ZONE_DETAIL("ServiceRenderLodRequests", Frame);
-            frame.readLodStates = serviceRenderLodRequests(viewContext);
+            PROFILE_ZONE_DETAIL("ServiceLodGroupRequests", Frame);
+            frame.readLodStates = serviceLodGroupRequests(viewContext);
         }
         frame.countLodPops();
         frame.fitCascades();
@@ -618,20 +618,20 @@ auto main(int argc, char* argv[]) -> int {
     SDL_DestroyWindow(window);
     SDL_Quit();
 
-    // The endpoint goes last, so subscribers get the trace up to here: the last events are sent before the
+    // The endpoint goes last, so subscribers get the log up to here: the last events are sent before the
     // connections close, waiting up to a second for a subscriber to take them.
     bool failed = failOnValidation && (validationErrors > 0 || pipelinesFailed);
     if (failOnValidation && validationErrors > 0) {
-        TRACE_ERROR("Engine", "ValidationFailed", "view").text(std::format("validation errors: {}", validationErrors)).field("count", (int64_t) validationErrors);
+        LOG_ERROR("Engine", "ValidationFailed", "view").text(std::format("validation errors: {}", validationErrors)).field("count", (int64_t) validationErrors);
     }
     if (failOnValidation && pipelinesFailed) {
-        TRACE_ERROR("Engine", "PipelinesFailed", "view").text("a pipeline failed: its shader didn't pack or the device couldn't create it (the reason is above)");
+        LOG_ERROR("Engine", "PipelinesFailed", "view").text("a pipeline failed: its shader didn't pack or the device couldn't create it (the reason is above)");
     }
-    TRACE_EVENT("Engine", "ProcessExiting", "view")
+    LOG_EVENT("Engine", "ProcessExiting", "view")
         .text(std::format("exiting after {} frames", frame.frameCounter))
         .field("frames", (int64_t) frame.frameCounter)
         .field("validation_errors", (int64_t) validationErrors);
-    endpoint.finishTrace(std::chrono::seconds(1));
+    endpoint.finishLog(std::chrono::seconds(1));
     endpoint.stop();
 
     if (failed) {

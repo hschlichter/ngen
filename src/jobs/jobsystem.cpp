@@ -31,7 +31,7 @@ auto JobSystem::init(uint32_t numWorkers) -> void {
     }
     for (uint32_t i = 0; i < numWorkers; i++) {
         workers.emplace_back([i](std::stop_token stopToken) {
-            static std::array<std::string, 64> names; // lane names must outlive the thread
+            static std::array<std::string, 64> names; // track names must outlive the thread
             auto& name = names[i % names.size()];
             name = "Worker " + std::to_string(i);
             profile::registerThread(name.c_str());
@@ -53,10 +53,10 @@ auto JobSystem::shutdown() -> void {
 
 auto JobSystem::submit(JobFunc job, const char* name, JobKind kind, std::source_location location) -> JobFence {
     auto done = std::make_shared<std::atomic<bool>>(false);
-    auto siteId = profile::registerSite(name, profile::Group::Jobs, profile::Level::Guide, location);
+    auto locationId = profile::registerSourceLocation(name, profile::Group::Jobs, profile::Level::Guide, location);
     JobFence fence;
     fence.done = done;
-    Job entry{.func = std::move(job), .done = done, .profileNameId = siteId, .name = name, .kind = kind};
+    Job entry{.func = std::move(job), .done = done, .profileNameId = locationId, .name = name, .kind = kind};
     if (workers.empty()) {
         execute(entry, noWorker);
         return fence;
@@ -101,9 +101,9 @@ auto JobSystem::parallelFor(size_t count, size_t grain, const std::function<void
     }
     grain = std::max<size_t>(grain, 1);
     auto chunks = (count + grain - 1) / grain;
-    auto siteId = profile::registerSite(name, profile::Group::Jobs, profile::Level::Guide, location);
+    auto locationId = profile::registerSourceLocation(name, profile::Group::Jobs, profile::Level::Guide, location);
     if (chunks == 1 || workers.empty()) {
-        profile::ScopedZone zone(siteId);
+        profile::ScopedZone zone(locationId);
         body(0, count);
         return;
     }
@@ -127,7 +127,7 @@ auto JobSystem::parallelFor(size_t count, size_t grain, const std::function<void
         fences.push_back(submit(run, name, JobKind::Frame, location));
     }
     {
-        profile::ScopedZone zone(siteId);
+        profile::ScopedZone zone(locationId);
         run();
     }
     waitAll(fences);

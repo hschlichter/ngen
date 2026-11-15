@@ -1,8 +1,8 @@
 # ngen quick reference
 
-A cheat sheet of the commands, flags, script verbs, RPC methods and records, for humans and agents. Every row says what it does in one line;
+A cheat sheet of the commands, flags, console commands, RPC methods and records, for humans and agents. Every row says what it does in one line;
 the library READMEs linked at the end explain how and why. The live sources of truth are `./ngen-cli introspect describe view` (every
-method and its parameters) and the `config` record (every configuration value).
+method and its parameters) and the `cvars` record (every cvar).
 
 ## Quick start
 
@@ -17,14 +17,14 @@ mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/boo
 ./ngen-cli view assets/three_cubes.usda
 
 # Headless verification run
-./ngen-cli introspect trace --until-exit=view --output=/tmp/trace.jsonl & trace=$!
+./ngen-cli introspect log --until-exit=view --output=/tmp/log.jsonl & log=$!
 SDL_VIDEODRIVER=offscreen ./ngen-cli view assets/three_cubes.usda --frames=200 --script=/tmp/script.txt
-wait $trace
-jq -c 'select(.level != "info") | {process, level, type, text}' /tmp/trace.jsonl   # empty on a clean run
+wait $log
+jq -c 'select(.severity != "info") | {process, severity, type, text}' /tmp/log.jsonl   # empty on a clean run
 ```
 
-A script file holds `<frame> <verb> [args]` per line, for example `120 record render /tmp/records.jsonl`. Frames count from when the scene is
-first resident.
+A script file holds `<frame> <command> [args]` per line, for example `120 record render /tmp/records.jsonl`. Frames count from when the scene is
+first ready.
 
 Test scenes: `assets/three_cubes.usda` (smoke test), `assets/layered/root.usda` (composition), `assets/main_sponza/NewSponza_Main_USD_Zup_003.usda`
 (materials, git-ignored), `assets/caldera/caldera.usda` (large, git-ignored).
@@ -40,7 +40,7 @@ The entry point for humans and agents. Runs the set variant's binaries.
 | `ngen-cli build [args]` | Run `ngen-build`; `-p`/`-c` default to the set variant, other arguments pass through. |
 | `ngen-cli view [args]` | Run `ngen-view` (replaces the process, so signals and exit codes are the view's). |
 | `ngen-cli asset-server [args]` | Run `ngen-asset-server` in the foreground. |
-| `ngen-cli introspect [args]` | Run `ngen-introspect`: no arguments opens the window; `list`, `get`, `describe`, `call`, `trace` for the command line. |
+| `ngen-cli introspect [args]` | Run `ngen-introspect`: no arguments opens the window; `list`, `get`, `describe`, `call`, `log` for the command line. |
 | `ngen-cli pack <scene>...` | Run `ngen-pack`: pack everything a scene can reach, so the view opens it from the cache. |
 | `ngen-cli help` | Usage, the set variant and which tools are built. |
 
@@ -82,17 +82,17 @@ substring of a library, program, tool or alias name.
 
 | Flag | Does |
 |---|---|
-| `--frames=N` | Quit after N frames (counted from the scene first being resident). |
-| `--script=FILE` | Run a script: `<frame> <verb> [args]` per line. |
+| `--frames=N` | Quit after N frames (counted from the scene first being ready). |
+| `--script=FILE` | Run a script: `<frame> <command> [args]` per line. |
 | `--screenshot=PATH` | Write the presented frame as PNG on the last frame (frame 3 without `--frames`). The UI is left out. |
 | `--show-ui` | Keep the UI (menu bar, windows, status bar) in screenshots. |
 | `--camera=x,y,z,yaw,pitch` | Start camera pose, set before the scene loads. |
 | `--camera=/camera/prim` | Start at a camera the scene authors. |
 | `--camera-frame=scene\|/prim` | What the camera frames while the scene arrives. |
 | `--select=/prim` | Select a prim (full path, instances expanded). |
-| `--view=<mode>` | Buffer view: `lit`, `albedo`, `normals`, `depth`, `shadowfactor`, `shadowmap`, `shadowuv`, `worldpos`, `miplevel`, `cascades`, `lodlevel`, `hzb`. |
+| `--view=<mode>` | View mode: `lit`, `albedo`, `normals`, `depth`, `shadowfactor`, `shadowmap`, `shadowuv`, `worldpos`, `miplevel`, `cascades`, `lodlevel`, `hzb`. |
 | `--overlay=name=on\|off,...` | Overlays: `grid`, `origin`, `gizmo`, `aabbs`, `lightgizmos`, `buffer`, `shadow`, `aa`, `cascadefrusta`. |
-| `--no-wait-resident` | Count script frames from start-up instead of from residency, to look at loading. |
+| `--no-wait-ready` | Count script frames from start-up instead of from the scene first being ready, to look at loading. |
 | `--validation` | Turn on the Vulkan validation layer. |
 | `--fail-on-validation` | Validation on; exit code 2 if it reported anything. |
 | `--geometry-limit=<MiB>` | Cap each geometry pool buffer, to exercise a full pool. |
@@ -122,34 +122,34 @@ Headless: set `SDL_VIDEODRIVER=offscreen`.
 | Ctrl+5 | Every view and overlay off for the plain lit image; again restores them. |
 | F12 | Screenshot. |
 
-## Script verbs
+## Console commands
 
-A script line is `<frame> <verb> [args]`. Every verb runs an RPC method with the same code, so the method column also tells you what to call
+A script line is `<frame> <command> [args]`. Every console command runs an RPC method with the same code, so the method column also tells you what to call
 live.
 
 ### Scene and selection
 
-| Verb | Method | Does |
+| Console command | Method | Does |
 |---|---|---|
 | `select /prim` | `view.select` | Select a prim; an empty path deselects. |
 | `pick <x> <y>` | `view.pick` | Select what is drawn at a framebuffer pixel (GPU readback; the `Picked` event names it). |
-| `translate /prim dx,dy,dz` | `view.translate` | Offset a prim's local position: the view's own opinion, never saved. |
+| `translate /prim dx,dy,dz` | `view.translate` | Offset a prim's local position: a session opinion of the view, never saved. |
 | `purposes guide=on\|off,proxy=on\|off` | `view.purposes` | Draw guide and proxy prims. Holds the script until drawn. |
-| `repack <id>...\|scene` | `view.repack` | Force the asset server to repack, and rebuild the scene. Holds the script until resident. |
-| `goto-asset <id> [all]` | `view.gotoAsset` | Move the camera to an asset's next draw (nearest first) and select it; `all` frames every draw. |
+| `repack <id>...\|scene` | `view.repack` | Force the asset server to repack, and rebuild the scene. Holds the script until ready. |
+| `goto-asset <id> [all]` | `view.gotoAsset` | Move the camera to the next prim using an asset (nearest first) and select it; `all` frames every such prim. |
 | `assets-of [/prim]` | `view.assetsOf` | The assets drawn at or under a prim, or the selection. |
-| `wait-resident` | `view.waitResident` | Hold the script until the scene is resident. |
+| `wait-ready` | `view.waitReady` | Hold the script until the scene is ready. |
 | `quit` | `view.quit` | Stop the view after this frame. |
 
 ### Camera
 
-| Verb | Method | Does |
+| Console command | Method | Does |
 |---|---|---|
 | `camera x,y,z,yaw,pitch [debug]` | `view.camera.set` | Place the main camera, or the debug camera (turn it on first: `debug-camera on`). |
 | `camera-use /camera/prim` | `view.camera.use` | Move to a camera the scene authors. |
 | `camera-frame [scene\|/prim]` | `view.camera.frame` | Frame the scene or a prim. |
 | `camera-orbit x,y,z yaw pitch [debug]` | `view.camera.orbit` | Turn around a pivot by angles, the distance kept. |
-| `camera-follow on\|off`, `camera-follow height <m>` | `config.set` | Keep the eye a height above the highest drawn surface under it. |
+| `camera-follow on\|off`, `camera-follow height <m>` | `cvar.set` | Keep the eye a height above the highest drawn surface under it. |
 | `fly <path prefix> <m/s>` | `view.camera.fly` | Fly through the scene's cameras with that prefix, in path order. Holds the script while flying. |
 | `fly-stop` | `view.camera.fly.stop` | Stop the flight. |
 | `debug-camera on\|off\|place` | `view.camera.debug` | Debug camera on, off, or placed 15 m behind and 10 m above the main camera. |
@@ -159,7 +159,7 @@ live.
 
 ### LOD and streaming
 
-| Verb | Method | Does |
+| Console command | Method | Does |
 |---|---|---|
 | `lod <root> <level>` | `view.lod.set` | The level a LOD root wants; loads it. Holds the script until drawn. |
 | `lod-reset <root>` | `view.lod.reset` | Back to the default level. |
@@ -172,20 +172,20 @@ live.
 | `lod-bias <f>` | `view.lod.tuning` | Pick every root as if this many times closer. |
 | `lod-hysteresis <fraction>` | `view.lod.tuning` | Hysteresis at a boundary without a blend band. |
 | `lod-blending on\|off` | `view.lod.tuning` | LOD blending. |
-| `lod-show labels\|gizmo\|gizmo-all\|flash on\|off` | `config.set` | LOD tool viewport layers. |
-| `lod-show color level\|depth` | `config.set` | What the `lodlevel` view colours by. |
-| `streaming-show bounds\|rings\|rings-all\|labels on\|off` | `config.set` | Streaming tool viewport layers. |
+| `lod-show labels\|gizmo\|gizmo-all\|flash on\|off` | `cvar.set` | LOD tool viewport layers. |
+| `lod-show color level\|depth` | `cvar.set` | What the `lodlevel` view colours by. |
+| `streaming-show bounds\|rings\|rings-all\|labels on\|off` | `cvar.set` | Streaming tool viewport layers. |
 | `streaming-reset` | `view.streaming.reset` | Zero the `streaming` record's measured totals. |
 
 ### Rendering settings
 
-These set configuration values. `config <name> <value>` sets any value; `config-reset [<name or prefix>]` puts values back to their defaults.
+These set cvars. `cvar <name> <value>` sets any value; `cvar-reset [<name or prefix>]` puts values back to their defaults.
 
-| Verb | Does |
+| Console command | Does |
 |---|---|
-| `config <name> <value>` | Set any configuration value (`config render.shadow.cascades 1`). |
-| `config-reset [<name or prefix>]` | Reset one value, a group, or all. |
-| `view <mode>` | Buffer view, same modes as `--view`. |
+| `cvar <name> <value>` | Set any cvar (`cvar render.shadow.cascades 1`). |
+| `cvar-reset [<name or prefix>]` | Reset one value, a group, or all. |
+| `view <mode>` | View mode, same modes as `--view`. |
 | `debugview <mode>` | `off`, `wireframe`, `trianglesize`, `overdraw`, `instance`, `mesh`, `material`, `primitive`, `uv`, `streaming`, `meshlet`, `meshletcull`. |
 | `overlay name=on\|off,...` | Overlays, same names as `--overlay`. |
 | `cull on\|off\|freeze\|unfreeze\|show\|hide` | Frustum culling, frozen frustum, AABB overlay. |
@@ -201,7 +201,7 @@ These set configuration values. `config <name> <value>` sets any value; `config-
 
 ### Output, capture and UI
 
-| Verb | Method | Does |
+| Console command | Method | Does |
 |---|---|---|
 | `record <record> <file>` | `introspect.record` | Append a record to a file as one JSON line: `{record, requested_frame, frame, ts_ns, value}`. |
 | `screenshot <path>` | `view.screenshot` | Write the presented image as PNG. |
@@ -212,11 +212,11 @@ These set configuration values. `config <name> <value>` sets any value; `config-
 | `dump-gpuscene <dir>` | `introspect.gpuscene` | GPU scene tables, culling buffers and `instances_joined.json`. |
 | `dump-profile <path>` | `introspect.profile` | Profiler history as a Chrome trace (Perfetto). |
 | `renderdoc-capture` | `renderdoc.capture` | RenderDoc capture of the next frame (needs `--renderdoc`). |
-| `window <name> on\|off` | `view.window` | Open or close a window: `memory`, `capture`, `framedebugger`, `gpuscene`, `counters`, `shaders`, `culling`, `assets`, `lod`, `streaming`, `camera`, `renderdebug`, `framegraph`, `performance`, `config`. |
+| `window <name> on\|off` | `view.window` | Open or close a window: `memory`, `capture`, `framedebugger`, `gpuscene`, `counters`, `shaders`, `culling`, `assets`, `lod`, `streaming`, `camera`, `renderdebug`, `framegraph`, `performance`, `cvars`. |
 
-## RPC methods without a verb
+## RPC methods without a console command
 
-Every method above is also callable live: `./ngen-cli introspect call view <method> '<json params>'`. These ngen-view methods have no verb.
+Every method above is also callable live: `./ngen-cli introspect call view <method> '<json params>'`. These ngen-view methods have no console command.
 The asset server serves only its own methods (next section), and no `rpc.*`.
 
 | Method | Does |
@@ -226,16 +226,16 @@ The asset server serves only its own methods (next section), and no `rpc.*`.
 | `rpc.version` | Protocol version and endpoint kind. |
 | `introspect.list` | The records this endpoint gives. |
 | `introspect.get` | One record as JSON. |
-| `config.get` | One value by name, or every one under a prefix. |
-| `config.set` | One value, or several as `{values: {name: value}}`; nothing is set when one fails. |
-| `config.reset` | Reset a value, a prefix, or all. |
+| `cvar.get` | One value by name, or every one under a prefix. |
+| `cvar.set` | One value, or several as `{values: {name: value}}`; nothing is set when one fails. |
+| `cvar.reset` | Reset a value, a prefix, or all. |
 | `view.camera.get` | A camera's position and yaw/pitch. |
 | `view.camera.list` | The cameras the scene authors. |
 | `view.transform` | A prim's local and world transform. |
 | `view.lod.inspect` | One LOD root as the LOD window's inspector shows it. |
 | `view.streaming.inspect` | One streaming root as the Streaming window shows it. |
-| `view.renderlod` | Render-LOD groups under a path, with what the GPU wants and draws (answers frames later). |
-| `trace.subscribe`, `trace.unsubscribe` | Trace stream (answered by the endpoint itself; not in `rpc.describe`). |
+| `view.lodgroups` | LOD groups under a path, with what the GPU wants and draws (answers frames later). |
+| `log.subscribe`, `log.unsubscribe` | Log stream (answered by the endpoint itself; not in `rpc.describe`). |
 
 Errors: `-32601` unknown method, `-32602` invalid params (names the field), `-32603` internal, `-32000` engine failure with a message.
 
@@ -272,22 +272,22 @@ Finds processes through `.ngen-discovery/` in the working directory. A target is
 | `get <target> <record>` | One record as JSON. |
 | `describe <target>` | Every method and its parameters. |
 | `call <target> <method> [params-json]` | Call a method. |
-| `trace [options]` | Record the trace of every process, merged by time. |
+| `log [options]` | Record the log of every process, merged by time. |
 
-| Trace option | Does |
+| Log option | Does |
 |---|---|
-| `--output=FILE` | Write the trace to a file (sorted, when done). |
+| `--output=FILE` | Write the log to a file (sorted, when done). |
 | `--until-exit=TARGET` | Stop once that process has exited. Without it, run until Ctrl-C. |
 | `--process=A,...` | Only these processes. |
 | `--category=A,...` | Only these categories. |
 | `--type=A,...` | Only these event types. |
-| `--level=warning\|error` | Only this level and above. |
+| `--severity=warning\|error` | Only this severity and above. |
 | `--history` | Include what the processes' rings still hold. |
 
 | Window option | Does |
 |---|---|
 | `--select=<target>/<record>` | Show a record once its process is there. |
-| `--trace` | Open the Trace tab. |
+| `--log` | Open the Log tab. |
 | `--frames=N` | Quit after N frames. |
 | `--screenshot=PATH` | Write the last frame as PNG. |
 
@@ -299,25 +299,25 @@ frames later; record them at steady state (frame 120 or later).
 | Record | Holds |
 |---|---|
 | `status` | Frame counter, scene, selection, main camera, camera modes. |
-| `config` | Every configuration value: type, value, default, description, range or choices. |
-| `scene` | Layer stack, up axis and units, prims, prototypes, draws, lights, LOD levels set. |
+| `cvars` | Every cvar: type, value, default, description, range or choices. |
+| `scene` | Layer stack, up axis and units, prims, prototypes, instances, lights, LOD levels set. |
 | `environment` | The dome light, its image and the light it casts. |
-| `scenethread` | Requests, composes, placement passes, assets in flight and held, residency. |
-| `gpuscene` | Change lists, upload queue and budget, geometry pool. |
+| `scenethread` | Requests, composes, placement passes, assets in flight and held, readiness. |
+| `gpuscene` | Scene changes, upload queue and budget, geometry pool. |
 | `instancers` | Every PointInstancer: points, those shown, prototypes. |
 | `variants` | Every prim with variant sets: the variant composed, counts per variant. |
 | `payloads` | Every payload placement: prim, asset ids, loaded, extentsHint. |
 | `assets` | What the view asked the asset server for: per asset state, size, times. |
 | `culling` | Per view: instances drawn and culled, meshlets culled by frustum, cone and depth, triangles. |
-| `pipelines` | Every pipeline: state, shaders and versions, last error. |
+| `pipelines` | Every pipeline: state, shaders and hashes, last error. |
 | `render` | Device, swapchain, scene tables, per-pass stats, draw log (next frames). |
 | `memory` | Every allocation and memory heap (next frames). |
 | `counters` | GPU zones and pipeline statistics per pass (next frames). |
 | `profile` | CPU and GPU time per frame. |
 | `zones` | Every profiler zone over the last 60 frames: count, total, median, longest. |
-| `lod` | Every LOD root: levels, default, wanted, drawn, loaded, set by hand. |
-| `streaming` | Per streaming root: selected level and why, radii, state, resident, late; measured totals. |
-| `renderlod` | Render-LOD groups, the GPU's pick and its check against the heuristic (next frames). |
+| `lod` | Every LOD root: levels, default, desired, drawn, loaded, set by hand. |
+| `streaming` | Per streaming root: desired level and why, radii, state, resident, late; measured totals. |
+| `lodgroups` | LOD groups, the GPU's pick and its check against the heuristic (next frames). |
 | `lodtool` | The LOD tool's inspection of the root at or above the selection, tuning, layers, pops. |
 | `streamingtool` | The Streaming tool's inspection of the root at or above the selection, totals, map view. |
 | `debugcamera` | Debug camera position, yaw, pitch and the main camera's trail. |
@@ -327,9 +327,9 @@ frames later; record them at steady state (frame 120 or later).
 jq 'select(.record == "render") | .value.passes' /tmp/records.jsonl
 ```
 
-## Configuration values
+## Cvars
 
-Set with `config <name> <value>` or `config.set`; list with the `config` record or `config.get`. A prefix selects a group (`render.shadow`).
+Set with `cvar <name> <value>` or `cvar.set`; list with the `cvars` record or `cvar.get`. A prefix selects a group (`render.shadow`).
 
 | Group | Values |
 |---|---|
@@ -370,7 +370,7 @@ done
 ## Where to read more
 
 [`src/rpc/README.md`](src/rpc/README.md) (protocol, adding a method), [`src/introspect/README.md`](src/introspect/README.md) (records, the
-tool), [`src/trace/README.md`](src/trace/README.md) (events), [`src/view/README.md`](src/view/README.md) (commands, camera, frame),
-[`src/config/README.md`](src/config/README.md) (configuration), [`src/asset/README.md`](src/asset/README.md) (asset server, packers),
+tool), [`src/log/README.md`](src/log/README.md) (events), [`src/view/README.md`](src/view/README.md) (commands, camera, frame),
+[`src/cvar/README.md`](src/cvar/README.md) (cvars), [`src/asset/README.md`](src/asset/README.md) (asset server, packers),
 [`src/build/README.md`](src/build/README.md) (build system), [`src/rhi/README.md`](src/rhi/README.md) (RHI examples), and the `run-headless`
 skill (`.claude/skills/run-headless/SKILL.md`).

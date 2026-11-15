@@ -15,7 +15,7 @@ class FrameGraph;
 class RhiBuffer;
 class RhiDevice;
 
-// One entry of the render-LOD group table (std430, stride 240), read by shaders/lodselect.comp: RenderLodGroup, the distance's transforms as
+// One entry of the LOD group table (std430, stride 240), read by shaders/lodselect.comp: RenderLodGroup, the distance's transforms as
 // three rows each. serial changes each time the slot takes a new group, so the level picked for the group before isn't taken as this one's.
 struct GpuLodGroup {
     std::array<glm::vec4, 3> toWorld = {};
@@ -42,7 +42,7 @@ static_assert(sizeof(GpuLodGroup) == 240);
 // What shaders/lodselect.comp counts over the groups each frame (its Totals, std430).
 struct LodSelectTotals {
     std::array<uint32_t, RenderLodGroup::maxLevels> picked = {}; // groups drawing each level
-    uint32_t fallbacks = 0;                                      // groups drawing another level while the one wanted isn't resident
+    uint32_t fallbacks = 0;                                      // groups drawing another level while the one desired isn't resident
     uint32_t forced = 0;                                         // groups at a hand-set level or the default, the heuristic off
     uint32_t groups = 0;                                         // alive
     uint32_t fading = 0;                                         // groups drawing two levels, cross-faded, inside a blend band
@@ -56,23 +56,23 @@ inline constexpr uint8_t forced = 1;   // at a forced level: hand-set, or the de
 inline constexpr uint8_t flashing = 2; // its drawn level changed without a fade within the last half second (the pop flash)
 } // namespace LodStateFlags
 
-// The render-LOD groups on the GPU (src/renderer/README.md, "Render LOD"): the group table, a record per group slot uploaded as groups
+// The LOD groups on the GPU (src/renderer/README.md, "LOD groups"): the group table, a record per group slot uploaded as groups
 // change; the state, per group the serial it was picked for, the level the heuristic wants, the level drawn, the level fading in and its
 // share, and the measure, which lodselect.comp writes each frame and the cull pass and the cutout pipelines read; and the residency mask, per group a bit per level with a mesh not in the pool, which the cull pass
 // sets and lodselect.comp reads and clears the next frame. The three persist across frames; a grown one is new, its contents undefined
 // until written: the state is written before anything reads it, and stale residency bits only make a group fall back for a frame.
-// Per frame slot: the per-workgroup counters, the totals and the readback.
+// Per frame context: the per-workgroup counters, the totals and the readback.
 class LodGroups {
 public:
     static constexpr uint32_t groupSize = 256;
     static constexpr uint32_t counterCount = sizeof(LodSelectTotals) / sizeof(uint32_t);
 
-    auto init(RhiDevice* device, uint32_t frameSlots, DeletionQueue* deletionQueue) -> void;
+    auto init(RhiDevice* device, uint32_t frameContexts, DeletionQueue* deletionQueue) -> void;
     auto destroy() -> void;
     // The table's growth (BufferGrowth), for the gpuscene record.
     auto growthStatus() const -> GrowthStatus { return growth.statusOf(capacity, groups.size()); }
 
-    // Applies a change list's groups: the table grows to `count` slots and the changed slots are uploaded at the next import. True when a
+    // Applies the groups of one `SceneChanges`: the table grows to `count` slots and the changed slots are uploaded at the next import. True when a
     // buffer was replaced, so the descriptor sets naming it are rewritten.
     auto apply(std::span<const std::pair<uint32_t, RenderLodGroup>> changes, uint32_t count, uint64_t frame) -> bool;
     auto groupCount() const -> uint32_t { return (uint32_t) groups.size(); }
@@ -88,25 +88,25 @@ public:
         FgBufferHandle readback;
     };
     // Imports the persistent buffers with the access the last frame left them in and the slot's; adds LodGroupUpload when groups changed.
-    auto import(FrameGraph& fg, uint32_t frameSlot) -> Handles;
+    auto import(FrameGraph& fg, uint32_t frameContext) -> Handles;
     // Copies the totals, and with `states` every group's state, into the slot's readback; `eye` and `windowArea` are the camera the pick
     // measured from, kept with it.
-    auto addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool states, const glm::vec3& eye, float windowArea) -> void;
+    auto addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameContext, bool states, const glm::vec3& eye, float windowArea) -> void;
     // Once the slot's fence has passed: what that slot's frame read back.
-    auto parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void;
+    auto parseReadback(uint32_t frameContext, uint64_t contextFrame) -> void;
     // Stores the access the persistent buffers are left in, for the next frame's import.
     auto afterExecute(const FrameGraph& fg) -> void;
 
     auto tableBuffer() const -> RhiBuffer* { return table; }
     auto stateBuffer() const -> RhiBuffer* { return states; }
     auto residencyBuffer() const -> RhiBuffer* { return residency; }
-    auto groupCountersBuffer(uint32_t frameSlot) const -> RhiBuffer* { return slots[frameSlot].groupCounters; }
-    auto totalsBuffer(uint32_t frameSlot) const -> RhiBuffer* { return slots[frameSlot].totals; }
-    auto frameSlots() const -> uint32_t { return (uint32_t) slots.size(); }
+    auto groupCountersBuffer(uint32_t frameContext) const -> RhiBuffer* { return slots[frameContext].groupCounters; }
+    auto totalsBuffer(uint32_t frameContext) const -> RhiBuffer* { return slots[frameContext].totals; }
+    auto frameContexts() const -> uint32_t { return (uint32_t) slots.size(); }
     // The table, the state (16 bytes a group) and the residency mask.
     auto capacityBytes() const -> uint64_t { return (uint64_t) capacity * (sizeof(GpuLodGroup) + (5 * sizeof(uint32_t))); }
 
-    // The latest readback (one frame-slot cycle old): the totals, and per group the level drawn and wanted (0xFF for none), the level
+    // The latest readback (one frame-context cycle old): the totals, and per group the level drawn and desired (0xFF for none), the level
     // fading in (0xFF for none) and its share, the measure and its flags (LodStateFlags), when the states were read.
     struct Readback {
         uint64_t frame = 0;
@@ -116,7 +116,7 @@ public:
         glm::vec3 eye = glm::vec3(0.0f); // the camera the pick measured from
         float windowArea = 1.0f;
         std::vector<uint8_t> drawn;
-        std::vector<uint8_t> wanted;
+        std::vector<uint8_t> desired;
         std::vector<uint8_t> fadeLevel;
         std::vector<float> fade;
         std::vector<float> measure;
@@ -147,7 +147,7 @@ private:
     uint32_t capacity = 0;
     // The next size, made on a background job once the groups pass render.growth.ahead of the capacity.
     BufferGrowth growth{"gpuscene.lodgroups", BufferGrowth::Behind::GrowNow};
-    std::vector<RenderLodGroup> groups; // by group slot, as the change lists left them
+    std::vector<RenderLodGroup> groups; // by group slot, as the scene changes left them
     std::vector<uint32_t> serials;      // by group slot
     RhiBuffer* table = nullptr;
     RhiBuffer* states = nullptr;

@@ -4,7 +4,7 @@
 //
 // From each scene's root layer it follows what every pack names (namedAssets, scenepack.h): every LOD level and every variant, not only what a
 // view would load. Nothing is composed: what is authored anywhere is packed. Each asset is requested and streamed back like a view's request,
-// so the server's cache, its trace and its records see an ordinary client. Exit codes: 0 everything packed, 1 an asset failed or no server
+// so the server's cache, its log and its records see an ordinary client. Exit codes: 0 everything packed, 1 an asset failed or no server
 // runs, 3 usage.
 
 #include "assetclient.h"

@@ -97,7 +97,7 @@ struct AssetClient::State {
             auto offset = params.value("offset", size_t(0));
             auto total = params.value("total", size_t(0));
             asset.id = id;
-            asset.version = params.value("version", std::string());
+            asset.hash = params.value("hash", std::string());
             asset.bytes.resize(total);
             if (offset + attachment.size() <= total) {
                 std::memcpy(asset.bytes.data() + offset, attachment.data(), attachment.size());
@@ -109,11 +109,11 @@ struct AssetClient::State {
         } else if (method == "asset.ready") {
             if (params.value("sent", false) && params.value("size", size_t(0)) == 0 && !partial.contains(id)) {
                 // An empty asset: no asset.data precedes it.
-                partial[id] = PackedAsset{.id = id, .version = params.value("version", std::string()), .bytes = {}};
+                partial[id] = PackedAsset{.id = id, .hash = params.value("hash", std::string()), .bytes = {}};
             }
             auto it = partial.find(id);
             if (it == partial.end() && !ready.contains(id)) {
-                // Ready without data: only for a version the client said it holds, which this client never does.
+                // Ready without data: only for a hash the client said it holds, which this client never does.
                 fail(id, {std::format("{}: the asset server sent no data", id)});
             } else {
                 stats.received++;
@@ -125,7 +125,7 @@ struct AssetClient::State {
                 auto& logged = entry(id);
                 logged.state = AssetLogState::Received;
                 logged.packed = params.value("packed", false);
-                logged.version = params.value("version", std::string());
+                logged.hash = params.value("hash", std::string());
                 logged.bytes = params.value("size", uint64_t(0));
                 logged.doneMs = nowMs();
                 logged.serverMs = params.value("ms", -1.0);

@@ -1,4 +1,4 @@
-// Render-LOD fades (src/renderer/README.md, "Render LOD"): while a group draws two levels inside an authored blend band, each pixel keeps
+// LOD-group fades (src/renderer/README.md, "LOD groups"): while a group draws two levels inside an authored blend band, each pixel keeps
 // one of them by a 4x4 ordered (Bayer) pattern in screen space, the two levels' tests complementary, so every pixel is covered once. The
 // cull pass draws a fading group's instances in the cutout buckets; their mesh shaders read the group's state (lodCoverage, with the
 // includer's `lodStates`, lodselect.comp's) and passes the coverage flat; the fragment stage, which defines LOD_FADE_FRAGMENT before
@@ -35,8 +35,8 @@ float lodCoverage(uint lodGroup, uint lodLevel) {
     return lodLevel - 1u == fadeLevel ? share : -share;
 }
 
-// The LOD level view's tag (the G-buffer normal target's alpha): the drawn level + 1 (0 under no LOD root), plus, for a render-LOD
-// group's instance, 16 at a forced level, 32 drawing another level than it wants (the wanted one not resident), 64 while it flashes for a
+// The LOD level view's tag (the G-buffer normal target's alpha): the drawn level + 1 (0 under no LOD root), plus, for a LOD
+// group's instance, 16 at a forced level, 32 drawing another level than it wants (the desired one not resident), 64 while it flashes for a
 // pop. A 16-bit float holds it exactly; lighting.frag reads it back.
 const uint lodTagForced = 16u;
 const uint lodTagFallback = 32u;

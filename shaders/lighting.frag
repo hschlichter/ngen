@@ -33,7 +33,7 @@ layout(push_constant) uniform Push {
     int viewMode;
     int showOverlay;
     int showShadowOverlay;
-    int lodFlash;        // 1: tint the meshes of a render-LOD group flashing for a pop (the LOD tag's 64), over any view
+    int lodFlash;        // 1: tint the meshes of a LOD group flashing for a pop (the LOD tag's 64), over any view
     int lodColorByDepth; // the LOD Level view's colour: 0 by the drawn level, 1 by how many LOD roots deep
     int hzbLevel;        // the Hzb view's pyramid level; -1 while the pyramid wasn't built this frame
 } push;
@@ -165,7 +165,7 @@ float sampleShadow(vec3 worldPos, vec3 normal, float viewDepth) {
 // (src/ui/lodwindow.cpp) colours the LOD window's swatches. By level: the drawn level of the nearest LOD root, 0 red, 1 orange, 2 yellow,
 // 3 green, 4 cyan, 5 blue, 6 magenta, 7 and up white; an index within that root, so a region's level 1 and a tile's level 1 are different
 // resolutions. By depth: how many LOD roots the draw is under (the tag from 128 up), 1 blue, 2 green, 3 orange, 4 and more magenta. Grey
-// under no LOD root. A render-LOD group at a forced level is striped diagonally, one drawing another level than it wants checkered.
+// under no LOD root. A LOD group at a forced level is striped diagonally, one drawing another level than it wants checkered.
 vec3 lodLevelTint(int tag) {
     const vec3 levelRamp[8] = vec3[](vec3(1.0, 0.0, 0.0), vec3(1.0, 0.5, 0.0), vec3(1.0, 1.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 1.0, 1.0), vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 1.0), vec3(1.0, 1.0, 1.0));
     const vec3 depthHues[4] = vec3[](vec3(0.25, 0.5, 1.0), vec3(0.2, 0.85, 0.25), vec3(1.0, 0.55, 0.05), vec3(0.9, 0.2, 0.9));
@@ -346,7 +346,7 @@ void main() {
     }
 
     outColor = vec4(sampleBuffer(push.viewMode, uv), 1.0);
-    // The pop flash: a render-LOD group whose level changed without a fade, for half a second.
+    // The pop flash: a LOD group whose level changed without a fade, for half a second.
     if (push.lodFlash == 1 && !isBackground(uv) && (int(texture(gbufferNormal, uv).a + 0.5) & 64) != 0) {
         outColor.rgb = mix(outColor.rgb, vec3(1.0), 0.7);
     }

@@ -1,0 +1,4 @@
+# The cvars hero: the Cvars window over the castle. Paths are relative to the repository root.
+10 window cvars on
+40 screenshot _out/heroes/cvars/shot.png
+50 quit

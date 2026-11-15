@@ -1,7 +1,7 @@
 #pragma once
 
 // Which introspection windows are open (Windows > Introspection). Owned by EditorUI; the
-// menu and session verbs edit the same flags.
+// menu and console commands edit the same flags.
 struct IntrospectionFlags {
     bool memory = false;
     bool capture = false;

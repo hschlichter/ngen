@@ -113,8 +113,8 @@ private:
     size_t count = 0;
 };
 
-// One draw: a submesh of a placed mesh. Draws live in slots that keep their index while they exist; a removed draw's slot is dead (alive
-// false) until a new draw reuses it.
+// One instance: a submesh of a placed mesh. Instances live in slots that keep their index while they exist; a removed instance's slot is dead (alive
+// false) until a new instance reuses it.
 struct RenderMeshInstance {
     MeshHandle mesh;
     MaterialHandle material;
@@ -133,7 +133,7 @@ struct RenderMeshInstance {
     bool cutout = false;   // its material is cutout: drawn by the cutout pipelines
     uint32_t lodLevel = 0; // the drawn level + 1 of the nearest LOD root above its prim, 0 under none; for the LOD level view
     uint32_t lodDepth = 0; // how many LOD roots its prim is under, 0 under none; the LOD level view's hue
-    // Its render-LOD group + 1, 0 for none: drawn only while the group picks its level (lodLevel - 1).
+    // Its LOD group + 1, 0 for none: drawn only while the group picks its level (lodLevel - 1).
     uint32_t lodGroup = 0;
     // The slot + 1 of the nearest streaming LOD root above its prim, 0 under none: the streaming view colours it by that root's state.
     uint32_t streamRoot = 0;
@@ -162,15 +162,15 @@ struct RenderLight {
     auto operator==(const RenderLight&) const -> bool = default;
 };
 
-// How a render-LOD group measures the camera: UsdLod's two heuristics.
+// How a LOD group measures the camera: UsdLod's two heuristics.
 enum class RenderLodKind : uint32_t {
     ScreenSize, // the sphere over the view window at depth 1, a fraction of the window
     Distance,   // to the center, or the nearest point of the box (0 inside), in metres
 };
 
-// A render-LOD root where it is placed: the renderer picks its level each frame from the camera (shaders/lodselect.comp), by the heuristic the
+// A LOD-group root where it is placed: the renderer picks its level each frame from the camera (shaders/lodselect.comp), by the heuristic the
 // view chose for it, and draws the slots tagged with it and that level; inside an authored blend band it draws the next level too, the two
-// cross-faded. Slots in RenderWorld::lodGroups, like draw slots.
+// cross-faded. Slots in RenderWorld::lodGroups, like instance slots.
 struct RenderLodGroup {
     static constexpr uint32_t maxLevels = 8;
     RenderLodKind kind = RenderLodKind::ScreenSize;
@@ -224,10 +224,10 @@ struct SceneChanges {
     std::vector<TextureHandle> texturesRemoved;
     std::vector<std::pair<MaterialHandle, MaterialDesc>> materialsChanged; // added, or with new content
     std::vector<MaterialHandle> materialsRemoved;
-    // Draws whose slot changed: added, updated or removed (alive false). slotCount is the slot list's length afterwards.
+    // Instances whose slot changed: added, updated or removed (alive false). slotCount is the slot list's length afterwards.
     std::vector<std::pair<uint32_t, RenderMeshInstance>> instances;
     uint32_t slotCount = 0;
-    // Render-LOD groups whose slot changed, applied with the draws; lodGroupCount is the group list's length afterwards.
+    // LOD groups whose slot changed, applied with the instances; lodGroupCount is the group list's length afterwards.
     std::vector<std::pair<uint32_t, RenderLodGroup>> lodGroups;
     uint32_t lodGroupCount = 0;
     bool lightsChanged = false;

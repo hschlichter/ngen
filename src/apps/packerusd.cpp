@@ -1,5 +1,5 @@
 // ngen-packer-usd: packs one USD file (.usda, .usdc, .usd) into a layer pack, the opinions the file authors, and writes each mesh and
-// material the file defines as a secondary output, "<asset>#<prim path>" (src/asset/README.md).
+// material the file defines as a sub-asset, "<asset>#<prim path>" (src/asset/README.md).
 
 #include "packer.h"
 #include "profile.h"
@@ -42,10 +42,10 @@ auto main(int argc, char** argv) -> int {
         finish(1);
     }
 
-    clearSecondaryOutputs(args->out);
+    clearSubAssets(args->out);
     std::vector<std::pair<std::string, std::string>> outputs;
-    auto writeSecondary = [&](const std::string& primPath, const std::vector<std::byte>& bytes) -> bool {
-        auto file = secondaryOutputFile(args->out, primPath);
+    auto writeSubAsset = [&](const std::string& primPath, const std::vector<std::byte>& bytes) -> bool {
+        auto file = subAssetPath(args->out, primPath);
         auto written = writePackerFile(file, bytes);
         if (!written) {
             std::println(stderr, "{}", written.error());
@@ -55,16 +55,16 @@ auto main(int argc, char** argv) -> int {
         return true;
     };
     for (const auto& [primPath, mesh] : result.meshes) {
-        if (!writeSecondary(primPath, writeMeshPack(mesh))) {
+        if (!writeSubAsset(primPath, writeMeshPack(mesh))) {
             finish(1);
         }
     }
     for (const auto& [primPath, material] : result.materials) {
-        if (!writeSecondary(primPath, writeMaterialPack(material))) {
+        if (!writeSubAsset(primPath, writeMaterialPack(material))) {
             finish(1);
         }
     }
-    if (auto listed = writeSecondaryOutputs(args->out, outputs); !listed) {
+    if (auto listed = writeSubAssets(args->out, outputs); !listed) {
         std::println(stderr, "{}", listed.error());
         finish(1);
     }
@@ -82,7 +82,7 @@ auto main(int argc, char** argv) -> int {
         finish(1);
     }
 
-    // Warnings on stdout: the asset server shows them in its trace; the pack keeps them too.
+    // Warnings on stdout: the asset server shows them in its log; the pack keeps them too.
     for (const auto& warning : result.layer.warnings) {
         if (warning.path.empty()) {
             std::println("{}", warning.text);

@@ -1,7 +1,7 @@
 #include "introspectcommands.h"
 
+#include "introspectlog.h"
 #include "introspecttarget.h"
-#include "introspecttrace.h"
 #include "rpcclient.h"
 #include "rpcdiscovery.h"
 
@@ -26,7 +26,7 @@ auto usage() -> int {
     std::println(stderr, "       ngen-introspect get <target> <record>");
     std::println(stderr, "       ngen-introspect describe <target>");
     std::println(stderr, "       ngen-introspect call <target> <method> [params-json]");
-    std::println(stderr, "       ngen-introspect trace [--output=FILE] [--until-exit=TARGET] [--process=TARGET,...] [--category=A,...] [--type=A,...] [--level=L] [--history]");
+    std::println(stderr, "       ngen-introspect log [--output=FILE] [--until-exit=TARGET] [--process=TARGET,...] [--category=A,...] [--type=A,...] [--severity=L] [--history]");
     std::println(stderr, "target: <kind>, <kind>:<pid> or <pid>");
     return exitUsage;
 }
@@ -95,7 +95,7 @@ auto commandList(const std::vector<RpcEndpointInfo>& endpoints) -> int {
 } // namespace
 
 auto isIntrospectCommand(const std::string& command) -> bool {
-    return command == "list" || command == "get" || command == "describe" || command == "call" || command == "trace";
+    return command == "list" || command == "get" || command == "describe" || command == "call" || command == "log";
 }
 
 auto runIntrospectCommand(std::span<const std::string> args) -> int {
@@ -103,8 +103,8 @@ auto runIntrospectCommand(std::span<const std::string> args) -> int {
         return usage();
     }
     const auto& command = args[0];
-    if (command == "trace") {
-        return runTraceCommand(args.subspan(1));
+    if (command == "log") {
+        return runLogCommand(args.subspan(1));
     }
     auto endpoints = listRpcEndpoints();
     if (command == "list") {

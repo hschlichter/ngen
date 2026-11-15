@@ -22,7 +22,7 @@
   <text x="726" y="196" class="res" transform="rotate(-55 726 196)">cullVisibility</text>
   <text x="762" y="196" class="res" transform="rotate(-55 762 196)">cullGroupCounters</text>
   <text x="798" y="196" class="res" transform="rotate(-55 798 196)">cullGroupOffsets</text>
-  <text x="834" y="196" class="res" transform="rotate(-55 834 196)">cullRegionWork</text>
+  <text x="834" y="196" class="res" transform="rotate(-55 834 196)">cullDrawListWork</text>
   <text x="870" y="196" class="res" transform="rotate(-55 870 196)">cullWorkItems</text>
   <text x="906" y="196" class="res" transform="rotate(-55 906 196)">drawCommands</text>
   <text x="942" y="196" class="res" transform="rotate(-55 942 196)">drawCounts</text>
@@ -41,7 +41,7 @@
   <line x1="454" y1="206" x2="630" y2="206" stroke="#64748b" stroke-width="1.5"/>
   <text x="542" y="221" class="s" text-anchor="middle">persistent</text>
   <line x1="634" y1="206" x2="1026" y2="206" stroke="#64748b" stroke-width="1.5"/>
-  <text x="830" y="221" class="s" text-anchor="middle">per frame slot</text>
+  <text x="830" y="221" class="s" text-anchor="middle">per frame context</text>
   <line x1="1030" y1="206" x2="1314" y2="206" stroke="#64748b" stroke-width="1.5"/>
   <text x="1172" y="221" class="s" text-anchor="middle">transient (ResourcePool)</text>
   <line x1="1318" y1="206" x2="1386" y2="206" stroke="#64748b" stroke-width="1.5"/>
@@ -51,7 +51,7 @@
   <rect x="28" y="234" width="1368" height="92" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
   <text x="40" y="250" class="band" fill="#16a34a">uploads</text>
   <rect x="28" y="334" width="1368" height="202" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
-  <text x="40" y="350" class="band" fill="#16a34a">render LOD and culling, first phase: what was visible last frame (compute)</text>
+  <text x="40" y="350" class="band" fill="#16a34a">LOD groups and culling, first phase: what was visible last frame (compute)</text>
   <rect x="28" y="544" width="1368" height="70" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
   <text x="40" y="560" class="band" fill="#16a34a">mesh-shader draws, first phase</text>
   <rect x="28" y="622" width="1368" height="158" rx="8" fill="#fffbeb" stroke="#d97706" stroke-opacity="0.45"/>
@@ -127,7 +127,7 @@
   <circle cx="686" cy="476" r="5" fill="#16a34a"/>
   <circle cx="650" cy="476" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
   <text x="44" y="502" class="pass">InstanceCullLayout</text>
-  <text x="432" y="502" class="s" text-anchor="end">regions in the work items</text>
+  <text x="432" y="502" class="s" text-anchor="end">draw lists in the work items</text>
   <circle cx="830" cy="498" r="5" fill="#16a34a"/>
   <circle cx="938" cy="498" r="5" fill="#16a34a"/>
   <circle cx="974" cy="498" r="5" fill="#16a34a"/>
@@ -181,7 +181,7 @@
   <circle cx="758" cy="698" r="4.5" fill="#ffffff" stroke="#d97706" stroke-width="1.6"/>
   <circle cx="614" cy="698" r="4.5" fill="#ffffff" stroke="#d97706" stroke-width="1.6"/>
   <text x="44" y="724" class="pass">InstanceCullLateLayout</text>
-  <text x="432" y="724" class="s" text-anchor="end">after the first regions</text>
+  <text x="432" y="724" class="s" text-anchor="end">after the first draw lists</text>
   <circle cx="830" cy="720" r="5" fill="#d97706"/>
   <circle cx="938" cy="720" r="5" fill="#d97706"/>
   <circle cx="614" cy="720" r="4.5" fill="#ffffff" stroke="#d97706" stroke-width="1.6"/>

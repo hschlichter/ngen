@@ -1,6 +1,6 @@
 #pragma once
 
-// Session commands: the verbs an agent or a script uses to drive ngen-view without the
+// Session commands: the console commands an agent or a script uses to drive ngen-view without the
 // UI. CLI flags and the --script file both produce the same commands; main applies the
 // ones due at the top of each frame.
 //
@@ -12,11 +12,11 @@
 //   view lit|albedo|normals|depth|shadowfactor|shadowmap|shadowuv|worldpos
 //   overlay name=on|off[,...]     grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa
 //   screenshot PATH               write the presented frame as PNG
-//   record NAME                   put a record (render, memory, culling, …) into the trace as one event
+//   record NAME                   put a record (render, memory, culling, …) into the log as one event
 //   dump-profile PATH             write the profiler history as Chrome trace JSON
 //   quit
 //
-// Script lines: "<frame> <verb> [args]"; '#' starts a comment.
+// Script lines: "<frame> <command> [args]"; '#' starts a comment.
 
 #include <cstdint>
 #include <string>
@@ -25,7 +25,7 @@
 
 struct SessionCommand {
     uint64_t frame = 0;
-    std::string verb;
+    std::string name;
     std::string args;
 };
 
@@ -33,7 +33,7 @@ class SessionScript {
 public:
     // Parses one line; returns false with `error` set on a malformed line.
     auto addLine(std::string_view line, std::string& error) -> bool;
-    auto add(uint64_t frame, std::string verb, std::string args) -> void;
+    auto add(uint64_t frame, std::string name, std::string args) -> void;
     auto loadFile(const char* path, std::string& error) -> bool;
 
     // Commands due at `frame`, in insertion order, removed from the queue.

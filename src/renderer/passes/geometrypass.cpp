@@ -1,9 +1,9 @@
 #include "geometrypass.h"
+#include "log.h"
 #include "profilegpu.h"
 #include "renderertypes.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "trace.h"
 
 #include <array>
 #include <format>
@@ -21,7 +21,7 @@ auto GeometryPass::init(RhiDevice* device, PipelineRegistry& pipelineRegistry, R
     // enough precision for a unit vector. Keep R32 where the device cannot render to it.
     auto neededUsage = RhiTextureUsage::ColorAttachment | RhiTextureUsage::Sampled;
     if (!device->supportsTextureFormat(R16G16B16A16_SFLOAT, neededUsage)) {
-        TRACE_WARNING("Render", "FormatFallback", "GeometryPass").text("R16G16B16A16_SFLOAT not renderable, normal target stays R32G32B32A32_SFLOAT");
+        LOG_WARNING("Render", "FormatFallback", "GeometryPass").text("R16G16B16A16_SFLOAT not renderable, normal target stays R32G32B32A32_SFLOAT");
         normalTargetFormat = R32G32B32A32_SFLOAT;
     }
     // Task and mesh shaders pull the vertices (meshlet.task, gbuffer.mesh): no vertex input.
@@ -71,15 +71,15 @@ auto GeometryPass::descriptorBindings() -> std::array<RhiDescriptorBinding, 16> 
         {.binding = 7, .type = StorageBuffer, .stage = shaders},
         {.binding = 8, .type = StorageBuffer, .stage = shaders},
         {.binding = 9, .type = StorageBuffer, .stage = shaders},
-        // The frame slot's culling buffers: the meshlet work items, the culling parameters, the meshlet counts.
+        // The frame context's culling buffers: the meshlet work items, the culling parameters, the meshlet counts.
         {.binding = 10, .type = StorageBuffer, .stage = shaders},
         {.binding = 11, .type = StorageBuffer, .stage = shaders},
         {.binding = 12, .type = StorageBuffer, .stage = shaders},
         // The depth pyramid, for the late phase's meshlets.
         {.binding = 13, .type = CombinedImageSampler, .stage = shaders},
-        // The regions' draws and work item ranges.
+        // The draw lists' draws and work item ranges.
         {.binding = 14, .type = StorageBuffer, .stage = shaders},
-        // The render-LOD state (lodselect.comp's): the cutout buckets' mesh shaders read a fading instance's share of the pattern, the geometry
+        // The LOD-group state (lodselect.comp's): the cutout buckets' mesh shaders read a fading instance's share of the pattern, the geometry
         // pass's its LOD tag (lodfade.glsl).
         {.binding = 15, .type = StorageBuffer, .stage = shaders},
     }};
@@ -150,8 +150,8 @@ auto GeometryPass::addPass(
             }
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
             // The task shaders read their draw's instance from the commands, and add to the meshlet counts.
-            // One draw per region: its RegionWork is the draw's command and the task shaders' range of work items.
-            builder.read(drawHandles.regionWork, FgAccessFlags::IndirectRead | FgAccessFlags::StorageRead);
+            // One draw per draw list: its DrawListWork is the draw's command and the task shaders' range of work items.
+            builder.read(drawHandles.drawListWork, FgAccessFlags::IndirectRead | FgAccessFlags::StorageRead);
             builder.read(drawHandles.workItems, FgAccessFlags::StorageRead);
             builder.write(drawHandles.meshletStats, FgAccessFlags::StorageWrite);
             builder.read(hzb, FgAccessFlags::ShaderRead);
@@ -205,8 +205,8 @@ auto GeometryPass::addPass(
             // two-phase prepass every meshlet of both phases is tested against the pyramid of the prepass's whole depth (HzbBuildFinal): one
             // it hides lies behind the depth at every pixel it covers, so under the Equal test it would shade nothing. Drawing the phases
             // itself, the second phase's meshlets are tested against the pyramid of the first's depth, and the first's aren't tested.
-            auto* regionWork = ctx.buffer(drawHandles.regionWork);
-            // Both: the first phase's regions, then with occlusion the second's. First and Second: one of them.
+            auto* drawListWork = ctx.buffer(drawHandles.drawListWork);
+            // Both: the first phase's draw lists, then with occlusion the second's. First and Second: one of them.
             uint32_t firstPhase = phase == GeometryPhase::Second ? 1u : 0u;
             uint32_t endPhase = phase == GeometryPhase::First ? 1u : (occlusion ? 2u : 1u);
             // The pyramid test: every meshlet after a two-phase prepass (its whole depth), the second phase's without one.
@@ -214,8 +214,8 @@ auto GeometryPass::addPass(
             for (uint32_t drawPhase = firstPhase; drawPhase < endPhase; drawPhase++) {
                 bool late = drawPhase == 1;
                 for (uint32_t bucket = 0; bucket < DrawLists::bucketCount; bucket++) {
-                    auto region = late ? DrawLists::cameraLateRegion(bucket % 2 != 0, bucket >= 2) : DrawLists::cameraRegion(bucket % 2 != 0, bucket >= 2);
-                    // The GPU-written count decides how many commands draw; an empty region costs one call.
+                    auto drawList = late ? DrawLists::cameraLateDrawList(bucket % 2 != 0, bucket >= 2) : DrawLists::cameraDrawList(bucket % 2 != 0, bucket >= 2);
+                    // The GPU-written count decides how many commands draw; an empty draw list costs one call.
                     if (!scene.poolReady() || descriptorSet == nullptr) {
                         continue;
                     }
@@ -224,11 +224,11 @@ auto GeometryPass::addPass(
                     // One set for every draw: materials are indexed through the instance record, vertices pulled from the pool.
                     cmd->bindDescriptorSet(pip, 0, descriptorSet);
                     // The camera's meshlet counts come from this pass.
-                    MeshletPush push = {.region = region, .flags = meshletFlagCount | (testPyramid ? meshletFlagOcclusion : 0u)};
+                    MeshletPush push = {.drawList = drawList, .flags = meshletFlagCount | (testPyramid ? meshletFlagOcclusion : 0u)};
                     cmd->pushConstants(pip, RhiShaderStage::Task | RhiShaderStage::Mesh, 0, sizeof(push), &push);
-                    PROFILE_GPU_ZONE(cmd, DrawLists::drawName(region), Geometry);
-                    DrawLists::drawRegion(cmd, regionWork, region);
-                    lists.report(ctx, region, *instances);
+                    PROFILE_GPU_ZONE(cmd, DrawLists::drawName(drawList), Geometry);
+                    DrawLists::draw(cmd, drawListWork, drawList);
+                    lists.report(ctx, drawList, *instances);
                 }
             }
 

@@ -60,8 +60,8 @@ auto DepthPrepass::addPass(
             data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
             builder.read(hzb, FgAccessFlags::ShaderRead);
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
-            // One draw per region: its RegionWork is the draw's command and the task shaders' range of work items.
-            builder.read(drawHandles.regionWork, FgAccessFlags::IndirectRead | FgAccessFlags::StorageRead);
+            // One draw per draw list: its DrawListWork is the draw's command and the task shaders' range of work items.
+            builder.read(drawHandles.drawListWork, FgAccessFlags::IndirectRead | FgAccessFlags::StorageRead);
             builder.read(drawHandles.workItems, FgAccessFlags::StorageRead);
             if (drawHandles.lodStates.valid()) {
                 builder.read(drawHandles.lodStates, FgAccessFlags::StorageRead);
@@ -85,12 +85,12 @@ auto DepthPrepass::addPass(
             cmd->setViewport(extent);
             cmd->setScissor(extent);
 
-            // The camera regions the geometry pass draws, one indirect call per bucket, culling the same meshlets (it doesn't count them).
-            auto* regionWork = ctx.buffer(drawHandles.regionWork);
+            // The camera draw lists the geometry pass draws, one indirect call per bucket, culling the same meshlets (it doesn't count them).
+            auto* drawListWork = ctx.buffer(drawHandles.drawListWork);
             for (uint32_t bucket = 0; bucket < DrawLists::bucketCount; bucket++) {
                 bool cutout = bucket >= 2;
-                auto region = late ? DrawLists::cameraLateRegion(bucket % 2 != 0, cutout) : DrawLists::cameraRegion(bucket % 2 != 0, cutout);
-                // The GPU-written count decides how many commands draw; an empty region costs one call.
+                auto drawList = late ? DrawLists::cameraLateDrawList(bucket % 2 != 0, cutout) : DrawLists::cameraDrawList(bucket % 2 != 0, cutout);
+                // The GPU-written count decides how many commands draw; an empty draw list costs one call.
                 if (!scene.poolReady() || descriptorSet == nullptr) {
                     continue;
                 }
@@ -102,11 +102,11 @@ auto DepthPrepass::addPass(
                 if (cullCamera) {
                     flags |= meshletFlagCullCamera;
                 }
-                MeshletPush push = {.region = region, .flags = flags};
+                MeshletPush push = {.drawList = drawList, .flags = flags};
                 cmd->pushConstants(pip, RhiShaderStage::Task | RhiShaderStage::Mesh, 0, sizeof(push), &push);
-                PROFILE_GPU_ZONE(cmd, DrawLists::drawName(region), Geometry);
-                DrawLists::drawRegion(cmd, regionWork, region);
-                lists.report(ctx, region, *instances);
+                PROFILE_GPU_ZONE(cmd, DrawLists::drawName(drawList), Geometry);
+                DrawLists::draw(cmd, drawListWork, drawList);
+                lists.report(ctx, drawList, *instances);
             }
 
             cmd->endRendering();

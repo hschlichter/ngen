@@ -20,13 +20,13 @@ auto parseWindow(const std::string& args) -> std::expected<Json, std::string> {
 
 } // namespace
 
-auto registerUiCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewUI& ui) -> void {
+auto registerUiCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records, ViewUI& ui) -> void {
     registry.add(
         {
             .name = "view.window",
             .summary = "Open or close a window.",
             .params = {
-                requiredField("name", RpcType::String, "a window: memory, capture, framedebugger, gpuscene, counters, shaders, culling, assets, lod, streaming, camera, renderdebug, framegraph, performance, config"),
+                requiredField("name", RpcType::String, "a window: memory, capture, framedebugger, gpuscene, counters, shaders, culling, assets, lod, streaming, camera, renderdebug, framegraph, performance, cvars"),
                 optionalField("open", RpcType::Bool, "default true"),
             },
             .result = "{}",
@@ -39,7 +39,7 @@ auto registerUiCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& reco
             }
             responder.respond(Json::object());
         });
-    verbs.add("window", "view.window", parseWindow);
+    console.add("window", "view.window", parseWindow);
 
     records.add("windows", "the UI's windows by name and whether each is open (view.window opens and closes them)", [&ui](RpcResponder responder) {
         auto windows = Json::object();

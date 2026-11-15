@@ -4,7 +4,7 @@
 //   ngen-worldcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--instancers] [--lod-heuristics] [--lod-authoring]
 //                   [--output <file>] <scene id>
 //
-// --lod sets a LOD root's wanted level before composing (the path with instances expanded); --transforms adds world matrices;
+// --lod sets a LOD root's desired level before composing (the path with instances expanded); --transforms adds world matrices;
 // --instancing prints instance and prototype counts instead of the fingerprint; --instancers prints every PointInstancer's points instead
 // (fingerprintPointLine); --lod-heuristics prints every LOD root's heuristics instead (fingerprintHeuristicLine); --lod-authoring prints,
 // for every LOD root reached, what of the streaming authoring contract doesn't hold (checkLodAuthoring, against the LOD root nearest above
@@ -37,26 +37,26 @@ auto usage() -> int {
 // Instances as USD's default traversal finds them on the stage: active, defined, concrete and loaded prims, not inside other instances.
 auto countInstances(const World& world) -> size_t {
     size_t count = 0;
-    std::vector<std::pair<const WorldContent*, EntityId>> pending = {{&world.stage, 0}};
+    std::vector<std::pair<const WorldContent*, PrimId>> pending = {{&world.stage, 0}};
     while (!pending.empty()) {
         auto [content, id] = pending.back();
         pending.pop_back();
-        const auto& entity = content->entities[id];
+        const auto& prim = content->prims[id];
         if (id != 0 || content != &world.stage) {
-            if (!entity.active || !entity.defined || entity.abstract) {
+            if (!prim.active || !prim.defined || prim.abstract) {
                 continue;
             }
             if (auto payload = content->payloads.find(id); payload != content->payloads.end() && !payload->second.loaded) {
                 continue;
             }
-            if (entity.prototype >= 0) {
+            if (prim.prototype >= 0) {
                 count++;
                 continue;
             }
         }
-        for (EntityId child : entity.children) {
+        for (PrimId child : prim.children) {
             // A LOD level is its content's root, the level prim with everything under it.
-            if (auto level = content->entities[child].linkedContent; level >= 0) {
+            if (auto level = content->prims[child].linkedContent; level >= 0) {
                 pending.emplace_back(&world.contents[(size_t) level], 0);
                 continue;
             }
@@ -170,7 +170,7 @@ auto main(int argc, char** argv) -> int {
 
     std::vector<std::string> lines;
     if (heuristics) {
-        world.visit([&](const VisitedEntity& visited) {
+        world.visit([&](const VisitedPrim& visited) {
             auto found = visited.content->lodRoots.find(visited.id);
             if (found == visited.content->lodRoots.end()) {
                 return true;
@@ -205,7 +205,7 @@ auto main(int argc, char** argv) -> int {
     } else if (authoring) {
         // Visited parents first: the roots above a path, by path, for the nesting rules.
         std::map<std::string, const LodRoot*> roots;
-        world.visit([&](const VisitedEntity& visited) {
+        world.visit([&](const VisitedPrim& visited) {
             auto found = visited.content->lodRoots.find(visited.id);
             if (found != visited.content->lodRoots.end()) {
                 roots[visited.path] = &found->second;
@@ -230,7 +230,7 @@ auto main(int argc, char** argv) -> int {
         lines.push_back(std::format("instances\t{}", countInstances(world)));
         lines.push_back(std::format("prototypes\t{}", world.prototypeCount()));
     } else if (instancers) {
-        world.visit([&](const VisitedEntity& visited) {
+        world.visit([&](const VisitedPrim& visited) {
             auto found = visited.content->pointInstancers.find(visited.id);
             if (found == visited.content->pointInstancers.end()) {
                 return true;
@@ -239,7 +239,7 @@ auto main(int argc, char** argv) -> int {
             auto instancerPath = visited.content->path(visited.id);
             for (size_t i = 0; i < data.protoIndices.size(); i++) {
                 std::string prototype;
-                if (data.protoIndices[i] < data.prototypes.size() && data.prototypes[data.protoIndices[i]] != noEntity) {
+                if (data.protoIndices[i] < data.prototypes.size() && data.prototypes[data.protoIndices[i]] != noPrim) {
                     // The prototype's full path: the instancer's, then the prototype's below it in their content.
                     auto inContent = visited.content->path(data.prototypes[data.protoIndices[i]]);
                     prototype = inContent.starts_with(instancerPath) ? visited.path + inContent.substr(instancerPath.size()) : inContent;
@@ -258,8 +258,8 @@ auto main(int argc, char** argv) -> int {
         });
         std::ranges::sort(lines);
     } else {
-        world.visit([&](const VisitedEntity& visited) {
-            int64_t points = std::max<int64_t>(visited.entity->pointCount, 0);
+        world.visit([&](const VisitedPrim& visited) {
+            int64_t points = std::max<int64_t>(visited.prim->pointCount, 0);
             if (transforms) {
                 double matrix[16];
                 for (int i = 0; i < 4; i++) {
@@ -267,9 +267,9 @@ auto main(int argc, char** argv) -> int {
                         matrix[(i * 4) + j] = visited.worldTransform[i][j];
                     }
                 }
-                lines.push_back(fingerprintLine(visited.path, visited.entity->typeName, points, matrix));
+                lines.push_back(fingerprintLine(visited.path, visited.prim->typeName, points, matrix));
             } else {
-                lines.push_back(fingerprintLine(visited.path, visited.entity->typeName, points, nullptr));
+                lines.push_back(fingerprintLine(visited.path, visited.prim->typeName, points, nullptr));
             }
             return true;
         });
@@ -278,11 +278,11 @@ auto main(int argc, char** argv) -> int {
 
     size_t meshes = 0;
     int64_t totalPoints = 0;
-    world.visit([&](const VisitedEntity& visited) {
-        if (visited.entity->typeName == "Mesh") {
+    world.visit([&](const VisitedPrim& visited) {
+        if (visited.prim->typeName == "Mesh") {
             meshes++;
         }
-        totalPoints += std::max<int64_t>(visited.entity->pointCount, 0);
+        totalPoints += std::max<int64_t>(visited.prim->pointCount, 0);
         return true;
     });
     auto ms = [](auto from, auto to) {

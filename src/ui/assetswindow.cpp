@@ -51,7 +51,7 @@ enum Column : int {
     ColumnAsset,
     ColumnState,
     ColumnSource,
-    ColumnDraws,
+    ColumnPrims,
     ColumnSize,
     ColumnTotal,
     ColumnServer,
@@ -60,7 +60,7 @@ enum Column : int {
     ColumnRequests,
 };
 
-auto compare(const AssetLogEntry& a, const AssetLogEntry& b, int column, const std::function<size_t(const std::string&)>& drawCount) -> int {
+auto compare(const AssetLogEntry& a, const AssetLogEntry& b, int column, const std::function<size_t(const std::string&)>& primCount) -> int {
     auto order = [](auto x, auto y) {
         return x < y ? -1 : (y < x ? 1 : 0);
     };
@@ -69,8 +69,8 @@ auto compare(const AssetLogEntry& a, const AssetLogEntry& b, int column, const s
             return order((int) a.state, (int) b.state);
         case ColumnSource:
             return order(a.packed, b.packed);
-        case ColumnDraws:
-            return drawCount ? order(drawCount(a.id), drawCount(b.id)) : 0;
+        case ColumnPrims:
+            return primCount ? order(primCount(a.id), primCount(b.id)) : 0;
         case ColumnSize:
             return order(a.bytes, b.bytes);
         case ColumnTotal:
@@ -214,7 +214,7 @@ auto drawAssetsWindow(bool& show, const std::vector<AssetLogEntry>& log, AssetsW
         ImGui::TableSetupColumn("Asset", ImGuiTableColumnFlags_WidthStretch, 0.0f, ColumnAsset);
         ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 70.0f, ColumnState);
         ImGui::TableSetupColumn("Source", ImGuiTableColumnFlags_WidthFixed, 60.0f, ColumnSource);
-        ImGui::TableSetupColumn("Draws", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_PreferSortDescending, 50.0f, ColumnDraws);
+        ImGui::TableSetupColumn("Prims", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_PreferSortDescending, 50.0f, ColumnPrims);
         ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 80.0f, ColumnSize);
         ImGui::TableSetupColumn("Total ms", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_PreferSortDescending, 70.0f, ColumnTotal);
         ImGui::TableSetupColumn("Server ms", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_PreferSortDescending, 70.0f, ColumnServer);
@@ -228,7 +228,7 @@ auto drawAssetsWindow(bool& show, const std::vector<AssetLogEntry>& log, AssetsW
             auto column = (int) sort->Specs[0].ColumnUserID;
             bool descending = sort->Specs[0].SortDirection == ImGuiSortDirection_Descending;
             std::ranges::stable_sort(rows, [&](const AssetLogEntry* a, const AssetLogEntry* b) {
-                auto order = compare(*a, *b, column, state.drawCount);
+                auto order = compare(*a, *b, column, state.primCount);
                 return descending ? order > 0 : order < 0;
             });
         }
@@ -276,11 +276,11 @@ auto drawAssetsWindow(bool& show, const std::vector<AssetLogEntry>& log, AssetsW
                         state.selected = {entry.id};
                         state.anchor = entry.id;
                     }
-                    auto draws = state.drawCount ? state.drawCount(entry.id) : 0;
-                    if (ImGui::MenuItem("Go to", nullptr, false, draws > 0)) {
+                    auto prims = state.primCount ? state.primCount(entry.id) : 0;
+                    if (ImGui::MenuItem("Go to", nullptr, false, prims > 0)) {
                         state.goToRequested = AssetsWindowState::GoTo{.id = entry.id, .all = false};
                     }
-                    if (ImGui::MenuItem(std::format("Frame all ({} draws)", draws).c_str(), nullptr, false, draws > 0)) {
+                    if (ImGui::MenuItem(std::format("Frame all ({} prims)", prims).c_str(), nullptr, false, prims > 0)) {
                         state.goToRequested = AssetsWindowState::GoTo{.id = entry.id, .all = true};
                     }
                     ImGui::Separator();
@@ -291,7 +291,7 @@ auto drawAssetsWindow(bool& show, const std::vector<AssetLogEntry>& log, AssetsW
                 }
                 ImGui::PopID();
                 if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("%s\nversion %s", entry.id.c_str(), entry.version.empty() ? "-" : entry.version.c_str());
+                    ImGui::SetTooltip("%s\nhash %s", entry.id.c_str(), entry.hash.empty() ? "-" : entry.hash.c_str());
                 }
                 ImGui::TableSetColumnIndex(ColumnState);
                 if (entry.state == AssetLogState::Failed) {
@@ -320,9 +320,9 @@ auto drawAssetsWindow(bool& show, const std::vector<AssetLogEntry>& log, AssetsW
                 } else {
                     ImGui::TextDisabled("-");
                 }
-                ImGui::TableSetColumnIndex(ColumnDraws);
-                if (auto draws = state.drawCount ? state.drawCount(entry.id) : 0; draws > 0) {
-                    ImGui::Text("%zu", draws);
+                ImGui::TableSetColumnIndex(ColumnPrims);
+                if (auto prims = state.primCount ? state.primCount(entry.id) : 0; prims > 0) {
+                    ImGui::Text("%zu", prims);
                 } else {
                     ImGui::TextDisabled("-");
                 }

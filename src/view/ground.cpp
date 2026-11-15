@@ -84,22 +84,22 @@ auto groundBelow(const RenderWorld& world, const SceneBoundsCache& chunkBounds, 
             continue;
         }
         counts.chunks++;
-        for (const auto& draw : world.meshInstances.chunk(c)) {
-            if (!draw.alive || !holds(draw.worldBounds)) {
+        for (const auto& instance : world.meshInstances.chunk(c)) {
+            if (!instance.alive || !holds(instance.worldBounds)) {
                 continue;
             }
-            const auto* mesh = meshes.get(draw.mesh);
+            const auto* mesh = meshes.get(instance.mesh);
             if (mesh == nullptr) {
                 continue;
             }
-            counts.draws++;
+            counts.instances++;
             // The ray in the mesh's space; t stays a distance along it in world units only up to the transform's scale, so the hit is taken
             // back to world space to compare.
-            auto toLocal = glm::inverse(draw.worldTransform);
+            auto toLocal = glm::inverse(instance.worldTransform);
             auto localOrigin = glm::vec3(toLocal * glm::vec4(origin, 1.0f));
             auto localDir = glm::vec3(toLocal * glm::vec4(-up, 0.0f));
-            auto end = std::min<size_t>(draw.indexOffset + draw.indexCount, mesh->indices.size());
-            for (size_t i = draw.indexOffset; i + 2 < end; i += 3) {
+            auto end = std::min<size_t>(instance.indexOffset + instance.indexCount, mesh->indices.size());
+            for (size_t i = instance.indexOffset; i + 2 < end; i += 3) {
                 counts.triangles++;
                 auto t = rayTriangle(localOrigin,
                                      localDir,
@@ -109,10 +109,10 @@ auto groundBelow(const RenderWorld& world, const SceneBoundsCache& chunkBounds, 
                 if (!t) {
                     continue;
                 }
-                auto point = glm::vec3(draw.worldTransform * glm::vec4(localOrigin + (localDir * *t), 1.0f));
+                auto point = glm::vec3(instance.worldTransform * glm::vec4(localOrigin + (localDir * *t), 1.0f));
                 auto height = glm::dot(point, up);
                 if (!best || height > bestHeight) {
-                    best = GroundHit{.point = point, .prim = draw.prim};
+                    best = GroundHit{.point = point, .prim = instance.prim};
                     bestHeight = height;
                 }
             }
@@ -133,15 +133,15 @@ auto drawCameraModes(const CameraModesState& modes, const glm::vec3& eye, double
     if (modes.orbiting) {
         cross(modes.pivot, 0.5f);
     }
-    if (viewconfig::follow.get() && modes.ground) {
+    if (viewcvars::follow.get() && modes.ground) {
         draw.line(eye, *modes.ground, color);
         cross(*modes.ground, 0.25f);
     }
 }
 
-namespace viewconfig {
+namespace viewcvars {
 
-config::Bool follow{"view.camera.follow", false, "Keep the eye of the camera that has the controls a height above the highest drawn surface under it (G)."};
-config::Float followHeight{"view.camera.followHeight", 1.8, "Metres the eye is kept above the ground while following it; Q/E change it.", {.min = 0.0, .max = 1000.0}};
+cvar::Bool follow{"view.camera.follow", false, "Keep the eye of the camera that has the controls a height above the highest drawn surface under it (G)."};
+cvar::Float followHeight{"view.camera.followHeight", 1.8, "Metres the eye is kept above the ground while following it; Q/E change it.", {.min = 0.0, .max = 1000.0}};
 
-} // namespace viewconfig
+} // namespace viewcvars

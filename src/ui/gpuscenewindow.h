@@ -18,7 +18,7 @@ struct GpuSceneWindowState {
     uint32_t trigger = 1;
     std::map<std::string, CaptureResult> results; // by resource
     int cullView = 0;
-    int compactionRegion = 0;
+    int compactionDrawList = 0;
     char filter[64] = "";
 };
 

@@ -19,7 +19,7 @@
     </pattern>
   </defs>
   <rect x="0" y="0" width="1000" height="470" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
-  <text x="28" y="40" class="title">Render LOD: the pick and the fade</text>
+  <text x="28" y="40" class="title">LOD groups: the pick and the fade</text>
   <text x="28" y="62" class="s" style="font-size:12px">One group with distance thresholds 10 m and 30 m and a blend band on the first boundary (to 15 m), with the default hysteresis.</text>
 
   <!-- the pick -->

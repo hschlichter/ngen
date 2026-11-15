@@ -101,6 +101,7 @@ locked; **Superseded by N** — replaced, kept as a record.
 | [84](0084_tracy_frame_images.md) | 2026-11-09 | Frame images in Tracy only, from the render tools | Accepted |
 | [85](0085_frame_budget_overlay.md) | 2026-11-11 | A frame budget overlay from the profiler's numbers; ImGui textures uploaded under a lock | Accepted |
 | [86](0086_allocations_off_the_render_thread.md) | 2026-11-12 | Large allocations off the render thread: tables grow ahead on background jobs, and what doesn't fit waits | Accepted |
+| [87](0087_industry_terms_for_engine_concepts.md) | 2026-11-15 | The engine takes the game engine industry's word where one exists | Accepted |
 
 ## By area
 

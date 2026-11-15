@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "cvar.h"
 
 #include <glm/glm.hpp>
 
@@ -16,7 +16,7 @@ class ViewScene;
 struct CullResult;
 
 // The LOD tool's data (src/view/README.md, "The LOD tool"): what the LOD window lists, inspects and draws in the viewport, built from the
-// scene's snapshot and the render-LOD readback.
+// scene's snapshot and the LOD-group readback.
 
 // What a LOD root's heuristic measures, placed in the world, for the viewport's gizmo and labels: a distance's center or box (in the root's
 // space, `toWorld` placing it) or a screen size's sphere (world metres), and the thresholds the view picks with (tuned), a distance's in
@@ -42,12 +42,12 @@ struct LodShape {
     auto anchor() const -> glm::vec3;
 };
 
-// One LOD root as the LOD tool lists it, either kind: a streaming root (its levels payloads, chosen per root on the CPU) or a render-LOD
+// One LOD root as the LOD tool lists it, either kind: a streaming root (its levels payloads, chosen per root on the CPU) or a LOD
 // group (every level held, chosen per placement on the GPU). Its full path, its levels' names finest first, the level it defaults to, wants
 // and draws (-1 while none is loaded or read back), the level fading in and its share, the levels loaded, whether its level was set by hand.
 struct LodRow {
     std::string path;
-    int32_t group = -1; // the render-LOD group slot; -1 for a streaming root
+    int32_t group = -1; // the LOD group slot; -1 for a streaming root
     uint32_t depth = 1; // how many LOD roots it is in, itself counted: the hue of its swatches
     std::vector<std::string> levels;
     std::vector<std::vector<std::string>> levelPayloads; // per level, its payloads' asset ids
@@ -55,17 +55,17 @@ struct LodRow {
     std::string key;                                     // its authored root, which threshold overrides name
     bool overridden = false;                             // the view's thresholds replace the authored ones for its authored root
     uint32_t defaultIndex = 0;
-    uint32_t wanted = 0;
+    uint32_t desired = 0;
     int32_t drawn = -1;
     int32_t fadeLevel = -1; // the level fading in, -1 for none
     float fade = 0.0f;      // its share
-    bool flashing = false;  // a render-LOD group's pop flash is on
+    bool flashing = false;  // a LOD group's pop flash is on
     std::vector<uint32_t> loaded;
     bool setByHand = false;
     float measure = -1.0f;   // the heuristic's measure, -1 when not computed
     std::string measureUnit; // "m" for a distance (the stage's units), empty for a screen size
     std::string why;         // why it wants its level: "distance", "screen size", "hand-set", "heuristic off", ...
-    std::string waiting;     // while its wanted level is loaded and not drawn: what that level waits for
+    std::string waiting;     // while its desired level is loaded and not drawn: what that level waits for
     // A streaming root's residency: the state (the finest level that must be resident) and why, from the streaming heuristic's radii.
     std::optional<uint32_t> state;
     std::string residentWhy;
@@ -90,18 +90,18 @@ struct LodInspection {
     };
     struct Level {
         std::string name;
-        uint64_t triangles = 0; // of its draws; for a streaming root, only the drawn level's are known
-        uint32_t draws = 0;
-        bool known = false; // its draws are counted
+        uint64_t triangles = 0; // of its instances; for a streaming root, only the drawn level's are known
+        uint32_t instances = 0;
+        bool known = false; // its instances are counted
         bool loaded = false;
     };
     std::string path;
     uint32_t depth = 1; // how many LOD roots it is in, itself counted: the hue of its swatches
-    bool renderLod = false;
+    bool isLodGroup = false;
     int32_t group = -1;
     std::string key;
     uint32_t defaultIndex = 0;
-    int32_t wanted = -1;
+    int32_t desired = -1;
     int32_t drawn = -1;
     int32_t fadeLevel = -1;
     float fade = 0.0f;
@@ -114,17 +114,17 @@ struct LodInspection {
 };
 
 // The LOD tool's state: what the LOD window lists and inspects (the application builds the rows and the inspection from the scene), the
-// list's filters (the gizmo of every root the list shows reads them), the selection, the render-LOD counts, and what the window asked for
+// list's filters (the gizmo of every root the list shows reads them), the selection, the LOD-group counts, and what the window asked for
 // this frame (the application applies the requests and clears them). The window's own state (scroll, edit buffers) is the UI's.
 struct LodToolState {
     bool windowOpen = false; // the LOD window is open; set by the UI each frame. The rows and the inspector are kept while it is.
     char filter[128] = "";
-    int kindFilter = 0; // 0 every root, 1 render LOD, 2 streaming
+    int kindFilter = 0; // 0 every root, 1 LOD groups, 2 streaming
     bool onlyUnderSelection = false;
-    bool onlyNotDrawingWanted = false;
+    bool onlyNotDrawingDesired = false;
     bool onlyFading = false;
-    std::vector<LodRow> rows; // set by the application when the scene changes; render-LOD rows' live state each frame
-    // What the render-LOD group rows (after the LOD roots' rows in `rows`) were built from: the snapshot's draws (their revision), the tuning
+    std::vector<LodRow> rows; // set by the application when the scene changes; LOD-group rows' live state each frame
+    // What the LOD group rows (after the LOD roots' rows in `rows`) were built from: the snapshot's placed scene (its revision), the tuning
     // and the hand-set levels (held, so a new one can't take a freed one's address), the preference and the heuristic's state. A snapshot
     // that changes none of them (a camera move) rebuilds only the roots' rows.
     struct GroupRowsSource {
@@ -167,17 +167,17 @@ struct LodToolState {
     };
     std::vector<OverrideRequest> overrideRequests;
     std::vector<std::string> overrideResets; // a root's overrides dropped; an empty path drops every one
-    // The viewport's layers: the LOD Level view (the G-buffer view the application sets), labels over the roots, the heuristic gizmo of the
+    // The viewport's layers: the LOD Level view (the view mode the application sets), labels over the roots, the heuristic gizmo of the
     // selected root or of every root the list shows, and the pop flash.
     bool levelView = false; // set by the application
     std::optional<bool> levelViewRequested;
     std::optional<bool> triangleSizeRequested;
     // The inspector: the selected root's, refreshed by the application when the selection changes and once a second while shown.
     std::optional<LodInspection> inspection;
-    // Render LOD, the roots whose levels the GPU picks per placement: the groups placed, and from the latest readback the groups drawing
+    // LOD groups, the roots whose levels the GPU picks per placement: the groups placed, and from the latest readback the groups drawing
     // each level, falling back while the level they want uploads, at a forced level, fading, popping, and the slots of levels not drawn.
     // Set by the application.
-    struct RenderLod {
+    struct LodGroupCounts {
         uint32_t groups = 0;
         std::array<uint32_t, 8> drawing = {};
         uint32_t fallbacks = 0;
@@ -187,7 +187,7 @@ struct LodToolState {
         uint64_t pops = 0;   // since the scene opened, counted over the readbacks
         uint32_t slotsNotDrawn = 0;
     };
-    RenderLod renderLod;
+    LodGroupCounts groupCounts;
 };
 
 // The LOD Level view's colour of a level of a root `depth` LOD roots deep (itself counted), as lighting.frag's lodLevelTint: by level, 0 red,
@@ -204,12 +204,12 @@ struct LodToolCamera {
     float aspect = 1.0f;
 };
 
-// The list's rows, from a snapshot: every streaming root drawn and every render-LOD group placed, with their heuristics as the view picks
-// with them (tuned) and their shapes for the viewport. The render-LOD rows' live state is updateLodRows'.
+// The list's rows, from a snapshot: every streaming root drawn and every LOD group placed, with their heuristics as the view picks
+// with them (tuned) and their shapes for the viewport. The LOD-group rows' live state is updateLodRows'.
 auto buildLodRows(const ViewScene& scene, LodToolState& state) -> void;
-// The render-LOD rows' live state from the latest readback with states: wanted, drawn, fading, measure, the pop flash.
+// The LOD-group rows' live state from the latest readback with states: desired, drawn, fading, measure, the pop flash.
 auto updateLodRows(const ViewScene& scene, const CullResult& cull, LodToolState& state) -> void;
-// One root inspected: the LOD root at `path` (a streaming root's or a render-LOD group's full path); none when no root is placed there.
+// One root inspected: the LOD root at `path` (a streaming root's or a LOD group's full path); none when no root is placed there.
 auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::string& path, const LodToolCamera& camera) -> std::optional<LodInspection>;
 // The heuristic gizmo: for the selected root, or every root the list shows, its distance's center or box, or its screen size's sphere,
 // and a ring (in the plane across `up`) at each threshold, at the distance where it is reached (a screen size's from the camera's window,
@@ -218,11 +218,11 @@ auto drawLodGizmos(const LodToolState& state, DebugDraw& draw, const glm::vec3& 
 // The distance unit a stage's metres per unit names: "m", "cm", else "units".
 auto lodUnitName(double metersPerUnit) -> const char*;
 
-// The LOD tool's configuration values (src/config/README.md): its viewport layers.
-namespace toolsconfig {
-extern config::Bool lodLabels;       // tools.lod.labels
-extern config::Bool lodGizmo;        // tools.lod.gizmo: the selected root's heuristic
-extern config::Bool lodGizmoAll;     // tools.lod.gizmoAll: every shown root's
-extern config::Bool lodPopFlash;     // tools.lod.popFlash
-extern config::Bool lodColorByDepth; // tools.lod.colorByDepth: the LOD Level view's colours
-} // namespace toolsconfig
+// The LOD tool's cvars (src/cvar/README.md): its viewport layers.
+namespace toolscvars {
+extern cvar::Bool lodLabels;       // tools.lod.labels
+extern cvar::Bool lodGizmo;        // tools.lod.gizmo: the selected root's heuristic
+extern cvar::Bool lodGizmoAll;     // tools.lod.gizmoAll: every shown root's
+extern cvar::Bool lodPopFlash;     // tools.lod.popFlash
+extern cvar::Bool lodColorByDepth; // tools.lod.colorByDepth: the LOD Level view's colours
+} // namespace toolscvars

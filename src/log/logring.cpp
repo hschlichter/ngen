@@ -1,6 +1,6 @@
-#include "tracering.h"
+#include "logring.h"
 
-#include "trace.h"
+#include "log.h"
 
 #include <algorithm>
 #include <chrono>
@@ -12,7 +12,7 @@
 #include <sstream>
 #include <thread>
 
-namespace trace {
+namespace logging {
 
 namespace {
 
@@ -40,13 +40,13 @@ auto msSinceStart() -> double {
     return (double) (now() - startNs) * 1e-6;
 }
 
-auto levelName(Level level) -> const char* {
-    switch (level) {
-        case Level::Info:
+auto severityName(Severity severity) -> const char* {
+    switch (severity) {
+        case Severity::Info:
             return "info";
-        case Level::Warning:
+        case Severity::Warning:
             return "warning";
-        case Level::Error:
+        case Severity::Error:
             return "error";
     }
     return "info";
@@ -61,16 +61,16 @@ auto printToConsole(const Event& event) -> void {
     localtime_r(&seconds, &local);
     auto message = event.text.empty() ? std::format("{} {}", event.type, event.name) : event.text;
     std::lock_guard lock(consoleMutex);
-    switch (event.level) {
-        case Level::Info:
+    switch (event.severity) {
+        case Severity::Info:
             std::println(stdout, "{:02}:{:02}:{:02}.{:03}  {}", local.tm_hour, local.tm_min, local.tm_sec, millis, message);
             // Flushed at once, so a redirected log is current.
             std::fflush(stdout);
             break;
-        case Level::Warning:
+        case Severity::Warning:
             std::println(stderr, "{:02}:{:02}:{:02}.{:03}  warning: {}", local.tm_hour, local.tm_min, local.tm_sec, millis, message);
             break;
-        case Level::Error:
+        case Severity::Error:
             std::println(stderr, "{:02}:{:02}:{:02}.{:03}  error: {}", local.tm_hour, local.tm_min, local.tm_sec, millis, message);
             break;
     }
@@ -90,10 +90,10 @@ auto threadLabel() -> const std::string& {
     return label;
 }
 
-TraceRing::TraceRing() : slots(capacity) {
+LogRing::LogRing() : slots(capacity) {
 }
 
-auto TraceRing::push(Event event) -> void {
+auto LogRing::push(Event event) -> void {
     if (event.thread.empty()) {
         event.thread = threadLabel();
     }
@@ -114,7 +114,7 @@ auto TraceRing::push(Event event) -> void {
     }
 }
 
-auto TraceRing::read(uint64_t from, size_t max, std::vector<Event>& out) const -> Read {
+auto LogRing::read(uint64_t from, size_t max, std::vector<Event>& out) const -> Read {
     std::lock_guard lock(mutex);
     uint64_t first = next > capacity ? next - capacity : 1;
     Read result;
@@ -130,17 +130,17 @@ auto TraceRing::read(uint64_t from, size_t max, std::vector<Event>& out) const -
     return result;
 }
 
-auto TraceRing::head() const -> uint64_t {
+auto LogRing::head() const -> uint64_t {
     std::lock_guard lock(mutex);
     return next;
 }
 
-auto TraceRing::oldest() const -> uint64_t {
+auto LogRing::oldest() const -> uint64_t {
     std::lock_guard lock(mutex);
     return next > capacity ? next - capacity : 1;
 }
 
-auto TraceRing::firstAtOrAfter(uint64_t tsNs) const -> uint64_t {
+auto LogRing::firstAtOrAfter(uint64_t tsNs) const -> uint64_t {
     std::lock_guard lock(mutex);
     uint64_t first = next > capacity ? next - capacity : 1;
     // Times rise with seq, so search.
@@ -157,14 +157,14 @@ auto TraceRing::firstAtOrAfter(uint64_t tsNs) const -> uint64_t {
     return low;
 }
 
-auto TraceRing::waitFor(uint64_t seq, std::chrono::milliseconds timeout) const -> void {
+auto LogRing::waitFor(uint64_t seq, std::chrono::milliseconds timeout) const -> void {
     std::unique_lock lock(mutex);
     grew.wait_for(lock, timeout, [&] { return next >= seq; });
 }
 
-auto ring() -> TraceRing& {
-    static TraceRing instance;
+auto ring() -> LogRing& {
+    static LogRing instance;
     return instance;
 }
 
-} // namespace trace
+} // namespace logging

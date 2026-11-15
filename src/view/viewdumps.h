@@ -20,7 +20,7 @@
 
 struct RenderWorld;
 
-// Where a dump goes: a file (script verbs, or an RPC call that names a path), an RPC reply,
+// Where a dump goes: a file (console commands, or an RPC call that names a path), an RPC reply,
 // or both.
 struct DumpTarget {
     std::string path;
@@ -30,11 +30,11 @@ struct DumpTarget {
 // The view's dumps and captures, which finish frames after they are asked for: render debug,
 // memory, counters, captures, the frame debug capture, the GPU scene tables and screenshots.
 // The main loop feeds it what the render thread delivers; each request completes its target
-// when its data arrives. File output and console messages are the same as the old verbs'.
+// when its data arrives. File output and console messages are the same as the old console commands'.
 class ViewDumps {
 public:
-    // `renderWorldOf` gives the draws of the snapshot the view holds now (each snapshot has its own, freed with it); `primPathOf` names the
-    // prim of a draw (RenderWorld's prim index), empty when unknown.
+    // `renderWorldOf` gives the instances of the snapshot the view holds now (each snapshot has its own, freed with it); `primPathOf` names the
+    // prim of an instance (RenderWorld's prim index), empty when unknown.
     ViewDumps(std::function<const RenderWorld&()> renderWorldOf, std::function<std::string(uint32_t)> primPathOf, const CullResult& latestCull, bool pipelineStatistics);
 
     // Render debug, memory and counters answer a responder only; they are records (introspect.get), not files.

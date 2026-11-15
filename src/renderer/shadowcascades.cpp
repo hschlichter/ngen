@@ -1,6 +1,6 @@
 #include "shadowcascades.h"
 
-#include "renderconfig.h"
+#include "rendercvars.h"
 
 #include <algorithm>
 #include <cmath>
@@ -174,13 +174,13 @@ auto fitShadowCascades(const ShadowCascadeSettings& settings, const glm::mat4& v
     return count;
 }
 
-namespace renderconfig {
+namespace rendercvars {
 
-config::Int shadowCascades{"render.shadow.cascades", 3, "Shadow cascades from the camera out to the shadow distance; the atlas has room for four.", {.min = 1, .max = (double) maxShadowCascades}};
-config::Int shadowTile{"render.shadow.tile", 1024, "Texels along each side of a cascade's shadow map.", {.min = 64, .max = 8192}};
-config::Float shadowSplitLambda{"render.shadow.splitLambda", 0.5, "Where the cascades split: 0 evenly by distance, 1 logarithmically (finer near the camera).", {.min = 0.0, .max = 1.0}};
-config::Bool shadowPcf{"render.shadow.pcf", true, "A 3x3 hardware-compare filter on shadow lookups; off is one comparison, hard-edged."};
-config::Float shadowDistance{"render.shadow.distance", 200.0, "Metres from the camera where shadows end; beyond, surfaces are lit without shadow.", {.min = 1.0, .max = 100000.0}};
+cvar::Int shadowCascades{"render.shadow.cascades", 3, "Shadow cascades from the camera out to the shadow distance; the atlas has room for four.", {.min = 1, .max = (double) maxShadowCascades}};
+cvar::Int shadowTile{"render.shadow.tile", 1024, "Texels along each side of a cascade's shadow map.", {.min = 64, .max = 8192}};
+cvar::Float shadowSplitLambda{"render.shadow.splitLambda", 0.5, "Where the cascades split: 0 evenly by distance, 1 logarithmically (finer near the camera).", {.min = 0.0, .max = 1.0}};
+cvar::Bool shadowPcf{"render.shadow.pcf", true, "A 3x3 hardware-compare filter on shadow lookups; off is one comparison, hard-edged."};
+cvar::Float shadowDistance{"render.shadow.distance", 200.0, "Metres from the camera where shadows end; beyond, surfaces are lit without shadow.", {.min = 1.0, .max = 100000.0}};
 
 auto shadowSettings() -> ShadowCascadeSettings {
     return {
@@ -200,4 +200,4 @@ auto setShadowSettings(const ShadowCascadeSettings& settings) -> void {
     (void) shadowDistance.set(settings.maxDistance);
 }
 
-} // namespace renderconfig
+} // namespace rendercvars

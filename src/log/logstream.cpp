@@ -1,13 +1,13 @@
-#include "tracestream.h"
+#include "logstream.h"
 
+#include "logring.h"
 #include "profile.h"
-#include "tracering.h"
 
 #include <nlohmann/json.hpp>
 
 #include <vector>
 
-namespace trace {
+namespace logging {
 
 namespace {
 
@@ -34,7 +34,7 @@ auto eventJson(const Event& event) -> rpc::Json {
         {"seq", event.seq},
         {"ts_ns", event.tsNs},
         {"thread", event.thread},
-        {"level", levelName(event.level)},
+        {"severity", severityName(event.severity)},
         {"category", event.category},
         {"type", event.type},
         {"name", event.name},
@@ -45,27 +45,27 @@ auto eventJson(const Event& event) -> rpc::Json {
 
 } // namespace
 
-TraceStream::TraceStream(RpcServer& rpcServer, std::string processName) : server(rpcServer), process(std::move(processName)) {
+LogStream::LogStream(RpcServer& rpcServer, std::string processName) : server(rpcServer), process(std::move(processName)) {
     thread = std::thread([this] { loop(); });
 }
 
-TraceStream::~TraceStream() {
+LogStream::~LogStream() {
     running.store(false);
     if (thread.joinable()) {
         thread.join();
     }
 }
 
-auto TraceStream::handle(RpcServer::ConnectionId connection, const rpc::Json& message) -> bool {
+auto LogStream::handle(RpcServer::ConnectionId connection, const rpc::Json& message) -> bool {
     if (rpc::messageKind(message) != rpc::MessageKind::Request) {
         return false;
     }
     const auto& method = message["method"];
-    if (method != "trace.subscribe" && method != "trace.unsubscribe") {
+    if (method != "log.subscribe" && method != "log.unsubscribe") {
         return false;
     }
     const auto& id = message["id"];
-    if (method == "trace.unsubscribe") {
+    if (method == "log.unsubscribe") {
         {
             std::lock_guard lock(mutex);
             subscribers.erase(connection);
@@ -85,12 +85,12 @@ auto TraceStream::handle(RpcServer::ConnectionId connection, const rpc::Json& me
     return true;
 }
 
-auto TraceStream::disconnected(RpcServer::ConnectionId connection) -> void {
+auto LogStream::disconnected(RpcServer::ConnectionId connection) -> void {
     std::lock_guard lock(mutex);
     subscribers.erase(connection);
 }
 
-auto TraceStream::pump() -> bool {
+auto LogStream::pump() -> bool {
     std::lock_guard lock(mutex);
     bool caughtUp = true;
     std::vector<Event> events;
@@ -107,27 +107,27 @@ auto TraceStream::pump() -> bool {
             for (const auto& event : events) {
                 list.push_back(eventJson(event));
             }
-            server.send(connection, rpc::makeNotification("trace.events", {{"process", process}, {"dropped", read.dropped}, {"events", std::move(list)}}));
+            server.send(connection, rpc::makeNotification("log.events", {{"process", process}, {"dropped", read.dropped}, {"events", std::move(list)}}));
         }
     }
     return caughtUp;
 }
 
-auto TraceStream::loop() -> void {
-    profile::registerThread("Trace I/O");
+auto LogStream::loop() -> void {
+    profile::registerThread("Log I/O");
     uint64_t sent = ring().head();
     while (running.load()) {
         {
-            PROFILE_ZONE_DETAIL("TraceWait", Wait);
+            PROFILE_ZONE_DETAIL("LogWait", Wait);
             ring().waitFor(sent + batchEvents, batchInterval);
         }
         sent = ring().head();
-        PROFILE_ZONE_DETAIL("TraceSend", Io);
+        PROFILE_ZONE_DETAIL("LogSend", Io);
         pump();
     }
 }
 
-auto TraceStream::finish(std::chrono::milliseconds timeout) -> void {
+auto LogStream::finish(std::chrono::milliseconds timeout) -> void {
     auto deadline = std::chrono::steady_clock::now() + timeout;
     while (std::chrono::steady_clock::now() < deadline) {
         bool caughtUp = pump();
@@ -147,4 +147,4 @@ auto TraceStream::finish(std::chrono::milliseconds timeout) -> void {
     }
 }
 
-} // namespace trace
+} // namespace logging

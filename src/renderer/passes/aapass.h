@@ -27,7 +27,7 @@ public:
     auto init(RhiDevice* device, PipelineRegistry& pipelines, uint32_t frameCount, RhiFormat inputFormat) -> bool;
     auto destroy(RhiDevice* device) -> void;
 
-    auto addPass(FrameGraph& fg, FgTextureHandle input, RhiExtent2D extent, uint32_t frameSlot, RhiSampler* sampler, bool enabled) -> const AAPassData&;
+    auto addPass(FrameGraph& fg, FgTextureHandle input, RhiExtent2D extent, uint32_t frameContext, RhiSampler* sampler, bool enabled) -> const AAPassData&;
 
     // Format of sceneColorAA.
     auto outputFormat() const -> RhiFormat { return format; }
@@ -44,5 +44,5 @@ private:
     RhiDescriptorSetLayout* setLayout = nullptr;
     PipelineHandle pipelineHandle;
     RhiDescriptorPool* pool = nullptr;
-    std::vector<RhiDescriptorSet*> sets; // one per frame slot; rewritten at execute
+    std::vector<RhiDescriptorSet*> sets; // one per frame context; rewritten at execute
 };

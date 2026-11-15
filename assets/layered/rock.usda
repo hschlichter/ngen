@@ -3,7 +3,7 @@
     defaultPrim = "Rock"
 )
 
-# A render-LOD asset: a UsdLod root whose levels are references into one geometry file, not payloads, so every level is held with the
+# A LOD-group asset: a UsdLod root whose levels are references into one geometry file, not payloads, so every level is held with the
 # asset and the renderer picks one per placement. The level not drawn by default is invisible, as UsdLod recommends for readers without LOD.
 def Xform "Rock"
 {

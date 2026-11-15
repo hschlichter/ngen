@@ -26,26 +26,26 @@ auto SessionScript::addLine(std::string_view rawLine, std::string& error) -> boo
     }
     auto space = line.find(' ');
     if (space == std::string_view::npos) {
-        error = "expected '<frame> <verb> [args]'";
+        error = "expected '<frame> <command> [args]'";
         return false;
     }
     uint64_t frame = 0;
     auto frameText = line.substr(0, space);
     auto [ptr, ec] = std::from_chars(frameText.data(), frameText.data() + frameText.size(), frame);
     if (ec != std::errc{} || ptr != frameText.data() + frameText.size()) {
-        error = "frame number expected before the verb";
+        error = "frame number expected before the command";
         return false;
     }
     auto rest = trim(line.substr(space + 1));
-    auto verbEnd = rest.find(' ');
-    auto verb = rest.substr(0, verbEnd);
-    auto args = verbEnd == std::string_view::npos ? std::string_view{} : trim(rest.substr(verbEnd + 1));
-    add(frame, std::string(verb), std::string(args));
+    auto nameEnd = rest.find(' ');
+    auto name = rest.substr(0, nameEnd);
+    auto args = nameEnd == std::string_view::npos ? std::string_view{} : trim(rest.substr(nameEnd + 1));
+    add(frame, std::string(name), std::string(args));
     return true;
 }
 
-auto SessionScript::add(uint64_t frame, std::string verb, std::string args) -> void {
-    pending.push_back({.frame = frame, .verb = std::move(verb), .args = std::move(args)});
+auto SessionScript::add(uint64_t frame, std::string name, std::string args) -> void {
+    pending.push_back({.frame = frame, .name = std::move(name), .args = std::move(args)});
     std::stable_sort(pending.begin(), pending.end(), [](const SessionCommand& a, const SessionCommand& b) { return a.frame < b.frame; });
 }
 

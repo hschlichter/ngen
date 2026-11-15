@@ -7,7 +7,7 @@ auto UiRender::init(const RenderExtensionContext& context) -> bool {
     backend.init({
         .device = &context.device,
         .colorFormat = context.colorFormat,
-        .imageCount = context.frameSlots,
+        .imageCount = context.frameContexts,
     });
     return true;
 }

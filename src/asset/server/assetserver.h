@@ -1,14 +1,14 @@
 #pragma once
 
 #include "assetcache.h"
-#include "assettrace.h"
+#include "assetlog.h"
 #include "filewatcher.h"
+#include "logstream.h"
 #include "packjobs.h"
 #include "packrule.h"
 #include "rpcprotocol.h"
 #include "rpcrecords.h"
 #include "rpcserver.h"
-#include "tracestream.h"
 
 #include <atomic>
 #include <chrono>
@@ -64,7 +64,7 @@ private:
         bool ok = false;
         bool packed = false; // a packer ran for it; false when the cache was up to date
         double ms = 0.0;     // the server's time for it: the cache check, and packing when it ran (waiting for the file's job included)
-        uint64_t version = 0;
+        uint64_t hash = 0;
         std::string path;
         std::vector<std::string> errors;
     };
@@ -72,21 +72,21 @@ private:
     struct Subscriber {
         RpcServer::ConnectionId connection = 0;
         int64_t request = 0;
-        std::optional<std::string> held; // the version the client already has
+        std::optional<std::string> held; // the hash the client already has
     };
 
     struct Outgoing {
         int64_t request = 0;
         std::string id;
-        std::string version;
+        std::string hash;
         bool packed = false;
         double ms = 0.0;
         std::shared_ptr<const std::vector<std::byte>> bytes;
         size_t offset = 0;
     };
 
-    // What the trace reports when a request is done.
-    struct RequestTrace {
+    // What the log reports when a request is done.
+    struct RequestLog {
         RpcServer::ConnectionId connection = 0;
         size_t assets = 0;
         size_t remaining = 0;
@@ -114,11 +114,11 @@ private:
 
     // `forceRequest` is the request that forces a repack of the asset, 0 for none.
     auto subscribe(const std::string& id, Subscriber subscriber, int64_t forceRequest) -> void;
-    // Packs an asset if it is out of date: "<file>" or "<file>#<fragment>", a secondary output of <file>'s job.
+    // Packs an asset if it is out of date: "<file>" or "<file>#<fragment>", a sub-asset of <file>'s job.
     // Packs the asset when its cache is stale, or once per forcing request (`forceRequest`, 0 for none): the outputs of one file, forced
     // together, pack it once.
     auto pack(const std::string& id, int64_t forceRequest) -> Outcome;
-    // Runs a file's packer and records its outputs, primary and secondary.
+    // Runs a file's packer and records its outputs, the file's own and its sub-assets.
     auto runPacker(const std::string& primary, const PackRule& rule, uint64_t key) -> Outcome;
     auto deliver(const std::string& id, const Outcome& outcome) -> void;
     auto pump(RpcServer::ConnectionId connection) -> void;
@@ -150,8 +150,8 @@ private:
     AssetCache cache;
     std::unique_ptr<PackJobs> jobs;
     RpcServer rpc;
-    // Answers trace.subscribe and streams the trace; created in start(), reset in stop() after rpc has stopped.
-    std::unique_ptr<trace::TraceStream> traceStream;
+    // Answers log.subscribe and streams the log; created in start(), reset in stop() after rpc has stopped.
+    std::unique_ptr<logging::LogStream> logStream;
     uint16_t boundPort = 0;
     std::filesystem::path discoveryFile;
     std::atomic<int64_t> nextRequest{1};
@@ -169,11 +169,11 @@ private:
     RpcRecords records;
 
     std::mutex requestMutex;
-    std::unordered_map<int64_t, RequestTrace> requests;
+    std::unordered_map<int64_t, RequestLog> requests;
     // The most recent finished requests, oldest first, for the requests record.
     struct FinishedRequest {
         int64_t request = 0;
-        RequestTrace trace;
+        RequestLog log;
         double ms = 0.0;
     };
     std::deque<FinishedRequest> finishedRequests;

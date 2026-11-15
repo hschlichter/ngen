@@ -1,12 +1,12 @@
 #version 450
 
-// Render LOD (src/renderer/README.md, "Render LOD"): the level each render-LOD group draws this frame, in two dispatches selected by
+// LOD groups (src/renderer/README.md, "LOD groups"): the level each LOD group draws this frame, in two dispatches selected by
 // push.mode:
 //
 //   0 select   one thread per group: the group's measure (UsdLod's distance or screen size, by the heuristic the view chose for it); the
 //              level it wants, as pickLodLevel (src/world/world.cpp) picks it: UsdLod's levels with their blend bands, and hysteresis at a
-//              boundary without a band, against the level it wanted last frame; else the group's forced level. The level drawn is the
-//              wanted one when resident, else the one drawn last frame when resident, else the nearest resident level, coarser first. Inside
+//              boundary without a band, against the level it desired last frame; else the group's forced level. The level drawn is the
+//              desired one when resident, else the one drawn last frame when resident, else the nearest resident level, coarser first. Inside
 //              a band the next level fades in when it is resident too. A drawn level that changes without a fade (no band, a forced
 //              level, a fallback) is a pop: the group flashes for push.flashFrames. The state written and the residency mask cleared;
 //              per-workgroup counters
@@ -20,7 +20,7 @@ const uint kindScreenSize = 0u;
 const uint kindDistance = 1u;
 // Counter layout per workgroup and in the totals (LodSelectTotals).
 const uint counterPicked = 0;                    // maxLevels: groups drawing each level
-const uint counterFallbacks = maxLevels;         // groups drawing another level while the wanted one isn't resident
+const uint counterFallbacks = maxLevels;         // groups drawing another level while the desired one isn't resident
 const uint counterForced = counterFallbacks + 1; // groups at a forced level
 const uint counterGroups = counterForced + 1;    // alive groups
 const uint counterFading = counterGroups + 1;    // groups drawing two levels, cross-faded
@@ -64,7 +64,7 @@ layout(std430, set = 0, binding = 0) readonly buffer Groups {
     Group data[];
 } groups;
 
-// Per group: x the serial of the group it was written for, y the level wanted (bits 0-7), drawn (bits 8-15) and fading in (bits 16-23, 0xFF
+// Per group: x the serial of the group it was written for, y the level desired (bits 0-7), drawn (bits 8-15) and fading in (bits 16-23, 0xFF
 // for none), at a forced level (bit 24) and the pop flash's frames left (bits 25-31), z the fading level's share as float bits, w the
 // measure as float bits.
 layout(std430, set = 0, binding = 1) buffer States {
@@ -197,45 +197,45 @@ void select() {
             uint last = min(group.levelCount, maxLevels) - 1;
             uvec4 state = states.data[g];
             bool known = state.x == group.serial;
-            uint previousWanted = known ? min(state.y & 0xFFu, last) : min(group.defaultLevel, last);
+            uint previousDesired = known ? min(state.y & 0xFFu, last) : min(group.defaultLevel, last);
             uint previousDrawn = known ? ((state.y >> 8) & 0xFFu) : noLevel;
             uint previousFade = known ? ((state.y >> 16) & 0xFFu) : noLevel;
             uint flash = known ? (state.y >> 25) : 0u;
             float measure = group.kind == kindDistance ? distanceOf(group) : screenSizeOf(group);
-            uint wanted;
+            uint desired;
             float blend = 0.0;
             if (group.forcedLevel >= 0) {
-                wanted = min(uint(group.forcedLevel), last);
+                desired = min(uint(group.forcedLevel), last);
                 atomicAdd(sharedCounters[counterForced], 1u);
             } else {
-                vec2 pick = pickLevel(group, measure, previousWanted);
-                wanted = uint(pick.x);
+                vec2 pick = pickLevel(group, measure, previousDesired);
+                desired = uint(pick.x);
                 blend = pick.y;
             }
-            uint drawn = wanted;
-            if (!resident(missing, wanted)) {
+            uint drawn = desired;
+            if (!resident(missing, desired)) {
                 if (previousDrawn <= last && resident(missing, previousDrawn)) {
                     drawn = previousDrawn;
                 } else {
                     for (uint step = 1; step <= last; step++) {
-                        if (wanted + step <= last && resident(missing, wanted + step)) {
-                            drawn = wanted + step;
+                        if (desired + step <= last && resident(missing, desired + step)) {
+                            drawn = desired + step;
                             break;
                         }
-                        if (step <= wanted && resident(missing, wanted - step)) {
-                            drawn = wanted - step;
+                        if (step <= desired && resident(missing, desired - step)) {
+                            drawn = desired - step;
                             break;
                         }
                     }
                 }
-                if (drawn != wanted) {
+                if (drawn != desired) {
                     atomicAdd(sharedCounters[counterFallbacks], 1u);
                 }
             }
-            // Inside a band the next level fades in, when the wanted level is drawn and the next one is resident too.
+            // Inside a band the next level fades in, when the desired level is drawn and the next one is resident too.
             uint fadeLevel = noLevel;
-            if (blend > 0.0 && drawn == wanted && wanted < last && resident(missing, wanted + 1)) {
-                fadeLevel = wanted + 1;
+            if (blend > 0.0 && drawn == desired && desired < last && resident(missing, desired + 1)) {
+                fadeLevel = desired + 1;
                 atomicAdd(sharedCounters[counterFading], 1u);
             } else {
                 blend = 0.0;
@@ -250,7 +250,7 @@ void select() {
                 flash--;
             }
             uint forced = group.forcedLevel >= 0 ? 1u : 0u;
-            uint levels = wanted | (drawn << 8) | (fadeLevel << 16) | (forced << 24) | (flash << 25);
+            uint levels = desired | (drawn << 8) | (fadeLevel << 16) | (forced << 24) | (flash << 25);
             states.data[g] = uvec4(group.serial, levels, floatBitsToUint(blend), floatBitsToUint(measure));
             atomicAdd(sharedCounters[counterPicked + drawn], 1u);
             atomicAdd(sharedCounters[counterGroups], 1u);

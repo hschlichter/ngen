@@ -20,7 +20,7 @@
   <!-- World::stage -->
   <rect x="28" y="92" width="432" height="448" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
   <text x="44" y="116" class="lib">World::stage</text>
-  <text x="44" y="134" class="s">ContentKind::Stage, entities by EntityId, version 7</text>
+  <text x="44" y="134" class="s">ContentKind::Stage, prims by PrimId, version 7</text>
 
   <rect x="44" y="148" width="400" height="28" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
   <text x="56" y="166" class="i">0</text>
@@ -70,7 +70,7 @@
   <text x="44" y="458" class="s">that content is complete (every pack it named held, or failed):</text>
   <text x="44" y="474" class="s">nothing that reads the World sees a partial content.</text>
   <text x="44" y="500" class="s">visit expands an instance into its prototype and a stand-in into</text>
-  <text x="44" y="516" class="s">its level content, giving every entity its full path.</text>
+  <text x="44" y="516" class="s">its level content, giving every prim its full path.</text>
 
   <!-- World::contents -->
   <rect x="480" y="92" width="492" height="448" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
@@ -81,7 +81,7 @@
   <text x="510" y="170" class="lib">[0] Prototype</text>
   <text x="630" y="170" class="s">sourcePath /World/House_1</text>
   <text x="942" y="170" class="s" text-anchor="end">version 2</text>
-  <text x="510" y="190" class="s">entity 0: the instance prim, standing for every instance</text>
+  <text x="510" y="190" class="s">prim 0: the instance prim, standing for every instance</text>
   <text x="510" y="206" class="s">children /Roof, /Walls: paths relative to the prototype</text>
   <text x="510" y="222" class="s">shared by the instances with the same arcs (its kept nodes)</text>
 
@@ -89,14 +89,14 @@
   <text x="510" y="268" class="lib">[1] Level</text>
   <text x="600" y="268" class="s">/World/Tree/lod0, loaded</text>
   <text x="942" y="268" class="s" text-anchor="end">version 10</text>
-  <text x="510" y="287" class="s">released: reached no more, so emptied in place (index kept, no entities)</text>
+  <text x="510" y="287" class="s">released: reached no more, so emptied in place (index kept, no prims)</text>
   <text x="510" y="302" class="s">composed again if it is reached later</text>
 
   <rect x="496" y="320" width="460" height="64" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
   <text x="510" y="342" class="lib">[2] Level</text>
   <text x="600" y="342" class="s">/World/Tree/lod0, not loaded</text>
   <text x="942" y="342" class="s" text-anchor="end">version 4</text>
-  <text x="510" y="361" class="s">entity 0: the level prim, composed without its payload</text>
+  <text x="510" y="361" class="s">prim 0: the level prim, composed without its payload</text>
   <text x="510" y="376" class="s">complete: linked</text>
 
   <rect x="496" y="394" width="460" height="64" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6" stroke-dasharray="4 3"/>
@@ -110,7 +110,7 @@
   <text x="510" y="490" class="lib">[4] Level</text>
   <text x="600" y="490" class="s">/World/Tree/lod2, loaded</text>
   <text x="942" y="490" class="s" text-anchor="end">version 9</text>
-  <text x="510" y="509" class="s">entity 0: the level prim, its payload's prims under it</text>
+  <text x="510" y="509" class="s">prim 0: the level prim, its payload's prims under it</text>
   <text x="510" y="524" class="s">complete: linked</text>
 
   <!-- Links -->

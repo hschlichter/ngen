@@ -8,7 +8,7 @@
 
 auto goToAsset(AssetGoToState& state, Camera& camera, const ViewScene& scene, std::string& selectedPath, const std::string& assetId, bool all) -> AssetGoToResult {
     AssetGoToResult result;
-    auto prims = scene.drawsOf(assetId);
+    auto prims = scene.primsUsing(assetId);
     if (prims.empty()) {
         result.error = std::format("nothing drawn uses {}", assetId);
         return result;

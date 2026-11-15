@@ -15,7 +15,7 @@
 // A packed asset as the asset server streamed it.
 struct PackedAsset {
     std::string id;
-    std::string version;
+    std::string hash;
     std::vector<std::byte> bytes;
 };
 
@@ -43,7 +43,7 @@ struct AssetLogEntry {
     AssetLogState state = AssetLogState::InFlight;
     uint32_t requests = 0; // how often the id was requested
     bool packed = false;   // the last arrival: a packer ran for it (else the server's cache was up to date)
-    std::string version;
+    std::string hash;
     uint64_t bytes = 0;      // the last arrival's size
     double requestedMs = -1; // the last request
     double firstDataMs = -1; // its first asset.data
@@ -75,8 +75,8 @@ public:
     // Blocks until every request for the ids in `ids` has been answered: each has arrived or failed.
     auto wait(std::span<const std::string> ids) -> void;
 
-    // The asset once it has arrived; nullptr before that, or when it failed. A new version replaces it when it is ready, not when it starts
-    // arriving; the pointer keeps the version it holds alive. A request that fails keeps the version that had arrived.
+    // The asset once it has arrived; nullptr before that, or when it failed. New content replaces it when it is ready, not when it starts
+    // arriving; the pointer keeps the content it holds alive. A request that fails keeps the content that had arrived.
     auto find(const std::string& id) const -> std::shared_ptr<const PackedAsset>;
 
     // Moves an arrived asset out of the client; nullopt if it hasn't arrived. A later request for the id streams it again.

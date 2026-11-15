@@ -71,7 +71,7 @@ auto LodSelectPass::rebuildDescriptors(RhiDevice* device, const LodGroups& group
         pool = nullptr;
         sets.clear();
     }
-    auto slotCount = groups.frameSlots();
+    auto slotCount = groups.frameContexts();
     pool = device->createDescriptorPool(slotCount, selectBindings);
     device->setDebugName(pool, "lodselect.sets.pool");
     sets.assign(slotCount, nullptr);
@@ -89,12 +89,12 @@ auto LodSelectPass::rebuildDescriptors(RhiDevice* device, const LodGroups& group
     }
 }
 
-auto LodSelectPass::addPasses(FrameGraph& fg, const LodGroups::Handles& handles, const Camera& camera, float hysteresis, uint32_t flashFrames, uint32_t groupCount, uint32_t frameSlot) -> void {
+auto LodSelectPass::addPasses(FrameGraph& fg, const LodGroups::Handles& handles, const Camera& camera, float hysteresis, uint32_t flashFrames, uint32_t groupCount, uint32_t frameContext) -> void {
     if (groupCount == 0) {
         return;
     }
     auto* pip = registry->get(pipelineHandle);
-    auto* set = frameSlot < sets.size() ? sets[frameSlot] : nullptr;
+    auto* set = frameContext < sets.size() ? sets[frameContext] : nullptr;
     SelectPush push{.eye = camera.eye, .windowArea = camera.windowArea, .groupCount = groupCount, .mode = 0, .workgroupCount = LodGroups::workgroupsFor(groupCount), .hysteresis = hysteresis, .flashFrames = flashFrames};
     auto dispatchMode = [pip, set, push](FrameGraphContext& ctx, uint32_t mode, uint32_t workgroups) {
         auto* cmd = ctx.cmd();

@@ -16,7 +16,7 @@
 #include <vector>
 
 // A prim's transforms as the view draws it: local, and world before the unit scale.
-struct EntityTransform {
+struct ContentPrimTransform {
     glm::mat4 local = glm::mat4(1.0f);
     glm::mat4 world = glm::mat4(1.0f);
     bool xformable = false;
@@ -25,7 +25,7 @@ struct EntityTransform {
 };
 
 // A content's prims' transforms relative to its root, by path relative to the root.
-using ContentTransforms = std::unordered_map<std::string, EntityTransform>;
+using ContentTransforms = std::unordered_map<std::string, ContentPrimTransform>;
 
 // A camera the scene authors (a UsdGeom Camera prim): its full path and its world transform in metres. It looks down its local -Z with
 // local +Y up, as USD's cameras do.
@@ -64,7 +64,7 @@ struct SceneLodRoot {
     std::string key;                                     // its authored root (lodRootKey), which the view's threshold overrides name
     uint32_t depth = 1;                                  // how many LOD roots it is in, itself counted (1 for a root under none): the LOD Level view's hue
     uint32_t defaultIndex = 0;
-    uint32_t wanted = 0;
+    uint32_t desired = 0;
     std::optional<uint32_t> drawn;
     std::vector<uint32_t> loaded;
     bool setByHand = false;
@@ -118,8 +118,8 @@ struct WalkItem {
     std::string path;                  // relative to the content's root ("/" for a level content's root, the level prim)
     glm::mat4 world = glm::mat4(1.0f); // relative to the content's root
     bool absolute = false;
-    const Entity* entity = nullptr; // a Prim's, in the content
-    EntityId id = noEntity;
+    const Prim* prim = nullptr; // a Prim's, in the content
+    PrimId id = noPrim;
     Purpose purpose = Purpose::Default;
     std::string material; // the binding in force here
     bool strongBinding = false;
@@ -128,13 +128,13 @@ struct WalkItem {
     bool payload = false;
     bool lodRoot = false;
     bool light = false;
-    bool variants = false;    // it has variant sets (the `variants` record)
-    bool subsets = false;     // its mesh's GeomSubsets may bind their own materials
-    EntityId root = noEntity; // a Level's LOD root, in the content
+    bool variants = false; // it has variant sets (the `variants` record)
+    bool subsets = false;  // its mesh's GeomSubsets may bind their own materials
+    PrimId root = noPrim;  // a Level's LOD root, in the content
     uint32_t level = 0;
-    // Render LOD: the item is a render-LOD root (a group where it is placed), or is under one of its levels: the root's item in this
+    // LOD groups: the item is a LOD-group root (a group where it is placed), or is under one of its levels: the root's item in this
     // walk and the level (the nearest root's, for one inside another's level).
-    bool renderLodRoot = false;
+    bool lodGroupRoot = false;
     int32_t lodRootItem = -1;
     uint32_t lodLevel = 0;
 };
@@ -144,7 +144,7 @@ struct ContentWalk {
     std::vector<WalkItem> items;
     std::shared_ptr<const ContentTransforms> transforms;
     std::vector<uint32_t> meshItems;     // the items that draw a mesh
-    std::vector<std::string> meshAssets; // their meshes, each once: a walk outlives the composition its entities point into
+    std::vector<std::string> meshAssets; // their meshes, each once: a walk outlives the composition its prims point into
     std::vector<uint32_t> rowItems;      // the items a record lists: cameras, prims with variant sets or payloads, LOD roots
 };
 
@@ -185,23 +185,23 @@ struct Placement {
     Kind kind = Kind::Stage;
     int32_t content = -1;              // in World::contents; the stage's -1; an Instancer's, the content holding the PointInstancer
     Kind contentKind = Kind::Stage;    // an Instancer's content's kind
-    EntityId instancer = noEntity;     // an Instancer's PointInstancer, in its content
+    PrimId instancer = noPrim;         // an Instancer's PointInstancer, in its content
     uint64_t version = 0;              // the content's, as placed
     std::string path;                  // full path of the content's root prim ("/" for the stage)
     glm::mat4 world = glm::mat4(1.0f); // before the unit scale
     Purpose purpose = Purpose::Default;
     std::string material;
     bool strong = false;
-    uint32_t lodTag = 0;     // the drawn level + 1 of the nearest LOD root above, for the draws
-    uint32_t lodDepth = 0;   // how many LOD roots it is under (1 under a root that is under none), for the draws
-    uint32_t streamRoot = 0; // the nearest streaming root's slot + 1, for the draws (RenderMeshInstance::streamRoot)
+    uint32_t lodTag = 0;     // the drawn level + 1 of the nearest LOD root above, for the instances
+    uint32_t lodDepth = 0;   // how many LOD roots it is under (1 under a root that is under none), for the instances
+    uint32_t streamRoot = 0; // the nearest streaming root's slot + 1, for the instances (RenderMeshInstance::streamRoot)
     bool drawn = true;       // false: a loaded level not drawn (the floor under a finer one, a finer one loading), and everything in it
     std::vector<PlacementSegment> segments;
-    std::vector<uint32_t> slots;     // its draws
+    std::vector<uint32_t> slots;     // its instances
     std::vector<uint32_t> prims;     // prim indices of its drawn prims and lights
-    std::vector<uint32_t> lodGroups; // the render-LOD groups of the render-LOD roots in it, by group slot
-    // Under a level of a render-LOD root of the placement above (an instance in an asset's level): that group slot + 1 and the level, which
-    // its draws are tagged with; 0 for none.
+    std::vector<uint32_t> lodGroups; // the LOD groups of the LOD-group roots in it, by group slot
+    // Under a level of a LOD-group root of the placement above (an instance in an asset's level): that group slot + 1 and the level, which
+    // its instances are tagged with; 0 for none.
     uint32_t lodGroup = 0;
     uint32_t lodGroupLevel = 0;
     std::vector<RenderLight> lights;  // its distant lights
@@ -237,7 +237,7 @@ struct PlacementRecords {
 };
 auto gatherRecords(const Placement& tree) -> PlacementRecords;
 
-// Free indices (draw slots, prim indices, LOD group slots), taken lowest first so a scene placed afresh fills them in tree order: a bit per
+// Free indices (instance slots, prim indices, LOD group slots), taken lowest first so a scene placed afresh fills them in tree order: a bit per
 // index and the lowest word that may hold one. Freeing and taking allocate nothing.
 class LowestFreeList {
 public:
@@ -306,7 +306,7 @@ private:
 
 // A prim's transform in a published tree, world before the unit scale; none when no drawn placement holds it (inactive, invisible, in a
 // level not drawn).
-auto findTransform(const Placement& tree, const std::string& path) -> std::optional<EntityTransform>;
+auto findTransform(const Placement& tree, const std::string& path) -> std::optional<ContentPrimTransform>;
 
 // The world bounds of what published trees draw at or under a path, each placement's whole bounds kept from one tree to the next. A node once
 // published is never changed in place: the scene thread changes in place only a node nothing else holds, and the latest published snapshot
@@ -318,7 +318,7 @@ public:
     auto under(const std::shared_ptr<const Placement>& tree, const RenderWorld& drawn, const ChunkedList<std::string>& primPaths, const std::string& path) -> AABB;
 
 private:
-    // A placement's draws and everything drawn in it.
+    // A placement's instances and everything drawn in it.
     auto whole(const std::shared_ptr<const Placement>& node, const RenderWorld& drawn) -> AABB;
     // What a placement draws at or under the path: all of it at or under, its prims there and what is placed there when the path is in it.
     auto part(const std::shared_ptr<const Placement>& node, const RenderWorld& drawn, const ChunkedList<std::string>& primPaths, const std::string& path, AABB& out) -> void;

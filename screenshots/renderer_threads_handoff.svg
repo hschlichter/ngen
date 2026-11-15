@@ -50,7 +50,7 @@
   <text x="54" y="396" class="s">view mode, overlays, AA, prepass, sampler</text>
   <text x="54" y="412" class="s">cull frustum (live or frozen), cullEnabled</text>
   <text x="54" y="428" class="s">shadow settings and fitted cascades</text>
-  <text x="54" y="444" class="s">render-LOD eye and tuning</text>
+  <text x="54" y="444" class="s">LOD-group eye and tuning</text>
   <text x="54" y="460" class="s">debug lines, capture watches</text>
   <text x="54" y="476" class="s">each extension's data: render tools'</text>
   <text x="54" y="492" class="s">requests, gizmo lines, ImGui draw data</text>
@@ -148,5 +148,5 @@
 
   <text x="816" y="660" class="s">A slot comes round</text>
   <text x="816" y="676" class="s">again a slot cycle</text>
-  <text x="816" y="692" class="s">later (Frame slots)</text>
+  <text x="816" y="692" class="s">later (Frame contexts)</text>
 </svg>

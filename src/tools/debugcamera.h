@@ -1,7 +1,7 @@
 #pragma once
 
 #include "camera.h"
-#include "config.h"
+#include "cvar.h"
 
 #include <glm/glm.hpp>
 
@@ -11,7 +11,7 @@
 class DebugDraw;
 
 // The debug camera's state: its pose, and the main camera's trail. Its switches (on, what it drives, the controls, the trail drawn) are
-// configuration values (`tools.debugcamera.*`, src/view/debugcamera.h); ngen-view applies them each frame (src/view/README.md, "The
+// cvars (`tools.debugcamera.*`, src/view/debugcamera.h); ngen-view applies them each frame (src/view/README.md, "The
 // debug camera").
 struct DebugCameraState {
     Camera camera{};
@@ -37,12 +37,12 @@ auto drawMainCamera(const DebugCameraState& debug, const Camera& main, const glm
 // The camera LOD and streaming are decided from: the main camera, or the debug camera while it is on and set to drive them.
 auto lodCamera(const DebugCameraState& debug, const Camera& main) -> const Camera&;
 
-// The debug camera's configuration values (src/config/README.md).
-namespace toolsconfig {
-extern config::Bool debugCamera;      // tools.debugcamera.on: render from the debug camera
-extern config::Bool debugControlMain; // tools.debugcamera.controlMain: the keys and mouse move the main camera
-extern config::Bool debugLod;         // tools.debugcamera.lod: LOD and streaming measured from the debug camera
-extern config::Bool debugCull;        // tools.debugcamera.cull: culling from the debug camera
-extern config::Bool debugShadows;     // tools.debugcamera.shadows: the shadow cascades fitted to the debug camera
-extern config::Bool debugTrail;       // tools.debugcamera.trail: the main camera's trail drawn
-} // namespace toolsconfig
+// The debug camera's cvars (src/cvar/README.md).
+namespace toolscvars {
+extern cvar::Bool debugCamera;      // tools.debugcamera.on: render from the debug camera
+extern cvar::Bool debugControlMain; // tools.debugcamera.controlMain: the keys and mouse move the main camera
+extern cvar::Bool debugLod;         // tools.debugcamera.lod: LOD and streaming measured from the debug camera
+extern cvar::Bool debugCull;        // tools.debugcamera.cull: culling from the debug camera
+extern cvar::Bool debugShadows;     // tools.debugcamera.shadows: the shadow cascades fitted to the debug camera
+extern cvar::Bool debugTrail;       // tools.debugcamera.trail: the main camera's trail drawn
+} // namespace toolscvars

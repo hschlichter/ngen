@@ -17,7 +17,7 @@ struct AssetsWindowState {
     // What the window asked for this frame: the application repacks them and clears these.
     std::vector<std::string> repackRequested;
     bool repackSceneRequested = false;
-    // A "go to" asked for this frame: the asset, and whether every draw of it at once. The application answers in goToStatus.
+    // A "go to" asked for this frame: the asset, and whether every instance of it at once. The application answers in goToStatus.
     struct GoTo {
         std::string id;
         bool all = false;
@@ -28,14 +28,14 @@ struct AssetsWindowState {
     bool findSelectedRequested = false;
     bool showSelectedOnly = false;
     bool hasPrimSelected = false; // the view has a prim selected; set by the application each frame
-    // How many draws use an asset; set by the application.
-    std::function<size_t(const std::string&)> drawCount;
+    // How many prims use an asset; set by the application.
+    std::function<size_t(const std::string&)> primCount;
 };
 
 // What the view asked the asset server for: every asset id, its state, whether it was packed or came from the cache, its size, and its
 // times (the total from request to arrival, the server's share of it, and the rest: queueing and streaming). From AssetClient::log().
 // Clicking a row selects it, Ctrl+click adds or removes a row, Shift+click selects the rows from the last click to it, as sorted and
-// filtered; Ctrl+A or Select shown selects every row shown. A double-click or the row menu's Go to moves the camera to the asset's next draw
-// (Frame all to every draw); Selected prim's assets selects the rows of what the view's selected prim uses; Repack selected (or the row
+// filtered; Ctrl+A or Select shown selects every row shown. A double-click or the row menu's Go to moves the camera to the next prim using the asset
+// (Frame all to every instance); Selected prim's assets selects the rows of what the view's selected prim uses; Repack selected (or the row
 // menu) asks for a forced repack of the selection, Repack scene of every asset of the scene.
 auto drawAssetsWindow(bool& show, const std::vector<AssetLogEntry>& log, AssetsWindowState& state) -> void;
