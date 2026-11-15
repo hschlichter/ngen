@@ -241,7 +241,7 @@ auto registerToolCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRe
     registry.add(
         {
             .name = "view.camera.debug",
-            .summary = "The debug camera's actions: place puts it 15 m behind and 10 m above the main camera, clearTrail forgets the main camera's trail. Its switches are cvars (tools.debugcamera.on, controlMain, lod, cull, shadows, trail); the switches here set them, as the debug-camera verb does.",
+            .summary = "The debug camera's actions: place puts it 15 m behind and 10 m above the main camera, clearTrail forgets the main camera's trail. Its switches are cvars (tools.debugcamera.on, controlMain, lod, cull, shadows, trail); the switches here set them, as the debug-camera console command does.",
             .params = {optionalField("place", RpcType::Bool, "put it behind and above the main camera"),
                        optionalField("clearTrail", RpcType::Bool, "forget the trail"),
                        optionalField("on", RpcType::Bool, "tools.debugcamera.on"),
@@ -273,7 +273,7 @@ auto registerToolCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRe
     registry.add(
         {
             .name = "view.lod.inspect",
-            .summary = "One LOD root as the LOD window's inspector shows it: kind, authored root, state (desired, drawn, fade, why), every heuristic (used or why not, thresholds authored and in force, its measure from the camera now and the level it would pick) and every level (triangles, draws).",
+            .summary = "One LOD root as the LOD window's inspector shows it: kind, authored root, state (desired, drawn, fade, why), every heuristic (used or why not, thresholds authored and in force, its measure from the camera now and the level it would pick) and every level (triangles, instances).",
             .params = {requiredField("root", RpcType::String, "a LOD root's full path")},
             .result = "the inspection",
         },

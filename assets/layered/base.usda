@@ -166,8 +166,8 @@ def Xform "World" (
         }
     }
 
-    # Render LOD (rock.usda): a LOD root whose levels aren't payloads, placed twice by reference and once as an instance.
-    def Scope "RenderLod"
+    # LOD groups (rock.usda): a LOD root whose levels aren't payloads, placed twice by reference and once as an instance.
+    def Scope "LodGroups"
     {
         def Xform "RockNear" (
             prepend references = @./rock.usda@

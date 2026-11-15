@@ -1756,7 +1756,7 @@ auto ViewScene::place() -> void {
             return content == nullptr || content->version != entry.second->version;
         });
         profile::endZone();
-        // The engine's light follows the scene's up axis, known once the stage composed: the lights are gathered on every change.
+        // The default light follows the scene's up axis, known once the stage composed: the lights are gathered on every change.
         lightsChanged = false;
         auto previousLights = drawn.lights;
         collectLights();
@@ -2001,7 +2001,7 @@ auto ViewScene::collectEnvironment() -> std::optional<RenderEnvironment> {
     return environment;
 }
 
-// The distant lights in prim order, or the engine's light when the scene has none: upper-front-right in the scene's own frame, as it
+// The distant lights in prim order, or the default light when the scene has none: upper-front-right in the scene's own frame, as it
 // always was.
 auto ViewScene::collectLights() -> void {
     PROFILE_ZONE_DETAIL("CollectLights", Scene);

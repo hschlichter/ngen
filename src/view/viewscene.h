@@ -628,7 +628,7 @@ private:
     // The roots whose desired level or hand-set state changed since the last pass: a pass looks into the placements holding them.
     std::set<std::string> rootsToCheck;
     bool passNewRoots = false;                                                        // a pass drew roots not drawn before: the heuristic evaluates them
-    uint32_t defaultLightPrim = 0;                                                    // the engine's light's prim index while the scene has no distant light, else 0
+    uint32_t defaultLightPrim = 0;                                                    // the default light's prim index while the scene has no distant light, else 0
     std::shared_ptr<const PlacedScene> placedScene = std::make_shared<PlacedScene>(); // the last pass's, as published
     // Counted when the World is composed, not at every publish: a content's prims (as World::visit reaches them) kept by its version.
     size_t worldPrims = 0;
@@ -741,7 +741,7 @@ private:
     auto wantAsset(Placement& node, const std::string& assetId, AssetKind kind) -> void;
     // The assets a material binding wants and lacks: its pack, or its textures once the pack is held.
     auto wantMaterial(const std::string& key, Placement& node) -> void;
-    // The distant lights, or the engine's light when there is none, after a pass that changed them.
+    // The distant lights, or the default light when there is none, after a pass that changed them.
     auto collectLights() -> void;
     // The scene's environment, from its first dome light whose lat-long texture is held; none without one.
     auto collectEnvironment() -> std::optional<RenderEnvironment>;

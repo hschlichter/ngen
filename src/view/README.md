@@ -200,7 +200,7 @@ do its instances: only where it is placed.
   and moves the view to one on a click; `--camera=/path`, the `camera-use` console command and `view.camera.use` do the same, and `view.camera.list`
   lists them with their poses. The view takes a camera's position and the direction it looks (its local -Z); roll, focal length and
   aperture aren't read (the packer doesn't keep them), so the view's 45° field of view stays.
-- **The engine's light**: when the scene has no distant light, one is added, upper-front-right in the scene's frame (intensity 1, colour
+- **The default light**: when the scene has no distant light, one is added, upper-front-right in the scene's frame (intensity 1, colour
   (1, 0.95, 0.88), angle 0.53).
 - **The sky**: a drawn dome light takes a prim as a distant light does, and its image is asked for as a material's texture is. After each
   pass the first dome in prim order whose image is held as an HDR lat-long with its irradiance (`.exr`, `src/asset/README.md`) becomes

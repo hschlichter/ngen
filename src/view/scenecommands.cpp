@@ -540,7 +540,7 @@ auto registerSceneCommands(RpcRegistry& registry, ConsoleCommands& console, RpcR
             .summary = "Move the camera to the prims using an asset: the next of them (the nearest first), framed and selected, or all of them framed.",
             .params = {
                 requiredField("id", RpcType::String, "asset id: a mesh, material, texture or USD file"),
-                optionalField("all", RpcType::Bool, "frame every instance together"),
+                optionalField("all", RpcType::Bool, "frame every prim together"),
             },
             .result = "{prim, index, count}",
         },

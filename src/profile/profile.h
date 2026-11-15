@@ -42,7 +42,7 @@ enum class Group : uint8_t {
     Tools,    // LOD and Streaming tools, the debug camera, gizmos
     Render,   // the render thread's CPU work
     Culling,  // GPU culling, LOD selection, the depth pyramid
-    Geometry, // depth prepass, geometry, debug views, draw draw lists
+    Geometry, // depth prepass, geometry, debug views, draw lists
     Shadow,
     Lighting, // lighting, sky
     Post,     // anti-aliasing, overlays, present passes

@@ -354,7 +354,7 @@ auto PipelineRegistry::finishReload(const std::string& id, uint64_t frame) -> vo
                 entry.error.clear();
             }
         }
-        LOG_EVENT("Render", "ShaderReloaded", id).text(std::format("shader {} is back to the content its pipelines have ({}): nothing to recreate", id, oldHash)).field("version", oldHash).field("pipelines", (int64_t) 0);
+        LOG_EVENT("Render", "ShaderReloaded", id).text(std::format("shader {} is back to the content its pipelines have ({}): nothing to recreate", id, oldHash)).field("hash", oldHash).field("pipelines", (int64_t) 0);
         return;
     }
     std::optional<ShaderRef> ref;

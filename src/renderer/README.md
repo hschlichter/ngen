@@ -64,15 +64,15 @@ pipelines by the pipeline registry ("Pipelines", below).
   pipeline during a frame's recording; debug builds assert it.
 - **Shader modules are shared.** One module per shader id, for every pipeline that uses it (`shaders/shadow.frag`: the shadow pass and the
   depth prepass).
-- **Observable.** Events `ShadersRequested`, `ShaderLoaded` (id, version), `PipelinePending`, `PipelineCreated`, `PipelineCreateFailed`
-  (reason), `ShaderPackFailed`; the `pipelines` record (name, `atStart` or `firstUse`, state, shaders and versions, the last error) and the Render
+- **Observable.** Events `ShadersRequested`, `ShaderLoaded` (id, hash), `PipelinePending`, `PipelineCreated`, `PipelineCreateFailed`
+  (reason), `ShaderPackFailed`; the `pipelines` record (name, `atStart` or `firstUse`, state, shaders and hashes, the last error) and the Render
   Debug window's Pipelines tab.
 - **Hot reload.** `reload(ids)` (the renderer's `reloadShaders`, with the ids the asset server said changed) requests the shaders it has
   modules for again. When the request is answered, `update()` creates the new module and recreates every ready pipeline using it; the handle
   keeps its index, and the old pipeline and module go to the deletion queue, since frames in flight may use them. A failed pipeline using the
   shader, including one whose shader never made a module, is tried again. A shader that fails to pack or to become a module keeps the old module and pipelines, with the error in the log
   (`ShaderReloadFailed`) and the pipelines' info until a later version loads or the source goes back. Events `ShadersReloadRequested`,
-  `ShaderReloaded` (version, pipelines recreated), `PipelineRecreateFailed`.
+  `ShaderReloaded` (hash, pipelines recreated), `PipelineRecreateFailed`.
 - **Not yet**: shader reflection, creation off the render thread, a disk pipeline cache.
 
 ## How the pieces fit

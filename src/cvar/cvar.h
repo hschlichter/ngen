@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-// Configuration (src/cvar/README.md): the engine's settings, each a typed value declared in code by the system it configures, with a
+// Cvars (src/cvar/README.md): the engine's settings, each a typed value declared in code by the system it configures, with a
 // dotted name, a default and a description. Read and set on the main thread only; a value counts its changes, so code that acts on one
 // compares the count it last saw.
 namespace cvar {

@@ -159,7 +159,7 @@ auto drawRow(const LodRow& row, LodToolState& state) -> void {
 
     ImGui::TableSetColumnIndex(ColumnKind);
     ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(row.group >= 0 ? "render" : "stream");
+    ImGui::TextUnformatted(row.group >= 0 ? "group" : "stream");
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip(row.group >= 0 ? "LOD group: every level held, the GPU picks one per placement each frame and cross-fades inside a blend band."
                                          : "Streaming: each level a payload, loaded when wanted; the CPU picks one per root.");
